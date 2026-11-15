@@ -162,6 +162,15 @@ export const formatWindow = (minutes: number): string => {
 	return hours % 1 === 0 ? `${hours}h` : `${minutes}m`
 }
 
+/**
+ * A rule's window as a notification names it. A cost budget has no rolling one: its check
+ * reads the period to date, which its detail names.
+ */
+export const formatRuleWindow = (rule: {
+	readonly signalType: string
+	readonly windowMinutes: number
+}): string => (rule.signalType === "cost_budget" ? "budget period" : formatWindow(rule.windowMinutes))
+
 export const severityEmoji = (severity: AlertSeverity): string =>
 	Match.value(severity).pipe(
 		Match.when("critical", () => "\u{1F534}"),
@@ -210,7 +219,8 @@ export const signalCarriesDetail = (signalType: string): boolean =>
 	signalType === "uptime" ||
 	signalType === "slo_burn_rate" ||
 	signalType === "anomaly" ||
-	signalType === "audit"
+	signalType === "audit" ||
+	signalType === "cost_budget"
 
 /** An anomaly rule's value is its severity code; what it says is the detector's sentence. */
 const anomalyObserved = (context: Pick<ObservedContext, "value" | "detail">): string =>
@@ -236,7 +246,9 @@ export const formatObservedSummary = (context: ObservedContext): string =>
 		? uptimeObserved(context)
 		: context.signalType === "anomaly"
 			? anomalyObserved(context)
-			: (context.signalType === "slo_burn_rate" || context.signalType === "audit") &&
+			: (context.signalType === "slo_burn_rate" ||
+						context.signalType === "audit" ||
+						context.signalType === "cost_budget") &&
 				  context.detail != null
 				? context.detail
 				: context.value === null

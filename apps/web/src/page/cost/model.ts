@@ -138,6 +138,10 @@ export const canManageSources = (model: Pick<Model, "grants">): boolean =>
 export const cannotManageSources = (model: Pick<Model, "grants">): boolean =>
 	model.grants !== null && !Policy.has(model.grants, "integrations:manage")
 
+/** A budget is an alert rule: who manages alerts sets one. False until the session answers. */
+export const canManageBudgets = (model: Pick<Model, "grants">): boolean =>
+	model.grants !== null && Policy.has(model.grants, "alerts:manage")
+
 /** The org's cost sources once read; none before. */
 export const sourcesOf = (model: Pick<Model, "sources">): ReadonlyArray<CostSourceSummary> =>
 	Option.getOrUndefined(AsyncData.getData(model.sources.data))?.sources ?? []

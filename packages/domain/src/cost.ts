@@ -53,3 +53,27 @@ export const CostChargeCategory = Schema.Literals([
 	"unknown",
 ])
 export type CostChargeCategory = typeof CostChargeCategory.Type
+
+/** Values per dimension a cost read may narrow to; the query inlines them, so both sizes are capped. */
+export const COST_FILTER_MAX_VALUES = 50
+export const COST_FILTER_MAX_VALUE_LENGTH = 300
+
+const CostFilterValues = Schema.Array(
+	Schema.String.check(Schema.isMaxLength(COST_FILTER_MAX_VALUE_LENGTH)),
+).check(Schema.isMaxLength(COST_FILTER_MAX_VALUES))
+
+/** One optional value list per `CostDimension`; an empty or missing list does not narrow. */
+export const CostFilters = Schema.Struct({
+	provider: Schema.optionalKey(CostFilterValues),
+	account: Schema.optionalKey(CostFilterValues),
+	cloud_service: Schema.optionalKey(CostFilterValues),
+	service_category: Schema.optionalKey(CostFilterValues),
+	usage_type: Schema.optionalKey(CostFilterValues),
+	region: Schema.optionalKey(CostFilterValues),
+	resource: Schema.optionalKey(CostFilterValues),
+	service: Schema.optionalKey(CostFilterValues),
+} satisfies Record<CostDimension, Schema.Top>)
+export type CostFilters = typeof CostFilters.Type
+
+/** An ISO 4217 code as the providers bill it. The query inlines it, so nothing else gets through. */
+export const CostCurrency = Schema.String.check(Schema.isPattern(/^[A-Z]{3}$/u))

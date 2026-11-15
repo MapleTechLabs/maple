@@ -1,4 +1,5 @@
 import { defineMaterializedView, node } from "@maple-dev/effect-orm/tinybird"
+import { AWS_METRIC_PREFIX } from "../aws-infra"
 import {
 	chPattern,
 	chRedactChain,
@@ -63,6 +64,7 @@ import {
 	tracesAggregatesHourly,
 	logsAggregatesHourly,
 	metricCatalog,
+	awsMetricsHourly,
 	spanMetricsCallsHourly,
 	serviceOperationsMinutely,
 	serviceOperationsHourly,
@@ -1892,6 +1894,46 @@ export const metricCatalogGaugeMv = defineMaterializedView("metric_catalog_gauge
       `,
 		}),
 	],
+})
+
+// One row per AWS series and hour, in `aws_metrics_hourly`'s column order. The filter is the
+// prefix every `AWS_INFRA_KINDS` metric carries, so no AWS infra read misses its rollup.
+// Read by `awsInfraMetricsSQL`.
+const awsMetricsHourlySql = (metricType: "sum" | "gauge") => `
+        SELECT
+          OrgId,
+          '${metricType}' AS MetricType,
+          MetricName,
+          toStartOfHour(toDateTime(TimeUnix)) AS Hour,
+          ServiceName,
+          Attributes,
+          ResourceAttributes['cloud.region'] AS CloudRegion,
+          ResourceAttributes['cloud.account.id'] AS CloudAccountId,
+          sum(Value) AS Total,
+          count() AS Samples,
+          max(Value) AS Peak,
+          max(toDateTime(TimeUnix)) AS LastSeen
+        FROM metrics_${metricType}
+        WHERE startsWith(MetricName, '${AWS_METRIC_PREFIX}')
+        GROUP BY OrgId, MetricType, MetricName, Hour, ServiceName, Attributes, CloudRegion, CloudAccountId
+      `
+
+export const awsMetricsHourlySumMv = defineMaterializedView("aws_metrics_hourly_sum_mv", {
+	description:
+		"Rolls up the AWS metric stream's aws.* sum points hourly per series into aws_metrics_hourly.",
+	datasource: awsMetricsHourly,
+	// Tinybird refuses `alter` on a view's first deploy. Once it exists, set `deploymentMethod: "alter"`
+	// before changing it: the target is backfilled by hand (`BACKFILL skip`), so a rebuild empties it.
+	nodes: [node({ name: "aws_metrics_hourly_sum_mv_node", sql: awsMetricsHourlySql("sum") })],
+})
+
+export const awsMetricsHourlyGaugeMv = defineMaterializedView("aws_metrics_hourly_gauge_mv", {
+	description:
+		"Rolls up the AWS metric stream's aws.* gauge points hourly per series into aws_metrics_hourly.",
+	datasource: awsMetricsHourly,
+	// Tinybird refuses `alter` on a view's first deploy. Once it exists, set `deploymentMethod: "alter"`
+	// before changing it: the target is backfilled by hand (`BACKFILL skip`), so a rebuild empties it.
+	nodes: [node({ name: "aws_metrics_hourly_gauge_mv_node", sql: awsMetricsHourlySql("gauge") })],
 })
 
 export const metricCatalogHistogramMv = defineMaterializedView("metric_catalog_histogram_mv", {

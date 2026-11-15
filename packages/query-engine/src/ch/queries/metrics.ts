@@ -7,8 +7,11 @@ import type { DateTime } from "effect"
 import { finiteOrZero } from "./format"
 import {
 	defaultSpaceAggregation,
+	METRICS_PERCENTILES,
+	isMetricsPercentile,
 	type AttributeFilter,
 	type MetricsMetric,
+	type MetricsPercentile,
 	type MetricsSpaceAggregation,
 	type MetricType,
 } from "@maple/domain/query-engine"
@@ -79,6 +82,8 @@ export interface MetricsTimeseriesOpts extends MetricsQueryOpts {
 	metric?: MetricsValueAggregation
 	/** One bucket per group over the whole range; see `timeseriesBucket`. Alert evaluation sets it. */
 	wholeRange?: boolean
+	/** Histograms only: how far before startTime to read each series' previous sample. Default: bucketSeconds. */
+	lookbackSeconds?: number
 }
 
 /** One group's value in one bucket. `groupName` is "" when the query has no group-by. */
@@ -86,7 +91,7 @@ export interface MetricsTimeseriesOutput {
 	readonly bucket: DateTime.Utc
 	readonly groupName: string
 	readonly value: number
-	/** Datapoints behind the value (observations for histograms). */
+	/** Datapoints behind the value: for a histogram its observations, or its samples under count and sum. */
 	readonly dataPointCount: number
 	/** Distinct series (service + attributes + resource) combined into the value. */
 	readonly seriesCount: number
@@ -163,6 +168,12 @@ function timeAggregationExpr($: MetricsRow, metric: MetricsValueAggregation): CH
 			return CH.toFloat64(CH.count())
 		case "latest":
 			return CH.argMax($.Value, $.TimeUnix)
+		case "p50":
+		case "p75":
+		case "p90":
+		case "p95":
+		case "p99":
+			return finiteOrZero(CH.quantile(METRICS_PERCENTILES[metric])($.Value))
 	}
 }
 
@@ -187,11 +198,15 @@ type MetricsWhereColumns = Pick<
 	"MetricName" | "OrgId" | "TimeUnix" | "ServiceName" | "Attributes" | "ResourceAttributes"
 >
 
-function metricsWhere($: MetricsWhereColumns, opts: MetricsTimeseriesOpts) {
+function metricsWhere(
+	$: MetricsWhereColumns,
+	opts: MetricsTimeseriesOpts,
+	start: CH.Expr<DateTime.Utc> = param.dateTime("startTime"),
+) {
 	return [
 		$.MetricName.eq(param.string("metricName")),
 		$.OrgId.eq(orgIdParam),
-		$.TimeUnix.gte(param.dateTime("startTime")),
+		$.TimeUnix.gte(start),
 		$.TimeUnix.lte(param.dateTime("endTime")),
 		wholeRangeEnd($.TimeUnix, opts.wholeRange),
 		CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
@@ -209,28 +224,14 @@ function metricsWhere($: MetricsWhereColumns, opts: MetricsTimeseriesOpts) {
  * a group are combined (`spaceAggregation`). One stage would weight a series by
  * how often it reports: `sum` of a gauge scraped 4x per bucket read 4x high.
  *
- * Histograms merge their observations across series instead (sum of Sum over
- * sum of Count), which is the exact distribution average; `spaceAggregation`
- * does not apply to them.
+ * Histograms merge their observations across series instead; see
+ * `histogramTimeseriesQuery`. `spaceAggregation` does not apply to them.
  */
 export function metricsTimeseriesQuery(opts: MetricsTimeseriesOpts) {
 	const metric = opts.metric ?? "avg"
 	const { tbl, isHistogram } = resolveMetricTable(opts.metricType)
 
-	if (isHistogram) {
-		const inner = from(tbl as typeof Datasources.metricsHistogram)
-			.select(($) => ({
-				bucket: timeseriesBucket($.TimeUnix, opts.wholeRange),
-				groupName: metricsGroupNameExpr($, opts),
-				value: histogramValueExpr($, metric),
-				dataPointCount: CH.sum($.Count),
-				seriesCount: CH.uniqExact(metricsSeriesKeyExpr($)),
-			}))
-			.where(($) => metricsWhere($, opts))
-			.groupBy("bucket", "groupName")
-			.orderBy(["bucket", "asc"])
-		return finalizeTimeseries(inner, metricsTimeseriesColumns, "value", opts)
-	}
+	if (isHistogram) return histogramTimeseriesQuery(opts, metric)
 
 	const perSeries = from(tbl as typeof Datasources.metricsSum)
 		.select(($) => ({
@@ -260,22 +261,254 @@ export function metricsTimeseriesQuery(opts: MetricsTimeseriesOpts) {
 	return finalizeTimeseries(inner, metricsTimeseriesColumns, "value", opts)
 }
 
-function histogramValueExpr(
-	$: ColumnAccessor<typeof Datasources.metricsHistogram.columns>,
+// Histogram timeseries
+
+const histogramSampleColumns = {
+	TimeUnix: T.dateTime64,
+	groupName: T.string,
+	series: T.uint64,
+	temporality: T.int32,
+	startTime: T.dateTime64,
+	prevStart: T.dateTime64,
+	prevTime: T.dateTime64,
+	fresh: T.uint8,
+	sCount: T.uint64,
+	prevCount: T.uint64,
+	sSum: T.float64,
+	prevSum: T.float64,
+	sMin: T.nullable(T.float64),
+	sMax: T.nullable(T.float64),
+	buckets: T.array(T.uint64),
+	prevBuckets: T.array(T.uint64),
+	bounds: T.array(T.float64),
+	prevBounds: T.array(T.float64),
+}
+
+// A sample counts whole when it carries its own accumulation: delta temporality,
+// a series that began inside the scanned range (`fresh`), or a reset (count
+// dropped, or a StartTimeUnix that moved to or past the previous sample). A start
+// equal to the previous sample's own start is the same accumulation, which is how
+// a scraped series reads after its first point. Otherwise only the increase counts.
+const SAMPLE_IS_WHOLE =
+	"(temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime > prevStart AND startTime < TimeUnix))"
+const OBSERVATIONS = `if(${SAMPLE_IS_WHOLE}, toFloat64(sCount), toFloat64(sCount) - toFloat64(prevCount))`
+const OBSERVED_SUM = `if(${SAMPLE_IS_WHOLE}, sSum, sSum - prevSum)`
+// New bounds inside one accumulation leave no bucket to subtract from: that sample adds
+// no buckets. `arrayResize` keeps the zipped arrays the same length in every branch.
+const BUCKET_INCREASE = `multiIf(${SAMPLE_IS_WHOLE}, arrayMap(c -> toFloat64(c), buckets), bounds != prevBounds, arrayMap(c -> toFloat64(0), buckets), arrayMap((c, p) -> greatest(toFloat64(c) - toFloat64(p), 0), buckets, arrayResize(prevBuckets, length(buckets))))`
+// Recorded extrema bound the merged distribution only when every sample that added
+// observations recorded them; one series' min says nothing about another's values.
+const EXTREMA_COVER_ALL = `countIf((isNull(sMin) OR isNull(sMax)) AND ${OBSERVATIONS} > 0) = 0`
+// OTLP: N bounds describe N + 1 buckets, the last unbounded. Any other shape has no usable buckets.
+const HAS_BUCKETS = "length(buckets) = length(bounds) + 1"
+const BUCKET_UPPER_BOUNDS = `if(${HAS_BUCKETS}, arrayPushBack(bounds, inf), emptyArrayFloat64())`
+const BUCKET_COUNTS = `if(${HAS_BUCKETS}, ${BUCKET_INCREASE}, emptyArrayFloat64())`
+
+/**
+ * The q-quantile of one merged histogram: linear interpolation inside the bucket
+ * the rank falls in, as Prometheus' `histogram_quantile` does, except that the
+ * unbounded last bucket interpolates up to the recorded max (`bMax`). NaN when
+ * it cannot be estimated.
+ *
+ * `bKeys` and `bCounts` are the non-empty buckets by ascending upper bound
+ * (`sumMap` drops a key whose sum is zero), `bTotal` their sum, and `bBounds`
+ * every finite bound of the samples that added observations, which is where a
+ * bucket's lower edge comes from.
+ */
+function histogramQuantileSql(q: number): string {
+	const rank = `(${q} * bTotal)`
+	const cumulative = "arrayCumSum(bCounts)"
+	const index = `arrayFirstIndex(c -> c >= ${rank}, ${cumulative})`
+	const at = `greatest(${index}, 1)`
+	const upper = `bKeys[${at}]`
+	const inBucket = `bCounts[${at}]`
+	const before = `(${cumulative}[${at}] - ${inBucket})`
+	const fraction = `if(${inBucket} > 0, (${rank} - ${before}) / ${inBucket}, 0)`
+	const below = `arrayFilter(b -> b < ${upper}, bBounds)`
+	// Below the lowest bound the bucket starts at zero, unless that bound is itself negative.
+	const lower = `if(empty(${below}), if(${upper} > 0, 0, ${upper}), arrayMax(${below}))`
+	const bounded = `${lower} + (${upper} - ${lower}) * ${fraction}`
+	const unbounded = `if(empty(bBounds), nan, ${lower} + (greatest(ifNull(bMax, ${lower}), ${lower}) - ${lower}) * ${fraction})`
+	return `multiIf(bTotal <= 0 OR ${index} = 0, nan, isInfinite(${upper}), ${unbounded}, ${bounded})`
+}
+
+/**
+ * Histograms merge their observations across series: every sample is reduced
+ * to what it observed since the previous sample of its series, and those
+ * increases (count, sum, per-bucket counts) add up within a bucket and group.
+ * `avg` is sum over count, the exact distribution average; percentiles are
+ * estimated from the merged buckets. `min` and `max` read the recorded extrema,
+ * which a cumulative series reports since its start.
+ *
+ * Exponential histograms take the same path for count, sum and avg; their
+ * buckets are not merged, so a percentile on one has no rows.
+ */
+function histogramTimeseriesQuery(
+	opts: MetricsTimeseriesOpts,
 	metric: MetricsValueAggregation,
+): CHQuery<ColumnDefs, MetricsTimeseriesOutput> {
+	const { tbl } = resolveMetricTable(opts.metricType)
+	// Bucket arrays are only read for a percentile, and only explicit buckets merge.
+	const readsBuckets = opts.metricType === "histogram" && isMetricsPercentile(metric)
+
+	const scanStart = CH.intervalSub(
+		param.dateTime("startTime"),
+		opts.lookbackSeconds ?? param.int("bucketSeconds"),
+	)
+
+	const samplesQuery = from(tbl as typeof Datasources.metricsHistogram)
+		.select(($) => {
+			// One partition per emitting series, fingerprinted like the counter query, plus the
+			// instrumentation scope: two libraries can record the same metric with the same labels.
+			const onePrecedingFrame = CH.windowSpec({
+				partitionBy: [
+					$.ServiceName,
+					$.MetricName,
+					$.ScopeName,
+					CH.cityHash64(CH.mapKeys($.Attributes), CH.mapValues($.Attributes)),
+					CH.cityHash64(CH.mapKeys($.ResourceAttributes), CH.mapValues($.ResourceAttributes)),
+				],
+				orderBy: [[$.TimeUnix, "asc"]],
+				frame: CH.rowsBetween(CH.preceding(1), CH.currentRow),
+			})
+			const previous = <A>(value: CH.Expr<A>) =>
+				CH.over(CH.lagInFrame(value, 1, value), onePrecedingFrame)
+			// A series' first scanned sample that also began in the scanned range has no
+			// earlier sample to subtract; without this a process that exports once is lost.
+			const fresh = CH.over(CH.count(), onePrecedingFrame)
+				.eq(1)
+				.and($.StartTimeUnix.gte(scanStart))
+				.and($.StartTimeUnix.lt($.TimeUnix))
+			const buckets = readsBuckets
+				? $.BucketCounts
+				: CH.rawExpr("emptyArrayUInt64()", T.array(T.uint64))
+			const bounds = readsBuckets
+				? $.ExplicitBounds
+				: CH.rawExpr("emptyArrayFloat64()", T.array(T.float64))
+			return {
+				TimeUnix: $.TimeUnix,
+				groupName: metricsGroupNameExpr($, opts),
+				series: metricsSeriesKeyExpr($),
+				temporality: $.AggregationTemporality,
+				startTime: $.StartTimeUnix,
+				prevStart: previous($.StartTimeUnix),
+				prevTime: previous($.TimeUnix),
+				fresh: CH.if_(fresh, CH.lit(1), CH.lit(0)),
+				sCount: $.Count,
+				prevCount: previous($.Count),
+				sSum: $.Sum,
+				prevSum: previous($.Sum),
+				sMin: $.Min,
+				sMax: $.Max,
+				buckets,
+				prevBuckets: previous(buckets),
+				bounds,
+				prevBounds: previous(bounds),
+			}
+		})
+		// A no-recorded-value point (a failed scrape) carries zeros, which would read as a reset.
+		.where(($) => [...metricsWhere($, opts, scanStart), CH.rawCond("bitAnd(Flags, 1) = 0")])
+
+	const samples = table("hist_samples", { external: true, columns: histogramSampleColumns })
+
+	const merged = from(samples)
+		.withCTE("hist_samples", samplesQuery)
+		.select(($) => ({
+			bucket: timeseriesBucket($.TimeUnix, opts.wholeRange),
+			groupName: $.groupName,
+			observations: CH.sum(CH.rawExpr(OBSERVATIONS, T.float64)),
+			total: CH.sum(CH.rawExpr(OBSERVED_SUM, T.float64)),
+			minValue: CH.min_($.sMin),
+			maxValue: CH.max_($.sMax),
+			samples: CH.count(),
+			seriesCount: CH.uniqExact($.series),
+			...(isMetricsPercentile(metric)
+				? {
+						bKeys: CH.rawExpr(
+							`tupleElement(sumMap(${BUCKET_UPPER_BOUNDS}, ${BUCKET_COUNTS}), 1)`,
+							T.array(T.float64),
+						),
+						bCounts: CH.rawExpr(
+							`tupleElement(sumMap(${BUCKET_UPPER_BOUNDS}, ${BUCKET_COUNTS}), 2)`,
+							T.array(T.float64),
+						),
+						bTotal: CH.sum(CH.rawExpr(`arraySum(${BUCKET_COUNTS})`, T.float64)),
+						bBounds: CH.rawExpr(
+							`arraySort(groupUniqArrayArray(if(arraySum(${BUCKET_COUNTS}) > 0, bounds, emptyArrayFloat64())))`,
+							T.array(T.float64),
+						),
+						bMin: CH.rawExpr(`if(${EXTREMA_COVER_ALL}, min(sMin), NULL)`, T.nullable(T.float64)),
+						bMax: CH.rawExpr(`if(${EXTREMA_COVER_ALL}, max(sMax), NULL)`, T.nullable(T.float64)),
+					}
+				: undefined),
+		}))
+		.where(($) => [$.TimeUnix.gte(param.dateTime("startTime"))])
+		.groupBy("bucket", "groupName")
+
+	if (!isMetricsPercentile(metric)) {
+		const inner = fromQuery(merged, "merged")
+			.select(($) => ({
+				bucket: $.bucket,
+				groupName: $.groupName,
+				value: histogramValueExpr($, metric),
+				// A count or sum of zero is a reading as long as the series still exports.
+				dataPointCount:
+					metric === "count" || metric === "sum" ? $.samples : CH.toUInt64($.observations),
+				seriesCount: $.seriesCount,
+			}))
+			// An average over no observations is not zero; the bucket has no value.
+			.where(($) => [metric === "avg" || metric === "latest" ? $.observations.gt(0) : undefined])
+			.orderBy(["bucket", "asc"])
+		return finalizeTimeseries(inner, metricsTimeseriesColumns, "value", opts)
+	}
+
+	const estimated = fromQuery(merged, "merged").select(($) => ({
+		bucket: $.bucket,
+		groupName: $.groupName,
+		observations: $.observations,
+		seriesCount: $.seriesCount,
+		bMin: $.bMin,
+		bMax: $.bMax,
+		estimate: CH.rawExpr(histogramQuantileSql(METRICS_PERCENTILES[metric]), T.float64),
+	}))
+	const inner = fromQuery(estimated, "estimated")
+		.select(($) => ({
+			bucket: $.bucket,
+			groupName: $.groupName,
+			// The recorded extrema bound every observation, so they bound the estimate.
+			value: CH.least_(
+				CH.greatest_($.estimate, CH.ifNull($.bMin, $.estimate)),
+				CH.ifNull($.bMax, $.estimate),
+			),
+			dataPointCount: CH.toUInt64($.observations),
+			seriesCount: $.seriesCount,
+		}))
+		.where(() => [CH.rawCond("isFinite(estimate)")])
+		.orderBy(["bucket", "asc"])
+	return finalizeTimeseries(inner, metricsTimeseriesColumns, "value", opts)
+}
+
+function histogramValueExpr(
+	$: {
+		readonly observations: CH.Expr<number>
+		readonly total: CH.Expr<number>
+		readonly minValue: CH.Expr<number | null>
+		readonly maxValue: CH.Expr<number | null>
+	},
+	metric: Exclude<MetricsValueAggregation, MetricsPercentile>,
 ): CH.Expr<number> {
 	switch (metric) {
 		case "sum":
-			return CH.sum($.Sum)
+			return $.total
 		case "min":
-			return CH.ifNull(CH.min_($.Min), CH.lit(0))
+			return CH.ifNull($.minValue, CH.lit(0))
 		case "max":
-			return CH.ifNull(CH.max_($.Max), CH.lit(0))
+			return CH.ifNull($.maxValue, CH.lit(0))
 		case "count":
-			return CH.toFloat64(CH.sum($.Count))
+			return $.observations
 		case "avg":
 		case "latest":
-			return finiteOrZero(CH.sum($.Sum).div(CH.sum($.Count)))
+			return finiteOrZero($.total.div($.observations))
 	}
 }
 

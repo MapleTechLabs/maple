@@ -16,6 +16,7 @@ import { StoredAlertMaintenanceSchedule } from "@maple/domain/alert-maintenance-
 import { AlertIncidentLabels } from "@maple/domain/alerts"
 import { AnomalySignalType } from "@maple/domain/anomalies"
 import { AuditDetectionFilters } from "@maple/domain/audit-trail"
+import { StoredCostBudget } from "@maple/domain/cost-budget"
 import { Schema } from "effect"
 
 const StringArray = Schema.Array(Schema.String)
@@ -90,6 +91,8 @@ export const AlertRules = PG.table("alert_rules", {
 		}),
 		/** Audit detections only: events that arrived before this do not count. Moves when what is counted changes. */
 		auditCountFrom: PG.column(PG.nullable(PG.timestamptzMillis), { name: "audit_count_from" }),
+		/** Cost budgets only: the amount, period and slice of spend the rule measures. */
+		costBudgetJson: PG.column(PG.nullable(PG.jsonb(StoredCostBudget)), { name: "cost_budget_json" }),
 		/** JSON-encoded `string[]` of free-form tags used to group and filter rules. */
 		tagsJson: PG.column(PG.nullable(PG.jsonb(StringArray)), { name: "tags_json" }),
 		signalType: PG.column(PG.text, { name: "signal_type" }),

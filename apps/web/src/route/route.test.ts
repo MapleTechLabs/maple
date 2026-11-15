@@ -262,8 +262,23 @@ describe("routes", () => {
 		}
 	})
 
+	test("the budgets list and the budget editor have their own paths under /cost", () => {
+		expect(parse("/cost/budgets")._tag).toBe("CostBudgets")
+		const prefilled = parse(hrefOf(AppRoute.CostBudgetNew({ search: { provider: ["aws"] } })))
+		expect(prefilled).toMatchObject({ _tag: "CostBudgetNew", search: { provider: ["aws"] } })
+		expect(parse("/cost/budgets/new?budgetId=abc")).toMatchObject({
+			_tag: "CostBudgetNew",
+			search: { budgetId: "abc" },
+		})
+	})
+
 	test("an org outside the cloudCost rollout is sent home from /cost, filters and all", () => {
-		for (const path of ["/cost", "/cost?groupBy=region&region=%5B%22eu-west-1%22%5D"]) {
+		for (const path of [
+			"/cost",
+			"/cost?groupBy=region&region=%5B%22eu-west-1%22%5D",
+			"/cost/budgets",
+			"/cost/budgets/new",
+		]) {
 			expect(
 				flaggedRouteRedirect(parse(path), {
 					statusPages: true,

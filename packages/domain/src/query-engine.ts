@@ -49,8 +49,30 @@ export const MetricsMetric = Schema.Literals([
 	"latest",
 	"rate",
 	"increase",
+	"p50",
+	"p75",
+	"p90",
+	"p95",
+	"p99",
 ])
 export type MetricsMetric = Schema.Schema.Type<typeof MetricsMetric>
+
+/**
+ * The quantile each percentile aggregation reads. On a histogram it is
+ * estimated from the merged buckets; on a gauge or sum it is the quantile of
+ * each series' samples in the bucket.
+ */
+export const METRICS_PERCENTILES = {
+	p50: 0.5,
+	p75: 0.75,
+	p90: 0.9,
+	p95: 0.95,
+	p99: 0.99,
+} as const satisfies Partial<Record<MetricsMetric, number>>
+export type MetricsPercentile = keyof typeof METRICS_PERCENTILES
+
+export const isMetricsPercentile = (metric: MetricsMetric): metric is MetricsPercentile =>
+	metric in METRICS_PERCENTILES
 
 /**
  * How the per-series values of one group are combined (the space aggregation).
@@ -61,7 +83,12 @@ export const MetricsSpaceAggregation = Schema.Literals(QUERY_BUILDER_SPACE_AGGRE
 export type MetricsSpaceAggregation = Schema.Schema.Type<typeof MetricsSpaceAggregation>
 
 export const defaultSpaceAggregation = (metric: MetricsMetric): MetricsSpaceAggregation =>
-	metric === "avg" || metric === "min" || metric === "max" ? metric : "sum"
+	metric === "avg" || metric === "min" || metric === "max"
+		? metric
+		: // Per-series percentiles do not add up; their average is the neutral reading.
+			isMetricsPercentile(metric)
+			? "avg"
+			: "sum"
 
 /** Group-by keys per query across `groupByAttributeKeys` and `groupByResourceAttributeKeys`. */
 export const MAX_METRICS_GROUP_BY_KEYS = 5

@@ -144,7 +144,8 @@ export interface AlertReadModelsServiceApi {
 
 /**
  * An audit detection's rule is absent from the public rule API, so its checks are too: they are
- * a minute-by-minute count of audit activity. Uptime and SLO checks have always been served.
+ * a minute-by-minute count of audit activity. Uptime and SLO checks have always been served, and
+ * a cost budget's are too: they say no more than its incidents, which the public API lists.
  */
 const hiddenFromPublicApi = (
 	rule: { readonly signalType: string },

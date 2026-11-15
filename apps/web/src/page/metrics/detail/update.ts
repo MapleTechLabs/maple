@@ -2,7 +2,7 @@ import { pickerStep } from "../../kit/page-time"
 import { keyedSlot } from "../../kit/keyed-step"
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { RequestMode } from "@maple/views/data/keyed"
-import { Option, Array as Arr, Record as Rec } from "effect"
+import { Option, Array as Arr, Record as Rec, Schema } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import * as AddToDashboard from "./add-to-dashboard"
 import { behindToastContent } from "../../dashboards/kit/store"
@@ -23,7 +23,7 @@ import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "../../../data/time-range"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
-import type { MetricSearch } from "../../../route/search"
+import { type MetricSearch, MetricSearchAggregation } from "../../../route/search"
 import * as Combobox from "@maple/views/ui/combobox"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Select from "@maple/views/ui/select"
@@ -322,6 +322,9 @@ const routed = (model: Model, route: Route, context: PageContext): Return => {
 export const contextChanged = (model: Model, context: PageContext): Return =>
 	model.window === null ? { model } : requestAll(model, context, model.window, "Load")
 
+// Every aggregation the picker can offer is one the URL can carry.
+const isSearchAggregation = Schema.is(MetricSearchAggregation)
+
 const liftAggregation = (model: Model, message: Select.Message): Return => {
 	const next = Select.update(model.aggregationSelect, message)
 	const lifted: Return = {
@@ -332,15 +335,7 @@ const liftAggregation = (model: Model, message: Select.Message): Return => {
 	}
 	if (next.outMessage === undefined) return lifted
 	const agg = next.outMessage.value
-	const isKnown =
-		agg === "avg" ||
-		agg === "sum" ||
-		agg === "min" ||
-		agg === "max" ||
-		agg === "count" ||
-		agg === "rate" ||
-		agg === "increase"
-	return isKnown
+	return isSearchAggregation(agg)
 		? { ...lifted, outMessage: patchSearch(lifted.model, { ...model.search, agg }).outMessage }
 		: lifted
 }

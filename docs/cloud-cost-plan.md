@@ -4,6 +4,7 @@ Status: **phase 1 built, 2026-11-11, behind the `cloudCost` org flag.** AWS spen
 into `cost_daily` and shown on `/cost`. OpenRouter, GitHub, Vercel and Cloudflare followed on
 2026-11-12, PlanetScale, Anthropic and OpenAI on 2026-11-13.
 Phase 0 checked the provider APIs against docs, public schemas and one real AWS account.
+Budgets, the first piece of phase 4, were built on 2026-11-15.
 Recommendations (phase 2) and the other providers are not built.
 
 ## Goal
@@ -158,6 +159,34 @@ Answers are cached by their window, and a past window is held for 15 minutes. A 
 days, so the key also carries when the org's sources were last written: a sync step shows on the
 next read.
 
+### Budgets
+
+A budget is an amount per calendar period (month, quarter or year, in UTC) over a slice of the
+org's spend: one currency, one metric, and the same filters a cost read takes. It is stored as a
+hidden alert rule of signal type `cost_budget` (`alert_rules.cost_budget_json`), the way an audit
+log detection is, so its incidents, destinations, silences, maintenance windows and reminders are
+the alerting ones and nothing is built twice. The generic rule APIs refuse it.
+
+- A budget has one or two alerts, one per severity. Each opens at a percent of the amount and
+  watches either the spend so far or the period's forecast.
+- The forecast is a straight run rate over the period's complete days, times the days of the
+  period. Today, still filling, is no day of the rate, and neither is a last day or two a
+  provider has not reported yet. None is made in the first three days of a period. A forecast
+  alert opens at its percent and clears five percent under it, so a rate that moves a little
+  every day does not close and reopen an incident.
+- The rule is checked hourly. Each check reads the period to date from `cost_daily` over the
+  org's connected sources (`CostBudgetSource`), so it follows the sync, and a cached read is
+  replaced as soon as a sync writes.
+- A new period starts at zero, which resolves an open incident.
+- A budget that is spent opens no error issue and starts no investigation.
+- Writes need `alerts:manage`; everyone in the org can read. At most 50 budgets per org. An org
+  that leaves the rollout can still delete its budgets, which go on being checked.
+- A budget's checks are served by the public rule API, like an SLO's: they say no more than
+  its incidents.
+
+Known limit: cost for the last days of a period arrives after the period has closed. An overage
+that only shows then is not alerted on, because a check reads the current period only.
+
 ### Surfaces
 
 - Web: `/cost` behind the `cloudCost` flag. One page: the window against the period before, a
@@ -173,13 +202,22 @@ next read.
   the team or organization the org has connected, all three of which the page can remove again.
   The pasted-credential step is one form described by data (`credential-sources.ts`).
   Recommendations (list and detail with the evidence chart) come with phase 2.
+- Web: `/cost/budgets` lists the org's budgets in one table: what each covers, what is spent of
+  its amount, the forecast, its alerts and where it stands (on track, warning, critical, off).
+  `/cost/budgets/new` is the editor, also for an existing one (`?budgetId=`): name, the slice of
+  spend picked from each dimension's largest values of the last 30 days, amount, currency and
+  period, and the warning and critical alerts with their destinations. Set budget on the Cost
+  page opens it on the page's filters. Everyone reads the list; the editor, the switch and
+  delete are for `alerts:manage`. A budget's incident page links back to the list. In the
+  sidebar, Cost has two rows: Spend and Budgets.
 - API: four internal endpoints in the query-engine group (`cost-totals`, `cost-timeseries`,
   `cost-breakdown`, `cost-sources`), `PUT` / `DELETE` on `/internal/cost/openrouter` and
   `/internal/cost/cloudflare`, `/internal/cost/anthropic` and `/internal/cost/openai` for the
   pasted credentials, `GET /internal/cost/github` with `PUT` /
   `DELETE /internal/cost/github/{installationId}` for GitHub sources, and `GET` / `PUT` /
   `DELETE` on `/internal/cost/vercel` and `/internal/cost/planetscale` for the Vercel and
-  PlanetScale sources. A public `/v2/cost/*` is not built.
+  PlanetScale sources, and `GET` / `POST` on `/internal/cost/budgets` with `GET` / `PATCH` /
+  `DELETE` on `/internal/cost/budgets/{id}` for budgets. A public `/v2/cost/*` is not built.
 - MCP: `cost_overview`, `cost_breakdown`, `compare_cost_periods`, `list_cost_recommendations`,
   `inspect_cost_recommendation`.
 
@@ -631,8 +669,8 @@ Each phase is one PR stack.
    `CREDENTIAL_SOURCES`. One read through a connection adds a reconcile function instead, and
    when the org opts in on the Cost page (GitHub, Vercel, PlanetScale) a source service with its
    endpoints and a step in the Add source dialog.
-4. **Closing the loop.** Budgets and cost anomalies as managed alert signals, a cost block in the
-   weekly digest, cost per request on service pages, realized savings once an accepted
+4. **Closing the loop.** Budgets are built (see Budgets above). Cost anomalies as a managed alert
+   signal, a cost block in the weekly digest, cost per request on service pages, realized savings once an accepted
    recommendation stops firing.
 5. **Depth.** CUR 2.0 for resource-level history, allocation of shared cost (NAT, cluster nodes),
    and cost tools for the investigation agent.

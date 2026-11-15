@@ -444,11 +444,25 @@ export const InvestigationSearch = Schema.Struct({
 	action: Schema.optional(Schema.Unknown),
 })
 
+export const MetricSearchAggregation = Schema.Literals([
+	"avg",
+	"sum",
+	"min",
+	"max",
+	"count",
+	"latest",
+	"rate",
+	"increase",
+	"p50",
+	"p75",
+	"p90",
+	"p95",
+	"p99",
+])
+
 export const MetricSearch = Schema.Struct({
 	type: Schema.optional(Schema.Literals(QUERY_BUILDER_METRIC_TYPES)),
-	agg: Schema.optional(
-		Schema.Literals(["avg", "sum", "min", "max", "count", "latest", "rate", "increase"]),
-	),
+	agg: Schema.optional(MetricSearchAggregation),
 	where: StringParam,
 	groupBy: StringParam,
 	step: StringParam,
@@ -615,6 +629,21 @@ export const CostSearch = Schema.Struct({
 	resource: OptionalStringArrayParam,
 	account: OptionalStringArrayParam,
 })
+
+/**
+ * `/cost/budgets/new`: `budgetId` edits that budget. The rest prefill a new one with the slice of
+ * spend the Cost page was filtered to, one value list per dimension.
+ */
+export const CostBudgetNewSearch = Schema.Struct({
+	budgetId: StringParam,
+	cloud_service: OptionalStringArrayParam,
+	provider: OptionalStringArrayParam,
+	service_category: OptionalStringArrayParam,
+	region: OptionalStringArrayParam,
+	resource: OptionalStringArrayParam,
+	account: OptionalStringArrayParam,
+})
+export type CostBudgetNewSearch = typeof CostBudgetNewSearch.Type
 
 export const DashboardsSearch = Schema.Struct({
 	q: StringParam,

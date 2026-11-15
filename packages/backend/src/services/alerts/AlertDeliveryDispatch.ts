@@ -24,7 +24,7 @@ import {
 	formatSignalLabel,
 	formatSignalMetric,
 	formatThresholdSummary,
-	formatWindow,
+	formatRuleWindow,
 	signalDisplayOf,
 	truncate,
 	uptimeSummaryLine,
@@ -84,12 +84,17 @@ export const buildSummaryLine = (context: SummaryLineContext, em: (value: string
 	// An SLO's check names both windows and the tier, which one value and window cannot.
 	if (context.signalType === "slo_burn_rate" && context.detail != null && context.eventType !== "test")
 		return em(context.detail)
-	// A detection's check already says how many events arrived and over which window.
-	if (context.signalType === "audit" && context.detail != null && context.eventType !== "test")
+	// A detection's check already says how many events arrived and over which window, and a
+	// budget's what was spent or forecast, of how much, and in which period.
+	if (
+		(context.signalType === "audit" || context.signalType === "cost_budget") &&
+		context.detail != null &&
+		context.eventType !== "test"
+	)
 		return em(context.detail)
 	const signal = formatSignalLabel(context)
 	const observed = formatSignalMetric(context.value, signalDisplayOf(context))
-	const window = formatWindow(context.windowMinutes)
+	const window = formatRuleWindow(context)
 	if (context.eventType === "test") {
 		return `This is a test notification. Live alerts fire when ${em(signal)} is ${comparatorBreachPhrase(context)} over a ${window} window.`
 	}
@@ -126,7 +131,7 @@ export const buildDiscordEmbeds = (context: DispatchContext, linkUrl: string) =>
 			{ name: "Signal", value: formatSignalLabel(context), inline: true },
 			{ name: "Group", value: displayGroup(context) ?? "all", inline: true },
 			{ name: "Observed", value: formatObservedSummary(context), inline: true },
-			{ name: "Window", value: formatWindow(context.windowMinutes), inline: true },
+			{ name: "Window", value: formatRuleWindow(context), inline: true },
 			{
 				name: "Links",
 				value: `[Open in Maple](${linkUrl})`,
@@ -166,7 +171,7 @@ const telegramDetailLine = (
 	const group = displayGroup(context)
 	const parts = [
 		`<b>Severity</b> ${escapeTelegramHtml(formatSeverityLabel(context.severity))}`,
-		`<b>Window</b> ${escapeTelegramHtml(formatWindow(context.windowMinutes))}`,
+		`<b>Window</b> ${escapeTelegramHtml(formatRuleWindow(context))}`,
 	]
 	if (group != null) parts.push(`<b>Group</b> <code>${escapeTelegramHtml(group)}</code>`)
 	return Arr.join(parts, "  \u{00B7}  ")
@@ -253,7 +258,7 @@ export const buildTemplateContext = (
 		"observed.summary": formatObservedSummary(context),
 		sampleCount: context.sampleCount != null ? String(context.sampleCount) : "",
 		group: displayGroup(context) ?? "all",
-		window: formatWindow(context.windowMinutes),
+		window: formatRuleWindow(context),
 		incidentId: context.incidentId ?? "",
 		incidentStatus: context.incidentStatus,
 		dedupeKey: context.dedupeKey,

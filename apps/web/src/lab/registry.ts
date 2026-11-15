@@ -190,6 +190,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/cost-budgets",
+		title: "Cost budgets",
+		description:
+			"The Budgets list and the budget editor over fixture budgets: on track, over, off, empty, failing, a viewer's read-only list, the delete dialog and each state of the form (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/integration-features",
 		title: "Integration features",
 		description:
