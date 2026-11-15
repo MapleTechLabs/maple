@@ -5623,21 +5623,26 @@ fn profiles_export_response(headers: &HeaderMap, accepted: ProfilesAccepted) -> 
 
 /// What the gateway stamps on a profile's resource: the same attributes
 /// `enrich_resource_attributes` gives a log's, less a sender's own source claim.
-fn profile_resource_stamps(resolved_key: &ResolvedIngestKey) -> profiles::ResourceStamps {
+/// The source's resource overrides, applied to the export before the org's rules run, and
+/// the gateway's own stamps, applied by the flatten after them.
+fn profile_resource_stamps(
+    resolved_key: &ResolvedIngestKey,
+) -> (profiles::ResourceOverrides, profiles::ResourceStamps) {
+    let mut overrides = profiles::ResourceOverrides::default();
     let mut stamps = profiles::ResourceStamps {
         reserved: &["org_id", "maple_org_id", SOURCE_ID_ATTRIBUTE],
         ..Default::default()
     };
-    let overrides = resolved_key
+    let attributes = resolved_key
         .source
         .iter()
         .flat_map(|source| &source.resource_attributes)
         .filter(|attribute| !sources::is_protected_attribute(&attribute.key));
-    for attribute in overrides {
+    for attribute in attributes {
         let pair = (attribute.key.clone(), attribute.value.clone());
         match attribute.mode {
-            OverrideMode::Set => stamps.set.push(pair),
-            OverrideMode::Default => stamps.defaults.push(pair),
+            OverrideMode::Set => overrides.set.push(pair),
+            OverrideMode::Default => overrides.defaults.push(pair),
         }
     }
     // Last, so the maple_* stamps win over any override.
@@ -5648,7 +5653,7 @@ fn profile_resource_stamps(resolved_key: &ResolvedIngestKey) -> profiles::Resour
     if let Some(source_id) = resolved_key.source_public_id() {
         stamp(SOURCE_ID_ATTRIBUTE, source_id);
     }
-    stamps
+    (overrides, stamps)
 }
 
 /// `POST /v1development/profiles`, and `/v1/profiles` where the spec moves it: an
@@ -5896,7 +5901,7 @@ async fn decode_profiles(
     body: Bytes,
     gzip: bool,
     payload_format: PayloadFormat,
-    stamps: profiles::ResourceStamps,
+    (overrides, stamps): (profiles::ResourceOverrides, profiles::ResourceStamps),
     rules: Option<Arc<rules_gateway::OrgRules>>,
 ) -> Result<FlattenedProfiles, ApiError> {
     let span = Span::current();
@@ -5947,34 +5952,31 @@ async fn decode_profiles(
             PayloadFormat::Json => profiles::decode_json(&payload)
                 .map_err(|e| invalid_payload("profiles", "JSON", e))?,
         };
-        // Text the rules inline from the string table: under the decode heap ceiling with the
-        // decoded export, and held with it until the rows are built.
-        let mut inlined = 0u64;
+        // What the source's overrides add and the rules inline from the string table: under the
+        // decode heap ceiling with the decoded export, and held with it until the rows are built.
+        let mut grown = ExportGrowth::new(estimate, heap_budget);
+        if !profiles::apply_resource_overrides(&mut request, &overrides, |bytes| {
+            grown.charge(bytes, &mut reservation)
+        }) {
+            return Err(grown.refusal());
+        }
         if let Some(rules) = &rules {
-            let mut over_ceiling = false;
-            let charge = |bytes: u64| {
-                inlined = inlined.saturating_add(bytes);
-                over_ceiling = estimate.saturating_add(inlined) > heap_budget;
-                !over_ceiling && reservation.try_add(bytes)
-            };
-            redact_profile_export(&span, rules, &mut request, charge).map_err(|error| {
-                match error {
-                    ingest_rules::ProfileRedactError::OverMemoryBudget if over_ceiling => {
-                        over_decode_budget(heap_budget)
-                    }
-                    ingest_rules::ProfileRedactError::OverMemoryBudget => profiles_decode_busy(),
-                    ingest_rules::ProfileRedactError::ScanBudgetExceeded => ApiError::tagged(
-                        StatusCode::PAYLOAD_TOO_LARGE,
-                        &INGEST_RULES_SCAN_BUDGET,
-                        "This export needs more ingest rule scanning than one request may use; send smaller exports",
-                    ),
-                }
+            redact_profile_export(&span, rules, &mut request, |bytes| {
+                grown.charge(bytes, &mut reservation)
+            })
+            .map_err(|error| match error {
+                ingest_rules::ProfileRedactError::OverMemoryBudget => grown.refusal(),
+                ingest_rules::ProfileRedactError::ScanBudgetExceeded => ApiError::tagged(
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    &INGEST_RULES_SCAN_BUDGET,
+                    "This export needs more ingest rule scanning than one request may use; send smaller exports",
+                ),
             })?;
         }
         // Only the decoded form is left; the buffers went with the payload.
         let decoded_bytes = payload.len();
         drop(payload);
-        let decoded_heap = estimate.saturating_add(inlined);
+        let decoded_heap = estimate.saturating_add(grown.bytes);
         reservation.shrink_to(decoded_heap);
         let limits = ProfileLimits {
             decoded_heap,
@@ -6058,6 +6060,56 @@ fn profiles_decode_busy() -> ApiError {
         &INGEST_DECODE_BUSY,
         "Ingest gateway is busy decoding other requests; retry shortly",
     )
+}
+
+/// Memory a decoded export grows by before it is flattened: the source's overrides and the text
+/// the org's rules inline. Counted exactly against the decode heap ceiling, and reserved from the
+/// process-wide budget in steps, so many small copies are not each rounded up to a KiB there.
+struct ExportGrowth {
+    estimate: u64,
+    heap_ceiling: u64,
+    bytes: u64,
+    reserved: u64,
+    over_ceiling: bool,
+}
+
+impl ExportGrowth {
+    const STEP: u64 = 64 * 1024;
+
+    const fn new(estimate: u64, heap_ceiling: u64) -> Self {
+        Self {
+            estimate,
+            heap_ceiling,
+            bytes: 0,
+            reserved: 0,
+            over_ceiling: false,
+        }
+    }
+
+    fn charge(&mut self, bytes: u64, reservation: &mut DecodeReservation) -> bool {
+        self.bytes = self.bytes.saturating_add(bytes);
+        self.over_ceiling = self.estimate.saturating_add(self.bytes) > self.heap_ceiling;
+        if self.over_ceiling {
+            return false;
+        }
+        if self.bytes > self.reserved {
+            let ask = (self.bytes - self.reserved).max(Self::STEP);
+            if !reservation.try_add(ask) {
+                return false;
+            }
+            self.reserved = self.reserved.saturating_add(ask);
+        }
+        true
+    }
+
+    /// Past the ceiling no retry fits: 413. Refused by the process-wide budget: the retryable 503.
+    fn refusal(&self) -> ApiError {
+        if self.over_ceiling {
+            over_decode_budget(self.heap_ceiling)
+        } else {
+            profiles_decode_busy()
+        }
+    }
 }
 
 /// Refuses an export whose rows would store more than `INGEST_MAX_ROW_EXPANSION`
@@ -15355,6 +15407,128 @@ mod tests {
         assert!(resource.get("deploy.secret").is_none(), "{resource}");
         assert_eq!(rows[0]["sample_attributes"]["customer"], "[REDACTED:email]");
         assert_eq!(rows[0]["sample_attributes"]["contact"], "[REDACTED:email]");
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    // Many tiny inlined copies are reserved from the process-wide budget in steps, not each
+    // rounded up to a KiB: 40,000 one-byte copies would otherwise ask for about 39 MiB.
+    #[tokio::test]
+    async fn many_tiny_inlined_copies_fit_the_decode_memory_they_use() {
+        const ENTRIES: usize = 20_000;
+        let queue_dir = unique_main_test_dir("profiles-redact-tiny");
+        let key = "maple_sk_test_profiles_redact_tiny";
+        let org = "org_profiles_redact_tiny";
+        let store = private_key_store(key, org, false);
+        store.set_ingest_rules(org, &[mask_emails_rule()]);
+        let (state, mut imports) = profiles_test_state(Arc::clone(&store), queue_dir.clone()).await;
+        let mut state = with_ingest_rules(state, &store);
+        let mut table = vec![serde_json::json!({})];
+        table.extend(
+            (0..ENTRIES).map(|_| serde_json::json!({ "keyStrindex": 2, "value": { "stringValueStrindex": 3 } })),
+        );
+        let request = serde_json::json!({
+            "resourceProfiles": [{ "scopeProfiles": [{ "profiles": [{ "samples": [
+                { "stackIndex": 1, "attributeIndices": [1], "values": ["1"] },
+            ] }] }] }],
+            "dictionary": {
+                "stringTable": ["", "main", "k", "v"],
+                "functionTable": [{}, { "nameStrindex": 1 }],
+                "locationTable": [{}, { "lines": [{ "functionIndex": 1 }] }],
+                "stackTable": [{}, { "locationIndices": [1] }],
+                "attributeTable": table,
+            },
+        });
+        let body = Bytes::from(serde_json::to_vec(&request).expect("the export encodes"));
+        let estimate = decode_budget::json_cost(&body, u64::MAX).expect("an unbounded estimate");
+        // The export, its decode and 16 MiB to spare: room for the copies, not for a KiB each.
+        state.decode_memory = DecodeMemory::new(body.len() as u64 + estimate + 16 * 1024 * 1024);
+        let headers = profiles_headers(key, "application/json");
+
+        let accepted = handle_profiles_inner(&state, &headers, body)
+            .await
+            .expect("an idle gateway holds the copies");
+        assert_eq!(accepted.stored_rows, 1);
+        assert_eq!(imported_profile_rows(&mut imports, 1).await.len(), 1);
+        assert_eq!(state.decode_memory.reserved_bytes(), 0);
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    // A source's overrides land on the resource before the org's rules run, as on traces and
+    // logs, so a rule redacts an override's value too. A key at string-table index 0 reads as
+    // empty in redaction and in the stored row alike, whatever the sender put there.
+    #[tokio::test]
+    async fn profiles_are_redacted_after_the_source_overrides_land() {
+        let queue_dir = unique_main_test_dir("profiles-overrides-redacted");
+        let org = "org_profiles_overrides_redacted";
+        let token = "maple_src_profiles_overrides_redacted_000000";
+        let store = Arc::new(FakeKeyStore::default());
+        store.insert_source(
+            token,
+            source_row(
+                org,
+                source_config(
+                    None,
+                    None,
+                    r#"[{"key":"team.secret","value":"s3cr3t","mode":"set"},
+                        {"key":"owner","value":"ops@example.com","mode":"set"},
+                        {"key":"region.secret","value":"eu","mode":"default"}]"#,
+                ),
+            ),
+        );
+        store.set_ingest_rules(
+            org,
+            &[
+                serde_json::json!({
+                    "signals": ["traces"], "conditions": [],
+                    "action": { "_tag": "redact", "keys": ["*.secret", "password"], "detectors": [],
+                        "patterns": [], "scopes": ["resource"], "method": "remove" }
+                }),
+                serde_json::json!({
+                    "signals": ["logs"], "conditions": [],
+                    "action": { "_tag": "redact", "keys": [], "detectors": ["email"], "patterns": [],
+                        "scopes": ["resource"], "method": "mask" }
+                }),
+            ],
+        );
+        let (state, mut imports) = profiles_test_state(Arc::clone(&store), queue_dir.clone()).await;
+        let state = with_ingest_rules(state, &store);
+        let request = serde_json::json!({
+            "resourceProfiles": [{
+                "resource": { "attributes": [
+                    { "key": "service.name", "value": { "stringValue": "checkout" } },
+                    { "keyStrindex": 0, "value": { "stringValue": "hunter2" } },
+                ] },
+                "scopeProfiles": [{ "profiles": [{ "samples": [
+                    { "stackIndex": 1, "values": ["1"] },
+                ] }] }],
+            }],
+            "dictionary": {
+                "stringTable": ["password", "main"],
+                "functionTable": [{}, { "nameStrindex": 1 }],
+                "locationTable": [{}, { "lines": [{ "functionIndex": 1 }] }],
+                "stackTable": [{}, { "locationIndices": [1] }],
+            },
+        });
+        let body = Bytes::from(serde_json::to_vec(&request).expect("the export encodes"));
+        let headers = profiles_headers(token, "application/json");
+
+        let accepted = handle_profiles_inner(&state, &headers, body)
+            .await
+            .expect("the export is accepted");
+        assert_eq!(accepted.stored_rows, 1);
+        let rows = imported_profile_rows(&mut imports, 1).await;
+        let resource = rows[0]["resource_attributes"]
+            .as_object()
+            .expect("resource attributes are a map");
+        assert_eq!(resource["service.name"], "checkout");
+        // A `set` override a remove rule names is gone, a `default` one too.
+        assert!(!resource.contains_key("team.secret"), "{resource:?}");
+        assert!(!resource.contains_key("region.secret"), "{resource:?}");
+        // A `set` override a mask rule matches is masked.
+        assert_eq!(resource["owner"], "[REDACTED:email]");
+        // Index 0 is the empty key, never the sender's "password".
+        assert!(!resource.contains_key("password"), "{resource:?}");
+        assert!(resource.values().all(|value| value != "hunter2"), "{resource:?}");
         drop(std::fs::remove_dir_all(&queue_dir));
     }
 

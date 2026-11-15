@@ -1949,10 +1949,12 @@ impl<C: FnMut(u64) -> bool> Inliner<'_, C> {
         }
     }
 
-    /// The text at `index` as an owned string; empty when it is out of range.
+    /// The text at `index` as an owned string; empty when it is out of range, and at index 0,
+    /// which the spec keeps empty and the flatten reads as empty.
     fn text(&mut self, index: i32) -> Result<String, ProfileRedactError> {
         let text = usize::try_from(index)
             .ok()
+            .filter(|index| *index != 0)
             .and_then(|index| self.strings.get(index))
             .map_or("", String::as_str);
         if text.is_empty() {
