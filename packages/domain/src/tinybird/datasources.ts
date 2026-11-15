@@ -3240,7 +3240,7 @@ export const profiles = defineDatasource("profiles", {
 		 * Computed by the warehouse, so the gateway and Maple Local cannot disagree on it. No
 		 * `jsonPath`: the insert never names it. Wrap it in `toString()` in every SELECT.
 		 */
-		StackHash: t.uint64().defaultExpr("cityHash64(Frames, FrameFiles)"),
+		StackHash: t.uint64().defaultExpr("cityHash64(Frames, FrameFiles, FrameLines)"),
 	},
 	indexes: [
 		// The span panel looks samples up by span alone; near-unique values and `''` on most rows.

@@ -7,6 +7,7 @@ import {
 	isSupportedProfilesVersion,
 	MAX_FRAME_TEXT,
 	MAX_STACK_DEPTH,
+	ProfilesTooLarge,
 } from "./profiles"
 import { decodeProfilesRequest, encodeProfilesRequest } from "./proto"
 
@@ -20,6 +21,9 @@ const Row = Schema.Struct({
 	service_name: Schema.String,
 	service_version: Schema.String,
 	environment: Schema.String,
+	resource_attributes: Schema.Record(Schema.String, Schema.String),
+	profile_id: Schema.String,
+	duration_nano: Schema.Number,
 	sample_type: Schema.String,
 	sample_unit: Schema.String,
 	value: Schema.Number,
@@ -33,8 +37,14 @@ const Row = Schema.Struct({
 })
 const decodeRow = Schema.decodeUnknownSync(Schema.fromJsonString(Row))
 
-const rowsOf = (request: unknown) => {
-	const { batches, profileCount } = encodeProfiles(request, NOW_NANO)
+/** Ids in call order, so a test names the profile each one went to. */
+const countingIds = () => {
+	let next = 0
+	return () => Str.padStart(32, "0")((++next).toString(16))
+}
+
+const rowsOf = (request: unknown, newProfileId: () => string = countingIds()) => {
+	const { batches, profileCount } = encodeProfiles(request, NOW_NANO, newProfileId)
 	const rows = Arr.flatMap(batches, (batch) =>
 		Arr.map(Str.split("\n")(batch.ndjson), (line) => decodeRow(line)),
 	)
@@ -216,6 +226,133 @@ describe("encodeProfiles", () => {
 		expect(viaProto.rows).toEqual(rowsOf(request).rows)
 	})
 
+	it("resolves string-table references nested in an array and in a map", () => {
+		type Text = (index: number) => object
+		const asArray = (text: Text) => ({
+			arrayValue: { values: [text(8), { arrayValue: { values: [text(3)] } }, { intValue: "7" }] },
+		})
+		const asMap = (text: Text, key: Text) => ({
+			kvlistValue: {
+				values: [
+					{ ...key(9), value: text(8) },
+					{ ...key(7), value: { kvlistValue: { values: [{ ...key(1), value: text(2) }] } } },
+				],
+			},
+		})
+		// The same values on the resource and, through the attribute table, on the sample.
+		const requestWith = (text: Text, key: Text) => {
+			const request = cpuRequest([{ stackIndex: 1, attributeIndices: [1, 2], values: ["1"] }])
+			const first = request.resourceProfiles[0]
+			return {
+				resourceProfiles: [
+					{
+						...first,
+						resource: {
+							attributes: [
+								...(first?.resource.attributes ?? []),
+								{ key: "tags", value: asArray(text) },
+								{ key: "labels", value: asMap(text, key) },
+							],
+						},
+					},
+				],
+				dictionary: {
+					...dictionary,
+					attributeTable: [
+						{},
+						{ keyStrindex: 9, value: asArray(text) },
+						{ keyStrindex: 7, value: asMap(text, key) },
+					],
+				},
+			}
+		}
+		const byReference = requestWith(
+			(index) => ({ stringValueStrindex: index }),
+			(index) => ({ keyStrindex: index }),
+		)
+		const inline = requestWith(
+			(index) => ({ stringValue: STRINGS[index] }),
+			(index) => ({ key: STRINGS[index] }),
+		)
+		const { rows } = rowsOf(byReference)
+		const tags = '["checkout",["main"],"7"]'
+		const labels = '{"thread.name":"checkout","service.name":{"cpu":"nanoseconds"}}'
+		expect(rows).toEqual(rowsOf(inline).rows)
+		expect(rows[0]?.resource_attributes).toMatchObject({ tags, labels })
+		expect(rows[0]?.sample_attributes).toEqual({ "thread.name": tags, "service.name": labels })
+		expect(rowsOf(decodeProfilesRequest(encodeProfilesRequest(byReference))).rows).toEqual(rows)
+	})
+
+	it("reads a null integer as unset", () => {
+		const request = cpuRequest([{ stackIndex: 3, values: ["1"] }])
+		const profile = request.resourceProfiles[0]?.scopeProfiles[0]?.profiles[0]
+		Object.assign(profile ?? {}, { timeUnixNano: null, durationNano: null, period: null })
+		const nulled = {
+			...dictionary,
+			functionTable: [
+				{},
+				{ nameStrindex: 3, filenameStrindex: 6, startLine: null },
+				{ nameStrindex: 4, filenameStrindex: 6, startLine: 10 },
+			],
+			locationTable: [
+				{},
+				{ lines: [{ functionIndex: 1, line: null }] },
+				{ lines: [{ functionIndex: 2, line: null }] },
+				{},
+				{ mappingIndex: 1, address: null },
+			],
+		}
+		const body = { ...request, dictionary: nulled }
+		expect(Result.isSuccess(checkOtlpProfilesJson(body))).toBe(true)
+		const { rows } = rowsOf(body)
+		expect(rows[0]).toMatchObject({
+			timestamp: "2025-11-15 09:46:40.000000000",
+			duration_nano: 0,
+			frames: ["main", "handleRequest", "libc.so.6+0x0"],
+			frame_lines: [0, 10, 0],
+			value: 1,
+		})
+	})
+
+	it("gives every profile without an id one of its own", () => {
+		const request = cpuRequest([
+			{ stackIndex: 1, values: ["1"] },
+			{ stackIndex: 2, values: ["1"] },
+		])
+		const scope = request.resourceProfiles[0]?.scopeProfiles[0]
+		const sent = scope?.profiles[0]
+		const idless = [
+			{ ...sent, profileId: undefined },
+			{ ...sent, profileId: "" },
+			{ ...sent, profileId: b64(Str.repeat(32)("0")) },
+			{ ...sent, profileId: null },
+		]
+		const { rows } = rowsOf({
+			...request,
+			resourceProfiles: [{ scopeProfiles: [{ profiles: [sent, ...idless] }] }],
+		})
+		// Two rows per profile: the sent id is kept, the generated ones are in profile order.
+		const generated = Arr.makeBy(4, (index) => Str.padStart(32, "0")(`${index + 1}`))
+		expect(Arr.map(rows, (row) => row.profile_id)).toEqual(
+			Arr.flatMap([TRACE_ID, ...generated], (id) => [id, id]),
+		)
+	})
+
+	it("generates a 16-byte lowercase hex id by default", () => {
+		const request = cpuRequest([{ stackIndex: 1, values: ["1"] }])
+		const sent = request.resourceProfiles[0]?.scopeProfiles[0]?.profiles[0]
+		const idless = { ...sent, profileId: undefined }
+		const { batches } = encodeProfiles(
+			{ ...request, resourceProfiles: [{ scopeProfiles: [{ profiles: [idless, idless] }] }] },
+			NOW_NANO,
+		)
+		const ids = Arr.map(Str.split("\n")(batches[0]?.ndjson ?? ""), (line) => decodeRow(line).profile_id)
+		expect(ids).toHaveLength(2)
+		expect(ids[0]).toMatch(/^[0-9a-f]{32}$/)
+		expect(ids[1]).toMatch(/^[0-9a-f]{32}$/)
+		expect(ids[0]).not.toBe(ids[1])
+	})
+
 	it("emits exactly the fields the insert mapping reads", () => {
 		const { batches } = rowsOf(cpuRequest([{ stackIndex: 1, values: ["1"] }]))
 		const line = Str.split("\n")(batches[0]?.ndjson ?? "")[0] ?? "{}"
@@ -267,6 +404,22 @@ describe("hostile input", () => {
 		}
 		const row = rowsOf(request).rows[0]
 		expect(row?.frames[0]).toHaveLength(MAX_FRAME_TEXT)
+	})
+
+	it("refuses a request whose rows pass the ceiling, to the byte", () => {
+		// Few bytes on the wire, many in the rows: every sample is its own row of the same stack.
+		const request = cpuRequest(Arr.makeBy(50, (index) => ({ stackIndex: index + 1, values: ["1"] })))
+		request.dictionary = {
+			...dictionary,
+			stackTable: Arr.makeBy(51, () => ({ locationIndices: [2, 1] })),
+		}
+		const whole = encodeProfiles(request, NOW_NANO).batches[0]
+		const bytes = Buffer.byteLength(whole?.ndjson ?? "")
+		expect(whole?.rowCount).toBe(50)
+		const at = (ceiling: number) => () => encodeProfiles(request, NOW_NANO, undefined, ceiling)
+		expect(at(bytes)().batches[0]?.rowCount).toBe(50)
+		expect(at(bytes - 1)).toThrow(ProfilesTooLarge)
+		expect(at(1024)).toThrow(ProfilesTooLarge)
 	})
 
 	it("stores values the columns cannot hold as their nearest bound, not as a failed insert", () => {
