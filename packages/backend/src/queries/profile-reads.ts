@@ -85,7 +85,7 @@ export const makeProfileReads = (deps: QueryRunnerDeps) => {
 			)
 
 	/**
-	 * The heaviest stacks of one sample type, bounded twice: `CH.PROFILE_STACKS_CAP` rows and
+	 * The heaviest stacks of one sample type in the request's unit, bounded twice: `CH.PROFILE_STACKS_CAP` rows and
 	 * `PROFILE_STACKS_RESPONSE_BYTES`. Over the bytes it reads fewer stacks once, then refuses.
 	 */
 	const stacks = Effect.fn("ProfileReads.stacks")(function* (

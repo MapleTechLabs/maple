@@ -626,7 +626,7 @@ const profileParams = (payload: ProfileSampleTypesRequest, orgId: OrgId) => ({
 	...(payload.traceId !== undefined && { traceId: payload.traceId }),
 })
 
-/** The sample types a service or a trace's spans sent, heaviest first; empty without profiles. */
+/** The sample types a service or a trace's spans sent, a row per unit, heaviest first. */
 export const profileSampleTypes = defineQuery({
 	id: "profileSampleTypes",
 	profile: "aggregation",
@@ -635,7 +635,10 @@ export const profileSampleTypes = defineQuery({
 		CH.compile(CH.profileSampleTypesQuery(profileScope(payload)), profileParams(payload, orgId)),
 })
 
-/** The heaviest stacks of one sample type, at most `limit` (`CH.PROFILE_STACKS_CAP` by default). */
+/**
+ * The heaviest stacks of one sample type in one unit, at most `limit` (`CH.PROFILE_STACKS_CAP` by
+ * default). Producers can report a type in different units, and those values do not add up.
+ */
 export const profileStacks = defineQuery({
 	id: "profileStacks",
 	profile: "aggregation",
@@ -644,9 +647,14 @@ export const profileStacks = defineQuery({
 		CH.compile(
 			CH.profileStacksQuery({
 				...profileScope(payload),
+				unit: true,
 				...(payload.limit !== undefined && { limit: payload.limit }),
 			}),
-			{ ...profileParams(payload, orgId), sampleType: payload.sampleType },
+			{
+				...profileParams(payload, orgId),
+				sampleType: payload.sampleType,
+				sampleUnit: payload.sampleUnit,
+			},
 		),
 })
 

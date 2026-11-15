@@ -1901,6 +1901,18 @@ export class ServiceRuntimesResponse extends Schema.Class<ServiceRuntimesRespons
 /** Span ids one profile read may name: the span panel cuts a deeper subtree off at the same count. */
 export const PROFILE_SPAN_IDS_MAX = 500
 
+/** A span and the spans under it: a sample belongs to the innermost span that was running. */
+export const ProfileSpanIds = Schema.Array(SpanId).check(
+	Schema.isMinLength(1),
+	Schema.isMaxLength(PROFILE_SPAN_IDS_MAX),
+)
+
+/** A sample type as a producer names it (`cpu`, `alloc_space`, ...). */
+export const ProfileSampleType = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128))
+
+/** `nanoseconds` | `bytes` | `count`, or `""`: ingest stores a profile that names no unit that way. */
+export const ProfileSampleUnit = Schema.String.check(Schema.isMaxLength(128))
+
 /**
  * What a profile read covers: a service's window (`serviceName`, one environment at most), or the
  * samples linked to spans of one trace (`traceId` with `spanIds`). A read names at least one.
@@ -1908,20 +1920,17 @@ export const PROFILE_SPAN_IDS_MAX = 500
 const profileScopeFields = {
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	serviceName: Schema.optional(ServiceName),
-	deploymentEnv: Schema.optional(DeploymentEnvironment),
-	traceId: Schema.optional(TraceId),
-	/** A span and the spans under it: a sample belongs to the innermost span that was running. */
-	spanIds: Schema.optional(
-		Schema.Array(SpanId).check(Schema.isMinLength(1), Schema.isMaxLength(PROFILE_SPAN_IDS_MAX)),
-	),
+	serviceName: Schema.optionalKey(ServiceName),
+	deploymentEnv: Schema.optionalKey(DeploymentEnvironment),
+	traceId: Schema.optionalKey(TraceId),
+	spanIds: Schema.optionalKey(ProfileSpanIds),
 }
 
 export class ProfileSampleTypesRequest extends Schema.Class<ProfileSampleTypesRequest>(
 	"ProfileSampleTypesRequest",
 )(profileScopeFields) {}
 
-/** One sample type in scope (`cpu`, `alloc_space`, ...), with what it summed to. */
+/** One sample type in scope, in one unit, with what it summed to. */
 export const ProfileSampleTypeRow = Schema.Struct({
 	sampleType: Schema.String,
 	/** `nanoseconds` | `bytes` | `count`. */
@@ -1943,7 +1952,9 @@ export class ProfileSampleTypesResponse extends Schema.Class<ProfileSampleTypesR
 
 export class ProfileStacksRequest extends Schema.Class<ProfileStacksRequest>("ProfileStacksRequest")({
 	...profileScopeFields,
-	sampleType: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+	sampleType: ProfileSampleType,
+	/** The unit of the sample-type row being read: one type's values only add up within a unit. */
+	sampleUnit: ProfileSampleUnit,
 }) {}
 
 /** One distinct call stack, frames root first, with the value it summed to in scope. */

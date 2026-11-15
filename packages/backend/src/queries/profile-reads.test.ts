@@ -31,12 +31,14 @@ const serviceStacks = Schema.decodeSync(ProfileStacksRequest)({
 	...WINDOW,
 	serviceName: "checkout-api",
 	sampleType: "cpu",
+	sampleUnit: "nanoseconds",
 })
 const spanStacks = Schema.decodeSync(ProfileStacksRequest)({
 	...WINDOW,
 	traceId: "7f3a4b5c6d7e8f901234567890abcdef",
 	spanIds: ["aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"],
 	sampleType: "cpu",
+	sampleUnit: "nanoseconds",
 })
 
 type Rows = ReadonlyArray<Record<string, unknown>>
@@ -157,6 +159,7 @@ describe("makeProfileReads.sampleTypes", () => {
 						...WINDOW,
 						traceId: "7f3a4b5c6d7e8f901234567890abcdef",
 						sampleType: "cpu",
+						sampleUnit: "nanoseconds",
 					}),
 				),
 			)
@@ -187,6 +190,53 @@ describe("makeProfileReads.stacks", () => {
 			])
 			expect(limitOf(bounded[0]?.sql ?? "")).toBe(CH.PROFILE_STACKS_CAP)
 			expect(bounded[0]?.sql).toContain("OrgId = 'org_profile_reads'")
+		}),
+	)
+
+	it.effect("reads one unit of the sample type, so two units of it are never added together", () =>
+		Effect.gen(function* () {
+			const { warehouse, bounded } = makeWarehouse(() => Effect.succeed([stackRow(0, 1)]))
+			const reads = makeProfileReads({ warehouse, queryEngine })
+			yield* reads.stacks(tenant, serviceStacks)
+			yield* reads.stacks(
+				tenant,
+				Schema.decodeSync(ProfileStacksRequest)({
+					...WINDOW,
+					serviceName: "checkout-api",
+					sampleType: "cpu",
+					sampleUnit: "count",
+				}),
+			)
+			// A profile whose export named no unit is stored with an empty one.
+			yield* reads.stacks(
+				tenant,
+				Schema.decodeSync(ProfileStacksRequest)({
+					...WINDOW,
+					serviceName: "checkout-api",
+					sampleType: "unknown",
+					sampleUnit: "",
+				}),
+			)
+			const [nanoseconds = "", count = "", unnamed = ""] = Arr.map(bounded, (call) => call.sql)
+			expect(nanoseconds).toContain("SampleType = 'cpu'")
+			expect(nanoseconds).toContain("SampleUnit = 'nanoseconds'")
+			expect(count).toContain("SampleType = 'cpu'")
+			expect(count).toContain("SampleUnit = 'count'")
+			expect(unnamed).toContain("SampleType = 'unknown'")
+			expect(unnamed).toContain("SampleUnit = ''")
+		}),
+	)
+
+	it.effect("the fewer-stacks retry reads the same unit", () =>
+		Effect.gen(function* () {
+			const { warehouse, bounded } = makeWarehouse((sql) =>
+				limitOf(sql) > PROFILE_STACKS_FALLBACK_CAP
+					? Effect.fail(overBytes)
+					: Effect.succeed([stackRow(0, 7000)]),
+			)
+			yield* makeProfileReads({ warehouse, queryEngine }).stacks(tenant, serviceStacks)
+			expect(bounded).toHaveLength(2)
+			expect(bounded[1]?.sql).toContain("SampleUnit = 'nanoseconds'")
 		}),
 	)
 
