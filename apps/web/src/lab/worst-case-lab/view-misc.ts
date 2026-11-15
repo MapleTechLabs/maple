@@ -16,7 +16,6 @@ import { severityBadge } from "@maple/views/ui/logs/severity-badge"
 import { PINNED_COLUMNS, rulesOverview } from "./fixture"
 import { Message, type Model } from "./model"
 import { type H, narrow, wcSection } from "./view-parts"
-import { releaseNarrow } from "./view-sections"
 import { Array as Arr } from "effect"
 
 // The tables and misc sections.
@@ -39,7 +38,7 @@ const rulesView = Submodel.defineView<HubModel, HubMessage, RulesInputs>((hub, i
 )
 
 export const tablesSection = (h: H, model: Model): Html =>
-	wcSection(h, "wc-tables", "Tables: alert rules, release comparison", [
+	wcSection(h, "wc-tables", "Tables: alert rules", [
 		h.submodel({
 			slotId: "wc-rules",
 			model: model.hub,
@@ -47,7 +46,6 @@ export const tablesSection = (h: H, model: Model): Html =>
 			viewInputs: { mode: model.mode, nowMs: model.nowMs },
 			toParentMessage: (message: HubMessage) => Message.GotRulesMessage({ message }),
 		}),
-		releaseNarrow(h, model),
 	])
 
 /** The two tool calls: a settled call with its argument and result, and a live one. */
