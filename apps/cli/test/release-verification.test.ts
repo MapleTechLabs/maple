@@ -9,8 +9,8 @@ import * as CH from "@maple/query-engine/ch"
 import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
 import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
-import { Effect, Array as Arr, String as Str } from "effect"
-import { ServiceDeploysRequest } from "@maple/domain/http"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
+import { ServiceDeploysRequest, ServiceName } from "@maple/domain/http"
 import { Queries } from "@maple/query-engine/registry"
 import { baselineWarehouseCapabilities } from "@maple/query-engine/observability"
 import schemaSql from "@maple/local-server/schema/local-schema.sql" with { type: "text" }
@@ -147,7 +147,7 @@ describeWithChdb("release verification", () => {
 		const compiled = Effect.runSync(
 			Queries.serviceDeploys.compile(
 				new ServiceDeploysRequest({
-					serviceName: "api",
+					serviceName: Schema.decodeSync(ServiceName)("api"),
 					startTime: seconds(DEPLOY_MS - 10 * MINUTE_MS),
 					endTime: seconds(DEPLOY_MS + 3_600_000),
 				}),
