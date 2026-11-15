@@ -198,3 +198,22 @@ describe("print keeps meaning", () => {
 		expect(errorOf('x{a="\\U00110000"}')).toMatch(/invalid string literal/)
 	})
 })
+
+describe("second-review parser regressions", () => {
+	it("decodes byte escapes as UTF-8", () => {
+		expect(ok('x{city="\\xc3\\xa9"}')).toMatchObject({ matchers: [{}, { value: "é" }] })
+	})
+
+	it("refuses a zero subquery step", () => {
+		expect(errorOf("max_over_time(up[5m:0s])")).toMatch(/subquery step/)
+	})
+
+	it("accepts label_join with no source labels", () => {
+		expect(errorOf('label_join(up, "joined", ",")')).toBe("parsed")
+	})
+
+	it("keeps a reserved metric name quoted", () => {
+		const expr = ok('{"NaN"}')
+		expect(ok(print(expr))).toEqual(expr)
+	})
+})

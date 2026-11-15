@@ -57,7 +57,8 @@ export const checkTypes = (expr: Expr): string | undefined => {
 			const signature = functionSignature(expr.func)
 			if (signature === undefined) return `unknown function "${expr.func}"`
 			const { args, optional } = signature
-			const min = optional === -1 ? args.length : args.length - optional
+			// A variadic last argument may appear zero times.
+			const min = optional === -1 ? args.length - 1 : args.length - optional
 			const max = optional === -1 ? Number.POSITIVE_INFINITY : args.length
 			if (expr.args.length < min || expr.args.length > max) {
 				return `expected ${min === max ? min : `${min} to ${max}`} argument(s) in call to "${expr.func}", got ${expr.args.length}`
