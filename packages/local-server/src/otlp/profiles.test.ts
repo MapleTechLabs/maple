@@ -451,6 +451,48 @@ describe("hostile input", () => {
 		expect(performance.now() - started).toBeLessThan(2_000)
 	})
 
+	it("bounds the text the whole request resolves, not each attribute value alone", () => {
+		// 500 attributes of 64 references each to a 1 MiB entry: each under the ceiling, 32 GB in all.
+		const big = Str.repeat(1024 * 1024)("x")
+		const attribute = (index: number) => ({
+			key: `tags.${index}`,
+			value: { arrayValue: { values: Arr.makeBy(64, () => ({ stringValueStrindex: 1 })) } },
+		})
+		const request = {
+			resourceProfiles: [
+				{
+					resource: { attributes: Arr.makeBy(500, attribute) },
+					scopeProfiles: [{ profiles: [{ samples: [{ stackIndex: 1, values: ["1"] }] }] }],
+				},
+			],
+			dictionary: { stringTable: ["", big] },
+		}
+		const started = performance.now()
+		expect(() => encodeProfiles(request, NOW_NANO)).toThrow(ProfilesTooLarge)
+		expect(performance.now() - started).toBeLessThan(2_000)
+	})
+
+	it("counts a value sent as the wrong type, so it cannot switch the budget off", () => {
+		// A number where a string belongs, beside the references the budget exists to stop.
+		const big = Str.repeat(1024 * 1024)("x")
+		const value = {
+			stringValue: 5,
+			arrayValue: { values: Arr.makeBy(10_000, () => ({ stringValueStrindex: 1 })) },
+		}
+		const request = {
+			resourceProfiles: [
+				{
+					resource: { attributes: [{ key: "tags", value }] },
+					scopeProfiles: [{ profiles: [{ samples: [{ stackIndex: 1, values: ["1"] }] }] }],
+				},
+			],
+			dictionary: { stringTable: ["", big] },
+		}
+		const started = performance.now()
+		expect(() => encodeProfiles(request, NOW_NANO)).toThrow(ProfilesTooLarge)
+		expect(performance.now() - started).toBeLessThan(2_000)
+	})
+
 	it("stops on attributes every row repeats before it groups the samples they repeat in", () => {
 		// One attribute-heavy profile, every sample its own group: the rows would repeat 2 MB each.
 		const samples = Arr.makeBy(1_000, (index) => ({ stackIndex: 1, linkIndex: index, values: ["1"] }))
