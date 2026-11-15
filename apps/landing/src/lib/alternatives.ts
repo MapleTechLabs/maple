@@ -311,7 +311,7 @@ const dash0: AlternativesPage = {
 		},
 		{
 			question: "Which Dash0 alternatives support PromQL?",
-			answer: "SigNoz, Grafana and Better Stack take PromQL for queries and alerts. Maple runs PromQL queries and imports dashboards with their PromQL, but alert rules have to be set up again in Maple. Honeycomb, Axiom, Datadog and New Relic use their own builders or query languages.",
+			answer: "SigNoz, Grafana and Better Stack take PromQL for queries and alerts. Maple runs PromQL queries, and Grafana dashboards import with their PromQL panels; Perses dashboards and alert rules have to be set up again in Maple. Honeycomb, Axiom, Datadog and New Relic use their own builders or query languages.",
 		},
 		{
 			question: "How hard is it to move off Dash0?",
