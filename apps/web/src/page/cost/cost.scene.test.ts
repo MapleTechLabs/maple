@@ -1646,6 +1646,33 @@ describe("cost page", () => {
 		)
 	})
 
+	test("a new grouping drops the old one's rows while it loads, and a filter keeps them", () => {
+		const planetScale = source({
+			id: PLANETSCALE_SOURCE,
+			provider: "planetscale",
+			connectionRef: "0190f2b3-0000-7000-8000-00000000a065",
+			accountId: "acme",
+			requestsThisMonth: 0,
+		})
+		const byRegion = answered(entered({ groupBy: "region" }, [source(), planetScale]).model)
+		// Under Service, a region's lowercase key would read as a PlanetScale database.
+		scene(
+			{ update: pageUpdate, view },
+			given(routeChanged(byRegion, { search: { groupBy: "cloud_service" } }, context).model),
+			resolveTheme,
+			expectView(role("columnheader", { name: "Service" })).toExist(),
+			expectView(role("link", { name: "north-1" })).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				routeChanged(byRegion, { search: { groupBy: "region", provider: ["aws"] } }, context).model,
+			),
+			resolveTheme,
+			expectView(role("link", { name: "north-1" })).toExist(),
+		)
+	})
+
 	test("removing one provider's source leaves the other's on the page", () => {
 		const openRouter = source({
 			id: OPENROUTER_SOURCE,
