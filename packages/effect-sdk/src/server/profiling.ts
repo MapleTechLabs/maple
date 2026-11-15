@@ -382,13 +382,17 @@ export const profilerLayer = (
 				Effect.andThen(rotate),
 				Effect.forever,
 				// A loop that dies must not leave V8 sampling, and holding every sample, until exit.
-				Effect.catchCause((cause) =>
-					Effect.gen(function* () {
-						options.timeline?.setRecording(false)
-						yield* Ref.set(running, false)
-						yield* Effect.ignore(post(session, "Profiler.stop"))
-						yield* Effect.logWarning("[MapleProfiler] stopped", Cause.squash(cause))
-					}),
+				// The scope closing interrupts it too: that is shutdown, whose finalizer exports the
+				// last window, so an interruption is passed on untouched.
+				Effect.catchCauseIf(
+					(cause) => !Cause.hasInterruptsOnly(cause),
+					(cause) =>
+						Effect.gen(function* () {
+							options.timeline?.setRecording(false)
+							yield* Ref.set(running, false)
+							yield* Effect.ignore(post(session, "Profiler.stop"))
+							yield* Effect.logWarning("[MapleProfiler] stopped", Cause.squash(cause))
+						}),
 				),
 				Effect.forkScoped,
 			)
