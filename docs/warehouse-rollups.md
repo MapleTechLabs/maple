@@ -161,7 +161,7 @@ nothing errors. The counts come out wrong on a chart that looks fine.
 `packages/query-engine/src/ch/queries/rollup-splice.ts` owns that boundary:
 `utcInteriorConditions(bucketColumn, grain)` for the rollup branch, `edgeCondition(tsColumn,
 grain)` for the raw branch, defined as its complement. Traces, logs, services,
-service-operations and the service map use them.
+service-operations, the service map and the AWS infra metrics use them.
 
 The service-map family used to hand-roll it, and drifted. `serviceDependencies`
 hand-rolled the boundary correctly. `serviceDbEdges`, `serviceExternalEdges` and the
@@ -236,18 +236,24 @@ staged backfill. `scripts/backfill-hourly-rollup.ts --rollup <table>` runs it fo
 infisical run --env=prod -- bun scripts/backfill-hourly-rollup.ts --rollup user_activity_hourly --until 2026-11-06T10:00:00Z
 # Populate, a day at a time, oldest first
 infisical run --env=prod -- bun scripts/backfill-hourly-rollup.ts --rollup user_activity_hourly --until 2026-11-06T10:00:00Z --execute
+# The AWS rollup reads 90 days of metrics
+infisical run --env=prod -- bun scripts/backfill-hourly-rollup.ts --rollup aws_metrics_hourly --until <deploy time> --execute
 ```
 
 - `--until` is when the views went live (the deploy). The views wrote everything after it, so a
   later `--until` double counts.
 - `--from` defaults to the source's retention before `--until` (30 days for traces and logs, 90
-  for metrics); `--pause-seconds` (default 60)
-  spaces the days out. Run it off-peak and watch workspace CPU between days.
+  for metrics); `--pause-seconds` (default 60) spaces the days out. Run it off-peak and watch
+  workspace CPU between days.
+- The hour `--until` falls in is deleted and repopulated whole, last: points stamped before the
+  deploy but ingested after it already reached the views, so a populate cut at `--until` would
+  count them twice. `--execute` refuses to run until that hour has been over for 30 minutes.
 - A day whose whole hours already hold rows is skipped, so a stopped run resumes. A day that
   failed between its two views is skipped too: delete that day's rows and re-run.
 - Run once per workspace (US primary, prod-eu, the legacy mirror) with TINYBIRD_HOST/TOKEN set.
 - Try it on a Tinybird branch first: it calls the materialized node population endpoint
-  (`/v0/pipes/<pipe>/nodes/<node>/population`) with a `populate_condition` per day.
+  (`/v0/pipes/<pipe>/nodes/<node>/population`) with a `populate_condition` per day, and the
+  datasource delete endpoint for the boundary hour.
 
 ---
 
