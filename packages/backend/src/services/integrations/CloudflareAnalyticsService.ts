@@ -2460,7 +2460,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 					if (!disabled.has(WORKERS_DATASET)) {
 						// Script enumeration rides the same discovery TTL. It filters deleted scripts out of
 						// the workers dataset; a failure (typically a pre-workers-scripts.read grant) degrades
-						// open — emit everything rather than wedge the org, and keep the last known set.
+						// open: emit everything rather than wedge the org, and keep the last known set.
 						const scriptsResult = yield* Effect.result(
 							listWorkerScripts(accessToken, accountId, apiBaseUrl),
 						)
@@ -2491,7 +2491,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 						// Hyperdrive config inventory rides the same discovery TTL. It only feeds the
 						// service map's "what sits behind Hyperdrive" resolution, so a failure (typically
 						// a pre-hyperdrive-scope grant surfacing as IntegrationsRevokedError) degrades
-						// open — log and keep the last-known rows, never disable the org's analytics.
+						// open: log and keep the last-known rows, never disable the org's analytics.
 						const hyperdriveResult = yield* Effect.result(
 							listAccountHyperdriveConfigs(accessToken, accountId, apiBaseUrl),
 						)
