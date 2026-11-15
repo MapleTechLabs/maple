@@ -113,7 +113,7 @@ const dash0: AlternativesPage = {
 		},
 	],
 	stayIf: [
-		"Your alerts and dashboards are written in PromQL, or kept as Perses dashboards-as-code. Leaving means rewriting them; of the tools above, SigNoz, Grafana and Better Stack take PromQL alerts; Maple runs PromQL queries and dashboards, but its alerts are its own.",
+		"Your alerts are PromQL rules, or your dashboards live as Perses dashboards-as-code. Leaving means rewriting the alerts: of the tools above, SigNoz, Grafana and Better Stack take PromQL alerts, while Maple runs PromQL queries and dashboards but keeps its own alert rules. Perses dashboards import into Maple with their PromQL panels as placeholders to rebuild.",
 		"You want 13 months of metric retention included in the storage rate. By default Maple keeps metrics 90 days, Honeycomb 60 and SigNoz one month.",
 		"You use Dash0's Kubernetes operator and OpenTelemetry distribution, or its synthetic API checks at $0.20 per thousand runs.",
 		"Per-data-point pricing suits your data. Dash0 charges per span, log record and metric data point, not per byte, so wide spans and verbose log lines cost the same as small ones.",
