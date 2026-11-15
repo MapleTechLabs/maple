@@ -1835,8 +1835,9 @@ pub mod conformance {
 /// ignoring its conditions: those describe spans, logs and metrics, which a profile has none of,
 /// so a profile gets the most redaction any rule asks for rather than none. `resource` scope covers
 /// each resource's attributes, `attributes` scope the dictionary's attribute table (profile and
-/// sample attributes). Keys named by string-table index are resolved first so key rules see them;
-/// a removed table entry keeps its index with an empty key, which the flatten skips.
+/// sample attributes). Keys and string values held as string-table indexes are inlined first so
+/// key rules and detectors see them; a removed table entry keeps its index with an empty key,
+/// which the flatten skips.
 #[hotpath::measure]
 pub fn redact_profiles(
     rules: &CompiledRules,
@@ -1925,7 +1926,8 @@ pub fn redact_profiles(
     }
 }
 
-/// Moves a key named by string-table index into `key`, nested kvlist keys too.
+/// Moves a key named by string-table index into `key`, and a value held that way into an
+/// inline string, nested kvlist entries and array items too.
 fn resolve_key(kv: &mut KeyValue, key_of: &impl Fn(i32) -> String) {
     if kv.key.is_empty() && kv.key_strindex != 0 {
         kv.key = key_of(kv.key_strindex);
@@ -1947,6 +1949,10 @@ fn resolve_value_keys(value: &mut AnyValue, key_of: &impl Fn(i32) -> String) {
             for kv in &mut list.values {
                 resolve_key(kv, key_of);
             }
+        }
+        // Inline, so detectors and patterns scan the text the flatten would store.
+        Some(any_value::Value::StringValueStrindex(index)) => {
+            value.value = Some(any_value::Value::StringValue(key_of(*index)));
         }
         _ => {}
     }
