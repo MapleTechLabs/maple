@@ -11,7 +11,7 @@ import type {
 	SelectorRequest,
 	SeriesData,
 } from "@maple/promql"
-import { Array as Arr, Order } from "effect"
+import { Array as Arr, Order, Record as Rec } from "effect"
 import { compile } from "@maple-dev/effect-orm/clickhouse"
 import type { OrgId } from "@maple/primitives"
 import {
@@ -316,16 +316,18 @@ export const toPushdownData = (
 				})
 				return { labels, steps: row.steps, values: row.values }
 			}
-			const labels: Record<string, string> = {}
-			Arr.forEach(byLabels, (name, i) => {
-				const value = row.groups[i] ?? ""
-				if (value !== "") labels[name] = value
-			})
-			if (by.includes("le") && plan.component === "bucket") labels.le = formatLe(parseLe(row.le))
+			const entries: Array<readonly [string, string]> = Arr.map(byLabels, (name, i) => [
+				name,
+				row.groups[i] ?? "",
+			])
+			if (by.includes("le") && plan.component === "bucket")
+				entries.push(["le", formatLe(parseLe(row.le))])
 			// Every pushed function but last_over_time drops the name before aggregating.
 			if (by.includes("__name__") && (request.func === "last" || request.func === "last_over_time")) {
-				labels.__name__ = plan.promName
+				entries.push(["__name__", plan.promName])
 			}
+			// fromEntries defines own properties, so `by (__proto__)` stays a label.
+			const labels = Rec.fromEntries(Arr.filter(entries, ([, value]) => value !== ""))
 			return { labels, steps: row.steps, values: row.values }
 		}),
 	}
