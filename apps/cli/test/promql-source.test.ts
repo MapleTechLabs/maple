@@ -547,4 +547,50 @@ describeWithChdb("PromQL selector source", () => {
 		expect(series).toHaveLength(1)
 		expect(total(Arr.flatMap(series, (s) => Arr.map(s.buckets, (b) => b.count)))).toBe(samples.length)
 	})
+
+	test("one name stored in two units reads as two metrics", () => {
+		const exports = Arr.map(every(15 * SECOND_MS, MINUTE_MS, 15 * SECOND_MS), (t): Sample => [t, 1])
+		const gaugeIn = (service: string, unit: string, value: number): SumSeries => ({
+			...gauge,
+			metric: "request.duration",
+			unit,
+			attributes: {},
+			resource: { ...RESOURCE, "service.name": service },
+			samples: Arr.map(exports, ([t]): Sample => [t, value]),
+		})
+		insertValues(db, gaugeIn("seconds-svc", "s", 0.2))
+		insertValues(db, gaugeIn("millis-svc", "ms", 200))
+		const seconds = select(db, ORG_A, request("request_duration_seconds")).series
+		const millis = select(db, ORG_A, request("request_duration_milliseconds")).series
+		expect(Arr.map(seconds, (s) => s.labels.job)).toEqual(["seconds-svc"])
+		expect(Arr.map(millis, (s) => s.labels.job)).toEqual(["millis-svc"])
+	})
+
+	test("attribute order does not split a series", () => {
+		const times = every(15 * SECOND_MS, 2 * MINUTE_MS, 15 * SECOND_MS)
+		const ordered = (
+			attributes: Readonly<Record<string, string>>,
+			part: ReadonlyArray<number>,
+		): SumSeries => ({
+			...counterA,
+			metric: "ordered",
+			attributes,
+			samples: Arr.map(part, (t, k): Sample => [t, k]),
+		})
+		insertValues(
+			db,
+			ordered(
+				{ route: "/a", method: "GET" },
+				Arr.filter(times, (_t, i) => i % 2 === 0),
+			),
+		)
+		insertValues(
+			db,
+			ordered(
+				{ method: "GET", route: "/a" },
+				Arr.filter(times, (_t, i) => i % 2 === 1),
+			),
+		)
+		expect(select(db, ORG_A, request("ordered_total")).series).toHaveLength(1)
+	})
 })
