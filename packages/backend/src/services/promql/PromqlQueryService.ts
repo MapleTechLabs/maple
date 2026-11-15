@@ -36,10 +36,9 @@ import {
 	matchesValue,
 	prometheusMetadata,
 	promqlAttributeValuesQuery,
-	promqlInstanceValuesQuery,
 	resourceKeysForLabel,
 	promqlMetadataQuery,
-	promqlJobValuesQuery,
+	promqlIdentityValuesQuery,
 	type PushdownPlan,
 	toPushdownData,
 	toSelectorData,
@@ -464,49 +463,27 @@ const make = Effect.gen(function* () {
 		return Arr.flatten(values)
 	})
 
-	/** `instance` values: one bounded read per metric table, since no rollup keeps id-like keys. */
-	const instanceValues = Effect.fn("PromqlQueryService.instanceValues")(function* (
+	/** `job` or `instance` values as series carry them: one bounded read per metric table. */
+	const identityValues = Effect.fn("PromqlQueryService.identityValues")(function* (
 		tenant: TenantContext,
 		window: DiscoveryWindow,
+		label: "job" | "instance",
 	) {
 		const perTable = yield* Effect.forEach(
 			PROMQL_METRIC_TABLES,
 			(table) =>
 				warehouse.compiledQuery(
 					tenant,
-					CH.compile(
-						promqlInstanceValuesQuery({ table, limit: DISCOVERY_LIMIT }),
-						windowParams(tenant, window),
-					),
-					{ profile: "discovery", context: "promqlInstances" },
+					CH.compile(promqlIdentityValuesQuery({ table, label, limit: DISCOVERY_LIMIT }), {
+						orgId: tenant.orgId,
+						startMs: window.startMs,
+						endMs: window.endMs,
+					}),
+					{ profile: "discovery", context: label === "job" ? "promqlJobs" : "promqlInstances" },
 				),
 			{ concurrency: "unbounded" },
 		)
-		return Arr.flatMap(perTable, (rows) => Arr.map(rows, (row) => row.instance))
-	})
-
-	/** `job` values as series carry them (`namespace/service`): one bounded read per metric table. */
-	const jobValues = Effect.fn("PromqlQueryService.jobValues")(function* (
-		tenant: TenantContext,
-		window: DiscoveryWindow,
-	) {
-		const perTable = yield* Effect.forEach(
-			PROMQL_METRIC_TABLES,
-			(table) =>
-				warehouse.compiledQuery(
-					tenant,
-					CH.compile(
-						promqlJobValuesQuery({ table, limit: DISCOVERY_LIMIT }),
-						windowParams(tenant, window),
-					),
-					{ profile: "discovery", context: "promqlJobs" },
-				),
-			{ concurrency: "unbounded" },
-		)
-		return Arr.filter(
-			Arr.flatMap(perTable, (rows) => Arr.map(rows, (row) => row.job)),
-			(job) => job !== "",
-		)
+		return Arr.flatMap(perTable, (rows) => Arr.map(rows, (row) => row.value))
 	})
 
 	const labelValues = Effect.fn("PromqlQueryService.labelValues")(function* (
@@ -531,11 +508,11 @@ const make = Effect.gen(function* () {
 					limited(sortedUnique(canonicalPromNames(catalog)), input.limit),
 				)
 			case "job":
-				return yield* Effect.map(jobValues(tenant, window), (names) =>
+				return yield* Effect.map(identityValues(tenant, window, "job"), (names) =>
 					limited(sortedUnique(names), input.limit),
 				)
 			case "instance":
-				return yield* Effect.map(instanceValues(tenant, window), (values) =>
+				return yield* Effect.map(identityValues(tenant, window, "instance"), (values) =>
 					limited(sortedUnique(values), input.limit),
 				)
 			default:

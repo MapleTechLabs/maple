@@ -27,6 +27,16 @@ describe("Prometheus wire format", () => {
 			// Past what a Date renders (nanoseconds sent as seconds): a 400, not a 500 downstream.
 			const huge = yield* Effect.flip(parseTime("time", "1752580800123456789"))
 			expect(huge.message).toMatch(/cannot parse/)
+			// A clock or calendar field Date would roll over is refused, as Go's time.Parse refuses it.
+			for (const text of [
+				"2026-07-15T24:00:00Z",
+				"2026-02-30T00:00:00Z",
+				"2026-07-15T12:60:00Z",
+				"2026-13-01T00:00:00Z",
+			]) {
+				expect((yield* Effect.flip(parseTime("time", text))).message).toMatch(/cannot parse/)
+			}
+			expect(yield* parseTime("time", "2028-02-29T23:59:59Z")).toBe(Date.UTC(2028, 1, 29, 23, 59, 59))
 		}),
 	)
 })
