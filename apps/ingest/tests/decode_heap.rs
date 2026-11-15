@@ -1209,7 +1209,15 @@ mod prometheus {
         // Metadata with a long help text and then a tag of zero.
         let help = [&[0x22, 0x80, 0x40][..], &[b'h'; 8 * 1024]].concat();
         let bad_metadata = framed(3, &[help.as_slice(), &[0x00]].concat());
+        // A label two bytes long whose name claims the 8 kB that follow the series: the
+        // decoder copies them into the name before it notices the label was overrun.
+        let overrun = [
+            framed(1, &[0x0a, 0x02, 0x0a, 0x80, 0x40]).as_slice(),
+            &[b'x'; 8 * 1024],
+        ]
+        .concat();
         for (case, wire) in [
+            ("a label overrunning its series", overrun),
             ("a series ending in a bad tag", bad_tail),
             ("a series ending in a cut label", bad_label),
             ("a bad byte after good series", bad_after_good),
@@ -1225,5 +1233,115 @@ mod prometheus {
                 "{case}: estimate {estimate} below the real peak {actual}"
             );
         }
+    }
+    /// A small deterministic generator, so a failing case can be replayed from its seed.
+    struct Rng(u64);
+
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            self.0
+        }
+
+        fn below(&mut self, bound: usize) -> usize {
+            (self.next() % bound.max(1) as u64) as usize
+        }
+
+        fn text(&mut self, longest: usize) -> String {
+            let len = self.below(longest + 1);
+            (0..len).map(|_| char::from(b'a' + self.below(26) as u8)).collect()
+        }
+    }
+
+    /// A request of random shape: any number of series, labels, samples and metadata.
+    fn random_request(rng: &mut Rng) -> WriteRequest {
+        let timeseries = (0..rng.below(40))
+            .map(|_| TimeSeries {
+                labels: (0..rng.below(30))
+                    .map(|_| label(&rng.text(24), &rng.text(40)))
+                    .collect(),
+                samples: (0..rng.below(60))
+                    .map(|_| Sample {
+                        value: rng.below(1_000) as f64,
+                        timestamp: 1_700_000_000_000 + rng.below(1_000_000) as i64,
+                    })
+                    .collect(),
+                exemplars: vec![Skipped {}; rng.below(3)],
+                histograms: vec![Skipped {}; rng.below(2)],
+            })
+            .collect();
+        let metadata = (0..rng.below(6))
+            .map(|_| MetricMetadata {
+                kind: MetricType::Counter.into(),
+                metric_family_name: rng.text(24),
+                help: rng.text(300),
+                unit: rng.text(8),
+            })
+            .collect();
+        WriteRequest {
+            timeseries,
+            metadata,
+        }
+    }
+
+    /// Damages `wire` the ways a hostile sender would: cut it, overwrite bytes, and
+    /// splice in runs of the cheapest messages the decoder allocates for.
+    fn mutate(rng: &mut Rng, mut wire: Vec<u8>) -> Vec<u8> {
+        for _ in 0..rng.below(4) {
+            if wire.is_empty() {
+                break;
+            }
+            let at = rng.below(wire.len());
+            match rng.below(5) {
+                0 => wire.truncate(at),
+                1 => wire[at] = rng.next() as u8,
+                2 => wire.insert(at, 0x00),
+                3 => {
+                    let run = [0x0a, 0x00].repeat(rng.below(4_000));
+                    wire.splice(at..at, run);
+                }
+                _ => {
+                    let run = framed(1, &[0x0a, 0x00].repeat(rng.below(4_000)));
+                    wire.splice(at..at, run);
+                }
+            }
+        }
+        wire
+    }
+
+    /// What the decoder's own error value can hold, however large the input.
+    const ERROR_VALUE_BYTES: usize = 1024;
+
+    /// Whatever the bytes are, and whether the decoder accepts them or not, it never
+    /// allocates more than the estimate reserved for it.
+    #[test]
+    fn the_estimate_bounds_random_and_damaged_bodies() {
+        let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
+        let (mut refused, mut accepted) = (0_u32, 0_u32);
+        for case in 0..12_000 {
+            let seed = rng.0;
+            let wire = random_request(&mut rng).encode_to_vec();
+            let wire = if case % 3 == 0 { wire } else { mutate(&mut rng, wire) };
+            let cost = decode_cost(&wire, u64::MAX).unwrap();
+            let (actual, decoded) = peak_during(|| decode(&wire));
+            if decoded.is_ok() {
+                accepted += 1;
+            } else {
+                refused += 1;
+            }
+            drop(decoded);
+            // A refusal also allocates the decoder's error value: its message and the
+            // path to the field, a few hundred bytes whatever the input.
+            let estimate = usize::try_from(cost.peak).unwrap() + ERROR_VALUE_BYTES;
+            assert!(
+                estimate >= actual,
+                "case {case} (seed {seed:#x}, {} wire bytes): estimate {estimate} below the real peak {actual}",
+                wire.len()
+            );
+        }
+        eprintln!("{accepted} bodies decoded, {refused} refused");
+        assert!(accepted > 500 && refused > 500, "{accepted} decoded, {refused} refused");
     }
 }

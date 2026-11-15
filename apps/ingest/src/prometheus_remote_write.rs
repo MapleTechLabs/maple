@@ -448,7 +448,8 @@ pub struct DecodeCost {
 }
 
 /// Estimates what [`decode`] allocates for `payload`, failing once the peak is
-/// past `budget`, before any of it is allocated. Malformed input is left to the decoder.
+/// past `budget`, before any of it is allocated. Malformed input is left to the decoder
+/// to refuse, charged for what the decoder holds before it gets that far.
 pub fn decode_cost(payload: &[u8], budget: u64) -> Result<DecodeCost, OverBudget> {
     let request = (size_of::<WriteRequest>() + size_of::<ExportMetricsServiceRequest>()) as u64;
     let mut cost = Cost {
@@ -458,13 +459,21 @@ pub fn decode_cost(payload: &[u8], budget: u64) -> Result<DecodeCost, OverBudget
         widest_metadata: 0,
         budget,
     };
-    match cost.walk_request(payload) {
-        Ok(()) | Err(Stop::Malformed) => {}
+    let malformed = match cost.walk_request(payload) {
+        Ok(()) => false,
+        Err(Stop::Malformed) => true,
         Err(Stop::OverBudget) => return Err(OverBudget),
-    }
+    };
+    // The decoder fails at the same byte, but a length that overruns its own message
+    // first makes it copy up to the rest of the payload into a string: a label has two.
+    let overrun = if malformed {
+        2 * heap_len(payload.len())
+    } else {
+        0
+    };
     // Every metric holds a copy of its family's help and unit.
     let copies = cost.series.saturating_mul(cost.widest_metadata);
-    let peak = cost.peak.saturating_add(copies);
+    let peak = cost.peak.saturating_add(copies).saturating_add(overrun);
     if peak > budget {
         return Err(OverBudget);
     }
