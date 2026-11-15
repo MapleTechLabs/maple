@@ -272,3 +272,15 @@ describe("query_promql rendering", () => {
 		}),
 	)
 })
+
+describe("query_promql empty results", () => {
+	it.effect("tells an instant query to move end_time, not widen start_time", () =>
+		Effect.gen(function* () {
+			const { text } = yield* run({ query: QUERY, ...WINDOW, instant: true }, () =>
+				Effect.succeed({ resultType: "vector" as const, result: [] }),
+			)
+			expect(text).toContain("move end_time")
+			expect(text).not.toContain("Widen start_time")
+		}),
+	)
+})
