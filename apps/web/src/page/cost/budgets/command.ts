@@ -1,9 +1,9 @@
 import { AlertRuleId } from "@maple/domain/http"
-import { Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { settleTo } from "@maple/views/data/load-failure"
 import { fetchSessionGrants } from "../../kit/session-grants"
-import { deleteBudget, listBudgets, updateBudget } from "../kit/budget-api"
+import { deleteBudget, listBudgets, readCostSources, updateBudget } from "../kit/budget-api"
 import { Message } from "./model"
 
 // The Budgets page's reads and writes.
@@ -15,6 +15,14 @@ export const FetchBudgets = Command.define("FetchCostBudgets", {
 	messages: [Message.CompletedFetchBudgets],
 	execute: ({ key }) =>
 		listBudgets.pipe(settleTo((result) => Message.CompletedFetchBudgets({ key, result }))),
+})
+
+/** The sources behind the account names; tagged with the org asked for, so a late answer is dropped. */
+export const FetchBudgetSources = Command.define("FetchCostBudgetSources", {
+	args: { orgId: Schema.String },
+	messages: [Message.CompletedFetchSources],
+	execute: ({ orgId }) =>
+		Effect.map(readCostSources, (sources) => Message.CompletedFetchSources({ orgId, sources })),
 })
 
 /** Turns one budget's alerts on or off; the answer is the budget as the API stored it. */

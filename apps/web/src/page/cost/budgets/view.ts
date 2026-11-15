@@ -1,3 +1,4 @@
+import { COST_BUDGET_FORECAST_MIN_DAYS } from "@maple/domain/cost-budget"
 import type { CostBudgetStatus } from "@maple/domain/http"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import * as Keyed from "@maple/views/data/keyed"
@@ -86,7 +87,9 @@ const spentCell = (h: H, budget: CostBudgetStatus): Html =>
 const forecast = (h: H, budget: CostBudgetStatus): Html => {
 	const text = forecastText(budget, budget.progress)
 	if (text === null) {
-		return typography(h, { size: "xs", tone: "muted" }, ["After 3 days of the period"])
+		return typography(h, { size: "xs", tone: "muted" }, [
+			`After ${COST_BUDGET_FORECAST_MIN_DAYS} days of the period`,
+		])
 	}
 	const isOver = budget.progress.forecast !== null && budget.progress.forecast > budget.amount
 	return typography(h, { size: "xs", numeric: true, tone: isOver ? "warning" : "muted" }, [text])
@@ -159,7 +162,7 @@ const budgetRow = (h: H, model: Model, budget: CostBudgetStatus, canManage: bool
 									budget.name,
 								]),
 						typography(h, { size: "xs", tone: "muted", className: "break-words" }, [
-							`${PERIODS[budget.period].label} · ${scopeText(budget.filters)}`,
+							`${PERIODS[budget.period].label} · ${scopeText(budget.filters, model.sources)}`,
 						]),
 						vstack(h, { gap: "1.5", className: `py-1 ${ON_PHONE}` }, [
 							spentCell(h, budget),

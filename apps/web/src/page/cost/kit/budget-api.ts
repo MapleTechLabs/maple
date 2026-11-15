@@ -1,4 +1,10 @@
-import type { AlertRuleId, CostBudgetCreateRequest, CostBudgetUpdateRequest } from "@maple/domain/http"
+import type {
+	AlertRuleId,
+	CostBudgetCreateRequest,
+	CostBudgetUpdateRequest,
+	CostSourceSummary,
+} from "@maple/domain/http"
+import { getCostSources } from "@maple/web-data/warehouse/cost"
 import { Effect } from "effect"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 
@@ -21,3 +27,12 @@ export const updateBudget = (id: AlertRuleId, payload: CostBudgetUpdateRequest) 
 /** Deletes the budget's rule, and its incidents with it. */
 export const deleteBudget = (id: AlertRuleId) =>
 	Effect.flatMap(MapleInternalApiClient, (api) => api.costBudgets.remove({ params: { id } }))
+
+/**
+ * The org's cost sources, which name an account by what reads it. None when the read fails: an
+ * account then reads as its id.
+ */
+export const readCostSources = getCostSources().pipe(
+	Effect.map((answer) => answer.sources),
+	Effect.orElseSucceed((): ReadonlyArray<CostSourceSummary> => []),
+)

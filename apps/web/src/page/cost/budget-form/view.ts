@@ -1,4 +1,4 @@
-import { CostBudgetPeriod } from "@maple/domain/cost-budget"
+import { COST_BUDGET_FORECAST_MIN_DAYS, CostBudgetPeriod } from "@maple/domain/cost-budget"
 import type { AlertSeverity } from "@maple/domain/http"
 import { Array as Arr, Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -76,7 +76,7 @@ const scopeMenuEntries = (model: Model): ReadonlyArray<MenuView.MenuEntry> =>
 								entries: Arr.map(rows, (row) => ({
 									_tag: "Item" as const,
 									value: scopeItemValue(dimension, row.key),
-									label: keyLabel(dimension, row.key),
+									label: keyLabel(dimension, row.key, model.options?.sources),
 								})),
 							},
 						]
@@ -85,7 +85,7 @@ const scopeMenuEntries = (model: Model): ReadonlyArray<MenuView.MenuEntry> =>
 const scopeSection = (h: H, model: Model): Html =>
 	formSection(h, { title: "Covers", hint: "The spend it measures" }, [
 		pickList(h, {
-			entries: Arr.map(scopeEntries(filtersOf(model.form)), (entry) => ({
+			entries: Arr.map(scopeEntries(filtersOf(model.form), model.options?.sources), (entry) => ({
 				key: `${entry.dimension}:${entry.value}`,
 				label: entry.label,
 				media: icon(h, "FilterIcon", { className: "text-muted-foreground" }),
@@ -207,7 +207,7 @@ const alertSentence = (form: Form, alert: AlertForm): string =>
 				onSome: (amount) => formatMoney((amount * percent) / 100, form.currency),
 			})
 			return alert.basis === "forecast"
-				? `Opens when the ${PERIODS[form.period].noun}'s forecast reaches ${at}. The forecast is the spend so far at its daily rate, from the period's fourth day.`
+				? `Opens when the ${PERIODS[form.period].noun}'s forecast reaches ${at}. The forecast is the spend so far at its daily rate, after ${COST_BUDGET_FORECAST_MIN_DAYS} days of the period.`
 				: `Opens when the spend reaches ${at}.`
 		},
 	})

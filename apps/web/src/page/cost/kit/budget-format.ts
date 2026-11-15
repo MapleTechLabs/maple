@@ -57,14 +57,14 @@ export const scopeEntries = (
 	)
 
 /** "Provider: AWS, Vercel · Region: us-east-1", or "All spend": a dimension is named once. */
-export const scopeText = (filters: CostFilters): string => {
+export const scopeText = (filters: CostFilters, sources: ReadonlyArray<CostSourceSummary> = []): string => {
 	const dimensions = Arr.flatMap(BUDGET_DIMENSIONS, (dimension) => {
 		const values = filters[dimension] ?? []
 		return values.length === 0
 			? []
 			: [
 					`${dimensionLabel(dimension)}: ${Arr.join(
-						Arr.map(values, (value) => valueLabel(dimension, value, [])),
+						Arr.map(values, (value) => valueLabel(dimension, value, sources)),
 						", ",
 					)}`,
 				]
@@ -76,7 +76,8 @@ export const scopeText = (filters: CostFilters): string => {
 export const spentText = (budget: Pick<CostBudget, "amount" | "currency">, spent: number): string =>
 	`${formatMoney(spent, budget.currency)} of ${formatMoney(budget.amount, budget.currency)}`
 
-export const percentText = (percent: number): string => `${Math.round(percent)}%`
+/** A share of a budget, rounded down: 99.6% must not read as reached before an alert opens on it. */
+export const percentText = (percent: number): string => `${Math.floor(percent)}%`
 
 /** "$1,200.00 by Nov 30", or null before the period has a forecast. */
 export const forecastText = (
@@ -94,7 +95,7 @@ const BASIS_NOUN = { actual: "spend", forecast: "forecast" } as const satisfies 
 
 /** "100% forecast": what an alert opens at, without its severity. */
 export const alertText = (alert: Pick<CostBudgetAlert, "percent" | "basis">): string =>
-	`${percentText(alert.percent)} ${BASIS_NOUN[alert.basis]}`
+	`${alert.percent}% ${BASIS_NOUN[alert.basis]}`
 
 /** The severity a budget stands at now, from its own alerts; null while none is reached. */
 export const reachedSeverity = (

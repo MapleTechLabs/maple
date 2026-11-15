@@ -50,7 +50,6 @@ import {
 } from "./derive"
 import { Message } from "./message"
 import { type Model, type Search, sourcesOf } from "./model"
-import { budgetFormHref } from "./kit/budget-format"
 import { contextChanged, GITHUB_PERMISSION_MISSING_CODE, init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
@@ -2141,7 +2140,7 @@ describe("cost page", () => {
 			resolveTheme,
 			expectView(role("link", { name: "Set budget for this view" })).toHaveAttr(
 				"href",
-				budgetFormHref({ provider: ["aws"], region: ["eu-west-1"] }),
+				"/cost/budgets/new?provider=%5B%22aws%22%5D&region=%5B%22eu-west-1%22%5D",
 			),
 		)
 		scene(

@@ -24,6 +24,7 @@ import {
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { budgetsOf, noBudgets } from "../../../lab/cost-budgets-fixture"
+import { LAB_SOURCES, LAB_VERCEL_TEAM } from "../../../lab/cost-fixture"
 import { type PageContext, PageOutMessage } from "../../contract"
 import { budgetFormHref } from "../kit/budget-format"
 import { DeleteBudget, FetchBudgets, SaveBudgetEnabled } from "./command"
@@ -89,7 +90,7 @@ describe("cost budgets", () => {
 			given(only("All cloud spend")),
 			expectView(within(table, text("Monthly · All spend"))).toExist(),
 			expectView(within(table, text("$4,180.42 of $12,000.00"))).toExist(),
-			expectView(within(table, text("35%"))).toExist(),
+			expectView(within(table, text("34%"))).toExist(),
 			expectView(within(table, text("$8,360.84 by Nov 30"))).toExist(),
 			expectView(within(table, text("Warning at 100% forecast"))).toExist(),
 			expectView(within(table, text("Critical at 100% spend"))).toExist(),
@@ -116,7 +117,7 @@ describe("cost budgets", () => {
 			{ update: pageUpdate, view },
 			given(only("Model spend")),
 			expectView(within(table, text("$1,734.90 of $1,500.00"))).toExist(),
-			expectView(within(table, text("116%"))).toExist(),
+			expectView(within(table, text("115%"))).toExist(),
 			expectView(within(table, text("Critical"))).toExist(),
 		)
 	})
@@ -245,6 +246,45 @@ describe("cost budgets", () => {
 				"false",
 			),
 			expectView(within(table, text("$3,912.07 of $6,000.00"))).toExist(),
+		)
+	})
+
+	// An account's id means nothing to a reader: the org's sources say what reads it.
+	test("an account a budget covers reads by its provider and name once the sources answer", () => {
+		const budget = { ...named("All cloud spend"), filters: { account: [LAB_VERCEL_TEAM.id] } }
+		const model = loaded({ budgets: [budget] })
+		const sources = [...LAB_SOURCES.synced.sources]
+		const answered = (orgId: string) =>
+			pageUpdate(model, Message.CompletedFetchSources({ orgId, sources })).model
+
+		expect(names(init().commands)).toContain("FetchCostBudgetSources")
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(within(table, text(`Monthly · Connected account: ${LAB_VERCEL_TEAM.id}`))).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(answered(context.orgId)),
+			expectView(
+				within(table, text(`Monthly · Connected account: Vercel ${LAB_VERCEL_TEAM.slug}`)),
+			).toExist(),
+		)
+		// An answer for the org the viewer has since left names nothing here.
+		expect(answered("org_other").sources).toEqual([])
+	})
+
+	// Rounded up, 99.6% would read as reached beside a budget that is still on track.
+	test("a budget just under its amount does not read as 100%", () => {
+		const budget = named("All cloud spend")
+		const nearly = { ...budget, progress: { ...budget.progress, spent: 11_952, percent: 99.6 } }
+
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ budgets: [nearly] })),
+			expectView(within(table, text("99%"))).toExist(),
+			expectView(within(table, text("100%"))).toBeAbsent(),
+			expectView(within(table, text("On track"))).toExist(),
 		)
 	})
 

@@ -133,6 +133,7 @@ const row = (key: string, cost: number) => ({ key, cost, previousCost: cost })
 export const budgetFormOptions: FormOptions = {
 	currency: "USD",
 	currencies: ["USD", "EUR"],
+	sources: [],
 	facets: {
 		...perDimension(() => []),
 		provider: [row("aws", 5_210), row("openrouter", 1_120), row("cloudflare", 640), row("vercel", 310)],

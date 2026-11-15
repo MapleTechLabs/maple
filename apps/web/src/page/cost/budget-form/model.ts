@@ -1,6 +1,12 @@
 import { CostDimension } from "@maple/domain/cost"
 import { CostBudgetBasis, CostBudgetPeriod } from "@maple/domain/cost-budget"
-import { AlertDestinationId, AlertRuleId, AlertSeverity, CostBudget } from "@maple/domain/http"
+import {
+	AlertDestinationId,
+	AlertRuleId,
+	AlertSeverity,
+	CostBudget,
+	CostSourceSummary,
+} from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { AlertDestinationRowSchema } from "@maple/web-data/collections/alerts"
 import { Schema } from "effect"
@@ -23,6 +29,8 @@ export const FormOptions = Schema.Struct({
 	currency: Schema.String,
 	currencies: Schema.Array(Schema.String),
 	facets: CostFacets,
+	/** The org's cost sources, which name an account by what reads it. */
+	sources: Schema.Array(CostSourceSummary),
 })
 export type FormOptions = typeof FormOptions.Type
 

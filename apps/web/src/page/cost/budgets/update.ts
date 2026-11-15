@@ -12,7 +12,13 @@ import { type PageContext, PageOutMessage, type PageReturn } from "../../contrac
 import { chain, slotStep } from "../../kit/keyed-step"
 import { acceptGrants } from "../../kit/session-grants"
 import { budgetFormHref } from "../kit/budget-format"
-import { DeleteBudget, FetchBudgets, ReadBudgetsGrants, SaveBudgetEnabled } from "./command"
+import {
+	DeleteBudget,
+	FetchBudgetSources,
+	FetchBudgets,
+	ReadBudgetsGrants,
+	SaveBudgetEnabled,
+} from "./command"
 import { budgetById, budgetsOf } from "./derive"
 import { Message, type Model } from "./model"
 
@@ -44,13 +50,20 @@ export const enter = (context: PageContext, sessionDecides: boolean): Return => 
 		grants: sessionDecides ? [] : Policy.allPermissions,
 		isGrantsRead: !sessionDecides,
 		list: Keyed.idle(),
+		sources: [],
 		togglingIds: [],
 		confirmDeleteId: null,
 		deletingId: null,
 		deleteDialog: Dialog.init(DELETE_DIALOG_ID, "alert-dialog"),
 	}
 	return chain<Model, Message>(
-		{ model, commands: sessionDecides ? [ReadBudgetsGrants({ orgId: context.orgId })] : [] },
+		{
+			model,
+			commands: [
+				...(sessionDecides ? [ReadBudgetsGrants({ orgId: context.orgId })] : []),
+				FetchBudgetSources({ orgId: context.orgId }),
+			],
+		},
 		(entered) => readList(entered, context, "Load"),
 	)
 }
@@ -118,6 +131,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchBudgets: ({ key, result }) => ({
 			model: { ...model, list: Keyed.accept(model.list, key, result) },
 		}),
+		CompletedFetchSources: ({ orgId, sources }) =>
+			orgId === context.orgId ? { model: { ...model, sources } } : { model },
 		ClickedRetry: () => readList(model, context, "Refresh"),
 		ClickedEdit: ({ id }) => ({
 			model,

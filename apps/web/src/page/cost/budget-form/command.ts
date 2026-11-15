@@ -6,7 +6,7 @@ import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { fetchSessionGrants } from "../../kit/session-grants"
 import { perDimension } from "../derive"
-import { createBudget, getBudget, updateBudget } from "../kit/budget-api"
+import { createBudget, getBudget, readCostSources, updateBudget } from "../kit/budget-api"
 import { type FormOptions, Message } from "./model"
 
 // The budget editor's reads and its save.
@@ -43,9 +43,10 @@ export const FetchBudgetFormOptions = Command.define("FetchCostBudgetFormOptions
 		}
 		// The currencies decide what a new budget is created in, so their read is the one that can
 		// fail. A dimension that does not answer only leaves its values off the menu.
-		const [totals, facets] = yield* Effect.all(
+		const [totals, sources, facets] = yield* Effect.all(
 			[
 				getCostTotals({ data: window }),
+				readCostSources,
 				Effect.all(
 					perDimension((groupBy) =>
 						getCostBreakdown({
@@ -60,7 +61,7 @@ export const FetchBudgetFormOptions = Command.define("FetchCostBudgetFormOptions
 			],
 			{ concurrency: "unbounded" },
 		)
-		return { currency: totals.currency, currencies: totals.currencies, facets }
+		return { currency: totals.currency, currencies: totals.currencies, facets, sources }
 	}).pipe(settleTo((result) => Message.CompletedFetchOptions({ result }))),
 })
 
