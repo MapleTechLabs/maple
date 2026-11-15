@@ -1,3 +1,4 @@
+import { lookup } from "../lookup"
 import { Result } from "effect"
 import type { BinaryOp, VectorMatching } from "../ast"
 import { COMPARISON_OPS, SET_OPS } from "../ast"
@@ -155,7 +156,7 @@ const resultMetric = (
 		}
 	}
 	for (const name of matching.include) {
-		const value = one[name]
+		const value = lookup(one, name)
 		if (value === undefined || value === "") out.delete(name)
 		else out.set(name, value)
 	}

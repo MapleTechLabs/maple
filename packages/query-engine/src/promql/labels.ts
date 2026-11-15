@@ -83,17 +83,23 @@ export const seriesLabels = (row: StoredSeries): Readonly<Record<string, string>
 	for (const key of Rec.keys(row.resourceAttributes)) {
 		if (notExcluded(key)) names.add(normalizeLabelName(key))
 	}
-	const labels: Record<string, string> = {}
-	for (const name of [...names].sort()) {
-		const value = labelValue(row, name)
-		if (value !== "") labels[name] = value
-	}
-	return labels
+	// fromEntries defines own properties, so a label called __proto__ stays a label.
+	return Rec.fromEntries(
+		Arr.filter(
+			Arr.map([...names].sort(), (name) => [name, labelValue(row, name)] as const),
+			([, value]) => value !== "",
+		),
+	)
 }
 
 /** Whether a series' labels satisfy every matcher (a missing label is `""`). */
 export const matchesAll = (labels: Readonly<Record<string, string>>, matchers: ReadonlyArray<LabelMatcher>) =>
-	Arr.every(matchers, (m) => matchesValue(m, labels[m.name] ?? ""))
+	Arr.every(matchers, (m) =>
+		matchesValue(
+			m,
+			Option.getOrElse(Rec.get(labels, m.name), () => ""),
+		),
+	)
 
 /** The columns a label value reads. */
 export interface LabelColumns {

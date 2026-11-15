@@ -334,6 +334,19 @@ describe("PromqlQueryService discovery", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
+	it.effect("answers no values for a label named like an Object member", () => {
+		const { layer } = recordingWarehouse()
+		return Effect.gen(function* () {
+			const service = yield* PromqlQueryService
+			const values = yield* service.labelValues(tenant, {
+				...window,
+				matches: ['http_requests_total{http_route=~"/c.*"}'],
+				name: "constructor",
+			})
+			expect(values).toEqual([])
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("lists metric names and jobs from the catalog", () => {
 		const { layer } = recordingWarehouse()
 		return Effect.gen(function* () {
