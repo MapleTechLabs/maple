@@ -776,6 +776,7 @@ export function promqlServiceNamesQuery(opts: { readonly limit: number }) {
  * hourly rollup (fed by `metrics_sum` only) so a bare label-values call never scans metric tables.
  */
 export function promqlAttributeValuesQuery(opts: {
+	readonly scope: "metric" | "resource"
 	readonly keys: ReadonlyArray<string>
 	readonly limit: number
 }) {
@@ -785,7 +786,7 @@ export function promqlAttributeValuesQuery(opts: {
 			$.OrgId.eq(orgIdParam),
 			$.Hour.gte(utcHourFloor("startTime")),
 			$.Hour.lte(utcSecondsParam("endTime")),
-			$.AttributeScope.eq("metric"),
+			$.AttributeScope.eq(opts.scope),
 			CH.inList($.AttributeKey, opts.keys),
 			$.AttributeValue.neq(""),
 		])

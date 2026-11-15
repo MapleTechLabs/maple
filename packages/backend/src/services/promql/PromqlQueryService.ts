@@ -36,6 +36,7 @@ import {
 	matchesValue,
 	prometheusMetadata,
 	promqlAttributeValuesQuery,
+	resourceKeysForLabel,
 	promqlMetadataQuery,
 	promqlServiceNamesQuery,
 	type PushdownPlan,
@@ -135,6 +136,8 @@ export interface DiscoveryQuery extends DiscoveryWindow {
 /** Names and values one discovery call returns at most. */
 export const DISCOVERY_LIMIT = 10_000
 const ATTRIBUTE_KEY_LIMIT = 1_000
+
+type AttributeScope = "metric" | "resource"
 const LABEL_NAME = /^[a-zA-Z_][a-zA-Z0-9_]*$/
 
 const validateWindow = (window: DiscoveryWindow): Effect.Effect<DiscoveryWindow, PromqlBadQueryError> =>
@@ -381,9 +384,10 @@ const make = Effect.gen(function* () {
 	const attributeKeys = Effect.fn("PromqlQueryService.attributeKeys")(function* (
 		tenant: TenantContext,
 		window: DiscoveryWindow,
+		scope: AttributeScope,
 	) {
 		const compiled = CH.compile(
-			CH.attributeKeysQuery({ scope: "metric", limit: ATTRIBUTE_KEY_LIMIT }),
+			CH.attributeKeysQuery({ scope, limit: ATTRIBUTE_KEY_LIMIT }),
 			windowParams(tenant, window),
 		)
 		const rows = yield* warehouse.compiledQuery(tenant, compiled, {
@@ -392,6 +396,12 @@ const make = Effect.gen(function* () {
 		})
 		return Arr.map(rows, (row) => row.attributeKey)
 	})
+
+	/** Datapoint keys and resource keys, read concurrently. */
+	const bothAttributeKeys = (tenant: TenantContext, window: DiscoveryWindow) =>
+		Effect.all([attributeKeys(tenant, window, "metric"), attributeKeys(tenant, window, "resource")], {
+			concurrency: 2,
+		})
 
 	const sortedUnique = (values: ReadonlyArray<string>) =>
 		Arr.take(Arr.sort(Arr.dedupe(values), Order.String), DISCOVERY_LIMIT)
@@ -410,10 +420,10 @@ const make = Effect.gen(function* () {
 			return limited(sortedUnique(Arr.flatMap(found, (labels) => Rec.keys(labels))), input.limit)
 		}
 		const [catalog, keys] = yield* Effect.all(
-			[readCatalog(tenant, window), attributeKeys(tenant, window)],
+			[readCatalog(tenant, window), bothAttributeKeys(tenant, window)],
 			{ concurrency: 2 },
 		)
-		return limited(labelNamesFrom(catalog, keys), input.limit)
+		return limited(labelNamesFrom(catalog, ...keys), input.limit)
 	})
 
 	const attributeValues = Effect.fn("PromqlQueryService.attributeValues")(function* (
@@ -421,18 +431,29 @@ const make = Effect.gen(function* () {
 		window: DiscoveryWindow,
 		name: string,
 	) {
-		const allKeys = yield* attributeKeys(tenant, window)
-		const keys = keysForLabel(allKeys, name)
-		if (keys.length === 0) return []
-		const compiled = CH.compile(
-			promqlAttributeValuesQuery({ keys, limit: DISCOVERY_LIMIT }),
-			windowParams(tenant, window),
+		const [metricKeys, resourceKeys] = yield* bothAttributeKeys(tenant, window)
+		const candidates: ReadonlyArray<{ scope: AttributeScope; keys: ReadonlyArray<string> }> = [
+			{ scope: "metric", keys: keysForLabel(metricKeys, name) },
+			{ scope: "resource", keys: resourceKeysForLabel(resourceKeys, name) },
+		]
+		const reads = Arr.filter(candidates, (read) => read.keys.length > 0)
+		const values = yield* Effect.forEach(
+			reads,
+			(read) =>
+				Effect.map(
+					warehouse.compiledQuery(
+						tenant,
+						CH.compile(
+							promqlAttributeValuesQuery({ ...read, limit: DISCOVERY_LIMIT }),
+							windowParams(tenant, window),
+						),
+						{ profile: "discovery", context: "promqlLabelValues" },
+					),
+					(rows) => Arr.map(rows, (row) => row.attributeValue),
+				),
+			{ concurrency: 2 },
 		)
-		const rows = yield* warehouse.compiledQuery(tenant, compiled, {
-			profile: "discovery",
-			context: "promqlLabelValues",
-		})
-		return Arr.map(rows, (row) => row.attributeValue)
+		return Arr.flatten(values)
 	})
 
 	const serviceNames = Effect.fn("PromqlQueryService.serviceNames")(function* (
