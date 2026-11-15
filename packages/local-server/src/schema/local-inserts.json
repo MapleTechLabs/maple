@@ -1,5 +1,5 @@
 {
-	"projectRevision": "906351fff728ebf43b329308fe4bfe6bebe2c36fa834aa4346ca69472844c58d",
+	"projectRevision": "4a524118c4076a53c7dde36f6252c55ba6e527ceba622866fc29b63abdc1d162",
 	"orgPlaceholder": "__ORG__",
 	"datasources": {
 		"traces": {
@@ -339,6 +339,52 @@
 				"aggregation_temporality"
 			],
 			"inputSchema": "resource_attributes Map(LowCardinality(String), String), resource_schema_url String, scope_name String, scope_version String, scope_attributes Map(LowCardinality(String), String), scope_schema_url String, service_name LowCardinality(String), metric_name LowCardinality(String), metric_description LowCardinality(String), metric_unit LowCardinality(String), metric_attributes Map(LowCardinality(String), String), start_timestamp DateTime64(9), timestamp DateTime64(9), count UInt64, sum Float64, scale Int32, zero_count UInt64, positive_offset Int32, positive_bucket_counts Array(UInt64), negative_offset Int32, negative_bucket_counts Array(UInt64), exemplars_trace_id Array(String), exemplars_span_id Array(String), exemplars_timestamp Array(DateTime64(9)), exemplars_value Array(Float64), exemplars_filtered_attributes Array(Map(LowCardinality(String), String)), flags UInt32, min Nullable(Float64), max Nullable(Float64), aggregation_temporality Int32"
+		},
+		"profiles": {
+			"table": "profiles",
+			"columns": [
+				"OrgId",
+				"Timestamp",
+				"ServiceName",
+				"ServiceVersion",
+				"Environment",
+				"ServiceInstanceId",
+				"ResourceAttributes",
+				"ProfileId",
+				"SampleType",
+				"SampleUnit",
+				"Value",
+				"Samples",
+				"DurationNano",
+				"Frames",
+				"FrameFiles",
+				"FrameLines",
+				"TraceId",
+				"SpanId",
+				"SampleAttributes"
+			],
+			"selects": [
+				"__ORG__",
+				"timestamp",
+				"service_name",
+				"service_version",
+				"environment",
+				"service_instance_id",
+				"resource_attributes",
+				"profile_id",
+				"sample_type",
+				"sample_unit",
+				"value",
+				"samples",
+				"duration_nano",
+				"frames",
+				"frame_files",
+				"frame_lines",
+				"trace_id",
+				"span_id",
+				"sample_attributes"
+			],
+			"inputSchema": "timestamp DateTime64(9), service_name LowCardinality(String), service_version LowCardinality(String), environment LowCardinality(String), service_instance_id String, resource_attributes Map(LowCardinality(String), String), profile_id String, sample_type LowCardinality(String), sample_unit LowCardinality(String), value Int64, samples UInt64, duration_nano UInt64, frames Array(LowCardinality(String)), frame_files Array(LowCardinality(String)), frame_lines Array(Int32), trace_id String, span_id String, sample_attributes Map(LowCardinality(String), String)"
 		}
 	}
 }

@@ -120,6 +120,7 @@ export const TABLE_DELETE_PLAN = {
 	metrics_histogram: raw("TimeUnix"),
 	metrics_sum: raw("TimeUnix"),
 	product_events: derived("Timestamp", { env: null }),
+	profiles: raw("Timestamp"),
 	scanner_requests: derived("Timestamp", { env: null }),
 	cost_daily: {
 		strategy: "excluded",
