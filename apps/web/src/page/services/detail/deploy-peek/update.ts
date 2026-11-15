@@ -68,7 +68,7 @@ export const FetchShipped = Command.define("FetchServiceDeployShipped", {
 const MINUTE_MS = 60_000
 
 /** The minutes either side of the deploy, cut at the minute the warehouse placed it in. */
-export const sidesOf = (check: DeployCheck, dataEndMs: number) => {
+export const sidesOf = (check: Pick<DeployCheck, "firstSeenMs" | "windowMinutes">, dataEndMs: number) => {
 	const deployMs = Math.floor(check.firstSeenMs / MINUTE_MS) * MINUTE_MS
 	const windowMs = check.windowMinutes * MINUTE_MS
 	return {

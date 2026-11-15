@@ -7,7 +7,7 @@ import type { Operation } from "../model-tabs"
 /** Below this many calls on either side an operation's change is noise. */
 const MIN_OPERATION_SPANS = 20
 
-export type Change = "errors-up" | "slower" | "new" | "faster" | "steady"
+export type Change = "errors-up" | "slower" | "new" | "few-before" | "faster" | "steady"
 
 export type OperationChange = Readonly<{
 	spanName: string
@@ -16,13 +16,19 @@ export type OperationChange = Readonly<{
 	after: Operation
 }>
 
-const RANK = { "errors-up": 0, slower: 1, new: 2, faster: 3, steady: 4 } as const satisfies Record<
-	Change,
-	number
->
+const RANK = {
+	"errors-up": 0,
+	slower: 1,
+	new: 2,
+	"few-before": 3,
+	faster: 4,
+	steady: 5,
+} as const satisfies Record<Change, number>
 
 const changeOf = (before: Operation | undefined, after: Operation): Change => {
-	if (before === undefined || before.spanCount < MIN_OPERATION_SPANS) return "new"
+	if (before === undefined) return "new"
+	// It ran before, too rarely to compare: not something the deploy introduced.
+	if (before.spanCount < MIN_OPERATION_SPANS) return "few-before"
 	if (isErrorRateUp(before.errorRate, after.errorRate)) return "errors-up"
 	if (isP95Up(before.p95DurationMs, after.p95DurationMs)) return "slower"
 	// The same rule run backwards: a quarter faster and at least 10ms.

@@ -130,6 +130,7 @@ const CHANGE_BADGE = {
 	"errors-up": { label: "Errors up", variant: "crit" },
 	slower: { label: "Slower", variant: "warn" },
 	new: { label: "New", variant: "info" },
+	"few-before": { label: "Few before", variant: "muted" },
 	faster: { label: "Faster", variant: "ok" },
 	steady: { label: "Steady", variant: "muted" },
 } as const
@@ -138,7 +139,7 @@ const CHANGE_BADGE = {
 const operationFigures = (change: OperationChange): string => {
 	const { before, after } = change
 	// A New operation's few earlier calls are no baseline: it shows its after figures alone.
-	return before === undefined || change.change === "new"
+	return before === undefined || change.change === "new" || change.change === "few-before"
 		? `errors ${formatErrorRate(after.errorRate)} · p95 ${formatLatency(after.p95DurationMs)}`
 		: `errors ${formatErrorRate(before.errorRate)} → ${formatErrorRate(after.errorRate)} · p95 ${formatLatency(before.p95DurationMs)} → ${formatLatency(after.p95DurationMs)}`
 }
