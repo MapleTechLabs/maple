@@ -86,7 +86,7 @@ export const Message = defineMessageUnion({
 	ChangedEndpointQuery: { value: Schema.String },
 	GotEndpointPeekMessage: { message: EndpointPeek.Message },
 	/** A deploy row or the callout: its drawer (`?deploy=`). */
-	ClickedDeploy: { sha: Schema.String },
+	ClickedDeploy: { sha: Schema.String, environment: Schema.String },
 	GotDeployPeekMessage: { message: DeployPeek.Message },
 	GotEnvironmentSelectMessage: { message: Select.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },

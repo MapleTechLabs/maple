@@ -137,7 +137,11 @@ export const deployCallout = (h: H, model: Model, deploys: ReadonlyArray<DeployC
 				{
 					variant: "outline",
 					size: "sm",
-					attributes: [h.OnClick(Message.ClickedDeploy({ sha: deploy.sha }))],
+					attributes: [
+						h.OnClick(
+							Message.ClickedDeploy({ sha: deploy.sha, environment: deploy.environment }),
+						),
+					],
 				},
 				["What changed", icon(h, "ArrowRightIcon")],
 			),

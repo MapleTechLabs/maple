@@ -472,6 +472,8 @@ export const ServiceSearch = Schema.Struct({
 	endpoint: StringParam,
 	/** The Overview's open deploy drawer, by commit sha. */
 	deploy: StringParam,
+	/** The open deploy's environment, when its commit shipped to several. */
+	deployEnv: StringParam,
 	environments: OptionalStringArrayParam,
 	...TimeRangeSearchFields,
 })

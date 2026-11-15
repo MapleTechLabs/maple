@@ -131,6 +131,13 @@ export const deployBefore = (
 		? undefined
 		: Option.getOrUndefined(Arr.findFirst(checks, (check) => check.firstSeenMs <= atMs))
 
+/** The deploy the URL opens: its commit, and its environment when the URL names one. */
+export const isOpenDeploy = (
+	search: Readonly<{ deploy?: string | undefined; deployEnv?: string | undefined }>,
+	check: DeployCheck,
+): boolean =>
+	search.deploy === check.sha && (search.deployEnv === undefined || search.deployEnv === check.environment)
+
 /** The same deploy: one commit on one service and environment, however it was derived. */
 export const isSameDeploy = (a: DeployCheck | undefined, b: DeployCheck): boolean =>
 	a !== undefined && a.sha === b.sha && a.serviceName === b.serviceName && a.environment === b.environment

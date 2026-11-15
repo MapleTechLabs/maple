@@ -59,7 +59,7 @@ import {
 } from "./derive"
 import { stepEnvironmentSelect } from "../../kit/environment-switcher"
 import { initialSort, nextSort, operationTraceSearch, TRACE_DETAIL_LIMIT_SECONDS } from "./derive-tables"
-import { type DeployCheck, dataEndOf, deployChecksOf, railOrder } from "./derive-deploys"
+import { type DeployCheck, dataEndOf, deployChecksOf, isOpenDeploy, railOrder } from "./derive-deploys"
 import { matchesFilter } from "./derive-api"
 import * as DeployPeek from "./deploy-peek/model"
 import * as DeployPeekUpdate from "./deploy-peek/update"
@@ -520,7 +520,7 @@ const syncPeek = (result: Return, context: PageContext, mode: RequestMode): Retu
 export const deployPeekOf = (model: Model): DeployCheck | null =>
 	tabOf(model.search) !== "overview" || model.search.deploy === undefined
 		? null
-		: Option.getOrNull(Arr.findFirst(deployChecksOf(model), (check) => check.sha === model.search.deploy))
+		: Option.getOrNull(Arr.findFirst(deployChecksOf(model), (check) => isOpenDeploy(model.search, check)))
 
 const deployScope = (model: Model, context: PageContext): DeployPeekUpdate.DeployScope => ({
 	context,
@@ -538,7 +538,8 @@ const liftDeployPeek = (model: Model, result: DeployPeekUpdate.Return): Return =
 		? {
 				model: next,
 				commands,
-				outMessage: navigate(next, { ...model.search, deploy: undefined }, true).outMessage,
+				outMessage: navigate(next, { ...model.search, deploy: undefined, deployEnv: undefined }, true)
+					.outMessage,
 			}
 		: { model: next, commands }
 }
@@ -564,8 +565,11 @@ const syncDeployPeek = (result: Return, context: PageContext, mode: RequestMode)
 		? {
 				model: peeked.model,
 				commands,
-				outMessage: navigate(peeked.model, { ...peeked.model.search, deploy: undefined }, true)
-					.outMessage,
+				outMessage: navigate(
+					peeked.model,
+					{ ...peeked.model.search, deploy: undefined, deployEnv: undefined },
+					true,
+				).outMessage,
 			}
 		: { ...result, model: peeked.model, commands, outMessage: result.outMessage ?? peeked.outMessage }
 }
@@ -599,6 +603,7 @@ export const tabSearch = (search: Search, tab: ServiceTab): Search => ({
 	...search,
 	endpoint: undefined,
 	deploy: undefined,
+	deployEnv: undefined,
 	tab: tab === "overview" ? undefined : tab,
 })
 
@@ -832,12 +837,19 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			syncPeek({ model: { ...model, endpointFilter: filter } }, context, "Load"),
 		ChangedEndpointQuery: ({ value }) =>
 			syncPeek({ model: { ...model, endpointQuery: value } }, context, "Load"),
-		ClickedDeploy: ({ sha }) =>
-			navigate(
+		ClickedDeploy: ({ sha, environment }) => {
+			const isOpen =
+				model.search.deploy === sha && (model.search.deployEnv ?? environment) === environment
+			return navigate(
 				model,
-				{ ...model.search, deploy: model.search.deploy === sha ? undefined : sha },
+				{
+					...model.search,
+					deploy: isOpen ? undefined : sha,
+					deployEnv: isOpen || environment === "" ? undefined : environment,
+				},
 				false,
-			),
+			)
+		},
 		GotDeployPeekMessage: ({ message: inner }) =>
 			liftDeployPeek(
 				model,

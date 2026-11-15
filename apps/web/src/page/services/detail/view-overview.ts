@@ -62,6 +62,11 @@ const deployDrawer = (
 			dataEndMs: dataEndOf(model),
 			nowMs: model.nowMs ?? 0,
 			timeZone: context.timeZone,
+			timeSearch: {
+				startTime: model.search.startTime,
+				endTime: model.search.endTime,
+				timePreset: model.search.timePreset,
+			},
 		},
 		toParentMessage: (message) => Message.GotDeployPeekMessage({ message }),
 	})
