@@ -28,6 +28,7 @@ import {
 	refreshCloudflare,
 	requestUsage,
 	resetPrime,
+	statusAnswered,
 	update,
 } from "./update-cloudflare"
 import { cloudflareCard, cloudflareHeaderActions } from "./view-cloudflare"
@@ -59,6 +60,7 @@ export const CLOUDFLARE: ProviderModule<CloudflareIntegrationStatus, CloudflareC
 			}
 		},
 		onDisconnected: (model, env) => requestUsage(model, env, "Refresh"),
+		onStatus: statusAnswered,
 		// Status and usage every 30 s while a fresh connection settles.
 		subscription: {
 			everyMs: 30_000,

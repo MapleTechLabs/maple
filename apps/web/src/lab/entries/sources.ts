@@ -28,12 +28,23 @@ import { Model as NewModel } from "../../page/sources/new/model"
 import { initPage as newInit, update as newUpdate } from "../../page/sources/new/update"
 import { view as newView } from "../../page/sources/new/view"
 import { defineShellLab } from "../shell-lab"
+import { Message as IntegrationsMessage } from "../../page/integrations/message"
+import { Model as IntegrationsModel } from "../../page/integrations/model"
+import { update as integrationsUpdate } from "../../page/integrations/update"
+import { view as integrationsView } from "../../page/integrations/view"
+import {
+	INTEGRATION_PAGES,
+	type IntegrationLabPage,
+	integrationCardModel,
+	integrationFlowModel,
+} from "../sources-integrations-fixture"
 
 // `/lab/sources`: the sources list, one source and the connect flow (its picker, a push source before
 // and after Create) as an engineer or a member (`?page=list|detail|new|push|sent&role=engineer|member`),
 // over fixture sources in mixed health states. Typing and toggles work; nothing is read or saved.
+// `cloudflare`/`planetscale` and their `-card` pages show an integration's flow step and card.
 
-const PAGES = ["list", "detail", "new", "push", "sent"] as const
+const PAGES = ["list", "detail", "new", "push", "sent", ...INTEGRATION_PAGES] as const
 const ROLES = ["engineer", "member"] as const
 type LabPage = (typeof PAGES)[number]
 type LabRole = (typeof ROLES)[number]
@@ -235,7 +246,11 @@ const detailModel = (role: LabRole): DetailModel => {
 }
 
 /** The picker, a push source's form (`push`), or the same source once Create answered (`sent`). */
+const isIntegrationPage = (page: LabPage): page is IntegrationLabPage =>
+	Arr.some(INTEGRATION_PAGES, (candidate) => candidate === page)
+
 const newModel = (role: LabRole, page: LabPage): NewModel => {
+	if (isIntegrationPage(page)) return integrationFlowModel(page, context, grantsOf(role))
 	const search = page === "push" || page === "sent" ? { platform: "nodejs" as const } : {}
 	const granted = newUpdate(
 		newInit(AppRoute.SourcesNew({ search }), context).model,
@@ -253,6 +268,7 @@ const Model = Schema.Struct({
 	list: ListModel,
 	detail: DetailModel,
 	create: NewModel,
+	card: IntegrationsModel,
 })
 type Model = typeof Model.Type
 
@@ -263,6 +279,7 @@ const Message = defineMessageUnion({
 	GotListMessage: { message: ListMessage },
 	GotDetailMessage: { message: DetailMessage },
 	GotNewMessage: { message: NewMessage },
+	GotCardMessage: { message: IntegrationsMessage },
 })
 type Message = typeof Message.Type
 
@@ -278,6 +295,7 @@ const build = (page: LabPage, role: LabRole): Model => ({
 	list: listModel(role),
 	detail: detailModel(role),
 	create: newModel(role, page),
+	card: integrationCardModel(page === "planetscale-card" ? page : "cloudflare-card", context),
 })
 
 const update = (model: Model, message: Message) =>
@@ -293,32 +311,43 @@ const update = (model: Model, message: Message) =>
 		GotNewMessage: ({ message: inner }) => ({
 			model: { ...model, create: newUpdate(model.create, inner, context).model },
 		}),
+		GotCardMessage: ({ message: inner }) => ({
+			model: { ...model, card: integrationsUpdate(model.card, inner, context).model },
+		}),
 	})
 
 const view = (model: Model, h: HtmlBuilder<Message>): Html =>
-	model.page === "list"
+	model.page === "cloudflare-card" || model.page === "planetscale-card"
 		? h.submodel({
-				slotId: "sources-lab-list",
-				model: model.list,
-				view: listView,
+				slotId: "sources-lab-card",
+				model: model.card,
+				view: integrationsView,
 				viewInputs: { context },
-				toParentMessage: (message) => Message.GotListMessage({ message }),
+				toParentMessage: (message) => Message.GotCardMessage({ message }),
 			})
-		: model.page === "detail"
+		: model.page === "list"
 			? h.submodel({
-					slotId: "sources-lab-detail",
-					model: model.detail,
-					view: detailView,
+					slotId: "sources-lab-list",
+					model: model.list,
+					view: listView,
 					viewInputs: { context },
-					toParentMessage: (message) => Message.GotDetailMessage({ message }),
+					toParentMessage: (message) => Message.GotListMessage({ message }),
 				})
-			: h.submodel({
-					slotId: "sources-lab-new",
-					model: model.create,
-					view: newView,
-					viewInputs: { context },
-					toParentMessage: (message) => Message.GotNewMessage({ message }),
-				})
+			: model.page === "detail"
+				? h.submodel({
+						slotId: "sources-lab-detail",
+						model: model.detail,
+						view: detailView,
+						viewInputs: { context },
+						toParentMessage: (message) => Message.GotDetailMessage({ message }),
+					})
+				: h.submodel({
+						slotId: "sources-lab-new",
+						model: model.create,
+						view: newView,
+						viewInputs: { context },
+						toParentMessage: (message) => Message.GotNewMessage({ message }),
+					})
 
 /** The page and role switcher, fixed at the bottom like the other shell labs'. */
 const switcher = (model: Model, h: HtmlBuilder<Message>): Html =>

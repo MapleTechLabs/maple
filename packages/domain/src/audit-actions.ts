@@ -125,10 +125,16 @@ export const AuditResources = {
 	 * OAuth round trip completes at the provider's callback.
 	 */
 	planetscale_integration: {
-		verbs: ["connect_started", "organization_selected", "metrics_token_set", "disconnected"],
+		verbs: [
+			"connect_started",
+			"organization_selected",
+			"metrics_token_set",
+			"features_updated",
+			"disconnected",
+		],
 	},
 	/** Org-singleton connection; per-account zone choices ride in `metadata`. */
-	cloudflare_integration: { verbs: ["zones_updated"] },
+	cloudflare_integration: { verbs: ["zones_updated", "features_updated"] },
 	/** A provider key the org's spend is read with, one per provider; the key is never in `changes`. */
 	cost_source_key: { verbs: ["updated", "deleted"] },
 	/** A cost source that reads through a connection the org already has; which one is in `metadata`. */
@@ -374,8 +380,10 @@ export const AuditActionLabels = {
 	"planetscale_integration.connect_started": "Started PlanetScale connection",
 	"planetscale_integration.organization_selected": "Selected PlanetScale organization",
 	"planetscale_integration.metrics_token_set": "Set PlanetScale metrics token",
+	"planetscale_integration.features_updated": "Changed what PlanetScale collects",
 	"planetscale_integration.disconnected": "Disconnected PlanetScale",
 	"cloudflare_integration.zones_updated": "Updated Cloudflare zones",
+	"cloudflare_integration.features_updated": "Changed what Cloudflare collects",
 	"cost_source_key.updated": "Updated cost source key",
 	"cost_source_key.deleted": "Removed cost source key",
 	"cost_source.created": "Added cost source",

@@ -1,4 +1,4 @@
-import { IntegrationsValidationError } from "@maple/domain/http"
+import { CloudflareFeatureSettingsRequest, IntegrationsValidationError } from "@maple/domain/http"
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
@@ -1519,6 +1519,166 @@ describe("CloudflareAnalyticsService", () => {
 			assert.isTrue(beyond.enabled)
 			assert.notInclude(beyond.lastError ?? "", "no longer present")
 		}).pipe(Effect.provide(makeLayer(testDb, captured, { zonesTotal: 201 })))
+	})
+
+	describe("feature switches", () => {
+		const ADMIN = Schema.decodeSync(UserId)("user_admin")
+
+		it.effect("a switched-off feature is never queried while the others still are", () => {
+			const testDb = createTestDb(trackedDbs)
+			const captured: CapturedIngest[] = []
+			const otlpCalls: OtlpCall[] = []
+			const graphqlQueries: string[] = []
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(T0)
+				yield* seedConnection()
+				const service = yield* CloudflareAnalyticsService
+				yield* service.setFeatures(
+					ORG,
+					ADMIN,
+					new CloudflareFeatureSettingsRequest({ workersEnabled: false }),
+				)
+				const summary = yield* service.pollOrg(ORG)
+				assert.isNull(summary.skipped)
+
+				assert.isFalse(Arr.some(graphqlQueries, Str.includes("workersInvocationsAdaptive(")))
+				assert.isTrue(Arr.some(graphqlQueries, Str.includes("httpRequestsAdaptiveGroups(")))
+				const metrics = flattenOtlp(otlpCalls)
+				assert.isFalse(Arr.some(metrics, (m) => Str.startsWith("cloudflare.worker.")(m.name)))
+				assert.isTrue(Arr.some(metrics, (m) => m.name === "cloudflare.http.requests"))
+
+				const status = yield* service.getIntegrationStatus(ORG)
+				assert.strictEqual(status.features?.workersEnabled, false)
+				assert.strictEqual(status.features?.httpTrafficEnabled, true)
+				assert.strictEqual(status.workers?.enabled, false)
+			}).pipe(Effect.provide(makeLayer(testDb, captured, { otlpCalls, graphqlQueries })))
+		})
+
+		it.effect("turning a feature back on keeps the other switches and polls it again", () => {
+			const testDb = createTestDb(trackedDbs)
+			const captured: CapturedIngest[] = []
+			const graphqlQueries: string[] = []
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(T0)
+				yield* seedConnection()
+				const service = yield* CloudflareAnalyticsService
+				yield* service.setFeatures(
+					ORG,
+					ADMIN,
+					new CloudflareFeatureSettingsRequest({ workersEnabled: false, dnsEnabled: false }),
+				)
+				const next = yield* service.setFeatures(
+					ORG,
+					ADMIN,
+					new CloudflareFeatureSettingsRequest({ workersEnabled: true }),
+				)
+				assert.isTrue(next.workersEnabled)
+				assert.isFalse(next.dnsEnabled)
+
+				yield* service.pollOrg(ORG)
+				assert.isTrue(Arr.some(graphqlQueries, Str.includes("workersInvocationsAdaptive(")))
+				assert.isFalse(Arr.some(graphqlQueries, Str.includes("dnsAnalyticsAdaptiveGroups(")))
+			}).pipe(Effect.provide(makeLayer(testDb, captured, { graphqlQueries })))
+		})
+
+		it.effect("a feature turned back on resumes from now instead of reading the hours it was off", () => {
+			const testDb = createTestDb(trackedDbs)
+			const captured: CapturedIngest[] = []
+			const graphqlQueries: string[] = []
+			const workersQueried = () => Arr.some(graphqlQueries, Str.includes("workersInvocationsAdaptive("))
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(T0)
+				yield* seedConnection()
+				const service = yield* CloudflareAnalyticsService
+				yield* service.pollOrg(ORG)
+				yield* service.setFeatures(
+					ORG,
+					ADMIN,
+					new CloudflareFeatureSettingsRequest({ workersEnabled: false }),
+				)
+				yield* TestClock.adjust("12 hours")
+				yield* service.pollOrg(ORG)
+
+				yield* service.setFeatures(
+					ORG,
+					ADMIN,
+					new CloudflareFeatureSettingsRequest({ workersEnabled: true }),
+				)
+				graphqlQueries.length = 0
+				yield* service.pollOrg(ORG)
+				assert.isFalse(workersQueried())
+
+				// Its first window after the switch is the one that opened at it.
+				yield* TestClock.adjust("20 minutes")
+				yield* service.pollOrg(ORG)
+				assert.isTrue(workersQueried())
+			}).pipe(Effect.provide(makeLayer(testDb, captured, { graphqlQueries })))
+		})
+
+		it.effect(
+			"with Workers off, discovery lists zones but no Worker scripts or Hyperdrive configs",
+			() => {
+				const testDb = createTestDb(trackedDbs)
+				const captured: CapturedIngest[] = []
+				const requestUrls: string[] = []
+				return Effect.gen(function* () {
+					yield* TestClock.setTime(T0)
+					yield* seedConnection()
+					const service = yield* CloudflareAnalyticsService
+					yield* service.setFeatures(
+						ORG,
+						ADMIN,
+						new CloudflareFeatureSettingsRequest({ workersEnabled: false }),
+					)
+					yield* service.pollOrg(ORG)
+
+					assert.isTrue(Arr.some(requestUrls, Str.includes("/zones")))
+					assert.isFalse(Arr.some(requestUrls, Str.includes("/workers/scripts")))
+					assert.isFalse(Arr.some(requestUrls, Str.includes("/hyperdrive/configs")))
+				}).pipe(Effect.provide(makeLayer(testDb, captured, { requestUrls })))
+			},
+		)
+
+		it.effect("with every feature off the org is skipped without a call to Cloudflare", () => {
+			const testDb = createTestDb(trackedDbs)
+			const captured: CapturedIngest[] = []
+			const requestUrls: string[] = []
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(T0)
+				yield* seedConnection()
+				const service = yield* CloudflareAnalyticsService
+				yield* service.setFeatures(
+					ORG,
+					ADMIN,
+					new CloudflareFeatureSettingsRequest({
+						httpTrafficEnabled: false,
+						firewallEnabled: false,
+						dnsEnabled: false,
+						workersEnabled: false,
+						queuesEnabled: false,
+						durableObjectsEnabled: false,
+					}),
+				)
+				const summary = yield* service.pollOrg(ORG)
+				assert.strictEqual(summary.skipped, "every feature off")
+				assert.strictEqual(requestUrls.length, 0)
+			}).pipe(Effect.provide(makeLayer(testDb, captured, { requestUrls })))
+		})
+
+		it.effect("refuses to store switches for an org with no Cloudflare connection", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const service = yield* CloudflareAnalyticsService
+				const result = yield* Effect.flip(
+					service.setFeatures(
+						ORG,
+						ADMIN,
+						new CloudflareFeatureSettingsRequest({ dnsEnabled: false }),
+					),
+				)
+				assert.strictEqual(result._tag, "@maple/http/errors/IntegrationsNotConnectedError")
+			}).pipe(Effect.provide(makeLayer(testDb, [])))
+		})
 	})
 
 	describe("zone selection", () => {

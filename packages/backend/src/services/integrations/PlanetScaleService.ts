@@ -50,7 +50,11 @@ import {
 	runPlanetScale,
 	type SdkError,
 } from "./planetscale/api"
-import { makePlanetScalePollState, pollStateResult } from "./planetscale/poll-state"
+import {
+	makePlanetScalePollState,
+	PLANETSCALE_DEPLOY_REQUESTS_DATASET,
+	pollStateResult,
+} from "./planetscale/poll-state"
 import { insertPlanetScaleEvent } from "./planetscale/webhook-events"
 import { isolatePollFailure, pollFleet } from "./poll-fleet"
 import { timestampMs } from "@maple/backend/platform/time"
@@ -84,7 +88,7 @@ const INVENTORY_TTL_MS = Duration.toMillis(Duration.hours(1))
  * live source; this exists so an org that connects after the fact still has a
  * timeline, and so a missed delivery self-heals.
  */
-const DEPLOY_REQUESTS_DATASET = "deploy_requests"
+const DEPLOY_REQUESTS_DATASET = PLANETSCALE_DEPLOY_REQUESTS_DATASET
 /** Faster than inventory: a deploy an hour late is a deploy nobody can use. */
 const DEPLOY_REQUESTS_TTL_MS = Duration.toMillis(Duration.minutes(5))
 /** How far back a first backfill reaches. Older deploys have no chart left. */
@@ -96,7 +100,6 @@ const DEPLOY_REQUESTS_CONCURRENCY = 2
  * Webhook registration (`PlanetScaleWebhookService`). Short enough that a reauthorization or a
  * new database gets its webhook within a few ticks; a healthy check is one listing per database.
  */
-const WEBHOOKS_DATASET = "webhooks"
 const WEBHOOKS_TTL_MS = Duration.toMillis(Duration.minutes(15))
 /**
  * Extra attempts after a timed-out request, before the call fails. A PlanetScale
@@ -778,13 +781,16 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				// Each database row carries its own lease + 5-minute TTL, so this is
 				// safe to enter on every tick. Its own error boundary — a broken
 				// backfill must never cost the org its inventory.
-				const deployEvents = yield* refreshDeployRequests(connection).pipe(
-					isolatePollFailure(
-						"PlanetScale deploy-request backfill failed for org",
-						{ orgId: connection.orgId },
-						0,
-					),
-				)
+				// Events switched off: no deploy-request history either.
+				const deployEvents = !connection.eventsEnabled
+					? 0
+					: yield* refreshDeployRequests(connection).pipe(
+							isolatePollFailure(
+								"PlanetScale deploy-request backfill failed for org",
+								{ orgId: connection.orgId },
+								0,
+							),
+						)
 				yield* Effect.annotateCurrentSpan({
 					"maple.planetscale.deploy_events_inserted": deployEvents,
 				})
@@ -892,28 +898,14 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				return "failed" as const
 			})
 
-			/** Register missing webhooks after the inventory, so a new connection gets them on its first tick. */
+			/**
+			 * Webhooks follow the stored events switch, after the inventory so a new connection gets
+			 * them on its first tick. The sync re-reads the switch under its lease, never this row.
+			 */
 			const syncWebhooks = Effect.fn("PlanetScaleService.syncWebhooks")(
 				function* (connection: PlanetScaleConnectionRow) {
 					yield* Effect.annotateCurrentSpan({ orgId: connection.orgId })
-					yield* underPollState(connection.orgId, WEBHOOKS_DATASET, "", WEBHOOKS_TTL_MS, (lease) =>
-						Effect.gen(function* () {
-							const result = yield* webhooks.reconcile(connection)
-							const finishedAt = yield* Clock.currentTimeMillis
-							yield* lease.write(
-								pollStateResult(
-									finishedAt,
-									// A skip (no write access yet) is not a success: the next tick checks the
-									// grant again, so a reauthorization registers within minutes, not after the TTL.
-									result.skipped !== null
-										? `Webhook sync skipped: ${result.skipped}`
-										: result.failed > 0
-											? `${result.failed} database webhook(s) failed to register`
-											: null,
-								),
-							)
-						}),
-					)
+					yield* webhooks.sync(connection.orgId, WEBHOOKS_TTL_MS)
 				},
 				// Webhooks must never cost the org its inventory or deploy timeline.
 				isolatePollFailure("PlanetScale webhook sync failed", {}, undefined),
