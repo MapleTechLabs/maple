@@ -311,6 +311,16 @@ describe("convertGrafanaDashboardToPortable on other inputs", () => {
 						"SELECT SpanName, count() AS value FROM traces WHERE OrgId = 'x' AND $__timeFilter(Timestamp) -- scoped\nGROUP BY SpanName",
 					),
 					panel(
+						"Except column",
+						"table",
+						"SELECT * EXCEPT (Body) FROM logs WHERE OrgId = 'x' AND $__timeFilter(Timestamp)",
+					),
+					panel(
+						"Union",
+						"table",
+						"SELECT count() FROM logs WHERE OrgId = 'x' AND $__timeFilter(Timestamp) UNION ALL SELECT count() FROM traces WHERE OrgId = 'x' AND $__timeFilter(Timestamp)",
+					),
+					panel(
 						"Mean",
 						"stat",
 						"SELECT toStartOfMinute(Timestamp) AS t, count() AS value FROM logs WHERE OrgId = 'x' AND $__timeFilter(Timestamp) GROUP BY t",
@@ -324,6 +334,11 @@ describe("convertGrafanaDashboardToPortable on other inputs", () => {
 				"SELECT count() AS value FROM logs WHERE (OrgId = 'x' AND Body LIKE '%limit%' AND $__timeFilter(Timestamp)) AND $__orgFilter",
 			)
 			expect(dataSourceRawSql(widgetNamed(converted, "Subquery").dataSource)).toBeNull()
+			// Each SELECT of a UNION needs its own scope, so the importer leaves it to the author.
+			expect(dataSourceRawSql(widgetNamed(converted, "Union").dataSource)).toBeNull()
+			expect(dataSourceRawSql(widgetNamed(converted, "Except column").dataSource)?.sql).toBe(
+				"SELECT * EXCEPT (Body) FROM logs WHERE (OrgId = 'x' AND $__timeFilter(Timestamp)) AND $__orgFilter",
+			)
 			// The OR is grouped, so the org filter binds every branch; the semicolon no longer ends the statement early.
 			expect(dataSourceRawSql(widgetNamed(converted, "Either").dataSource)?.sql).toBe(
 				"SELECT count() AS value FROM logs WHERE (OrgId = 'legacy' OR ServiceName = 'api' AND $__timeFilter(Timestamp)) AND $__orgFilter",

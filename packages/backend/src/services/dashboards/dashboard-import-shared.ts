@@ -114,6 +114,19 @@ export function normalizeClickHouseSql(sql: string, warnings: string[], panelTit
 	// The outer query reads a subquery: its rows may have no OrgId column to filter, so the scope
 	// has to be written inside it by hand.
 	const readsSubquery = fromAt !== undefined && /^FROM\s*\(/i.test(Str.slice(fromAt)(sql))
+	// A UNION, INTERSECT or EXCEPT joins statements that each need their own scope. `SELECT * EXCEPT (col)`
+	// is ClickHouse's column exclusion, not a set operation, so EXCEPT counts only before a SELECT.
+	const combinesQueries =
+		topLevelIndex(sql, /UNION|INTERSECT|EXCEPT\s+(?:ALL\s+|DISTINCT\s+)?\(?\s*SELECT/) !== undefined
+	if (!Str.includes("$__orgFilter")(sql) && combinesQueries) {
+		warnings.push(
+			`Panel "${panelTitle}" was imported as a placeholder because its ClickHouse query combines several SELECTs; add $__orgFilter to each.`,
+		)
+		return {
+			placeholderReason:
+				"This ClickHouse query needs $__orgFilter in each of its SELECTs before it can run.",
+		}
+	}
 	if (!Str.includes("$__orgFilter")(sql) && readsSubquery) {
 		warnings.push(
 			`Panel "${panelTitle}" was imported as a placeholder because its ClickHouse query reads a subquery; add $__orgFilter inside it.`,
