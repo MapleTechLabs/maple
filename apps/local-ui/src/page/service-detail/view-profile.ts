@@ -1,7 +1,6 @@
-import { formatNumber } from "@maple/ui/lib/format"
 import { failureWithoutData } from "@maple/views/data/keyed"
 import {
-	formatProfileValue,
+	profileSummary,
 	topFunctionsTable,
 	view as flamegraphView,
 } from "@maple/views/profiles/profile-flamegraph-view"
@@ -20,17 +19,6 @@ import type { Model, ServiceProfile } from "./model"
 
 const TOP_FUNCTIONS = 15
 
-/** The profile's total and stack count. Only CPU time reads as time on CPU and average cores. */
-const summary = (profile: NonNullable<ServiceProfile>): string => {
-	const stacks = `${formatNumber(profile.totalStacks)} distinct stacks`
-	const value = formatProfileValue(profile.totalValue, profile.sampleUnit)
-	if (profile.sampleType !== "cpu") return `${value}, ${stacks}`
-	if (profile.sampleUnit !== "nanoseconds" || profile.durationNano === 0)
-		return `${value} on CPU, ${stacks}`
-	const cores = profile.totalValue / profile.durationNano
-	return `${value} on CPU, ${cores.toFixed(2)} cores on average, ${stacks}`
-}
-
 const loaded = (h: HtmlBuilder<Message>, model: Model, profile: NonNullable<ServiceProfile>): Html => {
 	const input = { stacks: profile.stacks, totalValue: profile.totalValue }
 	return h.section(
@@ -38,7 +26,7 @@ const loaded = (h: HtmlBuilder<Message>, model: Model, profile: NonNullable<Serv
 		[
 			hstack(h, { align: "baseline", justify: "between", gap: "3" }, [
 				heading(h, { level: 3, variant: "subsection" }, [`Profile: ${profile.sampleType}`]),
-				typography(h, { size: "xs", tone: "muted", numeric: true }, [summary(profile)]),
+				typography(h, { size: "xs", tone: "muted", numeric: true }, [profileSummary(profile)]),
 			]),
 			flamegraphView(h, model.flamegraph, { input, unit: profile.sampleUnit }, (message) =>
 				Message.GotFlamegraphMessage({ message }),
