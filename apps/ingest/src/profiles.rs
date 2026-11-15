@@ -1556,7 +1556,12 @@ impl JsonKeyValue {
         })
     }
 
+    /// A table entry names its key by `keyStrindex` only: the wire type has no inline key, so
+    /// one sent with `key` is refused rather than stored without its attribute.
     fn into_table_entry(self) -> Result<KeyValueAndUnit, String> {
+        if self.key.as_deref().is_some_and(|key| !key.is_empty()) {
+            return Err("attributeTable entries name their key by keyStrindex, not key".to_owned());
+        }
         Ok(KeyValueAndUnit {
             key_strindex: int(self.key_strindex),
             value: Self::any_value(self.value)?,
@@ -2769,6 +2774,33 @@ mod tests {
         );
         let attributes = &request.resource_profiles[9].resource.as_ref().expect("a resource").attributes;
         assert_eq!(attributes.len(), 10_002);
+    }
+
+    /// An attribute-table entry with an inline key cannot be stored as sent, so the export is
+    /// refused, never stored with that attribute silently missing.
+    #[test]
+    fn refuses_an_attribute_table_entry_with_an_inline_key() {
+        let export = |entry: serde_json::Value| {
+            serde_json::to_vec(&serde_json::json!({
+                "dictionary": { "stringTable": ["", "thread.name"], "attributeTable": [{}, entry] },
+            }))
+            .expect("the export encodes")
+        };
+        let refused = decode_json(&export(serde_json::json!({
+            "key": "thread.name", "value": { "stringValue": "main" },
+        })));
+        assert!(
+            refused.as_ref().is_err_and(|error| error.to_string().contains("keyStrindex")),
+            "{:?}",
+            refused.map(|_| ())
+        );
+        // By index, or with an empty inline key beside the index, it decodes.
+        for entry in [
+            serde_json::json!({ "keyStrindex": 1, "value": { "stringValue": "main" } }),
+            serde_json::json!({ "key": "", "keyStrindex": 1, "value": { "stringValue": "main" } }),
+        ] {
+            assert!(decode_json(&export(entry)).is_ok());
+        }
     }
 
     /// A real export of the Maple SDK's Node profiler.
