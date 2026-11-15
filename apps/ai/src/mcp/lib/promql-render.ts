@@ -1,7 +1,7 @@
 // query_promql's model-facing text: per series its labels, summary stats and a few points.
 import { Array as Arr, Option, Order, Record as Rec, String as Str } from "effect"
 import type { PromqlSampleValue, PromqlSeries, QueryPromqlOutput } from "@maple/domain/mcp-outputs"
-import { formatNumber, tableCell } from "./format"
+import { formatNumber, tableCell, truncate } from "./format"
 import { doc, type DocBlock, type NextCall, type ToolDoc } from "./tool-doc"
 import { MAX_POINTS } from "./promql-result"
 
@@ -73,7 +73,7 @@ const matrixBlocks = (series: ReadonlyArray<Series>): ReadonlyArray<DocBlock> =>
 		Arr.map(series, (s) => {
 			const { min, avg, max } = stats(s)
 			return [
-				tableCell(seriesName(s.labels), 100),
+				truncate(seriesName(s.labels), 100),
 				formatNumber(s.totalPoints),
 				min,
 				avg,
@@ -85,6 +85,7 @@ const matrixBlocks = (series: ReadonlyArray<Series>): ReadonlyArray<DocBlock> =>
 	doc.list(
 		Arr.map(
 			Arr.take(series, DETAILED_SERIES),
+			// Table cells are escaped by the renderer; list items are not.
 			(s) => `${tableCell(seriesName(s.labels), 100)}: ${sampled(s)}`,
 		),
 	),
@@ -101,7 +102,7 @@ const bodyOf = (output: Output): ReadonlyArray<DocBlock> => {
 						doc.table(
 							["Series", "Value"],
 							Arr.map(output.series, (s) => [
-								tableCell(seriesName(s.labels), 100),
+								truncate(seriesName(s.labels), 100),
 								lastValue(s),
 							]),
 						),
