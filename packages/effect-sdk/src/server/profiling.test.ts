@@ -2,6 +2,7 @@ import { describe, it } from "@effect/vitest"
 import { Effect, Exit, Layer, Logger, Predicate, References, Scope, Array as Arr } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { TestClock } from "effect/testing"
+import { makeSpanTimeline, type SpanTimeline } from "../shared/span-timeline"
 import { expect, vi } from "vitest"
 import {
 	type InspectorModule,
@@ -46,6 +47,8 @@ const makeHarness = (
 		readonly profiles?: ReadonlyArray<unknown>
 		/** The collector's answer to the nth request, counted from 1. Default 200. */
 		readonly respond?: (attempt: number) => Response
+		/** The inspector refuses `Profiler.start`. */
+		readonly refuseStart?: boolean
 	} = {},
 ) => {
 	const events: Array<string> = []
@@ -62,6 +65,8 @@ const makeHarness = (
 		}
 		post(...[method, , callback]: Parameters<InspectorSession["post"]>) {
 			events.push(method)
+			if (method === "Profiler.start" && setup.refuseStart === true)
+				return callback(new Error("Profiler is already started"), {})
 			if (method !== "Profiler.stop") return callback(null, {})
 			const profile = profiles.shift() ?? busyProfile
 			callback(null, {
@@ -163,6 +168,24 @@ describe("profilerLayer without an inspector", () => {
 	it.effect("runs without profiling when node:inspector does not load", () =>
 		expectProfilingOff(makeHarness(), { loadBuiltin: () => undefined }, UNAVAILABLE),
 	)
+
+	it.effect("stops recording span switches when the profiler refuses to start", () => {
+		const harness = makeHarness({ refuseStart: true })
+		const recording: Array<boolean> = []
+		const timeline = makeSpanTimeline()
+		const watched: SpanTimeline = {
+			...timeline,
+			setRecording: (next) => {
+				recording.push(next)
+				timeline.setRecording(next)
+			},
+		}
+		return Effect.gen(function* () {
+			yield* Layer.build(harness.layer({ timeline: watched }))
+			expect(harness.logs[0]?.message).toContain("profiling is off")
+			expect(recording.at(-1)).toBe(false)
+		}).pipe(harness.run)
+	})
 
 	it.effect("runs without profiling when the inspector refuses a session", () => {
 		class Refused implements InspectorSession {

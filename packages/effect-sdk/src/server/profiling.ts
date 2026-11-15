@@ -298,7 +298,10 @@ export const profilerLayer = (
 				}).pipe(Effect.catch((error) => outage.failed("profile window dropped", error)))
 
 			options.timeline?.setRecording(true)
-			const first = yield* start
+			// A profiler that never started leaves nothing recording.
+			const first = yield* start.pipe(
+				Effect.onError(() => Effect.sync(() => options.timeline?.setRecording(false))),
+			)
 			const current = yield* Ref.make(first)
 
 			// Stop, restart at once, and only then decode, encode and send: the gap between two
