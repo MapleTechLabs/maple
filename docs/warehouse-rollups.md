@@ -229,15 +229,19 @@ them one at a time. Migration `0019_mv_sweep` is the worked example.
 Managed Tinybird deploys some rollups without replaying raw history (`SKIP_BACKFILL` in
 `packages/domain/src/tinybird/project-manifest.ts`), so their history stays empty until a
 staged backfill. `scripts/backfill-hourly-rollup.ts --rollup <table>` runs it for
-`user_activity_hourly` (migration 0056) and `aws_metrics_hourly` (migration 0066):
+`user_activity_hourly` (migration 0056).
+
+**The prod workspaces refuse it.** Forward workspaces answer the population endpoint with
+"Forward workspaces do not support populating materialized views on-demand" (seen
+2026-11-15), so the script only works on a classic workspace. On prod, let the deploy
+backfill instead: leave the datasource out of `SKIP_BACKFILL`. `aws_metrics_hourly` shipped
+that way, its 90 days of `aws.*` points replayed by its first deploy.
 
 ```bash
 # Dry run: the day chunks, and which already hold rows
 infisical run --env=prod -- bun scripts/backfill-hourly-rollup.ts --rollup user_activity_hourly --until 2026-11-06T10:00:00Z
 # Populate, a day at a time, oldest first
 infisical run --env=prod -- bun scripts/backfill-hourly-rollup.ts --rollup user_activity_hourly --until 2026-11-06T10:00:00Z --execute
-# The AWS rollup reads 90 days of metrics
-infisical run --env=prod -- bun scripts/backfill-hourly-rollup.ts --rollup aws_metrics_hourly --until <deploy time> --execute
 ```
 
 - `--until` is when the views went live (the deploy). The views wrote everything after it, so a
