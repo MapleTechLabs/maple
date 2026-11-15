@@ -483,9 +483,7 @@ const make = Effect.gen(function* () {
 		if (input.matches.length > 0) {
 			const found = yield* series(tenant, { ...input, limit: undefined })
 			return limited(
-				sortedUnique(
-					Arr.flatMap(found, (labels) => Option.toArray(Option.fromNullishOr(labels[input.name]))),
-				),
+				sortedUnique(Arr.flatMap(found, (labels) => Option.toArray(Rec.get(labels, input.name)))),
 				input.limit,
 			)
 		}
