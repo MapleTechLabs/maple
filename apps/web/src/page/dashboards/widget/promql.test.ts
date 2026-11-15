@@ -3,7 +3,7 @@ import { dataSourceTransform } from "@maple/widgets/dashboard"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import type { EditorState } from "./editor-state"
-import { promqlDataSourceOf } from "./promql"
+import { promqlDataSourceOf, promqlDraftOf } from "./promql"
 
 const table = Schema.decodeSync(DashboardWidgetSchema)({
 	id: "jobs",
@@ -25,5 +25,21 @@ describe("promqlDataSourceOf", () => {
 			dataSourceTransform(promqlDataSourceOf(table, draft, { ...state, tableLimit }))?.limit
 		expect(limitOf("10")).toBe(10)
 		expect(limitOf("")).toBeUndefined()
+	})
+
+	it("drops a stored row limit when the panel is not a table", () => {
+		const line = promqlDataSourceOf(table, draft, { ...state, visualization: "chart", tableLimit: "" })
+		expect(dataSourceTransform(line)?.limit).toBeUndefined()
+	})
+
+	it("keeps an empty stored query empty, so Apply refuses it instead of saving the template", () => {
+		const empty = Schema.decodeSync(DashboardWidgetSchema)({
+			id: "empty",
+			visualization: "chart",
+			dataSource: { kind: "promql", query: "", legendFormat: "{{job}}" },
+			display: { title: "Empty" },
+			layout: { x: 0, y: 0, w: 6, h: 4 },
+		})
+		expect(promqlDraftOf(empty)).toEqual({ query: "", legendFormat: "{{job}}", minStepSeconds: null })
 	})
 })

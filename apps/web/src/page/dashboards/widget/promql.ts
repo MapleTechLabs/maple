@@ -25,10 +25,10 @@ export type PromqlState = typeof PromqlState.Type
 export const PROMQL_TEMPLATE =
 	"sum by (job) (rate(http_server_request_duration_seconds_count[$__rate_interval]))"
 
-/** The widget's PromQL, or the template while it has none. */
+/** The widget's PromQL (an empty stored query stays empty, so Apply refuses it), or the template for a non-PromQL widget. */
 export const promqlDraftOf = (widget: Widget): PromqlDraft => {
 	const promql = dataSourcePromql(widget.dataSource)
-	return promql !== null && promql.query.length > 0
+	return promql !== null
 		? {
 				query: promql.query,
 				legendFormat: promql.legendFormat ?? "",
@@ -55,11 +55,12 @@ export const promqlDataSourceOf = (
 		dataSourcePromql(widget.dataSource) === null ? undefined : dataSourceTransform(widget.dataSource)
 	const { reduceToValue: _previous, ...kept } = stored ?? {}
 	const isScalar = widgetTypeByVisualization(state.visualization)?.isScalar === true
-	// A table writes the Row limit picked in the editor; clearing it removes the stored one.
+	// A table writes the Row limit picked in the editor; any other panel drops it, since a chart would
+	// silently show only that many rows and has no control to clear it.
 	const isTable = rawSqlDisplayTypeFor(state.visualization, state.chartId) === "table"
 	const { limit: _limit, ...unlimited } = kept
-	const rowLimit = parseRowLimit(state.tableLimit)
-	const limited = !isTable ? kept : rowLimit === undefined ? unlimited : { ...unlimited, limit: rowLimit }
+	const rowLimit = isTable ? parseRowLimit(state.tableLimit) : undefined
+	const limited = rowLimit === undefined ? unlimited : { ...unlimited, limit: rowLimit }
 	const transform = isScalar
 		? { ...limited, reduceToValue: { field: "value", aggregate: state.statAggregate } }
 		: limited
