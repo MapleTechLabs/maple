@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest"
 import { Array as Arr } from "effect"
 import type { Operation } from "../model-tabs"
 import { operationChanges } from "./derive"
+import { sidesOf } from "./update"
 
 const op = (spanName: string, spanCount: number, errorRate: number, p95DurationMs: number): Operation => ({
 	spanName,
@@ -22,6 +23,7 @@ describe("operationChanges", () => {
 		op("GET /depots", 500, 0, 40),
 		op("GET /routes", 800, 0.001, 50),
 		op("GET /retired", 300, 0, 10),
+		op("GET /rarely", 5, 0, 30),
 	]
 	const after = [
 		op("POST /batch", 700, 0.1, 85),
@@ -29,13 +31,15 @@ describe("operationChanges", () => {
 		op("GET /routes", 600, 0.001, 51),
 		op("GET /cache", 200, 0, 2),
 		op("GET /rare", 5, 1, 900),
+		op("GET /rarely", 400, 0, 31),
 	]
 	const changes = operationChanges(before, after)
 
-	test("worst change first: errors up, then new, then faster, then steady", () => {
+	test("worst change first: errors up, new, too few before to compare, faster, steady", () => {
 		expect(Arr.map(changes, (change) => [change.spanName, change.change])).toEqual([
 			["POST /batch", "errors-up"],
 			["GET /cache", "new"],
+			["GET /rarely", "few-before"],
 			["GET /depots", "faster"],
 			["GET /routes", "steady"],
 		])
@@ -50,5 +54,29 @@ describe("operationChanges", () => {
 	test("a p95 a quarter higher and 10ms more reads slower", () => {
 		const [change] = operationChanges([op("GET /x", 100, 0, 40)], [op("GET /x", 100, 0, 60)])
 		expect(change?.change).toBe("slower")
+	})
+})
+
+describe("sidesOf", () => {
+	const MINUTE = 60_000
+	const DEPLOY = Date.UTC(2026, 10, 15, 12)
+	const check = { firstSeenMs: DEPLOY + 20_000, windowMinutes: 30 }
+
+	test("a settled deploy compares its full half hour after with the half hour before", () => {
+		expect(sidesOf(check, DEPLOY + 3 * 60 * MINUTE)).toEqual({
+			before: { startMs: DEPLOY - 30 * MINUTE, endMs: DEPLOY },
+			after: { startMs: DEPLOY, endMs: DEPLOY + 30 * MINUTE },
+		})
+	})
+
+	test("while it verifies, the after side stops where the data does", () => {
+		expect(sidesOf(check, DEPLOY + 10 * MINUTE).after).toEqual({
+			startMs: DEPLOY,
+			endMs: DEPLOY + 10 * MINUTE,
+		})
+	})
+
+	test("in its first minute the after side still spans one minute", () => {
+		expect(sidesOf(check, DEPLOY + 30_000).after).toEqual({ startMs: DEPLOY, endMs: DEPLOY + MINUTE })
 	})
 })
