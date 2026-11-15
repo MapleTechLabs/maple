@@ -16,6 +16,7 @@ import {
 	dataEndOf,
 	deployBefore,
 	deployDataEndOf,
+	isComparable,
 	isSameDeploy,
 	leadDeploy,
 } from "./derive-deploys"
@@ -119,7 +120,9 @@ const detail = (deploy: DeployCheck, newIssues: number): string => {
 	const issues = newIssues === 0 ? "" : ` ${countLabel(newIssues, "open issue")} first seen since.`
 	const figure = verdictFigure(deploy)
 	return figure === undefined
-		? `No change so far against the ${window} before it.${issues}`
+		? isComparable(deploy)
+			? `No change so far against the ${window} before it.${issues}`
+			: `Too little traffic to compare yet.${issues}`
 		: `${figure} in its first ${judged}, against the ${window} before it.${issues}`
 }
 
