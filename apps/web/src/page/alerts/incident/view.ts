@@ -1,3 +1,4 @@
+import { isUptimeCertificateIncident } from "@maple/domain/uptime"
 import type {
 	AlertCheckDocument,
 	AlertIncidentDocument,
@@ -349,7 +350,9 @@ export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>
 											])
 										: incident.signalType === "uptime"
 											? sourceNote(h, {
-													text: "This incident follows an uptime monitor: it opened when the monitor's checks went down and resolves when one passes again. The monitor's page lists each check with its failing trace.",
+													text: isUptimeCertificateIncident(incident)
+														? "This incident follows an uptime monitor's TLS certificate: it opened when the certificate came within 14 days of expiry and resolves once a check sees a renewed one. The monitor stays up meanwhile."
+														: "This incident follows an uptime monitor: it opened when the monitor's checks went down and resolves when one passes again. The monitor's page lists each check with its failing trace.",
 													href: inputs.sourceHref ?? null,
 													label: "Open monitor",
 													fallback: {

@@ -237,7 +237,7 @@ describe("uptime certificate notifications", () => {
 		value: 0.5,
 		sampleCount: 1,
 		severity: "warning",
-		groupKey: "tls_certificate",
+		groupKey: "__tls_certificate__",
 		detail: "Certificate for checkout.example.com expires in 9 days (2026-11-24)",
 	}
 

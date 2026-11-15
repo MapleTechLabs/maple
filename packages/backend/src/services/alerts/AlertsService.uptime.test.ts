@@ -21,7 +21,11 @@ import {
 	UptimeMonitorId as UptimeMonitorIdSchema,
 	type UptimeMonitorStatus,
 } from "@maple/primitives"
-import type { UptimeCertificate, UptimeMonitorConfig } from "@maple/domain/uptime"
+import {
+	type UptimeCertificate,
+	type UptimeMonitorConfig,
+	UPTIME_CERTIFICATE_GROUP_KEY,
+} from "@maple/domain/uptime"
 import { uptimeRuleFields } from "./AlertRuleModel"
 import {
 	makeWarehouseStub,
@@ -372,7 +376,14 @@ describe("AlertsService uptime rules", () => {
 						incident.severity,
 						incident.status,
 					]),
-					[["tls_certificate", "TLS certificate (checkout.example.com)", "warning", "open"]],
+					[
+						[
+							UPTIME_CERTIFICATE_GROUP_KEY,
+							"TLS certificate (checkout.example.com)",
+							"warning",
+							"open",
+						],
+					],
 				)
 				const trigger = Schema.decodeSync(
 					Schema.fromJsonString(
@@ -448,7 +459,7 @@ describe("AlertsService uptime rules", () => {
 					)
 
 				yield* alerts.runSchedulerTick()
-				const expected = ["__total__:critical:open", "tls_certificate:warning:open"]
+				const expected = ["__tls_certificate__:warning:open", "__total__:critical:open"]
 				assert.deepStrictEqual(yield* incidents(), expected)
 				// A second tick changes nothing: neither group's state is swept as the wrong shape.
 				yield* TestClock.adjust(Duration.minutes(1))
@@ -457,6 +468,34 @@ describe("AlertsService uptime rules", () => {
 			}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}))))
 		},
 	)
+
+	it.effect("a monitor whose service shares the certificate group's key keeps its outage open", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* alertServices
+			const orgId = asOrgId("org_uptime_cert_collision")
+			yield* seedUptimeMonitor(testDb, {
+				orgId,
+				name: "Checkout health",
+				serviceName: UPTIME_CERTIFICATE_GROUP_KEY,
+				destinationIds: [],
+				config: httpMonitorConfig,
+				status: "down",
+				error: "Status 503, expected 2xx",
+				certificate: certificateIn(90),
+			})
+			const incidents = () =>
+				Effect.map(alerts.listIncidents(orgId), ({ incidents }) =>
+					Arr.map(incidents, (incident) => `${incident.severity}:${incident.status}`),
+				)
+			yield* alerts.runSchedulerTick()
+			assert.deepStrictEqual(yield* incidents(), ["critical:open"])
+			yield* TestClock.adjust(Duration.minutes(1))
+			yield* alerts.runSchedulerTick()
+			assert.deepStrictEqual(yield* incidents(), ["critical:open"])
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}))))
+	})
 
 	it.effect("a monitor created before backing rules gets one, once, and then fires", () => {
 		const testDb = createTestDb(trackedDbs)

@@ -1,6 +1,7 @@
 import type { AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
 import { compareAlertThreshold } from "@maple/alerting-core/tiers"
 import { sloNameFromRuleName } from "@maple/domain/slo"
+import { isUptimeCertificateIncident } from "@maple/domain/uptime"
 
 import {
 	comparatorLabels,
@@ -68,6 +69,8 @@ export const isQueryIncident = (incident: Pick<AlertIncidentDocument, "signalTyp
 
 /** "Error rate 8.4% on checkout", "checkout-api is down", or a query rule's name: what an incident is about, in one line. */
 export function incidentTitle(incident: IncidentLine): string {
+	if (isUptimeCertificateIncident(incident))
+		return `${incident.ruleName}: ${incident.status === "resolved" ? "certificate renewed" : "certificate expires soon"}`
 	if (isUptime(incident))
 		return `${incident.ruleName} ${incident.status === "resolved" ? "is back up" : "is down"}`
 	if (isSlo(incident))
@@ -100,6 +103,8 @@ export const NO_THRESHOLD = "–"
 
 /** The Now / threshold cells: an uptime incident is "Down" (or "Up") with no threshold. */
 export function incidentValues(incident: IncidentLine): Readonly<{ now: string; threshold: string | null }> {
+	if (isUptimeCertificateIncident(incident))
+		return { now: incident.status === "resolved" ? "Renewed" : "Expiring", threshold: NO_THRESHOLD }
 	if (isUptime(incident))
 		return { now: incident.status === "resolved" ? "Up" : "Down", threshold: NO_THRESHOLD }
 	// An anomaly's threshold is the detector's, not the rule's: its severity is the whole reading.

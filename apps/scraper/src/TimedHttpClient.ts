@@ -136,10 +136,20 @@ const exchange = (
 					: { tlsMs: tlsAt - connectAt }),
 			}
 		}
+		// A handshake that completed is a certificate read, whatever the request does next.
+		const presented = Effect.suspend(() =>
+			certificate === null ? Effect.void : recordCertificate(certificate),
+		)
 		// Kept for the request's life: an abort after the headers still emits here. A failed hop
-		// still reports what it got through (a connect before a refused handshake).
+		// still reports what it got through (a connect before a refused handshake, a TLS certificate
+		// before a reset).
 		outgoing.on("error", (cause) =>
-			resume(Effect.andThen(recordPhases(connected()), Effect.fail(transportError(request, cause)))),
+			resume(
+				Effect.andThen(
+					Effect.andThen(recordPhases(connected()), presented),
+					Effect.fail(transportError(request, cause)),
+				),
+			),
 		)
 		outgoing.once("response", (response) => {
 			const ready = marks.get("tls") ?? marks.get("connect") ?? startedAt
@@ -152,7 +162,11 @@ const exchange = (
 			)
 		})
 		outgoing.end(body)
-		return Effect.sync(() => outgoing.destroy())
+		// Interrupted (the check's timeout) before the headers: keep the certificate it got.
+		return Effect.andThen(
+			presented,
+			Effect.sync(() => outgoing.destroy()),
+		)
 	})
 
 const toWeb = (request: HttpClientRequest.HttpClientRequest, response: http.IncomingMessage) =>

@@ -276,8 +276,12 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 				if (Option.isNone(read)) return []
 				const row = read.value
 				const monitor = yield* observeMonitor(orgId, ruleId, row, nowMs)
-				// The expiry date stays known while checks are stale or failing, so it is always observed.
-				const certificate = certificateObservation(row.lastCheckJson?.certificate, nowMs)
+				// The expiry date stays known while checks are stale or failing, so it is always observed;
+				// never under a key the monitor's own group already holds.
+				const certificate = Option.filter(
+					certificateObservation(row.lastCheckJson?.certificate, nowMs),
+					(observed) => !Option.exists(monitor, (own) => own.groupKey === observed.groupKey),
+				)
 				return Arr.getSomes([monitor, certificate])
 			})
 

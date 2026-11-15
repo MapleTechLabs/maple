@@ -96,8 +96,17 @@ export const UptimeCertificate = Schema.Struct({
 })
 export type UptimeCertificate = Schema.Schema.Type<typeof UptimeCertificate>
 
-/** The alert group an HTTPS monitor's certificate is observed under, beside the monitor's own. */
-export const UPTIME_CERTIFICATE_GROUP_KEY = "tls_certificate"
+/**
+ * The alert group an HTTPS monitor's certificate is observed under, beside the monitor's own.
+ * Spelled like `__total__`, so no real service name takes it.
+ */
+export const UPTIME_CERTIFICATE_GROUP_KEY = "__tls_certificate__"
+
+/** An uptime incident about the monitor's certificate rather than the monitor being down. */
+export const isUptimeCertificateIncident = (incident: {
+	readonly signalType: string
+	readonly groupKey?: string | null
+}): boolean => incident.signalType === "uptime" && incident.groupKey === UPTIME_CERTIFICATE_GROUP_KEY
 
 /** How far ahead of its expiry a certificate opens a warning incident. */
 export const UPTIME_CERTIFICATE_WARNING_DAYS = 14

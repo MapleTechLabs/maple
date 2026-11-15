@@ -270,6 +270,55 @@ describe("UptimeMonitorsService", () => {
 		},
 	)
 
+	it.effect("folds a retried batch in order: a renewal before a failure is kept", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* UptimeMonitorsService
+			const monitor = yield* createHttp("API")
+			const expiring = { expiresAt: 1_000_000, subject: "api.example.com", issuer: "R11" }
+			const renewed = { ...expiring, expiresAt: 9_000_000 }
+			yield* service.recordChecks([
+				new UptimeCheckReport({ ...report(monitor.id, 1_000, true), certificate: expiring }),
+			])
+			// The API was away: a renewal and then a refused connection arrive together.
+			yield* service.recordChecks([
+				new UptimeCheckReport({ ...report(monitor.id, 2_000, true), certificate: renewed }),
+				report(monitor.id, 3_000, false),
+			])
+			const read = yield* service.get(ORG, monitor.id)
+			assert.deepStrictEqual(read.state.lastCheck?.certificate, renewed)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("forgets the certificate when the monitored origin changes, and only then", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* UptimeMonitorsService
+			const monitor = yield* createHttp("API")
+			const certificate = { expiresAt: 9_000_000, subject: "status.example.com", issuer: "R11" }
+			const certificateNow = () =>
+				Effect.map(service.get(ORG, monitor.id), (read) => read.state.lastCheck?.certificate)
+			yield* service.recordChecks([
+				new UptimeCheckReport({ ...report(monitor.id, 1_000, true), certificate }),
+			])
+
+			// Same origin, another path: the certificate still stands.
+			yield* service.update(ORG, monitor.id, {
+				config: httpConfig("https://status.example.com/ready"),
+				updatedBy: USER,
+			})
+			assert.deepStrictEqual(yield* certificateNow(), certificate)
+			// Another host: its certificate is not this one.
+			yield* service.update(ORG, monitor.id, {
+				config: httpConfig("https://new.example.com/health"),
+				updatedBy: USER,
+			})
+			assert.isUndefined(yield* certificateNow())
+			const read = yield* service.get(ORG, monitor.id)
+			assert.strictEqual(read.state.lastCheck?.at, 1_000)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("goes down after failures_to_down failures in a row and recovers on a success", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {

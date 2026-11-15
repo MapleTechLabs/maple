@@ -488,6 +488,23 @@ const foldReports = (row: CheckStateRow, reports: ReadonlyArray<UptimeCheckRepor
 		},
 	)
 
+/** The origin an HTTPS check's certificate comes from; null for anything else. */
+export const certificateOrigin = (config: UptimeMonitorConfig): string | null => {
+	if (config._tag !== "http") return null
+	const url = Option.liftThrowable(() => new URL(config.url))()
+	return Option.match(url, {
+		onNone: () => null,
+		onSome: (parsed) => (parsed.protocol === "https:" ? parsed.origin : null),
+	})
+}
+
+/** Drops the stored certificate from a monitor's last check, keeping the rest of it. */
+const forgetCertificate = (db: MapleDb, orgId: OrgId, monitorId: UptimeMonitorId) =>
+	db.execute(
+		Orm.sql`UPDATE uptime_monitor_states SET last_check_json = last_check_json - 'certificate'
+			WHERE org_id = ${orgId} AND monitor_id = ${monitorId} AND last_check_json -> 'certificate' IS NOT NULL`,
+	)
+
 /**
  * The stored detail of a monitor's newest check. A failed check that read no certificate (an
  * expired one fails the handshake) keeps the previous one, so its expiry stays in view.
@@ -956,6 +973,13 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 											.where(($) => [$.orgId.eq(orgId), $.monitorId.eq(monitorId)]),
 									)
 								}
+								// A certificate belongs to the host that presented it: a new target forgets it.
+								if (
+									config !== undefined &&
+									certificateOrigin(config) !== certificateOrigin(locked.config)
+								) {
+									yield* forgetCertificate(db, orgId, monitorId)
+								}
 								return
 							}
 							yield* db.run(
@@ -1124,7 +1148,10 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 								consecutiveFailures: folded.snapshot.consecutiveFailures,
 								consecutiveSuccesses: folded.snapshot.consecutiveSuccesses,
 								statusChangedAt: folded.statusChangedAt,
-								lastCheckJson: toCheckDetail(last.value, row.lastCheckJson),
+								// Folded in order, so a renewal earlier in a retried batch is not lost to a later failure.
+								lastCheckJson: Arr.reduce(fresh, row.lastCheckJson, (previous, report) =>
+									toCheckDetail(report, previous),
+								),
 								recentJson: folded.recent,
 								readUpdatedAt: row.stateUpdatedAt,
 								updatedAt: now,
