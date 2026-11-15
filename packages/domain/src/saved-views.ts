@@ -29,10 +29,14 @@ const SearchParams = Schema.Record(
 )
 
 const encodeJson = Schema.encodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
+const utf8 = new TextEncoder()
 
-/** The state's size as stored; a value JSON cannot hold counts as too large. */
+/** The state's size in bytes as stored; a value JSON cannot hold counts as too large. */
 const storedSizeOf = (state: unknown): number =>
-	Option.match(encodeJson(state), { onNone: () => Infinity, onSome: (json) => json.length })
+	Option.match(encodeJson(state), {
+		onNone: () => Infinity,
+		onSome: (json) => utf8.encode(json).length,
+	})
 
 /**
  * What a view restores: the explorer's URL search params as the route decoded them, and for a

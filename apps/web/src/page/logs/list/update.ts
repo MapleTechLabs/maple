@@ -683,7 +683,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			return navigate(model, { ...model.search, columns: next.length > 0 ? next : undefined })
 		},
 		GotSavedViewsMessage: ({ message: inner }) =>
-			SavedViews.pageStep(model, inner, viewsExplorer([model.search]), toSavedViews),
+			SavedViews.pageStep(model, inner, viewsExplorer([model.search]), toSavedViews, draftFromView),
 		GotRefreshMenuMessage: ({ message: inner }) => {
 			const next = Menu.update(model.refreshMenu, inner)
 			const lifted = liftChild({ ...model, refreshMenu: next.model }, next.commands, (m) =>
@@ -745,6 +745,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 const savePreferences = (model: Model): Return => ({
 	model,
 	commands: [SavePreferences({ wrap: model.wrap, density: model.density })],
+})
+
+// A picked view replaces the search box's draft, and a debounce still pending from the old
+// draft must not put it back over the view's search.
+const draftFromView = (model: Model, search: SavedViews.ViewSearch): Model => ({
+	...model,
+	searchText: typeof search["search"] === "string" ? search["search"] : "",
+	searchGeneration: model.searchGeneration + 1,
 })
 
 /** The view the old URL was stays the page's view as the URL moves on. */

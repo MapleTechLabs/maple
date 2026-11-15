@@ -82,8 +82,8 @@ export interface SavedViewsServiceApi {
  */
 export const SAVED_VIEWS_PER_OWNER_LIMIT = 100
 
-/** The most rows a list read returns: every member's shared views in a large org, bounded. */
-const LIST_LIMIT = 500
+/** The most shared views of other members a list read returns, in a large org. The caller's own are all read. */
+const SHARED_LIST_LIMIT = 500
 
 const UNIQUE_VIOLATION = "23505"
 
@@ -164,19 +164,34 @@ export class SavedViewsService extends Context.Service<SavedViewsService, SavedV
 					"tenant.userId": caller.userId,
 					"maple.saved_view.surface": surface,
 				})
-				const rows = yield* dbExecute((db) =>
+				// Two reads, so other members' shared views can never crowd out the caller's own.
+				const own = yield* dbExecute((db) =>
 					db.run(
 						PG.from(SavedViews)
 							.select()
 							.where(($) => [
 								$.orgId.eq(caller.orgId),
 								$.surface.eq(surface),
-								PG.or($.ownerUserId.eq(caller.userId), $.visibility.eq("org")),
+								$.ownerUserId.eq(caller.userId),
 							])
-							.orderBy(["updatedAt", "desc"], ["id", "asc"])
-							.limit(LIST_LIMIT),
+							.orderBy(["updatedAt", "desc"], ["id", "asc"]),
 					),
 				)
+				const shared = yield* dbExecute((db) =>
+					db.run(
+						PG.from(SavedViews)
+							.select()
+							.where(($) => [
+								$.orgId.eq(caller.orgId),
+								$.surface.eq(surface),
+								$.ownerUserId.neq(caller.userId),
+								$.visibility.eq("org"),
+							])
+							.orderBy(["updatedAt", "desc"], ["id", "asc"])
+							.limit(SHARED_LIST_LIMIT),
+					),
+				)
+				const rows = [...own, ...shared]
 				yield* Effect.annotateCurrentSpan("result.rowCount", rows.length)
 				return Arr.sort(
 					Arr.map(rows, (row) => toView(caller, row)),

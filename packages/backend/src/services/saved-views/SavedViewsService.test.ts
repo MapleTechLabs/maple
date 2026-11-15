@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Array as Arr, Effect, Layer, Schema } from "effect"
+import { Array as Arr, Effect, Layer, Order, Schema } from "effect"
 import { OrgId, UserId } from "@maple/domain/http"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { SAVED_VIEWS_PER_OWNER_LIMIT, type SavedViewCaller, SavedViewsService } from "./SavedViewsService"
@@ -273,6 +273,31 @@ describe("SavedViewsService", () => {
 
 				yield* views.create(ANA, { surface: "traces", name: "Still fine", state: errorState })
 				yield* views.create(BEN, { surface: "logs", name: "Ben is fine", state: errorState })
+			}),
+		),
+	)
+
+	it.effect("lists the caller's own shared view once, beside another member's shared view", () =>
+		provide(
+			Effect.gen(function* () {
+				const views = yield* SavedViewsService
+				const mine = yield* views.create(ANA, { surface: "logs", name: "Mine", state: errorState })
+				yield* views.update(ANA, mine.id, { visibility: "org" })
+				yield* views.create(ANA, { surface: "logs", name: "Mine, private", state: errorState })
+				const theirs = yield* views.create(BEN, {
+					surface: "logs",
+					name: "Theirs",
+					state: errorState,
+				})
+				yield* views.update(BEN, theirs.id, { visibility: "org" })
+				yield* views.create(BEN, { surface: "logs", name: "Theirs, private", state: errorState })
+
+				const listed = yield* views.list(ANA, "logs")
+				assert.deepStrictEqual(Arr.sort(names(listed), Order.String), [
+					"Mine",
+					"Mine, private",
+					"Theirs",
+				])
 			}),
 		),
 	)

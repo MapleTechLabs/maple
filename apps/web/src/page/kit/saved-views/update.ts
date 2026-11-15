@@ -83,7 +83,7 @@ const openForm = (model: Model, form: Form): Return =>
 const opened = (step: Return, view: SavedView, explorer: Explorer): Return => ({
 	...step,
 	model: { ...step.model, activeViewId: view.id },
-	outMessage: OutMessage.OpenedView({ url: explorer.hrefOf(view.state) }),
+	outMessage: OutMessage.OpenedView({ url: explorer.hrefOf(view.state), search: view.state.search }),
 })
 
 const selected = (step: Return, value: string, explorer: Explorer): Return => {

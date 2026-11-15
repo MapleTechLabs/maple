@@ -234,4 +234,23 @@ describe("metrics saved views", () => {
 			expectView(role("button", { name: "Views" })).toExist(),
 		)
 	})
+
+	test("opening a view drops the search box's unsent draft, even when the view's query is the current one", () => {
+		const HTTP_HISTOGRAMS = savedView("metrics", "0c", "HTTP histograms", {
+			search: { q: "http", type: "histogram" },
+		})
+		const typed = browseUpdate(
+			browsing({ q: "http" }, [HTTP_HISTOGRAMS]),
+			BrowseMessage.ChangedSearchInput({ value: "grpc" }),
+		).model
+		const opened = browseViews.open(typed, HTTP_HISTOGRAMS)
+		expect(opened.model.searchInput).toBe("http")
+		// The debounce "grpc" started fires after the view opened: it must not replace the view's query.
+		expect(
+			browseUpdate(
+				opened.model,
+				BrowseMessage.CompletedSearchDebounce({ generation: typed.searchGeneration }),
+			).outMessage,
+		).toBeUndefined()
+	})
 })

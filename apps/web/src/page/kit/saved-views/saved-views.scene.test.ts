@@ -204,7 +204,9 @@ describe("saved views control", () => {
 	test("picking a view goes to its params and makes it the page's view", () => {
 		const explorer = explorerOf({})
 		const picked = pick(loaded([MINE, THEIRS], explorer), viewItem(THEIRS.id), explorer)
-		expect(picked.outMessage).toEqual(OutMessage.OpenedView({ url: "/logs?services=checkout" }))
+		expect(picked.outMessage).toEqual(
+			OutMessage.OpenedView({ url: "/logs?services=checkout", search: THEIRS.state.search }),
+		)
 		expect(picked.model.activeViewId).toBe(THEIRS.id)
 	})
 
@@ -232,7 +234,10 @@ describe("saved views control", () => {
 		])
 		const discarded = pick(model, ITEM.discard, edited)
 		expect(discarded.outMessage).toEqual(
-			OutMessage.OpenedView({ url: "/logs?severities=ERROR&timePreset=1h" }),
+			OutMessage.OpenedView({
+				url: "/logs?severities=ERROR&timePreset=1h",
+				search: MINE.state.search,
+			}),
 		)
 	})
 

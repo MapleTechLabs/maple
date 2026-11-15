@@ -89,7 +89,7 @@ export type Message = typeof Message.Type
 
 export const OutMessage = defineMessageUnion({
 	/** A view was picked: the page goes to its URL. */
-	OpenedView: { url: Schema.String },
+	OpenedView: { url: Schema.String, search: Schema.Record(Schema.String, Schema.Json) },
 	/** A write from the menu failed, with no dialog open to say so. */
 	RequestedToast: { type: ToastType, title: Schema.String, description: Schema.String },
 })

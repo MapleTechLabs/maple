@@ -214,4 +214,22 @@ describe("logs saved views", () => {
 		)
 		expect(failed.outMessage).toMatchObject({ _tag: "RequestedToast", title: "Couldn't update view" })
 	})
+
+	test("opening a view replaces the search box's draft and drops the draft's pending debounce", () => {
+		const TIMEOUTS = savedView("logs", "0c", "Timeouts", {
+			search: { search: "timeout", timePreset: "1h" },
+		})
+		const typed = pageUpdate(
+			entered({ search: "refused" }, [TIMEOUTS]),
+			Message.ChangedSearchText({ text: "refused again" }),
+		).model
+		const opened = views.open(typed, TIMEOUTS)
+		expect(opened.model.searchText).toBe("timeout")
+		expect(navigationOf(opened.outMessage)?.url).toContain("timeout")
+		// The debounce the old draft started fires after the view opened: it must not navigate.
+		expect(
+			pageUpdate(opened.model, Message.ElapsedSearchDebounce({ generation: typed.searchGeneration }))
+				.outMessage,
+		).toBeUndefined()
+	})
 })

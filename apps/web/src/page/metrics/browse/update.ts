@@ -386,9 +386,27 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotTypeSelectMessage: ({ message: inner }) => liftTypeSelect(model, inner),
 		GotTimePickerMessage: ({ message: inner }) => liftTimePicker(model, inner),
 		GotSavedViewsMessage: ({ message: inner }) =>
-			SavedViews.pageStep(model, inner, browseViewsExplorer([model.search]), toSavedViews),
+			SavedViews.pageStep(
+				model,
+				inner,
+				browseViewsExplorer([model.search]),
+				toSavedViews,
+				draftFromView,
+			),
 		GotSparklineMessage: () => ({ model }),
 	})
+
+// A picked view replaces the search box's draft, and a debounce still pending from the old
+// draft must not put it back over the view's query.
+const draftFromView = (model: Model, search: SavedViews.ViewSearch): Model => {
+	const query = typeof search["q"] === "string" ? search["q"] : ""
+	return {
+		...model,
+		searchInput: query,
+		lastSentQuery: query,
+		searchGeneration: model.searchGeneration + 1,
+	}
+}
 
 /** The view the old URL was stays the page's view as the URL moves on. */
 const withRememberedView = (model: Model): Model => {
