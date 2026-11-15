@@ -13,6 +13,7 @@ import type {
 } from "./ast"
 import { functionSignature } from "./functions"
 import { lookup } from "./lookup"
+import { anchoredRegex, type LabelRegex } from "./regex"
 import { parseDurationMs, parseNumber, unquote } from "./literals"
 import { checkTypes } from "./types"
 
@@ -109,12 +110,7 @@ const children = (node: SyntaxNode): SyntaxNode[] => {
 
 const exprChildren = (node: SyntaxNode): SyntaxNode[] => children(node).filter((c) => EXPR_NODES.has(c.name))
 
-const compileRegex = Option.liftThrowable((pattern: string) => new RegExp(`^(?:${pattern})$`))
-
-/** A label regex anchored the way Prometheus anchors it, or None when it does not compile. */
-export const anchoredRegex = (pattern: string): Option.Option<RegExp> => compileRegex(pattern)
-
-const matchesEmpty = (m: LabelMatcher, regex: RegExp | undefined): boolean => {
+const matchesEmpty = (m: LabelMatcher, regex: LabelRegex | undefined): boolean => {
 	switch (m.op) {
 		case "=":
 			return m.value === ""

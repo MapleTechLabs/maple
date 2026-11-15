@@ -1,7 +1,7 @@
 // Prometheus names for OTel metrics, after the OpenTelemetry-to-Prometheus translation
 // ("UnderscoreEscapingWithSuffixes"), plus the stored name itself so scraped data matches as-is.
 
-import { anchoredRegex, type LabelMatcher } from "@maple/promql"
+import { anchoredRegex, type LabelMatcher, type LabelRegex } from "@maple/promql"
 import { Array as Arr, Option, pipe, String as Str } from "effect"
 
 export type OtelMetricType = "sum" | "gauge" | "histogram" | "exponential_histogram"
@@ -156,9 +156,9 @@ export const promNamesOf = (metric: CatalogMetric): ReadonlyArray<PromName> => {
 	}
 }
 
-const regexCache = new Map<string, Option.Option<RegExp>>()
+const regexCache = new Map<string, Option.Option<LabelRegex>>()
 
-const regexOf = (pattern: string): Option.Option<RegExp> => {
+const regexOf = (pattern: string): Option.Option<LabelRegex> => {
 	const cached = regexCache.get(pattern)
 	if (cached !== undefined) return cached
 	const compiled = anchoredRegex(pattern)

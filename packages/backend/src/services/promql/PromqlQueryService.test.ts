@@ -92,4 +92,38 @@ describe("PromqlQueryService", () => {
 			expect(error.message).toMatch(/too many samples/)
 		}),
 	)
+
+	const withCatalog = (rows: ReadonlyArray<Record<string, unknown>>) =>
+		Layer.effect(PromqlQueryService, PromqlQueryService.make).pipe(
+			Layer.provide(
+				Layer.succeed(
+					WarehouseQueryService,
+					makeWarehouseServiceStub({ compiledQuery: () => Effect.succeed(rows) }),
+				),
+			),
+		)
+
+	const errorWith = (rows: ReadonlyArray<Record<string, unknown>>, query: string) =>
+		Effect.gen(function* () {
+			const service = yield* PromqlQueryService
+			return yield* Effect.flip(service.query(tenant, { query, startMs: 0, endMs: 0, stepMs: 0 }))
+		}).pipe(Effect.provide(withCatalog(rows)))
+
+	const gauge = (i: number) => ({ metricName: `m_${i}`, metricType: "gauge", unit: "", isMonotonic: 0 })
+
+	it.effect("refuses a selector that matches more than 100 metrics", () =>
+		Effect.gen(function* () {
+			const rows = Array.from({ length: 101 }, (_, i) => gauge(i))
+			const error = yield* errorWith(rows, '{__name__=~"m_.*"}')
+			expect(error.message).toMatch(/matches 101 metrics, at most 100/)
+		}),
+	)
+
+	it.effect("refuses to resolve names against a catalog that was cut off", () =>
+		Effect.gen(function* () {
+			const rows = Array.from({ length: 50_001 }, (_, i) => gauge(i))
+			const error = yield* errorWith(rows, "m_1")
+			expect(error.message).toMatch(/more than 50000 metrics/)
+		}),
+	)
 })

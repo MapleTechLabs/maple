@@ -12,6 +12,7 @@ import * as CH from "@maple-dev/effect-orm/expr"
 import { CHNumber } from "../schema"
 import * as Datasources from "@maple/domain/tinybird/datasources"
 import { orgId, orgIdParam, utcSecondsParam } from "../tables"
+import { EXCLUDED_KEY } from "../../promql/labels"
 
 export type PromqlMetricTable =
 	| "metrics_sum"
@@ -122,12 +123,16 @@ const scanQuery = (opts: PromqlSelectorOpts) =>
 			...opts.conditions($),
 		])
 
-/** The series key: the stored identity of the series, plus the bound for a bucket. */
+/**
+ * The series key: everything the series' labels are built from, and nothing else. A resource
+ * key the labels drop (service.version, telemetry.sdk.*) must not split a series, or a deploy
+ * turns one counter into two with the same labels.
+ */
 const keyedQuery = (opts: PromqlSelectorOpts) =>
 	fromQuery(scanQuery(opts), "scan").select(($) => ({
 		sk: sql(
 			T.uint64,
-		)`cityHash64(${$.MetricName}, ${$.ServiceName}, mapKeys(${$.Attributes}), mapValues(${$.Attributes}), mapKeys(${$.ResourceAttributes}), mapValues(${$.ResourceAttributes}), ${$.pair}[1])`,
+		)`cityHash64(${$.MetricName}, ${$.ServiceName}, mapKeys(${$.Attributes}), mapValues(${$.Attributes}), mapKeys(mapFilter((_k, _v) -> NOT ${EXCLUDED_KEY}, ${$.ResourceAttributes})), mapValues(mapFilter((_k, _v) -> NOT ${EXCLUDED_KEY}, ${$.ResourceAttributes})), ${$.ResourceAttributes}['service.name'], ${$.ResourceAttributes}['service.namespace'], ${$.ResourceAttributes}['service.instance.id'], ${$.pair}[1])`,
 		MetricName: $.MetricName,
 		ServiceName: $.ServiceName,
 		Attributes: $.Attributes,

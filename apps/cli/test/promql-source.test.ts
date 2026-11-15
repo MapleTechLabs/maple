@@ -527,4 +527,24 @@ describeWithChdb("PromQL selector source", () => {
 	test("a query returns one series past the cap so overflow shows", () => {
 		expect(select(db, ORG_A, request("requests_total"), 1).series).toHaveLength(2)
 	})
+
+	test("a deploy that changes service.version keeps one series", () => {
+		// Inside the request window (BASE, BASE + 5m]; the start is exclusive.
+		const samples = Arr.map(every(15 * SECOND_MS, 5 * MINUTE_MS, 15 * SECOND_MS), (t, k): Sample => [
+			t,
+			3 * k,
+		])
+		const half = Math.floor(samples.length / 2)
+		const deployed = (version: string, part: ReadonlyArray<Sample>): SumSeries => ({
+			...counterA,
+			metric: "deploys",
+			resource: { ...RESOURCE, "service.version": version, "telemetry.sdk.version": version },
+			samples: part,
+		})
+		insertValues(db, deployed("1.0", Arr.take(samples, half)))
+		insertValues(db, deployed("2.0", Arr.drop(samples, half)))
+		const series = select(db, ORG_A, request("deploys_total")).series
+		expect(series).toHaveLength(1)
+		expect(total(Arr.flatMap(series, (s) => Arr.map(s.buckets, (b) => b.count)))).toBe(samples.length)
+	})
 })

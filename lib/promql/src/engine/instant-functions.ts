@@ -10,6 +10,7 @@ import {
 } from "./labels"
 import type { InstantVector, Labels, Sample } from "./types"
 import { lookup } from "../lookup"
+import { anchoredRegex, type RegexMatch } from "../regex"
 
 type R = Result.Result<InstantVector, EvalError>
 
@@ -133,13 +134,8 @@ const sortByValue = (vector: InstantVector, desc: boolean): InstantVector =>
 		return a.value < b.value === desc ? 1 : -1
 	})
 
-/** RE2 syntax to JS: named groups `(?P<n>` become `(?<n>`; `s` mirrors Prometheus' `(?s:...)` wrapper. */
-const compileGoRegex = Option.liftThrowable(
-	(pattern: string) => new RegExp(`^(?:${pattern.replace(/\(\?P</g, "(?<")})$`, "s"),
-)
-
 /** Go's regexp.Expand: `$1`, `${1}`, `$name`, `${name}`, `$$`; a malformed `$` is copied as is. */
-export const expandTemplate = (template: string, match: RegExpExecArray): string => {
+export const expandTemplate = (template: string, match: RegexMatch): string => {
 	let out = ""
 	let rest = template
 	while (rest.length > 0) {
@@ -160,7 +156,7 @@ export const expandTemplate = (template: string, match: RegExpExecArray): string
 			continue
 		}
 		rest = rest.slice(ref[0].length)
-		out += /^\d+$/.test(name) ? (match[Number(name)] ?? "") : (match.groups?.[name] ?? "")
+		out += (/^\d+$/.test(name) ? match.group(Number(name)) : match.group(name)) ?? ""
 	}
 	return out
 }
@@ -174,7 +170,7 @@ const labelReplace = (vector: InstantVector, params: ReadonlyArray<number | stri
 		const repl = yield* stringParam(params, 1, "label_replace")
 		const src = yield* stringParam(params, 2, "label_replace")
 		const regexStr = yield* stringParam(params, 3, "label_replace")
-		const regex = compileGoRegex(regexStr)
+		const regex = anchoredRegex(regexStr)
 		if (Option.isNone(regex)) {
 			return yield* Result.fail(evalError(`invalid regular expression in label_replace(): ${regexStr}`))
 		}
@@ -183,7 +179,8 @@ const labelReplace = (vector: InstantVector, params: ReadonlyArray<number | stri
 		}
 		const out = vector.map((s): Sample => {
 			const match = regex.value.exec(s.labels[src] ?? "")
-			const labels = match === null ? s.labels : setLabel(s.labels, dst, expandTemplate(repl, match))
+			const labels =
+				match === undefined ? s.labels : setLabel(s.labels, dst, expandTemplate(repl, match))
 			return { labels, value: s.value, t: evalTimeMs }
 		})
 		return yield* ensureUniqueLabelsets(out)

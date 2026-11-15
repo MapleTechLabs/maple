@@ -3,7 +3,7 @@ import type { VectorSelector } from "../ast"
 import { parse } from "../parser"
 import { evaluate } from "./evaluate"
 import type { EvalError } from "./ops"
-import { planRequests, type QueryParams } from "./plan"
+import { planRequests, type QueryParams, resolutionError } from "./plan"
 import type { EvalLimits, QueryResult, SelectorData, SelectorRequest } from "./types"
 
 export { evaluate, type EvaluationInput } from "./evaluate"
@@ -11,11 +11,13 @@ export { bucketSamples, matchesLabels, memorySource, type RawSeries } from "./me
 export type { EvalError } from "./ops"
 export {
 	gridTimes,
+	MAX_POINTS_PER_SERIES,
 	planPushdowns,
 	planRequests,
 	type PushdownCandidate,
 	type QueryParams,
 	type RequestPlan,
+	resolutionError,
 } from "./plan"
 export * from "./types"
 
@@ -29,6 +31,8 @@ export const runQuery = (
 	const parsed = parse(query)
 	if (Result.isFailure(parsed)) return Result.fail({ message: parsed.failure.message })
 	const expr = parsed.success
+	const resolution = resolutionError(expr, params)
+	if (resolution !== undefined) return Result.fail({ message: resolution })
 	const data = new Map<VectorSelector, SelectorData>()
 	for (const [selector, request] of planRequests(expr, params)) data.set(selector, source(request))
 	return evaluate({ expr, params, data, ...(limits === undefined ? undefined : { limits }) })

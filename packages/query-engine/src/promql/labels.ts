@@ -107,7 +107,8 @@ const NORMALIZED_KEY = sql.raw(
 	"concat(if(match(_k, '^[0-9]'), '_', ''), replaceRegexpAll(replaceRegexpAll(_k, '[^a-zA-Z0-9_]', '_'), '_+', '_'))",
 )
 
-const EXCLUDED_KEY = sql.raw(
+/** Whether resource key `_k` is left out of the labels, in ClickHouse. */
+export const EXCLUDED_KEY = sql.raw(
 	`(${Arr.join(
 		Arr.map(EXCLUDED_RESOURCE_PREFIXES, (prefix) => `startsWith(_k, '${prefix}')`),
 		" OR ",
@@ -155,7 +156,8 @@ export const labelValueExpr = ($: LabelColumns, name: string): CH.Expr<string> |
 export const matcherCondition = ($: LabelColumns, matcher: LabelMatcher): CH.Condition | undefined => {
 	const value = labelValueExpr($, matcher.name)
 	if (value === undefined) return undefined
-	const pattern = `^(?:${matcher.value})$`
+	// The anchoring Prometheus uses; ClickHouse's `match` is RE2 like Prometheus'.
+	const pattern = `^(?s:${matcher.value})$`
 	switch (matcher.op) {
 		case "=":
 			return sql.cond`${value} = ${matcher.value}`

@@ -109,3 +109,39 @@ describe("evaluate", () => {
 		expect(Result.isFailure(result) && result.failure.message).toMatch(/too many samples/)
 	})
 })
+
+describe("regex matchers", () => {
+	const at = DATA_START_MS + 3600_000
+	const instant = { startMs: at, endMs: at, stepMs: 0 }
+
+	it("match case-insensitively and with POSIX classes, as Prometheus does", () => {
+		const count = (q: string) => flatten(run(q, instant)).length
+		expect(count('http_requests_total{job=~"(?i)API"}')).toBe(count('http_requests_total{job="api"}'))
+		expect(count('http_requests_total{instance=~"[[:alpha:]]:9090"}')).toBe(count("http_requests_total"))
+		expect(count("http_requests_total")).toBeGreaterThan(0)
+	})
+
+	it("run in linear time on a pathological pattern", () => {
+		const started = performance.now()
+		run('http_requests_total{job=~"(a|a)*b"}', instant)
+		run('{__name__=~"(.*.*)*Q"}', instant)
+		expect(performance.now() - started).toBeLessThan(1000)
+	})
+})
+
+describe("resolution limits", () => {
+	it("rejects a subquery finer than 11000 points before reading anything", () => {
+		let reads = 0
+		const counting = (request: SelectorRequest) => {
+			reads += 1
+			return bucketed(request)
+		}
+		const result = runQuery(
+			"max_over_time(http_requests_total[1y:1ms])",
+			{ startMs: DATA_END_MS, endMs: DATA_END_MS, stepMs: 0 },
+			counting,
+		)
+		expect(Result.isFailure(result) && result.failure.message).toMatch(/subquery resolution too fine/)
+		expect(reads).toBe(0)
+	})
+})
