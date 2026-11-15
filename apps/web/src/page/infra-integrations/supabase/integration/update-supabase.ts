@@ -16,6 +16,7 @@ import {
 	type SupabaseSwitchKind,
 	SyncSupabase,
 } from "./supabase"
+import { featureAcross } from "./supabase-features"
 
 type Env = ProviderEnv<SupabaseIntegrationStatus>
 type Return = ProviderReturn<SupabaseCardModel, SupabaseMessage>
@@ -65,6 +66,26 @@ const toggledSwitch = (
 				model: { ...model, pending: [...model.pending, { ref, kind, enabled, isSaved: false }] },
 				commands: [SetSupabaseSwitch[kind]({ ref, enabled })],
 			}
+
+/** One write per project, as its own switch sends; projects already writing are left as they are. */
+const toggledFeature = (model: SupabaseCardModel, env: Env, kind: SupabaseSwitchKind): Return => {
+	const status = Option.getOrNull(AsyncData.getData(env.status.data))
+	if (status === null || !status.connected) return { model }
+	const across = featureAcross(model.pending, status.projects, kind)
+	const enabled = !across.isChecked
+	return across.targets.length === 0
+		? { model }
+		: {
+				model: {
+					...model,
+					pending: [
+						...model.pending,
+						...Arr.map(across.targets, (ref) => ({ ref, kind, enabled, isSaved: false })),
+					],
+				},
+				commands: Arr.map(across.targets, (ref) => SetSupabaseSwitch[kind]({ ref, enabled })),
+			}
+}
 
 /** The toast title when a switch's write fails, by whether it turned the switch on. */
 const FAILED_TITLE = {
@@ -128,6 +149,7 @@ export const update = (model: SupabaseCardModel, message: SupabaseMessage, env: 
 			model: { ...model, metrics: Keyed.accept(model.metrics, key, result) },
 		}),
 		ToggledSwitch: ({ ref, kind, enabled }) => toggledSwitch(model, ref, kind, enabled),
+		ToggledFeature: ({ kind }) => toggledFeature(model, env, kind),
 		CompletedSwitch: ({ ref, kind, enabled, failure }) =>
 			completedSwitch(model, ref, kind, enabled, failure),
 	})

@@ -7,6 +7,7 @@ import {
 	GCP_METRICS_STATUS,
 	GCP_SCOPE_NAMES,
 	type GcpCapability,
+	gcpCollectLock,
 	gcpLogState,
 	gcpMetricsState,
 	gcpNothingSeen,
@@ -31,6 +32,9 @@ import { gcpMessage } from "../gcp-message"
 import { Message } from "../../../integrations/message"
 import type { Model } from "../../../integrations/model"
 import { gcpInfraHref, gcpLogsHref } from "./update-gcp"
+import { metricsAvailable } from "./update-gcp-configure"
+import { CAPABILITIES, CAPABILITY_IDS } from "./gcp-configure-copy"
+import { type FeatureNote, featureList } from "../../../kit/feature-list"
 import { gcpCommand } from "./view-gcp-parts"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
@@ -229,6 +233,41 @@ const connectionIssues = (
 	return []
 }
 
+/** Where a switched capability stands in Google Cloud, when the setup has not caught up with it. */
+const featureNote = (state: LogState | MetricsState): FeatureNote | undefined => {
+	if (state.kind === "off")
+		return state.stillSetUp ? { _tag: "Pending", text: "Still in Google Cloud" } : undefined
+	if (state.kind === "setup-pending") return { _tag: "Pending", text: "Not set up" }
+	if (state.kind === "setup-running") return { _tag: "Pending", text: "Setup running" }
+	return undefined
+}
+
+/** Logs and metrics as switches: a flip opens Edit data with it drafted, where it is saved and applied. */
+const connectionFeatures = (
+	h: H,
+	model: Model,
+	connector: V2GcpConnector,
+	log: LogState,
+	metrics: MetricsState,
+): Html =>
+	featureList(h, {
+		idPrefix: `gcp-feature-${connector.id}`,
+		bordered: false,
+		className: "border-t border-border-subtle",
+		rows: Arr.map(CAPABILITY_IDS, (capability) => {
+			const { spec, flag } = CAPABILITIES[capability]
+			const note = featureNote(capability === "logs" ? log : metrics)
+			return {
+				spec,
+				isChecked: connector[flag],
+				isDisabled:
+					!IS_ADMIN || gcpCollectLock(connector, capability, metricsAvailable(model)) !== null,
+				onToggle: Message.ToggledGcpFeature({ id: connector.id, capability }),
+				...(note !== undefined && { note }),
+			}
+		}),
+	})
+
 type Signal = Readonly<{ tone: Tone; text: Html | string }>
 
 /** A capability's state in a word or two, with when it last delivered. */
@@ -422,6 +461,7 @@ export const gcpConnection = (h: H, model: Model, connector: V2GcpConnector, tim
 				),
 				menu,
 			]),
+			connectionFeatures(h, model, connector, log, metrics),
 		])
 	return panel(h, { className: "@container" }, [
 		vstack(h, { gap: "3", className: "pt-3 pr-2 pb-4 pl-4" }, [
@@ -458,5 +498,6 @@ export const gcpConnection = (h: H, model: Model, connector: V2GcpConnector, tim
 				),
 			],
 		),
+		connectionFeatures(h, model, connector, log, metrics),
 	])
 }

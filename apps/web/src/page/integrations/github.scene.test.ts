@@ -151,6 +151,30 @@ describe("github card", () => {
 		expect(ciTracesShown(failed.model)).toBe(true)
 	})
 
+	test("the features list switches CI traces here and links pull request reviews to their repositories", () => {
+		const model = loaded()
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(role("switch", { name: "CI traces and logs" })).toHaveAttr("aria-checked", "true"),
+			expectView(role("link", { name: "Choose repositories" })).toHaveAttr(
+				"href",
+				"/code-review/settings",
+			),
+			expectView(text("0 of 1 repository")).toExist(),
+		)
+		const toggled = pageUpdate(model, Message.ToggledCiTraces())
+		expect(Arr.map(toggled.commands ?? [], ({ name, args }) => [name, args])).toEqual([
+			["SetGithubCiTraces", { enabled: false }],
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(toggled.model),
+			expectView(role("switch", { name: "CI traces and logs" })).toHaveAttr("aria-checked", "false"),
+			expectView(role("switch", { name: "CI traces and logs" })).toBeDisabled(),
+		)
+	})
+
 	test("picking another branch confirms first, then saves and polls the backfill", () => {
 		const model = loaded()
 		const picked = pageUpdate(model, Message.ClickedBranch({ repoId, branch: "release" }))

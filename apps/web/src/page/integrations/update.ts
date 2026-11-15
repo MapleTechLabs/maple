@@ -420,6 +420,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotGcpScopeFieldMessage: ({ field, message: child }) => Configure.gotScopeField(model, field, child),
 		SubmittedGcpCreate: () => Configure.submittedCreate(model),
 		ToggledGcpCollect: ({ capability }) => Configure.toggledCollect(model, capability),
+		ToggledGcpFeature: ({ id, capability }) => Configure.toggledFeature(model, id, capability),
 		ClickedGcpLogFilter: () => Configure.clickedLogFilter(model),
 		GotGcpFilterModeMessage: ({ message: child }) => Configure.gotFilterMode(model, context, child),
 		ClickedGcpForwardOutput: () => Configure.clickedForwardOutput(model, context),

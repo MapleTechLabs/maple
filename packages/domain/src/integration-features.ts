@@ -25,6 +25,82 @@ export interface IntegrationFeatureSpec<Id extends string = string> {
 const feature = <const Id extends string>(spec: IntegrationFeatureSpec<Id>) => spec
 
 export const INTEGRATION_FEATURES = {
+	supabase: [
+		feature({
+			id: "metrics",
+			title: "Metrics and Postgres health",
+			summary:
+				"Database, connection and resource metrics from each project's metrics endpoint, read every minute.",
+			signal: "metrics",
+			defaultEnabled: true,
+			countsTowardIngest: true,
+			apply: "instant",
+		}),
+		feature({
+			id: "logs",
+			title: "Logs, polled",
+			summary:
+				"Postgres, API, Auth, Storage, Realtime and Edge Function logs, read every minute through your grant.",
+			signal: "logs",
+			defaultEnabled: false,
+			countsTowardIngest: true,
+			apply: "instant",
+		}),
+		feature({
+			id: "logDrain",
+			title: "Log drain",
+			summary:
+				"Supabase pushes the same logs to Maple instead of polling. Needs a Pro plan; Supabase bills each drain.",
+			signal: "logs",
+			defaultEnabled: false,
+			countsTowardIngest: true,
+			apply: "provisions",
+		}),
+	],
+	gcp: [
+		feature({
+			id: "logs",
+			title: "Log forwarding",
+			summary:
+				"Request and managed-service logs, through a Log Router sink and Pub/Sub. Admin activity goes to the Security audit log.",
+			signal: "logs",
+			defaultEnabled: true,
+			countsTowardIngest: true,
+			apply: "setupUpdate",
+		}),
+		feature({
+			id: "metrics",
+			title: "Metrics and resources",
+			summary:
+				"Cloud Run, GKE, Compute Engine, Cloud SQL, Pub/Sub, Load Balancing and Cloud Functions. Read-only, every 5 minutes.",
+			signal: "metrics",
+			defaultEnabled: false,
+			countsTowardIngest: true,
+			apply: "setupUpdate",
+		}),
+	],
+	github: [
+		feature({
+			id: "ciTraces",
+			title: "CI traces and logs",
+			summary:
+				"Each finished GitHub Actions run becomes a trace under the github-actions service, with a span per job and step, and each job's log lines up to 5 MB.",
+			signal: "traces",
+			defaultEnabled: true,
+			countsTowardIngest: true,
+			apply: "instant",
+		}),
+		feature({
+			id: "prReview",
+			title: "Pull request reviews",
+			summary:
+				"Maple reviews pull requests on the repositories you pick, with your rules and model. Set per repository.",
+			signal: "actions",
+			defaultEnabled: false,
+			countsTowardIngest: false,
+			apply: "instant",
+		}),
+	],
 	vercel: [
 		feature({
 			id: "logs",
