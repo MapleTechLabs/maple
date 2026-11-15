@@ -138,7 +138,11 @@ export const spanProfileTab = (h: H, model: Pick<Model, "flamegraph" | "profile"
 			}),
 		onData: (profile) =>
 			profile === null
-				? emptyMessage(h, {}, ["No samples were linked to this span or the spans under it"])
+				? emptyMessage(h, {}, [
+						subtreeIsCut(model.span)
+							? `No samples on this span or the first ${formatNumber(PROFILE_SPAN_CAP)} spans under it, which is as many as one read covers`
+							: "No samples were linked to this span or the spans under it",
+					])
 				: spanProfile(h, model, profile),
 	})
 

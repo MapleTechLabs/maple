@@ -214,6 +214,25 @@ describe("span panel tab keys", () => {
 		expect(subtreeIsCut({ ...wide, children: wide.children.slice(1) })).toBe(false)
 	})
 
+	test("a cut subtree with no samples keeps the Profile tab and says how far the read went", () => {
+		const leaf: SpanNodeData = { ...span, children: [] }
+		const wide = init({
+			...input,
+			span: { ...span, children: Arr.makeBy(PROFILE_SPAN_CAP, () => leaf) },
+		}).model
+		const empty = update(
+			wide,
+			Message.CompletedFetchProfile({ key: wide.profile.key ?? "", result: Result.succeed(null) }),
+		).model
+		scene(
+			{ update, view },
+			given(empty),
+			indicatorMeasured(),
+			click(tab("Profile")),
+			expectView(text(/first 500 spans under it/)).toExist(),
+		)
+	})
+
 	test("a highlight left on a tab that went away falls back to the selected tab", () => {
 		const onProfile = update(
 			profiled(),
