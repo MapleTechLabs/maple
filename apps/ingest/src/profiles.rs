@@ -197,14 +197,6 @@ fn json_text_len(text: &str) -> usize {
         .sum()
 }
 
-/// Bytes a JSON map of `attributes` takes, escaping included.
-fn attributes_len(attributes: &Attributes<'_>) -> usize {
-    attributes
-        .iter()
-        .map(|(key, value)| json_text_len(key) + json_text_len(value) + 6)
-        .sum()
-}
-
 /// What a value costs once read: the bytes its string form takes inside a JSON
 /// string, escaping included, and the heap building it takes. Both are bounds,
 /// worked out from the wire form before anything is built.
@@ -473,23 +465,30 @@ impl<'a> Dictionary<'a> {
         meter: &mut Meter<'_>,
     ) -> Result<StampedResource<'a>, FlattenError> {
         let mut attributes = Attributes::new();
+        // Each entry's JSON length, carried beside it: a value is never rescanned to size the
+        // map, however many keys share it.
+        let mut lens: BTreeMap<&'a str, usize> = BTreeMap::new();
         for attribute in resource.map_or(&[][..], |resource| resource.attributes.as_slice()) {
-            meter.charge(NODE_BYTES + self.value_cost(attribute.value.as_ref()).heap)?;
-            attributes.insert(
-                Cow::Borrowed(self.key(attribute)),
-                self.value(attribute.value.as_ref()),
-            );
+            let cost = self.value_cost(attribute.value.as_ref());
+            meter.charge(2 * NODE_BYTES + cost.heap)?;
+            let key = self.key(attribute);
+            lens.insert(key, self.key_len(attribute) + cost.json_len + 6);
+            attributes.insert(Cow::Borrowed(key), self.value(attribute.value.as_ref()));
         }
         for key in stamps.reserved {
             attributes.remove(*key);
+            lens.remove(*key);
         }
-        meter.charge(NODE_BYTES * (stamps.defaults.len() + stamps.set.len()))?;
+        meter.charge(2 * NODE_BYTES * (stamps.defaults.len() + stamps.set.len()))?;
+        let stamped = |key: &str, value: &str| json_text_len(key) + json_text_len(value) + 6;
         for (key, value) in &stamps.defaults {
-            attributes
-                .entry(Cow::Borrowed(key.as_str()))
-                .or_insert(Cow::Borrowed(value.as_str()));
+            if !lens.contains_key(key.as_str()) {
+                lens.insert(key, stamped(key, value));
+                attributes.insert(Cow::Borrowed(key.as_str()), Cow::Borrowed(value.as_str()));
+            }
         }
         for (key, value) in &stamps.set {
+            lens.insert(key, stamped(key, value));
             attributes.insert(Cow::Borrowed(key.as_str()), Cow::Borrowed(value.as_str()));
         }
         let mut resource = StampedResource {
@@ -503,7 +502,7 @@ impl<'a> Dictionary<'a> {
             resource.environment(),
             resource.get("service.instance.id").unwrap_or(""),
         ];
-        resource.json_len = attributes_len(&resource.attributes)
+        resource.json_len = lens.values().sum::<usize>()
             + columns.into_iter().map(json_text_len).sum::<usize>();
         Ok(resource)
     }
@@ -939,7 +938,8 @@ impl<'a> Flattener<'a, '_> {
         let mut profile_attributes = Attributes::new();
         self.dictionary
             .indexed_attributes(&profile.attribute_indices, &mut profile_attributes);
-        let profile_attributes_len = attributes_len(&profile_attributes);
+        // Summed from the entries' worked-out lengths, never by rescanning their values.
+        let profile_attributes_len = profile_cost.json_len;
         let shared_len = ROW_FIXED_BYTES
             + resource.json_len
             + json_text_len(terms.sample_type)
@@ -1736,6 +1736,52 @@ mod tests {
             started.elapsed()
         );
         flattened
+    }
+
+    /// `keys` distinct keys whose values all name one long string-table entry.
+    fn shared_long_value(keys: usize) -> (ExportProfilesServiceRequest, i32) {
+        let mut request = decode(&cpu_request(json!([{ "stackIndex": 1, "values": ["1"] }])));
+        let dictionary = request.dictionary.as_mut().unwrap();
+        let long = i32::try_from(dictionary.string_table.len()).unwrap();
+        dictionary.string_table.push("v".repeat(1024 * 1024));
+        let resource = request.resource_profiles[0].resource.as_mut().unwrap();
+        resource.attributes.extend((0..keys).map(|at| KeyValue {
+            key: format!("key.{at}"),
+            value: Some(AnyValue {
+                value: Some(any_value::Value::StringValueStrindex(long)),
+            }),
+            ..Default::default()
+        }));
+        (request, long)
+    }
+
+    #[test]
+    fn sizes_resource_attributes_sharing_one_long_value_without_rescanning_it() {
+        let (request, _) = shared_long_value(100_000);
+        assert_eq!(flatten_quickly(&request).profile_count, 1);
+    }
+
+    #[test]
+    fn sizes_profile_attributes_sharing_one_long_value_without_rescanning_it() {
+        let (mut request, long) = shared_long_value(0);
+        let dictionary = request.dictionary.as_mut().unwrap();
+        let first_key = i32::try_from(dictionary.string_table.len()).unwrap();
+        dictionary
+            .string_table
+            .extend((0..100_000).map(|at| format!("key.{at}")));
+        let first_entry = i32::try_from(dictionary.attribute_table.len()).unwrap();
+        dictionary
+            .attribute_table
+            .extend((0..100_000).map(|at| KeyValueAndUnit {
+                key_strindex: first_key + at,
+                value: Some(AnyValue {
+                    value: Some(any_value::Value::StringValueStrindex(long)),
+                }),
+                ..Default::default()
+            }));
+        request.resource_profiles[0].scope_profiles[0].profiles[0].attribute_indices =
+            (first_entry..first_entry + 100_000).collect();
+        assert_eq!(flatten_quickly(&request).profile_count, 1);
     }
 
     #[test]
