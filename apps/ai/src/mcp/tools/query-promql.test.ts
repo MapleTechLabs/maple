@@ -220,6 +220,16 @@ describe("query_promql", () => {
 			])
 		}),
 	)
+
+	it.effect("suggests a sub-second step the tool accepts again", () =>
+		Effect.gen(function* () {
+			const many = Arr.makeBy(25, (i) => series(`svc-${i}`, [i]))
+			const { doc } = yield* run({ query: QUERY, ...WINDOW, step: "500ms" }, () =>
+				Effect.succeed({ resultType: "matrix" as const, result: many }),
+			)
+			expect(doc.next?.[0]?.args).toMatchObject({ step: "500ms" })
+		}),
+	)
 })
 
 describe("query_promql steps", () => {
