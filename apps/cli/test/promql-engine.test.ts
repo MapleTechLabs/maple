@@ -121,6 +121,13 @@ const options = { orgId: OrgId.make(ORG), maxSeries: 10_000 }
 let pushedCount = 0
 const decodeCatalog = decodeJsonEachRow(promqlCatalogRowSchema)
 
+/** The tenant scope of every compiled read; the warehouse refuses anything but single-tenant. */
+const scopes = new Set<string>()
+const sqlOf = (compiled: { readonly sql: string; readonly tenantScope: string }) => {
+	scopes.add(compiled.tenantScope)
+	return normalizeSqlForClickHouseClient(compiled.sql)
+}
+
 const sqlRun = (
 	db: Chdb,
 	catalog: ReadonlyArray<CatalogMetric>,
@@ -149,9 +156,7 @@ const sqlRun = (
 			buildSelectorQueries(request, catalog, { orgId: OrgId.make(ORG), maxSeries: 10_000 }),
 			(plan) => ({
 				plan,
-				rows: decodeRows(
-					db.query(normalizeSqlForClickHouseClient(Effect.runSync(plan.compiled).sql)),
-				),
+				rows: decodeRows(db.query(sqlOf(Effect.runSync(plan.compiled)))),
 			}),
 		)
 		data.set(selector, toSelectorData(request, results))
@@ -262,5 +267,9 @@ describeWithChdb("PromQL on the warehouse matches the reference", () => {
 	test("pushes most of the corpus down", () => {
 		// Each corpus query runs four cases; dozens of them have a pushable subtree.
 		expect(pushedCount).toBeGreaterThan(100)
+	})
+
+	test("every compiled read is single-tenant, as the warehouse requires", () => {
+		expect([...scopes]).toEqual(["single-tenant"])
 	})
 })
