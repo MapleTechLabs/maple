@@ -15,7 +15,11 @@ export interface QueryParams {
 	readonly endMs: number
 	readonly stepMs: number
 	readonly lookbackMs?: number
+	/** Instant (one sample per series) or range (a matrix). Default: instant when start equals end. */
+	readonly instant?: boolean
 }
+
+export const isInstant = (params: QueryParams): boolean => params.instant ?? params.startMs === params.endMs
 
 /** The evaluation timestamps of one (sub)expression: `start, start + step, ..., <= end`. */
 export interface TimeGrid {
@@ -177,7 +181,7 @@ const pushableInner = (
 export const planPushdowns = (expr: Expr, params: QueryParams): Map<Expr, PushdownCandidate> => {
 	const out = new Map<Expr, PushdownCandidate>()
 	const lookback = params.lookbackMs ?? LOOKBACK_MS
-	const instant = params.startMs === params.endMs || params.stepMs <= 0
+	const instant = isInstant(params) || params.stepMs <= 0
 	const steps = instant ? 1 : Math.floor((params.endMs - params.startMs) / params.stepMs) + 1
 	const offer = (
 		node: Expr,
