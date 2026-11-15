@@ -1615,6 +1615,30 @@ describe("CloudflareAnalyticsService", () => {
 			}).pipe(Effect.provide(makeLayer(testDb, captured, { graphqlQueries })))
 		})
 
+		it.effect(
+			"with Workers off, discovery lists zones but no Worker scripts or Hyperdrive configs",
+			() => {
+				const testDb = createTestDb(trackedDbs)
+				const captured: CapturedIngest[] = []
+				const requestUrls: string[] = []
+				return Effect.gen(function* () {
+					yield* TestClock.setTime(T0)
+					yield* seedConnection()
+					const service = yield* CloudflareAnalyticsService
+					yield* service.setFeatures(
+						ORG,
+						ADMIN,
+						new CloudflareFeatureSettingsRequest({ workersEnabled: false }),
+					)
+					yield* service.pollOrg(ORG)
+
+					assert.isTrue(Arr.some(requestUrls, Str.includes("/zones")))
+					assert.isFalse(Arr.some(requestUrls, Str.includes("/workers/scripts")))
+					assert.isFalse(Arr.some(requestUrls, Str.includes("/hyperdrive/configs")))
+				}).pipe(Effect.provide(makeLayer(testDb, captured, { requestUrls })))
+			},
+		)
+
 		it.effect("with every feature off the org is skipped without a call to Cloudflare", () => {
 			const testDb = createTestDb(trackedDbs)
 			const captured: CapturedIngest[] = []
