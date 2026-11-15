@@ -127,14 +127,34 @@ pub fn flatten<'a>(
     max_row_bytes: usize,
     reserve: &mut dyn FnMut(u64) -> bool,
 ) -> Result<Flattened, FlattenError> {
+    let mut dictionary = Dictionary::new(request.dictionary.as_ref());
+    // Escaped lengths and attribute costs, worked out once per request: a sample can
+    // name one attribute, and attributes one long string, any number of times.
+    let mut meter = Meter {
+        reserve,
+        held: 0,
+        spent: 0,
+    };
+    meter.charge(
+        dictionary.strings.len() * size_of::<usize>()
+            + dictionary.attributes.len() * size_of::<Option<Cost>>(),
+    )?;
+    let string_lens: Vec<usize> = dictionary
+        .strings
+        .iter()
+        .map(|text| json_text_len(text))
+        .collect();
+    dictionary.string_lens = &string_lens;
+    let attribute_costs: Vec<Option<Cost>> = dictionary
+        .attributes
+        .iter()
+        .map(|entry| dictionary.entry_cost(entry))
+        .collect();
+    dictionary.attribute_costs = &attribute_costs;
     let mut flattener = Flattener {
-        dictionary: Dictionary::new(request.dictionary.as_ref()),
+        dictionary,
         stacks: HashMap::new(),
-        meter: Meter {
-            reserve,
-            held: 0,
-            spent: 0,
-        },
+        meter,
         new_profile_id,
         max_row_bytes,
         rows: Vec::new(),
@@ -250,6 +270,10 @@ struct Dictionary<'a> {
     links: &'a [Link],
     attributes: &'a [KeyValueAndUnit],
     stacks: &'a [Stack],
+    /// Each string's length inside a JSON string, by string-table index.
+    string_lens: &'a [usize],
+    /// What reading each attribute-table entry costs; `None` for one never read.
+    attribute_costs: &'a [Option<Cost>],
 }
 
 fn at<T>(table: &[T], index: i32) -> Option<&T> {
@@ -285,6 +309,8 @@ impl<'a> Dictionary<'a> {
                 links: &[],
                 attributes: &[],
                 stacks: &[],
+                string_lens: &[],
+                attribute_costs: &[],
             };
         };
         Self {
@@ -295,11 +321,27 @@ impl<'a> Dictionary<'a> {
             links: &dictionary.link_table,
             attributes: &dictionary.attribute_table,
             stacks: &dictionary.stack_table,
+            string_lens: &[],
+            attribute_costs: &[],
         }
     }
 
     fn string(&self, index: i32) -> &'a str {
         at(self.strings, index).map_or("", String::as_str)
+    }
+
+    /// `json_text_len` of a string-table entry, looked up rather than scanned.
+    fn string_len(&self, index: i32) -> usize {
+        at(self.string_lens, index).copied().unwrap_or(0)
+    }
+
+    /// `json_text_len` of a key, looked up when it is a string-table index.
+    fn key_len(&self, attribute: &KeyValue) -> usize {
+        if attribute.key.is_empty() {
+            self.string_len(attribute.key_strindex)
+        } else {
+            json_text_len(&attribute.key)
+        }
     }
 
     /// A key spelled out, or named by string-table index as collectors send them.
@@ -357,9 +399,7 @@ impl<'a> Dictionary<'a> {
     fn scalar_len(&self, value: &AnyValue) -> usize {
         match value.value.as_ref() {
             Some(any_value::Value::StringValue(text)) => json_text_len(text),
-            Some(any_value::Value::StringValueStrindex(index)) => {
-                json_text_len(self.string(*index))
-            }
+            Some(any_value::Value::StringValueStrindex(index)) => self.string_len(*index),
             Some(any_value::Value::BoolValue(_)) => 5,
             Some(any_value::Value::IntValue(_)) => 20,
             // `f64` displays every digit: `f64::MAX` is 309 of them.
@@ -386,7 +426,7 @@ impl<'a> Dictionary<'a> {
                         .value
                         .as_ref()
                         .map_or((2, 1), |each| self.json_bound(each));
-                    let key = json_text_len(self.key(entry));
+                    let key = self.key_len(entry);
                     (len + key + 4 + each_len, nodes + each_nodes + 1)
                 })
             }
@@ -480,15 +520,28 @@ impl<'a> Dictionary<'a> {
         })
     }
 
-    /// What reading the attributes `indices` name costs, before they are read.
-    fn indexed_cost(&self, indices: &'a [i32]) -> Cost {
-        self.indexed_entries(indices)
-            .fold(Cost::default(), |cost, (key, entry)| {
-                let value = self.value_cost(entry.value.as_ref());
-                Cost {
-                    json_len: cost.json_len + json_text_len(key) + value.json_len + 6,
-                    heap: cost.heap + NODE_BYTES + value.heap,
-                }
+    /// What reading one attribute-table entry costs; `None` for one with no key,
+    /// which is never read.
+    fn entry_cost(&self, entry: &KeyValueAndUnit) -> Option<Cost> {
+        if self.string(entry.key_strindex).is_empty() {
+            return None;
+        }
+        let value = self.value_cost(entry.value.as_ref());
+        Some(Cost {
+            json_len: self.string_len(entry.key_strindex) + value.json_len + 6,
+            heap: NODE_BYTES + value.heap,
+        })
+    }
+
+    /// What reading the attributes `indices` name costs, before they are read: one
+    /// lookup per index, whatever the entries hold.
+    fn indexed_cost(&self, indices: &[i32]) -> Cost {
+        indices
+            .iter()
+            .filter_map(|index| at(self.attribute_costs, *index).copied().flatten())
+            .fold(Cost::default(), |cost, each| Cost {
+                json_len: cost.json_len.saturating_add(each.json_len),
+                heap: cost.heap.saturating_add(each.heap),
             })
     }
 
@@ -1638,6 +1691,63 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![&json!(given), &json!(given)]
         );
+    }
+
+    /// A sample naming attributes `refs` times, each entry keyed by one long string:
+    /// `entries` is how many attribute-table entries share that key.
+    fn repeated_long_key(entries: usize, refs: usize) -> ExportProfilesServiceRequest {
+        let mut request = decode(&cpu_request(json!([{ "stackIndex": 1, "values": ["1"] }])));
+        let dictionary = request.dictionary.as_mut().unwrap();
+        let key = i32::try_from(dictionary.string_table.len()).unwrap();
+        dictionary.string_table.push("k".repeat(1024 * 1024));
+        let first = i32::try_from(dictionary.attribute_table.len()).unwrap();
+        dictionary
+            .attribute_table
+            .extend((0..entries).map(|_| KeyValueAndUnit {
+                key_strindex: key,
+                value: Some(AnyValue {
+                    value: Some(any_value::Value::StringValueStrindex(key)),
+                }),
+                ..Default::default()
+            }));
+        let sample = &mut request.resource_profiles[0].scope_profiles[0].profiles[0].samples[0];
+        sample.attribute_indices = (0..refs)
+            .map(|at| first + i32::try_from(at % entries).unwrap())
+            .collect();
+        request
+    }
+
+    /// Flattens `request`, which must take nowhere near the seconds a rescan of its
+    /// long string per reference would: about 100 GB of text here.
+    fn flatten_quickly(request: &ExportProfilesServiceRequest) -> Flattened {
+        let started = std::time::Instant::now();
+        let flattened = flatten(
+            request,
+            &ResourceStamps::default(),
+            NOW_NANO,
+            &mut test_profile_id,
+            MAX_ROW_BYTES,
+            &mut |_| true,
+        )
+        .expect("the export flattens");
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "took {:?}",
+            started.elapsed()
+        );
+        flattened
+    }
+
+    #[test]
+    fn sizes_a_long_key_named_many_times_without_rescanning_it() {
+        let flattened = flatten_quickly(&repeated_long_key(1, 100_000));
+        assert_eq!(flattened.profile_count, 1);
+    }
+
+    #[test]
+    fn sizes_many_entries_sharing_one_long_string_without_rescanning_it() {
+        let flattened = flatten_quickly(&repeated_long_key(100_000, 100_000));
+        assert_eq!(flattened.profile_count, 1);
     }
 
     #[test]
