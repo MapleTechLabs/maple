@@ -31,23 +31,23 @@ const source = (fields: Record<string, unknown> = {}) =>
 		...fields,
 	})
 
-const run = (messages: ReadonlyArray<Message>, model = init(null)) =>
+const run = (messages: ReadonlyArray<Message>, model = init(null, true)) =>
 	Arr.reduce(messages, model, (current, message) => update(current, message).model)
 
 describe("source rules draft", () => {
 	test("a new draft allows every signal, so the payload clears the allow list", () => {
-		const outcome = rulesOutcome(init(null))
+		const outcome = rulesOutcome(init(null, true))
 		expect(outcome.valid).toBe(true)
 		expect(outcome.payload).toEqual({
 			allowed_signals: null,
 			rate_limit_rps: null,
 			resource_attributes: [],
 		})
-		expect(Arr.map(expiryChoicesOf(init(null)), (choice) => choice.value)).not.toContain("keep")
+		expect(Arr.map(expiryChoicesOf(init(null, true)), (choice) => choice.value)).not.toContain("keep")
 	})
 
 	test("an existing source seeds the draft and offers to keep its expiry", () => {
-		const draft = init(source())
+		const draft = init(source(), true)
 		expect(draft.expiry).toBe("keep")
 		expect(Arr.map(expiryChoicesOf(draft), (choice) => choice.value)).toContain("keep")
 		expect(rulesOutcome(draft).payload).toEqual({
