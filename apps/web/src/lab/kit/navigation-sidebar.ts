@@ -16,7 +16,6 @@ import {
 	sidebarMenuItem,
 	sidebarMenuSub,
 	sidebarMenuSubButton,
-	sidebarMenuSubItem,
 	sidebarSeparator,
 	type SidebarState,
 	sidebarWrapper,
@@ -114,20 +113,26 @@ export const sidebarFrame = <Message>(h: HtmlBuilder<Message>, options: SidebarF
 										sidebarMenuItem(h, undefined, [
 											menuButton("Hosts", "ServerIcon", false),
 											sidebarMenuSub(h, undefined, [
-												sidebarMenuSubItem(h, undefined, [
-													sidebarMenuSubButton(
-														h,
-														{ isActive: true, href: "#kubernetes" },
-														["Kubernetes"],
-													),
-												]),
-												sidebarMenuSubItem(h, undefined, [
-													sidebarMenuSubButton(
-														h,
-														{ isActive: false, href: "#railway" },
-														["Railway"],
-													),
-												]),
+												{
+													isActive: true,
+													children: [
+														sidebarMenuSubButton(
+															h,
+															{ isActive: true, href: "#kubernetes" },
+															["Kubernetes"],
+														),
+													],
+												},
+												{
+													isActive: false,
+													children: [
+														sidebarMenuSubButton(
+															h,
+															{ isActive: false, href: "#railway" },
+															["Railway"],
+														),
+													],
+												},
 											]),
 										]),
 									]),
