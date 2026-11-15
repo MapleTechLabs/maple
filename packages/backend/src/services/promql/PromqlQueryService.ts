@@ -13,6 +13,7 @@ import {
 	parse,
 	planRequests,
 	type QueryParams,
+	resolutionError,
 	type QueryResult,
 	type SelectorData,
 	type SelectorRequest,
@@ -32,7 +33,7 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 /** The query is not valid PromQL, or its parameters are out of range. Prometheus' `bad_data`. */
 export class PromqlBadQueryError extends Schema.TaggedError<PromqlBadQueryError>()(
 	"@maple/backend/promql/PromqlBadQueryError",
-	{ message: Schema.String, position: Schema.optional(Schema.Number) },
+	{ message: Schema.String, position: Schema.optionalKey(Schema.Number) },
 ) {}
 
 /** The query is valid but cannot be evaluated: limits, many-to-many matching. Prometheus' `execution`. */
@@ -48,6 +49,12 @@ export const MAX_STEPS = 11_000
 const MAX_SELECTORS = 20
 
 const WAREHOUSE_CONCURRENCY = 4
+
+/** Stored metrics one selector may read; `{__name__=~".+"}` would otherwise read them all. */
+const MAX_METRICS_PER_SELECTOR = 100
+
+/** Catalog rows read to resolve names; one more comes back when the org has more. */
+const CATALOG_LIMIT = 50_000
 
 export interface PromqlQuery extends QueryParams {
 	readonly query: string
@@ -94,7 +101,7 @@ const make = Effect.gen(function* () {
 		tenant: TenantContext,
 		window: { readonly startMs: number; readonly endMs: number },
 	) {
-		const compiled = CH.compile(catalogQuery(), {
+		const compiled = CH.compile(catalogQuery(CATALOG_LIMIT + 1), {
 			orgId: tenant.orgId,
 			startTime: formatWarehouseDateTime(window.startMs),
 			endTime: formatWarehouseDateTime(window.endMs),
@@ -103,6 +110,12 @@ const make = Effect.gen(function* () {
 			profile: "discovery",
 			context: "promqlCatalog",
 		})
+		if (rows.length > CATALOG_LIMIT) {
+			// A cut catalog would silently drop names; refuse instead.
+			return yield* new PromqlExecutionError({
+				message: `this organization has more than ${CATALOG_LIMIT} metrics in the range; shorten the range`,
+			})
+		}
 		return catalogFromRows(rows)
 	})
 
@@ -115,6 +128,12 @@ const make = Effect.gen(function* () {
 			orgId: tenant.orgId,
 			maxSeries: DEFAULT_LIMITS.maxSeries,
 		})
+		const metrics = Arr.reduce(plans, 0, (n, plan) => n + plan.promNames.size)
+		if (metrics > MAX_METRICS_PER_SELECTOR) {
+			return yield* new PromqlExecutionError({
+				message: `a selector matches ${metrics} metrics, at most ${MAX_METRICS_PER_SELECTOR}; narrow its __name__ matcher`,
+			})
+		}
 		yield* Effect.annotateCurrentSpan({
 			"maple.promql.metric": request.metricName ?? "",
 			"maple.promql.bucket_ms": request.widthMs,
@@ -145,6 +164,8 @@ const make = Effect.gen(function* () {
 			"maple.promql.step_ms": input.stepMs,
 		})
 		const expr = yield* validate(input)
+		const resolution = resolutionError(expr, input)
+		if (resolution !== undefined) return yield* new PromqlBadQueryError({ message: resolution })
 		const plan = planRequests(expr, input)
 		const entries = [...plan.entries()]
 		if (entries.length > MAX_SELECTORS) {
