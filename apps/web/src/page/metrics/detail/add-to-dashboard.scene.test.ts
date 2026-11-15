@@ -123,6 +123,11 @@ describe("add to dashboard", () => {
 		})
 	})
 
+	test("a percentile is in the metric's declared unit", () => {
+		const latency = { ...cpu, metricName: "http.server.duration", aggregation: "p95" }
+		expect(AddToDashboard.widgetOf(latency, "s", "q").display).toMatchObject({ unit: "duration_s" })
+	})
+
 	test("a count of a declared-unit metric falls back to the inferred unit", () => {
 		const lag = { ...cpu, metricName: "process.runtime.nodejs.eventloop.lag", aggregation: "count" }
 		expect(AddToDashboard.widgetOf(lag, "ms", "q").display).toMatchObject({ unit: "number" })

@@ -25,6 +25,7 @@ import {
 	breakdownGroupBy,
 	type CatalogSummary,
 	GROUP_BY_SERIES_LIMIT,
+	keepsMetricUnit,
 	queryLabel,
 	SERVICE_KEY,
 } from "./derive"
@@ -90,9 +91,11 @@ export const metricChart = (
 	h: H,
 	model: Model,
 	draft: MetricsQueryDraft,
-	unit: string,
+	declaredUnit: string,
 	timeZone: string,
 ): Html => {
+	// A count of a seconds metric is a number of observations, not a duration.
+	const unit = keepsMetricUnit(draft.aggregation) ? declaredUnit : ""
 	const label = queryLabel(draft)
 	const capped = isCapped(model, draft)
 	return panel(h, {}, [

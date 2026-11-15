@@ -1,5 +1,6 @@
 import { formatWarehouseDateTime, resolveThroughput } from "@maple/query-engine"
 import {
+	METRICS_PERCENTILES,
 	QueryEngineExecuteRequest,
 	type MetricsMetric,
 	type QueryEngineExecuteResponse,
@@ -291,6 +292,7 @@ const metricsMetrics = new Set<MetricsMetric>([
 	"latest",
 	"rate",
 	"increase",
+	...Rec.keys(METRICS_PERCENTILES),
 ])
 const metricsBreakdownMetrics = new Set<"avg" | "sum" | "count">(["avg", "sum", "count"])
 
@@ -387,6 +389,9 @@ function buildTimeseriesQuerySpec(data: CustomChartTimeSeriesDecoded): QuerySpec
 		(data.filters.metricType === "histogram" || data.filters.metricType === "exponential_histogram")
 	) {
 		return "Histogram metrics do not support latest; use avg, sum, min, max or count"
+	}
+	if (data.filters.metricType === "exponential_histogram" && data.metric in METRICS_PERCENTILES) {
+		return "Percentiles are not available for exponential histograms yet; use avg, sum, min, max or count"
 	}
 	if (data.groupBy && !["service", "attribute", "none"].includes(data.groupBy)) {
 		return `Unsupported metrics groupBy: ${data.groupBy}`

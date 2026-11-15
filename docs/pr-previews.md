@@ -86,8 +86,9 @@ and fails the job if a Postgres- or warehouse-backed route returns anything but 
    only, and no production role trusts that subject.
 4. **GitHub environment `preview-tinybird`** (deploys from `main` only) with its own
    `INFISICAL_MACHINE_IDENTITY_ID`: an identity bound to
-   `repo:MapleTechLabs/maple:environment:preview-tinybird` that reads `TINYBIRD_HOST`,
-   `TINYBIRD_TOKEN` and `PREVIEW_HANDOFF_KEY` from `dev`.
+   `repo:MapleTechLabs/maple:environment:preview-tinybird` that reads `PREVIEW_HANDOFF_KEY` from
+   `dev`, plus the variable `TINYBIRD_PARENT_HOST` and the secret `TINYBIRD_PARENT_TOKEN` (the
+   parent workspace admin token). `maintenance` carries the same two for the branch sweep.
 5. A dedicated Infisical environment for previews without the parent Tinybird credentials, the
    repo variable `PREVIEW_INFISICAL_ENV_SLUG` pointing at it, and the `pr-preview` identity's
    role narrowed to that environment alone. The role is what counts: a PR can edit its workflow

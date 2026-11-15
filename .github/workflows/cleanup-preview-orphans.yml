@@ -63,11 +63,27 @@ jobs:
               id: build-deps
               run: bun run alchemy:build-deps
 
+            # The parent workspace token is a `maintenance` environment secret, not an Infisical
+            # value: no Infisical environment, dev included, holds production's admin token.
             - name: Sweep orphaned Tinybird PR branches
-              if: ${{ !cancelled() && env.TINYBIRD_TOKEN != '' && steps.install-tinybird-cli.outcome == 'success' }}
+              if: ${{ !cancelled() && steps.install-tinybird-cli.outcome == 'success' }}
               env:
                   GITHUB_TOKEN: ${{ github.token }}
-              run: bun scripts/tinybird-pr-branch.ts sweep
+                  PARENT_HOST: ${{ vars.TINYBIRD_PARENT_HOST }}
+                  PARENT_TOKEN: ${{ secrets.TINYBIRD_PARENT_TOKEN }}
+              run: |
+                  if [ -z "$PARENT_HOST" ] || [ -z "$PARENT_TOKEN" ]; then
+                      echo "::warning::TINYBIRD_PARENT_HOST / TINYBIRD_PARENT_TOKEN unset on the maintenance environment; skipping the Tinybird sweep"
+                      exit 0
+                  fi
+                  TINYBIRD_HOST="$PARENT_HOST" TINYBIRD_TOKEN="$PARENT_TOKEN" bun scripts/tinybird-pr-branch.ts sweep
+
+            # The stack config requires both keys, but `alchemy destroy` touches nothing in
+            # Tinybird (the branch sweep above removes branches), and dev no longer carries them.
+            - name: Stand-in Tinybird env for the stage teardown
+              run: |
+                  [ -n "${TINYBIRD_HOST:-}" ] || echo "TINYBIRD_HOST=https://unused.invalid" >> "$GITHUB_ENV"
+                  [ -n "${TINYBIRD_TOKEN:-}" ] || echo "TINYBIRD_TOKEN=unused" >> "$GITHUB_ENV"
 
             # Whole closed-PR stages (AWS included) via `alchemy destroy`, then their Neon
             # branch and retained R2 bucket. Before the Worker/Hyperdrive sweeps: alchemy
