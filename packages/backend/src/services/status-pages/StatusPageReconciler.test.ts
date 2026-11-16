@@ -549,4 +549,34 @@ describe("StatusPageReconciler.advanceMaintenance", () => {
 				}),
 			),
 	)
+
+	it.effect("starts maintenance with auto-complete off but leaves it in progress past its end", () =>
+		withReconciler(({ testDb, reconciler }) =>
+			Effect.gen(function* () {
+				const pageId = newPageId()
+				yield* seedPage(testDb, { id: pageId, slug: "acme-manual-maintenance" })
+				const manual = SecureRandom.uuidV4Unsafe()
+				yield* seedIncident(testDb, {
+					id: manual,
+					pageId,
+					title: "Index rebuild",
+					kind: "maintenance",
+					status: "scheduled",
+					startedAt: NOW - 3 * 3_600_000,
+					scheduledStart: NOW - 2 * 3_600_000,
+					scheduledEnd: NOW - 3_600_000,
+					autoComplete: false,
+				})
+
+				assert.strictEqual(yield* reconciler.advanceMaintenance, 1)
+				assert.deepStrictEqual(yield* statusOf(testDb, pageId, manual), ["in_progress", false])
+				yield* TestClock.adjust("1 hour")
+				assert.strictEqual(yield* reconciler.advanceMaintenance, 0)
+				assert.deepStrictEqual(
+					Arr.map(yield* updatesOf(testDb, manual), (u) => u.status),
+					["scheduled", "in_progress"],
+				)
+			}),
+		),
+	)
 })

@@ -49,6 +49,7 @@ export const permissions = {
 	"security_audit:run": { min: "admin", action: "configure and run code security audits" },
 	"audit_log:read": { min: "admin", action: "read the audit log" },
 	"llm_keys:manage": { min: "admin", action: "manage the organization's model provider keys" },
+	"sso:manage": { min: "admin", action: "manage single sign-on and SCIM provisioning" },
 	"mcp_connections:view_all": { min: "admin", action: "see every member's MCP connections" },
 } as const satisfies Record<string, { readonly min: Role; readonly action: string }>
 

@@ -927,7 +927,8 @@ const securityWindow = (payload: SecurityExposureRequest | SecurityRuntimesReque
 export const scannerSignatures = defineQuery({
 	id: "scannerSignatures",
 	profile: "aggregation",
-	cache: timeRangeCache,
+	// v2: rows carry `inPath`.
+	cache: makeTimeRangeCachePolicy({ version: 2 }),
 	compile: (payload: SecurityExposureRequest, orgId: OrgId) =>
 		CH.compile(CH.scannerSignaturesQuery(), securityWindow(payload, orgId)),
 })

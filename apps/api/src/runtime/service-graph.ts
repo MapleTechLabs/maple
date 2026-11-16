@@ -94,6 +94,7 @@ import { CostBudgetsService } from "@maple/backend/services/cost/CostBudgetsServ
 import { PlanetScaleCostSourceService } from "@maple/backend/services/cost/PlanetScaleCostSourceService"
 import { VercelCostSourceService } from "@maple/backend/services/cost/VercelCostSourceService"
 import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRouterKeyService"
+import { EnterpriseSsoService } from "@maple/backend/services/org/enterprise-sso/EnterpriseSsoService"
 import { ServiceMapWorldService } from "@maple/backend/services/service-map/ServiceMapWorldService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
@@ -209,7 +210,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	StatusPagesService.layer,
 	// Custom domains: Cloudflare for SaaS hostnames, unavailable where its zone is not configured.
 	StatusPageCustomDomainsService.layer,
-	// The `statusPages` rollout gate on the status page routes.
+	// Rollout gates on the data sources and cloud cost routes.
 	OrganizationFeatureFlagsService.layer,
 	// Read-only: previews of unsaved pages.
 	StatusPageSnapshotBuilder.layer,
@@ -239,6 +240,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	AwsConnectionService.layer,
 	AwsIngestService.layer,
 	OrgOpenRouterKeyService.layer,
+	EnterpriseSsoService.layer,
 	OpenRouterCostConnectionService.layer,
 	CloudflareCostConnectionService.layer,
 	AnthropicCostConnectionService.layer,

@@ -94,8 +94,12 @@ export interface CatchAllService {
  * its index page for `/.env` too, so their answered probes are a warning, not an exposure.
  */
 export const catchAllServices = (exposure: Exposure): ReadonlyArray<CatchAllService> => {
-	// Critical paths only: a WordPress site answers its own WordPress paths for real.
-	const probes = Arr.filter(exposure.signatures, (row) => isCriticalSignature(row.signature))
+	// Critical paths only: a WordPress site answers its own WordPress paths for real. A probe only in
+	// the query cannot be answered, so it would only dilute the share.
+	const probes = Arr.filter(
+		exposure.signatures,
+		(row) => isCriticalSignature(row.signature) && row.inPath > 0,
+	)
 	return Arr.flatMap([...new Set(Arr.map(probes, (row) => row.service))], (service) => {
 		const own = Arr.filter(probes, (row) => row.service === service)
 		const probed = distinct(Arr.map(own, (row) => row.signature))

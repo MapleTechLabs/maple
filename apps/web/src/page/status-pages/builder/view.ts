@@ -25,6 +25,7 @@ import { publicAddress, publicUrl, STATUS_PAGE_BASE_URL, statusPagesHref } from 
 import { textField } from "../shared/fields"
 import { APPEARANCES, presetCards } from "../shared/look"
 import { monitorStatusOf } from "../shared/derive"
+import { orNull } from "../shared/form"
 import { checkedRows } from "../shared/picker"
 import { pickerView } from "../shared/picker-view"
 import { daysOf, previewDocument, previewFrame, previewTheme } from "../shared/preview"
@@ -182,7 +183,7 @@ const draftDocument = (model: Model): string => {
 			id: draftComponentId(index),
 			name: Str.trim(row.name) === "" ? "Untitled component" : Str.trim(row.name),
 			description: null,
-			group: Str.trim(row.group) === "" ? null : Str.trim(row.group),
+			group: orNull(row.group),
 			monitorStatus: monitorStatusOf(monitors, row.monitorId),
 			manualStatus: row.monitorId === null ? row.manualStatus : null,
 			showUptime: true,
@@ -196,7 +197,6 @@ const draftDocument = (model: Model): string => {
 		snapshot,
 		nowMs,
 		isSelectable: false,
-		selectedIds: [],
 		publicUrl: isSlug(model.slug) ? publicUrl(STATUS_PAGE_BASE_URL, model.slug) : null,
 	})
 }
