@@ -941,9 +941,23 @@ export const refreshFindings = (
 			const present = new Set(Arr.map(found, (finding) => finding.findingId))
 			return { found, missing: Arr.filter(ids, (id) => !present.has(id)) }
 		}),
-		// A refresh that fails changes nothing; the next one tries the same rows again.
-		Effect.catchTag("@maple/backend/cloud-security/AwsSecurityReadError", () =>
-			Effect.succeed({ found: [], missing: [] }),
+		// A refresh that fails changes nothing; the next one tries the same rows again. It still says why.
+		Effect.catchTag("@maple/backend/cloud-security/AwsSecurityReadError", (error) =>
+			Effect.logWarning("AWS security refresh by id failed").pipe(
+				Effect.annotateLogs({
+					source,
+					region: target.region,
+					kind: error.kind,
+					error: error.message,
+				}),
+				Effect.andThen(
+					Effect.annotateCurrentSpan({
+						"error.type": error.kind,
+						"maple.cloud_security.refresh_error": error.message,
+					}),
+				),
+				Effect.as({ found: [], missing: [] }),
+			),
 		),
 		Effect.withSpan("AwsSecurity.refreshFindings", {
 			attributes: { "maple.aws.region": target.region, "maple.cloud_security.source": source },
