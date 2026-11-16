@@ -3,6 +3,7 @@ import {
 	AI_CREDITS_FEATURE_ID,
 	AI_CREDITS_MARKUP_PERCENT,
 	BILLING_SUB_ORGS_FEATURE_ID,
+	ENTERPRISE_SSO_FEATURE_ID,
 	OPENROUTER_BYOK_ADDON_ID,
 	OPENROUTER_BYOK_FEATURE_ID,
 	UPTIME_MONITORS_FEATURE_ID,
@@ -109,6 +110,13 @@ export const openRouterByok = feature({
 export const billingSubOrgs = feature({
 	id: BILLING_SUB_ORGS_FEATURE_ID,
 	name: "Billing for sub-organizations",
+	type: "boolean",
+})
+
+// SSO (SAML/OIDC) and SCIM provisioning. Enterprise is sales-led: granted per customer in Autumn.
+export const enterpriseSso = feature({
+	id: ENTERPRISE_SSO_FEATURE_ID,
+	name: "Enterprise SSO and SCIM",
 	type: "boolean",
 })
 

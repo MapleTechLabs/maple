@@ -49,6 +49,9 @@ export const OPENROUTER_BYOK_FEATURE_ID = "openrouter_byok"
  */
 export const BILLING_SUB_ORGS_FEATURE_ID = "billing_sub_orgs"
 
+/** Enterprise SSO (SAML/OIDC) and SCIM provisioning. Granted by hand on Enterprise plans in Autumn. */
+export const ENTERPRISE_SSO_FEATURE_ID = "enterprise_sso"
+
 /** AI usage in dollars: one credit is one dollar. Chat, triage, reviews and security audits draw on it. */
 export const AI_CREDITS_FEATURE_ID = "ai_credits"
 

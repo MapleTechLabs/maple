@@ -1,0 +1,936 @@
+import { customerHasFlag, ENTERPRISE_SSO_FEATURE_ID } from "@maple/domain/billing"
+import {
+	EnterpriseSsoConflictError,
+	EnterpriseSsoDocument,
+	EnterpriseSsoInvalidError,
+	EnterpriseSsoNotEntitledError,
+	EnterpriseSsoNotFoundError,
+	EnterpriseSsoUnavailableError,
+	IsoDateTimeString,
+	ScimDirectoryDocument,
+	ScimGroupDocument,
+	ScimRoleMappingDocument,
+	ScimTokenIssued,
+	SSO_CHALLENGE_RECORD_PREFIX,
+	SsoBypassUserDocument,
+	SsoConnectionDocument,
+	SsoDomainDocument,
+	SsoDomainName,
+	SsoMappedRole,
+	SsoProvider,
+	ssoProtocolOf,
+	type OrgId,
+	type SsoConnectionRequest,
+	UserId,
+} from "@maple/domain/http"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import {
+	OrgDirectoryGroups,
+	OrgSsoConnections,
+	OrgSsoDomains,
+	type OrgSsoConnectionRow,
+	type OrgSsoDomainRow,
+} from "@maple/db/tables"
+import { EdgeCacheService } from "@maple/cache"
+import { Array as Arr, Clock, Context, Effect, Layer, Option, Order, Schema, String as Str } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
+import * as Hex from "effect/encoding/Hex"
+import { Database } from "@maple/backend/platform/DatabaseLive"
+import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
+import type { ClerkRequestError } from "@maple/backend/services/auth/clerk-request"
+import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
+import { ensureOk, readCustomerCached } from "@maple/backend/services/billing/autumn-client"
+import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
+import {
+	ClerkSsoGateway,
+	type ClerkSsoConnection,
+	type ClerkSsoConnectionInput,
+	type ClerkSsoDirectory,
+} from "./ClerkSsoGateway"
+import { DnsTxtResolver } from "./DnsTxtResolver"
+
+type Entitlement = "entitled" | "not_entitled" | "unknown"
+
+export type SsoWriteError =
+	| EnterpriseSsoUnavailableError
+	| EnterpriseSsoNotEntitledError
+	| EnterpriseSsoInvalidError
+	| EnterpriseSsoConflictError
+	| EnterpriseSsoNotFoundError
+
+const decodeIso = Schema.decodeUnknownSync(IsoDateTimeString)
+const iso = (ms: number) => decodeIso(new Date(ms).toISOString())
+const isDomainName = Schema.is(SsoDomainName)
+const isMappedRole = Schema.is(SsoMappedRole)
+const isProvider = Schema.is(SsoProvider)
+const decodeUserId = Schema.decodeSync(UserId)
+const byDomain = Order.mapInput(Str.Order, (d: SsoDomainDocument) => d.domain)
+const byGroupName = Order.mapInput(Str.Order, (g: ScimGroupDocument) => g.displayName)
+
+const toPersistenceError = makePersistenceErrorMapper(
+	EnterpriseSsoUnavailableError,
+	"SSO settings persistence failure",
+)
+
+/** Lower-cased, trimmed, no trailing dot, so `Acme.com.` and `acme.com` are one domain. */
+export const normalizeDomain = (raw: string): string => Str.replace(/\.$/, "")(Str.toLowerCase(Str.trim(raw)))
+
+export const challengeRecordName = (domain: string) => `${SSO_CHALLENGE_RECORD_PREFIX}.${domain}`
+
+/** Clerk's typed failure as what the settings page can act on; Clerk's 4xx text is user-facing. */
+const fromClerk = (error: ClerkRequestError): SsoWriteError => {
+	switch (error.status) {
+		case 400:
+		case 422:
+			return new EnterpriseSsoInvalidError({ message: error.message })
+		case 409:
+			return new EnterpriseSsoConflictError({ message: error.message })
+		case 404:
+			return new EnterpriseSsoNotFoundError({ message: error.message })
+		default:
+			return new EnterpriseSsoUnavailableError({ message: `${error.operation}: ${error.message}` })
+	}
+}
+
+const unavailable = (error: ClerkRequestError) =>
+	new EnterpriseSsoUnavailableError({ message: `${error.operation}: ${error.message}` })
+
+/** Okta and Entra get Clerk's guided SCIM flavour; everything else pushes as a custom SCIM 2.0 client. */
+const directoryProviderFor = (provider: string): "okta" | "entra" | "custom" =>
+	provider === "saml_okta" ? "okta" : provider === "saml_microsoft" ? "entra" : "custom"
+
+export interface DirectoryGroupEvent {
+	readonly directoryId: string
+	readonly groupId: string
+	readonly displayName: string
+	readonly updatedAt: number
+	readonly deleted: boolean
+}
+
+export interface EnterpriseSsoServiceApi {
+	readonly get: (orgId: OrgId) => Effect.Effect<EnterpriseSsoDocument, EnterpriseSsoUnavailableError>
+	readonly addDomain: (
+		orgId: OrgId,
+		userId: UserId,
+		domain: string,
+	) => Effect.Effect<EnterpriseSsoDocument, SsoWriteError>
+	readonly verifyDomain: (
+		orgId: OrgId,
+		domain: string,
+	) => Effect.Effect<EnterpriseSsoDocument, SsoWriteError>
+	readonly removeDomain: (
+		orgId: OrgId,
+		domain: string,
+	) => Effect.Effect<EnterpriseSsoDocument, SsoWriteError>
+	readonly createConnection: (
+		orgId: OrgId,
+		userId: UserId,
+		request: SsoConnectionRequest,
+	) => Effect.Effect<EnterpriseSsoDocument, SsoWriteError>
+	readonly updateConnection: (
+		orgId: OrgId,
+		request: SsoConnectionRequest,
+	) => Effect.Effect<EnterpriseSsoDocument, SsoWriteError>
+	readonly setEnforcement: (
+		orgId: OrgId,
+		enforced: boolean,
+	) => Effect.Effect<EnterpriseSsoDocument, SsoWriteError>
+	readonly deleteConnection: (orgId: OrgId) => Effect.Effect<EnterpriseSsoDocument, SsoWriteError>
+	readonly createDirectory: (orgId: OrgId) => Effect.Effect<ScimTokenIssued, SsoWriteError>
+	readonly rotateDirectoryToken: (orgId: OrgId) => Effect.Effect<ScimTokenIssued, SsoWriteError>
+	readonly setDirectoryState: (
+		orgId: OrgId,
+		paused: boolean,
+	) => Effect.Effect<EnterpriseSsoDocument, SsoWriteError>
+	readonly deleteDirectory: (orgId: OrgId) => Effect.Effect<EnterpriseSsoDocument, SsoWriteError>
+	readonly setRoleMappings: (
+		orgId: OrgId,
+		mappings: ReadonlyArray<{ readonly groupId: string; readonly role: SsoMappedRole }>,
+	) => Effect.Effect<EnterpriseSsoDocument, SsoWriteError>
+	readonly addBypassUser: (
+		orgId: OrgId,
+		userId: UserId,
+	) => Effect.Effect<EnterpriseSsoDocument, SsoWriteError>
+	readonly removeBypassUser: (
+		orgId: OrgId,
+		userId: UserId,
+	) => Effect.Effect<EnterpriseSsoDocument, SsoWriteError>
+	/**
+	 * Applies a `directoryGroup.*` webhook. `not_here` when no org in this region owns the directory:
+	 * each region receives every event and only the home region holds the row.
+	 */
+	readonly applyDirectoryGroup: (
+		event: DirectoryGroupEvent,
+	) => Effect.Effect<"applied" | "not_here", EnterpriseSsoUnavailableError>
+}
+
+export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, EnterpriseSsoServiceApi>()(
+	"@maple/backend/services/org/enterprise-sso/EnterpriseSsoService",
+	{
+		make: Effect.gen(function* () {
+			const database = yield* Database
+			const edgeCache = yield* EdgeCacheService
+			const autumn = yield* AutumnClient
+			const billingCustomers = yield* BillingCustomerResolver
+			const clerk = yield* ClerkSsoGateway
+			const dns = yield* DnsTxtResolver
+			const dbExecute = makeDbExecute(database, "EnterpriseSsoService", toPersistenceError)
+
+			// Billing that is not configured (self-hosted, local dev) sells nothing: everything is on.
+			const entitlement = (orgId: OrgId): Effect.Effect<Entitlement> =>
+				billingCustomers.customerFor(orgId).pipe(
+					Effect.flatMap((customerId) =>
+						readCustomerCached(
+							edgeCache,
+							customerId,
+							autumn.getOrCreateCustomer(customerId, { expand: ["subscriptions.plan"] }),
+						),
+					),
+					Effect.flatMap(({ result }) => ensureOk(result)),
+					Effect.map((customer): Entitlement =>
+						customerHasFlag(customer, ENTERPRISE_SSO_FEATURE_ID) ? "entitled" : "not_entitled",
+					),
+					Effect.catchTags({
+						"@maple/http/errors/BillingNotConfiguredError": () =>
+							Effect.succeed<Entitlement>("entitled"),
+						"@maple/http/errors/BillingUpstreamError": (error) =>
+							Effect.logWarning("Could not read the enterprise SSO entitlement").pipe(
+								Effect.annotateLogs({ orgId, error: error.message }),
+								Effect.as<Entitlement>("unknown"),
+							),
+						"@maple/http/errors/BillingAccountPersistenceError": (error) =>
+							Effect.logWarning("Could not read the enterprise SSO entitlement").pipe(
+								Effect.annotateLogs({ orgId, error: error.message }),
+								Effect.as<Entitlement>("unknown"),
+							),
+					}),
+				)
+
+			/** Every write starts here: Clerk mode, and the org holds `enterprise_sso`. */
+			const requireEntitled = Effect.fn("EnterpriseSsoService.requireEntitled")(function* (
+				orgId: OrgId,
+			) {
+				if (!clerk.available) {
+					return yield* new EnterpriseSsoInvalidError({
+						message:
+							"Single sign-on needs Maple's hosted sign-in; this deployment runs without it.",
+					})
+				}
+				const state = yield* entitlement(orgId)
+				if (state === "not_entitled") {
+					return yield* new EnterpriseSsoNotEntitledError({
+						message:
+							"SSO and SCIM provisioning are part of the Enterprise plan. Contact sales to enable them.",
+					})
+				}
+				if (state === "unknown") {
+					return yield* new EnterpriseSsoUnavailableError({
+						message: "Could not confirm the plan with billing.",
+					})
+				}
+			})
+
+			const loadDomains = (orgId: OrgId) =>
+				dbExecute((db) =>
+					db.run(
+						PG.from(OrgSsoDomains)
+							.select()
+							.where(($) => [$.orgId.eq(orgId)]),
+					),
+				)
+
+			const loadConnectionRow = (orgId: OrgId) =>
+				dbExecute((db) =>
+					db.run(
+						PG.from(OrgSsoConnections)
+							.select()
+							.where(($) => [$.orgId.eq(orgId)])
+							.limit(1),
+					),
+				).pipe(Effect.map((rows) => Option.fromUndefinedOr(rows[0])))
+
+			const requireConnectionRow = (orgId: OrgId) =>
+				loadConnectionRow(orgId).pipe(
+					Effect.flatMap(
+						Option.match({
+							onNone: () =>
+								Effect.fail(
+									new EnterpriseSsoNotFoundError({
+										message: "Connect an identity provider first.",
+									}),
+								),
+							onSome: Effect.succeed,
+						}),
+					),
+				)
+
+			const requireDirectoryId = (row: OrgSsoConnectionRow) =>
+				row.clerkDirectoryId === null
+					? Effect.fail(
+							new EnterpriseSsoNotFoundError({ message: "Set up SCIM provisioning first." }),
+						)
+					: Effect.succeed(row.clerkDirectoryId)
+
+			const toDomainDocument = (row: OrgSsoDomainRow) =>
+				new SsoDomainDocument({
+					domain: row.domain,
+					status: row.status,
+					recordName: challengeRecordName(row.domain),
+					recordValue: row.challenge,
+					verifiedAt: row.verifiedAt === null ? null : iso(row.verifiedAt),
+				})
+
+			const toConnectionDocument = (c: ClerkSsoConnection) => {
+				const provider = isProvider(c.provider) ? c.provider : "saml_custom"
+				return new SsoConnectionDocument({
+					name: c.name,
+					provider,
+					protocol: ssoProtocolOf(provider),
+					domains: c.domains,
+					enforced: c.active,
+					acsUrl: c.saml?.acsUrl ?? null,
+					spEntityId: c.saml?.spEntityId ?? null,
+					spMetadataUrl: c.saml?.spMetadataUrl ?? null,
+					idpMetadataUrl: c.saml?.idpMetadataUrl ?? null,
+					idpSsoUrl: c.saml?.idpSsoUrl ?? null,
+					idpEntityId: c.saml?.idpEntityId ?? null,
+					idpCertificateExpiresAt:
+						c.saml?.certificateExpiresAt === null || c.saml?.certificateExpiresAt === undefined
+							? null
+							: iso(c.saml.certificateExpiresAt),
+					oidcDiscoveryUrl: c.oidc?.discoveryUrl ?? null,
+					oidcClientId: c.oidc?.clientId ?? null,
+					createdAt: iso(c.createdAt),
+				})
+			}
+
+			const toDirectoryDocument = (d: ClerkSsoDirectory) =>
+				new ScimDirectoryDocument({
+					endpointUrl: d.endpoint_url,
+					enabled: d.enabled,
+					paused: d.paused,
+					createdAt: iso(d.created_at),
+				})
+
+			const get = Effect.fn("EnterpriseSsoService.get")(function* (orgId: OrgId) {
+				yield* Effect.annotateCurrentSpan({ orgId })
+				const [domains, row, entitled] = yield* Effect.all(
+					[loadDomains(orgId), loadConnectionRow(orgId), entitlement(orgId)],
+					{ concurrency: "unbounded" },
+				)
+				const empty = {
+					connection: null,
+					directory: null,
+					roleMappings: [],
+					groups: [],
+					bypassUsers: [],
+				}
+				const clerkSide = Option.isNone(row)
+					? Effect.succeed(empty)
+					: Effect.gen(function* () {
+							const { clerkConnectionId, clerkDirectoryId } = row.value
+							const [connection, directory, mappings, bypass, groups] = yield* Effect.all(
+								[
+									clerk.getConnection(clerkConnectionId),
+									clerkDirectoryId === null
+										? Effect.succeed(null)
+										: clerk.getDirectory(clerkDirectoryId),
+									clerkDirectoryId === null
+										? Effect.succeed([])
+										: clerk.listRoleMappings(clerkDirectoryId),
+									clerk.listBypassUsers(clerkConnectionId),
+									clerkDirectoryId === null
+										? Effect.succeed([])
+										: dbExecute((db) =>
+												db.run(
+													PG.from(OrgDirectoryGroups)
+														.select()
+														.where(($) => [
+															$.orgId.eq(orgId),
+															$.directoryId.eq(clerkDirectoryId),
+														]),
+												),
+											),
+								],
+								{ concurrency: "unbounded" },
+							).pipe(
+								Effect.catchTag("@maple/backend/services/auth/ClerkRequestError", (e) =>
+									Effect.fail(unavailable(e)),
+								),
+							)
+							const names = new Map(Arr.map(groups, (g) => [g.groupId, g.displayName] as const))
+							return {
+								connection: toConnectionDocument(connection),
+								directory: directory === null ? null : toDirectoryDocument(directory),
+								roleMappings: Arr.flatMap(mappings, (m) =>
+									isMappedRole(m.roleKey)
+										? [
+												new ScimRoleMappingDocument({
+													groupId: m.groupId,
+													groupName: m.groupName ?? names.get(m.groupId) ?? null,
+													role: m.roleKey,
+												}),
+											]
+										: [],
+								),
+								groups: Arr.sort(
+									Arr.map(
+										groups,
+										(g) =>
+											new ScimGroupDocument({
+												groupId: g.groupId,
+												displayName: g.displayName,
+											}),
+									),
+									byGroupName,
+								),
+								bypassUsers: Arr.map(
+									bypass,
+									(u) =>
+										new SsoBypassUserDocument({
+											userId: decodeUserId(u.userId),
+											identifier: u.identifier,
+										}),
+								),
+							}
+						})
+				const side = yield* clerkSide
+				return new EnterpriseSsoDocument({
+					// An outage reads as entitled: the page should not flash an upsell at a paying org.
+					entitled: entitled !== "not_entitled",
+					domains: Arr.sort(Arr.map(domains, toDomainDocument), byDomain),
+					...side,
+				})
+			})
+
+			const addDomain = Effect.fn("EnterpriseSsoService.addDomain")(function* (
+				orgId: OrgId,
+				userId: UserId,
+				raw: string,
+			) {
+				yield* requireEntitled(orgId)
+				const domain = normalizeDomain(raw)
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.sso.domain": domain })
+				if (!isDomainName(domain)) {
+					return yield* new EnterpriseSsoInvalidError({
+						message: `"${raw}" is not a domain name, e.g. acme.com.`,
+					})
+				}
+				const now = yield* Clock.currentTimeMillis
+				const bytes = yield* Effect.sync(() => SecureRandom.randomBytesUnsafe(16))
+				const challenge = `maple-domain-verification=${Hex.encode(bytes)}`
+				yield* dbExecute((db) =>
+					db.run(
+						PG.insertInto(OrgSsoDomains)
+							.values({
+								orgId,
+								domain,
+								challenge,
+								status: "pending",
+								clerkDomainId: null,
+								verifiedAt: null,
+								createdAt: now,
+								createdBy: userId,
+							})
+							.onConflictDoNothing(),
+					),
+				)
+				return yield* get(orgId)
+			})
+
+			const requireDomainRow = (orgId: OrgId, domain: string) =>
+				loadDomains(orgId).pipe(
+					Effect.flatMap((rows) => {
+						const row = Option.getOrUndefined(Arr.findFirst(rows, (r) => r.domain === domain))
+						return row === undefined
+							? Effect.fail(
+									new EnterpriseSsoNotFoundError({
+										message: `${domain} is not one of this organization's SSO domains.`,
+									}),
+								)
+							: Effect.succeed(row)
+					}),
+				)
+
+			const verifyDomain = Effect.fn("EnterpriseSsoService.verifyDomain")(function* (
+				orgId: OrgId,
+				raw: string,
+			) {
+				yield* requireEntitled(orgId)
+				const domain = normalizeDomain(raw)
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.sso.domain": domain })
+				const row = yield* requireDomainRow(orgId, domain)
+				if (row.status === "verified") return yield* get(orgId)
+				const values = yield* dns.lookupTxt(challengeRecordName(domain)).pipe(
+					Effect.mapError(
+						(error) =>
+							new EnterpriseSsoUnavailableError({
+								message: `DNS lookup failed: ${error.message}`,
+							}),
+					),
+				)
+				yield* Effect.annotateCurrentSpan({ "maple.sso.txt_records": values.length })
+				if (!values.includes(row.challenge)) {
+					return yield* new EnterpriseSsoInvalidError({
+						message: `No matching TXT record at ${challengeRecordName(domain)} yet. DNS changes can take a few minutes to appear.`,
+					})
+				}
+				const clerkDomainId = yield* clerk
+					.ensureOrgDomain(orgId, domain)
+					.pipe(Effect.mapError(fromClerk))
+				yield* clerk.verifyOrgDomainOwnership(orgId, clerkDomainId).pipe(Effect.mapError(fromClerk))
+				const now = yield* Clock.currentTimeMillis
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(OrgSsoDomains)
+							.set({ status: "verified", clerkDomainId, verifiedAt: now })
+							.where(($) => [$.orgId.eq(orgId), $.domain.eq(domain)]),
+					),
+				)
+				return yield* get(orgId)
+			})
+
+			const removeDomain = Effect.fn("EnterpriseSsoService.removeDomain")(function* (
+				orgId: OrgId,
+				raw: string,
+			) {
+				const domain = normalizeDomain(raw)
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.sso.domain": domain })
+				yield* requireDomainRow(orgId, domain)
+				const row = yield* loadConnectionRow(orgId)
+				if (Option.isSome(row)) {
+					const connection = yield* clerk
+						.getConnection(row.value.clerkConnectionId)
+						.pipe(Effect.mapError(fromClerk))
+					if (connection.domains.includes(domain)) {
+						return yield* new EnterpriseSsoConflictError({
+							message: `${domain} is used by the identity provider connection. Remove it there first.`,
+						})
+					}
+				}
+				// The Clerk organization domain stays: the Domains tab owns it and may use it for invitations.
+				yield* dbExecute((db) =>
+					db.run(
+						PG.deleteFrom(OrgSsoDomains).where(($) => [$.orgId.eq(orgId), $.domain.eq(domain)]),
+					),
+				)
+				return yield* get(orgId)
+			})
+
+			/** The request's domains, all verified by this org, and the IdP settings its protocol needs. */
+			const connectionInput = Effect.fn("EnterpriseSsoService.connectionInput")(function* (
+				orgId: OrgId,
+				request: SsoConnectionRequest,
+				provider: SsoProvider,
+				mode: "create" | "update",
+			) {
+				const domains = Arr.dedupe(Arr.map(request.domains, normalizeDomain))
+				const rows = yield* loadDomains(orgId)
+				const verified = new Set(
+					Arr.map(
+						Arr.filter(rows, (d) => d.status === "verified"),
+						(d) => d.domain,
+					),
+				)
+				const unverified = Arr.filter(domains, (d) => !verified.has(d))
+				if (unverified.length > 0) {
+					return yield* new EnterpriseSsoInvalidError({
+						message: `Verify ${Arr.join(unverified, ", ")} before using it for SSO.`,
+					})
+				}
+				const base = { name: Str.trim(request.name), domains }
+				if (ssoProtocolOf(provider) === "saml") {
+					const saml = request.saml
+					const manual =
+						saml?.ssoUrl !== undefined &&
+						saml.entityId !== undefined &&
+						saml.certificate !== undefined
+					if (saml === undefined || (saml.metadataUrl === undefined && !manual)) {
+						if (mode === "update" && saml === undefined)
+							return base satisfies ClerkSsoConnectionInput
+						return yield* new EnterpriseSsoInvalidError({
+							message:
+								"Give the IdP metadata URL, or its SSO URL, entity ID and signing certificate.",
+						})
+					}
+					return { ...base, saml } satisfies ClerkSsoConnectionInput
+				} else {
+					const oidc = request.oidc
+					if (oidc === undefined) {
+						if (mode === "update") return base satisfies ClerkSsoConnectionInput
+						return yield* new EnterpriseSsoInvalidError({
+							message: "Give the OIDC discovery URL, client ID and client secret.",
+						})
+					}
+					if (mode === "create" && (oidc.clientSecret === undefined || oidc.clientSecret === "")) {
+						return yield* new EnterpriseSsoInvalidError({
+							message: "Give the OIDC client secret.",
+						})
+					}
+					return { ...base, oidc } satisfies ClerkSsoConnectionInput
+				}
+			})
+
+			const createConnection = Effect.fn("EnterpriseSsoService.createConnection")(function* (
+				orgId: OrgId,
+				userId: UserId,
+				request: SsoConnectionRequest,
+			) {
+				yield* requireEntitled(orgId)
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.sso.provider": request.provider })
+				const existing = yield* loadConnectionRow(orgId)
+				if (Option.isSome(existing)) {
+					return yield* new EnterpriseSsoConflictError({
+						message: "This organization already has an identity provider connected.",
+					})
+				}
+				const input = yield* connectionInput(orgId, request, request.provider, "create")
+				const connection = yield* clerk
+					.createConnection(orgId, request.provider, input)
+					.pipe(Effect.mapError(fromClerk))
+				const now = yield* Clock.currentTimeMillis
+				yield* dbExecute((db) =>
+					db.run(
+						PG.insertInto(OrgSsoConnections).values({
+							orgId,
+							clerkConnectionId: connection.id,
+							clerkDirectoryId: null,
+							createdAt: now,
+							createdBy: userId,
+							updatedAt: now,
+						}),
+					),
+				).pipe(
+					// A connection Maple cannot find again would claim the domains forever: undo it.
+					Effect.tapError(() => clerk.deleteConnection(connection.id).pipe(Effect.ignore)),
+				)
+				return yield* get(orgId)
+			})
+
+			const updateConnection = Effect.fn("EnterpriseSsoService.updateConnection")(function* (
+				orgId: OrgId,
+				request: SsoConnectionRequest,
+			) {
+				yield* requireEntitled(orgId)
+				const row = yield* requireConnectionRow(orgId)
+				const current = yield* clerk
+					.getConnection(row.clerkConnectionId)
+					.pipe(Effect.mapError(fromClerk))
+				const provider = isProvider(current.provider) ? current.provider : request.provider
+				const input = yield* connectionInput(orgId, request, provider, "update")
+				yield* clerk.updateConnection(row.clerkConnectionId, input).pipe(Effect.mapError(fromClerk))
+				yield* touch(orgId)
+				return yield* get(orgId)
+			})
+
+			const touch = (orgId: OrgId, set: { clerkDirectoryId?: string | null } = {}) =>
+				Clock.currentTimeMillis.pipe(
+					Effect.flatMap((now) =>
+						dbExecute((db) =>
+							db.run(
+								PG.update(OrgSsoConnections)
+									.set({ updatedAt: now, ...set })
+									.where(($) => [$.orgId.eq(orgId)]),
+							),
+						),
+					),
+				)
+
+			const setEnforcement = Effect.fn("EnterpriseSsoService.setEnforcement")(function* (
+				orgId: OrgId,
+				enforced: boolean,
+			) {
+				// Relaxing is always allowed: an org that lost the plan must still be able to get out.
+				if (enforced) yield* requireEntitled(orgId)
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.sso.enforced": enforced })
+				const row = yield* requireConnectionRow(orgId)
+				yield* clerk
+					.updateConnection(row.clerkConnectionId, { active: enforced })
+					.pipe(Effect.mapError(fromClerk))
+				yield* touch(orgId)
+				return yield* get(orgId)
+			})
+
+			const dropDirectory = (orgId: OrgId, directoryId: string) =>
+				clerk.deleteDirectory(directoryId).pipe(
+					Effect.catchIf(
+						(e) => e.status === 404,
+						() => Effect.void,
+					),
+					Effect.mapError(fromClerk),
+					Effect.andThen(
+						dbExecute((db) =>
+							db.run(
+								PG.deleteFrom(OrgDirectoryGroups).where(($) => [
+									$.orgId.eq(orgId),
+									$.directoryId.eq(directoryId),
+								]),
+							),
+						),
+					),
+				)
+
+			const deleteConnection = Effect.fn("EnterpriseSsoService.deleteConnection")(function* (
+				orgId: OrgId,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId })
+				const row = yield* requireConnectionRow(orgId)
+				if (row.clerkDirectoryId !== null) yield* dropDirectory(orgId, row.clerkDirectoryId)
+				yield* clerk.deleteConnection(row.clerkConnectionId).pipe(
+					Effect.catchIf(
+						(e) => e.status === 404,
+						() => Effect.void,
+					),
+					Effect.mapError(fromClerk),
+				)
+				yield* dbExecute((db) =>
+					db.run(PG.deleteFrom(OrgSsoConnections).where(($) => [$.orgId.eq(orgId)])),
+				)
+				return yield* get(orgId)
+			})
+
+			const issued = (orgId: OrgId, directory: ClerkSsoDirectory) =>
+				Effect.gen(function* () {
+					const token = directory.api_key
+					if (token === undefined || token === null || token === "") {
+						return yield* new EnterpriseSsoUnavailableError({
+							message: "Clerk returned no SCIM token",
+						})
+					}
+					return new ScimTokenIssued({ document: yield* get(orgId), token })
+				})
+
+			const createDirectory = Effect.fn("EnterpriseSsoService.createDirectory")(function* (
+				orgId: OrgId,
+			) {
+				yield* requireEntitled(orgId)
+				yield* Effect.annotateCurrentSpan({ orgId })
+				const row = yield* requireConnectionRow(orgId)
+				if (row.clerkDirectoryId !== null) {
+					return yield* new EnterpriseSsoConflictError({
+						message: "SCIM provisioning is already set up. Rotate its token to get a new one.",
+					})
+				}
+				const connection = yield* clerk
+					.getConnection(row.clerkConnectionId)
+					.pipe(Effect.mapError(fromClerk))
+				const directory = yield* clerk
+					.createDirectory(row.clerkConnectionId, directoryProviderFor(connection.provider))
+					.pipe(Effect.mapError(fromClerk))
+				yield* touch(orgId, { clerkDirectoryId: directory.id }).pipe(
+					Effect.tapError(() => clerk.deleteDirectory(directory.id).pipe(Effect.ignore)),
+				)
+				return yield* issued(orgId, directory)
+			})
+
+			const rotateDirectoryToken = Effect.fn("EnterpriseSsoService.rotateDirectoryToken")(function* (
+				orgId: OrgId,
+			) {
+				yield* requireEntitled(orgId)
+				yield* Effect.annotateCurrentSpan({ orgId })
+				const directoryId = yield* requireConnectionRow(orgId).pipe(
+					Effect.flatMap(requireDirectoryId),
+				)
+				const directory = yield* clerk
+					.rotateDirectoryKey(directoryId)
+					.pipe(Effect.mapError(fromClerk))
+				yield* touch(orgId)
+				return yield* issued(orgId, directory)
+			})
+
+			const setDirectoryState = Effect.fn("EnterpriseSsoService.setDirectoryState")(function* (
+				orgId: OrgId,
+				paused: boolean,
+			) {
+				if (!paused) yield* requireEntitled(orgId)
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.sso.directory_paused": paused })
+				const directoryId = yield* requireConnectionRow(orgId).pipe(
+					Effect.flatMap(requireDirectoryId),
+				)
+				yield* clerk.updateDirectory(directoryId, { paused }).pipe(Effect.mapError(fromClerk))
+				yield* touch(orgId)
+				return yield* get(orgId)
+			})
+
+			const deleteDirectory = Effect.fn("EnterpriseSsoService.deleteDirectory")(function* (
+				orgId: OrgId,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId })
+				const directoryId = yield* requireConnectionRow(orgId).pipe(
+					Effect.flatMap(requireDirectoryId),
+				)
+				yield* dropDirectory(orgId, directoryId)
+				yield* touch(orgId, { clerkDirectoryId: null })
+				return yield* get(orgId)
+			})
+
+			const setRoleMappings = Effect.fn("EnterpriseSsoService.setRoleMappings")(function* (
+				orgId: OrgId,
+				mappings: ReadonlyArray<{ readonly groupId: string; readonly role: SsoMappedRole }>,
+			) {
+				yield* requireEntitled(orgId)
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.sso.role_mappings": mappings.length })
+				const directoryId = yield* requireConnectionRow(orgId).pipe(
+					Effect.flatMap(requireDirectoryId),
+				)
+				const groupIds = Arr.map(mappings, (m) => m.groupId)
+				if (new Set(groupIds).size !== groupIds.length) {
+					return yield* new EnterpriseSsoInvalidError({
+						message: "Map each group to one role only.",
+					})
+				}
+				const roles = yield* clerk.listRoles.pipe(Effect.mapError(fromClerk))
+				const roleIds = new Map(Arr.map(roles, (r) => [r.key, r.id] as const))
+				const resolved = yield* Effect.forEach(mappings, (m) => {
+					const roleId = roleIds.get(m.role)
+					return roleId === undefined
+						? Effect.fail(
+								new EnterpriseSsoInvalidError({
+									message: `The ${m.role} role does not exist in this deployment.`,
+								}),
+							)
+						: Effect.succeed({ groupId: m.groupId, roleId })
+				})
+				yield* clerk.replaceRoleMappings(directoryId, resolved).pipe(Effect.mapError(fromClerk))
+				// Clerk applies a mapping when the IdP next pushes the group, not on save (seen live):
+				// existing members change role on the IdP's next sync.
+				yield* clerk
+					.updateDirectory(directoryId, { group_role_mapping_enabled: true })
+					.pipe(Effect.mapError(fromClerk))
+				yield* touch(orgId)
+				return yield* get(orgId)
+			})
+
+			const addBypassUser = Effect.fn("EnterpriseSsoService.addBypassUser")(function* (
+				orgId: OrgId,
+				userId: UserId,
+			) {
+				yield* requireEntitled(orgId)
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.sso.bypass_user": userId })
+				yield* requireConnectionRow(orgId)
+				yield* clerk.addBypassUser(userId).pipe(Effect.mapError(fromClerk))
+				return yield* get(orgId)
+			})
+
+			const removeBypassUser = Effect.fn("EnterpriseSsoService.removeBypassUser")(function* (
+				orgId: OrgId,
+				userId: UserId,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.sso.bypass_user": userId })
+				const row = yield* requireConnectionRow(orgId)
+				// The allowlist is instance-wide: only entries this org's connection serves are its to remove.
+				const listed = yield* clerk
+					.listBypassUsers(row.clerkConnectionId)
+					.pipe(Effect.mapError(fromClerk))
+				if (!Arr.some(listed, (u) => u.userId === userId)) {
+					return yield* new EnterpriseSsoNotFoundError({
+						message: "That person is not on this organization's bypass list.",
+					})
+				}
+				yield* clerk.removeBypassUser(userId).pipe(Effect.mapError(fromClerk))
+				return yield* get(orgId)
+			})
+
+			const applyDirectoryGroup = Effect.fn("EnterpriseSsoService.applyDirectoryGroup")(function* (
+				event: DirectoryGroupEvent,
+			) {
+				yield* Effect.annotateCurrentSpan({
+					"maple.sso.directory_id": event.directoryId,
+					"maple.sso.group_deleted": event.deleted,
+				})
+				// Cross-org on purpose: the directory id is what tells us which org, if any, is ours.
+				const owners = yield* dbExecute((db) =>
+					db.run(
+						PG.from(OrgSsoConnections)
+							.select()
+							.where(($) => [$.clerkDirectoryId.eq(event.directoryId)])
+							.limit(1),
+					),
+				)
+				const owner = owners[0]
+				if (owner === undefined) return "not_here" as const
+				const orgId = owner.orgId
+				if (event.deleted) {
+					yield* dbExecute((db) =>
+						db.run(
+							PG.deleteFrom(OrgDirectoryGroups).where(($) => [
+								$.directoryId.eq(event.directoryId),
+								$.groupId.eq(event.groupId),
+							]),
+						),
+					)
+				} else {
+					const set = { displayName: event.displayName, updatedAt: event.updatedAt }
+					yield* dbExecute((db) =>
+						db.run(
+							PG.insertInto(OrgDirectoryGroups)
+								.values({
+									orgId,
+									directoryId: event.directoryId,
+									groupId: event.groupId,
+									...set,
+								})
+								.onConflictDoUpdate({ target: ["directoryId", "groupId"], set }),
+						),
+					)
+				}
+				return "applied" as const
+			})
+
+			return {
+				get,
+				addDomain,
+				verifyDomain,
+				removeDomain,
+				createConnection,
+				updateConnection,
+				setEnforcement,
+				deleteConnection,
+				createDirectory,
+				rotateDirectoryToken,
+				setDirectoryState,
+				deleteDirectory,
+				setRoleMappings,
+				addBypassUser,
+				removeBypassUser,
+				applyDirectoryGroup,
+			} satisfies EnterpriseSsoServiceApi
+		}),
+	},
+) {
+	static readonly layer = Layer.effect(this, this.make).pipe(
+		Layer.provide(
+			Layer.mergeAll(
+				AutumnClient.layer,
+				BillingCustomerResolver.layer,
+				ClerkSsoGateway.layer,
+				DnsTxtResolver.layer,
+			),
+		),
+	)
+
+	/** Serves only the webhook's directory-group path, for route tests; settings calls fail. */
+	static readonly webhookOnly = (apply: EnterpriseSsoServiceApi["applyDirectoryGroup"]) => {
+		const unserved = Effect.fail(
+			new EnterpriseSsoUnavailableError({ message: "webhookOnly serves webhooks only" }),
+		)
+		return Layer.succeed(this, {
+			get: () => unserved,
+			addDomain: () => unserved,
+			verifyDomain: () => unserved,
+			removeDomain: () => unserved,
+			createConnection: () => unserved,
+			updateConnection: () => unserved,
+			setEnforcement: () => unserved,
+			deleteConnection: () => unserved,
+			createDirectory: () => unserved,
+			rotateDirectoryToken: () => unserved,
+			setDirectoryState: () => unserved,
+			deleteDirectory: () => unserved,
+			setRoleMappings: () => unserved,
+			addBypassUser: () => unserved,
+			removeBypassUser: () => unserved,
+			applyDirectoryGroup: apply,
+		})
+	}
+}
