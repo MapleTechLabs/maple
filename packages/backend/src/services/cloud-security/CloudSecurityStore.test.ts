@@ -134,13 +134,14 @@ describe("CloudSecurityStore", () => {
 				checkedAt: 2,
 			})
 			const [state] = yield* store.serviceStates(orgId, connection.id)
+			assert.strictEqual(state?.windowMs, null)
 			assert.strictEqual(state?.state, "failing")
 			assert.strictEqual(state?.cursorAt, 4_000)
 			assert.strictEqual(state?.lastError, "throttled")
 		}).pipe(Effect.provide(world.layer))
 	})
 
-	it.effect("prunes only the org's closed findings older than the cutoff", () => {
+	it.effect("prunes only the org's findings closed before the cutoff", () => {
 		const world = makeWorld()
 		return Effect.gen(function* () {
 			const store = yield* CloudSecurityStore
@@ -151,18 +152,18 @@ describe("CloudSecurityStore", () => {
 					finding(mine, orgId, {
 						findingId: "old-closed",
 						status: "resolved",
-						providerUpdatedAt: 100,
+						closedAt: 100,
 					}),
 					finding(mine, orgId, {
 						findingId: "new-closed",
 						status: "archived",
-						providerUpdatedAt: 900,
+						closedAt: 900,
 					}),
 					finding(mine, orgId, { findingId: "old-active", providerUpdatedAt: 100 }),
 					finding(theirs, otherOrgId, {
 						findingId: "their-closed",
 						status: "resolved",
-						providerUpdatedAt: 100,
+						closedAt: 100,
 					}),
 				],
 				1,

@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS "cloud_security_findings" (
 	"first_seen_at" timestamp with time zone NOT NULL,
 	"last_seen_at" timestamp with time zone NOT NULL,
 	"provider_updated_at" timestamp with time zone NOT NULL,
+	"closed_at" timestamp with time zone,
 	"detail" jsonb,
 	"synced_at" timestamp with time zone NOT NULL,
 	CONSTRAINT "cloud_security_findings_pkey" PRIMARY KEY ("org_id", "connection_id", "region", "source", "finding_id")

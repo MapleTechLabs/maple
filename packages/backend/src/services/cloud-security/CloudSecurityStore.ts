@@ -25,6 +25,8 @@ export interface CloudServiceStateWrite {
 	readonly state: CloudServiceState
 	/** Moves the cursor; absent keeps the stored one (a failed or empty poll). */
 	readonly cursorAt?: number
+	/** The window size to start the next windowed read with; absent keeps the stored one. */
+	readonly windowMs?: number
 	readonly lastError: string | null
 	readonly checkedAt: number
 }
@@ -52,7 +54,7 @@ export interface CloudSecurityStoreApi {
 		orgId: OrgId,
 		connectionId: AwsConnectionId,
 	) => Effect.Effect<ReadonlyArray<CloudSecurityServiceStateRow>, IntegrationsPersistenceError>
-	/** Deletes the org's closed findings the service last touched before `beforeMs`. */
+	/** Deletes the org's findings closed (as Maple first saw them closed) before `beforeMs`. */
 	readonly pruneClosed: (
 		orgId: OrgId,
 		beforeMs: number,
@@ -96,7 +98,9 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 				state: CloudServiceStateWrite,
 			) {
 				const base = { state: state.state, lastError: state.lastError, checkedAt: state.checkedAt }
-				const values = state.cursorAt === undefined ? base : { ...base, cursorAt: state.cursorAt }
+				const withCursor = state.cursorAt === undefined ? base : { ...base, cursorAt: state.cursorAt }
+				const values =
+					state.windowMs === undefined ? withCursor : { ...withCursor, windowMs: state.windowMs }
 				yield* dbExecute((db) =>
 					db.run(
 						PG.insertInto(CloudSecurityServiceStates)
@@ -138,7 +142,7 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 							.where(($) => [
 								$.orgId.eq(orgId),
 								$.status.neq("active"),
-								$.providerUpdatedAt.lt(beforeMs),
+								$.closedAt.lt(beforeMs),
 							])
 							.returning(($) => ({ findingId: $.findingId })),
 					),
