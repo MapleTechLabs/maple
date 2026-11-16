@@ -93,8 +93,8 @@ const dash0: AlternativesPage = {
 		},
 		{
 			team: "Must self-host and keep PromQL",
-			pick: "SigNoz or Grafana, or Maple without alerting",
-			why: "All three take PromQL. SigNoz and Grafana have mature self-hosted installs (Docker and Helm) with alerting; Maple self-hosts as one container, without alerting yet.",
+			pick: "SigNoz or Grafana",
+			why: "Both take PromQL and have mature self-hosted installs (Docker and Helm). Maple runs PromQL on Maple Cloud only; its self-hosted version has no dashboards or PromQL yet.",
 		},
 		{
 			team: "Need phone and SMS paging",
@@ -127,7 +127,7 @@ const dash0: AlternativesPage = {
 			pickIf: "You want Dash0's model, source-available and self-hostable, with uptime, on-call, replay and error tracking in one app.",
 			pricing: "$39/mo with 100 GB each of logs, traces and metrics, then $0.30 per GB",
 			openSource:
-				"Source-available (FSL-1.1, Apache 2.0 after two years); self-hosts for one team, without alerting yet",
+				"Source-available (FSL-1.1, Apache 2.0 after two years); self-hosts for one team, without alerting, dashboards or PromQL yet",
 			promql: "Yes",
 			summary:
 				"Maple starts from the same place as Dash0: OpenTelemetry in, usage-based pricing, no per-seat fee, an MCP server for agents. The source is on GitHub and it self-hosts as one container. Around traces, logs and metrics it puts the rest of the on-call loop in the same app: uptime checks and cron heartbeats, on-call schedules with escalation, SLOs with burn-rate alerts, errors grouped into issues, and browser session replay linked to the trace behind each click.",
@@ -139,7 +139,7 @@ const dash0: AlternativesPage = {
 			],
 			cons: [
 				"30 days for traces and logs, 90 for metrics, against Dash0's 13 months for metrics",
-				"The self-hosted version has no alerting or team accounts yet",
+				"The self-hosted version has no alerting, dashboards, PromQL or team accounts yet",
 				"No phone or SMS paging or scripted browser checks yet",
 				"Younger, with a smaller ecosystem, and no free plan on Maple Cloud",
 			],
@@ -149,7 +149,7 @@ const dash0: AlternativesPage = {
 			id: "signoz",
 			name: "SigNoz",
 			url: "https://signoz.io",
-			pickIf: "You want an open-source, self-hosted platform with alerting and need to keep PromQL.",
+			pickIf: "You want an open-source, self-hosted platform and need to keep PromQL.",
 			pricing: "$49/mo including $49 of usage, then $0.30 per GB of logs and traces",
 			openSource: "MIT core, SSO and RBAC under a commercial license; self-hostable",
 			promql: "Yes",
