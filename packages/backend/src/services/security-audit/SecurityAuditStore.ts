@@ -1971,7 +1971,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					Effect.fn("SecurityAuditStore.listPullRequestRunsReporting")(
 						function* (targetId, fingerprint) {
 							// The target's pull request runs newest first (its started index), each joined to its
-							// finding by primary key; the limit applies to runs that reported it, never before.
+							// finding by primary key, then each pull request once at its newest: none left out.
 							const rows = yield* dbExecute((db) =>
 								db.run(
 									PG.from(SecurityAuditRuns)
@@ -1989,8 +1989,10 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 											$.prNumber.isNotNull(),
 											$.finishedAt.isNotNull(),
 										])
-										.orderBy(($) => [[$.startedAt, "desc"]])
-										.limit(20),
+										.orderBy(($) => [
+											[$.startedAt, "desc"],
+											[$.id, "desc"],
+										]),
 								),
 							)
 							// Newest first, so the first of each pull request is its newest.

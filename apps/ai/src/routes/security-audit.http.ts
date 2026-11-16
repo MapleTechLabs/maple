@@ -533,7 +533,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 					yield* Effect.forEach(
 						Arr.dedupe([run.id, ...reporting]),
 						(runId) => prChecks.publish(tenant.orgId, runId),
-						{ discard: true },
+						{ concurrency: 4, discard: true },
 					)
 					return updated.value
 				}).pipe(Effect.withSpan("HttpSecurityAudit.updateRunFindingStatus")),
@@ -570,6 +570,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 						store.listPullRequestRunsReporting(params.targetId, params.fingerprint),
 					)
 					yield* Effect.forEach(reporting, (runId) => prChecks.publish(tenant.orgId, runId), {
+						concurrency: 4,
 						discard: true,
 					})
 					return { targetId: params.targetId, ...updated.value }
