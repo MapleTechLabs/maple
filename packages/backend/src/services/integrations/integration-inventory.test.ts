@@ -646,10 +646,13 @@ describe("aws", () => {
 		const auditLogOf = (
 			problems: ReadonlyArray<{ accountId: string; state: string; lastError: string | null }>,
 		) =>
-			providerOf(
-				{ awsConnections: [security], awsCloudTrailProblems: problems },
-				"aws",
-			)?.resources.find((resource) => resource.kind === "audit log")
+			Option.getOrUndefined(
+				Arr.findFirst(
+					providerOf({ awsConnections: [security], awsCloudTrailProblems: problems }, "aws")
+						?.resources ?? [],
+					(resource) => resource.kind === "audit log",
+				),
+			)
 		expect(auditLogOf([])?.status).toBe("healthy")
 		const failing = auditLogOf([
 			{
