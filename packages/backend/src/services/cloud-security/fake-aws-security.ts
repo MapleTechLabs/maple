@@ -59,12 +59,20 @@ export interface FakeAccessAnalyzerFinding {
 	readonly updatedAtMs: number
 }
 
+/** A CloudTrail record; `record` is the event's JSON body, `eventTimeMs` when it happened. */
+export interface FakeCloudTrailEvent {
+	readonly eventId: string
+	readonly eventTimeMs: number
+	readonly record: Record<string, unknown>
+}
+
 /** One region's services; an absent service is not enabled there. */
 export interface FakeRegion {
 	guardduty?: Array<FakeGuardDutyFinding>
 	securityhub?: Array<FakeSecurityHubFinding>
 	inspector?: Array<FakeInspectorFinding>
 	accessAnalyzer?: Array<FakeAccessAnalyzerFinding>
+	cloudtrail?: Array<FakeCloudTrailEvent>
 }
 
 export interface FakeAwsSecurityRequest {
@@ -89,7 +97,7 @@ const decodeJson = Schema.decodeUnknownOption(
 )
 const decoder = new TextDecoder()
 const HOST =
-	/^https:\/\/(guardduty|securityhub|inspector2|access-analyzer|account)\.([a-z0-9-]+)\.amazonaws\.com(\/[^?]*)/u
+	/^https:\/\/(guardduty|securityhub|inspector2|access-analyzer|account|cloudtrail)\.([a-z0-9-]+)\.amazonaws\.com(\/[^?]*)/u
 
 const iso = (ms: number) => DateTime.formatIso(DateTime.makeUnsafe(ms))
 const asNumber = (value: unknown) => (typeof value === "number" ? value : undefined)
@@ -345,6 +353,30 @@ export const makeFakeAwsSecurity = (fallback: HttpClient.HttpClient): FakeAwsSec
 						updatedAt: iso(finding.updatedAtMs),
 					})),
 					nextToken: page.next,
+				})
+			}
+			if (route === "cloudtrail POST /") {
+				// JSON 1.1: times are epoch seconds, events come newest first.
+				const start = (asNumber(body["StartTime"]) ?? 0) * 1000
+				const end = (asNumber(body["EndTime"]) ?? Number.MAX_SAFE_INTEGER / 1000) * 1000
+				const matching = Arr.reverse(
+					Arr.sort(
+						Arr.filter(
+							fake.cloudtrail ?? [],
+							(event) => event.eventTimeMs >= start && event.eventTimeMs <= end,
+						),
+						Order.mapInput(Order.Number, (event: FakeCloudTrailEvent) => event.eventTimeMs),
+					),
+				)
+				const page = pageOf(matching, body["NextToken"], asNumber(body["MaxResults"]) ?? 50)
+				return json(200, {
+					Events: Arr.map(page.items, (event) => ({
+						EventId: event.eventId,
+						EventTime: event.eventTimeMs / 1000,
+						ReadOnly: "false",
+						CloudTrailEvent: encodeJson(event.record),
+					})),
+					NextToken: page.next,
 				})
 			}
 			return refuse(404, `UnknownOperation ${route}`)

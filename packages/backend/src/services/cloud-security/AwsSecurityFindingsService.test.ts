@@ -13,6 +13,9 @@ import { MAPLE_TEST_OIDC_KEY, makeFakeAws } from "../integrations/aws/fake-aws"
 import { MAX_PAGES } from "./aws-security-readers"
 import { AwsSecurityFindingsService, NOT_ENABLED_RECHECK_MS } from "./AwsSecurityFindingsService"
 import { CloudSecurityStore } from "./CloudSecurityStore"
+import { AuditTrailService } from "../audit-trail/AuditTrailService"
+import type { AuditTrailEvent } from "@maple/domain/audit-trail"
+import { CLOUDTRAIL_LATE_MS } from "./aws-security-readers"
 import { type FakeGuardDutyFinding, makeFakeAwsSecurity } from "./fake-aws-security"
 
 const trackedDbs: TestDb[] = []
@@ -41,11 +44,23 @@ const makeWorld = () => {
 	const sts = makeFakeAws()
 	const aws = makeFakeAwsSecurity(sts.client)
 	const rolledOut = new Set<OrgId>([orgId])
+	const audit: Array<{ readonly orgId: OrgId; readonly event: AuditTrailEvent }> = []
 	const layer = Layer.mergeAll(
 		Layer.effect(AwsSecurityFindingsService, AwsSecurityFindingsService.make),
 		Layer.effect(AwsConnectionService, AwsConnectionService.make),
 	).pipe(
 		Layer.provideMerge(CloudSecurityStore.layer),
+		Layer.provide(
+			Layer.succeed(AuditTrailService, {
+				write: (org, events) =>
+					Effect.sync(() => {
+						audit.push(...Arr.map(events, (event) => ({ orgId: org, event })))
+					}),
+				list: () => Effect.die("unused"),
+				count: () => Effect.die("unused"),
+				providerStats: () => Effect.die("unused"),
+			}),
+		),
 		Layer.provide(
 			Layer.succeed(OrganizationFeatureFlagsService, {
 				flags: (org) =>
@@ -60,7 +75,7 @@ const makeWorld = () => {
 		Layer.provide(Layer.succeed(HttpClient.HttpClient, aws.client)),
 		Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(config))),
 	)
-	return { testDb, sts, aws, rolledOut, layer }
+	return { testDb, sts, aws, rolledOut, audit, layer }
 }
 
 type World = ReturnType<typeof makeWorld>
@@ -144,7 +159,13 @@ describe("AwsSecurityFindingsService", () => {
 		return Effect.gen(function* () {
 			const connection = yield* connect(world)
 			const summary = yield* poll
-			assert.deepStrictEqual(summary, { connections: 1, failedConnections: 0, reads: 8, findings: 3 })
+			assert.deepStrictEqual(summary, {
+				connections: 1,
+				failedConnections: 0,
+				reads: 10,
+				findings: 3,
+				auditEvents: 0,
+			})
 			assert.deepStrictEqual(yield* findingRows(world), [
 				{
 					source: "access_analyzer",
@@ -331,6 +352,7 @@ describe("AwsSecurityFindingsService", () => {
 				failedConnections: 0,
 				reads: 0,
 				findings: 0,
+				auditEvents: 0,
 			})
 			yield* Effect.promise(() =>
 				executeSql(
@@ -341,6 +363,83 @@ describe("AwsSecurityFindingsService", () => {
 			world.rolledOut.clear()
 			assert.strictEqual((yield* poll).connections, 0)
 			assert.deepStrictEqual(world.aws.requests, [])
+		}).pipe(Effect.provide(world.layer))
+	})
+	it.effect("writes CloudTrail changes to the audit log and leaves out role-session plumbing", () => {
+		const world = makeWorld()
+		const at = Date.parse("2026-11-10T00:00:00Z")
+		const record = (
+			eventName: string,
+			eventSource: string,
+			identity: Record<string, unknown>,
+			extra = {},
+		) => ({
+			eventSource,
+			eventName,
+			userIdentity: identity,
+			sourceIPAddress: "203.0.113.7",
+			userAgent: "aws-cli/2",
+			...extra,
+		})
+		const alice = { type: "IAMUser", arn: "arn:aws:iam::111111111111:user/alice", userName: "alice" }
+		world.aws.regions["us-east-1"] = {
+			cloudtrail: [
+				{
+					eventId: "ct-key",
+					eventTimeMs: at - 60_000,
+					record: record("CreateAccessKey", "iam.amazonaws.com", alice, {
+						errorCode: "AccessDenied",
+						errorMessage: "not allowed",
+					}),
+				},
+				{
+					eventId: "ct-login",
+					eventTimeMs: at - 30_000,
+					record: record("ConsoleLogin", "signin.amazonaws.com", alice, {
+						responseElements: { ConsoleLogin: "Success" },
+					}),
+				},
+				{
+					eventId: "ct-assume",
+					eventTimeMs: at - 20_000,
+					record: record("AssumeRole", "sts.amazonaws.com", {
+						type: "AssumedRole",
+						arn: "arn:aws:sts::1:assumed-role/app/x",
+					}),
+				},
+				{
+					eventId: "ct-aws",
+					eventTimeMs: at - 10_000,
+					record: record("PutBucketPolicy", "s3.amazonaws.com", {
+						type: "AWSService",
+						invokedBy: "s3.amazonaws.com",
+					}),
+				},
+			],
+		}
+		return Effect.gen(function* () {
+			yield* connect(world)
+			yield* TestClock.setTime(at)
+			const summary = yield* poll
+			assert.strictEqual(summary.auditEvents, 2)
+			assert.deepStrictEqual(
+				Arr.map(world.audit, ({ orgId: org, event }) => [
+					org,
+					event.action,
+					event.category,
+					event.outcome,
+					event.actor.name,
+				]),
+				[
+					[orgId, "signin:ConsoleLogin", "authentication", "success", "alice"],
+					[orgId, "iam:CreateAccessKey", "credential", "denied", "alice"],
+				],
+			)
+			world.aws.requests.length = 0
+			yield* TestClock.adjust("5 minutes")
+			yield* poll
+			const [lookup] = Arr.filter(world.aws.requests, (request) => request.service === "cloudtrail")
+			assert.strictEqual(lookup?.body["StartTime"], (at - CLOUDTRAIL_LATE_MS) / 1000)
 		}).pipe(Effect.provide(world.layer))
 	})
 })

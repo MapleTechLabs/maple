@@ -1,4 +1,4 @@
-import type { CloudFindingSource, CloudServiceState } from "@maple/domain/cloud-security"
+import type { CloudSecurityFeed, CloudServiceState } from "@maple/domain/cloud-security"
 import { IntegrationsPersistenceError } from "@maple/domain/http"
 import {
 	CloudSecurityFindings,
@@ -21,7 +21,7 @@ export interface CloudServiceStateWrite {
 	readonly orgId: OrgId
 	readonly connectionId: AwsConnectionId
 	readonly region: AwsRegion
-	readonly source: CloudFindingSource
+	readonly source: CloudSecurityFeed
 	readonly state: CloudServiceState
 	/** Moves the cursor; null keeps the stored one (a failed or empty poll). */
 	readonly cursorAt: number | null

@@ -6,6 +6,7 @@
 import * as AccessAnalyzer from "@distilled.cloud/aws/accessanalyzer"
 import * as Account from "@distilled.cloud/aws/account"
 import * as Category from "@distilled.cloud/aws/Category"
+import * as CloudTrail from "@distilled.cloud/aws/cloudtrail"
 import * as Credentials from "@distilled.cloud/aws/Credentials"
 import { UnknownAwsError } from "@distilled.cloud/aws/Errors"
 import * as GuardDuty from "@distilled.cloud/aws/guardduty"
@@ -20,6 +21,7 @@ import {
 	cloudFindingSeverityOfLabel,
 	cloudFindingSeverityOfScore,
 } from "@maple/domain/cloud-security"
+import type { AuditTrailEvent } from "@maple/domain/audit-trail"
 import { AwsRegion } from "@maple/primitives"
 import {
 	Array as Arr,
@@ -33,6 +35,7 @@ import {
 } from "effect"
 import { HttpClient } from "effect/http"
 import type { AwsRoleSession } from "../integrations/aws/api"
+import { cloudTrailAuditEvent } from "./cloudtrail-events"
 
 const REQUEST_TIMEOUT = Duration.seconds(20)
 const RETRY: Retry.Options = {
@@ -644,5 +647,63 @@ export const enabledRegions = (
 				Arr.getSomes(Arr.map(read.items, (region) => Option.fromUndefinedOr(region.RegionName))),
 				isRegion,
 			),
+	)
+}
+
+// CloudTrail
+
+/** CloudTrail lists an event up to about 15 minutes after it happened: each read reaches back past that. */
+export const CLOUDTRAIL_LATE_MS = 20 * 60 * 1000
+/** How far back the first read of a region goes. */
+export const CLOUDTRAIL_BACKFILL_MS = 24 * 60 * 60 * 1000
+
+export interface CloudTrailRead {
+	readonly state: CloudServiceState
+	readonly events: ReadonlyArray<AuditTrailEvent>
+	readonly cursorAt: number | null
+	readonly lastError: string | null
+}
+
+/**
+ * The region's write management events since the cursor, less the late margin. Reads overlap, and
+ * an event read twice lands on the same audit trail key.
+ */
+export const readCloudTrail = (target: ReadTarget, nowMs: number): Effect.Effect<CloudTrailRead> => {
+	const call = callAs(target)
+	const startMs = Num.max(nowMs - CLOUDTRAIL_BACKFILL_MS, (target.cursorAt ?? 0) - CLOUDTRAIL_LATE_MS)
+	return pagesOf((token) =>
+		Effect.map(
+			call(
+				"CloudTrail.LookupEvents",
+				CloudTrail.lookupEvents({
+					region: target.region,
+					LookupAttributes: [{ AttributeKey: "ReadOnly", AttributeValue: "false" }],
+					StartTime: DateTime.toDate(DateTime.makeUnsafe(startMs)),
+					EndTime: DateTime.toDate(DateTime.makeUnsafe(nowMs)),
+					MaxResults: 50,
+					NextToken: token,
+				}),
+			),
+			(page) => ({ items: page.Events ?? [], next: page.NextToken }),
+		),
+	).pipe(
+		Effect.map((read): CloudTrailRead => ({
+			state: "enabled",
+			events: Arr.getSomes(
+				Arr.map(read.items, (event) => cloudTrailAuditEvent(target.accountId, event)),
+			),
+			// Newest first: a read cut short keeps the cursor and reads the window again.
+			cursorAt: read.complete ? nowMs : null,
+			lastError: read.complete ? null : "More changes than one poll reads; the oldest may be missed.",
+		})),
+		Effect.catchTag("@maple/backend/cloud-security/AwsSecurityReadError", (error) =>
+			Effect.succeed({
+				state: error.kind,
+				events: [],
+				cursorAt: null,
+				lastError: error.message,
+			} satisfies CloudTrailRead),
+		),
+		Effect.withSpan("AwsSecurity.readCloudTrail", { attributes: { "maple.aws.region": target.region } }),
 	)
 }

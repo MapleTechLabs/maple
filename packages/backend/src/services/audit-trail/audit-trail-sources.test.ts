@@ -99,7 +99,20 @@ describe("auditTrailSources", () => {
 
 	it("keeps a platform a newer writer added, so its events are not unaccounted for", () => {
 		const sources = auditTrailSources([{ provider: "github", events: 2, lastEventAt: 9 }], null)
-		expect(Arr.map(sources, (source) => source.provider)).toEqual(["maple", "vercel", "gcp", "github"])
+		expect(Arr.map(sources, (source) => source.provider)).toEqual(["maple", "vercel", "gcp", "aws", "github"])
 		expect(stateOf(sources, "github")).toBe("receiving")
+	})
+
+	it("reads AWS as feeding through its audit log resource, and off without one", () => {
+		const inventory = (resources: ReadonlyArray<IntegrationResource>) => ({
+			integrations: [entry({ provider: "aws", resources })],
+			available: [],
+		})
+		const auditLog = [resource({ kind: "audit log" })]
+		expect(stateOf(auditTrailSources([], inventory(auditLog)), "aws")).toBe("waiting")
+		expect(
+			stateOf(auditTrailSources([{ provider: "aws", events: 4, lastEventAt: 9 }], inventory(auditLog)), "aws"),
+		).toBe("receiving")
+		expect(stateOf(auditTrailSources([], inventory([resource({ kind: "role" })])), "aws")).toBe("off")
 	})
 })

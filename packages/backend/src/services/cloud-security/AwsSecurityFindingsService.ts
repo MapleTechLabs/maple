@@ -6,7 +6,7 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { type AwsConnectionRow, AwsConnections } from "@maple/db/tables"
 import { awsConnectionResourceNames, awsOidcIssuer, awsOidcSubject, awsRoleArn } from "@maple/domain/aws"
-import { CLOUD_FINDING_SOURCES, type CloudFindingSource } from "@maple/domain/cloud-security"
+import { CloudSecurityFeed } from "@maple/domain/cloud-security"
 import type { IntegrationsPersistenceError } from "@maple/domain/http"
 import { IntegrationsPersistenceError as PersistenceError } from "@maple/domain/http"
 import { AwsRegion } from "@maple/primitives"
@@ -19,6 +19,7 @@ import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/Org
 import { type AwsApiError, assumeRole } from "../integrations/aws/api"
 import { type AwsOidcSigner, makeAwsOidcSigner } from "../integrations/aws/oidc"
 import { pollFleet } from "../integrations/poll-fleet"
+import { AuditTrailService } from "../audit-trail/AuditTrailService"
 import { CLOSED_FINDING_RETENTION_MS, CloudSecurityStore } from "./CloudSecurityStore"
 
 // The SDK modules of four services are large: they load with the first poll, not with the Worker.
@@ -35,11 +36,13 @@ export interface AwsSecurityPollSummary {
 	readonly failedConnections: number
 	readonly reads: number
 	readonly findings: number
+	readonly auditEvents: number
 }
 
 interface ConnectionPoll {
 	readonly reads: number
 	readonly findings: number
+	readonly auditEvents: number
 	readonly failed: boolean
 }
 
@@ -64,6 +67,7 @@ export class AwsSecurityFindingsService extends Context.Service<
 		const httpClient = yield* HttpClient.HttpClient
 		const featureFlags = yield* OrganizationFeatureFlagsService
 		const store = yield* CloudSecurityStore
+		const auditTrail = yield* AuditTrailService
 		const dbExecute = makeDbExecute(database, "AwsSecurityFindingsService", toPersistenceError)
 
 		// Without a usable key no role can be assumed, and nothing is polled.
@@ -98,7 +102,7 @@ export class AwsSecurityFindingsService extends Context.Service<
 			row: AwsConnectionRow,
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId: row.orgId, "maple.aws.connection_id": row.id })
-			const { enabledRegions, readSource } = yield* readers
+			const { enabledRegions, readCloudTrail, readSource } = yield* readers
 			const session = yield* sessionOf(signerKey, row)
 			const states = yield* store.serviceStates(row.orgId, row.id)
 			// A role from an old stack may not list regions: read the ones read before, or the stack's.
@@ -116,11 +120,11 @@ export class AwsSecurityFindingsService extends Context.Service<
 				),
 			)
 			const now = yield* Clock.currentTimeMillis
-			const stateOf = (region: AwsRegion, source: CloudFindingSource) =>
+			const stateOf = (region: AwsRegion, source: CloudSecurityFeed) =>
 				Arr.findFirst(states, (state) => state.region === region && state.source === source)
 			const due = Arr.filter(
 				Arr.flatMap(regions, (region) =>
-					Arr.map(CLOUD_FINDING_SOURCES, (source) => ({ region, source })),
+					Arr.map(CloudSecurityFeed.literals, (source) => ({ region, source })),
 				),
 				({ region, source }) =>
 					Option.match(stateOf(region, source), {
@@ -138,13 +142,22 @@ export class AwsSecurityFindingsService extends Context.Service<
 								Option.fromNullOr(state.cursorAt),
 							),
 						)
-						const read = yield* readSource(source, {
-							httpClient,
-							session,
-							accountId: row.accountId,
-							region,
-							cursorAt,
-						})
+						const target = { httpClient, session, accountId: row.accountId, region, cursorAt }
+						const state = { orgId: row.orgId, connectionId: row.id, region, source }
+						if (source === "cloudtrail") {
+							const trail = yield* readCloudTrail(target, now)
+							yield* auditTrail.write(row.orgId, trail.events)
+							const checkedAt = yield* Clock.currentTimeMillis
+							yield* store.recordServiceState({
+								...state,
+								state: trail.state,
+								cursorAt: trail.cursorAt,
+								lastError: trail.lastError,
+								checkedAt,
+							})
+							return { findings: 0, auditEvents: trail.events.length }
+						}
+						const read = yield* readSource(source, target)
 						const checkedAt = yield* Clock.currentTimeMillis
 						yield* store.upsertFindings(
 							Arr.map(read.findings, (finding) => ({
@@ -158,31 +171,31 @@ export class AwsSecurityFindingsService extends Context.Service<
 							checkedAt,
 						)
 						yield* store.recordServiceState({
-							orgId: row.orgId,
-							connectionId: row.id,
-							region,
-							source,
+							...state,
 							state: read.state,
 							cursorAt: read.cursorAt,
 							lastError: read.lastError,
 							checkedAt,
 						})
-						return read.findings.length
+						return { findings: read.findings.length, auditEvents: 0 }
 					}),
 				{ concurrency: READ_CONCURRENCY },
 			)
 			yield* store.pruneClosed(row.orgId, now - CLOSED_FINDING_RETENTION_MS)
-			const findings = Arr.reduce(counts, 0, (total, count) => total + count)
+			const findings = Arr.reduce(counts, 0, (total, count) => total + count.findings)
+			const auditEvents = Arr.reduce(counts, 0, (total, count) => total + count.auditEvents)
 			yield* Effect.annotateCurrentSpan({
 				"maple.aws.regions": regions.length,
 				"maple.cloud_security.reads": due.length,
 				"maple.cloud_security.findings": findings,
+				"maple.cloud_security.audit_events": auditEvents,
 			})
-			return { reads: due.length, findings, failed: false } satisfies ConnectionPoll
+			return { reads: due.length, findings, auditEvents, failed: false } satisfies ConnectionPoll
 		})
 
 		const pollAll = Effect.gen(function* () {
-			if (signer === undefined) return { connections: 0, failedConnections: 0, reads: 0, findings: 0 }
+			if (signer === undefined)
+				return { connections: 0, failedConnections: 0, reads: 0, findings: 0, auditEvents: 0 }
 			// Every org's connections: the module filter is jsonb, so it is applied here.
 			const rows = yield* dbExecute((db) =>
 				db.run(
@@ -203,13 +216,14 @@ export class AwsSecurityFindingsService extends Context.Service<
 			const polls = yield* pollFleet(eligible, (row) => pollConnection(signer, row), {
 				message: "AWS security findings poll failed",
 				annotations: (row) => ({ orgId: row.orgId, connectionId: row.id }),
-				fallback: (): ConnectionPoll => ({ reads: 0, findings: 0, failed: true }),
+				fallback: (): ConnectionPoll => ({ reads: 0, findings: 0, auditEvents: 0, failed: true }),
 			})
 			const summary = {
 				connections: eligible.length,
 				failedConnections: Arr.filter(polls, (poll) => poll.failed).length,
 				reads: Arr.reduce(polls, 0, (total, poll) => total + poll.reads),
 				findings: Arr.reduce(polls, 0, (total, poll) => total + poll.findings),
+				auditEvents: Arr.reduce(polls, 0, (total, poll) => total + poll.auditEvents),
 			} satisfies AwsSecurityPollSummary
 			yield* Effect.annotateCurrentSpan({
 				"maple.cloud_security.connections": summary.connections,
@@ -225,6 +239,7 @@ export class AwsSecurityFindingsService extends Context.Service<
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide([
 			CloudSecurityStore.layer,
+			AuditTrailService.layer,
 			FetchHttpClient.layer,
 			OrganizationFeatureFlagsService.layer,
 		]),
