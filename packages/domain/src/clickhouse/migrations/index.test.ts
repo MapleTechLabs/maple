@@ -17,6 +17,7 @@ import { migration_0034_trace_facets_hourly, traceFacetsHourlyBackfill } from ".
 import { migration_0037_service_overview_spans_span_kind } from "./0037_service_overview_spans_span_kind"
 import { migration_0038_external_edges_legacy_db_system } from "./0038_external_edges_legacy_db_system"
 import { migration_0045_ttl_only_drop_parts } from "./0045_ttl_only_drop_parts"
+import { migration_0068_service_usage_profiles } from "./0068_service_usage_profiles"
 import { latestSnapshotStatements } from "../../generated/clickhouse-schema"
 import { migrations } from "./index"
 
@@ -386,6 +387,29 @@ describe("migration 0038: legacy db.system spans stay off the external edges", (
 		expect(create).toContain(
 			"AND coalesce(nullIf(SpanAttributes['db.system.name'], ''), SpanAttributes['db.system']) = ''",
 		)
+	})
+})
+
+describe("migration 0068: service_usage counts profiles", () => {
+	it("adds the profile columns before creating the view that fills them, outside the ingest gate", () => {
+		const [addCount, addBytes, drop, create, ...rest] = migration_0068_service_usage_profiles.statements
+		expect(rest).toEqual([])
+		expect(addCount).toBe(
+			"ALTER TABLE service_usage ADD COLUMN IF NOT EXISTS ProfileCount UInt64 DEFAULT 0",
+		)
+		expect(addBytes).toBe(
+			"ALTER TABLE service_usage ADD COLUMN IF NOT EXISTS ProfileSizeBytes UInt64 DEFAULT 0",
+		)
+		expect(drop).toBe("DROP VIEW IF EXISTS service_usage_profiles_mv")
+		expect(create).toBe(
+			Option.getOrUndefined(
+				Arr.findFirst(latestSnapshotStatements, (stmt) =>
+					Str.includes("service_usage_profiles_mv TO service_usage")(stmt),
+				),
+			),
+		)
+		expect(create).toContain("FROM profiles")
+		expect(migration_0068_service_usage_profiles.requiredForIngest).toBe(false)
 	})
 })
 

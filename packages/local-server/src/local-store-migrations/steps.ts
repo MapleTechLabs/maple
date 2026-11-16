@@ -2040,6 +2040,41 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 			},
 		],
 	},
+	{
+		// Profile counts and bytes on service_usage, written by a new view the bootstrap creates.
+		// Existing hours hold 0 and are not backfilled from profiles.
+		slug: "service-usage-profiles",
+		description: "Add profile counts and bytes to service_usage and create its view from profiles",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [
+			addColumns("service_usage", [
+				["ProfileCount", "UInt64 DEFAULT 0"],
+				["ProfileSizeBytes", "UInt64 DEFAULT 0"],
+			]),
+		],
+		plan: [
+			[
+				"add-service-usage-profiles",
+				"Add ProfileCount and ProfileSizeBytes to service_usage and create service_usage_profiles_mv via the v60 bootstrap",
+			],
+		],
+		dispositions: [
+			{
+				name: "service_usage",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"The profile columns are added with a 0 default; existing rows keep every value and read no profile usage.",
+			},
+			{
+				name: "profiles",
+				classification: "authoritative",
+				disposition: "preserve-exact",
+				guarantee:
+					"The new view's source is neither read nor rewritten; only rows ingested after it count.",
+			},
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]
 

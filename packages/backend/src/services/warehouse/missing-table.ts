@@ -98,3 +98,7 @@ export const isMissingUserActivityIdentity = namesDriftedColumn(/\bUser(?:Name|E
 /** `error_events.UserId` (migration 0057) is missing: schema drift naming `UserId` only, so every
  * other drift still surfaces. User issues and affected users then answer unattributed. */
 export const isMissingErrorEventsUserId = namesDriftedColumn(/\bUserId\b/)
+
+/** `service_usage` predates its profile columns (migration 0068): schema drift naming one of them.
+ * The billing chart then reads no profile usage. */
+export const isMissingServiceUsageProfiles = namesDriftedColumn(/\bProfile(?:Count|SizeBytes)\b/)

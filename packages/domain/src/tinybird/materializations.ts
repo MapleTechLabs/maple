@@ -336,6 +336,41 @@ export const serviceUsageMetricsExpHistogramMv = defineMaterializedView(
 	},
 )
 
+// One profiles row is one call stack. Like logs (body + 200), the estimate is the variable part,
+// 16 bytes per frame reference, plus 200 for the value, attributes and links. The billing chart
+// rescales it to the metered total, so only the daily shape matters.
+export const serviceUsageProfilesMv = defineMaterializedView("service_usage_profiles_mv", {
+	description: "Materialized view to aggregate continuous profiling usage statistics per service per hour",
+	datasource: serviceUsage,
+	nodes: [
+		node({
+			name: "service_usage_profiles_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          ServiceName,
+          toStartOfHour(toDateTime(Timestamp)) AS Hour,
+          0 AS LogCount,
+          0 AS LogSizeBytes,
+          0 AS TraceCount,
+          0 AS TraceSizeBytes,
+          0 AS SumMetricCount,
+          0 AS SumMetricSizeBytes,
+          0 AS GaugeMetricCount,
+          0 AS GaugeMetricSizeBytes,
+          0 AS HistogramMetricCount,
+          0 AS HistogramMetricSizeBytes,
+          0 AS ExpHistogramMetricCount,
+          0 AS ExpHistogramMetricSizeBytes,
+          count() AS ProfileCount,
+          sum(length(Frames) * 16 + 200) AS ProfileSizeBytes
+        FROM profiles
+        GROUP BY OrgId, ServiceName, Hour
+      `,
+		}),
+	],
+})
+
 /**
  * One `source_usage_hourly` row per (org, source, hour) from a signal table.
  * Consumed by `sourceUsageHourlyQuery` and `sourceUsageTotalsQuery`; byte

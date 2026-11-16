@@ -319,8 +319,18 @@ export const serviceUsage = defineDatasource("service_usage", {
 		HistogramMetricSizeBytes: t.uint64(),
 		ExpHistogramMetricCount: t.uint64(),
 		ExpHistogramMetricSizeBytes: t.uint64(),
+		// Continuous profiling (migration 0068, appended last). Hours written before it hold 0.
+		ProfileCount: t.uint64().default(0),
+		ProfileSizeBytes: t.uint64().default(0),
 	},
-	forwardQuery: `SELECT *`,
+	// One-shot: Tinybird needs every column in a forward query, so the 0068 columns carry
+	// forward as 0. Back to `SELECT *` once that deploy is live, or a rebuild zeroes them.
+	forwardQuery: `SELECT
+		OrgId, ServiceName, Hour, LogCount, LogSizeBytes, TraceCount, TraceSizeBytes,
+		SumMetricCount, SumMetricSizeBytes, GaugeMetricCount, GaugeMetricSizeBytes,
+		HistogramMetricCount, HistogramMetricSizeBytes, ExpHistogramMetricCount, ExpHistogramMetricSizeBytes,
+		toUInt64(0) AS ProfileCount,
+		toUInt64(0) AS ProfileSizeBytes`,
 	engine: engine.summingMergeTree({
 		sortingKey: ["OrgId", "ServiceName", "Hour"],
 		ttl: "Hour + INTERVAL 365 DAY",
