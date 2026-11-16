@@ -28,10 +28,15 @@ const parsePlainNumber = (text: string): number | undefined => {
 	return /^0[0-7]+$/.test(digits) ? Number.parseInt(digits, 8) : Number(digits)
 }
 
+/** Go's math.Round: halves round away from zero (JavaScript's Math.round rounds them up). */
+export const roundHalfAway = (value: number): number => Math.sign(value) * Math.round(Math.abs(value)) + 0
+
 /** A Prometheus duration (`1h30m`, `5m`, `250ms`) or a plain number of seconds, in ms. Undefined when invalid. */
 export const parseDurationMs = (text: string): number | undefined => {
 	const seconds = parsePlainNumber(text)
-	if (seconds !== undefined) return Number.isFinite(seconds) ? Math.round(seconds * 1000) : undefined
+	// As Prometheus: seconds round to nanoseconds, then truncate to the milliseconds samples use.
+	if (seconds !== undefined)
+		return Number.isFinite(seconds) ? Math.trunc(roundHalfAway(seconds * 1e9) / 1e6) : undefined
 	if (!/^(\d+(ms|y|w|d|h|m|s))+$/.test(text)) return undefined
 	let total = 0
 	let lastUnit = -1

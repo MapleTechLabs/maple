@@ -128,6 +128,25 @@ describe("regex matchers", () => {
 	})
 })
 
+describe("explicit instant queries", () => {
+	it("read only their start, whatever end the caller passes", () => {
+		const requests: Array<SelectorRequest> = []
+		const at = DATA_START_MS + 3600_000
+		const source = (request: SelectorRequest) => {
+			requests.push(request)
+			return bucketed(request)
+		}
+		const wide = run(
+			"timestamp(http_requests_total @ end())",
+			{ startMs: at, endMs: DATA_END_MS, stepMs: 0, instant: true },
+			source,
+		)
+		const narrow = run("timestamp(http_requests_total @ end())", { startMs: at, endMs: at, stepMs: 0 })
+		expect(flatten(wide)).toEqual(flatten(narrow))
+		expect(Arr.every(requests, (r) => r.endMs <= at)).toBe(true)
+	})
+})
+
 describe("resolution limits", () => {
 	it("rejects a subquery finer than 11000 points before reading anything", () => {
 		let reads = 0

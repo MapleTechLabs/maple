@@ -14,7 +14,7 @@ import type {
 import { functionSignature } from "./functions"
 import { lookup } from "./lookup"
 import { anchoredRegex, type LabelRegex } from "./regex"
-import { parseDurationMs, parseNumber, unquote } from "./literals"
+import { parseDurationMs, parseNumber, roundHalfAway, unquote } from "./literals"
 import { checkTypes, valueTypeOf } from "./types"
 
 export interface PromqlSyntaxError {
@@ -283,7 +283,11 @@ class Converter {
 				const negative =
 					(value.name === "UnaryExpr" && this.text(value).trim().startsWith("-")) !==
 					(signed && text.startsWith("-"))
-				return { kind: "time", timeMs: (negative ? -seconds : seconds) * 1000 } as const
+				// timestamp.FromFloatSeconds: whole milliseconds, halves away from zero.
+				return {
+					kind: "time",
+					timeMs: roundHalfAway((negative ? -seconds : seconds) * 1000),
+				} as const
 			}
 			return yield* fail(value, `invalid @ modifier ${this.text(value)}`)
 		})
