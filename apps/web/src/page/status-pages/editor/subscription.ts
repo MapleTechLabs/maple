@@ -7,8 +7,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { resolveView } from "./update"
 
-// Escape closes the side panel, from its inputs too; an open dialog, menu or listbox keeps its own
-// Escape. A click in the preview frame selects what it landed on.
+// Escape closes the open component, from its inputs too; an open dialog (the sheet included), menu
+// or listbox keeps its own Escape. A click in the live page's frame opens what it landed on.
 
 /** An open popup owns Escape: a dialog, or a dropdown whose trigger or list has focus. */
 const isPopupOpen = (target: EventTarget | null): boolean =>
@@ -37,7 +37,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 	previewSelection: entry(
 		{ isCanvas: Schema.Boolean },
 		{
-			modelToDependencies: ({ model }) => ({ isCanvas: resolveView(model.search.view) === "page" }),
+			modelToDependencies: ({ model }) => ({ isCanvas: resolveView(model.search).tab === "page" }),
 			dependenciesToStream: ({ isCanvas }) =>
 				isCanvas
 					? previewSelections.pipe(

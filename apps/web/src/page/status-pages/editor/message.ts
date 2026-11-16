@@ -65,7 +65,7 @@ export const Message = defineMessageUnion({
 	ReceivedPreviewSelection: { kind: PreviewSelection.fields.kind, id: Schema.String },
 	ClickedComponent: { componentId: StatusPageComponentId },
 	ClickedIncident: { incidentId: StatusPageIncidentId },
-	ClickedClosePanel: {},
+	GotPanelSheetMessage: { message: Dialog.Message },
 	PressedEscape: {},
 	// Components
 	ChangedComponentField: { field: ComponentTextField, value: Schema.String },
@@ -155,6 +155,7 @@ export const Message = defineMessageUnion({
 	CompletedAccessChange: { action: AccessAction, result: LoadOutcome(V2StatusPage) },
 	// Custom domain
 	CompletedFetchCustomDomain: { key: Schema.String, result: LoadOutcome(V2StatusPageCustomDomain) },
+	ClickedRetryCustomDomain: {},
 	ChangedCustomDomain: { value: Schema.String },
 	SubmittedCustomDomain: {},
 	CompletedSetCustomDomain: { result: LoadOutcome(V2StatusPageCustomDomain) },

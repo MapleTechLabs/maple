@@ -19,8 +19,8 @@ import { ComponentForm, IncidentEditForm, IncidentForm, SettingsForm, UpdateForm
 import { Picker } from "../shared/picker"
 import { PreviewHistory, PreviewScheme, PreviewState, PreviewWidth } from "../shared/preview"
 
-// `/status-pages/$pageId`: the page itself is the editor. A component or incident picked in the
-// preview or the list opens in the side panel; Settings and JSON are views of their own.
+// `/status-pages/$pageId`: the live page, its incidents, its maintenance and its settings. A
+// component opens in place under Settings > Monitors; an incident, or Add monitors, in a side sheet.
 
 /** Where the Post incident dialog is: writing it, or reviewing what publishing it changes. */
 export const ComposeStep = Schema.Literals(["write", "review"])
@@ -59,7 +59,7 @@ export type AccessAction = typeof AccessAction.Type
 /** A freshly issued break-glass token: shown once, never read back. */
 export const RevealedToken = Schema.Struct({ token: Schema.String, suffix: Schema.String })
 
-/** What the side panel shows: one component or incident, or Add component. */
+/** What is open: one component (in its Monitors row), or an incident or Add monitors (in the sheet). */
 export const Panel = Schema.Union([
 	Schema.TaggedStruct("Component", { componentId: StatusPageComponentId }),
 	Schema.TaggedStruct("Incident", { incidentId: StatusPageIncidentId }),
@@ -68,7 +68,7 @@ export const Panel = Schema.Union([
 ])
 export type Panel = typeof Panel.Type
 
-/** The component panel's autosave: each commit is a PATCH, its outcome shown next to the title. */
+/** The component form's autosave: each commit is a PATCH, its outcome shown next to the title. */
 export const SaveState = Schema.Literals(["idle", "saving", "saved", "failed"])
 export type SaveState = typeof SaveState.Type
 
@@ -88,6 +88,10 @@ export const Model = Schema.Struct({
 	isSessionLoaded: Schema.Boolean,
 	pageMenu: Menu.Model,
 	panel: Schema.NullOr(Panel),
+	/** The side sheet an incident or Add monitors opens in; open while `panel` is one of those. */
+	panelSheet: Dialog.Model,
+	/** What the sheet shows: the last incident or Add `panel` held, kept while the sheet closes. */
+	sheetPanel: Schema.NullOr(Panel),
 	// Preview
 	previewScheme: PreviewScheme,
 	/** Looking only, like the scheme: neither is saved with the page. */

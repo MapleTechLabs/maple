@@ -185,10 +185,15 @@ export const liveView = (h: H, model: Model, page: V2StatusPage): Html =>
 				description:
 					"Agents read and change the page as one JSON document through the API or Maple's MCP server, and post incidents the same way.",
 				actions: [
-					linkButton(h, { size: "sm", variant: "outline", href: statusPageHref(page.id, "json") }, [
-						icon(h, "BracketsCurlyIcon"),
-						"Page JSON",
-					]),
+					linkButton(
+						h,
+						{
+							size: "sm",
+							variant: "outline",
+							href: statusPageHref(page.id, "settings", "advanced"),
+						},
+						[icon(h, "BracketsCurlyIcon"), "Page JSON"],
+					),
 					linkButton(
 						h,
 						{

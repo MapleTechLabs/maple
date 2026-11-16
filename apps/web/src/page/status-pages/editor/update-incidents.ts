@@ -8,6 +8,7 @@ import { StatusPageIncidentImpact, StatusPageIncidentStatus } from "@maple/domai
 import { worstStatus } from "@maple/domain/status-page"
 import type { V2StatusPageIncident } from "@maple/domain/http/v2"
 import { Option, Result, Schema, Array as Arr, String as Str } from "effect"
+import { AsyncData } from "foldkit"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../../contract"
 import { componentStatus, isOpenIncident, STATUSES_OF_KIND } from "../shared/derive"
@@ -50,7 +51,6 @@ import {
 	type Return,
 	toast,
 } from "./reads"
-import { focusPanel } from "./update-components"
 
 // Incidents: the Post incident, Post update and Edit details dialogs, publishing a draft, deleting.
 
@@ -202,7 +202,7 @@ export const submitIncident = (model: Model, context: PageContext, isPublished: 
 			}
 }
 
-/** A created incident closes the dialog and opens in the panel; a refused one stays on review with why. */
+/** A created incident closes the dialog and opens in the sheet; a refused one stays on review with why. */
 export const createdIncident = (
 	model: Model,
 	result: Result.Result<V2StatusPageIncident, LoadFailure>,
@@ -214,7 +214,18 @@ export const createdIncident = (
 			const noun = incident.kind === "incident" ? "Incident" : "Maintenance"
 			return {
 				...chain(
-					{ ...settled, panel: { _tag: "Incident", incidentId: incident.id } },
+					{
+						...settled,
+						panel: { _tag: "Incident", incidentId: incident.id },
+						// The sheet shows it at once; the re-read confirms it.
+						incidents: {
+							...settled.incidents,
+							data: AsyncData.map(settled.incidents.data, (rows) => [
+								incident,
+								...Arr.filter(rows, (row) => row.id !== incident.id),
+							]),
+						},
+					},
 					(next) => composeDialog(next, Dialog.close(next.composeDialog)),
 					(next) => reread(next, context),
 				),
@@ -229,10 +240,10 @@ export const createdIncident = (
 	})
 }
 
-/** Opens the incident in the panel. */
+/** Opens the incident in the sheet. */
 export const selectIncident = (model: Model, incidentId: StatusPageIncidentId): Return =>
 	Arr.some(incidentsOf(model), (incident) => incident.id === incidentId)
-		? focusPanel({ ...model, panel: { _tag: "Incident", incidentId } })
+		? { model: { ...model, panel: { _tag: "Incident", incidentId } } }
 		: { model }
 
 /** The Post update dialog on its write step: the next status along, or the closing one for Resolve. */

@@ -1,4 +1,5 @@
 import { Option } from "effect"
+import { pageTitle } from "@maple/status-page"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { errorState } from "@maple/views/ui/error-state"
@@ -39,12 +40,11 @@ const body = (h: H, model: Model): Html => {
 			vstack(h, { gap: "2" }, [
 				typography(h, { size: "xs", tone: "muted", as: "p" }, [NOTE[snapshot.page.visibility]]),
 				previewFrame(h, {
-					title: `${snapshot.page.name} status`,
+					title: pageTitle(snapshot.page.name),
 					document: previewDocument({
 						snapshot,
 						nowMs: snapshot.generatedAt,
 						isSelectable: false,
-						selectedIds: [],
 						publicUrl: null,
 						opensLinks: true,
 					}),

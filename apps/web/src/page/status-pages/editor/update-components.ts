@@ -25,7 +25,6 @@ import {
 	AddComponents,
 	CreateEditorMonitor,
 	DeleteComponent,
-	FocusEditorElement,
 	ReorderComponents,
 	SaveComponent,
 	TrackMonitorCreated,
@@ -44,11 +43,14 @@ import {
 	toast,
 } from "./reads"
 
-// Components in the side panel: saved as you go, removed behind a confirm, moved in the list,
-// and added from the same checklist the builder uses.
+// Components under Settings > Monitors: opened in place, saved as you go, removed behind a
+// confirm, moved within their group, and added from the same checklist the builder uses.
 
-export const PANEL_TITLE_ID = "status-page-panel-title"
 export const ADD_PICKER_ID = "status-page-add"
+
+/** A component's row in the Monitors list: the button that opens and closes it. */
+export const componentRowId = (componentId: StatusPageComponentId): string =>
+	`status-page-item-${componentId}`
 
 export const deleteComponentDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => {
 	const lifted = liftDialog(
@@ -62,22 +64,24 @@ export const deleteComponentDialog = (model: Model, step: ReturnType<typeof Dial
 		: lifted
 }
 
-/** Opens the panel and moves focus to its title, so a screen reader lands in it. */
-export const focusPanel = (model: Model): Return => ({
-	model,
-	commands: [FocusEditorElement({ id: PANEL_TITLE_ID })],
-})
-
+/**
+ * Opens the component in its row, which scrolls itself into view as it mounts. The one open before
+ * saves what was typed first; a save in flight keeps its state, so a second cannot start beside it.
+ */
 export const selectComponent = (model: Model, componentId: StatusPageComponentId): Return => {
 	const found = Arr.findFirst(componentsOf(model), (row) => row.id === componentId)
 	if (Option.isNone(found)) return { model }
-	const component = found.value
-	return focusPanel({
-		...model,
-		panel: { _tag: "Component", componentId },
-		componentForm: componentFormOf(component),
-		componentSave: "idle",
-		componentFailure: null,
+	return chain(model, commitComponent, (next) => {
+		const isSaving = next.componentSave === "saving"
+		return {
+			model: {
+				...next,
+				panel: { _tag: "Component", componentId },
+				componentForm: componentFormOf(found.value),
+				componentSave: isSaving ? "saving" : "idle",
+				componentFailure: isSaving ? next.componentFailure : null,
+			},
+		}
 	})
 }
 
@@ -139,20 +143,38 @@ export const savedComponent = (
 		}),
 	})
 
-/** The list with `componentId` moved by `offset`, or `null` when it cannot move that way. */
-export const moved = <A extends { readonly id: StatusPageComponentId }>(
+type Groupable = { readonly id: StatusPageComponentId; readonly group: string | null }
+
+/**
+ * The components as the public page lists them: each group, ungrouped ones too, where its first
+ * member is, then its members in page order.
+ */
+export const groupedOrder = <A extends Groupable>(components: ReadonlyArray<A>): ReadonlyArray<A> =>
+	Arr.flatMap(Arr.dedupe(Arr.map(components, (component) => component.group)), (group) =>
+		Arr.filter(components, (component) => component.group === group),
+	)
+
+/**
+ * The list with `componentId` swapped with its neighbour in its group (`offset` -1 or 1), every
+ * other component where it was; `null` when it has no neighbour that way.
+ */
+export const moved = <A extends Groupable>(
 	components: ReadonlyArray<A>,
 	componentId: StatusPageComponentId,
 	offset: number,
 ): ReadonlyArray<A> | null => {
-	const found = Arr.findFirstIndex(components, (component) => component.id === componentId)
-	if (Option.isNone(found)) return null
-	const from = found.value
-	const to = from + offset
-	const item = components[from]
-	if (to < 0 || to >= components.length || item === undefined) return null
-	const rest = Arr.filter(components, (_, index) => index !== from)
-	return [...rest.slice(0, to), item, ...rest.slice(to)]
+	const item = Arr.findFirst(components, (component) => component.id === componentId)
+	if (Option.isNone(item)) return null
+	const group = Arr.filter(components, (component) => component.group === item.value.group)
+	const neighbour = Option.flatMap(
+		Arr.findFirstIndex(group, (component) => component.id === componentId),
+		(index) => Arr.get(group, index + offset),
+	)
+	if (Option.isNone(neighbour)) return null
+	const other = neighbour.value
+	return Arr.map(components, (component) =>
+		component.id === componentId ? other : component.id === other.id ? item.value : component,
+	)
 }
 
 /** Moves the row at once; the server's order lands with the re-read. */
@@ -248,7 +270,7 @@ export const openAdd = (model: Model): Return => {
 		false,
 	)
 	const session = model.addSession + 1
-	return focusPanel({ ...model, panel: { _tag: "Add", session }, addSession: session, addPicker: picker })
+	return { model: { ...model, panel: { _tag: "Add", session }, addSession: session, addPicker: picker } }
 }
 
 /** Whether the Add panel open now is the one `session` started in. */
@@ -308,20 +330,12 @@ export const submitAdd = (model: Model): Return => {
 			}
 }
 
-/** Closes the Add panel it came from and hands focus back; any panel opened since stays open. */
-const settleAdd = (model: Model, session: number, context: PageContext): Return => {
-	const isAddOpen = isAddSession(model, session)
-	const next = reread(
-		{ ...model, isAddingComponents: false, panel: isAddOpen ? null : model.panel },
+/** Closes the Add sheet it came from; anything opened since stays open. */
+const settleAdd = (model: Model, session: number, context: PageContext): Return =>
+	reread(
+		{ ...model, isAddingComponents: false, panel: isAddSession(model, session) ? null : model.panel },
 		context,
 	)
-	return isAddOpen
-		? {
-				...next,
-				commands: [...(next.commands ?? []), FocusEditorElement({ id: "status-page-on-this-page" })],
-			}
-		: next
-}
 
 export const addedComponents = (
 	model: Model,

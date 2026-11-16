@@ -80,7 +80,8 @@ export const componentFormOf = (component: V2StatusPageComponent): ComponentForm
 	showUptime: component.show_uptime,
 })
 
-const orNull = (value: string): string | null => (Str.trim(value) === "" ? null : Str.trim(value))
+/** A typed value trimmed, or `null` when nothing is left. */
+export const orNull = (value: string): string | null => (Str.trim(value) === "" ? null : Str.trim(value))
 const decodeMonitorId = Schema.decodeUnknownOption(UptimeMonitorId)
 const decodeComponentStatus = Schema.decodeUnknownOption(StatusPageComponentStatus)
 
