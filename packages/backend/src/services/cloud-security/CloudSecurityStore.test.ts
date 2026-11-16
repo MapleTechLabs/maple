@@ -124,6 +124,7 @@ describe("CloudSecurityStore", () => {
 				...base,
 				state: "enabled",
 				cursorAt: 4_000,
+				windowMs: null,
 				lastError: null,
 				checkedAt: 1,
 			})
@@ -131,6 +132,7 @@ describe("CloudSecurityStore", () => {
 				...base,
 				state: "failing",
 				cursorAt: null,
+				windowMs: null,
 				lastError: "throttled",
 				checkedAt: 2,
 			})
@@ -203,6 +205,7 @@ describe("CloudSecurityStore", () => {
 				source: "guardduty",
 				state: "enabled",
 				cursorAt: null,
+				windowMs: null,
 				lastError: null,
 				checkedAt: 1,
 			})

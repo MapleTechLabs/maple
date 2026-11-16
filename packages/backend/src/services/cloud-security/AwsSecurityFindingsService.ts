@@ -175,12 +175,18 @@ export class AwsSecurityFindingsService extends Context.Service<
 							accountId: row.accountId,
 							region,
 							cursorAt,
+							windowMs: Option.getOrNull(
+								Option.flatMap(stateOf(region, source), (state) =>
+									Option.fromNullOr(state.windowMs),
+								),
+							),
 							nowMs: now,
 							deadlineMs,
 						}
 						const recordState = (read: {
 							readonly state: CloudServiceState
 							readonly cursorAt: number | null
+							readonly windowMs: number | null
 							readonly lastError: string | null
 						}) =>
 							Effect.flatMap(Clock.currentTimeMillis, (checkedAt) =>
@@ -191,6 +197,7 @@ export class AwsSecurityFindingsService extends Context.Service<
 									source,
 									state: read.state,
 									cursorAt: read.cursorAt,
+									windowMs: read.windowMs,
 									lastError: read.lastError,
 									checkedAt,
 								}),

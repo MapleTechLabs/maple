@@ -59,6 +59,8 @@ export interface CloudServiceStateWrite {
 	readonly state: CloudServiceState
 	/** Moves the cursor; null keeps the stored one (a failed or empty poll). */
 	readonly cursorAt: number | null
+	/** The window size to start the next windowed read with; null keeps the stored one. */
+	readonly windowMs: number | null
 	readonly lastError: string | null
 	readonly checkedAt: number
 }
@@ -194,7 +196,9 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 				state: CloudServiceStateWrite,
 			) {
 				const base = { state: state.state, lastError: state.lastError, checkedAt: state.checkedAt }
-				const values = state.cursorAt === null ? base : { ...base, cursorAt: state.cursorAt }
+				const withCursor = state.cursorAt === null ? base : { ...base, cursorAt: state.cursorAt }
+				const values =
+					state.windowMs === null ? withCursor : { ...withCursor, windowMs: state.windowMs }
 				yield* dbExecute((db) =>
 					db.run(
 						PG.insertInto(CloudSecurityServiceStates)
