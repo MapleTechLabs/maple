@@ -1,4 +1,5 @@
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
+import { cachedRecoverable } from "@maple/infra/cached-recoverable"
 import { Effect, Array as Arr } from "effect"
 import { MCP_TOOL_MODULES } from "../tool-modules.generated"
 import { audienceAdmits } from "./types"
@@ -29,7 +30,8 @@ const loadDefinition = (entry: McpToolModule) =>
  */
 export const makeModuleToolLookup = Effect.gen(function* () {
 	const cachedLoads = yield* Effect.forEach(registeredModules, (entry) =>
-		Effect.map(Effect.cached(loadDefinition(entry)), (load) => [entry.tool, load] as const),
+		// Waiters await a Promise so each resumes in its own request's I/O context; a failed import is retried.
+		Effect.map(cachedRecoverable(loadDefinition(entry)), (load) => [entry.tool, load] as const),
 	)
 	const loaders = new Map(cachedLoads)
 	const lookup: McpToolLookup = {

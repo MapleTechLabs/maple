@@ -441,7 +441,18 @@ const finish = Effect.fnUntraced(function* (
 	surface: McpToolSurface,
 ) {
 	const checked = yield* Effect.forEach(nextCallsOf(run.doc), (call) =>
-		checkNextCall(lookup, call, surface),
+		checkNextCall(lookup, call, surface).pipe(
+			// The call already ran: a suggested tool whose module fails to load drops the hint, not the result.
+			Effect.catchCause((cause) =>
+				Effect.logWarning("MCP tool suggested a call whose tool failed to load", cause).pipe(
+					Effect.annotateLogs({
+						"maple.mcp.tool": definition.name,
+						"maple.mcp.next_call": call.tool,
+					}),
+					Effect.as({ call, valid: false, hidden: true }),
+				),
+			),
+		),
 	)
 	const invalid = Arr.filter(checked, (check) => !check.valid)
 	const undecodable = Arr.filter(invalid, (check) => !check.hidden)
