@@ -14,7 +14,7 @@ const stamps = (attrs: Record<string, string>) =>
 	Rec.filter(attrs, (_, key) => Str.startsWith("maple_ai.")(key))
 
 describe("stampAiSpan", () => {
-	// facts.rs `vercel_v7_agent_call_and_tool`, chat span: requested model kept over its dated snapshot.
+	// Composite of facts.rs `vercel_v7_agent_call_and_tool` (model rule) and usage.rs cases, chat span.
 	it("stamps a chat span as an unknown:genai model call with usage and its session", () => {
 		const got = stamp("chat openai/gpt-4o-mini", {
 			"gen_ai.operation.name": "chat",
@@ -83,7 +83,7 @@ describe("stampAiSpan", () => {
 		expect(got["maple_ai.usage.cache_write_tokens"]).toBe("765")
 	})
 
-	// facts.rs `vercel_v7_agent_call_and_tool`, tool span.
+	// Composite after facts.rs `vercel_v7_agent_call_and_tool`, tool span.
 	it("stamps an execute_tool span as a tool call", () => {
 		const got = stamp("execute_tool search_docs", {
 			"gen_ai.operation.name": "execute_tool",
@@ -148,6 +148,11 @@ describe("stampAiSpan", () => {
 			"maple_ai.llm_call": "1",
 		}
 		expect(stamp("chat", attrs)).toEqual(attrs)
+	})
+
+	it("stamps a span whose upstream vendor id is empty", () => {
+		const got = stamp("chat", { "gen_ai.operation.name": "chat", "maple_ai.vendor.id": "" })
+		expect(got["maple_ai.vendor.id"]).toBe("unknown:genai")
 	})
 
 	it("leaves a non-GenAI span untouched", () => {

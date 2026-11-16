@@ -1,11 +1,6 @@
-/**
- * Port of the hosted ingest's `maple_ai.*` span stamping
- * (`apps/ingest/src/ai_session.rs`, `ai_session/facts.rs`, `ai_session/usage.rs`)
- * for the local write path, so `ai_trace_index_mv` and Agent Sessions fill.
- *
- * Interim scope: only the `maple` native vendor and the `unknown:genai` tier.
- * Native vendor detection (Claude Code, Codex, Vercel AI SDK, ...) is a follow-up.
- */
+// Local port of the hosted `maple_ai.*` stamping (apps/ingest/src/ai_session.rs, facts.rs, usage.rs),
+// limited to the `maple` and `unknown:genai` tiers. Named vendors, `unknown:openinference`
+// and `unknown:other` (openinference, llm.*, legacy ai.* spans) are a follow-up.
 
 import {
 	MAPLE_AI_SESSION_ID_ATTR,
@@ -17,11 +12,12 @@ import {
 	MAPLE_NATIVE_TURN_ID_ATTR,
 } from "@maple/domain/gen-ai"
 import { Array as Arr, Record as Rec, String as Str } from "effect"
-import { formatDouble } from "./encode"
+import { formatDouble } from "./format-double"
 
 type Attrs = Record<string, string>
 
 const inNamespace = Str.startsWith("maple_ai.")
+const isScorerSpan = Str.startsWith("scorer_")
 const VENDOR_VERSION = "0"
 const CONVERSATION_ID_KEY = "gen_ai.conversation.id"
 const PRESERVED_ATTRS: ReadonlySet<string> = new Set([
@@ -285,7 +281,7 @@ function classify(attrs: Attrs, kind: number | undefined): string | undefined {
 	// A Mastra scorer run is an evaluation, and an MCP server span is the tool, not an agent.
 	if (
 		attrs["mastra.metadata.targetTraceId"] !== undefined ||
-		Str.startsWith("scorer_")(attrs["mastra.span.type"] ?? "")
+		isScorerSpan(attrs["mastra.span.type"] ?? "")
 	) {
 		return undefined
 	}
@@ -315,8 +311,8 @@ export function stampAiSpan(
 			break
 		}
 	}
-	// Already stamped upstream: hosted would re-derive, but this port lacks most vendors, so keep it.
-	if (namespaced && attrs[MAPLE_AI_VENDOR_ID_ATTR] !== undefined) return attrs
+	// Differs from Rust, which re-derives: this port lacks most vendors, so an upstream stamp is kept.
+	if (namespaced && (attrs[MAPLE_AI_VENDOR_ID_ATTR] ?? "") !== "") return attrs
 	const vendor = classify(attrs, kind)
 	const nativeSession = attrs[MAPLE_AI_SESSION_ID_ATTR] ?? ""
 	const out = namespaced
