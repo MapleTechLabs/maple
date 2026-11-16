@@ -271,4 +271,45 @@ describe("AnomalyDetectionService incident chart", () => {
 			])
 		}),
 	)
+
+	it.effect("draws the live error-log point from the previous hour when this hour has no logs yet", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(createdDbs)
+			yield* TestClock.setTime(Date.parse("2026-11-16T10:30:00Z"))
+			const hourStart = Date.parse("2026-11-16T10:00:00Z")
+			const incidentId = Schema.decodeSync(AnomalyIncidentId)("00000000-0000-4000-8000-000000000072")
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO anomaly_incidents
+					   (id, org_id, detector_key, signal_type, service_name, deployment_env, status, severity,
+					    opened_value, baseline_median, baseline_sigma, threshold_value, last_observed_value,
+					    last_sample_count, first_triggered_at, last_triggered_at, triage_status, dedupe_key,
+					    fingerprints_json, reopen_count, created_at, updated_at)
+					 VALUES ($1, $2, 'log_volume:production:payments', 'log_volume', 'payments', 'production',
+					         'open', 'warning', 1, 1, 1, 1, 1, 60, to_timestamp($3 / 1000.0),
+					         to_timestamp($3 / 1000.0), 'none', $1, '[]'::jsonb, 0, now(), now())`,
+					[incidentId, ORG, hourStart - HOUR_MS],
+				),
+			)
+			const warehouse = makeWarehouseServiceStub({
+				compiledQuery: (_tenant, compiled, options) =>
+					compiledQueryOf(compiled)
+						.decodeRows(
+							options?.context === "anomalyLogVolumeTimeseries"
+								? [{ hour: formatWarehouseDateTime(hourStart - HOUR_MS), errorLogCount: 60 }]
+								: [],
+						)
+						.pipe(Effect.orDie),
+			})
+			const series = yield* AnomalyDetectionService.use((service) =>
+				service.getIncidentTimeseries(systemTenant(ORG, ALERTING_SYSTEM_USER_ID), incidentId, {}),
+			).pipe(Effect.provide(makeLayer(testDb, warehouse)))
+			// Half of 09:00's 60 logs fall in the window 09:30 to 10:30.
+			expect(Arr.map(series.buckets, (b) => [b.bucket, b.value, b.sampleCount])).toEqual([
+				["2026-11-16T09:00:00.000Z", 1, 60],
+				["2026-11-16T10:00:00.000Z", 0.5, 30],
+			])
+		}),
+	)
 })

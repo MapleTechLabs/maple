@@ -885,7 +885,14 @@ const make: Effect.Effect<
 
 		const currentHourStartMs = Math.floor(nowMs / HOUR_MS) * HOUR_MS
 		// The in-progress hour's point is the detector's own observation: the last 60 minutes.
+		// It is drawn whenever the chart reaches now, even if that hour has no row yet.
 		const isLiveBucket = (hourMs: number) => hourMs >= currentHourStartMs
+		const reachesNow = endMs >= currentHourStartMs
+		const sealedHours = <R extends { readonly hour: DateTime.Utc }>(rows: ReadonlyArray<R>) =>
+			Arr.filter(rows, (r) => {
+				const hourMs = DateTime.toEpochMillis(r.hour)
+				return hourMs >= startMs && !isLiveBucket(hourMs)
+			})
 
 		const queryWindow = {
 			orgId,
@@ -951,20 +958,29 @@ const make: Effect.Effect<
 				context: "anomalyLogVolumeTimeseries",
 			})
 			const byHour = new Map(Arr.map(rows, (r) => [DateTime.toEpochMillis(r.hour), r]))
-			buckets = Arr.map(
-				Arr.filter(rows, (r) => DateTime.toEpochMillis(r.hour) >= startMs),
-				(r) => {
-					const hourMs = DateTime.toEpochMillis(r.hour)
-					const errorLogCount = isLiveBucket(hourMs)
-						? logWindowFromHours(byHour.get(hourMs - HOUR_MS), r, nowMs).errorLogCount
-						: r.errorLogCount
-					return new AnomalyTimeseriesBucket({
-						bucket: isoFromEpoch(hourMs),
-						value: errorLogCount / CURRENT_WINDOW_MINUTES,
-						sampleCount: Math.round(errorLogCount),
-					})
-				},
-			)
+			const logBucket = (hourMs: number, errorLogCount: number) =>
+				new AnomalyTimeseriesBucket({
+					bucket: isoFromEpoch(hourMs),
+					value: errorLogCount / CURRENT_WINDOW_MINUTES,
+					sampleCount: Math.round(errorLogCount),
+				})
+			buckets = [
+				...Arr.map(sealedHours(rows), (r) =>
+					logBucket(DateTime.toEpochMillis(r.hour), r.errorLogCount),
+				),
+				...(reachesNow
+					? [
+							logBucket(
+								currentHourStartMs,
+								logWindowFromHours(
+									byHour.get(currentHourStartMs - HOUR_MS),
+									byHour.get(currentHourStartMs),
+									nowMs,
+								).errorLogCount,
+							),
+						]
+					: []),
+			]
 		} else {
 			bucketSeconds = 3600
 			const compiled = CH.compile(CH.anomalyTraceSignalTimeseriesQuery(), {
@@ -983,12 +999,22 @@ const make: Effect.Effect<
 					: signalType === "latency_p95"
 						? "milliseconds"
 						: "per_minute"
-			const live = Arr.some(rows, (r) => isLiveBucket(DateTime.toEpochMillis(r.hour)))
-				? (yield* fetchGoldenWindow(tenant, nowMs, currentHourStartMs)).get(seriesKey(row))
+			// No minutely row means no traffic in the window: zero, as the detector sees it.
+			const live: GoldenHour | undefined = reachesNow
+				? ((yield* fetchGoldenWindow(tenant, nowMs, currentHourStartMs)).get(seriesKey(row)) ?? {
+						requestCount: 0,
+						errorCount: 0,
+						p95Ms: 0,
+					})
 				: undefined
-			buckets = Arr.map(rows, (r) => {
-				const hourMs = DateTime.toEpochMillis(r.hour)
-				const observed = isLiveBucket(hourMs) && live !== undefined ? live : r
+			const points: ReadonlyArray<readonly [number, GoldenHour]> = [
+				...Arr.map(sealedHours(rows), (r): readonly [number, GoldenHour] => [
+					DateTime.toEpochMillis(r.hour),
+					r,
+				]),
+				...(live === undefined ? [] : [[currentHourStartMs, live] as const]),
+			]
+			buckets = Arr.map(points, ([hourMs, observed]) => {
 				const { requestCount, errorCount, p95Ms } = observed
 				const value =
 					signalType === "error_rate"
