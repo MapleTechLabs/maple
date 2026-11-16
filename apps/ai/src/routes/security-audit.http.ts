@@ -193,6 +193,29 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 				),
 			)
 
+		/**
+		 * The pull request runs whose checks a triage re-reports. Best effort: the triage is already
+		 * committed, so a failed read refreshes no other check rather than failing the response; the
+		 * next publish of those runs judges the finding afresh.
+		 */
+		const reportingRuns = (
+			store: SecurityAuditOrgStore,
+			targetId: SecurityAuditTargetId,
+			fingerprint: string,
+		) =>
+			store
+				.listPullRequestRunsReporting(targetId, fingerprint)
+				.pipe(
+					Effect.catch((error) =>
+						Effect.logWarning(
+							"[SecurityPrCheck] could not list the checks a triage re-reports",
+						).pipe(
+							Effect.annotateLogs({ targetId, error: error.message }),
+							Effect.as<ReadonlyArray<SecurityAuditRunRow["id"]>>([]),
+						),
+					),
+				)
+
 		/** Marks a run whose Workflow never started as failed, so it does not read as running forever. */
 		const failUnstarted = (
 			store: SecurityAuditOrgStore,
@@ -527,9 +550,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 						},
 					})
 					// Every pull request check reporting it follows: a dismissed blocker stops failing them.
-					const reporting = yield* orUnavailable(
-						store.listPullRequestRunsReporting(run.targetId, params.fingerprint),
-					)
+					const reporting = yield* reportingRuns(store, run.targetId, params.fingerprint)
 					yield* Effect.forEach(
 						Arr.dedupe([run.id, ...reporting]),
 						(runId) => prChecks.publish(tenant.orgId, runId),
@@ -566,9 +587,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 						},
 					})
 					// Pull request checks that reported it follow: a reopened blocker fails them again.
-					const reporting = yield* orUnavailable(
-						store.listPullRequestRunsReporting(params.targetId, params.fingerprint),
-					)
+					const reporting = yield* reportingRuns(store, params.targetId, params.fingerprint)
 					yield* Effect.forEach(reporting, (runId) => prChecks.publish(tenant.orgId, runId), {
 						concurrency: 4,
 						discard: true,
