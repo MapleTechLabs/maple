@@ -487,7 +487,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				const now = yield* Clock.currentTimeMillis
 				const bytes = yield* Effect.sync(() => SecureRandom.randomBytesUnsafe(16))
 				const challenge = `maple-domain-verification=${Hex.encode(bytes)}`
-				yield* dbExecute((db) =>
+				const inserted = yield* dbExecute((db) =>
 					db.run(
 						PG.insertInto(OrgSsoDomains)
 							.values({
@@ -500,9 +500,14 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 								createdAt: now,
 								createdBy: userId,
 							})
-							.onConflictDoNothing(),
+							.onConflictDoNothing()
+							.returning("domain"),
 					),
 				)
+				// Re-adding keeps the existing challenge; it is not a change, so it is refused, not audited.
+				if (inserted.length === 0) {
+					return yield* new EnterpriseSsoConflictError({ message: `${domain} is already added.` })
+				}
 				return yield* get(orgId)
 			})
 

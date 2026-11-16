@@ -340,7 +340,12 @@ const samlRequest = (domains: Array<string>) =>
 const verifiedDomain = (dns: Map<string, Array<string>>, domain: string) =>
 	Effect.gen(function* () {
 		const sso = yield* EnterpriseSsoService
-		const added = yield* sso.addDomain(ORG, ADMIN, domain)
+		// Already added earlier in the test: publish the challenge it has.
+		const added = yield* sso
+			.addDomain(ORG, ADMIN, domain)
+			.pipe(
+				Effect.catchTag("@maple/http/enterprise-sso/EnterpriseSsoConflictError", () => sso.get(ORG)),
+			)
 		const row = Arr.findFirst(added.domains, (d) => d.domain === domain)
 		assert.isTrue(Option.isSome(row))
 		if (Option.isSome(row)) dns.set(row.value.recordName, ["v=spf1 -all", row.value.recordValue])
@@ -363,6 +368,10 @@ describe("EnterpriseSsoService", () => {
 					[["acme.com", "pending", "_maple-challenge.acme.com"]],
 				)
 				assert.match(added.domains[0]?.recordValue ?? "", /^maple-domain-verification=[0-9a-f]{32}$/)
+
+				// Adding it again changes nothing and says so.
+				const readded = yield* sso.addDomain(ORG, ADMIN, "ACME.com").pipe(Effect.flip)
+				assert.strictEqual(readded._tag, "@maple/http/enterprise-sso/EnterpriseSsoConflictError")
 
 				// No record published yet: refused, and nothing reaches Clerk.
 				const early = yield* sso.verifyDomain(ORG, "acme.com").pipe(Effect.flip)
