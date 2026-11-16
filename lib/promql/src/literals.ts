@@ -54,6 +54,7 @@ export const parseDurationMs = (text: string): number | undefined => {
 /** Prometheus' canonical spelling of a duration, the inverse of `parseDurationMs`. */
 export const formatDuration = (ms: number): string => {
 	if (ms === 0) return "0s"
+	if (ms < 0) return `-${formatDuration(-ms)}`
 	let rest = ms
 	let out = ""
 	for (const unit of UNIT_ORDER) {
