@@ -323,14 +323,8 @@ export const serviceUsage = defineDatasource("service_usage", {
 		ProfileRowCount: t.uint64().default(0),
 		ProfileSizeBytes: t.uint64().default(0),
 	},
-	// One-shot: changing the views makes Tinybird rebuild service_usage, and without a forward
-	// query it would refill it from 14 to 90 day sources. Back to `SELECT *` after the 0068 deploy.
-	forwardQuery: `SELECT
-		OrgId, ServiceName, Hour, LogCount, LogSizeBytes, TraceCount, TraceSizeBytes,
-		SumMetricCount, SumMetricSizeBytes, GaugeMetricCount, GaugeMetricSizeBytes,
-		HistogramMetricCount, HistogramMetricSizeBytes, ExpHistogramMetricCount, ExpHistogramMetricSizeBytes,
-		defaultValueOfTypeName('UInt64') AS ProfileRowCount,
-		defaultValueOfTypeName('UInt64') AS ProfileSizeBytes`,
+	// A rebuild refills from the live table: the source tables keep 14 to 90 days, this one 365.
+	forwardQuery: `SELECT *`,
 	engine: engine.summingMergeTree({
 		sortingKey: ["OrgId", "ServiceName", "Hour"],
 		ttl: "Hour + INTERVAL 365 DAY",
