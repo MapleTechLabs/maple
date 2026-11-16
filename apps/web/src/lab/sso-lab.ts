@@ -21,13 +21,14 @@ import type { Resources } from "../platform/resources"
 import { keepLocal } from "./local-commands"
 
 // `/lab/sso`: the settings SSO & SCIM tab over fixtures. `?state=` picks one: not-entitled, empty,
-// pending (a domain awaiting its TXT record), connected, configured, token, enforce, member.
+// pending (a domain awaiting its TXT record), connected, oidc, configured, token, enforce, member.
 
 export const LabState = Schema.Literals([
 	"not-entitled",
 	"empty",
 	"pending",
 	"connected",
+	"oidc",
 	"configured",
 	"token",
 	"enforce",
@@ -91,6 +92,25 @@ const connection = (enforced: boolean) =>
 		createdAt: iso("2026-11-14T09:20:00.000Z"),
 	})
 
+const oidcConnection = new SsoConnectionDocument({
+	name: "Acme Identity",
+	provider: "oidc_custom",
+	protocol: "oidc",
+	domains: ["acme.com"],
+	enforced: false,
+	acsUrl: null,
+	spEntityId: null,
+	spMetadataUrl: null,
+	idpMetadataUrl: null,
+	idpSsoUrl: null,
+	idpEntityId: null,
+	idpCertificateExpiresAt: null,
+	oidcDiscoveryUrl: "https://id.acme.com/.well-known/openid-configuration",
+	oidcClientId: "maple-dashboard",
+	oidcRedirectUri: "https://clerk.maple.dev/v1/oauth_callback",
+	createdAt: iso("2026-11-14T09:20:00.000Z"),
+})
+
 const directory = new ScimDirectoryDocument({
 	endpointUrl: "https://api.clerk.com/scim/v2",
 	enabled: true,
@@ -130,6 +150,13 @@ const documentOf = (state: LabState): EnterpriseSsoDocument => {
 				...base,
 				domains: [verifiedDomain, pendingDomain],
 				connection: connection(false),
+				bypassUsers: bypass,
+			})
+		case "oidc":
+			return new EnterpriseSsoDocument({
+				...base,
+				domains: [verifiedDomain],
+				connection: oidcConnection,
 				bypassUsers: bypass,
 			})
 		case "configured":

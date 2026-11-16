@@ -97,7 +97,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/sso",
 		title: "SSO & SCIM",
 		description:
-			"The settings SSO & SCIM tab: not entitled, empty, a pending domain, connected, fully configured, the one-time token, the enforce confirm and a read-only member (`?state=`).",
+			"The settings SSO & SCIM tab: not entitled, empty, a pending domain, connected over SAML or OIDC, fully configured, the one-time token, the enforce confirm and a read-only member (`?state=`).",
 		kind: "lab",
 		session: "none",
 	},
