@@ -596,3 +596,23 @@ describe("startPullRequestCheck edits and stale supersedes", () => {
 		expect(Arr.map(result.runs, (r) => r.status)).toEqual(["in_progress"])
 	})
 })
+
+describe("startPullRequestCheck edits after an unfinished audit", () => {
+	it("does not start another run when a title edit follows a cancelled run at the same head", async () => {
+		const harness = makeHarness()
+		const result = await harness.run(
+			Effect.gen(function* () {
+				const target = yield* harness.seeded
+				yield* startPullRequestCheck(orgId, job())
+				const store = (yield* SecurityAuditStore).forOrg(orgId)
+				const first = harness.started[0]?.runId ?? ""
+				yield* store.finishRun(first, { status: "incomplete", reason: "cancelled" })
+				const outcome = yield* startPullRequestCheck(orgId, job({ action: "edited" }))
+				return { outcome, runs: yield* harness.runsOf(target.id) }
+			}),
+		)
+
+		expect(result.outcome.reason).toBe("already_checked")
+		expect([harness.started.length, result.runs.length]).toEqual([1, 1])
+	})
+})
