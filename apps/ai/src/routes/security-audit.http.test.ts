@@ -13,7 +13,7 @@ import {
 import { aiCreditsUsd } from "@maple/domain/billing"
 import { OrgId, RoleName, UserId } from "@maple/primitives"
 import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
-import type { EstimatedSeverity, Finding } from "@maple/security-audit"
+import { AuditStoreError, type EstimatedSeverity, type Finding } from "@maple/security-audit"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import {
 	SecurityAuditWorkflowStarter,
@@ -103,6 +103,8 @@ const makeHarness = (
 		readonly noCredits?: { readonly resetsAt: number | null }
 		/** Repository sizes GitHub reports, by `owner/name`; read on every call. */
 		readonly repositoryBytes?: Record<string, number>
+		/** The lookup of a finding's reporting pull request runs fails, as with the database down. */
+		readonly reportingFails?: boolean
 	} = {},
 ) => {
 	const db = createTestDb(trackedDbs)
@@ -133,7 +135,23 @@ const makeHarness = (
 					}),
 	})
 	const auditLog = makeMemoryAuditLog()
-	const storeLayer = SecurityAuditStore.layer.pipe(Layer.provide(db.layer))
+	const realStore = SecurityAuditStore.layer.pipe(Layer.provide(db.layer))
+	const storeLayer =
+		options.reportingFails === true
+			? Layer.effect(
+					SecurityAuditStore,
+					Effect.gen(function* () {
+						const base = yield* SecurityAuditStore
+						return {
+							forOrg: (orgId: OrgId) => ({
+								...base.forOrg(orgId),
+								listPullRequestRunsReporting: () =>
+									Effect.fail(new AuditStoreError({ message: "database unavailable" })),
+							}),
+						}
+					}),
+				).pipe(Layer.provide(realStore))
+			: realStore
 	// The org's GitHub connection: a target can only name a repository it has connected.
 	const connected = executeSql(
 		db,
@@ -1592,6 +1610,42 @@ describe("/api/security-audit run triage across pull requests", () => {
 			})
 
 			expect([...harness.published].sort()).toEqual([runs.a.id, runs.newerB.id].sort())
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+describe("/api/security-audit triage when its check refresh cannot read", () => {
+	it("returns the committed triage and still re-reports the triaged run's own check", async () => {
+		const harness = makeHarness({ reportingFails: true })
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const run = await harness.withStore((store) =>
+				Effect.gen(function* () {
+					const scoped = store.forOrg(ORG_A)
+					const started = yield* scoped.startRun({
+						targetId: target.body.id,
+						kind: "pull_request",
+						prNumber: 4,
+						sourceRef: "0123456789abcdef0123456789abcdef01234567",
+					})
+					yield* scoped.saveFindings(started.id, [confirmed("p1")], NO_ESTIMATES)
+					yield* scoped.finishRun(started.id, { status: "complete" })
+					return started
+				}),
+			)
+
+			const triaged = await harness.call("PATCH", `/runs/${run.id}/findings/p1`, {
+				body: { status: "dismissed", reason: "test fixture" },
+			})
+			const onTarget = await harness.call("PATCH", `/targets/${target.body.id}/findings/p1`, {
+				body: { status: "accepted_risk", reason: "still fine" },
+			})
+
+			expect([triaged.status, triaged.body.status]).toEqual([200, "dismissed"])
+			expect([onTarget.status, onTarget.body.status]).toEqual([200, "accepted_risk"])
+			expect(harness.published).toEqual([run.id])
 		} finally {
 			await harness.dispose()
 		}
