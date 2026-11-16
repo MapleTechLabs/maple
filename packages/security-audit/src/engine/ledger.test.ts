@@ -87,6 +87,20 @@ describe("reviewProposal", () => {
 		expect(review._tag === "Refused" ? review.unknownRefs : []).toEqual([BEARER])
 	})
 
+	it("refuses a unit with neither an attack-class block nor a companion block", () => {
+		const review = reviewProposal(
+			seed("keys", "Bearer tokens", {
+				ordinary_attack_class_block: null,
+				selected_companion_blocks: [],
+			}),
+		)
+		expect(review).toEqual({
+			_tag: "Refused",
+			reason: "no known attack-class block: no companion block names an attack class",
+			unknownRefs: [],
+		})
+	})
+
 	it("collapses two spellings of one block and an exclusion of a selected block", () => {
 		const tenant = "DATA-ISOLATION-AND-LIFECYCLE.md#Tenant and object-isolation attack classes"
 		const review = admitted(

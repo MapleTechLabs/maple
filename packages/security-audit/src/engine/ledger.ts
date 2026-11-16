@@ -112,15 +112,12 @@ export const reviewProposal = (seed: Proposal): ProposalReview => {
 	const selected = Arr.dedupe(
 		Arr.flatMap(seed.selected_companion_blocks, (ref) => present(canonicalBlockRef(ref))),
 	)
-	if (
-		ordinary === null &&
-		seed.selected_companion_blocks.length > 0 &&
-		!Arr.some(selected, (ref) => !isCompanionRequiredSection(ref))
-	) {
-		return refused(
-			`no known attack-class block: ${plural(unknownSelected.length, "unknown companion block reference")} (${listSome(unknownSelected)})`,
-			unknownSelected,
-		)
+	if (ordinary === null && !Arr.some(selected, (ref) => !isCompanionRequiredSection(ref))) {
+		const detail =
+			unknownSelected.length === 0
+				? "no companion block names an attack class"
+				: `${plural(unknownSelected.length, "unknown companion block reference")} (${listSome(unknownSelected)})`
+		return refused(`no known attack-class block: ${detail}`, unknownSelected)
 	}
 	if (seed.starting_paths.length === 0) return refused("no starting paths")
 	const unsafe = Arr.filter(seed.starting_paths, (path) => !isSafeRelativePath(path))

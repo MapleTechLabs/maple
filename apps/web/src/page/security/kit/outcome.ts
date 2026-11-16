@@ -66,7 +66,7 @@ const REASON_COPY = new Map<string, (detail: string) => ReasonCopy>([
 		() => ({
 			kind: "broken",
 			title: "No unit was audited",
-			body: "Every unit the coverage review planned was refused before it ran, so nothing in the repository was checked. This run proves nothing. Start a new run to plan the units again.",
+			body: "Nothing in the repository was checked, so this run proves nothing. Start a new run to plan and hunt the units again.",
 			short: "no unit was audited",
 			action: "start",
 		}),
