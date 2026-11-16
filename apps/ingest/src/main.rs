@@ -15224,6 +15224,46 @@ mod tests {
         drop(std::fs::remove_dir_all(&denied_dir));
     }
 
+    // A refused commit bills nothing, whatever it stored before the refusal: the resend bills the
+    // whole export, once. Any commit error returns before usage is recorded.
+    #[tokio::test]
+    async fn a_refused_profiles_commit_bills_nothing_and_its_resend_bills_once() {
+        let key = "maple_sk_test_profiles_refused_billing";
+        let refused_dir = unique_main_test_dir("profiles-refused-billing");
+        let store = private_key_store(key, "org_profiles_refused_billing", false);
+        // The org's queue cannot hold the export, so the commit is refused.
+        let (state, mut imports) =
+            profiles_test_state_with_org_queue(store, refused_dir.clone(), 100 * 1024).await;
+        let (state, mut rx) = with_fake_autumn(state).await;
+        let refused = send_sdk_profiles(&state, key)
+            .await
+            .expect_err("the export is past the org's queue");
+        assert_eq!(refused.status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert!(no_profiles_are_stored(&mut imports).await);
+        assert!(tracked(&drain_autumn_calls(&mut rx).await).is_empty());
+
+        // The resend to a gateway with room is stored and billed whole, once.
+        let resent_dir = unique_main_test_dir("profiles-resent-billing");
+        let store = private_key_store(key, "org_profiles_refused_billing", false);
+        let (state, mut imports) = profiles_test_state(store, resent_dir.clone()).await;
+        let (state, mut rx) = with_fake_autumn(state).await;
+        assert_eq!(
+            send_sdk_profiles(&state, key).await.expect("the resend is stored"),
+            PROFILES_SDK_ROWS
+        );
+        assert_eq!(
+            imported_profile_rows(&mut imports, PROFILES_SDK_ROWS).await.len(),
+            PROFILES_SDK_ROWS
+        );
+        let calls = drain_autumn_calls(&mut rx).await;
+        let billed = tracked(&calls);
+        assert_eq!(billed.len(), 1, "{billed:?}");
+        let expected = billable_gb(PROFILES_SDK_EXPORT.len() as u64);
+        assert!((billed[0].1 - expected).abs() < 1e-12, "{billed:?}");
+        drop(std::fs::remove_dir_all(&refused_dir));
+        drop(std::fs::remove_dir_all(&resent_dir));
+    }
+
     // The spec's development path and the path it moves to both take an export.
     #[tokio::test]
     async fn both_profiles_routes_take_an_export() {

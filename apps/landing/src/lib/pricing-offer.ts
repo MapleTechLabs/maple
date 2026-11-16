@@ -82,6 +82,7 @@ const dataFeatureLabels = (): Record<string, string> => ({
 	logs: m.pricing_logs(),
 	traces: m.pricing_traces(),
 	metrics: m.pricing_metrics(),
+	profiles: m.pricing_profiles(),
 	browser_sessions: m.nav_browser_sessions(),
 	product_events: m.pricing_product_events(),
 	ai_credits: m.pricing_ai_usage(),
@@ -191,6 +192,14 @@ export async function getOffer(): Promise<Offer> {
 				unit: "gb",
 				included: 100,
 				rate: 0.3,
+				rateUnits: 1,
+			},
+			{
+				featureId: "profiles",
+				label: labels.profiles,
+				unit: "gb",
+				included: 10,
+				rate: 0.6,
 				rateUnits: 1,
 			},
 			{
