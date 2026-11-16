@@ -18,7 +18,6 @@ import { ScraperEnv } from "./Env"
 import { activeTargets, scrapeDurationMs, scrapesTotal } from "./Metrics"
 import { backoffLogMessage, nextScrapeDelayMs, shouldBackOff, startJitterMs } from "./policy"
 import { ResultReporter } from "./ResultReporter"
-import type { ScrapeFailureReason } from "./ScrapeError"
 import { type ScrapePermit, Scraper, type SubTargetScrape } from "./Scraper"
 import { type TargetGroup, TargetRegistry, targetKey } from "./TargetRegistry"
 
@@ -70,8 +69,6 @@ const toReport = (scrape: SubTargetScrape) =>
 interface Backoff {
 	readonly consecutive: number
 	readonly notBefore: number
-	/** The failure that put it here; the same failure again is the same streak. */
-	readonly reason: ScrapeFailureReason
 	/** The URL it failed on; a changed URL is a new endpoint and starts clean. */
 	readonly url: string
 }
@@ -111,7 +108,6 @@ const nextBackoffs = (
 		const backoff = {
 			consecutive: consecutive + 1,
 			notBefore: endedAt + delayMs,
-			reason: failure.reason,
 			url: scrape.target.url,
 		}
 		return [[key, backoff]]
@@ -195,11 +191,7 @@ export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSche
 					const outcome =
 						firstDue === undefined
 							? { scrapes: [], deliveryFailure: null }
-							: yield* scraper.scrapeCycle(
-									[firstDue, ...restDue],
-									permit,
-									new Map(Array.from(current, ([key, backoff]) => [key, backoff.reason])),
-								)
+							: yield* scraper.scrapeCycle([firstDue, ...restDue], permit)
 					yield* Effect.forEach(outcome.scrapes, record, { discard: true })
 					const endedAt = yield* Clock.currentTimeMillis
 
