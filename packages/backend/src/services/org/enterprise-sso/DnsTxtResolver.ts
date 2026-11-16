@@ -33,36 +33,35 @@ export interface DnsTxtResolverApi {
 /** DNS over HTTPS against Cloudflare's resolver: Workers have no raw DNS, and it works in both regions. */
 const make = Effect.gen(function* () {
 	const httpClient = yield* HttpClient.HttpClient
-	const lookupTxt = Effect.fn("DnsTxtResolver.lookupTxt")(
-		function* (name: string) {
-			yield* Effect.annotateCurrentSpan({ "dns.question.name": name })
-			const fail = (message: string) => new DnsLookupError({ recordName: name, message })
-			const response = yield* httpClient
-				.execute(
-					HttpClientRequest.get("https://cloudflare-dns.com/dns-query").pipe(
-						HttpClientRequest.setUrlParams({ name, type: "TXT" }),
-						HttpClientRequest.setHeader("accept", "application/dns-json"),
-					),
-				)
-				.pipe(Effect.mapError((error) => fail(error.message)))
-			if (response.status !== 200) return yield* fail(`DNS resolver answered ${response.status}`)
-			const body = yield* response.json.pipe(
-				Effect.flatMap(Schema.decodeUnknownEffect(DohAnswer)),
-				Effect.mapError(() => fail("DNS resolver answered in an unexpected shape")),
+	const lookupTxt = Effect.fn("DnsTxtResolver.lookupTxt")(function* (name: string) {
+		yield* Effect.annotateCurrentSpan({ "dns.question.name": name })
+		const fail = (message: string) => new DnsLookupError({ recordName: name, message })
+		const response = yield* httpClient
+			.execute(
+				HttpClientRequest.get("https://cloudflare-dns.com/dns-query").pipe(
+					HttpClientRequest.setUrlParams({ name, type: "TXT" }),
+					HttpClientRequest.setHeader("accept", "application/dns-json"),
+				),
 			)
-			if (body.Status === NXDOMAIN) return []
-			if (body.Status !== 0) return yield* fail(`DNS lookup failed with status ${body.Status}`)
-			return Arr.map(
-				Arr.filter(body.Answer ?? [], (a) => a.type === TXT),
-				(a) => txtValue(a.data),
+			.pipe(
+				Effect.mapError((error) => fail(error.message)),
+				Effect.timeoutOrElse({
+					duration: Duration.seconds(5),
+					orElse: () => Effect.fail(fail("DNS lookup timed out")),
+				}),
 			)
-		},
-		Effect.timeoutOrElse({
-			duration: Duration.seconds(5),
-			orElse: () =>
-				Effect.fail(new DnsLookupError({ recordName: "", message: "DNS lookup timed out" })),
-		}),
-	)
+		if (response.status !== 200) return yield* fail(`DNS resolver answered ${response.status}`)
+		const body = yield* response.json.pipe(
+			Effect.flatMap(Schema.decodeUnknownEffect(DohAnswer)),
+			Effect.mapError(() => fail("DNS resolver answered in an unexpected shape")),
+		)
+		if (body.Status === NXDOMAIN) return []
+		if (body.Status !== 0) return yield* fail(`DNS lookup failed with status ${body.Status}`)
+		return Arr.map(
+			Arr.filter(body.Answer ?? [], (a) => a.type === TXT),
+			(a) => txtValue(a.data),
+		)
+	})
 	return { lookupTxt } satisfies DnsTxtResolverApi
 })
 

@@ -12,6 +12,7 @@ import {
 	Predicate,
 	Redacted,
 	Schema,
+	String as Str,
 } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
@@ -144,6 +145,9 @@ export interface ClerkSsoGatewayApi {
 	) => Effect.Effect<ClerkSsoDirectory, ClerkRequestError>
 	readonly rotateDirectoryKey: (id: string) => Effect.Effect<ClerkSsoDirectory, ClerkRequestError>
 	readonly deleteDirectory: (id: string) => Effect.Effect<void, ClerkRequestError>
+	readonly isMember: (orgId: OrgId, userId: UserId) => Effect.Effect<boolean, ClerkRequestError>
+	/** The domains of the user's verified email addresses, lower-cased. */
+	readonly verifiedEmailDomains: (userId: UserId) => Effect.Effect<ReadonlyArray<string>, ClerkRequestError>
 	readonly listRoleMappings: (
 		directoryId: string,
 	) => Effect.Effect<ReadonlyArray<ClerkSsoRoleMapping>, ClerkRequestError>
@@ -288,13 +292,14 @@ const make = Effect.gen(function* () {
 					Effect.fail(
 						new ClerkRequestError({ operation, message: cause.message, status: null, cause }),
 					),
-				SchemaError: (cause) =>
+				SchemaError: () =>
 					Effect.fail(
 						new ClerkRequestError({
 							operation,
 							message: "Clerk answered in an unexpected shape",
 							status: null,
-							cause,
+							// The decode error can quote the body, which may hold a SCIM key: not kept.
+							cause: null,
 						}),
 					),
 			}),
@@ -349,9 +354,19 @@ const make = Effect.gen(function* () {
 				Effect.catchIf(
 					(error) => error.status === 422 || error.status === 409 || error.status === 400,
 					(error) =>
-						sdk("Clerk.organizations.getOrganizationDomainList", { orgId }, (c) =>
-							c.organizations.getOrganizationDomainList({ organizationId: orgId, limit: 100 }),
-						).pipe(
+						sdk("Clerk.organizations.getOrganizationDomainList", { orgId }, async (c) => {
+							const all: Array<{ readonly id: string; readonly name: string }> = []
+							for (let offset = 0; offset < 1_000; offset += 100) {
+								const page = await c.organizations.getOrganizationDomainList({
+									organizationId: orgId,
+									limit: 100,
+									offset,
+								})
+								all.push(...page.data)
+								if (page.data.length < 100) break
+							}
+							return { data: all }
+						}).pipe(
 							Effect.flatMap((page) => {
 								const found = Arr.findFirst(page.data, (d) => d.name === domain)
 								return Option.match(found, {
@@ -407,6 +422,26 @@ const make = Effect.gen(function* () {
 		deleteDirectory: (id) =>
 			raw("Clerk.directories.delete", "DELETE", `/directories/${encodeURIComponent(id)}`).pipe(
 				Effect.asVoid,
+			),
+		isMember: (orgId, userId) =>
+			sdk("Clerk.organizations.getOrganizationMembershipList", { orgId }, (c) =>
+				c.organizations.getOrganizationMembershipList({
+					organizationId: orgId,
+					userId: [userId],
+					limit: 1,
+				}),
+			).pipe(Effect.map((page) => page.data.length > 0)),
+		verifiedEmailDomains: (userId) =>
+			sdk("Clerk.users.getUser", {}, (c) => c.users.getUser(userId)).pipe(
+				Effect.map((user) =>
+					Arr.flatMap(user.emailAddresses, (e) =>
+						e.verification?.status === "verified"
+							? Option.toArray(
+									Option.map(Arr.last(Str.split(e.emailAddress, "@")), Str.toLowerCase),
+								)
+							: [],
+					),
+				),
 			),
 		listRoleMappings: (directoryId) =>
 			raw(

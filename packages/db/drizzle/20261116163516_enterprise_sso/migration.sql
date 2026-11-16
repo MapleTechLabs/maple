@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS "org_directory_groups" (
 	"group_id" text NOT NULL,
 	"display_name" text NOT NULL,
 	"updated_at" timestamp with time zone NOT NULL,
+	"deleted_at" timestamp with time zone,
 	CONSTRAINT "org_directory_groups_pkey" PRIMARY KEY ("directory_id", "group_id")
 );
 --> statement-breakpoint

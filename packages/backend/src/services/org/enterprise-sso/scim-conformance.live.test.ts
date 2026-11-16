@@ -1,7 +1,17 @@
 import { assert, describe, it } from "@effect/vitest"
 import { createClerkClient } from "@clerk/backend"
 import { OrgId } from "@maple/domain/http"
-import { Array as Arr, ConfigProvider, Duration, Effect, Layer, Option, Schedule, Schema, String as Str } from "effect"
+import {
+	Array as Arr,
+	ConfigProvider,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Schedule,
+	Schema,
+	String as Str,
+} from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Hex from "effect/encoding/Hex"
@@ -35,7 +45,9 @@ const config = ConfigProvider.layer(
 const gatewayLayer = ClerkSsoGateway.layer.pipe(Layer.provide(Env.layer), Layer.provide(config))
 
 const ScimResource = Schema.fromJsonString(Schema.Struct({ id: Schema.String }))
-const ClerkUserFlags = Schema.fromJsonString(Schema.Struct({ deprovisioned: Schema.optionalKey(Schema.Boolean) }))
+const ClerkUserFlags = Schema.fromJsonString(
+	Schema.Struct({ deprovisioned: Schema.optionalKey(Schema.Boolean) }),
+)
 
 interface ScimResponse {
 	readonly status: number
@@ -90,7 +102,9 @@ describe.skipIf(!ENABLED)("SCIM conformance (live Clerk dev instance)", () => {
 					yield* undoLater(gateway.deleteConnection(connection.id))
 					assert.isFalse(connection.active)
 					assert.isNotNull(connection.saml?.acsUrl ?? null)
-					yield* step(`connection ${connection.id}: created inactive, ACS ${connection.saml?.acsUrl}`)
+					yield* step(
+						`connection ${connection.id}: created inactive, ACS ${connection.saml?.acsUrl}`,
+					)
 
 					const directory = yield* gateway.createDirectory(connection.id, "custom")
 					yield* undoLater(gateway.deleteDirectory(directory.id))
@@ -110,12 +124,15 @@ describe.skipIf(!ENABLED)("SCIM conformance (live Clerk dev instance)", () => {
 								HttpClientRequest.acceptJson,
 							)
 							const response = yield* http.execute(
-								payload === undefined ? request : HttpClientRequest.bodyJsonUnsafe(request, payload),
+								payload === undefined
+									? request
+									: HttpClientRequest.bodyJsonUnsafe(request, payload),
 							)
 							const body = yield* response.text
 							return { status: response.status, body } satisfies ScimResponse
 						}).pipe(Effect.orDie)
-					const resourceId = (response: ScimResponse) => Schema.decodeSync(ScimResource)(response.body).id
+					const resourceId = (response: ScimResponse) =>
+						Schema.decodeSync(ScimResource)(response.body).id
 
 					const email = `ada@${domain}`
 					const created = yield* scim("POST", "/Users", {
@@ -154,7 +171,9 @@ describe.skipIf(!ENABLED)("SCIM conformance (live Clerk dev instance)", () => {
 						),
 					)
 					const joined = yield* eventually("the membership", memberships, Option.isSome)
-					yield* step(`Clerk user ${userId} provisioned, member as ${Option.getOrElse(joined, () => "?")}`)
+					yield* step(
+						`Clerk user ${userId} provisioned, member as ${Option.getOrElse(joined, () => "?")}`,
+					)
 
 					const patched = yield* scim("PATCH", `/Users/${scimUserId}`, {
 						schemas: ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
@@ -199,7 +218,9 @@ describe.skipIf(!ENABLED)("SCIM conformance (live Clerk dev instance)", () => {
 						Operations: [{ op: "add", path: "members", value: [{ value: scimUserId }] }],
 					})
 					assert.strictEqual(repush.status, 200, repush.body)
-					yield* eventually("the analyst role", memberships, (role) => Option.contains(role, "org:analyst"))
+					yield* eventually("the analyst role", memberships, (role) =>
+						Option.contains(role, "org:analyst"),
+					)
 					yield* step("group mapped to org:analyst, member role is org:analyst after the next push")
 
 					const deactivated = yield* scim("PATCH", `/Users/${scimUserId}`, {
@@ -225,9 +246,16 @@ describe.skipIf(!ENABLED)("SCIM conformance (live Clerk dev instance)", () => {
 						(u) => u.deprovisioned === true,
 					)
 					assert.isTrue(flags.deprovisioned)
-					yield* step(`PATCH active=false -> ${deactivated.status}, membership removed, user deprovisioned=true`)
+					yield* step(
+						`PATCH active=false -> ${deactivated.status}, membership removed, user deprovisioned=true`,
+					)
 
-					yield* Effect.logInfo(`SCIM conformance report\n${Arr.join(Arr.map(report, (l) => `  - ${l}`), "\n")}`)
+					yield* Effect.logInfo(
+						`SCIM conformance report\n${Arr.join(
+							Arr.map(report, (l) => `  - ${l}`),
+							"\n",
+						)}`,
+					)
 				}).pipe(Effect.ensuring(Effect.suspend(() => Effect.all(cleanup, { discard: true }))))
 			}).pipe(Effect.provide([gatewayLayer, FetchHttpClient.layer])),
 		180_000,

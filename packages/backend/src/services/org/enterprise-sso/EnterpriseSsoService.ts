@@ -67,6 +67,34 @@ const decodeUserId = Schema.decodeSync(UserId)
 const byDomain = Order.mapInput(Str.Order, (d: SsoDomainDocument) => d.domain)
 const byGroupName = Order.mapInput(Str.Order, (g: ScimGroupDocument) => g.displayName)
 
+/** A Clerk object deleted out from under Maple reads as missing, not as an outage. */
+const orMissing = <A>(effect: Effect.Effect<A, ClerkRequestError>) =>
+	effect.pipe(
+		Effect.asSome,
+		Effect.catchIf(
+			(e) => e.status === 404,
+			() => Effect.succeed(Option.none<A>()),
+		),
+	)
+const orEmpty = <A>(effect: Effect.Effect<ReadonlyArray<A>, ClerkRequestError>) =>
+	effect.pipe(
+		Effect.catchIf(
+			(e) => e.status === 404,
+			() => Effect.succeed<ReadonlyArray<A>>([]),
+		),
+	)
+
+/** Best-effort undo of a Clerk object Maple failed to record; a failure is logged, never raised. */
+const undo = (what: string, effect: Effect.Effect<void, ClerkRequestError>) =>
+	effect.pipe(
+		Effect.tapError((error) =>
+			Effect.logError(`Could not undo the Clerk ${what} Maple failed to record`).pipe(
+				Effect.annotateLogs({ operation: error.operation, error: error.message }),
+			),
+		),
+		Effect.ignore,
+	)
+
 const toPersistenceError = makePersistenceErrorMapper(
 	EnterpriseSsoUnavailableError,
 	"SSO settings persistence failure",
@@ -331,14 +359,14 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 							const { clerkConnectionId, clerkDirectoryId } = row.value
 							const [connection, directory, mappings, bypass, groups] = yield* Effect.all(
 								[
-									clerk.getConnection(clerkConnectionId),
+									orMissing(clerk.getConnection(clerkConnectionId)),
 									clerkDirectoryId === null
-										? Effect.succeed(null)
-										: clerk.getDirectory(clerkDirectoryId),
+										? Effect.succeed(Option.none<ClerkSsoDirectory>())
+										: orMissing(clerk.getDirectory(clerkDirectoryId)),
 									clerkDirectoryId === null
 										? Effect.succeed([])
-										: clerk.listRoleMappings(clerkDirectoryId),
-									clerk.listBypassUsers(clerkConnectionId),
+										: clerk.listRoleMappings(clerkDirectoryId).pipe(orEmpty),
+									clerk.listBypassUsers(clerkConnectionId).pipe(orEmpty),
 									clerkDirectoryId === null
 										? Effect.succeed([])
 										: dbExecute((db) =>
@@ -348,6 +376,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 														.where(($) => [
 															$.orgId.eq(orgId),
 															$.directoryId.eq(clerkDirectoryId),
+															$.deletedAt.isNull(),
 														]),
 												),
 											),
@@ -358,10 +387,15 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 									Effect.fail(unavailable(e)),
 								),
 							)
+							// Removed in Clerk's dashboard or a half-finished delete: show it as not set up.
+							if (Option.isNone(connection)) return empty
 							const names = new Map(Arr.map(groups, (g) => [g.groupId, g.displayName] as const))
 							return {
-								connection: toConnectionDocument(connection),
-								directory: directory === null ? null : toDirectoryDocument(directory),
+								connection: toConnectionDocument(connection.value),
+								directory: Option.match(directory, {
+									onNone: () => null,
+									onSome: toDirectoryDocument,
+								}),
 								roleMappings: Arr.flatMap(mappings, (m) =>
 									isMappedRole(m.roleKey)
 										? [
@@ -585,24 +619,29 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 					})
 				}
 				const input = yield* connectionInput(orgId, request, request.provider, "create")
-				const connection = yield* clerk
-					.createConnection(orgId, request.provider, input)
-					.pipe(Effect.mapError(fromClerk))
-				const now = yield* Clock.currentTimeMillis
-				yield* dbExecute((db) =>
-					db.run(
-						PG.insertInto(OrgSsoConnections).values({
-							orgId,
-							clerkConnectionId: connection.id,
-							clerkDirectoryId: null,
-							createdAt: now,
-							createdBy: userId,
-							updatedAt: now,
-						}),
-					),
-				).pipe(
-					// A connection Maple cannot find again would claim the domains forever: undo it.
-					Effect.tapError(() => clerk.deleteConnection(connection.id).pipe(Effect.ignore)),
+				// Uninterruptible so a dropped request cannot strand a Clerk connection Maple never saved:
+				// one Maple cannot find again would claim the domains forever.
+				yield* Effect.uninterruptible(
+					Effect.gen(function* () {
+						const connection = yield* clerk
+							.createConnection(orgId, request.provider, input)
+							.pipe(Effect.mapError(fromClerk))
+						const now = yield* Clock.currentTimeMillis
+						yield* dbExecute((db) =>
+							db.run(
+								PG.insertInto(OrgSsoConnections).values({
+									orgId,
+									clerkConnectionId: connection.id,
+									clerkDirectoryId: null,
+									createdAt: now,
+									createdBy: userId,
+									updatedAt: now,
+								}),
+							),
+						).pipe(
+							Effect.onError(() => undo("connection", clerk.deleteConnection(connection.id))),
+						)
+					}),
 				)
 				return yield* get(orgId)
 			})
@@ -651,6 +690,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				return yield* get(orgId)
 			})
 
+			/** Clerk first, then the row and groups, so the row never points at a deleted directory. */
 			const dropDirectory = (orgId: OrgId, directoryId: string) =>
 				clerk.deleteDirectory(directoryId).pipe(
 					Effect.catchIf(
@@ -658,6 +698,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 						() => Effect.void,
 					),
 					Effect.mapError(fromClerk),
+					Effect.andThen(touch(orgId, { clerkDirectoryId: null })),
 					Effect.andThen(
 						dbExecute((db) =>
 							db.run(
@@ -675,6 +716,22 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId })
 				const row = yield* requireConnectionRow(orgId)
+				// Bypass entries are instance-wide and would outlive the connection that justified them.
+				const bypass = yield* clerk
+					.listBypassUsers(row.clerkConnectionId)
+					.pipe(orEmpty, Effect.mapError(fromClerk))
+				yield* Effect.forEach(
+					bypass,
+					(u) =>
+						clerk.removeBypassUser(decodeUserId(u.userId)).pipe(
+							Effect.catchIf(
+								(e) => e.status === 404,
+								() => Effect.void,
+							),
+							Effect.mapError(fromClerk),
+						),
+					{ concurrency: 4, discard: true },
+				)
 				if (row.clerkDirectoryId !== null) yield* dropDirectory(orgId, row.clerkDirectoryId)
 				yield* clerk.deleteConnection(row.clerkConnectionId).pipe(
 					Effect.catchIf(
@@ -697,7 +754,40 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 							message: "Clerk returned no SCIM token",
 						})
 					}
-					return new ScimTokenIssued({ document: yield* get(orgId), token })
+					// The token exists only in this response, so a failed refresh must not swallow it.
+					const document = yield* get(orgId).pipe(
+						Effect.catch((error) =>
+							Effect.logWarning("SSO document refresh failed after issuing a SCIM token").pipe(
+								Effect.annotateLogs({ orgId, error: error.message }),
+								Effect.andThen(loadDomains(orgId)),
+								Effect.map(
+									(domains) =>
+										new EnterpriseSsoDocument({
+											entitled: true,
+											domains: Arr.sort(Arr.map(domains, toDomainDocument), byDomain),
+											connection: null,
+											directory: toDirectoryDocument(directory),
+											roleMappings: [],
+											groups: [],
+											bypassUsers: [],
+										}),
+								),
+								Effect.orElseSucceed(
+									() =>
+										new EnterpriseSsoDocument({
+											entitled: true,
+											domains: [],
+											connection: null,
+											directory: toDirectoryDocument(directory),
+											roleMappings: [],
+											groups: [],
+											bypassUsers: [],
+										}),
+								),
+							),
+						),
+					)
+					return new ScimTokenIssued({ document, token })
 				})
 
 			const createDirectory = Effect.fn("EnterpriseSsoService.createDirectory")(function* (
@@ -714,11 +804,31 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				const connection = yield* clerk
 					.getConnection(row.clerkConnectionId)
 					.pipe(Effect.mapError(fromClerk))
-				const directory = yield* clerk
-					.createDirectory(row.clerkConnectionId, directoryProviderFor(connection.provider))
-					.pipe(Effect.mapError(fromClerk))
-				yield* touch(orgId, { clerkDirectoryId: directory.id }).pipe(
-					Effect.tapError(() => clerk.deleteDirectory(directory.id).pipe(Effect.ignore)),
+				const directory = yield* Effect.uninterruptible(
+					Effect.gen(function* () {
+						const created = yield* clerk
+							.createDirectory(row.clerkConnectionId, directoryProviderFor(connection.provider))
+							.pipe(Effect.mapError(fromClerk))
+						const dropCreated = undo("directory", clerk.deleteDirectory(created.id))
+						const now = yield* Clock.currentTimeMillis
+						// Claims the slot only if still empty: of two concurrent set-ups, one wins.
+						const claimed = yield* dbExecute((db) =>
+							db.run(
+								PG.update(OrgSsoConnections)
+									.set({ clerkDirectoryId: created.id, updatedAt: now })
+									.where(($) => [$.orgId.eq(orgId), $.clerkDirectoryId.isNull()])
+									.returning("orgId"),
+							),
+						).pipe(Effect.onError(() => dropCreated))
+						if (claimed.length === 0) {
+							yield* dropCreated
+							return yield* new EnterpriseSsoConflictError({
+								message:
+									"SCIM provisioning is already set up. Rotate its token to get a new one.",
+							})
+						}
+						return created
+					}),
 				)
 				return yield* issued(orgId, directory)
 			})
@@ -760,7 +870,6 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 					Effect.flatMap(requireDirectoryId),
 				)
 				yield* dropDirectory(orgId, directoryId)
-				yield* touch(orgId, { clerkDirectoryId: null })
 				return yield* get(orgId)
 			})
 
@@ -807,7 +916,27 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 			) {
 				yield* requireEntitled(orgId)
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.sso.bypass_user": userId })
-				yield* requireConnectionRow(orgId)
+				const row = yield* requireConnectionRow(orgId)
+				// The allowlist is instance-wide, so Maple scopes it: a member of this org with a
+				// verified email on this connection's domains, so the entry serves only this org.
+				const [connection, member, emailDomains] = yield* Effect.all(
+					[
+						clerk.getConnection(row.clerkConnectionId),
+						clerk.isMember(orgId, userId),
+						clerk.verifiedEmailDomains(userId),
+					],
+					{ concurrency: "unbounded" },
+				).pipe(Effect.mapError(fromClerk))
+				if (!member) {
+					return yield* new EnterpriseSsoInvalidError({
+						message: "Only members of this organization can be added.",
+					})
+				}
+				if (!Arr.some(emailDomains, (d) => Arr.contains(connection.domains, d))) {
+					return yield* new EnterpriseSsoInvalidError({
+						message: `Only people with a verified email on ${Arr.join(connection.domains, ", ")} can bypass SSO.`,
+					})
+				}
 				yield* clerk.addBypassUser(userId).pipe(Effect.mapError(fromClerk))
 				return yield* get(orgId)
 			})
@@ -850,30 +979,24 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				const owner = owners[0]
 				if (owner === undefined) return "not_here" as const
 				const orgId = owner.orgId
-				if (event.deleted) {
-					yield* dbExecute((db) =>
-						db.run(
-							PG.deleteFrom(OrgDirectoryGroups).where(($) => [
-								$.directoryId.eq(event.directoryId),
-								$.groupId.eq(event.groupId),
-							]),
-						),
-					)
-				} else {
-					const set = { displayName: event.displayName, updatedAt: event.updatedAt }
-					yield* dbExecute((db) =>
-						db.run(
-							PG.insertInto(OrgDirectoryGroups)
-								.values({
-									orgId,
-									directoryId: event.directoryId,
-									groupId: event.groupId,
-									...set,
-								})
-								.onConflictDoUpdate({ target: ["directoryId", "groupId"], set }),
-						),
-					)
+				// A deletion is a tombstone and only newer events win, so a late redelivered
+				// update cannot bring a deleted group back.
+				const set = {
+					displayName: event.displayName,
+					updatedAt: event.updatedAt,
+					deletedAt: event.deleted ? event.updatedAt : null,
 				}
+				yield* dbExecute((db) =>
+					db.run(
+						PG.insertInto(OrgDirectoryGroups)
+							.values({ orgId, directoryId: event.directoryId, groupId: event.groupId, ...set })
+							.onConflictDoUpdate({
+								target: ["directoryId", "groupId"],
+								where: ($) => PG.and($.orgId.eq(orgId), $.updatedAt.lte(event.updatedAt)),
+								set,
+							}),
+					),
+				)
 				return "applied" as const
 			})
 

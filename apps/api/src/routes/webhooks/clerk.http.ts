@@ -243,6 +243,8 @@ const handler = Effect.gen(function* () {
 				u.deprovisioned === true ? decodeUserId(u.id) : Option.none(),
 			)
 			if (Option.isSome(userId)) {
+				// Clerk sets this only once every directory managing the user has deprovisioned them,
+				// and then the user cannot sign in anywhere, so every org's credentials go too.
 				yield* Effect.annotateCurrentSpan({ "maple.webhook.deprovisioned": true })
 				return yield* revoke(revocation.revokeUser(userId.value))
 			}

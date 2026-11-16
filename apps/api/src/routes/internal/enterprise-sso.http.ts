@@ -3,7 +3,10 @@ import { CurrentTenant, EnterpriseSsoForbiddenError, MapleInternalApi } from "@m
 import { Array as Arr, Effect } from "effect"
 import * as Policy from "@maple/domain/policy"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
-import { EnterpriseSsoService } from "@maple/backend/services/org/enterprise-sso/EnterpriseSsoService"
+import {
+	EnterpriseSsoService,
+	normalizeDomain,
+} from "@maple/backend/services/org/enterprise-sso/EnterpriseSsoService"
 
 const requireSsoAdmin = Effect.gen(function* () {
 	const tenant = yield* CurrentTenant.Context
@@ -33,7 +36,7 @@ export const HttpEnterpriseSsoLive = HttpApiBuilder.group(MapleInternalApi, "ent
 					const tenant = yield* requireSsoAdmin
 					const document = yield* sso.addDomain(tenant.orgId, tenant.userId, payload.domain)
 					yield* recordHttpAudit("enterprise_sso.domain_added", {
-						metadata: { domain: payload.domain },
+						metadata: { domain: normalizeDomain(payload.domain) },
 					})
 					return document
 				}).pipe(Effect.withSpan("HttpEnterpriseSso.addDomain")),
@@ -43,7 +46,7 @@ export const HttpEnterpriseSsoLive = HttpApiBuilder.group(MapleInternalApi, "ent
 					const tenant = yield* requireSsoAdmin
 					const document = yield* sso.verifyDomain(tenant.orgId, params.domain)
 					yield* recordHttpAudit("enterprise_sso.domain_verified", {
-						metadata: { domain: params.domain },
+						metadata: { domain: normalizeDomain(params.domain) },
 					})
 					return document
 				}).pipe(Effect.withSpan("HttpEnterpriseSso.verifyDomain")),
@@ -53,7 +56,7 @@ export const HttpEnterpriseSsoLive = HttpApiBuilder.group(MapleInternalApi, "ent
 					const tenant = yield* requireSsoAdmin
 					const document = yield* sso.removeDomain(tenant.orgId, params.domain)
 					yield* recordHttpAudit("enterprise_sso.domain_removed", {
-						metadata: { domain: params.domain },
+						metadata: { domain: normalizeDomain(params.domain) },
 					})
 					return document
 				}).pipe(Effect.withSpan("HttpEnterpriseSso.removeDomain")),
@@ -66,7 +69,7 @@ export const HttpEnterpriseSsoLive = HttpApiBuilder.group(MapleInternalApi, "ent
 						metadata: {
 							provider: payload.provider,
 							name: payload.name,
-							domains: Arr.join(payload.domains, ","),
+							domains: Arr.join(Arr.map(payload.domains, normalizeDomain), ","),
 						},
 					})
 					return document
@@ -79,7 +82,7 @@ export const HttpEnterpriseSsoLive = HttpApiBuilder.group(MapleInternalApi, "ent
 					yield* recordHttpAudit("enterprise_sso.connection_updated", {
 						metadata: {
 							name: payload.name,
-							domains: Arr.join(payload.domains, ","),
+							domains: Arr.join(Arr.map(payload.domains, normalizeDomain), ","),
 							idpSettingsChanged: payload.saml !== undefined || payload.oidc !== undefined,
 						},
 					})

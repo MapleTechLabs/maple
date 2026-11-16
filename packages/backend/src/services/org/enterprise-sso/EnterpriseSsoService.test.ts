@@ -26,6 +26,9 @@ interface FakeClerk {
 	verifiedDomains: Array<string>
 	mappings: Map<string, Array<{ groupId: string; roleId: string }>>
 	bypass: Array<string>
+	/** Org members, and each user's verified email domains. */
+	members: Set<string>
+	emailDomains: Map<string, Array<string>>
 	nextId: number
 	/** The next `createConnection` fails with this Clerk status and message. */
 	rejectCreate: { status: number; message: string } | null
@@ -44,6 +47,12 @@ const fakeClerk = (): FakeClerk => ({
 	verifiedDomains: [],
 	mappings: new Map(),
 	bypass: [],
+	members: new Set(["user_admin", "user_breakglass", "user_contractor"]),
+	emailDomains: new Map([
+		["user_breakglass", ["acme.com"]],
+		["user_contractor", ["gmail.com"]],
+		["user_outsider", ["acme.com"]],
+	]),
 	nextId: 1,
 	rejectCreate: null,
 })
@@ -166,6 +175,8 @@ const gatewayLayer = (clerk: FakeClerk) =>
 			),
 		replaceRoleMappings: (directoryId, mappings) =>
 			Effect.sync(() => void clerk.mappings.set(directoryId, [...mappings])),
+		isMember: (_orgId, userId) => Effect.sync(() => clerk.members.has(userId)),
+		verifiedEmailDomains: (userId) => Effect.sync(() => clerk.emailDomains.get(userId) ?? []),
 		listBypassUsers: () =>
 			Effect.sync(() =>
 				Arr.map(clerk.bypass, (userId) => ({ userId, identifier: `${userId}@acme.com` })),
@@ -525,4 +536,92 @@ describe("EnterpriseSsoService", () => {
 			)
 		},
 	)
+
+	it.effect(
+		"scopes the instance-wide bypass list to this org's members on its domains, and clears it on delete",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const world = { clerk: fakeClerk(), dns: new Map<string, Array<string>>(), entitled: true }
+			return run(
+				testDb,
+				world,
+				Effect.gen(function* () {
+					const sso = yield* EnterpriseSsoService
+					yield* verifiedDomain(world.dns, "acme.com")
+					yield* sso.createConnection(ORG, ADMIN, samlRequest(["acme.com"]))
+
+					// Someone else's member, even with an email on this domain, cannot be exempted from here.
+					const outsider = yield* sso
+						.addBypassUser(ORG, Schema.decodeSync(UserId)("user_outsider"))
+						.pipe(Effect.flip)
+					assert.strictEqual(outsider._tag, "@maple/http/enterprise-sso/EnterpriseSsoInvalidError")
+					// A member whose email is on another domain would land on another org's connection.
+					const contractor = yield* sso
+						.addBypassUser(ORG, Schema.decodeSync(UserId)("user_contractor"))
+						.pipe(Effect.flip)
+					assert.strictEqual(
+						contractor._tag,
+						"@maple/http/enterprise-sso/EnterpriseSsoInvalidError",
+					)
+					assert.deepStrictEqual(world.clerk.bypass, [])
+
+					yield* sso.addBypassUser(ORG, BREAK_GLASS)
+					assert.deepStrictEqual(world.clerk.bypass, [BREAK_GLASS])
+					yield* sso.deleteConnection(ORG)
+					assert.deepStrictEqual(world.clerk.bypass, [])
+				}),
+			)
+		},
+	)
+
+	it.effect("lets one of two concurrent SCIM set-ups win, and drops the loser's directory", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = { clerk: fakeClerk(), dns: new Map<string, Array<string>>(), entitled: true }
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				const sso = yield* EnterpriseSsoService
+				yield* verifiedDomain(world.dns, "acme.com")
+				yield* sso.createConnection(ORG, ADMIN, samlRequest(["acme.com"]))
+				const [a, b] = yield* Effect.all(
+					[sso.createDirectory(ORG).pipe(Effect.exit), sso.createDirectory(ORG).pipe(Effect.exit)],
+					{
+						concurrency: "unbounded",
+					},
+				)
+				assert.strictEqual(Arr.filter([a, b], Exit.isSuccess).length, 1)
+				assert.strictEqual(world.clerk.directories.size, 1)
+			}),
+		)
+	})
+
+	it.effect("reads a connection deleted in Clerk as not set up, and never revives a deleted group", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = { clerk: fakeClerk(), dns: new Map<string, Array<string>>(), entitled: true }
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				const sso = yield* EnterpriseSsoService
+				yield* verifiedDomain(world.dns, "acme.com")
+				yield* sso.createConnection(ORG, ADMIN, samlRequest(["acme.com"]))
+				yield* sso.createDirectory(ORG)
+				const directoryId = [...world.clerk.directories.keys()][0] ?? ""
+				const group = { directoryId, groupId: "grp_1", displayName: "Admins" }
+
+				yield* sso.applyDirectoryGroup({ ...group, updatedAt: 10, deleted: false })
+				yield* sso.applyDirectoryGroup({ ...group, updatedAt: 20, deleted: true })
+				// A redelivered older update arrives after the deletion.
+				yield* sso.applyDirectoryGroup({ ...group, updatedAt: 15, deleted: false })
+				assert.deepStrictEqual((yield* sso.get(ORG)).groups, [])
+
+				world.clerk.directories.clear()
+				world.clerk.connections.clear()
+				const doc = yield* sso.get(ORG)
+				assert.isNull(doc.connection)
+				assert.isNull(doc.directory)
+			}),
+		)
+	})
 })

@@ -1,7 +1,7 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "d54a9503bb0bf103b5ff69f2dd1d8ac2794d3ce7feae5a747ce3614ca9f9609e",
+	"id": "24fe01e1e14727a6af35609d1b4729fc95ca400925198675ba15a9900e5bbbc4",
 	"prevIds": [
 		"5fa05f5b16fe30b3669d13615281ef6457c8ed2742d1203703e4c696a396bb47"
 	],
@@ -11973,6 +11973,16 @@
 			"position": 4,
 			"type": "timestamp with time zone",
 			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_directory_groups",
+			"name": "deleted_at",
+			"position": 5,
+			"type": "timestamp with time zone",
+			"notNull": false,
 			"default": null,
 			"identity": null
 		},

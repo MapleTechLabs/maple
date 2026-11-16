@@ -65,6 +65,8 @@ export const OrgDirectoryGroups = PG.table("org_directory_groups", {
 		groupId: PG.column(PG.text, { name: "group_id" }),
 		displayName: PG.column(PG.text, { name: "display_name" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
+		/** Set by `directoryGroup.deleted`; kept so a late, older event cannot revive the group. */
+		deletedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "deleted_at" }),
 	},
 	primaryKey: ["directoryId", "groupId"],
 	indexes: [PG.index("org_directory_groups_org_idx", ["orgId"])],
