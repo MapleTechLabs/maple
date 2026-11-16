@@ -43,11 +43,26 @@ export const isSameTimeRange = (a: TimeRange | null, b: TimeRange | null): boole
 			? b.type === "relative" && a.value === b.value
 			: b.type === "absolute" && a.startTime === b.startTime && a.endTime === b.endTime
 
-/** Snapped on entry, unsnapped after a reload; a bad preset falls back to 1h. */
+/**
+ * How a pass asks: `Load` fetches keys not held, `Refresh` refetches held ones too. `Tick` is an
+ * auto-refresh: `Load` for the requests, so a tile whose snapped window has not moved fetches nothing.
+ */
+export type PlanMode = Keyed.RequestMode | "Tick"
+
+/** What `read` the clock picks: a tick plans as a `Tick`, a Reload refetches everything held. */
+export const planModeOf = (clockRead: Model["clockRead"]): PlanMode =>
+	clockRead === "Reload" ? "Refresh" : clockRead === "AutoRefresh" ? "Tick" : "Load"
+
+/** Snapped to the cache grid except after an explicit Reload, which wants "now". */
+const clockOf = (model: Model) =>
+	model.nowMs === null ? null : { nowMs: model.nowMs, snap: model.clockRead !== "Reload" }
+
+/** The board's window on the current clock; a bad preset falls back to 1h. */
 export const windowOf = (model: Model, context: PageContext) => {
 	const timeRange = timeRangeOf(model)
-	if (timeRange === null || model.nowMs === null) return null
-	const options = { snap: model.refreshVersion === 0, timeZone: context.timeZone, nowMs: model.nowMs }
+	const clock = clockOf(model)
+	if (timeRange === null || clock === null) return null
+	const options = { ...clock, timeZone: context.timeZone }
 	return (
 		resolveTimeRangeWindow(timeRange, options) ??
 		resolveTimeRangeWindow({ type: "relative", value: "1h" }, options)
@@ -195,6 +210,7 @@ const sparklineGate = (
 	widget: Widget,
 	window: ReturnType<typeof windowOf>,
 	variables: ReturnType<typeof variablesOf>,
+	clock: ReturnType<typeof clockOf>,
 ): WidgetGate | null => {
 	const sparkline = widget.display.sparkline
 	if (widget.visualization !== "stat" || sparkline?.enabled !== true || sparkline.dataSource === undefined)
@@ -204,6 +220,7 @@ const sparklineGate = (
 		dataSource: sparkline.dataSource,
 		window,
 		...(widget.timeRange === undefined ? undefined : { widgetTimeRange: widget.timeRange }),
+		...(clock === null ? undefined : { clock }),
 		variables,
 	})
 }
@@ -226,11 +243,13 @@ type OptionsPlan = ReturnType<typeof planVariableOptions>
 const planTiles = (
 	model: Model,
 	context: PageContext,
-	mode: Keyed.RequestMode,
+	mode: PlanMode,
 	widgets: ReadonlyArray<Widget>,
 	options: OptionsPlan,
 ): Planned => {
 	const window = windowOf(model, context)
+	const clock = clockOf(model)
+	const requestMode = mode === "Tick" ? "Load" : mode
 	const withOptions = { ...model, variableOptions: options.variableOptions }
 	const variables = variablesOf(withOptions, context)
 	const initial: PlanState = {
@@ -252,17 +271,18 @@ const planTiles = (
 			dataSource: widget.dataSource,
 			window,
 			...(widget.timeRange === undefined ? undefined : { widgetTimeRange: widget.timeRange }),
+			...(clock === null ? undefined : { clock }),
 			maxDataPoints: maxDataPointsForWidth(slot.widthPx ?? DEFAULT_WIDGET_WIDTH_PX, panelType),
 			variables,
 			isNarrowed: slot.isNarrowed === true,
 		})
 		const gate = keptGate(planned, slot.gate)
 		const previousSpark = slot.sparkGate ?? null
-		const nextSparkGate = sparklineGate(context, widget, window, variables)
+		const nextSparkGate = sparklineGate(context, widget, window, variables, clock)
 		const sparkGate = nextSparkGate === null ? null : keptGate(nextSparkGate, previousSpark)
 		const isChanged = gate !== slot.gate || sparkGate !== previousSpark
 		// Still loading a window this refresh moved: wait for that answer, which re-plans the tile.
-		if (mode === "Refresh" && isInFlight(state.requests, slot))
+		if (mode !== "Load" && isInFlight(state.requests, slot))
 			return keep(!isChanged || slot.isStale === true ? slot : { ...slot, isStale: true })
 		// Off screen: keep what it shows, and fetch the new window once it scrolls back into view.
 		if (slot.isOffscreen === true)
@@ -271,7 +291,7 @@ const planTiles = (
 					? { ...slot, isStale: true }
 					: slot,
 			)
-		const tileMode = slot.isStale === true ? "Refresh" : mode
+		const tileMode = slot.isStale === true ? "Refresh" : requestMode
 		const asked = ask(ask(state, gate, slot.gate, tileMode), sparkGate, previousSpark, tileMode)
 		const { isStale: _stale, ...fresh } = slot
 		// An unchanged slot keeps its object: the tile's memo compares it by reference.
@@ -287,10 +307,11 @@ const planTiles = (
 }
 
 /** Every revealed tile and the variables' option lists, for a new window, document or variable. */
-export const replan = (model: Model, context: PageContext, mode: Keyed.RequestMode): Planned => {
+export const replan = (model: Model, context: PageContext, mode: PlanMode): Planned => {
 	const document = shownDocumentOf(model)
 	if (document === null) return { model, commands: [] }
-	return planTiles(model, context, mode, document.widgets, planVariableOptions(model, context, mode))
+	const options = planVariableOptions(model, context, mode === "Tick" ? "Load" : mode)
+	return planTiles(model, context, mode, document.widgets, options)
 }
 
 /** One tile revealed, measured or narrowed: no other tile's plan can have moved. */
