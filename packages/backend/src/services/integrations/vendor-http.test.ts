@@ -394,6 +394,82 @@ describe("VendorHttp", () => {
 		)
 	})
 
+	it.effect("fails the attempt span only on an undecodable answer, not on a refusal or outage", () => {
+		const spans: Array<Tracer.NativeSpan> = []
+		const tracer = Tracer.make({
+			span(options) {
+				const span = new Tracer.NativeSpan(options)
+				spans.push(span)
+				return span
+			},
+		})
+		const fake = VendorFake.make({
+			routes: [
+				{ path: "/v1/forbidden", respond: () => VendorFake.json({}, 403) },
+				{ path: "/v1/plan", respond: () => VendorFake.json({}, 402) },
+				{ path: "/v1/down", respond: () => VendorFake.json({}, 503) },
+				{ path: "/v1/garbled", respond: () => VendorFake.json({ nope: true }) },
+			],
+		})
+		const paths = ["/v1/forbidden", "/v1/plan", "/v1/down", "/v1/garbled"]
+		return withClient(
+			fake,
+			(client) =>
+				Effect.forEach(paths, (path) => Effect.flip(client.json(Page, { path })), {
+					discard: true,
+				}).pipe(Effect.withTracer(tracer)),
+			{ retry: false },
+		).pipe(
+			Effect.map(() => {
+				const outcome = Arr.map(spans, (span) => [
+					span.attributes.get("url.path"),
+					span.attributes.get("error.type"),
+					span.status._tag === "Ended" ? span.status.exit._tag : "Open",
+				])
+				assert.deepStrictEqual(outcome, [
+					["/v1/forbidden", "forbidden", "Success"],
+					["/v1/plan", "upstream", "Success"],
+					["/v1/down", "upstream", "Success"],
+					["/v1/garbled", "invalid_response", "Failure"],
+				])
+			}),
+		)
+	})
+
+	it.effect("vendorCallSpan keeps an expected failure off the span and still fails the call", () => {
+		const spans: Array<Tracer.NativeSpan> = []
+		const tracer = Tracer.make({
+			span(options) {
+				const span = new Tracer.NativeSpan(options)
+				spans.push(span)
+				return span
+			},
+		})
+		const call = (error: AcmeError) =>
+			Effect.fail(error).pipe(
+				VendorHttp.vendorCallSpan("Acme.call", (failure: AcmeError) =>
+					failure.kind === "forbidden" ? failure.kind : undefined,
+				),
+			)
+		return Effect.gen(function* () {
+			const refused = yield* Effect.flip(call(new AcmeError({ message: "no", kind: "forbidden" })))
+			const broken = yield* Effect.flip(
+				call(new AcmeError({ message: "bad", kind: "invalid_response" })),
+			)
+			assert.deepStrictEqual([refused.kind, broken.kind], ["forbidden", "invalid_response"])
+			assert.deepStrictEqual(
+				Arr.map(spans, (span) => [
+					span.attributes.get("error.type"),
+					span.status._tag === "Ended" ? span.status.exit._tag : "Open",
+				]),
+				[
+					["forbidden", "Success"],
+					[undefined, "Failure"],
+				],
+			)
+		}).pipe(Effect.withTracer(tracer))
+	})
+
 	it.effect("records one Client span per attempt with the path, never the query or token", () => {
 		const spans: Array<Tracer.NativeSpan> = []
 		const tracer = Tracer.make({

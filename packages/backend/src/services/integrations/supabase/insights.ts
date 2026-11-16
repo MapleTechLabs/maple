@@ -14,7 +14,7 @@ import type { SupabaseProjectRef } from "@maple/primitives"
 import { Effect, Option, Schema, Array as Arr } from "effect"
 import type { HttpClient } from "effect/http"
 import * as VendorHttp from "../vendor-http"
-import { SupabaseApiError, supabaseClient } from "./api"
+import { SupabaseApiError, supabaseCallSpan, supabaseClient } from "./api"
 
 export const TOP_QUERIES_LIMIT = 10
 const QUERY_TEXT_CHARS = 2000
@@ -123,9 +123,12 @@ export const decodeStatements = (raw: ReadonlyArray<unknown>) =>
 	)
 
 const unexpectedBody = (what: string) =>
-	new SupabaseApiError({ message: `Supabase returned an unexpected body while ${what}`, kind: "upstream" })
+	new SupabaseApiError({
+		message: `Supabase returned an unexpected body while ${what}`,
+		kind: "invalid_response",
+	})
 
-export const getAdvisors = Effect.fn("SupabaseApi.getAdvisors")(function* (
+export const getAdvisors = Effect.fnUntraced(function* (
 	httpClient: HttpClient.HttpClient,
 	apiBaseUrl: string,
 	accessToken: string,
@@ -149,10 +152,10 @@ export const getAdvisors = Effect.fn("SupabaseApi.getAdvisors")(function* (
 		"maple.supabase.lints_skipped": body.value.lints.length - lints.length,
 	})
 	return lints
-})
+}, supabaseCallSpan("SupabaseApi.getAdvisors"))
 
 /** The top statements by total execution time. A refused query (e.g. no privilege) fails with its message. */
-export const getTopQueries = Effect.fn("SupabaseApi.getTopQueries")(function* (
+export const getTopQueries = Effect.fnUntraced(function* (
 	httpClient: HttpClient.HttpClient,
 	apiBaseUrl: string,
 	accessToken: string,
@@ -171,4 +174,4 @@ export const getTopQueries = Effect.fn("SupabaseApi.getTopQueries")(function* (
 	const rows = decodeRowsBody(text)
 	if (Option.isNone(rows)) return yield* unexpectedBody(what)
 	return decodeStatements(rows.value)
-})
+}, supabaseCallSpan("SupabaseApi.getTopQueries"))
