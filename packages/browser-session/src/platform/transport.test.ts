@@ -203,7 +203,6 @@ describe("transport", () => {
 			[503, "retry"],
 			[429, "retry"],
 			[400, "rejected"],
-			[404, "rejected"],
 		] as const) {
 			fetchMock.mockResolvedValueOnce(new Response(null, { status }))
 			expect(await postSessionEvents(CONFIG, [{ seq: 0 }])).toBe(outcome)
@@ -220,7 +219,7 @@ describe("transport", () => {
 		warn.mockRestore()
 	})
 
-	it.each([401, 402, 403])(
+	it.each([401, 402, 403, 404])(
 		"stops a channel for the rest of the page once ingest answers %i",
 		async (status) => {
 			const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
