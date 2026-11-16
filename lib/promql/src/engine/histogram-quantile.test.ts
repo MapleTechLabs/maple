@@ -1,6 +1,6 @@
 import { Result } from "effect"
 import { describe, expect, it } from "vitest"
-import { histogramQuantile, parseGoFloat } from "./histogram-quantile"
+import { bucketFraction, histogramQuantile, parseGoFloat } from "./histogram-quantile"
 import type { InstantVector } from "./types"
 
 const T = 1_000
@@ -127,5 +127,28 @@ describe("parseGoFloat", () => {
 			2,
 		])
 		expect(["", "abc", "1,5"].map(parseGoFloat)).toEqual([undefined, undefined, undefined])
+	})
+})
+
+describe("bucketFraction", () => {
+	const cumulative = [
+		{ upperBound: 0.1, count: 10 },
+		{ upperBound: 0.5, count: 20 },
+		{ upperBound: 1, count: 40 },
+		{ upperBound: Infinity, count: 40 },
+	]
+
+	it("starts positive buckets at 0, so a range inside the first bucket interpolates", () => {
+		expect(bucketFraction(0, 0.2, cumulative)).toBeCloseTo(12.5 / 40) // 10 + 10 * (0.1/0.4)
+		expect(bucketFraction(0, 0.05, cumulative)).toBeCloseTo(5 / 40)
+	})
+
+	it("counts a whole infinite-width first bucket instead of answering NaN", () => {
+		const negative = [
+			{ upperBound: -1, count: 4 },
+			{ upperBound: 1, count: 8 },
+			{ upperBound: Infinity, count: 8 },
+		]
+		expect(bucketFraction(-2, 0, negative)).toBeCloseTo(2 / 8) // 4 at -2, 6 at 0
 	})
 })

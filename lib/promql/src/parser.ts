@@ -284,7 +284,17 @@ class Converter {
 		})
 	}
 
+	/** Where each expression starts in the query, for errors found after conversion. */
+	readonly positions = new WeakMap<Expr, number>()
+
 	expr(node: SyntaxNode): R<Expr> {
+		return Result.map(this.convert(node), (expr) => {
+			if (!this.positions.has(expr)) this.positions.set(expr, node.from)
+			return expr
+		})
+	}
+
+	convert(node: SyntaxNode): R<Expr> {
 		return Result.gen(this, function* (): Generator<R<unknown>, Expr> {
 			switch (node.name) {
 				case "PromQL": {
@@ -518,8 +528,11 @@ export const parse = (query: string): R<Expr> => {
 		const near = query.slice(error.from, Math.max(error.to, error.from + 1)).trim()
 		return fail(error.from, near.length > 0 ? `syntax error near "${near}"` : "unexpected end of input")
 	}
-	return Result.flatMap(new Converter(query).expr(tree.topNode), (expr) => {
+	const converter = new Converter(query)
+	return Result.flatMap(converter.expr(tree.topNode), (expr) => {
 		const typeError = checkTypes(expr)
-		return typeError === undefined ? Result.succeed(expr) : fail(0, typeError)
+		return typeError === undefined
+			? Result.succeed(expr)
+			: fail(converter.positions.get(typeError.at) ?? 0, typeError.message)
 	})
 }
