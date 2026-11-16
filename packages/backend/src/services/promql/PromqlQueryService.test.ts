@@ -1,6 +1,8 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Layer, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
-import { compiledQueryOf } from "@maple/query-engine/execution"
+import { DEFAULT_LIMITS } from "@maple/promql"
+import { METRIC_UNIT_SEPARATOR } from "@maple/query-engine/ch"
+import { compiledQueryOf, type CompiledQueryInput } from "@maple/query-engine/execution"
 import type { TenantContext } from "@maple/domain/http"
 import { OrgId, UserId } from "@maple/primitives"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -25,6 +27,21 @@ const failureOf = (input: { query: string; startMs: number; endMs: number; stepM
 		const service = yield* PromqlQueryService
 		return yield* Effect.flip(service.query(tenant, input))
 	}).pipe(Effect.provide(TestLayer))
+
+/** A selector row's per-bucket statistic columns; empty is enough for a read that is refused. */
+const STAT_COLUMNS = [
+	"end",
+	"firstT",
+	"firstV",
+	"lastT",
+	"lastV",
+	"prevT",
+	"prevV",
+	"count",
+	"sum",
+	"min",
+	"max",
+].concat(["sumSquares", "increase", "resets", "changes", "sumT", "sumTT", "sumTV", "values"])
 
 describe("PromqlQueryService", () => {
 	it.effect("refuses a widget window that ends before it starts", () =>
@@ -172,6 +189,57 @@ describe("PromqlQueryService", () => {
 			const rows = Array.from({ length: 50_001 }, (_, i) => gauge(i))
 			const error = yield* errorWith(rows, "m_1")
 			expect(error.message).toMatch(/more than 50000 metrics/)
+		}),
+	)
+
+	it.effect("refuses a selector read that hit its row limit, even when the le filter would hide it", () =>
+		Effect.gen(function* () {
+			// One more row than the cap; only one of them has le="0.5", so a cut read would look small.
+			const selectorRows = Arr.makeBy(DEFAULT_LIMITS.maxSeries + 1, (i) => ({
+				series: String(i),
+				metricName: `lat${METRIC_UNIT_SEPARATOR}s`,
+				serviceName: "api",
+				attributes: { route: `/r${i}` },
+				resourceAttributes: {},
+				le: i === 0 ? "0.5" : "1",
+				...Rec.fromEntries(Arr.map(STAT_COLUMNS, (key) => [key, []] as const)),
+			}))
+			const answer = (
+				_tenant: unknown,
+				compiled: CompiledQueryInput<unknown>,
+				opts: { context?: string },
+			) => {
+				const query = compiledQueryOf(compiled)
+				const rows =
+					opts.context === "promqlCatalog"
+						? [{ metricName: "lat", metricType: "histogram", unit: "s", isMonotonic: 0 }]
+						: selectorRows
+				return query.decodeRows(rows).pipe(Effect.orDie)
+			}
+			const warehouse = makeWarehouseServiceStub({
+				// SAFETY: the service hands the stub plain compiled queries, never a capability compile.
+				compiledQuery: answer as never,
+				// SAFETY: as above; selector reads go through the bounded read.
+				compiledQueryBounded: answer as never,
+			})
+			const error = yield* Effect.gen(function* () {
+				const service = yield* PromqlQueryService
+				return yield* Effect.flip(
+					service.query(tenant, {
+						query: 'lat_seconds_bucket{le=~"0.5"}',
+						startMs: 3_600_000,
+						endMs: 3_600_000,
+						stepMs: 0,
+					}),
+				)
+			}).pipe(
+				Effect.provide(
+					Layer.effect(PromqlQueryService, PromqlQueryService.make).pipe(
+						Layer.provide(Layer.succeed(WarehouseQueryService, warehouse)),
+					),
+				),
+			)
+			expect(error.message).toMatch(/selects more than 10000 series/)
 		}),
 	)
 })
