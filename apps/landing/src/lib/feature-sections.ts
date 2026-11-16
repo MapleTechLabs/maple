@@ -27,6 +27,47 @@ export const K8S_INSTALL_STEPS = [
 	},
 ]
 
+/** One uptime check written three ways; the code is runnable, so never translated. */
+export const UPTIME_SETUP_WAYS = [
+	{
+		label: m.uptime_setup_way_agent,
+		lang: "text",
+		code: `> Add an uptime check for https://api.example.com/health,
+  every minute, linked to the checkout service.
+
+create_uptime_monitor({
+  kind: "http",
+  name: "checkout-api",
+  url: "https://api.example.com/health",
+  interval_seconds: 60,
+  service: "checkout",
+})`,
+	},
+	{
+		label: m.uptime_setup_way_terraform,
+		lang: "hcl",
+		code: `resource "maple_uptime_monitor" "checkout_api" {
+  name             = "checkout-api"
+  interval_seconds = 60
+  service_name     = "checkout"
+  config = jsonencode({
+    type = "http"
+    url  = "https://api.example.com/health"
+  })
+}`,
+	},
+	{
+		label: m.uptime_setup_way_api,
+		lang: "bash",
+		code: `curl https://api.maple.dev/v2/uptime_monitors \\
+  -H "Authorization: Bearer $MAPLE_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"name": "checkout-api", "kind": "http",
+       "config": {"type": "http", "url": "https://api.example.com/health"},
+       "interval_seconds": 60, "service_name": "checkout"}'`,
+	},
+]
+
 /** Copied from `/docs/product-events/*` and must stay runnable, so never translated. */
 export const PRODUCT_EVENT_SOURCES = [
 	{
@@ -140,6 +181,24 @@ export const sectionMarkdown = (id: SectionId, site: URL | undefined): string =>
 					{ title: m.uptime_trace_rule_2_title, body: m.uptime_trace_rule_2_body },
 					{ title: m.uptime_trace_rule_3_title, body: m.uptime_trace_rule_3_body },
 				]),
+			)
+		case "uptime-setup":
+			return section(
+				m.uptime_setup_title(),
+				m.uptime_setup_lede(),
+				...Arr.map(UPTIME_SETUP_WAYS, (way) => `### ${way.label()}\n\n${fence(way.lang, way.code)}`),
+				...rules([
+					{ title: m.uptime_setup_fact_1_title, body: m.uptime_setup_fact_1_body },
+					{ title: m.uptime_setup_fact_2_title, body: m.uptime_setup_fact_2_body },
+					{ title: m.uptime_setup_fact_3_title, body: m.uptime_setup_fact_3_body },
+				]),
+				Arr.join(
+					[
+						`- [${m.uptime_setup_link_checks()}](${absolute(site, "/docs/alerting/uptime-checks")})`,
+						`- [${m.uptime_setup_link_heartbeats()}](${absolute(site, "/docs/alerting/heartbeat-monitors")})`,
+					],
+					"\n",
+				),
 			)
 		case "status-page-feeds":
 			return section(
