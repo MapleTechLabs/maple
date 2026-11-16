@@ -64,7 +64,7 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
 				"maple.ai.service": params.service ?? "all",
-				"maple.ai.has_error": params.has_error ?? false,
+				"maple.ai.has_error": params.has_error === undefined ? "any" : params.has_error,
 				"maple.ai.limit": params.limit,
 				"maple.ai.offset": params.offset,
 			})
@@ -202,6 +202,14 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 				["Time range", `${output.timeRange.start} to ${output.timeRange.end}`],
 				["Service", filters.service],
 				["Environment", filters.environment],
+				[
+					"Status",
+					filters.hasError === undefined
+						? undefined
+						: filters.hasError
+							? "Error only"
+							: "non-Error only",
+				],
 				[
 					"Span name",
 					filters.spanName === undefined

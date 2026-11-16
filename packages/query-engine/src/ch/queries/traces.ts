@@ -1260,7 +1260,7 @@ export function spanSearchQuery(opts: SpanSearchOpts) {
 export interface TracesRootListOpts extends TracesQueryOpts {
 	limit?: number
 	offset?: number
-	/** Only this trace's root span, seeked through `trace_index` within the query window. */
+	/** Only this trace's entry spans, seeked through `trace_index` within the query window. */
 	traceId?: string
 	/**
 	 * Keyset pagination cursor. When set, only root spans with `Timestamp < cursor`

@@ -42,15 +42,16 @@ interface SeedSpan {
 	readonly parentSpanId: string
 	readonly spanName: string
 	readonly spanKind: string
+	readonly serviceName: string
 	readonly statusCode: "Ok" | "Error"
 	readonly hour: number
 }
 
 const row = (s: SeedSpan) =>
-	`(${quote(s.orgId)}, ${quote(at(s.hour))}, ${quote(s.traceId)}, ${quote(s.spanId)}, ${quote(s.parentSpanId)}, ${quote(s.spanName)}, ${quote(s.spanKind)}, 'api', 1000000, ${quote(s.statusCode)}, 1, '', map(), map())`
+	`(${quote(s.orgId)}, ${quote(at(s.hour))}, ${quote(s.traceId)}, ${quote(s.spanId)}, ${quote(s.parentSpanId)}, ${quote(s.spanName)}, ${quote(s.spanKind)}, ${quote(s.serviceName)}, 1000000, ${quote(s.statusCode)}, 1, '', map(), map())`
 
-// Each trace has a root and a child with the same name and status, so span level sees two
-// rows per trace and root level one.
+// Each trace has a root, an internal child and a downstream Server span, all with the same
+// name and status: span level sees three rows per trace, root level the two entry spans.
 const traceSpans = (orgId: string, traceId: string, statusCode: "Ok" | "Error", hour: number) => [
 	row({
 		orgId,
@@ -59,6 +60,7 @@ const traceSpans = (orgId: string, traceId: string, statusCode: "Ok" | "Error", 
 		parentSpanId: "",
 		spanName: SPAN_NAME,
 		spanKind: "Server",
+		serviceName: "api",
 		statusCode,
 		hour,
 	}),
@@ -69,6 +71,18 @@ const traceSpans = (orgId: string, traceId: string, statusCode: "Ok" | "Error", 
 		parentSpanId: `${Str.slice(0, 15)(traceId)}1`,
 		spanName: SPAN_NAME,
 		spanKind: "Internal",
+		serviceName: "api",
+		statusCode,
+		hour,
+	}),
+	row({
+		orgId,
+		traceId,
+		spanId: `${Str.slice(0, 15)(traceId)}3`,
+		parentSpanId: `${Str.slice(0, 15)(traceId)}2`,
+		spanName: SPAN_NAME,
+		spanKind: "Server",
+		serviceName: "payments",
 		statusCode,
 		hour,
 	}),
@@ -144,31 +158,36 @@ describeWithChdb("search_traces filters on chDB", () => {
 
 	const okRoot = `${OK_TRACE}:1:Ok`
 	const okChild = `${OK_TRACE}:2:Ok`
+	const okDownstream = `${OK_TRACE}:3:Ok`
 	const errRoot = `${ERROR_TRACE}:1:Error`
 	const errChild = `${ERROR_TRACE}:2:Error`
+	const errDownstream = `${ERROR_TRACE}:3:Error`
+	const okSpans = [okRoot, okChild, okDownstream]
+	const errSpans = [errRoot, errChild, errDownstream]
+	const sorted = (spans: ReadonlyArray<string>) => [...spans].sort()
 
 	test("span level: has_error unset returns both statuses, true only Error, false only Ok", async () => {
-		expect(await search({ spanName: SPAN_NAME })).toEqual([okRoot, okChild, errRoot, errChild].sort())
-		expect(await search({ spanName: SPAN_NAME, hasError: true })).toEqual([errRoot, errChild].sort())
-		expect(await search({ spanName: SPAN_NAME, hasError: false })).toEqual([okRoot, okChild].sort())
+		expect(await search({ spanName: SPAN_NAME })).toEqual(sorted([...okSpans, ...errSpans]))
+		expect(await search({ spanName: SPAN_NAME, hasError: true })).toEqual(sorted(errSpans))
+		expect(await search({ spanName: SPAN_NAME, hasError: false })).toEqual(sorted(okSpans))
 	})
 
 	test("span level with a trace id applies has_error the same way", async () => {
 		expect(await search({ spanName: SPAN_NAME, traceId: ERROR_TRACE, hasError: false })).toEqual([])
 		expect(await search({ spanName: SPAN_NAME, traceId: OK_TRACE, hasError: false })).toEqual(
-			[okRoot, okChild].sort(),
+			sorted(okSpans),
 		)
 	})
 
 	test("root level: has_error unset returns both traces, true only Error, false only Ok", async () => {
-		expect(await search({})).toEqual([okRoot, errRoot].sort())
-		expect(await search({ hasError: true })).toEqual([errRoot])
-		expect(await search({ hasError: false })).toEqual([okRoot])
+		expect(await search({})).toEqual(sorted([okRoot, okDownstream, errRoot, errDownstream]))
+		expect(await search({ hasError: true })).toEqual(sorted([errRoot, errDownstream]))
+		expect(await search({ hasError: false })).toEqual(sorted([okRoot, okDownstream]))
 	})
 
-	test("a bare trace_id returns only that trace's root span", async () => {
-		expect(await search({ traceId: OK_TRACE })).toEqual([okRoot])
-		expect(await search({ traceId: ERROR_TRACE })).toEqual([errRoot])
+	test("a bare trace_id returns only that trace's entry spans", async () => {
+		expect(await search({ traceId: OK_TRACE })).toEqual(sorted([okRoot, okDownstream]))
+		expect(await search({ traceId: ERROR_TRACE })).toEqual(sorted([errRoot, errDownstream]))
 		expect(await search({ traceId: ERROR_TRACE, hasError: false })).toEqual([])
 	})
 
