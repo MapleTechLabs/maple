@@ -23,7 +23,15 @@ const OVERRIDES: Partial<Record<AnomalySignalType, Partial<HysteresisConfig>>> =
 	throughput: { breachesToOpen: 3, healthyToResolve: 1 },
 } satisfies Partial<Record<AnomalySignalType, Partial<HysteresisConfig>>>
 
-export const hysteresisConfigFor = (signalType: AnomalySignalType): HysteresisConfig => ({
-	...DEFAULT_HYSTERESIS_CONFIG,
-	...OVERRIDES[signalType],
-})
+/** Each reopen adds a resolve window, up to 3, so a flapping incident holds open; stays under the 1h no-data sweep. */
+const MAX_RESOLVE_MULTIPLIER = 3
+
+export const hysteresisConfigFor = (signalType: AnomalySignalType, reopenCount: number): HysteresisConfig => {
+	const config = { ...DEFAULT_HYSTERESIS_CONFIG, ...OVERRIDES[signalType] }
+	// A recovered outage resolves at once, however often it flapped.
+	if (signalType === "throughput") return config
+	return {
+		...config,
+		healthyToResolve: config.healthyToResolve * Math.min(1 + reopenCount, MAX_RESOLVE_MULTIPLIER),
+	}
+}
