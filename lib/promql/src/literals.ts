@@ -14,9 +14,21 @@ const UNIT_ORDER = ["y", "w", "d", "h", "m", "s", "ms"]
 
 const DURATION_PART = /(\d+)(ms|y|w|d|h|m|s)/g
 
+const DECIMAL = /^(\d+(_\d+)*(\.(\d+(_\d+)*)?)?|\.\d+(_\d+)*)(e[+-]?\d+(_\d+)*)?$/
+// The lezer grammar does not lex `_` in hex literals, so they take none here.
+const HEX = /^0x[0-9a-f]+$/
+
+/** An unsigned decimal or hex number as Go reads it: exponents, and `_` only between digits. */
+const parsePlainNumber = (text: string): number | undefined => {
+	const lower = text.toLowerCase()
+	if (HEX.test(lower)) return Number.parseInt(lower.slice(2), 16)
+	return DECIMAL.test(lower) ? Number(lower.replaceAll("_", "")) : undefined
+}
+
 /** A Prometheus duration (`1h30m`, `5m`, `250ms`) or a plain number of seconds, in ms. Undefined when invalid. */
 export const parseDurationMs = (text: string): number | undefined => {
-	if (/^\d+(\.\d+)?$/.test(text)) return Math.round(Number(text) * 1000)
+	const seconds = parsePlainNumber(text)
+	if (seconds !== undefined) return Number.isFinite(seconds) ? Math.round(seconds * 1000) : undefined
 	if (!/^(\d+(ms|y|w|d|h|m|s))+$/.test(text)) return undefined
 	let total = 0
 	let lastUnit = -1
@@ -53,8 +65,8 @@ export const parseNumber = (text: string): number | undefined => {
 	if (lower === "inf" || lower === "+inf") return Number.POSITIVE_INFINITY
 	if (lower === "-inf") return Number.NEGATIVE_INFINITY
 	if (lower === "nan") return Number.NaN
-	if (/^0x[0-9a-f]+$/.test(lower)) return Number.parseInt(lower.slice(2), 16)
-	if (/^[0-9]*\.?[0-9]+(e[+-]?[0-9]+)?$/.test(lower) || /^[0-9]+\.$/.test(lower)) return Number(lower)
+	const plain = parsePlainNumber(lower)
+	if (plain !== undefined) return plain
 	const duration = parseDurationMs(text)
 	return duration === undefined ? undefined : duration / 1000
 }

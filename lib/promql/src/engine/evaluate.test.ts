@@ -2,7 +2,15 @@ import { Array as Arr, Result, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { buildDataset, DATA_END_MS, DATA_START_MS } from "../../scripts/compliance/dataset"
 import { QUERIES } from "../../scripts/compliance/queries"
-import { memorySource, type QueryParams, type QueryResult, runQuery, type SelectorRequest } from "./index"
+import { parse } from "../parser"
+import {
+	evaluate,
+	memorySource,
+	type QueryParams,
+	type QueryResult,
+	runQuery,
+	type SelectorRequest,
+} from "./index"
 
 const dataset = buildDataset()
 const bucketed = memorySource(dataset)
@@ -134,6 +142,53 @@ describe("resolution limits", () => {
 		)
 		expect(Result.isFailure(result) && result.failure.message).toMatch(/subquery resolution too fine/)
 		expect(reads).toBe(0)
+	})
+})
+
+describe("top-level resolution", () => {
+	const message = (params: QueryParams) => {
+		const result = runQuery("vector(1)", params, bucketed)
+		return Result.isFailure(result) ? result.failure.message : "ok"
+	}
+
+	it("counts intervals like Prometheus: 11000 steps pass, 11001 fail", () => {
+		expect(message({ startMs: 0, endMs: 11_000_000, stepMs: 1000 })).toBe("ok")
+		expect(message({ startMs: 0, endMs: 11_000_999, stepMs: 1000 })).toBe("ok")
+		expect(message({ startMs: 0, endMs: 11_001_000, stepMs: 1000 })).toBe(
+			"exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX)",
+		)
+	})
+
+	it("rejects a range query with no positive step", () => {
+		expect(message({ startMs: 0, endMs: 60_000, stepMs: 0 })).toMatch(
+			/zero or negative query resolution step/,
+		)
+		expect(message({ startMs: 0, endMs: 60_000, stepMs: -1 })).toMatch(
+			/zero or negative query resolution step/,
+		)
+		expect(message({ startMs: 60_000, endMs: 60_000, stepMs: 0 })).toBe("ok")
+	})
+
+	it("is enforced by evaluate itself, not only runQuery", () => {
+		const parsed = parse("vector(1)")
+		if (Result.isFailure(parsed)) throw new Error(parsed.failure.message)
+		const result = evaluate({
+			expr: parsed.success,
+			params: { startMs: 0, endMs: 1_000_000_000_000, stepMs: 1 },
+			data: new Map(),
+		})
+		expect(Result.isFailure(result) && result.failure.message).toMatch(/exceeded maximum resolution/)
+	})
+})
+
+describe("unary plus", () => {
+	it("makes timestamp() read the evaluation time, not the sample time", () => {
+		const at = DATA_START_MS + 3600_000 + 7_000
+		const instant = { startMs: at, endMs: at, stepMs: 0 }
+		const selector = 'http_requests_total{instance="a:9090", code="200"}'
+		const values = (q: string) => flatten(run(q, instant)).map(([, , v]) => v)
+		expect(values(`timestamp(${selector})`)).toEqual([(DATA_START_MS + 3600_000) / 1000])
+		expect(values(`timestamp(+${selector})`)).toEqual([at / 1000])
 	})
 })
 
