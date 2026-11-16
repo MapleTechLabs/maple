@@ -323,15 +323,15 @@ const repoTable = (h: H, repos: ReadonlyArray<GithubRepoSummary>): Html =>
 						[h.Class("w-36 shrink-0 truncate font-mono text-xs text-muted-foreground")],
 						[repo.trackedBranch ?? EMPTY_VALUE],
 					),
-					h.span(
-						[
-							h.Class(
-								cn(
-									"inline-flex w-28 shrink-0 items-center justify-end gap-1 text-xs",
-									presentation.tone,
-								),
-							),
-						],
+					hstack(
+						h,
+						{
+							as: "span",
+							inline: true,
+							gap: "1",
+							justify: "end",
+							className: cn("w-28 shrink-0 text-xs", presentation.tone),
+						},
 						[
 							icon(h, presentation.icon, {
 								size: 12,
