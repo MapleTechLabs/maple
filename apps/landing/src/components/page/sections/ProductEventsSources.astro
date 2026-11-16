@@ -19,11 +19,11 @@ import PixelIcon, { type PixelIconName } from "../../icons/PixelIcon.astro";
 
 const locale = Astro.currentLocale ?? "en";
 
-const ICONS: Record<(typeof PRODUCT_EVENT_SOURCES)[number]["label"], PixelIconName> = {
+const ICONS = {
 	browser: "globe",
 	span: "sitemap",
 	server: "cloud",
-};
+} satisfies Record<(typeof PRODUCT_EVENT_SOURCES)[number]["label"], PixelIconName>;
 
 const sources = PRODUCT_EVENT_SOURCES.map((source) => ({
 	...source,
