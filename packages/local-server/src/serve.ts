@@ -971,6 +971,13 @@ const SESSION_ROUTE_PATHS = {
 	events: SESSION_EVENTS_PATH,
 } as const satisfies Record<SessionRoute, string>
 
+/** One fixed `{method} {http.route}` span name per route. */
+const SESSION_SPAN_NAMES = {
+	meta: "POST /v1/sessionReplays/meta",
+	blob: "POST /v1/sessionReplays/blob",
+	events: "POST /v1/sessionEvents",
+} as const satisfies Record<SessionRoute, string>
+
 /** Browser session ingest as a `Server`-kind span, named and attributed like the Rust gateway's. */
 const sessionIngestSpan = (
 	inserts: Pick<InsertBatcher, "insert">,
@@ -993,7 +1000,7 @@ const sessionIngestSpan = (
 			})
 			return yield* recordServerResponse(response)
 		}).pipe(
-			Effect.withSpan(`POST ${SESSION_ROUTE_PATHS[route]}`, {
+			Effect.withSpan(SESSION_SPAN_NAMES[route], {
 				kind: "server",
 				attributes: {
 					"maple.signal": route === "events" ? "session_events" : "session_replays",
