@@ -5,32 +5,27 @@ import * as CH from "@maple-dev/effect-orm/expr"
 import { from, param } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import * as Datasources from "@maple/domain/tinybird/datasources"
-import { Array as Arr, Schema } from "effect"
+import {
+	CLOUD_RESOURCE_ATTRIBUTE_KEYS as DOMAIN_RESOURCE_KEYS,
+	type CloudResourceCandidate,
+} from "@maple/domain/cloud-security"
+import { Array as Arr, Result, Schema } from "effect"
 import { CHNumber } from "../schema"
 import { orgIdParam } from "../tables"
 
-/** Resource attributes that carry an AWS resource's id, most specific first. */
-export const CLOUD_RESOURCE_ATTRIBUTE_KEYS = [
-	"host.id",
-	"cloud.resource_id",
-	"faas.name",
-	"faas.id",
-	"aws.ecs.task.arn",
-	"aws.ecs.cluster.arn",
-	"k8s.cluster.name",
-	"container.image.name",
-] as const
+/** Resource attributes that carry an AWS resource's identity, most specific first. */
+export const CLOUD_RESOURCE_ATTRIBUTE_KEYS = DOMAIN_RESOURCE_KEYS
 
 /** Most (resource, service) pairs returned: a page of findings touches a few services each. */
 export const CLOUD_RESOURCE_SERVICES_MAX_ROWS = 1000
 
 export interface CloudResourceServicesOpts {
-	/** The ids to look for. Empty is the caller's to short-circuit: `IN ()` is invalid SQL. */
-	readonly resourceIds: Arr.NonEmptyReadonlyArray<string>
+	/** What to look for, each value on its own attribute. Empty is the caller's to short-circuit. */
+	readonly candidates: Arr.NonEmptyReadonlyArray<CloudResourceCandidate>
 }
 
 export const cloudResourceServicesRowSchema = Schema.Struct({
-	/** The id that matched, as one of `resourceIds`. */
+	/** The candidate value that matched. */
 	resourceId: Schema.String,
 	service: Schema.String,
 	/** Sample-weighted entry-point spans in the window. */
@@ -40,15 +35,25 @@ export type CloudResourceServicesOutput = typeof cloudResourceServicesRowSchema.
 
 /** Services that served requests from each resource over the window, busiest first. */
 export function cloudResourceServicesQuery(opts: CloudResourceServicesOpts) {
-	const ids = [...opts.resourceIds]
+	// Each value appears once per attribute it may sit on, so the query stays small for long ARNs.
+	const byKey = Arr.filterMap(CLOUD_RESOURCE_ATTRIBUTE_KEYS, (key) => {
+		const values = Arr.dedupe(
+			Arr.map(
+				Arr.filter(opts.candidates, (candidate) => candidate.key === key),
+				(candidate) => candidate.value,
+			),
+		)
+		return Arr.isReadonlyArrayNonEmpty(values) ? Result.succeed({ key, values }) : Result.failVoid
+	})
+	const allValues = Arr.dedupe(Arr.map(opts.candidates, (candidate) => candidate.value))
 	return from(Datasources.traces)
 		.select(($) => {
 			const attribute = (key: string) => $.ResourceAttributes.get(key)
 			return {
 				resourceId: CH.multiIf(
 					Arr.map(
-						CLOUD_RESOURCE_ATTRIBUTE_KEYS,
-						(key) => [CH.inList(attribute(key), ids), attribute(key)] as const,
+						byKey,
+						({ key, values }) => [CH.inList(attribute(key), values), attribute(key)] as const,
 					),
 					CH.lit(""),
 				),
@@ -66,13 +71,9 @@ export function cloudResourceServicesQuery(opts: CloudResourceServicesOpts) {
 				"hasAny",
 				T.uint8.schema,
 				CH.mapValues($.ResourceAttributes),
-				CH.arrayOf(...Arr.map(ids, (id) => CH.lit(id))),
+				CH.arrayOf(...Arr.map(allValues, (value) => CH.lit(value))),
 			).eq(1),
-			CH.or(
-				...Arr.map(CLOUD_RESOURCE_ATTRIBUTE_KEYS, (key) =>
-					CH.inList($.ResourceAttributes.get(key), ids),
-				),
-			),
+			CH.or(...Arr.map(byKey, ({ key, values }) => CH.inList($.ResourceAttributes.get(key), values))),
 		])
 		.groupBy("resourceId", "service")
 		.orderBy(["requests", "desc"])

@@ -31,12 +31,8 @@ describe("isOpenToAnalysts", () => {
 		).toBe(true)
 	})
 
-	it("lets an analyst read cloud findings, the filtered list included", () => {
-		const reads = endpointsOf(internal.cloudSecurity)
-		expect(reads.length).toBeGreaterThan(0)
-		expect(
-			Arr.every(reads, (endpoint) => isOpenToAnalysts({ group: internal.cloudSecurity, endpoint })),
-		).toBe(true)
+	it("keeps an analyst out of the cloud findings list, a Security Center read", () => {
+		expect(open(internal.cloudSecurity, "listFindings")).toBe(false)
 	})
 
 	it("refuses the work of running the product: issue triage, SLOs and alert rules", () => {

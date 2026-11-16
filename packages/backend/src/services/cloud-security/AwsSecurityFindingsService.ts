@@ -116,7 +116,10 @@ export class AwsSecurityFindingsService extends Context.Service<
 			row: AwsConnectionRow,
 			deadlineMs: number,
 		) {
-			yield* Effect.annotateCurrentSpan({ orgId: row.orgId, "maple.aws.connection_id": row.id })
+			yield* Effect.annotateCurrentSpan({
+				"tenant.orgId": row.orgId,
+				"maple.aws.connection_id": row.id,
+			})
 			const { enabledRegions, readCloudTrail, readSource, refreshFindings } = yield* readers
 			const session = yield* sessionOf(signerKey, row)
 			const states = yield* store.serviceStates(row.orgId, row.id)

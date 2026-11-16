@@ -1,4 +1,4 @@
-import { Schema, String as Str } from "effect"
+import { Array as Arr, Option, Schema, String as Str } from "effect"
 
 // Findings the AWS connection's `security` module pulls from the account's own security services,
 // stored per finding at its latest version. One vocabulary across the four services.
@@ -95,7 +95,9 @@ export const cloudFindingConsoleUrl = (finding: {
 	const { region, findingId } = finding
 	const host = Str.includes("-gov-")(region)
 		? `https://console.amazonaws-us-gov.com`
-		: `https://${region}.console.aws.amazon.com`
+		: Str.startsWith("cn-")(region)
+			? `https://console.amazonaws.cn`
+			: `https://${region}.console.aws.amazon.com`
 	switch (finding.source) {
 		case "guardduty":
 			return `${host}/guardduty/home?region=${region}#/findings?macros=current&fId=${encodeURIComponent(findingId)}`
@@ -108,15 +110,80 @@ export const cloudFindingConsoleUrl = (finding: {
 	}
 }
 
+/** Resource attributes that carry an AWS resource's identity in telemetry. */
+export const CLOUD_RESOURCE_ATTRIBUTE_KEYS = [
+	"host.id",
+	"cloud.resource_id",
+	"faas.name",
+	"faas.id",
+	"aws.ecs.task.arn",
+	"aws.ecs.cluster.arn",
+	"k8s.cluster.name",
+] as const
+export type CloudResourceAttributeKey = (typeof CLOUD_RESOURCE_ATTRIBUTE_KEYS)[number]
+
+/** One value telemetry may carry for a resource, on the one attribute that would carry it. */
+export interface CloudResourceCandidate {
+	readonly key: CloudResourceAttributeKey
+	readonly value: string
+}
+
+/** An ARN is matched whole on the attributes that hold ARNs. */
+const ARN_KEYS: ReadonlyArray<CloudResourceAttributeKey> = [
+	"cloud.resource_id",
+	"faas.id",
+	"aws.ecs.task.arn",
+	"aws.ecs.cluster.arn",
+]
+
+const EC2_INSTANCE_ID = /^i-[0-9a-f]{8,17}$/u
+
+/** The name part of an ARN's resource for the services whose name telemetry carries; undefined otherwise. */
+const arnName = (arn: string): CloudResourceCandidate | undefined => {
+	// arn:partition:service:region:account:resource, where resource may itself hold ':' and '/'.
+	const parts = Str.split(":")(arn)
+	const service = parts[2] ?? ""
+	const resource = Arr.join(Arr.drop(parts, 5), ":")
+	const after = (prefix: string) =>
+		Str.startsWith(prefix)(resource) ? Str.slice(prefix.length)(resource) : undefined
+	if (service === "ec2") {
+		const instance = after("instance/")
+		return instance !== undefined && EC2_INSTANCE_ID.test(instance)
+			? { key: "host.id", value: instance }
+			: undefined
+	}
+	if (service === "lambda") {
+		// `function:name` or `function:name:qualifier`: the qualifier is a version or alias, not a name.
+		const name = Arr.head(Str.split(":")(after("function:") ?? "")).pipe(Option.getOrElse(() => ""))
+		return name === "" ? undefined : { key: "faas.name", value: name }
+	}
+	if (service === "eks") {
+		const name = Arr.head(Str.split("/")(after("cluster/") ?? "")).pipe(Option.getOrElse(() => ""))
+		return name === "" ? undefined : { key: "k8s.cluster.name", value: name }
+	}
+	return undefined
+}
+
 /**
- * The ids telemetry may carry for a resource: itself, and for an ARN its last segment
- * (`arn:aws:ec2:...:instance/i-0abc` is `i-0abc` on `host.id`, a Lambda ARN ends in `faas.name`).
+ * The values telemetry may carry for a finding's resource, each on the attribute that would carry
+ * it: an ARN whole, plus its name for EC2 instances, Lambda functions and EKS clusters; a bare id
+ * only where its type says what it is. A short tail is never matched loosely, so `function:x:prod`
+ * cannot match a `prod` cluster.
  */
-export const cloudResourceIdCandidates = (resourceId: string): ReadonlyArray<string> => {
-	const id = Str.trim(resourceId)
+export const cloudResourceCandidates = (resource: {
+	readonly resourceId: string
+	readonly resourceType: string
+}): ReadonlyArray<CloudResourceCandidate> => {
+	const id = Str.trim(resource.resourceId)
 	if (id === "") return []
-	if (!Str.startsWith("arn:")(id)) return [id]
-	const segments = Str.split(Str.includes("/")(id) ? "/" : ":")(id)
-	const tail = segments[segments.length - 1] ?? ""
-	return tail === "" || tail === id ? [id] : [id, tail]
+	if (Str.startsWith("arn:")(id)) {
+		const name = arnName(id)
+		const whole = Arr.map(ARN_KEYS, (key): CloudResourceCandidate => ({ key, value: id }))
+		return name === undefined ? whole : Arr.append(whole, name)
+	}
+	const type = Str.toLowerCase(resource.resourceType)
+	if (EC2_INSTANCE_ID.test(id)) return [{ key: "host.id", value: id }]
+	if (Str.includes("lambda")(type)) return [{ key: "faas.name", value: id }]
+	if (Str.includes("eks")(type)) return [{ key: "k8s.cluster.name", value: id }]
+	return []
 }

@@ -73,7 +73,12 @@ describeWithChdb("cloudResourceServicesQuery on chDB", () => {
 
 	test("counts each service's requests per matched resource, in the org and window only", () => {
 		const compiled = CH.compileUnsafe(
-			CH.cloudResourceServicesQuery({ resourceIds: ["i-0abc", "cart-fn"] }),
+			CH.cloudResourceServicesQuery({
+				candidates: [
+					{ key: "host.id", value: "i-0abc" },
+					{ key: "faas.name", value: "cart-fn" },
+				],
+			}),
 			{
 				orgId: Schema.decodeSync(OrgId)(ORG),
 				startTime: formatWarehouseDateTime(Date.parse("2026-11-15T12:00:00Z")),

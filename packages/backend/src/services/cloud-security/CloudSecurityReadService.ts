@@ -1,6 +1,7 @@
 import {
 	cloudFindingConsoleUrl,
-	cloudResourceIdCandidates,
+	cloudResourceCandidates,
+	type CloudResourceCandidate,
 	CloudFindingSource,
 } from "@maple/domain/cloud-security"
 import {
@@ -46,12 +47,17 @@ export interface ResourceServiceMatch {
 
 const NO_MATCHES: ReadonlyArray<ResourceServiceMatch> = []
 
-/** The services one resource affects, summed over the ids it may carry, busiest first. */
+interface FindingResource {
+	readonly resourceId: string
+	readonly resourceType: string
+}
+
+/** The services one resource affects, summed over the values it may carry, busiest first. */
 export const affectedServicesOf = (
-	resourceId: string,
+	resource: FindingResource,
 	matches: ReadonlyArray<ResourceServiceMatch>,
 ): ReadonlyArray<CloudFindingAffectedService> => {
-	const candidates = new Set(cloudResourceIdCandidates(resourceId))
+	const candidates = new Set(Arr.map(cloudResourceCandidates(resource), (candidate) => candidate.value))
 	const totals = Arr.reduce(
 		Arr.filter(matches, (match) => candidates.has(match.resourceId)),
 		new Map<string, number>(),
@@ -91,7 +97,7 @@ const toFinding = (
 	lastSeenAt: row.lastSeenAt,
 	syncedAt: row.syncedAt,
 	consoleUrl: cloudFindingConsoleUrl(row),
-	affectedServices: affectedServicesOf(row.resourceId, matches),
+	affectedServices: affectedServicesOf(row, matches),
 })
 
 export interface CloudSecurityReadServiceApi {
@@ -136,9 +142,10 @@ export class CloudSecurityReadService extends Context.Service<
 		/** The services carrying each resource; none, flagged unmatched, when the warehouse fails. */
 		const matchTelemetry = Effect.fn("CloudSecurityReadService.matchTelemetry")(function* (
 			tenant: TenantContext,
-			resourceIds: ReadonlyArray<string>,
+			resources: ReadonlyArray<FindingResource>,
 		) {
-			const ids = Arr.dedupe(Arr.flatMap(resourceIds, cloudResourceIdCandidates))
+			const all: ReadonlyArray<CloudResourceCandidate> = Arr.flatMap(resources, cloudResourceCandidates)
+			const ids = Arr.dedupeWith(all, (a, b) => a.key === b.key && a.value === b.value)
 			if (!Arr.isReadonlyArrayNonEmpty(ids)) {
 				return { matches: NO_MATCHES, matched: true }
 			}
@@ -147,7 +154,7 @@ export class CloudSecurityReadService extends Context.Service<
 				.compiledQuery(
 					tenant,
 					CH.compile(
-						CH.cloudResourceServicesQuery({ resourceIds: ids }),
+						CH.cloudResourceServicesQuery({ candidates: ids }),
 						{
 							orgId: tenant.orgId,
 							startTime: formatWarehouseDateTime(now - TELEMETRY_MATCH_WINDOW_MS),
@@ -157,7 +164,15 @@ export class CloudSecurityReadService extends Context.Service<
 					),
 					{ profile: "list", context: "cloudResourceServices" },
 				)
-				.pipe(Effect.option)
+				.pipe(
+					// The list still loads without it; the log says why it says "not checked".
+					Effect.tapError((error) =>
+						Effect.logWarning("Cloud findings telemetry match failed").pipe(
+							Effect.annotateLogs({ error: error.message, candidates: ids.length }),
+						),
+					),
+					Effect.option,
+				)
 			yield* Effect.annotateCurrentSpan("maple.cloud_security.telemetry_matched", Option.isSome(rows))
 			return Option.match(rows, {
 				onNone: () => ({ matches: NO_MATCHES, matched: false }),
@@ -235,10 +250,7 @@ export class CloudSecurityReadService extends Context.Service<
 					{ limit, offset },
 				)
 				.pipe(Effect.mapError(toPersistenceError))
-			const telemetry = yield* matchTelemetry(
-				tenant,
-				Arr.map(page.rows, (row) => row.resourceId),
-			)
+			const telemetry = yield* matchTelemetry(tenant, page.rows)
 			return {
 				findings: Arr.map(page.rows, (row) => toFinding(row, telemetry.matches)),
 				nextOffset: page.hasMore ? offset + page.rows.length : null,
@@ -251,8 +263,7 @@ export class CloudSecurityReadService extends Context.Service<
 			query: CloudFindingDetailQuery,
 		) {
 			yield* requireRollout(tenant.orgId)
-			const source: CloudFindingSource = query.source
-			const row = yield* store.getFinding(tenant.orgId, { ...query, source }).pipe(
+			const row = yield* store.getFinding(tenant.orgId, query).pipe(
 				Effect.mapError(toPersistenceError),
 				Effect.flatMap(
 					Option.match({
@@ -262,7 +273,7 @@ export class CloudSecurityReadService extends Context.Service<
 					}),
 				),
 			)
-			const telemetry = yield* matchTelemetry(tenant, [row.resourceId])
+			const telemetry = yield* matchTelemetry(tenant, [row])
 			return {
 				finding: { ...toFinding(row, telemetry.matches), detail: row.detail },
 				telemetryMatched: telemetry.matched,

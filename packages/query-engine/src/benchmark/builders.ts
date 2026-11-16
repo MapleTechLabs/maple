@@ -293,7 +293,16 @@ const cloudResourceFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "default",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.cloudResourceServicesQuery({ resourceIds: ["i-0abc123", "checkout-fn"] }),
+				CH.cloudResourceServicesQuery({
+					candidates: [
+						{ key: "host.id", value: "i-0abc123" },
+						{ key: "faas.name", value: "checkout-fn" },
+						{
+							key: "cloud.resource_id",
+							value: "arn:aws:lambda:us-east-1:123456789012:function:checkout-fn",
+						},
+					],
+				}),
 				window,
 			),
 	},

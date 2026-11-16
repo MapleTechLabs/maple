@@ -7,7 +7,7 @@ import {
 	CloudFindingStatus,
 	CloudServiceState,
 } from "../cloud-security"
-import { AnalystAccess } from "./analyst-access"
+import { AuditedRead } from "./audit-log"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
 
@@ -173,6 +173,20 @@ export class CloudSecurityDisabledError extends HttpTaggedError<CloudSecurityDis
 	},
 ) {}
 
+/** The caller lacks `security:manage`: findings and their raw records are for engineers and admins. */
+export class CloudSecurityForbiddenError extends HttpTaggedError<CloudSecurityForbiddenError>()(
+	"@maple/http/errors/CloudSecurityForbiddenError",
+	{ message: Schema.String },
+	{
+		status: 403,
+		code: "cloud_security_forbidden",
+		title: "Not allowed to read cloud findings",
+		retry: "never",
+		recovery: "contact_support",
+		exposure: "public_message",
+	},
+) {}
+
 export class CloudSecurityPersistenceError extends HttpTaggedError<CloudSecurityPersistenceError>()(
 	"@maple/http/errors/CloudSecurityPersistenceError",
 	/** `cause` names the failure behind it (its tag), never its details. */
@@ -206,23 +220,30 @@ export class CloudSecurityApiGroup extends HttpApiGroup.make("cloudSecurity")
 	.add(
 		HttpApiEndpoint.get("overview", "/overview", {
 			success: CloudSecurityOverviewResponse,
-			error: [CloudSecurityDisabledError, CloudSecurityPersistenceError],
+			error: [CloudSecurityDisabledError, CloudSecurityForbiddenError, CloudSecurityPersistenceError],
 		}),
 	)
 	.add(
-		// A POST for the list filters; it only reads.
+		// A POST for the list filters; it only reads. Not for analysts: the Security Center is engineers' and admins'.
 		HttpApiEndpoint.post("listFindings", "/findings", {
 			payload: CloudFindingsListRequest,
 			success: CloudFindingsListResponse,
-			error: [CloudSecurityDisabledError, CloudSecurityPersistenceError],
-		}).annotate(AnalystAccess, "read"),
+			error: [CloudSecurityDisabledError, CloudSecurityForbiddenError, CloudSecurityPersistenceError],
+		}),
 	)
 	.add(
 		HttpApiEndpoint.get("finding", "/finding", {
 			query: CloudFindingDetailQuery,
 			success: CloudFindingDetailResponse,
-			error: [CloudSecurityDisabledError, CloudSecurityPersistenceError, CloudFindingNotFoundError],
+			error: [
+				CloudSecurityDisabledError,
+				CloudSecurityForbiddenError,
+				CloudSecurityPersistenceError,
+				CloudFindingNotFoundError,
+			],
 		}),
 	)
 	.prefix("/internal/cloud-security")
-	.middleware(SessionAuthorization) {}
+	.middleware(SessionAuthorization)
+	// Findings carry principals, addresses and exposed resources, and the list reads telemetry.
+	.annotate(AuditedRead, "telemetry.read") {}

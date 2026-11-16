@@ -152,17 +152,25 @@ export const regionsOf = (overview: Overview): ReadonlyArray<string> =>
 export const overviewOf = (model: Pick<Model, "overview">): Overview | null =>
 	Option.getOrNull(AsyncData.getData(model.overview.data))
 
-/** Every finding loaded so far; null until the first page answers. */
+/** A finding's identity: the store's key past the org. */
+const findingKeyOf = (finding: CloudFinding) =>
+	`${finding.connectionId}\n${finding.region}\n${finding.source}\n${finding.findingId}`
+
+/**
+ * Every finding loaded so far, each once; null until the first page answers. A finding seen again
+ * between two page loads moves up the order, so a later page can repeat it.
+ */
 export const findingsOf = (
 	model: Pick<Model, "firstPage" | "laterPages">,
 ): ReadonlyArray<CloudFinding> | null =>
 	AsyncData.matchData(model.firstPage.data, {
 		onEmpty: () => null,
 		onFailure: () => null,
-		onData: (first) => [
-			...first.findings,
-			...Arr.flatMap(model.laterPages.pages, (page) => page.findings),
-		],
+		onData: (first) =>
+			Arr.dedupeWith(
+				[...first.findings, ...Arr.flatMap(model.laterPages.pages, (page) => page.findings)],
+				(a, b) => findingKeyOf(a) === findingKeyOf(b),
+			),
 	})
 
 /** The offset after everything loaded so far, or null at the end of the list. */

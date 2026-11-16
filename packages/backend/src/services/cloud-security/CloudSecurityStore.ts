@@ -361,7 +361,10 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 				filters: CloudFindingFilters,
 				page: CloudFindingPage,
 			) {
-				yield* Effect.annotateCurrentSpan({ orgId, "maple.cloud_security.status": filters.status })
+				yield* Effect.annotateCurrentSpan({
+					"tenant.orgId": orgId,
+					"maple.cloud_security.status": filters.status,
+				})
 				const search = filters.search === undefined ? "" : Str.trim(filters.search)
 				const pattern = search === "" ? undefined : `%${PG.escapeLike(search)}%`
 				const severities = filters.severities ?? []

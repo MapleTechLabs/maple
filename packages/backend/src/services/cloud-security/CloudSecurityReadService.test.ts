@@ -64,8 +64,8 @@ const makeWorld = (flags: OrganizationFeatureFlags, warehouse: Warehouse = "answ
 					)
 				: query
 						.decodeRows([
-							{ resourceId: "i-0abc", service: "checkout-api", requests: "1200" },
-							{ resourceId: "i-0abc", service: "cart", requests: "40" },
+							{ resourceId: "i-0abc1234def567890", service: "checkout-api", requests: "1200" },
+							{ resourceId: "i-0abc1234def567890", service: "cart", requests: "40" },
 							{ resourceId: "checkout-fn", service: "payments", requests: "9" },
 						])
 						.pipe(Effect.orDie)
@@ -115,7 +115,7 @@ const finding = (
 	severity: "high",
 	status: "active",
 	resourceType: "Instance",
-	resourceId: "i-0abc",
+	resourceId: "i-0abc1234def567890",
 	resourceName: null,
 	occurrences: 3,
 	firstSeenAt: 1_000,
@@ -127,16 +127,22 @@ const finding = (
 
 describe("affectedServicesOf", () => {
 	it("sums a resource's services over its ARN and tail, busiest first", () => {
-		const services = affectedServicesOf("arn:aws:lambda:us-east-1:111111111111:function:checkout-fn", [
-			{ resourceId: "checkout-fn", service: "payments", requests: 9 },
+		const services = affectedServicesOf(
 			{
 				resourceId: "arn:aws:lambda:us-east-1:111111111111:function:checkout-fn",
-				service: "payments",
-				requests: 1,
+				resourceType: "AwsLambdaFunction",
 			},
-			{ resourceId: "checkout-fn", service: "checkout-api", requests: 50 },
-			{ resourceId: "i-0abc", service: "cart", requests: 999 },
-		])
+			[
+				{ resourceId: "checkout-fn", service: "payments", requests: 9 },
+				{
+					resourceId: "arn:aws:lambda:us-east-1:111111111111:function:checkout-fn",
+					service: "payments",
+					requests: 1,
+				},
+				{ resourceId: "checkout-fn", service: "checkout-api", requests: 50 },
+				{ resourceId: "i-0abc1234def567890", service: "cart", requests: 999 },
+			],
+		)
 		assert.deepStrictEqual(services, [
 			{ service: "checkout-api", requests: 50 },
 			{ service: "payments", requests: 10 },

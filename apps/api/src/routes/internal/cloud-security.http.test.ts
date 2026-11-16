@@ -26,7 +26,7 @@ const ORG_ID = Schema.decodeSync(OrgId)("org_cloud_route")
 const USER_ID = Schema.decodeSync(UserId)("user_cloud_route")
 const asFailure = Schema.decodeUnknownSync(Schema.Struct({ _tag: Schema.String }))
 
-const makeHarness = (enabled: boolean) => {
+const makeHarness = (enabled: boolean, role = "org:engineer") => {
 	const asked: Array<CloudFindingsListRequest> = []
 	const disabled = new CloudSecurityDisabledError({
 		message: "Cloud security is not enabled for this organization.",
@@ -53,7 +53,7 @@ const makeHarness = (enabled: boolean) => {
 						new CurrentTenant.TenantSchema({
 							orgId: ORG_ID,
 							userId: USER_ID,
-							roles: [Schema.decodeSync(RoleName)("org:member")],
+							roles: [Schema.decodeSync(RoleName)(role)],
 							authMode: "clerk",
 						}),
 					),
@@ -111,5 +111,22 @@ describe("POST /internal/cloud-security/findings", () => {
 		expect(response.status).toBe(403)
 		expect(asFailure(response.body)._tag).toBe("@maple/http/errors/CloudSecurityDisabledError")
 		await harness.dispose()
+	})
+
+	it("refuses members and analysts, as the rest of the Security Center does", async () => {
+		await Effect.runPromise(
+			Effect.forEach(["org:member", "org:analyst"], (role) =>
+				Effect.promise(async () => {
+					const harness = makeHarness(true, role)
+					const response = await harness.list({})
+					expect(response.status).toBe(403)
+					expect(asFailure(response.body)._tag).toBe(
+						"@maple/http/errors/CloudSecurityForbiddenError",
+					)
+					expect(harness.asked).toEqual([])
+					await harness.dispose()
+				}),
+			),
+		)
 	})
 })
