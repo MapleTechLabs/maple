@@ -254,7 +254,7 @@ export const planPushdowns = (expr: Expr, params: QueryParams): Map<Expr, Pushdo
 	return out
 }
 
-/** Prometheus' cap on points per series, for the query and every subquery. */
+/** Prometheus' cap on points per series: steps of a range query, and points of every subquery. */
 export const MAX_POINTS_PER_SERIES = 11_000
 
 /**
@@ -264,9 +264,16 @@ export const MAX_POINTS_PER_SERIES = 11_000
  */
 export const resolutionError = (expr: Expr, params: QueryParams): string | undefined => {
 	const points = (g: TimeGrid) => (g.stepMs > 0 ? Math.floor((g.endMs - g.startMs) / g.stepMs) + 1 : 1)
-	const top: TimeGrid = { startMs: params.startMs, endMs: params.endMs, stepMs: params.stepMs }
-	if (points(top) > MAX_POINTS_PER_SERIES) {
-		return `exceeded maximum resolution of ${MAX_POINTS_PER_SERIES} points per timeseries. Try decreasing the query resolution (?step=XX)`
+	const instant = isInstant(params)
+	const top: TimeGrid = instant
+		? { startMs: params.startMs, endMs: params.startMs, stepMs: 0 }
+		: { startMs: params.startMs, endMs: params.endMs, stepMs: params.stepMs }
+	if (!instant && params.stepMs <= 0) {
+		return "zero or negative query resolution step widths are not accepted. Try a positive integer"
+	}
+	// Prometheus' API counts intervals, not points: 11,000 steps (11,001 points) still pass.
+	if (!instant && Math.floor((params.endMs - params.startMs) / params.stepMs) > MAX_POINTS_PER_SERIES) {
+		return `exceeded maximum resolution of ${MAX_POINTS_PER_SERIES.toLocaleString("en-US")} points per timeseries. Try decreasing the query resolution (?step=XX)`
 	}
 	const walk = (node: Expr, grid: TimeGrid): string | undefined => {
 		switch (node.type) {

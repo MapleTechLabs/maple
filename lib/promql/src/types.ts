@@ -94,6 +94,14 @@ export const checkTypes = (expr: Expr): PromqlTypeError | undefined => {
 			if (isComparison && lhs === "scalar" && rhs === "scalar" && !expr.returnBool) {
 				return error("comparisons between scalars must use BOOL modifier")
 			}
+			if (expr.matching?.on === true) {
+				const { labels, include } = expr.matching
+				const both = include.find((label) => labels.includes(label))
+				if (both !== undefined)
+					return error(
+						`label ${JSON.stringify(both)} must not occur in ON and GROUP clause at once`,
+					)
+			}
 			if (SET_OPS.has(expr.op)) {
 				if (lhs !== "vector" || rhs !== "vector")
 					return error(`set operator "${expr.op}" not allowed in binary scalar expression`)
@@ -101,7 +109,8 @@ export const checkTypes = (expr: Expr): PromqlTypeError | undefined => {
 					return error("no grouping allowed for set operations")
 				}
 			}
-			if (expr.matching !== undefined && (lhs !== "vector" || rhs !== "vector")) {
+			const scalarSide = lhs !== "vector" || rhs !== "vector"
+			if (expr.matching !== undefined && expr.matching.labels.length > 0 && scalarSide) {
 				return error("vector matching only allowed between instant vectors")
 			}
 			return undefined

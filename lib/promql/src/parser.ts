@@ -15,7 +15,7 @@ import { functionSignature } from "./functions"
 import { lookup } from "./lookup"
 import { anchoredRegex, type LabelRegex } from "./regex"
 import { parseDurationMs, parseNumber, unquote } from "./literals"
-import { checkTypes } from "./types"
+import { checkTypes, valueTypeOf } from "./types"
 
 export interface PromqlSyntaxError {
 	readonly message: string
@@ -271,13 +271,18 @@ class Converter {
 				if (which === "AtEnd") return { kind: "end" } as const
 			}
 			const literal = value.name === "UnaryExpr" ? value.getChild("NumberDurationLiteral") : value
-			const seconds = literal === null ? undefined : parseNumber(this.text(literal))
+			// The lexer folds a sign into the @ literal (`@ -1`, `@ - 1`), so strip it here.
+			const text = literal === null ? "" : this.text(literal).replace(/\s+/g, "")
+			const signed = /^[+-]/.test(text)
+			const seconds = parseNumber(signed ? text.slice(1) : text)
 			if (
 				literal?.name === "NumberDurationLiteral" &&
 				seconds !== undefined &&
 				Number.isFinite(seconds)
 			) {
-				const negative = value.name === "UnaryExpr" && this.text(value).trim().startsWith("-")
+				const negative =
+					(value.name === "UnaryExpr" && this.text(value).trim().startsWith("-")) !==
+					(signed && text.startsWith("-"))
 				return { kind: "time", timeMs: (negative ? -seconds : seconds) * 1000 } as const
 			}
 			return yield* fail(value, `invalid @ modifier ${this.text(value)}`)
@@ -496,11 +501,16 @@ class Converter {
 					include: yield* this.grouping(groups[1] ?? null),
 				}
 			}
+			const lhs = yield* this.expr(lhsNode)
+			const rhs = yield* this.expr(rhsNode)
+			// Prometheus drops an empty `on()`/`ignoring()` next to a scalar; a non-empty one fails type checks.
+			const scalarSide = valueTypeOf(lhs) === "scalar" || valueTypeOf(rhs) === "scalar"
+			if (scalarSide && matching?.labels.length === 0) matching = undefined
 			const binary: Expr = {
 				type: "Binary",
 				op,
-				lhs: yield* this.expr(lhsNode),
-				rhs: yield* this.expr(rhsNode),
+				lhs,
+				rhs,
 				returnBool: node.getChild("BoolModifier") !== null,
 				matching,
 			}
