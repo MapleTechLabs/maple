@@ -37,4 +37,4 @@ export const complianceMarkdown = (): string =>
 	`${table(
 		["", m.compliance_status()],
 		Arr.map(complianceItems, (item) => [item.name, complianceStatusLabel(item.status)]),
-	)}\n\n${m.compliance_dpa_request({ email: `[${PRIVACY_EMAIL}](mailto:${PRIVACY_EMAIL})` })}`
+	)}\n\n${m.compliance_audit_log()}\n\n${m.compliance_dpa_request({ email: `[${PRIVACY_EMAIL}](mailto:${PRIVACY_EMAIL})` })}`
