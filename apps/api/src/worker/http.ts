@@ -16,7 +16,7 @@ import {
 	apiCorsPreflightResponse,
 } from "@maple/backend/http/api-cors"
 import { aiUnavailableResponse, forwardsToAi, forwardToAi } from "./ai-forward"
-import { v2WorkerUnavailableResponse } from "../http/v2-worker-unavailable"
+import { v2ShareBodyTooLargeResponse, v2WorkerUnavailableResponse } from "../http/v2-worker-unavailable"
 import { AiWorkerFetcher, type MapleDbConnection } from "@maple/backend/platform/bindings"
 import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
 import { recordRenderedFailure } from "@maple/backend/http/rendered-failure"
@@ -146,6 +146,25 @@ const pathOf = (url: string): string => {
 
 const isV2Path = (path: string): boolean => path === "/v2" || Str.startsWith("/v2/")(path)
 
+/** The anonymous share bodies are a token and a few small fields; nothing legitimate comes close. */
+export const SHARE_BODY_MAX_BYTES = 64 * 1024
+
+const BODYLESS_METHODS: ReadonlySet<string> = new Set(["GET", "HEAD", "OPTIONS"])
+
+/**
+ * A share body that is too large or of unknown length (chunked), refused before the route graph,
+ * because the router buffers and decodes the body before the share rate limit can run.
+ */
+const oversizedShareBody = (
+	method: string,
+	path: string,
+	headers: Readonly<Record<string, string | undefined>>,
+) => {
+	if (!Str.startsWith("/v2/share/")(path) || BODYLESS_METHODS.has(method)) return false
+	const declared = headers["content-length"]
+	return declared === undefined || !(Number(declared) <= SHARE_BODY_MAX_BYTES)
+}
+
 /** The route graph could not finish bootstrapping: the canonical v2 fallback, or a plain 504 for the rest. */
 const unavailableResponse = (path: string) =>
 	HttpServerResponse.fromWeb(
@@ -225,6 +244,12 @@ export const makeFetch = <E>(
 			// span carries that shape. Counted before the graph builds, so build failures count too,
 			// and before the forward, so a forwarded call's cold cost splits by both isolates.
 			yield* isolateAge.record
+
+			if (oversizedShareBody(request.method, path, request.headers)) {
+				return HttpServerResponse.fromWeb(
+					v2ShareBodyTooLargeResponse(API_CORS_RESPONSE_HEADERS, SHARE_BODY_MAX_BYTES),
+				)
+			}
 
 			// The agent surfaces moved to maple-ai; this origin keeps serving them.
 			// Ahead of the route graph on purpose: that is the whole point of the
