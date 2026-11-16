@@ -36,7 +36,8 @@ import {
 	type SearchTracesOutput,
 	type ServiceEdge,
 } from "@maple/query-engine/observability"
-import { MetricType } from "@maple/domain"
+import { MetricType, rawSqlIssue } from "@maple/domain"
+import { WarehouseInvalidSqlError } from "@maple/domain/http"
 import type { WarehouseQueryName } from "@maple/domain/warehouse-queries"
 import type { ListMetricsRow as ListMetricsOutput } from "@maple/query-engine/ch"
 import { executeLocalQuery } from "@maple/query-engine/local"
@@ -589,7 +590,7 @@ export const listMetrics = (p: { range: Range; service?: string; search?: string
  * the warehouse executor (whose `sqlQuery` enforces the OrgId scoping guard)
  * and posts straight to the single-tenant `/local/query` endpoint.
  */
-const executeRawLocalQuery = Effect.fn("WarehouseExecutor.rawQuery", { kind: "client" })(function* (
+const executeRawLocalQueryTraced = Effect.fn("WarehouseExecutor.rawQuery", { kind: "client" })(function* (
 	sql: string,
 	baseUrl: string,
 ) {
@@ -625,12 +626,24 @@ const executeRawLocalQuery = Effect.fn("WarehouseExecutor.rawQuery", { kind: "cl
 				),
 			),
 		),
+		// The user's own SQL is wrong: leave the span as a value so it closes `Ok`.
+		Effect.catchTag("@maple/http/errors/WarehouseInvalidSqlError", (error) => Effect.succeed(error)),
 	)
+	if (isInvalidSql(rows)) return rows
 	yield* Effect.annotateCurrentSpan("result.rowCount", rows.length)
 	yield* Effect.annotateCurrentSpan("db.response.returned_rows", rows.length)
 	yield* Effect.annotateCurrentSpan("db.duration_ms", (yield* Clock.currentTimeMillis) - startedAtMs)
 	return rows
 })
+
+const isInvalidSql = Schema.is(WarehouseInvalidSqlError)
+
+/** Re-raises an invalid-SQL outcome outside the span, so control flow is unchanged. */
+const executeRawLocalQuery = (sql: string, baseUrl: string) =>
+	executeRawLocalQueryTraced(sql, baseUrl).pipe(
+		// @effect-diagnostics-next-line flatMapConditionalToFilterOrFail:off -- filterOrFail's orFailWith sees the unnarrowed value, widening the error
+		Effect.flatMap((outcome) => (isInvalidSql(outcome) ? Effect.fail(outcome) : Effect.succeed(outcome))),
+	)
 
 /** True when the SQL uses the workspace's macros (`$__orgFilter`, `$__timeFilter(…)`, …). */
 const usesMacros = (sql: string): boolean => Str.includes("$__")(sql)
@@ -641,8 +654,11 @@ const usesMacros = (sql: string): boolean => Str.includes("$__")(sql)
  * validation applies, which is what makes it portable: the expansion requires
  * `$__orgFilter` remotely, so it does here too.
  */
-const expandLocalMacros = (sql: string, range: Range) =>
-	prepareRawSql({
+const expandLocalMacros = (sql: string, range: Range) => {
+	// Checked before the traced prepare, so a rejected query never marks a span Error.
+	const issue = rawSqlIssue(sql, { workload: "interactive" })
+	if (issue !== null) return Effect.fail(new CliUsageError({ message: `SQL rejected: ${issue.message}` }))
+	return prepareRawSql({
 		sql,
 		orgId: LOCAL_ORG_ID,
 		startTime: range.startTime,
@@ -655,6 +671,7 @@ const expandLocalMacros = (sql: string, range: Range) =>
 			onFailure: (error) => new CliUsageError({ message: `SQL rejected: ${error.message}` }),
 		}),
 	)
+}
 
 /**
  * Locally, plain SQL runs as written against the single-tenant store, and SQL

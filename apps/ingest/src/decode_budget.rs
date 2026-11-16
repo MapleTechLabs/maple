@@ -5,6 +5,7 @@
 
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
 use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
+use opentelemetry_proto::tonic::collector::profiles::v1development::ExportProfilesServiceRequest;
 use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
 use opentelemetry_proto::tonic::common::v1::{
     AnyValue, ArrayValue, EntityRef, InstrumentationScope, KeyValue, KeyValueList,
@@ -15,15 +16,17 @@ use opentelemetry_proto::tonic::metrics::v1::{
     ExponentialHistogram, ExponentialHistogramDataPoint, Gauge, Histogram, HistogramDataPoint,
     Metric, NumberDataPoint, ResourceMetrics, ScopeMetrics, Sum, Summary, SummaryDataPoint,
 };
+use opentelemetry_proto::tonic::profiles::v1development as profiles;
 use opentelemetry_proto::tonic::resource::v1::Resource;
 use opentelemetry_proto::tonic::trace::v1::{span, ResourceSpans, ScopeSpans, Span, Status};
 use std::mem::size_of;
 use std::sync::Arc;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
-/// The process-wide budget for request bodies being decoded: their raw bytes, the
-/// inflated bytes and the decoded form, reserved before each is allocated. A
-/// reservation that does not fit fails at once, so the caller can shed the request.
+/// The process-wide budget for requests being decoded and stored: their raw bytes,
+/// the inflated bytes, the decoded form and the rows or forward body built from it,
+/// reserved before each is allocated. A reservation that does not fit fails at once,
+/// so the caller can shed the request.
 #[derive(Clone, Debug)]
 pub struct DecodeMemory {
     kibibytes: Arc<Semaphore>,
@@ -95,6 +98,13 @@ impl DecodeReservation {
         true
     }
 
+    /// Bytes this reservation holds.
+    pub fn held_bytes(&self) -> u64 {
+        self.held
+            .as_ref()
+            .map_or(0, |held| held.num_permits() as u64 * DecodeMemory::UNIT)
+    }
+
     /// Gives back all but `keep` bytes (rounded up to whole KiB) of what is held.
     pub fn shrink_to(&mut self, keep: u64) {
         let keep = usize::try_from(keep.div_ceil(DecodeMemory::UNIT)).unwrap_or(usize::MAX);
@@ -132,6 +142,7 @@ pub enum OtlpSignal {
     Traces,
     Logs,
     Metrics,
+    Profiles,
 }
 
 /// The payload decodes to more than the budget allows.
@@ -144,6 +155,7 @@ pub fn protobuf_cost(signal: OtlpSignal, payload: &[u8], budget: u64) -> Result<
         OtlpSignal::Traces => Msg::ExportTraces,
         OtlpSignal::Logs => Msg::ExportLogs,
         OtlpSignal::Metrics => Msg::ExportMetrics,
+        OtlpSignal::Profiles => Msg::ExportProfiles,
     };
     let mut meter = Meter::new(budget);
     meter.charge(root.size())?;
@@ -365,14 +377,14 @@ impl From<Stop> for OverBudget {
     }
 }
 
-enum Stop {
+pub(crate) enum Stop {
     OverBudget,
     /// Not valid protobuf: left for the decoder to reject.
     Malformed,
 }
 
 /// Heap bytes behind a string or byte field of `len` bytes.
-const fn heap_len(len: usize) -> u64 {
+pub(crate) const fn heap_len(len: usize) -> u64 {
     if len == 0 {
         0
     } else {
@@ -419,6 +431,19 @@ enum Msg {
     AnyValue,
     ArrayValue,
     KeyValueList,
+    ExportProfiles,
+    ProfilesDictionary,
+    ResourceProfiles,
+    ScopeProfiles,
+    Profile,
+    ProfileSample,
+    ProfileLink,
+    ProfileMapping,
+    ProfileLocation,
+    ProfileLine,
+    ProfileFunction,
+    ProfileStack,
+    ProfileAttribute,
 }
 
 /// How a field's wire bytes turn into heap.
@@ -479,6 +504,19 @@ impl Msg {
             Self::AnyValue => size_of::<AnyValue>(),
             Self::ArrayValue => size_of::<ArrayValue>(),
             Self::KeyValueList => size_of::<KeyValueList>(),
+            Self::ExportProfiles => size_of::<ExportProfilesServiceRequest>(),
+            Self::ProfilesDictionary => size_of::<profiles::ProfilesDictionary>(),
+            Self::ResourceProfiles => size_of::<profiles::ResourceProfiles>(),
+            Self::ScopeProfiles => size_of::<profiles::ScopeProfiles>(),
+            Self::Profile => size_of::<profiles::Profile>(),
+            Self::ProfileSample => size_of::<profiles::Sample>(),
+            Self::ProfileLink => size_of::<profiles::Link>(),
+            Self::ProfileMapping => size_of::<profiles::Mapping>(),
+            Self::ProfileLocation => size_of::<profiles::Location>(),
+            Self::ProfileLine => size_of::<profiles::Line>(),
+            Self::ProfileFunction => size_of::<profiles::Function>(),
+            Self::ProfileStack => size_of::<profiles::Stack>(),
+            Self::ProfileAttribute => size_of::<profiles::KeyValueAndUnit>(),
         }) as u64
     }
 
@@ -486,6 +524,7 @@ impl Msg {
     /// `tests/decode_heap.rs` stop compiling when those gain a field.
     #[expect(
         clippy::match_same_arms,
+        clippy::too_many_lines,
         reason = "one arm per (message, tag), mirroring the .proto files"
     )]
     const fn field(self, tag: u64) -> Field {
@@ -499,7 +538,9 @@ impl Msg {
                 | Self::ResourceLogs
                 | Self::ScopeLogs
                 | Self::ResourceMetrics
-                | Self::ScopeMetrics,
+                | Self::ScopeMetrics
+                | Self::ResourceProfiles
+                | Self::ScopeProfiles,
                 3,
             ) => Text,
             (Self::ResourceSpans, 1) => Message(Self::Resource, No),
@@ -556,6 +597,31 @@ impl Msg {
             (Self::Exemplar, 7) => Message(Self::KeyValue, Yes),
             (Self::Exemplar, 4 | 5) => Text,
 
+            // A profile's `ValueType`s hold no heap, so they stay `Inline`.
+            (Self::ExportProfiles, 1) => Message(Self::ResourceProfiles, Yes),
+            (Self::ExportProfiles, 2) => Message(Self::ProfilesDictionary, No),
+            (Self::ResourceProfiles, 1) => Message(Self::Resource, No),
+            (Self::ResourceProfiles, 2) => Message(Self::ScopeProfiles, Yes),
+            (Self::ScopeProfiles, 1) => Message(Self::Scope, No),
+            (Self::ScopeProfiles, 2) => Message(Self::Profile, Yes),
+            (Self::Profile, 2) => Message(Self::ProfileSample, Yes),
+            (Self::Profile, 7 | 9 | 10) => Text,
+            (Self::Profile, 11) => NumberList,
+            (Self::ProfileSample, 2 | 4 | 5) => NumberList,
+            (Self::ProfileLink, 1 | 2) => Text,
+            (Self::ProfilesDictionary, 1) => Message(Self::ProfileMapping, Yes),
+            (Self::ProfilesDictionary, 2) => Message(Self::ProfileLocation, Yes),
+            (Self::ProfilesDictionary, 3) => Message(Self::ProfileFunction, Yes),
+            (Self::ProfilesDictionary, 4) => Message(Self::ProfileLink, Yes),
+            (Self::ProfilesDictionary, 5) => TextList,
+            (Self::ProfilesDictionary, 6) => Message(Self::ProfileAttribute, Yes),
+            (Self::ProfilesDictionary, 7) => Message(Self::ProfileStack, Yes),
+            (Self::ProfileMapping, 5) => NumberList,
+            (Self::ProfileLocation, 3) => Message(Self::ProfileLine, Yes),
+            (Self::ProfileLocation, 4) => NumberList,
+            (Self::ProfileStack, 1) => NumberList,
+            (Self::ProfileAttribute, 2) => Message(Self::AnyValue, No),
+
             (Self::Resource, 1) => Message(Self::KeyValue, Yes),
             (Self::Resource, 3) => Message(Self::EntityRef, Yes),
             (Self::Scope, 1 | 2) => Text,
@@ -574,12 +640,12 @@ impl Msg {
     }
 }
 
-const WIRE_VARINT: u64 = 0;
-const WIRE_FIXED64: u64 = 1;
-const WIRE_LEN: u64 = 2;
-const WIRE_START_GROUP: u64 = 3;
+pub(crate) const WIRE_VARINT: u64 = 0;
+pub(crate) const WIRE_FIXED64: u64 = 1;
+pub(crate) const WIRE_LEN: u64 = 2;
+pub(crate) const WIRE_START_GROUP: u64 = 3;
 const WIRE_END_GROUP: u64 = 4;
-const WIRE_FIXED32: u64 = 5;
+pub(crate) const WIRE_FIXED32: u64 = 5;
 
 fn walk(msg: Msg, mut buf: &[u8], depth: u32, meter: &mut Meter) -> Result<(), Stop> {
     if depth > MAX_DEPTH {
@@ -643,7 +709,7 @@ fn walk(msg: Msg, mut buf: &[u8], depth: u32, meter: &mut Meter) -> Result<(), S
 }
 
 /// Skips an unknown group up to its end marker, as the decoder does.
-fn skip_group(tag: u64, buf: &mut &[u8], depth: u32) -> Result<(), Stop> {
+pub(crate) fn skip_group(tag: u64, buf: &mut &[u8], depth: u32) -> Result<(), Stop> {
     if depth > MAX_DEPTH {
         return Err(Stop::Malformed);
     }
@@ -667,7 +733,7 @@ fn skip_group(tag: u64, buf: &mut &[u8], depth: u32) -> Result<(), Stop> {
     }
 }
 
-fn varint(buf: &mut &[u8]) -> Result<u64, Stop> {
+pub(crate) fn varint(buf: &mut &[u8]) -> Result<u64, Stop> {
     let mut value = 0_u64;
     for (i, byte) in buf.iter().copied().enumerate().take(10) {
         value |= u64::from(byte & 0x7f) << (7 * i);

@@ -1,6 +1,5 @@
 import {
 	computeNodePositions,
-	DB_NODE_PREFIX,
 	DEFAULT_LAYOUT_CONFIG,
 	isNsAggregateId,
 	NS_AGGREGATE_PREFIX,
@@ -270,7 +269,7 @@ const FIT_DURATION_MS = 300
  * 0,0,1. Later layouts mount their boxes while bridged, so fit.
  */
 export const hasNamespaceBoxes = (graph: EffectiveGraph): boolean =>
-	Arr.some(graph.nodes, (node) => !Str.startsWith(DB_NODE_PREFIX)(node.id) && Boolean(node.data.namespace))
+	Arr.some(graph.nodes, (node) => Boolean(node.data.namespace))
 
 /** The automatic fit of a new layout: skipped for a saved camera and for the first boxed reveal. */
 const autoFit = (model: Model, isFirstReveal: boolean): Model => {

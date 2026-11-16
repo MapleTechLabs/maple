@@ -307,7 +307,8 @@ export function gzipStored(bytes: Uint8Array): Uint8Array {
 
 /**
  * How ingest answered. `"retry"` (429, 5xx) may succeed later; `"refused"`
- * (401, 402, 403) will not on this page, so the channel stops; `"rejected"`
+ * (401, 402, 403, and 404 from an endpoint without that route, such as an
+ * older Maple Local) will not on this page, so the channel stops; `"rejected"`
  * is any other answer, never resent; `"failed"` means no response came back,
  * so the rows may or may not have reached ingest.
  */
@@ -316,7 +317,7 @@ export type PostOutcome = "accepted" | "retry" | "refused" | "rejected" | "faile
 function outcomeOf(status: number): Exclude<PostOutcome, "failed"> {
 	if (status >= 200 && status < 300) return "accepted"
 	if (status === 429 || status >= 500) return "retry"
-	if (status === 401 || status === 402 || status === 403) return "refused"
+	if (status === 401 || status === 402 || status === 403 || status === 404) return "refused"
 	return "rejected"
 }
 

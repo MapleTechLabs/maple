@@ -6,7 +6,7 @@ The speaker's platform in a Roman forum, with a long notice wall beside it where
 
 ## Provenance
 
-Not generated yet. Generate with the built-in Image Gen tool using `../maple-rome-balanced.webp` as the style reference, encode with `cwebp -q 85` to `status-pages.webp` (1536 × 1024), then set `illustration: "/art/features/status-pages.webp"` on the `status-pages` entry in `src/lib/features.ts`.
+Generated with the built-in image tool from the prompt below using ../maple-rome-balanced.webp as style reference, encoded with cwebp -q 85 at 1536x1024.
 
 ## Full prompt
 

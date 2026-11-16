@@ -101,6 +101,19 @@ describe("ingest key", () => {
 			null,
 		)
 	})
+
+	it("gates browser session uploads by the ingest key alone", () => {
+		const sessionPaths = ["/v1/sessionReplays/meta", "/v1/sessionReplays/blob", "/v1/sessionEvents"]
+		const keyOnly: RemoteAuth = { ingestKey: INGEST_KEY, accessToken: undefined }
+		const tokenOnly: RemoteAuth = { ingestKey: undefined, accessToken: ACCESS_TOKEN }
+		const withKey = { method: "POST", headers: { authorization: `Bearer ${INGEST_KEY}` } }
+		for (const path of sessionPaths) {
+			strictEqual(decide(keyOnly, path, { method: "POST" })?.status, 401)
+			strictEqual(decide(BOTH, path, { method: "POST" })?.status, 401)
+			strictEqual(decide(BOTH, path, withKey), null)
+			strictEqual(decide(tokenOnly, path, { method: "POST" }), null)
+		}
+	})
 })
 
 describe("access token", () => {

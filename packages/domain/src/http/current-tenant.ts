@@ -1,7 +1,7 @@
 import { HttpApiMiddleware, HttpApiSecurity } from "effect/http-api"
 import { Schema, Context as EffectContext } from "effect"
 import { type ActorId, AuthMode, OrgId, RoleName, UserId } from "@maple/primitives"
-import type { ChatTurnOrigin } from "../chat-session"
+import type { ChatMode, ChatTurnOrigin } from "../chat-session"
 import { MapleRegion } from "../organization-regions"
 import { analystMessage } from "../policy"
 import { HttpTaggedError } from "./error-policy"
@@ -125,6 +125,8 @@ export interface TenantContext {
 	readonly mcpClientName?: string
 	/** Who drove the chat-engine turn this invocation belongs to; audit attribution keys on it. */
 	readonly turnOrigin?: ChatTurnOrigin
+	/** Which Maple agent ran the chat-engine turn (investigation, code review, ...), so the audit log can name it. */
+	readonly chatMode?: ChatMode
 }
 
 export class TenantSchema extends Schema.Class<TenantSchema>("TenantSchema")({

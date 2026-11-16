@@ -518,6 +518,9 @@
 	--shadow-accent-start: inset 2px 0 0 var(--color-primary);
 	/* A sticky footer lifting over content scrolled under it. */
 	--shadow-overflow-up: 0 -6px 12px oklch(0 0 0 / 35%);
+	/* The surface continued 1rem below a floating action bar, so rows never show in the scroll
+	   padding under it. A surface that is not `background` sets `--action-bar-backdrop`. */
+	--shadow-backdrop-below: 0 1rem 0 var(--action-bar-backdrop, var(--color-background));
 	/* A sticky table header's bottom rule: a collapsed table's row border scrolls away under it. */
 	--shadow-rule-bottom: inset 0 -1px 0 var(--color-border);
 	/* A filled button's top-edge light at rest, and its pressed-in shade. */

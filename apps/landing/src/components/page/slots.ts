@@ -37,6 +37,7 @@ import GitHubCi from "./sections/GitHubCi.astro"
 import ProductEventsSources from "./sections/ProductEventsSources.astro"
 import StatusPageFeeds from "./sections/StatusPageFeeds.astro"
 import UptimeCheckTrace from "./sections/UptimeCheckTrace.astro"
+import UptimeSetup from "./sections/UptimeSetup.astro"
 
 /**
  * `satisfies`, not an annotation: it checks that every id has an entry while
@@ -69,5 +70,6 @@ export const EXTRA_SECTIONS = {
 	"github-ci": GitHubCi,
 	"github-after-merge": GitHubAfterMerge,
 	"uptime-check-trace": UptimeCheckTrace,
+	"uptime-setup": UptimeSetup,
 	"status-page-feeds": StatusPageFeeds,
 } satisfies Record<SectionId, unknown>

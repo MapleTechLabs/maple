@@ -117,9 +117,20 @@ describe("navGroups", () => {
 		expect(titles({ ...OFF, statusPages: true })).toContain("Status pages")
 	})
 
-	test("the Product analytics row shows only for an org in the productAnalytics rollout", () => {
-		expect(titles(OFF)).not.toContain("Product analytics")
-		expect(titles({ ...OFF, productAnalytics: true })).toContain("Product analytics")
+	test("Product analytics sits under Explore only for an org in the productAnalytics rollout", () => {
+		const exploreSubs = (flags: NavFlags) =>
+			Arr.map(
+				Option.getOrUndefined(
+					Arr.findFirst(
+						Arr.flatMap(navGroups(flags), (group) => group.items),
+						(item) => item.title === "Explore",
+					),
+				)?.subItems ?? [],
+				(sub) => sub.title,
+			)
+		expect(exploreSubs(OFF)).not.toContain("Product analytics")
+		expect(exploreSubs({ ...OFF, productAnalytics: true })).toContain("Product analytics")
+		expect(titles({ ...OFF, productAnalytics: true })).not.toContain("Product analytics")
 	})
 
 	test("the Cost row shows only for an org in the cloudCost rollout, marked Beta under Monitor", () => {

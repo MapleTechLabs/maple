@@ -1,5 +1,6 @@
 import { pickerStep } from "../../kit/page-time"
 import type { RequestMode } from "@maple/views/data/keyed"
+import { MAX_TRACES_LIST_OFFSET } from "@maple/domain/query-engine"
 import { Array as Arr, Option, Result } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
@@ -67,9 +68,11 @@ export const hiddenCount = (model: Model): number =>
 			first.hiddenCount + Arr.reduce(model.pagination.pages, 0, (sum, page) => sum + page.hiddenCount),
 	})
 
-/** More pages exist when the last warehouse page came back full before the noise filter. */
-export const hasNextPage = (model: Model): boolean => {
-	if (allRows(model).length >= MAX_RETAINED_TRACES || model.pagination.isStopped) return false
+/** The warehouse rows the pages so far consumed: the next page starts there. */
+const nextOffset = (pagination: Pagination): number => (pagination.pages.length + 1) * PAGE_SIZE
+
+/** The last warehouse page came back full before the noise filter, so more rows may follow. */
+const isLastPageFull = (model: Model): boolean => {
 	const first = AsyncData.getData(model.firstPage.data)
 	if (Option.isNone(first) || AsyncData.isFailure(model.firstPage.data)) return false
 	const last = Arr.last(model.pagination.pages)
@@ -80,6 +83,18 @@ export const hasNextPage = (model: Model): boolean => {
 		) === PAGE_SIZE
 	)
 }
+
+/**
+ * The list hit a limit rather than its end: the rows it keeps, or the deepest offset the API reads
+ * (hidden noise traces keep the shown rows under the first while the offset passes the second).
+ */
+export const isCapped = (model: Model): boolean =>
+	allRows(model).length >= MAX_RETAINED_TRACES ||
+	(nextOffset(model.pagination) > MAX_TRACES_LIST_OFFSET && isLastPageFull(model))
+
+/** More pages exist when the last page came back full and no cap stops the list. */
+export const hasNextPage = (model: Model): boolean =>
+	!model.pagination.isStopped && !isCapped(model) && isLastPageFull(model)
 
 const resolveCommand = (model: Model, context: PageContext, mode: RequestMode): Cmd =>
 	ResolveWindow({
@@ -144,8 +159,6 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 		commands,
 	}
 }
-
-const nextOffset = (pagination: Pagination): number => (pagination.pages.length + 1) * PAGE_SIZE
 
 /** Asks for the next page, one at a time; also the retry of a page that failed. */
 const fetchNext = (model: Model, context: PageContext): Return => {

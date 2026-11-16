@@ -36,6 +36,28 @@ You can also manage targets through the [REST API](/docs/reference/api) under `/
 - Summaries become three series: `<name>_sum` as a cumulative sum, `<name>_count` as a cumulative monotonic sum, and the quantiles as a gauge named `<name>` with a `quantile` attribute. Summary samples that are not finite numbers (such as a `NaN` quantile with no observations yet) are dropped.
 - Every data point carries `job` (the service name) and `instance` (the host of the target URL), plus the target's labels and the sample's own labels.
 
+## Remote write
+
+A Prometheus server you already run can push to Maple instead of being scraped, which also covers targets Maple cannot reach. Add Maple as a `remote_write` endpoint with an [ingest key](/docs/reference/authentication#ingest-keys) as the credential:
+
+```yaml
+remote_write:
+    - url: https://ingest.maple.dev/v1/prometheus/write
+      authorization:
+          credentials: maple_sk_…
+      queue_config:
+          retry_on_http_429: true
+```
+
+Use the ingest host of your organization's [region](/docs/reference/regions). To keep the key out of the config file, use `credentials_file` instead of `credentials`. Basic auth works too: put the key in `basic_auth.password` (or `password_file`), with any username. `retry_on_http_429` makes Prometheus retry a batch Maple rate limits instead of dropping it.
+
+- Maple accepts remote write 1.0, the Prometheus default. A sender configured for remote write 2.0 gets `415`.
+- Remote write 1.0 does not send a metric's type with its samples. When a request also carries metadata for the metric, that type is used: a counter becomes a cumulative monotonic sum, a gauge a gauge, and a summary's `_sum` a sum that may decrease. Prometheus usually sends metadata in requests of its own, so in practice Maple reads the type from the name: a series ending in `_total`, `_count`, `_sum` or `_bucket` becomes a cumulative monotonic sum, and everything else a gauge.
+- A remote write counts toward your metrics usage as the metric data points it is stored as, the same as those points sent over OTLP. Each stored point carries its series' labels, so usage follows the samples and their labels, not the size of the compressed request.
+- Classic histograms keep their `_bucket`, `_count` and `_sum` series, with `le` as an attribute. They are not merged into OTLP histograms.
+- `job` sets `service.name` and `instance` sets `service.instance.id` on the resource. Both stay on every data point with the series' other labels, as they do for scraped metrics.
+- Staleness markers, samples that are not finite numbers, exemplars and native histograms are not stored.
+
 ## Verify
 
 1. On the target's source page, click **Sync now**. Maple runs an immediate scrape and reports success or the exact failure: HTTP status, timeout, TLS or connection error.
@@ -48,7 +70,7 @@ You can also manage targets through the [REST API](/docs/reference/api) under `/
 - **Status is Down.** Open the target. The error message and a **How to fix** hint explain the failure. A failed scrape never advances the last successful scrape time, so the data gap stays visible next to the error.
 - **The URL is rejected.** The endpoint resolves to a loopback, private, or metadata address. Expose it through an authenticated public endpoint, or use the collector option below.
 - **401 or 403.** Check the authentication type and credentials. Basic auth sends the username and password exactly as entered.
-- **The endpoint is only reachable inside your network.** Run an OpenTelemetry Collector inside the network with a `prometheus` receiver and an OTLP exporter pointed at Maple's [ingest endpoint](/docs/reference/ingest).
+- **The endpoint is only reachable inside your network.** Push with [remote write](#remote-write) from a Prometheus server inside the network, or run an OpenTelemetry Collector there with a `prometheus` receiver and an OTLP exporter pointed at Maple's [ingest endpoint](/docs/reference/ingest).
 
 ## Next steps
 

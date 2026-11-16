@@ -5,7 +5,7 @@
  * in bold, or the heading text before any parenthetical qualifier.
  */
 import { SKILL_FILES, type SkillFileName } from "./skill-files.generated"
-import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Brand, Option, Record as Rec, String as Str } from "effect"
 
 export type { SkillFileName }
 
@@ -38,9 +38,16 @@ export const SKILL_REFERENCE_FILES: ReadonlySet<string> = new Set([
 	"report-schema.json",
 ])
 
+/**
+ * A block reference the vendored skill defines, spelled exactly as its key. Only `canonicalBlockRef`
+ * and the block table make one, so a ledger unit built from these cannot name an unknown block.
+ */
+export type SkillBlockRef = Brand.Branded<string, "SkillBlockRef">
+const SkillBlockRef = Brand.nominal<SkillBlockRef>()
+
 export interface SkillBlock {
 	/** `FILE.md#Name`, the skill's canonical block reference. */
-	readonly ref: string
+	readonly ref: SkillBlockRef
 	readonly file: SkillFileName
 	readonly name: string
 	/** The block's exact text, its marker line included. */
@@ -63,7 +70,7 @@ const ordinaryBlocks = (): ReadonlyArray<SkillBlock> => {
 		return match?.[1] === undefined ? [] : [{ index, name: match[1] }]
 	})
 	return Arr.map(starts, (start, i) => ({
-		ref: `${ATTACK_CLASSES_FILE}#${start.name}`,
+		ref: SkillBlockRef(`${ATTACK_CLASSES_FILE}#${start.name}`),
 		file: ATTACK_CLASSES_FILE,
 		name: start.name,
 		text: slice(lines, start.index, starts[i + 1]?.index ?? lines.length),
@@ -78,26 +85,63 @@ const companionBlocks = (file: SkillFileName): ReadonlyArray<SkillBlock> => {
 		return match?.[1] === undefined ? [] : [{ index, name: nameBeforeQualifier(match[1]) }]
 	})
 	return Arr.map(starts, (start, i) => ({
-		ref: `${file}#${start.name}`,
+		ref: SkillBlockRef(`${file}#${start.name}`),
 		file,
 		name: start.name,
 		text: slice(lines, start.index, starts[i + 1]?.index ?? lines.length),
 	}))
 }
 
-const ALL_BLOCKS: ReadonlyMap<string, SkillBlock> = new Map(
+const ALL_BLOCKS: ReadonlyMap<SkillBlockRef, SkillBlock> = new Map(
 	Arr.map([...ordinaryBlocks(), ...Arr.flatMap(COMPANION_FILES, companionBlocks)], (block) => [
 		block.ref,
 		block,
 	]),
 )
 
-export const ORDINARY_BLOCK_REFS: ReadonlyArray<string> = Arr.map(ordinaryBlocks(), (block) => block.ref)
+/** Every block reference the skill defines, ordinary blocks first, then each companion in file order. */
+export const SKILL_BLOCK_REFS: ReadonlyArray<SkillBlockRef> = [...ALL_BLOCKS.keys()]
 
-export const findBlock = (ref: string): SkillBlock | undefined => ALL_BLOCKS.get(ref)
+export const ORDINARY_BLOCK_REFS: ReadonlyArray<SkillBlockRef> = Arr.map(
+	ordinaryBlocks(),
+	(block) => block.ref,
+)
+
+/** Each companion file's block references, in heading order. */
+export const companionBlockRefs = (file: SkillFileName): ReadonlyArray<SkillBlockRef> =>
+	Arr.filter(SKILL_BLOCK_REFS, (ref) => Str.startsWith(`${file}#`)(ref))
+
+/**
+ * The lookup key both sides share: case-folded, the heading's parenthetical qualifier dropped,
+ * whitespace trimmed around `#` and collapsed inside, so `web-protocol-and-auth.md # mfa,  passkey`
+ * finds its block.
+ */
+const lookupKey = (ref: string): string => {
+	const [file, name] = Option.match(Str.indexOf("#")(ref), {
+		onNone: () => [ref, ""] as const,
+		onSome: (at) => [Str.slice(0, at)(ref), nameBeforeQualifier(Str.slice(at + 1)(ref))] as const,
+	})
+	return Str.toLowerCase(`${Str.trim(file)}#${Str.replace(/\s+/g, " ")(name)}`)
+}
+
+const BY_LOOKUP_KEY: ReadonlyMap<string, SkillBlockRef> = new Map(
+	Arr.map(SKILL_BLOCK_REFS, (ref) => [lookupKey(ref), ref]),
+)
+
+/** The skill's own spelling of `raw`, or undefined when no block it defines matches. */
+export const canonicalBlockRef = (raw: string): SkillBlockRef | undefined => BY_LOOKUP_KEY.get(lookupKey(raw))
+
+export const findBlock = (ref: string): SkillBlock | undefined => {
+	const canonical = canonicalBlockRef(ref)
+	return canonical === undefined ? undefined : ALL_BLOCKS.get(canonical)
+}
 
 /** The sections every prompt using a companion must carry alongside its chosen classes. */
 export const COMPANION_REQUIRED_SECTIONS = ["Core discipline", "Universal moves", "Validation rules"] as const
+
+/** Whether `ref` is one of a companion's required sections rather than one of its attack classes. */
+export const isCompanionRequiredSection = (ref: SkillBlockRef): boolean =>
+	Arr.some(COMPANION_REQUIRED_SECTIONS, (name) => Str.endsWith(`#${name}`)(ref))
 
 /** The first `search` in `text` at or after `from`, as an index into the whole of `text`. */
 const indexFrom = (text: string, search: string, from: number): Option.Option<number> =>

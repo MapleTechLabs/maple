@@ -1,16 +1,28 @@
 import { SpanId, TraceId } from "@maple/domain"
 import { Effect, Option, Result, Schema, Array as Arr } from "effect"
-import { click, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	click,
+	Command,
+	expect as expectView,
+	given,
+	keydown,
+	Mount,
+	role,
+	scene,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { inertHtml as ih } from "foldkit/html"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as Tabs from "@maple/views/ui/tabs"
+import * as ProfileFlamegraph from "../../profiles/profile-flamegraph"
 import type { SpanNodeData } from "../trace-data"
 import { TraceSource } from "../trace-source"
 import { FetchSpanDetail, FetchSpanLogs } from "./command"
 import { Message, OutMessage } from "./message"
 import type { Model } from "./model"
-import { init, refresh, update } from "./update"
+import { init, PROFILE_SPAN_CAP, refresh, subtreeIsCut, tabsOver, update } from "./update"
 import { view as panelView } from "./view"
 
 const span: SpanNodeData = {
@@ -62,6 +74,198 @@ const indicatorMeasured = () =>
 			rect: { left: 16, right: 300, top: 4, bottom: 5, width: 96, height: 32 },
 		}),
 	)
+
+const withInfra = withViewInputs(panelView, {
+	timeZone: "UTC",
+	canFilterAttributes: false,
+	infraTab: () => ih.p([], ["Host charts"]),
+})()
+
+const cpuProfile = {
+	sampleType: "cpu",
+	sampleUnit: "nanoseconds",
+	totalValue: 9_000_000,
+	stacks: [
+		{ frames: ["query", "parse"], files: ["/app/db.js", "/app/sql.js"], lines: [4, 9], value: 9_000_000 },
+	],
+}
+
+const profiled = (profile: typeof cpuProfile | null = cpuProfile): Model => {
+	const model = loaded()
+	return update(
+		model,
+		Message.CompletedFetchProfile({ key: model.profile.key ?? "", result: Result.succeed(profile) }),
+	).model
+}
+
+/** The strip's tab ids in the order drawn: a focus command must name one of the first `count`. */
+const tabIdAt = (index: number): string => Tabs.tabId(init(input).model.tabs, index)
+const tab = (name: string) => role("tab", { name: new RegExp(name) })
+const focusLands = (name: string, index: number) =>
+	[
+		Command.expectExact(Tabs.FocusTab({ id: tabIdAt(index) })),
+		Command.resolve(Tabs.FocusTab, Tabs.Message.CompletedFocusTab()),
+		expectView(tab(name)).toHaveAttr("id", tabIdAt(index)),
+		expectView(tab(name)).toHaveAttr("tabindex", "0"),
+	] as const
+
+const ALL_TABS = ["Details", "Logs", "Infrastructure", "Profile"]
+
+const SHOWN = [
+	{ title: "Details, Logs", view, model: loaded, names: ["Details", "Logs"] },
+	{
+		title: "Details, Logs, Infrastructure",
+		view: withInfra,
+		model: loaded,
+		names: ["Details", "Logs", "Infrastructure"],
+	},
+	{ title: "Details, Logs, Profile", view, model: profiled, names: ["Details", "Logs", "Profile"] },
+	{
+		title: "all four",
+		view: withInfra,
+		model: profiled,
+		names: ["Details", "Logs", "Infrastructure", "Profile"],
+	},
+] as const
+
+describe("span panel tab keys", () => {
+	test.each(SHOWN)("End and Home reach the last and the first shown tab: $title", (shown) => {
+		const last = shown.names.length - 1
+		scene(
+			{ update, view: shown.view },
+			given(shown.model()),
+			indicatorMeasured(),
+			...Arr.map(
+				Arr.filter(ALL_TABS, (name) => !Arr.contains(shown.names, name)),
+				(name) => expectView(tab(name)).toBeAbsent(),
+			),
+			keydown(tab("Details"), "End"),
+			...focusLands(shown.names[last] ?? "", last),
+			keydown(tab(shown.names[last] ?? ""), "Home"),
+			...focusLands("Details", 0),
+		)
+	})
+
+	test.each(SHOWN)("arrows wrap around the shown tabs and never leave them: $title", (shown) => {
+		const last = shown.names.length - 1
+		scene(
+			{ update, view: shown.view },
+			given(shown.model()),
+			indicatorMeasured(),
+			expectView(tab("Details")).toHaveAttr("tabindex", "0"),
+			keydown(tab("Details"), "ArrowLeft"),
+			...focusLands(shown.names[last] ?? "", last),
+			keydown(tab(shown.names[last] ?? ""), "ArrowRight"),
+			...focusLands("Details", 0),
+			keydown(tab("Details"), "ArrowRight"),
+			...focusLands("Logs", 1),
+			...(last > 1 ? [keydown(tab("Logs"), "ArrowRight"), ...focusLands(shown.names[2] ?? "", 2)] : []),
+		)
+	})
+
+	test("clicking Profile with no Infrastructure tab opens the profile", () => {
+		const model = profiled()
+		scene(
+			{ update, view },
+			given(model),
+			indicatorMeasured(),
+			expectView(tab("Infrastructure")).toBeAbsent(),
+			click(tab("Profile")),
+			Mount.resolve(
+				ProfileFlamegraph.MountFlameChart({ chartId: model.flamegraph.id, maxRows: 14 }),
+				Message.GotFlamegraphMessage({
+					message: ProfileFlamegraph.Message.ChangedZoom({ isZoomed: false }),
+				}),
+			),
+			expectView(tab("Profile")).toHaveAttr("aria-selected", "true"),
+			expectView(tab("Profile")).toHaveAttr("tabindex", "0"),
+			expectView(role("table", { name: "Top functions" })).toExist(),
+			click(tab("Logs")),
+			Mount.expectEnded(ProfileFlamegraph.MountFlameChart),
+			expectView(tab("Logs")).toHaveAttr("aria-selected", "true"),
+			expectView(text("Read the docs")).toExist(),
+		)
+	})
+
+	test("a failed profile read keeps the Profile tab and says the read failed", () => {
+		const model = loaded()
+		const failed = update(
+			model,
+			Message.CompletedFetchProfile({
+				key: model.profile.key ?? "",
+				result: Result.fail(toLoadFailure(new Error("warehouse unavailable"))),
+			}),
+		).model
+		scene(
+			{ update, view },
+			given(failed),
+			indicatorMeasured(),
+			click(tab("Profile")),
+			expectView(tab("Profile")).toHaveAttr("aria-selected", "true"),
+			expectView(text("Couldn't load the profile")).toExist(),
+		)
+	})
+
+	test("says when the span has more spans under it than the read covers", () => {
+		expect(subtreeIsCut(span)).toBe(false)
+		const leaf: SpanNodeData = { ...span, children: [] }
+		const wide: SpanNodeData = { ...span, children: Arr.makeBy(PROFILE_SPAN_CAP, () => leaf) }
+		expect(subtreeIsCut(wide)).toBe(true)
+		expect(subtreeIsCut({ ...wide, children: wide.children.slice(1) })).toBe(false)
+	})
+
+	test("a cut subtree with no samples has no Profile tab, as a source without profiles has none", () => {
+		const leaf: SpanNodeData = { ...span, children: [] }
+		const wide = init({
+			...input,
+			span: { ...span, children: Arr.makeBy(PROFILE_SPAN_CAP, () => leaf) },
+		}).model
+		const empty = update(
+			wide,
+			Message.CompletedFetchProfile({ key: wide.profile.key ?? "", result: Result.succeed(null) }),
+		).model
+		scene({ update, view }, given(empty), indicatorMeasured(), expectView(tab("Profile")).toBeAbsent())
+	})
+
+	test("a highlight left on a tab that went away falls back to the selected tab", () => {
+		const onProfile = update(
+			profiled(),
+			Message.GotTabsMessage({
+				message: Tabs.Message.PressedTabKey({ key: "End" }),
+				shown: ["details", "logs", "infrastructure", "profile"],
+			}),
+		).model
+		const gone = update(
+			onProfile,
+			Message.CompletedFetchProfile({ key: onProfile.profile.key ?? "", result: Result.succeed(null) }),
+		).model
+		scene(
+			{ update, view: withInfra },
+			given(gone),
+			indicatorMeasured(),
+			expectView(tab("Profile")).toBeAbsent(),
+			expectView(tab("Details")).toHaveAttr("tabindex", "0"),
+			keydown(tab("Details"), "End"),
+			...focusLands("Infrastructure", 2),
+		)
+	})
+
+	test("the highlight follows its tab when a tab appears before it", () => {
+		const shown = tabsOver(
+			{ ...init(input).model.tabs, values: ["details", "logs", "profile"], highlightedIndex: 2 },
+			["details", "logs", "infrastructure", "profile"],
+		)
+		expect(shown.values[shown.highlightedIndex]).toBe("profile")
+	})
+
+	test("a selected tab that is no longer shown reads as the first tab", () => {
+		const shown = tabsOver({ ...init(input).model.tabs, selected: "profile", highlightedIndex: 3 }, [
+			"details",
+			"logs",
+		])
+		expect([shown.selected, shown.highlightedIndex]).toEqual(["details", 0])
+	})
+})
 
 describe("span panel", () => {
 	test("mounting asks for the span's logs and its full attributes", () => {
@@ -154,11 +358,6 @@ describe("span panel", () => {
 			indicatorMeasured(),
 			expectView(role("tab", { name: /Infrastructure/ })).toBeAbsent(),
 		)
-		const withInfra = withViewInputs(panelView, {
-			timeZone: "UTC",
-			canFilterAttributes: false,
-			infraTab: () => ih.p([], ["Host charts"]),
-		})()
 		scene(
 			{ update, view: withInfra },
 			given(loaded()),

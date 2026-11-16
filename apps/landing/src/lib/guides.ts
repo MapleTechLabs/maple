@@ -73,9 +73,9 @@ export const guideCategories: GuideCategory[] = [
 			{
 				href: "/guides/uptime-monitoring",
 				icon: "PulseIcon",
-				title: "Uptime monitoring with traces and HTTP checks",
+				title: "Uptime monitoring with checks and traces",
 				description:
-					"Alert on error rate, throughput and Apdex from your traces, plus HTTP checks for endpoints.",
+					"Which failures a probe catches and which only traces see, with hosted checks, trace alerts and Collector probes.",
 			},
 			{
 				href: "/guides/remote-server-monitoring",

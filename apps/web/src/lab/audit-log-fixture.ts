@@ -24,7 +24,7 @@ type Wire = Readonly<{
 	n: number
 	minutesAgo: number
 	action: string
-	actor: "ada" | "grace" | "linus" | "key" | "agent" | "system"
+	actor: "ada" | "grace" | "linus" | "key" | "agent" | "system" | "review" | "bot"
 	source: "dashboard" | "api" | "mcp" | "chat_platform" | "system"
 	resource?: { type: string; prefix?: PublicIdPrefix }
 	denied?: string
@@ -46,6 +46,14 @@ const ACTORS = {
 	key: { actor_type: "api_key", actor_id: "key_aXwpxqBkqtYwtBtmsGbR41", actor_name: "CI deploy key" },
 	agent: { actor_type: "agent", actor_id: "actor_4CzLmR1pTxWvYbNhQd82Kf", actor_name: "Claude Code" },
 	system: { actor_type: "system", actor_id: null, actor_name: null },
+	// An unattended code review pass, which the server names for the agent that ran it.
+	review: { actor_type: "system", actor_id: null, actor_name: "Maple code review" },
+	// A chat-platform turn with no linked user runs as the connector's agent actor.
+	bot: {
+		actor_type: "agent",
+		actor_id: "actor_7RqNw2KxVbLmTcYdHf41Pz",
+		actor_name: "chat-connector-slack",
+	},
 } as const
 
 const entry = (wire: Wire): V2AuditLogEntry => {
@@ -233,11 +241,12 @@ export const AUDIT_ENTRIES: ReadonlyArray<V2AuditLogEntry> = Arr.map(
 			n: 14,
 			minutesAgo: 60 * 75,
 			action: "mcp_tool.called",
-			actor: "agent",
+			actor: "bot",
 			source: "chat_platform",
 			metadata: {
 				tool: "list_errors",
-				surface: "chat",
+				tool_title: "List Errors",
+				surface: "bot",
 				is_error: true,
 				params: '{"service":"payments"}',
 				connector: "slack",
@@ -247,6 +256,35 @@ export const AUDIT_ENTRIES: ReadonlyArray<V2AuditLogEntry> = Arr.map(
 			},
 			ip: "198.51.100.200",
 			country: "US",
+		},
+		{
+			n: 15,
+			minutesAgo: 60 * 96,
+			action: "mcp_tool.called",
+			actor: "review",
+			source: "system",
+			metadata: {
+				tool: "sandbox_grep",
+				tool_title: "Search Repository Checkout",
+				surface: "chat",
+				agent: "pr-review",
+				is_error: false,
+				params: '{"repository":"acme/shop","pattern":"retryPayment"}',
+			},
+		},
+		{
+			n: 16,
+			minutesAgo: 60 * 96 + 1,
+			action: "telemetry.sql_executed",
+			actor: "review",
+			source: "system",
+			metadata: {
+				sql: "SELECT ServiceName, count() FROM traces WHERE StatusCode = 'Error' GROUP BY ServiceName",
+				context: "mcp.run_sql",
+				start_time: "2026-11-09 14:00:00",
+				end_time: "2026-11-09 15:00:00",
+				row_count: 4,
+			},
 		},
 	] satisfies ReadonlyArray<Wire>,
 	entry,

@@ -55,7 +55,7 @@ const EMPTY_SET: ReadonlySet<string> = new Set()
 function mergeEdgeData(a: ServiceEdgeData, b: ServiceEdgeData): ServiceEdgeData {
 	const callCount = a.callCount + b.callCount
 	const errorCount = a.errorCount + b.errorCount
-	return {
+	const merged: ServiceEdgeData = {
 		callCount,
 		callsPerSecond: a.callsPerSecond + b.callsPerSecond,
 		estimatedCallsPerSecond: a.estimatedCallsPerSecond + b.estimatedCallsPerSecond,
@@ -66,6 +66,9 @@ function mergeEdgeData(a: ServiceEdgeData, b: ServiceEdgeData): ServiceEdgeData 
 		maxDurationMs: Math.max(a.maxDurationMs, b.maxDurationMs),
 		hasSampling: a.hasSampling || b.hasSampling,
 	}
+	// Two structural edges merged stay structural; traffic merged in makes it traffic.
+	if (a.relation !== undefined && a.relation === b.relation) merged.relation = a.relation
+	return merged
 }
 
 interface CollapseOutput {
@@ -76,7 +79,7 @@ interface CollapseOutput {
 }
 
 /**
- * Replace each collapsed namespace's member services with one aggregate node
+ * Replace each collapsed namespace's members (services and their own databases) with one aggregate node
  * (`nsagg:<ns>`), re-pointing edges at it: intra-namespace edges are dropped,
  * parallel edges between the same remapped (source, target) pair merge with
  * deterministic ids so {@link topologyKey} stays stable.
@@ -107,8 +110,11 @@ function collapseNamespaces(
 	if (members.size === 0) return { nodes, edges, memberToAggregate }
 
 	for (const ns of Array.from(members.keys()).sort()) {
-		const group = members.get(ns)
-		if (!group) continue
+		const allMembers = members.get(ns)
+		if (!allMembers) continue
+		// A folded database hides inside the aggregate but is not a service: its calls
+		// already count on its callers, so it adds neither throughput nor member count.
+		const group = Arr.filter(allMembers, (node) => node.data.kind !== "database")
 		let throughput = 0
 		let tracedThroughput = 0
 		let errorWeighted = 0
