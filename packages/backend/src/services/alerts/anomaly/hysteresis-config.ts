@@ -23,7 +23,18 @@ const OVERRIDES: Partial<Record<AnomalySignalType, Partial<HysteresisConfig>>> =
 	throughput: { breachesToOpen: 3, healthyToResolve: 1 },
 } satisfies Partial<Record<AnomalySignalType, Partial<HysteresisConfig>>>
 
-export const hysteresisConfigFor = (signalType: AnomalySignalType): HysteresisConfig => ({
-	...DEFAULT_HYSTERESIS_CONFIG,
-	...OVERRIDES[signalType],
-})
+/**
+ * Each reopen adds one more resolve window, up to three: an incident that keeps
+ * flapping stays open through short dips instead of resolving and reopening
+ * (and paging) every hour. Capped below the no-data sweep's hour, which
+ * resolves an incident with no breach in the last 60 minutes.
+ */
+const MAX_RESOLVE_MULTIPLIER = 3
+
+export const hysteresisConfigFor = (signalType: AnomalySignalType, reopenCount: number): HysteresisConfig => {
+	const config = { ...DEFAULT_HYSTERESIS_CONFIG, ...OVERRIDES[signalType] }
+	return {
+		...config,
+		healthyToResolve: config.healthyToResolve * Math.min(1 + reopenCount, MAX_RESOLVE_MULTIPLIER),
+	}
+}

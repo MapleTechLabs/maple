@@ -1,15 +1,15 @@
 // Anomaly detector queries
 //
 // The built-in anomaly detector computes seasonal-naive baselines per series
-// in TypeScript from hourly-MV rows. Every query here reads pre-aggregated
-// tables only (traces_aggregates_hourly, logs_aggregates_hourly,
+// in TypeScript from rollup rows. Every query here reads pre-aggregated
+// tables only (service_overview_hourly/_minutely, logs_aggregates_hourly,
 // error_events_by_time) and returns at most a few thousand rows per org —
 // never a raw traces/logs scan.
 //
-// The "matched hours" trick: filtering `toHour(Hour) IN (h-1, h, h+1)` over a
-// trailing 7-day window returns both the in-progress hour (the current
-// observation) and ≤21 sealed same-hour-of-day samples (the baseline) in ONE
-// query; the caller splits rows on `hour === currentHourStart`.
+// Baselines use the "matched hours" trick: `toHour(Hour) IN (h-1, h, h+1)`
+// over a trailing 7-day window returns ≤21 sealed same-hour-of-day samples.
+// The current observation is a rolling 60-minute window, so it is the same
+// length as a baseline sample at every minute of the hour.
 
 import type { DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
@@ -19,13 +19,8 @@ import * as Datasources from "@maple/domain/tinybird/datasources"
 import { orgIdParam, utcSecondsParam } from "../tables"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 
-/** Hour-of-day values matching the current hour ±1, wrapping at midnight. */
-export function matchedHoursOfDay(currentHourOfDay: number): readonly number[] {
-	return [(currentHourOfDay + 23) % 24, currentHourOfDay, (currentHourOfDay + 1) % 24]
-}
-
 export interface AnomalyTraceSignalsOpts {
-	/** Hour-of-day values (0–23) to include; see `matchedHoursOfDay`. */
+	/** Hour-of-day values (0–23) to include: the hours the detector's baseline windows straddle. */
 	hoursOfDay: readonly number[]
 }
 
@@ -38,29 +33,61 @@ export interface AnomalyTraceSignalsOutput {
 	readonly p95Ms: number
 }
 
+const SERVICE_OVERVIEW_P95_MS = CH.rawExpr(
+	"arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(DurationQuantiles), 2) / 1000000",
+	T.float64,
+)
+
+/**
+ * Hourly entry-point signals per series. Reads `service_overview_hourly`, the twin
+ * of the minutely table the current window comes from, so both sides share one
+ * entry-point definition and one (unweighted) latency digest.
+ */
 export function anomalyTraceSignalsQuery(opts: AnomalyTraceSignalsOpts) {
-	return from(Datasources.tracesAggregatesHourly)
+	return from(Datasources.serviceOverviewHourly)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			deploymentEnv: $.DeploymentEnv,
 			hour: $.Hour,
-			requestCount: CH.rawExpr("sum(WeightedCount)", T.float64),
-			errorCount: CH.rawExpr("sum(WeightedErrorCount)", T.float64),
-			// Sample-weighted t-digest merge — the same expression
-			// tracesTimeseriesQuery uses; never average p95s across hours.
-			p95Ms: CH.rawExpr(
-				"arrayElement(quantilesTDigestWeightedMerge(0.95)(DurationQuantiles), 1) / 1000000",
-				T.float64,
-			),
+			requestCount: CH.sum($.EstimatedSpanCount),
+			errorCount: CH.sum($.EstimatedErrorCount),
+			p95Ms: SERVICE_OVERVIEW_P95_MS,
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.IsEntryPoint.eq(1),
 			$.Hour.gte(utcSecondsParam("startTime")),
 			$.Hour.lte(utcSecondsParam("endTime")),
 			CH.toHour($.Hour).in_(...opts.hoursOfDay),
 		])
 		.groupBy("serviceName", "deploymentEnv", "hour")
+		.limit(25000)
+		.format("JSON")
+}
+
+export interface AnomalyTraceSignalsWindowOutput {
+	readonly serviceName: string
+	readonly deploymentEnv: string
+	readonly requestCount: number
+	readonly errorCount: number
+	readonly p95Ms: number
+}
+
+/** Entry-point signals per series over `[startTime, endTime)`: the detector's rolling current window. */
+export function anomalyTraceSignalsWindowQuery() {
+	return from(Datasources.serviceOverviewMinutely)
+		.select(($) => ({
+			serviceName: $.ServiceName,
+			deploymentEnv: $.DeploymentEnv,
+			requestCount: CH.sum($.EstimatedSpanCount),
+			errorCount: CH.sum($.EstimatedErrorCount),
+			p95Ms: SERVICE_OVERVIEW_P95_MS,
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Minute.gte(utcSecondsParam("startTime")),
+			$.Minute.lt(utcSecondsParam("endTime")),
+		])
+		.groupBy("serviceName", "deploymentEnv")
 		.limit(25000)
 		.format("JSON")
 }
@@ -180,20 +207,16 @@ export interface AnomalyTraceSignalTimeseriesOutput {
 
 /** Hourly golden-signal buckets for one (service, env) — covers error_rate, latency_p95, throughput. */
 export function anomalyTraceSignalTimeseriesQuery() {
-	return from(Datasources.tracesAggregatesHourly)
+	// Must match the detector's series definition: the same entry-point rollup.
+	return from(Datasources.serviceOverviewHourly)
 		.select(($) => ({
 			hour: $.Hour,
-			requestCount: CH.rawExpr("sum(WeightedCount)", T.float64),
-			errorCount: CH.rawExpr("sum(WeightedErrorCount)", T.float64),
-			p95Ms: CH.rawExpr(
-				"arrayElement(quantilesTDigestWeightedMerge(0.95)(DurationQuantiles), 1) / 1000000",
-				T.float64,
-			),
+			requestCount: CH.sum($.EstimatedSpanCount),
+			errorCount: CH.sum($.EstimatedErrorCount),
+			p95Ms: SERVICE_OVERVIEW_P95_MS,
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			// Must match the detector's series definition (entry-point spans only).
-			$.IsEntryPoint.eq(1),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.DeploymentEnv.eq(param.string("deploymentEnv")),
 			$.Hour.gte(utcSecondsParam("startTime")),

@@ -64,20 +64,31 @@ import { timestampMs } from "@maple/backend/platform/time"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import {
+	baselineHoursOfDay,
+	blendGoldenHours,
+	blendLogHours,
 	capBusiestLogSeries,
+	CURRENT_WINDOW_MINUTES,
+	currentWindowHoursOfDay,
 	ERROR_SPIKE_MIN_COUNT,
 	excludeMaintenanceHours,
 	evaluateErrorSpike,
 	evaluateGoldenSignals,
 	evaluateLogVolume,
+	goldenWindowFromHours,
 	healthyErrorSpikeRecovery,
+	isWatchedEnvironment,
+	logWindowFromHours,
 	SENSITIVITY,
+	windowBaseline,
 	type AnomalyEvaluation,
 	type BaselineExclusion,
 	type ErrorSpikeBaseline,
+	type GoldenHour,
 	type GoldenSignalSeries,
 	type LogVolumeSeries,
 } from "./anomaly/detection"
+import { isMissingServiceOverviewMinutely } from "@maple/backend/services/warehouse/missing-table"
 import { selectBaselineExclusions } from "./alert-maintenance-window-store"
 import { issueSeverityFromAlert } from "@maple/backend/services/errors/severity-map"
 import {
@@ -524,6 +535,7 @@ const make: Effect.Effect<
 			enabled: row.enabled,
 			sensitivity: row.sensitivity,
 			mutedSignals: parseMutedSignals(row.mutedSignalsJson),
+			includedEnvironments: row.includedEnvironmentsJson,
 			updatedAt: isoFromEpoch(row.updatedAt),
 			updatedBy: row.updatedBy ?? null,
 		})
@@ -554,6 +566,7 @@ const make: Effect.Effect<
 						enabled: true,
 						sensitivity: "normal",
 						mutedSignalsJson: [],
+						includedEnvironmentsJson: [],
 						createdAt: nowMs,
 						updatedAt: nowMs,
 					})
@@ -587,6 +600,10 @@ const make: Effect.Effect<
 			sensitivity: request.sensitivity ?? existing.sensitivity,
 			mutedSignalsJson:
 				request.mutedSignals === undefined ? existing.mutedSignalsJson : request.mutedSignals,
+			includedEnvironmentsJson:
+				request.includedEnvironments === undefined
+					? existing.includedEnvironmentsJson
+					: Arr.dedupe(request.includedEnvironments),
 			updatedAt: nowMs,
 			updatedBy: userId,
 		}
@@ -988,22 +1005,89 @@ const make: Effect.Effect<
 		readonly deploymentEnv: string
 	}
 
-	/** Split matched-hour rows into the in-progress hour vs sealed baseline. */
-	const splitRows = <R extends HourRow>(rows: ReadonlyArray<R>, currentHourStartMs: number) => {
-		const current = new Map<string, R>()
-		const baseline = new Map<string, R[]>()
+	const seriesKey = (row: { readonly serviceName: string; readonly deploymentEnv: string }) =>
+		`${row.serviceName}\u0000${row.deploymentEnv}`
+
+	/** Sealed hourly rows per series, keyed by hour, for `windowBaseline`. */
+	const hoursBySeries = <R extends HourRow>(rows: ReadonlyArray<R>) => {
+		const bySeries = new Map<string, Map<number, R>>()
 		for (const row of rows) {
-			const key = `${row.serviceName}\u0000${row.deploymentEnv}`
-			if (row.hourMs >= currentHourStartMs) {
-				current.set(key, row)
-			} else {
-				const list = baseline.get(key)
-				if (list) list.push(row)
-				else baseline.set(key, [row])
-			}
+			const key = seriesKey(row)
+			const hours = bySeries.get(key)
+			if (hours) hours.set(row.hourMs, row)
+			else bySeries.set(key, new Map([[row.hourMs, row]]))
 		}
-		return { current, baseline }
+		return bySeries
 	}
+
+	/** The previous and in-progress hour per series, for sources read at hour grain. */
+	const lastTwoHours = <R extends HourRow>(rows: ReadonlyArray<R>, currentHourStartMs: number) => {
+		const bySeries = new Map<string, { previous?: R; inProgress?: R }>()
+		for (const row of rows) {
+			const key = seriesKey(row)
+			const entry = bySeries.get(key) ?? {}
+			if (row.hourMs >= currentHourStartMs) entry.inProgress = row
+			else if (row.hourMs >= currentHourStartMs - HOUR_MS) entry.previous = row
+			bySeries.set(key, entry)
+		}
+		return bySeries
+	}
+
+	const splitKey = (key: string) => {
+		const [serviceName, deploymentEnv = ""] = Str.split("\u0000")(key)
+		return { serviceName, deploymentEnv }
+	}
+
+	/**
+	 * Entry-point signals over the last 60 minutes. A cluster that has not applied
+	 * `service_overview_minutely` yet falls back to the hourly rollup: the in-progress
+	 * hour plus the covered share of the previous one.
+	 */
+	const fetchGoldenWindow = Effect.fn("AnomalyDetectionService.fetchGoldenWindow")(function* (
+		tenant: TenantContext,
+		nowMs: number,
+		currentHourStartMs: number,
+	) {
+		const fromMinutes = withOutboundPermit(
+			warehouse.compiledQuery(
+				tenant,
+				CH.compile(CH.anomalyTraceSignalsWindowQuery(), {
+					orgId: tenant.orgId,
+					startTime: formatWarehouseDateTime(nowMs - CURRENT_WINDOW_MINUTES * 60_000),
+					endTime: formatWarehouseDateTime(nowMs),
+				}),
+				{ profile: "list", context: "anomalyTraceSignalsCurrent" },
+			),
+		).pipe(Effect.map((rows) => new Map(Arr.map(rows, (r): [string, GoldenHour] => [seriesKey(r), r]))))
+		const fromHours = Effect.gen(function* () {
+			yield* Effect.annotateCurrentSpan("query.rollup.fallback", true)
+			const rows = yield* withOutboundPermit(
+				warehouse.compiledQuery(
+					tenant,
+					CH.compile(CH.anomalyTraceSignalsQuery({ hoursOfDay: currentWindowHoursOfDay(nowMs) }), {
+						orgId: tenant.orgId,
+						startTime: formatWarehouseDateTime(currentHourStartMs - HOUR_MS),
+						endTime: formatWarehouseDateTime(nowMs),
+					}),
+					{ profile: "list", context: "anomalyTraceSignalsCurrentHourly" },
+				),
+			)
+			const twoHours = lastTwoHours(
+				Arr.map(rows, (r) => ({ ...r, hourMs: DateTime.toEpochMillis(r.hour) })),
+				currentHourStartMs,
+			)
+			return new Map(
+				Arr.map([...twoHours], ([key, { previous, inProgress }]): [string, GoldenHour] => [
+					key,
+					goldenWindowFromHours(previous, inProgress, nowMs),
+				]),
+			)
+		})
+		return yield* fromMinutes.pipe(
+			Effect.catchIf(isMissingServiceOverviewMinutely, () => fromHours),
+			Effect.mapError(makePersistenceError),
+		)
+	})
 
 	const fetchGoldenSeries = Effect.fn("AnomalyDetectionService.fetchGoldenSeries")(function* (
 		tenant: TenantContext,
@@ -1011,23 +1095,24 @@ const make: Effect.Effect<
 		currentHourStartMs: number,
 		cached: CachedBaselines,
 		exclusions: ReadonlyArray<BaselineExclusion>,
+		watched: (deploymentEnv: string) => boolean,
 	) {
-		const hoursOfDay = CH.matchedHoursOfDay(DateTime.getPartUtc(DateTime.makeUnsafe(nowMs), "hour"))
-
-		// The 7-day matched-hours baseline only changes when the hour rolls over,
-		// so compute it once per org per hour and share the blob from the edge cache. Only the
-		// in-progress hour is fetched fresh each tick (a single-hour scan) — this
-		// cuts the heavy 7-day scan from 12×/hour to 1×/hour per org.
+		// The 7-day baseline only changes when the hour rolls over, so compute it
+		// once per org per hour and share the blob from the edge cache. Only the
+		// current window is fetched fresh each tick.
 		const baselineRows = yield* baselineOrCompute(
 			GOLDEN_BASELINE_CACHE_BUCKET,
 			cached.key,
 			cached.golden,
 			Effect.gen(function* () {
-				const compiled = CH.compile(CH.anomalyTraceSignalsQuery({ hoursOfDay }), {
-					orgId: tenant.orgId,
-					startTime: formatWarehouseDateTime(nowMs - BASELINE_WINDOW_MS),
-					endTime: formatWarehouseDateTime(currentHourStartMs),
-				})
+				const compiled = CH.compile(
+					CH.anomalyTraceSignalsQuery({ hoursOfDay: baselineHoursOfDay(nowMs) }),
+					{
+						orgId: tenant.orgId,
+						startTime: formatWarehouseDateTime(nowMs - BASELINE_WINDOW_MS - 3 * HOUR_MS),
+						endTime: formatWarehouseDateTime(currentHourStartMs),
+					},
+				)
 				const rows = yield* withOutboundPermit(
 					warehouse.compiledQuery(tenant, compiled, {
 						profile: "list",
@@ -1049,37 +1134,15 @@ const make: Effect.Effect<
 				)
 			}),
 		)
-
-		const currentCompiled = CH.compile(CH.anomalyTraceSignalsQuery({ hoursOfDay }), {
-			orgId: tenant.orgId,
-			startTime: formatWarehouseDateTime(currentHourStartMs),
-			endTime: formatWarehouseDateTime(nowMs),
-		})
-		const currentRows = yield* withOutboundPermit(
-			warehouse.compiledQuery(tenant, currentCompiled, {
-				profile: "list",
-				context: "anomalyTraceSignalsCurrent",
-			}),
-		).pipe(Effect.mapError(makePersistenceError))
-		const currentNormalized = Arr.map(currentRows, (r) => ({
-			hourMs: DateTime.toEpochMillis(r.hour),
-			serviceName: r.serviceName,
-			deploymentEnv: r.deploymentEnv,
-			requestCount: r.requestCount,
-			errorCount: r.errorCount,
-			p95Ms: r.p95Ms,
-		}))
+		const current = yield* fetchGoldenWindow(tenant, nowMs, currentHourStartMs)
 
 		// Hours a maintenance window covered are left out, so planned spikes do not widen the baseline.
-		const { current, baseline } = splitRows(
-			[...excludeMaintenanceHours(baselineRows, exclusions), ...currentNormalized],
-			currentHourStartMs,
-		)
-
-		const keys = new Set([...current.keys(), ...baseline.keys()])
+		const hours = hoursBySeries(excludeMaintenanceHours(baselineRows, exclusions))
 		const series: GoldenSignalSeries[] = []
-		for (const key of keys) {
-			const [serviceName, deploymentEnv = ""] = Str.split("\u0000")(key)
+		for (const key of new Set([...current.keys(), ...hours.keys()])) {
+			const { serviceName, deploymentEnv } = splitKey(key)
+			if (!watched(deploymentEnv)) continue
+			const windows = windowBaseline(hours.get(key) ?? new Map(), nowMs, blendGoldenHours)
 			const cur = current.get(key)
 			series.push({
 				serviceName,
@@ -1089,7 +1152,8 @@ const make: Effect.Effect<
 					errorCount: cur?.errorCount ?? 0,
 					p95Ms: cur?.p95Ms ?? 0,
 				},
-				baseline: baseline.get(key) ?? [],
+				baseline: windows.all,
+				sameTime: windows.sameTime,
 			})
 		}
 		// Bound per-org work to the busiest series.
@@ -1108,21 +1172,22 @@ const make: Effect.Effect<
 		currentHourStartMs: number,
 		cached: CachedBaselines,
 		exclusions: ReadonlyArray<BaselineExclusion>,
+		watched: (deploymentEnv: string) => boolean,
 	) {
-		const hoursOfDay = CH.matchedHoursOfDay(DateTime.getPartUtc(DateTime.makeUnsafe(nowMs), "hour"))
-
-		// Same split as fetchGoldenSeries: cache the sealed 7-day baseline per
-		// hour, fetch only the in-progress hour fresh.
+		// Same split as fetchGoldenSeries: cache the sealed 7-day baseline per hour.
 		const baselineRows = yield* baselineOrCompute(
 			LOG_BASELINE_CACHE_BUCKET,
 			cached.key,
 			cached.logs,
 			Effect.gen(function* () {
-				const compiled = CH.compile(CH.anomalyLogVolumeQuery({ hoursOfDay }), {
-					orgId: tenant.orgId,
-					startTime: formatWarehouseDateTime(nowMs - BASELINE_WINDOW_MS),
-					endTime: formatWarehouseDateTime(currentHourStartMs),
-				})
+				const compiled = CH.compile(
+					CH.anomalyLogVolumeQuery({ hoursOfDay: baselineHoursOfDay(nowMs) }),
+					{
+						orgId: tenant.orgId,
+						startTime: formatWarehouseDateTime(nowMs - BASELINE_WINDOW_MS - 3 * HOUR_MS),
+						endTime: formatWarehouseDateTime(currentHourStartMs),
+					},
+				)
 				const rows = yield* withOutboundPermit(
 					warehouse.compiledQuery(tenant, compiled, {
 						profile: "list",
@@ -1141,38 +1206,45 @@ const make: Effect.Effect<
 			}),
 		)
 
-		const currentCompiled = CH.compile(CH.anomalyLogVolumeQuery({ hoursOfDay }), {
-			orgId: tenant.orgId,
-			startTime: formatWarehouseDateTime(currentHourStartMs),
-			endTime: formatWarehouseDateTime(nowMs),
-		})
+		// Logs have no minute grain: the window is the in-progress hour plus the covered share of the previous one.
+		const currentCompiled = CH.compile(
+			CH.anomalyLogVolumeQuery({ hoursOfDay: currentWindowHoursOfDay(nowMs) }),
+			{
+				orgId: tenant.orgId,
+				startTime: formatWarehouseDateTime(currentHourStartMs - HOUR_MS),
+				endTime: formatWarehouseDateTime(nowMs),
+			},
+		)
 		const currentRows = yield* withOutboundPermit(
 			warehouse.compiledQuery(tenant, currentCompiled, {
 				profile: "list",
 				context: "anomalyLogVolumeCurrent",
 			}),
 		).pipe(Effect.mapError(makePersistenceError))
-		const currentNormalized = Arr.map(currentRows, (r) => ({
-			hourMs: DateTime.toEpochMillis(r.hour),
-			serviceName: r.serviceName,
-			deploymentEnv: r.deploymentEnv,
-			errorLogCount: r.errorLogCount,
-		}))
-
-		// Hours a maintenance window covered are left out, so planned spikes do not widen the baseline.
-		const { current, baseline } = splitRows(
-			[...excludeMaintenanceHours(baselineRows, exclusions), ...currentNormalized],
+		const current = lastTwoHours(
+			Arr.map(currentRows, (r) => ({
+				hourMs: DateTime.toEpochMillis(r.hour),
+				serviceName: r.serviceName,
+				deploymentEnv: r.deploymentEnv,
+				errorLogCount: r.errorLogCount,
+			})),
 			currentHourStartMs,
 		)
-		const keys = new Set([...current.keys(), ...baseline.keys()])
+
+		// Hours a maintenance window covered are left out, so planned spikes do not widen the baseline.
+		const hours = hoursBySeries(excludeMaintenanceHours(baselineRows, exclusions))
 		const series: LogVolumeSeries[] = []
-		for (const key of keys) {
-			const [serviceName, deploymentEnv = ""] = Str.split("\u0000")(key)
+		for (const key of new Set([...current.keys(), ...hours.keys()])) {
+			const { serviceName, deploymentEnv } = splitKey(key)
+			if (!watched(deploymentEnv)) continue
+			const windows = windowBaseline(hours.get(key) ?? new Map(), nowMs, blendLogHours)
+			const cur = current.get(key)
 			series.push({
 				serviceName,
 				deploymentEnv,
-				current: { errorLogCount: current.get(key)?.errorLogCount ?? 0 },
-				baseline: baseline.get(key) ?? [],
+				current: logWindowFromHours(cur?.previous, cur?.inProgress, nowMs),
+				baseline: windows.all,
+				sameTime: windows.sameTime,
 			})
 		}
 		return capBusiestLogSeries(series, MAX_SERIES_PER_ORG)
@@ -1182,6 +1254,7 @@ const make: Effect.Effect<
 		tenant: TenantContext,
 		nowMs: number,
 		cached: CachedBaselines,
+		watched: (deploymentEnv: string) => boolean,
 	) {
 		const currentCompiled = CH.compile(CH.anomalyErrorSpikeCurrentQuery({}), {
 			orgId: tenant.orgId,
@@ -1195,12 +1268,15 @@ const make: Effect.Effect<
 			}),
 		).pipe(Effect.mapError(makePersistenceError))
 
-		const observations = Arr.map(currentRows, (r) => ({
-			fingerprintHash: r.fingerprintHash,
-			serviceName: r.serviceName,
-			deploymentEnv: r.deploymentEnv,
-			count: r.count,
-		}))
+		const observations = Arr.map(
+			Arr.filter(currentRows, (r) => watched(r.deploymentEnv)),
+			(r) => ({
+				fingerprintHash: r.fingerprintHash,
+				serviceName: r.serviceName,
+				deploymentEnv: r.deploymentEnv,
+				count: r.count,
+			}),
+		)
 
 		if (observations.length === 0) {
 			return { observations, baselines: new Map<string, ErrorSpikeBaselineEntry>() }
@@ -1338,8 +1414,10 @@ const make: Effect.Effect<
 		const sensitivity = SENSITIVITY[settings.sensitivity] ?? SENSITIVITY.normal
 		const tenant = systemTenant(orgId, SYSTEM_USER_ID)
 		const currentHourStartMs = Math.floor(nowMs / HOUR_MS) * HOUR_MS
-		const elapsedMinutes = Math.floor((nowMs - currentHourStartMs) / 60_000)
-		const config = { sensitivity, elapsedMinutes }
+		const config = { sensitivity }
+		// Non-production environments (staging, pr-123...) are skipped unless the org opted them in.
+		const watched = (deploymentEnv: string) =>
+			isWatchedEnvironment(deploymentEnv, settings.includedEnvironmentsJson)
 
 		// Warm this org's route before the three-way fan-out. Deliberately here and
 		// not at the outer per-org `Effect.forEach`: the route is per-org, so
@@ -1350,14 +1428,14 @@ const make: Effect.Effect<
 		const cachedBaselines = yield* readCachedBaselines(orgId, nowMs)
 		// One read of the maintenance occurrences that ran over the lookback.
 		const exclusions = yield* dbExecute((db) =>
-			selectBaselineExclusions(db, orgId, nowMs - BASELINE_WINDOW_MS - HOUR_MS, currentHourStartMs),
+			selectBaselineExclusions(db, orgId, nowMs - BASELINE_WINDOW_MS - 3 * HOUR_MS, currentHourStartMs),
 		)
 		yield* Effect.annotateCurrentSpan({ "maple.anomaly.maintenance_exclusions": exclusions.length })
 		const [goldenSeries, logSeries, spikes] = yield* Effect.all(
 			[
-				fetchGoldenSeries(tenant, nowMs, currentHourStartMs, cachedBaselines, exclusions),
-				fetchLogSeries(tenant, nowMs, currentHourStartMs, cachedBaselines, exclusions),
-				fetchErrorSpikes(tenant, nowMs, cachedBaselines),
+				fetchGoldenSeries(tenant, nowMs, currentHourStartMs, cachedBaselines, exclusions, watched),
+				fetchLogSeries(tenant, nowMs, currentHourStartMs, cachedBaselines, exclusions, watched),
+				fetchErrorSpikes(tenant, nowMs, cachedBaselines, watched),
 			],
 			{ concurrency: 3 },
 		)
@@ -1515,7 +1593,13 @@ const make: Effect.Effect<
 					lastResolvedAtMs: state?.lastResolvedAt ?? null,
 				},
 				evaluation.status,
-				hysteresisConfigFor(evaluation.signalType),
+				// A flapping incident holds open longer before it resolves (and can page again).
+				hysteresisConfigFor(
+					evaluation.signalType,
+					state?.openIncidentId != null
+						? (incidentById.get(state.openIncidentId)?.row.reopenCount ?? 0)
+						: 0,
+				),
 				nowMs,
 			).pipe(Effect.map((outcome) => ({ evaluation, state, ...outcome })))
 		})

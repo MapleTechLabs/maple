@@ -190,6 +190,10 @@ export const V2AnomalySettings = Schema.Struct({
 	muted_signals: Schema.Array(AnomalySignalType).annotate({
 		description: "Signals the detector ignores.",
 	}),
+	included_environments: Schema.Array(Schema.String).annotate({
+		description:
+			"Non-production environments the detector watches anyway. By default it skips environments whose name reads as non-production (`staging`, `development`, `local`, `pr-123`...).",
+	}),
 	updated_at: Schema.NullOr(Timestamp).annotate({
 		description: "When settings were last updated, or `null`.",
 	}),
@@ -206,6 +210,7 @@ export const V2AnomalySettings = Schema.Struct({
 			enabled: true,
 			sensitivity: "normal",
 			muted_signals: [],
+			included_environments: [],
 			updated_at: "2026-07-15T09:12:00.000Z",
 			updated_by: "user_2abc",
 		}),
@@ -277,6 +282,8 @@ export const V2AnomalyLinkIssueParams = Schema.Struct({
 })
 export type V2AnomalyLinkIssueParams = Schema.Schema.Type<typeof V2AnomalyLinkIssueParams>
 
+const AnomalyEnvironmentName = Schema.Trim.check(Schema.isMinLength(1), Schema.isMaxLength(200))
+
 export const V2AnomalySettingsUpdateParams = Schema.Struct({
 	enabled: Schema.optionalKey(Schema.Boolean.annotate({ description: "Enable or disable detection." })),
 	sensitivity: Schema.optionalKey(
@@ -284,6 +291,12 @@ export const V2AnomalySettingsUpdateParams = Schema.Struct({
 	),
 	muted_signals: Schema.optionalKey(
 		Schema.Array(AnomalySignalType).annotate({ description: "Replace the set of muted signals." }),
+	),
+	included_environments: Schema.optionalKey(
+		Schema.Array(AnomalyEnvironmentName).check(Schema.isMaxLength(50)).annotate({
+			description:
+				'Replace the non-production environments the detector watches anyway, e.g. `["staging"]`.',
+		}),
 	),
 }).annotate({
 	identifier: "AnomalySettingsUpdateParams",

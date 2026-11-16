@@ -115,6 +115,8 @@ export class AnomalyDetectorSettingsDocument extends Schema.Class<AnomalyDetecto
 	enabled: Schema.Boolean,
 	sensitivity: AnomalySensitivity,
 	mutedSignals: Schema.Array(AnomalySignalType),
+	/** Non-production environments (`staging`, `pr-123`...) the detector watches anyway; it skips them by default. */
+	includedEnvironments: Schema.Array(Schema.String),
 	updatedAt: Schema.NullOr(IsoDateTimeString),
 	updatedBy: Schema.NullOr(UserId),
 }) {}
@@ -125,6 +127,11 @@ export class AnomalyDetectorSettingsUpdateRequest extends Schema.Class<AnomalyDe
 	enabled: Schema.optionalKey(Schema.Boolean),
 	sensitivity: Schema.optionalKey(AnomalySensitivity),
 	mutedSignals: Schema.optionalKey(Schema.Array(AnomalySignalType)),
+	includedEnvironments: Schema.optionalKey(
+		Schema.Array(Schema.Trim.check(Schema.isMinLength(1), Schema.isMaxLength(200))).check(
+			Schema.isMaxLength(50),
+		),
+	),
 }) {}
 
 export class AnomalyPersistenceError extends HttpTaggedError<AnomalyPersistenceError>()(
