@@ -81,6 +81,9 @@ const isCommitSha = Schema.is(GitCommitSha)
  */
 export const CLONE_CREDENTIALS_REUSE = Duration.minutes(30)
 
+/** How long a SHA the provider confirmed is trusted without asking again. */
+export const KNOWN_COMMIT_REUSE = Duration.hours(1)
+
 export interface ConnectedSourceRepository {
 	readonly provider: VcsRepo["provider"]
 	readonly fullName: string
@@ -225,6 +228,29 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 				{
 					capacity: 256,
 					timeToLive: (exit) => (Exit.isSuccess(exit) ? CLONE_CREDENTIALS_REUSE : Duration.zero),
+				},
+			)
+
+			// A commit that exists stays existing, so a confirmed SHA is not asked again for a while.
+			// Only found commits are kept: a SHA pushed a moment later must resolve on the next call.
+			const knownCommits = yield* Cache.makeWith(
+				(key: {
+					readonly provider: VcsRepo["provider"]
+					readonly installation: VcsInstallation
+					readonly repository: VcsRepositoryRef
+					readonly sha: string
+				}) =>
+					asUpstream(providers.resolve(key.provider)).pipe(
+						Effect.flatMap((provider) =>
+							asUpstream(provider.resolveRef(key.installation, key.repository, key.sha)),
+						),
+					),
+				{
+					capacity: 512,
+					timeToLive: (exit) =>
+						Exit.isSuccess(exit) && Option.isSome(exit.value)
+							? KNOWN_COMMIT_REUSE
+							: Duration.zero,
 				},
 			)
 
@@ -457,9 +483,15 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 					owner: repository.owner,
 					name: repository.name,
 				}
-				// A full SHA needs no lookup; anything else is asked of the provider.
+				// A full SHA is still confirmed: agents invent plausible ones, and an unknown SHA
+				// otherwise fails later inside the clone as `not our ref`.
 				const resolved = isCommitSha(ref)
-					? Option.some(ref)
+					? yield* Cache.get(knownCommits, {
+							provider: repository.provider,
+							installation,
+							repository: repoRef,
+							sha: ref,
+						})
 					: yield* asUpstream(provider.resolveRef(installation, repoRef, ref))
 				if (Option.isNone(resolved)) {
 					// The message is the agent's only chance to recover: sandbox tool failures are
