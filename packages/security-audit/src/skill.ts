@@ -139,6 +139,10 @@ export const findBlock = (ref: string): SkillBlock | undefined => {
 /** The sections every prompt using a companion must carry alongside its chosen classes. */
 export const COMPANION_REQUIRED_SECTIONS = ["Core discipline", "Universal moves", "Validation rules"] as const
 
+/** Whether `ref` is one of a companion's required sections rather than one of its attack classes. */
+export const isCompanionRequiredSection = (ref: SkillBlockRef): boolean =>
+	Arr.some(COMPANION_REQUIRED_SECTIONS, (name) => Str.endsWith(`#${name}`)(ref))
+
 /** The first `search` in `text` at or after `from`, as an index into the whole of `text`. */
 const indexFrom = (text: string, search: string, from: number): Option.Option<number> =>
 	Option.map(Str.indexOf(search)(Str.slice(from)(text)), (at) => at + from)

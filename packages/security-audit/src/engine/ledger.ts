@@ -6,7 +6,7 @@
 import type { HunterUnitResult, MissingUnit, SeedUnit } from "../results"
 import type { CoverageUnit } from "../schema"
 import { coverageId, isSafeRelativePath, ledgerErrors, safeCoverageId } from "../validators"
-import { canonicalBlockRef, type SkillBlockRef } from "../skill"
+import { canonicalBlockRef, isCompanionRequiredSection, type SkillBlockRef } from "../skill"
 import { Array as Arr, String as Str } from "effect"
 
 type PriorStatus = CoverageUnit["prior_status"]
@@ -112,7 +112,11 @@ export const reviewProposal = (seed: Proposal): ProposalReview => {
 	const selected = Arr.dedupe(
 		Arr.flatMap(seed.selected_companion_blocks, (ref) => present(canonicalBlockRef(ref))),
 	)
-	if (ordinary === null && seed.selected_companion_blocks.length > 0 && selected.length === 0) {
+	if (
+		ordinary === null &&
+		seed.selected_companion_blocks.length > 0 &&
+		!Arr.some(selected, (ref) => !isCompanionRequiredSection(ref))
+	) {
 		return refused(
 			`no known attack-class block: ${plural(unknownSelected.length, "unknown companion block reference")} (${listSome(unknownSelected)})`,
 			unknownSelected,
@@ -160,9 +164,9 @@ export const reviewProposal = (seed: Proposal): ProposalReview => {
 /** One note for a reviewed proposal: why it was refused, or what was dropped from it; none when clean. */
 export const proposalNote = (seed: Proposal, review: ProposalReview): string | undefined => {
 	const label = `${seed.surface} / ${seed.attack_class}`
-	if (review._tag === "Refused") return `${label}: refused, ${review.reason}`
+	if (review._tag === "Refused") return `refused: ${label}: ${review.reason}`
 	if (review.dropped.length === 0) return undefined
-	return `${label}: kept, dropped ${plural(review.dropped.length, "unknown block reference")} (${listSome(review.dropped)})`
+	return `kept: ${label}: dropped ${plural(review.dropped.length, "unknown block reference")} (${listSome(review.dropped)})`
 }
 
 /** A seeded unit: `planned` in scope, otherwise `out_of_scope` with the reason. */

@@ -22,7 +22,7 @@ import {
 	seedUnit,
 } from "./ledger"
 import type { AuditStoreError } from "./ports"
-import type { EngineState, Engine } from "./state"
+import type { EngineState, Engine, RepairReview } from "./state"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 const BUDGET_DEFER = "budget_cannot_reserve_critics_and_validation"
@@ -197,16 +197,37 @@ const runHunter = (
 		])
 	})
 
-/** A critic repair turn's note when any proposal names an unknown attack-class block. */
-const repairUnknownBlocks = (result: CriticResult): string | undefined => {
-	const refs = Arr.dedupe(
-		Arr.flatMap(result.missing_units, (unit) => {
-			const review = reviewProposal(unit)
-			return review._tag === "Refused" ? review.unknownRefs : []
-		}),
-	)
-	return refs.length === 0 ? undefined : refusedBlockRefsRepair(refs)
-}
+/**
+ * A critic repair turn for proposals naming an unknown attack-class block. It runs only on spare
+ * budget: never for a gap critic (it defers what it accepts), and never at the cost of the
+ * final-clean critic or the validation reserve. It is kept only when it admits no fewer units.
+ */
+const unknownBlocksReview = (
+	engine: Engine,
+	kind: "post-wave" | "final-clean" | "gap",
+): RepairReview<CriticResult> => ({
+	objection: (result) => {
+		const refs = Arr.dedupe(
+			Arr.flatMap(result.missing_units, (unit) => {
+				const review = reviewProposal(unit)
+				return review._tag === "Refused" ? review.unknownRefs : []
+			}),
+		)
+		return refs.length === 0 ? undefined : refusedBlockRefsRepair(refs)
+	},
+	affordable: Effect.gen(function* () {
+		if (kind === "gap") return false
+		if (engine.input.budget === null) return true
+		const quick = engine.input.profile === "quick"
+		const left = yield* engine.remaining
+		const finalCritic = kind === "post-wave" && !quick ? 1 : 0
+		const state = yield* Ref.get(engine.state)
+		const reserve = validationReserve(state, quick ? 1 : 2, left - finalCritic)
+		return left - finalCritic - reserve >= 1
+	}),
+	score: (result) =>
+		Arr.filter(result.missing_units, (unit) => reviewProposal(unit)._tag === "Admissible").length,
+})
 
 /** The critic's short name for the ledger unit at `index`; `reassign_ids` answers with it. */
 const criticAlias = (index: number) => `U${index + 1}`
@@ -315,7 +336,7 @@ const runCritic = (
 			agentId,
 			prompt,
 			CriticResult,
-			repairUnknownBlocks,
+			unknownBlocksReview(engine, kind),
 		)
 		if (result === undefined) return undefined
 		// Aliases name units of the ledger the critic was shown.
@@ -384,7 +405,7 @@ const runCritic = (
 				),
 			)
 			const ledger = deferReason === undefined ? marked : defer(marked, planned, deferReason)
-			const ledgerRefused = Arr.map(admitted.refused, (r) => `${r.coverage_id}: refused, ${r.reason}`)
+			const ledgerRefused = Arr.map(admitted.refused, (r) => `refused: ${r.coverage_id}: ${r.reason}`)
 			return [
 				{ accepted: planned.size, ledgerRefused },
 				{ ...current, ledger, uncovered: [] },

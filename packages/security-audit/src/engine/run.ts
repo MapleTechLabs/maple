@@ -11,7 +11,7 @@ import type { AuditReports, RunMetadata, RunStatus } from "./ports"
 import { runReconnaissance } from "./recon"
 import { runHunting } from "./hunt"
 import { buildReports } from "./report"
-import { type AuditRunInput, type EngineState, makeEngine } from "./state"
+import { type AuditRunInput, type Engine, type EngineState, makeEngine } from "./state"
 import { finalFindings, runCandidateValidation, runRecordVerification } from "./validate"
 
 /** The incomplete reason for a run that ends with no unit covered or carrying a candidate. */
@@ -58,6 +58,25 @@ const assembleFindings = (s: EngineState): ReadonlyArray<Finding> => {
 	return [...decided, ...suppressed].sort((a, b) => (a.fingerprint < b.fingerprint ? -1 : 1))
 }
 
+const SETTLED: ReadonlySet<string> = new Set(["covered", "candidate"])
+
+/**
+ * A run that settled no unit audited nothing, however its critics or budget ended. A unit counts
+ * when it is settled now or was settled before a critic reopened it.
+ */
+const requireCoverage = Effect.fn("SecurityAudit.requireCoverage")(function* (engine: Engine) {
+	const { ledger } = yield* Ref.get(engine.state)
+	const settled = Arr.filter(
+		ledger,
+		(u) => SETTLED.has(u.status) || Arr.some(u.attempts, (a) => SETTLED.has(a.status)),
+	).length
+	yield* Effect.annotateCurrentSpan({
+		"maple.security_audit.ledger_units": ledger.length,
+		"maple.security_audit.settled_units": settled,
+	})
+	if (settled === 0) yield* engine.fail(NO_UNITS_COVERED)
+})
+
 export const runAudit = (input: AuditRunInput) =>
 	Effect.gen(function* () {
 		const engine = yield* makeEngine(input)
@@ -65,18 +84,8 @@ export const runAudit = (input: AuditRunInput) =>
 
 		if (yield* runReconnaissance(engine)) {
 			yield* runHunting(engine)
-			// A run whose hunters settled no unit audited nothing, however its critics or budget ended.
-			const hunted = yield* Ref.get(engine.state)
-			const covered = Arr.filter(
-				hunted.ledger,
-				(u) => u.status === "covered" || u.status === "candidate",
-			)
-			yield* Effect.annotateCurrentSpan({
-				"maple.security_audit.ledger_units": hunted.ledger.length,
-				"maple.security_audit.covered_units": covered.length,
-			})
-			if (covered.length === 0) yield* engine.fail(NO_UNITS_COVERED)
 			yield* runCandidateValidation(engine)
+			yield* requireCoverage(engine)
 			yield* runRecordVerification(engine)
 		}
 

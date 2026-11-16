@@ -50,7 +50,7 @@ describe("reviewProposal", () => {
 		expect(review.unit?.excluded_blocks).toEqual([])
 		expect(review.dropped).toEqual([BEARER, REVOCATION, FIREWALL])
 		expect(proposalNote(proposal, reviewProposal(proposal))).toBe(
-			`POST /keys / Access control: kept, dropped 3 unknown block references (${BEARER}, ${REVOCATION}, ${FIREWALL})`,
+			`kept: POST /keys / Access control: dropped 3 unknown block references (${BEARER}, ${REVOCATION}, ${FIREWALL})`,
 		)
 	})
 
@@ -75,6 +75,16 @@ describe("reviewProposal", () => {
 			}),
 		)
 		expect(review._tag === "Refused" ? review.unknownRefs : []).toEqual([BEARER, FIREWALL])
+	})
+
+	it("refuses a companion-only unit whose only known blocks are the companion's required sections", () => {
+		const review = reviewProposal(
+			seed("keys", "Bearer tokens", {
+				ordinary_attack_class_block: null,
+				selected_companion_blocks: ["WEB-PROTOCOL-AND-AUTH.md#Core discipline", BEARER],
+			}),
+		)
+		expect(review._tag === "Refused" ? review.unknownRefs : []).toEqual([BEARER])
 	})
 
 	it("collapses two spellings of one block and an exclusion of a selected block", () => {
