@@ -5,7 +5,8 @@ import { Option, String as Str } from "effect"
 type AuditEntryResource = Pick<
 	V2AuditLogEntry,
 	"action" | "resource_type" | "resource_id" | "affected_user" | "metadata"
->
+> &
+	Partial<Pick<V2AuditLogEntry, "actor_name">>
 
 /** Where a resource lives in the app. Only routes the web really has. */
 export type AuditResourceLink =
@@ -131,6 +132,8 @@ export function auditResourceDisplay(entry: AuditEntryResource): AuditResourceDi
 			stringField(entry.metadata, "agent"),
 		)
 		const tool = stringField(entry.metadata, "tool_title") ?? stringField(entry.metadata, "tool")
+		// The actor column already names the agent on an unattended pass; say the tool once.
+		if (tool !== null && entry.actor_name === caller) return { text: tool, link: null }
 		return { text: tool === null ? caller : `${caller} · ${tool}`, link: null }
 	}
 	const typeLabel = auditResourceLabel(entry.resource_type) ?? entry.resource_type

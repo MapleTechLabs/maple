@@ -97,6 +97,22 @@ describe("auditResourceDisplay", () => {
 				}),
 			)?.text,
 		).toBe("Maple code review · Search Repository Checkout")
+		// When the actor already names the agent, the resource names only the tool.
+		expect(
+			auditResourceDisplay(
+				entry({
+					action: "mcp_tool.called",
+					resource_type: "mcp_tool",
+					actor_name: "Maple code review",
+					metadata: {
+						tool: "sandbox_grep",
+						tool_title: "Search Repository Checkout",
+						surface: "chat",
+						agent: "pr-review",
+					},
+				}),
+			)?.text,
+		).toBe("Search Repository Checkout")
 		// Rows written before the agent was recorded still say Maple ran them, not MCP.
 		expect(
 			auditResourceDisplay(

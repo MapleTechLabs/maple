@@ -246,7 +246,7 @@ export const AUDIT_ENTRIES: ReadonlyArray<V2AuditLogEntry> = Arr.map(
 			metadata: {
 				tool: "list_errors",
 				tool_title: "List Errors",
-				surface: "chat",
+				surface: "bot",
 				is_error: true,
 				params: '{"service":"payments"}',
 				connector: "slack",
@@ -259,7 +259,7 @@ export const AUDIT_ENTRIES: ReadonlyArray<V2AuditLogEntry> = Arr.map(
 		},
 		{
 			n: 15,
-			minutesAgo: 10,
+			minutesAgo: 60 * 96,
 			action: "mcp_tool.called",
 			actor: "review",
 			source: "system",
@@ -274,7 +274,7 @@ export const AUDIT_ENTRIES: ReadonlyArray<V2AuditLogEntry> = Arr.map(
 		},
 		{
 			n: 16,
-			minutesAgo: 11,
+			minutesAgo: 60 * 96 + 1,
 			action: "telemetry.sql_executed",
 			actor: "review",
 			source: "system",
