@@ -1,4 +1,4 @@
-import type { AuditTrailEntry, AuditTrailListResponse } from "@maple/domain/http"
+import type { AuditTrailEntry, AuditTrailListResponse, AuditTrailSourcesResponse } from "@maple/domain/http"
 import { Array as Arr, String as Str } from "effect"
 
 // Audit events for the Security hub's audit log lab: Maple's own changes and refusals over the
@@ -189,3 +189,58 @@ export const auditEventsOf = (nowMs: number, hasMore = true): AuditTrailListResp
 }
 
 export const noAuditEvents: AuditTrailListResponse = { events: [], nextCursor: null }
+
+/** Maple and a Vercel team sending, Google Cloud connected with its log forwarding off. */
+export const auditSourcesOf = (nowMs: number): AuditTrailSourcesResponse => ({
+	windowDays: 30,
+	sources: [
+		{
+			provider: "maple",
+			state: "built_in",
+			account: null,
+			problem: null,
+			events: 214,
+			lastEventAt: nowMs - 4 * MINUTE,
+		},
+		{
+			provider: "vercel",
+			state: "receiving",
+			account: "Acme (6 projects)",
+			problem: null,
+			events: 37,
+			lastEventAt: nowMs - 52 * MINUTE,
+		},
+		{
+			provider: "gcp",
+			state: "off",
+			account: "project acme-prod",
+			problem: null,
+			events: 0,
+			lastEventAt: null,
+		},
+	],
+})
+
+/** A new org: only Maple's own feed, nothing connected. */
+export const noAuditSources: AuditTrailSourcesResponse = {
+	windowDays: 30,
+	sources: [
+		{ provider: "maple", state: "built_in", account: null, problem: null, events: 0, lastEventAt: null },
+		{
+			provider: "vercel",
+			state: "not_connected",
+			account: null,
+			problem: null,
+			events: 0,
+			lastEventAt: null,
+		},
+		{
+			provider: "gcp",
+			state: "not_connected",
+			account: null,
+			problem: null,
+			events: 0,
+			lastEventAt: null,
+		},
+	],
+}

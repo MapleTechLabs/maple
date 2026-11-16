@@ -454,6 +454,17 @@ SELECT
         LIMIT 51
         FORMAT JSON
 
+-- builder:audit-trail:auditTrailSourcesQuery:default  [c248e070]
+SELECT
+          audit_trail_events.Provider AS provider,
+          uniqExact(audit_trail_events.Id) AS events,
+          toUnixTimestamp(max(audit_trail_events.OccurredAt)) AS lastOccurredAt
+        FROM audit_trail_events
+        WHERE audit_trail_events.OrgId = 'org_sql_catalog'
+          AND audit_trail_events.OccurredAt >= '2026-01-01 10:30:00'
+        GROUP BY provider
+        FORMAT JSON
+
 -- builder:aws-ingest:awsIngestQuery:default  [c5891e34]
 SELECT
           metrics_sum.Attributes['aws.namespace'] AS namespace,
