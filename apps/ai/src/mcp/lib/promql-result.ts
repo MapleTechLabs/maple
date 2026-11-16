@@ -60,7 +60,10 @@ export const parseStepMs = (raw: string): number | undefined => {
 	return Number.isSafeInteger(ms) && ms > 0 ? ms : undefined
 }
 
-const NICE_STEPS = [15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10_800, 21_600, 43_200, 86_400]
+// Short windows step in seconds too, so a 2-minute spike still gets 60 to 120 points.
+const NICE_STEPS = [
+	1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10_800, 21_600, 43_200, 86_400,
+]
 
 /** The smallest round step that keeps a range at no more than 120 points. */
 export const defaultStepSeconds = (rangeSeconds: number): number =>

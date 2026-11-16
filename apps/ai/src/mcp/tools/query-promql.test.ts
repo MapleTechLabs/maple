@@ -310,6 +310,8 @@ describe("query_promql steps", () => {
 
 	it("picks a round step giving at most 120 points", () => {
 		expect(defaultStepSeconds(3600)).toBe(30)
+		expect(defaultStepSeconds(120)).toBe(1)
+		expect(defaultStepSeconds(600)).toBe(5)
 		expect(defaultStepSeconds(6 * 3600)).toBe(300)
 		expect(defaultStepSeconds(7 * 86_400)).toBe(7200)
 	})
