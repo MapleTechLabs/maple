@@ -338,20 +338,21 @@ const toDrainInfo = (drain: typeof DrainBody.Type): VercelDrainInfo => ({
 const drainPath = (drainId?: string) =>
 	`/v1/drains${drainId === undefined ? "" : `/${encodeURIComponent(drainId)}`}`
 
-export const createDrain = Effect.fn("VercelApi.createDrain")(function* (
-	httpClient: HttpClient.HttpClient,
-	token: string,
-	teamId: string,
-	body: VercelDrainBody,
-) {
-	const drain = yield* client(httpClient, token).json(DrainBody, {
-		method: "POST",
-		path: drainPath(),
-		query: { teamId },
-		body,
-	})
-	return toDrainInfo(drain)
-})
+export const createDrain = Effect.fnUntraced(
+	function* (httpClient: HttpClient.HttpClient, token: string, teamId: string, body: VercelDrainBody) {
+		const drain = yield* client(httpClient, token).json(DrainBody, {
+			method: "POST",
+			path: drainPath(),
+			query: { teamId },
+			body,
+		})
+		return toDrainInfo(drain)
+	},
+	// A plan or permission refusal is answered to the person connecting as a 400, not our failure.
+	VendorHttp.vendorCallSpan("VercelApi.createDrain", (error: VercelApiError) =>
+		error.kind === "invalid_response" ? undefined : error.kind,
+	),
+)
 
 export const updateDrain = Effect.fn("VercelApi.updateDrain")(function* (
 	httpClient: HttpClient.HttpClient,

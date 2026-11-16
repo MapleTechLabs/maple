@@ -19,6 +19,12 @@ export class SupabaseApiError extends Schema.TaggedError<SupabaseApiError>()(
 	},
 ) {}
 
+/** A Supabase call's span: a refusal or outage the poller records as health stays off the error list. */
+export const supabaseCallSpan = (name: string) =>
+	VendorHttp.vendorCallSpan(name, (error: { readonly _tag: string }) =>
+		Schema.is(SupabaseApiError)(error) ? error.kind : undefined,
+	)
+
 export const DRAINS_PLAN_MESSAGE = "Log drains need a Supabase Pro plan or higher."
 
 /** Supabase answered 402: the organization's plan does not include the feature (log drains need Pro). */
@@ -339,7 +345,7 @@ export const createLogDrain = Effect.fn("SupabaseApi.createLogDrain")(function* 
  * `GET /v2/projects/{ref}/analytics/log-drains`; a drain with an undecodable shape is skipped.
  * None when the plan has no drains: Free answers 403 "does not have access to this API" (live, 2026-10-22).
  */
-export const listLogDrains = Effect.fn("SupabaseApi.listLogDrains")(function* (
+export const listLogDrains = Effect.fnUntraced(function* (
 	httpClient: HttpClient.HttpClient,
 	baseUrl: string,
 	accessToken: string,
@@ -367,7 +373,7 @@ export const listLogDrains = Effect.fn("SupabaseApi.listLogDrains")(function* (
 		"maple.supabase.log_drains_skipped": list.data.length - drains.length,
 	})
 	return Option.some<ReadonlyArray<SupabaseLogDrain>>(drains)
-})
+}, supabaseCallSpan("SupabaseApi.listLogDrains"))
 
 /** `DELETE /v2/projects/{ref}/analytics/log-drains/{id}`. A 404 means it is already gone. */
 export const deleteLogDrain = Effect.fn("SupabaseApi.deleteLogDrain")(function* (
