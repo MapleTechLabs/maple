@@ -49,6 +49,11 @@ const make = Effect.gen(function* () {
 					duration: Duration.seconds(5),
 					orElse: () => Effect.fail(fail("DNS lookup timed out")),
 				}),
+				// Client-kind so the service map draws the DoH resolver as a dependency.
+				Effect.withSpan("DNS-over-HTTPS TXT", {
+					kind: "client",
+					attributes: { "peer.service": "cloudflare-dns", "dns.question.name": name },
+				}),
 			)
 		if (response.status !== 200) return yield* fail(`DNS resolver answered ${response.status}`)
 		const body = yield* response.json.pipe(
