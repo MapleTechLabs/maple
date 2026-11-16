@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Array as Arr, Effect, Layer, Order, Result, Schema, Tracer } from "effect"
+import { Array as Arr, Effect, Layer, Order, Result, Schema, String as Str, Tracer } from "effect"
 import { OrgId, SavedViewId, UserId } from "@maple/domain/http"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { SAVED_VIEWS_PER_OWNER_LIMIT, type SavedViewCaller, SavedViewsService } from "./SavedViewsService"
@@ -283,7 +283,7 @@ describe("SavedViewsService", () => {
 				)
 				assert.isAbove(failures.length, 0)
 				assert.deepStrictEqual(
-					Arr.filter(failures, (name) => !name.startsWith("SavedViewsService.")),
+					Arr.filter(failures, (name) => !Str.startsWith("SavedViewsService.")(name)),
 					[],
 				)
 			}).pipe(Effect.withTracer(tracer)),
