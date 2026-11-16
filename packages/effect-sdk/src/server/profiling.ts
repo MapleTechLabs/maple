@@ -154,6 +154,12 @@ const post = (session: InspectorSession, method: string, params: InspectorParams
 			clearTimeout(timer)
 			resume(error === null ? Effect.succeed(reply) : Effect.fail(failed(`${method} failed`)(error)))
 		})
+		// An interrupted wait (a setup timeout, a bounded shutdown) clears the timer, which would
+		// otherwise keep the process alive until it fired.
+		return Effect.sync(() => {
+			settled = true
+			clearTimeout(timer)
+		})
 	})
 
 /** A setup command that fails, rather than waits forever, when the inspector never answers it. */

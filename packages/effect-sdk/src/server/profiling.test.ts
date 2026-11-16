@@ -244,6 +244,7 @@ describe("profilerLayer without an inspector", () => {
 			}
 		}
 		const harness = makeHarness()
+		const cleared = vi.spyOn(globalThis, "clearTimeout")
 		return Effect.gen(function* () {
 			const building = yield* Effect.forkChild(
 				Layer.build(harness.layer({ loadBuiltin: () => ({ Session: Silent }) })),
@@ -255,7 +256,9 @@ describe("profilerLayer without an inspector", () => {
 			expect(harness.logs[0]?.message).toContain("the inspector did not answer")
 			// Ended at once, with the app still running: nothing it started keeps sampling.
 			expect(calls).toEqual(["Profiler.enable", "disconnect"])
-		}).pipe(harness.run)
+			// The interrupted command's own timer is cleared, so it cannot hold the process open.
+			expect(cleared).toHaveBeenCalled()
+		}).pipe(harness.run, Effect.ensuring(Effect.sync(() => cleared.mockRestore())))
 	})
 
 	it.effect("ends the session at once when the first Profiler.start never answers", () => {
