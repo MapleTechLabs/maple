@@ -32,10 +32,14 @@ const unitMs = (unit: string | undefined): number => {
 const DURATION = /^(?:\d+(?:ms|s|m|h|d|w|y))+$/
 const DURATION_PART = /(\d+)(ms|s|m|h|d|w|y)/g
 
-/** Float seconds as whole milliseconds, when they are whole up to float noise (`1.001` is 1001). */
+/**
+ * Float seconds as whole milliseconds, when they are whole up to float rounding (`1.001` is 1001);
+ * a real fraction of a millisecond (`1000.0005`) is refused at any scale.
+ */
 const secondsToMs = (seconds: number): number => {
-	const ms = Math.round(seconds * 1000)
-	return Math.abs(seconds * 1000 - ms) <= 1e-6 * Math.max(1, ms) ? ms : Number.NaN
+	const exact = seconds * 1000
+	const ms = Math.round(exact)
+	return Math.abs(exact - ms) <= 8 * Number.EPSILON * Math.max(1, Math.abs(exact)) ? ms : Number.NaN
 }
 
 /**
