@@ -1,7 +1,9 @@
 import { PrReviewFinding, type PullRequestReviewThread } from "@maple/domain/http"
 import { assert, describe, it } from "vitest"
 import {
+	capUnsourcedPrivacyCriticals,
 	followUpScope,
+	latestReplies,
 	ignoredPathsInKickoff,
 	mergeSavedFindings,
 	nextHandles,
@@ -445,6 +447,140 @@ describe("mergeSavedFindings", () => {
 		assert.deepEqual(
 			Arr.map(merged, (item) => item.line),
 			[10, 40],
+		)
+	})
+})
+
+describe("credential findings and the replies to them", () => {
+	const privacy = (overrides: Partial<ConstructorParameters<typeof PrReviewFinding>[0]> = {}) =>
+		new PrReviewFinding({
+			path: "src/auth.ts",
+			line: 50,
+			category: "security",
+			checkId: "PII-01",
+			severity: "critical",
+			title: "Credential `obj.legacyApiKey` written to logs",
+			body: "b",
+			...overrides,
+		})
+
+	it("files a reviewer's credential critical without a cited source as a warning", () => {
+		const { findings, downgraded } = capUnsourcedPrivacyCriticals([
+			// The reported case: a boolean field whose name holds "ApiKey", no source given.
+			privacy(),
+			privacy({ title: "`auth.cookie_refused` attribute leaks a cookie", source: "the cookie header" }),
+			privacy({
+				title: "Bearer token logged",
+				source: "src/auth.ts:42 `const token = req.headers.authorization`",
+			}),
+			privacy({ severity: "warn", title: "`user.email` logged" }),
+		])
+		assert.deepEqual(
+			Arr.map(findings, (finding) => finding.severity),
+			["warn", "warn", "critical", "warn"],
+		)
+		assert.equal(downgraded.length, 2)
+	})
+
+	it("leaves the privacy scan's own findings to the scan's rules", () => {
+		const scan = privacy({ title: "Credential `api_key` written to a span attribute" })
+		assert.equal(capUnsourcedPrivacyCriticals([scan]).findings[0]?.severity, "critical")
+	})
+
+	it("hands a reply with no verdict phrase to the next review instead of dropping it", () => {
+		const finding = tracked({
+			category: "security",
+			title: "Credential `obj.legacyApiKey` written to logs",
+		})
+		const threads = [
+			thread({
+				comments: [
+					...thread().comments,
+					{
+						commentId: "101",
+						author: "octocat",
+						body: "This is a boolean:\nit only says whether the legacy header was sent.",
+						thumbsUp: 0,
+						thumbsDown: 0,
+					},
+					{
+						commentId: "102",
+						author: "ci-bot",
+						isBot: true,
+						body: "noise",
+						thumbsUp: 0,
+						thumbsDown: 0,
+					},
+				],
+			}),
+		]
+		// No phrase the verdict rules know, so the finding stays open...
+		assert.equal(settledFindings([finding], threads, undefined).dismissed.length, 0)
+		// ...and the reply reaches the reviewer, on one line, under its finding.
+		const replies = latestReplies([finding], threads)
+		const text = Arr.join(
+			renderFollowUp({ previousSha: "abcdef1234", changes: undefined, open: [finding], replies }),
+			"\n",
+		)
+		assert.include(
+			text,
+			'- F1 · src/a.ts:10 · security · warn · Credential `obj.legacyApiKey` written to logs\n  octocat replied: "This is a boolean: it only says whether the legacy header was sent."',
+		)
+		assert.include(text, "list the handle in `dismissed`")
+		assert.notInclude(text, "noise")
+	})
+
+	it("lists dismissed findings so the reviewer never files them again", () => {
+		const text = Arr.join(
+			renderFollowUp({
+				previousSha: "abcdef1234",
+				changes: undefined,
+				open: [],
+				dismissed: [
+					tracked({ handle: "F4", status: "dismissed", title: "`auth.cookie_refused` leaks" }),
+				],
+			}),
+			"\n",
+		)
+		assert.include(text, "No finding from earlier reviews is still open.")
+		assert.include(text, "Never file them again")
+		assert.include(text, "- F4 · src/a.ts:10 · correctness · `auth.cookie_refused` leaks")
+	})
+
+	it("blocks a reworded re-raise of a dismissed credential finding on the same file and identifier", () => {
+		const dismissed = tracked({
+			path: "src/auth.ts",
+			line: 50,
+			category: "security",
+			severity: "critical",
+			title: "Credential `obj.legacyApiKey` written to logs",
+			status: "dismissed",
+		})
+		const { fresh, repeated, reraisedDismissed } = withoutRepeats(
+			[
+				// Reworded, 30 lines away, and naming the field without its object.
+				privacy({ line: 80, title: "API key flag `legacyApiKey` leaks into telemetry" }),
+				privacy({ line: 80, title: "Session `obj.sessionToken` logged" }),
+				privacy({ path: "src/other.ts", title: "API key flag `legacyApiKey` leaks into telemetry" }),
+			],
+			[dismissed],
+		)
+		assert.deepEqual(
+			Arr.map(fresh, (finding) => `${finding.path} ${finding.title}`),
+			[
+				"src/auth.ts Session `obj.sessionToken` logged",
+				"src/other.ts API key flag `legacyApiKey` leaks into telemetry",
+			],
+		)
+		assert.equal(repeated, 1)
+		assert.equal(reraisedDismissed, 1)
+		// While it was open, the same wording was a new finding: only a dismissal blocks it.
+		assert.equal(
+			withoutRepeats(
+				[privacy({ line: 80, title: "API key flag `legacyApiKey` leaks into telemetry" })],
+				[{ ...dismissed, status: "open" }],
+			).fresh.length,
+			1,
 		)
 	})
 })

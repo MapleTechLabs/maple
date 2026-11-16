@@ -80,6 +80,40 @@ describe("normalizePrReviewSubmission", () => {
 		assert.equal(normalizePrReviewSubmission({ findings: "not json" }).report.findings.length, 0)
 	})
 
+	it("takes the earlier findings the reviewer dismissed, each with its reason", () => {
+		const { dismissed } = normalizePrReviewSubmission({
+			dismissed: [
+				{ handle: "f1", reason: "It is a boolean, the reply was right." },
+				{ handle: "F1", reason: "again" },
+				{ handle: "F2" },
+				{ handle: "nonsense", reason: "x" },
+			],
+		})
+		assert.deepEqual(dismissed, [{ handle: "F1", reason: "It is a boolean, the reply was right." }])
+		assert.deepEqual(
+			normalizePrReviewSubmission({ dismissed: '[{"handle":"F3","reason":"an enum"}]' }).dismissed,
+			[{ handle: "F3", reason: "an enum" }],
+		)
+	})
+
+	it("keeps where a credential finding says its value comes from", () => {
+		const { report } = normalizePrReviewSubmission({
+			findings: [
+				{
+					path: "src/auth.ts",
+					line: 50,
+					category: "security",
+					checkId: "PII-01",
+					severity: "critical",
+					title: "Bearer token logged",
+					body: "b",
+					source: " src/auth.ts:42 `const token = req.headers.authorization` ",
+				},
+			],
+		})
+		assert.equal(report.findings[0]?.source, "src/auth.ts:42 `const token = req.headers.authorization`")
+	})
+
 	it("drops a finding it cannot anchor to a line rather than inventing one", () => {
 		const { report, droppedFindings } = normalizePrReviewSubmission({
 			findings: [
