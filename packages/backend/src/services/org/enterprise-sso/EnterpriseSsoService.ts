@@ -32,7 +32,19 @@ import {
 	type OrgSsoDomainRow,
 } from "@maple/db/tables"
 import { EdgeCacheService } from "@maple/cache"
-import { Array as Arr, Clock, Context, Effect, Layer, Option, Order, Schema, String as Str } from "effect"
+import {
+	Array as Arr,
+	Clock,
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Order,
+	Schedule,
+	Schema,
+	String as Str,
+} from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Hex from "effect/encoding/Hex"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -1167,15 +1179,15 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 			const confirmDeprovisioned = Effect.fn("EnterpriseSsoService.confirmDeprovisioned")(function* (
 				userId: UserId,
 			) {
-				const state = yield* clerk
-					.isDeprovisioned(userId)
-					.pipe(
-						Effect.catch((error) =>
-							Effect.logWarning(
-								"Could not confirm a deprovisioning with Clerk; sweeping anyway",
-							).pipe(Effect.annotateLogs({ userId, error: error.message }), Effect.as(true)),
-						),
-					)
+				const state = yield* clerk.isDeprovisioned(userId).pipe(
+					// A blip should not decide it: retry briefly, then fail closed.
+					Effect.retry({ schedule: Schedule.exponential(Duration.millis(200)), times: 2 }),
+					Effect.catch((error) =>
+						Effect.logWarning(
+							"Could not confirm a deprovisioning with Clerk; sweeping anyway",
+						).pipe(Effect.annotateLogs({ userId, error: error.message }), Effect.as(true)),
+					),
+				)
 				yield* Effect.annotateCurrentSpan({ "maple.sso.still_deprovisioned": state })
 				return state
 			})
