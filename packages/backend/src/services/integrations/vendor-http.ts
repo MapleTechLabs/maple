@@ -3,7 +3,18 @@
  * transient retries, `retry-after` on a 429, no redirects, paging, and a Client span that records
  * only the URL path. Each client maps {@link VendorHttpError} to its own errors through `toError`.
  */
-import { Clock, Duration, Effect, Option, Redacted, Schedule, Schema, Stream, String as Str } from "effect"
+import {
+	Clock,
+	Duration,
+	Effect,
+	Option,
+	Redacted,
+	Result,
+	Schedule,
+	Schema,
+	Stream,
+	String as Str,
+} from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
 import { parseDeltaSeconds, parseRetryAfterSeconds, VENDOR_TRANSIENT_RETRY } from "./vendor-retry"
 
@@ -150,6 +161,9 @@ const isTransient = (error: VendorHttpError) =>
 	error.kind === "timeout" ||
 	(error.kind === "upstream" && (error.status === undefined || error.status >= 500))
 
+const isRedirect = (error: VendorHttpError) =>
+	error.status !== undefined && error.status >= 300 && error.status < 400
+
 const decodeJsonText = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))
 
 export const make = <E>(options: VendorHttpOptions<E>): VendorHttpClient<E> => {
@@ -259,7 +273,14 @@ export const make = <E>(options: VendorHttpOptions<E>): VendorHttpClient<E> => {
 						duration: request.timeout ?? options.timeout,
 						orElse: () => Effect.fail(fail("timeout", "timed out", request)),
 					}),
-					Effect.tapError((error) => Effect.annotateCurrentSpan("error.type", error.kind)),
+					Effect.tapError((error) =>
+						isRedirect(error)
+							? Effect.void
+							: Effect.annotateCurrentSpan("error.type", error.kind),
+					),
+					// A 3xx is a complete answer the caller may follow by hand, so its span ends Ok.
+					Effect.map(Result.succeed),
+					Effect.catchIf(isRedirect, (error) => Effect.succeed(Result.fail(error))),
 					Effect.withSpan("VendorHttp.request", {
 						kind: "client",
 						attributes: {
@@ -273,6 +294,7 @@ export const make = <E>(options: VendorHttpOptions<E>): VendorHttpClient<E> => {
 								: { "maple.vendor.operation": request.operation }),
 						},
 					}),
+					Effect.flatMap(Effect.fromResult),
 				),
 			),
 		)

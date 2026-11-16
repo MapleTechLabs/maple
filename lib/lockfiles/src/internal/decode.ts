@@ -13,11 +13,20 @@ const parseError = (path: string, what: string) => (cause: unknown) =>
 /** Matches a JSON string literal (kept) or a trailing comma before `]`/`}` (dropped). */
 const STRING_OR_TRAILING_COMMA = /"(?:[^"\\]|\\.)*"|,(\s*[\]}])/g
 
+/** Matches a JSON string literal (kept) or a `//` or `/* *\/` comment (dropped). */
+const STRING_OR_COMMENT = /("(?:[^"\\]|\\.)*")|\/\/[^\n]*|\/\*[\s\S]*?\*\//g
+
 export const stripTrailingCommas = (text: string): string =>
 	replaceWith(
 		text,
 		STRING_OR_TRAILING_COMMA,
 		(match: string, closer: string | undefined) => closer ?? match,
+	)
+
+/** JSONC as Bun reads it: comments and trailing commas. Comments go first, so `, // x\n}` loses its comma too. */
+export const stripJsonc = (text: string): string =>
+	stripTrailingCommas(
+		replaceWith(text, STRING_OR_COMMENT, (_: string, literal: string | undefined) => literal ?? ""),
 	)
 
 export const decodeJson = <T>(
