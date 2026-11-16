@@ -5,6 +5,7 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto"
 import { Option, pipe, Result, Schema, Array as Arr, String as Str } from "effect"
 import { MAINTENANCE_TOKEN_HEADER } from "./maintenance-auth"
+import { SESSION_EVENTS_PATH, SESSION_REPLAYS_BLOB_PATH, SESSION_REPLAYS_META_PATH } from "./session-ingest"
 
 export const INGEST_KEY_ENV = "MAPLE_LOCAL_INGEST_KEY"
 export const ACCESS_TOKEN_ENV = "MAPLE_LOCAL_ACCESS_TOKEN"
@@ -136,13 +137,17 @@ export const sessionCookie = (req: Request, url: URL, value: string): string =>
 export const hasValidSession = (auth: RemoteAuth, req: Request, nowMs: number): boolean =>
 	auth.accessToken !== undefined && sessionValid(auth.accessToken, readCookie(req, SESSION_COOKIE), nowMs)
 
-const OTLP_PATHS = new Set([
+/** Ingest routes: open, or gated by the ingest key alone, never by the access token. */
+const INGEST_KEY_PATHS = new Set([
 	"/v1/traces",
 	"/v1/logs",
 	"/v1/metrics",
 	"/v1/profiles",
 	// The profiles export keeps the spec's development path until it reaches RC.
 	"/v1development/profiles",
+	SESSION_REPLAYS_META_PATH,
+	SESSION_REPLAYS_BLOB_PATH,
+	SESSION_EVENTS_PATH,
 ])
 /** The only routes an event consumer's token opens. */
 const CONSUMER_PATHS = new Set(["/local/eventing/claims", "/local/eventing/acks"])
@@ -173,7 +178,7 @@ export const accessDenied = (
 	attempts: CredentialAttempts,
 ): Response | null => {
 	if (url.pathname === "/health") return null
-	if (OTLP_PATHS.has(url.pathname))
+	if (INGEST_KEY_PATHS.has(url.pathname))
 		return auth.ingestKey === undefined || secretMatches(auth.ingestKey, presentedIngestKey(req))
 			? null
 			: unauthorized("ingest key required")
