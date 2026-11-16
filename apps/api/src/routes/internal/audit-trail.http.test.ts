@@ -8,6 +8,7 @@ import {
 	AuditTrailApiGroup,
 	type AuditTrailEntry,
 	AuditTrailListResponse,
+	AuditTrailSourcesResponse,
 	CurrentTenant,
 	OrgId,
 	RoleName,
@@ -27,6 +28,10 @@ import {
 	AuditTrailService,
 } from "@maple/backend/services/audit-trail/AuditTrailService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
+import {
+	IntegrationInventoryService,
+	IntegrationInventoryUnavailableError,
+} from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { HttpAuditTrailLive } from "./audit-trail.http"
 
 class AuditTrailOnlyApi extends HttpApi.make("MapleInternalApi")
@@ -42,6 +47,7 @@ const asRole = Schema.decodeSync(RoleName)
 const asPage = Schema.decodeUnknownSync(AuditTrailListResponse)
 const asDetection = Schema.decodeUnknownSync(AuditDetection)
 const asDetections = Schema.decodeUnknownSync(AuditDetectionListResponse)
+const asSources = Schema.decodeUnknownSync(AuditTrailSourcesResponse)
 const asFailure = Schema.decodeUnknownSync(Schema.Struct({ _tag: Schema.String }))
 
 const trackedDbs: TestDb[] = []
@@ -77,6 +83,7 @@ const makeHarness = (
 	page: AuditTrailPage,
 	directoryDown = false,
 	testDb: TestDb = createTestDb(trackedDbs),
+	inventoryDown = false,
 ) => {
 	const asked: Array<AuditTrailListFilters> = []
 	let directoryReads = 0
@@ -86,6 +93,39 @@ const makeHarness = (
 			write: () => unused,
 			list: (_orgId, filters) => Effect.sync(() => (asked.push(filters), page)),
 			count: () => unused,
+			providerStats: () =>
+				Effect.succeed([
+					{ provider: "maple", events: 12, lastEventAt: 1_700_000_000_000 },
+					{ provider: "vercel", events: 3, lastEventAt: 1_699_000_000_000 },
+				]),
+		}),
+		Layer.succeed(IntegrationInventoryService, {
+			list: () =>
+				inventoryDown
+					? Effect.fail(new IntegrationInventoryUnavailableError({ message: "db down" }))
+					: Effect.succeed({
+							integrations: [
+								{
+									provider: "vercel",
+									status: "healthy",
+									account: "Acme (2 projects)",
+									connectedAt: 1,
+									problem: null,
+									feeds: [],
+									resources: [
+										{
+											kind: "drain",
+											name: "audit log",
+											status: "healthy",
+											lastSuccessAt: null,
+											lastError: null,
+											note: null,
+										},
+									],
+								},
+							],
+							available: [],
+						}),
 		}),
 		Layer.effect(AuditDetectionsService, AuditDetectionsService.make).pipe(Layer.provide(testDb.layer)),
 		Layer.succeed(AuditLogService, auditLog),
@@ -135,6 +175,13 @@ const makeHarness = (
 		return { status: response.status, body: await response.json() }
 	}
 
+	const sources = () =>
+		send(
+			new Request("http://maple.test/internal/audit-trail/sources", {
+				headers: { authorization: "Bearer test-token" },
+			}),
+		)
+
 	const list = (search = "") =>
 		send(
 			new Request(`http://maple.test/internal/audit-trail/events${search}`, {
@@ -163,7 +210,7 @@ const makeHarness = (
 			changedFields: entry.changedFields,
 		}))
 
-	return { list, detections, audited, asked, directoryReads: () => directoryReads, dispose }
+	return { list, sources, detections, audited, asked, directoryReads: () => directoryReads, dispose }
 }
 
 const ADMIN = ["org:admin"]
@@ -486,6 +533,51 @@ describe("/internal/audit-trail/detections", () => {
 
 			expect([edited.status, deleted.status]).toEqual([404, 404])
 			expect(await harness.audited()).toEqual([])
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+describe("GET /internal/audit-trail/sources", () => {
+	it("refuses an engineer: what feeds the log says what the log holds", async () => {
+		const harness = makeHarness(["org:engineer"], { events: [], next: null })
+		try {
+			expect((await harness.sources()).status).toBe(403)
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("tells an admin which platforms send events and which are not connected", async () => {
+		const harness = makeHarness(ADMIN, { events: [], next: null })
+		try {
+			const response = await harness.sources()
+			expect(response.status).toBe(200)
+			const body = asSources(response.body)
+			expect(Arr.map(body.sources, (source) => [source.provider, source.state, source.events])).toEqual(
+				[
+					["maple", "built_in", 12],
+					["vercel", "receiving", 3],
+					["gcp", "not_connected", 0],
+				],
+			)
+			expect(body.sources[1]?.account).toBe("Acme (2 projects)")
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("still answers with what arrived when the integration state cannot be read", async () => {
+		const harness = makeHarness(ADMIN, { events: [], next: null }, false, undefined, true)
+		try {
+			const response = await harness.sources()
+			expect(response.status).toBe(200)
+			expect(Arr.map(asSources(response.body).sources, (source) => source.state)).toEqual([
+				"built_in",
+				"receiving",
+				"waiting",
+			])
 		} finally {
 			await harness.dispose()
 		}
