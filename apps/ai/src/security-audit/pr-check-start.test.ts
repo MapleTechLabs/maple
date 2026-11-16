@@ -692,3 +692,23 @@ describe("startPullRequestCheck fail-open reports", () => {
 		expect(Arr.map(result.runs, (r) => r.status)).toEqual(["failed"])
 	})
 })
+
+describe("startPullRequestCheck flags read as off after a finished audit", () => {
+	it("re-reports the head's finished run instead of a not-blocking check", async () => {
+		const harness = makeHarness()
+		const outcome = await harness.run(
+			Effect.gen(function* () {
+				yield* harness.seeded
+				yield* startPullRequestCheck(orgId, job())
+				const store = (yield* SecurityAuditStore).forOrg(orgId)
+				yield* store.finishRun(harness.started[0]?.runId ?? "", { status: "complete" })
+				harness.rollout.enabled = false
+				return yield* startPullRequestCheck(orgId, job({ action: "synchronize" }))
+			}),
+		)
+
+		expect(outcome.reason).toBe("already_checking")
+		expect(harness.published).toEqual([harness.started[0]?.runId])
+		expect(harness.notices).toEqual(["1111:running"])
+	})
+})
