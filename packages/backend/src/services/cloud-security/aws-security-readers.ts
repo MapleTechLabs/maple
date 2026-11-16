@@ -263,10 +263,11 @@ const readWindows = <E>(
 				const total = count + read.count
 				if (read.complete) return go(to, Num.min(ceiling, span * 2), ceiling, left, total, skipped)
 				if (smallest) {
-					// Every page left went to one second and it still had more: skip the rest of it.
-					return read.pages < allowed
-						? Effect.succeed({ ...stop, count: total })
-						: go(to, MIN_WINDOW_MS, plan.maxSpanMs, left, total, true)
+					// A whole poll's pages went to one second and it still had more: skip the rest of it.
+					if (read.pages >= plan.budgetPages)
+						return go(to, MIN_WINDOW_MS, plan.maxSpanMs, left, total, true)
+					// Fewer pages were left than a poll has: the next poll gives this second every page.
+					return Effect.succeed({ ...stop, count: total, spanMs: MIN_WINDOW_MS })
 				}
 				// The budget or the deadline ran out inside the window: the next poll reads it again.
 				if (read.pages < WINDOW_PAGES) return Effect.succeed({ ...stop, count: total })
@@ -724,10 +725,21 @@ export const normalizeAccessAnalyzer = (
 const readAccessAnalyzer = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =>
 	Effect.gen(function* () {
 		const call = callAs(target)
-		const listed = yield* call(
-			"AccessAnalyzer.ListAnalyzers",
-			AccessAnalyzer.listAnalyzers({ region: target.region }),
+		const analyzers = yield* Ref.make<ReadonlyArray<AccessAnalyzer.AnalyzerSummary>>([])
+		const listing = yield* pagesOf(
+			(token) =>
+				Effect.map(
+					call(
+						"AccessAnalyzer.ListAnalyzers",
+						AccessAnalyzer.listAnalyzers({ region: target.region, nextToken: token }),
+					),
+					(page) => ({ items: page.analyzers, next: page.nextToken }),
+				),
+			(page) => Ref.update(analyzers, (seen) => Arr.appendAll(seen, page)),
+			MAX_PAGES,
+			target.deadlineMs,
 		)
+		const listed = { analyzers: yield* Ref.get(analyzers) }
 		const active = Arr.filter(listed.analyzers, (analyzer) => analyzer.status === "ACTIVE")
 		if (active.length === 0) return notEnabled
 		const seen = yield* Ref.make<ReadonlyArray<string>>([])
@@ -769,7 +781,9 @@ const readAccessAnalyzer = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =
 		)
 		// An analyzer still being created, or failed, holds findings this read did not see.
 		const complete =
-			Arr.every(reads, (read) => read.complete) && active.length === listed.analyzers.length
+			listing.complete &&
+			Arr.every(reads, (read) => read.complete) &&
+			active.length === listed.analyzers.length
 		const seenIds = yield* Ref.get(seen)
 		return {
 			state: "enabled",
@@ -972,66 +986,80 @@ export const readCloudTrail = <E>(
 	const oldestKept = endMs - CLOUDTRAIL_MAX_BEHIND_MS
 	const dropped = target.cursorAt !== null && target.cursorAt < oldestKept
 	const startMs =
-		target.cursorAt === null
-			? endMs - CLOUDTRAIL_BACKFILL_MS
-			: Num.max(oldestKept, target.cursorAt - CLOUDTRAIL_OVERLAP_MS)
-	return readWindows(
-		{
-			startMs,
-			endMs,
-			spanMs: target.windowMs ?? 15 * MINUTE_MS,
-			maxSpanMs: CLOUDTRAIL_MAX_BEHIND_MS,
-			budgetPages: CLOUDTRAIL_PAGES,
-			deadlineMs: target.deadlineMs,
-		},
-		(fromMs, toMs, maxPages) =>
-			Effect.gen(function* () {
-				// LookupEvents answers newest first: the oldest event read sizes a split window.
-				const oldest = yield* Ref.make<number | undefined>(undefined)
-				const read = yield* pagesOf(
-					(token) =>
-						Effect.map(
-							callAs(target)(
-								"CloudTrail.LookupEvents",
-								CloudTrail.lookupEvents({
-									region: target.region,
-									LookupAttributes: [{ AttributeKey: "ReadOnly", AttributeValue: "false" }],
-									StartTime: dateOf(fromMs),
-									EndTime: dateOf(toMs),
-									MaxResults: 50,
-									NextToken: token,
-								}),
-							),
-							(page) => ({
-								items: Arr.getSomes(
-									Arr.map(page.Events ?? [], (event) =>
-										cloudTrailAuditEvent(target.accountId, event),
-									),
-								),
-								next: page.NextToken,
+		target.cursorAt === null ? endMs - CLOUDTRAIL_BACKFILL_MS : Num.max(oldestKept, target.cursorAt)
+	// LookupEvents answers newest first: the oldest event read sizes a split window.
+	const lookupWindow = (
+		fromMs: number,
+		toMs: number,
+		maxPages: number,
+	): Effect.Effect<PagesRead, AwsSecurityReadError | E> =>
+		Effect.gen(function* () {
+			// LookupEvents answers newest first: the oldest event read sizes a split window.
+			const oldest = yield* Ref.make<number | undefined>(undefined)
+			const read = yield* pagesOf(
+				(token) =>
+					Effect.map(
+						callAs(target)(
+							"CloudTrail.LookupEvents",
+							CloudTrail.lookupEvents({
+								region: target.region,
+								LookupAttributes: [{ AttributeKey: "ReadOnly", AttributeValue: "false" }],
+								StartTime: dateOf(fromMs),
+								EndTime: dateOf(toMs),
+								MaxResults: 50,
+								NextToken: token,
 							}),
 						),
-					(events) =>
-						Effect.andThen(
-							Ref.update(oldest, (current) =>
-								Arr.reduce(events, current, (min: number | undefined, event) =>
-									min === undefined ? event.occurredAtMs : Num.min(min, event.occurredAtMs),
+						(page) => ({
+							items: Arr.getSomes(
+								Arr.map(page.Events ?? [], (event) =>
+									cloudTrailAuditEvent(target.accountId, event),
 								),
 							),
-							sink(events),
+							next: page.NextToken,
+						}),
+					),
+				(events) =>
+					Effect.andThen(
+						Ref.update(oldest, (current) =>
+							Arr.reduce(events, current, (min: number | undefined, event) =>
+								min === undefined ? event.occurredAtMs : Num.min(min, event.occurredAtMs),
+							),
 						),
-					maxPages,
-					target.deadlineMs,
-				)
-				const oldestMs = yield* Ref.get(oldest)
-				return oldestMs === undefined ? read : { ...read, oldestMs }
-			}),
-	).pipe(
+						sink(events),
+					),
+				maxPages,
+				target.deadlineMs,
+			)
+			const oldestMs = yield* Ref.get(oldest)
+			return oldestMs === undefined ? read : { ...read, oldestMs }
+		})
+	return Effect.gen(function* () {
+		// The few minutes behind the cursor, for events CloudTrail listed late: one capped window of
+		// their own, so a burst there can neither stall the read nor regrow its span.
+		const overlapFrom =
+			target.cursorAt === null ? startMs : Num.max(oldestKept, startMs - CLOUDTRAIL_OVERLAP_MS)
+		const overlap =
+			overlapFrom < startMs
+				? yield* lookupWindow(overlapFrom, startMs, WINDOW_PAGES)
+				: { count: 0, pages: 0, complete: true }
+		const read = yield* readWindows(
+			{
+				startMs,
+				endMs,
+				spanMs: target.windowMs ?? 15 * MINUTE_MS,
+				maxSpanMs: CLOUDTRAIL_MAX_BEHIND_MS,
+				budgetPages: CLOUDTRAIL_PAGES - overlap.pages,
+				deadlineMs: target.deadlineMs,
+			},
+			lookupWindow,
+		)
+		return { ...read, count: read.count + overlap.count }
+	}).pipe(
 		Effect.map((read): CloudTrailRead => ({
 			state: "enabled",
 			events: read.count,
-			// The overlap never moves the cursor back.
-			cursorAt: Num.max(read.cursorAt, target.cursorAt ?? 0),
+			cursorAt: read.cursorAt,
 			windowMs: read.spanMs,
 			lastError: dropped
 				? "This region fell more than a day behind; changes older than a day were skipped."
