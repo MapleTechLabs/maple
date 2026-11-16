@@ -9,6 +9,7 @@ import {
 	PrReviewCoverageSubmission,
 	PrReviewCoverageUnit,
 	PrReviewFinding,
+	PrReviewFindingDismissalSubmission,
 	PrReviewFindingSubmission,
 	PrReviewMergeStep,
 	PrReviewReplyCommand,
@@ -179,6 +180,9 @@ const decodeDismissals = Schema.decodeUnknownOption(
 const decodeChildDismissals = Schema.decodeUnknownOption(
 	Schema.fromJsonString(Schema.Array(PrReviewChildDismissalSubmission)),
 )
+const decodeFindingDismissals = Schema.decodeUnknownOption(
+	Schema.fromJsonString(Schema.Array(PrReviewFindingDismissalSubmission)),
+)
 
 /** A lenient list as its items; JSON text that is not a list of them reads as empty. */
 const listOf = <A>(
@@ -254,6 +258,7 @@ export const normalizePrReviewFinding = (raw: PrReviewFindingSubmission): PrRevi
 			: undefined
 	const startLine = Math.floor(line)
 	const suggestion = trimmed(raw.suggestion)
+	const source = trimmed(raw.source)
 	const endLine =
 		rawEndLine !== undefined && Math.floor(rawEndLine) > startLine ? Math.floor(rawEndLine) : undefined
 	return new PrReviewFinding({
@@ -270,6 +275,8 @@ export const normalizePrReviewFinding = (raw: PrReviewFindingSubmission): PrRevi
 		...(typeof raw.replacement === "string" && raw.replacement.length <= MAX_TEXT
 			? { replacement: Str.replace(/\n+$/, "")(raw.replacement) }
 			: undefined),
+		// Not clipped for display: a citation past the first 200 characters must survive the check.
+		...(source ? { source: clip(source) } : undefined),
 	})
 }
 
@@ -315,6 +322,13 @@ export interface NormalizedPrReviewSubmission {
 	readonly telemetryDismissals: ReadonlyArray<PrReviewTelemetryDismissal>
 	/** Child reviewers' findings the reviewer refuted; a dismissal without a reason is dropped. */
 	readonly childDismissals: ReadonlyArray<PrReviewChildDismissal>
+	/** Earlier findings the reviewer agrees do not hold, by upper-cased handle; one without a reason is dropped. */
+	readonly dismissed: ReadonlyArray<PrReviewFindingDismissal>
+}
+
+export interface PrReviewFindingDismissal {
+	readonly handle: string
+	readonly reason: string
 }
 
 export interface PrReviewChildDismissal {
@@ -397,6 +411,14 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 				: []
 		},
 	)
+	const dismissed = Arr.flatMap(
+		listOf(submission.dismissed, decodeFindingDismissals),
+		(raw): ReadonlyArray<PrReviewFindingDismissal> => {
+			const handle = handlesOf(raw.handle == null ? [] : [raw.handle])[0]
+			const reason = trimmed(raw.reason)
+			return handle && reason ? [{ handle, reason: clip(reason, MAX_BULLET) }] : []
+		},
+	)
 	return {
 		report: new PrReviewReport({
 			verdict,
@@ -427,6 +449,10 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 				? [{ path, line: Math.round(line), reason: clip(reason, MAX_BULLET) }]
 				: []
 		}).slice(0, MAX_FINDINGS),
+		dismissed: Arr.dedupeWith(dismissed, (item, other) => item.handle === other.handle).slice(
+			0,
+			MAX_FINDINGS,
+		),
 	}
 }
 
