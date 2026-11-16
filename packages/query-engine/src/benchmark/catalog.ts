@@ -131,6 +131,9 @@ export const pipeFixtures: ReadonlyArray<PipeFixture> = [
 		params: { service: "ap", service_match_mode: "contains", span_name_match_mode: "contains" },
 		allCapabilities: true,
 	},
+	{ pipe: "list_traces", label: "trace-id", params: { trace_id: TRACE_ID } },
+	{ pipe: "list_traces", label: "ok-only", params: { has_error: false } },
+	{ pipe: "span_search", label: "ok-only", params: { span_name: "GET /v1/x", has_error: false } },
 	{
 		pipe: "span_hierarchy",
 		label: "windowed",

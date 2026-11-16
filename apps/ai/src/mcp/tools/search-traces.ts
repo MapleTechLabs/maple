@@ -32,7 +32,9 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 				"Only this service (exact `service.name`), matched on the entry span, or on every span when `span_name` is set",
 			),
 			environment: P.environment(),
-			has_error: P.optionalFlag("Only spans with status Error"),
+			has_error: P.optionalFlag(
+				"true: only spans with status Error. false: only spans without it. Omit for both",
+			),
 			min_duration_ms: P.optionalNumber("Minimum duration in milliseconds"),
 			max_duration_ms: P.optionalNumber("Maximum duration in milliseconds"),
 			http_method: P.optionalText("Only spans with this HTTP method"),
