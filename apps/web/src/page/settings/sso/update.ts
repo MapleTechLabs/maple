@@ -526,6 +526,26 @@ const SUCCESS_TITLES = {
 	removeBypass: "Break-glass member removed",
 } as const satisfies { readonly [A in WriteAction]: string }
 
+/** Names the failed action; the server's message says why. */
+const FAILURE_TITLES = {
+	addDomain: "Couldn't add the domain",
+	verifyDomain: "Couldn't verify the domain",
+	removeDomain: "Couldn't remove the domain",
+	createConnection: "Couldn't connect the identity provider",
+	updateConnection: "Couldn't save the identity provider",
+	enforce: "Couldn't require SSO",
+	unenforce: "Couldn't stop requiring SSO",
+	deleteConnection: "Couldn't remove the identity provider",
+	createDirectory: "Couldn't set up SCIM",
+	rotateToken: "Couldn't rotate the SCIM token",
+	pause: "Couldn't pause SCIM",
+	resume: "Couldn't resume SCIM",
+	deleteDirectory: "Couldn't remove SCIM",
+	saveMappings: "Couldn't save the role mappings",
+	addBypass: "Couldn't add the break-glass member",
+	removeBypass: "Couldn't remove the break-glass member",
+} as const satisfies { readonly [A in WriteAction]: string }
+
 /** The dialog a successful write closes, and the state it clears. */
 const afterSuccess = (model: Model, action: WriteAction): Return => {
 	switch (action) {
@@ -559,17 +579,22 @@ const afterSuccess = (model: Model, action: WriteAction): Return => {
 	}
 }
 
-const failed = (model: Model, failure: LoadFailure): Return => ({
+const failed = (model: Model, action: WriteAction, failure: LoadFailure): Return => ({
 	model: { ...model, pending: null },
-	outMessage: toast("error", failure.title, failureMessage(failure)),
+	outMessage: toast("error", FAILURE_TITLES[action], failureMessage(failure)),
 })
 
 const settled = (model: Model, action: WriteAction, document: EnterpriseSsoDocument): Return => {
+	// A pasted URL is saved as its domain: the toast names what was actually added.
+	const title =
+		action === "addDomain"
+			? `Added ${normalizeDomain(model.domainField.value)}. Publish the TXT record, then verify it.`
+			: SUCCESS_TITLES[action]
 	const step = afterSuccess(
 		{ ...model, pending: null, document: AsyncData.Success({ data: document }) },
 		action,
 	)
-	return { ...step, outMessage: toast("success", SUCCESS_TITLES[action]) }
+	return { ...step, outMessage: toast("success", title) }
 }
 
 const fieldStep = (model: Model, child: Field.Message): Return => {
@@ -653,7 +678,7 @@ export const update = (model: Model, message: Message): Return =>
 		CompletedWrite: ({ action, result }) =>
 			Result.match(result, {
 				onSuccess: (document) => settled(model, action, document),
-				onFailure: (failure) => failed(model, failure),
+				onFailure: (failure) => failed(model, action, failure),
 			}),
 		CompletedIssueToken: ({ action, result }) =>
 			Result.match(result, {
@@ -669,7 +694,7 @@ export const update = (model: Model, message: Message): Return =>
 					)
 					return { ...merge(step, revealed), outMessage: step.outMessage }
 				},
-				onFailure: (failure) => failed(model, failure),
+				onFailure: (failure) => failed(model, action, failure),
 			}),
 		GotCopyMessage: ({ key, message: child }) => {
 			const step = CopyButton.update(model.copies[key] ?? CopyButton.init(), child)

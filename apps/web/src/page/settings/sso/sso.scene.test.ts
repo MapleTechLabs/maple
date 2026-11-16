@@ -392,4 +392,26 @@ describe("sso tab", () => {
 		)
 		expect(names(checkout)).toContain("OpenSsoAddOnCheckout")
 	})
+
+	test("toasts name what happened: the domain a pasted URL saved as, and the action that failed", () => {
+		const typed = { ...loaded(doc()), domainField: Field.init("https://Acme.com/login") }
+		const added = update(
+			typed,
+			Message.CompletedWrite({
+				action: "addDomain",
+				result: Result.succeed(doc({ domains: [verifiedDomain] })),
+			}),
+		)
+		expect(added.outMessage).toMatchObject({
+			title: "Added acme.com. Publish the TXT record, then verify it.",
+		})
+		const refused = update(
+			loaded(doc()),
+			Message.CompletedWrite({
+				action: "verifyDomain",
+				result: Result.fail(toLoadFailure(new Error("No matching TXT record"))),
+			}),
+		)
+		expect(refused.outMessage).toMatchObject({ title: "Couldn't verify the domain" })
+	})
 })
