@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Option, Schema } from "effect"
+import { Option, Schema, String as Str } from "effect"
 import { cloudTrailAuditEvent } from "./cloudtrail-events"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
@@ -89,5 +89,20 @@ describe("cloudTrailAuditEvent", () => {
 				userIdentity: { type: "IAMUser" },
 			}),
 		).toBeUndefined()
+	})
+
+	it("keeps a large record's identity but drops its request and response past 32 KB", () => {
+		const event = mapped({
+			eventSource: "lambda.amazonaws.com",
+			eventName: "UpdateFunctionCode",
+			userIdentity: { type: "IAMUser", userName: "bob" },
+			requestParameters: { zipFile: Str.repeat(40 * 1024)("x") },
+			responseElements: { ok: true },
+		})
+		expect(event?.raw).toMatchObject({
+			eventName: "UpdateFunctionCode",
+			userIdentity: { userName: "bob" },
+		})
+		expect(event?.raw?.["requestParameters"]).toBeUndefined()
 	})
 })

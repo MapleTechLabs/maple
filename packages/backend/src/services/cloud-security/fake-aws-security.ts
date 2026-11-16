@@ -81,6 +81,8 @@ export interface FakeRegion {
 	securityhub?: Array<FakeSecurityHubFinding>
 	inspector?: Array<FakeInspectorFinding>
 	accessAnalyzer?: Array<FakeAccessAnalyzerFinding>
+	/** The account analyzer's status; ACTIVE when absent. */
+	analyzerStatus?: "ACTIVE" | "CREATING" | "FAILED"
 	cloudtrail?: Array<FakeCloudTrailEvent>
 }
 
@@ -361,7 +363,7 @@ export const makeFakeAwsSecurity = (fallback: HttpClient.HttpClient): FakeAwsSec
 										name: "account",
 										type: "ACCOUNT",
 										createdAt: iso(0),
-										status: "ACTIVE",
+										status: fake.analyzerStatus ?? "ACTIVE",
 									},
 								],
 				})

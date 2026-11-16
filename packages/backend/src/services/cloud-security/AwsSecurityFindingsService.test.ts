@@ -1,7 +1,7 @@
 import * as Retry from "@distilled.cloud/aws/Retry"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ENABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
-import { AwsAccountId, type AwsModule, OrgId, UserId } from "@maple/primitives"
+import { AwsAccountId, type AwsModule, AwsRegion, OrgId, UserId } from "@maple/primitives"
 import { Array as Arr, ConfigProvider, Effect, Layer, Schema, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { HttpClient } from "effect/http"
@@ -19,8 +19,8 @@ import {
 import { CloudSecurityStore } from "./CloudSecurityStore"
 import { AuditTrailService } from "../audit-trail/AuditTrailService"
 import type { AuditTrailEvent } from "@maple/domain/audit-trail"
-import { CLOUDTRAIL_LATE_MS } from "./aws-security-readers"
-import { type FakeGuardDutyFinding, makeFakeAwsSecurity } from "./fake-aws-security"
+import { CLOUDTRAIL_LATE_MS, CLOUDTRAIL_OVERLAP_MS } from "./aws-security-readers"
+import { type FakeGuardDutyFinding, type FakeRegion, makeFakeAwsSecurity } from "./fake-aws-security"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -465,14 +465,18 @@ describe("AwsSecurityFindingsService", () => {
 			yield* TestClock.adjust("5 minutes")
 			yield* poll
 			const [lookup] = Arr.filter(world.aws.requests, (request) => request.service === "cloudtrail")
-			// The next read starts exactly where the last one stopped.
-			assert.strictEqual(lookup?.body["StartTime"], (firstPollAt - CLOUDTRAIL_LATE_MS) / 1000)
+			// The next read starts a little before where the last one stopped.
+			assert.strictEqual(
+				lookup?.body["StartTime"],
+				(firstPollAt - CLOUDTRAIL_LATE_MS - CLOUDTRAIL_OVERLAP_MS) / 1000,
+			)
 		}).pipe(Effect.provide(world.layer))
 	})
 
 	it.effect("catches up on more Inspector findings than one poll reads, one whole window at a time", () => {
 		const world = makeWorld()
-		const total = WINDOW_PAGES * 100 + 500
+		// Past the 2,000 a single capped read used to stop at.
+		const total = MAX_PAGES * 100 + 100
 		world.aws.regions["us-east-1"] = {
 			inspector: Arr.makeBy(total, (index) => ({
 				arn: `arn:aws:inspector2:us-east-1:111111111111:finding/${index}`,
@@ -556,6 +560,34 @@ describe("AwsSecurityFindingsService", () => {
 			yield* TestClock.adjust(RECONCILE_AFTER_MS)
 			yield* poll
 			assert.strictEqual((yield* findingRows(world))[0]?.status, "archived")
+			// Reopened in the console, again without moving UpdatedAt.
+			region.securityhub = [{ ...control, workflow: "NEW" as const }, newer]
+			yield* TestClock.adjust(RECONCILE_AFTER_MS + 60_000)
+			yield* poll
+			assert.strictEqual((yield* findingRows(world))[0]?.status, "active")
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("picks up a GuardDuty finding archived without a new update time", () => {
+		const world = makeWorld()
+		const old = sshBruteForce({ id: "gd-old", updatedAtMs: NOW - 3600_000 })
+		const newer = sshBruteForce({ id: "gd-new", updatedAtMs: NOW - 60_000 })
+		const region = { guardduty: [old, newer] }
+		world.aws.regions["us-east-1"] = region
+		return Effect.gen(function* () {
+			yield* connect(world)
+			yield* poll
+			region.guardduty = [{ ...old, archived: true }, newer]
+			yield* TestClock.adjust(RECONCILE_AFTER_MS + 60_000)
+			yield* poll
+			const rows = yield* findingRows(world)
+			assert.deepStrictEqual(
+				Arr.map(rows, (row) => [row.finding_id, row.status]),
+				[
+					["gd-new", "active"],
+					["gd-old", "archived"],
+				],
+			)
 		}).pipe(Effect.provide(world.layer))
 	})
 
@@ -577,6 +609,16 @@ describe("AwsSecurityFindingsService", () => {
 			guardduty: [
 				sshBruteForce({ id: "gd-own" }),
 				sshBruteForce({ id: "gd-member", accountId: "222222222222" }),
+			],
+			inspector: [
+				{
+					arn: "insp-member",
+					title: "CVE",
+					severity: "HIGH",
+					status: "ACTIVE" as const,
+					updatedAtMs: NOW - 3600_000,
+					accountId: "222222222222",
+				},
 			],
 		}
 		return Effect.gen(function* () {
@@ -725,6 +767,78 @@ describe("AwsSecurityFindingsService", () => {
 				(row) => row.source === "inspector",
 			)
 			assert.isAbove(state?.cursorAt ?? 0, massUpdate)
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("moves past a dense burst of CloudTrail writes right at the cursor while behind", () => {
+		const world = makeWorld()
+		const lagged = NOW - 40 * 60_000
+		const burst = 300
+		world.aws.regions["us-east-1"] = {
+			cloudtrail: Arr.makeBy(burst, (index) => ({
+				eventId: `ct-${index}`,
+				eventTimeMs: lagged + 1000 + index * 100,
+				record: {
+					eventSource: "ec2.amazonaws.com",
+					eventName: "RunInstances",
+					userIdentity: { type: "IAMUser", userName: "ci" },
+				},
+			})),
+		}
+		return Effect.gen(function* () {
+			const connection = yield* connect(world)
+			// The region's cursor sits just before the burst, well behind the late margin.
+			const store = yield* CloudSecurityStore
+			yield* store.recordServiceState({
+				orgId,
+				connectionId: connection.id,
+				region: Schema.decodeSync(AwsRegion)("us-east-1"),
+				source: "cloudtrail",
+				state: "enabled",
+				cursorAt: lagged,
+				windowMs: null,
+				lastError: null,
+				checkedAt: NOW - 60_000,
+			})
+			yield* Effect.forEach(
+				Arr.range(1, 3),
+				() => Effect.andThen(poll, TestClock.adjust("5 minutes")),
+				{
+					discard: true,
+				},
+			)
+			assert.strictEqual(
+				new Set(Arr.map(world.audit, ({ event }) => event.providerEventId)).size,
+				burst,
+			)
+			const [state] = Arr.filter(
+				yield* store.serviceStates(orgId, connection.id),
+				(row) => row.source === "cloudtrail",
+			)
+			assert.isAbove(state?.cursorAt ?? 0, lagged + 1000 + burst * 100)
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("resolves nothing while an analyzer is not active", () => {
+		const world = makeWorld()
+		const finding = {
+			id: "aa-1",
+			findingType: "ExternalAccess",
+			status: "ACTIVE" as const,
+			resource: "arn:aws:s3:::shared",
+			updatedAtMs: NOW - 3600_000,
+		}
+		const region: FakeRegion = { accessAnalyzer: [finding] }
+		world.aws.regions["us-east-1"] = region
+		return Effect.gen(function* () {
+			yield* connect(world)
+			yield* poll
+			// Recreated: the new analyzer is still creating and lists nothing yet.
+			region.analyzerStatus = "CREATING"
+			region.accessAnalyzer = []
+			yield* TestClock.adjust("5 minutes")
+			yield* poll
+			assert.strictEqual((yield* findingRows(world))[0]?.status, "active")
 		}).pipe(Effect.provide(world.layer))
 	})
 })

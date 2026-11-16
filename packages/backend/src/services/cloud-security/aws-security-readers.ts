@@ -25,6 +25,7 @@ import {
 import { AwsRegion } from "@maple/primitives"
 import {
 	Array as Arr,
+	Clock,
 	DateTime,
 	Duration,
 	Effect,
@@ -87,6 +88,8 @@ export interface RegionRead {
 	readonly lastError: string | null
 	/** Every id a complete read of a service read whole returned; null when the read was not whole. */
 	readonly seenIds: ReadonlyArray<string> | null
+	/** For a windowed read: the window size the next poll starts with; null keeps the stored one. */
+	readonly windowMs: number | null
 }
 
 export interface ReadTarget {
@@ -96,7 +99,11 @@ export interface ReadTarget {
 	readonly region: AwsRegion
 	/** The stored cursor: how far earlier reads got. Null on the first poll. */
 	readonly cursorAt: number | null
+	/** The window size the last windowed read ended on. Null before one. */
+	readonly windowMs: number | null
 	readonly nowMs: number
+	/** A read starts no page past this; what is left waits for the next poll. */
+	readonly deadlineMs: number
 }
 
 const codeOf = (error: { readonly _tag: string }) =>
@@ -167,11 +174,15 @@ type Page<A> = Effect.Effect<
 	AwsSecurityReadError
 >
 
-/** Pages of a listing, each handed to `onPage`, until it ends or `maxPages`; `complete` says which. */
+/**
+ * Pages of a listing, each handed to `onPage`, until it ends, `maxPages`, or the deadline passes
+ * between two pages; `complete` says whether it ended.
+ */
 const pagesOf = <A, E>(
 	page: (token: string | undefined) => Page<A>,
 	onPage: Sink<A, E>,
-	maxPages: number = MAX_PAGES,
+	maxPages: number,
+	deadlineMs: number,
 ): Effect.Effect<PagesRead, AwsSecurityReadError | E> => {
 	const go = (
 		token: string | undefined,
@@ -182,9 +193,12 @@ const pagesOf = <A, E>(
 			Effect.flatMap(onPage(items), () => {
 				const read = { count: count + items.length, pages: pages + 1 }
 				if (next === undefined || next === "") return Effect.succeed({ ...read, complete: true })
-				return read.pages >= maxPages
-					? Effect.succeed({ ...read, complete: false })
-					: go(next, read.count, read.pages)
+				if (read.pages >= maxPages) return Effect.succeed({ ...read, complete: false })
+				return Effect.flatMap(Clock.currentTimeMillis, (now) =>
+					now >= deadlineMs
+						? Effect.succeed({ ...read, complete: false })
+						: go(next, read.count, read.pages),
+				)
 			}),
 		)
 	return go(undefined, 0, 0)
@@ -195,14 +209,21 @@ interface WindowsRead {
 	readonly cursorAt: number
 	readonly count: number
 	readonly caughtUp: boolean
-	/** A one-minute window held more than a window's pages, and the rest of it was skipped. */
+	/** A smallest window held more than every page left, and the rest of it was skipped. */
 	readonly skipped: boolean
+	/** The span the next read starts with, so splitting a dense spot carries over between polls. */
+	readonly spanMs: number
 }
+
+/** The smallest window: both services keep their times to the second. */
+const MIN_WINDOW_MS = 1000
 
 /**
  * Reads `[startMs, endMs]` oldest window first, for listings that cannot sort by time. A whole window
- * moves the cursor past it and doubles the next span; one that fills `WINDOW_PAGES` is read again at
- * half the span, and the span stops growing for the rest of the read.
+ * moves the cursor past it and doubles the next span. One that fills `WINDOW_PAGES` is read again
+ * smaller: sized from the oldest item it reached when the listing is newest first, an eighth otherwise.
+ * The span is kept with the cursor, so a poll either moves the cursor or narrows the span, and a dense
+ * spot is never split from scratch twice. A one-second window gets every page left; past that it is skipped.
  */
 const readWindows = <E>(
 	plan: {
@@ -210,6 +231,8 @@ const readWindows = <E>(
 		readonly endMs: number
 		readonly spanMs: number
 		readonly maxSpanMs: number
+		readonly budgetPages: number
+		readonly deadlineMs: number
 	},
 	readWindow: (
 		fromMs: number,
@@ -226,38 +249,44 @@ const readWindows = <E>(
 		skipped: boolean,
 	): Effect.Effect<WindowsRead, AwsSecurityReadError | E> => {
 		if (from >= plan.endMs)
-			return Effect.succeed({ cursorAt: plan.endMs, count, caughtUp: true, skipped })
-		if (pagesLeft <= 0) return Effect.succeed({ cursorAt: from, count, caughtUp: false, skipped })
-		const to = Num.min(plan.endMs, from + span)
-		const allowed = Num.min(WINDOW_PAGES, pagesLeft)
-		return Effect.flatMap(readWindow(from, to, allowed), (read) => {
-			const left = pagesLeft - read.pages
-			const total = count + read.count
-			if (read.complete) return go(to, Num.min(ceiling, span * 2), ceiling, left, total, skipped)
-			// The read's budget ran out inside the window: the next poll reads it again.
-			if (allowed < WINDOW_PAGES)
-				return Effect.succeed({ cursorAt: from, count: total, caughtUp: false, skipped })
+			return Effect.succeed({ cursorAt: plan.endMs, count, caughtUp: true, skipped, spanMs: span })
+		const stop = { cursorAt: from, count, caughtUp: false, skipped, spanMs: span }
+		if (pagesLeft <= 0) return Effect.succeed(stop)
+		return Effect.flatMap(Clock.currentTimeMillis, (now) => {
+			if (now >= plan.deadlineMs) return Effect.succeed(stop)
+			const to = Num.min(plan.endMs, from + span)
 			const width = to - from
-			if (width > MINUTE_MS) {
-				// A newest-first listing says how much of the window its pages covered: size the next one to fit.
-				// Without one, an eighth: a one-minute window is two splits away from an hour.
+			const smallest = width <= MIN_WINDOW_MS
+			const allowed = smallest ? pagesLeft : Num.min(WINDOW_PAGES, pagesLeft)
+			return Effect.flatMap(readWindow(from, to, allowed), (read) => {
+				const left = pagesLeft - read.pages
+				const total = count + read.count
+				if (read.complete) return go(to, Num.min(ceiling, span * 2), ceiling, left, total, skipped)
+				if (smallest) {
+					// Every page left went to one second and it still had more: skip the rest of it.
+					return read.pages < allowed
+						? Effect.succeed({ ...stop, count: total })
+						: go(to, MIN_WINDOW_MS, plan.maxSpanMs, left, total, true)
+				}
+				// The budget or the deadline ran out inside the window: the next poll reads it again.
+				if (read.pages < WINDOW_PAGES) return Effect.succeed({ ...stop, count: total })
 				const fitted =
 					read.oldestMs === undefined || read.oldestMs <= from
 						? Math.floor(width / 8)
 						: Math.floor((to - read.oldestMs) * 0.8)
-				const next = Num.max(MINUTE_MS, Num.min(fitted, Math.floor(width / 2)))
-				return go(from, next, next, left, total, skipped)
-			}
-			return go(to, span, ceiling, left, total, true)
+				const next = Num.max(MIN_WINDOW_MS, Num.min(fitted, Math.floor(width / 2)))
+				// Growing back stops short of the window that was too full.
+				return go(from, next, Num.max(next, Math.floor(width / 2)), left, total, skipped)
+			})
 		})
 	}
-	const span = Num.max(MINUTE_MS, plan.spanMs)
-	return go(plan.startMs, span, plan.maxSpanMs, MAX_PAGES, 0, false)
+	const span = Num.min(plan.maxSpanMs, Num.max(MIN_WINDOW_MS, plan.spanMs))
+	return go(plan.startMs, span, plan.maxSpanMs, plan.budgetPages, 0, false)
 }
 
 const windowsError = (read: WindowsRead, noun: string): string | null => {
 	if (read.skipped)
-		return `More ${noun} in one minute than one read takes; the rest of that minute was skipped.`
+		return `More ${noun} in one second than one poll reads; the rest of that second was skipped.`
 	return read.caughtUp ? null : "Catching up: the next poll continues."
 }
 
@@ -336,6 +365,7 @@ const notEnabled: RegionRead = {
 	cursorAt: null,
 	lastError: null,
 	seenIds: null,
+	windowMs: null,
 }
 
 const CAPPED = "More findings changed than one poll reads; the next one continues."
@@ -432,6 +462,8 @@ const readGuardDuty = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =>
 					return { items, next: listed.NextToken }
 				}),
 			tracked.sink,
+			MAX_PAGES,
+			target.deadlineMs,
 		)
 		const newest = yield* Ref.get(tracked.newest)
 		return {
@@ -440,6 +472,7 @@ const readGuardDuty = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =>
 			cursorAt: sortedCursor(target, newest),
 			lastError: read.complete ? null : CAPPED,
 			seenIds: null,
+			windowMs: null,
 		} satisfies RegionRead
 	})
 
@@ -527,6 +560,8 @@ const readSecurityHub = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =>
 					}),
 				),
 			tracked.sink,
+			MAX_PAGES,
+			target.deadlineMs,
 		)
 		const newest = yield* Ref.get(tracked.newest)
 		return {
@@ -535,6 +570,7 @@ const readSecurityHub = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =>
 			cursorAt: sortedCursor(target, newest),
 			lastError: read.complete ? null : CAPPED,
 			seenIds: null,
+			windowMs: null,
 		} satisfies RegionRead
 	})
 
@@ -572,7 +608,7 @@ export const normalizeInspector = (finding: Inspector.Finding): Option.Option<Fi
 
 /** Inspector keeps an open finding indefinitely: the first read reaches back a year. */
 export const INSPECTOR_BACKFILL_MS = 365 * DAY_MS
-/** Inspector's update index lags a little: a read stops this far short of now, and the next starts there. */
+/** Inspector's update index lags a little: a read stops this far short of now. Late listings meet the refresh by id. */
 const INSPECTOR_LATE_MS = 5 * MINUTE_MS
 
 /** Inspector cannot sort by update time, so it is read in update-time windows, oldest first. */
@@ -589,8 +625,10 @@ const readInspector = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =>
 			{
 				startMs: target.cursorAt ?? endMs - INSPECTOR_BACKFILL_MS,
 				endMs,
-				spanMs: target.cursorAt === null ? 7 * DAY_MS : 60 * MINUTE_MS,
+				spanMs: target.windowMs ?? (target.cursorAt === null ? 7 * DAY_MS : 60 * MINUTE_MS),
 				maxSpanMs: 90 * DAY_MS,
+				budgetPages: MAX_PAGES,
+				deadlineMs: target.deadlineMs,
 			},
 			(fromMs, toMs, maxPages) =>
 				pagesOf(
@@ -617,6 +655,7 @@ const readInspector = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =>
 						),
 					sink,
 					maxPages,
+					target.deadlineMs,
 				),
 		)
 		return {
@@ -625,6 +664,7 @@ const readInspector = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =>
 			cursorAt: read.cursorAt,
 			lastError: windowsError(read, "findings changed"),
 			seenIds: null,
+			windowMs: read.spanMs,
 		} satisfies RegionRead
 	})
 
@@ -723,9 +763,13 @@ const readAccessAnalyzer = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =
 						),
 						sink(findings),
 					),
+				MAX_PAGES,
+				target.deadlineMs,
 			),
 		)
-		const complete = Arr.every(reads, (read) => read.complete)
+		// An analyzer still being created, or failed, holds findings this read did not see.
+		const complete =
+			Arr.every(reads, (read) => read.complete) && active.length === listed.analyzers.length
 		const seenIds = yield* Ref.get(seen)
 		return {
 			state: "enabled",
@@ -733,6 +777,7 @@ const readAccessAnalyzer = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =
 			cursorAt: target.nowMs,
 			lastError: complete ? null : "This account has more findings than one poll reads.",
 			seenIds: complete ? seenIds : null,
+			windowMs: null,
 		} satisfies RegionRead
 	})
 
@@ -762,6 +807,7 @@ export const readSource = <E>(
 				cursorAt: null,
 				lastError: error.kind === "not_enabled" ? null : error.message,
 				seenIds: null,
+				windowMs: null,
 			} satisfies RegionRead),
 		),
 		Effect.withSpan("AwsSecurity.readSource", {
@@ -774,49 +820,71 @@ export const readSource = <E>(
 
 /** Security Hub takes this many values for one filter field. */
 const SECURITY_HUB_ID_BATCH = 20
+/** Inspector takes this many values for one string filter. */
+const INSPECTOR_ID_BATCH = 10
 
 /**
  * The current version of stored findings, by id: a status changed in the console does not always
  * move the service's update time. `missing` are ids the service no longer has.
  */
 export const refreshFindings = (
-	source: "guardduty" | "securityhub",
+	source: "guardduty" | "securityhub" | "inspector",
 	target: ReadTarget,
 	ids: ReadonlyArray<string>,
 ): Effect.Effect<{
 	readonly found: ReadonlyArray<FindingRead>
 	readonly missing: ReadonlyArray<string>
 }> => {
-	const fetch: Effect.Effect<ReadonlyArray<FindingRead>, AwsSecurityReadError> = source === "guardduty"
-		? Effect.flatMap(guardDutyDetector(target), (detectorId) =>
-				Option.isNone(detectorId)
-					? Effect.succeed([])
-					: Effect.map(
-							Effect.forEach(Arr.chunksOf(ids, 50), (chunk) =>
-								guardDutyFindings(target, detectorId.value, chunk),
-							),
-							Arr.flatten,
-						),
-			)
-		: Effect.map(
-				Effect.forEach(Arr.chunksOf(ids, SECURITY_HUB_ID_BATCH), (chunk) =>
+	const fetch: Effect.Effect<ReadonlyArray<FindingRead>, AwsSecurityReadError> = source === "inspector"
+		? Effect.map(
+				Effect.forEach(Arr.chunksOf(ids, INSPECTOR_ID_BATCH), (chunk) =>
 					Effect.map(
 						callAs(target)(
-							"SecurityHub.GetFindings",
-							SecurityHub.getFindings({
+							"Inspector.ListFindings",
+							Inspector.listFindings({
 								region: target.region,
-								Filters: {
-									...securityHubScope(target),
-									Id: Arr.map(chunk, (id) => ({ Value: id, Comparison: "EQUALS" })),
+								filterCriteria: {
+									awsAccountId: [{ comparison: "EQUALS", value: target.accountId }],
+									findingArn: Arr.map(chunk, (id) => ({ comparison: "EQUALS", value: id })),
 								},
-								MaxResults: 100,
+								maxResults: 100,
 							}),
 						),
-						(page) => Arr.getSomes(Arr.map(page.Findings, normalizeSecurityHub)),
+						(page) => Arr.getSomes(Arr.map(page.findings ?? [], normalizeInspector)),
 					),
 				),
 				Arr.flatten,
 			)
+		: source === "guardduty"
+			? Effect.flatMap(guardDutyDetector(target), (detectorId) =>
+					Option.isNone(detectorId)
+						? Effect.succeed([])
+						: Effect.map(
+								Effect.forEach(Arr.chunksOf(ids, 50), (chunk) =>
+									guardDutyFindings(target, detectorId.value, chunk),
+								),
+								Arr.flatten,
+							),
+				)
+			: Effect.map(
+					Effect.forEach(Arr.chunksOf(ids, SECURITY_HUB_ID_BATCH), (chunk) =>
+						Effect.map(
+							callAs(target)(
+								"SecurityHub.GetFindings",
+								SecurityHub.getFindings({
+									region: target.region,
+									Filters: {
+										...securityHubScope(target),
+										Id: Arr.map(chunk, (id) => ({ Value: id, Comparison: "EQUALS" })),
+									},
+									MaxResults: 100,
+								}),
+							),
+							(page) => Arr.getSomes(Arr.map(page.Findings, normalizeSecurityHub)),
+						),
+					),
+					Arr.flatten,
+				)
 	return fetch.pipe(
 		Effect.map((found) => {
 			const present = new Set(Arr.map(found, (finding) => finding.findingId))
@@ -860,6 +928,8 @@ export const enabledRegions = (
 						Arr.getSomes(Arr.map(regions, (region) => Option.fromUndefinedOr(region.RegionName))),
 					),
 				),
+			MAX_PAGES,
+			Number.POSITIVE_INFINITY,
 		)
 		const all = yield* Ref.get(names)
 		return Arr.filter(all, isRegion)
@@ -875,13 +945,18 @@ export const enabledRegions = (
 export const CLOUDTRAIL_LATE_MS = 15 * MINUTE_MS
 /** How far back the first read of a region goes. */
 export const CLOUDTRAIL_BACKFILL_MS = 60 * MINUTE_MS
-/** A region whose cursor fell further behind than this restarts here. */
+/** A region whose cursor fell further behind than this restarts here, and says what it skipped. */
 const CLOUDTRAIL_MAX_BEHIND_MS = DAY_MS
+/** Each read starts this far behind the cursor, for an event CloudTrail listed after the margin. */
+export const CLOUDTRAIL_OVERLAP_MS = 3 * MINUTE_MS
+/** Pages one CloudTrail read takes per poll: LookupEvents allows about 2 a second per region. */
+export const CLOUDTRAIL_PAGES = 40
 
 export interface CloudTrailRead {
 	readonly state: CloudServiceState
 	readonly events: number
 	readonly cursorAt: number | null
+	readonly windowMs: number | null
 	readonly lastError: string | null
 }
 
@@ -894,12 +969,21 @@ export const readCloudTrail = <E>(
 	sink: Sink<AuditTrailEvent, E>,
 ): Effect.Effect<CloudTrailRead, E> => {
 	const endMs = target.nowMs - CLOUDTRAIL_LATE_MS
+	const oldestKept = endMs - CLOUDTRAIL_MAX_BEHIND_MS
+	const dropped = target.cursorAt !== null && target.cursorAt < oldestKept
 	const startMs =
 		target.cursorAt === null
 			? endMs - CLOUDTRAIL_BACKFILL_MS
-			: Num.max(endMs - CLOUDTRAIL_MAX_BEHIND_MS, target.cursorAt)
+			: Num.max(oldestKept, target.cursorAt - CLOUDTRAIL_OVERLAP_MS)
 	return readWindows(
-		{ startMs, endMs, spanMs: 15 * MINUTE_MS, maxSpanMs: CLOUDTRAIL_MAX_BEHIND_MS },
+		{
+			startMs,
+			endMs,
+			spanMs: target.windowMs ?? 15 * MINUTE_MS,
+			maxSpanMs: CLOUDTRAIL_MAX_BEHIND_MS,
+			budgetPages: CLOUDTRAIL_PAGES,
+			deadlineMs: target.deadlineMs,
+		},
 		(fromMs, toMs, maxPages) =>
 			Effect.gen(function* () {
 				// LookupEvents answers newest first: the oldest event read sizes a split window.
@@ -937,6 +1021,7 @@ export const readCloudTrail = <E>(
 							sink(events),
 						),
 					maxPages,
+					target.deadlineMs,
 				)
 				const oldestMs = yield* Ref.get(oldest)
 				return oldestMs === undefined ? read : { ...read, oldestMs }
@@ -945,14 +1030,19 @@ export const readCloudTrail = <E>(
 		Effect.map((read): CloudTrailRead => ({
 			state: "enabled",
 			events: read.count,
-			cursorAt: read.cursorAt,
-			lastError: windowsError(read, "changes"),
+			// The overlap never moves the cursor back.
+			cursorAt: Num.max(read.cursorAt, target.cursorAt ?? 0),
+			windowMs: read.spanMs,
+			lastError: dropped
+				? "This region fell more than a day behind; changes older than a day were skipped."
+				: windowsError(read, "changes"),
 		})),
 		Effect.catchIf(isReadError, (error) =>
 			Effect.succeed({
 				state: error.kind,
 				events: 0,
 				cursorAt: null,
+				windowMs: null,
 				lastError: error.message,
 			} satisfies CloudTrailRead),
 		),

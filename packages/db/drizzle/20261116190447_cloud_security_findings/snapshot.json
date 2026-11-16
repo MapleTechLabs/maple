@@ -1,7 +1,7 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "f29bf1e48c94b0834c32c34587e056185098098a38e9ed51c22929602d0f5181",
+	"id": "f588482401279ffbf45173291b0fb1175dafd72cd8f7f41f7161004af92c0914",
 	"prevIds": [
 		"5fa05f5b16fe30b3669d13615281ef6457c8ed2742d1203703e4c696a396bb47"
 	],
@@ -5484,8 +5484,18 @@
 		{
 			"kind": "column",
 			"table": "cloud_security_service_states",
-			"name": "last_error",
+			"name": "window_ms",
 			"position": 6,
+			"type": "bigint",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_service_states",
+			"name": "last_error",
+			"position": 7,
 			"type": "text",
 			"notNull": false,
 			"default": null,
@@ -5495,7 +5505,7 @@
 			"kind": "column",
 			"table": "cloud_security_service_states",
 			"name": "checked_at",
-			"position": 7,
+			"position": 8,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
