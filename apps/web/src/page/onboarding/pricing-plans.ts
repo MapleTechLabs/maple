@@ -12,6 +12,7 @@ export const FEATURE_ICONS = new Map<string, IconName>([
 	["logs", "FileIcon"],
 	["traces", "PulseIcon"],
 	["metrics", "ChartLineIcon"],
+	["profiles", "FireIcon"],
 	["browser_sessions", "PlayRotateClockwiseIcon"],
 	["product_events", "GlobePointerIcon"],
 	["ai_credits", "SquareSparkleIcon"],
@@ -21,6 +22,7 @@ const DATA_FEATURE_LABELS = new Map<string, string>([
 	["logs", "Logs"],
 	["traces", "Traces"],
 	["metrics", "Metrics"],
+	["profiles", "Profiles"],
 	["browser_sessions", "Browser sessions"],
 	["product_events", "Product events"],
 	["ai_credits", "AI usage"],
@@ -72,7 +74,7 @@ const padCents = (text: string): string =>
 	replaceWith(text, /\$(\d+)\.(\d)(?!\d)/g, (_, dollars = "", tenths = "") => `$${dollars}.${tenths}0`)
 
 const normalizeDetailText = (text: string): string =>
-	padCents(Str.replace(/\bper\s+(?:[\d,]+\s+)?(?:logs?|traces?|metrics?)\b/i, "per GB")(text))
+	padCents(Str.replace(/\bper\s+(?:[\d,]+\s+)?(?:logs?|traces?|metrics?|profiles?)\b/i, "per GB")(text))
 
 /** Autumn words the rate per billing block; events are quoted per million, in its style. */
 const formatDetail = (item: CatalogPlanItem): string | undefined => {
@@ -91,6 +93,7 @@ export const ENTERPRISE_DATA_FEATURES: ReadonlyArray<FeatureRow> = [
 	{ featureId: "logs", label: "Logs", value: "Custom", detail: null },
 	{ featureId: "traces", label: "Traces", value: "Custom", detail: null },
 	{ featureId: "metrics", label: "Metrics", value: "Custom", detail: null },
+	{ featureId: "profiles", label: "Profiles", value: "Custom", detail: null },
 	{ featureId: "browser_sessions", label: "Browser sessions", value: "Custom", detail: null },
 	{ featureId: "product_events", label: "Product events", value: "Custom", detail: null },
 ]
