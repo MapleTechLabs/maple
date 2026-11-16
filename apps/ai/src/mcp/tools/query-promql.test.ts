@@ -190,6 +190,24 @@ describe("query_promql", () => {
 		}),
 	)
 
+	it.effect("counts the window's end point, as the engine does, when refusing a step", () =>
+		Effect.gen(function* () {
+			// 1 100 s at 100ms is exactly 11 000 steps, which the engine evaluates as 11 001 points.
+			const error = yield* Effect.flip(
+				run(
+					{
+						query: "up",
+						start_time: "2026-11-15 10:00:00",
+						end_time: "2026-11-15 10:18:20",
+						step: "100ms",
+					},
+					() => Effect.die("not reached"),
+				),
+			)
+			expect(error).toMatchObject({ _tag: "@maple/mcp/errors/McpInvalidInputError", parameter: "step" })
+		}),
+	)
+
 	it.effect("prints a sub-second step the way the step parameter accepts it", () =>
 		Effect.gen(function* () {
 			const { text } = yield* run({ query: "up", ...WINDOW, step: "500ms" }, () =>
