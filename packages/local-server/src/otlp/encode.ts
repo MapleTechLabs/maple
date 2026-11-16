@@ -7,6 +7,7 @@
  *     and no attribute mappings.
  *   - The OrgId is NOT part of the NDJSON; it is injected by the INSERT
  *     statement, so no org field is emitted here.
+ *   - GenAI spans get the gateway's `maple_ai.*` stamps (`./ai-stamp`).
  *
  * Input is the normalized lowerCamelCase object shape produced by both
  * `decode*Request` (protobuf) and `JSON.parse` of an OTLP/JSON body:
@@ -20,6 +21,7 @@
 
 import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { encodeJson } from "../json"
+import { stampAiSpan } from "./ai-stamp"
 
 export interface EncodedBatch {
 	datasource: string
@@ -281,7 +283,7 @@ function anyValueJson(value: AnyValue | undefined): AttrJson {
  * notation for large/small magnitudes, so we expand any exponent into a plain
  * decimal string.
  */
-function formatDouble(num: number): string {
+export function formatDouble(num: number): string {
 	if (Number.isNaN(num)) {
 		return "NaN"
 	}
@@ -623,7 +625,12 @@ export function encodeTraces(req: unknown): EncodedBatch[] {
 
 			for (const span of scopeSpans.spans ?? []) {
 				const traceId = traceIdHex(span.traceId, "span.traceId")
-				const spanAttrs = attrMap(span.attributes)
+				const spanAttrs = stampAiSpan(
+					attrMap(span.attributes),
+					span.name ?? "",
+					span.kind,
+					span.status?.code,
+				)
 
 				const events = span.events ?? []
 				const links = span.links ?? []
