@@ -642,6 +642,70 @@ describe("aws card", () => {
 			"ReadAwsRemovedStacks",
 		)
 	})
+	describe("the Security scan module", () => {
+		const SECURITY_MODULE = {
+			module: "security",
+			title: "Security scan",
+			summary: "GuardDuty, Security Hub, Inspector and Access Analyzer findings, and CloudTrail.",
+			available: true,
+		} as const
+		const withSecurity = (connections: ReadonlyArray<V2AwsConnection>): Model =>
+			pageUpdate(
+				entered(),
+				Message.CompletedLoadAws({
+					key: statusKey(context, "aws"),
+					result: Result.succeed({
+						object: "aws_integration",
+						available: true,
+						modules: [COST_MODULE, SECURITY_MODULE],
+						connections,
+					} satisfies V2AwsIntegration),
+				}),
+			).model
+		const verified = (overrides: Partial<V2AwsConnection> = {}) =>
+			connection({
+				verified_at: "2026-10-23T08:00:00.000Z",
+				template_version: 2,
+				granted_modules: [],
+				...overrides,
+			})
+		const securitySwitch = role("switch", { name: "Security scan" })
+
+		test("granted, it reads and links to the cloud findings", () => {
+			scene(
+				{ update: pageUpdate, view },
+				given(withSecurity([verified({ modules: ["security"], granted_modules: ["security"] })])),
+				expectView(securitySwitch).toBeChecked(),
+				expectView(text("Reading")).toExist(),
+				expectView(role("link", { name: "Open cloud findings" })).toExist(),
+			)
+		})
+
+		test("asked for but not granted, it says the stack needs an update", () => {
+			scene(
+				{ update: pageUpdate, view },
+				given(withSecurity([verified({ modules: ["security"] })])),
+				expectView(securitySwitch).toBeChecked(),
+				expectView(text("Needs a stack update")).toExist(),
+			)
+		})
+
+		test("its switch asks for the module beside the others", () => {
+			const model = withSecurity([verified({ modules: ["cost"], granted_modules: ["cost"] })])
+			expect(
+				pageUpdate(model, Message.ToggledAwsModule({ id: connectionId, module: "security" }))
+					.commands,
+			).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						name: UpdateAwsModules.name,
+						args: { id: connectionId, modules: ["cost", "security"] },
+					}),
+				]),
+			)
+		})
+	})
+
 	describe("the Cost module", () => {
 		const verified_at = Schema.decodeSync(Timestamp)("2026-10-21T12:05:00.000Z")
 		const verified = (overrides: Partial<V2AwsConnection> = {}) =>

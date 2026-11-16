@@ -55,8 +55,8 @@ const COPY = {
 	aws: {
 		brand: providerBrand("aws"),
 		sends: "CloudTrail management changes: IAM, keys, sign-ins, resources",
-		turnOn: "Turn on the Security module of the AWS connection and run its setup script again.",
-		connect: "Connect an AWS account with the Security module on.",
+		turnOn: "Turn on the Security scan module of the AWS connection, then run its setup script again so the role grants it.",
+		connect: "Connect an AWS account with the Security scan module on.",
 	},
 } satisfies Record<AuditTrailProvider, SourceCopy>
 

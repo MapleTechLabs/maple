@@ -1,3 +1,4 @@
+import type { AwsModule } from "@maple/primitives"
 import type { V2AwsConnection } from "@maple/domain/http/v2"
 import { countLabel } from "@maple/ui/lib/format"
 import { Option, Array as Arr } from "effect"
@@ -96,6 +97,9 @@ const stackRail = (h: H, connection: V2AwsConnection | null, hasCost: boolean): 
 	})
 
 /** An opt-in module for the account about to be connected, unticked until the user picks it. */
+/** The modules the connect flow offers a checkbox for, when the org is offered them. */
+const OFFERED_IN_FLOW = ["cost", "security"] as const satisfies ReadonlyArray<AwsModule>
+
 const moduleChoice = (h: H, model: Model, info: AwsModuleInfo): Html => {
 	const isChecked = model.awsCard.newModules.includes(info.module)
 	return choiceCard(
@@ -184,10 +188,13 @@ const accountForm = (h: H, model: Model): Html => {
 							card.createError,
 						),
 			]),
-			...Option.match(offeredModule(awsStatusOf(model), "cost"), {
-				onNone: () => [],
-				onSome: (info) => [moduleChoice(h, model, info)],
-			}),
+			// Every module this org is offered, in the order the connection card lists them.
+			...Arr.flatMap(OFFERED_IN_FLOW, (module) =>
+				Option.match(offeredModule(awsStatusOf(model), module), {
+					onNone: () => [],
+					onSome: (info) => [moduleChoice(h, model, info)],
+				}),
+			),
 		],
 	)
 }
