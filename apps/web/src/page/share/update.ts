@@ -168,8 +168,8 @@ const reload = (model: Model, pageTimeZone: string): Return => {
 	const requested =
 		model.clockRead === "Reload"
 			? {}
-			: Rec.filter(model.requested, (_, widgetId) => model.states[widgetId]?._tag !== "Error")
-	return flush(withWindow({ ...model, requested }, pageTimeZone))
+			: Rec.filter(model.requested, (key, widgetId) => model.failedKeys[widgetId] !== key)
+	return flush(withWindow({ ...model, requested, failedKeys: {} }, pageTimeZone))
 }
 
 export const init = (route: Route): Return => ({
@@ -181,6 +181,7 @@ export const init = (route: Route): Return => ({
 		window: null,
 		options: {},
 		requested: {},
+		failedKeys: {},
 		isFlushScheduled: false,
 		queuedBatches: [],
 		sentBatchId: 0,
@@ -234,9 +235,15 @@ export const update = (model: Model, message: Message, pageTimeZone: string): Re
 				...Rec.fromEntries(Arr.map(Rec.keys(keys), (widgetId) => [widgetId, missing])),
 				...states,
 			}
-			const isLive = Arr.some(
-				Rec.keys(settled),
-				(widgetId) => model.requested[widgetId] === keys[widgetId],
+			const live = Arr.filter(
+				Rec.toEntries(settled),
+				([widgetId]) => model.requested[widgetId] === keys[widgetId],
+			)
+			const isLive = live.length > 0
+			const failedKeys = Arr.reduce(live, model.failedKeys, (failed, [widgetId, state]) =>
+				state._tag === "Error"
+					? { ...failed, [widgetId]: keys[widgetId] ?? "" }
+					: Rec.remove(failed, widgetId),
 			)
 			return {
 				model: {
@@ -245,15 +252,8 @@ export const update = (model: Model, message: Message, pageTimeZone: string): Re
 					sentBatchId: next === undefined ? model.sentBatchId : model.sentBatchId + 1,
 					// A batch whose widgets all moved on is skipped whole, its variables included.
 					variables: isLive && variables !== undefined ? variables : model.variables,
-					states: {
-						...model.states,
-						...Rec.fromEntries(
-							Arr.filter(
-								Rec.toEntries(settled),
-								([widgetId]) => model.requested[widgetId] === keys[widgetId],
-							),
-						),
-					},
+					failedKeys,
+					states: { ...model.states, ...Rec.fromEntries(live) },
 				},
 				commands:
 					next === undefined

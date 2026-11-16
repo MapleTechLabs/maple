@@ -172,7 +172,7 @@ describe("share", () => {
 		expect(names(ticked.commands)).toContain(FetchBatch.name)
 	})
 
-	test("a tick retries a failed tile even when its window has not moved", () => {
+	test("a tick retries a failed tile once, not again while the retry is in flight", () => {
 		const flushed = update(measured(1), Message.CompletedFlushFrame()).model
 		const failed = update(
 			flushed,
@@ -188,6 +188,11 @@ describe("share", () => {
 			Message.CompletedResolveReloadClock({ nowMs: NOW + 30_000 }),
 		)
 		expect(names(ticked.commands)).toContain(FetchBatch.name)
+		const again = update(
+			update(ticked.model, Message.TickedAutoRefresh()).model,
+			Message.CompletedResolveReloadClock({ nowMs: NOW + 40_000 }),
+		)
+		expect(names(again.commands)).not.toContain(FetchBatch.name)
 	})
 
 	test("a reload inside the same grid step still refetches at the true time", () => {

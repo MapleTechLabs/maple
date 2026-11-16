@@ -106,6 +106,8 @@ export const Model = Schema.Struct({
 	options: Schema.Record(Schema.String, Schema.Number),
 	/** The request key each widget was last fetched under. */
 	requested: Schema.Record(Schema.String, Schema.String),
+	/** The key each widget's last answer failed under; a tick retries it once, until the retry answers. */
+	failedKeys: Schema.Record(Schema.String, Schema.String),
 	isFlushScheduled: Schema.Boolean,
 	/** Batches after the one in flight; each is awaited before the next is sent. */
 	queuedBatches: Schema.Array(QueuedBatch),
