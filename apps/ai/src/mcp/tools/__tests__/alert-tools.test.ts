@@ -22,7 +22,7 @@ import {
 	OrgId,
 	UserId,
 } from "@maple/domain/http"
-import { encodePublicId } from "@maple/domain/http/v2"
+import { encodePublicId, INVESTIGATION_READ_FAMILIES } from "@maple/domain/http/v2"
 import { AlertIncidentId } from "@maple/primitives"
 import {
 	CreateAlertRuleOutput,
@@ -168,6 +168,8 @@ interface Seen {
 	rules?: ReadonlyArray<AlertRuleDocument>
 	/** The timing a raw-SQL preview reports. */
 	queryTiming?: Record<string, unknown>
+	/** The calling key's scopes; unset is a full-access caller. */
+	scopes?: ReadonlyArray<string>
 	/** A raw-SQL preview whose range was too heavy to chart: no series. */
 	seriesFailure?: "query_too_slow" | "query_too_much_memory"
 }
@@ -179,6 +181,7 @@ const layer = (seen: Seen) =>
 			userId: Schema.decodeSync(UserId)("user_tools"),
 			roles: [],
 			authMode: "self_hosted",
+			...(seen.scopes === undefined ? undefined : { scopes: seen.scopes }),
 		} as never),
 		Layer.succeed(AlertRulesService, {
 			listRules: () =>
@@ -1184,6 +1187,29 @@ describe("alert tools", () => {
 		expect(text(heavy)).not.toContain("returned no series")
 		// The one-check timing still says which interval fits.
 		expect(text(heavy)).toContain("One check took 7.8s")
+	})
+
+	it("preview_alert_rule refuses a raw-SQL replay to a key without alerts:write, as /v2 does", async () => {
+		const readScopes = Arr.map(INVESTIGATION_READ_FAMILIES, (family) => `${family}:read`)
+		const seen: Seen = { rules: [slowedRule], scopes: readScopes }
+		const refused = await run("preview_alert_rule", { rule_id: RULE_ID }, seen)
+		expect(refused._tag).toBe("Failure")
+		if (refused._tag === "Failure") {
+			expect(refused.failure).toMatchObject({
+				_tag: "@maple/mcp/errors/McpAuthInvalidError",
+				reason: "insufficient_scope",
+			})
+			expect(refused.failure.message).toContain("`alerts:write`")
+		}
+		expect(seen.previewed).toBeUndefined()
+
+		// A query-builder rule stays an alerts:read preview.
+		await ok("preview_alert_rule", { rule_id: RULE_ID }, { scopes: readScopes })
+		await ok(
+			"preview_alert_rule",
+			{ rule_id: RULE_ID },
+			{ ...seen, scopes: [...readScopes, "alerts:write"] },
+		)
 	})
 
 	it("create_alert_rule sends an escalation chain on the rule's single tier", async () => {
