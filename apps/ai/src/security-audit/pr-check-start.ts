@@ -85,7 +85,16 @@ export const startPullRequestCheck = Effect.fn("SecurityPrCheck.start")(function
 			// An unfinished one with no Workflow was cut off before it started: with the rollout off it
 			// is not started now, but settled, so its check reports instead of staying pending.
 			const workflow = yield* SecurityAuditWorkflowStarter
-			if (yield* workflow.exists(owner.id)) return skipped("already_checking")
+			// A lookup that fails reports like any other failure: a check that never comes is worse.
+			const exists = yield* workflow.exists(owner.id).pipe(
+				Effect.map((found) => (found ? ("yes" as const) : ("no" as const))),
+				Effect.catchTag("@maple/backend/platform/WorkflowStartError", () =>
+					Effect.succeed("unknown" as const),
+				),
+			)
+			if (exists === "unknown")
+				return yield* report("security audits are not enabled for this organization")
+			if (exists === "yes") return skipped("already_checking")
 			yield* store.finishRun(owner.id, {
 				status: "failed",
 				error: "start_failed: security audits are off",

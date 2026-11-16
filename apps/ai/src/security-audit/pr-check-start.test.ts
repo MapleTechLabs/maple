@@ -137,6 +137,8 @@ const makeHarness = (
 		readonly createFails?: boolean
 		/** Every run's Workflow reads as existing, as when another delivery created it first. */
 		readonly workflowsExist?: boolean
+		/** Looking a Workflow up fails, as with the binding down. */
+		readonly lookupFails?: boolean
 		readonly enabled?: boolean
 		readonly noCredits?: boolean
 		readonly prCheckEnabled?: boolean
@@ -171,9 +173,11 @@ const makeHarness = (
 					? Effect.fail(new WorkflowStartError({ message: "instance limit reached", cause: null }))
 					: Effect.sync(() => void started.push(payload)),
 			exists: (runId) =>
-				Effect.succeed(
-					options.workflowsExist === true || Arr.some(started, (p) => p.runId === runId),
-				),
+				options.lookupFails === true
+					? Effect.fail(new WorkflowStartError({ message: "binding unavailable", cause: null }))
+					: Effect.succeed(
+							options.workflowsExist === true || Arr.some(started, (p) => p.runId === runId),
+						),
 			cancel: (runId) => Effect.sync(() => void cancelled.push(runId)),
 		}),
 		Layer.succeed(SecurityPrCheck, {
@@ -753,5 +757,29 @@ describe("startPullRequestCheck owned runs without a Workflow", () => {
 
 		expect(result.outcome).toEqual({ outcome: "started" })
 		expect(Arr.map(result.runs, (r) => r.status)).toEqual(["in_progress"])
+	})
+})
+
+describe("startPullRequestCheck rollout off and a lookup that fails", () => {
+	it("reports not blocking when the owner's Workflow cannot be looked up", async () => {
+		const harness = makeHarness({ enabled: false, lookupFails: true })
+		const outcome = await harness.run(
+			Effect.gen(function* () {
+				const target = yield* harness.seeded
+				const store = (yield* SecurityAuditStore).forOrg(orgId)
+				yield* store.startRun({
+					targetId: target.id,
+					kind: "pull_request",
+					prNumber: 612,
+					sourceRef: HEAD,
+				})
+				return yield* startPullRequestCheck(orgId, job({ action: "synchronize" }))
+			}),
+		)
+
+		expect(outcome.outcome).toBe("reported")
+		expect(harness.notices).toEqual([
+			"1111:unchecked:security audits are not enabled for this organization",
+		])
 	})
 })
