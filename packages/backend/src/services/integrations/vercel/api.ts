@@ -349,9 +349,8 @@ export const createDrain = Effect.fnUntraced(
 		return toDrainInfo(drain)
 	},
 	// A plan or permission refusal is answered to the person connecting as a 400, not our failure.
-	VendorHttp.vendorCallSpan("VercelApi.createDrain", (error: VercelApiError) =>
-		error.kind === "invalid_response" ? undefined : error.kind,
-	),
+	// An undecodable answer still fails the inner `VendorHttp.request` span.
+	VendorHttp.vendorCallSpan("VercelApi.createDrain", (error: VercelApiError) => error.kind),
 )
 
 export const updateDrain = Effect.fn("VercelApi.updateDrain")(function* (

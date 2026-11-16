@@ -1225,8 +1225,9 @@ interface IngestRefused {
 }
 
 /**
- * The single seam that turns a poll failure into signal: record health to Postgres (as before) AND
- * record an OTel exception event + ERROR log so the failure is visible in Maple's own tooling. This
+ * The single seam that turns a poll failure into signal: health is on the rows and the summary;
+ * only an `other` failure (possibly ours) adds an OTel exception event + ERROR log, the tenant's or
+ * Cloudflare's own failures log a warning on an Ok span. This
  * is the ONLY place that reacts to a `DatasetPollFailure`; every failure path just classifies and
  * returns one, so a new failure path is observable by construction rather than by remembering to
  * instrument it. Expected degradations (`quantiles-downgraded`, `disabled`) never reach here.

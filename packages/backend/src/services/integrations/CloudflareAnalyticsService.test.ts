@@ -2258,8 +2258,8 @@ describe("CloudflareAnalyticsService", () => {
 			// Regression for the invisible outage: a Cloudflare "not authorized" on the zone dataset
 			// used to be written ONLY to cloudflare_analytics_state.lastError with zero telemetry, so a
 			// fully-broken integration was invisible to find_errors/logs for hours. It must now be a
-			// classified, first-class failure on the summary (which the seam turns into an exception
-			// event + ERROR log through Maple's own error pipeline).
+			// classified, first-class failure on the summary (which the seam logs as a warning and
+			// the source's health shows).
 			const authz = Option.getOrThrow(
 				Arr.findFirst(
 					summary.failures,
