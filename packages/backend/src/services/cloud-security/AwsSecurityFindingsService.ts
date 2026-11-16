@@ -28,12 +28,12 @@ const readers = Effect.promise(() => import("./aws-security-readers"))
 
 /** A service found off, or refused, in a region is asked again after this long, not every tick. */
 export const NOT_ENABLED_RECHECK_MS = 60 * 60 * 1000
-/** An active finding not synced for this long is refreshed by id: a console change may not touch its update time. */
+/** An open finding not synced for this long is refreshed by id: a console change may not touch its update time. */
 export const RECONCILE_AFTER_MS = 60 * 60 * 1000
 /** Findings one feed refreshes by id per poll. */
 const RECONCILE_BATCH = 100
-/** Reads one connection runs at once, and connections polled at once: six fetches, the Worker's limit. */
-const READ_CONCURRENCY = 3
+/** Reads one connection runs at once, and connections polled at once: four fetches, under the Worker's six. */
+const READ_CONCURRENCY = 2
 const CONNECTION_CONCURRENCY = 2
 /** A tick stops starting reads after this long, inside the lane's 270 s; the rest wait for the next one. */
 export const TICK_BUDGET_MS = 200 * 1000
@@ -176,6 +176,7 @@ export class AwsSecurityFindingsService extends Context.Service<
 							region,
 							cursorAt,
 							nowMs: now,
+							deadlineMs,
 						}
 						const recordState = (read: {
 							readonly state: CloudServiceState
@@ -220,11 +221,9 @@ export class AwsSecurityFindingsService extends Context.Service<
 						if (read.state === "enabled" && read.seenIds !== null) {
 							yield* store.resolve(feed, { except: read.seenIds }, now)
 						}
-						if (
-							read.state === "enabled" &&
-							(source === "guardduty" || source === "securityhub")
-						) {
-							const stale = yield* store.staleActiveIds(
+						// Inspector too: a second it skipped may hold updates no later read sees.
+						if (read.state === "enabled" && source !== "access_analyzer") {
+							const stale = yield* store.staleOpenIds(
 								feed,
 								now - RECONCILE_AFTER_MS,
 								RECONCILE_BATCH,

@@ -19,7 +19,7 @@ import {
 import { CloudSecurityStore } from "./CloudSecurityStore"
 import { AuditTrailService } from "../audit-trail/AuditTrailService"
 import type { AuditTrailEvent } from "@maple/domain/audit-trail"
-import { CLOUDTRAIL_LATE_MS } from "./aws-security-readers"
+import { CLOUDTRAIL_LATE_MS, CLOUDTRAIL_OVERLAP_MS } from "./aws-security-readers"
 import { type FakeGuardDutyFinding, makeFakeAwsSecurity } from "./fake-aws-security"
 
 const trackedDbs: TestDb[] = []
@@ -465,8 +465,11 @@ describe("AwsSecurityFindingsService", () => {
 			yield* TestClock.adjust("5 minutes")
 			yield* poll
 			const [lookup] = Arr.filter(world.aws.requests, (request) => request.service === "cloudtrail")
-			// The next read starts exactly where the last one stopped.
-			assert.strictEqual(lookup?.body["StartTime"], (firstPollAt - CLOUDTRAIL_LATE_MS) / 1000)
+			// The next read starts a little before where the last one stopped.
+			assert.strictEqual(
+				lookup?.body["StartTime"],
+				(firstPollAt - CLOUDTRAIL_LATE_MS - CLOUDTRAIL_OVERLAP_MS) / 1000,
+			)
 		}).pipe(Effect.provide(world.layer))
 	})
 
