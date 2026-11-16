@@ -4,7 +4,7 @@ import type {
 	AuditTrailEvent,
 	AuditTrailOutcome,
 } from "@maple/domain/audit-trail"
-import { Array as Arr, Option, Predicate, Schema, String as Str } from "effect"
+import { Array as Arr, Option, Predicate, Record as Rec, Schema, String as Str } from "effect"
 
 // A CloudTrail management event as an audit trail event. Only writes are read; AWS acting on its
 // own and the role-session plumbing every workload runs stay out.
@@ -110,6 +110,17 @@ const outcomeOf = (
 
 const IP = /^[0-9a-f:.]+$/iu
 
+/** The most of a record the audit trail keeps; a larger one loses its request and response first. */
+const RAW_LIMIT_BYTES = 32 * 1024
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const sizeOf = (value: Json) => new TextEncoder().encode(encodeJson(value)).length
+
+const rawOf = (record: Json): Json | undefined => {
+	if (sizeOf(record) <= RAW_LIMIT_BYTES) return record
+	const trimmed = Rec.remove(Rec.remove(record, "requestParameters"), "responseElements")
+	return sizeOf(trimmed) <= RAW_LIMIT_BYTES ? trimmed : undefined
+}
+
 /** An event `LookupEvents` returned, as the audit trail stores it. None for noise and AWS's own calls. */
 export const cloudTrailAuditEvent = (
 	accountId: string,
@@ -156,7 +167,7 @@ export const cloudTrailAuditEvent = (
 					: { type: textAt(resource, "type"), id: targetName, name: targetName },
 			originIp: sourceIp !== undefined && IP.test(sourceIp) ? sourceIp : undefined,
 			userAgent,
-			raw: record,
+			raw: rawOf(record),
 		})
 	})
 }

@@ -10,8 +10,12 @@ import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/Org
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AwsConnectionService } from "../integrations/AwsConnectionService"
 import { MAPLE_TEST_OIDC_KEY, makeFakeAws } from "../integrations/aws/fake-aws"
-import { MAX_PAGES } from "./aws-security-readers"
-import { AwsSecurityFindingsService, NOT_ENABLED_RECHECK_MS } from "./AwsSecurityFindingsService"
+import { MAX_PAGES, WINDOW_PAGES } from "./aws-security-readers"
+import {
+	AwsSecurityFindingsService,
+	NOT_ENABLED_RECHECK_MS,
+	RECONCILE_AFTER_MS,
+} from "./AwsSecurityFindingsService"
 import { CloudSecurityStore } from "./CloudSecurityStore"
 import { AuditTrailService } from "../audit-trail/AuditTrailService"
 import type { AuditTrailEvent } from "@maple/domain/audit-trail"
@@ -80,8 +84,12 @@ const makeWorld = () => {
 
 type World = ReturnType<typeof makeWorld>
 
+/** The tests' "now": every fixture is dated before it. */
+const NOW = Date.parse("2026-11-10T00:00:00Z")
+
 const connect = (world: World, granted: ReadonlyArray<AwsModule> = ["security"]) =>
 	Effect.gen(function* () {
+		yield* TestClock.setTime(NOW)
 		const connections = yield* AwsConnectionService
 		const created = yield* connections.create(orgId, userId, {
 			accountId: account,
@@ -226,7 +234,14 @@ describe("AwsSecurityFindingsService", () => {
 			)
 			assert.deepStrictEqual(
 				Arr.map(listed, (request) => request.body["findingCriteria"]),
-				[{ criterion: { updatedAt: { greaterThanOrEqual: Date.parse("2026-11-01T00:00:00Z") } } }],
+				[
+					{
+						criterion: {
+							accountId: { equals: ["111111111111"] },
+							updatedAt: { greaterThanOrEqual: Date.parse("2026-11-01T00:00:00Z") },
+						},
+					},
+				],
 			)
 			const [row] = yield* findingRows(world)
 			assert.strictEqual(row?.status, "archived")
@@ -237,7 +252,7 @@ describe("AwsSecurityFindingsService", () => {
 	it.effect("leaves out Security Hub's copies of the other services and closes passed controls", () => {
 		const world = makeWorld()
 		const at = Date.parse("2026-11-01T00:00:00Z")
-		world.aws.regions["us-east-1"] = {
+		const region = {
 			securityhub: [
 				{
 					id: "sh-control",
@@ -254,7 +269,7 @@ describe("AwsSecurityFindingsService", () => {
 					title: "Root MFA",
 					label: "CRITICAL",
 					updatedAtMs: at,
-					compliance: "PASSED",
+					compliance: "FAILED" as const,
 				},
 				{
 					id: "sh-gd-copy",
@@ -266,8 +281,17 @@ describe("AwsSecurityFindingsService", () => {
 				},
 			],
 		}
+		world.aws.regions["us-east-1"] = region
 		return Effect.gen(function* () {
 			yield* connect(world)
+			yield* poll
+			// Fixed: the control passes on its next check, which moves its update time.
+			region.securityhub = Arr.map(region.securityhub, (finding) =>
+				finding.id === "sh-passed"
+					? { ...finding, compliance: "PASSED" as const, updatedAtMs: at + 60_000 }
+					: finding,
+			)
+			yield* TestClock.adjust("5 minutes")
 			yield* poll
 			const rows = yield* findingRows(world)
 			assert.deepStrictEqual(
@@ -419,7 +443,9 @@ describe("AwsSecurityFindingsService", () => {
 		}
 		return Effect.gen(function* () {
 			yield* connect(world)
-			yield* TestClock.setTime(at)
+			// Events are read once they are older than the late margin.
+			const firstPollAt = at + CLOUDTRAIL_LATE_MS + 60_000
+			yield* TestClock.setTime(firstPollAt)
 			const summary = yield* poll
 			assert.strictEqual(summary.auditEvents, 2)
 			assert.deepStrictEqual(
@@ -439,7 +465,266 @@ describe("AwsSecurityFindingsService", () => {
 			yield* TestClock.adjust("5 minutes")
 			yield* poll
 			const [lookup] = Arr.filter(world.aws.requests, (request) => request.service === "cloudtrail")
-			assert.strictEqual(lookup?.body["StartTime"], (at - CLOUDTRAIL_LATE_MS) / 1000)
+			// The next read starts exactly where the last one stopped.
+			assert.strictEqual(lookup?.body["StartTime"], (firstPollAt - CLOUDTRAIL_LATE_MS) / 1000)
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("catches up on more Inspector findings than one poll reads, one whole window at a time", () => {
+		const world = makeWorld()
+		const total = WINDOW_PAGES * 100 + 500
+		world.aws.regions["us-east-1"] = {
+			inspector: Arr.makeBy(total, (index) => ({
+				arn: `arn:aws:inspector2:us-east-1:111111111111:finding/${index}`,
+				title: `CVE ${index}`,
+				severity: "HIGH",
+				status: "ACTIVE" as const,
+				updatedAtMs: NOW - 2 * 24 * 3600_000 + index * 60_000,
+			})),
+		}
+		const inspectorPages = () =>
+			Arr.filter(world.aws.requests, (request) => request.path === "/findings/list").length
+		return Effect.gen(function* () {
+			yield* connect(world)
+			const polls = yield* Effect.forEach(Arr.range(1, 8), () =>
+				Effect.gen(function* () {
+					world.aws.requests.length = 0
+					yield* poll
+					yield* TestClock.adjust("5 minutes")
+					return inspectorPages()
+				}),
+			)
+			assert.isTrue(Arr.every(polls, (pages) => pages <= MAX_PAGES))
+			assert.strictEqual((yield* findingRows(world)).length, total)
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("resolves an Access Analyzer finding that is gone from a whole read", () => {
+		const world = makeWorld()
+		const finding = (id: string) => ({
+			id,
+			findingType: "ExternalAccess",
+			status: "ACTIVE" as const,
+			resource: `arn:aws:s3:::${id}`,
+			updatedAtMs: NOW - 3600_000,
+		})
+		const region = {
+			accessAnalyzer: [
+				finding("aa-1"),
+				finding("aa-2"),
+				{ ...finding("aa-old"), status: "RESOLVED" as const },
+			],
+		}
+		world.aws.regions["us-east-1"] = region
+		return Effect.gen(function* () {
+			yield* connect(world)
+			yield* poll
+			region.accessAnalyzer = [finding("aa-1")]
+			yield* TestClock.adjust("5 minutes")
+			yield* poll
+			assert.deepStrictEqual(
+				Arr.map(yield* findingRows(world), (row) => [row.finding_id, row.status]),
+				[
+					["aa-1", "active"],
+					["aa-2", "resolved"],
+				],
+			)
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("picks up a Security Hub status changed in the console, which leaves UpdatedAt alone", () => {
+		const world = makeWorld()
+		const control = {
+			id: "sh-1",
+			productName: "Security Hub",
+			generatorId: "EC2.19",
+			title: "Security group open to the world",
+			label: "HIGH",
+			updatedAtMs: NOW - 3600_000,
+		}
+		// A newer finding moves the cursor past the control, so only the reconcile can see it again.
+		const newer = { ...control, id: "sh-2", generatorId: "S3.1", updatedAtMs: NOW - 60_000 }
+		const region = { securityhub: [control, newer] }
+		world.aws.regions["us-east-1"] = region
+		return Effect.gen(function* () {
+			yield* connect(world)
+			yield* poll
+			region.securityhub = [{ ...control, workflow: "SUPPRESSED" as const }, newer]
+			yield* TestClock.adjust("10 minutes")
+			yield* poll
+			assert.strictEqual((yield* findingRows(world))[0]?.status, "active")
+			yield* TestClock.adjust(RECONCILE_AFTER_MS)
+			yield* poll
+			assert.strictEqual((yield* findingRows(world))[0]?.status, "archived")
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("leaves out member accounts' and linked regions' findings an administrator lists", () => {
+		const world = makeWorld()
+		const base = {
+			productName: "Security Hub",
+			generatorId: "S3.1",
+			title: "S3",
+			label: "HIGH",
+			updatedAtMs: NOW - 60_000,
+		}
+		world.aws.regions["us-east-1"] = {
+			securityhub: [
+				{ ...base, id: "own" },
+				{ ...base, id: "member", accountId: "222222222222" },
+				{ ...base, id: "linked", region: "eu-west-1" },
+			],
+			guardduty: [
+				sshBruteForce({ id: "gd-own" }),
+				sshBruteForce({ id: "gd-member", accountId: "222222222222" }),
+			],
+		}
+		return Effect.gen(function* () {
+			yield* connect(world)
+			yield* poll
+			assert.deepStrictEqual(
+				Arr.map(yield* findingRows(world), (row) => row.finding_id),
+				["gd-own", "own"],
+			)
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("catches up on a burst of CloudTrail writes and never reads the read-only ones", () => {
+		const world = makeWorld()
+		const burst = 1200
+		const write = (index: number) => ({
+			eventId: `ct-${index}`,
+			eventTimeMs: NOW - 10 * 60_000 + index * 400,
+			record: {
+				eventSource: "ec2.amazonaws.com",
+				eventName: "RunInstances",
+				userIdentity: { type: "IAMUser", userName: "ci" },
+			},
+		})
+		world.aws.regions["us-east-1"] = {
+			cloudtrail: [
+				...Arr.makeBy(burst, write),
+				{
+					...write(burst),
+					eventId: "ct-read",
+					readOnly: true,
+					record: { ...write(burst).record, eventName: "DescribeInstances" },
+				},
+			],
+		}
+		return Effect.gen(function* () {
+			yield* connect(world)
+			yield* TestClock.adjust(CLOUDTRAIL_LATE_MS)
+			yield* Effect.forEach(
+				Arr.range(1, 8),
+				() => Effect.andThen(poll, TestClock.adjust("5 minutes")),
+				{
+					discard: true,
+				},
+			)
+			const ids = new Set(Arr.map(world.audit, ({ event }) => event.providerEventId))
+			assert.strictEqual(ids.size, burst)
+			assert.isFalse(ids.has("ct-read"))
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("asks a service the role may not read again only after an hour", () => {
+		const world = makeWorld()
+		world.aws.regions["us-east-1"] = { guardduty: [] }
+		world.aws.denied.add("inspector2")
+		const inspectorCalls = () =>
+			Arr.filter(world.aws.requests, (request) => request.service === "inspector2").length
+		return Effect.gen(function* () {
+			yield* connect(world)
+			yield* poll
+			yield* TestClock.adjust("10 minutes")
+			yield* poll
+			assert.strictEqual(inspectorCalls(), 1)
+			yield* TestClock.adjust(NOT_ENABLED_RECHECK_MS)
+			yield* poll
+			assert.strictEqual(inspectorCalls(), 2)
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("writes each org's findings only under that org and its own account", () => {
+		const world = makeWorld()
+		const otherOrg = Schema.decodeSync(OrgId)("org_other")
+		world.rolledOut.add(otherOrg)
+		world.aws.regions["us-east-1"] = {
+			guardduty: [
+				sshBruteForce({ id: "gd-a" }),
+				sshBruteForce({ id: "gd-b", accountId: "222222222222" }),
+			],
+		}
+		return Effect.gen(function* () {
+			yield* connect(world)
+			const connections = yield* AwsConnectionService
+			const other = yield* connections.create(otherOrg, userId, {
+				accountId: Schema.decodeSync(AwsAccountId)("222222222222"),
+				modules: ["security"],
+			})
+			const setup = yield* connections.setup(otherOrg, other.id)
+			world.sts.deploy("222222222222", setup.cloudformationTemplate)
+			yield* Effect.promise(() =>
+				executeSql(
+					world.testDb,
+					"UPDATE aws_connections SET granted_modules = '[\"security\"]'::jsonb",
+				),
+			)
+			yield* poll
+			const rows = yield* Effect.promise(() =>
+				world.testDb.pglite
+					.query<{ org_id: string; account_id: string; finding_id: string }>(
+						"SELECT org_id, account_id, finding_id FROM cloud_security_findings ORDER BY finding_id",
+					)
+					.then((result) => result.rows),
+			)
+			assert.deepStrictEqual(rows, [
+				{ org_id: "org_sec", account_id: "111111111111", finding_id: "gd-a" },
+				{ org_id: "org_other", account_id: "222222222222", finding_id: "gd-b" },
+			])
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("moves past a minute in which Inspector updated more findings than one window reads", () => {
+		const world = makeWorld()
+		const massUpdate = NOW - 30 * 60_000
+		const total = WINDOW_PAGES * 100 + 200
+		world.aws.regions["us-east-1"] = {
+			inspector: [
+				...Arr.makeBy(total, (index) => ({
+					arn: `arn:aws:inspector2:us-east-1:111111111111:finding/mass-${index}`,
+					title: "CVE-2026-9999",
+					severity: "CRITICAL",
+					status: "ACTIVE" as const,
+					updatedAtMs: massUpdate,
+				})),
+				{
+					arn: "arn:aws:inspector2:us-east-1:111111111111:finding/later",
+					title: "CVE-2026-0002",
+					severity: "LOW",
+					status: "ACTIVE" as const,
+					updatedAtMs: NOW - 10 * 60_000,
+				},
+			],
+		}
+		return Effect.gen(function* () {
+			const connection = yield* connect(world)
+			yield* Effect.forEach(
+				Arr.range(1, 6),
+				() => Effect.andThen(poll, TestClock.adjust("5 minutes")),
+				{
+					discard: true,
+				},
+			)
+			const rows = yield* findingRows(world)
+			assert.isTrue(Arr.some(rows, (row) => Str.endsWith("/later")(row.finding_id)))
+			const store = yield* CloudSecurityStore
+			const [state] = Arr.filter(
+				yield* store.serviceStates(orgId, connection.id),
+				(row) => row.source === "inspector",
+			)
+			assert.isAbove(state?.cursorAt ?? 0, massUpdate)
 		}).pipe(Effect.provide(world.layer))
 	})
 })

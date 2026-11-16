@@ -6,11 +6,11 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { type AwsConnectionRow, AwsConnections } from "@maple/db/tables"
 import { awsConnectionResourceNames, awsOidcIssuer, awsOidcSubject, awsRoleArn } from "@maple/domain/aws"
-import { CloudSecurityFeed } from "@maple/domain/cloud-security"
+import { CloudSecurityFeed, type CloudServiceState } from "@maple/domain/cloud-security"
 import type { IntegrationsPersistenceError } from "@maple/domain/http"
 import { IntegrationsPersistenceError as PersistenceError } from "@maple/domain/http"
 import { AwsRegion } from "@maple/primitives"
-import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { Array as Arr, Clock, Context, Effect, Layer, Option, Order, Schema } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -20,15 +20,23 @@ import { type AwsApiError, assumeRole } from "../integrations/aws/api"
 import { type AwsOidcSigner, makeAwsOidcSigner } from "../integrations/aws/oidc"
 import { pollFleet } from "../integrations/poll-fleet"
 import { AuditTrailService } from "../audit-trail/AuditTrailService"
+import type { FindingRead } from "./aws-security-readers"
 import { CLOSED_FINDING_RETENTION_MS, CloudSecurityStore } from "./CloudSecurityStore"
 
 // The SDK modules of four services are large: they load with the first poll, not with the Worker.
 const readers = Effect.promise(() => import("./aws-security-readers"))
 
-/** A service found off in a region is asked again after this long, not every tick. */
+/** A service found off, or refused, in a region is asked again after this long, not every tick. */
 export const NOT_ENABLED_RECHECK_MS = 60 * 60 * 1000
-/** Region x service reads one connection runs at once: each holds one of the Worker's connections. */
-const READ_CONCURRENCY = 4
+/** An active finding not synced for this long is refreshed by id: a console change may not touch its update time. */
+export const RECONCILE_AFTER_MS = 60 * 60 * 1000
+/** Findings one feed refreshes by id per poll. */
+const RECONCILE_BATCH = 100
+/** Reads one connection runs at once, and connections polled at once: six fetches, the Worker's limit. */
+const READ_CONCURRENCY = 3
+const CONNECTION_CONCURRENCY = 2
+/** A tick stops starting reads after this long, inside the lane's 270 s; the rest wait for the next one. */
+export const TICK_BUDGET_MS = 200 * 1000
 const FALLBACK_REGION = Schema.decodeSync(AwsRegion)("us-east-1")
 
 export interface AwsSecurityPollSummary {
@@ -44,6 +52,12 @@ interface ConnectionPoll {
 	readonly findings: number
 	readonly auditEvents: number
 	readonly failed: boolean
+}
+
+interface FeedPoll {
+	readonly read: boolean
+	readonly findings: number
+	readonly auditEvents: number
 }
 
 export interface AwsSecurityFindingsServiceApi {
@@ -100,16 +114,17 @@ export class AwsSecurityFindingsService extends Context.Service<
 		const pollConnection = Effect.fn("AwsSecurityFindingsService.pollConnection")(function* (
 			signerKey: AwsOidcSigner,
 			row: AwsConnectionRow,
+			deadlineMs: number,
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId: row.orgId, "maple.aws.connection_id": row.id })
-			const { enabledRegions, readCloudTrail, readSource } = yield* readers
+			const { enabledRegions, readCloudTrail, readSource, refreshFindings } = yield* readers
 			const session = yield* sessionOf(signerKey, row)
 			const states = yield* store.serviceStates(row.orgId, row.id)
 			// A role from an old stack may not list regions: read the ones read before, or the stack's.
 			const regions = yield* enabledRegions(httpClient, session).pipe(
 				Effect.catchTag("@maple/backend/cloud-security/AwsSecurityReadError", (error) =>
 					Effect.logWarning("AWS ListRegions failed; polling known regions").pipe(
-						Effect.annotateLogs({ error: error.message }),
+						Effect.annotateLogs({ error: error.message, orgId: row.orgId, connectionId: row.id }),
 						Effect.as(
 							Arr.match(Arr.dedupe(Arr.map(states, (state) => state.region)), {
 								onEmpty: () => [FALLBACK_REGION],
@@ -122,75 +137,121 @@ export class AwsSecurityFindingsService extends Context.Service<
 			const now = yield* Clock.currentTimeMillis
 			const stateOf = (region: AwsRegion, source: CloudSecurityFeed) =>
 				Arr.findFirst(states, (state) => state.region === region && state.source === source)
-			const due = Arr.filter(
-				Arr.flatMap(regions, (region) =>
-					Arr.map(CloudSecurityFeed.literals, (source) => ({ region, source })),
+			const checkedAtOf = (region: AwsRegion, source: CloudSecurityFeed) =>
+				Option.match(stateOf(region, source), { onNone: () => 0, onSome: (state) => state.checkedAt })
+			// Least recently read first, so a tick cut short by its budget rotates through every feed.
+			const due = Arr.sort(
+				Arr.filter(
+					Arr.flatMap(regions, (region) =>
+						Arr.map(CloudSecurityFeed.literals, (source) => ({ region, source })),
+					),
+					({ region, source }) =>
+						Option.match(stateOf(region, source), {
+							onNone: () => true,
+							onSome: (state) =>
+								(state.state !== "not_enabled" && state.state !== "denied") ||
+								now - state.checkedAt >= NOT_ENABLED_RECHECK_MS,
+						}),
 				),
-				({ region, source }) =>
-					Option.match(stateOf(region, source), {
-						onNone: () => true,
-						onSome: (state) =>
-							state.state !== "not_enabled" || now - state.checkedAt >= NOT_ENABLED_RECHECK_MS,
-					}),
+				Order.mapInput(Order.Number, (feed: { region: AwsRegion; source: CloudSecurityFeed }) =>
+					checkedAtOf(feed.region, feed.source),
+				),
 			)
-			const counts = yield* Effect.forEach(
+			const polls = yield* Effect.forEach(
 				due,
 				({ region, source }) =>
 					Effect.gen(function* () {
+						if ((yield* Clock.currentTimeMillis) >= deadlineMs) {
+							return { read: false, findings: 0, auditEvents: 0 } satisfies FeedPoll
+						}
 						const cursorAt = Option.getOrNull(
 							Option.flatMap(stateOf(region, source), (state) =>
 								Option.fromNullOr(state.cursorAt),
 							),
 						)
-						const target = { httpClient, session, accountId: row.accountId, region, cursorAt }
-						const state = { orgId: row.orgId, connectionId: row.id, region, source }
-						if (source === "cloudtrail") {
-							const trail = yield* readCloudTrail(target, now)
-							yield* auditTrail.write(row.orgId, trail.events)
-							const checkedAt = yield* Clock.currentTimeMillis
-							yield* store.recordServiceState({
-								...state,
-								state: trail.state,
-								cursorAt: trail.cursorAt,
-								lastError: trail.lastError,
-								checkedAt,
-							})
-							return { findings: 0, auditEvents: trail.events.length }
+						const target = {
+							httpClient,
+							session,
+							accountId: row.accountId,
+							region,
+							cursorAt,
+							nowMs: now,
 						}
-						const read = yield* readSource(source, target)
-						const checkedAt = yield* Clock.currentTimeMillis
-						yield* store.upsertFindings(
-							Arr.map(read.findings, (finding) => ({
-								...finding,
-								orgId: row.orgId,
-								connectionId: row.id,
-								accountId: row.accountId,
-								region,
-								source,
-							})),
-							checkedAt,
-						)
-						yield* store.recordServiceState({
-							...state,
-							state: read.state,
-							cursorAt: read.cursorAt,
-							lastError: read.lastError,
-							checkedAt,
-						})
-						return { findings: read.findings.length, auditEvents: 0 }
+						const recordState = (read: {
+							readonly state: CloudServiceState
+							readonly cursorAt: number | null
+							readonly lastError: string | null
+						}) =>
+							Effect.flatMap(Clock.currentTimeMillis, (checkedAt) =>
+								store.recordServiceState({
+									orgId: row.orgId,
+									connectionId: row.id,
+									region,
+									source,
+									state: read.state,
+									cursorAt: read.cursorAt,
+									lastError: read.lastError,
+									checkedAt,
+								}),
+							)
+						if (source === "cloudtrail") {
+							const trail = yield* readCloudTrail(target, (events) =>
+								auditTrail.write(row.orgId, events),
+							)
+							yield* recordState(trail)
+							return { read: true, findings: 0, auditEvents: trail.events } satisfies FeedPoll
+						}
+						const feed = { orgId: row.orgId, connectionId: row.id, region, source }
+						const write = (findings: ReadonlyArray<FindingRead>) =>
+							Effect.flatMap(Clock.currentTimeMillis, (syncedAt) =>
+								store.upsertFindings(
+									Arr.map(findings, (finding) => ({
+										...finding,
+										orgId: row.orgId,
+										connectionId: row.id,
+										accountId: row.accountId,
+										region,
+										source,
+									})),
+									syncedAt,
+								),
+							)
+						const read = yield* readSource(source, target, write)
+						if (read.state === "enabled" && read.seenIds !== null) {
+							yield* store.resolve(feed, { except: read.seenIds }, now)
+						}
+						if (
+							read.state === "enabled" &&
+							(source === "guardduty" || source === "securityhub")
+						) {
+							const stale = yield* store.staleActiveIds(
+								feed,
+								now - RECONCILE_AFTER_MS,
+								RECONCILE_BATCH,
+							)
+							if (stale.length > 0) {
+								const refreshed = yield* refreshFindings(source, target, stale)
+								yield* write(refreshed.found)
+								yield* store.resolve(feed, { only: refreshed.missing }, now)
+							}
+						}
+						yield* recordState(read)
+						return { read: true, findings: read.findings, auditEvents: 0 } satisfies FeedPoll
 					}),
 				{ concurrency: READ_CONCURRENCY },
 			)
 			yield* store.pruneClosed(row.orgId, now - CLOSED_FINDING_RETENTION_MS)
-			const findings = Arr.reduce(counts, 0, (total, count) => total + count.findings)
-			const auditEvents = Arr.reduce(counts, 0, (total, count) => total + count.auditEvents)
+			const reads = Arr.filter(polls, (poll) => poll.read).length
+			const findings = Arr.reduce(polls, 0, (total, poll) => total + poll.findings)
+			const auditEvents = Arr.reduce(polls, 0, (total, poll) => total + poll.auditEvents)
 			yield* Effect.annotateCurrentSpan({
 				"maple.aws.regions": regions.length,
-				"maple.cloud_security.reads": due.length,
+				"maple.cloud_security.reads": reads,
+				"maple.cloud_security.deferred": due.length - reads,
 				"maple.cloud_security.findings": findings,
 				"maple.cloud_security.audit_events": auditEvents,
 			})
-			return { reads: due.length, findings, auditEvents, failed: false } satisfies ConnectionPoll
+			return { reads, findings, auditEvents, failed: false } satisfies ConnectionPoll
 		})
 
 		const pollAll = Effect.gen(function* () {
@@ -213,11 +274,17 @@ export class AwsSecurityFindingsService extends Context.Service<
 			const eligible = yield* Effect.filter(granted, (row) =>
 				Effect.map(featureFlags.flags(row.orgId), (flags) => flags.cloudSecurity),
 			)
-			const polls = yield* pollFleet(eligible, (row) => pollConnection(signer, row), {
-				message: "AWS security findings poll failed",
-				annotations: (row) => ({ orgId: row.orgId, connectionId: row.id }),
-				fallback: (): ConnectionPoll => ({ reads: 0, findings: 0, auditEvents: 0, failed: true }),
-			})
+			const deadlineMs = (yield* Clock.currentTimeMillis) + TICK_BUDGET_MS
+			const polls = yield* pollFleet(
+				eligible,
+				(row) => pollConnection(signer, row, deadlineMs),
+				{
+					message: "AWS security findings poll failed",
+					annotations: (row) => ({ orgId: row.orgId, connectionId: row.id }),
+					fallback: (): ConnectionPoll => ({ reads: 0, findings: 0, auditEvents: 0, failed: true }),
+				},
+				CONNECTION_CONCURRENCY,
+			)
 			const summary = {
 				connections: eligible.length,
 				failedConnections: Arr.filter(polls, (poll) => poll.failed).length,

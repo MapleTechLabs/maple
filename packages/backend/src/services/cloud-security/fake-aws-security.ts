@@ -27,6 +27,7 @@ export interface FakeGuardDutyFinding {
 	readonly archived?: boolean
 	readonly count?: number
 	readonly instanceId?: string
+	readonly accountId?: string
 }
 
 export interface FakeSecurityHubFinding {
@@ -38,7 +39,13 @@ export interface FakeSecurityHubFinding {
 	readonly updatedAtMs: number
 	readonly recordState?: "ACTIVE" | "ARCHIVED"
 	readonly compliance?: "PASSED" | "FAILED"
+	/** Set in the console: Security Hub does not move `UpdatedAt` for it. */
+	readonly workflow?: "NEW" | "SUPPRESSED" | "RESOLVED"
 	readonly resourceId?: string
+	/** A member account's finding, as an administrator account lists it. */
+	readonly accountId?: string
+	/** A linked region's finding, as an aggregation region lists it. */
+	readonly region?: string
 }
 
 export interface FakeInspectorFinding {
@@ -49,6 +56,7 @@ export interface FakeInspectorFinding {
 	readonly updatedAtMs: number
 	readonly cve?: string
 	readonly resourceId?: string
+	readonly accountId?: string
 }
 
 export interface FakeAccessAnalyzerFinding {
@@ -64,6 +72,7 @@ export interface FakeCloudTrailEvent {
 	readonly eventId: string
 	readonly eventTimeMs: number
 	readonly record: Record<string, unknown>
+	readonly readOnly?: boolean
 }
 
 /** One region's services; an absent service is not enabled there. */
@@ -114,6 +123,17 @@ const pageOf = <A>(items: ReadonlyArray<A>, token: unknown, size: number) => {
 	const end = start + size
 	return { items: items.slice(start, end), next: end < items.length ? String(end) : undefined }
 }
+
+const OWN_ACCOUNT = "111111111111"
+
+/** The `Value`s of a Security Hub string filter with this comparison. */
+const valuesOf = (filter: unknown, comparison: string) =>
+	Arr.getSomes(
+		Arr.map(
+			Arr.filter(asArray(filter), (entry) => asRecord(entry)?.["Comparison"] === comparison),
+			(entry) => Option.fromUndefinedOr(asString(asRecord(entry)?.["Value"])),
+		),
+	)
 
 const byUpdated = <A extends { readonly updatedAtMs: number }>(items: ReadonlyArray<A>) =>
 	Arr.sort(
@@ -176,9 +196,11 @@ export const makeFakeAwsSecurity = (fallback: HttpClient.HttpClient): FakeAwsSec
 				const criterion = asRecord(asRecord(body["findingCriteria"])?.["criterion"]) ?? {}
 				const since = asNumber(asRecord(criterion["updatedAt"])?.["greaterThanOrEqual"])
 				const openOnly = criterion["service.archived"] !== undefined
+				const accounts = asArray(asRecord(criterion["accountId"])?.["equals"])
 				const matching = Arr.filter(
 					byUpdated(fake.guardduty ?? []),
 					(finding) =>
+						(accounts.length === 0 || accounts.includes(finding.accountId ?? OWN_ACCOUNT)) &&
 						(since === undefined || finding.updatedAtMs >= since) &&
 						(!openOnly || finding.archived !== true),
 				)
@@ -194,7 +216,7 @@ export const makeFakeAwsSecurity = (fallback: HttpClient.HttpClient): FakeAwsSec
 					findings: Arr.map(
 						Arr.filter(fake.guardduty ?? [], (finding) => ids.includes(finding.id)),
 						(finding) => ({
-							accountId: "111111111111",
+							accountId: finding.accountId ?? OWN_ACCOUNT,
 							arn: `arn:aws:guardduty:${region}:111111111111:detector/det/finding/${finding.id}`,
 							createdAt: iso(finding.updatedAtMs - 1000),
 							id: finding.id,
@@ -229,20 +251,27 @@ export const makeFakeAwsSecurity = (fallback: HttpClient.HttpClient): FakeAwsSec
 			}
 			if (route === "securityhub POST /findings") {
 				const filters = asRecord(body["Filters"]) ?? {}
-				const excluded = Arr.getSomes(
-					Arr.map(asArray(filters["ProductName"]), (filter) =>
-						Option.fromUndefinedOr(asString(asRecord(filter)?.["Value"])),
-					),
-				)
-				const start = asString(
-					asRecord(Arr.head(asArray(filters["UpdatedAt"])).pipe(Option.getOrUndefined))?.["Start"],
-				)
+				const excluded = valuesOf(filters["ProductName"], "NOT_EQUALS")
+				const ids = valuesOf(filters["Id"], "EQUALS")
+				const accounts = valuesOf(filters["AwsAccountId"], "EQUALS")
+				const regions = valuesOf(filters["Region"], "EQUALS")
+				const notCompliance = valuesOf(filters["ComplianceStatus"], "NOT_EQUALS")
+				const range = asRecord(Option.getOrUndefined(Arr.head(asArray(filters["UpdatedAt"]))))
+				const start = asString(range?.["Start"])
+				const end = asString(range?.["End"])
+				// Security Hub refuses an UpdatedAt filter with only one end.
+				if ((start === undefined) !== (end === undefined)) return refuse(400, "InvalidInputException")
 				const activeOnly = filters["RecordState"] !== undefined
 				const matching = Arr.filter(
 					byUpdated(fake.securityhub ?? []),
 					(finding) =>
 						!excluded.includes(finding.productName) &&
+						(ids.length === 0 || ids.includes(finding.id)) &&
+						(accounts.length === 0 || accounts.includes(finding.accountId ?? OWN_ACCOUNT)) &&
+						(regions.length === 0 || regions.includes(finding.region ?? region)) &&
+						!notCompliance.includes(finding.compliance ?? "") &&
 						(start === undefined || finding.updatedAtMs >= (msOfIso(start) ?? 0)) &&
+						(end === undefined || finding.updatedAtMs <= (msOfIso(end) ?? 0)) &&
 						(!activeOnly || finding.recordState !== "ARCHIVED"),
 				)
 				const page = pageOf(matching, body["NextToken"], asNumber(body["MaxResults"]) ?? 100)
@@ -253,7 +282,8 @@ export const makeFakeAwsSecurity = (fallback: HttpClient.HttpClient): FakeAwsSec
 						ProductArn: `arn:aws:securityhub:${region}::product/aws/securityhub`,
 						ProductName: finding.productName,
 						GeneratorId: finding.generatorId,
-						AwsAccountId: "111111111111",
+						AwsAccountId: finding.accountId ?? OWN_ACCOUNT,
+						Region: finding.region ?? region,
 						CreatedAt: iso(finding.updatedAtMs - 1000),
 						UpdatedAt: iso(finding.updatedAtMs),
 						Title: finding.title,
@@ -263,6 +293,7 @@ export const makeFakeAwsSecurity = (fallback: HttpClient.HttpClient): FakeAwsSec
 						RecordState: finding.recordState ?? "ACTIVE",
 						Compliance:
 							finding.compliance === undefined ? undefined : { Status: finding.compliance },
+						Workflow: { Status: finding.workflow ?? "NEW" },
 					})),
 					NextToken: page.next,
 				})
@@ -283,23 +314,24 @@ export const makeFakeAwsSecurity = (fallback: HttpClient.HttpClient): FakeAwsSec
 			}
 			if (route === "inspector2 POST /findings/list") {
 				const criteria = asRecord(body["filterCriteria"]) ?? {}
-				const since = asNumber(
-					asRecord(Option.getOrUndefined(Arr.head(asArray(criteria["updatedAt"]))))?.[
-						"startInclusive"
-					],
+				const range = asRecord(Option.getOrUndefined(Arr.head(asArray(criteria["updatedAt"]))))
+				const since = asNumber(range?.["startInclusive"])
+				const until = asNumber(range?.["endInclusive"])
+				const account = asString(
+					asRecord(Option.getOrUndefined(Arr.head(asArray(criteria["awsAccountId"]))))?.["value"],
 				)
-				const activeOnly = criteria["findingStatus"] !== undefined
 				const matching = Arr.filter(
 					fake.inspector ?? [],
 					(finding) =>
 						(since === undefined || finding.updatedAtMs / 1000 >= since) &&
-						(!activeOnly || finding.status === "ACTIVE"),
+						(until === undefined || finding.updatedAtMs / 1000 <= until) &&
+						(account === undefined || account === (finding.accountId ?? OWN_ACCOUNT)),
 				)
 				const page = pageOf(matching, body["nextToken"], asNumber(body["maxResults"]) ?? 100)
 				return json(200, {
 					findings: Arr.map(page.items, (finding) => ({
 						findingArn: finding.arn,
-						awsAccountId: "111111111111",
+						awsAccountId: finding.accountId ?? OWN_ACCOUNT,
 						type: "PACKAGE_VULNERABILITY",
 						description: `${finding.title}.`,
 						title: finding.title,
@@ -335,8 +367,12 @@ export const makeFakeAwsSecurity = (fallback: HttpClient.HttpClient): FakeAwsSec
 				})
 			}
 			if (route === "access-analyzer POST /findingv2") {
+				const statuses = asArray(asRecord(asRecord(body["filter"])?.["status"])?.["eq"])
 				const page = pageOf(
-					fake.accessAnalyzer ?? [],
+					Arr.filter(
+						fake.accessAnalyzer ?? [],
+						(finding) => statuses.length === 0 || statuses.includes(finding.status),
+					),
 					body["nextToken"],
 					asNumber(body["maxResults"]) ?? 100,
 				)
@@ -357,13 +393,22 @@ export const makeFakeAwsSecurity = (fallback: HttpClient.HttpClient): FakeAwsSec
 			}
 			if (route === "cloudtrail POST /") {
 				// JSON 1.1: times are epoch seconds, events come newest first.
+				const writesOnly = Arr.some(
+					asArray(body["LookupAttributes"]),
+					(attribute) =>
+						asRecord(attribute)?.["AttributeKey"] === "ReadOnly" &&
+						asRecord(attribute)?.["AttributeValue"] === "false",
+				)
 				const start = (asNumber(body["StartTime"]) ?? 0) * 1000
 				const end = (asNumber(body["EndTime"]) ?? Number.MAX_SAFE_INTEGER / 1000) * 1000
 				const matching = Arr.reverse(
 					Arr.sort(
 						Arr.filter(
 							fake.cloudtrail ?? [],
-							(event) => event.eventTimeMs >= start && event.eventTimeMs <= end,
+							(event) =>
+								event.eventTimeMs >= start &&
+								event.eventTimeMs <= end &&
+								(!writesOnly || event.readOnly !== true),
 						),
 						Order.mapInput(Order.Number, (event: FakeCloudTrailEvent) => event.eventTimeMs),
 					),
@@ -373,7 +418,7 @@ export const makeFakeAwsSecurity = (fallback: HttpClient.HttpClient): FakeAwsSec
 					Events: Arr.map(page.items, (event) => ({
 						EventId: event.eventId,
 						EventTime: event.eventTimeMs / 1000,
-						ReadOnly: "false",
+						ReadOnly: event.readOnly === true ? "true" : "false",
 						CloudTrailEvent: encodeJson(event.record),
 					})),
 					NextToken: page.next,

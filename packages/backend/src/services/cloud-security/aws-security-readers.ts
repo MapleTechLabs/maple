@@ -1,7 +1,7 @@
 /**
- * Reads one AWS security service in one region with an assumed-role session. Each reader answers
- * with the service's state there, the findings changed since the cursor, and the next cursor. Owns
- * the SDK imports, so `AwsSecurityFindingsService` loads it with the first poll.
+ * Reads one AWS security service in one region with an assumed-role session. A reader hands each
+ * page of findings to a sink as it reads it and answers with the service's state there and the
+ * next cursor. Owns the SDK imports, so `AwsSecurityFindingsService` loads it with the first poll.
  */
 import * as AccessAnalyzer from "@distilled.cloud/aws/accessanalyzer"
 import * as Account from "@distilled.cloud/aws/account"
@@ -13,6 +13,7 @@ import * as GuardDuty from "@distilled.cloud/aws/guardduty"
 import * as Inspector from "@distilled.cloud/aws/inspector2"
 import * as Retry from "@distilled.cloud/aws/Retry"
 import * as SecurityHub from "@distilled.cloud/aws/securityhub"
+import type { AuditTrailEvent } from "@maple/domain/audit-trail"
 import {
 	type CloudFindingSeverity,
 	type CloudFindingSource,
@@ -21,7 +22,6 @@ import {
 	cloudFindingSeverityOfLabel,
 	cloudFindingSeverityOfScore,
 } from "@maple/domain/cloud-security"
-import type { AuditTrailEvent } from "@maple/domain/audit-trail"
 import { AwsRegion } from "@maple/primitives"
 import {
 	Array as Arr,
@@ -30,22 +30,29 @@ import {
 	Effect,
 	Number as Num,
 	Option,
+	Ref,
 	Schema,
 	String as Str,
 } from "effect"
 import { HttpClient } from "effect/http"
 import type { AwsRoleSession } from "../integrations/aws/api"
 import { cloudTrailAuditEvent } from "./cloudtrail-events"
+import type { CloudFindingWrite } from "./CloudSecurityStore"
 
 const REQUEST_TIMEOUT = Duration.seconds(20)
 const RETRY: Retry.Options = {
 	while: Category.isTransientError,
 	backoff: { baseMs: 500, factor: 2, capMs: 2000, maxRetries: 2, jitterMs: 50 },
 }
-/** Pages one service reads in one region per poll; a poll past it resumes from the cursor next time. */
+/** Pages one feed reads in one region per poll; a poll past it resumes from the cursor next time. */
 export const MAX_PAGES = 20
+/** Pages one time window may take before it is split in half. */
+export const WINDOW_PAGES = 5
 /** A finding's service record above this many bytes keeps only its columns. */
 const DETAIL_LIMIT_BYTES = 16 * 1024
+
+const MINUTE_MS = 60 * 1000
+const DAY_MS = 24 * 60 * MINUTE_MS
 
 const DENIED_CODES = new Set(["AccessDenied", "AccessDeniedException", "UnauthorizedOperation"])
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
@@ -60,31 +67,26 @@ export class AwsSecurityReadError extends Schema.TaggedError<AwsSecurityReadErro
 	},
 ) {}
 
+const isReadError = Schema.is(AwsSecurityReadError)
+
 /** A finding as a reader saw it, before the poller stamps the connection's columns. */
-export interface FindingRead {
-	readonly findingId: string
-	readonly type: string
-	readonly title: string
-	readonly description: string | null
-	readonly severity: CloudFindingSeverity
-	readonly status: CloudFindingStatus
-	readonly resourceType: string
-	readonly resourceId: string
-	readonly resourceName: string | null
-	readonly occurrences: number
-	readonly firstSeenAt: number
-	readonly lastSeenAt: number
-	readonly providerUpdatedAt: number
-	readonly detail: Record<string, unknown> | null
-}
+export type FindingRead = Omit<
+	CloudFindingWrite,
+	"orgId" | "connectionId" | "accountId" | "region" | "source"
+>
+
+/** Where a reader hands each page as it reads it, so a read never holds more than a page. */
+export type Sink<A, E> = (items: ReadonlyArray<A>) => Effect.Effect<void, E>
 
 export interface RegionRead {
 	readonly state: CloudServiceState
-	readonly findings: ReadonlyArray<FindingRead>
+	readonly findings: number
 	/** The cursor to store; null keeps the stored one. */
 	readonly cursorAt: number | null
 	/** Why the read stopped short, or why the service is not readable. */
 	readonly lastError: string | null
+	/** Every id a complete read of a service read whole returned; null when the read was not whole. */
+	readonly seenIds: ReadonlyArray<string> | null
 }
 
 export interface ReadTarget {
@@ -92,8 +94,9 @@ export interface ReadTarget {
 	readonly session: AwsRoleSession
 	readonly accountId: string
 	readonly region: AwsRegion
-	/** The stored cursor: the newest service update time already read. Null on the first poll. */
+	/** The stored cursor: how far earlier reads got. Null on the first poll. */
 	readonly cursorAt: number | null
+	readonly nowMs: number
 }
 
 const codeOf = (error: { readonly _tag: string }) =>
@@ -107,7 +110,11 @@ const messageOf = (what: string, error: { readonly _tag: string }) => {
 
 /** One SDK call as the session, with a bounded retry and timeout, failing as a read error. */
 const callAs =
-	(target: ReadTarget) =>
+	(target: {
+		readonly httpClient: HttpClient.HttpClient
+		readonly session: AwsRoleSession
+		readonly region: AwsRegion
+	}) =>
 	<A, E extends { readonly _tag: string }>(
 		what: string,
 		effect: Effect.Effect<A, E, Credentials.Credentials | HttpClient.HttpClient>,
@@ -147,31 +154,111 @@ const callAs =
 			)
 		})
 
-/** Pages of a listing until it ends or `MAX_PAGES`; `complete` says which. */
-const pagesOf = <A>(
-	page: (
-		token: string | undefined,
-	) => Effect.Effect<
-		{ readonly items: ReadonlyArray<A>; readonly next: string | undefined },
-		AwsSecurityReadError
-	>,
-): Effect.Effect<{ readonly items: ReadonlyArray<A>; readonly complete: boolean }, AwsSecurityReadError> => {
+interface PagesRead {
+	readonly count: number
+	readonly pages: number
+	readonly complete: boolean
+	/** For a newest-first listing: the oldest item time the pages reached. */
+	readonly oldestMs?: number
+}
+
+type Page<A> = Effect.Effect<
+	{ readonly items: ReadonlyArray<A>; readonly next: string | undefined },
+	AwsSecurityReadError
+>
+
+/** Pages of a listing, each handed to `onPage`, until it ends or `maxPages`; `complete` says which. */
+const pagesOf = <A, E>(
+	page: (token: string | undefined) => Page<A>,
+	onPage: Sink<A, E>,
+	maxPages: number = MAX_PAGES,
+): Effect.Effect<PagesRead, AwsSecurityReadError | E> => {
 	const go = (
 		token: string | undefined,
-		seen: ReadonlyArray<A>,
 		count: number,
-	): Effect.Effect<
-		{ readonly items: ReadonlyArray<A>; readonly complete: boolean },
-		AwsSecurityReadError
-	> =>
-		Effect.flatMap(page(token), ({ items, next }) => {
-			const all = Arr.appendAll(seen, items)
-			if (next === undefined || next === "") return Effect.succeed({ items: all, complete: true })
-			return count >= MAX_PAGES
-				? Effect.succeed({ items: all, complete: false })
-				: go(next, all, count + 1)
+		pages: number,
+	): Effect.Effect<PagesRead, AwsSecurityReadError | E> =>
+		Effect.flatMap(page(token), ({ items, next }) =>
+			Effect.flatMap(onPage(items), () => {
+				const read = { count: count + items.length, pages: pages + 1 }
+				if (next === undefined || next === "") return Effect.succeed({ ...read, complete: true })
+				return read.pages >= maxPages
+					? Effect.succeed({ ...read, complete: false })
+					: go(next, read.count, read.pages)
+			}),
+		)
+	return go(undefined, 0, 0)
+}
+
+interface WindowsRead {
+	/** Where the next read starts: the end of the last whole window. */
+	readonly cursorAt: number
+	readonly count: number
+	readonly caughtUp: boolean
+	/** A one-minute window held more than a window's pages, and the rest of it was skipped. */
+	readonly skipped: boolean
+}
+
+/**
+ * Reads `[startMs, endMs]` oldest window first, for listings that cannot sort by time. A whole window
+ * moves the cursor past it and doubles the next span; one that fills `WINDOW_PAGES` is read again at
+ * half the span, and the span stops growing for the rest of the read.
+ */
+const readWindows = <E>(
+	plan: {
+		readonly startMs: number
+		readonly endMs: number
+		readonly spanMs: number
+		readonly maxSpanMs: number
+	},
+	readWindow: (
+		fromMs: number,
+		toMs: number,
+		maxPages: number,
+	) => Effect.Effect<PagesRead, AwsSecurityReadError | E>,
+): Effect.Effect<WindowsRead, AwsSecurityReadError | E> => {
+	const go = (
+		from: number,
+		span: number,
+		ceiling: number,
+		pagesLeft: number,
+		count: number,
+		skipped: boolean,
+	): Effect.Effect<WindowsRead, AwsSecurityReadError | E> => {
+		if (from >= plan.endMs)
+			return Effect.succeed({ cursorAt: plan.endMs, count, caughtUp: true, skipped })
+		if (pagesLeft <= 0) return Effect.succeed({ cursorAt: from, count, caughtUp: false, skipped })
+		const to = Num.min(plan.endMs, from + span)
+		const allowed = Num.min(WINDOW_PAGES, pagesLeft)
+		return Effect.flatMap(readWindow(from, to, allowed), (read) => {
+			const left = pagesLeft - read.pages
+			const total = count + read.count
+			if (read.complete) return go(to, Num.min(ceiling, span * 2), ceiling, left, total, skipped)
+			// The read's budget ran out inside the window: the next poll reads it again.
+			if (allowed < WINDOW_PAGES)
+				return Effect.succeed({ cursorAt: from, count: total, caughtUp: false, skipped })
+			const width = to - from
+			if (width > MINUTE_MS) {
+				// A newest-first listing says how much of the window its pages covered: size the next one to fit.
+				// Without one, an eighth: a one-minute window is two splits away from an hour.
+				const fitted =
+					read.oldestMs === undefined || read.oldestMs <= from
+						? Math.floor(width / 8)
+						: Math.floor((to - read.oldestMs) * 0.8)
+				const next = Num.max(MINUTE_MS, Num.min(fitted, Math.floor(width / 2)))
+				return go(from, next, next, left, total, skipped)
+			}
+			return go(to, span, ceiling, left, total, true)
 		})
-	return go(undefined, [], 1)
+	}
+	const span = Num.max(MINUTE_MS, plan.spanMs)
+	return go(plan.startMs, span, plan.maxSpanMs, MAX_PAGES, 0, false)
+}
+
+const windowsError = (read: WindowsRead, noun: string): string | null => {
+	if (read.skipped)
+		return `More ${noun} in one minute than one read takes; the rest of that minute was skipped.`
+	return read.caughtUp ? null : "Catching up: the next poll continues."
 }
 
 const msOf = (value: string | Date | undefined): number | undefined =>
@@ -179,25 +266,14 @@ const msOf = (value: string | Date | undefined): number | undefined =>
 		? undefined
 		: Option.getOrUndefined(Option.map(DateTime.make(value), DateTime.toEpochMillis))
 
+const isoOf = (ms: number) => DateTime.formatIso(DateTime.makeUnsafe(ms))
+const dateOf = (ms: number) => DateTime.toDate(DateTime.makeUnsafe(ms))
+
 /** The service's record, unless it is too large to keep. */
 const detailOf = (detail: Record<string, unknown>): Record<string, unknown> | null =>
 	new TextEncoder().encode(encodeJson(detail)).length > DETAIL_LIMIT_BYTES ? null : detail
 
-const newestOf = (findings: ReadonlyArray<FindingRead>): number | undefined =>
-	Arr.match(findings, {
-		onEmpty: () => undefined,
-		onNonEmpty: (all) => Arr.reduce(all, 0, (max, finding) => Num.max(max, finding.providerUpdatedAt)),
-	})
-
-/**
- * Where a sorted read leaves the cursor: at the newest update read, never behind the stored one.
- * Reads overlap on that instant, which the upsert absorbs.
- */
-const sortedCursor = (target: ReadTarget, findings: ReadonlyArray<FindingRead>): number | null => {
-	const newest = newestOf(findings)
-	return newest === undefined ? null : Num.max(newest, target.cursorAt ?? 0)
-}
-
+/** A finding in the stored shape. None when the service gave it no time at all. */
 const readFinding = (finding: {
 	readonly findingId: string
 	readonly type: string
@@ -213,9 +289,10 @@ const readFinding = (finding: {
 	readonly lastSeenAt: number | undefined
 	readonly updatedAt: number | undefined
 	readonly detail: Record<string, unknown>
-}): FindingRead => {
-	const updatedAt = finding.updatedAt ?? finding.lastSeenAt ?? finding.firstSeenAt ?? 0
-	return {
+}): Option.Option<FindingRead> => {
+	const updatedAt = finding.updatedAt ?? finding.lastSeenAt ?? finding.firstSeenAt
+	if (updatedAt === undefined) return Option.none()
+	return Option.some({
 		findingId: finding.findingId,
 		type: finding.type,
 		title: finding.title === undefined || finding.title === "" ? finding.type : finding.title,
@@ -231,16 +308,42 @@ const readFinding = (finding: {
 		lastSeenAt: finding.lastSeenAt ?? updatedAt,
 		providerUpdatedAt: updatedAt,
 		detail: detailOf(finding.detail),
-	}
+	})
 }
+
+/** A sink that also keeps the newest update time it passed on, for readers sorted by it. */
+const trackingNewest = <E>(sink: Sink<FindingRead, E>) =>
+	Effect.map(Ref.make<number | null>(null), (newest) => ({
+		newest,
+		sink: (findings: ReadonlyArray<FindingRead>) =>
+			Effect.andThen(
+				Ref.update(newest, (current) =>
+					Arr.reduce(findings, current, (max: number | null, finding) =>
+						max === null ? finding.providerUpdatedAt : Num.max(max, finding.providerUpdatedAt),
+					),
+				),
+				sink(findings),
+			),
+	}))
+
+/** Where a read sorted by update time leaves the cursor: at the newest read, never behind the stored one. */
+const sortedCursor = (target: ReadTarget, newest: number | null): number | null =>
+	newest === null ? null : Num.max(newest, target.cursorAt ?? 0)
+
+const notEnabled: RegionRead = {
+	state: "not_enabled",
+	findings: 0,
+	cursorAt: null,
+	lastError: null,
+	seenIds: null,
+}
+
+const CAPPED = "More findings changed than one poll reads; the next one continues."
 
 // GuardDuty
 
 const guardDutyResource = (resource: GuardDuty.Resource | undefined) => {
-	const named = (id: string | undefined, name?: string) => ({
-		resourceId: id,
-		resourceName: name,
-	})
+	const named = (id: string | undefined, name?: string) => ({ resourceId: id, resourceName: name })
 	if (resource === undefined) return named(undefined)
 	if (resource.InstanceDetails?.InstanceId !== undefined) return named(resource.InstanceDetails.InstanceId)
 	if (resource.AccessKeyDetails?.AccessKeyId !== undefined)
@@ -259,81 +362,84 @@ const guardDutyResource = (resource: GuardDuty.Resource | undefined) => {
 
 export const normalizeGuardDuty = (finding: GuardDuty.Finding): Option.Option<FindingRead> => {
 	if (finding.Id === undefined || finding.Type === undefined) return Option.none()
-	return Option.some(
-		readFinding({
-			findingId: finding.Id,
-			type: finding.Type,
-			title: finding.Title,
-			description: finding.Description,
-			severity: cloudFindingSeverityOfScore(finding.Severity ?? 0),
-			status: finding.Service?.Archived === true ? "archived" : "active",
-			resourceType: finding.Resource?.ResourceType,
-			...guardDutyResource(finding.Resource),
-			occurrences: finding.Service?.Count,
-			firstSeenAt: msOf(finding.Service?.EventFirstSeen ?? finding.CreatedAt),
-			lastSeenAt: msOf(finding.Service?.EventLastSeen ?? finding.UpdatedAt),
-			updatedAt: msOf(finding.UpdatedAt),
-			detail: { arn: finding.Arn, resource: finding.Resource, action: finding.Service?.Action },
-		}),
-	)
+	return readFinding({
+		findingId: finding.Id,
+		type: finding.Type,
+		title: finding.Title,
+		description: finding.Description,
+		severity: cloudFindingSeverityOfScore(finding.Severity ?? 0),
+		status: finding.Service?.Archived === true ? "archived" : "active",
+		resourceType: finding.Resource?.ResourceType,
+		...guardDutyResource(finding.Resource),
+		occurrences: finding.Service?.Count,
+		firstSeenAt: msOf(finding.Service?.EventFirstSeen ?? finding.CreatedAt),
+		lastSeenAt: msOf(finding.Service?.EventLastSeen ?? finding.UpdatedAt),
+		updatedAt: msOf(finding.UpdatedAt),
+		detail: { arn: finding.Arn, resource: finding.Resource, action: finding.Service?.Action },
+	})
 }
 
-/** GuardDuty's ids page 50 at a time; each page's findings are fetched by id. */
-const readGuardDuty = (target: ReadTarget) =>
-	Effect.gen(function* () {
-		const call = callAs(target)
-		const detectors = yield* call(
-			"GuardDuty.ListDetectors",
-			GuardDuty.listDetectors({ region: target.region }),
-		)
-		const detectorId = Arr.head(detectors.DetectorIds ?? [])
-		if (Option.isNone(detectorId))
-			return {
-				state: "not_enabled",
-				findings: [],
-				cursorAt: null,
-				lastError: null,
-			} satisfies RegionRead
-		// The first poll reads what is open; later ones every change since the cursor, oldest first.
-		const criterion: Record<string, GuardDuty.Condition> =
-			target.cursorAt === null
-				? { "service.archived": { Equals: ["false"] } }
-				: { updatedAt: { GreaterThanOrEqual: target.cursorAt } }
-		const read = yield* pagesOf((token) =>
-			Effect.gen(function* () {
-				const listed = yield* call(
-					"GuardDuty.ListFindings",
-					GuardDuty.listFindings({
-						region: target.region,
-						DetectorId: detectorId.value,
-						FindingCriteria: { Criterion: criterion },
-						SortCriteria: { AttributeName: "updatedAt", OrderBy: "ASC" },
-						MaxResults: 50,
-						NextToken: token,
-					}),
-				)
-				if (listed.FindingIds.length === 0) return { items: [], next: listed.NextToken }
-				const got = yield* call(
-					"GuardDuty.GetFindings",
-					GuardDuty.getFindings({
-						region: target.region,
-						DetectorId: detectorId.value,
-						FindingIds: listed.FindingIds,
-					}),
-				)
-				return {
-					items: Arr.getSomes(Arr.map(got.Findings, normalizeGuardDuty)),
-					next: listed.NextToken,
-				}
+const guardDutyDetector = (target: ReadTarget) =>
+	Effect.map(
+		callAs(target)("GuardDuty.ListDetectors", GuardDuty.listDetectors({ region: target.region })),
+		(listed) => Arr.head(listed.DetectorIds ?? []),
+	)
+
+const guardDutyFindings = (target: ReadTarget, detectorId: string, ids: ReadonlyArray<string>) =>
+	Effect.map(
+		callAs(target)(
+			"GuardDuty.GetFindings",
+			GuardDuty.getFindings({
+				region: target.region,
+				DetectorId: detectorId,
+				FindingIds: Arr.fromIterable(ids),
 			}),
+		),
+		(got) => Arr.getSomes(Arr.map(got.Findings, normalizeGuardDuty)),
+	)
+
+/** GuardDuty's ids page 50 at a time, oldest update first; each page's findings are fetched by id. */
+const readGuardDuty = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =>
+	Effect.gen(function* () {
+		const detectorId = yield* guardDutyDetector(target)
+		if (Option.isNone(detectorId)) return notEnabled
+		// A delegated administrator lists its members' findings too: only this account's are read.
+		const criterion = {
+			accountId: { Equals: [target.accountId] },
+			...(target.cursorAt === null
+				? { "service.archived": { Equals: ["false"] } }
+				: { updatedAt: { GreaterThanOrEqual: target.cursorAt } }),
+		} satisfies Record<string, GuardDuty.Condition>
+		const tracked = yield* trackingNewest(sink)
+		const read = yield* pagesOf(
+			(token) =>
+				Effect.gen(function* () {
+					const listed = yield* callAs(target)(
+						"GuardDuty.ListFindings",
+						GuardDuty.listFindings({
+							region: target.region,
+							DetectorId: detectorId.value,
+							FindingCriteria: { Criterion: criterion },
+							SortCriteria: { AttributeName: "updatedAt", OrderBy: "ASC" },
+							MaxResults: 50,
+							NextToken: token,
+						}),
+					)
+					const items =
+						listed.FindingIds.length === 0
+							? []
+							: yield* guardDutyFindings(target, detectorId.value, listed.FindingIds)
+					return { items, next: listed.NextToken }
+				}),
+			tracked.sink,
 		)
+		const newest = yield* Ref.get(tracked.newest)
 		return {
 			state: "enabled",
-			findings: read.items,
-			cursorAt: sortedCursor(target, read.items),
-			lastError: read.complete
-				? null
-				: "More findings changed than one poll reads; the next one continues.",
+			findings: read.count,
+			cursorAt: sortedCursor(target, newest),
+			lastError: read.complete ? null : CAPPED,
+			seenIds: null,
 		} satisfies RegionRead
 	})
 
@@ -353,71 +459,82 @@ const securityHubStatus = (finding: SecurityHub.AwsSecurityFinding): CloudFindin
 export const normalizeSecurityHub = (finding: SecurityHub.AwsSecurityFinding): Option.Option<FindingRead> => {
 	if (finding.Id === undefined) return Option.none()
 	const resource = Option.getOrUndefined(Arr.head(finding.Resources ?? []))
-	return Option.some(
-		readFinding({
-			findingId: finding.Id,
-			type: finding.GeneratorId ?? Option.getOrElse(Arr.head(finding.Types ?? []), () => "Finding"),
-			title: finding.Title,
-			description: finding.Description,
-			severity: cloudFindingSeverityOfLabel(finding.Severity?.Label),
-			status: securityHubStatus(finding),
-			resourceType: resource?.Type,
-			resourceId: resource?.Id,
-			resourceName: undefined,
-			occurrences: undefined,
-			firstSeenAt: msOf(finding.FirstObservedAt ?? finding.CreatedAt),
-			lastSeenAt: msOf(finding.LastObservedAt ?? finding.UpdatedAt),
-			updatedAt: msOf(finding.UpdatedAt),
-			detail: {
-				productName: finding.ProductName,
-				compliance: finding.Compliance,
-				remediation: finding.Remediation,
-				resources: finding.Resources,
-			},
-		}),
-	)
+	return readFinding({
+		findingId: finding.Id,
+		type: finding.GeneratorId ?? Option.getOrElse(Arr.head(finding.Types ?? []), () => "Finding"),
+		title: finding.Title,
+		description: finding.Description,
+		severity: cloudFindingSeverityOfLabel(finding.Severity?.Label),
+		status: securityHubStatus(finding),
+		resourceType: resource?.Type,
+		resourceId: resource?.Id,
+		resourceName: undefined,
+		occurrences: undefined,
+		firstSeenAt: msOf(finding.FirstObservedAt ?? finding.CreatedAt),
+		lastSeenAt: msOf(finding.LastObservedAt ?? finding.UpdatedAt),
+		updatedAt: msOf(finding.UpdatedAt),
+		detail: {
+			productName: finding.ProductName,
+			compliance: finding.Compliance,
+			remediation: finding.Remediation,
+			resources: finding.Resources,
+		},
+	})
 }
 
-const readSecurityHub = (target: ReadTarget) =>
+/** This account's findings in this region, not an aggregation region's or an administrator's members'. */
+const securityHubScope = (target: ReadTarget): SecurityHub.AwsSecurityFindingFilters => ({
+	ProductName: Arr.map(AGGREGATED_PRODUCTS, (name) => ({ Value: name, Comparison: "NOT_EQUALS" })),
+	AwsAccountId: [{ Value: target.accountId, Comparison: "EQUALS" }],
+	Region: [{ Value: target.region, Comparison: "EQUALS" }],
+})
+
+const readSecurityHub = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =>
 	Effect.gen(function* () {
-		const call = callAs(target)
 		// A region without Security Hub answers DescribeHub with InvalidAccessException.
-		yield* call(
+		yield* callAs(target)(
 			"SecurityHub.DescribeHub",
 			SecurityHub.describeHub({ region: target.region }),
 			new Set(["InvalidAccessException", "ResourceNotFoundException"]),
 		)
+		// The first read takes what is open and not passing; a passed control would only be stored closed.
 		const filters: SecurityHub.AwsSecurityFindingFilters = {
-			ProductName: Arr.map(AGGREGATED_PRODUCTS, (name) => ({ Value: name, Comparison: "NOT_EQUALS" })),
+			...securityHubScope(target),
 			...(target.cursorAt === null
-				? { RecordState: [{ Value: "ACTIVE", Comparison: "EQUALS" }] }
-				: { UpdatedAt: [{ Start: DateTime.formatIso(DateTime.makeUnsafe(target.cursorAt)) }] }),
+				? {
+						RecordState: [{ Value: "ACTIVE", Comparison: "EQUALS" }],
+						ComplianceStatus: [{ Value: "PASSED", Comparison: "NOT_EQUALS" }],
+					}
+				: { UpdatedAt: [{ Start: isoOf(target.cursorAt), End: isoOf(target.nowMs) }] }),
 		}
-		const read = yield* pagesOf((token) =>
-			Effect.map(
-				call(
-					"SecurityHub.GetFindings",
-					SecurityHub.getFindings({
-						region: target.region,
-						Filters: filters,
-						SortCriteria: [{ Field: "UpdatedAt", SortOrder: "asc" }],
-						MaxResults: 100,
-						NextToken: token,
+		const tracked = yield* trackingNewest(sink)
+		const read = yield* pagesOf(
+			(token) =>
+				Effect.map(
+					callAs(target)(
+						"SecurityHub.GetFindings",
+						SecurityHub.getFindings({
+							region: target.region,
+							Filters: filters,
+							SortCriteria: [{ Field: "UpdatedAt", SortOrder: "asc" }],
+							MaxResults: 100,
+							NextToken: token,
+						}),
+					),
+					(page) => ({
+						items: Arr.getSomes(Arr.map(page.Findings, normalizeSecurityHub)),
+						next: page.NextToken,
 					}),
 				),
-				(page) => ({
-					items: Arr.getSomes(Arr.map(page.Findings, normalizeSecurityHub)),
-					next: page.NextToken,
-				}),
-			),
+			tracked.sink,
 		)
+		const newest = yield* Ref.get(tracked.newest)
 		return {
 			state: "enabled",
-			findings: read.items,
-			cursorAt: sortedCursor(target, read.items),
-			lastError: read.complete
-				? null
-				: "More findings changed than one poll reads; the next one continues.",
+			findings: read.count,
+			cursorAt: sortedCursor(target, newest),
+			lastError: read.complete ? null : CAPPED,
+			seenIds: null,
 		} satisfies RegionRead
 	})
 
@@ -426,7 +543,7 @@ const readSecurityHub = (target: ReadTarget) =>
 const inspectorStatus = (status: string): CloudFindingStatus =>
 	status === "CLOSED" ? "resolved" : status === "SUPPRESSED" ? "archived" : "active"
 
-export const normalizeInspector = (finding: Inspector.Finding): FindingRead => {
+export const normalizeInspector = (finding: Inspector.Finding): Option.Option<FindingRead> => {
 	const resource = Option.getOrUndefined(Arr.head(finding.resources))
 	return readFinding({
 		findingId: finding.findingArn,
@@ -453,48 +570,61 @@ export const normalizeInspector = (finding: Inspector.Finding): FindingRead => {
 	})
 }
 
-const readInspector = (target: ReadTarget) =>
+/** Inspector keeps an open finding indefinitely: the first read reaches back a year. */
+export const INSPECTOR_BACKFILL_MS = 365 * DAY_MS
+/** Inspector's update index lags a little: a read stops this far short of now, and the next starts there. */
+const INSPECTOR_LATE_MS = 5 * MINUTE_MS
+
+/** Inspector cannot sort by update time, so it is read in update-time windows, oldest first. */
+const readInspector = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =>
 	Effect.gen(function* () {
-		const call = callAs(target)
-		const status = yield* call(
+		const status = yield* callAs(target)(
 			"Inspector.BatchGetAccountStatus",
 			Inspector.batchGetAccountStatus({ region: target.region, accountIds: [target.accountId] }),
 		)
 		const account = Arr.findFirst(status.accounts, (state) => state.accountId === target.accountId)
-		if (Option.isNone(account) || account.value.state.status !== "ENABLED") {
-			return {
-				state: "not_enabled",
-				findings: [],
-				cursorAt: null,
-				lastError: null,
-			} satisfies RegionRead
-		}
-		const filterCriteria: Inspector.FilterCriteria =
-			target.cursorAt === null
-				? { findingStatus: [{ comparison: "EQUALS", value: "ACTIVE" }] }
-				: { updatedAt: [{ startInclusive: DateTime.toDate(DateTime.makeUnsafe(target.cursorAt)) }] }
-		const read = yield* pagesOf((token) =>
-			Effect.map(
-				call(
-					"Inspector.ListFindings",
-					Inspector.listFindings({
-						region: target.region,
-						filterCriteria,
-						maxResults: 100,
-						nextToken: token,
-					}),
+		if (Option.isNone(account) || account.value.state.status !== "ENABLED") return notEnabled
+		const endMs = target.nowMs - INSPECTOR_LATE_MS
+		const read = yield* readWindows(
+			{
+				startMs: target.cursorAt ?? endMs - INSPECTOR_BACKFILL_MS,
+				endMs,
+				spanMs: target.cursorAt === null ? 7 * DAY_MS : 60 * MINUTE_MS,
+				maxSpanMs: 90 * DAY_MS,
+			},
+			(fromMs, toMs, maxPages) =>
+				pagesOf(
+					(token) =>
+						Effect.map(
+							callAs(target)(
+								"Inspector.ListFindings",
+								Inspector.listFindings({
+									region: target.region,
+									filterCriteria: {
+										awsAccountId: [{ comparison: "EQUALS", value: target.accountId }],
+										updatedAt: [
+											{ startInclusive: dateOf(fromMs), endInclusive: dateOf(toMs) },
+										],
+									},
+									maxResults: 100,
+									nextToken: token,
+								}),
+							),
+							(page) => ({
+								items: Arr.getSomes(Arr.map(page.findings ?? [], normalizeInspector)),
+								next: page.nextToken,
+							}),
+						),
+					sink,
+					maxPages,
 				),
-				(page) => ({ items: Arr.map(page.findings ?? [], normalizeInspector), next: page.nextToken }),
-			),
 		)
-		// Inspector cannot sort by update time, so the cursor moves only once a read is complete.
 		return {
 			state: "enabled",
-			findings: read.items,
-			cursorAt: read.complete ? sortedCursor(target, read.items) : null,
-			lastError: read.complete
-				? null
-				: "More findings changed than one poll reads; the next one reads them again.",
+			findings: read.count,
+			cursorAt: read.cursorAt,
+			lastError: windowsError(read, "findings changed"),
+			seenIds: null,
 		} satisfies RegionRead
 	})
 
@@ -525,7 +655,9 @@ const accessAnalyzerSeverity = (findingType: string): CloudFindingSeverity =>
 const accessAnalyzerStatus = (status: string): CloudFindingStatus =>
 	status === "RESOLVED" ? "resolved" : status === "ARCHIVED" ? "archived" : "active"
 
-export const normalizeAccessAnalyzer = (finding: AccessAnalyzer.FindingSummaryV2): FindingRead => {
+export const normalizeAccessAnalyzer = (
+	finding: AccessAnalyzer.FindingSummaryV2,
+): Option.Option<FindingRead> => {
 	const findingType = finding.findingType ?? "ExternalAccess"
 	return readFinding({
 		findingId: finding.id,
@@ -545,8 +677,11 @@ export const normalizeAccessAnalyzer = (finding: AccessAnalyzer.FindingSummaryV2
 	})
 }
 
-/** Access Analyzer findings are few and cannot be filtered by update time: every poll reads them all. */
-const readAccessAnalyzer = (target: ReadTarget) =>
+/**
+ * Access Analyzer cannot filter by update time, so every poll reads the open and archived findings
+ * whole. A whole read names every id it saw, and the poller resolves the stored ones it did not.
+ */
+const readAccessAnalyzer = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =>
 	Effect.gen(function* () {
 		const call = callAs(target)
 		const listed = yield* call(
@@ -554,156 +689,275 @@ const readAccessAnalyzer = (target: ReadTarget) =>
 			AccessAnalyzer.listAnalyzers({ region: target.region }),
 		)
 		const active = Arr.filter(listed.analyzers, (analyzer) => analyzer.status === "ACTIVE")
-		if (active.length === 0)
-			return {
-				state: "not_enabled",
-				findings: [],
-				cursorAt: null,
-				lastError: null,
-			} satisfies RegionRead
+		if (active.length === 0) return notEnabled
+		const seen = yield* Ref.make<ReadonlyArray<string>>([])
 		const reads = yield* Effect.forEach(active, (analyzer) =>
-			pagesOf((token) =>
-				Effect.map(
-					call(
-						"AccessAnalyzer.ListFindingsV2",
-						AccessAnalyzer.listFindingsV2({
-							region: target.region,
-							analyzerArn: analyzer.arn,
-							maxResults: 100,
-							nextToken: token,
+			pagesOf(
+				(token) =>
+					Effect.map(
+						call(
+							"AccessAnalyzer.ListFindingsV2",
+							AccessAnalyzer.listFindingsV2({
+								region: target.region,
+								analyzerArn: analyzer.arn,
+								filter: {
+									status: { eq: ["ACTIVE", "ARCHIVED"] },
+									resourceOwnerAccount: { eq: [target.accountId] },
+								},
+								maxResults: 100,
+								nextToken: token,
+							}),
+						),
+						(page) => ({
+							items: Arr.getSomes(Arr.map(page.findings, normalizeAccessAnalyzer)),
+							next: page.nextToken,
 						}),
 					),
-					(page) => ({
-						items: Arr.map(page.findings, normalizeAccessAnalyzer),
-						next: page.nextToken,
-					}),
-				),
+				(findings) =>
+					Effect.andThen(
+						Ref.update(seen, (ids) =>
+							Arr.appendAll(
+								ids,
+								Arr.map(findings, (finding) => finding.findingId),
+							),
+						),
+						sink(findings),
+					),
 			),
 		)
-		const findings = Arr.flatMap(reads, (read) => read.items)
 		const complete = Arr.every(reads, (read) => read.complete)
+		const seenIds = yield* Ref.get(seen)
 		return {
 			state: "enabled",
-			findings,
-			cursorAt: sortedCursor(target, findings),
+			findings: Arr.reduce(reads, 0, (total, read) => total + read.count),
+			cursorAt: target.nowMs,
 			lastError: complete ? null : "This account has more findings than one poll reads.",
+			seenIds: complete ? seenIds : null,
 		} satisfies RegionRead
 	})
 
-const READERS = {
-	guardduty: readGuardDuty,
-	securityhub: readSecurityHub,
-	inspector: readInspector,
-	access_analyzer: readAccessAnalyzer,
-} satisfies Record<
-	CloudFindingSource,
-	(target: ReadTarget) => Effect.Effect<RegionRead, AwsSecurityReadError>
->
-
-/** One service in one region. A failure is the state it leaves, never an error. */
-export const readSource = (source: CloudFindingSource, target: ReadTarget): Effect.Effect<RegionRead> =>
-	READERS[source](target).pipe(
-		Effect.catchTag("@maple/backend/cloud-security/AwsSecurityReadError", (error) =>
+/** One service in one region. An AWS failure is the state it leaves; only the sink's errors fail it. */
+export const readSource = <E>(
+	source: CloudFindingSource,
+	target: ReadTarget,
+	sink: Sink<FindingRead, E>,
+): Effect.Effect<RegionRead, E> => {
+	const read = (): Effect.Effect<RegionRead, AwsSecurityReadError | E> => {
+		switch (source) {
+			case "guardduty":
+				return readGuardDuty(target, sink)
+			case "securityhub":
+				return readSecurityHub(target, sink)
+			case "inspector":
+				return readInspector(target, sink)
+			case "access_analyzer":
+				return readAccessAnalyzer(target, sink)
+		}
+	}
+	return read().pipe(
+		Effect.catchIf(isReadError, (error) =>
 			Effect.succeed({
 				state: error.kind,
-				findings: [],
+				findings: 0,
 				cursorAt: null,
 				lastError: error.kind === "not_enabled" ? null : error.message,
+				seenIds: null,
 			} satisfies RegionRead),
 		),
 		Effect.withSpan("AwsSecurity.readSource", {
 			attributes: { "maple.aws.region": target.region, "maple.cloud_security.source": source },
 		}),
 	)
+}
+
+// Reconcile
+
+/** Security Hub takes this many values for one filter field. */
+const SECURITY_HUB_ID_BATCH = 20
+
+/**
+ * The current version of stored findings, by id: a status changed in the console does not always
+ * move the service's update time. `missing` are ids the service no longer has.
+ */
+export const refreshFindings = (
+	source: "guardduty" | "securityhub",
+	target: ReadTarget,
+	ids: ReadonlyArray<string>,
+): Effect.Effect<{
+	readonly found: ReadonlyArray<FindingRead>
+	readonly missing: ReadonlyArray<string>
+}> => {
+	const fetch: Effect.Effect<ReadonlyArray<FindingRead>, AwsSecurityReadError> = source === "guardduty"
+		? Effect.flatMap(guardDutyDetector(target), (detectorId) =>
+				Option.isNone(detectorId)
+					? Effect.succeed([])
+					: Effect.map(
+							Effect.forEach(Arr.chunksOf(ids, 50), (chunk) =>
+								guardDutyFindings(target, detectorId.value, chunk),
+							),
+							Arr.flatten,
+						),
+			)
+		: Effect.map(
+				Effect.forEach(Arr.chunksOf(ids, SECURITY_HUB_ID_BATCH), (chunk) =>
+					Effect.map(
+						callAs(target)(
+							"SecurityHub.GetFindings",
+							SecurityHub.getFindings({
+								region: target.region,
+								Filters: {
+									...securityHubScope(target),
+									Id: Arr.map(chunk, (id) => ({ Value: id, Comparison: "EQUALS" })),
+								},
+								MaxResults: 100,
+							}),
+						),
+						(page) => Arr.getSomes(Arr.map(page.Findings, normalizeSecurityHub)),
+					),
+				),
+				Arr.flatten,
+			)
+	return fetch.pipe(
+		Effect.map((found) => {
+			const present = new Set(Arr.map(found, (finding) => finding.findingId))
+			return { found, missing: Arr.filter(ids, (id) => !present.has(id)) }
+		}),
+		// A refresh that fails changes nothing; the next one tries the same rows again.
+		Effect.catchTag("@maple/backend/cloud-security/AwsSecurityReadError", () =>
+			Effect.succeed({ found: [], missing: [] }),
+		),
+		Effect.withSpan("AwsSecurity.refreshFindings", {
+			attributes: { "maple.aws.region": target.region, "maple.cloud_security.source": source },
+		}),
+	)
+}
 
 /** The regions enabled in the account, as `account:ListRegions` lists them. */
 export const enabledRegions = (
 	httpClient: HttpClient.HttpClient,
 	session: AwsRoleSession,
 ): Effect.Effect<ReadonlyArray<AwsRegion>, AwsSecurityReadError> => {
-	const call = callAs({
-		httpClient,
-		session,
-		accountId: "",
-		region: Schema.decodeSync(AwsRegion)("us-east-1"),
-		cursorAt: null,
-	})
-	return Effect.map(
-		pagesOf((token) =>
-			Effect.map(
-				call(
-					"Account.ListRegions",
-					Account.listRegions({
-						RegionOptStatusContains: ["ENABLED", "ENABLED_BY_DEFAULT"],
-						MaxResults: 50,
-						NextToken: token,
-					}),
+	const call = callAs({ httpClient, session, region: Schema.decodeSync(AwsRegion)("us-east-1") })
+	return Effect.gen(function* () {
+		const names = yield* Ref.make<ReadonlyArray<string>>([])
+		yield* pagesOf(
+			(token) =>
+				Effect.map(
+					call(
+						"Account.ListRegions",
+						Account.listRegions({
+							RegionOptStatusContains: ["ENABLED", "ENABLED_BY_DEFAULT"],
+							MaxResults: 50,
+							NextToken: token,
+						}),
+					),
+					(page) => ({ items: page.Regions ?? [], next: page.NextToken }),
 				),
-				(page) => ({ items: page.Regions ?? [], next: page.NextToken }),
-			),
-		),
-		(read) =>
-			Arr.filter(
-				Arr.getSomes(Arr.map(read.items, (region) => Option.fromUndefinedOr(region.RegionName))),
-				isRegion,
-			),
-	)
+			(regions) =>
+				Ref.update(names, (seen) =>
+					Arr.appendAll(
+						seen,
+						Arr.getSomes(Arr.map(regions, (region) => Option.fromUndefinedOr(region.RegionName))),
+					),
+				),
+		)
+		const all = yield* Ref.get(names)
+		return Arr.filter(all, isRegion)
+	})
 }
 
 // CloudTrail
 
-/** CloudTrail lists an event up to about 15 minutes after it happened: each read reaches back past that. */
-export const CLOUDTRAIL_LATE_MS = 20 * 60 * 1000
+/**
+ * CloudTrail lists an event up to about 15 minutes after it happened: a read stops this far short of
+ * now and the next one starts where it stopped, so every event is read once, after it has arrived.
+ */
+export const CLOUDTRAIL_LATE_MS = 15 * MINUTE_MS
 /** How far back the first read of a region goes. */
-export const CLOUDTRAIL_BACKFILL_MS = 24 * 60 * 60 * 1000
+export const CLOUDTRAIL_BACKFILL_MS = 60 * MINUTE_MS
+/** A region whose cursor fell further behind than this restarts here. */
+const CLOUDTRAIL_MAX_BEHIND_MS = DAY_MS
 
 export interface CloudTrailRead {
 	readonly state: CloudServiceState
-	readonly events: ReadonlyArray<AuditTrailEvent>
+	readonly events: number
 	readonly cursorAt: number | null
 	readonly lastError: string | null
 }
 
 /**
- * The region's write management events since the cursor, less the late margin. Reads overlap, and
- * an event read twice lands on the same audit trail key.
+ * The region's write management events from the cursor to the late margin, in time windows oldest
+ * first. An event read again (a split window) lands on the same audit trail key.
  */
-export const readCloudTrail = (target: ReadTarget, nowMs: number): Effect.Effect<CloudTrailRead> => {
-	const call = callAs(target)
-	const startMs = Num.max(nowMs - CLOUDTRAIL_BACKFILL_MS, (target.cursorAt ?? 0) - CLOUDTRAIL_LATE_MS)
-	return pagesOf((token) =>
-		Effect.map(
-			call(
-				"CloudTrail.LookupEvents",
-				CloudTrail.lookupEvents({
-					region: target.region,
-					LookupAttributes: [{ AttributeKey: "ReadOnly", AttributeValue: "false" }],
-					StartTime: DateTime.toDate(DateTime.makeUnsafe(startMs)),
-					EndTime: DateTime.toDate(DateTime.makeUnsafe(nowMs)),
-					MaxResults: 50,
-					NextToken: token,
-				}),
-			),
-			(page) => ({ items: page.Events ?? [], next: page.NextToken }),
-		),
+export const readCloudTrail = <E>(
+	target: ReadTarget,
+	sink: Sink<AuditTrailEvent, E>,
+): Effect.Effect<CloudTrailRead, E> => {
+	const endMs = target.nowMs - CLOUDTRAIL_LATE_MS
+	const startMs =
+		target.cursorAt === null
+			? endMs - CLOUDTRAIL_BACKFILL_MS
+			: Num.max(endMs - CLOUDTRAIL_MAX_BEHIND_MS, target.cursorAt)
+	return readWindows(
+		{ startMs, endMs, spanMs: 15 * MINUTE_MS, maxSpanMs: CLOUDTRAIL_MAX_BEHIND_MS },
+		(fromMs, toMs, maxPages) =>
+			Effect.gen(function* () {
+				// LookupEvents answers newest first: the oldest event read sizes a split window.
+				const oldest = yield* Ref.make<number | undefined>(undefined)
+				const read = yield* pagesOf(
+					(token) =>
+						Effect.map(
+							callAs(target)(
+								"CloudTrail.LookupEvents",
+								CloudTrail.lookupEvents({
+									region: target.region,
+									LookupAttributes: [{ AttributeKey: "ReadOnly", AttributeValue: "false" }],
+									StartTime: dateOf(fromMs),
+									EndTime: dateOf(toMs),
+									MaxResults: 50,
+									NextToken: token,
+								}),
+							),
+							(page) => ({
+								items: Arr.getSomes(
+									Arr.map(page.Events ?? [], (event) =>
+										cloudTrailAuditEvent(target.accountId, event),
+									),
+								),
+								next: page.NextToken,
+							}),
+						),
+					(events) =>
+						Effect.andThen(
+							Ref.update(oldest, (current) =>
+								Arr.reduce(events, current, (min: number | undefined, event) =>
+									min === undefined ? event.occurredAtMs : Num.min(min, event.occurredAtMs),
+								),
+							),
+							sink(events),
+						),
+					maxPages,
+				)
+				const oldestMs = yield* Ref.get(oldest)
+				return oldestMs === undefined ? read : { ...read, oldestMs }
+			}),
 	).pipe(
 		Effect.map((read): CloudTrailRead => ({
 			state: "enabled",
-			events: Arr.getSomes(
-				Arr.map(read.items, (event) => cloudTrailAuditEvent(target.accountId, event)),
-			),
-			// Newest first: a read cut short keeps the cursor and reads the window again.
-			cursorAt: read.complete ? nowMs : null,
-			lastError: read.complete ? null : "More changes than one poll reads; the oldest may be missed.",
+			events: read.count,
+			cursorAt: read.cursorAt,
+			lastError: windowsError(read, "changes"),
 		})),
-		Effect.catchTag("@maple/backend/cloud-security/AwsSecurityReadError", (error) =>
+		Effect.catchIf(isReadError, (error) =>
 			Effect.succeed({
 				state: error.kind,
-				events: [],
+				events: 0,
 				cursorAt: null,
 				lastError: error.message,
 			} satisfies CloudTrailRead),
 		),
-		Effect.withSpan("AwsSecurity.readCloudTrail", { attributes: { "maple.aws.region": target.region } }),
+		Effect.withSpan("AwsSecurity.readCloudTrail", {
+			attributes: { "maple.aws.region": target.region },
+		}),
 	)
 }
