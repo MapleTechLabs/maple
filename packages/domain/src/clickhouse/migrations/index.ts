@@ -66,6 +66,7 @@ import { migration_0064_audit_trail_events } from "./0064_audit_trail_events"
 import { migration_0065_user_activity_identity } from "./0065_user_activity_identity"
 import { migration_0066_aws_metrics_hourly } from "./0066_aws_metrics_hourly"
 import { migration_0067_profiles } from "./0067_profiles"
+import { migration_0068_service_usage_profiles } from "./0068_service_usage_profiles"
 import { Array as Arr } from "effect"
 
 /**
@@ -165,6 +166,7 @@ export const migrations: ReadonlyArray<ClickHouseMigration> = [
 	migration_0065_user_activity_identity,
 	migration_0066_aws_metrics_hourly,
 	migration_0067_profiles,
+	migration_0068_service_usage_profiles,
 ] as const
 
 /** Highest migration `version` bundled — i.e. the schema level a fully-applied

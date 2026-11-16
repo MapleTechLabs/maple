@@ -17,6 +17,7 @@ import { migration_0034_trace_facets_hourly, traceFacetsHourlyBackfill } from ".
 import { migration_0037_service_overview_spans_span_kind } from "./0037_service_overview_spans_span_kind"
 import { migration_0038_external_edges_legacy_db_system } from "./0038_external_edges_legacy_db_system"
 import { migration_0045_ttl_only_drop_parts } from "./0045_ttl_only_drop_parts"
+import { migration_0068_service_usage_profiles } from "./0068_service_usage_profiles"
 import { latestSnapshotStatements } from "../../generated/clickhouse-schema"
 import { migrations } from "./index"
 
@@ -386,6 +387,27 @@ describe("migration 0038: legacy db.system spans stay off the external edges", (
 		expect(create).toContain(
 			"AND coalesce(nullIf(SpanAttributes['db.system.name'], ''), SpanAttributes['db.system']) = ''",
 		)
+	})
+})
+
+describe("migration 0068: service_usage counts profile rows", () => {
+	it("adds the columns, then recreates every service_usage view from the snapshot, outside the ingest gate", () => {
+		const statements = migration_0068_service_usage_profiles.statements
+		const serviceUsageViews = Arr.filter(latestSnapshotStatements, (stmt) =>
+			Str.includes(" TO service_usage AS")(stmt),
+		)
+		expect(statements.slice(0, 2)).toEqual([
+			"ALTER TABLE service_usage ADD COLUMN IF NOT EXISTS ProfileRowCount UInt64 DEFAULT 0",
+			"ALTER TABLE service_usage ADD COLUMN IF NOT EXISTS ProfileSizeBytes UInt64 DEFAULT 0",
+		])
+		const drops = Arr.filter(statements, (stmt) => Str.startsWith("DROP VIEW")(stmt))
+		const creates = Arr.filter(statements, (stmt) => Str.startsWith("CREATE MATERIALIZED VIEW")(stmt))
+		// Every view writing service_usage must emit the new columns, so all of them are replaced.
+		expect(drops).toHaveLength(serviceUsageViews.length)
+		expect([...creates].sort()).toEqual([...serviceUsageViews].sort())
+		expect(statements).toEqual([...statements.slice(0, 2), ...drops, ...creates])
+		for (const view of creates) expect(view).toContain("AS ProfileRowCount")
+		expect(migration_0068_service_usage_profiles.requiredForIngest).toBe(false)
 	})
 })
 
