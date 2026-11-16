@@ -154,10 +154,15 @@ export const Model = Schema.Struct({
 	document: Schema.NullOr(DashboardDocument),
 	/** The live board never answered within `COLLECTION_LOAD_TIMEOUT_MS`: the HTTP snapshot's state. */
 	snapshot: Snapshot,
-	/** The clock the window is resolved against: read on entry, Reload and a time range change. */
+	/** The clock the window is resolved against: read on entry, a range change, Reload and each tick. */
 	nowMs: Schema.NullOr(Schema.Number),
-	/** 0 snaps the window to the cache grid. */
+	/** Bumped by every Reload and auto-refresh tick; the Reload spinner ends on its own version. */
 	refreshVersion: Schema.Number,
+	/**
+	 * What read `nowMs`. Only an explicit Reload leaves the window unsnapped and refetches held keys;
+	 * an auto-refresh tick snaps, so a tile refetches only once its window reaches the next grid step.
+	 */
+	clockRead: Schema.Literals(["Navigation", "AutoRefresh", "Reload"]),
 	isReloading: Schema.Boolean,
 	/** The sections container's width; 0 until measured. */
 	gridWidth: Schema.Number,
