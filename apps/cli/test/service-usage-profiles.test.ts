@@ -30,7 +30,7 @@ const insertProfile = (db: Chdb, orgId: string, atMs: number, frames: ReadonlyAr
 
 const UsageRow = Schema.Struct({
 	hour: Schema.String,
-	profiles: CH.CHNumber,
+	profileRows: CH.CHNumber,
 	profileBytes: CH.CHNumber,
 	logBytes: CH.CHNumber,
 })
@@ -38,7 +38,7 @@ const UsageRow = Schema.Struct({
 const usage = (db: Chdb, orgId: string) =>
 	decodeJsonEachRow(UsageRow)(
 		db.query(
-			`SELECT toString(Hour) AS hour, sum(ProfileCount) AS profiles, sum(ProfileSizeBytes) AS profileBytes, sum(LogSizeBytes) AS logBytes FROM service_usage WHERE OrgId = '${orgId}' AND ServiceName = 'checkout' GROUP BY Hour ORDER BY Hour`,
+			`SELECT toString(Hour) AS hour, sum(ProfileRowCount) AS profileRows, sum(ProfileSizeBytes) AS profileBytes, sum(LogSizeBytes) AS logBytes FROM service_usage WHERE OrgId = '${orgId}' AND ServiceName = 'checkout' GROUP BY Hour ORDER BY Hour`,
 		),
 	)
 
@@ -65,8 +65,8 @@ describeWithChdb("service_usage profiles view", () => {
 		const rows = usage(db, ORG)
 		// 16 bytes per frame plus 200 per row: (2 * 16 + 200) + (3 * 16 + 200), then 1 * 16 + 200.
 		expect(rows).toEqual([
-			{ hour: seconds(HOUR_MS), profiles: 2, profileBytes: 480, logBytes: 0 },
-			{ hour: seconds(HOUR_MS + 3_600_000), profiles: 1, profileBytes: 216, logBytes: 0 },
+			{ hour: seconds(HOUR_MS), profileRows: 2, profileBytes: 480, logBytes: 0 },
+			{ hour: seconds(HOUR_MS + 3_600_000), profileRows: 1, profileBytes: 216, logBytes: 0 },
 		])
 	})
 })
@@ -100,6 +100,6 @@ describeWithChdb("v59 -> v60 service_usage profile columns", () => {
 			{ schemaSql: localSchemaSnapshot(60).sql, bootstrapSchema: false },
 		)
 		await rm(root, { recursive: true, force: true })
-		expect(rows).toEqual([{ hour: seconds(HOUR_MS), profiles: 1, profileBytes: 216, logBytes: 900 }])
+		expect(rows).toEqual([{ hour: seconds(HOUR_MS), profileRows: 1, profileBytes: 216, logBytes: 900 }])
 	})
 })

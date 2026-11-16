@@ -390,25 +390,23 @@ describe("migration 0038: legacy db.system spans stay off the external edges", (
 	})
 })
 
-describe("migration 0068: service_usage counts profiles", () => {
-	it("adds the profile columns before creating the view that fills them, outside the ingest gate", () => {
-		const [addCount, addBytes, drop, create, ...rest] = migration_0068_service_usage_profiles.statements
-		expect(rest).toEqual([])
-		expect(addCount).toBe(
-			"ALTER TABLE service_usage ADD COLUMN IF NOT EXISTS ProfileCount UInt64 DEFAULT 0",
+describe("migration 0068: service_usage counts profile rows", () => {
+	it("adds the columns, then recreates every service_usage view from the snapshot, outside the ingest gate", () => {
+		const statements = migration_0068_service_usage_profiles.statements
+		const serviceUsageViews = Arr.filter(latestSnapshotStatements, (stmt) =>
+			Str.includes(" TO service_usage AS")(stmt),
 		)
-		expect(addBytes).toBe(
+		expect(statements.slice(0, 2)).toEqual([
+			"ALTER TABLE service_usage ADD COLUMN IF NOT EXISTS ProfileRowCount UInt64 DEFAULT 0",
 			"ALTER TABLE service_usage ADD COLUMN IF NOT EXISTS ProfileSizeBytes UInt64 DEFAULT 0",
-		)
-		expect(drop).toBe("DROP VIEW IF EXISTS service_usage_profiles_mv")
-		expect(create).toBe(
-			Option.getOrUndefined(
-				Arr.findFirst(latestSnapshotStatements, (stmt) =>
-					Str.includes("service_usage_profiles_mv TO service_usage")(stmt),
-				),
-			),
-		)
-		expect(create).toContain("FROM profiles")
+		])
+		const drops = Arr.filter(statements, (stmt) => Str.startsWith("DROP VIEW")(stmt))
+		const creates = Arr.filter(statements, (stmt) => Str.startsWith("CREATE MATERIALIZED VIEW")(stmt))
+		// Every view writing service_usage must emit the new columns, so all of them are replaced.
+		expect(drops).toHaveLength(serviceUsageViews.length)
+		expect([...creates].sort()).toEqual([...serviceUsageViews].sort())
+		expect(statements).toEqual([...statements.slice(0, 2), ...drops, ...creates])
+		for (const view of creates) expect(view).toContain("AS ProfileRowCount")
 		expect(migration_0068_service_usage_profiles.requiredForIngest).toBe(false)
 	})
 })

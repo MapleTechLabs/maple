@@ -101,4 +101,4 @@ export const isMissingErrorEventsUserId = namesDriftedColumn(/\bUserId\b/)
 
 /** `service_usage` predates its profile columns (migration 0068): schema drift naming one of them.
  * The billing chart then reads no profile usage. */
-export const isMissingServiceUsageProfiles = namesDriftedColumn(/\bProfile(?:Count|SizeBytes)\b/)
+export const isMissingServiceUsageProfiles = namesDriftedColumn(/\bProfile(?:RowCount|SizeBytes)\b/)

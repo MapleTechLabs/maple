@@ -2041,21 +2041,29 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 		],
 	},
 	{
-		// Profile counts and bytes on service_usage, written by a new view the bootstrap creates.
-		// Existing hours hold 0 and are not backfilled from profiles.
+		// Profile stack rows and bytes on service_usage, written by a new view the bootstrap creates; the six
+		// signal views are dropped first so the bootstrap recreates them writing 0 there. Nothing is backfilled.
 		slug: "service-usage-profiles",
 		description: "Add profile counts and bytes to service_usage and create its view from profiles",
 		clonedBefore: "any DDL runs",
 		beforeBootstrap: [
 			addColumns("service_usage", [
-				["ProfileCount", "UInt64 DEFAULT 0"],
+				["ProfileRowCount", "UInt64 DEFAULT 0"],
 				["ProfileSizeBytes", "UInt64 DEFAULT 0"],
 			]),
+			dropViews(
+				"service_usage_logs_mv",
+				"service_usage_traces_mv",
+				"service_usage_metrics_sum_mv",
+				"service_usage_metrics_gauge_mv",
+				"service_usage_metrics_histogram_mv",
+				"service_usage_metrics_exp_histogram_mv",
+			),
 		],
 		plan: [
 			[
 				"add-service-usage-profiles",
-				"Add ProfileCount and ProfileSizeBytes to service_usage and create service_usage_profiles_mv via the v60 bootstrap",
+				"Add ProfileRowCount and ProfileSizeBytes to service_usage, recreate its six signal views and create service_usage_profiles_mv via the v60 bootstrap",
 			],
 		],
 		dispositions: [
