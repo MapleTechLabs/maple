@@ -736,7 +736,7 @@ export const features: Feature[] = [
 				{ key: "clients", value: "Claude Code · Cursor · any Streamable HTTP client" },
 				{ key: "auth", value: "API key · OAuth with PKCE" },
 				{ key: "scope", value: "one org per key" },
-				{ key: "tools", value: "130+ · read and write kept separate" },
+				{ key: "tools", value: "130+ · each marked read or write" },
 				{
 					key: "reads",
 					value: "traces · logs · metrics · sessions · issues · agent sessions · infra",
@@ -860,7 +860,12 @@ export const features: Feature[] = [
 			{ op: "read_source_file()", title: m.feat_github_cap_7_title, body: m.feat_github_cap_7_body },
 			{ op: "review.rules", title: m.feat_github_cap_8_title, body: m.feat_github_cap_8_body },
 		],
-		plan: { meters: [], retention: m.feat_plan_ret_ci, limit: null, docs: "/docs/code-review/overview" },
+		plan: {
+			meters: ["ai_credits"],
+			retention: m.feat_plan_ret_ci,
+			limit: null,
+			docs: "/docs/code-review/overview",
+		},
 		related: ["error-tracking", "ai-mcp-integration", "distributed-tracing"],
 		relatedUseCases: ["api-performance"],
 		locales: ["en", "ja", "ko"],

@@ -104,11 +104,6 @@ export const platformFeatures = (): string[] => [
 ]
 
 /**
- * The live offer, or the `autumn.config.ts` mirror if Autumn is unreachable at
- * build time. The fallback carries browser sessions and product events too, since a
- * short fallback would render a meter that disagrees with the live one.
- */
-/**
  * One Autumn request per build: every feature page reads the offer, in three
  * locales. The response carries no localized text, so sharing it is safe; labels
  * are still resolved per call. The site is fully static, so nothing outlives a build.
@@ -121,6 +116,11 @@ const listPlans = () =>
 		xApiVersion: AUTUMN_API_VERSION,
 	}).plans.list())
 
+/**
+ * The live offer, or the `autumn.config.ts` mirror if Autumn is unreachable at
+ * build time. The fallback carries browser sessions and product events too, since a
+ * short fallback would render a meter that disagrees with the live one.
+ */
 export async function getOffer(): Promise<Offer> {
 	const labels = dataFeatureLabels()
 

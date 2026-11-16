@@ -11,8 +11,6 @@ import { STATUS_PAGE_ENDPOINTS } from "../../../lib/feature-sections";
 
 const json = JSON.stringify(demoStatusJson(), null, 2);
 
-const ENDPOINTS = STATUS_PAGE_ENDPOINTS;
-
 const rules = [
 	{ title: m.status_feeds_rule_1_title(), body: m.status_feeds_rule_1_body() },
 	{ title: m.status_feeds_rule_2_title(), body: m.status_feeds_rule_2_body() },
@@ -31,7 +29,7 @@ const rules = [
 				<pre class="spf-json" tabindex="0">{json}</pre>
 				<div class="spf-endpoints">
 					{
-						ENDPOINTS.map((endpoint) => (
+						STATUS_PAGE_ENDPOINTS.map((endpoint) => (
 							<div>
 								<span>{endpoint.path}</span>
 								<span>{endpoint.what}</span>

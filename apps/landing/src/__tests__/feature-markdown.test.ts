@@ -36,6 +36,11 @@ describe("feature page markdown twins", () => {
 		expect(text).toContain("](https://maple.dev/docs/explore/logs.md)")
 	})
 
+	it("bills code review against AI usage", async () => {
+		const text = await renderFeature("github")
+		expect(text).toMatch(/- \*\*billed as\*\*: AI usage: \$10 included, then billed per model/)
+	})
+
 	it("says an unmetered feature has no separate charge", async () => {
 		const text = await renderFeature("alerts")
 		expect(text).toMatch(/- \*\*billed as\*\*: No separate meter/)

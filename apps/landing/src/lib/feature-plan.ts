@@ -20,7 +20,7 @@ import {
 } from "./pricing-offer"
 
 /** The Autumn features a page's data is billed under. */
-export type MeterId = "traces" | "logs" | "metrics" | "browser_sessions" | "product_events"
+export type MeterId = "traces" | "logs" | "metrics" | "browser_sessions" | "product_events" | "ai_credits"
 
 export interface FeaturePlan {
 	/** Empty when the feature has no meter of its own. */
