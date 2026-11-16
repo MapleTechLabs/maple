@@ -56,7 +56,7 @@ interface FindingResource {
 	readonly region: string
 }
 
-/** The services one resource affects, summed over the values it may carry, busiest first. */
+/** The services one resource affects, busiest first, each counted once across the values it may carry. */
 export const affectedServicesOf = (
 	resource: FindingResource,
 	matches: ReadonlyArray<ResourceServiceMatch>,
@@ -64,10 +64,12 @@ export const affectedServicesOf = (
 	// On attribute, scope and value together: a Lambda named `prod` is not the `prod` cluster, nor
 	// the `prod` function of another account.
 	const candidates = new Set(Arr.map(cloudResourceCandidates(resource), cloudResourceMatchTag))
+	// One span can carry several of a finding's candidates (a Lambda's ARN and its name), so a
+	// service counts the most any one of them saw, not their sum.
 	const totals = Arr.reduce(
 		Arr.filter(matches, (match) => candidates.has(match.match)),
 		new Map<string, number>(),
-		(acc, match) => acc.set(match.service, (acc.get(match.service) ?? 0) + match.requests),
+		(acc, match) => acc.set(match.service, Math.max(acc.get(match.service) ?? 0, match.requests)),
 	)
 	return Arr.sort(
 		Arr.map([...totals], ([service, requests]) => ({ service, requests })),

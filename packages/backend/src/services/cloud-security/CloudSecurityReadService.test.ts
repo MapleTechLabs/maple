@@ -140,7 +140,7 @@ const finding = (
 const matchTag = (key: string, scope: string, value: string) => `${key}\u001f${scope}\u001f${value}`
 
 describe("affectedServicesOf", () => {
-	it("sums a resource's services over its ARN and name, busiest first, on the right attribute", () => {
+	it("counts a resource's services once across its ARN and name, busiest first, on the right attribute", () => {
 		const services = affectedServicesOf(
 			{
 				resourceId: "arn:aws:lambda:us-east-1:111111111111:function:checkout-fn",
@@ -189,7 +189,8 @@ describe("affectedServicesOf", () => {
 		)
 		assert.deepStrictEqual(services, [
 			{ service: "checkout-api", requests: 50 },
-			{ service: "payments", requests: 10 },
+			// The same span counted under the ARN (1) and the name (9): the most, not the sum.
+			{ service: "payments", requests: 9 },
 		])
 	})
 })

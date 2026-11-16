@@ -197,6 +197,13 @@ describe("security cloud findings", () => {
 		})
 	})
 
+	test("a filter picked while a search is only typed puts the box back to the applied search", () => {
+		const model = listed(populatedOverview(NOW), cloudFindingsOf(NOW))
+		const typed = pageUpdate(model, Message.ChangedSearchText({ value: "ssh" }))
+		const filtered = pageUpdate(typed.model, Message.ChangedFilter({ filter: "severity", value: "high" }))
+		expect(filtered.model.searchText).toBe("")
+	})
+
 	test("new filters read a new first page", () => {
 		const model = listed(populatedOverview(NOW), cloudFindingsOf(NOW))
 		const moved = routeChanged(model, listRoute({ source: "guardduty" }), context)

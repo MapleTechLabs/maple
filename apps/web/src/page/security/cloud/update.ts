@@ -137,8 +137,10 @@ export const init = (route: SecurityCloudRoute, context: PageContext): Return =>
 export const routeChanged = (model: Model, route: SecurityCloudRoute, context: PageContext): Return => {
 	const hasDraft = model.searchText !== (model.search.q ?? "")
 	const next: Model = { ...model, ...routeFields(route) }
+	// A draft survives only while the applied search is the same; otherwise the box shows what applies.
+	const keepsDraft = hasDraft && next.search.q === model.search.q
 	return readScreen(
-		{ ...next, searchText: hasDraft ? model.searchText : (next.search.q ?? "") },
+		{ ...next, searchText: keepsDraft ? model.searchText : (next.search.q ?? "") },
 		context,
 		"Load",
 	)
@@ -166,8 +168,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRetry: () =>
 			chain({ model, commands: [ReadCloudClock()] }, (next) => readScreen(next, context, "Refresh")),
 		ClickedLoadMore: () => fetchNext(model),
+		// A filter applies what the URL holds; an unsubmitted draft goes back to the applied search.
 		ChangedFilter: ({ filter, value }) =>
-			navigate(model, withFilter(model.search, FILTER_KEY[filter], value)),
+			navigate(
+				{ ...model, searchText: model.search.q ?? "" },
+				withFilter(model.search, FILTER_KEY[filter], value),
+			),
 		ChangedSearchText: ({ value }) => ({ model: { ...model, searchText: value } }),
 		SubmittedSearch: () => navigate(model, withFilter(model.search, "q", Str.trim(model.searchText))),
 		ClearedSearch: () =>
