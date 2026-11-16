@@ -16,6 +16,7 @@ const organization: ClerkOrganization = {
 	flags: {
 		aiAutoTriage: false,
 		cloudCost: false,
+		cloudSecurity: false,
 		dataSources: false,
 		productAnalytics: false,
 		profiling: false,

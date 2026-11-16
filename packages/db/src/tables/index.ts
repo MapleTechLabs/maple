@@ -47,6 +47,7 @@ import { IssueEscalationPolicies, IssueEscalations } from "./escalations"
 import { AlertEscalationRuns, AlertMemberNotifications, EscalationChains } from "./escalation-chains"
 import { OnCallOverrides, OnCallSchedules } from "./oncall-schedules"
 import { AwsConnections } from "./aws-connections"
+import { CloudSecurityFindings, CloudSecurityServiceStates } from "./cloud-security"
 import { CostSources } from "./cost-sources"
 import { GcpConnectors } from "./gcp-connectors"
 import { GcpResources } from "./gcp-resources"
@@ -127,6 +128,7 @@ export * from "./anomalies"
 export * from "./api-keys"
 export * from "./billing-links"
 export * from "./cancellation-reviews"
+export * from "./cloud-security"
 export * from "./dependency-scan"
 export * from "./chat-identities"
 export * from "./chat-workspaces"
@@ -238,6 +240,8 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	GcpConnectors,
 	GcpResources,
 	AwsConnections,
+	CloudSecurityFindings,
+	CloudSecurityServiceStates,
 	CostSources,
 	Investigations,
 	LinearFeatureSettings,

@@ -17,6 +17,7 @@
 		"./cloud-platform": "./src/cloud-platform.ts",
 		"./format": "./src/format.ts",
 		"./aws": "./src/aws.ts",
+		"./cloud-security": "./src/cloud-security.ts",
 		"./gcp": "./src/gcp.ts",
 		"./gcp-infra": "./src/gcp-infra.ts",
 		"./runtime-advisories": "./src/runtime-advisories.ts",
