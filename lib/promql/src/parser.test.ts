@@ -150,6 +150,9 @@ describe("parse errors", () => {
 		expect(errorOf("a and on(x) group_left b")).toMatch(/no grouping allowed/)
 		expect(errorOf("topk(x)")).toMatch(/wrong number of arguments/)
 		expect(errorOf("clamp(x, 1)")).toMatch(/argument/)
+		expect(errorOf("label_join(up)")).toBe(
+			'expected at least 3 argument(s) in call to "label_join", got 1',
+		)
 	})
 
 	it("points a type error at the expression it is about", () => {

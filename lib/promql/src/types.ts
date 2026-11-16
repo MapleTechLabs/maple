@@ -70,8 +70,10 @@ export const checkTypes = (expr: Expr): PromqlTypeError | undefined => {
 			const min = optional === -1 ? args.length - 1 : args.length - optional
 			const max = optional === -1 ? Number.POSITIVE_INFINITY : args.length
 			if (expr.args.length < min || expr.args.length > max) {
+				const expected =
+					optional === -1 ? `at least ${min}` : min === max ? `${min}` : `${min} to ${max}`
 				return error(
-					`expected ${min === max ? min : `${min} to ${max}`} argument(s) in call to "${expr.func}", got ${expr.args.length}`,
+					`expected ${expected} argument(s) in call to "${expr.func}", got ${expr.args.length}`,
 				)
 			}
 			for (const [index, arg] of expr.args.entries()) {
