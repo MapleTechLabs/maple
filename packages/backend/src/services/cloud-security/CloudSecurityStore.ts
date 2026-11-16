@@ -185,6 +185,10 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 									.onConflictDoUpdate({
 										target: ["orgId", "connectionId", "region", "source", "findingId"],
 										set: PG.excludedAll(),
+										// An older version read late never replaces a newer one; the same time does,
+										// since a console change can leave the service's update time alone.
+										where: (existing, excluded) =>
+											existing.providerUpdatedAt.lte(excluded.providerUpdatedAt),
 									}),
 							),
 						),
@@ -263,7 +267,8 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 				const updated = yield* dbExecute((db) =>
 					db.run(
 						PG.update(CloudSecurityFindings)
-							.set({ status: "resolved", providerUpdatedAt: at, syncedAt: at })
+							// Not the provider time: the service may still report this finding, at its own time.
+							.set({ status: "resolved", syncedAt: at })
 							.where(($) => [
 								$.orgId.eq(feed.orgId),
 								$.connectionId.eq(feed.connectionId),
