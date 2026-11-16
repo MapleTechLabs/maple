@@ -137,7 +137,7 @@ export const exposureOf = (nowMs: number): Exposure => ({
 			signature: "",
 			service: "api-gateway",
 			requests: 640,
-			inPath: 640,
+			inPath: 0,
 			answered: 602,
 			sources: 5,
 			lastSeen: at(nowMs, 8 * MINUTE),
@@ -234,7 +234,6 @@ export const exposureOf = (nowMs: number): Exposure => ({
 			return {
 				bucket: new Date(bucket).toISOString(),
 				requests: 20 + ((index * 37) % 90),
-				inPath: 20 + ((index * 37) % 90),
 				answered: (index * 11) % 20,
 			}
 		},
