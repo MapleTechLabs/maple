@@ -354,6 +354,19 @@ describe("mapWarehouseError", () => {
 			).toBeInstanceOf(WarehouseUpstreamError)
 		})
 
+		it("keeps an engine fault whose message echoes a missing table a query error", () => {
+			expect(
+				classify(
+					"p",
+					{
+						message: "[Error] Logical error near: -- Resource 'spans' not found",
+						type: "LOGICAL_ERROR",
+					},
+					"maple",
+				),
+			).toBeInstanceOf(WarehouseQueryError)
+		})
+
 		it("keeps transient failures upstream for caller SQL", () => {
 			expect(
 				classify("rawSqlQuery", { message: "blip", type: "SOCKET_TIMEOUT" }, "caller"),
