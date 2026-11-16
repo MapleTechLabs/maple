@@ -56,7 +56,8 @@ const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b))
 export const resolveAt = (at: AtModifier | undefined, params: QueryParams): number | undefined => {
 	if (at === undefined) return undefined
 	if (at.kind === "start") return params.startMs
-	if (at.kind === "end") return params.endMs
+	// An instant query has one timestamp, its start, whatever end the caller passed.
+	if (at.kind === "end") return isInstant(params) ? params.startMs : params.endMs
 	return at.timeMs
 }
 
@@ -108,7 +109,10 @@ const request = (
 export const planRequests = (expr: Expr, params: QueryParams): RequestPlan => {
 	const plan: RequestPlan = new Map()
 	const lookback = params.lookbackMs ?? LOOKBACK_MS
-	const top: TimeGrid = { startMs: params.startMs, endMs: params.endMs, stepMs: params.stepMs }
+	// The grid `evaluate` walks: an instant query reads at its start only.
+	const top: TimeGrid = isInstant(params)
+		? { startMs: params.startMs, endMs: params.startMs, stepMs: 0 }
+		: { startMs: params.startMs, endMs: params.endMs, stepMs: params.stepMs }
 	const matrix = (node: MatrixSelector, grid: TimeGrid, raw: boolean): void => {
 		plan.set(node.vector, request(node.vector, grid, params, node.rangeMs, raw))
 	}

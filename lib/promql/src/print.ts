@@ -70,8 +70,8 @@ const matcher = (m: LabelMatcher): string => `${labelName(m.name)}${m.op}${quote
 
 const selector = (s: VectorSelector, range: string): string => {
 	const isName = (m: LabelMatcher) => m.name === "__name__" && m.op === "=" && m.value === s.name
-	// A second name matcher only parses as `__name__=...` next to the first, never beside a bare name.
-	const spellOut = s.matchers.some((m) => m.name === "__name__" && !isName(m))
+	// A second name matcher, even an identical one, only parses spelled out as `__name__=...`.
+	const spellOut = s.matchers.filter((m) => m.name === "__name__").length > 1
 	const nameIsIdentifier =
 		!spellOut && s.name !== undefined && IDENTIFIER.test(s.name) && !RESERVED.has(s.name.toLowerCase())
 	const rest = s.matchers.filter((m) => !(nameIsIdentifier && isName(m)))
