@@ -213,6 +213,7 @@ export const settingsTabValues = [
 	"general",
 	"members",
 	"domains",
+	"sso",
 	"billing",
 	"audit-log",
 	"keys",

@@ -28,6 +28,7 @@ import * as BillingView from "./billing/view"
 import * as MembersView from "./members/view"
 import * as GeneralView from "./general/view"
 import * as DomainsView from "./domains/view"
+import * as SsoView from "./sso/view"
 import * as DataPlatformView from "./data-platform/view"
 import * as DataSourcesView from "./data-sources/view"
 import * as AuditLogView from "./audit-log/view"
@@ -195,6 +196,16 @@ const tabContent = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<H
 					viewInputs: {},
 				}),
 			]
+		case "Sso":
+			return [
+				h.submodel({
+					slotId: "settings-sso",
+					model: tab.model,
+					view: SsoView.view,
+					toParentMessage: (message) => Message.GotSsoMessage({ message }),
+					viewInputs: {},
+				}),
+			]
 		case "Billing":
 			return [
 				h.submodel({
@@ -319,6 +330,8 @@ const tabDescription = (model: Model): string | undefined => {
 			return MembersView.description
 		case "Domains":
 			return DomainsView.description
+		case "Sso":
+			return SsoView.description
 		case "AuditLog":
 			return AuditLogView.description
 		case "SetupHealth":
