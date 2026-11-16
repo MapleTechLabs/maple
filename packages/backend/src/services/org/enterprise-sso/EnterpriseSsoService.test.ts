@@ -2,7 +2,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import { Array as Arr, ConfigProvider, Effect, Exit, Layer, Option, Schema, String as Str } from "effect"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
-import { OrgId, SsoConnectionRequest, UserId } from "@maple/domain/http"
+import { OrgId, SsoConnectionRequest, SsoSamlSettings, UserId } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AutumnClient, type AutumnResult } from "@maple/backend/services/billing/autumn-http"
@@ -47,11 +47,12 @@ const fakeClerk = (): FakeClerk => ({
 	verifiedDomains: [],
 	mappings: new Map(),
 	bypass: [],
-	members: new Set(["user_admin", "user_breakglass", "user_contractor"]),
+	members: new Set(["user_admin", "user_breakglass", "user_contractor", "user_dual"]),
 	emailDomains: new Map([
 		["user_breakglass", ["acme.com"]],
 		["user_contractor", ["gmail.com"]],
 		["user_outsider", ["acme.com"]],
+		["user_dual", ["acme.com", "partner.io"]],
 	]),
 	nextId: 1,
 	rejectCreate: null,
@@ -175,6 +176,15 @@ const gatewayLayer = (clerk: FakeClerk) =>
 			),
 		replaceRoleMappings: (directoryId, mappings) =>
 			Effect.sync(() => void clerk.mappings.set(directoryId, [...mappings])),
+		domainsClaimedElsewhere: (connectionId, domains) =>
+			Effect.sync(() =>
+				Arr.filter(domains, (d) =>
+					Arr.some(
+						[...clerk.connections.values()],
+						(c) => c.id !== connectionId && Arr.contains(c.domains, d),
+					),
+				),
+			),
 		isMember: (_orgId, userId) => Effect.sync(() => clerk.members.has(userId)),
 		verifiedEmailDomains: (userId) => Effect.sync(() => clerk.emailDomains.get(userId) ?? []),
 		listBypassUsers: () =>
@@ -621,6 +631,134 @@ describe("EnterpriseSsoService", () => {
 				const doc = yield* sso.get(ORG)
 				assert.isNull(doc.connection)
 				assert.isNull(doc.directory)
+			}),
+		)
+	})
+
+	it.effect("refuses to exempt someone another org's SSO also covers", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = { clerk: fakeClerk(), dns: new Map<string, Array<string>>(), entitled: true }
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				const sso = yield* EnterpriseSsoService
+				yield* verifiedDomain(world.dns, "acme.com")
+				yield* sso.createConnection(ORG, ADMIN, samlRequest(["acme.com"]))
+				// Another org's connection serves the user's second address.
+				world.clerk.connections.set("ent_partner", {
+					...[...world.clerk.connections.values()][0],
+					id: "ent_partner",
+					organizationId: OTHER_ORG,
+					domains: ["partner.io"],
+				})
+				const dual = yield* sso
+					.addBypassUser(ORG, Schema.decodeSync(UserId)("user_dual"))
+					.pipe(Effect.flip)
+				assert.strictEqual(dual._tag, "@maple/http/enterprise-sso/EnterpriseSsoInvalidError")
+				assert.deepStrictEqual(world.clerk.bypass, [])
+			}),
+		)
+	})
+
+	it.effect(
+		"recovers from a connection or directory deleted in Clerk: domains removable, set-up repeatable",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const world = { clerk: fakeClerk(), dns: new Map<string, Array<string>>(), entitled: true }
+			return run(
+				testDb,
+				world,
+				Effect.gen(function* () {
+					const sso = yield* EnterpriseSsoService
+					yield* verifiedDomain(world.dns, "acme.com")
+					yield* sso.addDomain(ORG, ADMIN, "acme.io")
+					yield* sso.createConnection(ORG, ADMIN, samlRequest(["acme.com"]))
+					yield* sso.createDirectory(ORG)
+
+					// Directory removed in Clerk's dashboard: a new one can be set up.
+					world.clerk.directories.clear()
+					const again = yield* sso.createDirectory(ORG)
+					assert.isNotNull(again.document.directory)
+					assert.strictEqual(world.clerk.directories.size, 1)
+
+					// Connection removed in Clerk's dashboard: domains can go, and a new IdP can connect.
+					world.clerk.connections.clear()
+					world.clerk.directories.clear()
+					const removed = yield* sso.removeDomain(ORG, "acme.io")
+					assert.deepStrictEqual(
+						Arr.map(removed.domains, (d) => d.domain),
+						["acme.com"],
+					)
+					const reconnected = yield* sso.createConnection(ORG, ADMIN, samlRequest(["acme.com"]))
+					assert.isNotNull(reconnected.connection)
+					assert.isNull(reconnected.directory)
+				}),
+			)
+		},
+	)
+
+	it.effect("keeps a group deleted when an update arrives with the same timestamp", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = { clerk: fakeClerk(), dns: new Map<string, Array<string>>(), entitled: true }
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				const sso = yield* EnterpriseSsoService
+				yield* verifiedDomain(world.dns, "acme.com")
+				yield* sso.createConnection(ORG, ADMIN, samlRequest(["acme.com"]))
+				yield* sso.createDirectory(ORG)
+				const directoryId = [...world.clerk.directories.keys()][0] ?? ""
+				const group = { directoryId, groupId: "grp_1", displayName: "Admins" }
+				yield* sso.applyDirectoryGroup({ ...group, updatedAt: 10, deleted: false })
+				yield* sso.applyDirectoryGroup({ ...group, updatedAt: 20, deleted: true })
+				yield* sso.applyDirectoryGroup({ ...group, updatedAt: 20, deleted: false })
+				assert.deepStrictEqual((yield* sso.get(ORG)).groups, [])
+				// A genuinely newer push re-creates it.
+				yield* sso.applyDirectoryGroup({ ...group, updatedAt: 30, deleted: false })
+				assert.deepStrictEqual(
+					Arr.map((yield* sso.get(ORG)).groups, (g) => g.groupId),
+					["grp_1"],
+				)
+			}),
+		)
+	})
+
+	it.effect("edits a manual SAML connection without asking for the certificate again", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = { clerk: fakeClerk(), dns: new Map<string, Array<string>>(), entitled: true }
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				const sso = yield* EnterpriseSsoService
+				yield* verifiedDomain(world.dns, "acme.com")
+				const manual = (certificate?: string) =>
+					new SsoConnectionRequest({
+						name: "Acme IdP",
+						provider: "saml_custom",
+						domains: ["acme.com"],
+						saml:
+							certificate === undefined
+								? new SsoSamlSettings({
+										ssoUrl: "https://idp.acme.com/sso",
+										entityId: "https://idp.acme.com",
+									})
+								: new SsoSamlSettings({
+										ssoUrl: "https://idp.acme.com/sso",
+										entityId: "https://idp.acme.com",
+										certificate,
+									}),
+					})
+				const missing = yield* sso.createConnection(ORG, ADMIN, manual()).pipe(Effect.flip)
+				assert.strictEqual(missing._tag, "@maple/http/enterprise-sso/EnterpriseSsoInvalidError")
+				yield* sso.createConnection(ORG, ADMIN, manual("-----BEGIN CERTIFICATE-----"))
+				const renamed = yield* sso.updateConnection(
+					ORG,
+					new SsoConnectionRequest({ ...manual(), name: "Acme Corp IdP" }),
+				)
+				assert.strictEqual(renamed.connection?.name, "Acme Corp IdP")
 			}),
 		)
 	})

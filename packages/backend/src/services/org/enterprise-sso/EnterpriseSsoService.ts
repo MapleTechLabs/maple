@@ -533,10 +533,11 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				yield* requireDomainRow(orgId, domain)
 				const row = yield* loadConnectionRow(orgId)
 				if (Option.isSome(row)) {
-					const connection = yield* clerk
-						.getConnection(row.value.clerkConnectionId)
-						.pipe(Effect.mapError(fromClerk))
-					if (connection.domains.includes(domain)) {
+					const connection = yield* orMissing(
+						clerk.getConnection(row.value.clerkConnectionId),
+					).pipe(Effect.mapError(fromClerk))
+					// A connection already gone in Clerk holds no domain.
+					if (Option.isSome(connection) && Arr.contains(connection.value.domains, domain)) {
 						return yield* new EnterpriseSsoConflictError({
 							message: `${domain} is used by the identity provider connection. Remove it there first.`,
 						})
@@ -575,10 +576,11 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				const base = { name: Str.trim(request.name), domains }
 				if (ssoProtocolOf(provider) === "saml") {
 					const saml = request.saml
+					// On an edit an omitted certificate keeps the one Clerk holds; a new connection needs it.
 					const manual =
 						saml?.ssoUrl !== undefined &&
 						saml.entityId !== undefined &&
-						saml.certificate !== undefined
+						(saml.certificate !== undefined || mode === "update")
 					if (saml === undefined || (saml.metadataUrl === undefined && !manual)) {
 						if (mode === "update" && saml === undefined)
 							return base satisfies ClerkSsoConnectionInput
@@ -612,7 +614,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 			) {
 				yield* requireEntitled(orgId)
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.sso.provider": request.provider })
-				const existing = yield* loadConnectionRow(orgId)
+				const existing = yield* reconcileRow(orgId)
 				if (Option.isSome(existing)) {
 					return yield* new EnterpriseSsoConflictError({
 						message: "This organization already has an identity provider connected.",
@@ -690,6 +692,67 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				return yield* get(orgId)
 			})
 
+			const clearDirectory = (orgId: OrgId, directoryId: string) =>
+				Clock.currentTimeMillis.pipe(
+					Effect.flatMap((now) =>
+						dbExecute((db) =>
+							db.run(
+								PG.update(OrgSsoConnections)
+									.set({ clerkDirectoryId: null, updatedAt: now })
+									.where(($) => [$.orgId.eq(orgId), $.clerkDirectoryId.eq(directoryId)]),
+							),
+						),
+					),
+				)
+
+			/**
+			 * The org's row with ids Clerk has confirmed deleted (404) cleared, so a connection or
+			 * directory removed in Clerk's dashboard does not block setting up a new one.
+			 */
+			const reconcileRow = Effect.fn("EnterpriseSsoService.reconcileRow")(function* (orgId: OrgId) {
+				const row = yield* loadConnectionRow(orgId)
+				if (Option.isNone(row)) return Option.none<OrgSsoConnectionRow>()
+				const { clerkConnectionId, clerkDirectoryId } = row.value
+				const [connection, directory] = yield* Effect.all(
+					[
+						orMissing(clerk.getConnection(clerkConnectionId)),
+						clerkDirectoryId === null
+							? Effect.succeedSome(null)
+							: orMissing(clerk.getDirectory(clerkDirectoryId)),
+					],
+					{ concurrency: "unbounded" },
+				).pipe(Effect.mapError(fromClerk))
+				const dropGroups = (directoryId: string) =>
+					dbExecute((db) =>
+						db.run(
+							PG.deleteFrom(OrgDirectoryGroups).where(($) => [
+								$.orgId.eq(orgId),
+								$.directoryId.eq(directoryId),
+							]),
+						),
+					)
+				if (Option.isNone(connection)) {
+					yield* Effect.annotateCurrentSpan({ "maple.sso.reconciled": "connection" })
+					yield* dbExecute((db) =>
+						db.run(
+							PG.deleteFrom(OrgSsoConnections).where(($) => [
+								$.orgId.eq(orgId),
+								$.clerkConnectionId.eq(clerkConnectionId),
+							]),
+						),
+					)
+					if (clerkDirectoryId !== null) yield* dropGroups(clerkDirectoryId)
+					return Option.none<OrgSsoConnectionRow>()
+				}
+				if (clerkDirectoryId !== null && Option.isNone(directory)) {
+					yield* Effect.annotateCurrentSpan({ "maple.sso.reconciled": "directory" })
+					yield* clearDirectory(orgId, clerkDirectoryId)
+					yield* dropGroups(clerkDirectoryId)
+					return Option.some({ ...row.value, clerkDirectoryId: null })
+				}
+				return row
+			})
+
 			/** Clerk first, then the row and groups, so the row never points at a deleted directory. */
 			const dropDirectory = (orgId: OrgId, directoryId: string) =>
 				clerk.deleteDirectory(directoryId).pipe(
@@ -698,7 +761,8 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 						() => Effect.void,
 					),
 					Effect.mapError(fromClerk),
-					Effect.andThen(touch(orgId, { clerkDirectoryId: null })),
+					// Only this directory's binding: a slower, overlapping delete must not clear a newer one.
+					Effect.andThen(clearDirectory(orgId, directoryId)),
 					Effect.andThen(
 						dbExecute((db) =>
 							db.run(
@@ -741,7 +805,12 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 					Effect.mapError(fromClerk),
 				)
 				yield* dbExecute((db) =>
-					db.run(PG.deleteFrom(OrgSsoConnections).where(($) => [$.orgId.eq(orgId)])),
+					db.run(
+						PG.deleteFrom(OrgSsoConnections).where(($) => [
+							$.orgId.eq(orgId),
+							$.clerkConnectionId.eq(row.clerkConnectionId),
+						]),
+					),
 				)
 				return yield* get(orgId)
 			})
@@ -795,7 +864,13 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 			) {
 				yield* requireEntitled(orgId)
 				yield* Effect.annotateCurrentSpan({ orgId })
-				const row = yield* requireConnectionRow(orgId)
+				const reconciled = yield* reconcileRow(orgId)
+				if (Option.isNone(reconciled)) {
+					return yield* new EnterpriseSsoNotFoundError({
+						message: "Connect an identity provider first.",
+					})
+				}
+				const row = reconciled.value
 				if (row.clerkDirectoryId !== null) {
 					return yield* new EnterpriseSsoConflictError({
 						message: "SCIM provisioning is already set up. Rotate its token to get a new one.",
@@ -844,7 +919,14 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				const directory = yield* clerk
 					.rotateDirectoryKey(directoryId)
 					.pipe(Effect.mapError(fromClerk))
-				yield* touch(orgId)
+				// The old key is already retiring: a failed timestamp write must not swallow the new one.
+				yield* touch(orgId).pipe(
+					Effect.catch((error) =>
+						Effect.logWarning("SSO timestamp update failed after rotating a SCIM token").pipe(
+							Effect.annotateLogs({ orgId, error: error.message }),
+						),
+					),
+				)
 				return yield* issued(orgId, directory)
 			})
 
@@ -937,6 +1019,19 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 						message: `Only people with a verified email on ${Arr.join(connection.domains, ", ")} can bypass SSO.`,
 					})
 				}
+				// Clerk's entry exempts the user from every connection that serves them, so a user
+				// another org's SSO also covers cannot be exempted from here.
+				const elsewhere = yield* clerk
+					.domainsClaimedElsewhere(
+						row.clerkConnectionId,
+						Arr.filter(emailDomains, (d) => !Arr.contains(connection.domains, d)),
+					)
+					.pipe(Effect.mapError(fromClerk))
+				if (elsewhere.length > 0) {
+					return yield* new EnterpriseSsoInvalidError({
+						message: `This person also has an email on ${Arr.join(elsewhere, ", ")}, which another organization's SSO covers, so they cannot bypass SSO from here.`,
+					})
+				}
 				yield* clerk.addBypassUser(userId).pipe(Effect.mapError(fromClerk))
 				return yield* get(orgId)
 			})
@@ -992,7 +1087,14 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 							.values({ orgId, directoryId: event.directoryId, groupId: event.groupId, ...set })
 							.onConflictDoUpdate({
 								target: ["directoryId", "groupId"],
-								where: ($) => PG.and($.orgId.eq(orgId), $.updatedAt.lte(event.updatedAt)),
+								// Ties go to the deletion: a redelivered update at the same instant stays dead.
+								where: ($) =>
+									PG.and(
+										$.orgId.eq(orgId),
+										event.deleted
+											? $.updatedAt.lte(event.updatedAt)
+											: $.updatedAt.lt(event.updatedAt),
+									),
 								set,
 							}),
 					),

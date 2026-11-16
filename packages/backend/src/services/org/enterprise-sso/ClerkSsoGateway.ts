@@ -145,6 +145,11 @@ export interface ClerkSsoGatewayApi {
 	) => Effect.Effect<ClerkSsoDirectory, ClerkRequestError>
 	readonly rotateDirectoryKey: (id: string) => Effect.Effect<ClerkSsoDirectory, ClerkRequestError>
 	readonly deleteDirectory: (id: string) => Effect.Effect<void, ClerkRequestError>
+	/** Which of `domains` another enterprise connection in the instance serves. */
+	readonly domainsClaimedElsewhere: (
+		connectionId: string,
+		domains: ReadonlyArray<string>,
+	) => Effect.Effect<ReadonlyArray<string>, ClerkRequestError>
 	readonly isMember: (orgId: OrgId, userId: UserId) => Effect.Effect<boolean, ClerkRequestError>
 	/** The domains of the user's verified email addresses, lower-cased. */
 	readonly verifiedEmailDomains: (userId: UserId) => Effect.Effect<ReadonlyArray<string>, ClerkRequestError>
@@ -423,6 +428,28 @@ const make = Effect.gen(function* () {
 			raw("Clerk.directories.delete", "DELETE", `/directories/${encodeURIComponent(id)}`).pipe(
 				Effect.asVoid,
 			),
+		domainsClaimedElsewhere: (connectionId, domains) =>
+			domains.length === 0
+				? Effect.succeed([])
+				: sdk(
+						"Clerk.enterpriseConnections.list",
+						{ "maple.sso.domains": domains.length },
+						async (c) => {
+							const claimed = new Set<string>()
+							for (let offset = 0; offset < 10_000; offset += 100) {
+								const page = await c.enterpriseConnections.getEnterpriseConnectionList({
+									limit: 100,
+									offset,
+								})
+								for (const conn of page.data) {
+									if (conn.id !== connectionId)
+										for (const d of conn.domains) claimed.add(Str.toLowerCase(d))
+								}
+								if (page.data.length < 100) break
+							}
+							return Arr.filter(domains, (d) => claimed.has(d))
+						},
+					),
 		isMember: (orgId, userId) =>
 			sdk("Clerk.organizations.getOrganizationMembershipList", { orgId }, (c) =>
 				c.organizations.getOrganizationMembershipList({
