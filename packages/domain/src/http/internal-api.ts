@@ -19,6 +19,7 @@ import { IntegrationsApiGroup } from "./integrations"
 import { OpenRouterCostApiGroup } from "./openrouter-cost"
 import { CostBudgetsApiGroup } from "./cost-budgets"
 import { OpenRouterKeyApiGroup } from "./openrouter-key"
+import { EnterpriseSsoApiGroup } from "./enterprise-sso"
 import { PlanetScaleCostApiGroup } from "./planetscale-cost"
 import { OrgClickHouseSettingsApiGroup } from "./org-clickhouse-settings"
 import {
@@ -72,6 +73,7 @@ export class MapleInternalApi extends HttpApi.make("MapleInternalApi")
 	.add(IntegrationsApiGroup)
 	.add(McpInternalApiGroup)
 	.add(OpenRouterKeyApiGroup)
+	.add(EnterpriseSsoApiGroup)
 	.add(OpenRouterCostApiGroup)
 	.add(CloudflareCostApiGroup)
 	.add(AnthropicCostApiGroup)

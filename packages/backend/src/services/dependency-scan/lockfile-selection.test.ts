@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
 	MAX_LOCKFILES,
 	MAX_MANIFEST_BYTES,
+	MAX_SKIPPED_LOCKFILES,
 	MAX_MANIFEST_TOTAL_BYTES,
 	manifestsFor,
 	type SelectedLockfile,
@@ -36,13 +37,23 @@ describe("selectLockfiles", () => {
 
 	it("caps the lockfiles a scan reads and counts the rest", () => {
 		const many = Array.from({ length: MAX_LOCKFILES + 3 }, (_, i) => file(`pkg${i}/bun.lock`))
-		const { selected, skipped } = selectLockfiles(many)
+		const { selected, skipped, omitted } = selectLockfiles(many)
 		expect(selected).toHaveLength(MAX_LOCKFILES)
 		expect(skipped).toHaveLength(3)
+		expect(omitted).toBe(0)
 		// Every lockfile is either read or recorded as skipped, never dropped.
 		expect(new Set(Arr.map([...selected, ...skipped], (lockfile) => lockfile.file.path)).size).toBe(
 			many.length,
 		)
+	})
+
+	it("records skipped lockfiles up to a cap and only counts the rest", () => {
+		const total = MAX_LOCKFILES + MAX_SKIPPED_LOCKFILES + 7
+		const many = Array.from({ length: total }, (_, i) => file(`pkg${i}/bun.lock`))
+		const { selected, skipped, omitted } = selectLockfiles(many)
+		expect(selected).toHaveLength(MAX_LOCKFILES)
+		expect(skipped).toHaveLength(MAX_SKIPPED_LOCKFILES)
+		expect(omitted).toBe(7)
 	})
 })
 

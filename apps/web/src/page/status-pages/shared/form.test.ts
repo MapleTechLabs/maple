@@ -189,6 +189,7 @@ describe("times the API would refuse as in the future", () => {
 			componentIds: [],
 			start: "2026-10-01T11:00",
 			end: "2026-10-01T11:30",
+			autoComplete: true,
 		}
 		expect(incidentEditIssues(edit, "UTC", nowMs).times).toBeNull()
 		expect(incidentEditIssues({ ...edit, start: "2026-10-01T12:05" }, "UTC", nowMs).times).toBe(

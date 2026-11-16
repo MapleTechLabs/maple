@@ -171,7 +171,7 @@ jobs:
                         - 'packages/sdk-core/**'
                         - 'packages/tsconfig.browser.dts.json'
 
-            - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
+            - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
               with:
                   install_args: bun
 
@@ -471,7 +471,7 @@ jobs:
             # Migration replay and search indexes, raw-vs-rollup parity for web
             # analytics, the service map, SLOs and the AWS infra metrics (a divergence renders as a plausible wrong number), the
             # cascaded trace facets rollup (one that never fires reads as "no data"), and the users
-            # directory's group view.
+            # directory's group view, and which scanner probes count as answered.
             - name: Replay migrations and verify rollups
               run: >-
                   bun run --filter=@maple/backend test --
@@ -486,6 +486,7 @@ jobs:
                   src/services/warehouse/host-infra.clickhouse.e2e.test.ts
                   src/services/warehouse/slo-parity.clickhouse.e2e.test.ts
                   src/services/warehouse/aws-metrics-hourly-parity.clickhouse.e2e.test.ts
+                  src/services/warehouse/security-telemetry.clickhouse.e2e.test.ts
                   src/services/users/users-groups.clickhouse.e2e.test.ts
 
             # The fingerprint the error views compute, against the TS mirror every
@@ -543,7 +544,7 @@ jobs:
                   MAPLE_REQUIRE_LIBCHDB: "1"
                   MAPLE_TELEMETRY: off
               run: |
-                  for file in tenant-isolation scoped-delete local-service-map-rollup checkpoint-merge-freeze local-store-traces-rekey local-query-guard local-query-guard.fuzz funnel-scenarios users-identity histogram-metrics exponential-histogram-metrics release-verification profile-sample-types service-usage-profiles search-traces-filters cloud-resources; do
+                  for file in tenant-isolation scoped-delete local-service-map-rollup checkpoint-merge-freeze local-store-traces-rekey local-query-guard local-query-guard.fuzz funnel-scenarios users-identity histogram-metrics exponential-histogram-metrics release-verification profile-sample-types profile-hotspots service-usage-profiles search-traces-filters cloud-resources; do
                       bun test --timeout 30000 "test/$file.test.ts"
                   done
 
@@ -729,7 +730,7 @@ jobs:
                   install-filters: "@maple/ingest-rules"
                   turbo-cache: "false"
 
-            - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
+            - uses: Swatinem/rust-cache@eedcf2fb1c22f010a0eb66b92f378c110977f266 # v2
               with:
                   workspaces: apps/ingest
 
@@ -763,7 +764,7 @@ jobs:
 
             - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
               with:
-                  # Match `go 1.25.0` in packages/otel-collector-maple-exporter/go.mod.
+                  # Match the `go` directive in packages/otel-collector-maple-exporter/go.mod.
                   go-version-file: packages/otel-collector-maple-exporter/go.mod
                   cache: true
                   cache-dependency-path: packages/otel-collector-maple-exporter/go.sum

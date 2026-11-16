@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "2f985b0eac280ea29b18f91216f0067f64a18e4f61283bedb0046ca5a75a7146",
+	"id": "b1e5dc6813147a0762981a0725d9851ba54770dd750ff8861b46420ea03e1acc",
 	"prevIds": [
-		"9d6e8b6218558b21171920ac6617574c35fa06490caafd45e4b31417c66d6058"
+		"633dfcaec2d9da67578a0b6b77229d7b3d47443e70af34face1eee2e876e7a8d"
 	],
 	"entities": [
 		{
@@ -782,6 +782,17 @@
 		},
 		{
 			"kind": "table",
+			"name": "org_directory_groups",
+			"primaryKey": {
+				"name": "org_directory_groups_pkey",
+				"columns": [
+					"directory_id",
+					"group_id"
+				]
+			}
+		},
+		{
+			"kind": "table",
 			"name": "org_ingest_attribute_mappings",
 			"primaryKey": {
 				"name": "org_ingest_attribute_mappings_pkey",
@@ -870,6 +881,27 @@
 				"name": "org_recommendation_issues_pkey",
 				"columns": [
 					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "org_sso_connections",
+			"primaryKey": {
+				"name": "org_sso_connections_pkey",
+				"columns": [
+					"org_id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "org_sso_domains",
+			"primaryKey": {
+				"name": "org_sso_domains_pkey",
+				"columns": [
+					"org_id",
+					"domain"
 				]
 			}
 		},
@@ -12233,6 +12265,66 @@
 		},
 		{
 			"kind": "column",
+			"table": "org_directory_groups",
+			"name": "org_id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_directory_groups",
+			"name": "directory_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_directory_groups",
+			"name": "group_id",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_directory_groups",
+			"name": "display_name",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_directory_groups",
+			"name": "updated_at",
+			"position": 4,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_directory_groups",
+			"name": "deleted_at",
+			"position": 5,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
 			"table": "org_ingest_attribute_mappings",
 			"name": "id",
 			"position": 0,
@@ -13068,6 +13160,146 @@
 			"position": 11,
 			"type": "timestamp with time zone",
 			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_sso_connections",
+			"name": "org_id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_sso_connections",
+			"name": "clerk_connection_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_sso_connections",
+			"name": "clerk_directory_id",
+			"position": 2,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_sso_connections",
+			"name": "created_at",
+			"position": 3,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_sso_connections",
+			"name": "created_by",
+			"position": 4,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_sso_connections",
+			"name": "updated_at",
+			"position": 5,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_sso_domains",
+			"name": "org_id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_sso_domains",
+			"name": "domain",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_sso_domains",
+			"name": "challenge",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_sso_domains",
+			"name": "status",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_sso_domains",
+			"name": "clerk_domain_id",
+			"position": 4,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_sso_domains",
+			"name": "verified_at",
+			"position": 5,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_sso_domains",
+			"name": "created_at",
+			"position": 6,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_sso_domains",
+			"name": "created_by",
+			"position": 7,
+			"type": "text",
+			"notNull": true,
 			"default": null,
 			"identity": null
 		},
@@ -17744,8 +17976,18 @@
 		{
 			"kind": "column",
 			"table": "status_page_incidents",
-			"name": "started_at",
+			"name": "auto_complete",
 			"position": 11,
+			"type": "boolean",
+			"notNull": true,
+			"default": "true",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_incidents",
+			"name": "started_at",
+			"position": 12,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -17755,7 +17997,7 @@
 			"kind": "column",
 			"table": "status_page_incidents",
 			"name": "resolved_at",
-			"position": 12,
+			"position": 13,
 			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
@@ -17765,7 +18007,7 @@
 			"kind": "column",
 			"table": "status_page_incidents",
 			"name": "created_by",
-			"position": 13,
+			"position": 14,
 			"type": "text",
 			"notNull": false,
 			"default": null,
@@ -17775,7 +18017,7 @@
 			"kind": "column",
 			"table": "status_page_incidents",
 			"name": "created_at",
-			"position": 14,
+			"position": 15,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -17785,7 +18027,7 @@
 			"kind": "column",
 			"table": "status_page_incidents",
 			"name": "updated_at",
-			"position": 15,
+			"position": 16,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -22004,6 +22246,17 @@
 		},
 		{
 			"kind": "index",
+			"table": "org_directory_groups",
+			"name": "org_directory_groups_org_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
 			"table": "org_ingest_attribute_mappings",
 			"name": "org_ingest_attribute_mappings_org_idx",
 			"unique": false,
@@ -22089,6 +22342,28 @@
 			"columns": [
 				"\"org_id\"",
 				"\"recommendation_key\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "org_sso_connections",
+			"name": "org_sso_connections_connection_unq",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"clerk_connection_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "org_sso_connections",
+			"name": "org_sso_connections_directory_unq",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"clerk_directory_id\""
 			],
 			"where": null
 		},

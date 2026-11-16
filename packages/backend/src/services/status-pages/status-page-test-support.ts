@@ -183,13 +183,15 @@ export const seedIncident = (
 		readonly scheduledEnd?: number | null
 		readonly componentIds?: ReadonlyArray<string>
 		readonly alertIncidentId?: string | null
+		readonly autoComplete?: boolean
 	},
 ) =>
 	sql(
 		testDb,
 		`INSERT INTO status_page_incidents (id, org_id, page_id, kind, title, impact, status, published,
-			scheduled_end, started_at, resolved_at, created_at, updated_at, alert_incident_id, scheduled_start)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $10, $10, $12, $13)`,
+			scheduled_end, started_at, resolved_at, created_at, updated_at, alert_incident_id, scheduled_start,
+			auto_complete)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $10, $10, $12, $13, $14)`,
 		[
 			input.id,
 			ORG,
@@ -206,6 +208,7 @@ export const seedIncident = (
 			input.scheduledStart === undefined || input.scheduledStart === null
 				? null
 				: iso(input.scheduledStart),
+			input.autoComplete ?? true,
 		],
 	).pipe(
 		Effect.andThen(

@@ -3367,6 +3367,8 @@ export class SecurityExposureResponse extends Schema.Class<SecurityExposureRespo
 				signature: Schema.String,
 				service: Schema.String,
 				requests: Schema.Number,
+				/** Requests whose path holds the token; the rest probed only in the query. */
+				inPath: Schema.Number,
 				answered: Schema.Number,
 				sources: Schema.Number,
 				lastSeen: Schema.String,

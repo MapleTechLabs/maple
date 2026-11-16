@@ -504,7 +504,8 @@ export interface CatchAllService {
  * serves its index page for `/.env` too, so their answers are a warning, not an exposure.
  */
 export const catchAllServices = (signatures: ReadonlyArray<SignatureRow>): ReadonlyArray<CatchAllService> => {
-	const probes = Arr.filter(signatures, (row) => isCriticalSignature(row.signature))
+	// Probes in the path only: a query-only probe cannot be answered, so it would only dilute the share.
+	const probes = Arr.filter(signatures, (row) => isCriticalSignature(row.signature) && row.inPath > 0)
 	return Arr.flatMap([...new Set(Arr.map(probes, (row) => row.service))], (service) => {
 		const own = Arr.filter(probes, (row) => row.service === service)
 		const probed = new Set(Arr.map(own, (row) => row.signature)).size

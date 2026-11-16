@@ -247,37 +247,20 @@ describe("routes", () => {
 		expect(routeRedirect(parse("/integrations?integration=chat-hazel"))).toEqual(Option.none())
 	})
 
-	test("an org outside the statusPages rollout is sent home from every status page route", () => {
+	test("every org opens the status page routes, whatever its rollouts", () => {
 		for (const path of ["/status-pages", "/status-pages/new", "/status-pages/stp_abc"]) {
 			expect(
 				flaggedRouteRedirect(parse(path), {
-					statusPages: false,
-					cloudCost: true,
-					cloudSecurity: false,
-					productAnalytics: true,
-				}),
-			).toEqual(Option.some({ url: "/", isReplace: true }))
-			expect(
-				flaggedRouteRedirect(parse(path), {
-					statusPages: true,
 					cloudCost: false,
+					productAnalytics: false,
 					cloudSecurity: false,
-					productAnalytics: true,
 				}),
 			).toEqual(Option.none())
 		}
-		expect(
-			flaggedRouteRedirect(parse("/services"), {
-				statusPages: false,
-				cloudCost: false,
-				cloudSecurity: false,
-				productAnalytics: false,
-			}),
-		).toEqual(Option.none())
 	})
 
 	test("an org outside the productAnalytics rollout is sent home from /product-analytics", () => {
-		const flags = { statusPages: true, cloudCost: true, cloudSecurity: true }
+		const flags = { cloudCost: true, cloudSecurity: true }
 		for (const path of ["/product-analytics", "/product-analytics?tab=funnels&timePreset=7d"]) {
 			expect(flaggedRouteRedirect(parse(path), { ...flags, productAnalytics: false })).toEqual(
 				Option.some({ url: "/", isReplace: true }),
@@ -307,7 +290,6 @@ describe("routes", () => {
 		]) {
 			expect(
 				flaggedRouteRedirect(parse(path), {
-					statusPages: true,
 					cloudCost: false,
 					cloudSecurity: false,
 					productAnalytics: true,
@@ -315,7 +297,6 @@ describe("routes", () => {
 			).toEqual(Option.some({ url: "/", isReplace: true }))
 			expect(
 				flaggedRouteRedirect(parse(path), {
-					statusPages: false,
 					cloudCost: true,
 					cloudSecurity: false,
 					productAnalytics: true,

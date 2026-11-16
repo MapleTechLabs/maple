@@ -126,8 +126,10 @@ jobs:
                 # sit queued far longer than the others. Publishing is per-job (see the
                 # header), so a slow Intel build delays only its own tarball.
                 include:
+                    # macos-14 is retired ("configuration 'macos-14-arm64-us-default' is not
+                    # supported"); its job was cancelled unstarted from v0.3.5 on.
                     - target: aarch64-apple-darwin
-                      runner: macos-14
+                      runner: macos-15
                       os: macos
                     - target: x86_64-apple-darwin
                       runner: macos-15-intel
@@ -231,7 +233,17 @@ jobs:
 
             - name: Attest build provenance
               # Verify with: gh attestation verify <bundle>.tar.gz --repo MapleTechLabs/maple
+              # Sigstore's transparency log sometimes 404s a fresh entry (v0.3.6 lost both
+              # Linux bundles to it), so one failure gets a second attempt below.
+              id: attest
               if: ${{ env.PUBLISH == 'true' }}
+              continue-on-error: true
+              uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+              with:
+                  subject-path: ${{ steps.package.outputs.tarball }}
+
+            - name: Attest build provenance (retry)
+              if: ${{ env.PUBLISH == 'true' && steps.attest.outcome == 'failure' }}
               uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
               with:
                   subject-path: ${{ steps.package.outputs.tarball }}

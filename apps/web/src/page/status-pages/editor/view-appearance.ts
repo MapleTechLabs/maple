@@ -6,14 +6,11 @@ import {
 	StatusPageThemeRadius,
 	type StatusPageThemeTokens,
 } from "@maple/domain/status-page"
-import { previewSnapshot } from "@maple/status-page"
 import { Schema, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { colorInput } from "@maple/views/ui/color-input"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
-import { skeleton } from "@maple/views/ui/skeleton"
-import { heading } from "@maple/views/ui/heading"
 import { settingsSection } from "../../kit/settings-section"
 import { selectField, textField } from "../shared/fields"
 import {
@@ -24,30 +21,18 @@ import {
 	settingsIssues,
 	themeColorIssues,
 	themeContrastOf,
-	themeOf,
 } from "../shared/form"
 import { Message } from "./message"
-import { pageUrlOf } from "./update-domain"
 import { canManage, type Model } from "./model"
-import { monitorStatusOf } from "../shared/derive"
 import { APPEARANCES, presetCards } from "../shared/look"
-import {
-	daysOf,
-	isListedIncident,
-	previewControls,
-	previewDocument,
-	previewExampleNote,
-	previewFrame,
-	previewTheme,
-	simulatePreview,
-	toSnapshotIncident,
-} from "../shared/preview"
-import { componentsOf, incidentsOf, monitorsOf, statusReadsReady } from "./reads"
+import { onYourPage } from "../shared/preview"
+import { componentsOf } from "./reads"
+import { fragmentPreview, tabPreview } from "./view-canvas"
 import { typography } from "@maple/views/ui/typography"
+import { grid } from "@maple/views/ui/grid"
 import { hstack, vstack } from "@maple/views/ui/stack"
-import { toEpochMs } from "@maple/ui/lib/time-format"
 
-// The Settings view's Appearance section and the live preview of the public page.
+// Settings > Appearance: the brand (logos, tab icon) and the theme, each with how it reads on the page.
 
 type H = HtmlBuilder<Message>
 
@@ -124,7 +109,7 @@ const colorField = (
 }
 
 /** The logos and tab icon: what carries the brand besides the colours. */
-export const brandingSection = (h: H, model: Model, form: SettingsForm): Html => {
+export const brandingSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm): Html => {
 	const issues = settingsIssues(form)
 	const isReadOnly = !canManage(model)
 	return settingsSection(
@@ -132,12 +117,13 @@ export const brandingSection = (h: H, model: Model, form: SettingsForm): Html =>
 		{
 			id: "status-page-settings-branding",
 			title: "Branding",
-			description: ["Your logo in the page header and the icon in the browser tab."],
+			description: [
+				"Your logo in the page header and the icon in the browser tab. Without a logo, the page shows its initial in your accent colour.",
+			],
 		},
 		[
-			h.div(
-				[h.Class("grid gap-4 sm:grid-cols-2")],
-				[
+			vstack(h, { gap: "4" }, [
+				grid(h, { sm: 2, gap: "4" }, [
 					textField(h, {
 						id: "status-page-logo",
 						label: "Logo URL",
@@ -167,13 +153,31 @@ export const brandingSection = (h: H, model: Model, form: SettingsForm): Html =>
 						error: issues.faviconUrl,
 						onInput: (value) => Message.ChangedSetting({ field: "faviconUrl", value }),
 					}),
-				],
-			),
+				]),
+				onYourPage(h, tabPreview(h, model, page, form, null)),
+			]),
 		],
 	)
 }
 
-export const appearanceSection = (h: H, model: Model, form: SettingsForm): Html => {
+/** The theme on the banner, one component and a link: the first component stands for the rest. */
+const themePreview = (h: H, model: Model, page: V2StatusPage, form: SettingsForm): Html => {
+	const first = componentsOf(model)[0]
+	const title = "The theme as visitors see it"
+	return onYourPage(
+		h,
+		first === undefined
+			? fragmentPreview(h, model, page, form, { title, parts: ["header", "hero"], className: "h-48" })
+			: fragmentPreview(h, model, page, form, {
+					title,
+					parts: ["header", "hero", "components"],
+					componentId: first.id,
+					className: "h-96",
+				}),
+	)
+}
+
+export const appearanceSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm): Html => {
 	const theme = form.theme
 	const isReadOnly = !canManage(model)
 	const isAuto = theme.appearance === "auto"
@@ -183,7 +187,7 @@ export const appearanceSection = (h: H, model: Model, form: SettingsForm): Html 
 		h,
 		{
 			id: "status-page-settings-appearance",
-			title: "Appearance",
+			title: "Theme",
 			description: ["Colors, corners and type of the public page."],
 		},
 		[
@@ -212,8 +216,9 @@ export const appearanceSection = (h: H, model: Model, form: SettingsForm): Html 
 							: `Every visitor sees the ${theme.appearance} page.`,
 					]),
 				]),
-				h.div(
-					[h.Class("grid gap-4 sm:grid-cols-2")],
+				grid(
+					h,
+					{ sm: 2, gap: "4" },
 					Arr.map(COLOR_FIELDS, (entry) =>
 						colorField(
 							h,
@@ -232,122 +237,30 @@ export const appearanceSection = (h: H, model: Model, form: SettingsForm): Html 
 								alertDescription(h, [contrast]),
 							]),
 						]),
-				h.div(
-					[h.Class("grid gap-4 sm:grid-cols-2")],
-					[
-						selectField(h, {
-							id: "status-page-theme-radius",
-							label: "Corners",
-							value: theme.radius,
-							entries: RADII,
-							isDisabled: isReadOnly,
-							onInput: (value) =>
-								Message.PickedThemeRadius({
-									radius: isRadius(value) ? value : theme.radius,
-								}),
-						}),
-						selectField(h, {
-							id: "status-page-theme-font",
-							label: "Font",
-							value: theme.font,
-							entries: FONTS,
-							isDisabled: isReadOnly,
-							onInput: (value) =>
-								Message.PickedThemeFont({ font: isFont(value) ? value : theme.font }),
-						}),
-					],
-				),
+				grid(h, { sm: 2, gap: "4" }, [
+					selectField(h, {
+						id: "status-page-theme-radius",
+						label: "Corners",
+						value: theme.radius,
+						entries: RADII,
+						isDisabled: isReadOnly,
+						onInput: (value) =>
+							Message.PickedThemeRadius({
+								radius: isRadius(value) ? value : theme.radius,
+							}),
+					}),
+					selectField(h, {
+						id: "status-page-theme-font",
+						label: "Font",
+						value: theme.font,
+						entries: FONTS,
+						isDisabled: isReadOnly,
+						onInput: (value) =>
+							Message.PickedThemeFont({ font: isFont(value) ? value : theme.font }),
+					}),
+				]),
+				themePreview(h, model, page, form),
 			]),
 		],
 	)
 }
-
-const orNull = (value: string): string | null => (Str.trim(value) === "" ? null : Str.trim(value))
-
-/** The public page as the draft would render it, from the loaded components and incidents. */
-export const settingsDocument = (model: Model, page: V2StatusPage, form: SettingsForm): string => {
-	const nowMs = model.nowMs ?? toEpochMs(page.updated_at)
-	const monitors = monitorsOf(model)
-	const shown = simulatePreview(model.previewState, {
-		components: Arr.map(componentsOf(model), (component) => ({
-			id: component.id,
-			name: component.name,
-			description: component.description,
-			group: component.group,
-			monitorStatus: monitorStatusOf(monitors, component.monitor_id),
-			manualStatus: component.manual_status,
-			showUptime: component.show_uptime,
-			monitored: component.monitor_id !== null,
-			days: daysOf(model.previewHistory, component.monitor_id),
-		})),
-		incidents: Arr.map(
-			Arr.filter(incidentsOf(model), (incident) => isListedIncident(incident, nowMs)),
-			toSnapshotIncident,
-		),
-		nowMs,
-	})
-	const snapshot = previewSnapshot({
-		pageId: page.id,
-		page: {
-			name: Str.trim(form.name) === "" ? page.name : Str.trim(form.name),
-			slug: form.slug,
-			description: orNull(form.description),
-			websiteUrl: orNull(form.websiteUrl),
-			logoUrl: orNull(form.logoUrl),
-			logoDarkUrl: orNull(form.logoDarkUrl),
-			faviconUrl: orNull(form.faviconUrl),
-			supportUrl: orNull(form.supportUrl),
-			privacyUrl: orNull(form.privacyUrl),
-			termsUrl: orNull(form.termsUrl),
-			customDomain: null,
-			visibility: page.visibility,
-			showPoweredBy: form.showPoweredBy,
-			theme: previewTheme(themeOf(form.theme), model.previewScheme),
-		},
-		components: shown.components,
-		incidents: shown.incidents,
-		nowMs,
-	})
-	return previewDocument({
-		snapshot,
-		nowMs,
-		isSelectable: false,
-		selectedIds: [],
-		publicUrl: pageUrlOf(model, page),
-	})
-}
-
-export const previewPanel = (h: H, model: Model, page: V2StatusPage, form: SettingsForm): Html =>
-	vstack(
-		h,
-		{
-			gap: "3",
-			shrink: true,
-			as: "section",
-			className: "xl:sticky xl:top-6",
-			attributes: [h.AriaLabelledBy("status-page-preview-title")],
-		},
-		[
-			hstack(h, { gap: "3", justify: "between", wrap: true, className: "min-h-7" }, [
-				heading(h, { level: 2, variant: "subsection", id: "status-page-preview-title" }, ["Preview"]),
-				previewControls(h, {
-					state: model.previewState,
-					width: model.previewWidth,
-					scheme: form.theme.appearance === "auto" ? model.previewScheme : null,
-					onState: (state) => Message.PickedPreviewState({ state }),
-					onWidth: (width) => Message.PickedPreviewWidth({ width }),
-					onScheme: (scheme) => Message.PickedPreviewScheme({ scheme }),
-				}),
-			]),
-			...previewExampleNote(h, model.previewState),
-			statusReadsReady(model)
-				? previewFrame(h, {
-						title: "Status page preview",
-						document: settingsDocument(model, page, form),
-						width: model.previewWidth,
-						className: "h-[640px]",
-					})
-				: skeleton(h, "h-[640px] w-full"),
-			typography(h, { size: "xs", tone: "muted", as: "p" }, ["Unsaved changes show here first."]),
-		],
-	)
