@@ -17,6 +17,7 @@ import { allGuides } from "../lib/guides"
 import { absolute, plainText } from "../lib/page-markdown"
 import { scaleProofMarkdown } from "../lib/scale-proof"
 import { API_ORIGIN, API_PATHS, GITHUB_URL, SITE_PATHS } from "../lib/agent-resources"
+import * as m from "../paraglide/messages.js"
 import { Array as Arr } from "effect"
 
 const CONVENTION = (family: string) =>
@@ -61,6 +62,11 @@ export const GET: APIRoute = ({ site }) => {
 			"Maple Cloud runs in the United States and the European Union (Frankfurt). An organization picks its region at creation; its telemetry is stored and processed there. Same price in both.",
 			"",
 			...both("EU hosting", "/eu"),
+			"",
+
+			"## Security and compliance",
+			"",
+			`${m.compliance_audit_log()} ${m.compliance_dpa_held()}. ${m.compliance_audits()}`,
 			"",
 
 			"## Changelog",

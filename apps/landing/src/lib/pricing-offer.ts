@@ -100,6 +100,7 @@ export const platformFeatures = (): string[] => [
 	m.pricing_mcp_server(),
 	m.pricing_ai_triage(),
 	m.pricing_full_api(),
+	m.pricing_audit_log(),
 ]
 
 /**
