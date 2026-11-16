@@ -25,6 +25,7 @@ import {
 	Exit,
 	Layer,
 	Option,
+	Result,
 	Schema,
 	String as Str,
 	Array as Arr,
@@ -182,16 +183,22 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 				return installations
 			})
 
-			const repositoriesFor = Effect.fn("VcsSourceService.repositoriesFor")(function* (
-				installations: ReadonlyArray<VcsInstallation>,
+			// Both reads at once: every source and sandbox call checks access, and in sequence they
+			// were two round trips (one more per extra installation) in front of each call.
+			const connectedRepositories = Effect.fn("VcsSourceService.connectedRepositories")(function* (
+				orgId: OrgId,
 			) {
-				return yield* Effect.forEach(installations, (installation) =>
-					asPersistence(repoStore.listRepositoriesByInstallation(installation.id, "active")).pipe(
-						Effect.map((repositories) =>
-							Arr.map(repositories, (repository) => ({ installation, repository })),
-						),
+				const [installations, repositories] = yield* Effect.all(
+					[activeInstallations(orgId), asPersistence(repoStore.listActiveRepositoriesByOrg(orgId))],
+					{ concurrency: 2 },
+				)
+				return Arr.flatMap(installations, (installation) =>
+					Arr.filterMap(repositories, (repository) =>
+						repository.installationId === installation.id
+							? Result.succeed({ installation, repository })
+							: Result.failVoid,
 					),
-				).pipe(Effect.map((groups) => groups.flat()))
+				)
 			})
 
 			const cloneCredentials = yield* Cache.makeWith(
@@ -215,8 +222,7 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 				orgId: OrgId,
 				fullName: string,
 			) {
-				const installations = yield* activeInstallations(orgId)
-				const entries = yield* repositoriesFor(installations)
+				const entries = yield* connectedRepositories(orgId)
 				const found = Option.getOrUndefined(
 					Arr.findFirst(
 						entries,
@@ -234,8 +240,7 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 
 			const listRepositories = Effect.fn("VcsSourceService.listRepositories")(function* (orgId: OrgId) {
 				yield* Effect.annotateCurrentSpan({ orgId })
-				const installations = yield* activeInstallations(orgId)
-				const entries = yield* repositoriesFor(installations)
+				const entries = yield* connectedRepositories(orgId)
 				return Arr.map(entries, ({ repository }) => ({
 					provider: repository.provider,
 					fullName: repository.fullName,

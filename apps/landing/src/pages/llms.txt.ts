@@ -16,6 +16,7 @@ import { useCases } from "../lib/use-cases"
 import { allGuides } from "../lib/guides"
 import { absolute, plainText } from "../lib/page-markdown"
 import { scaleProofMarkdown } from "../lib/scale-proof"
+import { enterpriseOfferMarkdown } from "../lib/enterprise-offer"
 import { API_ORIGIN, API_PATHS, GITHUB_URL, SITE_PATHS } from "../lib/agent-resources"
 import * as m from "../paraglide/messages.js"
 import { Array as Arr } from "effect"
@@ -53,6 +54,8 @@ export const GET: APIRoute = ({ site }) => {
 			"## Pricing",
 			"",
 			"One plan: $39 a month with 100 GB each of logs, traces and metrics included, then $0.30 per GB per signal; 5,000 browser sessions included, then $0.002 per session; 1M product events included, then $5 per million (page views not counted).",
+			"",
+			enterpriseOfferMarkdown(site),
 			"",
 			...both("Pricing", "/pricing"),
 			"",
@@ -156,6 +159,18 @@ export const GET: APIRoute = ({ site }) => {
 			`- Install script: \`curl -fsSL ${url("/cli/install")} | sh\` ([source](${url("/cli/install")}))`,
 			`- [Releases on GitHub](${GITHUB_URL}/releases)`,
 			`- [CLI reference](${url("/docs/reference/cli.md")})`,
+			"",
+
+			"## Alerting and uptime",
+			"",
+			"Alert rules on traces, logs and metrics; hosted HTTP, TCP and DNS checks; heartbeats for cron jobs; and public status pages. Each can be set up in the app, over MCP, through the REST API, or in Terraform.",
+			"",
+			`- [Alert rules](${url("/docs/alerting/alert-rules.md")})`,
+			`- [Uptime monitoring overview](${url("/docs/alerting/uptime-monitoring.md")})`,
+			`- [Uptime checks](${url("/docs/alerting/uptime-checks.md")})`,
+			`- [Heartbeat monitors](${url("/docs/alerting/heartbeat-monitors.md")})`,
+			`- [Status pages](${url("/docs/alerting/status-pages.md")})`,
+			`- [Terraform resources](${url("/docs/iac/terraform-resources.md")})`,
 			"",
 
 			"## SDKs and instrumentation",
