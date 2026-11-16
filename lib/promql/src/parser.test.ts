@@ -148,6 +148,16 @@ describe("parse errors", () => {
 		expect(errorOf("clamp(x, 1)")).toMatch(/argument/)
 	})
 
+	it("points a type error at the expression it is about", () => {
+		const positionOf = (query: string) => {
+			const result = parse(query)
+			return Result.isFailure(result) ? result.failure.position : -1
+		}
+		expect(positionOf('topk("v", up)')).toBe(5)
+		expect(positionOf("sum(x[5m])")).toBe(4)
+		expect(positionOf("up + rate(x)")).toBe(10)
+	})
+
 	it("rejects a repeated offset, including after offset 0s", () => {
 		expect(errorOf("x offset 0s offset 5m")).toMatch(/offset may not be set multiple times/)
 		expect(errorOf("x[5m] offset 1m offset 5m")).toMatch(/offset may not be set multiple times/)

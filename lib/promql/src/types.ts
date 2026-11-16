@@ -26,15 +26,24 @@ export const valueTypeOf = (expr: Expr): ValueType => {
 	}
 }
 
-const expect = (expr: Expr, want: ReadonlyArray<ValueType>, context: string): string | undefined => {
+/** A type error and the expression it is about, so the parser can point at it. */
+export interface PromqlTypeError {
+	readonly message: string
+	readonly at: Expr
+}
+
+const expect = (expr: Expr, want: ReadonlyArray<ValueType>, context: string): PromqlTypeError | undefined => {
 	const inner = checkTypes(expr)
 	if (inner !== undefined) return inner
 	const got = valueTypeOf(expr)
-	return want.includes(got) ? undefined : `expected type ${want.join(" or ")} in ${context}, got ${got}`
+	return want.includes(got)
+		? undefined
+		: { message: `expected type ${want.join(" or ")} in ${context}, got ${got}`, at: expr }
 }
 
 /** The first type error in the expression, or undefined. Mirrors Prometheus' parser checks. */
-export const checkTypes = (expr: Expr): string | undefined => {
+export const checkTypes = (expr: Expr): PromqlTypeError | undefined => {
+	const error = (message: string): PromqlTypeError => ({ message, at: expr })
 	switch (expr.type) {
 		case "NumberLiteral":
 		case "StringLiteral":
@@ -55,18 +64,20 @@ export const checkTypes = (expr: Expr): string | undefined => {
 		}
 		case "Call": {
 			const signature = functionSignature(expr.func)
-			if (signature === undefined) return `unknown function "${expr.func}"`
+			if (signature === undefined) return error(`unknown function "${expr.func}"`)
 			const { args, optional } = signature
 			// A variadic last argument may appear zero times.
 			const min = optional === -1 ? args.length - 1 : args.length - optional
 			const max = optional === -1 ? Number.POSITIVE_INFINITY : args.length
 			if (expr.args.length < min || expr.args.length > max) {
-				return `expected ${min === max ? min : `${min} to ${max}`} argument(s) in call to "${expr.func}", got ${expr.args.length}`
+				return error(
+					`expected ${min === max ? min : `${min} to ${max}`} argument(s) in call to "${expr.func}", got ${expr.args.length}`,
+				)
 			}
 			for (const [index, arg] of expr.args.entries()) {
 				const want = args[Math.min(index, args.length - 1)] ?? "vector"
-				const error = expect(arg, [want], `call to function "${expr.func}"`)
-				if (error !== undefined) return error
+				const argError = expect(arg, [want], `call to function "${expr.func}"`)
+				if (argError !== undefined) return argError
 			}
 			return undefined
 		}
@@ -79,19 +90,19 @@ export const checkTypes = (expr: Expr): string | undefined => {
 			const rhs = valueTypeOf(expr.rhs)
 			const isComparison = COMPARISON_OPS.has(expr.op)
 			if (expr.returnBool && !isComparison)
-				return "bool modifier can only be used on comparison operators"
+				return error("bool modifier can only be used on comparison operators")
 			if (isComparison && lhs === "scalar" && rhs === "scalar" && !expr.returnBool) {
-				return "comparisons between scalars must use BOOL modifier"
+				return error("comparisons between scalars must use BOOL modifier")
 			}
 			if (SET_OPS.has(expr.op)) {
 				if (lhs !== "vector" || rhs !== "vector")
-					return `set operator "${expr.op}" not allowed in binary scalar expression`
+					return error(`set operator "${expr.op}" not allowed in binary scalar expression`)
 				if (expr.matching !== undefined && expr.matching.card !== "one-to-one") {
-					return "no grouping allowed for set operations"
+					return error("no grouping allowed for set operations")
 				}
 			}
 			if (expr.matching !== undefined && (lhs !== "vector" || rhs !== "vector")) {
-				return "vector matching only allowed between instant vectors"
+				return error("vector matching only allowed between instant vectors")
 			}
 			return undefined
 		}
