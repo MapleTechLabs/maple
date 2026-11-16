@@ -32,17 +32,26 @@ const unitSeconds = (unit: string | undefined): number => {
 const DURATION = /^(?:\d+(?:ms|s|m|h|d|w|y))+$/
 const DURATION_PART = /(\d+)(ms|s|m|h|d|w|y)/g
 
-/** A Prometheus duration (`1m`, `1h30m`) or float seconds, in seconds; undefined when neither. */
+/** A step the engine can run: a positive, finite, whole number of milliseconds. */
+const isEngineStep = (seconds: number): boolean => {
+	const ms = seconds * 1000
+	return Number.isSafeInteger(ms) && ms > 0
+}
+
+/**
+ * A Prometheus duration (`1m`, `1h30m`) or float seconds, in seconds; undefined when neither, or
+ * when it is not a whole number of milliseconds the engine can step by.
+ */
 export const parseStepSeconds = (raw: string): number | undefined => {
 	const text = Str.trim(raw)
-	if (DURATION.test(text)) {
-		const seconds = Arr.reduce(Arr.fromIterable(Str.matchAll(DURATION_PART)(text)), 0, (total, part) => {
-			return total + Number(part[1]) * unitSeconds(part[2])
-		})
-		return seconds > 0 ? seconds : undefined
-	}
-	const seconds = Number(text)
-	return text !== "" && Number.isFinite(seconds) && seconds > 0 ? seconds : undefined
+	const seconds = DURATION.test(text)
+		? Arr.reduce(Arr.fromIterable(Str.matchAll(DURATION_PART)(text)), 0, (total, part) => {
+				return total + Number(part[1]) * unitSeconds(part[2])
+			})
+		: text === ""
+			? Number.NaN
+			: Number(text)
+	return isEngineStep(seconds) ? seconds : undefined
 }
 
 const NICE_STEPS = [15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10_800, 21_600, 43_200, 86_400]

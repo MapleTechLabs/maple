@@ -12,7 +12,7 @@ import * as CH from "@maple-dev/effect-orm/expr"
 import { CHNumber } from "../schema"
 import * as Datasources from "@maple/domain/tinybird/datasources"
 import { orgId, orgIdParam, utcSecondsParam } from "../tables"
-import { EXCLUDED_KEY, labelValueExpr } from "../../promql/labels"
+import { labelSetExpr, labelValueExpr } from "../../promql/labels"
 import { utcHourFloor } from "./query-helpers"
 
 /** Joins a stored metric's name and unit into the identity a selector row reports. */
@@ -46,6 +46,8 @@ export interface PromqlSelectorOpts {
 	readonly limit: number
 	/** Label matchers as WHERE conditions, built from the table's columns. */
 	readonly conditions: ($: PromqlLabelColumns) => ReadonlyArray<CH.Condition | undefined>
+	/** `le` matchers on the expanded bucket bound, applied before the limit (`bucket` only). */
+	readonly boundConditions: (le: CH.Expr<number>) => ReadonlyArray<CH.Condition | undefined>
 }
 
 /** Params: `orgId`, plus epoch ms `startMs`, `endMs`, `originMs` (bucket grid), `timeOriginMs` (regression). */
@@ -136,25 +138,26 @@ const scanQuery = (opts: PromqlSelectorOpts) =>
 		])
 
 /**
- * The series key: everything the series' labels are built from, maps sorted so attribute order
- * does not matter, and nothing else. A resource
- * key the labels drop (service.version, telemetry.sdk.*) must not split a series, or a deploy
- * turns one counter into two with the same labels.
+ * The series key: the series' resolved labels and nothing else, so rows that differ only in a
+ * value the labels hide (a dropped resource key, an overridden or empty one) stay one series.
  */
 const keyedQuery = (opts: PromqlSelectorOpts) =>
-	fromQuery(scanQuery(opts), "scan").select(($) => ({
-		sk: sql(
-			T.uint64,
-		)`cityHash64(${$.MetricName}, ${$.ServiceName}, mapKeys(mapSort(${$.Attributes})), mapValues(mapSort(${$.Attributes})), mapKeys(mapSort(mapFilter((_k, _v) -> NOT ${EXCLUDED_KEY}, ${$.ResourceAttributes}))), mapValues(mapSort(mapFilter((_k, _v) -> NOT ${EXCLUDED_KEY}, ${$.ResourceAttributes}))), ${$.ResourceAttributes}['service.name'], ${$.ResourceAttributes}['service.namespace'], ${$.ResourceAttributes}['service.instance.id'], ${$.pair}[1])`,
-		MetricName: $.MetricName,
-		ServiceName: $.ServiceName,
-		Attributes: $.Attributes,
-		ResourceAttributes: $.ResourceAttributes,
-		t: $.t,
-		isDelta: $.isDelta,
-		le: sql(T.float64)`${$.pair}[1]`,
-		raw: sql(T.float64)`${$.pair}[2]`,
-	}))
+	fromQuery(scanQuery(opts), "scan")
+		.select(($) => ({
+			sk: sql(
+				T.uint64,
+			)`cityHash64(${$.MetricName}, ${labelSetExpr($, opts.component === "bucket")}, ${$.pair}[1])`,
+			MetricName: $.MetricName,
+			ServiceName: $.ServiceName,
+			Attributes: $.Attributes,
+			ResourceAttributes: $.ResourceAttributes,
+			t: $.t,
+			isDelta: $.isDelta,
+			le: sql(T.float64)`${$.pair}[1]`,
+			raw: sql(T.float64)`${$.pair}[2]`,
+		}))
+		// sk includes the bound, so whole series drop before the window and the limit.
+		.where(($) => (opts.component === "bucket" ? opts.boundConditions(sql(T.float64)`${$.pair}[1]`) : []))
 
 /** Each sample's value and the series' previous sample; delta samples accumulate into a counter. */
 const windowedQuery = (opts: PromqlSelectorOpts) =>
