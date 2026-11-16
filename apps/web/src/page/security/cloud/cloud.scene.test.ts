@@ -122,6 +122,8 @@ describe("security cloud findings", () => {
 			expectView(text("ThrottlingException: Rate exceeded")).toExist(),
 			expectView(text("The role may not read IAM Access Analyzer in us-east-1")).toExist(),
 			expectView(role("link", { name: "Update the AWS stack" })).toExist(),
+			expectView(text("No active findings from the services that answered")).toExist(),
+			expectView(text("No active findings")).toBeAbsent(),
 		)
 	})
 

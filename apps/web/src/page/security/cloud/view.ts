@@ -212,8 +212,12 @@ const findingRow = (h: H, finding: CloudFinding, clock: Clock, isMatched: boolea
 				h,
 				[
 					vstack(h, { shrink: true }, [
-						typography(h, { weight: "medium", truncate: true }, [
-							textLink(h, { href: findingHref(finding), tone: "inherit" }, [finding.title]),
+						typography(h, { weight: "medium", truncate: true, as: "div" }, [
+							textLink(
+								h,
+								{ href: findingHref(finding), tone: "inherit", className: "block truncate" },
+								[finding.title],
+							),
 						]),
 						truncatedText(h, {
 							text: finding.type,
@@ -221,7 +225,7 @@ const findingRow = (h: H, finding: CloudFinding, clock: Clock, isMatched: boolea
 							tooltip: "overflow",
 							className: small,
 						}),
-						// A phone has no Resource column: the resource rides under the title.
+						// A phone has no Resource or Affected column: both ride under the title.
 						h.span(
 							[h.Class("sm:hidden")],
 							[
@@ -230,11 +234,12 @@ const findingRow = (h: H, finding: CloudFinding, clock: Clock, isMatched: boolea
 									mono: true,
 									className: small,
 								}),
+								affectedCell(h, finding, isMatched),
 							],
 						),
 					]),
 				],
-				"max-w-40 sm:max-w-80",
+				"max-w-44 sm:max-w-72",
 			),
 			tableCell(
 				h,
@@ -246,9 +251,9 @@ const findingRow = (h: H, finding: CloudFinding, clock: Clock, isMatched: boolea
 						className: typographyClass({ size: "xs" }),
 					}),
 				],
-				`max-w-56 ${WIDE_COLUMN}`,
+				`max-w-48 ${WIDE_COLUMN}`,
 			),
-			tableCell(h, [affectedCell(h, finding, isMatched)], "max-w-56"),
+			tableCell(h, [affectedCell(h, finding, isMatched)], `max-w-56 ${WIDE_COLUMN}`),
 			tableCell(
 				h,
 				[
@@ -259,7 +264,7 @@ const findingRow = (h: H, finding: CloudFinding, clock: Clock, isMatched: boolea
 				],
 				ROOMY_COLUMN,
 			),
-			tableCell(h, [typography(h, { size: "xs" }, [sourceTitle(finding.source)])], WIDE_COLUMN),
+			tableCell(h, [typography(h, { size: "xs" }, [sourceTitle(finding.source)])], ROOMY_COLUMN),
 			tableCell(
 				h,
 				[
@@ -289,9 +294,9 @@ const findingsTable = (h: H, findings: ReadonlyArray<CloudFinding>, clock: Clock
 				tableHead(h, ["Severity"], "w-24"),
 				tableHead(h, ["Finding"]),
 				tableHead(h, ["Resource"], WIDE_COLUMN),
-				tableHead(h, ["Affected services"]),
+				tableHead(h, ["Affected services"], WIDE_COLUMN),
 				tableHead(h, ["Account / region"], ROOMY_COLUMN),
-				tableHead(h, ["Source"], WIDE_COLUMN),
+				tableHead(h, ["Source"], ROOMY_COLUMN),
 				tableHead(h, ["Last seen"], WIDE_COLUMN),
 			]),
 		]),
@@ -301,7 +306,7 @@ const findingsTable = (h: H, findings: ReadonlyArray<CloudFinding>, clock: Clock
 		),
 	])
 
-const listBody = (h: H, model: Model, clock: Clock): Html =>
+const listBody = (h: H, model: Model, overview: Overview, clock: Clock): Html =>
 	AsyncData.matchData(model.firstPage.data, {
 		onEmpty: () => placeholderRows(h, 6),
 		onFailure: (failure) =>
@@ -322,7 +327,11 @@ const listBody = (h: H, model: Model, clock: Clock): Html =>
 					onClear: Message.ClickedClearFilters(),
 					className: "py-8",
 				})
-			if (findings.length === 0) return allClear(h)
+			if (findings.length === 0)
+				return allClear(
+					h,
+					Arr.some(serviceNoticesOf(overview), (notice) => notice.state !== "not_enabled"),
+				)
 			const canExtend = Keyed.canExtend(model.firstPage)
 			const footer = listFooter(h, {
 				shown: findings.length,
@@ -363,7 +372,10 @@ const listScreen = (h: H, model: Model, overview: Overview, clock: Clock): Reado
 	return [
 		...(notices === null ? [] : [notices]),
 		severityRail(h, model, overview),
-		panel(h, { className: "overflow-hidden" }, [toolbar(h, model, overview), listBody(h, model, clock)]),
+		panel(h, { className: "overflow-hidden" }, [
+			toolbar(h, model, overview),
+			listBody(h, model, overview, clock),
+		]),
 	]
 }
 

@@ -125,16 +125,25 @@ export const serviceNotices = <M>(h: HtmlBuilder<M>, notices: ReadonlyArray<Serv
 				Arr.map(notices, (notice) => noticeAlert(h, notice)),
 			)
 
-/** No active finding anywhere: what was checked, so the quiet reads as a result. */
-export const allClear = <M>(h: HtmlBuilder<M>): Html =>
+/**
+ * No active finding: what was checked, so the quiet reads as a result. With a service that could
+ * not be read, it says the quiet covers only the ones that answered.
+ */
+export const allClear = <M>(h: HtmlBuilder<M>, isPartial: boolean): Html =>
 	empty(
 		h,
 		[
 			emptyHeader(h, [
-				emptyMedia(h, { variant: "icon" }, [icon(h, "ShieldCheckIcon")]),
-				emptyTitle(h, ["No active findings"]),
+				emptyMedia(h, { variant: "icon" }, [
+					icon(h, isPartial ? "CircleInfoIcon" : "ShieldCheckIcon"),
+				]),
+				emptyTitle(h, [
+					isPartial ? "No active findings from the services that answered" : "No active findings",
+				]),
 				emptyDescription(h, [
-					`None of ${Arr.join(Arr.map(CLOUD_FINDING_SOURCES, sourceTitle), ", ")} reports an active finding in the regions they are on.`,
+					isPartial
+						? "The services above could not be read, so findings they hold are not listed yet."
+						: `None of ${Arr.join(Arr.map(CLOUD_FINDING_SOURCES, sourceTitle), ", ")} reports an active finding in the regions they are on.`,
 				]),
 			]),
 		],
