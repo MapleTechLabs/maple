@@ -586,6 +586,10 @@ describe("github connect flow", () => {
 			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			expectView(role("listitem", { name: "Live (done)" })).toExist(),
 			expectView(text("GitHub is live")).toExist(),
+			// Synced repos are not listed again, the switches are, and the saved source has no Cancel.
+			expectView(text("Tracked branch")).toBeAbsent(),
+			expectView(role("switch", { name: /CI traces/i })).toExist(),
+			expectView(role("link", { name: "Cancel" })).toBeAbsent(),
 		)
 		scene(
 			{ update: pageUpdate, view },
