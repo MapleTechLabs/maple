@@ -37,6 +37,7 @@ import { SecurityAuditStore } from "@maple/backend/services/security-audit/Secur
 import { Clock, Context, Duration, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { HttpRouter, HttpServerRequest } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
+import { SecurityPrCheck } from "../security-audit/pr-check"
 import { HttpSecurityAuditLive } from "./security-audit.http"
 
 class SecurityAuditOnlyApi extends HttpApi.make("MapleAiApi")
@@ -107,6 +108,15 @@ const makeHarness = (
 	const db = createTestDb(trackedDbs)
 	const started: Array<SecurityAuditWorkflowPayload> = []
 	const cancelled: Array<string> = []
+	/** Runs whose `Maple / security` check was re-reported. */
+	const published: Array<string> = []
+	const prChecks = Layer.succeed(SecurityPrCheck, {
+		notify: () => Effect.void,
+		publish: (_orgId, runId) =>
+			Effect.sync(() => {
+				published.push(runId)
+			}),
+	})
 	const starter = Layer.succeed(SecurityAuditWorkflowStarter, {
 		create: (payload) =>
 			options.startFails === true
@@ -141,6 +151,7 @@ const makeHarness = (
 				envPorts({}),
 				storeLayer,
 				starter,
+				prChecks,
 				Layer.succeed(AuditLogService, auditLog),
 				options.noCredits !== undefined
 					? Layer.succeed(AiCredits, {
@@ -202,7 +213,7 @@ const makeHarness = (
 
 	const sql = (statement: string, params: Array<unknown> = []) => executeSql(db, statement, params)
 
-	return { call, dispose, started, cancelled, withStore, count, sql, auditLog }
+	return { call, dispose, started, cancelled, published, withStore, count, sql, auditLog }
 }
 
 const confirmed = (fingerprint: string): Finding => ({
@@ -1211,6 +1222,140 @@ describe("/api/security-audit settings", () => {
 				"openai/gpt-6-luna",
 			])
 			expect([otherOrg.body.monthlySpendLimitUsd, audit.length]).toEqual([100, 1])
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+describe("/api/security-audit pull request check settings", () => {
+	it("turns the check on with a threshold, keeps the other fields, and keeps it to admins", async () => {
+		const harness = makeHarness()
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const engineer = `${ORG_A}|org:engineer`
+
+			const onByDefault = await harness.call("PATCH", `/targets/${target.body.id}`, {
+				body: { prCheckEnabled: true },
+			})
+			const informOnly = await harness.call("PATCH", `/targets/${target.body.id}`, {
+				body: { prCheckBlockAt: null },
+			})
+			const refused = await harness.call("PATCH", `/targets/${target.body.id}`, {
+				as: engineer,
+				body: { prCheckEnabled: false },
+			})
+			const foreign = await harness.call("PATCH", `/targets/${target.body.id}`, {
+				as: `${ORG_B}|org:admin`,
+				body: { prCheckEnabled: false },
+			})
+			const invalid = await harness.call("PATCH", `/targets/${target.body.id}`, {
+				body: { prCheckBlockAt: "severe" },
+			})
+
+			expect([target.body.prCheckEnabled, target.body.prCheckBlockAt]).toEqual([false, "high"])
+			expect([onByDefault.body.prCheckEnabled, onByDefault.body.prCheckBlockAt]).toEqual([true, "high"])
+			expect([informOnly.body.prCheckEnabled, informOnly.body.prCheckBlockAt]).toEqual([true, null])
+			expect([refused.status, foreign.status, invalid.status]).toEqual([403, 404, 400])
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+describe("/api/security-audit pull request run findings", () => {
+	it("keeps a pull request run's findings off the target until triaged, then re-reports its check", async () => {
+		const harness = makeHarness()
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const run = await harness.withStore((store) =>
+				Effect.gen(function* () {
+					const scoped = store.forOrg(ORG_A)
+					const started = yield* scoped.startRun({
+						targetId: target.body.id,
+						kind: "pull_request",
+						prNumber: 42,
+						sourceRef: "0123456789abcdef0123456789abcdef01234567",
+					})
+					yield* scoped.saveFindings(started.id, [confirmed("p1"), confirmed("p2")], NO_ESTIMATES)
+					yield* scoped.finishRun(started.id, { status: "complete" })
+					return started
+				}),
+			)
+
+			const before = await harness.call("GET", `/targets/${target.body.id}/findings`)
+			const accepted = await harness.call("PATCH", `/runs/${run.id}/findings/p1`, {
+				body: { status: "accepted_risk", reason: "internal tool, behind SSO" },
+			})
+			const missing = await harness.call("PATCH", `/runs/${run.id}/findings/nope`, {
+				body: { status: "dismissed", reason: "not real" },
+			})
+			const after = await harness.call("GET", `/targets/${target.body.id}/findings`)
+			const runFindings = await harness.call("GET", `/runs/${run.id}/findings`)
+
+			expect(before.body.findings).toEqual([])
+			expect([accepted.status, accepted.body.status, missing.status]).toEqual([
+				200,
+				"accepted_risk",
+				404,
+			])
+			expect(
+				after.body.findings.map((f: { fingerprint: string; status: string }) => [
+					f.fingerprint,
+					f.status,
+				]),
+			).toEqual([["p1", "accepted_risk"]])
+			expect(
+				runFindings.body.findings.map((f: { fingerprint: string; status: string }) => [
+					f.fingerprint,
+					f.status,
+				]),
+			).toEqual([
+				["p1", "accepted_risk"],
+				["p2", "open"],
+			])
+			expect(harness.published).toEqual([run.id])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("runs a pull request's check beside the target's own run, one per pull request", async () => {
+		const harness = makeHarness()
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const manual = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			const outcomes = await harness.withStore((store) =>
+				Effect.gen(function* () {
+					const scoped = store.forOrg(ORG_A)
+					const start = (prNumber: number) =>
+						scoped
+							.startRun({
+								targetId: target.body.id,
+								kind: "pull_request",
+								prNumber,
+								sourceRef: "0123456789abcdef0123456789abcdef01234567",
+							})
+							.pipe(
+								Effect.as("started"),
+								Effect.catchTag("@maple/backend/security-audit/RunInProgress", () =>
+									Effect.succeed("in_progress"),
+								),
+							)
+					return [yield* start(7), yield* start(8), yield* start(7)]
+				}),
+			)
+			const prior = await harness.withStore((store) =>
+				Effect.gen(function* () {
+					const scoped = store.forOrg(ORG_A)
+					const open = yield* scoped.listOpenPullRequestRuns(target.body.id, 7)
+					return Arr.map(open, (r) => r.prNumber)
+				}),
+			)
+
+			expect(manual.status).toBe(200)
+			expect(outcomes).toEqual(["started", "started", "in_progress"])
+			expect(prior).toEqual([7])
 		} finally {
 			await harness.dispose()
 		}

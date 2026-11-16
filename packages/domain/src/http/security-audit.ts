@@ -69,6 +69,15 @@ export const SecurityAuditCreateTargetRequest = Schema.Struct({
 })
 export type SecurityAuditCreateTargetRequest = typeof SecurityAuditCreateTargetRequest.Type
 
+/** What changes on a target; absent fields stay as they are. */
+export const SecurityAuditUpdateTargetRequest = Schema.Struct({
+	/** Audit pull requests into the target's branch and report them as the `Maple / security` check. */
+	prCheckEnabled: Schema.optionalKey(Schema.Boolean),
+	/** The lowest confirmed severity that fails the check; null reports without ever failing. */
+	prCheckBlockAt: Schema.optionalKey(Schema.NullOr(SecurityAuditSeverity)),
+})
+export type SecurityAuditUpdateTargetRequest = typeof SecurityAuditUpdateTargetRequest.Type
+
 /** Runs started here are always `manual`; the scheduler picks the other kinds. */
 export const SecurityAuditStartRunRequest = Schema.Struct({
 	scopePaths: Schema.optionalKey(ScopePaths),
@@ -127,6 +136,10 @@ export const SecurityAuditTarget = Schema.Struct({
 	/** The target's own models; null runs on the org's. */
 	discoveryModel: Schema.NullOr(Schema.String),
 	validationModel: Schema.NullOr(Schema.String),
+	/** Whether pull requests into `branch` get the `Maple / security` check. */
+	prCheckEnabled: Schema.Boolean,
+	/** The lowest confirmed severity that fails the check; null reports without ever failing. */
+	prCheckBlockAt: Schema.NullOr(SecurityAuditSeverity),
 	createdBy: UserId,
 	createdAt: Schema.Number,
 	updatedAt: Schema.Number,
@@ -137,6 +150,8 @@ const runFields = {
 	id: SecurityAuditRunId,
 	targetId: SecurityAuditTargetId,
 	kind: SecurityAuditRunKind,
+	/** The pull request a `pull_request` run checks; null for every other kind. */
+	prNumber: Schema.NullOr(Schema.Number),
 	status: SecurityAuditRunStatus,
 	sourceRef: Schema.String,
 	profile: SecurityAuditProfile,
@@ -577,6 +592,14 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 		}),
 	)
 	.add(
+		HttpApiEndpoint.patch("updateTarget", "/targets/:targetId", {
+			params: { targetId: SecurityAuditTargetId },
+			payload: SecurityAuditUpdateTargetRequest,
+			success: SecurityAuditTarget,
+			error: [...gatedErrors, SecurityAuditTargetNotFoundError],
+		}),
+	)
+	.add(
 		HttpApiEndpoint.get("listTargets", "/targets", {
 			success: SecurityAuditTargetsResponse,
 			error: gatedErrors,
@@ -641,6 +664,16 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 			params: { runId: SecurityAuditRunId },
 			success: SecurityAuditFindingsResponse,
 			error: [...gatedErrors, SecurityAuditRunNotFoundError],
+		}),
+	)
+	.add(
+		// Triage of a finding a pull request run reported, before the target follows it: a dismissed
+		// or accepted one stops failing that pull request's check.
+		HttpApiEndpoint.patch("updateRunFindingStatus", "/runs/:runId/findings/:fingerprint", {
+			params: { runId: SecurityAuditRunId, fingerprint: Fingerprint },
+			payload: SecurityAuditUpdateFindingRequest,
+			success: SecurityAuditFindingTriageResult,
+			error: [...gatedErrors, SecurityAuditRunNotFoundError, SecurityAuditFindingNotFoundError],
 		}),
 	)
 	.add(

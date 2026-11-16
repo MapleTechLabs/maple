@@ -557,6 +557,7 @@ export interface GithubCheckRunInput {
 		readonly title: string
 		readonly message: string
 	}>
+	readonly detailsUrl?: string
 }
 
 export interface GithubReviewInput {
@@ -2045,14 +2046,28 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 								"POST",
 								token,
 								`${base}/check-runs`,
-								{ name: input.name, head_sha: input.headSha, ...state, output },
+								{
+									name: input.name,
+									head_sha: input.headSha,
+									...state,
+									output,
+									...(input.detailsUrl === undefined
+										? undefined
+										: { details_url: input.detailsUrl }),
+								},
 								"Create check run",
 							)
 						: yield* authedSend(
 								"PATCH",
 								token,
 								`${base}/check-runs/${running.id}`,
-								{ ...state, output },
+								{
+									...state,
+									output,
+									...(input.detailsUrl === undefined
+										? undefined
+										: { details_url: input.detailsUrl }),
+								},
 								"Update check run",
 							)
 				if (!isOk(response)) return yield* failure(response, "Write check run", "repository")

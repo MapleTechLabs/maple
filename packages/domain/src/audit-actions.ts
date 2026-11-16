@@ -190,6 +190,8 @@ export const AuditResources = {
 	security_audit_finding: { verbs: ["triaged"] },
 	/** An admin stopping an in-progress security audit run; target and run id in `metadata`. */
 	security_audit_run: { verbs: ["cancelled"] },
+	/** An admin changing a target's pull request check; the changed fields in `metadata`. */
+	security_audit_target: { verbs: ["updated"] },
 	/** An admin changing the org's audit spend limit or default models; the new values in `metadata`. */
 	security_audit_settings: { verbs: ["updated"] },
 	/**
@@ -271,6 +273,7 @@ export const AuditResourceLabels = {
 	status_page_incident: "Status page incident",
 	security_audit_finding: "Security audit finding",
 	security_audit_run: "Security audit run",
+	security_audit_target: "Security audit target",
 	security_audit_settings: "Security audit settings",
 	source: "Source",
 	session_replay: "Session replay",
@@ -429,6 +432,7 @@ export const AuditActionLabels = {
 	"status_page_incident.update_posted": "Posted status page update",
 	"security_audit_finding.triaged": "Triaged security audit finding",
 	"security_audit_run.cancelled": "Cancelled security audit run",
+	"security_audit_target.updated": "Updated security audit target",
 	"security_audit_settings.updated": "Updated security audit spend limit and models",
 	"session_replay.read": "Viewed session replay",
 	"support_channel.created": "Created support channel",

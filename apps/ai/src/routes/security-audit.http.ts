@@ -42,6 +42,7 @@ import { AiCredits } from "@maple/backend/services/billing/AiCredits"
 import { SecurityAuditRepositorySize } from "@maple/backend/services/security-audit/SecurityAuditRepositorySize"
 import { hostedSizeViolations, refusalReason } from "../security-audit/repo-size"
 import { loadLlmSettings, securityAuditModelIds } from "../platform/Llm"
+import { SecurityPrCheck } from "../security-audit/pr-check"
 import {
 	securityAuditEventView,
 	securityAuditFindingView,
@@ -88,6 +89,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 		const workflow = yield* SecurityAuditWorkflowStarter
 		const credits = yield* AiCredits
 		const repositorySize = yield* SecurityAuditRepositorySize
+		const prChecks = yield* SecurityPrCheck
 		const random = yield* SecureRandom.SecureRandom
 
 		/** The caller's org store, once the org is in the rollout. The org is the tenant's, never the request's. */
@@ -473,6 +475,56 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 						),
 					}
 				}).pipe(Effect.withSpan("HttpSecurityAudit.listFindings")),
+			)
+			.handle("updateTarget", ({ params, payload }) =>
+				Effect.gen(function* () {
+					const { store } = yield* auditAccess
+					const updated = yield* orUnavailable(store.updateTarget(params.targetId, payload))
+					if (Option.isNone(updated)) {
+						return yield* new SecurityAuditTargetNotFoundError({
+							message: "This organization has no audit target with that id.",
+							targetId: params.targetId,
+						})
+					}
+					yield* recordHttpAudit("security_audit_target.updated", {
+						metadata: { targetId: params.targetId, ...payload },
+					})
+					return securityAuditTargetView(updated.value)
+				}).pipe(Effect.withSpan("HttpSecurityAudit.updateTarget")),
+			)
+			.handle("updateRunFindingStatus", ({ params, payload }) =>
+				Effect.gen(function* () {
+					const { tenant, store } = yield* readAccess
+					const run = yield* requireRun(store, params.runId)
+					const updated = yield* orUnavailable(
+						store.setRunFindingStatus(
+							run.id,
+							params.fingerprint,
+							payload.status,
+							payload.reason,
+							tenant.userId,
+						),
+					)
+					if (Option.isNone(updated)) {
+						return yield* new SecurityAuditFindingNotFoundError({
+							message: "This audit run has no finding with that fingerprint.",
+							targetId: run.targetId,
+							fingerprint: params.fingerprint,
+						})
+					}
+					yield* recordHttpAudit("security_audit_finding.triaged", {
+						metadata: {
+							targetId: run.targetId,
+							runId: run.id,
+							fingerprint: params.fingerprint,
+							status: payload.status,
+							reason: payload.reason,
+						},
+					})
+					// The pull request's check follows the triage: a dismissed blocker stops failing it.
+					yield* prChecks.publish(tenant.orgId, run.id)
+					return updated.value
+				}).pipe(Effect.withSpan("HttpSecurityAudit.updateRunFindingStatus")),
 			)
 			.handle("updateFindingStatus", ({ params, payload }) =>
 				Effect.gen(function* () {

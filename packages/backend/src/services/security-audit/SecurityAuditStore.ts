@@ -95,6 +95,8 @@ export interface StartRunInput {
 	readonly targetId: SecurityAuditTargetId
 	readonly kind: SecurityAuditRunKind
 	readonly sourceRef: string
+	/** The pull request a `pull_request` run checks; it runs beside the target's other runs. */
+	readonly prNumber?: number
 	/** Defaults to the target's. */
 	readonly profile?: SecurityAuditProfile
 	readonly scopePaths?: ReadonlyArray<string>
@@ -103,6 +105,11 @@ export interface StartRunInput {
 	readonly discoveryModel?: string
 	readonly validationModel?: string
 	readonly workflowInstanceId?: string
+}
+
+export interface UpdateTargetInput {
+	readonly prCheckEnabled?: boolean
+	readonly prCheckBlockAt?: SecurityAuditSeverity | null
 }
 
 export interface SaveSettingsInput {
@@ -148,7 +155,28 @@ export interface SecurityAuditOrgStore extends AuditStoreApi {
 	readonly getTarget: (
 		targetId: SecurityAuditTargetId,
 	) => Effect.Effect<Option.Option<SecurityAuditTargetRow>, AuditStoreError>
-	/** Refuses a disabled target, and a second run while one is in progress. */
+	/** None when the org has no such target. */
+	readonly updateTarget: (
+		targetId: SecurityAuditTargetId,
+		input: UpdateTargetInput,
+	) => Effect.Effect<Option.Option<SecurityAuditTargetRow>, AuditStoreError>
+	/**
+	 * The enabled target that checks pull requests into `branch` of `repository` (matched
+	 * case-insensitively, as GitHub does), if any.
+	 */
+	readonly findPullRequestTarget: (
+		repository: string,
+		branch: string,
+	) => Effect.Effect<Option.Option<SecurityAuditTargetRow>, AuditStoreError>
+	/** The unfinished runs checking this pull request, which a newer head supersedes. */
+	readonly listOpenPullRequestRuns: (
+		targetId: SecurityAuditTargetId,
+		prNumber: number,
+	) => Effect.Effect<ReadonlyArray<SecurityAuditRunRow>, AuditStoreError>
+	/**
+	 * Refuses a disabled target, and a second run while one is in progress: on the target for its
+	 * own runs, on the pull request for a pull request's.
+	 */
 	readonly startRun: (
 		input: StartRunInput,
 	) => Effect.Effect<
@@ -261,6 +289,21 @@ export interface SecurityAuditOrgStore extends AuditStoreApi {
 		reason: string,
 		actor: UserId,
 	) => Effect.Effect<Option.Option<SecurityAuditTriage>, AuditStoreError>
+	/**
+	 * A person's triage of a finding a run reported, which the target then follows: the target's
+	 * lifecycle row is written from the run's record when it has none. None when the run has no
+	 * such finding.
+	 */
+	readonly setRunFindingStatus: (
+		runId: SecurityAuditRunId,
+		fingerprint: string,
+		status: Exclude<SecurityAuditFindingStatus, "fixed">,
+		reason: string,
+		actor: UserId,
+	) => Effect.Effect<
+		Option.Option<SecurityAuditTriage & { readonly targetId: SecurityAuditTargetId }>,
+		AuditStoreError
+	>
 }
 
 /** A run's finding: its record, verdict and severity from the run, its lifecycle from the target. */
@@ -345,6 +388,8 @@ export const securityAuditTargetView = (row: SecurityAuditTargetRow): SecurityAu
 	scopePaths: row.scopePaths,
 	discoveryModel: row.discoveryModel,
 	validationModel: row.validationModel,
+	prCheckEnabled: row.prCheckEnabled,
+	prCheckBlockAt: row.prCheckBlockAt,
 	createdBy: row.createdBy,
 	createdAt: row.createdAt,
 	updatedAt: row.updatedAt,
@@ -354,6 +399,7 @@ export const securityAuditRunView = (row: SecurityAuditRunRow): SecurityAuditRun
 	id: row.id,
 	targetId: row.targetId,
 	kind: row.kind,
+	prNumber: row.prNumber,
 	status: row.status,
 	sourceRef: row.sourceRef,
 	profile: row.profile,
@@ -696,7 +742,7 @@ const lockOpenRun = (db: MapleDb, orgId: OrgId, runId: SecurityAuditRunId, write
 	db
 		.run(
 			PG.from(SecurityAuditRuns)
-				.select("id", "targetId", "sourceRef", "finishedAt")
+				.select("id", "targetId", "sourceRef", "prNumber", "finishedAt")
 				.where(($) => [$.orgId.eq(orgId), $.id.eq(runId)])
 				.limit(1)
 				.forUpdate(),
@@ -919,17 +965,21 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 										$.runId.eq(runId),
 									]),
 								)
-								yield* db.run(
-									PG.deleteFrom(SecurityAuditFindings).where(($) => [
-										$.orgId.eq(orgId),
-										$.targetId.eq(run.targetId),
-										$.firstSeenRunId.eq(runId),
-										$.lastSeenRunId.eq(runId),
-										$.fingerprint.notIn(...fingerprints),
-										$.status.eq("open"),
-										$.statusChangedAt.isNull(),
-									]),
-								)
+								// A pull request's code is not on the branch yet: its findings stay the run's,
+								// and the target follows one only once a person triages it.
+								const followed = run.prNumber === null
+								if (followed)
+									yield* db.run(
+										PG.deleteFrom(SecurityAuditFindings).where(($) => [
+											$.orgId.eq(orgId),
+											$.targetId.eq(run.targetId),
+											$.firstSeenRunId.eq(runId),
+											$.lastSeenRunId.eq(runId),
+											$.fingerprint.notIn(...fingerprints),
+											$.status.eq("open"),
+											$.statusChangedAt.isNull(),
+										]),
+									)
 								if (!Arr.isReadonlyArrayNonEmpty(unique)) return
 								yield* db.run(
 									PG.insertInto(SecurityAuditRunFindings).values(
@@ -944,6 +994,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 										})),
 									),
 								)
+								if (!followed) return
 								const findingRows = yield* Effect.forEach(unique, (finding) =>
 									Effect.map(random.uuidV4(), (id) => ({
 										id,
@@ -1109,9 +1160,14 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 						const now = yield* Clock.currentTimeMillis
 						const runId = input.runId ?? (yield* newRunId)
 						const inProgress = new SecurityAuditRunInProgress({
-							message: `Security audit target ${input.targetId} already has a run in progress`,
+							message:
+								input.prNumber === undefined
+									? `Security audit target ${input.targetId} already has a run in progress`
+									: `Pull request #${input.prNumber} already has a security check in progress`,
 							targetId: input.targetId,
 						})
+						// A pull request's runs only wait on that pull request; the target's own on each other.
+						const prNumber = input.prNumber
 						return yield* dbExecute((db) =>
 							db.transaction(
 								Effect.gen(function* () {
@@ -1190,6 +1246,9 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 												$.orgId.eq(orgId),
 												$.targetId.eq(input.targetId),
 												$.finishedAt.isNull(),
+												prNumber === undefined
+													? $.prNumber.isNull()
+													: $.prNumber.eq(prNumber),
 											])
 											.limit(1),
 									)
@@ -1203,6 +1262,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 												orgId,
 												targetId: input.targetId,
 												kind: input.kind,
+												prNumber: input.prNumber ?? null,
 												sourceRef: input.sourceRef,
 												profile: input.profile ?? target.profile,
 												scopePaths: input.scopePaths ?? target.scopePaths,
@@ -1228,6 +1288,9 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 												$.orgId.eq(orgId),
 												$.targetId.eq(input.targetId),
 												$.finishedAt.isNull(),
+												prNumber === undefined
+													? $.prNumber.isNull()
+													: $.prNumber.eq(prNumber),
 											])
 											.limit(1),
 									)
@@ -1268,6 +1331,8 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 												.where(($unit) => [$unit.orgId.eq(orgId)]),
 										),
 										unscopedOnly ? $.scopePaths.eq([]) : undefined,
+										// A pull request's head is not the branch: its run carries nothing forward.
+										$.prNumber.isNull(),
 									])
 									.orderBy(($) => [[$.startedAt, "desc"]])
 									.limit(1),
@@ -1812,6 +1877,142 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					return Option.fromUndefinedOr(rows[0])
 				})
 
+				const updateTarget: SecurityAuditOrgStore["updateTarget"] = Effect.fn(
+					"SecurityAuditStore.updateTarget",
+				)(function* (targetId, input) {
+					const now = yield* Clock.currentTimeMillis
+					const rows = yield* dbExecute((db) =>
+						db.run(
+							PG.update(SecurityAuditTargets)
+								.set({
+									...(input.prCheckEnabled === undefined
+										? undefined
+										: { prCheckEnabled: input.prCheckEnabled }),
+									...(input.prCheckBlockAt === undefined
+										? undefined
+										: { prCheckBlockAt: input.prCheckBlockAt }),
+									updatedAt: now,
+								})
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(targetId)])
+								.returning(),
+						),
+					)
+					return Option.fromUndefinedOr(rows[0])
+				})
+
+				const findPullRequestTarget: SecurityAuditOrgStore["findPullRequestTarget"] = Effect.fn(
+					"SecurityAuditStore.findPullRequestTarget",
+				)(function* (repository, branch) {
+					const rows = yield* dbExecute((db) =>
+						db.run(
+							PG.from(SecurityAuditTargets)
+								.select()
+								.where(($) => [
+									$.orgId.eq(orgId),
+									PG.lower($.repository).eq(Str.toLowerCase(repository)),
+									$.branch.eq(branch),
+									$.enabled.eq(true),
+									$.prCheckEnabled.eq(true),
+								])
+								.limit(1),
+						),
+					)
+					return Option.fromUndefinedOr(rows[0])
+				})
+
+				const listOpenPullRequestRuns: SecurityAuditOrgStore["listOpenPullRequestRuns"] = Effect.fn(
+					"SecurityAuditStore.listOpenPullRequestRuns",
+				)(function* (targetId, prNumber) {
+					return yield* dbExecute((db) =>
+						db.run(
+							selectRuns().where(($) => [
+								$.orgId.eq(orgId),
+								$.targetId.eq(targetId),
+								$.prNumber.eq(prNumber),
+								$.finishedAt.isNull(),
+							]),
+						),
+					).pipe(Effect.flatMap(lenientRuns))
+				})
+
+				const setRunFindingStatus: SecurityAuditOrgStore["setRunFindingStatus"] = Effect.fn(
+					"SecurityAuditStore.setRunFindingStatus",
+				)(function* (runId, fingerprint, status, reason, actor) {
+					const now = yield* Clock.currentTimeMillis
+					const id = yield* random.uuidV4()
+					return yield* dbExecute((db) =>
+						db.transaction(
+							Effect.gen(function* () {
+								const runs = yield* db.run(
+									PG.from(SecurityAuditRuns)
+										.select("targetId", "sourceRef")
+										.where(($) => [$.orgId.eq(orgId), $.id.eq(runId)])
+										.limit(1),
+								)
+								const run = runs[0]
+								if (run === undefined) return Option.none()
+								const reported = yield* db.run(
+									PG.from(SecurityAuditRunFindings)
+										.select(($) => ({
+											verdict: $.verdict,
+											overallSeverity: $.overallSeverity,
+											estimatedSeverity: $.estimatedSeverity,
+											record: $.record,
+										}))
+										.where(($) => [
+											$.orgId.eq(orgId),
+											$.runId.eq(runId),
+											$.fingerprint.eq(fingerprint),
+										])
+										.limit(1),
+								)
+								const finding = reported[0]
+								if (finding === undefined) return Option.none()
+								yield* db.run(
+									PG.insertInto(SecurityAuditFindings)
+										.values({
+											id,
+											orgId,
+											targetId: run.targetId,
+											fingerprint,
+											...finding,
+											status,
+											statusReason: reason,
+											statusChangedBy: actor,
+											statusChangedAt: now,
+											firstSeenRunId: runId,
+											lastSeenRunId: runId,
+											firstSeenRef: run.sourceRef,
+											lastSeenRef: run.sourceRef,
+											fixedRunId: null,
+											createdAt: now,
+											updatedAt: now,
+										})
+										.onConflictDoUpdate({
+											target: ["targetId", "fingerprint"],
+											set: () => ({
+												status,
+												statusReason: reason,
+												statusChangedBy: actor,
+												statusChangedAt: now,
+												fixedRunId: null,
+												updatedAt: now,
+											}),
+											where: ($) => $.orgId.eq(orgId),
+										}),
+								)
+								return Option.some({
+									targetId: run.targetId,
+									fingerprint,
+									status,
+									statusReason: reason,
+									statusChangedAt: now,
+								})
+							}),
+						),
+					)
+				})
+
 				const setFindingStatus: SecurityAuditOrgStore["setFindingStatus"] = Effect.fn(
 					"SecurityAuditStore.setFindingStatus",
 				)(function* (targetId, fingerprint, status, reason, actor) {
@@ -1961,6 +2162,10 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					saveSettings,
 					listTargets,
 					getTarget,
+					updateTarget,
+					findPullRequestTarget,
+					listOpenPullRequestRuns,
+					setRunFindingStatus,
 					setFindingStatus,
 					reserveOrgInvocation,
 					setExecutionProfile,

@@ -56,6 +56,7 @@ import {
 	type Context,
 	Duration,
 	Effect,
+	Exit,
 	Layer,
 	Option,
 	Predicate,
@@ -92,6 +93,7 @@ import {
 	lfsSkippedNote,
 } from "./repo-size"
 import { formatRepoTree, REPO_TREE_COMMAND } from "./repo-tree"
+import { SecurityPrCheck } from "./pr-check"
 import { sandboxSource } from "./sandbox-source"
 import { AUDIT_TOOL_GUIDANCE, type SourceReaderApi } from "./source"
 
@@ -738,7 +740,18 @@ export const runSecurityAuditWorkflow = (payload: SecurityAuditWorkflowPayload) 
 				ownKey: Option.isSome(orgKey),
 			},
 		)
-	})
+	}).pipe(
+		// A pull request run reports its result as the `Maple / security` check once it settles or
+		// dies. An eviction is neither: the replay finishes the run and reports then.
+		Effect.onExit((exit) =>
+			Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
+				? Effect.void
+				: Effect.gen(function* () {
+						const orgId = yield* Schema.decodeEffect(OrgId)(payload.orgId)
+						yield* (yield* SecurityPrCheck).publish(orgId, payload.runId)
+					}).pipe(Effect.ignore),
+		),
+	)
 
 const agentsOn = (
 	settings: LlmSettings,

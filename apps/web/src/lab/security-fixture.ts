@@ -57,6 +57,9 @@ const target = (
 	// The quick billing audit hunts on its own model; the rest follow the org's.
 	discoveryModel: profile === "quick" ? "openai/gpt-6-luna" : null,
 	validationModel: null,
+	// The gateway gates its pull requests on the `Maple / security` check.
+	prCheckEnabled: repository === "acme/api-gateway",
+	prCheckBlockAt: "high" as const,
 	createdBy: "user_maya",
 	createdAt: now - 20 * DAY,
 	updatedAt: now - 20 * DAY,
@@ -109,6 +112,7 @@ const run = (seed: RunSeed) => ({
 	id: seed.id,
 	targetId: seed.targetId,
 	kind: "manual",
+	prNumber: null,
 	status: seed.status,
 	sourceRef: seed.sourceRef,
 	profile: seed.profile,

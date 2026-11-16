@@ -1,6 +1,8 @@
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { Cause, Effect, Layer, Option } from "effect"
 import { EventBaseLive } from "@maple/backend/platform/DatabasePgLive"
+import type { AiWorkerFetcher } from "@maple/backend/platform/bindings"
+import type { Env } from "@maple/backend/platform/Env"
 import { GithubAppClientSecret, GithubAppPrivateKey, GithubAppWebhookSecret } from "@maple/infra/secrets"
 
 import { VcsScheduledSyncService } from "@maple/backend/services/integrations/vcs/VcsScheduledSyncService"
@@ -18,6 +20,7 @@ import { pullRequestEventSinkFanout } from "@maple/backend/services/integrations
 import { PrReviewService } from "@maple/backend/services/pr-review/PrReviewService"
 import { FindingEmbedder } from "@maple/backend/services/pr-review/FindingEmbedder"
 import { prReviewPullRequestHandler } from "@maple/backend/services/pr-review/pull-request-review-handler"
+import { securityPrCheckPullRequestHandler } from "@maple/backend/services/security-audit/pull-request-security-handler"
 import {
 	PullRequestChecklistSinkLive,
 	PullRequestCiApprovalSinkLive,
@@ -53,9 +56,13 @@ export { vcsSyncTelemetry }
 // the event fan-out and the checklist sink share the instance.
 const PrReviewLive = PrReviewService.layer.pipe(Layer.provide(VcsSyncQueue.layer))
 
-const PullRequestEventSinkLive = pullRequestEventSinkFanout<IssueFixVerificationService | PrReviewService>([
+const PullRequestEventSinkLive = pullRequestEventSinkFanout<
+	IssueFixVerificationService | PrReviewService | Env | AiWorkerFetcher
+>([
 	{ name: "fix-verification", handler: fixVerificationPullRequestHandler },
 	{ name: "pr-review", handler: prReviewPullRequestHandler },
+	// Pushes to pull requests a security audit target checks, for the `Maple / security` check.
+	{ name: "security-pr-check", handler: securityPrCheckPullRequestHandler },
 ]).pipe(Layer.provide(IssueFixVerificationService.layer), Layer.provide(PrReviewLive))
 
 export const VcsSyncLive = VcsSyncService.layer.pipe(

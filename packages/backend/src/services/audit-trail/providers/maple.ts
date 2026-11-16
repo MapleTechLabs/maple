@@ -58,6 +58,7 @@ const CATEGORY_BY_RESOURCE = {
 	security_audit_finding: "resource",
 	security_audit_run: "resource",
 	security_audit_settings: "configuration",
+	security_audit_target: "configuration",
 	session_replay: "data_access",
 	support_channel: "configuration",
 	telemetry: "data_access",

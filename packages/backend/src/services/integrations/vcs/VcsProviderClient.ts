@@ -3,6 +3,7 @@ import type {
 	BranchUpsertInput,
 	CommitUpsertInput,
 	GitCommitSha,
+	PullRequestCheckAnnotation,
 	PullRequestContext,
 	PullRequestFile,
 	PullRequestHead,
@@ -436,9 +437,15 @@ export interface VcsProviderClient {
 			readonly headSha: string
 			readonly state:
 				| { readonly status: "in_progress" }
-				| { readonly status: "completed"; readonly conclusion: "neutral" | "skipped" }
+				| {
+						readonly status: "completed"
+						readonly conclusion: "success" | "neutral" | "failure" | "skipped"
+				  }
 			readonly title: string
 			readonly summary: string
+			readonly annotations?: ReadonlyArray<PullRequestCheckAnnotation>
+			/** Where the check's "Details" link goes; the provider's own page when absent. */
+			readonly detailsUrl?: string
 		},
 	) => Effect.Effect<
 		{ readonly url: string | null },

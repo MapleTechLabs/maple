@@ -27,6 +27,7 @@ import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
 import { eventTelemetry } from "@maple/infra/worker-telemetry"
 import { Effect, Layer } from "effect"
 import { FetchHttpClient } from "effect/http"
+import { SecurityPrCheck } from "./pr-check"
 import { runSecurityAuditWorkflow } from "./workflow.run"
 
 // Its own service name: hour-long background runs would skew maple-ai's request percentiles.
@@ -53,6 +54,8 @@ const runServices = (env: Record<string, unknown>) => {
 	).pipe(Layer.provide(Layer.mergeAll(VcsSourceService.layer, SandboxClient.layer)))
 	return Layer.mergeAll(
 		SecurityAuditStore.layer,
+		// Reports a pull request run as its `Maple / security` check.
+		SecurityPrCheck.layer.pipe(Layer.provide(SecurityAuditStore.layer)),
 		AiCredits.layer,
 		OrgOpenRouterKeyService.layer,
 		BillingCustomerResolver.layer,

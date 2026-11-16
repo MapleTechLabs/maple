@@ -34,6 +34,8 @@ import {
 } from "../routes/internal/cancellation-review.http"
 import { HttpMcpToolsLive } from "../routes/internal/mcp-tools.http"
 import { HttpSecurityAuditLive } from "../routes/security-audit.http"
+import { HttpSecurityPrCheckLive } from "../routes/internal/security-pr-check.http"
+import { SecurityPrCheck } from "../security-audit/pr-check"
 import { layerDecisionModelFromConfig } from "../platform/Llm"
 import { WorkersAiGateway } from "../platform/WorkersAiHttpClient"
 import { ChatSessionsRouter } from "../routes/chat-sessions.http"
@@ -60,13 +62,14 @@ const AiInternalRoutes = HttpApiBuilder.layer(MapleAiApi).pipe(
 	Layer.provide(HttpChatLive),
 	Layer.provide(HttpMcpToolsLive),
 	Layer.provide(
-		HttpSecurityAuditLive.pipe(
+		Layer.mergeAll(HttpSecurityAuditLive, HttpSecurityPrCheckLive).pipe(
 			Layer.provide(
 				Layer.mergeAll(
 					SecurityAuditStore.layer,
 					OrganizationFeatureFlagsService.layer,
 					AiCredits.layer,
 					SecurityAuditRepositorySize.layer,
+					SecurityPrCheck.layer.pipe(Layer.provide(SecurityAuditStore.layer)),
 				),
 			),
 			Layer.provide(

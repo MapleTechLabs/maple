@@ -1,0 +1,346 @@
+import { afterEach, describe, expect, it } from "@effect/vitest"
+import type { PullRequestEventJob, PullRequestFile } from "@maple/domain/http"
+import {
+	DISABLED_ORGANIZATION_FEATURE_FLAGS,
+	ENABLED_ORGANIZATION_FEATURE_FLAGS,
+} from "@maple/domain/organization-feature-flags"
+import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
+import { SecurityAuditWorkflowStarter } from "@maple/backend/platform/bindings"
+import { envPorts } from "@maple/backend/platform/env-ports"
+import { AiCredits, AiCreditsExhausted } from "@maple/backend/services/billing/AiCredits"
+import {
+	asOrgId,
+	asUserId,
+	testRepoLayer,
+	upsertReposFor,
+} from "@maple/backend/services/integrations/vcs/__tests__/harness"
+import type { VcsProviderClient } from "@maple/backend/services/integrations/vcs/VcsProviderClient"
+import {
+	VcsProviderRegistry,
+	type VcsProviderRegistryApi,
+} from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
+import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
+import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
+import { Array as Arr, Effect, Layer, Order, String as Str } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
+import { SecurityPrCheck } from "./pr-check"
+import { startPullRequestCheck } from "./pr-check-start"
+
+const trackedDbs: TestDb[] = []
+afterEach(() => cleanupTestDbs(trackedDbs))
+
+const orgId = asOrgId("org_pr_check")
+const HEAD = "1111111111111111111111111111111111111111"
+const NEXT_HEAD = "2222222222222222222222222222222222222222"
+
+const file = (path: string, status: PullRequestFile["status"] = "modified"): PullRequestFile => ({
+	path,
+	previousPath: null,
+	status,
+	additions: 1,
+	deletions: 0,
+	patch: null,
+})
+
+const job = (overrides: Partial<PullRequestEventJob> = {}): PullRequestEventJob => ({
+	kind: "pull-request-event",
+	provider: "github",
+	externalInstallationId: "42",
+	externalRepoId: "7",
+	repoFullName: "octo/repo",
+	number: 612,
+	action: "opened",
+	url: "https://github.com/octo/repo/pull/612",
+	title: "Add the orders route",
+	body: null,
+	authorLogin: "octocat",
+	authorAssociation: "MEMBER",
+	merged: false,
+	mergeCommitSha: null,
+	mergedAtMs: null,
+	headSha: HEAD,
+	baseRef: "main",
+	headRef: "feat/orders",
+	draft: false,
+	...overrides,
+})
+
+/** Only the file list is read; any other provider call fails the test loudly. */
+const providerWith = (files: () => Effect.Effect<ReadonlyArray<PullRequestFile>>): VcsProviderClient => {
+	const unused = () => Effect.die("not used by the security check start")
+	return {
+		id: "github",
+		reviewerMention: "@maple-review-bot",
+		webhookSignatureHeader: "x-hub-signature-256",
+		webhookToJobs: unused,
+		fetchRepositories: unused,
+		fetchCommits: unused,
+		fetchBranches: unused,
+		fetchCommit: unused,
+		fetchPullRequests: unused,
+		fetchPullRequest: unused,
+		fetchPullRequestFiles: files,
+		fetchReviewThreads: unused,
+		hideEarlierComments: unused,
+		resolveReviewThread: unused,
+		fetchChangesSince: unused,
+		fetchPullRequestHead: unused,
+		postPullRequestReply: unused,
+		reactToComment: unused,
+		fetchCommenterPermission: unused,
+		commitFiles: unused,
+		fetchPullRequestContext: unused,
+		publishPullRequestReview: unused,
+		writePullRequestCheck: unused,
+		writePullRequestSummaryComment: unused,
+		searchCode: unused,
+		repositorySizeBytes: unused,
+		resolveRef: unused,
+		fetchCloneCredentials: unused,
+		fetchTreeFiles: unused,
+		fetchBlobText: unused,
+		fetchSourceFile: unused,
+		fetchWorkflowJobAnnotations: unused,
+		streamWorkflowJobLog: unused,
+		canReadWorkflowLogs: unused,
+		fetchBillingUsage: unused,
+		installationSettingsUrl: unused,
+	}
+}
+
+const makeHarness = (
+	options: {
+		readonly files?: () => Effect.Effect<ReadonlyArray<PullRequestFile>>
+		readonly enabled?: boolean
+		readonly noCredits?: boolean
+		readonly prCheckEnabled?: boolean
+	} = {},
+) => {
+	const db = createTestDb(trackedDbs)
+	const started: Array<SecurityAuditWorkflowPayload> = []
+	const cancelled: Array<string> = []
+	const notices: Array<string> = []
+	const layer = Layer.mergeAll(
+		SecurityAuditStore.layer.pipe(Layer.provide(db.layer)),
+		testRepoLayer(db),
+		Layer.succeed(VcsProviderRegistry, {
+			ids: ["github"],
+			resolve: () =>
+				Effect.succeed(
+					providerWith(options.files ?? (() => Effect.succeed([file("src/orders.ts")]))),
+				),
+		} satisfies VcsProviderRegistryApi),
+		Layer.succeed(SecurityAuditWorkflowStarter, {
+			create: (payload) => Effect.sync(() => void started.push(payload)),
+			cancel: (runId) => Effect.sync(() => void cancelled.push(runId)),
+		}),
+		Layer.succeed(SecurityPrCheck, {
+			notify: (_org, _target, headSha, notice) =>
+				Effect.sync(
+					() =>
+						void notices.push(
+							notice.kind === "running"
+								? `${Str.slice(0, 4)(headSha)}:running`
+								: `${Str.slice(0, 4)(headSha)}:unchecked:${notice.reason}`,
+						),
+				),
+			publish: () => Effect.void,
+		}),
+		options.noCredits === true
+			? Layer.succeed(AiCredits, {
+					ensure: () =>
+						Effect.fail(
+							new AiCreditsExhausted({
+								message: "used up",
+								reason: "used_up",
+								resetsAt: null,
+							}),
+						),
+				})
+			: AiCredits.unmetered,
+		OrganizationFeatureFlagsService.fixed(
+			options.enabled === false
+				? DISABLED_ORGANIZATION_FEATURE_FLAGS
+				: ENABLED_ORGANIZATION_FEATURE_FLAGS,
+		),
+		envPorts({}),
+		SecureRandom.layerWebCrypto,
+	)
+
+	const seeded = Effect.gen(function* () {
+		const repo = yield* VcsRepository
+		yield* repo.upsertInstallation({
+			orgId,
+			provider: "github",
+			externalInstallationId: "42",
+			accountLogin: "octo",
+			accountType: "organization",
+			externalAccountId: "100",
+			accountAvatarUrl: null,
+			repositorySelection: "all",
+			installedByUserId: asUserId("user_1"),
+		})
+		yield* upsertReposFor(repo, "42", [
+			{
+				externalRepoId: "7",
+				owner: "octo",
+				name: "repo",
+				fullName: "octo/repo",
+				defaultBranch: "main",
+				htmlUrl: "https://github.com/octo/repo",
+				isPrivate: true,
+				isArchived: false,
+			},
+		])
+		const store = (yield* SecurityAuditStore).forOrg(orgId)
+		const target = yield* store.createTarget({
+			repository: "octo/repo",
+			branch: "main",
+			createdBy: asUserId("user_1"),
+		})
+		yield* store.updateTarget(target.id, { prCheckEnabled: options.prCheckEnabled ?? true })
+		return target
+	})
+
+	const run = <A, E>(body: Effect.Effect<A, E, Layer.Success<typeof layer>>) =>
+		Effect.runPromise(body.pipe(Effect.provide(layer)))
+
+	const runsOf = (targetId: string) =>
+		Effect.gen(function* () {
+			const store = (yield* SecurityAuditStore).forOrg(orgId)
+			const rows = yield* store.listRuns({})
+			return Arr.map(
+				Arr.filter(rows, (r) => r.targetId === targetId),
+				(r) => ({
+					prNumber: r.prNumber,
+					kind: r.kind,
+					status: r.status,
+					reason: r.incompleteReason,
+				}),
+			)
+		})
+
+	return { run, seeded, started, cancelled, notices, runsOf }
+}
+
+describe("startPullRequestCheck", () => {
+	it("starts a quick run of the changed files at the head and reports it running", async () => {
+		const harness = makeHarness({
+			files: () => Effect.succeed([file("src/orders.ts", "added"), file("src/old.ts", "removed")]),
+		})
+		const outcome = await harness.run(
+			Effect.gen(function* () {
+				yield* harness.seeded
+				return yield* startPullRequestCheck(orgId, job())
+			}),
+		)
+
+		expect(outcome).toEqual({ outcome: "started" })
+		expect(
+			Arr.map(harness.started, (p) => [
+				p.ref,
+				p.profile,
+				p.scopePaths,
+				p.budget,
+				p.priorRunId,
+				p.repository,
+			]),
+		).toEqual([[HEAD, "quick", ["src/orders.ts"], 30, null, "octo/repo"]])
+		expect(harness.notices).toEqual(["1111:running"])
+	})
+
+	it("posts nothing for a pull request no target checks, a draft, a closed one or an org outside the rollout", async () => {
+		const harness = makeHarness()
+		const outcomes = await harness.run(
+			Effect.gen(function* () {
+				yield* harness.seeded
+				return [
+					yield* startPullRequestCheck(orgId, job({ baseRef: "release" })),
+					yield* startPullRequestCheck(orgId, job({ draft: true })),
+					yield* startPullRequestCheck(orgId, job({ action: "closed" })),
+				]
+			}),
+		)
+		const disabled = makeHarness({ enabled: false })
+		const outside = await disabled.run(
+			Effect.gen(function* () {
+				yield* disabled.seeded
+				return yield* startPullRequestCheck(orgId, job())
+			}),
+		)
+		const off = makeHarness({ prCheckEnabled: false })
+		const notTurnedOn = await off.run(
+			Effect.gen(function* () {
+				yield* off.seeded
+				return yield* startPullRequestCheck(orgId, job())
+			}),
+		)
+
+		expect(Arr.map(outcomes, (o) => o.reason)).toEqual(["no_target", "draft", "action"])
+		expect([outside.reason, notTurnedOn.reason]).toEqual(["not_enabled", "no_target"])
+		expect([harness.notices, harness.started, disabled.started, off.started]).toEqual([[], [], [], []])
+	})
+
+	it("stops the pull request's unfinished run when a newer push arrives", async () => {
+		const harness = makeHarness()
+		const runs = await harness.run(
+			Effect.gen(function* () {
+				const target = yield* harness.seeded
+				yield* startPullRequestCheck(orgId, job())
+				yield* startPullRequestCheck(orgId, job({ action: "synchronize", headSha: NEXT_HEAD }))
+				return yield* harness.runsOf(target.id)
+			}),
+		)
+
+		expect(harness.cancelled).toEqual([harness.started[0]?.runId])
+		expect(Arr.map(harness.started, (p) => p.ref)).toEqual([HEAD, NEXT_HEAD])
+		expect(
+			Arr.sort(
+				Arr.map(
+					runs,
+					(r) =>
+						`${r.kind}:${r.prNumber}:${r.status}:${r.reason === null ? "" : Str.slice(0, 11)(r.reason)}`,
+				),
+				Order.String,
+			),
+		).toEqual(["pull_request:612:in_progress:", "pull_request:612:incomplete:superseded:"])
+	})
+
+	it("reports the check as not blocking when it cannot audit, instead of leaving it pending", async () => {
+		const broke = makeHarness({ noCredits: true })
+		const noCredits = await broke.run(
+			Effect.gen(function* () {
+				yield* broke.seeded
+				return yield* startPullRequestCheck(orgId, job())
+			}),
+		)
+		const removals = makeHarness({ files: () => Effect.succeed([file("src/old.ts", "removed")]) })
+		const nothing = await removals.run(
+			Effect.gen(function* () {
+				yield* removals.seeded
+				return yield* startPullRequestCheck(orgId, job())
+			}),
+		)
+		const down = makeHarness({ files: () => Effect.die("GitHub is down") })
+		const failed = await down.run(
+			Effect.gen(function* () {
+				yield* down.seeded
+				return yield* startPullRequestCheck(orgId, job())
+			}),
+		)
+
+		expect([noCredits.outcome, nothing.outcome, failed.outcome]).toEqual([
+			"reported",
+			"reported",
+			"reported",
+		])
+		expect([...broke.notices, ...removals.notices, ...down.notices]).toEqual([
+			"1111:unchecked:the organization has no AI credits left for security audits",
+			"1111:unchecked:the pull request changes no file to audit",
+			"1111:unchecked:an error stopped the check from starting",
+		])
+		expect([broke.started, removals.started, down.started]).toEqual([[], [], []])
+	})
+})

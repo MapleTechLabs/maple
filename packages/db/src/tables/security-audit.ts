@@ -48,6 +48,13 @@ export const SecurityAuditTargets = PG.table("security_audit_targets", {
 		/** Max agent invocations per run; null is unbounded. */
 		budgetPerRun: PG.column(PG.nullable(PG.int4), { name: "budget_per_run" }),
 		monthlyInvocationBudget: PG.column(PG.nullable(PG.int4), { name: "monthly_invocation_budget" }),
+		/** Audit pull requests into `branch` and report them as the `Maple / security` check. */
+		prCheckEnabled: PG.column(PG.bool, { name: "pr_check_enabled", default: false }),
+		/** The lowest confirmed severity that fails the check; null reports without ever failing. */
+		prCheckBlockAt: PG.column(PG.nullable(PG.brand(PG.text, SecurityAuditSeverity)), {
+			name: "pr_check_block_at",
+			default: "high",
+		}),
 		/** OpenRouter model ids overriding the org's; null runs on the org's pick. */
 		discoveryModel: PG.column(PG.nullable(PG.text), { name: "discovery_model" }),
 		validationModel: PG.column(PG.nullable(PG.text), { name: "validation_model" }),
@@ -68,6 +75,8 @@ const securityAuditRunsColumns = {
 	orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
 	targetId: PG.column(PG.brand(PG.text, SecurityAuditTargetId), { name: "target_id" }),
 	kind: PG.brand(PG.text, SecurityAuditRunKind),
+	/** The pull request a `pull_request` run checks; null for every other kind. */
+	prNumber: PG.column(PG.nullable(PG.int4), { name: "pr_number" }),
 	sourceRef: PG.column(PG.text, { name: "source_ref" }),
 	profile: PG.brand(PG.text, SecurityAuditProfile),
 	scopePaths: PG.column(PG.jsonb(ScopePaths), { name: "scope_paths" }),
@@ -105,10 +114,16 @@ export const SecurityAuditRuns = PG.table("security_audit_runs", {
 	indexes: [
 		PG.index("security_audit_runs_org_started_idx", ["orgId", "startedAt"]),
 		PG.index("security_audit_runs_target_started_idx", ["targetId", "startedAt"]),
-		// One unfinished run per target; the store refuses a second before the insert reaches this.
+		// One unfinished run per target, and per pull request beside it; the store refuses a second
+		// before the insert reaches these.
 		PG.uniqueIndex<SecurityAuditRunsColumns>("security_audit_runs_one_running_idx", ["targetId"], {
-			where: ($) => $.finishedAt.isNull(),
+			where: "finished_at is null and pr_number is null",
 		}),
+		PG.uniqueIndex<SecurityAuditRunsColumns>(
+			"security_audit_runs_one_running_pr_idx",
+			["targetId", "prNumber"],
+			{ where: "finished_at is null and pr_number is not null" },
+		),
 	],
 	tenantColumn: "orgId",
 })

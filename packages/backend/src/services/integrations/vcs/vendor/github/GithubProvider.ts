@@ -1860,7 +1860,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				client
 					.upsertCheckRun(installation.externalInstallationId, repo.owner, repo.name, {
 						...input,
-						annotations: [],
+						annotations: input.annotations ?? [],
 					})
 					.pipe(
 						Effect.mapBoth({

@@ -27,7 +27,14 @@ export const SecurityAuditRunId = Schema.String.check(Schema.isNonEmpty()).pipe(
 )
 export type SecurityAuditRunId = Schema.Schema.Type<typeof SecurityAuditRunId>
 
-export const SecurityAuditRunKind = Schema.Literals(["baseline", "slice", "revalidation", "manual"])
+/** `pull_request` audits a pull request's changed files at its head for the `Maple / security` check. */
+export const SecurityAuditRunKind = Schema.Literals([
+	"baseline",
+	"slice",
+	"revalidation",
+	"manual",
+	"pull_request",
+])
 export type SecurityAuditRunKind = typeof SecurityAuditRunKind.Type
 
 export const SecurityAuditRunStatus = Schema.Literals(["in_progress", "complete", "incomplete", "failed"])

@@ -72,6 +72,7 @@ export const RUN_KIND_LABEL = {
 	slice: "Slice",
 	revalidation: "Revalidation",
 	manual: "Manual",
+	pull_request: "Pull request",
 } satisfies Record<SecurityAuditRunKind, string>
 
 export const FINDING_STATUS_LABEL = {
