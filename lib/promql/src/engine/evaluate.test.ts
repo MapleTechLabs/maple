@@ -315,6 +315,14 @@ describe("second-review regressions", () => {
 		expect(value("quantile_over_time(0.75, x[1m])", instant(40), src)).toBe(1.5)
 	})
 
+	it("reads an infinite value at a whole rank in quantile_over_time, as the aggregation does", () => {
+		const src = one({}, [
+			[at(10), 1],
+			[at(20), Infinity],
+		])
+		expect(value("quantile_over_time(0, x[1m])", instant(30), src)).toBe(1)
+	})
+
 	it("refuses an invalid smoothing factor instead of returning nothing", () => {
 		const src = one({}, [
 			[at(10), 1],

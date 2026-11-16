@@ -120,6 +120,8 @@ describe("parse", () => {
 			'histogram_quantile(0.95, sum by (le, service) (rate(http_server_duration_bucket{env="prod"}[5m])))',
 			"sum without (instance) (rate(x[5m])) / on(job) group_left(team) team_info",
 			'{"a.b", c="d"}[1m] offset 1h',
+			'{__name__="a", __name__="b"}',
+			'{__name__="a.b", __name__=~"a.*"}',
 			"-x + 2",
 			"x @ start()",
 			"avg_over_time(up[10m:1m])",
