@@ -55,7 +55,7 @@ const EMPTY_SET: ReadonlySet<string> = new Set()
 function mergeEdgeData(a: ServiceEdgeData, b: ServiceEdgeData): ServiceEdgeData {
 	const callCount = a.callCount + b.callCount
 	const errorCount = a.errorCount + b.errorCount
-	return {
+	const merged: ServiceEdgeData = {
 		callCount,
 		callsPerSecond: a.callsPerSecond + b.callsPerSecond,
 		estimatedCallsPerSecond: a.estimatedCallsPerSecond + b.estimatedCallsPerSecond,
@@ -66,6 +66,9 @@ function mergeEdgeData(a: ServiceEdgeData, b: ServiceEdgeData): ServiceEdgeData 
 		maxDurationMs: Math.max(a.maxDurationMs, b.maxDurationMs),
 		hasSampling: a.hasSampling || b.hasSampling,
 	}
+	// Two structural edges merged stay structural; traffic merged in makes it traffic.
+	if (a.relation !== undefined && a.relation === b.relation) merged.relation = a.relation
+	return merged
 }
 
 interface CollapseOutput {

@@ -207,6 +207,39 @@ describe("applyDeclutter — focus", () => {
 })
 
 describe("applyDeclutter — namespace collapse", () => {
+	it("keeps merged Hyperdrive origin edges structural through the traffic filter", () => {
+		const origin: Partial<ServiceEdgeData> = {
+			callCount: 0,
+			callsPerSecond: 0,
+			estimatedCallsPerSecond: 0,
+			relation: "hyperdrive-origin",
+		}
+		const nodes = [
+			node("edge"),
+			node("data", { namespace: "data" }),
+			node("db:hyperdrive:main", { kind: "database" }),
+			node("db:postgresql:orders", { kind: "database", namespace: "data" }),
+			node("db:postgresql:ledger", { kind: "database", namespace: "data" }),
+		]
+		const edges = [
+			edge("edge", "db:hyperdrive:main", { callCount: 500, callsPerSecond: 50 }),
+			edge("data", "db:postgresql:orders"),
+			edge("data", "db:postgresql:ledger"),
+			edge("db:hyperdrive:main", "db:postgresql:orders", origin),
+			edge("db:hyperdrive:main", "db:postgresql:ledger", origin),
+		]
+		const result = applyDeclutter(
+			nodes,
+			edges,
+			state({ collapsedNamespaces: ["data"], minTrafficPct: 1 }),
+		)
+		const merged = Arr.findFirst(
+			result.edges,
+			(e) => e.id === edgeIdFor("db:hyperdrive:main", nsAggregateId("data")),
+		)
+		expect(Option.getOrUndefined(merged)?.data?.relation).toBe("hyperdrive-origin")
+	})
+
 	// payments: [checkout, ledger]; platform: [gateway]; db node; external svc
 	const graph = () => ({
 		nodes: [
