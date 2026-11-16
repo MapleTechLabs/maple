@@ -6,7 +6,8 @@
  * A finding blocks when it is confirmed at or above the target's threshold and the pull request
  * brought it: not one a person dismissed or accepted, and not one the branch already had (a
  * finding the branch's own audit has seen, still open). Unconfirmed leads never block.
- * A run that could not finish fails open: neutral, so an outage never holds a merge.
+ * A run that could not finish fails open: neutral, so an outage never holds a merge, unless it
+ * had already confirmed a blocker, which fails the check like a finished run's would.
  */
 import type { PullRequestCheckAnnotation } from "@maple/domain/http"
 import type { SecurityAuditFindingStatus, SecurityAuditRunStatus } from "@maple/domain/security-audit"

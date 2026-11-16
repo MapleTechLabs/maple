@@ -1510,7 +1510,10 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 										options?.branchOnly === true ? $.prNumber.isNull() : undefined,
 										prNumber === undefined ? undefined : $.prNumber.eq(prNumber),
 									])
-									.orderBy(($) => [[$.startedAt, "desc"]])
+									.orderBy(($) => [
+										[$.startedAt, "desc"],
+										[$.id, "desc"],
+									])
 									.limit(options?.limit ?? DEFAULT_RUN_LIST_LIMIT),
 							),
 						).pipe(Effect.flatMap(lenientRuns))
@@ -1982,7 +1985,8 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 									statusReason: reason,
 									statusChangedAt: now,
 								}
-								// Open is every reported finding's state already: only a row the target follows changes.
+								// Open is every reported finding's state already: reopening only undoes a person's
+								// dismissal or acceptance, never a fix the branch's own audit recorded.
 								if (status === "open") {
 									yield* db.run(
 										PG.update(SecurityAuditFindings)
@@ -1998,6 +2002,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 												$.orgId.eq(orgId),
 												$.targetId.eq(run.targetId),
 												$.fingerprint.eq(fingerprint),
+												$.status.in_("dismissed", "accepted_risk"),
 											]),
 									)
 									return Option.some(triage)

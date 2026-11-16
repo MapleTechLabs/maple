@@ -378,7 +378,10 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 				Effect.gen(function* () {
 					const { store } = yield* readAccess
 					const rows = yield* orUnavailable(
-						store.listRuns(query.targetId === undefined ? {} : { targetId: query.targetId }),
+						store.listRuns({
+							...(query.targetId === undefined ? undefined : { targetId: query.targetId }),
+							branchOnly: query.branchOnly === "true",
+						}),
 					)
 					const runs = Arr.map(rows, securityAuditRunView)
 					const findingCounts = yield* orUnavailable(

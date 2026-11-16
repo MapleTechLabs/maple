@@ -5,7 +5,7 @@ import {
 	ENABLED_ORGANIZATION_FEATURE_FLAGS,
 } from "@maple/domain/organization-feature-flags"
 import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
-import { SecurityAuditWorkflowStarter } from "@maple/backend/platform/bindings"
+import { SecurityAuditWorkflowStarter, WorkflowStartError } from "@maple/backend/platform/bindings"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { AiCredits, AiCreditsExhausted } from "@maple/backend/services/billing/AiCredits"
 import {
@@ -68,7 +68,27 @@ const job = (overrides: Partial<PullRequestEventJob> = {}): PullRequestEventJob 
 })
 
 /** Only the file list is read; any other provider call fails the test loudly. */
-const providerWith = (files: () => Effect.Effect<ReadonlyArray<PullRequestFile>>): VcsProviderClient => {
+/** The pull request's head on GitHub, as a test moves it. */
+const headAt = (current: { sha: GitCommitSha }) => () =>
+	Effect.succeed({
+		number: 612,
+		title: "Add the orders route",
+		url: "https://github.com/octo/repo/pull/612",
+		body: null,
+		authorLogin: "octocat",
+		state: "open",
+		draft: false,
+		headSha: current.sha,
+		headRef: "feat/orders",
+		baseSha: HEAD,
+		baseRef: "main",
+		headRepoFullName: "octo/repo",
+	})
+
+const providerWith = (
+	files: () => Effect.Effect<ReadonlyArray<PullRequestFile>>,
+	head: VcsProviderClient["fetchPullRequestHead"],
+): VcsProviderClient => {
 	const unused = () => Effect.die("not used by the security check start")
 	return {
 		id: "github",
@@ -86,7 +106,7 @@ const providerWith = (files: () => Effect.Effect<ReadonlyArray<PullRequestFile>>
 		hideEarlierComments: unused,
 		resolveReviewThread: unused,
 		fetchChangesSince: unused,
-		fetchPullRequestHead: unused,
+		fetchPullRequestHead: head,
 		postPullRequestReply: unused,
 		reactToComment: unused,
 		fetchCommenterPermission: unused,
@@ -116,9 +136,12 @@ const makeHarness = (
 		readonly enabled?: boolean
 		readonly noCredits?: boolean
 		readonly prCheckEnabled?: boolean
+		/** The pull request's head on GitHub; the delivered head when absent. */
+		readonly head?: { sha: GitCommitSha }
 	} = {},
 ) => {
 	const db = createTestDb(trackedDbs)
+	const currentHead = options.head ?? { sha: HEAD }
 	const started: Array<SecurityAuditWorkflowPayload> = []
 	const cancelled: Array<string> = []
 	const notices: Array<string> = []
@@ -130,11 +153,18 @@ const makeHarness = (
 			ids: ["github"],
 			resolve: () =>
 				Effect.succeed(
-					providerWith(options.files ?? (() => Effect.succeed([file("src/orders.ts")]))),
+					providerWith(
+						options.files ?? (() => Effect.succeed([file("src/orders.ts")])),
+						headAt(currentHead),
+					),
 				),
 		} satisfies VcsProviderRegistryApi),
 		Layer.succeed(SecurityAuditWorkflowStarter, {
-			create: (payload) => Effect.sync(() => void started.push(payload)),
+			// One instance per run id, as Cloudflare Workflows keep them.
+			create: (payload) =>
+				Arr.some(started, (p) => p.runId === payload.runId)
+					? Effect.fail(new WorkflowStartError({ message: "instance already exists", cause: null }))
+					: Effect.sync(() => void started.push(payload)),
 			cancel: (runId) => Effect.sync(() => void cancelled.push(runId)),
 		}),
 		Layer.succeed(SecurityPrCheck, {
@@ -223,7 +253,7 @@ const makeHarness = (
 			)
 		})
 
-	return { run, seeded, started, cancelled, notices, published, runsOf }
+	return { run, seeded, started, cancelled, notices, published, runsOf, currentHead }
 }
 
 describe("startPullRequestCheck", () => {
@@ -290,6 +320,7 @@ describe("startPullRequestCheck", () => {
 			Effect.gen(function* () {
 				const target = yield* harness.seeded
 				yield* startPullRequestCheck(orgId, job())
+				harness.currentHead.sha = NEXT_HEAD
 				yield* startPullRequestCheck(orgId, job({ action: "synchronize", headSha: NEXT_HEAD }))
 				return yield* harness.runsOf(target.id)
 			}),
@@ -373,6 +404,7 @@ describe("startPullRequestCheck deliveries", () => {
 			Effect.gen(function* () {
 				yield* harness.seeded
 				yield* startPullRequestCheck(orgId, job())
+				harness.currentHead.sha = NEXT_HEAD
 				yield* startPullRequestCheck(orgId, job({ action: "synchronize", headSha: NEXT_HEAD }))
 			}),
 		)
@@ -391,5 +423,46 @@ describe("startPullRequestCheck deliveries", () => {
 		)
 
 		expect(Arr.map(harness.started, (p) => p.scopePaths)).toEqual([[]])
+	})
+})
+
+describe("startPullRequestCheck ordering and recovery", () => {
+	it("ignores a late delivery for a head the pull request has moved past", async () => {
+		const harness = makeHarness({ head: { sha: NEXT_HEAD } })
+		const outcome = await harness.run(
+			Effect.gen(function* () {
+				yield* harness.seeded
+				return yield* startPullRequestCheck(orgId, job())
+			}),
+		)
+
+		expect(outcome.reason).toBe("stale_head")
+		expect([harness.started, harness.notices, harness.cancelled]).toEqual([[], [], []])
+	})
+
+	it("starts the Workflow of a run whose first delivery was cut off before it", async () => {
+		const harness = makeHarness()
+		const orphan = await harness.run(
+			Effect.gen(function* () {
+				const target = yield* harness.seeded
+				const store = (yield* SecurityAuditStore).forOrg(orgId)
+				return yield* store.startRun({
+					targetId: target.id,
+					kind: "pull_request",
+					prNumber: 612,
+					sourceRef: HEAD,
+					scopePaths: ["src/orders.ts"],
+					discoveryModel: "discovery/model",
+					validationModel: "validation/model",
+				})
+			}),
+		)
+		const outcome = await harness.run(startPullRequestCheck(orgId, job({ action: "synchronize" })))
+
+		expect(outcome.reason).toBe("already_checking")
+		expect(Arr.map(harness.started, (p) => [p.runId, p.scopePaths])).toEqual([
+			[orphan.id, ["src/orders.ts"]],
+		])
+		expect(harness.notices).toEqual(["1111:running"])
 	})
 })

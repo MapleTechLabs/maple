@@ -1411,6 +1411,26 @@ describe("/api/security-audit pull request run cancellation", () => {
 
 			expect([reopened.status, reopened.body.status]).toEqual([200, "open"])
 			expect(followed.body.findings).toEqual([])
+
+			// A fix the branch's own audit recorded is not undone from a pull request run.
+			await harness.withStore((store) =>
+				Effect.gen(function* () {
+					const scoped = store.forOrg(ORG_A)
+					const branch = yield* scoped.startRun({
+						targetId: target.body.id,
+						kind: "manual",
+						sourceRef: "main",
+					})
+					yield* scoped.saveFindings(branch.id, [confirmed("p1")], NO_ESTIMATES)
+					yield* scoped.markFixed(target.body.id, ["p1"], branch.id)
+					yield* scoped.finishRun(branch.id, { status: "complete" })
+				}),
+			)
+			await harness.call("PATCH", `/runs/${run.id}/findings/p1`, {
+				body: { status: "open", reason: "again" },
+			})
+			const afterFix = await harness.call("GET", `/targets/${target.body.id}/findings`)
+			expect(afterFix.body.findings.map((f: { status: string }) => f.status)).toEqual(["fixed"])
 		} finally {
 			await harness.dispose()
 		}

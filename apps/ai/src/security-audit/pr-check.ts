@@ -63,7 +63,7 @@ export class SecurityPrCheck extends Context.Service<SecurityPrCheck, SecurityPr
 
 			/** GitHub's own hiccups (5xx, a rate limit) must not leave a required check unanswered. */
 			const retried = <A, E, R>(write: Effect.Effect<A, E, R>) =>
-				write.pipe(Effect.retry({ times: 3, schedule: Schedule.exponential("2 seconds") }))
+				write.pipe(Effect.retry({ times: 2, schedule: Schedule.exponential("500 millis") }))
 
 			const logFailure = (what: string, orgId: OrgId) =>
 				Effect.catchCause((cause: Cause.Cause<unknown>) =>
