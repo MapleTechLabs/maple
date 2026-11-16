@@ -1,5 +1,16 @@
 import { describe, it } from "@effect/vitest"
-import { Effect, Exit, Fiber, Layer, Logger, Predicate, References, Scope, Array as Arr } from "effect"
+import {
+	Effect,
+	Exit,
+	Fiber,
+	Layer,
+	Logger,
+	String as Str,
+	Predicate,
+	References,
+	Scope,
+	Array as Arr,
+} from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { TestClock } from "effect/testing"
 import { makeSpanTimeline, type SpanTimeline } from "../shared/span-timeline"
@@ -358,6 +369,33 @@ describe("profilerLayer", () => {
 			expect(harness.events).not.toContain("Profiler.stop")
 			yield* TestClock.adjust("1 millis")
 			expect(stopsIn(harness)).toHaveLength(1)
+		}).pipe(harness.run)
+	})
+
+	it.effect("an inspector that stops answering mid-run cannot hang shutdown", () => {
+		class GoesSilent implements InspectorSession {
+			connect() {}
+			disconnect() {}
+			post(...[method, , callback]: Parameters<InspectorSession["post"]>) {
+				// Answers setup, then never answers a stop: the rotation and the shutdown both wait on one.
+				if (method !== "Profiler.stop") callback(null, {})
+			}
+		}
+		const harness = makeHarness()
+		const realWait = (ms: number) =>
+			Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, ms)))
+		return Effect.gen(function* () {
+			const scope = yield* Scope.make()
+			yield* Layer.buildWithScope(
+				harness.layer({ loadBuiltin: () => ({ Session: GoesSilent }), commandTimeout: "20 millis" }),
+				scope,
+			)
+			yield* TestClock.adjust(WINDOW)
+			yield* realWait(100)
+			// Closing returns: the unanswered stops time out instead of holding the scope open.
+			yield* Scope.close(scope, Exit.void)
+			expect(harness.requests).toEqual([])
+			expect(Arr.some(harness.logs, (line) => Str.includes("window dropped")(line.message))).toBe(true)
 		}).pipe(harness.run)
 	})
 

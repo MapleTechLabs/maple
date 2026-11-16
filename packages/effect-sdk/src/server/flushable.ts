@@ -162,10 +162,17 @@ const makeProfiler = (
 	const layer = Layer.effectDiscard(
 		Effect.gen(function* () {
 			if (stopped) return
-			// The hold is taken before anything yields, so two builds at once start one profiler.
-			holders += 1
-			yield* Effect.addFinalizer(() => release)
-			if (holders > 1) return
+			// The hold and its release are one uninterruptible step, and the build that took the
+			// first hold is decided in it: an interrupted build leaves no hold behind, and two
+			// builds at once start exactly one profiler.
+			const first = yield* Effect.acquireRelease(
+				Effect.sync(() => {
+					holders += 1
+					return holders === 1
+				}),
+				() => release,
+			)
+			if (!first) return
 			// A resource that cannot be resolved turns profiling off, as it turns the flushes off.
 			const resource = yield* resolveResource({ ...config, sdkType: "server" }).pipe(
 				Effect.asSome,
