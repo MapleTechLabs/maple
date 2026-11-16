@@ -1246,7 +1246,7 @@ const dialogs = (h: H, model: Model, document: EnterpriseSsoDocument | null): Re
 			toParentMessage: (message) => Message.GotRotateDialogMessage({ message }),
 			title: "Rotate the SCIM token?",
 			description:
-				"The current token stops working right away. Your identity provider can't sync until you paste the new one.",
+				"The current token keeps working for a short grace period, then stops. Paste the new one into your identity provider before then.",
 			confirmLabel: "Rotate token",
 			isPending: model.pending === "rotateToken",
 			onConfirm: Message.ClickedConfirmRotate(),
