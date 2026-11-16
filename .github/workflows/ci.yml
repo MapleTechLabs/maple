@@ -763,7 +763,7 @@ jobs:
 
             - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
               with:
-                  # Match `go 1.25.0` in packages/otel-collector-maple-exporter/go.mod.
+                  # Match the `go` directive in packages/otel-collector-maple-exporter/go.mod.
                   go-version-file: packages/otel-collector-maple-exporter/go.mod
                   cache: true
                   cache-dependency-path: packages/otel-collector-maple-exporter/go.sum

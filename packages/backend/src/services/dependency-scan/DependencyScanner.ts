@@ -45,6 +45,7 @@ import { type DependencyScanMatchInput, DependencyScanStore } from "./Dependency
 import {
 	MAX_LOCKFILES,
 	MAX_MANIFEST_BYTES,
+	MAX_SKIPPED_LOCKFILES,
 	manifestsFor,
 	type SelectedLockfile,
 	sameLockfiles,
@@ -63,7 +64,7 @@ const PARSER_VERSION = 3
 const PARSE_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
 const PLAN_CACHE_BUCKET = "dependency-scan-plan"
 /** Part of the plan cache key: bump it when lockfile or manifest selection changes. */
-const PLAN_VERSION = 2
+const PLAN_VERSION = 3
 /** Larger lockfiles are recorded as too large rather than read into the Worker's memory. */
 export const MAX_LOCKFILE_BYTES = 8 * 1024 * 1024
 /** Two lockfiles at a time keeps a monorepo's largest pair well inside a Worker's memory. */
@@ -104,12 +105,14 @@ type PlannedLockfile = typeof PlannedLockfile.Type
 const ScanPlan = Schema.Struct({
 	selected: Schema.Array(PlannedLockfile),
 	skipped: Schema.Array(PlannedLockfile),
+	omitted: Schema.Number,
 })
 type ScanPlan = typeof ScanPlan.Type
 
 const planOf = (files: ReadonlyArray<VcsTreeFile>): ScanPlan => {
-	const { selected, skipped } = selectLockfiles(files)
+	const { selected, skipped, omitted } = selectLockfiles(files)
 	return {
+		omitted,
 		selected: Arr.map(selected, (lockfile) => ({
 			...lockfile,
 			manifests: manifestsFor(lockfile, files),
@@ -200,7 +203,7 @@ interface Prepared {
 	readonly unchanged: boolean
 }
 
-const EMPTY_PLAN: ScanPlan = { selected: [], skipped: [] }
+const EMPTY_PLAN: ScanPlan = { selected: [], skipped: [], omitted: 0 }
 
 export class DependencyScanner extends Context.Service<DependencyScanner, DependencyScannerApi>()(
 	"@maple/backend/services/dependency-scan/DependencyScanner",
@@ -566,11 +569,14 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 						? Option.some(precheck.value.plan)
 						: yield* planFor
 					const truncated = Option.isNone(planOpt)
-					const { selected, skipped } = Option.getOrElse(planOpt, (): ScanPlan => EMPTY_PLAN)
+					const { selected, skipped, omitted } = Option.getOrElse(
+						planOpt,
+						(): ScanPlan => EMPTY_PLAN,
+					)
 					yield* Effect.annotateCurrentSpan({
 						"vcs.commit.sha": commitSha,
 						"maple.depscan.lockfile_count": selected.length,
-						"maple.depscan.lockfiles_skipped": skipped.length,
+						"maple.depscan.lockfiles_skipped": skipped.length + omitted,
 						"maple.depscan.tree_truncated": truncated,
 					})
 
@@ -588,6 +594,8 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 							// An incomplete scan never reconciled, so its findings are not current.
 							latest.value.error === null &&
 							!truncated &&
+							// Lockfiles past the record cap are not on the last scan, so it cannot match.
+							omitted === 0 &&
 							// Skipped lockfiles are on the last scan too, so they count toward "unchanged".
 							sameLockfiles(latest.value.lockfiles, [...selected, ...skipped])
 						) {
@@ -636,7 +644,7 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 						// A scheduled precheck already asked OSV; its answer is reused, not asked for again.
 						const reads = Option.isSome(precheck)
 							? precheck.value.reads
-							: yield* readAll({ selected, skipped })
+							: yield* readAll({ selected, skipped, omitted })
 						const packages = Arr.flatMap(reads, (read) => read.packages)
 						const query = Option.isSome(precheck)
 							? precheck.value.query
@@ -686,9 +694,13 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 								packageCount: packages.length,
 								matches,
 								advisoryFingerprint: fingerprintOf(query, PARSER_VERSION),
-								// Either reason keeps this scan from reconciling: the branch changed, or advisories were left unread.
+								// Any reason keeps this scan from reconciling: the branch changed, lockfiles went
+								// unrecorded, or advisories were left unread.
 								incomplete:
 									headChange ??
+									(omitted === 0
+										? undefined
+										: `${omitted} lockfiles past the ${MAX_LOCKFILES + MAX_SKIPPED_LOCKFILES} a scan records were left out`) ??
 									(advisories.unread === 0
 										? undefined
 										: `${advisories.unread} known vulnerabilities past the ${MAX_VULNERABILITIES} a scan reads were left out`),

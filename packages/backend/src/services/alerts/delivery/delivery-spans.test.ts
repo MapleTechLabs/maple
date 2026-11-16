@@ -32,8 +32,8 @@ const dispatchDelivery = (
  * These assertions are the regression guard for that (same reasoning as
  * `GithubAppClient.span.test.ts`).
  *
- * They also guard the secret-leak rule: Discord and Telegram embed
- * their delivery token in the PATH, so those transports must annotate
+ * They also guard the secret-leak rule: Discord, Telegram and tenant webhooks can
+ * carry a delivery token in the PATH, so those transports must annotate
  * `server.address` only — never `url.path`, and never `url.full`.
  */
 
@@ -127,12 +127,13 @@ describe("AlertDelivery.http span", () => {
 			name: "webhook",
 			config: {
 				type: "webhook",
-				url: "https://hooks.example.test/maple",
+				url: "https://hooks.example.test/services/T0/B0/s3cr3t-token",
 				signingSecret: null,
 			} as const,
 			peerService: "webhook",
 			host: "hooks.example.test",
-			expectPath: "/maple",
+			// A tenant-supplied path may hold the receiver's own token.
+			expectPath: null,
 			respond: () => new Response("", { status: 200 }),
 		},
 		{
