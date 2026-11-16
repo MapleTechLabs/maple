@@ -48,6 +48,7 @@ import { expandChevron } from "../../kit/expand-chevron"
 import { jsonBlock, prettyJson } from "../../kit/json-block"
 import { refusedBadge } from "../../kit/refused-badge"
 import { relativeTime } from "../../kit/relative-time"
+import { providerName } from "../kit/audit-brands"
 import { ROOMY_COLUMN, securityLayout, WIDE_COLUMN } from "../kit/layout"
 import { placeholderRows } from "../kit/parts"
 import {
@@ -73,6 +74,7 @@ import {
 	targetText,
 } from "./derive"
 import { accessOf, Message, type Model, type SelectFilter } from "./model"
+import { sourcesPanel } from "./view-sources"
 
 type H = HtmlBuilder<Message>
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
@@ -222,7 +224,7 @@ const eventDetail = (h: H, event: AuditTrailEntry, clock: Clock): Html => {
 			...detailField(h, "IP address", event.originIp, true),
 			...detailField(h, "Country", event.originCountry),
 			...detailField(h, "User agent", event.userAgent, true),
-			keyValue(h, { label: "Platform", wrap: true }, [providerLabel(event.provider)]),
+			keyValue(h, { label: "Platform", wrap: true }, [providerName(h, event.provider)]),
 			...detailField(h, "Account", event.account, true),
 			keyValue(h, { label: "Occurred", wrap: true }, [at(event.occurredAt)]),
 			keyValue(h, { label: "Recorded", wrap: true }, [at(event.ingestedAt)]),
@@ -271,7 +273,7 @@ const eventRows = (h: H, model: Model, event: AuditTrailEntry, clock: Clock): Re
 					],
 					"p-0",
 				),
-				tableCell(h, [providerLabel(event.provider)], WIDE_COLUMN),
+				tableCell(h, [providerName(h, event.provider)], WIDE_COLUMN),
 				tableCell(
 					h,
 					[
@@ -427,7 +429,7 @@ const noEvents = (h: H): Html =>
 				emptyMedia(h, { variant: "icon" }, [icon(h, "HistoryIcon")]),
 				emptyTitle(h, ["No audit events yet"]),
 				emptyDescription(h, [
-					"Changes made in Maple, and requests it refused, appear here as they happen. So do audit events from Vercel and Google Cloud once their audit feeds are on.",
+					"Changes made in Maple, and requests it refused, appear here as they happen. Platforms you connect above add their own audit events.",
 				]),
 			]),
 		],
@@ -511,6 +513,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		// In the header, beside the title: the toolbar is full at laptop width and would wrap it.
 		{ source: "auditLog", actions: alertControl(h, model) },
 		[
+			...Arr.filter([sourcesPanel(h, model, clock)], (part): part is Html => part !== null),
 			panel(h, { className: "overflow-hidden" }, [toolbar(h, model), listBody(h, model, clock)]),
 			footnote(h),
 		],

@@ -11,6 +11,7 @@ import { OtlpExporter, OtlpLogger, OtlpMetrics, OtlpResource, OtlpSerialization 
 import type { OtlpTracer } from "effect/observability"
 import { makeMapleTracer, makeSpanEncoder } from "./flushable-tracer.js"
 import { resolveSpanFilter, type SpanFilterInput } from "./span-options.js"
+import type { SpanTimeline } from "./span-timeline.js"
 
 export interface OtlpLayerOptions {
 	readonly baseUrl: string
@@ -27,6 +28,8 @@ export interface OtlpLayerOptions {
 	readonly tracerExportInterval?: Duration.Input | undefined
 	readonly shutdownTimeout?: Duration.Input | undefined
 	readonly spans: SpanFilterInput
+	/** Set when a profiler links samples to spans: the tracer then records span switches on it. */
+	readonly spanTimeline?: SpanTimeline | undefined
 }
 
 const tracerLayer = (url: string, options: OtlpLayerOptions) =>
@@ -53,10 +56,11 @@ const tracerLayer = (url: string, options: OtlpLayerOptions) =>
 			})
 			const filter = resolveSpanFilter(options.spans)
 			const encode = makeSpanEncoder(filter)
-			return makeMapleTracer(filter, (span) => {
+			const tracer = makeMapleTracer(filter, (span) => {
 				const otlp = encode(span)
 				if (otlp !== undefined) exporter.push(otlp)
 			})
+			return options.spanTimeline === undefined ? tracer : options.spanTimeline.instrument(tracer)
 		}),
 	).pipe(Layer.provideMerge(OtlpExporter.layerFlusher))
 

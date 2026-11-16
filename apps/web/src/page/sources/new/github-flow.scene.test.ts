@@ -454,6 +454,8 @@ describe("github connect flow", () => {
 			given(complete),
 			click(role("button", { name: "Continue" })),
 			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
+			click(role("button", { name: "Continue" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			expectView(text("No repositories granted")).toExist(),
 			expectView(text("Discovering repositories")).not.toExist(),
 		)
@@ -510,6 +512,8 @@ describe("github connect flow", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(failed),
+			click(role("button", { name: "Continue" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			click(role("button", { name: "Continue" })),
 			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			expectView(text("Repository discovery failed")).toExist(),
@@ -571,7 +575,14 @@ describe("github connect flow", () => {
 			expectView(text("Installed on acme with 2 repositories.")).toExist(),
 			click(role("button", { name: "Continue" })),
 			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
+			// Choose data holds the switches and says where they live afterwards.
+			expectView(role("listitem", { current: "step", name: "Choose data" })).toExist(),
+			expectView(role("switch", { name: /CI traces/i })).toExist(),
+			expectView(text("Change later on the Connection tab")).toExist(),
+			click(role("button", { name: "Continue" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			expectView(role("listitem", { name: "Installed on acme (done)" })).toExist(),
+			expectView(role("listitem", { name: "CI traces on (done)" })).toExist(),
 			expectView(role("listitem", { current: "step", name: "Go live" })).toExist(),
 			expectView(text("Repositories syncing")).toExist(),
 			expectView(text("acme/api")).toExist(),
@@ -584,14 +595,21 @@ describe("github connect flow", () => {
 			given(withStatus(status({ repositories: [repo("1", "web", "ready")] }))),
 			click(role("button", { name: "Continue" })),
 			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
+			click(role("button", { name: "Continue" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			expectView(role("listitem", { name: "Live (done)" })).toExist(),
 			expectView(text("GitHub is live")).toExist(),
+			// Synced repos are not listed again, and the saved source has no Cancel.
+			expectView(text("Tracked branch")).toBeAbsent(),
+			expectView(role("link", { name: "Cancel" })).toBeAbsent(),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given(
 				withStatus(status({ repositories: [repo("1", "web", "error", "branch release is gone")] })),
 			),
+			click(role("button", { name: "Continue" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			click(role("button", { name: "Continue" })),
 			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			expectView(role("listitem", { name: "Go live: needs attention" })).toExist(),

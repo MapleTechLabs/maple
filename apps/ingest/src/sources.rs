@@ -29,6 +29,8 @@ pub(crate) enum SourceSignal {
     Sessions,
     /// `/v1/events` (product events).
     Events,
+    /// `/v1development/profiles` and `/v1/profiles`.
+    Profiles,
 }
 
 impl SourceSignal {
@@ -39,6 +41,7 @@ impl SourceSignal {
             Self::Metrics => "metrics",
             Self::Sessions => "sessions",
             Self::Events => "events",
+            Self::Profiles => "profiles",
         }
     }
 
@@ -49,6 +52,7 @@ impl SourceSignal {
             "metrics" => Some(Self::Metrics),
             "sessions" => Some(Self::Sessions),
             "events" => Some(Self::Events),
+            "profiles" => Some(Self::Profiles),
             _ => None,
         }
     }
@@ -480,6 +484,15 @@ mod tests {
         assert!(scoped.allows(SourceSignal::Sessions));
         assert!(!scoped.allows(SourceSignal::Logs));
         assert!(!scoped.allows(SourceSignal::Events));
+        assert!(!scoped.allows(SourceSignal::Profiles));
+
+        // A name this binary does not know is dropped from the list, not an error.
+        let newer = SourcePolicy::from_row(&row(Some(r#"["profiles","flamegraphs"]"#), "[]"));
+        assert!(newer.allows(SourceSignal::Profiles));
+        assert!(!newer.allows(SourceSignal::Traces));
+        let unknown_only = SourcePolicy::from_row(&row(Some(r#"["flamegraphs"]"#), "[]"));
+        assert!(!unknown_only.allows(SourceSignal::Profiles));
+        assert!(!unknown_only.allows(SourceSignal::Logs));
 
         let malformed = SourcePolicy::from_row(&row(Some(r#"{"traces":true}"#), "[]"));
         for signal in [
@@ -488,6 +501,7 @@ mod tests {
             SourceSignal::Metrics,
             SourceSignal::Sessions,
             SourceSignal::Events,
+            SourceSignal::Profiles,
         ] {
             assert!(
                 !malformed.allows(signal),

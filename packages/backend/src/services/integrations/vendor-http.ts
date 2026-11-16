@@ -3,7 +3,18 @@
  * transient retries, `retry-after` on a 429, no redirects, paging, and a Client span that records
  * only the URL path. Each client maps {@link VendorHttpError} to its own errors through `toError`.
  */
-import { Clock, Duration, Effect, Option, Redacted, Schedule, Schema, Stream, String as Str } from "effect"
+import {
+	Clock,
+	Duration,
+	Effect,
+	Option,
+	Redacted,
+	Result,
+	Schedule,
+	Schema,
+	Stream,
+	String as Str,
+} from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
 import { parseDeltaSeconds, parseRetryAfterSeconds, VENDOR_TRANSIENT_RETRY } from "./vendor-retry"
 
@@ -150,6 +161,30 @@ const isTransient = (error: VendorHttpError) =>
 	error.kind === "timeout" ||
 	(error.kind === "upstream" && (error.status === undefined || error.status >= 500))
 
+/** Only an answer we could not decode may be our own bug; anything else is the vendor's or the customer's state. */
+const failsAttemptSpan = (error: VendorHttpError) => error.kind === "invalid_response"
+
+/**
+ * A vendor client call's own span, for `Effect.fnUntraced(body, vendorCallSpan(name, expectedKind))`.
+ * A failure `expectedKind` names (a refusal or outage the caller handles) lands on the span as
+ * `error.type` instead of failing it; anything else fails the span as usual.
+ */
+export const vendorCallSpan =
+	<E>(name: string, expectedKind: (error: E) => string | undefined) =>
+	<A, E2 extends E, R>(self: Effect.Effect<A, E2, R>): Effect.Effect<A, E2, R> =>
+		self.pipe(
+			Effect.result,
+			Effect.flatMap((result): Effect.Effect<Result.Result<A, E2>, E2> => {
+				if (Result.isSuccess(result)) return Effect.succeed(result)
+				const kind = expectedKind(result.failure)
+				return kind === undefined
+					? Effect.fail(result.failure)
+					: Effect.as(Effect.annotateCurrentSpan("error.type", kind), result)
+			}),
+			Effect.withSpan(name),
+			Effect.flatMap(Effect.fromResult),
+		)
+
 const decodeJsonText = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))
 
 export const make = <E>(options: VendorHttpOptions<E>): VendorHttpClient<E> => {
@@ -260,6 +295,14 @@ export const make = <E>(options: VendorHttpOptions<E>): VendorHttpClient<E> => {
 						orElse: () => Effect.fail(fail("timeout", "timed out", request)),
 					}),
 					Effect.tapError((error) => Effect.annotateCurrentSpan("error.type", error.kind)),
+					// A refusal or a vendor outage is the caller's to judge (most record it as the
+					// connection's health), so only an undecodable answer fails the attempt span.
+					Effect.map((value): Result.Result<A, VendorHttpError> => Result.succeed(value)),
+					Effect.catchIf(
+						(error) => !failsAttemptSpan(error),
+						(error): Effect.Effect<Result.Result<A, VendorHttpError>> =>
+							Effect.succeed(Result.fail(error)),
+					),
 					Effect.withSpan("VendorHttp.request", {
 						kind: "client",
 						attributes: {
@@ -273,6 +316,7 @@ export const make = <E>(options: VendorHttpOptions<E>): VendorHttpClient<E> => {
 								: { "maple.vendor.operation": request.operation }),
 						},
 					}),
+					Effect.flatMap(Effect.fromResult),
 				),
 			),
 		)

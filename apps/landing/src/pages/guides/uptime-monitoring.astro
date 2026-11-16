@@ -9,11 +9,12 @@ import SeoHead from "../../components/SeoHead.astro";
 import TableOfContents from "../../components/TableOfContents.astro";
 import { CONTRIBUTORS } from "../../lib/changelog-meta";
 
-const pageTitle = "Uptime monitoring with OpenTelemetry: alerts from traces and HTTP checks";
+const pageTitle = "Uptime monitoring with OpenTelemetry: hosted checks, trace alerts and Collector probes";
 const pageDescription =
-    "Monitor uptime with the telemetry you already send. Alert on error rate, throughput and Apdex from traces, add OpenTelemetry Collector HTTP checks for endpoints and certificates, and learn which failures each one catches.";
+    "Monitor uptime with checks and the telemetry you already send. Run hosted HTTP, TCP and DNS checks, alert on error rate, throughput and Apdex from traces, probe private endpoints with the OpenTelemetry Collector, and learn which failures each one catches.";
 const published = "2026-10-04";
-const updatedLabel = "October 4, 2026";
+const modified = "2026-11-16";
+const updatedLabel = "November 16, 2026";
 const author = CONTRIBUTORS.jeremyfunk;
 const authorUrl = `https://github.com/${author.github}`;
 
@@ -41,6 +42,7 @@ const toc = [
     ["real-traffic", "Traffic as the check"],
     ["probe-cases", "Cases for a probe"],
     ["trace-alerts", "Alerts from traces"],
+    ["hosted-checks", "Hosted checks in Maple"],
     ["http-checks", "Collector HTTP checks"],
 ] as const;
 const tocHeadings = toc.map(([slug, text]) => ({ depth: 2, slug, text }));
@@ -49,7 +51,7 @@ const faqs = [
     {
         question: "Does Maple have uptime monitoring?",
         answer:
-            "Maple does not run hosted uptime probes. It alerts on error rate, throughput and Apdex computed from the traces your services send, and it stores the results of the OpenTelemetry Collector's http_check receiver as metrics you can chart and alert on. For probes from several regions or a public status page, run a dedicated uptime product next to Maple.",
+            "Yes. Maple runs hosted HTTP, TCP and DNS checks as often as every 30 seconds, and heartbeat monitors for cron jobs. A failed HTTP check opens as a trace of the request inside your service. Maple also alerts on error rate, throughput and Apdex from the traces your services send, accepts the OpenTelemetry Collector's http_check results for private endpoints, and publishes status pages. Checks run from one location per region (US East or Frankfurt), so they do not show whether users in another part of the world can reach you.",
     },
     {
         question: "Do I need an uptime monitor if I already have APM or tracing?",
@@ -77,10 +79,10 @@ const siteUrl = Astro.site?.toString().replace(/\/$/, "") ?? "https://maple.dev"
 const articleJsonLd = {
     "@context": "https://schema.org",
     "@type": "TechArticle",
-    headline: "Uptime monitoring with traces and HTTP checks",
+    headline: "Uptime monitoring with checks and traces",
     description: pageDescription,
     datePublished: published,
-    dateModified: published,
+    dateModified: modified,
     author: { "@type": "Person", name: author.name, url: authorUrl },
     publisher: {
         "@type": "Organization",
@@ -118,10 +120,10 @@ const articleJsonLd = {
                         <span>7 min read</span>
                     </div>
                     <h1 class="mt-6 max-w-[20ch] font-display text-[clamp(40px,6.3vw,72px)] font-medium leading-[0.98] tracking-[-0.045em] text-fg">
-                        Uptime monitoring with traces and HTTP checks
+                        Uptime monitoring with checks and traces
                     </h1>
                     <p class="mt-7 max-w-[62ch] text-[15px] leading-[1.75] text-fg-muted md:text-base">
-                        Find out within minutes when a service stops answering or starts failing requests. Alert on the traces your services already send, then add OpenTelemetry Collector HTTP checks for the endpoints and certificates that real traffic cannot cover.
+                        Find out within minutes when a service stops answering or starts failing requests. Alert on the traces your services already send, then add checks for the endpoints, ports and DNS records that real traffic cannot cover.
                     </p>
                     <div class="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
                         <a href={authorUrl} rel="noopener" class="flex items-center gap-2 transition-colors hover:text-fg">
@@ -159,7 +161,7 @@ const articleJsonLd = {
                     </div>
 
                     <p>
-                        The same tools watch the days left until the TLS certificate expires and whether the DNS record resolves. Hosted products run each check from several regions, so a network problem near one prober does not page you.
+                        The same tools watch the days left until the TLS certificate expires and whether the DNS record resolves. Many hosted products run each check from several regions, so a network problem near one prober does not page you on its own.
                     </p>
 
                     <h3>Availability as a number</h3>
@@ -323,7 +325,7 @@ const articleJsonLd = {
                     <p class="guide-eyebrow"><span>05</span> · In Maple</p>
                     <h2>Availability alerts from traces in Maple</h2>
                     <p>
-                        Maple alerts on the traces your services already send, and it accepts check results from the OpenTelemetry Collector as metrics. It does not run hosted probes of its own.
+                        Maple alerts on the traces your services already send. It also runs hosted checks, covered in the next section, and accepts check results from the OpenTelemetry Collector as metrics.
                     </p>
                     <p>
                         The <a href="/docs/alerting/uptime-monitoring#alert-on-real-traffic">uptime monitoring docs</a> walk through each rule below with screenshots.
@@ -354,18 +356,43 @@ const articleJsonLd = {
                     </figure>
 
                     <p>
-                        A throughput rule needs traffic to drop from. For a service that sits idle for hours, use an HTTP check instead.
+                        A throughput rule needs traffic to drop from. For a service that sits idle for hours, add a hosted check.
+                    </p>
+                </section>
+
+                <section id="hosted-checks" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>06</span> · Hosted checks</p>
+                    <h2>Hosted uptime checks in Maple</h2>
+                    <p>
+                        For the cases above, Maple runs the probe for you. Add a monitor under <strong>Alerts → Uptime</strong> and Maple checks it every 30 seconds to every 15 minutes, or up to every hour when you create it through the API or Terraform. A monitor goes down after one to ten failures in a row, two by default, and opens an incident through the same routing as your alert rules.
+                    </p>
+
+                    <div class="guide-signal-list">
+                        <div><span>HTTP</span><p>Status, response time, body text, JSON path and header assertions. The first one that fails is the error in the alert.</p></div>
+                        <div><span>TCP</span><p>A database, cache or broker port still accepts connections.</p></div>
+                        <div><span>DNS</span><p>A name resolves, optionally to the record you expect.</p></div>
+                        <div><span>Heartbeat</span><p>A cron job or worker pings a URL when it finishes, and Maple alerts when a ping is late.</p></div>
+                    </div>
+
+                    <p>
+                        Each HTTP check sends a <code>traceparent</code> header. When the service is instrumented, a failed check opens as the trace your service recorded for that request, so the probe and the traces from the earlier sections end up in one view. A down monitor can also drive a component on a <a href="/docs/alerting/status-pages">status page</a>.
+                    </p>
+                    <p>
+                        Checks run from one location per region: US East for organizations in the US region, Frankfurt for the EU. That covers whether the endpoint answers from the internet. It does not show that users on another continent are cut off, which needs probers in several regions.
+                    </p>
+                    <p>
+                        The <a href="/docs/alerting/uptime-checks">uptime checks docs</a> list every setting and assertion, with the same monitor created from the app, an AI assistant, the API and Terraform.
                     </p>
                 </section>
 
                 <section id="http-checks" class="scroll-mt-24">
-                    <p class="guide-eyebrow"><span>06</span> · HTTP checks</p>
+                    <p class="guide-eyebrow"><span>07</span> · Private endpoints</p>
                     <h2>HTTP uptime checks with the OpenTelemetry Collector</h2>
                     <p>
-                        For the endpoints that need a probe, the Collector's <code>http_check</code> receiver requests a list of URLs on an interval and reports each result as metrics: the status class of the response, the request duration, connection errors, and the seconds left on the TLS certificate. Maple stores them like any other metric, so you can chart them and alert on them.
+                        Maple's hosted checks only reach public addresses. For an endpoint inside a private network, run the Collector's <code>http_check</code> receiver somewhere that can reach it. It requests a list of URLs on an interval and reports each result as metrics: the status class of the response, the request duration, connection errors, and the seconds left on the TLS certificate. Maple stores them like any other metric, so you can chart them and alert on them.
                     </p>
                     <p>
-                        The Collector config and the settings for each rule are in the <a href="/docs/alerting/uptime-monitoring#add-http-checks">uptime monitoring docs</a>.
+                        The Collector config and the settings for each rule are in the <a href="/docs/alerting/uptime-monitoring#check-private-endpoints-from-your-collector">uptime monitoring docs</a>.
                     </p>
 
                     <h3>Rules to build on the check metrics</h3>
@@ -383,10 +410,7 @@ const articleJsonLd = {
                     <div class="guide-callout">
                         <p class="guide-kicker">One Collector is one vantage point</p>
                         <p>
-                            This setup probes from one place, through one DNS resolver. It cannot tell you that users in another region are cut off, and a network problem next to the Collector looks the same as an outage. It has no status page.
-                        </p>
-                        <p>
-                            If you need probes from several regions, a public status page, or an availability report for customers, run a dedicated uptime product next to Maple. Those products operate prober fleets in many regions, and a single Collector cannot stand in for that.
+                            This setup probes from one place, through one DNS resolver, and a network problem next to the Collector looks the same as an outage. Its results are metrics: they do not appear on a status page. Use hosted checks for public endpoints.
                         </p>
                     </div>
 

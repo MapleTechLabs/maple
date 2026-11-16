@@ -1,4 +1,4 @@
-import { auditActionLabel, auditResourceLabel } from "@maple/domain/audit-actions"
+import { auditActionLabel, auditMetadataValueLabel, auditResourceLabel } from "@maple/domain/audit-actions"
 import {
 	encodePublicId,
 	PublicIdPrefixes,
@@ -6,7 +6,7 @@ import {
 	type V2AuditLogEntry,
 } from "@maple/domain/http/v2"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
-import type { AuditResourceLink } from "../kit/audit-log-resource"
+import { auditActorName, type AuditResourceLink } from "../kit/audit-log-resource"
 import { DateTime, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
@@ -145,7 +145,10 @@ const metadataList = (h: H, metadata: Readonly<Record<string, unknown>>): Readon
 			h,
 			{ layout: "grid" },
 			Arr.map(keys, (key) => {
-				const block = metadataBlock(metadata[key])
+				const raw = metadata[key]
+				const named = typeof raw === "string" ? auditMetadataValueLabel(key, raw) : null
+				if (named !== null) return field(h, { label: metadataLabel(key) }, [h.span([], [named])])
+				const block = metadataBlock(raw)
 				return field(h, { label: metadataLabel(key) }, [
 					block !== null
 						? jsonBlock(h, block)
@@ -208,8 +211,10 @@ const METADATA_LABELS = {
 	path: "Path",
 	status: "HTTP status",
 	body: "Request body",
-	tool: "Tool",
-	surface: "Surface",
+	tool: "Tool ID",
+	tool_title: "Tool",
+	agent: "Maple agent",
+	surface: "Called from",
 	is_error: "Failed",
 	params: "Parameters",
 	sql: "SQL",
@@ -310,7 +315,7 @@ export const auditDetail = (
 	const actionText = auditActionLabel(entry.action)
 	const changes = entry.changes
 	const metadata = entry.metadata
-	const actorName = entry.actor_name ?? memberName(model, entry.actor_id)
+	const actorName = auditActorName(entry.actor_name, entry.actor_type) ?? memberName(model, entry.actor_id)
 	const affectedName = memberName(model, entry.affected_user)
 	return h.div(
 		[h.Class("border-border-subtle space-y-4 border-t px-4 py-3 @md:pl-11")],

@@ -115,6 +115,13 @@ describe("materialized projection order", () => {
 	it("keeps materialized projections aligned with target datasource column order", () => {
 		const targets = [
 			["ai_trace_index", "ai_trace_index_mv"],
+			["service_usage", "service_usage_logs_mv"],
+			["service_usage", "service_usage_traces_mv"],
+			["service_usage", "service_usage_metrics_sum_mv"],
+			["service_usage", "service_usage_metrics_gauge_mv"],
+			["service_usage", "service_usage_metrics_histogram_mv"],
+			["service_usage", "service_usage_metrics_exp_histogram_mv"],
+			["service_usage", "service_usage_profiles_mv"],
 			["ai_crawler_requests", "ai_crawler_requests_mv"],
 			["scanner_requests", "scanner_requests_mv"],
 			["service_runtimes_hourly", "service_runtimes_hourly_mv"],

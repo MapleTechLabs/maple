@@ -24,10 +24,13 @@ import { FetchHttpClient } from "effect/http"
 import { assert, describe, it } from "@effect/vitest"
 import { expect } from "vitest"
 import { PR_REVIEW_MODELS } from "@maple/domain/http"
+import { FindingEmbedder } from "@maple/backend/services/pr-review/FindingEmbedder"
 import {
 	DEFAULT_DECISION_MODEL,
 	layerDecisionModel,
 	DEFAULT_REVIEW_MODEL,
+	DEFAULT_EMBEDDING_MODEL,
+	layerFindingEmbedder,
 	layerLlm,
 	loadLlmSettings,
 	resolveDecisionModel,
@@ -515,6 +518,21 @@ describe("EU in-region routing", () => {
 			"@cf/cloudflare/clef-flash",
 		)
 		expect(resolveDecisionModel(openRouterEnv)).toBe(DEFAULT_DECISION_MODEL)
+	})
+})
+
+describe("layerFindingEmbedder", () => {
+	const embedderFor = (settings: LlmSettings) =>
+		Effect.runSync(
+			Effect.gen(function* () {
+				const embedder = yield* FindingEmbedder
+				return Option.map(embedder, (found) => found.model)
+			}).pipe(Effect.provide(layerFindingEmbedder(settings))),
+		)
+
+	it("embeds on OpenRouter in the US and not in the EU, where no provider serves the model", () => {
+		expect(embedderFor(openRouterEnv)).toEqual(Option.some(DEFAULT_EMBEDDING_MODEL))
+		expect(embedderFor({ ...openRouterEnv, MAPLE_REGION: "eu" })).toEqual(Option.none())
 	})
 })
 

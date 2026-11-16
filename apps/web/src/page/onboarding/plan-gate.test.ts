@@ -18,6 +18,7 @@ const organization: ClerkOrganization = {
 		cloudCost: false,
 		dataSources: false,
 		productAnalytics: false,
+		profiling: false,
 		securityAudit: false,
 		statusPages: false,
 	},

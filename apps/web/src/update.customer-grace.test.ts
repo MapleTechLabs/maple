@@ -62,6 +62,7 @@ const snapshot: ClerkSnapshot = {
 			cloudCost: false,
 			dataSources: false,
 			productAnalytics: false,
+			profiling: false,
 			securityAudit: false,
 			statusPages: false,
 		},
@@ -165,5 +166,28 @@ describe("productAnalytics rollout", () => {
 		expect(loaded.model.page).not.toBeNull()
 		expect(namesOf(loaded)).not.toContain("ReplaceUrl")
 		expect(linksOf(loaded.model)).toEqual(Option.some(true))
+	})
+})
+
+describe("profiling rollout", () => {
+	const withFlag = (profiling: boolean): ClerkSnapshot => ({
+		...snapshot,
+		maybeOrganization: Option.map(snapshot.maybeOrganization, (organization) => ({
+			...organization,
+			flags: { ...organization.flags, profiling },
+		})),
+	})
+	const atService = (): Model => ({
+		...base({ [orgId]: true }),
+		route: AppRoute.Service({ serviceName: "checkout-api", search: { tab: "profiles" } }),
+	})
+	const profilingOf = (flag: boolean) => {
+		const loaded = update(atService(), Message.CompletedLoadClerk({ snapshot: withFlag(flag) }))
+		return Option.map(pageContextOf(loaded.model), (context) => context.hasProfiling)
+	}
+
+	test("a service page is told whether its org is in the rollout", () => {
+		expect(profilingOf(false)).toEqual(Option.some(false))
+		expect(profilingOf(true)).toEqual(Option.some(true))
 	})
 })

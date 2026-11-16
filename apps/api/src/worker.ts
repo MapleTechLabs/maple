@@ -21,6 +21,7 @@ import * as AlchemyTelemetry from "alchemy/Telemetry"
 import { Effect } from "effect"
 import { makeVcsSyncIsolateCaches } from "@maple/backend/services/integrations/vcs/vcs-sync-isolate-caches"
 import { ApiObservabilityLive } from "./http/api-observability"
+import { apiTelemetryOptions } from "./telemetry-options"
 import { resolveWorkerEnv } from "@maple/infra/secret-guard"
 import { apiConfiguredEnv } from "./resources/env"
 import { ApiBindingsLive, apiPorts, bindApiClients } from "./worker/bindings"
@@ -94,7 +95,7 @@ export default class MapleApi extends Cloudflare.Worker<MapleApi>()(
 			IsolateAge.layer,
 			Cloudflare.Workers.CronEventSourceLive,
 			Cloudflare.Queues.EventSourceLive,
-			WorkerTelemetry({ serviceName: "maple-api" }),
+			WorkerTelemetry(apiTelemetryOptions),
 			// Read by the bridge's `HttpMiddleware.tracer`; cannot live in the app graph.
 			AlchemyTelemetry.layer(ApiObservabilityLive),
 		]),

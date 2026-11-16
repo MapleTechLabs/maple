@@ -57,7 +57,7 @@ export const reviewTool = Tool.make(SUBMIT_REVIEW, {
 	description:
 		"Record your review of THIS pull request. Call it once, after you have " +
 		"read every hunk you review, with your verdict, tests and risk signals, confidence reason, summary, key changes, what you checked, before-merge steps, coverage, line-anchored findings and the " +
-		"handles of earlier findings this head fixes. When the kickoff lists removed telemetry names and the head still emits one elsewhere, " +
+		"handles of earlier findings this head fixes. An earlier finding that does not hold (a person's reply showed why) goes in dismissed with its handle and reason. When the kickoff lists removed telemetry names and the head still emits one elsewhere, " +
 		"pass that location in telemetryDismissals. A warning or critical a review_files child reported is either " +
 		"filed or listed in childDismissals with the reason it does not hold. It " +
 		"persists the review and posts it to the pull request. A refusal says what to do before calling " +
@@ -226,7 +226,7 @@ const buildReviewCompletion = (
 	const record = (submission: PrReviewSubmission) =>
 		Effect.suspend(() => {
 			const normalized = normalizePrReviewSubmission(submission)
-			const { filled, droppedFindings, resolved, telemetryDismissals } = normalized
+			const { filled, droppedFindings, resolved, telemetryDismissals, dismissed } = normalized
 			const unread = unreadToRefuse(normalized.report.verdict)
 			if (unread.length > 0) {
 				return Effect.annotateCurrentSpan("maple.pr_review.unread_files", unread.length).pipe(
@@ -295,6 +295,7 @@ const buildReviewCompletion = (
 					outputTokens: usage.output,
 					...(partial ? { partial: true } : undefined),
 					...(resolved.length > 0 ? { resolved } : undefined),
+					...(dismissed.length > 0 ? { dismissed } : undefined),
 					...(telemetryDismissals.length > 0 ? { telemetryDismissals } : undefined),
 				}),
 			).pipe(
@@ -308,6 +309,7 @@ const buildReviewCompletion = (
 						"maple.pr_review.unreviewed_files": unreviewed.length,
 						"maple.pr_review.verdict": report.verdict,
 						"maple.pr_review.resolved": resolved.length,
+						"maple.pr_review.dismissed_by_reviewer": dismissed.length,
 						"maple.pr_review.child_findings": childFindings.all().length,
 						"maple.pr_review.child_findings_filed_unaccounted": childPosted,
 						// Unpostable, or cut by the report's finding cap.

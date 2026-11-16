@@ -4,7 +4,8 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { CachedOf } from "../../data/cached"
 import { LoadFailure } from "@maple/views/data/load-failure"
-import { GoldenSignalRow, OperationRow, Overview, SeriesPoint } from "./model"
+import * as ProfileFlamegraph from "@maple/views/profiles/profile-flamegraph"
+import { GoldenSignalRow, OperationRow, Overview, SeriesPoint, ServiceProfile } from "./model"
 
 export const Message = defineMessageUnion({
 	CompletedReadClock: { nowMs: Schema.Number },
@@ -33,6 +34,11 @@ export const Message = defineMessageUnion({
 	},
 	FailedFetchGoldenSignals: { key: Schema.String, failure: LoadFailure },
 	FoundCachedGoldenSignals: { key: Schema.String, cached: CachedOf(Schema.Array(GoldenSignalRow)) },
+	SucceededFetchProfile: { key: Schema.String, profile: ServiceProfile, fetchedAtMs: Schema.Number },
+	FailedFetchProfile: { key: Schema.String, failure: LoadFailure },
+	FoundCachedProfile: { key: Schema.String, cached: CachedOf(ServiceProfile) },
+	ClickedRetryProfile: {},
+	GotFlamegraphMessage: { message: ProfileFlamegraph.Message },
 	ClickedRetryOverview: {},
 	ClickedRetryOperations: {},
 	ClickedRetryGoldenSignals: {},

@@ -2,10 +2,11 @@ import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { Resources } from "../../platform/resources"
 import { snapToMinute, WIDEST_RANGE } from "../../lib/time"
 import * as Chart from "@maple/views/charts/chart"
+import * as ProfileFlamegraph from "@maple/views/profiles/profile-flamegraph"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import { Option, Record, Result, Array as Arr } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
-import { accept, idle, acceptCached } from "@maple/views/data/keyed"
+import { accept, idle, acceptCached, baseKey } from "@maple/views/data/keyed"
 import { hrefFor, queryOf } from "../../route"
 import { type PageContext, PageOutMessage, withParams } from "../contract"
 import { ReadClock, ReadRefreshClock } from "./command"
@@ -31,6 +32,8 @@ export const init = (
 		operations: idle(),
 		timeseries: idle(),
 		golden: idle(),
+		profile: idle(),
+		flamegraph: ProfileFlamegraph.init("service-profile"),
 		overviewUpdatedAtMs: 0,
 		isRefreshing: false,
 		chartRuntime: { _tag: "Loading" },
@@ -41,14 +44,28 @@ export const init = (
 })
 
 /** A search change (the range) re-keys every query on the new window. */
-export const locationChanged = (model: Model, context: PageContext): UpdateReturn => load(model, context)
+export const locationChanged = (model: Model, context: PageContext): UpdateReturn =>
+	followProfile(model, load(model, context))
+
+/**
+ * A profile read for another window or service opens on its whole flame graph: the zoom, the
+ * selection and the search were the last profile's. A refresh of the same window keeps them.
+ */
+const followProfile = (before: Model, step: UpdateReturn): UpdateReturn => {
+	const was = before.profile.key
+	const now = step.model.profile.key
+	return was === null || now === null || baseKey(was) === baseKey(now)
+		? step
+		: { ...step, model: { ...step.model, flamegraph: ProfileFlamegraph.reset(step.model.flamegraph) } }
+}
 
 /** The refresh spinner stops once nothing the refresh started is still loading. */
 const settleRefresh = (model: Model): Model => {
 	const isLoading = (data: AsyncData.AsyncData<unknown, unknown>) =>
 		AsyncData.isLoading(data) || AsyncData.isRefreshing(data)
-	const busy = Arr.some([model.overview, model.operations, model.timeseries, model.golden], (slot) =>
-		isLoading(slot.data),
+	const busy = Arr.some(
+		[model.overview, model.operations, model.timeseries, model.golden, model.profile],
+		(slot) => isLoading(slot.data),
 	)
 	return model.isRefreshing && !busy ? { ...model, isRefreshing: false } : model
 }
@@ -83,9 +100,12 @@ const back = (model: Model, context: PageContext): UpdateReturn => {
 const retry = (model: Model, context: PageContext, slot: SlotName): UpdateReturn =>
 	load(model, context, [slot])
 
-const ALL_SLOTS: ReadonlyArray<SlotName> = ["overview", "operations", "timeseries", "golden"]
+const ALL_SLOTS: ReadonlyArray<SlotName> = ["overview", "operations", "timeseries", "golden", "profile"]
 
 export const update = (model: Model, message: Message, context: PageContext): UpdateReturn =>
+	followProfile(model, updateMessage(model, message, context))
+
+const updateMessage = (model: Model, message: Message, context: PageContext): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
 		CompletedReadClock: ({ nowMs }) =>
 			load({ ...model, nowMs, maybeAnchorMs: Option.some(snapToMinute(nowMs)) }, context),
@@ -164,6 +184,26 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 				: { model },
 		FailedFetchGoldenSignals: ({ key, failure }) =>
 			settle({ ...model, golden: accept(model.golden, key, Result.fail(failure)) }, context),
+		SucceededFetchProfile: ({ key, profile, fetchedAtMs }) =>
+			settle(
+				{ ...model, profile: accept(model.profile, key, Result.succeed(profile), fetchedAtMs) },
+				context,
+			),
+		FailedFetchProfile: ({ key, failure }) =>
+			settle({ ...model, profile: accept(model.profile, key, Result.fail(failure)) }, context),
+		FoundCachedProfile: ({ key, cached }) =>
+			model.profile.key === key
+				? settleCached(
+						{ ...model, profile: acceptCached(model.profile, key, cached, cached.isFresh) },
+						context,
+						"profile",
+						cached.isFresh,
+					)
+				: { model },
+		ClickedRetryProfile: () => retry(model, context, "profile"),
+		GotFlamegraphMessage: ({ message: child }) => ({
+			model: { ...model, flamegraph: ProfileFlamegraph.update(model.flamegraph, child).model },
+		}),
 		ClickedRetryOverview: () => retry(model, context, "overview"),
 		ClickedRetryOperations: () => retry(model, context, "operations"),
 		ClickedRetryGoldenSignals: () => retry(model, context, "golden"),

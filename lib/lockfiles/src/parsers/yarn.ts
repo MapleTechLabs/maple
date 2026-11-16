@@ -1,4 +1,4 @@
-import { Effect, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Effect, Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { isRecord, isRegistryVersion, pkg, splitNameAt } from "../internal/collect.ts"
 import { parseYamlText } from "../internal/decode.ts"
 import { readPackageJsons, type ManifestDeps } from "../internal/manifests.ts"
@@ -15,6 +15,9 @@ interface Specifier {
 interface Block {
 	readonly specifiers: ReadonlyArray<Specifier>
 	readonly version: string | undefined
+	/** 1-based, so a parse error can point at the entry. */
+	readonly line: number
+	readonly header: string
 }
 
 const unquote = (s: string): string => Str.replace(/^"(.*)"$/, "$1")(Str.trim(s))
@@ -30,10 +33,15 @@ const VERSION_LINE = /^ {2}"?version"?:? +"?([^"\s]+)"?\s*$/
 
 /** yarn v1: unindented `"a@^1", a@^1.2:` headers, each followed by an indented `version "1.2.3"`. */
 const parseV1Blocks = (content: string): ReadonlyArray<Block> =>
-	Arr.reduce(Str.split(/\r?\n/)(content), Arr.empty<Block>(), (blocks, line) => {
+	Arr.reduce(Str.split(/\r?\n/)(content), Arr.empty<Block>(), (blocks, line, index) => {
 		if (line === "" || Str.startsWith("#")(line)) return blocks
 		if (!/^\s/.test(line)) {
-			blocks.push({ specifiers: parseSpecifiers(line), version: undefined })
+			blocks.push({
+				specifiers: parseSpecifiers(line),
+				version: undefined,
+				line: index + 1,
+				header: line,
+			})
 			return blocks
 		}
 		const version = VERSION_LINE.exec(line)?.[1]
@@ -120,10 +128,17 @@ const berryResult = Effect.fn(function* (input: LockfileInput, manifest: Manifes
 
 const v1Result = Effect.fn(function* (input: LockfileInput, manifest: ManifestDeps) {
 	const blocks = parseV1Blocks(input.content)
-	if (Arr.some(blocks, (b) => b.specifiers.length === 0 || b.version === undefined)) {
+	const broken = Arr.findFirst(blocks, (b) => b.specifiers.length === 0 || b.version === undefined)
+	if (Option.isSome(broken)) {
+		const { line, header, specifiers } = broken.value
+		// Says which shape the parser missed; a range is never echoed, since a tarball URL can carry a token.
+		const first = specifiers[0]
 		return yield* new LockfileParseError({
 			path: input.path,
-			message: "yarn.lock has an entry without specifiers or version",
+			message:
+				first === undefined
+					? `yarn.lock line ${line} is neither an entry nor a field: ${Str.slice(0, 40)(header)}`
+					: `yarn.lock entry for ${first.name} at line ${line} has no version line`,
 		})
 	}
 	return parseYarnV1(blocks, manifest)

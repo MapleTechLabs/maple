@@ -68,7 +68,7 @@ import {
 	repositoriesOf,
 } from "../security-dependencies-fixture"
 import { emptyExposureOf, exposureOf, runtimesOf } from "../security-telemetry-fixture"
-import { auditEventsOf, noAuditEvents } from "../security-audit-log-fixture"
+import { auditEventsOf, auditSourcesOf, noAuditEvents, noAuditSources } from "../security-audit-log-fixture"
 import {
 	detectionDestinationsOf,
 	detectionsOf,
@@ -392,6 +392,9 @@ const auditLog = (
 const auditLogPage = (page: AuditLogPage.EventsPage) => (model: AuditLogPage.Model) =>
 	A.CompletedFetchFirstPage({ key: model.firstPage.key ?? "", result: Result.succeed(page) })
 
+const auditLogSources = (sources: AuditLogPage.Sources) => (model: AuditLogPage.Model) =>
+	A.CompletedFetchSources({ key: model.sources.key ?? "", result: Result.succeed(sources) })
+
 type DetectionsStep = Step<DetectionsPage.Model, DetectionsPage.Message>
 const DT = DetectionsPage.Message
 
@@ -647,7 +650,9 @@ export const build = (scenario: Scenario, nowMs: number): Built => {
 		case "audit-log":
 			return {
 				_tag: "AuditLog",
-				step: auditLog(nowMs, { answers: [auditLogPage(auditEventsOf(nowMs))] }),
+				step: auditLog(nowMs, {
+					answers: [auditLogPage(auditEventsOf(nowMs)), auditLogSources(auditSourcesOf(nowMs))],
+				}),
 			}
 		case "audit-log-detail":
 			return {
@@ -667,7 +672,12 @@ export const build = (scenario: Scenario, nowMs: number): Built => {
 				}),
 			}
 		case "audit-log-empty":
-			return { _tag: "AuditLog", step: auditLog(nowMs, { answers: [auditLogPage(noAuditEvents)] }) }
+			return {
+				_tag: "AuditLog",
+				step: auditLog(nowMs, {
+					answers: [auditLogPage(noAuditEvents), auditLogSources(noAuditSources)],
+				}),
+			}
 		case "audit-log-filtered-empty":
 			return {
 				_tag: "AuditLog",

@@ -92,6 +92,12 @@ describe("stopNoteOf", () => {
 		expect(stopNoteOf(null, 0).body).toBe("The run ended early: stopped early.")
 	})
 
+	it("says a run that audited nothing proves nothing", () => {
+		const note = stopNoteOf("no_units_covered", 0)
+		expect(note.title).toBe("No unit was audited")
+		expect(note.body).toContain("this run proves nothing")
+	})
+
 	it("tells the final coverage review apart from a post-wave one", () => {
 		expect(stopNoteOf("critic_unavailable: final-clean critic", 0).title).toBe(
 			"The final coverage review failed",

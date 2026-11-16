@@ -3,6 +3,7 @@ import * as Chart from "@maple/views/charts/chart"
 import { Schema } from "effect"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
+import * as ProfileFlamegraph from "@maple/views/profiles/profile-flamegraph"
 import { ServiceCatalogEntry } from "../services/model"
 
 // The service detail page's data, as Schemas.
@@ -47,6 +48,28 @@ export const GoldenSignalRow = Schema.Struct({
 })
 export type GoldenSignalRow = typeof GoldenSignalRow.Type
 
+/** The service's heaviest call stacks of one sample type in the window; null when it sent no profiles. */
+export const ServiceProfile = Schema.NullOr(
+	Schema.Struct({
+		sampleType: Schema.String,
+		sampleUnit: Schema.String,
+		/** Every stack in the window, including those past the read's cap. */
+		totalValue: Schema.Number,
+		totalStacks: Schema.Number,
+		/** The summed length of the profiled windows: CPU time over it is average cores. */
+		durationNano: Schema.Number,
+		stacks: Schema.Array(
+			Schema.Struct({
+				frames: Schema.Array(Schema.String),
+				files: Schema.Array(Schema.String),
+				lines: Schema.Array(Schema.Number),
+				value: Schema.Number,
+			}),
+		),
+	}),
+)
+export type ServiceProfile = typeof ServiceProfile.Type
+
 export const Model = Schema.TaggedStruct("ServiceDetailPage", {
 	serviceName: Schema.String,
 	/** The time window's anchor, snapped to the minute; none until the clock is read. */
@@ -57,6 +80,8 @@ export const Model = Schema.TaggedStruct("ServiceDetailPage", {
 	operations: KeyedSchema(Schema.Array(OperationRow), LoadFailure),
 	timeseries: KeyedSchema(Schema.Array(SeriesPoint), LoadFailure),
 	golden: KeyedSchema(Schema.Array(GoldenSignalRow), LoadFailure),
+	profile: KeyedSchema(ServiceProfile, LoadFailure),
+	flamegraph: ProfileFlamegraph.Model,
 	overviewUpdatedAtMs: Schema.Number,
 	isRefreshing: Schema.Boolean,
 	...ChartEnvFields,

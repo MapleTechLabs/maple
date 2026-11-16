@@ -6,14 +6,16 @@ import { button } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { meter } from "@maple/views/ui/meter"
-import { columnHead, dataTable, dataTableEmpty } from "../kit/data-table"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { columnHead, dataTable } from "../kit/data-table"
 import {
+	CHANGE_LATER_NOTE,
 	type CheckRow,
+	connectionTabItem,
 	flowColumns,
 	flowRail,
 	foundChips,
 	liveChecklist,
-	savedBanner,
 	statusRow,
 	stepCard,
 } from "../kit/connect-flow"
@@ -23,7 +25,12 @@ import { activeRepos, githubReach } from "./flow-github"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { githubStatusOf } from "./update-github"
-import { githubDeactivated, githubInstallationPicker, githubReconnectButton } from "./view-github"
+import {
+	githubDeactivated,
+	githubFeatures,
+	githubInstallationPicker,
+	githubReconnectButton,
+} from "./view-github"
 import { SYNC_PRESENTATION } from "./view-github-repos"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -78,9 +85,9 @@ const showsUpRail = (h: H): Html =>
 			},
 			{ icon: "LayersIcon", title: "Traces", detail: "Spans with a commit SHA link to GitHub" },
 			{ icon: "PullRequestIcon", title: "Code review", detail: "Rules, models and analytics" },
-			{ icon: "GearIcon", title: "Source page", detail: "Edit data, tracked branches, Disconnect" },
+			connectionTabItem("switches, tracked branches, Disconnect"),
 		],
-		trust: "Large repos can take a few minutes to backfill. Nothing here needs you to stay.",
+		timeNote: "Large repos take a few minutes to backfill",
 		docs: DOCS_HREF === undefined ? null : { label: "Docs", href: DOCS_HREF },
 	})
 
@@ -297,45 +304,43 @@ const repoTable = (h: H, repos: ReadonlyArray<GithubRepoSummary>): Html =>
 			columnHead(h, { label: "Tracked branch", width: "w-36" }),
 			columnHead(h, { label: "Status", width: "w-28", align: "right" }),
 		],
-		repos.length === 0
-			? [dataTableEmpty(h, ["No repositories granted yet"])]
-			: Arr.map(repos, (repo) => {
-					const presentation = SYNC_PRESENTATION[repo.syncStatus]
-					return hstack(
+		Arr.map(repos, (repo) => {
+			const presentation = SYNC_PRESENTATION[repo.syncStatus]
+			return hstack(
+				h,
+				{
+					gap: "4",
+					className: typographyClass({
+						size: "sm",
+						className: stripClass("row"),
+					}),
+				},
+				[
+					h.span([h.Class("w-0 min-w-48 flex-1 truncate")], [repo.fullName]),
+					h.span(
+						[h.Class("w-36 shrink-0 truncate font-mono text-xs text-muted-foreground")],
+						[repo.trackedBranch ?? EMPTY_VALUE],
+					),
+					hstack(
 						h,
 						{
-							gap: "4",
-							className: typographyClass({
-								size: "sm",
-								className: stripClass("row"),
-							}),
+							as: "span",
+							inline: true,
+							gap: "1",
+							justify: "end",
+							className: cn("w-28 shrink-0 text-xs", presentation.tone),
 						},
 						[
-							h.span([h.Class("w-0 min-w-48 flex-1 truncate")], [repo.fullName]),
-							h.span(
-								[h.Class("w-36 shrink-0 truncate font-mono text-xs text-muted-foreground")],
-								[repo.trackedBranch ?? EMPTY_VALUE],
-							),
-							h.span(
-								[
-									h.Class(
-										cn(
-											"inline-flex w-28 shrink-0 items-center justify-end gap-1 text-xs",
-											presentation.tone,
-										),
-									),
-								],
-								[
-									icon(h, presentation.icon, {
-										size: 12,
-										className: presentation.spin ? "animate-spin" : undefined,
-									}),
-									presentation.label,
-								],
-							),
+							icon(h, presentation.icon, {
+								size: 12,
+								className: presentation.spin ? "animate-spin" : undefined,
+							}),
+							presentation.label,
 						],
-					)
-				}),
+					),
+				],
+			)
+		}),
 	)
 
 const liveStep = (h: H, model: Model): Html => {
@@ -344,6 +349,7 @@ const liveStep = (h: H, model: Model): Html => {
 	const discovery = status?.repositoryDiscovery
 	const isDiscovering = discovery?._tag === "Pending"
 	const discoveryFailed = discovery?._tag === "Failed"
+	const unsynced = Arr.filter(repos, (repo) => repo.syncStatus !== "ready")
 	const isLive =
 		status !== null &&
 		status.connected &&
@@ -354,12 +360,8 @@ const liveStep = (h: H, model: Model): Html => {
 	return flowColumns(
 		h,
 		[
-			savedBanner(
-				h,
-				"Saved as a source. Safe to leave; sync keeps running.",
-				"Nothing to apply on GitHub",
-			),
 			liveChecklist(h, {
+				saved: "Saved as a source. Safe to leave; sync keeps running.",
 				title: isLive ? "GitHub is live" : "Going live",
 				rows:
 					status === null
@@ -376,11 +378,38 @@ const liveStep = (h: H, model: Model): Html => {
 				: status !== null && !status.connected && !isDiscovering
 					? [installButton(h, model, "Reconnect GitHub")]
 					: []),
-			...(repos.length > 0 || (!isDiscovering && !discoveryFailed) ? [repoTable(h, repos)] : []),
+			// Once everything synced the checklist says so; the table only lists what still needs a look.
+			...(unsynced.length > 0 ? [repoTable(h, unsynced)] : []),
+		],
+		showsUpRail(h),
+	)
+}
+
+/** Choose data: CI traces and PR review, saved as they flip. */
+const chooseStep = (h: H, model: Model): Html => {
+	const status = githubStatusOf(model)
+	const discovery = status?.repositoryDiscovery
+	return flowColumns(
+		h,
+		[
+			stepCard(
+				h,
+				{ icon: "SlidersIcon", title: "Choose what Maple does", note: CHANGE_LATER_NOTE },
+				status === null ? [skeleton(h, "h-32 w-full")] : [githubFeatures(h, model, status)],
+			),
+			// Discovery can still be running (or have failed) when Connect hands over.
+			...(discovery?._tag === "Pending"
+				? [statusRow(h, { tone: "working", text: "Discovering repositories…" })]
+				: discovery?._tag === "Failed"
+					? [
+							statusRow(h, { tone: "error", text: discovery.message }),
+							githubReconnectButton(h, model),
+						]
+					: []),
 		],
 		showsUpRail(h),
 	)
 }
 
 export const githubFlowView = (h: H, model: Model, stage: FlowStage): Html =>
-	stage === "live" ? liveStep(h, model) : connectStep(h, model)
+	stage === "live" ? liveStep(h, model) : stage === "choose" ? chooseStep(h, model) : connectStep(h, model)

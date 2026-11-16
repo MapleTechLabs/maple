@@ -6,7 +6,15 @@ import { Effect, Option, Ref, Array as Arr, Record as Rec } from "effect"
 import { focusedReconPrompt, RECON_AGENTS, reconPrompt, synthesisPrompt } from "../prompts"
 import { SynthesisResult } from "../results"
 import type { CoverageUnit, Finding, Profile } from "../schema"
-import { admitUnits, type LedgerUnit, scoped, seedUnit, unitRefusal } from "./ledger"
+import {
+	admitUnits,
+	type LedgerUnit,
+	present,
+	proposalNote,
+	reviewProposal,
+	scoped,
+	seedUnit,
+} from "./ledger"
 import { type CarriedRecord, type Engine, type PriorRun, rereadPrompt, type TextAnswer } from "./state"
 
 /** The calls the skill reserves before any reconnaissance agent may launch. */
@@ -133,167 +141,165 @@ const replan = (
 }
 
 /** Runs Phase 1. Returns false when the run cannot go on (budget gate or synthesis failure). */
-export const runReconnaissance = (engine: Engine) =>
-	Effect.gen(function* () {
-		const { input } = engine
-		if (input.budget !== null && input.budget < minimumInvocations(input.profile)) {
-			yield* engine.fail("budget_cannot_fund_reconnaissance_and_reserves")
-			return false
-		}
-		const prior =
-			input.prior === null
-				? undefined
-				: planFromPrior(input.prior, (paths) => input.changedSincePrior(paths))
-		yield* engine.event({
-			_tag: "Phase",
-			phase: "reconnaissance",
-			detail: prior?.summary ?? "No prior ledger exists.",
-		})
-
-		// After the baseline, one more reconnaissance agent must leave a hunter, critics and a verifier funded.
-		const funded = Effect.map(
-			engine.remaining,
-			(left) => left - 1 >= minimumInvocations(input.profile) - 4,
-		)
-		/**
-		 * One retry for an agent that answered without reading the repository; a second such answer
-		 * is a disclosed gap. The facts, or undefined.
-		 */
-		const facts = (id: string, prompt: string, first: TextAnswer) =>
-			Effect.gen(function* () {
-				if (first._tag === "Answered") return first.text
-				if (first._tag === "None") return undefined
-				if (!(yield* funded)) {
-					yield* engine.gap(`${id} answered without reading the repository and no retry was funded`)
-					return undefined
-				}
-				const retry = yield* engine.invokeText("recon", `${id}-r1`, rereadPrompt(prompt))
-				if (retry._tag === "Unread")
-					yield* engine.gap(`${id} answered twice without reading the repository`)
-				return retry._tag === "Answered" ? retry.text : undefined
-			})
-
-		const answers = yield* Effect.forEach(
-			RECON_AGENTS,
-			(agent) =>
-				Effect.gen(function* () {
-					const id = `recon-${agent}`
-					const prompt = reconPrompt(agent, input.target, engine.context(id))
-					return { agent, id, prompt, answer: yield* engine.invokeText("recon", id, prompt) }
-				}),
-			{ concurrency: 4 },
-		)
-		// Retries after all four answered, sequential under a finite budget, so which one is funded
-		// does not depend on completion order.
-		const baseline = yield* Effect.forEach(
-			answers,
-			({ agent, id, prompt, answer }) =>
-				Effect.map(facts(id, prompt, answer), (text) => ({ agent, facts: text })),
-			{ concurrency: input.budget === null ? 4 : 1 },
-		)
-		const focused = yield* Effect.forEach(
-			input.focusedRecon ?? [],
-			(area, index) =>
-				Effect.gen(function* () {
-					// Each focused agent passes the gate again: a hunter, critics and a verifier stay reserved.
-					if (!(yield* funded)) {
-						yield* engine.gap(
-							`focused reconnaissance for ${area.subsystem} not funded by the budget`,
-						)
-						return { agent: `focused ${area.subsystem}`, facts: undefined }
-					}
-					const id = `recon-focus-${index + 1}`
-					const prompt = focusedReconPrompt(area.subsystem, area.paths, engine.context(id))
-					const answer = yield* engine.invokeText("recon", id, prompt)
-					return { agent: `focused ${area.subsystem}`, facts: yield* facts(id, prompt, answer) }
-				}),
-			// Sequential under a finite budget: which focused agent passes the gate must not depend on
-			// completion order, or a replay would spend differently.
-			{ concurrency: input.budget === null ? (input.concurrency ?? 4) : 1 },
-		)
-		const reconResults = Arr.flatMap([...baseline, ...focused], ({ agent, facts }) =>
-			facts === undefined ? [] : [{ agent, facts }],
-		)
-		const missing = Arr.map(
-			Arr.filter([...baseline, ...focused], (r) => r.facts === undefined),
-			(r) => r.agent,
-		)
-		if (missing.length > 0)
-			yield* engine.gap(`reconnaissance returned nothing for: ${Arr.join(missing, ", ")}`)
-
-		const synthesisInput = {
-			target: input.target,
-			profile: input.profile,
-			scopePaths: input.scopePaths,
-			reconResults,
-			priorSummary: prior?.summary ?? "No prior ledger exists for this repository.",
-		}
-		const synthesize = (id: string, attempt: "first" | "retry") =>
-			engine.invoke(
-				"synthesis",
-				id,
-				synthesisPrompt(synthesisInput, engine.context(id), attempt),
-				SynthesisResult,
-			)
-		const first = yield* synthesize("synthesis-1", "first")
-		const synthesis = first ?? (yield* synthesize("synthesis-2", "retry"))
-		if (synthesis === undefined) {
-			yield* engine.fail("reconnaissance_synthesis_failed")
-			return false
-		}
-
-		const priorStatus = input.prior === null ? "none" : "new"
-		const refusals = Arr.flatMap(synthesis.units, (seed) => {
-			const reason = unitRefusal(seed)
-			return reason === undefined ? [] : [`${seed.surface} / ${seed.attack_class}: ${reason}`]
-		})
-		const seeds = Arr.map(
-			Arr.filter(synthesis.units, (seed) => unitRefusal(seed) === undefined),
-			(seed) =>
-				seedUnit(seed, {
-					scope: input.scopePaths,
-					priorStatus,
-					priority: seed.priority,
-				}),
-		)
-		// Prior units first: their identity is the stable one across runs. They pass the same scope check.
-		const priorUnits = Arr.map(prior?.units ?? [], (unit) => scoped(unit, input.scopePaths))
-		const inScopeIds = new Set(
-			Arr.map(
-				Arr.filter(priorUnits, (u) => u.status !== "out_of_scope"),
-				(u) => u.coverage_id,
-			),
-		)
-		const carried = Arr.filter(prior?.carried ?? [], (c) => inScopeIds.has(c.coverageId))
-		// A seed the prior ledger already holds is that same unit (same canonical refs), not a refusal.
-		const priorIds = new Set(Arr.map(priorUnits, (u) => u.coverage_id))
-		const admitted = admitUnits(
-			admitUnits([], priorUnits).ledger,
-			Arr.filter(seeds, (seed) => !priorIds.has(seed.coverage_id)),
-		)
-		const refused = [...refusals, ...Arr.map(admitted.refused, (r) => `${r.coverage_id}: ${r.reason}`)]
-		yield* Effect.forEach(refused, (message) =>
-			engine.event({ _tag: "Note", message: `seed unit refused: ${message}` }),
-		)
-		if (refused.length > 0)
-			yield* engine.gap(`synthesis proposed ${refused.length} units the ledger refused`)
-		yield* engine.mutate((s) => [
-			undefined,
-			{
-				...s,
-				ledger: admitted.ledger,
-				architectureMd: synthesis.architecture_md,
-				carried,
-				suppressed: prior?.suppressed ?? new Map(),
-			},
-		])
-		yield* engine.persist
-		yield* engine.store.saveArchitecture(input.runId, synthesis.architecture_md)
-		const seeded = yield* Ref.get(engine.state)
-		yield* engine.event({
-			_tag: "Phase",
-			phase: "ledger-seeded",
-			detail: `${seeded.ledger.length} units, ${Arr.filter(seeded.ledger, (u) => u.status === "planned").length} planned`,
-		})
-		return true
+export const runReconnaissance = Effect.fn("SecurityAudit.reconnaissance")(function* (engine: Engine) {
+	const { input } = engine
+	if (input.budget !== null && input.budget < minimumInvocations(input.profile)) {
+		yield* engine.fail("budget_cannot_fund_reconnaissance_and_reserves")
+		return false
+	}
+	const prior =
+		input.prior === null
+			? undefined
+			: planFromPrior(input.prior, (paths) => input.changedSincePrior(paths))
+	yield* engine.event({
+		_tag: "Phase",
+		phase: "reconnaissance",
+		detail: prior?.summary ?? "No prior ledger exists.",
 	})
+
+	// After the baseline, one more reconnaissance agent must leave a hunter, critics and a verifier funded.
+	const funded = Effect.map(engine.remaining, (left) => left - 1 >= minimumInvocations(input.profile) - 4)
+	/**
+	 * One retry for an agent that answered without reading the repository; a second such answer
+	 * is a disclosed gap. The facts, or undefined.
+	 */
+	const facts = (id: string, prompt: string, first: TextAnswer) =>
+		Effect.gen(function* () {
+			if (first._tag === "Answered") return first.text
+			if (first._tag === "None") return undefined
+			if (!(yield* funded)) {
+				yield* engine.gap(`${id} answered without reading the repository and no retry was funded`)
+				return undefined
+			}
+			const retry = yield* engine.invokeText("recon", `${id}-r1`, rereadPrompt(prompt))
+			if (retry._tag === "Unread")
+				yield* engine.gap(`${id} answered twice without reading the repository`)
+			return retry._tag === "Answered" ? retry.text : undefined
+		})
+
+	const answers = yield* Effect.forEach(
+		RECON_AGENTS,
+		(agent) =>
+			Effect.gen(function* () {
+				const id = `recon-${agent}`
+				const prompt = reconPrompt(agent, input.target, engine.context(id))
+				return { agent, id, prompt, answer: yield* engine.invokeText("recon", id, prompt) }
+			}),
+		{ concurrency: 4 },
+	)
+	// Retries after all four answered, sequential under a finite budget, so which one is funded
+	// does not depend on completion order.
+	const baseline = yield* Effect.forEach(
+		answers,
+		({ agent, id, prompt, answer }) =>
+			Effect.map(facts(id, prompt, answer), (text) => ({ agent, facts: text })),
+		{ concurrency: input.budget === null ? 4 : 1 },
+	)
+	const focused = yield* Effect.forEach(
+		input.focusedRecon ?? [],
+		(area, index) =>
+			Effect.gen(function* () {
+				// Each focused agent passes the gate again: a hunter, critics and a verifier stay reserved.
+				if (!(yield* funded)) {
+					yield* engine.gap(`focused reconnaissance for ${area.subsystem} not funded by the budget`)
+					return { agent: `focused ${area.subsystem}`, facts: undefined }
+				}
+				const id = `recon-focus-${index + 1}`
+				const prompt = focusedReconPrompt(area.subsystem, area.paths, engine.context(id))
+				const answer = yield* engine.invokeText("recon", id, prompt)
+				return { agent: `focused ${area.subsystem}`, facts: yield* facts(id, prompt, answer) }
+			}),
+		// Sequential under a finite budget: which focused agent passes the gate must not depend on
+		// completion order, or a replay would spend differently.
+		{ concurrency: input.budget === null ? (input.concurrency ?? 4) : 1 },
+	)
+	const reconResults = Arr.flatMap([...baseline, ...focused], ({ agent, facts }) =>
+		facts === undefined ? [] : [{ agent, facts }],
+	)
+	const missing = Arr.map(
+		Arr.filter([...baseline, ...focused], (r) => r.facts === undefined),
+		(r) => r.agent,
+	)
+	if (missing.length > 0)
+		yield* engine.gap(`reconnaissance returned nothing for: ${Arr.join(missing, ", ")}`)
+
+	const synthesisInput = {
+		target: input.target,
+		profile: input.profile,
+		scopePaths: input.scopePaths,
+		reconResults,
+		priorSummary: prior?.summary ?? "No prior ledger exists for this repository.",
+	}
+	const synthesize = (id: string, attempt: "first" | "retry") =>
+		engine.invoke(
+			"synthesis",
+			id,
+			synthesisPrompt(synthesisInput, engine.context(id), attempt),
+			SynthesisResult,
+		)
+	const first = yield* synthesize("synthesis-1", "first")
+	const synthesis = first ?? (yield* synthesize("synthesis-2", "retry"))
+	if (synthesis === undefined) {
+		yield* engine.fail("reconnaissance_synthesis_failed")
+		return false
+	}
+
+	const priorStatus = input.prior === null ? "none" : "new"
+	const reviews = Arr.map(synthesis.units, (seed) => ({ seed, review: reviewProposal(seed) }))
+	const notes = Arr.flatMap(reviews, ({ seed, review }) => present(proposalNote(seed, review)))
+	const reviewRefused = Arr.filter(reviews, ({ review }) => review._tag === "Refused").length
+	const seeds = Arr.flatMap(reviews, ({ seed, review }) =>
+		review._tag === "Admissible"
+			? [seedUnit(review.unit, { scope: input.scopePaths, priorStatus, priority: seed.priority })]
+			: [],
+	)
+	// Prior units first: their identity is the stable one across runs. They pass the same scope check.
+	const priorUnits = Arr.map(prior?.units ?? [], (unit) => scoped(unit, input.scopePaths))
+	const inScopeIds = new Set(
+		Arr.map(
+			Arr.filter(priorUnits, (u) => u.status !== "out_of_scope"),
+			(u) => u.coverage_id,
+		),
+	)
+	const carried = Arr.filter(prior?.carried ?? [], (c) => inScopeIds.has(c.coverageId))
+	// A seed the prior ledger already holds is that same unit (same canonical refs), not a refusal.
+	const priorIds = new Set(Arr.map(priorUnits, (u) => u.coverage_id))
+	const admitted = admitUnits(
+		admitUnits([], priorUnits).ledger,
+		Arr.filter(seeds, (seed) => !priorIds.has(seed.coverage_id)),
+	)
+	const ledgerRefused = Arr.map(admitted.refused, (r) => `refused: ${r.coverage_id}: ${r.reason}`)
+	yield* Effect.forEach(
+		[...notes, ...ledgerRefused],
+		(message) => engine.event({ _tag: "Note", message: `seed unit ${message}` }),
+		{ discard: true },
+	)
+	const refusedCount = reviewRefused + ledgerRefused.length
+	yield* Effect.annotateCurrentSpan({
+		"maple.security_audit.proposed_units": synthesis.units.length,
+		"maple.security_audit.refused_units": refusedCount,
+	})
+	if (refusedCount > 0)
+		yield* engine.gap(
+			`synthesis proposed ${refusedCount} of ${synthesis.units.length} units the ledger refused`,
+		)
+	yield* engine.mutate((s) => [
+		undefined,
+		{
+			...s,
+			ledger: admitted.ledger,
+			architectureMd: synthesis.architecture_md,
+			carried,
+			suppressed: prior?.suppressed ?? new Map(),
+		},
+	])
+	yield* engine.persist
+	yield* engine.store.saveArchitecture(input.runId, synthesis.architecture_md)
+	const seeded = yield* Ref.get(engine.state)
+	yield* engine.event({
+		_tag: "Phase",
+		phase: "ledger-seeded",
+		detail: `${seeded.ledger.length} units, ${Arr.filter(seeded.ledger, (u) => u.status === "planned").length} planned`,
+	})
+	return true
+})

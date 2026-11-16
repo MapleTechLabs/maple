@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { describe, expect, it } from "vitest"
+import { STATUS_PAGE_SHOTS } from "../../scripts/screenshots/status-page-shots"
 import { SHOTS } from "../../scripts/screenshots/shots"
 import { features } from "../lib/features"
 import { Array as Arr } from "effect"
@@ -10,14 +11,14 @@ import { Array as Arr } from "effect"
  * the file it writes is checked in. Either half missing renders a broken image.
  */
 const screenshotsDir = resolve(__dirname, "../../public/screenshots")
-const shotIds = new Set(Arr.map(SHOTS, (shot) => shot.id))
+const shotIds = new Set(Arr.map([...SHOTS, ...STATUS_PAGE_SHOTS], (shot) => shot.id))
 
 describe("feature galleries", () => {
 	const gallery = Arr.flatMap(features, (feature) =>
 		Arr.map(feature.gallery, (shot) => ({ slug: feature.slug, id: shot.id })),
 	)
 
-	it.each(gallery)("$slug: $id is a capture in shots.ts", ({ id }) => {
+	it.each(gallery)("$slug: $id is a known capture", ({ id }) => {
 		expect(shotIds.has(id)).toBe(true)
 	})
 

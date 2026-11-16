@@ -174,6 +174,8 @@ export function compilePipeQuery(
 	// `has_error` feeds a tri-state filter where `false` means "exclude errors";
 	// the pipe flag only ever asks for errors, so absent or falsy means no filter.
 	const hasError = errorsOnlyParam(str("has_error"))
+	// The span listings honour an explicit `false` too: only spans that did not error.
+	const spanListHasError = hasErrorFilterParam(str("has_error"))
 
 	/** A single-valued param as the one-element list the query filters take. */
 	const strList = (key: string): string[] | undefined => {
@@ -210,10 +212,11 @@ export function compilePipeQuery(
 								cursor,
 								serviceName: str("service"),
 								spanName: str("span_name"),
-								errorsOnly: hasError,
+								errorsOnly: spanListHasError,
 								minDurationMs: int("min_duration_ms"),
 								maxDurationMs: int("max_duration_ms"),
 								environments: strList("deployment_env"),
+								traceId: str("trace_id"),
 								matchModes: {
 									serviceName:
 										str("service_match_mode") === "contains" ? "contains" : undefined,
@@ -885,7 +888,7 @@ export function compilePipeQuery(
 								str("span_name_match_mode") === "contains"
 									? { spanName: "contains" }
 									: undefined,
-							errorsOnly: hasError,
+							errorsOnly: spanListHasError,
 							minDurationMs: int("min_duration_ms"),
 							maxDurationMs: int("max_duration_ms"),
 							environments: strList("deployment_env"),
@@ -970,6 +973,15 @@ function buildAttributeFiltersFromParams(
 function errorsOnlyParam(raw: string | undefined): boolean | undefined {
 	if (raw == null || raw === "" || raw === "0" || raw === "false") return undefined
 	return true
+}
+
+/**
+ * The full tri-state, for `list_traces` and `span_search`: an explicit `false`
+ * (or `"0"`) keeps only non-errored spans; absent or empty still means no filter.
+ */
+function hasErrorFilterParam(raw: string | undefined): boolean | undefined {
+	if (raw == null || raw === "") return undefined
+	return raw !== "0" && raw !== "false"
 }
 
 function pipeParamsToTracesTimeseriesOpts(params: PipeParams): TracesTimeseriesOpts {

@@ -68,6 +68,8 @@ export interface PlanInput {
 	readonly dataSource: unknown
 	readonly window: { readonly startTime: string; readonly endTime: string } | null
 	readonly widgetTimeRange?: Parameters<typeof planWidgetRequest>[0]["widgetTimeRange"]
+	/** The clock read a pinned relative range resolves on, so a re-plan between reads keeps its key. */
+	readonly clock?: Readonly<{ nowMs: number; snap: boolean }>
 	readonly maxDataPoints?: number
 	/** The board's variables: their names, and the values resolved so far. */
 	readonly variables?: Readonly<{
@@ -135,6 +137,7 @@ export const planWidget = (input: PlanInput): WidgetGate => {
 		request,
 		dashboardWindow: input.window,
 		...(input.widgetTimeRange === undefined ? undefined : { widgetTimeRange: input.widgetTimeRange }),
+		...(input.clock === undefined ? undefined : input.clock),
 		...(input.maxDataPoints === undefined ? undefined : { maxDataPoints: input.maxDataPoints }),
 		...(input.variables === undefined ? undefined : { variableValues: input.variables.values }),
 	})

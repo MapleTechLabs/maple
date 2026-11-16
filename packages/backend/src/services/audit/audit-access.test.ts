@@ -280,6 +280,8 @@ describe("recordMcpToolAudit", () => {
 			const audit = yield* AuditLogService
 			yield* recordMcpToolAudit({
 				...toolCall,
+				name: "sandbox_grep",
+				title: "Search Repository Checkout",
 				surface: "chat",
 				tenant: {
 					orgId: ORG,
@@ -287,14 +289,23 @@ describe("recordMcpToolAudit", () => {
 					roles: [],
 					authMode: "self_hosted",
 					turnOrigin: { kind: "autonomous" },
+					chatMode: "pr-review",
 				},
 			})
 
 			const [entry] = yield* audit.list(ORG, { limit: 10, offset: 0 })
 			expect(entry?.actorType).toBe("system")
+			// The pass is named, not a bare "System".
+			expect(entry?.actorLabel).toBe("Maple code review")
 			expect(entry?.userId).toBeNull()
 			expect(entry?.source).toBe("system")
 			expect(entry?.metadata).not.toHaveProperty("connector")
+			// Names the agent and the tool in words a customer can read.
+			expect(entry?.metadata).toMatchObject({
+				tool: "sandbox_grep",
+				tool_title: "Search Repository Checkout",
+				agent: "pr-review",
+			})
 		}).pipe(Effect.provide(AuditLogService.layerMemory)),
 	)
 })

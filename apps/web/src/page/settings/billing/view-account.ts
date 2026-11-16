@@ -82,7 +82,7 @@ export const memberSection = (h: H, model: Model, account: BillingAccount): Html
 const volumeLabel = (usage: BillingAccountOrgUsage): string =>
 	Arr.join(
 		[
-			formatUsage(usage.logsGB + usage.tracesGB + usage.metricsGB),
+			formatUsage(usage.logsGB + usage.tracesGB + usage.metricsGB + (usage.profilesGB ?? 0)),
 			...(usage.browserSessions > 0 ? [`${formatCount(usage.browserSessions)} sessions`] : []),
 			...(usage.productEvents > 0 ? [`${formatCount(usage.productEvents)} events`] : []),
 		],

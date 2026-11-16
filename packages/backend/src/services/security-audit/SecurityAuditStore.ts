@@ -49,7 +49,7 @@ import {
 	type AuditStoreApi,
 	type EstimatedSeverity,
 	type Finding,
-} from "@maple/security-audit"
+} from "@maple/security-audit/store"
 import {
 	AuditReportsRecord,
 	CoverageUnit,

@@ -10,13 +10,18 @@ import * as Policy from "@maple/domain/policy"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { AuditDetectionsService } from "@maple/backend/services/audit-trail/AuditDetectionsService"
 import { AuditTrailService } from "@maple/backend/services/audit-trail/AuditTrailService"
+import { auditTrailSources } from "@maple/backend/services/audit-trail/audit-trail-sources"
+import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import type { OrgMember } from "@maple/backend/services/org/OrgMembersService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
-import { Effect, Array as Arr, Option, String as Str } from "effect"
+import { Clock, Effect, Array as Arr, Option, String as Str } from "effect"
 import { orgMemberDirectory, orgMemberDirectoryOrFail } from "@/routes/org-member-directory"
 import { auditDiff } from "@/routes/v2/audit-changes"
 
 const DEFAULT_PAGE_LIMIT = 50
+
+/** How far back the source list counts each platform's events. */
+const SOURCES_WINDOW_DAYS = 30
 
 /** `<occurredAt ms>:<event id>`; the query schema has already checked the shape. */
 const parseCursor = (cursor: string) => {
@@ -76,6 +81,7 @@ export const HttpAuditTrailLive = HttpApiBuilder.group(MapleInternalApi, "auditT
 		const trail = yield* AuditTrailService
 		const detections = yield* AuditDetectionsService
 		const members = yield* OrgMembersService
+		const inventory = yield* IntegrationInventoryService
 
 		return handlers
 			.handle("list", ({ query }) =>
@@ -130,6 +136,32 @@ export const HttpAuditTrailLive = HttpApiBuilder.group(MapleInternalApi, "auditT
 					return {
 						events: nameMapleUsers(page.events, directory),
 						nextCursor: page.next === null ? null : `${page.next.occurredAtMs}:${page.next.id}`,
+					}
+				}),
+			)
+			.handle("sources", () =>
+				Effect.gen(function* () {
+					const tenant = yield* requireAuditLogRead
+					const now = yield* Clock.currentTimeMillis
+					const stats = yield* trail.providerStats(
+						tenant.orgId,
+						now - SOURCES_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+					)
+					// Connection state is context: without it the list still says what arrived.
+					const integrations = yield* inventory.list(tenant.orgId).pipe(
+						Effect.asSome,
+						Effect.catchTag(
+							"@maple/backend/services/IntegrationInventoryUnavailableError",
+							(error) =>
+								Effect.logWarning("Audit log sources read without integration state").pipe(
+									Effect.annotateLogs({ cause: error.message }),
+									Effect.as(Option.none()),
+								),
+						),
+					)
+					return {
+						sources: auditTrailSources(stats, Option.getOrNull(integrations)),
+						windowDays: SOURCES_WINDOW_DAYS,
 					}
 				}),
 			)

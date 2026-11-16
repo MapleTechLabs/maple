@@ -1,3 +1,4 @@
+import { formatNumber } from "@maple/ui/lib/format"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -14,8 +15,13 @@ import { docsLink } from "@maple/views/ui/docs-link"
 import { LOG_LIMIT } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
-import type { LogEntry } from "../trace-source"
-import { TAB_VALUES } from "./update"
+import type { LogEntry, SpanProfile } from "../trace-source"
+import {
+	formatProfileValue,
+	topFunctionsTable,
+	view as flamegraphView,
+} from "../../profiles/profile-flamegraph-view"
+import { PROFILE_SPAN_CAP, subtreeIsCut, type TAB_VALUES, tabsOver } from "./update"
 import { hstack } from "../../ui/stack"
 import { typography } from "../../ui/typography"
 
@@ -28,6 +34,7 @@ type TabValue = (typeof TAB_VALUES)[number]
 const TAB_LABELS = {
 	details: { icon: "CircleInfoIcon", text: " Details" },
 	logs: { icon: "FileIcon", text: " Logs" },
+	profile: { icon: "FireIcon", text: " Profile" },
 	infrastructure: { icon: "ServerIcon", text: " Infrastructure" },
 } as const satisfies Record<TabValue, { icon: IconName; text: string }>
 
@@ -85,6 +92,56 @@ export const spanLogs = (h: H, model: Pick<Model, "logs">, timeZone: string, doc
 					),
 	})
 
+/**
+ * The CPU the span and the spans under it used, as a flame graph and the functions that used the
+ * most. Shown only when samples are linked to them.
+ */
+export const spanProfile = (h: H, model: Pick<Model, "flamegraph" | "span">, profile: SpanProfile): Html => {
+	const input = { stacks: profile.stacks, totalValue: profile.totalValue }
+	return h.div(
+		[h.Class("space-y-3 p-3")],
+		[
+			typography(h, { size: "xs", tone: "muted", as: "p" }, [
+				`${formatProfileValue(profile.totalValue, profile.sampleUnit)} of ${profile.sampleType} sampled while this span and the spans under it were running.`,
+				...(subtreeIsCut(model.span)
+					? [
+							` It covers the first ${formatNumber(PROFILE_SPAN_CAP)} spans in this subtree, this span included, widest levels first.`,
+						]
+					: []),
+			]),
+			flamegraphView(
+				h,
+				model.flamegraph,
+				{ input, unit: profile.sampleUnit, maxRows: 14, isCompact: true },
+				(message) => Message.GotFlamegraphMessage({ message }),
+			),
+			topFunctionsTable(h, input, {
+				unit: profile.sampleUnit,
+				limit: 8,
+				compact: true,
+				scope: model.flamegraph.scope,
+			}),
+		],
+	)
+}
+
+/** The Profile tab: the span's profile, or why it could not be read. */
+export const spanProfileTab = (h: H, model: Pick<Model, "flamegraph" | "profile" | "span">): Html =>
+	AsyncData.matchData(model.profile.data, {
+		onEmpty: () => h.div([h.Class("p-3")], [skeleton(h, "h-48 w-full")]),
+		onFailure: (failure) =>
+			errorState(h, {
+				failure,
+				title: "Couldn't load the profile",
+				variant: "inline",
+				className: "px-4",
+			}),
+		onData: (profile) =>
+			profile === null
+				? emptyMessage(h, {}, ["No samples were linked to this span or the spans under it"])
+				: spanProfile(h, model, profile),
+	})
+
 /** The Tabs root: list, then the selected value's panel (Base UI unmounts the others). */
 export const tabsView = (
 	h: H,
@@ -99,7 +156,7 @@ export const tabsView = (
 		)
 	return h.submodel({
 		slotId: `span-panel-tabs-${model.tabs.idBase}`,
-		model: { ...model.tabs, values },
+		model: tabsOver(model.tabs, values),
 		view: TabsView.view,
 		viewInputs: {
 			variant: "underline",
@@ -124,6 +181,7 @@ export const tabsView = (
 			panel: (value) => panel(shownOf(value)),
 			hasPanel: () => true,
 		},
-		toParentMessage: (message) => Message.GotTabsMessage({ message }),
+		// The update needs the shown tabs to read the message's indexes.
+		toParentMessage: (message) => Message.GotTabsMessage({ message, shown: values }),
 	})
 }

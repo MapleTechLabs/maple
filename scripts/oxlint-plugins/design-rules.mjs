@@ -65,6 +65,7 @@ const SHADOW_TOKENS = new Set([
 	"accent-start",
 	"overflow-up",
 	"rule-bottom",
+	"backdrop-below",
 	"none",
 ])
 const INSET_SHADOW_TOKENS = new Set(["highlight", "pressed", "none"])
@@ -82,7 +83,7 @@ const isRawShadow = (token) => {
 const noRawShadow = ratcheted("no-raw-shadow", {
 	description: "Depth comes from surfaces, the hairline and the shadow tokens.",
 	message:
-		"`{{token}}` is not a shadow token. Use `shadow-raised`, `shadow-popup`, `shadow-control`, `shadow-accent-start`, `shadow-overflow-up` or `shadow-rule-bottom` (inset: `inset-shadow-highlight`, `inset-shadow-pressed`). A shadow's colour is part of its token; a new depth gets a new token in tokens.css.",
+		"`{{token}}` is not a shadow token. Use `shadow-raised`, `shadow-popup`, `shadow-control`, `shadow-accent-start`, `shadow-overflow-up`, `shadow-rule-bottom` or `shadow-backdrop-below` (inset: `inset-shadow-highlight`, `inset-shadow-pressed`). A shadow's colour is part of its token; a new depth gets a new token in tokens.css.",
 	collect: (_context, push) =>
 		classStrings((node, tokens) => {
 			for (const token of tokens) if (isRawShadow(splitToken(token).utility)) push(node, { token })

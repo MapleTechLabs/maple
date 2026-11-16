@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Schema, Array as Arr, Record as Rec, String as Str, Option, Order } from "effect"
+import { Effect, Schema, Tracer, Array as Arr, Record as Rec, String as Str, Option, Order } from "effect"
 // A live logs response (2026-10-21) with the project ref, client IPs, geo, ISP and JWT signature
 // fields replaced by placeholders (documentation IPs, "Example City", AS64500).
 import sample from "./__fixtures__/supabase-logs-sample.json" with { type: "json" }
@@ -13,6 +13,7 @@ import {
 	parseRowTimestamp,
 } from "./logs"
 import { SupabaseProjectRef } from "@maple/primitives"
+import { SupabaseApiError, supabaseCallSpan } from "./api"
 
 const REF = Schema.decodeSync(SupabaseProjectRef)("abcdefghijklmnopqrst")
 const minute = 60_000
@@ -243,5 +244,32 @@ describe("advanceWatermark", () => {
 			watermarkAt: window.startMs + 1,
 			boundaryIds: [],
 		})
+	})
+})
+
+describe("supabaseCallSpan", () => {
+	it.effect("fails the span for an undecodable answer, keeps a refusal Ok", () => {
+		const spans: Array<Tracer.NativeSpan> = []
+		const tracer = Tracer.make({
+			span(options) {
+				const span = new Tracer.NativeSpan(options)
+				spans.push(span)
+				return span
+			},
+		})
+		const call = (kind: SupabaseApiError["kind"]) =>
+			Effect.flip(
+				Effect.fail(new SupabaseApiError({ message: kind, kind })).pipe(
+					supabaseCallSpan("SupabaseApi.test"),
+				),
+			)
+		return Effect.gen(function* () {
+			yield* call("forbidden")
+			yield* call("invalid_response")
+			assert.deepStrictEqual(
+				Arr.map(spans, (span) => (span.status._tag === "Ended" ? span.status.exit._tag : "Open")),
+				["Success", "Failure"],
+			)
+		}).pipe(Effect.withTracer(tracer))
 	})
 })

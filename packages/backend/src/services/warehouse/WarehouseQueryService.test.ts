@@ -419,7 +419,6 @@ describe("WarehouseQueryService org-scoped reads", () => {
 		CLICKHOUSE_URL: "https://gateway.tinybird.example",
 		CLICKHOUSE_PASSWORD: "gateway-admin-token",
 	}
-	const SCOPED = { ...GATEWAY, MAPLE_WAREHOUSE_ORG_SCOPED_READS: "1" }
 
 	/** The credential each statement or insert went out with, in call order. */
 	const recordCredentials = () => {
@@ -446,20 +445,24 @@ describe("WarehouseQueryService org-scoped reads", () => {
 	const orgFilters = (jwt: string) =>
 		Arr.dedupe(Arr.map(decodeScopes(decodeJwtPayload(jwt)).scopes, (scope) => scope.filter))
 
-	it.effect("keeps a compiled read on the shared token while the flag is off", () => {
-		const used = recordCredentials()
-		return Effect.gen(function* () {
-			yield* WarehouseQueryService.use((service) =>
-				service.compiledQuery(
-					makeTenant(),
-					scopedSql("SELECT 1 FROM traces WHERE OrgId = 'org_test'"),
-				),
-			)
-			assert.deepStrictEqual(used, [
-				{ op: "sql", kind: "tinybird-gateway", secret: "gateway-admin-token" },
-			])
-		}).pipe(Effect.provide(buildLayer(createTestDb(trackedDbs), GATEWAY)))
-	})
+	// Single-org self-hosted has no other org to isolate, so it may run without the signing key.
+	it.effect(
+		"keeps a compiled read on the shared token in single-org self-hosted without a signing key",
+		() => {
+			const used = recordCredentials()
+			return Effect.gen(function* () {
+				yield* WarehouseQueryService.use((service) =>
+					service.compiledQuery(
+						makeTenant(),
+						scopedSql("SELECT 1 FROM traces WHERE OrgId = 'org_test'"),
+					),
+				)
+				assert.deepStrictEqual(used, [
+					{ op: "sql", kind: "tinybird-gateway", secret: "gateway-admin-token" },
+				])
+			}).pipe(Effect.provide(buildLayer(createTestDb(trackedDbs), GATEWAY, false)))
+		},
+	)
 
 	it.effect("runs a tenant's compiled read on a token filtered to that tenant", () => {
 		const used = recordCredentials()
@@ -475,7 +478,7 @@ describe("WarehouseQueryService org-scoped reads", () => {
 			assert.strictEqual(read?.kind, "tinybird-gateway")
 			assert.notStrictEqual(read?.secret, "gateway-admin-token")
 			assert.deepStrictEqual(orgFilters(read?.secret ?? ""), ["OrgId = 'org_test'"])
-		}).pipe(Effect.provide(buildLayer(createTestDb(trackedDbs), SCOPED)))
+		}).pipe(Effect.provide(buildLayer(createTestDb(trackedDbs), GATEWAY)))
 	})
 
 	it.effect("scopes a tenant's read of an ingest-routed datasource the same way", () => {
@@ -497,7 +500,7 @@ describe("WarehouseQueryService org-scoped reads", () => {
 			assert.strictEqual(read?.kind, "tinybird")
 			assert.notStrictEqual(read?.secret, "managed-token")
 			assert.deepStrictEqual(orgFilters(read?.secret ?? ""), ["OrgId = 'org_test'"])
-		}).pipe(Effect.provide(buildLayer(createTestDb(trackedDbs), SCOPED)))
+		}).pipe(Effect.provide(buildLayer(createTestDb(trackedDbs), GATEWAY)))
 	})
 
 	// Both need to see past one org: a write lands rows, a cross-org read enumerates tenants.
@@ -527,7 +530,7 @@ describe("WarehouseQueryService org-scoped reads", () => {
 				{ op: "sql", kind: "tinybird", secret: "managed-token" },
 				{ op: "sql", kind: "tinybird-gateway", secret: "gateway-admin-token" },
 			])
-		}).pipe(Effect.provide(buildLayer(createTestDb(trackedDbs), SCOPED)))
+		}).pipe(Effect.provide(buildLayer(createTestDb(trackedDbs), GATEWAY)))
 	})
 
 	// No signing key here, as such a deployment may run: neither route may ask for a token.
@@ -562,7 +565,6 @@ describe("WarehouseQueryService org-scoped reads", () => {
 						CLICKHOUSE_URL: "https://clickhouse.example",
 						CLICKHOUSE_PROVIDER: "clickhouse",
 						CLICKHOUSE_PASSWORD: "vanilla-password",
-						MAPLE_WAREHOUSE_ORG_SCOPED_READS: "1",
 					},
 					false,
 				),

@@ -72,6 +72,9 @@ export const isMissingServiceEndpointDetails = isMissingWarehouseTable(
 /** `user_activity_hourly` (migration 0056) is missing; the users pages degrade. */
 export const isMissingUserActivityHourly = isMissingWarehouseTable(Datasources.userActivityHourly)
 
+/** `profiles` ships in migration 0067; a cluster without it has no profiles to show. */
+export const isMissingProfiles = isMissingWarehouseTable(Datasources.profiles)
+
 const MIGRATION_0048_COLUMNS =
 	/\b(?:HttpClassifiedSpanCount|HttpStatusCount|Http4xxCount|Http5xxCount|RequestBodyBytes|RequestBodyCount)\b/
 
@@ -95,3 +98,7 @@ export const isMissingUserActivityIdentity = namesDriftedColumn(/\bUser(?:Name|E
 /** `error_events.UserId` (migration 0057) is missing: schema drift naming `UserId` only, so every
  * other drift still surfaces. User issues and affected users then answer unattributed. */
 export const isMissingErrorEventsUserId = namesDriftedColumn(/\bUserId\b/)
+
+/** `service_usage` predates its profile columns (migration 0068): schema drift naming one of them.
+ * The billing chart then reads no profile usage. */
+export const isMissingServiceUsageProfiles = namesDriftedColumn(/\bProfile(?:RowCount|SizeBytes)\b/)

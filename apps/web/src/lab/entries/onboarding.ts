@@ -48,6 +48,7 @@ export const PLANS = [
 			meteredItem("logs", 100, 0.3, 1, "then $0.3 per Logs"),
 			meteredItem("traces", 100, 0.3, 1, "then $0.3 per Traces"),
 			meteredItem("metrics", 100, 0.3, 1, "then $0.3 per Metrics"),
+			meteredItem("profiles", 10, 0.6, 1, "then $0.6 per Profiles"),
 			meteredItem("browser_sessions", 5000, 0.002, 1, "then $0.002 per browser session"),
 			meteredItem("product_events", 1_000_000, 0.005, 1000, "then $0.005 per 1,000 product events"),
 		],

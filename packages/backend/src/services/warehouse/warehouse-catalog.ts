@@ -153,7 +153,7 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 	service_usage: [
 		"Hourly per-service rollup of STORED rows, 365-day TTL — far longer than the 30-day `logs`/`traces` retention, so it is the right table for long-range volume trends.",
 		"`Hour` is a top-of-hour DateTime. Snap both range bounds to their hour floor (`toStartOfHour`) or sub-hour windows return no rows at all; this necessarily over-reports at the window edges.",
-		"The `*SizeBytes` columns are STORAGE ESTIMATES, not measured bytes — the materialized views compute them as `length(Body) + 200` (logs), `length(SpanName) + 300` (spans) and flat per-point constants (metrics). They will NOT reconcile with an Autumn invoice and must never be presented as billed usage.",
+		"The `*SizeBytes` columns are STORAGE ESTIMATES, not measured bytes: the materialized views compute them as `length(Body) + 200` (logs), `length(SpanName) + 300` (spans), flat per-point constants (metrics) and `length(Frames) * 16 + 200` per stack row (profiles, `ProfileRowCount` / `ProfileSizeBytes`, 0 before migration 0068). They will NOT reconcile with an Autumn invoice and must never be presented as billed usage.",
 		"For real billed bytes use `metrics_sum` / `maple_ingest_org_bytes_total`, which records the decoded payload size the gateway actually metered. Counts here are also post-sampling and post-drop, i.e. what was stored, not what was accepted.",
 		"`TraceCount` counts stored SPANS (not distinct traces) and `LogCount` log records; there is no `SpanCount` column.",
 		"Metric counts are split across four columns by point type (`SumMetricCount`, `GaugeMetricCount`, `HistogramMetricCount`, `ExpHistogramMetricCount`) — add all four for a total metric-point count.",

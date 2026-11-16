@@ -137,7 +137,7 @@ export const githubInstallationPicker = (h: H, model: Model): ReadonlyArray<Html
 }
 
 /** CI traces switch here; PR review is per repository, so its row counts them and links there. */
-const githubFeatures = (h: H, model: Model, status: GithubIntegrationStatus): Html => {
+export const githubFeatures = (h: H, model: Model, status: GithubIntegrationStatus): Html => {
 	const [ciTraces, prReview] = INTEGRATION_FEATURES.github
 	const active = Arr.filter(status.repositories, (repo) => repo.status === "active")
 	const reviewed = Arr.filter(active, (repo) => repo.prReviewEnabled).length
