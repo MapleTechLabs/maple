@@ -401,9 +401,13 @@ export const AlertsStatusPageSearch = Schema.Struct({
 	tab: StringParam,
 })
 
-/** `/status-pages/$pageId`: `view` is `appearance`, `settings`, `json` or `live`; none is the page itself. */
+/**
+ * `/status-pages/$pageId`: `view` is `incidents`, `maintenance`, `settings` or `live` (just
+ * published); none is the live page. `section` picks the Settings section.
+ */
 export const StatusPageSearch = Schema.Struct({
 	view: StringParam,
+	section: StringParam,
 })
 
 export const CodeReviewCiSearch = Schema.Struct(CodeReviewCiSearchFields)

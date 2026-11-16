@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest"
 import { component, componentId, incident, statusPage } from "./test-pages"
-import { summarizePage } from "./derive"
+import { statusReason, summarizePage } from "./derive"
 import { downMonitor, httpMonitor } from "../../kit/uptime/test-monitors"
 
 describe("status page summary", () => {
@@ -39,5 +39,27 @@ describe("status page summary", () => {
 		})
 		expect(summary.overall).toBe("degraded")
 		expect(summary.openIncidents).toBe(1)
+	})
+})
+
+describe("status reason", () => {
+	test("an open incident behind a status is named, with what the monitor says", () => {
+		const up = httpMonitor()
+		const row = component(1, { monitor_id: up.id })
+		expect(statusReason(row, [up], [incident(1, { title: "Slow loads", impact: "minor" })])).toBe(
+			'Degraded by the open incident "Slow loads". The monitor is up.',
+		)
+	})
+
+	test("a component that shows what its monitor says has no reason, nor does a draft incident", () => {
+		const down = downMonitor()
+		expect(statusReason(component(1, { monitor_id: down.id }), [down], [])).toBeNull()
+		expect(statusReason(component(1), [], [incident(1, { published: false })])).toBeNull()
+	})
+
+	test("an override is the reason when no incident is", () => {
+		expect(statusReason(component(1, { manual_status: "maintenance" }), [], [])).toBe(
+			"Maintenance, set under Override status.",
+		)
 	})
 })
