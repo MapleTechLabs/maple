@@ -2667,13 +2667,14 @@ describe("PrReviewService credential findings and replies", () => {
 			path: "apps/api/src/auth.ts",
 			previousPath: null,
 			status: "modified",
-			additions: 1,
+			additions: 2,
 			deletions: 0,
 			patch: Arr.join(
 				[
-					"@@ -1,1 +1,2 @@",
+					"@@ -1,1 +1,3 @@",
 					" export const login = () => {",
 					'+\tlogger.info("key", { key: "sk_live_0123456789abcdefghij" })',
+					'+\tlogger.info("backup", { key: "sk_live_9876543210zyxwvutsrq" })',
 				],
 				"\n",
 			),
@@ -2682,17 +2683,24 @@ describe("PrReviewService credential findings and replies", () => {
 			yield* seed(true)
 			const reviews = yield* PrReviewService
 			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			// The scan groups both values into one finding anchored on line 2; line 3 is still evidenced.
 			yield* reviews.submitReview(
 				orgId,
 				started.reviewId!,
 				new SubmitPrReviewRequest({
-					report: report([credential(2, "Live `key` written to the log")]),
+					report: report([
+						credential(2, "Live `key` written to the log"),
+						credential(3, "Backup `secret` written to the log"),
+					]),
 				}),
 			)
 			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
 			assert.deepEqual(
 				Arr.map(stored.report?.findings ?? [], (finding) => [finding.line, finding.severity]),
-				[[2, "critical"]],
+				[
+					[2, "critical"],
+					[3, "critical"],
+				],
 			)
 		}).pipe(Effect.provide(layerFor(testDb, { prFiles: [leaky] })))
 	})

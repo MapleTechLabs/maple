@@ -104,7 +104,7 @@ import {
 import { FindingEmbedder } from "./FindingEmbedder"
 import { isRuntimeSource, lineEmitting } from "./telemetry/diff"
 import { POST_MERGE_FIRST_LOOK } from "./telemetry/post-merge"
-import { privacyFindings, withoutReviewerOverlap } from "./telemetry/privacy"
+import { privacyFindings, privacyValueLines, withoutReviewerOverlap } from "./telemetry/privacy"
 import { PrReviewTelemetryService } from "./telemetry/PrReviewTelemetryService"
 import {
 	buildChecklist,
@@ -1431,6 +1431,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						detected,
 						verdicts: new Map<string, NameVerdict>(verdicts.flat()),
 						privacy: privacyFindings(files),
+						privacyValues: privacyValueLines(files),
 					}
 				}).pipe(
 					Effect.timeout("15 seconds"),
@@ -2665,18 +2666,14 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						}),
 					)
 				}
-				// A scan critical on the same lines recognized the value itself: that is the evidence.
-				const scanCriticals = Arr.filter(
-					read?.privacy ?? [],
-					(finding) => finding.severity === "critical",
-				)
+				// A value the scan recognized on the finding's lines is the evidence itself.
 				const sourced = capUnsourcedPrivacyCriticals(request.report.findings, (own) =>
 					Arr.some(
-						scanCriticals,
-						(scan) =>
-							scan.path === own.path &&
-							scan.line >= own.line &&
-							scan.line <= (own.endLine ?? own.line),
+						read?.privacyValues ?? [],
+						(value) =>
+							value.path === own.path &&
+							value.line >= own.line &&
+							value.line <= (own.endLine ?? own.line),
 					),
 				)
 				if (sourced.downgraded.length > 0) {
