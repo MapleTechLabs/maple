@@ -168,7 +168,10 @@ export interface SecurityAuditOrgStore extends AuditStoreApi {
 		repository: string,
 		branch: string,
 	) => Effect.Effect<Option.Option<SecurityAuditTargetRow>, AuditStoreError>
-	/** The finished pull request runs of a target that reported this finding, newest first. */
+	/**
+	 * For each pull request of a target that reported this finding, its newest finished run that did:
+	 * the check a triage of the finding has to report again.
+	 */
 	readonly listPullRequestRunsReporting: (
 		targetId: SecurityAuditTargetId,
 		fingerprint: string,
@@ -1978,7 +1981,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 												finding.fingerprint.eq(fingerprint),
 											),
 										)
-										.select(($) => ({ id: $.id }))
+										.select(($) => ({ id: $.id, prNumber: $.prNumber }))
 										.where(($) => [
 											$.orgId.eq(orgId),
 											$.finding.orgId.eq(orgId),
@@ -1990,7 +1993,13 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 										.limit(20),
 								),
 							)
-							return Arr.map(rows, (row) => row.id)
+							// Newest first, so the first of each pull request is its newest.
+							const seen = new Set<number | null>()
+							return Arr.flatMap(rows, (row) => {
+								if (seen.has(row.prNumber)) return []
+								seen.add(row.prNumber)
+								return [row.id]
+							})
 						},
 					)
 

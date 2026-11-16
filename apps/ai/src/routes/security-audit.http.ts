@@ -526,8 +526,15 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 							reason: payload.reason,
 						},
 					})
-					// The pull request's check follows the triage: a dismissed blocker stops failing it.
-					yield* prChecks.publish(tenant.orgId, run.id)
+					// Every pull request check reporting it follows: a dismissed blocker stops failing them.
+					const reporting = yield* orUnavailable(
+						store.listPullRequestRunsReporting(run.targetId, params.fingerprint),
+					)
+					yield* Effect.forEach(
+						Arr.dedupe([run.id, ...reporting]),
+						(runId) => prChecks.publish(tenant.orgId, runId),
+						{ discard: true },
+					)
 					return updated.value
 				}).pipe(Effect.withSpan("HttpSecurityAudit.updateRunFindingStatus")),
 			)

@@ -127,49 +127,54 @@ export class SecurityPrCheck extends Context.Service<SecurityPrCheck, SecurityPr
 						return
 					const target = yield* store.getTarget(run.value.targetId)
 					if (Option.isNone(target)) return
-					const views = yield* store.listRunFindingViews(runId)
-					// Whether the branch's own audit reported a finding: its last sighting is a branch run.
-					const sightings = Arr.dedupe(
-						Arr.filter(
-							Arr.map(views, (view) => view.lastSeenRunId),
-							(id) => id !== run.value.id,
-						),
-					)
-					const sighted = yield* Effect.forEach(sightings, (id) => store.getRun(id), {
-						concurrency: 4,
+					// Read and judged afresh each time, so the check can be re-judged after it is written.
+					const judge = Effect.gen(function* () {
+						const views = yield* store.listRunFindingViews(runId)
+						// Whether the branch's own audit reported a finding: its last sighting is a branch run.
+						const sightings = Arr.dedupe(
+							Arr.filter(
+								Arr.map(views, (view) => view.lastSeenRunId),
+								(id) => id !== run.value.id,
+							),
+						)
+						const sighted = yield* Effect.forEach(sightings, (id) => store.getRun(id), {
+							concurrency: 4,
+						})
+						const branchRuns = new Set(
+							Arr.flatMap(sighted, (row) =>
+								Option.isSome(row) && row.value.prNumber === null ? [row.value.id] : [],
+							),
+						)
+						// Only a finding the branch's audit confirmed is the branch's: one it rejected or could not
+						// confirm, now confirmed here, is this pull request's to answer for.
+						const followed = yield* store.listFindings(run.value.targetId)
+						const confirmedOnBranch = new Set(
+							Arr.map(
+								Arr.filter(followed, (row) => row.verdict === "confirmed"),
+								(row) => row.fingerprint,
+							),
+						)
+						const lifecycle = new Map<string, FindingLifecycle>(
+							Arr.map(views, (view) => [
+								view.fingerprint,
+								{
+									status: view.status,
+									seenOnBranch:
+										branchRuns.has(view.lastSeenRunId) &&
+										confirmedOnBranch.has(view.fingerprint),
+								},
+							]),
+						)
+						const verdict = prCheckVerdict({
+							findings: Arr.map(views, (view) => view.record),
+							lifecycle,
+							blockAt: target.value.prCheckBlockAt,
+							run: run.value,
+							runUrl: runUrl(runId),
+						})
+						return verdict
 					})
-					const branchRuns = new Set(
-						Arr.flatMap(sighted, (row) =>
-							Option.isSome(row) && row.value.prNumber === null ? [row.value.id] : [],
-						),
-					)
-					// Only a finding the branch's audit confirmed is the branch's: one it rejected or could not
-					// confirm, now confirmed here, is this pull request's to answer for.
-					const followed = yield* store.listFindings(run.value.targetId)
-					const confirmedOnBranch = new Set(
-						Arr.map(
-							Arr.filter(followed, (row) => row.verdict === "confirmed"),
-							(row) => row.fingerprint,
-						),
-					)
-					const lifecycle = new Map<string, FindingLifecycle>(
-						Arr.map(views, (view) => [
-							view.fingerprint,
-							{
-								status: view.status,
-								seenOnBranch:
-									branchRuns.has(view.lastSeenRunId) &&
-									confirmedOnBranch.has(view.fingerprint),
-							},
-						]),
-					)
-					const verdict = prCheckVerdict({
-						findings: Arr.map(views, (view) => view.record),
-						lifecycle,
-						blockAt: target.value.prCheckBlockAt,
-						run: run.value,
-						runUrl: runUrl(runId),
-					})
+					const verdict = yield* judge
 					yield* Effect.annotateCurrentSpan({
 						"maple.security_pr_check.conclusion": verdict.conclusion,
 						"maple.security_pr_check.blocking": Arr.filter(
@@ -181,17 +186,24 @@ export class SecurityPrCheck extends Context.Service<SecurityPrCheck, SecurityPr
 					const upstream = yield* upstreamOfTarget(orgId, target.value)
 					if (Option.isNone(upstream)) return
 					const { provider, installation, ref } = upstream.value
-					yield* retried(
-						provider.writePullRequestCheck(installation, ref, {
-							name: SECURITY_PR_CHECK_NAME,
-							headSha: run.value.sourceRef,
-							state: { status: "completed", conclusion: verdict.conclusion },
-							title: verdict.title,
-							summary: verdict.summary,
-							annotations: verdict.annotations,
-							detailsUrl: runUrl(runId),
-						}),
-					)
+					const write = (judged: typeof verdict) =>
+						retried(
+							provider.writePullRequestCheck(installation, ref, {
+								name: SECURITY_PR_CHECK_NAME,
+								headSha: run.value.sourceRef,
+								state: { status: "completed", conclusion: judged.conclusion },
+								title: judged.title,
+								summary: judged.summary,
+								annotations: judged.annotations,
+								detailsUrl: runUrl(runId),
+							}),
+						)
+					yield* write(verdict)
+					// A triage that landed while this one was writing may have been overwritten by an older
+					// verdict: judge again, and write once more when the answer changed.
+					const again = yield* judge
+					if (again.conclusion !== verdict.conclusion || again.title !== verdict.title)
+						yield* write(again)
 				}).pipe(
 					logFailure("publish the security check", orgId),
 					Effect.withSpan("SecurityPrCheck.publish", { attributes: { orgId, runId } }),
