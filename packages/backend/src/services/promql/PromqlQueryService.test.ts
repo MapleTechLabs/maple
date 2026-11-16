@@ -192,6 +192,48 @@ describe("PromqlQueryService", () => {
 		}),
 	)
 
+	it.effect("counts a histogram once against the per-selector metric limit", () =>
+		Effect.gen(function* () {
+			// 40 histograms are 120 Prometheus series families (_bucket, _count, _sum) but 40 metrics.
+			const catalog = Arr.makeBy(40, (i) => ({
+				metricName: `lat${i}`,
+				metricType: "histogram",
+				unit: "s",
+				isMonotonic: 0,
+			}))
+			const answer = (
+				_tenant: unknown,
+				compiled: CompiledQueryInput<unknown>,
+				opts: { context?: string },
+			) =>
+				compiledQueryOf(compiled)
+					.decodeRows(opts.context === "promqlCatalog" ? catalog : [])
+					.pipe(Effect.orDie)
+			const warehouse = makeWarehouseServiceStub({
+				// SAFETY: the service hands the stub plain compiled queries, never a capability compile.
+				compiledQuery: answer as never,
+				// SAFETY: as above; selector reads go through the bounded read.
+				compiledQueryBounded: answer as never,
+			})
+			const result = yield* Effect.gen(function* () {
+				const service = yield* PromqlQueryService
+				return yield* service.query(tenant, {
+					query: '{__name__=~"lat.*"}',
+					startMs: 3_600_000,
+					endMs: 3_600_000,
+					stepMs: 0,
+				})
+			}).pipe(
+				Effect.provide(
+					Layer.effect(PromqlQueryService, PromqlQueryService.make).pipe(
+						Layer.provide(Layer.succeed(WarehouseQueryService, warehouse)),
+					),
+				),
+			)
+			expect(result.resultType).toBe("vector")
+		}),
+	)
+
 	it.effect("refuses a selector read that hit its row limit, even when the le filter would hide it", () =>
 		Effect.gen(function* () {
 			// One more row than the cap; only one of them has le="0.5", so a cut read would look small.

@@ -271,7 +271,8 @@ const make = Effect.gen(function* () {
 				orgId: tenant.orgId,
 				maxSeries: DEFAULT_LIMITS.maxSeries,
 			})
-			const metrics = Arr.reduce(plans, 0, (n, plan) => n + plan.promNames.size)
+			// A histogram's _bucket, _count and _sum are three plans over one stored metric.
+			const metrics = new Set(Arr.flatMap(plans, (plan) => [...plan.promNames.keys()])).size
 			if (metrics > MAX_METRICS_PER_SELECTOR) {
 				return yield* new PromqlExecutionError({
 					message: `a selector matches ${metrics} metrics, at most ${MAX_METRICS_PER_SELECTOR}; narrow its __name__ matcher`,
