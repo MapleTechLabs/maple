@@ -13,7 +13,7 @@ import {
 	promqlCatalogQuery,
 	promqlSelectorQuery,
 } from "../ch/queries/promql"
-import { matchesAll, matcherCondition, seriesLabels } from "./labels"
+import { leCondition, matchesAll, matcherCondition, seriesLabels } from "./labels"
 import {
 	type CatalogMetric,
 	type MetricComponent,
@@ -56,6 +56,11 @@ const compileSelector = (
 			needsValues: request.needsValues,
 			limit: options.maxSeries + 1,
 			conditions: ($) => Arr.map(labelMatchers, (m) => matcherCondition($, m)),
+			boundConditions: (le) =>
+				Arr.map(
+					Arr.filter(labelMatchers, (m) => m.name === "le"),
+					(m) => leCondition(le, m),
+				),
 		}),
 		{
 			orgId: options.orgId,
