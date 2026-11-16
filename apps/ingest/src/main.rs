@@ -5757,7 +5757,9 @@ async fn handle_profiles_inner(
     }
 
     commit_profile_rows(state, pipeline, &org_id, rows, destination).await?;
-    // Recorded once the rows are durable, as the byte signals are.
+    // Recorded once the rows are durable, as the byte signals are. An export refused part way
+    // (only a WAL write failing, since the whole export is reserved first) bills nothing: its
+    // resend bills the whole export, so billing the stored part too would count it twice.
     if let Some(usage) = &state.usage_metrics {
         let signal = TelemetrySignal::Profiles.as_str();
         usage.record(&org_id, signal, decoded_bytes as u64, count as u64);
