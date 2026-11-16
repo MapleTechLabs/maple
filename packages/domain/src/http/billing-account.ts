@@ -37,6 +37,7 @@ export class BillingAccountOrgUsage extends Schema.Class<BillingAccountOrgUsage>
 	logsGB: Schema.Number,
 	tracesGB: Schema.Number,
 	metricsGB: Schema.Number,
+	profilesGB: Schema.optionalKey(Schema.Number),
 	browserSessions: Schema.Number,
 	productEvents: Schema.Number,
 }) {}

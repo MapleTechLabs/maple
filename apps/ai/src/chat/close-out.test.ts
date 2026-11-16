@@ -3,6 +3,7 @@
  */
 import { ChatMessage, ChatToolCall } from "@maple/domain/chat-session"
 import { assert, describe, it } from "vitest"
+import { MAX_LIVE_CONTEXT_TOKENS } from "./budgets"
 import { CLOSE_OUT_EVIDENCE_CHARS, withToolTranscript } from "./close-out"
 import { String as Str } from "effect"
 
@@ -68,5 +69,18 @@ describe("withToolTranscript", () => {
 		assert.include(text, "src/f148.ts")
 		assert.notInclude(text, "src/f0.ts")
 		assert.match(text, /\(\d+ earlier tool calls left out for length\.\)/)
+	})
+
+	/**
+	 * An investigation close-out opened at 123k of its 128k limit with a 39k system prompt, and the
+	 * round after its submission failed with `ContextBudgetError` (2026-11-16).
+	 */
+	it("leaves a close-out room for the round after it submits", () => {
+		const SYSTEM_PROMPT_TOKENS = 39_282
+		const CHARS_PER_TOKEN = 2.4
+		const SUBMIT_ROUND_TOKENS = 20_000
+		const [message] = withToolTranscript([pass(149, 19_000)])
+		const evidenceTokens = (message?.text.length ?? Infinity) / CHARS_PER_TOKEN
+		assert.isAtMost(SYSTEM_PROMPT_TOKENS + evidenceTokens + SUBMIT_ROUND_TOKENS, MAX_LIVE_CONTEXT_TOKENS)
 	})
 })

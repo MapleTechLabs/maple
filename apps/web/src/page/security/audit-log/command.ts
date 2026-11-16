@@ -55,3 +55,12 @@ export const FetchNextPage = Command.define("SecurityApiAuditLogNextPage", {
 			settleTo((result) => Message.CompletedFetchNextPage({ key, generation, cursor, result })),
 		),
 })
+
+export const FetchSources = Command.define("SecurityApiAuditLogSources", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedFetchSources],
+	execute: ({ key }) =>
+		Effect.flatMap(MapleInternalApiClient, (api) => api.auditTrail.sources()).pipe(
+			settleTo((result) => Message.CompletedFetchSources({ key, result })),
+		),
+})

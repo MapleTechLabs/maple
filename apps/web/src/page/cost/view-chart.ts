@@ -5,6 +5,7 @@ import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as BarChart from "@maple/views/charts/bar-chart"
 import type * as Chart from "@maple/views/charts/chart"
+import { currencyUnit } from "@maple/ui/lib/format"
 import { chartEmpty, chartLoading } from "@maple/views/ui/chart-state"
 import { errorState } from "@maple/views/ui/error-state"
 import { panelChartBody } from "@maple/views/ui/panel"
@@ -84,6 +85,7 @@ const plot = (h: H, model: Model, response: CostTimeseriesResponse): Html => {
 					data: rowsOf(inputsKey),
 					seriesMarks: marksOf(inputsKey),
 					theme,
+					unit: currencyUnit(response.currency),
 					// Cost days are UTC calendar days, whatever the viewer's zone.
 					timeZone: "UTC",
 					nowMs: model.nowMs,

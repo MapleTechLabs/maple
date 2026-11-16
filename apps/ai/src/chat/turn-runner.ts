@@ -16,8 +16,8 @@
  *     made the service require itself through the Effect requirements channel. Here the turn builds
  *     its *own* runtime, so it just resolves `InvestigationService` without a cycle.
  */
-import { type ChatTurnOrigin, type ChatTurnTenantEncoded } from "@maple/domain/chat-session"
-import type { BillingCustomerId, PrReviewFailureReason, PrReviewId } from "@maple/domain/http"
+import { chatSessionKind, type ChatTurnOrigin, type ChatTurnTenantEncoded } from "@maple/domain/chat-session"
+import type { BillingCustomerId, PrReviewFailureReason, PrReviewId, TenantContext } from "@maple/domain/http"
 import type { PrReviewServiceApi } from "@maple/backend/services/pr-review/PrReviewService"
 import type { OrgId } from "@maple/primitives"
 import { CodeLoader } from "@maple/backend/platform/bindings"
@@ -287,6 +287,10 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			const mcpToolExecutor = yield* McpToolExecutor
 			const toolExecutor = yield* withSandboxBreaker(mcpToolExecutor)
 			const runTenant = yield* turnTenant(tenant, origin).pipe(
+				Effect.map((resolved): TenantContext => ({
+					...resolved,
+					chatMode: chatSessionKind(input.sessionId).mode,
+				})),
 				// The asker's linked Maple user may not read this org: nothing runs, and the message
 				// is the only thing that tells them why.
 				Effect.catchTag("@maple/ai/LinkedUserNotPermitted", (refusal) =>

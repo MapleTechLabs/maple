@@ -118,6 +118,7 @@ export const sumDailySpend = (
 							logsGB: sum.logsGB + next.logsGB,
 							tracesGB: sum.tracesGB + next.tracesGB,
 							metricsGB: sum.metricsGB + next.metricsGB,
+							profilesGB: (sum.profilesGB ?? 0) + (next.profilesGB ?? 0),
 							browserSessions: sum.browserSessions + next.browserSessions,
 							productEvents: (sum.productEvents ?? 0) + (next.productEvents ?? 0),
 						})
@@ -131,6 +132,7 @@ const orgUsageTotals = (orgId: OrgId, spend: DailySpendResponse) =>
 		logsGB: Arr.reduce(spend.days, 0, (sum, day) => sum + day.logsGB),
 		tracesGB: Arr.reduce(spend.days, 0, (sum, day) => sum + day.tracesGB),
 		metricsGB: Arr.reduce(spend.days, 0, (sum, day) => sum + day.metricsGB),
+		profilesGB: Arr.reduce(spend.days, 0, (sum, day) => sum + (day.profilesGB ?? 0)),
 		browserSessions: Arr.reduce(spend.days, 0, (sum, day) => sum + day.browserSessions),
 		productEvents: Arr.reduce(spend.days, 0, (sum, day) => sum + (day.productEvents ?? 0)),
 	})

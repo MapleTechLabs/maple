@@ -23,7 +23,7 @@ import { compactSearchInput } from "@maple/views/ui/compact-search-input"
 import { removableChip } from "@maple/views/ui/removable-chip"
 import type { Message as SelectMessage } from "@maple/views/ui/select"
 import * as CustomRangeView from "../../kit/custom-range-view"
-import { auditResourceDisplay } from "../kit/audit-log-resource"
+import { auditActorName, auditResourceDisplay } from "../kit/audit-log-resource"
 import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -142,7 +142,7 @@ const abbreviateId = (id: string): string => {
 
 /** The name frozen on the entry, else the member's current name, else a short id. */
 const actorDisplayName = (model: Model, entry: V2AuditLogEntry): string | null =>
-	entry.actor_name ??
+	auditActorName(entry.actor_name, entry.actor_type) ??
 	memberName(model, entry.actor_id) ??
 	(entry.actor_id === null ? null : abbreviateId(entry.actor_id))
 

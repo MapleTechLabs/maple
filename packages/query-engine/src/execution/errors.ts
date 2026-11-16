@@ -16,7 +16,9 @@ import {
 } from "@maple/domain/http"
 import type { WarehouseDriverError, WarehouseDriverFailureReason } from "./driver-error"
 import { detectQuotaSetting } from "../profiles"
-import { String as Str, Option } from "effect"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
+import { isDatasourceDefinition } from "@maple-dev/effect-orm/tinybird"
+import * as Datasources from "@maple/domain/tinybird"
 import { indexOfFrom } from "@maple/strings"
 
 /**
@@ -160,21 +162,114 @@ type ClassificationRule = {
 	readonly types?: ReadonlySet<string>
 	readonly pattern?: RegExp
 	readonly reasons?: ReadonlySet<WarehouseDriverFailureReason>
+	/** Any other condition, given what the database answered. */
+	readonly test?: (answer: DatabaseAnswer) => boolean
 	/** Restricts the rule to SQL with this authorship. Unset means either. */
 	readonly authoredBy?: SqlAuthorship
 	/** Construct the tagged error for this rule. `upstreamStatus` is only used by the rules that carry it. */
 	readonly make: (base: ClassifiedBase, upstreamStatus: number | undefined) => WarehouseClassifiedError
 }
 
+type DatabaseAnswer = {
+	readonly rawMessage: string
+	readonly code: string | undefined
+	readonly ruleType: string | undefined
+	readonly upstreamStatus: number | undefined
+}
+
+const MISSING_RESOURCE = /Resource '([^']*)' not found/i
+
+/** Every table Maple defines, the ones raw SQL may not read included. */
+const MAPLE_DATASOURCE_NAMES: ReadonlySet<string> = new Set(
+	Arr.map(Arr.filter(Rec.values(Datasources), isDatasourceDefinition), (ds) => ds._name),
+)
+
+/**
+ * Exception types that are only ever about the statement itself (its syntax, names, types or
+ * arguments). An allow-list: an unlisted type (a capacity limit, an engine fault, a new code)
+ * stays a server-side query error, never the caller's mistake.
+ */
+const STATEMENT_TYPES: ReadonlyMap<string, string> = new Map([
+	["CANNOT_PARSE_TEXT", "6"],
+	["THERE_IS_NO_COLUMN", "8"],
+	["DUPLICATE_COLUMN", "15"],
+	["NO_SUCH_COLUMN_IN_TABLE", "16"],
+	["BAD_ARGUMENTS", "36"],
+	["CANNOT_PARSE_DATE", "38"],
+	["CANNOT_PARSE_DATETIME", "41"],
+	["NUMBER_OF_ARGUMENTS_DOESNT_MATCH", "42"],
+	["ILLEGAL_TYPE_OF_ARGUMENT", "43"],
+	["ILLEGAL_COLUMN", "44"],
+	["UNKNOWN_FUNCTION", "46"],
+	["UNKNOWN_IDENTIFIER", "47"],
+	["NOT_IMPLEMENTED", "48"],
+	["UNKNOWN_TYPE", "50"],
+	["TYPE_MISMATCH", "53"],
+	["UNKNOWN_TABLE", "60"],
+	["SYNTAX_ERROR", "62"],
+	["UNKNOWN_AGGREGATE_FUNCTION", "63"],
+	["ARGUMENT_OUT_OF_BOUND", "69"],
+	["CANNOT_CONVERT_TYPE", "70"],
+	["CANNOT_PARSE_NUMBER", "72"],
+	["INCORRECT_QUERY", "80"],
+	["UNKNOWN_DATABASE", "81"],
+	["ILLEGAL_DIVISION", "153"],
+	["ILLEGAL_AGGREGATION", "184"],
+	["SIZES_OF_ARRAYS_DONT_MATCH", "190"],
+	["AMBIGUOUS_IDENTIFIER", "207"],
+	["NOT_AN_AGGREGATE", "215"],
+	["AMBIGUOUS_COLUMN_NAME", "352"],
+	["NO_COMMON_TYPE", "386"],
+	["CANNOT_COMPILE_REGEXP", "427"],
+	["INVALID_JOIN_ON_EXPRESSION", "403"],
+	["CANNOT_READ_ARRAY_FROM_TEXT", "130"],
+])
+
+const STATEMENT_CODES: ReadonlySet<string> = new Set(STATEMENT_TYPES.values())
+
+/** UNSUPPORTED_METHOD also covers server-side limits; only this analyzer complaint is the statement's. */
+const QUALIFIED_MATCHER = /Qualified matcher .* found a non-compound expression/i
+
+/**
+ * The database parsed a caller's statement and refused it: a statement-level exception type, or
+ * a bare statement-level code (`Code: 43`). The status is never read: it can be scraped from
+ * message text that echoes the caller's SQL.
+ */
+const refusedStatement = ({ code, ruleType, rawMessage }: DatabaseAnswer): boolean =>
+	ruleType === "UNSUPPORTED_METHOD"
+		? QUALIFIED_MATCHER.test(rawMessage)
+		: ruleType !== undefined
+			? STATEMENT_TYPES.has(ruleType)
+			: code !== undefined && STATEMENT_CODES.has(code)
+
 // Ordered rules — first match wins. A raw error can satisfy several patterns
 // (e.g. a 503 carrying an HTML body, or schema-drift text inside a transient
 // failure), so the order encodes precedence:
-// missing datasource > auth > upstream > config > client > schema_drift > (default) query.
+// missing datasource > auth > refused caller SQL > upstream > config > client > schema_drift > (default) query.
 const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
 	{
+		// A caller naming a table Maple never had (`FROM spans`, a CTE Tinybird cannot resolve) gets
+		// the same 403 as an undeployed datasource; only a Maple table missing is configuration.
+		authoredBy: "caller",
+		// Only a gateway answer with no ClickHouse identity, or a statement refusal: the message can
+		// echo the caller's SQL, so a timeout quoting `Resource 'x' not found` must not match.
+		test: (answer) => {
+			const name = MISSING_RESOURCE.exec(answer.rawMessage)?.[1]
+			const hasIdentity = answer.code !== undefined || answer.ruleType !== undefined
+			return (
+				name !== undefined &&
+				!MAPLE_DATASOURCE_NAMES.has(name) &&
+				(!hasIdentity || refusedStatement(answer))
+			)
+		},
+		make: (base) => new WarehouseInvalidSqlError(base),
+	},
+	{
 		// Tinybird answers a missing datasource with a 403, so the auth rule's status match read a
-		// table still being deployed as rejected credentials. The text names the failure; it wins.
-		pattern: /Resource '[^']*' not found/i,
+		// table still being deployed as rejected credentials. The text names the failure; it wins,
+		// unless a ClickHouse identity says the text is only echoed SQL.
+		test: ({ rawMessage, code, ruleType }) =>
+			MISSING_RESOURCE.test(rawMessage) && code === undefined && ruleType === undefined,
 		make: (base) => new WarehouseConfigError(base),
 	},
 	{
@@ -183,6 +278,13 @@ const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
 		pattern:
 			/authentication failed|access denied|not enough privileges|password is incorrect|invalid authentication token/i,
 		make: (base, upstreamStatus) => new WarehouseAuthError({ ...base, upstreamStatus }),
+	},
+	{
+		// Before the upstream rule: its patterns match anywhere in the message, which echoes the
+		// caller's SQL, so `LIKE '%fetch failed%'` read an unknown column as a network failure.
+		authoredBy: "caller",
+		test: refusedStatement,
+		make: (base) => new WarehouseInvalidSqlError(base),
 	},
 	{
 		status: (s) => s === 408 || s === 429 || (s >= 500 && s < 600),
@@ -220,11 +322,10 @@ const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
 	{
 		status: (s) => s === 404,
 		types: new Set(["UNKNOWN_DATABASE", "UNKNOWN_TABLE", "TABLE_IS_DROPPED", "UNKNOWN_SETTING"]),
-		// "Resource '<name>' not found" is the Tinybird gateway's phrasing of
-		// UNKNOWN_TABLE; without it a missing datasource fell through to the
-		// generic query error and the per-org missing-table fallbacks never fired.
+		// Tinybird's "Resource '<name>' not found" is claimed by the missing-resource rule above, only
+		// without a ClickHouse identity, so a typed error that merely echoes it is not read as config.
 		pattern:
-			/Invalid URL|unknown database|unknown table|table .* does not exist|database .* does not exist|Resource '[^']*' not found/i,
+			/Invalid URL|unknown database|unknown table|table .* does not exist|database .* does not exist/i,
 		make: (base) => new WarehouseConfigError(base),
 	},
 	{
@@ -415,7 +516,8 @@ export const mapWarehouseError = (
 				upstreamStatus !== undefined &&
 				rule.status(upstreamStatus)) ||
 			(rule.types !== undefined && ruleType !== undefined && rule.types.has(ruleType)) ||
-			(rule.pattern !== undefined && rule.pattern.test(rawMessage))
+			(rule.pattern !== undefined && rule.pattern.test(rawMessage)) ||
+			(rule.test !== undefined && rule.test({ rawMessage, code, ruleType, upstreamStatus }))
 		if (matches) return rule.make(base, upstreamStatus)
 	}
 	return new WarehouseQueryError(base)

@@ -1901,6 +1901,86 @@ export class ServiceRuntimesResponse extends Schema.Class<ServiceRuntimesRespons
 	},
 ) {}
 
+/** Span ids one profile read may name: the span panel cuts a deeper subtree off at the same count. */
+export const PROFILE_SPAN_IDS_MAX = 500
+
+/** A span and the spans under it: a sample belongs to the innermost span that was running. */
+export const ProfileSpanIds = Schema.Array(SpanId).check(
+	Schema.isMinLength(1),
+	Schema.isMaxLength(PROFILE_SPAN_IDS_MAX),
+)
+
+/** A sample type as a producer names it (`cpu`, `alloc_space`, ...). */
+export const ProfileSampleType = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128))
+
+/** `nanoseconds` | `bytes` | `count`, or `""`: ingest stores a profile that names no unit that way. */
+export const ProfileSampleUnit = Schema.String.check(Schema.isMaxLength(128))
+
+/**
+ * What a profile read covers: a service's window (`serviceName`, one environment at most), or the
+ * samples linked to spans of one trace (`traceId` with `spanIds`). A read names at least one.
+ */
+const profileScopeFields = {
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	serviceName: Schema.optionalKey(ServiceName),
+	deploymentEnv: Schema.optionalKey(DeploymentEnvironment),
+	traceId: Schema.optionalKey(TraceId),
+	spanIds: Schema.optionalKey(ProfileSpanIds),
+}
+
+export class ProfileSampleTypesRequest extends Schema.Class<ProfileSampleTypesRequest>(
+	"ProfileSampleTypesRequest",
+)(profileScopeFields) {}
+
+/** One sample type in scope, in one unit, with what it summed to. */
+export const ProfileSampleTypeRow = Schema.Struct({
+	sampleType: Schema.String,
+	/** `nanoseconds` | `bytes` | `count`. */
+	sampleUnit: Schema.String,
+	value: Schema.Number,
+	samples: Schema.Number,
+	profiles: Schema.Number,
+	/** The summed length of the profiled windows: CPU time over it is average cores. */
+	durationNano: Schema.Number,
+})
+export type ProfileSampleTypeRow = typeof ProfileSampleTypeRow.Type
+
+export class ProfileSampleTypesResponse extends Schema.Class<ProfileSampleTypesResponse>(
+	"ProfileSampleTypesResponse",
+)({
+	/** Heaviest first; empty for a scope without profiles. */
+	data: Schema.Array(ProfileSampleTypeRow),
+}) {}
+
+export class ProfileStacksRequest extends Schema.Class<ProfileStacksRequest>("ProfileStacksRequest")({
+	...profileScopeFields,
+	sampleType: ProfileSampleType,
+	/** The unit of the sample-type row being read: one type's values only add up within a unit. */
+	sampleUnit: ProfileSampleUnit,
+}) {}
+
+/** One distinct call stack, frames root first, with the value it summed to in scope. */
+export const ProfileStackRow = Schema.Struct({
+	frames: Schema.Array(Schema.String),
+	/** `""` where the producer had no file. */
+	files: Schema.Array(Schema.String),
+	/** 0 where unknown. */
+	lines: Schema.Array(Schema.Number),
+	value: Schema.Number,
+})
+export type ProfileStackRow = typeof ProfileStackRow.Type
+
+export class ProfileStacksResponse extends Schema.Class<ProfileStacksResponse>("ProfileStacksResponse")({
+	/** The heaviest stacks, up to the read's cap. */
+	stacks: Schema.Array(ProfileStackRow),
+	/** Every stack in scope, including those the cap cut off. */
+	totalValue: Schema.Number,
+	totalStacks: Schema.Number,
+	/** True when `stacks` is fewer than `totalStacks`. */
+	truncated: Schema.Boolean,
+}) {}
+
 export class ServiceMapBundleRequest extends Schema.Class<ServiceMapBundleRequest>("ServiceMapBundleRequest")(
 	{
 		startTime: TinybirdDateTime,
@@ -4594,6 +4674,20 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 			payload: ServiceRuntimesRequest,
 			success: ServiceRuntimesResponse,
 			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("profileSampleTypes", "/profile-sample-types", {
+			payload: ProfileSampleTypesRequest,
+			success: ProfileSampleTypesResponse,
+			error: validatedQueryEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("profileStacks", "/profile-stacks", {
+			payload: ProfileStacksRequest,
+			success: ProfileStacksResponse,
+			error: validatedQueryEndpointErrors,
 		}),
 	)
 	.add(

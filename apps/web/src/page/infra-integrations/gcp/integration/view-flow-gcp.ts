@@ -12,13 +12,13 @@ import { heading } from "@maple/views/ui/heading"
 import { button } from "@maple/views/ui/button"
 import { skeleton } from "@maple/views/ui/skeleton"
 import {
+	connectionTabItem,
 	type CheckRow,
 	choiceTiles,
 	flowColumns,
 	flowRail,
 	foundChips,
 	liveChecklist,
-	savedBanner,
 	statusRow,
 	stepCard,
 } from "../../../kit/connect-flow"
@@ -379,7 +379,7 @@ const showsUpRail = (h: H, connector: V2GcpConnector | null): Html =>
 				detail: "Workloads, databases and resources",
 			},
 			{ icon: "UnorderedListIcon", title: "Logs", detail: "Each entry carries this connection's id" },
-			{ icon: "GearIcon", title: "Source page", detail: "Edit data, Reconnect, Disconnect" },
+			connectionTabItem("Edit data, Reconnect, Disconnect"),
 		],
 		trust: "Nothing outside the setup's list. Disconnect gives you the matching cleanup script.",
 		docs:
@@ -406,10 +406,6 @@ const liveStep = (h: H, model: Model, configure: ConfigureModel, timeZone: strin
 	return flowColumns(
 		h,
 		[
-			savedBanner(
-				h,
-				"Saved as a source. Close this tab any time; the checklist continues on the source page.",
-			),
 			...(confirmed
 				? []
 				: [
@@ -421,29 +417,9 @@ const liveStep = (h: H, model: Model, configure: ConfigureModel, timeZone: strin
 								: methodSetup(h, model, configure, connector),
 						),
 					]),
-			live === "healthy"
-				? statusRow(h, {
-						tone: "ok",
-						text: "Confirmed: data shows up in Maple on its own from now on.",
-					})
-				: live === "attention"
-					? statusRow(h, { tone: "error", text: "Something needs a fix. The checklist names it." })
-					: confirmed
-						? statusRow(h, {
-								tone: "working",
-								text: "Google Cloud matches this configuration. Waiting for the first data.",
-							})
-						: gcpSetupRunning(connector, model.nowMs)
-							? statusRow(h, { tone: "working", text: "The script is reporting back." })
-							: statusRow(h, {
-									tone: "idle",
-									text:
-										configure.method === "script"
-											? "Waiting for the script to report back. This step completes on its own."
-											: "Waiting for Google Cloud. A setup without the script is confirmed by the first log or metrics read.",
-								}),
 			liveChecklist(h, {
-				title: "Live checklist",
+				saved: "Saved as a source. Close this tab any time; the checklist continues on the source page.",
+				title: live === "healthy" ? "Google Cloud is live" : "Going live",
 				meta: "Updates on its own",
 				rows: [
 					setupRow(h, model, configure, connector, timeZone, overdue),

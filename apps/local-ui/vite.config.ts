@@ -19,6 +19,7 @@ export default defineConfig(({ command }) => ({
 		proxy: {
 			"/local": { target: LOCAL_BINARY_URL, changeOrigin: true },
 			"/v1": { target: LOCAL_BINARY_URL, changeOrigin: true },
+			"/v1development": { target: LOCAL_BINARY_URL, changeOrigin: true },
 		},
 	},
 }))

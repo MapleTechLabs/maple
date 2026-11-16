@@ -65,6 +65,21 @@ describe("buildElkGraph", () => {
 		expect(Arr.some(graph.children!, (c) => c.id === "c")).toBe(true)
 	})
 
+	it("puts a namespaced database in its namespace's container, a shared one at the top level", () => {
+		const db = (id: string, namespace?: string): Node<ServiceNodeData> => {
+			const base = node(id, namespace)
+			return { ...base, data: { ...base.data, kind: "database" } }
+		}
+		const graph = buildElkGraph(
+			[node("a", "payments"), db("db:pg:ledger", "payments"), db("db:redis:cache")],
+			[edge("a", "db:pg:ledger"), edge("a", "db:redis:cache")],
+			DEFAULT_LAYOUT_CONFIG,
+		)
+		const container = Option.getOrThrow(Arr.findFirst(graph.children!, (c) => c.id === "elkns:payments"))
+		expect(Arr.map(container.children!, (c) => c.id).sort()).toEqual(["a", "db:pg:ledger"])
+		expect(Arr.some(graph.children!, (c) => c.id === "db:redis:cache")).toBe(true)
+	})
+
 	it("switches to bounded node placement above the large-graph threshold", () => {
 		const small = buildElkGraph([node("a")], [], DEFAULT_LAYOUT_CONFIG)
 		expect(small.layoutOptions!["elk.layered.nodePlacement.strategy"]).toBe("NETWORK_SIMPLEX")

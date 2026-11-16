@@ -193,7 +193,12 @@ export const view = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>): Html => 
 				fieldLabel(h, { ids: signalsIds, state: STATIC }, "Signals"),
 				h.div(
 					[h.Class("grid gap-2 sm:grid-cols-2")],
-					Arr.map(SIGNALS, (signal) => signalCard(h, config, signal)),
+					Arr.map(
+						config.model.showsProfiles
+							? SIGNALS
+							: Arr.filter(SIGNALS, (signal) => signal.value !== "profiles"),
+						(signal) => signalCard(h, config, signal),
+					),
 				),
 				fieldDescription(
 					h,

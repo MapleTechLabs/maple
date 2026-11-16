@@ -15,5 +15,4 @@ node_modules/
 # Not inputs to `cargo build --release`.
 alchemy.run.ts
 package.json
-railway.json
 LOAD_TESTS.md

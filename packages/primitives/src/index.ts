@@ -584,7 +584,14 @@ export const SourceKind = Schema.Literals(["default", "token", "integration"]).a
 export type SourceKind = Schema.Schema.Type<typeof SourceKind>
 
 /** Signal families a source can be limited to; `sessions` covers replays and session events. */
-export const SourceSignal = Schema.Literals(["traces", "logs", "metrics", "sessions", "events"]).annotate({
+export const SourceSignal = Schema.Literals([
+	"traces",
+	"logs",
+	"metrics",
+	"sessions",
+	"events",
+	"profiles",
+]).annotate({
 	identifier: "@maple/SourceSignal",
 	title: "Source Signal",
 })

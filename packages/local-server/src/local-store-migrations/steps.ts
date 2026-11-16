@@ -2024,6 +2024,65 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 			},
 		],
 	},
+	{
+		// Purely additive: a new empty table, created by the bootstrap. Profiles only exist once a
+		// producer exports them, so there is nothing to backfill.
+		slug: "profiles",
+		description: "Create profiles, continuous profiling samples",
+		clonedBefore: "additive DDL runs",
+		plan: [["install-profiles", "Install the empty profiles table via the v59 bootstrap"]],
+		dispositions: [
+			{
+				name: "profiles",
+				classification: "authoritative",
+				disposition: "preserve-exact",
+				guarantee: "Created empty; no existing table is read or rewritten.",
+			},
+		],
+	},
+	{
+		// Profile stack rows and bytes on service_usage, written by a new view the bootstrap creates; the six
+		// signal views are dropped first so the bootstrap recreates them writing 0 there. Nothing is backfilled.
+		slug: "service-usage-profiles",
+		description: "Add profile counts and bytes to service_usage and create its view from profiles",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [
+			addColumns("service_usage", [
+				["ProfileRowCount", "UInt64 DEFAULT 0"],
+				["ProfileSizeBytes", "UInt64 DEFAULT 0"],
+			]),
+			dropViews(
+				"service_usage_logs_mv",
+				"service_usage_traces_mv",
+				"service_usage_metrics_sum_mv",
+				"service_usage_metrics_gauge_mv",
+				"service_usage_metrics_histogram_mv",
+				"service_usage_metrics_exp_histogram_mv",
+			),
+		],
+		plan: [
+			[
+				"add-service-usage-profiles",
+				"Add ProfileRowCount and ProfileSizeBytes to service_usage, recreate its six signal views and create service_usage_profiles_mv via the v60 bootstrap",
+			],
+		],
+		dispositions: [
+			{
+				name: "service_usage",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"The profile columns are added with a 0 default; existing rows keep every value and read no profile usage.",
+			},
+			{
+				name: "profiles",
+				classification: "authoritative",
+				disposition: "preserve-exact",
+				guarantee:
+					"The new view's source is neither read nor rewritten; only rows ingested after it count.",
+			},
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]
 

@@ -59,6 +59,9 @@ const testConfig = () =>
 			MCP_PORT: "3489",
 			TINYBIRD_HOST: "https://api.tinybird.co",
 			TINYBIRD_TOKEN: "test-token",
+			// A multi-org deployment on Tinybird runs tenant reads on an org-scoped token.
+			TINYBIRD_SIGNING_KEY: "test-signing-key",
+			TINYBIRD_WORKSPACE_ID: "test-workspace",
 			MAPLE_AUTH_MODE: "clerk",
 			CLERK_SECRET_KEY: "sk_live_no_org_test",
 			CLERK_PUBLISHABLE_KEY: publishableKey,

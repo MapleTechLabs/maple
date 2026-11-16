@@ -53,6 +53,7 @@ describe("dailySignalVolumeQuery", () => {
 				logBytes: "13421772800",
 				traceBytes: "4294967296",
 				metricBytes: "1073741824",
+				profileBytes: "536870912",
 			},
 		])
 
@@ -62,7 +63,25 @@ describe("dailySignalVolumeQuery", () => {
 			logBytes: 13_421_772_800,
 			traceBytes: 4_294_967_296,
 			metricBytes: 1_073_741_824,
+			profileBytes: 536_870_912,
 		})
+	})
+
+	it("sums the profile bytes the profiles view writes into service_usage", () => {
+		const { sql } = compileUnsafe(dailySignalVolumeQuery(), params)
+
+		expect(sql).toContain("sum(service_usage.ProfileSizeBytes) AS profileBytes")
+	})
+
+	it("reads 0 profile bytes without naming the profile columns, for a cluster that predates them", () => {
+		const compiled = compileUnsafe(dailySignalVolumeQuery({ profiles: false }), params)
+
+		expect(compiled.sql).not.toContain("ProfileSizeBytes")
+		expect(compiled.sql).toContain("OrgId = 'org_123'")
+		const [row] = decodeRows(compiled, [
+			{ day: "2026-07-01 00:00:00", logBytes: "1", traceBytes: "2", metricBytes: "3", profileBytes: 0 },
+		])
+		expect(row?.profileBytes).toBe(0)
 	})
 })
 

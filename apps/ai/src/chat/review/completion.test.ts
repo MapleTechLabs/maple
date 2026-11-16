@@ -129,6 +129,19 @@ describe("reviewCompletion", () => {
 			assert.isTrue(completion.submitted())
 		})
 
+		it("hands the service the earlier findings the reviewer dismissed, with their reasons", async () => {
+			const filed: Array<SubmitPrReviewRequest> = []
+			const submit: SubmitReview = (request) => Effect.sync(() => filed.push(request))
+			const result = await submitWith(submit, []).call({
+				...CLEAN,
+				dismissed: [{ handle: "f1", reason: "A boolean flag, as the author replied." }],
+			})
+			assert.isTrue(Result.isSuccess(result))
+			assert.deepEqual(filed[0]?.dismissed, [
+				{ handle: "F1", reason: "A boolean flag, as the author replied." },
+			])
+		})
+
 		it("records straight away when every reviewed file was read", async () => {
 			const { filed, submit } = recording()
 			assert.isTrue(Result.isSuccess(await submitWith(submit, []).call(CLEAN)))
