@@ -324,6 +324,23 @@ describe("mapWarehouseError", () => {
 			).toBeInstanceOf(WarehouseQueryError)
 		})
 
+		it.each([
+			["MEMORY_LIMIT_EXCEEDED", undefined],
+			["TOO_MANY_PARTS", undefined],
+			["NOT_ENOUGH_SPACE", undefined],
+			["CANNOT_ALLOCATE_MEMORY", undefined],
+			["UNKNOWN_EXCEPTION", undefined],
+			[undefined, "241"],
+			[undefined, "159"],
+		])("never reads a server-side failure on caller SQL (%s %s) as invalid SQL", (type, code) => {
+			const mapped = classify(
+				"rawSqlQuery",
+				{ message: "HTTP 400: [Error] the cluster gave up. status: 400", type, code, status: 400 },
+				"caller",
+			)
+			expect(mapped).not.toBeInstanceOf(WarehouseInvalidSqlError)
+		})
+
 		it("keeps transient failures upstream for caller SQL", () => {
 			expect(
 				classify("rawSqlQuery", { message: "blip", type: "SOCKET_TIMEOUT" }, "caller"),

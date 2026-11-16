@@ -184,39 +184,63 @@ const MAPLE_DATASOURCE_NAMES: ReadonlySet<string> = new Set(
 	Arr.map(Arr.filter(Rec.values(Datasources), isDatasourceDefinition), (ds) => ds._name),
 )
 
-/** Exception types about the server, the credential, Maple's own settings or an engine fault, never the statement. */
-const SERVER_SIDE_TYPES: ReadonlySet<string> = new Set([
-	"AUTHENTICATION_FAILED",
-	"ACCESS_DENIED",
-	"USER_DOESNT_EXIST",
-	"REQUIRED_PASSWORD",
-	"NETWORK_ERROR",
-	"SOCKET_TIMEOUT",
-	"TOO_MANY_SIMULTANEOUS_QUERIES",
-	"SERVER_OVERLOADED",
-	"CANNOT_SCHEDULE_TASK",
-	"KEEPER_EXCEPTION",
-	"ALL_CONNECTION_TRIES_FAILED",
-	"QUERY_WAS_CANCELLED",
-	"ABORTED",
-	"UNKNOWN_SETTING",
-	// Engine faults: the server broke on a statement it accepted.
-	"LOGICAL_ERROR",
-	"UNKNOWN_EXCEPTION",
-	"STD_EXCEPTION",
-	"POCO_EXCEPTION",
-	"CANNOT_ALLOCATE_MEMORY",
-	"CORRUPTED_DATA",
-	"CHECKSUM_DOESNT_MATCH",
-	"CANNOT_READ_ALL_DATA",
+/**
+ * Exception types that are only ever about the statement itself (its syntax, names, types or
+ * arguments). An allow-list: an unlisted type (a capacity limit, an engine fault, a new code)
+ * stays a server-side query error, never the caller's mistake.
+ */
+const STATEMENT_TYPES: ReadonlyMap<string, string> = new Map([
+	["CANNOT_PARSE_TEXT", "6"],
+	["THERE_IS_NO_COLUMN", "8"],
+	["DUPLICATE_COLUMN", "15"],
+	["NO_SUCH_COLUMN_IN_TABLE", "16"],
+	["BAD_ARGUMENTS", "36"],
+	["CANNOT_PARSE_DATE", "38"],
+	["CANNOT_PARSE_DATETIME", "41"],
+	["NUMBER_OF_ARGUMENTS_DOESNT_MATCH", "42"],
+	["ILLEGAL_TYPE_OF_ARGUMENT", "43"],
+	["ILLEGAL_COLUMN", "44"],
+	["UNKNOWN_FUNCTION", "46"],
+	["UNKNOWN_IDENTIFIER", "47"],
+	["NOT_IMPLEMENTED", "48"],
+	["UNKNOWN_TYPE", "50"],
+	["TYPE_MISMATCH", "53"],
+	["UNKNOWN_TABLE", "60"],
+	["SYNTAX_ERROR", "62"],
+	["UNKNOWN_AGGREGATE_FUNCTION", "63"],
+	["ARGUMENT_OUT_OF_BOUND", "69"],
+	["CANNOT_CONVERT_TYPE", "70"],
+	["CANNOT_PARSE_NUMBER", "72"],
+	["INCORRECT_QUERY", "80"],
+	["UNKNOWN_DATABASE", "81"],
+	["ILLEGAL_DIVISION", "153"],
+	["ILLEGAL_AGGREGATION", "184"],
+	["SIZES_OF_ARRAYS_DONT_MATCH", "190"],
+	["AMBIGUOUS_IDENTIFIER", "207"],
+	["NOT_AN_AGGREGATE", "215"],
+	["AMBIGUOUS_COLUMN_NAME", "352"],
+	["NO_COMMON_TYPE", "386"],
+	["CANNOT_COMPILE_REGEXP", "427"],
+	["INVALID_JOIN_ON_EXPRESSION", "403"],
+	["CANNOT_READ_ARRAY_FROM_TEXT", "130"],
 ])
 
+const STATEMENT_CODES: ReadonlySet<string> = new Set(STATEMENT_TYPES.values())
+
+/** UNSUPPORTED_METHOD also covers server-side limits; only this analyzer complaint is the statement's. */
+const QUALIFIED_MATCHER = /Qualified matcher .* found a non-compound expression/i
+
 /**
- * The database parsed a caller's statement and refused it: it named an exception type that is
- * not about the server, or answered 400 with a bare code (`Code: 43`).
+ * The database parsed a caller's statement and refused it: a statement-level exception type, or
+ * a bare statement-level code (`Code: 43`). The status is never read: it can be scraped from
+ * message text that echoes the caller's SQL.
  */
-const refusedStatement = ({ code, ruleType, upstreamStatus }: DatabaseAnswer): boolean =>
-	ruleType !== undefined ? !SERVER_SIDE_TYPES.has(ruleType) : code !== undefined && upstreamStatus === 400
+const refusedStatement = ({ code, ruleType, rawMessage }: DatabaseAnswer): boolean =>
+	ruleType === "UNSUPPORTED_METHOD"
+		? QUALIFIED_MATCHER.test(rawMessage)
+		: ruleType !== undefined
+			? STATEMENT_TYPES.has(ruleType)
+			: code !== undefined && STATEMENT_CODES.has(code)
 
 // Ordered rules — first match wins. A raw error can satisfy several patterns
 // (e.g. a 503 carrying an HTML body, or schema-drift text inside a transient
