@@ -115,9 +115,10 @@ const validate = (query: PromqlQuery): Effect.Effect<Expr, PromqlBadQueryError> 
 						"zero or negative query resolution step widths are not accepted. Try a positive integer",
 				})
 			}
-			if ((endMs - startMs) / stepMs > MAX_STEPS) {
+			// Whole steps, as Prometheus divides durations: 11,000 steps and a remainder still pass.
+			if (Math.floor((endMs - startMs) / stepMs) > MAX_STEPS) {
 				return yield* new PromqlBadQueryError({
-					message: `exceeded maximum resolution of ${MAX_STEPS} points per timeseries. Try decreasing the query resolution (?step=XX)`,
+					message: `exceeded maximum resolution of ${MAX_STEPS.toLocaleString("en-US")} points per timeseries. Try decreasing the query resolution (?step=XX)`,
 				})
 			}
 		}
