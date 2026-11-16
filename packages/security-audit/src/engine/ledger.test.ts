@@ -87,6 +87,15 @@ describe("reviewProposal", () => {
 		expect(review._tag === "Refused" ? review.unknownRefs : []).toEqual([BEARER])
 	})
 
+	it("refuses a companion section named as the ordinary attack-class block", () => {
+		const core = "WEB-PROTOCOL-AND-AUTH.md#Core discipline"
+		expect(reviewProposal(seed("keys", "Bearer tokens", { ordinary_attack_class_block: core }))).toEqual({
+			_tag: "Refused",
+			reason: `not an ordinary attack-class block: ${core}`,
+			unknownRefs: [core],
+		})
+	})
+
 	it("refuses a unit with neither an attack-class block nor a companion block", () => {
 		const review = reviewProposal(
 			seed("keys", "Bearer tokens", {

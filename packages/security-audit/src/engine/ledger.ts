@@ -6,7 +6,12 @@
 import type { HunterUnitResult, MissingUnit, SeedUnit } from "../results"
 import type { CoverageUnit } from "../schema"
 import { coverageId, isSafeRelativePath, ledgerErrors, safeCoverageId } from "../validators"
-import { canonicalBlockRef, isCompanionRequiredSection, type SkillBlockRef } from "../skill"
+import {
+	canonicalBlockRef,
+	isCompanionRequiredSection,
+	ORDINARY_BLOCK_REFS,
+	type SkillBlockRef,
+} from "../skill"
 import { Array as Arr, String as Str } from "effect"
 
 type PriorStatus = CoverageUnit["prior_status"]
@@ -104,6 +109,10 @@ export const reviewProposal = (seed: Proposal): ProposalReview => {
 	if (ordinary === undefined) {
 		const raw = seed.ordinary_attack_class_block ?? ""
 		return refused(`unknown ordinary attack-class block: ${raw}`, [raw])
+	}
+	// A companion section is a known block but not an ordinary one: the repair turn can fix it too.
+	if (ordinary !== null && !ORDINARY_BLOCK_REFS.includes(ordinary)) {
+		return refused(`not an ordinary attack-class block: ${ordinary}`, [ordinary])
 	}
 	const unknownSelected = Arr.filter(
 		seed.selected_companion_blocks,
