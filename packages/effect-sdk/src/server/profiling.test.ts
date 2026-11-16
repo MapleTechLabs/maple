@@ -1,5 +1,5 @@
 import { describe, it } from "@effect/vitest"
-import { Effect, Exit, Layer, Logger, Predicate, References, Scope, Array as Arr } from "effect"
+import { Effect, Exit, Fiber, Layer, Logger, Predicate, References, Scope, Array as Arr } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { TestClock } from "effect/testing"
 import { makeSpanTimeline, type SpanTimeline } from "../shared/span-timeline"
@@ -7,6 +7,7 @@ import { expect, vi } from "vitest"
 import {
 	type InspectorModule,
 	type InspectorSession,
+	PROFILER_SETUP_TIMEOUT,
 	PROFILES_PATH,
 	type ProfilerLayerOptions,
 	profilerLayer,
@@ -218,6 +219,25 @@ describe("profilerLayer without an inspector", () => {
 			{ loadBuiltin: () => ({ Session: Refused }) },
 			"could not open an inspector session",
 		)
+	})
+
+	it.effect("builds without profiling when the inspector takes a session and never answers", () => {
+		class Silent implements InspectorSession {
+			connect() {}
+			disconnect() {}
+			post() {}
+		}
+		const harness = makeHarness()
+		return Effect.gen(function* () {
+			const building = yield* Effect.forkChild(
+				Layer.build(harness.layer({ loadBuiltin: () => ({ Session: Silent }) })),
+			)
+			yield* TestClock.adjust(PROFILER_SETUP_TIMEOUT)
+			const exit = yield* Fiber.await(building)
+			expect(Exit.isSuccess(exit)).toBe(true)
+			expect(levels(harness)).toEqual(["Warn"])
+			expect(harness.logs[0]?.message).toContain("the inspector did not answer")
+		}).pipe(harness.run)
 	})
 })
 

@@ -9,6 +9,7 @@ const SHUTDOWN_TIMEOUT = Duration.seconds(3)
  * (Effect's OTLP tracer), it exports a raw 4xx client span such as a 402 from ingest
  * without an `exception` event, so a status the scraper handles opens no issue.
  * Ingest key, endpoint and commit come from env; without a key it does not export.
+ * Continuous profiling is on: Bun's profiler restarts each window with no measurable pause.
  */
 export const telemetryLayer = (overrides: Partial<MapleFlushableConfig> = {}): Layer.Layer<never> =>
 	Layer.unwrap(
@@ -18,6 +19,7 @@ export const telemetryLayer = (overrides: Partial<MapleFlushableConfig> = {}): L
 					serviceName: "scraper",
 					serviceNamespace: "core",
 					attributes: { "vcs.repository.url.full": REPOSITORY_URL },
+					profiling: true,
 					...overrides,
 				}),
 			),

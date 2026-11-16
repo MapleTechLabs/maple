@@ -34,6 +34,8 @@ const MIN_SAMPLING_INTERVAL_MICROS = 100
 /** A collector that accepts the request and never answers must not hold the next window up. */
 const EXPORT_TIMEOUT = Duration.seconds(10)
 export const DEFAULT_SAMPLING_INTERVAL_MICROS = 10_000
+/** An inspector that takes a session and never answers must not hold the app's startup up. */
+export const PROFILER_SETUP_TIMEOUT = Duration.seconds(5)
 
 /** The OTLP path profiles are exported on until the signal reaches release candidate. */
 export const PROFILES_PATH = "/v1development/profiles"
@@ -137,6 +139,18 @@ const post = (session: InspectorSession, method: string, params: InspectorParams
 		)
 	})
 
+/** A setup command that fails, rather than waits forever, when the inspector never answers it. */
+const withinSetup = <A>(effect: Effect.Effect<A, ProfilerFailed>) =>
+	Effect.timeoutOrElse(effect, {
+		duration: PROFILER_SETUP_TIMEOUT,
+		orElse: () =>
+			Effect.fail(
+				failed("the inspector did not answer")(
+					`no answer within ${Duration.format(PROFILER_SETUP_TIMEOUT)}`,
+				),
+			),
+	})
+
 /** The profile a `Profiler.stop` reply carries: what was sampled since `Profiler.start`. */
 const profileOf = (reply: InspectorReply | undefined) =>
 	Effect.mapBoth(decodeCpuProfile(reply), {
@@ -229,8 +243,10 @@ export const profilerLayer = (
 				openSession(options.loadBuiltin ?? runtimeLoadBuiltin()),
 				(opened) => Effect.sync(() => opened.disconnect()),
 			)
-			yield* post(session, "Profiler.enable")
-			yield* post(session, "Profiler.setSamplingInterval", { interval: samplingIntervalMicros })
+			yield* withinSetup(post(session, "Profiler.enable"))
+			yield* withinSetup(
+				post(session, "Profiler.setSamplingInterval", { interval: samplingIntervalMicros }),
+			)
 
 			// The profiler stamps `startTime` as it starts, so the clocks are read just before.
 			const start = Effect.gen(function* () {
@@ -320,7 +336,7 @@ export const profilerLayer = (
 
 			options.timeline?.setRecording(true)
 			// A profiler that never started leaves nothing recording.
-			const first = yield* start.pipe(
+			const first = yield* withinSetup(start).pipe(
 				Effect.onError(() => Effect.sync(() => options.timeline?.setRecording(false))),
 			)
 			const current = yield* Ref.make(first)

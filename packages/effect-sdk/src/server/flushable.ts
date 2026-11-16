@@ -15,7 +15,8 @@
 //
 // Traces, logs, and Effect metric snapshots are flushed together.
 
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Tracer } from "effect"
+import { FetchHttpClient } from "effect/http"
 import {
 	buildResolved,
 	fetchTransport,
@@ -30,7 +31,9 @@ import { makeMetricBuffer } from "../shared/flushable-metrics.js"
 import { makeSpanBuffer, type SpanBuffer } from "../shared/flushable-tracer.js"
 import type { MapleSpanOptions } from "../shared/span-options.js"
 import { makeNoOpNotice } from "../shared/no-op-notice.js"
+import { makeSpanTimeline, type SpanTimeline } from "../shared/span-timeline.js"
 import { SDK_VERSION } from "../version.js"
+import { profilerLayer, type ProfilingOptions } from "./profiling.js"
 import { resolveResource } from "./resource.js"
 import type { MapleRegion } from "@maple/browser-session/region"
 
@@ -85,6 +88,13 @@ export interface MapleFlushableConfig extends MapleSpanOptions {
 	 * process that never flushes will lose data).
 	 */
 	readonly autoFlushInterval?: number | false | undefined
+	/**
+	 * Continuous CPU profiling on Node and Bun: `true` for the defaults, or the options. Off by
+	 * default. It runs while `layer` is built and exports its own windows, apart from `flush`; a
+	 * second build of `layer` while one is running starts no second profiler. Off, with no
+	 * warning, wherever export is off (no ingest key against Maple's hosted ingest).
+	 */
+	readonly profiling?: boolean | ProfilingOptions | undefined
 }
 
 export interface FlushableTelemetry {
@@ -103,11 +113,61 @@ export interface FlushableTelemetry {
 	readonly dispose: () => Promise<void>
 }
 
+const USER_AGENT = `maple-effect-sdk-server/${SDK_VERSION}`
+
+/** The buffer's tracer, recording span switches on `timeline` so profile samples link to spans. */
+const instrumentedTracer = (spans: SpanBuffer, timeline: SpanTimeline | undefined) =>
+	timeline === undefined
+		? spans.tracerLayer
+		: Layer.effect(Tracer.Tracer, Effect.map(Effect.tracer, timeline.instrument)).pipe(
+				Layer.provide(spans.tracerLayer),
+			)
+
+/**
+ * The profiler, sending to the endpoint and with the key the flushes use. One at a time: a layer
+ * built again while a profiler runs (a second runtime, a per-request provide) adds none.
+ */
+const makeProfiler = (
+	config: MapleFlushableConfig,
+	profiling: ProfilingOptions,
+	timeline: SpanTimeline | undefined,
+): Layer.Layer<never> => {
+	let running = false
+	return Layer.unwrap(
+		Effect.gen(function* () {
+			if (running) return Layer.empty
+			const resource = yield* resolveResource({ ...config, sdkType: "server" })
+			const resolved = buildResolved(resource, {
+				userAgent: USER_AGENT,
+				keyless: "disable-at-maple-ingest",
+			})
+			if (resolved.noOp) return Layer.empty
+			running = true
+			yield* Effect.addFinalizer(() => Effect.sync(() => (running = false)))
+			return profilerLayer({
+				baseUrl: resource.endpoint,
+				resource: resource.resource,
+				headers: resolved.headers,
+				profiling,
+				timeline,
+			}).pipe(Layer.provide(FetchHttpClient.layer))
+		}),
+	)
+}
+
 export const make = (config: MapleFlushableConfig = {}): FlushableTelemetry => {
 	const spans: SpanBuffer = makeSpanBuffer(config)
 	const logs: LogBuffer = makeLogBuffer({ excludeLogSpans: config.excludeLogSpans })
 	const metrics = makeMetricBuffer()
-	const layer = Layer.mergeAll(spans.tracerLayer, logs.loggerLayer, metrics.layer)
+	const profiling =
+		config.profiling === true ? {} : config.profiling === false ? undefined : config.profiling
+	const timeline = profiling !== undefined && profiling.linkSpans !== false ? makeSpanTimeline() : undefined
+	const layer = Layer.mergeAll(
+		instrumentedTracer(spans, timeline),
+		logs.loggerLayer,
+		metrics.layer,
+		profiling === undefined ? Layer.empty : makeProfiler(config, profiling, timeline),
+	)
 
 	const tracesState = makeSignalState()
 	const logsState = makeSignalState()
@@ -136,7 +196,7 @@ export const make = (config: MapleFlushableConfig = {}): FlushableTelemetry => {
 					tracesPath: config.tracesPath,
 					logsPath: config.logsPath,
 					metricsPath: config.metricsPath,
-					userAgent: `maple-effect-sdk-server/${SDK_VERSION}`,
+					userAgent: USER_AGENT,
 					keyless: "disable-at-maple-ingest",
 				}),
 			)
