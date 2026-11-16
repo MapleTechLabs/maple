@@ -4,7 +4,7 @@
 
 import type { LabelMatcher } from "@maple/promql"
 import * as CH from "@maple-dev/effect-orm/expr"
-import { sql, string as chString } from "@maple-dev/effect-orm/clickhouse"
+import { map as chMap, sql, string as chString } from "@maple-dev/effect-orm/clickhouse"
 import { Array as Arr, Option, pipe, Record as Rec, String as Str } from "effect"
 import { matchesValue } from "./names"
 
@@ -140,22 +140,52 @@ const mapLookupExpr = (map: CH.Expr<Record<string, string>>, name: string, filte
  */
 export const labelValueExpr = ($: LabelColumns, name: string): CH.Expr<string> | undefined => {
 	if (name === "__name__" || name === "le") return undefined
+	if (name === "job") return jobExpr($)
+	if (name === "instance") return instanceExpr($)
 	const datapoint = mapLookupExpr($.Attributes, name, false)
-	const resource = $.ResourceAttributes
-	if (name === "job") {
-		const service = sql(
-			chString,
-		)`if(${resource}['service.name'] != '', ${resource}['service.name'], ${$.ServiceName})`
-		const namespace = sql(chString)`${resource}['service.namespace']`
-		return sql(
-			chString,
-		)`if(${datapoint} != '', ${datapoint}, if(${namespace} != '', concat(${namespace}, '/', ${service}), ${service}))`
-	}
-	if (name === "instance") {
-		return sql(chString)`if(${datapoint} != '', ${datapoint}, ${resource}['service.instance.id'])`
-	}
-	const fromResource = mapLookupExpr(resource, name, true)
+	const fromResource = mapLookupExpr($.ResourceAttributes, name, true)
 	return sql(chString)`if(${datapoint} != '', ${datapoint}, ${fromResource})`
+}
+
+const jobExpr = ($: LabelColumns): CH.Expr<string> => {
+	const datapoint = mapLookupExpr($.Attributes, "job", false)
+	const resource = $.ResourceAttributes
+	const service = sql(
+		chString,
+	)`if(${resource}['service.name'] != '', ${resource}['service.name'], ${$.ServiceName})`
+	const namespace = sql(chString)`${resource}['service.namespace']`
+	return sql(
+		chString,
+	)`if(${datapoint} != '', ${datapoint}, if(${namespace} != '', concat(${namespace}, '/', ${service}), ${service}))`
+}
+
+const instanceExpr = ($: LabelColumns): CH.Expr<string> => {
+	const datapoint = mapLookupExpr($.Attributes, "instance", false)
+	return sql(chString)`if(${datapoint} != '', ${datapoint}, ${$.ResourceAttributes}['service.instance.id'])`
+}
+
+/** Label names a map entry never sets: the name, job, instance, and `le` on a bucket. */
+const computedNames = (bucket: boolean) =>
+	sql.raw(bucket ? "['__name__', 'job', 'instance', 'le']" : "['__name__', 'job', 'instance']")
+
+/** A map's `(label name, value)` pairs, resolved as `lookup` does, empty values dropped. */
+const mapLabelPairs = (map: CH.Expr<Record<string, string>>, bucket: boolean) => {
+	const names = sql`arrayMap(_k -> ${NORMALIZED_KEY}, mapKeys(${map}))`
+	return sql`arrayFilter(_p -> _p.2 != '' AND NOT has(${computedNames(bucket)}, _p.1), arrayDistinct(arrayMap(_n -> (_n, if(mapContains(${map}, _n), ${map}[_n], mapValues(${map})[indexOf(${names}, _n)])), ${names})))`
+}
+
+/**
+ * The labels `seriesLabels` gives a row, minus `__name__` and a bucket's `le`, as a ClickHouse
+ * value that is equal exactly when they are: what the series key hashes.
+ */
+export const labelSetExpr = ($: LabelColumns, bucket: boolean) => {
+	const datapoint = mapLabelPairs($.Attributes, bucket)
+	const resource = mapLabelPairs(
+		sql(chMap(chString, chString))`mapFilter((_k, _v) -> NOT ${EXCLUDED_KEY}, ${$.ResourceAttributes})`,
+		bucket,
+	)
+	const shown = sql`arrayMap(_s -> _s.1, ${datapoint})`
+	return sql`${jobExpr($)}, ${instanceExpr($)}, arraySort(arrayConcat(${datapoint}, arrayFilter(_r -> NOT has(${shown}, _r.1), ${resource})))`
 }
 
 /** A matcher as a WHERE condition, Prometheus semantics; `undefined` when it cannot be pushed down. */
@@ -174,4 +204,31 @@ export const matcherCondition = ($: LabelColumns, matcher: LabelMatcher): CH.Con
 		case "!~":
 			return sql.cond`NOT match(${value}, ${pattern})`
 	}
+}
+
+/** The bound an `le` value names, when `formatLe` writes that bound exactly so; else none can match. */
+const parseFormattedLe = (text: string): number | undefined => {
+	if (text === "+Inf") return Infinity
+	if (text === "-Inf") return -Infinity
+	if (text === "NaN") return Number.NaN
+	const value = Number(text)
+	return Number.isFinite(value) && formatLe(value) === text ? value : undefined
+}
+
+/**
+ * An equality matcher on a bucket's `le` as a condition on the bound, so it runs before the
+ * series cap; `undefined` for a regex, which is checked after the fetch.
+ */
+export const leCondition = (le: CH.Expr<number>, matcher: LabelMatcher): CH.Condition | undefined => {
+	if (matcher.op !== "=" && matcher.op !== "!=") return undefined
+	const equal = boundEquals(le, parseFormattedLe(matcher.value))
+	return matcher.op === "=" ? equal : sql.cond`NOT (${equal})`
+}
+
+const boundEquals = (le: CH.Expr<number>, bound: number | undefined): CH.Condition => {
+	if (bound === undefined) return sql.cond`0`
+	if (Number.isNaN(bound)) return sql.cond`isNaN(${le})`
+	if (bound === Infinity) return sql.cond`${le} = inf`
+	if (bound === -Infinity) return sql.cond`${le} = -inf`
+	return sql.cond`${le} = ${bound}`
 }
