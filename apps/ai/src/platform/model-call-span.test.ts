@@ -837,6 +837,36 @@ describe("model calls cut at their attempt cap", () => {
 		}),
 	)
 
+	it.effect("keeps the first attempt past the cap and delivers it when it beats the retry", () =>
+		Effect.gen(function* () {
+			const retried: Array<number> = []
+			// Reasons for 100s, then answers.
+			const slowAnswer = slowReasoning.pipe(Stream.take(11), Stream.concat(quickAnswer))
+			const fiber = yield* LanguageModel.streamText({ prompt: "hi" }).pipe(
+				Stream.runCollect,
+				Effect.provide(scripted([slowAnswer, slowReasoning], retried)),
+				Effect.forkChild,
+			)
+			// A second at a time, so each of the first attempt's chained sleeps gets to run.
+			const seconds = (n: number) =>
+				Effect.forEach(Arr.range(1, n), () => TestClock.adjust("1 second"), { discard: true })
+			yield* seconds(91)
+			assert.lengthOf(retried, 1, "the retry starts at the cap")
+			assert.isUndefined(fiber.pollUnsafe())
+			// The retry never answers, so only the first attempt can.
+			yield* seconds(15)
+			const parts = yield* Fiber.join(fiber)
+			assert.deepStrictEqual(
+				Arr.map(Arr.takeRight(parts, 4), (part) => part.type),
+				["text-start", "text-delta", "text-end", "finish"],
+			)
+			assert.isTrue(
+				Arr.some(parts, (part) => part.type === "reasoning-delta"),
+				"the first attempt's own parts",
+			)
+		}),
+	)
+
 	it.effect("delivers a call that finishes inside the cap as it was, without a retry", () =>
 		Effect.gen(function* () {
 			const retried: Array<number> = []

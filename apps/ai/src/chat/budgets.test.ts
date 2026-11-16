@@ -18,6 +18,7 @@ import {
 	PR_REVIEW_BUDGET,
 	type AgentBudget,
 } from "./budgets"
+import { closeOutAgent } from "./autonomous-phases"
 import { TURN_STALE_MS } from "./ChatSession"
 
 /** The window `z-ai/glm-5.3-flash:nitro` reports, which is what made this a bug. */
@@ -85,9 +86,12 @@ describe("agent budgets", () => {
 		const ms = (budget: AgentBudget) => Duration.toMillis(budget.maxDuration)
 		const margin = 5 * 60 * 1000
 		expect(ms(CHAT_BUDGET) + margin).toBeLessThanOrEqual(TURN_STALE_MS)
-		// An unattended pass that ends without its report gets a close-out run under the same budget.
+		// An unattended pass that ends without its report gets a close-out run on its own clock.
 		for (const budget of [INVESTIGATION_BUDGET, PR_REVIEW_BUDGET, PR_REPLY_BUDGET]) {
-			expect(2 * ms(budget) + margin).toBeLessThanOrEqual(TURN_STALE_MS)
+			const closeOut = Duration.toMillis(
+				closeOutAgent({ ...AGENTS.investigate, budget }).budget.maxDuration,
+			)
+			expect(ms(budget) + closeOut + margin).toBeLessThanOrEqual(TURN_STALE_MS)
 		}
 	})
 
