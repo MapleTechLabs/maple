@@ -13,6 +13,7 @@ import type { APIRoute, GetStaticPaths } from "astro"
 import { competitors, type Competitor, MAPLE_SURFACES } from "../../lib/competitors"
 import { absolute, blocks, docHeader, markdown, table } from "../../lib/page-markdown"
 import { scaleProofMarkdown } from "../../lib/scale-proof"
+import { enterpriseOfferMarkdown } from "../../lib/enterprise-offer"
 import * as m from "../../paraglide/messages.js"
 import {
 	defaultValues,
@@ -76,6 +77,7 @@ export const GET: APIRoute = ({ props, site }) => {
 			" · ",
 		)}`,
 		scaleProofMarkdown(site),
+		enterpriseOfferMarkdown(site),
 	)
 
 	// The Surfaces section, where the page has one: the same four rows, with

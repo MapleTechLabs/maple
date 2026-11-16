@@ -16,6 +16,7 @@ import { useCases } from "../lib/use-cases"
 import { allGuides } from "../lib/guides"
 import { absolute, plainText } from "../lib/page-markdown"
 import { scaleProofMarkdown } from "../lib/scale-proof"
+import { enterpriseOfferMarkdown } from "../lib/enterprise-offer"
 import { API_ORIGIN, API_PATHS, GITHUB_URL, SITE_PATHS } from "../lib/agent-resources"
 import * as m from "../paraglide/messages.js"
 import { Array as Arr } from "effect"
@@ -53,6 +54,8 @@ export const GET: APIRoute = ({ site }) => {
 			"## Pricing",
 			"",
 			"One plan: $39 a month with 100 GB each of logs, traces and metrics included, then $0.30 per GB per signal; 5,000 browser sessions included, then $0.002 per session; 1M product events included, then $5 per million (page views not counted).",
+			"",
+			enterpriseOfferMarkdown(site),
 			"",
 			...both("Pricing", "/pricing"),
 			"",
