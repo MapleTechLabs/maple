@@ -2,7 +2,7 @@ import type { McpToolRegistrar } from "./types"
 import { McpInvalidInputError } from "./types"
 import { CurrentMcpTenant } from "../tenant"
 import { warehouseReadToMcpHandlers } from "../lib/map-warehouse-error"
-import { defaultStepSeconds, parseStepSeconds, toOutput } from "../lib/promql-result"
+import { defaultStepSeconds, parseStepMs, toOutput } from "../lib/promql-result"
 import { renderPromqlOutput } from "../lib/promql-render"
 import * as P from "../lib/params"
 import { Effect, Schema } from "effect"
@@ -42,7 +42,7 @@ export function registerQueryPromqlTool(server: McpToolRegistrar) {
 			const instant = params.instant === true
 			const endMs = parseWarehouseDateTime(et)
 			const startMs = instant ? endMs : parseWarehouseDateTime(st)
-			const requested = params.step === undefined ? undefined : parseStepSeconds(params.step)
+			const requested = params.step === undefined ? undefined : parseStepMs(params.step)
 			if (params.step !== undefined && requested === undefined) {
 				return yield* new McpInvalidInputError({
 					message: `step "${params.step}" is not a Prometheus duration or a number of seconds, in whole milliseconds.`,
@@ -50,9 +50,10 @@ export function registerQueryPromqlTool(server: McpToolRegistrar) {
 					example: "1m",
 				})
 			}
-			const stepSeconds = instant ? 0 : (requested ?? defaultStepSeconds((endMs - startMs) / 1000))
+			const stepMs = instant ? 0 : (requested ?? defaultStepSeconds((endMs - startMs) / 1000) * 1000)
+			const stepSeconds = stepMs / 1000
 			// The engine's rule, as Prometheus': at most MAX_STEPS whole steps across the window.
-			if (!instant && Math.floor((endMs - startMs) / (stepSeconds * 1000)) > MAX_STEPS) {
+			if (!instant && Math.floor((endMs - startMs) / stepMs) > MAX_STEPS) {
 				return yield* new McpInvalidInputError({
 					message: `step "${params.step ?? `${stepSeconds}s`}" gives more than ${MAX_STEPS} steps over this window; use at least ${Math.ceil((endMs - startMs) / 1000 / MAX_STEPS)}s.`,
 					parameter: "step",
@@ -65,28 +66,26 @@ export function registerQueryPromqlTool(server: McpToolRegistrar) {
 				"maple.ai.promql.step_seconds": stepSeconds,
 			})
 
-			const result = yield* promql
-				.query(tenant, { query: params.query, startMs, endMs, stepMs: stepSeconds * 1000 })
-				.pipe(
-					Effect.catchTags({
-						"@maple/backend/promql/PromqlBadQueryError": (error) =>
-							Effect.fail(
-								new McpInvalidInputError({
-									message: `Invalid PromQL: ${error.message}${error.position === undefined ? "" : ` (at position ${error.position})`}`,
-									parameter: "query",
-									example: EXAMPLE,
-								}),
-							),
-						"@maple/backend/promql/PromqlExecutionError": (error) =>
-							Effect.fail(
-								new McpInvalidInputError({
-									message: `PromQL could not be evaluated: ${error.message}`,
-									parameter: "query",
-								}),
-							),
-						...warehouseReadToMcpHandlers("query_promql"),
-					}),
-				)
+			const result = yield* promql.query(tenant, { query: params.query, startMs, endMs, stepMs }).pipe(
+				Effect.catchTags({
+					"@maple/backend/promql/PromqlBadQueryError": (error) =>
+						Effect.fail(
+							new McpInvalidInputError({
+								message: `Invalid PromQL: ${error.message}${error.position === undefined ? "" : ` (at position ${error.position})`}`,
+								parameter: "query",
+								example: EXAMPLE,
+							}),
+						),
+					"@maple/backend/promql/PromqlExecutionError": (error) =>
+						Effect.fail(
+							new McpInvalidInputError({
+								message: `PromQL could not be evaluated: ${error.message}`,
+								parameter: "query",
+							}),
+						),
+					...warehouseReadToMcpHandlers("query_promql"),
+				}),
+			)
 			const output = toOutput({
 				query: params.query,
 				instant,

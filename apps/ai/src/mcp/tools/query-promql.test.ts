@@ -12,7 +12,7 @@ import {
 } from "@maple/backend/services/promql/PromqlQueryService"
 import { CurrentMcpTenant } from "../tenant"
 import { renderToolDoc } from "../lib/tool-doc"
-import { capSeries, defaultStepSeconds, parseStepSeconds, type PromqlResult } from "../lib/promql-result"
+import { capSeries, defaultStepSeconds, parseStepMs, type PromqlResult } from "../lib/promql-result"
 import { registerQueryPromqlTool } from "./query-promql"
 import type { McpToolError, McpToolRegistrar } from "./types"
 import type { McpToolRequirements } from "./runtime-services"
@@ -181,6 +181,20 @@ describe("query_promql", () => {
 		}),
 	)
 
+	it.effect("runs whole-millisecond steps exactly, whatever their float spelling", () =>
+		Effect.gen(function* () {
+			const calls: Array<PromqlQuery> = []
+			yield* Effect.forEach(["9ms", "1.001", "0.009", "1m30s"], (step) =>
+				run(
+					{ query: "up", start_time: "2026-11-15 10:59:00", end_time: "2026-11-15 11:00:00", step },
+					() => Effect.succeed({ resultType: "matrix" as const, result: [] }),
+					calls,
+				),
+			)
+			expect(Arr.map(calls, (c) => c.stepMs)).toEqual([9, 1001, 9, 90_000])
+		}),
+	)
+
 	it.effect("refuses a sub-millisecond or overflowing step before querying", () =>
 		Effect.gen(function* () {
 			const errors = yield* Effect.forEach(["0.0004", "1e308", "999999999999999999y"], (step) =>
@@ -285,12 +299,12 @@ describe("query_promql", () => {
 
 describe("query_promql steps", () => {
 	it("reads Prometheus durations and seconds", () => {
-		expect(parseStepSeconds("1m")).toBe(60)
-		expect(parseStepSeconds("1h30m")).toBe(5400)
-		expect(parseStepSeconds("15")).toBe(15)
-		expect(parseStepSeconds("0")).toBeUndefined()
-		expect(parseStepSeconds("0s")).toBeUndefined()
-		expect(parseStepSeconds("1 minute")).toBeUndefined()
+		expect(parseStepMs("1m")).toBe(60_000)
+		expect(parseStepMs("1h30m")).toBe(5_400_000)
+		expect(parseStepMs("15")).toBe(15_000)
+		expect(parseStepMs("0")).toBeUndefined()
+		expect(parseStepMs("0s")).toBeUndefined()
+		expect(parseStepMs("1 minute")).toBeUndefined()
 	})
 
 	it("picks a round step giving at most 120 points", () => {
