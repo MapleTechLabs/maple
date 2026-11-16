@@ -577,6 +577,9 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 		ChangedIncidentKind: ({ kind }) => changeIncidentKind(model, kind),
 		ChangedIncidentField: ({ field, value }) => changeIncident(model, field, value),
 		ToggledIncidentComponent: ({ componentId }) => toggleIncidentComponent(model, componentId),
+		ChangedIncidentAutoComplete: ({ autoComplete }) => ({
+			model: { ...model, incidentForm: { ...model.incidentForm, autoComplete } },
+		}),
 		SubmittedIncidentWrite: () => reviewIncident(model, context),
 		ClickedIncidentBack: () => backToIncidentWrite(model),
 		SubmittedIncident: ({ isPublished }) => submitIncident(model, context, isPublished),
@@ -601,6 +604,10 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 			),
 		ChangedIncidentEditField: ({ field, value }) => changeIncidentEdit(model, field, value),
 		ToggledIncidentEditComponent: ({ componentId }) => toggleIncidentEditComponent(model, componentId),
+		ChangedIncidentEditAutoComplete: ({ autoComplete }) =>
+			model.incidentEdit === null || model.isSavingIncident
+				? { model }
+				: { model: { ...model, incidentEdit: { ...model.incidentEdit, autoComplete } } },
 		SubmittedIncidentEdit: () => submitIncidentEdit(model, context),
 		CompletedSaveIncident: ({ result }) => savedIncident(model, result, context),
 		ClickedDeleteIncident: ({ incidentId }) => askDeleteIncident(model, incidentId),

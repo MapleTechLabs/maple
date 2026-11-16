@@ -186,6 +186,9 @@ export const incidentSheetBody = (
 				typography(h, { size: "xs", tone: "muted", as: "p" }, [
 					names.length === 0 ? "No components named" : Arr.join(names, ", "),
 					...(window === null ? [] : [" · ", ...window]),
+					...(incident.kind === "maintenance" && isOpenIncident(incident)
+						? [incident.auto_complete ? " · completes on its own" : " · you complete it"]
+						: []),
 				]),
 			]),
 			...(canPostIncidents(model) ? [incidentActions(h, model, incident)] : []),

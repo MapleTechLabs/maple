@@ -129,6 +129,7 @@ export const toV2StatusPageIncident = (incident: StatusPageIncidentRecord): V2St
 	published: incident.published,
 	scheduled_start: isoTimestampOrNull(incident.scheduledStart),
 	scheduled_end: isoTimestampOrNull(incident.scheduledEnd),
+	auto_complete: incident.autoComplete,
 	started_at: isoTimestamp(incident.startedAt),
 	resolved_at: isoTimestampOrNull(incident.resolvedAt),
 	component_ids: incident.componentIds,
@@ -187,6 +188,7 @@ const incidentAuditDiff = auditDiff({
 		"published",
 		"scheduled_start",
 		"scheduled_end",
+		"auto_complete",
 		"started_at",
 		"resolved_at",
 		"component_ids",
@@ -819,6 +821,9 @@ export const HttpV2StatusPageIncidentsLive = HttpApiBuilder.group(
 							...(payload.scheduled_end === undefined
 								? undefined
 								: { scheduledEnd: timestampMs(payload.scheduled_end) }),
+							...(payload.auto_complete === undefined
+								? undefined
+								: { autoComplete: payload.auto_complete }),
 							...(payload.started_at === undefined
 								? undefined
 								: { startedAt: timestampMs(payload.started_at) }),
@@ -851,6 +856,9 @@ export const HttpV2StatusPageIncidentsLive = HttpApiBuilder.group(
 								: { published: payload.published }),
 							...(scheduledStart === undefined ? undefined : { scheduledStart }),
 							...(scheduledEnd === undefined ? undefined : { scheduledEnd }),
+							...(payload.auto_complete === undefined
+								? undefined
+								: { autoComplete: payload.auto_complete }),
 							...(payload.started_at === undefined
 								? undefined
 								: { startedAt: timestampMs(payload.started_at) }),

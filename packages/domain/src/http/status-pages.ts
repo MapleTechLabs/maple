@@ -277,6 +277,8 @@ export const StatusPageIncidentRecord = Schema.Struct({
 	published: Schema.Boolean,
 	scheduledStart: Schema.NullOr(Schema.Number),
 	scheduledEnd: Schema.NullOr(Schema.Number),
+	/** Maintenance only: the sweep completes it when its window ends. */
+	autoComplete: Schema.Boolean,
 	startedAt: Schema.Number,
 	resolvedAt: Schema.NullOr(Schema.Number),
 	componentIds: Schema.Array(StatusPageComponentId),

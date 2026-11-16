@@ -95,6 +95,7 @@ export const Message = defineMessageUnion({
 	ChangedIncidentKind: { kind: StatusPageIncidentKind },
 	ChangedIncidentField: { field: IncidentTextField, value: Schema.String },
 	ToggledIncidentComponent: { componentId: StatusPageComponentId },
+	ChangedIncidentAutoComplete: { autoComplete: Schema.Boolean },
 	SubmittedIncidentWrite: {},
 	ClickedIncidentBack: {},
 	/** `isPublished`: Publish (or Schedule) rather than Save as draft. */
@@ -113,6 +114,7 @@ export const Message = defineMessageUnion({
 	GotEditIncidentDialogMessage: { message: Dialog.Message },
 	ChangedIncidentEditField: { field: IncidentEditField, value: Schema.String },
 	ToggledIncidentEditComponent: { componentId: StatusPageComponentId },
+	ChangedIncidentEditAutoComplete: { autoComplete: Schema.Boolean },
 	SubmittedIncidentEdit: {},
 	CompletedSaveIncident: { result: LoadOutcome(V2StatusPageIncident) },
 	ClickedDeleteIncident: { incidentId: StatusPageIncidentId },

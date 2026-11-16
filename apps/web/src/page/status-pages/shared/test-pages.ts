@@ -85,6 +85,7 @@ export const incident = (n: number, fields: Partial<V2StatusPageIncident> = {}):
 	published: true,
 	scheduled_start: null,
 	scheduled_end: null,
+	auto_complete: true,
 	started_at: iso(10 * MINUTE),
 	resolved_at: null,
 	component_ids: [componentId(1)],

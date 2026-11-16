@@ -112,6 +112,7 @@ const toIncidentRow = (incident: StatusPageIncidentRecord): typeof StatusPageInc
 		resolvedAt: isoOrNull(incident.resolvedAt),
 		scheduledStart: isoOrNull(incident.scheduledStart),
 		scheduledEnd: isoOrNull(incident.scheduledEnd),
+		autoComplete: incident.autoComplete,
 		componentIds: Arr.map(incident.componentIds, (id) =>
 			encodePublicId(PublicIdPrefixes.statusPageComponent, id),
 		),
@@ -280,6 +281,14 @@ const renderIncident = (title: string, output: typeof StatusPageIncidentMutation
 					incident.scheduledStart === null
 						? undefined
 						: `${incident.scheduledStart} to ${incident.scheduledEnd ?? "?"}`,
+				],
+				[
+					"When the window ends",
+					incident.kind === "maintenance"
+						? incident.autoComplete
+							? "completes on its own"
+							: "stays in progress until someone completes it"
+						: undefined,
 				],
 				["Latest update", incident.latestUpdate?.body],
 			]),
@@ -533,6 +542,9 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 			ends_at: P.optionalTimestamp(
 				"Opening maintenance only: when it ends. It moves to in_progress at the start and completed at the end on its own",
 			),
+			auto_complete: P.optionalFlag(
+				"Opening maintenance only: false keeps it in_progress past `ends_at` until someone posts completed. Default true",
+			),
 			impact: P.optionalOneOf(
 				StatusPageIncidentImpact.literals,
 				"How hard it hits the components (new incident default minor, new maintenance none; omit on an update to keep it)",
@@ -596,6 +608,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 									scheduledStart: parseWarehouseDateTime(params.starts_at),
 									scheduledEnd: parseWarehouseDateTime(params.ends_at),
 								}),
+						...(params.auto_complete === undefined ? undefined : { autoComplete: params.auto_complete }),
 						source: "mcp",
 						createdBy: tenant.userId,
 					})
@@ -612,6 +625,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 			if (params.title !== undefined) return yield* opensOnlyParameter("title")
 			if (params.starts_at !== undefined) return yield* opensOnlyParameter("starts_at")
 			if (params.ends_at !== undefined) return yield* opensOnlyParameter("ends_at")
+			if (params.auto_complete !== undefined) return yield* opensOnlyParameter("auto_complete")
 			const requestedStatus = params.status
 			if (requestedStatus === undefined) {
 				return yield* new McpInvalidInputError({

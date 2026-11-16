@@ -120,6 +120,8 @@ export const IncidentForm = Schema.Struct({
 	/** Maintenance only: the window as `datetime-local` values, in the viewer's time zone. */
 	scheduledStart: Schema.String,
 	scheduledEnd: Schema.String,
+	/** Maintenance only: completes on its own when the window ends. */
+	autoComplete: Schema.Boolean,
 	/** Incident only: when it began, as a `datetime-local` value; blank is when it is posted. */
 	startedAt: Schema.String,
 })
@@ -135,6 +137,7 @@ export const emptyIncidentForm = (kind: StatusPageIncidentKind): IncidentForm =>
 	isPublished: true,
 	scheduledStart: "",
 	scheduledEnd: "",
+	autoComplete: true,
 	startedAt: "",
 })
 
@@ -230,7 +233,12 @@ export const incidentPayload = (
 		Option.all([localToIso(form.scheduledStart, timeZone), localToIso(form.scheduledEnd, timeZone)]),
 		{
 			onNone: () => base,
-			onSome: ([start, end]) => ({ ...base, scheduled_start: start, scheduled_end: end }),
+			onSome: ([start, end]) => ({
+				...base,
+				scheduled_start: start,
+				scheduled_end: end,
+				auto_complete: form.autoComplete,
+			}),
 		},
 	)
 }
@@ -254,6 +262,8 @@ export const IncidentEditForm = Schema.Struct({
 	 */
 	start: Schema.String,
 	end: Schema.String,
+	/** Maintenance only. */
+	autoComplete: Schema.Boolean,
 })
 export type IncidentEditForm = typeof IncidentEditForm.Type
 
@@ -274,6 +284,7 @@ export const incidentEditFormOf = (incident: V2StatusPageIncident, timeZone: str
 		componentIds: incident.component_ids,
 		start: isoToLocal(times.start, timeZone),
 		end: isoToLocal(times.end, timeZone),
+		autoComplete: incident.auto_complete,
 	}
 }
 
@@ -331,6 +342,9 @@ export const incidentEditPayload = (
 				...base,
 				...(start === undefined ? undefined : { scheduled_start: start }),
 				...(end === undefined ? undefined : { scheduled_end: end }),
+				...(form.autoComplete === incident.auto_complete
+					? undefined
+					: { auto_complete: form.autoComplete }),
 			}
 		: {
 				...base,

@@ -5,6 +5,7 @@ import { toEpochMs } from "@maple/ui/lib/time-format"
 import { formatDateInTimezone } from "@maple/ui/lib/timezone-format"
 import { Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { button } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { panel } from "@maple/views/ui/panel"
@@ -22,6 +23,7 @@ import {
 	truncatedTableCell,
 } from "@maple/views/ui/table"
 import { timestamp } from "@maple/views/ui/timestamp"
+import { typography } from "@maple/views/ui/typography"
 import { relativeTime } from "../../kit/relative-time"
 import { sectionHeading } from "../../kit/section-heading"
 import { IMPACT_LABEL, IMPACT_TONE, isOpenIncident } from "../shared/derive"
@@ -203,31 +205,92 @@ export const incidentsTab = (h: H, model: Model, time: TimeInputs): Html => {
 	])
 }
 
+/** Whether the maintenance completes on its own, as the list shows it. */
+const endsBadge = (h: H, incident: V2StatusPageIncident): Html =>
+	incident.auto_complete
+		? badge(h, { variant: "ok", pill: true }, ["Auto-complete"])
+		: badge(h, { variant: "meta", pill: true }, ["You complete it"])
+
+/**
+ * When in-progress maintenance ends: a countdown, or once a manual one runs past its window, how
+ * far over it is with the button that completes it.
+ */
+const endsCell = (h: H, incident: V2StatusPageIncident, time: TimeInputs): ReadonlyArray<Html | string> => {
+	if (incident.scheduled_end === null) return ["\u2013"]
+	const overMs = time.nowMs - toEpochMs(incident.scheduled_end)
+	if (overMs < 0)
+		return [
+			relativeTime(h, { value: incident.scheduled_end, nowMs: time.nowMs, timeZone: time.timeZone }),
+		]
+	if (incident.auto_complete) return ["Completing now"]
+	return [
+		hstack(h, { gap: "3", justify: "between" }, [
+			typography(h, { tone: "warning", className: "whitespace-nowrap" }, [`${durationLabel(overMs)} over`]),
+			button(
+				h,
+				{
+					variant: "outline",
+					size: "xs",
+					attributes: [
+						h.OnClick(Message.ClickedPostUpdate({ incidentId: incident.id, isResolving: true }), {
+							propagation: "Stop",
+						}),
+					],
+				},
+				["Complete"],
+			),
+		]),
+	]
+}
+
+/** Who completed it: the sweep at the window's end, or a person. */
+const completedBy = (incident: V2StatusPageIncident): string =>
+	Arr.some(incident.updates, (update) => update.status === "completed" && update.source === "auto")
+		? "Automatically"
+		: "Manually"
+
 export const maintenanceTab = (h: H, model: Model, time: TimeInputs): Html => {
 	const maintenance = ofKind(model, "maintenance")
 	const components = (incident: V2StatusPageIncident) => [componentNames(model, incident)]
 	const window = (incident: V2StatusPageIncident) => windowLine(h, incident, time.timeZone) ?? ["Not set"]
+	const inProgress = Arr.filter(maintenance, (incident) => incident.status === "in_progress")
+	const whenItEnds: Column = { label: "When it ends", className: "w-40 px-3", cell: (incident) => [endsBadge(h, incident)] }
 	return vstack(h, { gap: "8" }, [
+		...(inProgress.length === 0
+			? []
+			: [
+					incidentTable(h, {
+						title: "In progress",
+						empty: "",
+						first: "Maintenance",
+						rows: inProgress,
+						columns: [
+							{ label: "Window", className: "w-72 px-3", cell: window },
+							{ label: "Components", cell: components },
+							whenItEnds,
+							{ label: "Ends", className: "w-48 px-3", cell: (incident) => endsCell(h, incident, time) },
+						],
+					}),
+				]),
 		incidentTable(h, {
 			title: "Upcoming",
 			empty: "No maintenance scheduled.",
 			first: "Maintenance",
-			rows: Arr.filter(maintenance, isOpenIncident),
+			rows: Arr.filter(maintenance, (incident) => incident.status === "scheduled"),
 			columns: [
 				{ label: "Window", className: "w-72 px-3", cell: window },
 				{ label: "Components", cell: components },
+				whenItEnds,
 				{
 					label: "Starts",
-					cell: (incident) =>
-						incident.status === "in_progress"
-							? ["In progress"]
-							: [
-									relativeTime(h, {
-										value: incident.scheduled_start ?? incident.started_at,
-										nowMs: time.nowMs,
-										timeZone: time.timeZone,
-									}),
-								],
+					className: "w-48 px-3",
+					cell: (incident) => [
+						relativeTime(h, {
+							value: incident.scheduled_start ?? incident.started_at,
+							nowMs: time.nowMs,
+							timeZone: time.timeZone,
+						}),
+					],
 				},
 			],
 		}),
@@ -239,11 +302,13 @@ export const maintenanceTab = (h: H, model: Model, time: TimeInputs): Html => {
 			columns: [
 				{ label: "Window", className: "w-72 px-3", cell: window },
 				{ label: "Components", cell: components },
+				{ label: "Completed", className: "w-40 px-3", cell: (incident) => [completedBy(incident)] },
 				{
 					label: "Duration",
+					className: "w-48 px-3",
 					cell: (incident) => {
 						const ms = maintenanceDurationMs(incident)
-						return [ms === null ? "–" : durationLabel(ms)]
+						return [ms === null ? "\u2013" : durationLabel(ms)]
 					},
 				},
 			],

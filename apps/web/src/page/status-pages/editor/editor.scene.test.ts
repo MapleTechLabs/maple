@@ -981,6 +981,40 @@ describe("posting an incident", () => {
 		)
 	})
 
+	test("maintenance can stay in progress past its window: the choice, the review and the post", () => {
+		const writing = steps(loaded(), [
+			Message.ClickedNewIncident({ kind: "maintenance" }),
+			Message.ChangedIncidentField({ field: "title", value: "Index rebuild" }),
+			Message.ChangedIncidentField({ field: "body", value: "Rebuilding indexes." }),
+			Message.ChangedIncidentField({ field: "scheduledStart", value: "2026-10-30T22:00" }),
+			Message.ChangedIncidentField({ field: "scheduledEnd", value: "2026-10-30T23:00" }),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(writing),
+			mounted,
+			expectView(role("radio", { name: "Complete automatically" })).toBeChecked(),
+			expectView(role("radio", { name: "Keep it in progress until someone completes it" })).not.toBeChecked(),
+		)
+		const reviewed = steps(writing, [
+			Message.ChangedIncidentAutoComplete({ autoComplete: false }),
+			Message.SubmittedIncidentWrite(),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(reviewed),
+			mounted,
+			expectView(
+				text(
+					"Starts Oct 30, 22:00 and ends Oct 30, 23:00 (UTC). It moves to In progress at the start on its own and stays there past the end until someone completes it.",
+				),
+			).toExist(),
+		)
+		expect(pageUpdate(reviewed, Message.SubmittedIncident({ isPublished: true })).commands).toMatchObject([
+			{ name: "CreateStatusPageIncident", args: { payload: { auto_complete: false } } },
+		])
+	})
+
 	test("an incident can be backdated: the review says when it started and the post carries it", () => {
 		const written = steps(loaded(), [
 			Message.ClickedNewIncident({ kind: "incident" }),
@@ -1657,6 +1691,52 @@ describe("header", () => {
 			expectView(role("dialog", { name: "Elevated errors" })).toExist(),
 			expectView(role("button", { name: "Post update" })).toExist(),
 		)
+	})
+
+	test("the Maintenance tab lists what is in progress, how each ends, and completes one over time", () => {
+		const model = loaded({
+			tab: "maintenance",
+			incidents: [
+				incident(1, {
+					kind: "maintenance",
+					title: "Index rebuild",
+					status: "in_progress",
+					impact: "none",
+					auto_complete: false,
+					scheduled_start: "2026-10-01T08:00:00.000Z",
+					scheduled_end: "2026-10-01T10:00:00.000Z",
+				}),
+				incident(2, {
+					kind: "maintenance",
+					title: "Database upgrade",
+					status: "scheduled",
+					impact: "none",
+					scheduled_start: "2026-10-03T02:00:00.000Z",
+					scheduled_end: "2026-10-03T03:00:00.000Z",
+				}),
+			],
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			inside(
+				role("table", { name: "In progress" }),
+				expectView(text("Index rebuild")).toExist(),
+				expectView(text("You complete it")).toExist(),
+				expectView(text("2h over")).toExist(),
+			),
+			inside(
+				role("table", { name: "Upcoming" }),
+				expectView(text("Database upgrade")).toExist(),
+				expectView(text("Auto-complete")).toExist(),
+			),
+		)
+		const completing = pageUpdate(
+			model,
+			Message.ClickedPostUpdate({ incidentId: incidentId(1), isResolving: true }),
+		).model
+		expect(completing.updateDialog.isOpen).toBe(true)
+		expect(completing.updateForm).toMatchObject({ form: { status: "completed" } })
 	})
 
 	test("closing the incident's sheet closes the incident", () => {

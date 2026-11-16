@@ -482,6 +482,42 @@ describe("StatusPagesService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("lets only maintenance turn auto-complete off, on creation or later", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* StatusPagesService
+			const page = yield* createPage("acme")
+			const start = Date.UTC(2026, 10, 1, 2)
+			const manual = yield* service.createIncident(ORG, page.id, {
+				kind: "maintenance",
+				title: "Index rebuild",
+				impact: "none",
+				status: "scheduled",
+				body: "Planned",
+				componentIds: [],
+				scheduledStart: start,
+				scheduledEnd: start + DAY,
+				autoComplete: false,
+				source: "dashboard",
+			})
+			assert.strictEqual(manual.autoComplete, false)
+			const switched = yield* service.updateIncident(ORG, manual.id, { autoComplete: true })
+			assert.strictEqual(switched.autoComplete, true)
+
+			const incident = yield* service.createIncident(ORG, page.id, {
+				kind: "incident",
+				title: "Errors",
+				impact: "minor",
+				status: "investigating",
+				body: "Looking",
+				componentIds: [],
+				source: "dashboard",
+			})
+			const refused = yield* Effect.flip(service.updateIncident(ORG, incident.id, { autoComplete: false }))
+			assert.strictEqual(refused._tag, "@maple/http/errors/StatusPageValidationError")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("backdates an incident's start and records when it ended, refusing impossible times", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
