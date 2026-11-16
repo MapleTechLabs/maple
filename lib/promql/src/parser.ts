@@ -127,6 +127,9 @@ const isModifiable = (expr: Expr): boolean =>
 	expr.type === "VectorSelector" || expr.type === "MatrixSelector" || expr.type === "Subquery"
 
 class Converter {
+	/** Selectors and subqueries that already carry an `offset`; `offset 0s` leaves the value at 0. */
+	private readonly offsetSet = new WeakSet()
+
 	constructor(private readonly source: string) {}
 
 	text(node: SyntaxNode): string {
@@ -384,16 +387,20 @@ class Converter {
 		if (target.type !== "VectorSelector" && target.type !== "Subquery") {
 			return fail(node, "offset and @ modifiers must follow a selector or subquery")
 		}
-		if (mod.offsetMs !== undefined && target.offsetMs !== 0)
-			return fail(node, "offset may not be set multiple times")
+		const hasOffset = this.offsetSet.has(target)
+		if (mod.offsetMs !== undefined && hasOffset) return fail(node, "offset may not be set multiple times")
 		if (mod.at !== undefined && target.at !== undefined)
 			return fail(node, "@ may not be set multiple times")
 		const offsetMs = mod.offsetMs ?? target.offsetMs
 		const at = mod.at ?? target.at
+		const marked = <T extends object>(node: T): T => {
+			if (hasOffset || mod.offsetMs !== undefined) this.offsetSet.add(node)
+			return node
+		}
 		if (expr.type === "MatrixSelector")
-			return Result.succeed({ ...expr, vector: { ...expr.vector, offsetMs, at } })
-		if (expr.type === "VectorSelector") return Result.succeed({ ...expr, offsetMs, at })
-		if (expr.type === "Subquery") return Result.succeed({ ...expr, offsetMs, at })
+			return Result.succeed({ ...expr, vector: marked({ ...expr.vector, offsetMs, at }) })
+		if (expr.type === "VectorSelector") return Result.succeed(marked({ ...expr, offsetMs, at }))
+		if (expr.type === "Subquery") return Result.succeed(marked({ ...expr, offsetMs, at }))
 		return fail(node, "offset and @ modifiers must follow a selector or subquery")
 	}
 

@@ -325,7 +325,7 @@ describe("query_promql statistics", () => {
 				}),
 			)
 			expect(text).toContain("| +Inf |")
-			expect(text).toMatch(/\d{2}:\d{2}:\d{2}/)
+			expect(text).toContain("11-15 10:59:30 1, 11-15 11:00:00 +Inf")
 		}),
 	)
 })
