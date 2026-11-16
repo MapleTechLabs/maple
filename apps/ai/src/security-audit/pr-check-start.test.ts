@@ -526,3 +526,25 @@ describe("startPullRequestCheck races and failed recovery", () => {
 		expect(Arr.map(result.runs, (r) => r.status)).toEqual(["failed"])
 	})
 })
+
+describe("startPullRequestCheck redelivery after a finished audit", () => {
+	it("re-reports a finished audit of the same head instead of paying for another", async () => {
+		const harness = makeHarness()
+		const result = await harness.run(
+			Effect.gen(function* () {
+				const target = yield* harness.seeded
+				yield* startPullRequestCheck(orgId, job())
+				const store = (yield* SecurityAuditStore).forOrg(orgId)
+				const first = harness.started[0]?.runId ?? ""
+				yield* store.finishRun(first, { status: "complete" })
+				const outcome = yield* startPullRequestCheck(orgId, job({ action: "reopened" }))
+				return { outcome, first, runs: yield* harness.runsOf(target.id) }
+			}),
+		)
+
+		expect(result.outcome.reason).toBe("already_checked")
+		expect(harness.started.length).toBe(1)
+		expect(harness.published).toEqual([result.first])
+		expect(result.runs.length).toBe(1)
+	})
+})

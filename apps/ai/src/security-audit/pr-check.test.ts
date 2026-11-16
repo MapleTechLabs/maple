@@ -311,3 +311,43 @@ describe("SecurityPrCheck.publish branch findings and reruns", () => {
 		expect(Arr.map(harness.checks, (c) => c.state)).toEqual(["success"])
 	})
 })
+
+describe("SecurityPrCheck.publish claims the branch rejected", () => {
+	it("blocks a finding the branch's audit rejected that this pull request confirms", async () => {
+		const harness = makeHarness()
+		await harness.run(
+			Effect.gen(function* () {
+				const { store, target } = yield* harness.seeded
+				const checks = yield* SecurityPrCheck
+				const branchRun = yield* store.startRun({
+					targetId: target.id,
+					kind: "manual",
+					sourceRef: "main",
+				})
+				const claim: Finding = {
+					verdict: "rejected",
+					fingerprint: "claim",
+					title: "Claim",
+					description: "claimed bypass",
+					trace: [],
+					evidence: [],
+					claimed_root_cause: "unchecked id",
+					reason: "the gateway filters by org",
+				}
+				yield* store.saveFindings(branchRun.id, [claim], new Map())
+				yield* store.finishRun(branchRun.id, { status: "complete" })
+				const run = yield* store.startRun({
+					targetId: target.id,
+					kind: "pull_request",
+					prNumber: 9,
+					sourceRef: HEAD,
+				})
+				yield* store.saveFindings(run.id, [confirmed("claim", "critical")], new Map())
+				yield* store.finishRun(run.id, { status: "complete" })
+				yield* checks.publish(orgId, run.id)
+			}),
+		)
+
+		expect(Arr.map(harness.checks, (c) => c.state)).toEqual(["failure"])
+	})
+})

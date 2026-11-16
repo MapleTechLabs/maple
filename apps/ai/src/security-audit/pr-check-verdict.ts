@@ -25,7 +25,7 @@ export const SEVERITY_RANK = {
 /** The target's follow-up of a fingerprint, as far as the gate reads it. */
 export interface FindingLifecycle {
 	readonly status: SecurityAuditFindingStatus
-	/** An audit of the branch itself has reported it: the code is already merged. */
+	/** An audit of the branch itself confirmed it: the code is already merged. */
 	readonly seenOnBranch: boolean
 }
 

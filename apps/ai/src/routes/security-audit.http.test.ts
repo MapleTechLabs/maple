@@ -1514,3 +1514,51 @@ describe("/api/security-audit target triage behind newer pull request runs", () 
 		}
 	})
 })
+
+describe("/api/security-audit superseded run usage", () => {
+	it("keeps a superseded run's agents, tokens and cost", async () => {
+		const harness = makeHarness()
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const run = await harness.withStore((store) =>
+				Effect.gen(function* () {
+					const scoped = store.forOrg(ORG_A)
+					const started = yield* scoped.startRun({
+						targetId: target.body.id,
+						kind: "pull_request",
+						prNumber: 8,
+						sourceRef: "0123456789abcdef0123456789abcdef01234567",
+					})
+					yield* scoped.reserveOrgInvocation(started.id, "hunter-1", {
+						since: 0,
+						limitUsd: 1000,
+						sandboxFeeUsd: 0,
+					})
+					yield* scoped.recordEvent(started.id, {
+						_tag: "Agent",
+						role: "hunter",
+						agentId: "hunter-1",
+						outcome: "ok",
+						usage: { inputTokens: 100, outputTokens: 20, costUsd: 0.5 },
+					})
+					yield* scoped.supersedeRun(started.id, "superseded: a newer push")
+					return started
+				}),
+			)
+
+			const detail = await harness.call("GET", `/runs/${run.id}`)
+			const settled = detail.body
+
+			expect([settled.status, settled.incompleteReason]).toEqual([
+				"incomplete",
+				"superseded: a newer push",
+			])
+			expect([settled.invocationsSpent, settled.inputTokens, settled.outputTokens]).toEqual([
+				1, 100, 20,
+			])
+			expect(settled.costUsd).not.toBeNull()
+		} finally {
+			await harness.dispose()
+		}
+	})
+})

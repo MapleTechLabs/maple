@@ -143,10 +143,24 @@ export class SecurityPrCheck extends Context.Service<SecurityPrCheck, SecurityPr
 							Option.isSome(row) && row.value.prNumber === null ? [row.value.id] : [],
 						),
 					)
+					// Only a finding the branch's audit confirmed is the branch's: one it rejected or could not
+					// confirm, now confirmed here, is this pull request's to answer for.
+					const followed = yield* store.listFindings(run.value.targetId)
+					const confirmedOnBranch = new Set(
+						Arr.map(
+							Arr.filter(followed, (row) => row.verdict === "confirmed"),
+							(row) => row.fingerprint,
+						),
+					)
 					const lifecycle = new Map<string, FindingLifecycle>(
 						Arr.map(views, (view) => [
 							view.fingerprint,
-							{ status: view.status, seenOnBranch: branchRuns.has(view.lastSeenRunId) },
+							{
+								status: view.status,
+								seenOnBranch:
+									branchRuns.has(view.lastSeenRunId) &&
+									confirmedOnBranch.has(view.fingerprint),
+							},
 						]),
 					)
 					const verdict = prCheckVerdict({
