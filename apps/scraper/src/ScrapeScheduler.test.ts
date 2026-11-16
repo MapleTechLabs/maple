@@ -196,7 +196,7 @@ describe("ScrapeScheduler", () => {
 			)
 		}
 
-		it.effect("closes only the first scrape of a dead target's streak as an error", () =>
+		it.effect("never closes a dead target's scrape as an error, yet reports each failure", () =>
 			Effect.gen(function* () {
 				const tracer = makeCapturingTracer()
 				const harness = makeHarness([mkTarget(TARGET_A, 10)])
@@ -207,7 +207,7 @@ describe("ScrapeScheduler", () => {
 				const spans = endedSpansNamed(tracer.ended, "scraper.scrape_target")
 				assert.deepStrictEqual(
 					Arr.map(spans, (span) => Exit.isFailure(span.exit)),
-					[true, false, false],
+					[false, false, false],
 				)
 				// Every failure is still reported, so the target shows its error.
 				assert.lengthOf(
@@ -217,7 +217,7 @@ describe("ScrapeScheduler", () => {
 			}),
 		)
 
-		it.effect("starts a target clean when its URL changes mid-streak", () =>
+		it.effect("starts a target clean when its URL changes mid-backoff", () =>
 			Effect.gen(function* () {
 				const tracer = makeCapturingTracer()
 				const harness = makeHarness([
@@ -234,11 +234,9 @@ describe("ScrapeScheduler", () => {
 					endedSpansNamed(tracer.ended, "scraper.scrape_target"),
 					(span) => span.attributes.get("maple.scraper.target_host") === "new.example.com",
 				)
-				// t=60 at the next tick, not t=70 after the old backoff; its first failure is an error.
-				assert.deepStrictEqual(
-					Arr.map(onNewHost, (span) => Exit.isFailure(span.exit)),
-					[true, false],
-				)
+				// t=60 at the next tick and t=70 after a fresh 10s backoff; the old backoff
+				// would have held it to one scrape at t=70.
+				assert.lengthOf(onNewHost, 2)
 			}),
 		)
 
