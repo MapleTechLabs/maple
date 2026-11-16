@@ -59,6 +59,8 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/errors/CliDeviceNotFoundError",
 	"@maple/http/errors/CliDeviceRateLimitError",
 	"@maple/http/errors/CloudCostDisabledError",
+	"@maple/http/errors/CloudFindingNotFoundError",
+	"@maple/http/errors/CloudSecurityDisabledError",
 	"@maple/http/errors/CostBudgetForbiddenError",
 	"@maple/http/errors/CostBudgetInvalidError",
 	"@maple/http/errors/CostBudgetNotFoundError",

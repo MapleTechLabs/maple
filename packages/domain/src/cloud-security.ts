@@ -77,3 +77,42 @@ export const cloudFindingSeverityOfLabel = (label: string | undefined): CloudFin
 			return "info"
 	}
 }
+
+/** The console's own filter syntax for "Id equals", encoded the way its URLs carry it. */
+const consoleEquals = (field: string, value: string) =>
+	`${field}%3D%255Coperator%255C%253AEQUALS%255C%253A${encodeURIComponent(encodeURIComponent(value))}`
+
+/** The finding in the AWS console: deep links where the console takes one, the findings list otherwise. */
+export const cloudFindingConsoleUrl = (finding: {
+	readonly source: CloudFindingSource
+	readonly region: string
+	readonly findingId: string
+}): string => {
+	const { region, findingId } = finding
+	const host = Str.includes("-gov-")(region)
+		? `https://console.amazonaws-us-gov.com`
+		: `https://${region}.console.aws.amazon.com`
+	switch (finding.source) {
+		case "guardduty":
+			return `${host}/guardduty/home?region=${region}#/findings?macros=current&fId=${encodeURIComponent(findingId)}`
+		case "securityhub":
+			return `${host}/securityhub/home?region=${region}#/findings?search=${consoleEquals("Id", findingId)}`
+		case "inspector":
+			return `${host}/inspector/v2/home?region=${region}#/findings/all?search=${consoleEquals("findingArn", findingId)}`
+		case "access_analyzer":
+			return `${host}/access-analyzer/home?region=${region}#/findings`
+	}
+}
+
+/**
+ * The ids telemetry may carry for a resource: itself, and for an ARN its last segment
+ * (`arn:aws:ec2:...:instance/i-0abc` is `i-0abc` on `host.id`, a Lambda ARN ends in `faas.name`).
+ */
+export const cloudResourceIdCandidates = (resourceId: string): ReadonlyArray<string> => {
+	const id = Str.trim(resourceId)
+	if (id === "") return []
+	if (!Str.startsWith("arn:")(id)) return [id]
+	const segments = Str.split(Str.includes("/")(id) ? "/" : ":")(id)
+	const tail = segments[segments.length - 1] ?? ""
+	return tail === "" || tail === id ? [id] : [id, tail]
+}
