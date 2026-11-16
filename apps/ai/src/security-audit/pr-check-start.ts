@@ -111,6 +111,15 @@ const checkPullRequest = Effect.fn("SecurityPrCheck.checkPullRequest")(function*
 		yield* checks.publish(orgId, done.id)
 		return skipped("already_checked")
 	}
+	// An edit never starts another run at a head that has one finished, completed or not: a person's
+	// cancel stands, and a title change spends nothing.
+	if (
+		done !== undefined &&
+		done.sourceRef === headSha &&
+		done.finishedAt !== null &&
+		job.action === "edited"
+	)
+		return skipped("already_checked")
 
 	/**
 	 * Whether this head already has a run (a redelivery, api's retry): if so it answers. Any other
