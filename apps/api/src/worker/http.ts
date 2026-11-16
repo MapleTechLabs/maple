@@ -246,7 +246,9 @@ export const makeFetch = <E>(
 			yield* isolateAge.record
 
 			if (oversizedShareBody(request.method, path, request.headers)) {
-				return HttpServerResponse.fromWeb(v2ShareBodyTooLargeResponse(API_CORS_RESPONSE_HEADERS))
+				return HttpServerResponse.fromWeb(
+					v2ShareBodyTooLargeResponse(API_CORS_RESPONSE_HEADERS, SHARE_BODY_MAX_BYTES),
+				)
 			}
 
 			// The agent surfaces moved to maple-ai; this origin keeps serving them.

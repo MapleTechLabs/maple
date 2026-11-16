@@ -16,7 +16,10 @@ export const v2WorkerUnavailableResponse = (): Response => {
 }
 
 /** The v2 envelope for an anonymous share body refused before the route graph decodes it. */
-export const v2ShareBodyTooLargeResponse = (headers: Readonly<Record<string, string>>): Response =>
+export const v2ShareBodyTooLargeResponse = (
+	headers: Readonly<Record<string, string>>,
+	maxBytes: number,
+): Response =>
 	Response.json(
 		{
 			error: {
@@ -24,7 +27,7 @@ export const v2ShareBodyTooLargeResponse = (headers: Readonly<Record<string, str
 				type: "invalid_request_error",
 				code: "payload_too_large",
 				title: "Request body too large",
-				message: "Share requests must send a Content-Length of at most 64 KiB.",
+				message: `Share requests must send a Content-Length of at most ${maxBytes} bytes.`,
 				retryable: false,
 				recovery: "fix_request",
 			},
