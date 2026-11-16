@@ -251,6 +251,7 @@ describe("CloudSecurityStore", () => {
 		return Effect.gen(function* () {
 			const store = yield* CloudSecurityStore
 			const connection = yield* connect(orgId, "111111111111")
+			yield* store.upsertFindings([finding(connection, orgId, { providerUpdatedAt: 1_000 })], 1)
 			yield* store.upsertFindings(
 				[finding(connection, orgId, { status: "archived", providerUpdatedAt: 5_000 })],
 				1,
