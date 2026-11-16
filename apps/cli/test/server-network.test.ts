@@ -479,6 +479,12 @@ describe("browser origin policy", () => {
 			"b3",
 			// A browser profiler's export names its wire version in this header.
 			"otlp-profiles-development-version",
+			// A browser session replay chunk describes itself in these.
+			"x-maple-session-id",
+			"x-maple-chunk-seq",
+			"x-maple-is-checkpoint",
+			"x-maple-event-count",
+			"x-maple-duration-ms",
 		]) {
 			ok(allowedHeaders.has(requested), `preflight must allow ${requested}`)
 		}

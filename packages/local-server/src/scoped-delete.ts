@@ -45,6 +45,9 @@ export type TableDeletePlan =
 			readonly env: DimensionSource | null
 			/** Rebuild path when the request names an undeclared dimension. */
 			readonly recompute: "views" | "service-map-rollup" | null
+			/** Rows a view writes from an excluded source. No delete clears them: a
+			 *  rebuild cannot recompute them, and a scoped delete does not address them. */
+			readonly keep?: string
 	  }
 	| { readonly strategy: "excluded"; readonly reason: string }
 
@@ -62,8 +65,13 @@ const raw = (time: string): TableDeletePlan => ({
 })
 const derived = (
 	time: string,
-	dims: { readonly namespace?: DimensionSource; readonly env?: DimensionSource | null } = {},
+	dims: {
+		readonly namespace?: DimensionSource
+		readonly env?: DimensionSource | null
+		readonly keep?: string
+	} = {},
 ): TableDeletePlan => ({
+	...(dims.keep === undefined ? undefined : { keep: dims.keep }),
 	strategy: "scoped",
 	time,
 	service: ["ServiceName"],
@@ -90,7 +98,7 @@ const edges = (target: string): TableDeletePlan => ({
 	recompute: "service-map-rollup",
 })
 const NOT_TELEMETRY = "control-plane history, not telemetry; local mode never writes it"
-const SESSION_DATA = "browser session data; local OTLP ingest never writes it"
+const SESSION_DATA = "browser session data, not service telemetry; its TTL removes it"
 
 /** Delete strategy per table name; keys are checked against the schema at runtime. */
 export type TableDeletePlans = Readonly<Record<string, TableDeletePlan>>
@@ -119,7 +127,7 @@ export const TABLE_DELETE_PLAN = {
 	metrics_gauge: raw("TimeUnix"),
 	metrics_histogram: raw("TimeUnix"),
 	metrics_sum: raw("TimeUnix"),
-	product_events: derived("Timestamp", { env: null }),
+	product_events: derived("Timestamp", { env: null, keep: "Source = 'browser'" }),
 	profiles: raw("Timestamp"),
 	scanner_requests: derived("Timestamp", { env: null }),
 	cost_daily: {
@@ -230,6 +238,7 @@ const filterPredicate = (entry: ScopedPlan, request: ScopedDeleteRequest): strin
 	const parts = scopePredicates(entry, request, dims)
 	if (request.beforeMs !== undefined)
 		parts.push(`${entry.time} < toDateTime(${Math.floor(request.beforeMs / 1000)})`)
+	if (entry.keep !== undefined) parts.push(`NOT (${entry.keep})`)
 	return Arr.join(parts, " AND ")
 }
 
@@ -453,6 +462,18 @@ export const validateDeletePlan = (
 		}
 	}
 
+	// A rebuild re-runs only views from deletable sources, so rows from an excluded one must be kept.
+	for (const view of views) {
+		const target = plans[view.target]
+		if (target?.strategy !== "scoped" || target.keep !== undefined) continue
+		for (const source of view.sources)
+			// A Null table stores nothing, so there is nothing of it to keep.
+			if (plans[source]?.strategy === "excluded" && tables.get(source)?.engine !== "Null")
+				problems.push(
+					`${view.name}: writes ${view.target} from excluded ${source} with no keep predicate`,
+				)
+	}
+
 	// Rows derived from deletable telemetry must never land in an excluded table.
 	for (const view of views) {
 		if (plans[view.target]?.strategy !== "excluded") continue
@@ -632,6 +653,7 @@ const rebuildTargetPredicate = (
 		[
 			...scopePredicates(entry, request, rebuild.scope),
 			`${hourOf(rebuild.time)} IN (${hourList(hours)})`,
+			...(entry.keep === undefined ? [] : [`NOT (${entry.keep})`]),
 		],
 		" AND ",
 	)
