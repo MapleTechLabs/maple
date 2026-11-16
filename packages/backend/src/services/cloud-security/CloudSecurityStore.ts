@@ -23,8 +23,8 @@ export interface CloudServiceStateWrite {
 	readonly region: AwsRegion
 	readonly source: CloudFindingSource
 	readonly state: CloudServiceState
-	/** Moves the cursor; absent keeps the stored one (a failed or empty poll). */
-	readonly cursorAt?: number
+	/** Moves the cursor; null keeps the stored one (a failed or empty poll). */
+	readonly cursorAt: number | null
 	readonly lastError: string | null
 	readonly checkedAt: number
 }
@@ -92,7 +92,7 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 				state: CloudServiceStateWrite,
 			) {
 				const base = { state: state.state, lastError: state.lastError, checkedAt: state.checkedAt }
-				const values = state.cursorAt === undefined ? base : { ...base, cursorAt: state.cursorAt }
+				const values = state.cursorAt === null ? base : { ...base, cursorAt: state.cursorAt }
 				yield* dbExecute((db) =>
 					db.run(
 						PG.insertInto(CloudSecurityServiceStates)

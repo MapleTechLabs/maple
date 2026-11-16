@@ -130,6 +130,7 @@ describe("CloudSecurityStore", () => {
 			yield* store.recordServiceState({
 				...base,
 				state: "failing",
+				cursorAt: null,
 				lastError: "throttled",
 				checkedAt: 2,
 			})
@@ -194,6 +195,7 @@ describe("CloudSecurityStore", () => {
 				region,
 				source: "guardduty",
 				state: "enabled",
+				cursorAt: null,
 				lastError: null,
 				checkedAt: 1,
 			})
