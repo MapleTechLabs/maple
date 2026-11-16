@@ -174,20 +174,23 @@ describe("PromqlQueryService", () => {
 				le: i === 0 ? "0.5" : "1",
 				...Rec.fromEntries(Arr.map(STAT_COLUMNS, (key) => [key, []] as const)),
 			}))
+			const answer = (
+				_tenant: unknown,
+				compiled: CompiledQueryInput<unknown>,
+				opts: { context?: string },
+			) => {
+				const query = compiledQueryOf(compiled)
+				const rows =
+					opts.context === "promqlCatalog"
+						? [{ metricName: "lat", metricType: "histogram", unit: "s", isMonotonic: 0 }]
+						: selectorRows
+				return query.decodeRows(rows).pipe(Effect.orDie)
+			}
 			const warehouse = makeWarehouseServiceStub({
 				// SAFETY: the service hands the stub plain compiled queries, never a capability compile.
-				compiledQuery: ((
-					_tenant: unknown,
-					compiled: CompiledQueryInput<unknown>,
-					opts: { context?: string },
-				) => {
-					const query = compiledQueryOf(compiled)
-					const rows =
-						opts.context === "promqlCatalog"
-							? [{ metricName: "lat", metricType: "histogram", unit: "s", isMonotonic: 0 }]
-							: selectorRows
-					return query.decodeRows(rows).pipe(Effect.orDie)
-				}) as never,
+				compiledQuery: answer as never,
+				// SAFETY: as above; selector reads go through the bounded read.
+				compiledQueryBounded: answer as never,
 			})
 			const error = yield* Effect.gen(function* () {
 				const service = yield* PromqlQueryService
