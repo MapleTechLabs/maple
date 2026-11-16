@@ -17,6 +17,7 @@ import {
 	VcsSourceRepositoryNotFoundError,
 } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { McpInvalidInputError, McpNotReadyError, McpQueryError, McpUnavailableError } from "../tools/types"
+import { githubRateLimitWait } from "../expected-failures"
 
 export type VcsLookupError =
 	| IntegrationsNotConnectedError
@@ -57,9 +58,6 @@ const GITHUB_APP_UNAVAILABLE = new McpUnavailableError({
 const isGithubAppMissing = (error: IntegrationsUpstreamError): boolean =>
 	Str.startsWith("GitHub App is not configured")(error.message)
 
-/** The GitHub client's wording for a rate limit, which carries its wait. */
-const RATE_LIMITED = /^GitHub rate limited \(retry after (\d+)s\)/
-
 export const fromVcsLookupError =
 	(operation: string) =>
 	(error: VcsLookupError): SourceToolError => {
@@ -77,12 +75,9 @@ export const fromVcsLookupError =
 				})
 			case "@maple/http/errors/IntegrationsUpstreamError": {
 				if (isGithubAppMissing(error)) return GITHUB_APP_UNAVAILABLE
-				const retryAfter = RATE_LIMITED.exec(error.message)?.[1]
+				const retryAfter = githubRateLimitWait(error.message)
 				if (retryAfter !== undefined)
-					return new McpNotReadyError({
-						message: error.message,
-						retryAfterSeconds: Number(retryAfter),
-					})
+					return new McpNotReadyError({ message: error.message, retryAfterSeconds: retryAfter })
 				// GitHub could not parse what the call sent (a code search query, most often).
 				if (error.status === 422) return new McpInvalidInputError({ message: error.message })
 				return new McpQueryError({ message: error.message, pipeName: operation, cause: error })

@@ -49,6 +49,21 @@ const CALLER_SPAWN_CAUSES: ReadonlySet<string | undefined> = new Set([
 ])
 
 // BOUNDARY: a failure value from the tracer, or the cause a sandbox error carries.
+/** The GitHub client's wording for a rate limit, which carries its wait in seconds. */
+const GITHUB_RATE_LIMITED = /^GitHub rate limited \(retry after (\d+)s\)/
+
+/** The wait a GitHub rate limit asks for, when `message` is one. */
+export const githubRateLimitWait = (message: string): number | undefined => {
+	const seconds = GITHUB_RATE_LIMITED.exec(message)?.[1]
+	return seconds === undefined ? undefined : Number(seconds)
+}
+
+const isRateLimitedLookup = (cause: unknown): boolean =>
+	tagOf(cause) === "@maple/http/errors/IntegrationsUpstreamError" &&
+	Predicate.hasProperty(cause, "message") &&
+	typeof cause.message === "string" &&
+	githubRateLimitWait(cause.message) !== undefined
+
 const tagOf = (value: unknown): string | undefined =>
 	Predicate.hasProperty(value, "_tag") && typeof value._tag === "string" ? value._tag : undefined
 
@@ -69,7 +84,10 @@ export const isAnticipatedMcpFailure = (error: unknown): boolean => {
 		case "@maple/backend/sandbox/SandboxUnsupportedRequestError":
 			return Predicate.hasProperty(error, "feature") && error.feature !== "runtime"
 		case "@maple/backend/sandbox/SandboxSpawnError":
-			return Predicate.hasProperty(error, "cause") && CALLER_SPAWN_CAUSES.has(tagOf(error.cause))
+			return (
+				Predicate.hasProperty(error, "cause") &&
+				(CALLER_SPAWN_CAUSES.has(tagOf(error.cause)) || isRateLimitedLookup(error.cause))
+			)
 		default:
 			return false
 	}

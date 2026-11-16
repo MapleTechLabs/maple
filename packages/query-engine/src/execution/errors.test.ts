@@ -314,6 +314,16 @@ describe("mapWarehouseError", () => {
 			).toBeInstanceOf(WarehouseQueryError)
 		})
 
+		it("keeps an engine fault on caller SQL a server-side query error", () => {
+			expect(
+				classify(
+					"rawSqlQuery",
+					{ message: "[Error] Logical error: bad cast", type: "LOGICAL_ERROR" },
+					"caller",
+				),
+			).toBeInstanceOf(WarehouseQueryError)
+		})
+
 		it("keeps transient failures upstream for caller SQL", () => {
 			expect(
 				classify("rawSqlQuery", { message: "blip", type: "SOCKET_TIMEOUT" }, "caller"),

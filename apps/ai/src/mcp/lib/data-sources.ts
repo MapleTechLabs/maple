@@ -142,10 +142,10 @@ export const toMcpDataSourceError =
 					pipeName: tool,
 					setting: "data_source_timeout",
 				})
-			// The org's own database refused the query the agent wrote (a misspelt column): its to fix.
 			case "@maple/data-sources/Query":
-				return new McpInvalidInputError({
+				return new McpQueryError({
 					message: `The data source rejected the query: ${error.message}`,
+					pipeName: tool,
 				})
 			case "@maple/data-sources/Persistence":
 				return new McpQueryError({ message: error.message, pipeName: tool, cause: error })

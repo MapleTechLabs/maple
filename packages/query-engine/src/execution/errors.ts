@@ -184,7 +184,7 @@ const MAPLE_DATASOURCE_NAMES: ReadonlySet<string> = new Set(
 	Arr.map(Arr.filter(Rec.values(Datasources), isDatasourceDefinition), (ds) => ds._name),
 )
 
-/** Exception types about the server, the credential or Maple's own settings, never the statement. */
+/** Exception types about the server, the credential, Maple's own settings or an engine fault, never the statement. */
 const SERVER_SIDE_TYPES: ReadonlySet<string> = new Set([
 	"AUTHENTICATION_FAILED",
 	"ACCESS_DENIED",
@@ -200,6 +200,15 @@ const SERVER_SIDE_TYPES: ReadonlySet<string> = new Set([
 	"QUERY_WAS_CANCELLED",
 	"ABORTED",
 	"UNKNOWN_SETTING",
+	// Engine faults: the server broke on a statement it accepted.
+	"LOGICAL_ERROR",
+	"UNKNOWN_EXCEPTION",
+	"STD_EXCEPTION",
+	"POCO_EXCEPTION",
+	"CANNOT_ALLOCATE_MEMORY",
+	"CORRUPTED_DATA",
+	"CHECKSUM_DOESNT_MATCH",
+	"CANNOT_READ_ALL_DATA",
 ])
 
 /**

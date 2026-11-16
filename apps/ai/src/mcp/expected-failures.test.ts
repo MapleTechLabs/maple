@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { Duration, String as Str } from "effect"
-import { IntegrationsPersistenceError } from "@maple/domain/http"
+import { IntegrationsPersistenceError, IntegrationsUpstreamError } from "@maple/domain/http"
 import { SandboxRunCheckoutFailed, SandboxRunCheckoutPending } from "@maple/domain/sandbox"
 import {
 	SandboxExitError,
@@ -30,6 +30,16 @@ const SANDBOX_FAILURES: ReadonlyArray<readonly [string, SandboxError]> = [
 	[
 		"a clone that failed",
 		spawn(new SandboxRunCheckoutFailed({ message: "Cloning o/r failed (exit 128)" })),
+	],
+	[
+		"a GitHub rate limit on the checkout lookup",
+		spawn(
+			new IntegrationsUpstreamError({ message: "GitHub rate limited (retry after 60s)", status: 403 }),
+		),
+	],
+	[
+		"a GitHub outage on the checkout lookup",
+		spawn(new IntegrationsUpstreamError({ message: "Get commit failed: 502", status: 502 })),
 	],
 	["a lost database connection", spawn(new IntegrationsPersistenceError({ message: "Connection closed" }))],
 	["a timeout", new SandboxTimeoutError({ implementation, maxWallTime: Duration.seconds(30) })],
