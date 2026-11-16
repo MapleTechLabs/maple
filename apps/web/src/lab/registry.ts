@@ -479,7 +479,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/service-map-runtimes",
 		title: "Service map runtimes",
 		description:
-			"The service map over a small fleet topology with fleet-api (Cloud Run) selected; ?tab=infrastructure opens the panel's Infrastructure tab.",
+			"The service map over a small fleet topology with fleet-api (Cloud Run) selected; ?tab=infrastructure opens the panel's Infrastructure tab, ?topology=namespaces shows two namespaces with their own and a shared database.",
 		kind: "lab",
 		session: "none",
 	},

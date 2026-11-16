@@ -282,6 +282,25 @@ describe("applyDeclutter — namespace collapse", () => {
 		expect(topologyKey(a.nodes, a.edges)).toBe(topologyKey(b.nodes, b.edges))
 	})
 
+	it("folds a database in the collapsed namespace into its aggregate", () => {
+		const { nodes, edges } = graph()
+		const db = "db:postgresql:payments"
+		const result = applyDeclutter(
+			[...nodes, node(db, { kind: "database", namespace: "payments", throughput: 500 })],
+			[...edges, edge("ledger", db, { callCount: 70, callsPerSecond: 7 })],
+			state({ collapsedNamespaces: ["payments"] }),
+		)
+		const ids = Arr.map(result.nodes, (n) => n.id)
+		expect(ids).not.toContain(db)
+		// The shared database outside the namespace stays its own node.
+		expect(ids).toContain("db:postgresql:main")
+		expect(Arr.some(result.edges, (e) => e.source === db || e.target === db)).toBe(false)
+		// Still two services and their request throughput: the database adds to neither.
+		const agg = Option.getOrThrow(Arr.findFirst(result.nodes, (n) => n.id === nsAggregateId("payments")))
+		expect(agg.data.nsMemberCount).toBe(2)
+		expect(agg.data.throughput).toBe(40)
+	})
+
 	it("collapsing both endpoints' namespaces links the two aggregates", () => {
 		const { nodes, edges } = graph()
 		const result = applyDeclutter(nodes, edges, state({ collapsedNamespaces: ["payments", "platform"] }))
