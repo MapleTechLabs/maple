@@ -158,6 +158,18 @@ export const GET: APIRoute = ({ site }) => {
 			`- [CLI reference](${url("/docs/reference/cli.md")})`,
 			"",
 
+			"## Alerting and uptime",
+			"",
+			"Alert rules on traces, logs and metrics; hosted HTTP, TCP and DNS checks; heartbeats for cron jobs; and public status pages. Each can be set up in the app, over MCP, through the REST API, or in Terraform.",
+			"",
+			`- [Alert rules](${url("/docs/alerting/alert-rules.md")})`,
+			`- [Uptime monitoring overview](${url("/docs/alerting/uptime-monitoring.md")})`,
+			`- [Uptime checks](${url("/docs/alerting/uptime-checks.md")})`,
+			`- [Heartbeat monitors](${url("/docs/alerting/heartbeat-monitors.md")})`,
+			`- [Status pages](${url("/docs/alerting/status-pages.md")})`,
+			`- [Terraform resources](${url("/docs/iac/terraform-resources.md")})`,
+			"",
+
 			"## SDKs and instrumentation",
 			"",
 			"Maple ingests OpenTelemetry, so any OTel SDK works unmodified. The Effect SDK and the per-language guides are documented here.",

@@ -54,6 +54,7 @@ export type SectionId =
 	| "github-ci"
 	| "github-after-merge"
 	| "uptime-check-trace"
+	| "uptime-setup"
 	| "status-page-feeds"
 
 /**

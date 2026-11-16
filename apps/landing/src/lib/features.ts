@@ -535,7 +535,7 @@ export const features: Feature[] = [
 			lede: m.feat_uptime_artifact_lede,
 			wide: true,
 		},
-		extraSections: ["uptime-check-trace"],
+		extraSections: ["uptime-check-trace", "uptime-setup"],
 		gallery: [],
 		capTitle: m.feat_uptime_cap_title,
 		capabilities: [
