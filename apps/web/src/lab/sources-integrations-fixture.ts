@@ -1,6 +1,6 @@
 import { CloudflareIntegrationStatus, GithubIntegrationStatus } from "@maple/domain/http"
 import { V2PlanetScaleIntegration, V2PlanetScaleOrganizationList } from "@maple/domain/http/v2"
-import { Result, Schema, Array as Arr } from "effect"
+import { Result, Schema, Array as Arr, String as Str } from "effect"
 import type { PageContext } from "../page/contract"
 import { Message as IntegrationsMessage } from "../page/integrations/message"
 import type { Model as IntegrationsModel } from "../page/integrations/model"
@@ -23,6 +23,7 @@ export const INTEGRATION_PAGES = [
 	"cloudflare-live",
 	"planetscale-live",
 	"github-live",
+	"github-syncing-live",
 	"cloudflare-card",
 	"planetscale-card",
 ] as const
@@ -30,7 +31,11 @@ export type IntegrationLabPage = (typeof INTEGRATION_PAGES)[number]
 type LabIntegration = "cloudflare" | "planetscale" | "github"
 
 const integrationOf = (page: IntegrationLabPage): LabIntegration =>
-	page.startsWith("cloudflare") ? "cloudflare" : page.startsWith("planetscale") ? "planetscale" : "github"
+	Str.startsWith("cloudflare")(page)
+		? "cloudflare"
+		: Str.startsWith("planetscale")(page)
+			? "planetscale"
+			: "github"
 
 const NOW = Date.UTC(2026, 10, 6, 12)
 
@@ -116,29 +121,30 @@ const REPOS = [
 	"gtm",
 ]
 
-/** Every granted repository synced. */
-const GITHUB = Schema.decodeSync(GithubIntegrationStatus)({
-	connected: true,
-	state: "connected",
-	accountLogin: "acme",
-	accountType: "organization",
-	repositorySelection: "all",
-	ciTracesEnabled: true,
-	repositoryDiscovery: null,
-	repositories: Arr.map(REPOS, (name, index) => ({
-		id: `0199a005-0000-7000-8000-${String(index).padStart(12, "0")}`,
-		fullName: `acme/${name}`,
-		htmlUrl: `https://github.com/acme/${name}`,
-		isPrivate: false,
-		status: "active",
-		syncStatus: "ready",
-		lastSyncedAt: null,
-		lastSyncError: null,
-		trackedBranch: "main",
-		branches: [{ name: "main", isDefault: true }],
-		prReviewEnabled: index < 3,
-	})),
-})
+/** Every granted repository synced, or (`syncing`) the first three synced and the rest backfilling. */
+const githubStatus = (syncing: boolean) =>
+	Schema.decodeSync(GithubIntegrationStatus)({
+		connected: true,
+		state: "connected",
+		accountLogin: "acme",
+		accountType: "organization",
+		repositorySelection: "all",
+		ciTracesEnabled: true,
+		repositoryDiscovery: null,
+		repositories: Arr.map(REPOS, (name, index) => ({
+			id: `0199a005-0000-7000-8000-${Str.padStart(12, "0")(String(index))}`,
+			fullName: `acme/${name}`,
+			htmlUrl: `https://github.com/acme/${name}`,
+			isPrivate: false,
+			status: "active",
+			syncStatus: syncing && index >= 3 ? "backfilling" : "ready",
+			lastSyncedAt: null,
+			lastSyncError: null,
+			trackedBranch: "main",
+			branches: [{ name: "main", isDefault: true }],
+			prReviewEnabled: index < 3,
+		})),
+	})
 
 const ORGANIZATIONS = Schema.decodeSync(V2PlanetScaleOrganizationList)({
 	object: "planetscale_integration.organization_list",
@@ -146,8 +152,8 @@ const ORGANIZATIONS = Schema.decodeSync(V2PlanetScaleOrganizationList)({
 })
 
 /** The status as the hub reads it. */
-const statusLoaded = (model: IntegrationsModel, integration: LabIntegration): IntegrationsMessage => {
-	switch (integration) {
+const statusLoaded = (model: IntegrationsModel, page: IntegrationLabPage): IntegrationsMessage => {
+	switch (integrationOf(page)) {
 		case "cloudflare":
 			return IntegrationsMessage.CompletedLoadCloudflare({
 				key: model.statuses.cloudflare.key ?? "",
@@ -161,18 +167,15 @@ const statusLoaded = (model: IntegrationsModel, integration: LabIntegration): In
 		case "github":
 			return IntegrationsMessage.CompletedLoadGithub({
 				key: model.statuses.github.key ?? "",
-				result: Result.succeed(GITHUB),
+				result: Result.succeed(githubStatus(Str.includes("syncing")(page))),
 			})
 	}
 }
 
 /** The clock and the status, then PlanetScale's organization list. */
-const loaded = (
-	model: IntegrationsModel,
-	integration: LabIntegration,
-): ReadonlyArray<IntegrationsMessage> => [
+const loaded = (model: IntegrationsModel, page: IntegrationLabPage): ReadonlyArray<IntegrationsMessage> => [
 	IntegrationsMessage.CompletedReadClock({ nowMs: NOW }),
-	statusLoaded(model, integration),
+	statusLoaded(model, page),
 ]
 
 const organizationsLoaded = (model: IntegrationsModel): IntegrationsMessage =>
@@ -189,7 +192,7 @@ export const integrationCardModel = (page: IntegrationLabPage, context: PageCont
 		integrationsUpdate(model, message, context).model
 	const integration = integrationOf(page)
 	const entered = integrationsInit({ search: { integration } }, context).model
-	const withStatus = Arr.reduce(loaded(entered, integration), entered, step)
+	const withStatus = Arr.reduce(loaded(entered, page), entered, step)
 	return integration === "planetscale" ? step(withStatus, organizationsLoaded(withStatus)) : withStatus
 }
 
@@ -205,12 +208,12 @@ export const integrationFlowModel = (
 	const integration = integrationOf(page)
 	const entered = newInit(AppRoute.SourcesNew({ search: { integration } }), context).model
 	const granted = step(entered, NewMessage.CompletedReadGrants({ grants }))
-	const withStatus = Arr.reduce(loaded(granted.integrations, integration), granted, inner)
+	const withStatus = Arr.reduce(loaded(granted.integrations, page), granted, inner)
 	const ready =
 		integration === "planetscale"
 			? inner(withStatus, organizationsLoaded(withStatus.integrations))
 			: withStatus
 	const next = [NewMessage.ClickedContinue(), NewMessage.CompletedScrollToTop()]
 	const once = Arr.reduce(next, ready, step)
-	return page.endsWith("-live") && once.stage !== "live" ? Arr.reduce(next, once, step) : once
+	return Str.endsWith("-live")(page) && once.stage !== "live" ? Arr.reduce(next, once, step) : once
 }
