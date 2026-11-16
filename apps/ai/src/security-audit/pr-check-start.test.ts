@@ -144,6 +144,7 @@ const makeHarness = (
 ) => {
 	const db = createTestDb(trackedDbs)
 	const currentHead = options.head ?? { sha: HEAD }
+	const rollout = { enabled: options.enabled !== false }
 	const started: Array<SecurityAuditWorkflowPayload> = []
 	const cancelled: Array<string> = []
 	const notices: Array<string> = []
@@ -194,11 +195,15 @@ const makeHarness = (
 						),
 				})
 			: AiCredits.unmetered,
-		OrganizationFeatureFlagsService.fixed(
-			options.enabled === false
-				? DISABLED_ORGANIZATION_FEATURE_FLAGS
-				: ENABLED_ORGANIZATION_FEATURE_FLAGS,
-		),
+		// Read on every call, so a test can turn the rollout off between deliveries.
+		Layer.succeed(OrganizationFeatureFlagsService, {
+			flags: () =>
+				Effect.sync(() =>
+					rollout.enabled
+						? ENABLED_ORGANIZATION_FEATURE_FLAGS
+						: DISABLED_ORGANIZATION_FEATURE_FLAGS,
+				),
+		}),
 		envPorts({}),
 		SecureRandom.layerWebCrypto,
 	)
@@ -256,7 +261,7 @@ const makeHarness = (
 			)
 		})
 
-	return { run, seeded, started, cancelled, notices, published, runsOf, currentHead }
+	return { run, seeded, started, cancelled, notices, published, runsOf, currentHead, rollout }
 }
 
 describe("startPullRequestCheck", () => {
@@ -614,5 +619,22 @@ describe("startPullRequestCheck edits after an unfinished audit", () => {
 
 		expect(result.outcome.reason).toBe("already_checked")
 		expect([harness.started.length, result.runs.length]).toEqual([1, 1])
+	})
+})
+
+describe("startPullRequestCheck flags read as off mid-audit", () => {
+	it("leaves a running audit's check alone when a redelivery reads the rollout as off", async () => {
+		const harness = makeHarness()
+		const outcome = await harness.run(
+			Effect.gen(function* () {
+				yield* harness.seeded
+				yield* startPullRequestCheck(orgId, job())
+				harness.rollout.enabled = false
+				return yield* startPullRequestCheck(orgId, job({ action: "synchronize" }))
+			}),
+		)
+
+		expect(outcome.reason).toBe("already_checking")
+		expect(harness.notices).toEqual(["1111:running"])
 	})
 })

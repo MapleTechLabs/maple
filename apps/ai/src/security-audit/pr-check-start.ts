@@ -72,7 +72,12 @@ export const startPullRequestCheck = Effect.fn("SecurityPrCheck.start")(function
 	// Flags read as off when Clerk cannot be reached: a target that expects the check still gets one,
 	// as not blocking, rather than a check that never comes.
 	const flags = yield* (yield* OrganizationFeatureFlagsService).flags(orgId)
-	if (!flags.securityAudit) return yield* report("security audits are not enabled for this organization")
+	if (!flags.securityAudit) {
+		// A run already at this head owns its check: never complete it as neutral mid-audit.
+		const latest = yield* store.listRuns({ targetId: target.value.id, prNumber: job.number, limit: 1 })
+		if (latest[0]?.sourceRef === headSha) return skipped("already_checking")
+		return yield* report("security audits are not enabled for this organization")
+	}
 	// A branch rule waits forever on a check nobody posts: past this point every failure reports.
 	return yield* checkPullRequest(orgId, job, target.value, headSha, report).pipe(
 		Effect.catchCause((cause) =>
