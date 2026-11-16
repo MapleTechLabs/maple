@@ -426,6 +426,8 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 					const cancelled = yield* orUnavailable(store.cancelRun(run.id, tenant.userId))
 					// Settled between the read and the write: its own outcome stands.
 					if (Option.isNone(cancelled)) return yield* notInProgress
+					// A terminated Workflow never reports: settle a pull request's check here, as not blocking.
+					yield* prChecks.publish(tenant.orgId, run.id)
 					yield* recordHttpAudit("security_audit_run.cancelled", {
 						metadata: { targetId: run.targetId, runId: run.id },
 					})

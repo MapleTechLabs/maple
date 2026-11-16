@@ -1361,3 +1361,58 @@ describe("/api/security-audit pull request run findings", () => {
 		}
 	})
 })
+
+describe("/api/security-audit pull request run cancellation", () => {
+	it("settles the pull request's check when its run is cancelled", async () => {
+		const harness = makeHarness()
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const run = await harness.withStore((store) =>
+				store.forOrg(ORG_A).startRun({
+					targetId: target.body.id,
+					kind: "pull_request",
+					prNumber: 5,
+					sourceRef: "0123456789abcdef0123456789abcdef01234567",
+				}),
+			)
+
+			const cancelled = await harness.call("POST", `/runs/${run.id}/cancel`)
+
+			expect([cancelled.status, cancelled.body.incompleteReason]).toEqual([200, "cancelled"])
+			expect(harness.cancelled).toEqual([run.id])
+			expect(harness.published).toEqual([run.id])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("reopens only a finding the target already follows", async () => {
+		const harness = makeHarness()
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const run = await harness.withStore((store) =>
+				Effect.gen(function* () {
+					const scoped = store.forOrg(ORG_A)
+					const started = yield* scoped.startRun({
+						targetId: target.body.id,
+						kind: "pull_request",
+						prNumber: 6,
+						sourceRef: "0123456789abcdef0123456789abcdef01234567",
+					})
+					yield* scoped.saveFindings(started.id, [confirmed("p1")], NO_ESTIMATES)
+					return started
+				}),
+			)
+
+			const reopened = await harness.call("PATCH", `/runs/${run.id}/findings/p1`, {
+				body: { status: "open", reason: "still real" },
+			})
+			const followed = await harness.call("GET", `/targets/${target.body.id}/findings`)
+
+			expect([reopened.status, reopened.body.status]).toEqual([200, "open"])
+			expect(followed.body.findings).toEqual([])
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
