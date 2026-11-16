@@ -97,6 +97,8 @@ export interface CompleteScanInput {
 	readonly matches: ReadonlyArray<DependencyScanMatchInput>
 	/** Why the matches are not the whole answer; such a scan stores them but reconciles nothing. */
 	readonly incomplete?: string | undefined
+	/** The OSV answer the matches came from; kept only on a complete scan. */
+	readonly advisoryFingerprint?: string | undefined
 }
 
 export interface SetFindingStatusInput {
@@ -491,6 +493,7 @@ export class DependencyScanStore extends Context.Service<DependencyScanStore, De
 									packageCount: 0,
 									vulnerableCount: 0,
 									error: null,
+									advisoryFingerprint: null,
 									startedAt: now,
 									finishedAt: null,
 								})
@@ -623,6 +626,11 @@ export class DependencyScanStore extends Context.Service<DependencyScanStore, De
 										packageCount: input.packageCount,
 										vulnerableCount,
 										error: input.incomplete ?? null,
+										// An incomplete scan never reconciled, so a later scan must not skip on it.
+										advisoryFingerprint:
+											input.incomplete === undefined
+												? (input.advisoryFingerprint ?? null)
+												: null,
 										finishedAt: now,
 									})
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(scanId)])

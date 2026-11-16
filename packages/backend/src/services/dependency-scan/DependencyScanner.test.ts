@@ -114,6 +114,12 @@ interface World {
 	stallBlobs: Deferred.Deferred<void> | undefined
 	/** Blob shas read from the provider, in order. */
 	readonly blobReads: Array<string>
+	/** Provider and OSV calls, counted per kind. */
+	readonly calls: { resolveRef: number; fetchTreeFiles: number; querybatch: number }
+	/** Vulnerability ids OSV leaves out of its answer, as before an advisory is published. */
+	readonly hidden: Set<string>
+	/** Per vulnerability id: a newer `modified`, or a record OSV serves as withdrawn. */
+	readonly revisions: Map<string, { readonly modified?: string; readonly withdrawn?: string }>
 }
 
 const world = (files: Record<string, string>): World => ({
@@ -129,12 +135,20 @@ const world = (files: Record<string, string>): World => ({
 	headAfterTree: undefined,
 	stallBlobs: undefined,
 	blobReads: [],
+	calls: { resolveRef: 0, fetchTreeFiles: 0, querybatch: 0 },
+	hidden: new Set(),
+	revisions: new Map(),
 })
 
 const source = (state: World) => ({
-	resolveRef: () => Effect.sync(() => Option.fromNullOr(state.head)),
+	resolveRef: () =>
+		Effect.sync(() => {
+			state.calls.resolveRef += 1
+			return Option.fromNullOr(state.head)
+		}),
 	fetchTreeFiles: () =>
 		Effect.sync(() => {
+			state.calls.fetchTreeFiles += 1
 			const listing = {
 				truncated: state.truncated,
 				files: Arr.map([...state.files], ([path, blob]): VcsTreeFile => ({
@@ -174,6 +188,7 @@ const osv = (state: World) =>
 			if (state.osvDown) return json(request, { message: "unavailable" }, 503)
 			const url = new URL(request.url)
 			if (url.pathname === "/v1/querybatch") {
+				state.calls.querybatch += 1
 				const body: { queries: ReadonlyArray<Query> } =
 					request.body._tag === "Uint8Array"
 						? JSON.parse(new TextDecoder().decode(request.body.body))
@@ -187,10 +202,24 @@ const osv = (state: World) =>
 								known.package.name === query.package.name &&
 								known.version === query.version,
 						)
-						return Option.match(index, {
-							onNone: () => ({}),
-							onSome: (i) => osvFixture.batch.results[i] ?? {},
-						})
+						const result: { readonly vulns?: ReadonlyArray<{ id: string; modified: string }> } =
+							Option.match(index, {
+								onNone: () => ({}),
+								onSome: (i) => osvFixture.batch.results[i] ?? {},
+							})
+						return {
+							vulns: Arr.flatMap(result.vulns ?? [], (vuln) =>
+								state.hidden.has(vuln.id)
+									? []
+									: [
+											{
+												...vuln,
+												modified:
+													state.revisions.get(vuln.id)?.modified ?? vuln.modified,
+											},
+										],
+							),
+						}
 					}),
 				})
 			}
@@ -198,7 +227,10 @@ const osv = (state: World) =>
 			const vuln = Option.getOrUndefined(
 				Arr.findFirst(osvFixture.vulns, (candidate) => candidate.id === id),
 			)
-			return vuln === undefined ? json(request, { message: "not found" }, 404) : json(request, vuln)
+			const withdrawn = state.revisions.get(id)?.withdrawn
+			return vuln === undefined
+				? json(request, { message: "not found" }, 404)
+				: json(request, withdrawn === undefined ? vuln : { ...vuln, withdrawn })
 		}),
 	)
 
@@ -549,6 +581,7 @@ describe("DependencyScanner", () => {
 			return Effect.gen(function* () {
 				const scanner = yield* DependencyScanner
 				yield* scanner.scan(installation, repository, { trigger: "schedule" })
+				state.head = sha("b")
 				state.truncated = true
 				state.files.delete("package-lock.json")
 				const error = yield* Effect.flip(
@@ -601,6 +634,7 @@ describe("DependencyScanner", () => {
 		return Effect.gen(function* () {
 			const scanner = yield* DependencyScanner
 			yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			state.head = sha("b")
 			state.files.set("package-lock.json", { sha: "huge", content: "", size: MAX_LOCKFILE_BYTES + 1 })
 			const outcome = yield* scanner.scan(installation, repository, { trigger: "schedule" })
 			assert.strictEqual(
@@ -638,6 +672,206 @@ describe("DependencyScanner", () => {
 			})
 			assert.strictEqual(again._tag, "Unchanged")
 			assert.strictEqual(state.blobReads.length, reads)
+		}).pipe(Effect.provide(scannerFor(state)))
+	})
+})
+
+describe("DependencyScanner scheduled rescans", () => {
+	const LOCKFILE = { "package-lock.json": packageLock("4.17.15") }
+	const MINIMIST_ADVISORY = "GHSA-xvch-5gv4-984h"
+
+	const resetCalls = (state: World) => {
+		state.calls.resolveRef = 0
+		state.calls.fetchTreeFiles = 0
+		state.calls.querybatch = 0
+	}
+
+	const scansOf = Effect.gen(function* () {
+		const store = yield* DependencyScanStore
+		return yield* store.listScans({ orgId: repository.orgId, limit: 50 })
+	})
+
+	const minimistOpen = Effect.map(findingsOf, (findings) =>
+		Arr.some(
+			findings,
+			(finding) => finding.advisoryId === MINIMIST_ADVISORY && finding.status === "open",
+		),
+	)
+
+	/** A completed default-branch scan of commit a, written as a scan before this change would. */
+	const completedScanAt = (fingerprint: string | undefined, incomplete?: string) =>
+		Effect.gen(function* () {
+			const store = yield* DependencyScanStore
+			const started = yield* store.startScan({
+				orgId: repository.orgId,
+				repositoryId: repository.id,
+				commitSha: sha("a"),
+				ref: "main",
+				trigger: "schedule",
+				defaultBranchHead: true,
+			})
+			return yield* store.completeScan({
+				orgId: repository.orgId,
+				scanId: started.id,
+				lockfiles: [],
+				packageCount: 0,
+				matches: [],
+				advisoryFingerprint: fingerprint,
+				incomplete,
+			})
+		})
+
+	it.effect("skips a commit already scanned when OSV answers the same, but still asks OSV", () => {
+		const state = world(LOCKFILE)
+		return Effect.gen(function* () {
+			const scanner = yield* DependencyScanner
+			const first = yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			assert.strictEqual(first._tag, "Scanned")
+			// Before: every scheduled scan resolved the head twice, listed the tree and asked OSV.
+			assert.deepStrictEqual(state.calls, { resolveRef: 2, fetchTreeFiles: 1, querybatch: 1 })
+			resetCalls(state)
+			yield* TestClock.adjust("12 hours")
+
+			const again = yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			assert.strictEqual(again._tag, "Unchanged")
+			assert.deepStrictEqual(state.calls, { resolveRef: 1, fetchTreeFiles: 0, querybatch: 1 })
+			assert.strictEqual((yield* scansOf).length, 1)
+		}).pipe(Effect.provide(scannerFor(state)))
+	})
+
+	it.effect("scans again when OSV publishes a new advisory, asking OSV once", () => {
+		const state = world(LOCKFILE)
+		state.hidden.add(MINIMIST_ADVISORY)
+		return Effect.gen(function* () {
+			const scanner = yield* DependencyScanner
+			yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			assert.isFalse(yield* minimistOpen)
+			state.hidden.delete(MINIMIST_ADVISORY)
+			resetCalls(state)
+			yield* TestClock.adjust("12 hours")
+
+			const outcome = yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			assert.strictEqual(outcome._tag, "Scanned")
+			assert.deepStrictEqual(state.calls, { resolveRef: 2, fetchTreeFiles: 0, querybatch: 1 })
+			assert.isTrue(yield* minimistOpen)
+			if (outcome._tag !== "Scanned") return
+			const store = yield* DependencyScanStore
+			const matches = yield* store.scanMatches({ orgId: repository.orgId, scanId: outcome.scan.id })
+			assert.isTrue(Arr.some(matches, (match) => match.advisoryId === MINIMIST_ADVISORY))
+		}).pipe(Effect.provide(scannerFor(state)))
+	})
+
+	it.effect("scans again when an advisory is modified, even under the same id", () => {
+		const state = world(LOCKFILE)
+		state.revisions.set(MINIMIST_ADVISORY, { modified: "2026-01-01T00:00:00Z", withdrawn: "2026-01-01" })
+		return Effect.gen(function* () {
+			const scanner = yield* DependencyScanner
+			yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			assert.isFalse(yield* minimistOpen)
+			// Reinstated: a new modification time, and the record no longer withdrawn.
+			state.revisions.set(MINIMIST_ADVISORY, { modified: "2026-11-01T00:00:00Z" })
+			yield* TestClock.adjust("12 hours")
+
+			const outcome = yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			assert.strictEqual(outcome._tag, "Scanned")
+			assert.isTrue(yield* minimistOpen)
+		}).pipe(Effect.provide(scannerFor(state)))
+	})
+
+	it.effect(
+		"scans in full when the last scan of the commit is incomplete, failed or has no fingerprint",
+		() =>
+			Effect.forEach(
+				[
+					{ name: "incomplete", setup: completedScanAt("stale", "main moved on") },
+					{ name: "no fingerprint", setup: completedScanAt(undefined) },
+					{
+						name: "failed",
+						setup: Effect.gen(function* () {
+							const store = yield* DependencyScanStore
+							const started = yield* store.startScan({
+								orgId: repository.orgId,
+								repositoryId: repository.id,
+								commitSha: sha("a"),
+								ref: "main",
+								trigger: "schedule",
+								defaultBranchHead: true,
+							})
+							return yield* store.failScan({
+								orgId: repository.orgId,
+								scanId: started.id,
+								error: "OSV querybatch failed",
+							})
+						}),
+					},
+				],
+				({ name, setup }) => {
+					const state = world(LOCKFILE)
+					return Effect.gen(function* () {
+						yield* setup
+						const scanner = yield* DependencyScanner
+						const outcome = yield* scanner.scan(installation, repository, { trigger: "schedule" })
+						assert.strictEqual(outcome._tag, "Scanned", name)
+						if (outcome._tag !== "Scanned") return
+						assert.isNotNull(outcome.scan.advisoryFingerprint, name)
+						assert.strictEqual(state.calls.querybatch, 1, name)
+					}).pipe(Effect.provide(scannerFor(state)))
+				},
+				{ discard: true },
+			),
+	)
+
+	it.effect("scans in full when the branch moved to another commit", () => {
+		const state = world(LOCKFILE)
+		return Effect.gen(function* () {
+			const scanner = yield* DependencyScanner
+			yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			state.head = sha("b")
+			const outcome = yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			assert.strictEqual(outcome._tag, "Scanned")
+			assert.strictEqual(state.calls.fetchTreeFiles, 2)
+		}).pipe(Effect.provide(scannerFor(state)))
+	})
+
+	it.effect("never skips a manual scan", () => {
+		const state = world(LOCKFILE)
+		return Effect.gen(function* () {
+			const scanner = yield* DependencyScanner
+			yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			const outcome = yield* scanner.scan(installation, repository, { trigger: "manual" })
+			assert.strictEqual(outcome._tag, "Scanned")
+			assert.strictEqual((yield* scansOf).length, 2)
+		}).pipe(Effect.provide(scannerFor(state)))
+	})
+
+	it.effect("skips an unchanged commit with no lockfiles without asking OSV", () => {
+		const state = world({ "README.md": "# shop" })
+		return Effect.gen(function* () {
+			const scanner = yield* DependencyScanner
+			yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			resetCalls(state)
+			const outcome = yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			assert.strictEqual(outcome._tag, "Unchanged")
+			assert.deepStrictEqual(state.calls, { resolveRef: 1, fetchTreeFiles: 0, querybatch: 0 })
+		}).pipe(Effect.provide(scannerFor(state)))
+	})
+
+	it.effect("stores no fingerprint on an incomplete scan, so the next one scans in full", () => {
+		const state = world(LOCKFILE)
+		state.headAfterTree = sha("c")
+		return Effect.gen(function* () {
+			const scanner = yield* DependencyScanner
+			const first = yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			assert.strictEqual(
+				first._tag === "Scanned" ? first.scan.error : null,
+				"main moved on to ccccccc during the scan",
+			)
+			assert.isNull(first._tag === "Scanned" ? first.scan.advisoryFingerprint : "missing")
+
+			state.head = sha("a")
+			state.headAfterTree = undefined
+			const again = yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			assert.strictEqual(again._tag, "Scanned")
 		}).pipe(Effect.provide(scannerFor(state)))
 	})
 })
