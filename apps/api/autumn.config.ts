@@ -30,6 +30,15 @@ export const traces = feature({
 	consumable: true,
 })
 
+// Continuous CPU profiles, in GB of decoded OTLP profiles. Metered by the ingest gateway
+// (`PROFILES_FEATURE_ID` in apps/ingest/src/main.rs).
+export const profiles = feature({
+	id: "profiles",
+	name: "Profiles",
+	type: "metered",
+	consumable: true,
+})
+
 export const browserSessions = feature({
 	id: "browser_sessions",
 	name: "Browser Sessions",
@@ -136,6 +145,17 @@ export const startup = plan({
 			included: 100,
 			price: {
 				amount: 0.3,
+				billingUnits: 1,
+				billingMethod: "usage_based",
+				interval: "month",
+			},
+		},
+		{
+			// Priced above the other byte signals: a profile stores about 28 times its wire size.
+			featureId: "profiles",
+			included: 10,
+			price: {
+				amount: 0.6,
 				billingUnits: 1,
 				billingMethod: "usage_based",
 				interval: "month",
