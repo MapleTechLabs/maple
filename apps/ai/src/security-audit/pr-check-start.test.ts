@@ -619,6 +619,8 @@ describe("startPullRequestCheck edits after an unfinished audit", () => {
 
 		expect(result.outcome.reason).toBe("already_checked")
 		expect([harness.started.length, result.runs.length]).toEqual([1, 1])
+		// The cancelled run's result is said again, in case its earlier write never landed.
+		expect(harness.published).toEqual([harness.started[0]?.runId])
 	})
 })
 
