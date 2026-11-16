@@ -11,6 +11,10 @@ export const CLOUD_FINDING_SEVERITIES = ["critical", "high", "medium", "low", "i
 export const CloudFindingSeverity = Schema.Literals(CLOUD_FINDING_SEVERITIES)
 export type CloudFindingSeverity = typeof CloudFindingSeverity.Type
 
+/** What the poller reads per region: a findings service, or CloudTrail for the audit log. */
+export const CloudSecurityFeed = Schema.Literals([...CLOUD_FINDING_SOURCES, "cloudtrail"])
+export type CloudSecurityFeed = typeof CloudSecurityFeed.Type
+
 /** `archived`: suppressed in the service. `resolved`: the service closed it (fixed, or gone). */
 export const CloudFindingStatus = Schema.Literals(["active", "archived", "resolved"])
 export type CloudFindingStatus = typeof CloudFindingStatus.Type

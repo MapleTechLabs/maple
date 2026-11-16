@@ -3,6 +3,7 @@ import {
 	CloudFindingSeverity,
 	CloudFindingSource,
 	CloudFindingStatus,
+	CloudSecurityFeed,
 	CloudServiceState,
 } from "@maple/domain/cloud-security"
 import { AwsAccountId, AwsConnectionId, AwsRegion, OrgId } from "@maple/primitives"
@@ -67,7 +68,7 @@ export const CloudSecurityServiceStates = PG.table("cloud_security_service_state
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
 		connectionId: PG.column(PG.brand(PG.text, AwsConnectionId), { name: "connection_id" }),
 		region: PG.brand(PG.text, AwsRegion),
-		source: PG.brand(PG.text, CloudFindingSource),
+		source: PG.brand(PG.text, CloudSecurityFeed),
 		state: PG.brand(PG.text, CloudServiceState),
 		/** The newest `provider_updated_at` stored; the next poll reads from here. Null: never read. */
 		cursorAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "cursor_at" }),

@@ -1,7 +1,7 @@
 import {
 	cloudFindingConsoleUrl,
 	cloudResourceIdCandidates,
-	type CloudFindingSource,
+	CloudFindingSource,
 } from "@maple/domain/cloud-security"
 import {
 	type CloudFinding,
@@ -21,11 +21,14 @@ import {
 import type { CloudSecurityFindingRow } from "@maple/db/tables"
 import type { OrgId } from "@maple/primitives"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
-import { Array as Arr, Clock, Context, Effect, Layer, Option, Order } from "effect"
+import { Array as Arr, Clock, Context, Effect, Layer, Option, Order, Schema } from "effect"
+
 import { AwsConnectionService } from "@maple/backend/services/integrations/AwsConnectionService"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { CloudSecurityStore } from "./CloudSecurityStore"
+
+const isFindingSource = Schema.is(CloudFindingSource)
 
 // The Security hub's Cloud tab: the store's findings, each matched to the services whose telemetry
 // carried its resource, behind the `cloudSecurity` rollout.
@@ -190,16 +193,18 @@ export class CloudSecurityReadService extends Context.Service<
 					return { connectionId: connection.id, accountId: connection.accountId, module }
 				}),
 				summary,
+				// CloudTrail's state belongs to the audit log's sources, not to the findings page.
 				services: Arr.flatMap(states, (state) => {
 					const accountId = accountOf.get(state.connectionId)
-					return accountId === undefined
+					const source = state.source
+					return accountId === undefined || !isFindingSource(source)
 						? []
 						: [
 								{
 									connectionId: state.connectionId,
 									accountId,
 									region: state.region,
-									source: state.source,
+									source,
 									state: state.state,
 									lastError: state.lastError,
 									checkedAt: state.checkedAt,

@@ -130,6 +130,7 @@ describe("CloudSecurityStore", () => {
 			yield* store.recordServiceState({
 				...base,
 				state: "failing",
+				cursorAt: null,
 				lastError: "throttled",
 				checkedAt: 2,
 			})
@@ -146,6 +147,13 @@ describe("CloudSecurityStore", () => {
 			const store = yield* CloudSecurityStore
 			const mine = yield* connect(orgId, "111111111111")
 			const theirs = yield* connect(otherOrgId, "222222222222")
+			// A finding is stored while open; its closed version then replaces it.
+			const open = [
+				finding(mine, orgId, { findingId: "old-closed", providerUpdatedAt: 50 }),
+				finding(mine, orgId, { findingId: "new-closed", providerUpdatedAt: 50 }),
+				finding(theirs, otherOrgId, { findingId: "their-closed", providerUpdatedAt: 50 }),
+			]
+			yield* store.upsertFindings(open, 1)
 			yield* store.upsertFindings(
 				[
 					finding(mine, orgId, {
@@ -194,6 +202,7 @@ describe("CloudSecurityStore", () => {
 				region,
 				source: "guardduty",
 				state: "enabled",
+				cursorAt: null,
 				lastError: null,
 				checkedAt: 1,
 			})
@@ -374,6 +383,34 @@ describe("CloudSecurityStore", () => {
 				),
 				Arr.sort([first.id, second.id], Order.String),
 			)
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("keeps a finding first seen closed out, and resolves the ones a read no longer names", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const store = yield* CloudSecurityStore
+			const connection = yield* connect(orgId, "111111111111")
+			yield* store.upsertFindings(
+				[
+					finding(connection, orgId, { findingId: "passed", status: "resolved" }),
+					finding(connection, orgId, { findingId: "open-1" }),
+					finding(connection, orgId, { findingId: "open-2" }),
+				],
+				1,
+			)
+			const feed = { orgId, connectionId: connection.id, region, source: "guardduty" as const }
+			assert.strictEqual(yield* store.resolve(feed, { except: ["open-1"] }, 9), 1)
+			const rows = yield* Effect.promise(() =>
+				queryRows<{ finding_id: string; status: string }>(
+					world.testDb,
+					"SELECT finding_id, status FROM cloud_security_findings ORDER BY finding_id",
+				),
+			)
+			assert.deepStrictEqual(rows, [
+				{ finding_id: "open-1", status: "active" },
+				{ finding_id: "open-2", status: "resolved" },
+			])
 		}).pipe(Effect.provide(world.layer))
 	})
 })
