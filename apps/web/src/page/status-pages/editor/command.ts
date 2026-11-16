@@ -349,7 +349,7 @@ export const FocusEditorElement = Command.define("FocusStatusPageEditorElement",
 		Dom.focus(`#${CSS.escape(id)}`).pipe(Effect.ignore, Effect.as(Message.CompletedFocus())),
 })
 
-/** Scrolls an opened component's row into view as it mounts: it may open from the live page. */
+/** Scrolls a component opened from the page preview into view as its row mounts. */
 export const RevealOpenComponent = Mount.define("RevealStatusPageComponent", {
 	messages: [Message.CompletedFocus],
 	execute: ({ element }) =>

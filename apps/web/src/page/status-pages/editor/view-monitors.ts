@@ -119,7 +119,7 @@ const componentForm = (h: H, model: Model, page: V2StatusPage, component: V2Stat
 		{
 			gap: "4",
 			className: "px-4 pt-1 pb-4 sm:pl-12",
-			attributes: [h.OnMount(RevealOpenComponent())],
+			attributes: model.revealComponentId === component.id ? [h.OnMount(RevealOpenComponent())] : [],
 		},
 		[
 			...(isReadOnly

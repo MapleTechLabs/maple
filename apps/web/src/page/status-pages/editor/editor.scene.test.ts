@@ -332,14 +332,14 @@ describe("components under Settings > Monitors", () => {
 			{ update: pageUpdate, view },
 			given(loaded({ ...MONITORS, components: [component(1), target] })),
 			click(role("button", { name: /^API/u })),
-			revealed,
+			// Expanded in place: nothing scrolls.
+			Mount.expectNone(),
 			expectView(role("button", { name: /^API/u })).toHaveAttr("aria-expanded", "true"),
 			expectView(role("textbox", { name: "Shown as" })).toHaveValue("API"),
 			expectView(role("textbox", { name: "Group" })).toHaveValue("Core"),
 			expectView(text("Degraded, set under Override status.")).toExist(),
 			click(role("button", { name: /^API/u })),
 			Command.resolve(FocusEditorElement, Message.CompletedFocus()),
-			Mount.expectEnded(RevealOpenComponent),
 			expectView(role("textbox", { name: "Shown as" })).not.toExist(),
 			expectView(role("button", { name: /^API/u })).toHaveAttr("aria-expanded", "false"),
 		)
@@ -404,7 +404,6 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(editing),
-			revealed,
 			expectView(selector('iframe[title="Component 2 as visitors see it"]')).toHaveAttr("sandbox", ""),
 			tap(({ html }) => {
 				const srcdoc = Option.getOrElse(
@@ -440,6 +439,8 @@ describe("components under Settings > Monitors", () => {
 			context,
 		)
 		expect(landed.model.panel).toEqual({ _tag: "Component", componentId: componentId(3) })
+		// Opened from the page, its row scrolls into view as it mounts.
+		scene({ update: pageUpdate, view }, given(landed.model), revealed)
 		const incidentPicked = pageUpdate(
 			model,
 			Message.ReceivedPreviewSelection({ kind: "incident", id: incidentId(1) }),
@@ -523,7 +524,7 @@ describe("components under Settings > Monitors", () => {
 			saving.model,
 			Message.CompletedSaveComponent({ result: Result.succeed(component(2, { name: "Payments" })) }),
 		)
-		scene({ update: pageUpdate, view }, given(saved.model), revealed, expectView(text("Saved")).toExist())
+		scene({ update: pageUpdate, view }, given(saved.model), expectView(text("Saved")).toExist())
 	})
 
 	test("a description typed in the panel saves on blur and shows in the preview as typed", () => {
@@ -541,7 +542,6 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(editing.model),
-			revealed,
 			expectView(role("textbox", { name: "Description" })).toHaveValue(" Card payments and payouts "),
 		)
 	})
@@ -552,7 +552,6 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(open),
-			revealed,
 			expectView(role("button", { name: "Core" })).toExist(),
 		)
 		const picked = pageUpdate(open, Message.PickedComponentField({ field: "group", value: "Core" }))
@@ -562,7 +561,6 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(picked.model),
-			revealed,
 			expectView(role("textbox", { name: "Group" })).toHaveValue("Core"),
 			expectView(role("group", { name: "Groups on this page" })).not.toExist(),
 		)
@@ -584,7 +582,6 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(failed),
-			revealed,
 			expectView(text("Not saved")).toExist(),
 			expectView(text("Couldn't save the component")).toExist(),
 		)
@@ -594,7 +591,6 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(selected(1)),
-			revealed,
 			expectView(role("checkbox", { name: "Show uptime bars" })).toBeChecked(),
 			expectView(role("checkbox", { name: "Show uptime bars" })).toBeDisabled(),
 			expectView(text("Uptime bars need a monitor.")).toExist(),
@@ -727,7 +723,6 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(selected(1, { grants: MEMBER })),
-			revealed,
 			expectView(text("Component 1")).toExist(),
 			expectView(role("button", { name: "Add monitor" })).not.toExist(),
 			expectView(role("button", { name: "Move Component 1 down" })).not.toExist(),
@@ -3263,7 +3258,6 @@ describe("the sheet, the previews and the reads they wait on", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(refused.model),
-			revealed,
 			expectView(text("Couldn't save the component")).not.toExist(),
 		)
 		// Closing the other component or opening a third sends nothing of the abandoned form.
@@ -3275,7 +3269,6 @@ describe("the sheet, the previews and the reads they wait on", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(pageUpdate(refused.model, Message.ClickedComponent({ componentId: componentId(1) })).model),
-			revealed,
 			expectView(text("Couldn't save the component")).toExist(),
 		)
 	})

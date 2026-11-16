@@ -95,6 +95,11 @@ export const Model = Schema.Struct({
 	isSessionLoaded: Schema.Boolean,
 	pageMenu: Menu.Model,
 	panel: Schema.NullOr(Panel),
+	/**
+	 * A component opened from the page preview, whose row scrolls into view as it opens; one
+	 * expanded in the list stays where it was clicked.
+	 */
+	revealComponentId: Schema.NullOr(StatusPageComponentId),
 	/** The side sheet an incident or Add monitors opens in; open while `panel` is one of those. */
 	panelSheet: Dialog.Model,
 	/** What the sheet shows: the last incident or Add `panel` held, kept while the sheet closes. */

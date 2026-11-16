@@ -76,6 +76,7 @@ export const selectComponent = (model: Model, componentId: StatusPageComponentId
 			...next,
 			panel: { _tag: "Component", componentId },
 			componentForm: componentFormOf(found.value),
+			revealComponentId: null,
 		},
 	}))
 }

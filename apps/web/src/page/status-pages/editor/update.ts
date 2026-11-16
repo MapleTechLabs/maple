@@ -190,6 +190,7 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		rawPageId: route.pageId,
 		pageId: Option.getOrNull(pageIdFromUrl(route.pageId)),
 		nowMs: null,
+		revealComponentId: null,
 		page: Keyed.idle(),
 		components: Keyed.idle(),
 		incidents: Keyed.idle(),
@@ -408,10 +409,14 @@ const selectFromPreview = (model: Model, kind: "component" | "incident", id: str
 			Arr.findFirst(componentsOf(model), (row) => row.id === id),
 			{
 				onNone: () => ({ model }),
-				onSome: (component) => ({
-					...selectComponent(model, component.id),
-					outMessage: navigate(statusPageHref(pageId, "settings", "monitors")),
-				}),
+				onSome: (component) => {
+					const selected = selectComponent(model, component.id)
+					return {
+						...selected,
+						model: { ...selected.model, revealComponentId: component.id },
+						outMessage: navigate(statusPageHref(pageId, "settings", "monitors")),
+					}
+				},
 			},
 		)
 	return Option.match(
