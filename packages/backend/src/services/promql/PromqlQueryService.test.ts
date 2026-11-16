@@ -67,8 +67,22 @@ describe("PromqlQueryService", () => {
 	it.effect("refuses more than 11000 points per series, as Prometheus does", () =>
 		Effect.gen(function* () {
 			const error = yield* failureOf({ query: "up", startMs: 0, endMs: 3_600_000, stepMs: 100 })
-			expect(error.message).toMatch(/maximum resolution of 11000 points/)
+			expect(error.message).toMatch(/maximum resolution of 11,000 points/)
 		}),
+	)
+
+	it.effect("counts whole steps, so 11,000 steps and a remainder still run", () =>
+		Effect.gen(function* () {
+			const service = yield* PromqlQueryService
+			// 16 501 s at 1.5 s is 11 000 whole steps plus 1 s.
+			const result = yield* service.query(tenant, {
+				query: "1",
+				startMs: 0,
+				endMs: 16_501_000,
+				stepMs: 1500,
+			})
+			expect(result.resultType).toBe("matrix")
+		}).pipe(Effect.provide(TestLayer)),
 	)
 
 	it.effect("refuses a range that ends before it starts and a zero step", () =>
