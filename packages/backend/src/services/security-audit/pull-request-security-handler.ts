@@ -26,7 +26,13 @@ const FORWARDED: ReadonlySet<PullRequestEventJob["action"]> = new Set([
 export const securityPrCheckPullRequestHandler: PullRequestEventHandler<Env | AiWorkerFetcher> = Effect.gen(
 	function* () {
 		const connection = yield* aiWorkerConnection
-		if (Result.isFailure(connection)) return { onPullRequestEvent: () => Effect.void }
+		// A deployment without the binding or token posts no check at all: say so, once, at build.
+		if (Result.isFailure(connection)) {
+			yield* Effect.logWarning(
+				"[SecurityPrCheck] no maple-ai connection; pull request checks are off",
+			).pipe(Effect.annotateLogs({ reason: connection.failure }))
+			return { onPullRequestEvent: () => Effect.void }
+		}
 		const { authorization, httpClient } = connection.success
 		const client = yield* HttpApiClient.group(MapleAiApi, {
 			group: "securityPrCheck",
