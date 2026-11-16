@@ -193,6 +193,8 @@ export const featurePath = (locale: string, slug: string) => localePath(locale, 
 
 export const useCasePath = (locale: string, slug: string) => localePath(locale, `/use-cases/${slug}`)
 
+export const pricingPath = (locale: string) => localePath(locale, "/pricing")
+
 /**
  * A story is only allowed to pin its pane when at least two plates are real.
  * A pinned frame crossfading between identical placeholder dot-grids reads as
