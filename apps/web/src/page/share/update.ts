@@ -49,7 +49,7 @@ export const resolveShareWindow = (
 ): ShareWindow | null => {
 	const { search } = model
 	const options = {
-		snap: model.refreshTick === 0,
+		snap: model.clockRead !== "Reload",
 		nowMs: model.nowMs,
 		timeZone: shareTimeZoneOf(search, pageTimeZone),
 	}
@@ -155,10 +155,10 @@ const withWindow = (model: Model, pageTimeZone: string): Model => {
 		: { ...model, window: resolveShareWindow(model, share, pageTimeZone) }
 }
 
+/** A tick keeps the snapped window, so only tiles whose window reached the next grid step refetch. */
 const reload = (model: Model, pageTimeZone: string): Return => {
-	const refreshTick = model.refreshTick + 1
-	const next = withWindow({ ...model, refreshTick, requested: {} }, pageTimeZone)
-	return flush(next)
+	const requested = model.clockRead === "Reload" ? {} : model.requested
+	return flush(withWindow({ ...model, requested }, pageTimeZone))
 }
 
 export const init = (route: Route): Return => ({
@@ -166,7 +166,7 @@ export const init = (route: Route): Return => ({
 		token: route.token,
 		search: route.search,
 		resolve: { _tag: "Loading" },
-		refreshTick: 0,
+		clockRead: "Navigation",
 		window: null,
 		options: {},
 		requested: {},
@@ -250,8 +250,11 @@ export const update = (model: Model, message: Message, pageTimeZone: string): Re
 						: [FetchBatch({ token: model.token, batchId: model.sentBatchId + 1, ...next })],
 			}
 		},
-		ClickedReload: () => ({ model, commands: [ResolveReloadClock()] }),
-		TickedAutoRefresh: () => ({ model, commands: [ResolveReloadClock()] }),
+		ClickedReload: () => ({ model: { ...model, clockRead: "Reload" }, commands: [ResolveReloadClock()] }),
+		TickedAutoRefresh: () => ({
+			model: { ...model, clockRead: "AutoRefresh" },
+			commands: [ResolveReloadClock()],
+		}),
 		CompletedResolveReloadClock: ({ nowMs }) => reload({ ...model, nowMs }, pageTimeZone),
 		...chartEnvHandlers(model),
 		GotChartMessage: ({ widgetId, message: inner }) => {

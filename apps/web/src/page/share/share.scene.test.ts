@@ -132,6 +132,27 @@ describe("share", () => {
 		expect(moved.window?.endTime).toBe("2026-10-01 12:05:00")
 	})
 
+	test("an auto-refresh tick inside the same grid step fetches nothing; the next step refetches", () => {
+		const settled = update(measured(2), Message.CompletedFlushFrame()).model
+		const tickAt = (model: Model, nowMs: number) =>
+			update(
+				update(model, Message.TickedAutoRefresh()).model,
+				Message.CompletedResolveReloadClock({ nowMs }),
+			)
+		const sameStep = tickAt(settled, NOW + 30_000)
+		expect(names(sameStep.commands)).not.toContain(FetchBatch.name)
+		expect(sameStep.model.window?.endTime).toBe(settled.window?.endTime)
+		expect(names(tickAt(sameStep.model, NOW + 60_000).commands)).toContain(FetchBatch.name)
+	})
+
+	test("a reload inside the same grid step still refetches at the true time", () => {
+		const settled = update(measured(2), Message.CompletedFlushFrame()).model
+		const clicked = update(settled, Message.ClickedReload()).model
+		const reloaded = update(clicked, Message.CompletedResolveReloadClock({ nowMs: NOW + 30_000 }))
+		expect(names(reloaded.commands)).toContain(FetchBatch.name)
+		expect(reloaded.model.window?.endTime).toBe("2026-10-01 12:00:30")
+	})
+
 	test("an unknown link renders the unavailable card", () => {
 		scene(
 			{ update: (model, message) => update(model, message), view },

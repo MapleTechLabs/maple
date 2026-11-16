@@ -99,8 +99,8 @@ export const Model = Schema.Struct({
 	token: Schema.String,
 	search: ShareSearch,
 	resolve: Resolve,
-	/** Reloads and auto-refresh ticks so far (non-zero stops snapping). */
-	refreshTick: Schema.Number,
+	/** What read `nowMs`: only a Reload unsnaps the window and refetches tiles whose key held still. */
+	clockRead: Schema.Literals(["Navigation", "AutoRefresh", "Reload"]),
 	window: Schema.NullOr(ShareWindow),
 	/** Each mounted tile's measured `maxDataPoints`. */
 	options: Schema.Record(Schema.String, Schema.Number),
