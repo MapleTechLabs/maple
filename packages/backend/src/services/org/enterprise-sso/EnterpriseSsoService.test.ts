@@ -4,7 +4,13 @@ import { Array as Arr, ConfigProvider, Effect, Exit, Layer, Option, Schema, Stri
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { OrgId, SsoConnectionRequest, SsoSamlSettings, UserId } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	executeSql,
+	queryFirstRow,
+	type TestDb,
+} from "@maple/backend/testing/test-pglite"
 import { AutumnClient, type AutumnResult } from "@maple/backend/services/billing/autumn-http"
 import { ClerkRequestError } from "@maple/backend/services/auth/clerk-request"
 import { ClerkSsoGateway, type ClerkSsoConnection, type ClerkSsoDirectory } from "./ClerkSsoGateway"
@@ -31,6 +37,8 @@ interface FakeClerk {
 	/** What Clerk says about a deprovisioned user now, or that it cannot be reached. */
 	deprovisioned: "yes" | "no" | "unreachable"
 	deprovisionLookups: number
+	/** Runs while Clerk rotates a key, to change the world mid-request. */
+	onRotate: (() => Promise<void>) | null
 	emailDomains: Map<string, Array<string>>
 	nextId: number
 	/** The next `createConnection` fails with this Clerk status and message. */
@@ -52,6 +60,7 @@ const fakeClerk = (): FakeClerk => ({
 	bypass: [],
 	deprovisioned: "yes",
 	deprovisionLookups: 0,
+	onRotate: null,
 	members: new Set(["user_admin", "user_breakglass", "user_contractor", "user_dual"]),
 	emailDomains: new Map([
 		["user_breakglass", ["acme.com"]],
@@ -174,7 +183,8 @@ const gatewayLayer = (clerk: FakeClerk) =>
 				if (d === undefined) return Effect.fail(notFound("dir"))
 				const next = { ...d, api_key: `scim_${clerk.nextId++}` }
 				clerk.directories.set(id, next)
-				return Effect.succeed(next)
+				const hook = clerk.onRotate
+				return hook === null ? Effect.succeed(next) : Effect.promise(hook).pipe(Effect.as(next))
 			}),
 		deleteDirectory: (id) => Effect.sync(() => void clerk.directories.delete(id)),
 		listRoleMappings: (directoryId) =>
@@ -228,8 +238,20 @@ const gatewayLayer = (clerk: FakeClerk) =>
 	})
 
 /** Published TXT records by name. */
-const dnsLayer = (records: Map<string, Array<string>>) =>
-	Layer.succeed(DnsTxtResolver, { lookupTxt: (name) => Effect.succeed(records.get(name) ?? []) })
+/** A step a test runs in the middle of a request, to change the world under it. */
+interface MidRequestHook {
+	current: (() => Promise<void>) | null
+}
+
+/** Published TXT records by name; `onLookup` runs during the lookup, to change the world mid-request. */
+const dnsLayer = (records: Map<string, Array<string>>, onLookup: MidRequestHook) =>
+	Layer.succeed(DnsTxtResolver, {
+		lookupTxt: (name) => {
+			const found = Effect.sync(() => records.get(name) ?? [])
+			const hook = onLookup.current
+			return hook === null ? found : Effect.promise(hook).pipe(Effect.andThen(found))
+		},
+	})
 
 const die = () => Effect.die(new Error("not used by this test"))
 
@@ -270,7 +292,12 @@ const config = ConfigProvider.layer(
 
 const run = <A, E>(
 	testDb: TestDb,
-	world: { clerk: FakeClerk; dns: Map<string, Array<string>>; entitled: boolean },
+	world: {
+		clerk: FakeClerk
+		dns: Map<string, Array<string>>
+		entitled: boolean
+		onLookup?: MidRequestHook
+	},
 	effect: Effect.Effect<A, E, EnterpriseSsoService>,
 ) =>
 	effect.pipe(
@@ -282,7 +309,7 @@ const run = <A, E>(
 						EdgeCacheService.layer.pipe(Layer.provide(MemoryCacheBackendLive)),
 						BillingCustomerResolver.standalone,
 						gatewayLayer(world.clerk),
-						dnsLayer(world.dns),
+						dnsLayer(world.dns, world.onLookup ?? { current: null }),
 					),
 				),
 				Layer.provide(testDb.layer),
@@ -840,6 +867,75 @@ describe("EnterpriseSsoService", () => {
 					assert.isTrue(yield* sso.confirmDeprovisioned(ADMIN))
 					// One attempt and two retries before it gives up and sweeps.
 					assert.strictEqual(world.clerk.deprovisionLookups, 3)
+				}),
+			)
+		},
+	)
+
+	it.effect(
+		"leaves a domain pending when it is removed and re-added while its TXT record is checked",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const onLookup: MidRequestHook = { current: null }
+			const world = {
+				clerk: fakeClerk(),
+				dns: new Map<string, Array<string>>(),
+				entitled: true,
+				onLookup,
+			}
+			return run(
+				testDb,
+				world,
+				Effect.gen(function* () {
+					const sso = yield* EnterpriseSsoService
+					const added = yield* sso.addDomain(ORG, ADMIN, "acme.com")
+					const record = added.domains[0]
+					world.dns.set(record?.recordName ?? "", [record?.recordValue ?? ""])
+					// The re-added row carries a new challenge nobody published.
+					onLookup.current = () =>
+						executeSql(
+							testDb,
+							"UPDATE org_sso_domains SET challenge = 'maple-domain-verification=new' WHERE domain = 'acme.com'",
+						)
+					const after = yield* sso.verifyDomain(ORG, "acme.com")
+					assert.strictEqual(after.domains[0]?.status, "pending")
+				}),
+			)
+		},
+	)
+
+	it.effect(
+		"returns a rotated token with its own directory's endpoint even if the binding changes meanwhile",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const world = { clerk: fakeClerk(), dns: new Map<string, Array<string>>(), entitled: true }
+			return run(
+				testDb,
+				world,
+				Effect.gen(function* () {
+					const sso = yield* EnterpriseSsoService
+					yield* verifiedDomain(world.dns, "acme.com")
+					yield* sso.createConnection(ORG, ADMIN, samlRequest(["acme.com"]))
+					const first = yield* sso.createDirectory(ORG)
+					const firstEndpoint = first.document.directory?.endpointUrl
+					// While Clerk rotates, another request swaps in a different directory.
+					world.clerk.directories.set("dir_other", {
+						id: "dir_other",
+						connectionId: "x",
+						endpoint_url: "https://scim.clerk.test/dir_other/custom",
+						enabled: true,
+						paused: false,
+						group_role_mapping_enabled: false,
+						created_at: 1,
+						api_key: null,
+					})
+					world.clerk.onRotate = () =>
+						executeSql(
+							testDb,
+							"UPDATE org_sso_connections SET clerk_directory_id = 'dir_other' WHERE org_id = 'org_acme'",
+						)
+					const rotated = yield* sso.rotateDirectoryToken(ORG)
+					assert.strictEqual(rotated.document.directory?.endpointUrl, firstEndpoint)
 				}),
 			)
 		},
