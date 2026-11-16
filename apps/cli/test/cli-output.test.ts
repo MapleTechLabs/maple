@@ -19,7 +19,11 @@ import {
 } from "../src/lib/output"
 import { logsLink, traceLink, uiRangeFor, withLogTraceLinks } from "../src/lib/local-links"
 import { errorsView, servicesView } from "../src/lib/views"
-import { WarehouseConfigError, WarehouseQueryError } from "@maple/domain/http/warehouse-errors"
+import {
+	WarehouseConfigError,
+	WarehouseInvalidSqlError,
+	WarehouseQueryError,
+} from "@maple/domain/http/warehouse-errors"
 import { LocalQueryFailed } from "@maple/query-engine/local"
 
 describe("--format", () => {
@@ -223,6 +227,17 @@ describe("failure rendering", () => {
 		assert.equal(report.message, "Code: 62. Syntax error")
 		assert.equal(report.expected, false)
 		assert.match(report.hint ?? "", /--debug/)
+	})
+
+	it("treats the user's own SQL failing to parse as an expected outcome", () => {
+		const invalid = (pipeName: string) =>
+			describeFailure(
+				new WarehouseInvalidSqlError({ message: "Code: 62. Syntax error\n  at frame", pipeName }),
+			)
+		assert.equal(invalid("rawQuery").expected, true)
+		assert.equal(invalid("rawQuery").message, "Code: 62. Syntax error")
+		// The CLI's own built-in queries failing to parse is a Maple bug.
+		assert.equal(invalid("list_metrics").expected, false)
 	})
 
 	it("hides Effect's cause rendering unless --debug", () => {

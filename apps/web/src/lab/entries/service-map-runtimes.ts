@@ -24,10 +24,12 @@ import {
 	MAP_RUNTIMES_NOW,
 	MAP_RUNTIMES_SELECTED,
 } from "../service-map-runtimes-fixture"
+import { MAP_NAMESPACES_BUNDLE } from "../service-map-namespaces-fixture"
 import { defineShellLab } from "../shell-lab"
 
 // `/lab/service-map-runtimes[?tab=infrastructure]`: the service map over the fleet topology with
 // `fleet-api` selected, its side panel on the Service or Infrastructure tab. Reads are answered.
+// `?topology=namespaces` swaps in two namespaces sharing a cache, with nothing selected.
 
 const CONTEXT: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_lab_service_map_runtimes"),
@@ -37,11 +39,14 @@ const CONTEXT: PageContext = {
 
 const PanelTab = Schema.Literals(["service", "infrastructure"])
 
-const Flags = Schema.Struct({ tab: PanelTab })
+const Topology = Schema.Literals(["fleet", "namespaces"])
+type Topology = typeof Topology.Type
+
+const Flags = Schema.Struct({ tab: PanelTab, topology: Topology })
 type Flags = typeof Flags.Type
 
 /** `isPrimed` once the lab selected the node: a later deselect is the user's. */
-const Model = Schema.Struct({ page: PageModel, tab: PanelTab, isPrimed: Schema.Boolean })
+const Model = Schema.Struct({ page: PageModel, flags: Flags, isPrimed: Schema.Boolean })
 type Model = typeof Model.Type
 
 const Message = defineMessageUnion({ GotPageMessage: { message: PageMessage } })
@@ -64,8 +69,13 @@ const slot =
 		return isPending(target.data) ? [answer(target.key ?? "")] : []
 	}
 
+const BUNDLES = {
+	fleet: MAP_RUNTIMES_BUNDLE,
+	namespaces: MAP_NAMESPACES_BUNDLE,
+} satisfies Record<Topology, MapBundle["value"]>
+
 /** Every read the page makes; adding a read is one more entry. */
-const ANSWERS: ReadonlyArray<Answer> = [
+const answersFor = (topology: Topology): ReadonlyArray<Answer> => [
 	slot(
 		(model) => model.facets,
 		(key) => PageMessage.CompletedFetchFacets({ key, result: Result.succeed(MAP_RUNTIMES_ENVIRONMENTS) }),
@@ -75,7 +85,7 @@ const ANSWERS: ReadonlyArray<Answer> = [
 		(key) =>
 			PageMessage.CompletedFetchBundle({
 				key,
-				result: Result.succeed(new MapBundle(MAP_RUNTIMES_BUNDLE)),
+				result: Result.succeed(new MapBundle(BUNDLES[topology])),
 			}),
 	),
 	slot(
@@ -114,8 +124,8 @@ const ANSWERS: ReadonlyArray<Answer> = [
 			: [],
 ]
 
-const answers = (model: PageModel): ReadonlyArray<PageMessage> =>
-	Arr.flatMap(ANSWERS, (answer) => answer(model))
+const answers = (model: PageModel, topology: Topology): ReadonlyArray<PageMessage> =>
+	Arr.flatMap(answersFor(topology), (answer) => answer(model))
 
 const merge = (acc: PageResult, next: PageResult): PageResult => ({
 	model: next.model,
@@ -127,9 +137,9 @@ const apply = (result: PageResult, messages: ReadonlyArray<PageMessage>): PageRe
 	Arr.reduce(messages, result, (acc, message) => merge(acc, MapUpdate.update(acc.model, message, CONTEXT)))
 
 /** Answers pending reads until none is left (an answer can start the next read). */
-const settle = (result: PageResult, depth = 0): PageResult => {
-	const pending = answers(result.model)
-	return pending.length === 0 || depth > 6 ? result : settle(apply(result, pending), depth + 1)
+const settle = (result: PageResult, topology: Topology, depth = 0): PageResult => {
+	const pending = answers(result.model, topology)
+	return pending.length === 0 || depth > 6 ? result : settle(apply(result, pending), topology, depth + 1)
 }
 
 /** Once the map exists: select the service, then open the requested panel tab. */
@@ -146,12 +156,12 @@ const prime = (result: PageResult, tab: Flags["tab"]): PageResult =>
 /** Network reads and the clock are answered here; local Commands (storage, chart runtime) run. */
 const isRead = (name: string) => /^(Fetch|ResolveServiceMapWindow|LoadServiceMapSignalPresence)/.test(name)
 
-const step = (result: PageResult, tab: Flags["tab"], isPrimed: boolean): Return => {
-	const settled = settle(result)
+const step = (result: PageResult, flags: Flags, isPrimed: boolean): Return => {
+	const settled = settle(result, flags.topology)
 	const shouldPrime = !isPrimed && Option.isSome(settled.model.map)
-	const primed = shouldPrime ? prime(settled, tab) : settled
+	const primed = shouldPrime && flags.topology === "fleet" ? prime(settled, flags.tab) : settled
 	return {
-		model: { page: primed.model, tab, isPrimed: isPrimed || shouldPrime },
+		model: { page: primed.model, flags, isPrimed: isPrimed || shouldPrime },
 		commands: Command.mapMessages(
 			Arr.filter(primed.commands ?? [], (command) => !isRead(command.name)),
 			(message) => Message.GotPageMessage({ message }),
@@ -180,14 +190,14 @@ const init = (flags: Flags): Return => {
 		}),
 		CONTEXT,
 	)
-	return step(merge(started, resolved), flags.tab, false)
+	return step(merge(started, resolved), flags, false)
 }
 
 /** URL writes (focus, environment) are dropped: the lab stays on its one view. */
 const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		GotPageMessage: ({ message: inner }) =>
-			step(MapUpdate.update(model.page, inner, CONTEXT), model.tab, model.isPrimed),
+			step(MapUpdate.update(model.page, inner, CONTEXT), model.flags, model.isPrimed),
 	})
 
 /** The page's reduced-motion feed, once the map exists. */
@@ -219,12 +229,13 @@ export const lab = defineShellLab("Service map runtimes", {
 	Model,
 	Message,
 	Flags,
-	flags: Effect.sync((): Flags => ({
-		tab:
-			new URLSearchParams(window.location.search).get("tab") === "infrastructure"
-				? "infrastructure"
-				: "service",
-	})),
+	flags: Effect.sync((): Flags => {
+		const search = new URLSearchParams(window.location.search)
+		return {
+			tab: search.get("tab") === "infrastructure" ? "infrastructure" : "service",
+			topology: search.get("topology") === "namespaces" ? "namespaces" : "fleet",
+		}
+	}),
 	init,
 	update,
 	view,

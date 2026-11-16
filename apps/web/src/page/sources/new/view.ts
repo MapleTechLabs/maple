@@ -113,7 +113,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		// A member has no steps to take, so no trail either.
 		isRefused(model)
 			? { title: titleOf(model), actions: cancel(h) }
-			: { titleContent: titleContent(h, model), actions: cancel(h) },
+			: // On Go live the source exists already, so there is nothing left to cancel.
+				{
+					titleContent: titleContent(h, model),
+					actions: model.integration !== null && model.stage === "live" ? undefined : cancel(h),
+				},
 		[pageBody(h, model, inputs.context.timeZone)],
 	),
 )

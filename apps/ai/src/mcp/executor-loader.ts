@@ -15,10 +15,13 @@ export type McpToolServicesLayer = Layer.Layer<
 >
 
 /**
- * Where a `tools/call` got its executor: built on its own request (`inline`), from a background
- * prewarm it is the first call to use (`prewarm`), or already in use by an earlier call (`reused`).
+ * Where a `tools/call` got its executor, as `maple.mcp.executor_build` records it:
+ * - `inline`: this request built it, and paid the whole build.
+ * - `prewarm`: the first call to use a background prewarm's build, finished or still running.
+ * - `joined`: another request's build was still running when this one asked, so it waited on it.
+ * - `reused`: the build had already completed when this request asked.
  */
-export type McpToolExecutorBuildKind = "inline" | "prewarm" | "reused"
+export type McpToolExecutorBuildKind = "inline" | "prewarm" | "joined" | "reused"
 
 /** Span attribute naming the {@link McpToolExecutorBuildKind}, on the request and the build span. */
 export const MCP_EXECUTOR_BUILD_ATTRIBUTE = "maple.mcp.executor_build"
@@ -47,7 +50,8 @@ export class McpToolsUnavailableError extends Schema.TaggedError<McpToolsUnavail
  * The tool executor, imported and built on first use, once per isolate.
  *
  * The executor's service graph is most of the Worker's code. `initialize`, the resource and
- * prompt lists and 401s never run a tool, so they must not pay to load or build it.
+ * prompt lists and 401s never run a tool, so they must not pay to load or build it. The build
+ * also prepares the per-tool lookup, so a call after it imports only its own tool's module.
  */
 export class McpToolExecutorLoader extends Context.Service<
 	McpToolExecutorLoader,
@@ -122,10 +126,17 @@ export class McpToolExecutorLoader extends Context.Service<
 					load: Effect.map(cached, ({ executor }) => executor),
 					loadReportingBuild: Effect.gen(function* () {
 						const fiber = yield* Effect.fiberId
+						// Read before waiting: a request that waits on a running build did not reuse it.
+						const builtBefore = yield* Ref.get(ready)
 						const { executor, builder, prewarmed } = yield* cached
 						if (builder === fiber) return { executor, build: "inline" as const }
 						const claimed = prewarmed && (yield* Ref.getAndSet(prewarmUnclaimed, false))
-						return { executor, build: claimed ? ("prewarm" as const) : ("reused" as const) }
+						const build: McpToolExecutorBuildKind = claimed
+							? "prewarm"
+							: builtBefore
+								? "reused"
+								: "joined"
+						return { executor, build }
 					}),
 					prewarm: Effect.gen(function* () {
 						if (yield* Ref.get(ready)) return

@@ -1,6 +1,6 @@
-import { CloudflareIntegrationStatus } from "@maple/domain/http"
+import { CloudflareIntegrationStatus, GithubIntegrationStatus } from "@maple/domain/http"
 import { V2PlanetScaleIntegration, V2PlanetScaleOrganizationList } from "@maple/domain/http/v2"
-import { Result, Schema, Array as Arr } from "effect"
+import { Result, Schema, Array as Arr, String as Str } from "effect"
 import type { PageContext } from "../page/contract"
 import { Message as IntegrationsMessage } from "../page/integrations/message"
 import type { Model as IntegrationsModel } from "../page/integrations/model"
@@ -12,11 +12,30 @@ import { init as newInit, update as newUpdate } from "../page/sources/new/update
 import { AppRoute } from "../route"
 import type * as Policy from "@maple/domain/policy"
 
-// `/lab/sources?page=cloudflare|planetscale` (the connect flow one step after Connect) and
-// `cloudflare-card|planetscale-card` (the connected integration's card), over fixture statuses.
+// `/lab/sources?page=cloudflare|planetscale|github` (the connect flow one step after Connect),
+// `<integration>-live` (its Go live step) and `cloudflare-card|planetscale-card` (the connected
+// integration's card), over fixture statuses.
 
-export const INTEGRATION_PAGES = ["cloudflare", "planetscale", "cloudflare-card", "planetscale-card"] as const
+export const INTEGRATION_PAGES = [
+	"cloudflare",
+	"planetscale",
+	"github",
+	"cloudflare-live",
+	"planetscale-live",
+	"github-live",
+	"github-syncing-live",
+	"cloudflare-card",
+	"planetscale-card",
+] as const
 export type IntegrationLabPage = (typeof INTEGRATION_PAGES)[number]
+type LabIntegration = "cloudflare" | "planetscale" | "github"
+
+const integrationOf = (page: IntegrationLabPage): LabIntegration =>
+	Str.startsWith("cloudflare")(page)
+		? "cloudflare"
+		: Str.startsWith("planetscale")(page)
+			? "planetscale"
+			: "github"
 
 const NOW = Date.UTC(2026, 10, 6, 12)
 
@@ -87,25 +106,76 @@ const PLANETSCALE = Schema.decodeSync(V2PlanetScaleIntegration)({
 	expires_at: null,
 })
 
+const REPOS = [
+	"hazel",
+	"maple-ui-parity",
+	"terraform-provider-maple",
+	"changesets",
+	"maple-render",
+	"maple-cost",
+	"maple",
+	"effect-orm",
+	"pulumi-maple",
+	"maple-portal",
+	"trace-capture",
+	"gtm",
+]
+
+/** Every granted repository synced, or (`syncing`) the first three synced and the rest backfilling. */
+const githubStatus = (syncing: boolean) =>
+	Schema.decodeSync(GithubIntegrationStatus)({
+		connected: true,
+		state: "connected",
+		accountLogin: "acme",
+		accountType: "organization",
+		repositorySelection: "all",
+		ciTracesEnabled: true,
+		repositoryDiscovery: null,
+		repositories: Arr.map(REPOS, (name, index) => ({
+			id: `0199a005-0000-7000-8000-${Str.padStart(12, "0")(String(index))}`,
+			fullName: `acme/${name}`,
+			htmlUrl: `https://github.com/acme/${name}`,
+			isPrivate: false,
+			status: "active",
+			syncStatus: syncing && index >= 3 ? "backfilling" : "ready",
+			lastSyncedAt: null,
+			lastSyncError: null,
+			trackedBranch: "main",
+			branches: [{ name: "main", isDefault: true }],
+			prReviewEnabled: index < 3,
+		})),
+	})
+
 const ORGANIZATIONS = Schema.decodeSync(V2PlanetScaleOrganizationList)({
 	object: "planetscale_integration.organization_list",
 	organizations: [{ id: "org_1", name: "acme" }],
 })
 
-const isCloudflare = (page: IntegrationLabPage) => page === "cloudflare" || page === "cloudflare-card"
-
-/** The statuses as the hub reads them, then PlanetScale's organization list. */
-const loaded = (model: IntegrationsModel, page: IntegrationLabPage): ReadonlyArray<IntegrationsMessage> => [
-	IntegrationsMessage.CompletedReadClock({ nowMs: NOW }),
-	isCloudflare(page)
-		? IntegrationsMessage.CompletedLoadCloudflare({
+/** The status as the hub reads it. */
+const statusLoaded = (model: IntegrationsModel, page: IntegrationLabPage): IntegrationsMessage => {
+	switch (integrationOf(page)) {
+		case "cloudflare":
+			return IntegrationsMessage.CompletedLoadCloudflare({
 				key: model.statuses.cloudflare.key ?? "",
 				result: Result.succeed(CLOUDFLARE),
 			})
-		: IntegrationsMessage.CompletedLoadPlanetscale({
+		case "planetscale":
+			return IntegrationsMessage.CompletedLoadPlanetscale({
 				key: model.statuses.planetscale.key ?? "",
 				result: Result.succeed(PLANETSCALE),
-			}),
+			})
+		case "github":
+			return IntegrationsMessage.CompletedLoadGithub({
+				key: model.statuses.github.key ?? "",
+				result: Result.succeed(githubStatus(Str.includes("syncing")(page))),
+			})
+	}
+}
+
+/** The clock and the status, then PlanetScale's organization list. */
+const loaded = (model: IntegrationsModel, page: IntegrationLabPage): ReadonlyArray<IntegrationsMessage> => [
+	IntegrationsMessage.CompletedReadClock({ nowMs: NOW }),
+	statusLoaded(model, page),
 ]
 
 const organizationsLoaded = (model: IntegrationsModel): IntegrationsMessage =>
@@ -120,15 +190,13 @@ const organizationsLoaded = (model: IntegrationsModel): IntegrationsMessage =>
 export const integrationCardModel = (page: IntegrationLabPage, context: PageContext): IntegrationsModel => {
 	const step = (model: IntegrationsModel, message: IntegrationsMessage) =>
 		integrationsUpdate(model, message, context).model
-	const entered = integrationsInit(
-		{ search: { integration: isCloudflare(page) ? "cloudflare" : "planetscale" } },
-		context,
-	).model
+	const integration = integrationOf(page)
+	const entered = integrationsInit({ search: { integration } }, context).model
 	const withStatus = Arr.reduce(loaded(entered, page), entered, step)
-	return isCloudflare(page) ? withStatus : step(withStatus, organizationsLoaded(withStatus))
+	return integration === "planetscale" ? step(withStatus, organizationsLoaded(withStatus)) : withStatus
 }
 
-/** The connect flow, one Continue past Connect. */
+/** The connect flow at Choose data, or on through to Go live. */
 export const integrationFlowModel = (
 	page: IntegrationLabPage,
 	context: PageContext,
@@ -137,14 +205,18 @@ export const integrationFlowModel = (
 	const step = (model: NewModel, message: NewMessage) => newUpdate(model, message, context).model
 	const inner = (model: NewModel, message: IntegrationsMessage) =>
 		step(model, NewMessage.GotIntegrationsMessage({ message }))
-	const entered = newInit(
-		AppRoute.SourcesNew({ search: { integration: isCloudflare(page) ? "cloudflare" : "planetscale" } }),
-		context,
-	).model
+	const integration = integrationOf(page)
+	const entered = newInit(AppRoute.SourcesNew({ search: { integration } }), context).model
 	const granted = step(entered, NewMessage.CompletedReadGrants({ grants }))
 	const withStatus = Arr.reduce(loaded(granted.integrations, page), granted, inner)
-	const ready = isCloudflare(page)
-		? withStatus
-		: inner(withStatus, organizationsLoaded(withStatus.integrations))
-	return Arr.reduce([NewMessage.ClickedContinue(), NewMessage.CompletedScrollToTop()], ready, step)
+	const ready =
+		integration === "planetscale"
+			? inner(withStatus, organizationsLoaded(withStatus.integrations))
+			: withStatus
+	// Continue until the page's stage: Go live for `-live`, else the step after Connect.
+	const target = Str.endsWith("-live")(page) ? "live" : "choose"
+	const next = [NewMessage.ClickedContinue(), NewMessage.CompletedScrollToTop()]
+	return Arr.reduce([1, 2], ready, (model) =>
+		model.stage === target || model.stage === "live" ? model : Arr.reduce(next, model, step),
+	)
 }

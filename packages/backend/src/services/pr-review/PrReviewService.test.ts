@@ -2589,6 +2589,7 @@ describe("PrReviewService privacy scan", () => {
 							severity: "critical",
 							title: "`password` from the login form is logged in clear",
 							body: "Every failed login writes the submitted password to the log.",
+							source: 'apps/api/src/auth.ts:3 `logger.warn("bad login", { password })`',
 						}),
 					]),
 				}),
@@ -2614,6 +2615,161 @@ describe("PrReviewService privacy scan", () => {
 				"security · PII-01",
 			)
 		}).pipe(Effect.provide(layerFor(testDb, { published, prFiles: [leaky] })))
+	})
+})
+
+describe("PrReviewService credential findings and replies", () => {
+	const credential = (line: number, title: string) =>
+		new PrReviewFinding({
+			path: "apps/api/src/auth.ts",
+			line,
+			category: "security",
+			checkId: "PII-01",
+			severity: "critical",
+			title,
+			body: "Anyone who can read the telemetry can read it.",
+		})
+
+	it.effect(
+		"files name-only credential criticals as warnings, so they no longer hold confidence at 2",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const published: Array<PullRequestReviewPublication> = []
+			return Effect.gen(function* () {
+				yield* seed(true)
+				const reviews = yield* PrReviewService
+				const started = yield* reviews.onPullRequestEvent(orgId, job())
+				// The reported pair: a boolean log field and an enum span attribute, no source for either.
+				yield* reviews.submitReview(
+					orgId,
+					started.reviewId!,
+					new SubmitPrReviewRequest({
+						report: report([
+							credential(10, "Credential `obj.legacyApiKey` written to logs"),
+							credential(20, "Cookie state `auth.cookie_refused` recorded on the span"),
+						]),
+					}),
+				)
+				const stored = Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
+				assert.deepEqual(
+					Arr.map(stored.report?.findings ?? [], (finding) => finding.severity),
+					["warn", "warn"],
+				)
+				assert.equal(stored.report?.confidence, 4)
+				assert.match(published[0].title, /^Confidence 4\/10/)
+			}).pipe(Effect.provide(layerFor(testDb, { published })))
+		},
+	)
+
+	it.effect("keeps an unsourced critical where the scan recognized the value on its line", () => {
+		const testDb = createTestDb(trackedDbs)
+		const leaky: PullRequestFile = {
+			path: "apps/api/src/auth.ts",
+			previousPath: null,
+			status: "modified",
+			additions: 2,
+			deletions: 0,
+			patch: Arr.join(
+				[
+					"@@ -1,1 +1,3 @@",
+					" export const login = () => {",
+					'+\tlogger.info("key", { key: "sk_live_0123456789abcdefghij" })',
+					'+\tlogger.info("backup", { key: "sk_live_9876543210zyxwvutsrq" })',
+				],
+				"\n",
+			),
+		}
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			// The scan groups both values into one finding anchored on line 2; line 3 is still evidenced.
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({
+					report: report([
+						credential(2, "Live `key` written to the log"),
+						credential(3, "Backup `secret` written to the log"),
+					]),
+				}),
+			)
+			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
+			assert.deepEqual(
+				Arr.map(stored.report?.findings ?? [], (finding) => [finding.line, finding.severity]),
+				[
+					[2, "critical"],
+					[3, "critical"],
+				],
+			)
+		}).pipe(Effect.provide(layerFor(testDb, { prFiles: [leaky] })))
+	})
+
+	it.effect("passes a person's reply to the next review, whose dismissal stops a reworded re-raise", () => {
+		const testDb = createTestDb(trackedDbs)
+		const published: Array<PullRequestReviewPublication> = []
+		const begun: Array<Begun> = []
+		const reply = "It's a boolean flag, it only says whether the legacy header was present."
+		const threads: ReadonlyArray<PullRequestReviewThread> = [
+			{
+				id: "T1",
+				isResolved: false,
+				comments: [
+					{ commentId: "c-0", author: "maple[bot]", body: "F1", thumbsUp: 0, thumbsDown: 0 },
+					{ commentId: "c-5", author: "octocat", body: reply, thumbsUp: 0, thumbsDown: 0 },
+				],
+			},
+		]
+		const statuses = Effect.gen(function* () {
+			const database = yield* Database
+			return yield* database.execute((db) =>
+				db.run(PG.from(PrReviewFindings).select("handle", "status").orderBy(["handle", "asc"])),
+			)
+		})
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const first = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				first.reviewId!,
+				new SubmitPrReviewRequest({
+					report: report([credential(10, "Credential `obj.legacyApiKey` written to logs")]),
+				}),
+			)
+
+			const second = yield* reviews.onPullRequestEvent(
+				orgId,
+				job({ action: "synchronize", headSha: HEAD_2 }),
+			)
+			// No verdict phrase, so F1 is still open, and the reviewer reads the reply under it.
+			const kickoff = begun.at(-1)!.text
+			assert.include(
+				kickoff,
+				`- F1 · apps/api/src/auth.ts:10 · security · warn · Credential \`obj.legacyApiKey\` written to logs\n  octocat replied: "${reply}"`,
+			)
+			yield* reviews.submitReview(
+				orgId,
+				second.reviewId!,
+				new SubmitPrReviewRequest({
+					dismissed: [{ handle: "F1", reason: "A boolean, as the reply says." }],
+					report: report([credential(40, "API key flag `legacyApiKey` leaks into telemetry")]),
+				}),
+			)
+			assert.deepEqual(published[1].comments, [])
+			assert.notInclude(published[1].summaryComment.body, "Still open from earlier reviews")
+			assert.deepEqual(yield* statuses, [{ handle: "F1", status: "dismissed" }])
+			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, second.reviewId!))
+			assert.deepEqual(stored.report?.findings, [])
+
+			yield* reviews.onPullRequestEvent(orgId, job({ action: "synchronize", headSha: HEAD_4 }))
+			const third = begun.at(-1)!.text
+			assert.include(third, "No finding from earlier reviews is still open.")
+			assert.include(
+				third,
+				"- F1 · apps/api/src/auth.ts:10 · security · Credential `obj.legacyApiKey` written to logs",
+			)
+		}).pipe(Effect.provide(layerFor(testDb, { published, begun, threads })))
 	})
 })
 

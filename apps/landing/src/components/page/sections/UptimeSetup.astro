@@ -1,0 +1,66 @@
+---
+/**
+ * Uptime · set it up. One check written three ways (agent, Terraform, REST), beside the
+ * limits a buyer or an agent needs before choosing Maple's checks over a dedicated tool.
+ */
+import * as m from "../../../paraglide/messages.js";
+import { UPTIME_SETUP_WAYS } from "../../../lib/feature-sections";
+
+const ways = UPTIME_SETUP_WAYS.map((way) => ({ label: way.label(), code: way.code }));
+
+const facts = [
+	{ title: m.uptime_setup_fact_1_title(), body: m.uptime_setup_fact_1_body() },
+	{ title: m.uptime_setup_fact_2_title(), body: m.uptime_setup_fact_2_body() },
+	{ title: m.uptime_setup_fact_3_title(), body: m.uptime_setup_fact_3_body() },
+];
+---
+
+<section class="border-t border-border bg-bg">
+	<div class="shell py-16 md:py-32">
+		<div class="grid gap-12 lg:grid-cols-[0.85fr_1.15fr] lg:gap-20">
+			<div class="flex min-w-0 flex-col">
+				<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{m.uptime_setup_eyebrow()}</p>
+				<h2
+					class="mt-4 max-w-[18ch] font-display text-3xl font-medium leading-[1.05] tracking-[-0.02em] text-fg md:text-[40px]"
+				>
+					{m.uptime_setup_title()}
+				</h2>
+				<p class="mt-5 max-w-[52ch] text-sm leading-relaxed text-fg-muted">{m.uptime_setup_lede()}</p>
+				<dl class="mt-8">
+					{
+						facts.map((fact) => (
+							<div class="border-t border-border py-4">
+								<dt class="text-[13px] font-medium text-fg">{fact.title}</dt>
+								<dd class="mt-1.5 max-w-[52ch] text-[13px] leading-relaxed text-fg-muted">{fact.body}</dd>
+							</div>
+						))
+					}
+				</dl>
+				<div class="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-[13px]">
+					<a href="/docs/alerting/uptime-checks" class="text-fg underline decoration-border underline-offset-4 hover:decoration-fg">
+						{m.uptime_setup_link_checks()}
+					</a>
+					<a
+						href="/docs/alerting/heartbeat-monitors"
+						class="text-fg underline decoration-border underline-offset-4 hover:decoration-fg"
+					>
+						{m.uptime_setup_link_heartbeats()}
+					</a>
+				</div>
+			</div>
+
+			<div class="flex min-w-0 flex-col gap-4">
+				{
+					ways.map((way) => (
+						<div class="live-frame min-w-0">
+							<div class="live-frame__head">
+								<span>{way.label}</span>
+							</div>
+							<pre class="m-0 overflow-x-auto px-4 py-3.5 font-mono text-[11.5px] leading-relaxed whitespace-pre text-fg md:text-xs"><code>{way.code}</code></pre>
+						</div>
+					))
+				}
+			</div>
+		</div>
+	</div>
+</section>

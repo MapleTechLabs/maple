@@ -36,6 +36,8 @@ export const Model = Schema.Struct({
 	/** The source being edited, or `null` on create. */
 	existing: Schema.NullOr(V2Source),
 	signals: Schema.Array(SourceSignal),
+	/** Whether the Profiles signal is offered: only to orgs in the `profiling` rollout. */
+	showsProfiles: Schema.Boolean,
 	rateLimitText: Schema.String,
 	attributes: Schema.Array(AttributeDraft),
 	expiry: ExpiryChoice,
@@ -57,9 +59,10 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
-export const init = (existing: V2Source | null): Model => ({
+export const init = (existing: V2Source | null, showsProfiles: boolean): Model => ({
 	existing,
 	signals: existing?.allowed_signals ?? Arr.map(SIGNALS, (signal) => signal.value),
+	showsProfiles,
 	rateLimitText:
 		existing === null || existing.rate_limit_rps === null ? "" : String(existing.rate_limit_rps),
 	attributes:
@@ -82,7 +85,7 @@ export const isRulesDirty = (model: Model): boolean => {
 			Arr.map(draft.attributes, ({ key, value, mode }) => [key, value, mode]),
 			draft.expiry,
 		])
-	return comparable(model) !== comparable(init(model.existing))
+	return comparable(model) !== comparable(init(model.existing, model.showsProfiles))
 }
 
 const DAY_MS = 86_400_000

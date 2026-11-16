@@ -24,7 +24,7 @@ import {
 	type WarehouseTrustedRouteError,
 } from "@maple/query-engine/execution"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
-import { Env, managedReadsAreTinybird } from "@maple/backend/platform/Env"
+import { Env, orgScopedReadsApply } from "@maple/backend/platform/Env"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/TinybirdOrgTokenService"
 
@@ -431,11 +431,11 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 			/**
 			 * The single routing decision: purpose → backend + credentials.
 			 *
-			 *   ingest → org-scoped reads on + a tenant's read?
+			 *   ingest → a tenant's read on managed Tinybird?
 			 *              managed Tinybird, org-scoped JWT             (source: org-jwt)
 			 *            else managed Tinybird Events API               (source: managed)
 			 *   read   → org BYO row? that org's ClickHouse             (source: org-byo)
-			 *            org-scoped reads on + managed tinybird/gateway?
+			 *            a tenant's read on managed tinybird/gateway?
 			 *              org-scoped JWT                               (source: org-jwt)
 			 *            else env: tinybird-gateway|clickhouse|tinybird (source: managed)
 			 *   raw    → org BYO row? that org's ClickHouse             (source: org-byo)
@@ -461,10 +461,10 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 			 * gateway); a shared vanilla ClickHouse credential has no DB-enforced OrgId
 			 * scope, so raw SQL there is allowed only in single-org self-hosted mode.
 			 *
-			 * Org-scoped reads (`MAPLE_WAREHOUSE_ORG_SCOPED_READS`) put Maple's own compiled
-			 * reads behind the same JWT, on the read route and on tenant reads of the ingest
-			 * route alike: a query compiled for another org than its tenant then returns
-			 * nothing instead of that org's rows. The executor says which reads are one
+			 * Maple's own compiled tenant reads run behind the same JWT, on the read route and on
+			 * tenant reads of the ingest route alike: a query compiled for another org than its
+			 * tenant then returns nothing instead of that org's rows. Multi-org deployments must
+			 * configure the signing key (checked at boot). The executor says which reads are one
 			 * tenant's (`scope`); writes and cross-org reads never are and keep the shared token.
 			 */
 			const resolveRouteEffect = Effect.fn("WarehouseQueryService.resolveRoute")(function* (
@@ -475,16 +475,11 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 			) {
 				yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
 				yield* Effect.annotateCurrentSpan("warehouse.route", purpose)
-				// A read the executor verified is one tenant's, on a Worker that asks for the
-				// org-scoped token. Writes and cross-org reads carry no scope and keep the shared one.
-				// Where managed reads are vanilla ClickHouse there is no such token, and the flag
-				// changes nothing on either route: the same rule `Env` checks the signing key by.
-				const orgScopedRead =
-					scope?.kind === "tenant" &&
-					env.MAPLE_WAREHOUSE_ORG_SCOPED_READS &&
-					managedReadsAreTinybird(env)
-						? scope
-						: undefined
+				// A read the executor verified is one tenant's always runs on the org-scoped token where
+				// managed reads are Tinybird, so Tinybird keeps it to its org even if Maple compiled it for
+				// another. Writes and cross-org reads carry no scope and keep the shared token; vanilla
+				// ClickHouse has no such token.
+				const orgScopedRead = scope?.kind === "tenant" && orgScopedReadsApply(env) ? scope : undefined
 
 				if (purpose === "ingest" && orgScopedRead !== undefined) {
 					const jwt = yield* orgReadToken(tenant, label, orgScopedRead.sql)

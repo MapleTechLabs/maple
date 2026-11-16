@@ -13,6 +13,7 @@ import protobuf from "protobufjs"
  *   - logs/v1/logs.proto
  *   - metrics/v1/metrics.proto
  *   - collector/{trace,logs,metrics}/v1/*_service.proto (request wrappers only)
+ *   - profiles/v1development/profiles.proto and its collector service
  *
  * Kept as a single proto3 source string (no package separation needed) so the
  * binary stays `bun build --compile`-friendly — nothing is read from disk.
@@ -368,6 +369,125 @@ message ExportMetricsPartialSuccess {
   string error_message = 2;
 }
 message ExportMetricsServiceResponse { ExportMetricsPartialSuccess partial_success = 1; }
+
+// profiles/v1development (opentelemetry-proto v1.10.0 to v1.11.1; older layouts reuse these
+// field numbers with other meanings). Attributes get their own messages: since v1.10 a key or a
+// string value may be an index into the dictionary's string table instead of inline text.
+message ProfileAnyValue {
+  oneof value {
+    string string_value = 1;
+    bool bool_value = 2;
+    int64 int_value = 3;
+    double double_value = 4;
+    ProfileArrayValue array_value = 5;
+    ProfileKeyValueList kvlist_value = 6;
+    bytes bytes_value = 7;
+    int32 string_value_strindex = 8;
+  }
+}
+message ProfileArrayValue { repeated ProfileAnyValue values = 1; }
+message ProfileKeyValueList { repeated ProfileKeyValue values = 1; }
+message ProfileKeyValue {
+  string key = 1;
+  ProfileAnyValue value = 2;
+  int32 key_strindex = 3;
+}
+message ProfileResource {
+  repeated ProfileKeyValue attributes = 1;
+  uint32 dropped_attributes_count = 2;
+}
+message ProfileScope {
+  string name = 1;
+  string version = 2;
+  repeated ProfileKeyValue attributes = 3;
+  uint32 dropped_attributes_count = 4;
+}
+message ProfilesDictionary {
+  repeated ProfileMapping mapping_table = 1;
+  repeated ProfileLocation location_table = 2;
+  repeated ProfileFunction function_table = 3;
+  repeated ProfileLink link_table = 4;
+  repeated string string_table = 5;
+  repeated ProfileKeyValueAndUnit attribute_table = 6;
+  repeated ProfileStack stack_table = 7;
+}
+message ResourceProfiles {
+  ProfileResource resource = 1;
+  repeated ScopeProfiles scope_profiles = 2;
+  string schema_url = 3;
+}
+message ScopeProfiles {
+  ProfileScope scope = 1;
+  repeated Profile profiles = 2;
+  string schema_url = 3;
+}
+message Profile {
+  ProfileValueType sample_type = 1;
+  repeated ProfileSample samples = 2;
+  fixed64 time_unix_nano = 3;
+  uint64 duration_nano = 4;
+  ProfileValueType period_type = 5;
+  int64 period = 6;
+  bytes profile_id = 7;
+  uint32 dropped_attributes_count = 8;
+  string original_payload_format = 9;
+  bytes original_payload = 10;
+  repeated int32 attribute_indices = 11;
+}
+message ProfileLink {
+  bytes trace_id = 1;
+  bytes span_id = 2;
+}
+message ProfileValueType {
+  int32 type_strindex = 1;
+  int32 unit_strindex = 2;
+}
+message ProfileSample {
+  int32 stack_index = 1;
+  repeated int32 attribute_indices = 2;
+  int32 link_index = 3;
+  repeated int64 values = 4;
+  repeated fixed64 timestamps_unix_nano = 5;
+}
+message ProfileMapping {
+  uint64 memory_start = 1;
+  uint64 memory_limit = 2;
+  uint64 file_offset = 3;
+  int32 filename_strindex = 4;
+  repeated int32 attribute_indices = 5;
+}
+message ProfileStack { repeated int32 location_indices = 1; }
+message ProfileLocation {
+  int32 mapping_index = 1;
+  uint64 address = 2;
+  repeated ProfileLine lines = 3;
+  repeated int32 attribute_indices = 4;
+}
+message ProfileLine {
+  int32 function_index = 1;
+  int64 line = 2;
+  int64 column = 3;
+}
+message ProfileFunction {
+  int32 name_strindex = 1;
+  int32 system_name_strindex = 2;
+  int32 filename_strindex = 3;
+  int64 start_line = 4;
+}
+message ProfileKeyValueAndUnit {
+  int32 key_strindex = 1;
+  ProfileAnyValue value = 2;
+  int32 unit_strindex = 3;
+}
+message ExportProfilesServiceRequest {
+  repeated ResourceProfiles resource_profiles = 1;
+  ProfilesDictionary dictionary = 2;
+}
+message ExportProfilesPartialSuccess {
+  int64 rejected_profiles = 1;
+  string error_message = 2;
+}
+message ExportProfilesServiceResponse { ExportProfilesPartialSuccess partial_success = 1; }
 `
 
 /**
@@ -380,6 +500,8 @@ const otlpRoot = protobuf.parse(PROTO_SRC, { keepCase: false }).root
 const ExportTraceServiceRequest = otlpRoot.lookupType("ExportTraceServiceRequest")
 const ExportLogsServiceRequest = otlpRoot.lookupType("ExportLogsServiceRequest")
 const ExportMetricsServiceRequest = otlpRoot.lookupType("ExportMetricsServiceRequest")
+const ExportProfilesServiceRequest = otlpRoot.lookupType("ExportProfilesServiceRequest")
+const ExportProfilesServiceResponse = otlpRoot.lookupType("ExportProfilesServiceResponse")
 const responseTypes = {
 	traces: otlpRoot.lookupType("ExportTraceServiceResponse"),
 	logs: otlpRoot.lookupType("ExportLogsServiceResponse"),
@@ -417,6 +539,22 @@ export function decodeLogsRequest(bytes: Uint8Array): unknown {
 export function decodeMetricsRequest(bytes: Uint8Array): unknown {
 	const message = ExportMetricsServiceRequest.decode(bytes)
 	return ExportMetricsServiceRequest.toObject(message, toObjectOptions)
+}
+
+export function decodeProfilesRequest(bytes: Uint8Array): unknown {
+	const message = ExportProfilesServiceRequest.decode(bytes)
+	return ExportProfilesServiceRequest.toObject(message, toObjectOptions)
+}
+
+/** Test helper: encode a profiles request object to protobuf bytes. */
+export function encodeProfilesRequest(obj: unknown): Uint8Array {
+	const message = ExportProfilesServiceRequest.fromObject(obj as Record<string, unknown>)
+	return ExportProfilesServiceRequest.encode(message).finish()
+}
+
+export function encodeProfilesExportResponse(rejected: number, errorMessage: string): Uint8Array {
+	const object = rejected > 0 ? { partialSuccess: { rejectedProfiles: rejected, errorMessage } } : {}
+	return ExportProfilesServiceResponse.encode(ExportProfilesServiceResponse.fromObject(object)).finish()
 }
 
 /** Test helper: encode a trace request object to protobuf bytes. */

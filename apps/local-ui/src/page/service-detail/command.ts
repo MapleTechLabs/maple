@@ -1,9 +1,15 @@
 import { readClock } from "@maple/views/data/timing"
-import { GoldenSignalRow, OperationRow, Overview, SeriesPoint } from "./model"
+import { GoldenSignalRow, OperationRow, Overview, SeriesPoint, ServiceProfile } from "./model"
 import { cachedAs, withCache } from "../../data/cached"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { fetchGoldenSignals, fetchOperations, fetchOperationsTimeseries, fetchOverview } from "./fetch"
+import {
+	fetchGoldenSignals,
+	fetchOperations,
+	fetchOperationsTimeseries,
+	fetchOverview,
+	fetchProfile,
+} from "./fetch"
 import { Message } from "./message"
 
 const Window = {
@@ -126,4 +132,20 @@ export const FetchGoldenSignals = Command.define("FetchLocalServiceGoldenSignals
 		}).pipe(
 			Effect.catch((failure) => Effect.succeed(Message.FailedFetchGoldenSignals({ key, failure }))),
 		),
+})
+
+export const FetchProfile = Command.define("FetchLocalServiceProfile", {
+	args: { ...Window, readsCache: Schema.Boolean },
+	messages: [Message.SucceededFetchProfile, Message.FailedFetchProfile, Message.FoundCachedProfile],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
+	execute: ({ key, serviceName, startTime, endTime, apiBase, readsCache }) =>
+		withCache({
+			key: ["local", "services", "profile", serviceName, windowKey(startTime, endTime)],
+			readsCache,
+			fromCached: cachedAs(ServiceProfile),
+			toCached: same,
+			fetch: fetchProfile(serviceName, { startTime, endTime }, apiBase),
+			found: (cached) => Message.FoundCachedProfile({ key, cached }),
+			succeeded: (profile, fetchedAtMs) => Message.SucceededFetchProfile({ key, profile, fetchedAtMs }),
+		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchProfile({ key, failure })))),
 })

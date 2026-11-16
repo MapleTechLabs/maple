@@ -13,6 +13,9 @@ import {
 	type VcsInstallation,
 	type VcsRepo,
 	type VcsRepositoryRef,
+	VcsSourceFileNotFoundError,
+	VcsSourceRefNotFoundError,
+	VcsSourceRepositoryNotFoundError,
 } from "@maple/domain/http"
 import {
 	Cache,
@@ -22,6 +25,7 @@ import {
 	Exit,
 	Layer,
 	Option,
+	Result,
 	Schema,
 	String as Str,
 	Array as Arr,
@@ -30,15 +34,7 @@ import { VcsProviderRegistry } from "./VcsProviderRegistry"
 import { VcsRepository } from "./VcsRepository"
 import type { VcsCodeSearchMatch, VcsSourceFile } from "./VcsProviderClient"
 
-export class VcsSourceRepositoryNotFoundError extends Schema.TaggedError<VcsSourceRepositoryNotFoundError>()(
-	"@maple/backend/vcs/VcsSourceRepositoryNotFoundError",
-	{ repository: Schema.String, message: Schema.String },
-) {}
-
-export class VcsSourceFileNotFoundError extends Schema.TaggedError<VcsSourceFileNotFoundError>()(
-	"@maple/backend/vcs/VcsSourceFileNotFoundError",
-	{ repository: Schema.String, path: Schema.String, ref: Schema.String, message: Schema.String },
-) {}
+export { VcsSourceFileNotFoundError, VcsSourceRefNotFoundError, VcsSourceRepositoryNotFoundError }
 
 /**
  * Everything that can go wrong resolving *which* repository to talk to, before
@@ -54,11 +50,6 @@ type VcsRepositoryScopedError =
 	| VcsSourceRepositoryNotFoundError
 
 type VcsSourceError = VcsRepositoryScopedError | VcsSourceFileNotFoundError
-
-export class VcsSourceRefNotFoundError extends Schema.TaggedError<VcsSourceRefNotFoundError>()(
-	"@maple/backend/vcs/VcsSourceRefNotFoundError",
-	{ repository: Schema.String, ref: Schema.String, message: Schema.String },
-) {}
 
 /** A commit the sandbox can check out: the exact SHA a ref names, and how to clone it. */
 export interface RepositoryCheckout {
@@ -79,6 +70,9 @@ const isCommitSha = Schema.is(GitCommitSha)
  * mint one each. Repository access is still checked on every call; only the mint is shared.
  */
 export const CLONE_CREDENTIALS_REUSE = Duration.minutes(30)
+
+/** How long a SHA the provider confirmed is trusted without asking again. */
+export const KNOWN_COMMIT_REUSE = Duration.hours(1)
 
 export interface ConnectedSourceRepository {
 	readonly provider: VcsRepo["provider"]
@@ -192,16 +186,22 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 				return installations
 			})
 
-			const repositoriesFor = Effect.fn("VcsSourceService.repositoriesFor")(function* (
-				installations: ReadonlyArray<VcsInstallation>,
+			// Both reads at once: every source and sandbox call checks access, and in sequence they
+			// were two round trips (one more per extra installation) in front of each call.
+			const connectedRepositories = Effect.fn("VcsSourceService.connectedRepositories")(function* (
+				orgId: OrgId,
 			) {
-				return yield* Effect.forEach(installations, (installation) =>
-					asPersistence(repoStore.listRepositoriesByInstallation(installation.id, "active")).pipe(
-						Effect.map((repositories) =>
-							Arr.map(repositories, (repository) => ({ installation, repository })),
-						),
+				const [installations, repositories] = yield* Effect.all(
+					[activeInstallations(orgId), asPersistence(repoStore.listActiveRepositoriesByOrg(orgId))],
+					{ concurrency: 2 },
+				)
+				return Arr.flatMap(installations, (installation) =>
+					Arr.filterMap(repositories, (repository) =>
+						repository.installationId === installation.id
+							? Result.succeed({ installation, repository })
+							: Result.failVoid,
 					),
-				).pipe(Effect.map((groups) => groups.flat()))
+				)
 			})
 
 			const cloneCredentials = yield* Cache.makeWith(
@@ -221,12 +221,34 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 				},
 			)
 
+			// A commit that exists stays existing, so a confirmed SHA is not asked again for a while.
+			// Only found commits are kept: a SHA pushed a moment later must resolve on the next call.
+			const knownCommits = yield* Cache.makeWith(
+				(key: {
+					readonly provider: VcsRepo["provider"]
+					readonly installation: VcsInstallation
+					readonly repository: VcsRepositoryRef
+					readonly sha: string
+				}) =>
+					asUpstream(providers.resolve(key.provider)).pipe(
+						Effect.flatMap((provider) =>
+							asUpstream(provider.resolveRef(key.installation, key.repository, key.sha)),
+						),
+					),
+				{
+					capacity: 512,
+					timeToLive: (exit) =>
+						Exit.isSuccess(exit) && Option.isSome(exit.value)
+							? KNOWN_COMMIT_REUSE
+							: Duration.zero,
+				},
+			)
+
 			const resolveRepository = Effect.fn("VcsSourceService.resolveRepository")(function* (
 				orgId: OrgId,
 				fullName: string,
 			) {
-				const installations = yield* activeInstallations(orgId)
-				const entries = yield* repositoriesFor(installations)
+				const entries = yield* connectedRepositories(orgId)
 				const found = Option.getOrUndefined(
 					Arr.findFirst(
 						entries,
@@ -244,8 +266,7 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 
 			const listRepositories = Effect.fn("VcsSourceService.listRepositories")(function* (orgId: OrgId) {
 				yield* Effect.annotateCurrentSpan({ orgId })
-				const installations = yield* activeInstallations(orgId)
-				const entries = yield* repositoriesFor(installations)
+				const entries = yield* connectedRepositories(orgId)
 				return Arr.map(entries, ({ repository }) => ({
 					provider: repository.provider,
 					fullName: repository.fullName,
@@ -452,9 +473,15 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 					owner: repository.owner,
 					name: repository.name,
 				}
-				// A full SHA needs no lookup; anything else is asked of the provider.
+				// A full SHA is still confirmed: agents invent plausible ones, and an unknown SHA
+				// otherwise fails later inside the clone as `not our ref`.
 				const resolved = isCommitSha(ref)
-					? Option.some(ref)
+					? yield* Cache.get(knownCommits, {
+							provider: repository.provider,
+							installation,
+							repository: repoRef,
+							sha: ref,
+						})
 					: yield* asUpstream(provider.resolveRef(installation, repoRef, ref))
 				if (Option.isNone(resolved)) {
 					// The message is the agent's only chance to recover: sandbox tool failures are

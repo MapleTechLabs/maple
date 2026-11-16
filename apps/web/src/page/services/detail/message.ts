@@ -7,6 +7,8 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadFailure } from "@maple/views/data/load-failure"
+import * as ProfileFlamegraph from "@maple/views/profiles/profile-flamegraph"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Select from "@maple/views/ui/select"
 import { ServiceRuntime } from "../../kit/service-runtimes"
 import * as TimeRangePicker from "../../kit/time-range-picker"
@@ -23,7 +25,7 @@ import {
 	SortTable,
 	StatusRow,
 } from "./model-tabs"
-import { Issue, OverviewData, RefinementPoint, Usage, Workload } from "./model"
+import { Issue, OverviewData, RefinementPoint, ServiceProfile, Usage, Workload } from "./model"
 import { ServiceDeploys } from "./model-deploys"
 import { Commit, CommitFailure } from "../../kit/service-metrics/points"
 
@@ -35,6 +37,7 @@ export const RetryTarget = Schema.Literals([
 	"Endpoints",
 	"ApiOverview",
 	"StatusBreakdown",
+	"Profile",
 ])
 export type RetryTarget = typeof RetryTarget.Type
 
@@ -63,6 +66,9 @@ export const Message = defineMessageUnion({
 	CompletedFetchWorkloads: result(Schema.Array(Workload)),
 	CompletedFetchRuntimes: result(Schema.Array(ServiceRuntime)),
 	CompletedFetchDependencies: result(DependencyBundle),
+	CompletedFetchProfile: result(ServiceProfile),
+	GotFlamegraphMessage: { message: ProfileFlamegraph.Message },
+	GotProfileSnippetCopyMessage: { message: CopyButton.Message },
 	CompletedFetchCommit: { sha: Schema.String, result: Schema.Result(Commit, CommitFailure) },
 	CompletedMountLinkedCursor: {},
 	SelectedChartRange: { startMs: Schema.Number, endMs: Schema.Number },

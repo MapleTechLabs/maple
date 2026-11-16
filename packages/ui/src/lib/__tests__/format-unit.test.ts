@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { formatValueByUnit } from "../format"
+import { axisTickFormatter, currencyUnit, formatValueByUnit } from "../format"
 
 describe("formatValueByUnit", () => {
 	it("percent expects a 0–1 fraction and scales it by 100", () => {
@@ -30,5 +30,26 @@ describe("formatValueByUnit", () => {
 
 	it("an uncatalogued unit renders as a bare number — the failure mode this catalog guards", () => {
 		expect(formatValueByUnit(1234, "GB")).toBe(formatValueByUnit(1234, undefined))
+	})
+})
+
+describe("money units", () => {
+	it("prints a currency unit as money, keeping two significant digits under a cent", () => {
+		const unit = currencyUnit("eur")
+		expect(formatValueByUnit(13.051, unit)).toBe("€13.05")
+		expect(formatValueByUnit(0.0637, unit)).toBe("€0.06")
+		expect(formatValueByUnit(0.00637, unit)).toBe("€0.0064")
+	})
+
+	it("leaves a value plain when the currency is not an ISO code", () => {
+		expect(currencyUnit("")).toBeUndefined()
+		expect(formatValueByUnit(13.051, currencyUnit(""))).toBe(formatValueByUnit(13.051))
+	})
+
+	it("drops cents from ticks a whole unit apart and keeps them on finer ones", () => {
+		const unit = currencyUnit("USD")
+		expect(axisTickFormatter(unit, [0, 40])(10)).toBe("$10")
+		expect(axisTickFormatter(unit, [0, 0.4])(0.1)).toBe("$0.10")
+		expect(axisTickFormatter(unit, [0, 40])(0)).toBe("0")
 	})
 })

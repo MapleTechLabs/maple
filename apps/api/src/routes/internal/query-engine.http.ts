@@ -10,6 +10,8 @@ import {
 	PromqlExecuteResponse,
 	QueryEngineValidationError,
 	SpanHierarchyResponse,
+	ProfileSampleTypesResponse,
+	ProfileStacksResponse,
 	SpanDetailResponse,
 	TraceSpanEventsResponse,
 	ErrorsByTypeResponse,
@@ -188,6 +190,7 @@ import {
 } from "@maple/backend/queries/dashboard-reads"
 import { makeSearchConsoleReads } from "@maple/backend/queries/search-console-reads"
 import { makeCostReads } from "@maple/backend/queries/cost-reads"
+import { makeProfileReads } from "@maple/backend/queries/profile-reads"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { runQueryEngineBatch } from "@/routes/query-engine-batch"
@@ -384,6 +387,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 		const database = yield* Database
 		const featureFlags = yield* OrganizationFeatureFlagsService
 		const cost = makeCostReads({ warehouse, queryEngine, database, featureFlags })
+		const profiles = makeProfileReads({ warehouse, queryEngine })
 
 		const dbEdgesWithinBudget = <A, P, E extends QueryEngineDirectError, R>(
 			rollup: (tenant: TenantContext, payload: P) => Effect.Effect<ReadonlyArray<A>, E, R>,
@@ -1645,6 +1649,14 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						return new ServiceRuntimesResponse({
 							data: toServiceRuntimeRows(rows, payload.services),
 						})
+					}),
+				)
+				.handle("profileSampleTypes", serveData(profiles.sampleTypes, ProfileSampleTypesResponse))
+				.handle("profileStacks", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const read = yield* profiles.stacks(tenant, payload)
+						return new ProfileStacksResponse(read)
 					}),
 				)
 				.handle("serviceUsage", serve.rows(Queries.serviceUsage, ServiceUsageResponse))

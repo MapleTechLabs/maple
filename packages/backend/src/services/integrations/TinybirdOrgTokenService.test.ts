@@ -150,22 +150,32 @@ describe("TinybirdOrgTokenService", () => {
 		}).pipe(Effect.provide(layer)),
 	)
 
-	it.effect("refuses to start with org-scoped reads on and no signing key", () => {
-		const unsignedLayer = TinybirdOrgTokenService.layer.pipe(
-			Layer.provide(Env.layer),
-			Layer.provide(testConfig({ MAPLE_WAREHOUSE_ORG_SCOPED_READS: "1" }, false)),
-		)
-		return Effect.asVoid(TinybirdOrgTokenService).pipe(
-			Effect.provide(unsignedLayer),
+	const startsUnsigned = (extra: Record<string, string>) =>
+		Effect.asVoid(TinybirdOrgTokenService).pipe(
+			Effect.provide(
+				TinybirdOrgTokenService.layer.pipe(
+					Layer.provide(Env.layer),
+					Layer.provide(testConfig(extra, false)),
+				),
+			),
 			Effect.exit,
-			Effect.map((exit) => {
-				assert.isTrue(Exit.isFailure(exit))
-				if (Exit.isFailure(exit)) {
-					assert.match(String(Cause.squash(exit.cause)), /MAPLE_WAREHOUSE_ORG_SCOPED_READS needs/)
-				}
-			}),
 		)
-	})
+
+	it.effect("refuses to start a multi-org deployment on Tinybird without a signing key", () =>
+		Effect.map(startsUnsigned({ MAPLE_AUTH_MODE: "clerk", CLERK_SECRET_KEY: "sk_test_x" }), (exit) => {
+			assert.isTrue(Exit.isFailure(exit))
+			if (Exit.isFailure(exit)) {
+				assert.match(
+					String(Cause.squash(exit.cause)),
+					/multi-org deployment reading Tinybird needs TINYBIRD_SIGNING_KEY/,
+				)
+			}
+		}),
+	)
+
+	it.effect("starts single-org self-hosted without a signing key, which has no other org to isolate", () =>
+		Effect.map(startsUnsigned({}), (exit) => assert.isTrue(Exit.isSuccess(exit))),
+	)
 
 	it.effect("bounds the per-isolate token cache with LRU eviction", () =>
 		Effect.gen(function* () {

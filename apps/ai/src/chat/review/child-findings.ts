@@ -69,6 +69,8 @@ export const parseChildFindings = (answer: string): ReadonlyArray<PrReviewFindin
 				body: why,
 				...(fix ? { suggestion: fix } : undefined),
 				...(check && check !== "-" ? { checkId: check } : undefined),
+				// The child cites a credential's assigning code in `why`; the service checks it.
+				...(check !== undefined && Str.toUpperCase(check) === "PII-01" ? { source: why } : undefined),
 			},
 		]
 	})

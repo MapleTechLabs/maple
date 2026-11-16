@@ -3,8 +3,7 @@
 # the gateway's own traces/metrics/usage metrics (and customer OTLP when
 # INGEST_WRITE_MODE is forward/dual) and exports them to Tinybird.
 #
-# Derived from `otel/collector-config.yaml` (the Railway collector), with two
-# deliberate differences:
+# Deliberate choices:
 #
 #   - No `file_storage/queue`. On Fargate a container exit ends the task AND
 #     its ephemeral disk, so a file-backed queue survives nothing it is meant
@@ -14,8 +13,6 @@
 #     Tinybird outage drops data with or without the file. In-memory queue only.
 #   - `memory_limiter` is sized for the 1 GiB task in `resolveMapleProfile` (`ingest.collectorTaskSize`)
 #     (~75% hard limit, ~25% spike) — a limit above task memory never fires.
-#
-# The Railway file goes away with the Railway decommission; this one stays.
 
 receivers:
     otlp:

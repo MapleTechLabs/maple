@@ -17,6 +17,7 @@ import {
 	VcsSourceRepositoryNotFoundError,
 } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { McpInvalidInputError, McpNotReadyError, McpQueryError, McpUnavailableError } from "../tools/types"
+import { githubRateLimitWait } from "../expected-failures"
 
 export type VcsLookupError =
 	| IntegrationsNotConnectedError
@@ -72,10 +73,15 @@ export const fromVcsLookupError =
 					message: "No source repository is connected to this organization.",
 					capability: "source_repository",
 				})
-			case "@maple/http/errors/IntegrationsUpstreamError":
-				return isGithubAppMissing(error)
-					? GITHUB_APP_UNAVAILABLE
-					: new McpQueryError({ message: error.message, pipeName: operation, cause: error })
+			case "@maple/http/errors/IntegrationsUpstreamError": {
+				if (isGithubAppMissing(error)) return GITHUB_APP_UNAVAILABLE
+				const retryAfter = githubRateLimitWait(error.message)
+				if (retryAfter !== undefined)
+					return new McpNotReadyError({ message: error.message, retryAfterSeconds: retryAfter })
+				// GitHub could not parse what the call sent (a code search query, most often).
+				if (error.status === 422) return new McpInvalidInputError({ message: error.message })
+				return new McpQueryError({ message: error.message, pipeName: operation, cause: error })
+			}
 			case "@maple/http/errors/IntegrationsPersistenceError":
 				return new McpQueryError({ message: error.message, pipeName: operation, cause: error })
 		}

@@ -319,7 +319,11 @@ export const serviceUsage = defineDatasource("service_usage", {
 		HistogramMetricSizeBytes: t.uint64(),
 		ExpHistogramMetricCount: t.uint64(),
 		ExpHistogramMetricSizeBytes: t.uint64(),
+		// Continuous profiling (migration 0068, appended last). Hours written before it hold 0.
+		ProfileRowCount: t.uint64().default(0),
+		ProfileSizeBytes: t.uint64().default(0),
 	},
+	// A rebuild refills from the live table: the source tables keep 14 to 90 days, this one 365.
 	forwardQuery: `SELECT *`,
 	engine: engine.summingMergeTree({
 		sortingKey: ["OrgId", "ServiceName", "Hour"],
@@ -3185,3 +3189,73 @@ export const costDaily = defineDatasource("cost_daily", {
 })
 
 export type CostDailyRow = InferRow<typeof costDaily>
+
+export const PROFILES_TTL_DAYS = 14
+
+/**
+ * Continuous profiling: one row per distinct stack per exported profile, the producer's samples of
+ * that stack summed. Flattened at ingest from the pprof-shaped OTLP payload, so the dictionary
+ * never reaches the warehouse and a proto change stays an ingest change.
+ *
+ * `Frames` runs root first (the wire runs leaf first), so `arraySlice(Frames, 1, n)` is a common
+ * prefix and the leaf is `Frames[-1]`. `FrameFiles` and `FrameLines` are parallel to it.
+ */
+export const profiles = defineDatasource("profiles", {
+	tenantColumn: "OrgId",
+	description:
+		"Continuous profiling samples: one row per distinct call stack per exported profile, with the summed value (CPU nanoseconds, allocated bytes) and the span it ran under when the producer linked one. Powers flame graphs and top functions.",
+	schema: {
+		OrgId: column(t.string().lowCardinality().brand(OrgId), {
+			jsonPath: "$.resource_attributes.maple_org_id",
+		}),
+		/** Start of the profile's window, or of the linked span's slice of it. */
+		Timestamp: column(utcDateTime64(9), { jsonPath: "$.timestamp" }),
+		ServiceName: column(t.string().lowCardinality(), { jsonPath: "$.service_name" }),
+		/** Real columns: a release diff and an environment filter must not read the attribute map. */
+		ServiceVersion: column(t.string().lowCardinality().default(""), {
+			jsonPath: "$.service_version",
+		}),
+		Environment: column(t.string().lowCardinality().default(""), { jsonPath: "$.environment" }),
+		ServiceInstanceId: column(t.string().default(""), { jsonPath: "$.service_instance_id" }),
+		ResourceAttributes: column(t.map(t.string().lowCardinality(), t.string()), {
+			jsonPath: "$.resource_attributes",
+		}),
+		ProfileId: column(t.string().default(""), { jsonPath: "$.profile_id" }),
+		/** `cpu` | `wall` | `alloc_space` | `alloc_objects` | whatever the producer named it. */
+		SampleType: column(t.string().lowCardinality(), { jsonPath: "$.sample_type" }),
+		/** `nanoseconds` | `bytes` | `count`. */
+		SampleUnit: column(t.string().lowCardinality(), { jsonPath: "$.sample_unit" }),
+		Value: column(t.int64(), { jsonPath: "$.value" }),
+		/** How many of the producer's samples `Value` sums. */
+		Samples: column(t.uint64().default(0), { jsonPath: "$.samples" }),
+		/** Length of the window the profile covers: `sum(Value) / DurationNano` is cores for CPU. */
+		DurationNano: column(t.uint64().default(0), { jsonPath: "$.duration_nano" }),
+		Frames: column(t.array(t.string().lowCardinality()), { jsonPath: "$.frames[:]" }),
+		/** `''` where the producer had no file (native and eBPF frames). */
+		FrameFiles: column(t.array(t.string().lowCardinality()), { jsonPath: "$.frame_files[:]" }),
+		/** 0 where unknown. */
+		FrameLines: column(t.array(t.int32()), { jsonPath: "$.frame_lines[:]" }),
+		TraceId: column(t.string().default(""), { jsonPath: "$.trace_id" }),
+		SpanId: column(t.string().default(""), { jsonPath: "$.span_id" }),
+		SampleAttributes: column(t.map(t.string().lowCardinality(), t.string()), {
+			jsonPath: "$.sample_attributes",
+		}),
+		/**
+		 * Computed by the warehouse, so the gateway and Maple Local cannot disagree on it. No
+		 * `jsonPath`: the insert never names it. Wrap it in `toString()` in every SELECT.
+		 */
+		StackHash: t.uint64().defaultExpr("cityHash64(Frames, FrameFiles, FrameLines)"),
+	},
+	indexes: [
+		// The span panel looks samples up by span alone; near-unique values and `''` on most rows.
+		{ name: "idx_span_id", expr: "SpanId", type: "bloom_filter(0.01)", granularity: 1 },
+		{ name: "idx_trace_id", expr: "TraceId", type: "bloom_filter(0.01)", granularity: 1 },
+	],
+	engine: engine.mergeTree({
+		partitionKey: "toDate(Timestamp)",
+		sortingKey: ["OrgId", "ServiceName", "SampleType", "toStartOfHour(Timestamp)", "StackHash"],
+		ttl: `toDate(Timestamp) + INTERVAL ${PROFILES_TTL_DAYS} DAY`,
+	}),
+})
+
+export type ProfilesRow = InferRow<typeof profiles>

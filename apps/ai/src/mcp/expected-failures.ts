@@ -1,4 +1,4 @@
-import { Effect, Record as Rec, String as Str } from "effect"
+import { Effect, Predicate, Record as Rec, String as Str } from "effect"
 
 /**
  * MCP failures that are expected 4xx client outcomes, not bugs: a bad or absent
@@ -36,6 +36,62 @@ const expectedStatusByTag = new Map<string, number>(Rec.toEntries(MCP_EXPECTED_F
 
 /** Spread into `anticipatedErrorIdentifiers` next to `ANTICIPATED_ERROR_IDENTIFIERS`. */
 export const MCP_ANTICIPATED_ERROR_IDENTIFIERS: ReadonlyArray<string> = [...expectedStatusByTag.keys()]
+
+/** JSON-RPC codes for a request the client got wrong: an unknown method, or params (a tool name) that name nothing. */
+const CLIENT_PROTOCOL_CODES: ReadonlySet<unknown> = new Set([-32601, -32602])
+
+/** Why a repository command never started, when the reason is the call's ref, repository or path. */
+const CALLER_SPAWN_CAUSES: ReadonlySet<string | undefined> = new Set([
+	"SandboxRunCheckoutPending",
+	"@maple/backend/vcs/VcsSourceRefNotFoundError",
+	"@maple/backend/vcs/VcsSourceRepositoryNotFoundError",
+	"@maple/backend/vcs/VcsSourceFileNotFoundError",
+])
+
+// BOUNDARY: a failure value from the tracer, or the cause a sandbox error carries.
+/** The GitHub client's wording for a rate limit, which carries its wait in seconds. */
+const GITHUB_RATE_LIMITED = /^GitHub rate limited \(retry after (\d+)s\)/
+
+/** The wait a GitHub rate limit asks for, when `message` is one. */
+export const githubRateLimitWait = (message: string): number | undefined => {
+	const seconds = GITHUB_RATE_LIMITED.exec(message)?.[1]
+	return seconds === undefined ? undefined : Number(seconds)
+}
+
+const isRateLimitedLookup = (cause: unknown): boolean =>
+	tagOf(cause) === "@maple/http/errors/IntegrationsUpstreamError" &&
+	Predicate.hasProperty(cause, "message") &&
+	typeof cause.message === "string" &&
+	githubRateLimitWait(cause.message) !== undefined
+
+const tagOf = (value: unknown): string | undefined =>
+	Predicate.hasProperty(value, "_tag") && typeof value._tag === "string" ? value._tag : undefined
+
+/**
+ * Failures a tag cannot single out, judged on the value: the SDK's MCP protocol error for a call to
+ * a tool that does not exist, and repository sandbox failures `fromSandboxError` hands the model as
+ * a fixable call or one to retry later (a missing capability stays an Error). Both export `Ok`.
+ *
+ * BOUNDARY: the tracer hands over a cause's raw failure values.
+ */
+export const isAnticipatedMcpFailure = (error: unknown): boolean => {
+	switch (tagOf(error)) {
+		case "ProtocolError":
+			return Predicate.hasProperty(error, "code") && CLIENT_PROTOCOL_CODES.has(error.code)
+		case "@maple/backend/sandbox/SandboxTimeoutError":
+		case "@maple/backend/sandbox/SandboxOutputLimitError":
+			return true
+		case "@maple/backend/sandbox/SandboxUnsupportedRequestError":
+			return Predicate.hasProperty(error, "feature") && error.feature !== "runtime"
+		case "@maple/backend/sandbox/SandboxSpawnError":
+			return (
+				Predicate.hasProperty(error, "cause") &&
+				(CALLER_SPAWN_CAUSES.has(tagOf(error.cause)) || isRateLimitedLookup(error.cause))
+			)
+		default:
+			return false
+	}
+}
 
 /**
  * Longest failure message a span or a transcript keeps. A ClickHouse syntax error arrives with the
