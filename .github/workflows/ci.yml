@@ -471,7 +471,7 @@ jobs:
             # Migration replay and search indexes, raw-vs-rollup parity for web
             # analytics, the service map, SLOs and the AWS infra metrics (a divergence renders as a plausible wrong number), the
             # cascaded trace facets rollup (one that never fires reads as "no data"), and the users
-            # directory's group view.
+            # directory's group view, and which scanner probes count as answered.
             - name: Replay migrations and verify rollups
               run: >-
                   bun run --filter=@maple/backend test --
@@ -486,6 +486,7 @@ jobs:
                   src/services/warehouse/host-infra.clickhouse.e2e.test.ts
                   src/services/warehouse/slo-parity.clickhouse.e2e.test.ts
                   src/services/warehouse/aws-metrics-hourly-parity.clickhouse.e2e.test.ts
+                  src/services/warehouse/security-telemetry.clickhouse.e2e.test.ts
                   src/services/users/users-groups.clickhouse.e2e.test.ts
 
             # The fingerprint the error views compute, against the TS mirror every

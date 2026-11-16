@@ -289,7 +289,7 @@ const categoriesPanel = (h: H, rows: ReadonlyArray<CategoryRow>): Html =>
 		panelHeader(h, {
 			title: "Categories",
 			action: typography(h, { size: "xs", tone: "muted" }, [
-				"Answered counts 2xx responses, catch-all routes left out",
+				"Answered counts 2xx responses to probes in the path, catch-all routes left out",
 			]),
 		}),
 		table(h, { ariaLabel: "Probe categories" }, [

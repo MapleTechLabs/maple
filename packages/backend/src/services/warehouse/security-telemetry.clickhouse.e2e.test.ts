@@ -72,6 +72,17 @@ const SPANS: ReadonlyArray<SeedSpan> = [
 		status: "404",
 		client: "203.0.113.7",
 	},
+	// A probe only in the query, answered by a route that ignores it: probe traffic, not an answer.
+	{
+		traceId: "q2",
+		service: "edge",
+		path: "/",
+		query: "page=/etc/passwd",
+		status: "200",
+		resource: { "process.runtime.name": "workerd" },
+	},
+	// A source-control path answered 200 with a secrets token in the query: filed under the path's own.
+	{ traceId: "q3", path: "/.git/HEAD", query: "file=/.env", status: "200" },
 	// A named scanner on an ordinary path.
 	{ traceId: "s1", path: "/", status: "200", client: "192.0.2.9", userAgent: "Mozilla/5.0 zgrab/0.x" },
 	// The same address with a browser user agent: the source row keeps the scanner's own.
@@ -232,6 +243,8 @@ describe.skipIf(!clickhouseE2eEnabled)("security telemetry materialization", () 
 				["p4", "/.env", "", "/api/.ENV.production", 200, "203.0.113.7"],
 				["p5", "/wp-login.php", "", "/wp-login.php", 200, "198.51.100.2"],
 				["q1", "../", "", "/index.php", 404, "203.0.113.7"],
+				["q2", "/etc/passwd", "", "/", 200, ""],
+				["q3", "/.env", "", "/.git/HEAD", 200, ""],
 				["s1", "", "ZGrab", "/", 200, "192.0.2.9"],
 				["s2", "/.git/", "", "/.git/HEAD", 404, "192.0.2.9"],
 				["s3", "", "Nuclei", "/", 200, "192.0.2.9"],
@@ -283,6 +296,7 @@ describe.skipIf(!clickhouseE2eEnabled)("security telemetry materialization", () 
 			Arr.map(rows, (row) => [row.path, row.signature, row.httpStatus, row.sampleTraceId]),
 			[
 				["/.git/config", "/.git/", 200, "d3"],
+				["/.git/HEAD", "/.git/", 200, "q3"],
 				["/api/.ENV.production", "/.env", 200, "p4"],
 			],
 		)
@@ -293,16 +307,18 @@ describe.skipIf(!clickhouseE2eEnabled)("security telemetry materialization", () 
 		const bySignature = Rec.fromEntries(
 			Arr.map(signatures, (row): readonly [string, ReadonlyArray<unknown>] => [
 				String(row.signature),
-				[row.requests, row.answered, row.sources],
+				[row.requests, row.inPath, row.answered, row.sources],
 			]),
 		)
 		assert.deepStrictEqual(bySignature, {
-			"/.env": [3, 1, 2],
-			"/.git/": [3, 1, 3],
-			"/wp-login.php": [2, 1, 1],
-			"/server-status": [1, 0, 1],
-			"../": [3, 0, 2],
-			"": [5, 5, 3],
+			"/.env": [3, 3, 1, 2],
+			"/.git/": [4, 4, 2, 3],
+			"/wp-login.php": [2, 2, 1, 1],
+			"/server-status": [1, 1, 0, 1],
+			// q1 and d2 hide traversal in the query; w1 has it in the path.
+			"../": [3, 1, 0, 2],
+			"/etc/passwd": [1, 0, 0, 0],
+			"": [5, 0, 5, 3],
 		})
 		const sources = await read(CH.scannerSourcesQuery())
 		assert.deepStrictEqual(
@@ -356,9 +372,9 @@ describe.skipIf(!clickhouseE2eEnabled)("security telemetry materialization", () 
 				row.spans,
 			]),
 			[
-				["api", "nodejs", "18.20.8", "", 20],
+				["api", "nodejs", "18.20.8", "", 21],
 				["billing", "cpython", "3.12.4", "", 1],
-				["edge", "workerd", "", "", 1],
+				["edge", "workerd", "", "", 2],
 				["worker", "nodejs", "24.3.0", "bun", 1],
 			],
 		)
