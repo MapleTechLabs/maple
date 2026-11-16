@@ -325,8 +325,11 @@ describe("aws connect flow", () => {
 				{ update: pageUpdate, view },
 				given(model),
 				expectView(securityChoice).toExist(),
+				expectView(text("Security policy")).not.toExist(),
 				change(securityChoice, "on"),
 				expectView(securityChoice).toBeChecked(),
+				// The stack summary lists the policy the module adds.
+				expectView(text("Security policy")).toExist(),
 			)
 			const ticked = inner(model, IntegrationMessage.ToggledAwsNewModule({ module: "security" }))
 			expect(submitted(ticked)).toEqual([

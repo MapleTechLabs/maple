@@ -1,4 +1,3 @@
-import type { AwsModule } from "@maple/primitives"
 import { AWS_METRICS_OFF } from "@maple/domain/aws"
 import type { V2AwsConnection, V2AwsIngest, V2AwsIntegration } from "@maple/domain/http/v2"
 import { countLabel, formatNumber } from "@maple/ui/lib/format"
@@ -28,6 +27,8 @@ import {
 	moduleStateOf,
 	offeredModule,
 	selectionOf,
+	AWS_OPT_IN_MODULES,
+	type AwsOptInModule,
 } from "./aws"
 import {
 	AWS_CONDITION_LABEL,
@@ -56,9 +57,19 @@ const COST_HREF = hrefOf(AppRoute.Cost({ search: {} }))
 
 const COST_BILLING_NOTE = "AWS bills USD 0.01 per Cost Explorer request."
 
-/** The modules a connection card offers a switch for, in order, and how each reads. */
-const MODULE_ROWS = [
-	{
+interface ModuleRow {
+	readonly module: AwsOptInModule
+	readonly icon: IconName
+	readonly waiting: string
+	readonly needsUpdate: string
+	readonly reading: string
+	readonly href: string
+	readonly open: string
+}
+
+/** How each opt-in module reads on a connection card; a module with no row here is a type error. */
+const MODULE_ROWS = {
+	cost: {
 		module: "cost",
 		icon: "CircleDollarIcon",
 		waiting: "Maple starts reading this account's cost once the stack is deployed.",
@@ -68,7 +79,7 @@ const MODULE_ROWS = [
 		href: COST_HREF,
 		open: "Open Cost",
 	},
-	{
+	security: {
 		module: "security",
 		icon: "ShieldCheckIcon",
 		waiting: "Maple starts reading this account's security findings once the stack is deployed.",
@@ -79,17 +90,7 @@ const MODULE_ROWS = [
 		href: hrefOf(AppRoute.SecurityCloud({ search: {} })),
 		open: "Open cloud findings",
 	},
-] as const satisfies ReadonlyArray<{
-	readonly module: AwsModule
-	readonly icon: IconName
-	readonly waiting: string
-	readonly needsUpdate: string
-	readonly reading: string
-	readonly href: string
-	readonly open: string
-}>
-
-type ModuleRow = (typeof MODULE_ROWS)[number]
+} as const satisfies Record<AwsOptInModule, ModuleRow>
 
 const MODULES_ADMIN_ONLY = "Only org admins and engineers can change what Maple reads from AWS."
 
@@ -672,10 +673,10 @@ const connectionRow = (
 				deliveryStep(h, model, connection, timeZone),
 			]),
 			...ingestPanel(h, model, connection, timeZone),
-			...Arr.flatMap(MODULE_ROWS, (row) =>
-				Option.match(offeredModule(status, row.module), {
+			...Arr.flatMap(AWS_OPT_IN_MODULES, (module) =>
+				Option.match(offeredModule(status, module), {
 					onNone: () => [],
-					onSome: (info) => [moduleRow(h, model, connection, row, info)],
+					onSome: (info) => [moduleRow(h, model, connection, MODULE_ROWS[module], info)],
 				}),
 			),
 		],

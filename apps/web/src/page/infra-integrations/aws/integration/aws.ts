@@ -156,6 +156,10 @@ export const isSelectionSaved = (connection: V2AwsConnection, selection: AwsSele
 
 export type AwsModuleInfo = V2AwsIntegration["modules"][number]
 
+/** The modules the dashboard lets a person turn on, in the order the connect form and the card list them. */
+export const AWS_OPT_IN_MODULES = ["cost", "security"] as const satisfies ReadonlyArray<AwsModule>
+export type AwsOptInModule = (typeof AWS_OPT_IN_MODULES)[number]
+
 /** The module as the status offers it to this org; none for one the org cannot turn on. */
 export const offeredModule = (
 	status: V2AwsIntegration | null,
