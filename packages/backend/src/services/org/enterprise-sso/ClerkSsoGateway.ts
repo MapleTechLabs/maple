@@ -92,6 +92,55 @@ const RoleMappingJson = Schema.Struct({
 const byPrecedence = Order.mapInput(Num.Order, (m: { readonly precedence: number }) => m.precedence)
 const UserFlags = Schema.Struct({ deprovisioned: Schema.optionalKey(Schema.NullOr(Schema.Boolean)) })
 
+const CONNECTION_PAGE_SIZE = 100
+/** 100 pages of 100 connections; past that the scan refuses rather than guess. */
+const MAX_CONNECTION_PAGES = 100
+
+interface ConnectionPage {
+	readonly data: ReadonlyArray<{ readonly id: string; readonly domains: ReadonlyArray<string> }>
+	readonly totalCount: number
+}
+
+/**
+ * Which of `domains` a connection other than `connectionId` serves, reading every page Clerk
+ * reports. Fails closed: a scan that cannot reach `totalCount` is an error, never a partial answer,
+ * since a miss would let a bypass change reach another org.
+ */
+export const scanClaimedDomains = (
+	fetchPage: (offset: number) => Effect.Effect<ConnectionPage, ClerkRequestError>,
+	connectionId: string,
+	domains: ReadonlyArray<string>,
+	maxPages: number = MAX_CONNECTION_PAGES,
+): Effect.Effect<ReadonlyArray<string>, ClerkRequestError> => {
+	const step = (
+		page: number,
+		claimed: ReadonlySet<string>,
+	): Effect.Effect<ReadonlySet<string>, ClerkRequestError> =>
+		fetchPage(page * CONNECTION_PAGE_SIZE).pipe(
+			Effect.flatMap((result) => {
+				const next = new Set(claimed)
+				Arr.forEach(result.data, (conn) => {
+					if (conn.id !== connectionId)
+						Arr.forEach(conn.domains, (d) => next.add(Str.toLowerCase(d)))
+				})
+				const seen = page * CONNECTION_PAGE_SIZE + result.data.length
+				if (seen >= result.totalCount || result.data.length === 0) return Effect.succeed(next)
+				if (page + 1 >= maxPages) {
+					return Effect.fail(
+						new ClerkRequestError({
+							operation: "Clerk.enterpriseConnections.list",
+							message: `Could not read all ${result.totalCount} enterprise connections`,
+							status: null,
+							cause: null,
+						}),
+					)
+				}
+				return step(page + 1, next)
+			}),
+		)
+	return step(0, new Set()).pipe(Effect.map((claimed) => Arr.filter(domains, (d) => claimed.has(d))))
+}
+
 const RoleMappingList = Schema.Struct({ data: Schema.Array(RoleMappingJson) })
 
 export interface ClerkSsoRoleMapping {
@@ -435,24 +484,16 @@ const make = Effect.gen(function* () {
 		domainsClaimedElsewhere: (connectionId, domains) =>
 			domains.length === 0
 				? Effect.succeed([])
-				: sdk(
-						"Clerk.enterpriseConnections.list",
-						{ "maple.sso.domains": domains.length },
-						async (c) => {
-							const claimed = new Set<string>()
-							for (let offset = 0; offset < 10_000; offset += 100) {
-								const page = await c.enterpriseConnections.getEnterpriseConnectionList({
-									limit: 100,
+				: scanClaimedDomains(
+						(offset) =>
+							sdk("Clerk.enterpriseConnections.list", { offset }, (c) =>
+								c.enterpriseConnections.getEnterpriseConnectionList({
+									limit: CONNECTION_PAGE_SIZE,
 									offset,
-								})
-								for (const conn of page.data) {
-									if (conn.id !== connectionId)
-										for (const d of conn.domains) claimed.add(Str.toLowerCase(d))
-								}
-								if (page.data.length < 100) break
-							}
-							return Arr.filter(domains, (d) => claimed.has(d))
-						},
+								}),
+							),
+						connectionId,
+						domains,
 					),
 		isDeprovisioned: (userId) =>
 			raw("Clerk.users.get", "GET", `/users/${encodeURIComponent(userId)}`, { decode: UserFlags }).pipe(
