@@ -13,6 +13,10 @@ export const PromqlSeries = Schema.Struct({
 	/** The last `points` samples of the series; `totalPoints` counts them all. */
 	points: Schema.Array(PromqlPoint),
 	totalPoints: Schema.Number,
+	/** Min, average and max over every point, not only the listed ones; absent when all are NaN. */
+	stats: Schema.optionalKey(
+		Schema.Struct({ min: PromqlSampleValue, avg: PromqlSampleValue, max: PromqlSampleValue }),
+	),
 })
 
 export const QueryPromqlOutput = Schema.Struct({
