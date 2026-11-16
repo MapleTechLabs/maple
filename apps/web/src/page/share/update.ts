@@ -108,7 +108,15 @@ const flush = (model: Model): Return => {
 	const pending = Arr.flatMap(share.dashboard.widgets, (widget) => {
 		const maxDataPoints = model.options[widget.id]
 		if (maxDataPoints === undefined) return []
-		const key = encodeJson([window.startTime, window.endTime, variablesKey, maxDataPoints])
+		// A pinned range moves on its own grid step, so a tick refetches the tile when it does.
+		const pinned =
+			widget.timeRange === undefined
+				? null
+				: resolveTimeRangeWindow(widget.timeRange, {
+						snap: model.clockRead !== "Reload",
+						nowMs: model.nowMs,
+					})
+		const key = encodeJson([window.startTime, window.endTime, variablesKey, maxDataPoints, pinned])
 		return model.requested[widget.id] === key
 			? []
 			: [{ widgetId: widget.id, key, maxDataPoints, transform: widget.dataSource.transform }]
@@ -155,9 +163,12 @@ const withWindow = (model: Model, pageTimeZone: string): Model => {
 		: { ...model, window: resolveShareWindow(model, share, pageTimeZone) }
 }
 
-/** A tick keeps the snapped window, so only tiles whose window reached the next grid step refetch. */
+/** A tick keeps the snapped window: only failed tiles and tiles whose window moved refetch. */
 const reload = (model: Model, pageTimeZone: string): Return => {
-	const requested = model.clockRead === "Reload" ? {} : model.requested
+	const requested =
+		model.clockRead === "Reload"
+			? {}
+			: Rec.filter(model.requested, (_, widgetId) => model.states[widgetId]?._tag !== "Error")
 	return flush(withWindow({ ...model, requested }, pageTimeZone))
 }
 
