@@ -663,4 +663,54 @@ describeWithChdb("PromQL selector source", () => {
 		expect(identity(ORG_A, "metrics_gauge", "job", 2 * HOUR_MS + 750)).toContain("scrape-job")
 		expect(identity(ORG_A, "metrics_gauge", "instance", 2 * HOUR_MS + 750)).toContain("host:9090")
 	})
+
+	test("rows whose labels resolve the same are one series", () => {
+		const times = every(15 * SECOND_MS, 2 * MINUTE_MS, 15 * SECOND_MS)
+		const part = (
+			attributes: Readonly<Record<string, string>>,
+			resource: Readonly<Record<string, string>>,
+			parity: number,
+		): SumSeries => ({
+			...counterA,
+			metric: "resolved",
+			attributes,
+			resource: { ...RESOURCE, ...resource },
+			samples: Arr.map(
+				Arr.filter(times, (_t, i) => i % 3 === parity),
+				(t): Sample => [t, t],
+			),
+		})
+		// The datapoint's host_name hides the resource's host.name; an empty datapoint value is no label.
+		insertValues(db, part({ host_name: "x", region: "" }, { "host.name": "a", region: "eu" }, 0))
+		insertValues(db, part({ host_name: "x" }, { "host.name": "b", region: "eu" }, 1))
+		insertValues(db, part({ "host.name": "x" }, { region: "eu" }, 2))
+		const series = select(db, ORG_A, request("resolved_total")).series
+		expect(Arr.map(series, (s) => s.labels)).toEqual([
+			labels("resolved_total", { host_name: "x", region: "eu" }),
+		])
+		expect(total(Arr.flatMap(series, (s) => Arr.map(s.buckets, (b) => b.count)))).toBe(times.length)
+	})
+
+	test("an le matcher filters before the series cap", () => {
+		const routes = Arr.makeBy(4, (i) => `/r${i}`)
+		for (const route of routes) {
+			insertHistogram(db, {
+				...histogram,
+				metric: "capped.duration",
+				attributes: { "http.route": route },
+			})
+		}
+		const inf = request("capped_duration_seconds_bucket", [{ name: "le", op: "=", value: "+Inf" }])
+		const rows = fetchRows(db, ORG_A, inf, 4)
+		expect(total(Arr.map(rows, (r) => r.rows.length))).toBe(routes.length)
+		expect(Arr.map(toSelectorData(inf, rows).series, (s) => s.labels.le)).toEqual(
+			Arr.map(routes, () => "+Inf"),
+		)
+		const notInf = request("capped_duration_seconds_bucket", [{ name: "le", op: "!=", value: "+Inf" }])
+		expect(total(Arr.map(fetchRows(db, ORG_A, notInf), (r) => r.rows.length))).toBe(3 * routes.length)
+		const unformatted = request("capped_duration_seconds_bucket", [{ name: "le", op: "=", value: "1" }])
+		expect(total(Arr.map(fetchRows(db, ORG_A, unformatted), (r) => r.rows.length))).toBe(0)
+		const formatted = request("capped_duration_seconds_bucket", [{ name: "le", op: "=", value: "1.0" }])
+		expect(total(Arr.map(fetchRows(db, ORG_A, formatted), (r) => r.rows.length))).toBe(routes.length)
+	})
 })

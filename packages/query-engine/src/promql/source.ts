@@ -25,7 +25,7 @@ import {
 	promqlPushdownSeriesQuery,
 	promqlSelectorQuery,
 } from "../ch/queries/promql"
-import { formatLe, labelValueExpr, matchesAll, matcherCondition, seriesLabels } from "./labels"
+import { formatLe, labelValueExpr, leCondition, matchesAll, matcherCondition, seriesLabels } from "./labels"
 import {
 	type CatalogMetric,
 	type MetricComponent,
@@ -68,6 +68,11 @@ const compileSelector = (
 			needsValues: request.needsValues,
 			limit: options.maxSeries + 1,
 			conditions: ($) => Arr.map(labelMatchers, (m) => matcherCondition($, m)),
+			boundConditions: (le) =>
+				Arr.map(
+					Arr.filter(labelMatchers, (m) => m.name === "le"),
+					(m) => leCondition(le, m),
+				),
 		}),
 		{
 			orgId: options.orgId,
@@ -249,6 +254,11 @@ const compilePushdown = (
 		rangeBuckets: request.rangeMs / request.widthMs,
 		limit: options.maxSeries + 1,
 		conditions: ($) => Arr.map(labelMatchers, (m) => matcherCondition($, m)),
+		boundConditions: (le) =>
+			Arr.map(
+				Arr.filter(labelMatchers, (m) => m.name === "le"),
+				(m) => leCondition(le, m),
+			),
 	}
 	const aggregation = request.aggregation
 	if (aggregation === undefined) return compile(promqlPushdownSeriesQuery(opts), params)

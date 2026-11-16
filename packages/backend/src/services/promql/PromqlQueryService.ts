@@ -92,10 +92,20 @@ export interface PromqlQuery extends QueryParams {
 	readonly query: string
 }
 
+/** The epoch ms a JavaScript Date can hold, and so the warehouse time formatting. */
+const MAX_DATE_MS = 8.64e15
+
+const inDateRange = (ms: number): boolean => Number.isFinite(ms) && Math.abs(ms) <= MAX_DATE_MS
+
 const validate = (query: PromqlQuery): Effect.Effect<Expr, PromqlBadQueryError> =>
 	Effect.gen(function* () {
 		const { startMs, endMs, stepMs } = query
-		if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) {
+		if (!inDateRange(startMs) || !inDateRange(endMs) || !Number.isFinite(stepMs)) {
+			return yield* new PromqlBadQueryError({
+				message: "timestamps and step must be finite and in range",
+			})
+		}
+		if (endMs < startMs) {
 			return yield* new PromqlBadQueryError({ message: "end timestamp must not be before start time" })
 		}
 		if (endMs > startMs || query.instant === false) {
@@ -259,7 +269,7 @@ const make = Effect.gen(function* () {
 					),
 				{ concurrency: WAREHOUSE_CONCURRENCY },
 			)
-			// A query that hit its LIMIT was cut before the `le` check after it; refuse a partial answer.
+			// A query that hit its LIMIT was cut, maybe before the regex `le` check after it; refuse a partial answer.
 			if (Arr.some(results, ({ rows }) => rows.length > DEFAULT_LIMITS.maxSeries)) {
 				return yield* new PromqlExecutionError({
 					message: `query selects more than ${DEFAULT_LIMITS.maxSeries} series; narrow the selector`,
@@ -311,10 +321,14 @@ const make = Effect.gen(function* () {
 				message: `query reads more than ${MAX_SELECTORS} selectors`,
 			})
 		}
-		const catalog =
-			entries.length === 0
-				? []
-				: yield* readCatalog(tenant, span(Arr.map(entries, ([, request]) => request)))
+		const window = span(Arr.map(entries, ([, request]) => request))
+		// `@` and `offset` move reads past the request's own range.
+		if (entries.length > 0 && !(inDateRange(window.startMs) && inDateRange(window.endMs))) {
+			return yield* new PromqlBadQueryError({
+				message: "query reads samples outside the supported time range",
+			})
+		}
+		const catalog = entries.length === 0 ? [] : yield* readCatalog(tenant, window)
 		const options = { orgId: tenant.orgId, maxSeries: DEFAULT_LIMITS.maxSeries }
 		const pushdowns = Arr.flatMap([...planPushdowns(expr, input)], ([node, candidate]) => {
 			const plan = buildPushdownQuery(candidate.request, catalog, options)

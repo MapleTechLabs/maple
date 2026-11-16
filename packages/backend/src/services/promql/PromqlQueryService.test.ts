@@ -64,6 +64,23 @@ describe("PromqlQueryService", () => {
 		}),
 	)
 
+	it.effect("refuses timestamps a date cannot hold as a bad query, not a defect", () =>
+		Effect.gen(function* () {
+			const far = yield* failureOf({ query: "up", startMs: 1e20, endMs: 1e20, stepMs: 0 })
+			expect(far._tag).toBe("@maple/backend/promql/PromqlBadQueryError")
+			const infiniteStep = yield* failureOf({
+				query: "up",
+				startMs: 0,
+				endMs: 10_000,
+				stepMs: Infinity,
+			})
+			expect(infiniteStep._tag).toBe("@maple/backend/promql/PromqlBadQueryError")
+			const pinned = yield* failureOf({ query: "up @ 1e14", startMs: 0, endMs: 0, stepMs: 0 })
+			expect(pinned._tag).toBe("@maple/backend/promql/PromqlBadQueryError")
+			expect(pinned.message).toMatch(/outside the supported time range/)
+		}),
+	)
+
 	it.effect("reports evaluation errors as execution errors", () =>
 		Effect.gen(function* () {
 			const error = yield* failureOf({ query: "topk(NaN, vector(1))", startMs: 0, endMs: 0, stepMs: 0 })

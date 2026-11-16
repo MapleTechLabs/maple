@@ -181,6 +181,20 @@ describe("query_promql", () => {
 		}),
 	)
 
+	it.effect("refuses a sub-millisecond or overflowing step before querying", () =>
+		Effect.gen(function* () {
+			const errors = yield* Effect.forEach(["0.0004", "1e308", "999999999999999999y"], (step) =>
+				Effect.flip(run({ query: "up", ...WINDOW, step }, () => Effect.die("not reached"))),
+			)
+			expect(errors).toMatchObject(
+				Arr.map(errors, () => ({
+					_tag: "@maple/mcp/errors/McpInvalidInputError",
+					parameter: "step",
+				})),
+			)
+		}),
+	)
+
 	it.effect("refuses a step too fine for the window as a step error, before querying", () =>
 		Effect.gen(function* () {
 			const error = yield* Effect.flip(
