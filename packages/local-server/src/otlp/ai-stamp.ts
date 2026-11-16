@@ -156,10 +156,17 @@ function nameHas(name: string, needle: string): boolean {
 }
 
 /** `text` cut to `max` characters (Unicode scalar values, as Rust counts them). */
+/** The first `max` code points, scanning no further (tool results can be megabytes). */
 function truncate(text: string, max: number): string {
 	if (text.length <= max) return text
-	const chars = Array.from(text)
-	return chars.length <= max ? text : Arr.join(Arr.take(chars, max), "")
+	let end = 0
+	let count = 0
+	for (const char of text) {
+		if (count === max) return Str.slice(0, end)(text)
+		end += char.length
+		count++
+	}
+	return text
 }
 
 const allDigits = (part: string | undefined, len: number) =>

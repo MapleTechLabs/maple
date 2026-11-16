@@ -119,6 +119,13 @@ describe("stampAiSpan", () => {
 			"gen_ai.tool.call.result": long,
 		})
 		expect(tool["maple_ai.tool.error_result"]).toBe(Str.slice(0, 1_000)(long))
+		// The cap counts code points like Rust's chars, so an emoji is one, not two.
+		const emoji = stamp("execute_tool fetch", {
+			"gen_ai.operation.name": "execute_tool",
+			"error.type": "TimeoutError",
+			"gen_ai.tool.call.result": Str.repeat(1_050)("😀"),
+		})
+		expect(emoji["maple_ai.tool.error_result"]).toBe(Str.repeat(1_000)("😀"))
 		expect(tool["maple_ai.error"]).toBe("1")
 		// An empty `error.type` is no failure.
 		const ok = stamp("execute_tool fetch", { "gen_ai.operation.name": "execute_tool", "error.type": "" })
