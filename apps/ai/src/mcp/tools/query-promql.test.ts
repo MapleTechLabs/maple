@@ -334,6 +334,17 @@ describe("query_promql empty results", () => {
 })
 
 describe("query_promql statistics", () => {
+	it.effect("summarises every point, not only the listed ones", () =>
+		Effect.gen(function* () {
+			// The peak sits before the last 200 points, which are all that get listed.
+			const values = Arr.map(Arr.range(1, 241), (i) => (i === 10 ? 99 : 1))
+			const { text } = yield* run({ query: QUERY, ...WINDOW, step: "15s" }, () =>
+				Effect.succeed({ resultType: "matrix" as const, result: [series("svc", values, 15_000)] }),
+			)
+			expect(text).toContain("| 241 | 1 | 1.407 | 99 | 1 |")
+		}),
+	)
+
 	it.effect("counts infinite points in the statistics and shows seconds in sampled times", () =>
 		Effect.gen(function* () {
 			const { text } = yield* run({ query: QUERY, ...WINDOW, step: "15s" }, () =>
