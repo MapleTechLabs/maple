@@ -1953,30 +1953,32 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 				const listPullRequestRunsReporting: SecurityAuditOrgStore["listPullRequestRunsReporting"] =
 					Effect.fn("SecurityAuditStore.listPullRequestRunsReporting")(
 						function* (targetId, fingerprint) {
+							// From the target's pull request runs (its started index), then each run's findings by
+							// primary key: never a scan of the org's findings by fingerprint.
 							const rows = yield* dbExecute((db) =>
 								db.run(
-									PG.from(SecurityAuditRuns)
-										.select("id")
+									PG.from(SecurityAuditRunFindings)
+										.select("runId")
 										.where(($) => [
 											$.orgId.eq(orgId),
-											$.targetId.eq(targetId),
-											$.prNumber.isNotNull(),
-											$.finishedAt.isNotNull(),
+											$.fingerprint.eq(fingerprint),
 											PG.inSubquery(
-												$.id,
-												PG.from(SecurityAuditRunFindings)
-													.select("runId")
-													.where(($f) => [
-														$f.orgId.eq(orgId),
-														$f.fingerprint.eq(fingerprint),
-													]),
+												$.runId,
+												PG.from(SecurityAuditRuns)
+													.select("id")
+													.where(($run) => [
+														$run.orgId.eq(orgId),
+														$run.targetId.eq(targetId),
+														$run.prNumber.isNotNull(),
+														$run.finishedAt.isNotNull(),
+													])
+													.orderBy(($run) => [[$run.startedAt, "desc"]])
+													.limit(20),
 											),
-										])
-										.orderBy(($) => [[$.startedAt, "desc"]])
-										.limit(20),
+										]),
 								),
 							)
-							return Arr.map(rows, (row) => row.id)
+							return Arr.map(rows, (row) => row.runId)
 						},
 					)
 
