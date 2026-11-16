@@ -242,3 +242,54 @@ describe("second-review parser regressions", () => {
 		expect(ok(print(expr))).toEqual(expr)
 	})
 })
+
+describe("third-review parser regressions", () => {
+	it("reads exponent and hex numbers as range and offset durations", () => {
+		expect(ok("rate(x[1e3])")).toMatchObject({ args: [{ rangeMs: 1_000_000 }] })
+		expect(ok("x[1.5e3]")).toMatchObject({ rangeMs: 1_500_000 })
+		expect(ok("x[0x10]")).toMatchObject({ rangeMs: 16_000 })
+		expect(ok("x offset -1e3")).toMatchObject({ offsetMs: -1_000_000 })
+	})
+
+	it("accepts digit separators in numbers but not in unit durations", () => {
+		expect(ok("1_000")).toEqual({ type: "NumberLiteral", value: 1000 })
+		expect(ok("1_000.5")).toEqual({ type: "NumberLiteral", value: 1000.5 })
+		expect(ok("1e1_0")).toEqual({ type: "NumberLiteral", value: 1e10 })
+		expect(ok("x[1_000]")).toMatchObject({ rangeMs: 1_000_000 })
+		expect(errorOf("1__0")).not.toBe("parsed")
+		expect(errorOf("x offset 1_0s")).not.toBe("parsed")
+	})
+
+	it("reads a signed @ timestamp", () => {
+		expect(ok("up @ -1")).toMatchObject({ at: { kind: "time", timeMs: -1000 } })
+		expect(ok("up @ - 1.5")).toMatchObject({ at: { kind: "time", timeMs: -1500 } })
+		expect(ok("up @ +2")).toMatchObject({ at: { kind: "time", timeMs: 2000 } })
+	})
+
+	it("drops an empty matching clause next to a scalar and keeps rejecting a non-empty one", () => {
+		expect(ok("up / ignoring() 2")).toMatchObject({ type: "Binary", matching: undefined })
+		expect(ok("2 * on() group_left(a) up")).toMatchObject({ type: "Binary", matching: undefined })
+		expect(errorOf("up / ignoring(a) 2")).toMatch(/vector matching only allowed between instant vectors/)
+	})
+
+	it("rejects a label in both on() and the group list, but not with ignoring()", () => {
+		expect(errorOf("a + on(job) group_left(job) b")).toBe(
+			'label "job" must not occur in ON and GROUP clause at once',
+		)
+		expect(errorOf("a + on(job) group_right(job) b")).toMatch(/must not occur in ON and GROUP/)
+		expect(errorOf("a + ignoring(job) group_left(job) b")).toBe("parsed")
+	})
+
+	it("keeps a negative base of ^ in parentheses", () => {
+		const expr: Expr = {
+			type: "Binary",
+			op: "^",
+			lhs: { type: "NumberLiteral", value: -2 },
+			rhs: { type: "NumberLiteral", value: 2 },
+			returnBool: false,
+			matching: undefined,
+		}
+		expect(print(expr)).toBe("(-2) ^ 2")
+		expect(ok(print(expr))).toEqual(ok("(-2) ^ 2"))
+	})
+})
