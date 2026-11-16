@@ -81,6 +81,10 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 									.onConflictDoUpdate({
 										target: ["orgId", "connectionId", "region", "source", "findingId"],
 										set: PG.excludedAll(),
+										// An older version read late never replaces a newer one; the same time does,
+										// since a console change can leave the service's update time alone.
+										where: (existing, excluded) =>
+											existing.providerUpdatedAt.lte(excluded.providerUpdatedAt),
 									}),
 							),
 						),
