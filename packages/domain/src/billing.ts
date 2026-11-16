@@ -75,6 +75,7 @@ export const PRICING_CARD_FEATURE_IDS = [
 	"logs",
 	"traces",
 	"metrics",
+	"profiles",
 	"browser_sessions",
 	"product_events",
 	"ai_credits",

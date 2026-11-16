@@ -27,6 +27,24 @@ describe("getFeatureRows", () => {
 		expect(Arr.map(getFeatureRows(plan), (row) => row.featureId)).toEqual(["logs", "ai_credits"])
 	})
 
+	it("lists profiles as a GB feature with its own label", () => {
+		const plan = new CatalogPlan({
+			id: "startup",
+			name: "Startup",
+			items: [
+				new CatalogPlanItem({
+					featureId: "profiles",
+					included: 10,
+					display: { secondaryText: "then $0.6 per 1 profiles" },
+				}),
+			],
+		})
+
+		expect(getFeatureRows(plan)).toEqual([
+			{ featureId: "profiles", label: "Profiles", value: "10 GB", detail: "then $0.60 per GB" },
+		])
+	})
+
 	it("quotes an overage rate in whole cents and leaves sub-cent rates alone", () => {
 		const metered = (featureId: string, secondaryText: string) =>
 			new CatalogPlanItem({ featureId, included: 100, display: { secondaryText } })
