@@ -2665,7 +2665,20 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						}),
 					)
 				}
-				const sourced = capUnsourcedPrivacyCriticals(request.report.findings)
+				// A scan critical on the same lines recognized the value itself: that is the evidence.
+				const scanCriticals = Arr.filter(
+					read?.privacy ?? [],
+					(finding) => finding.severity === "critical",
+				)
+				const sourced = capUnsourcedPrivacyCriticals(request.report.findings, (own) =>
+					Arr.some(
+						scanCriticals,
+						(scan) =>
+							scan.path === own.path &&
+							scan.line >= own.line &&
+							scan.line <= (own.endLine ?? own.line),
+					),
+				)
 				if (sourced.downgraded.length > 0) {
 					yield* Effect.logInfo(
 						"[PrReview] credential findings without a cited source filed as warnings",

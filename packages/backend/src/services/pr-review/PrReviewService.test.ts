@@ -2661,6 +2661,42 @@ describe("PrReviewService credential findings and replies", () => {
 		},
 	)
 
+	it.effect("keeps an unsourced critical where the scan recognized the value on its line", () => {
+		const testDb = createTestDb(trackedDbs)
+		const leaky: PullRequestFile = {
+			path: "apps/api/src/auth.ts",
+			previousPath: null,
+			status: "modified",
+			additions: 1,
+			deletions: 0,
+			patch: Arr.join(
+				[
+					"@@ -1,1 +1,2 @@",
+					" export const login = () => {",
+					'+\tlogger.info("key", { key: "sk_live_0123456789abcdefghij" })',
+				],
+				"\n",
+			),
+		}
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({
+					report: report([credential(2, "Live `key` written to the log")]),
+				}),
+			)
+			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
+			assert.deepEqual(
+				Arr.map(stored.report?.findings ?? [], (finding) => [finding.line, finding.severity]),
+				[[2, "critical"]],
+			)
+		}).pipe(Effect.provide(layerFor(testDb, { prFiles: [leaky] })))
+	})
+
 	it.effect("passes a person's reply to the next review, whose dismissal stops a reworded re-raise", () => {
 		const testDb = createTestDb(trackedDbs)
 		const published: Array<PullRequestReviewPublication> = []
