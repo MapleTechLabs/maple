@@ -1562,3 +1562,38 @@ describe("/api/security-audit superseded run usage", () => {
 		}
 	})
 })
+
+describe("/api/security-audit run triage across pull requests", () => {
+	it("re-reports every pull request check that reported the finding, at each one's newest run", async () => {
+		const harness = makeHarness()
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const runs = await harness.withStore((store) =>
+				Effect.gen(function* () {
+					const scoped = store.forOrg(ORG_A)
+					const finished = (prNumber: number, sourceRef: string) =>
+						scoped
+							.startRun({ targetId: target.body.id, kind: "pull_request", prNumber, sourceRef })
+							.pipe(
+								Effect.tap((run) =>
+									scoped.saveFindings(run.id, [confirmed("shared")], NO_ESTIMATES),
+								),
+								Effect.tap((run) => scoped.finishRun(run.id, { status: "complete" })),
+							)
+					const a = yield* finished(1, "1111111111111111111111111111111111111111")
+					const olderB = yield* finished(2, "2222222222222222222222222222222222222222")
+					const newerB = yield* finished(2, "3333333333333333333333333333333333333333")
+					return { a, olderB, newerB }
+				}),
+			)
+
+			await harness.call("PATCH", `/runs/${runs.a.id}/findings/shared`, {
+				body: { status: "dismissed", reason: "test fixture" },
+			})
+
+			expect([...harness.published].sort()).toEqual([runs.a.id, runs.newerB.id].sort())
+		} finally {
+			await harness.dispose()
+		}
+	})
+})

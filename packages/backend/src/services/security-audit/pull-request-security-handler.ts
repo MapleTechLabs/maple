@@ -14,6 +14,8 @@ const FORWARDED: ReadonlySet<PullRequestEventJob["action"]> = new Set([
 	"reopened",
 	"synchronize",
 	"ready_for_review",
+	// A base branch change can move the pull request onto a branch a target checks.
+	"edited",
 ])
 
 /**

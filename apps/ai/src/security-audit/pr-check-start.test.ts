@@ -285,7 +285,7 @@ describe("startPullRequestCheck", () => {
 		expect(harness.notices).toEqual(["1111:running"])
 	})
 
-	it("posts nothing for a pull request no target checks, a draft, a closed one or an org outside the rollout", async () => {
+	it("posts nothing for a pull request no target checks, a draft or a closed one; not blocking outside the rollout", async () => {
 		const harness = makeHarness()
 		const outcomes = await harness.run(
 			Effect.gen(function* () {
@@ -313,7 +313,11 @@ describe("startPullRequestCheck", () => {
 		)
 
 		expect(Arr.map(outcomes, (o) => o.reason)).toEqual(["no_target", "draft", "action"])
-		expect([outside.reason, notTurnedOn.reason]).toEqual(["not_enabled", "no_target"])
+		expect([outside.outcome, notTurnedOn.reason]).toEqual(["reported", "no_target"])
+		// A target that expects the check gets one, as not blocking, even when the flags read as off.
+		expect(disabled.notices).toEqual([
+			"1111:unchecked:security audits are not enabled for this organization",
+		])
 		expect([harness.notices, harness.started, disabled.started, off.started]).toEqual([[], [], [], []])
 	})
 
@@ -546,5 +550,49 @@ describe("startPullRequestCheck redelivery after a finished audit", () => {
 		expect(harness.started.length).toBe(1)
 		expect(harness.published).toEqual([result.first])
 		expect(result.runs.length).toBe(1)
+	})
+})
+
+describe("startPullRequestCheck edits and stale supersedes", () => {
+	it("checks a pull request moved onto a checked branch by an edit, without a new push", async () => {
+		const harness = makeHarness()
+		const outcome = await harness.run(
+			Effect.gen(function* () {
+				yield* harness.seeded
+				return yield* startPullRequestCheck(orgId, job({ action: "edited" }))
+			}),
+		)
+
+		expect(outcome).toEqual({ outcome: "started" })
+	})
+
+	it("never stops another head's run once the delivery's own head is no longer current", async () => {
+		// The head reads as this delivery's at first, then a newer push lands before it supersedes.
+		const reads = { n: 0 }
+		const head = {
+			get sha() {
+				reads.n += 1
+				return reads.n === 1 ? HEAD : NEXT_HEAD
+			},
+		}
+		const harness = makeHarness({ head })
+		const result = await harness.run(
+			Effect.gen(function* () {
+				const target = yield* harness.seeded
+				const store = (yield* SecurityAuditStore).forOrg(orgId)
+				yield* store.startRun({
+					targetId: target.id,
+					kind: "pull_request",
+					prNumber: 612,
+					sourceRef: NEXT_HEAD,
+				})
+				const outcome = yield* startPullRequestCheck(orgId, job())
+				return { outcome, runs: yield* harness.runsOf(target.id) }
+			}),
+		)
+
+		expect(result.outcome.reason).toBe("stale_head")
+		expect(harness.cancelled).toEqual([])
+		expect(Arr.map(result.runs, (r) => r.status)).toEqual(["in_progress"])
 	})
 })

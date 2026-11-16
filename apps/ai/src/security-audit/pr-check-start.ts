@@ -22,12 +22,16 @@ import { loadLlmSettings, securityAuditModelIds } from "../platform/Llm"
 import { SecurityPrCheck } from "./pr-check"
 import { prScope } from "./pr-check-scope"
 
-/** Pushes and openings: the events that put new code at the head. */
+/**
+ * Pushes and openings put new code at the head; an edit can move the pull request onto a branch a
+ * target checks. An edit of only the title or body finds the head's run, or its result, and stops.
+ */
 const CHECKED_ACTIONS: ReadonlySet<PullRequestEventJob["action"]> = new Set([
 	"opened",
 	"reopened",
 	"synchronize",
 	"ready_for_review",
+	"edited",
 ])
 
 /** One hunter wave and one verifier per candidate: a pull request's diff, not a whole branch. */
@@ -56,8 +60,6 @@ export const startPullRequestCheck = Effect.fn("SecurityPrCheck.start")(function
 	const baseRef = job.baseRef
 	if (headSha === undefined || baseRef === undefined) return skipped("no_head")
 
-	const flags = yield* (yield* OrganizationFeatureFlagsService).flags(orgId)
-	if (!flags.securityAudit) return skipped("not_enabled")
 	const store = (yield* SecurityAuditStore).forOrg(orgId)
 	const target = yield* store.findPullRequestTarget(job.repoFullName, baseRef)
 	if (Option.isNone(target)) return skipped("no_target")
@@ -67,6 +69,10 @@ export const startPullRequestCheck = Effect.fn("SecurityPrCheck.start")(function
 		checks
 			.notify(orgId, target.value, headSha, { kind: "unchecked", reason })
 			.pipe(Effect.as<SecurityPrCheckOutcome>({ outcome: "reported", reason }))
+	// Flags read as off when Clerk cannot be reached: a target that expects the check still gets one,
+	// as not blocking, rather than a check that never comes.
+	const flags = yield* (yield* OrganizationFeatureFlagsService).flags(orgId)
+	if (!flags.securityAudit) return yield* report("security audits are not enabled for this organization")
 	// A branch rule waits forever on a check nobody posts: past this point every failure reports.
 	return yield* checkPullRequest(orgId, job, target.value, headSha, report).pipe(
 		Effect.catchCause((cause) =>
@@ -114,7 +120,12 @@ const checkPullRequest = Effect.fn("SecurityPrCheck.checkPullRequest")(function*
 	const supersede = Effect.gen(function* () {
 		const open = yield* store.listOpenPullRequestRuns(target.id, job.number)
 		const same = Arr.findFirst(open, (run) => run.sourceRef === headSha)
-		if (Option.isSome(same)) return same
+		if (Option.isSome(same)) return { _tag: "Answering" as const, run: same.value }
+		if (open.length === 0) return { _tag: "Clear" as const }
+		// Another head's run started since this delivery read the head: read it again before stopping
+		// that run, so a stale delivery never stops the current head's.
+		const now = yield* provider.fetchPullRequestHead(installation, ref, job.number)
+		if (now.headSha !== headSha) return { _tag: "Stale" as const }
 		yield* Effect.forEach(
 			open,
 			(run) =>
@@ -134,7 +145,7 @@ const checkPullRequest = Effect.fn("SecurityPrCheck.checkPullRequest")(function*
 				),
 			{ discard: true },
 		)
-		return Option.none<SecurityAuditRunRow>()
+		return { _tag: "Clear" as const }
 	})
 
 	/**
@@ -148,6 +159,12 @@ const checkPullRequest = Effect.fn("SecurityPrCheck.checkPullRequest")(function*
 			if (yield* workflow.exists(run.id)) return
 			if (run.discoveryModel === null || run.validationModel === null)
 				return yield* settleOrphan(run, "the run has no recorded models")
+			// Said before the Workflow exists, so it can never land after the result.
+			yield* checks.notify(orgId, target, headSha, {
+				kind: "running",
+				runId: run.id,
+				scopePaths: run.scopePaths.length,
+			})
 			yield* workflow
 				.create({
 					orgId,
@@ -161,15 +178,15 @@ const checkPullRequest = Effect.fn("SecurityPrCheck.checkPullRequest")(function*
 					priorRunId: null,
 				})
 				.pipe(
-					Effect.andThen(
-						checks.notify(orgId, target, headSha, {
-							kind: "running",
-							runId: run.id,
-							scopePaths: run.scopePaths.length,
-						}),
-					),
+					// Another delivery may have created it in between: only a run with no Workflow settles.
 					Effect.catchTag("@maple/backend/platform/WorkflowStartError", (error) =>
-						settleOrphan(run, error.message),
+						workflow
+							.exists(run.id)
+							.pipe(
+								Effect.flatMap((exists) =>
+									exists ? Effect.void : settleOrphan(run, error.message),
+								),
+							),
 					),
 				)
 		})
@@ -180,8 +197,9 @@ const checkPullRequest = Effect.fn("SecurityPrCheck.checkPullRequest")(function*
 			.pipe(Effect.andThen(checks.publish(orgId, run.id)))
 
 	const answering = yield* supersede
-	if (Option.isSome(answering)) {
-		yield* resume(answering.value)
+	if (answering._tag === "Stale") return skipped("stale_head")
+	if (answering._tag === "Answering") {
+		yield* resume(answering.run)
 		return skipped("already_checking")
 	}
 
@@ -243,7 +261,8 @@ const checkPullRequest = Effect.fn("SecurityPrCheck.checkPullRequest")(function*
 					const now = yield* provider.fetchPullRequestHead(installation, ref, job.number)
 					if (now.headSha !== headSha) return { _tag: "Stale" as const }
 					const raced = yield* supersede
-					if (Option.isSome(raced)) return { _tag: "Checking" as const }
+					if (raced._tag === "Stale") return { _tag: "Stale" as const }
+					if (raced._tag === "Answering") return { _tag: "Checking" as const }
 					const retriedRun = yield* start.pipe(
 						Effect.catchTag(
 							"@maple/backend/security-audit/RunInProgress",
