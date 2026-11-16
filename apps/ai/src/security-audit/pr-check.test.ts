@@ -100,6 +100,8 @@ const providerWith = (writeCheck: VcsProviderClient["writePullRequestCheck"]): V
 const makeHarness = () => {
 	const db = createTestDb(trackedDbs)
 	const checks: Array<WrittenCheck> = []
+	/** Runs once, while the first check write is in flight: a triage landing mid-publish. */
+	const duringFirstWrite = { effect: Effect.void }
 	const provider = providerWith((_installation, _repo, input) =>
 		Effect.sync(() => {
 			checks.push({
@@ -109,8 +111,16 @@ const makeHarness = () => {
 				annotations: input.annotations ?? [],
 				detailsUrl: input.detailsUrl,
 			})
-			return { url: null }
-		}),
+		}).pipe(
+			Effect.andThen(
+				Effect.suspend(() => {
+					const pending = duringFirstWrite.effect
+					duringFirstWrite.effect = Effect.void
+					return pending
+				}),
+			),
+			Effect.as({ url: null }),
+		),
 	)
 	const deps = Layer.mergeAll(
 		SecurityAuditStore.layer.pipe(Layer.provide(db.layer)),
@@ -158,7 +168,7 @@ const makeHarness = () => {
 	const run = <A, E>(body: Effect.Effect<A, E, Layer.Success<typeof layer>>) =>
 		Effect.runPromise(body.pipe(Effect.provide(layer)))
 
-	return { run, seeded, checks }
+	return { run, seeded, checks, duringFirstWrite }
 }
 
 describe("SecurityPrCheck.publish", () => {
@@ -349,5 +359,32 @@ describe("SecurityPrCheck.publish claims the branch rejected", () => {
 		)
 
 		expect(Arr.map(harness.checks, (c) => c.state)).toEqual(["failure"])
+	})
+})
+
+describe("SecurityPrCheck.publish concurrent triage", () => {
+	it("writes again when a triage lands while its verdict is being written", async () => {
+		const harness = makeHarness()
+		await harness.run(
+			Effect.gen(function* () {
+				const { store, target } = yield* harness.seeded
+				const checks = yield* SecurityPrCheck
+				const run = yield* store.startRun({
+					targetId: target.id,
+					kind: "pull_request",
+					prNumber: 9,
+					sourceRef: HEAD,
+				})
+				yield* store.saveFindings(run.id, [confirmed("p1", "critical")], new Map())
+				yield* store.finishRun(run.id, { status: "complete" })
+				// The blocker is accepted after this publish judged it, before its write returned.
+				harness.duringFirstWrite.effect = store
+					.setRunFindingStatus(run.id, "p1", "accepted_risk", "behind SSO", user)
+					.pipe(Effect.asVoid, Effect.orDie)
+				yield* checks.publish(orgId, run.id)
+			}),
+		)
+
+		expect(Arr.map(harness.checks, (c) => c.state)).toEqual(["failure", "success"])
 	})
 })
