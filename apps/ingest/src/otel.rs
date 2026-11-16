@@ -58,7 +58,6 @@ pub fn build_resource(cfg: ResourceConfig) -> Resource {
 fn detect_head_revision() -> Option<String> {
     [
         "COMMIT_SHA",
-        "RAILWAY_GIT_COMMIT_SHA",
         "RENDER_GIT_COMMIT",
         "GITHUB_SHA",
     ]
@@ -94,19 +93,6 @@ fn detect_platform() -> Vec<KeyValue> {
         }
         if let Ok(instance) = env::var("AWS_LAMBDA_LOG_STREAM_NAME") {
             attrs.push(KeyValue::new("faas.instance", instance));
-        }
-        return attrs;
-    }
-    if env::var("RAILWAY_ENVIRONMENT_NAME").is_ok() {
-        let mut attrs = vec![
-            KeyValue::new("cloud.provider", "railway"),
-            KeyValue::new("cloud.platform", "railway"),
-        ];
-        if let Ok(replica) = env::var("RAILWAY_REPLICA_ID") {
-            attrs.push(KeyValue::new("faas.instance", replica));
-        }
-        if let Ok(region) = env::var("RAILWAY_REPLICA_REGION") {
-            attrs.push(KeyValue::new("cloud.region", region));
         }
         return attrs;
     }

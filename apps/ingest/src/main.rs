@@ -2701,11 +2701,9 @@ fn collector_unavailable(message: &'static str, detail: impl Into<String>) -> Ap
 
 /// Resolve the deployment environment in maple's canonical priority order.
 /// MAPLE_ENVIRONMENT is what apps/api/alchemy.run.ts and friends set via
-/// resolveDeploymentEnvironment(stage); RAILWAY_ENVIRONMENT_NAME is Railway's
-/// free runtime label; DEPLOYMENT_ENV is a manual override of last resort.
+/// resolveDeploymentEnvironment(stage); DEPLOYMENT_ENV is a manual override of last resort.
 fn resolve_deployment_env() -> String {
     std::env::var("MAPLE_ENVIRONMENT")
-        .or_else(|_| std::env::var("RAILWAY_ENVIRONMENT_NAME"))
         .or_else(|_| std::env::var("DEPLOYMENT_ENV"))
         .unwrap_or_else(|_| "development".to_owned())
 }
@@ -10977,7 +10975,7 @@ impl ClickHouseTargetProvider for ClickHouseTargetResolver {
 }
 
 /// PlanetScale Postgres-backed KeyStore. A pooled direct connection (PSBouncer
-/// 6432, no Hyperdrive — Railway dials PlanetScale). Uses `$N` placeholders,
+/// 6432, no Hyperdrive — the ECS fleet dials PlanetScale). Uses `$N` placeholders,
 /// native booleans, and `to_timestamp()` for the epoch-ms connector timestamps
 /// (those columns are `timestamptz`). A 60s in-process cache and HMAC
 /// fingerprinting sit upstream.
@@ -13408,7 +13406,7 @@ mod tests {
 
     #[test]
     fn country_is_empty_unless_the_proxy_is_trusted() {
-        // The gateway is reachable directly on its Railway origin, so an
+        // The gateway is reachable directly on its load balancer origin, so an
         // untrusted deployment must ignore the header entirely rather than let
         // a client label its own traffic.
         assert_eq!(derive_country(&geo_headers("DE"), false), "");
