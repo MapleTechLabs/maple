@@ -1233,7 +1233,11 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						return Option.none<GithubApiCommit>()
 					return yield* failure(response, "Get commit", "repository")
 				}
-				if (!isOk(response)) return yield* failure(response, "Get commit", "repository")
+				// A blocked repository fails as the anticipated domain error, so the span stays out of error tracking.
+				if (!isOk(response))
+					return yield* failure(response, "Get commit", "repository").pipe(
+						Effect.mapError(toRepositoryListingError),
+					)
 				const json = yield* parseJson(response, "Get commit")
 				return yield* decodeCommit(json).pipe(
 					Effect.mapBoth({

@@ -507,4 +507,48 @@ describe("VendorHttp", () => {
 			}),
 		)
 	})
+
+	it.effect("ends 3xx and 4xx attempt spans Ok and still fails the call with the status", () => {
+		const spans: Array<Tracer.NativeSpan> = []
+		const tracer = Tracer.make({
+			span(options) {
+				const span = new Tracer.NativeSpan(options)
+				spans.push(span)
+				return span
+			},
+		})
+		const fake = VendorFake.make({
+			routes: [
+				{
+					path: "/v1/logs",
+					respond: () =>
+						VendorFake.text("", 302, { location: "https://blobs.acme.test/log?sig=1" }),
+				},
+				{ path: "/v1/gone", respond: () => VendorFake.text("", 404) },
+			],
+		})
+		return withClient(fake, (client) =>
+			Effect.gen(function* () {
+				const redirect = yield* Effect.flip(client.text({ path: "/v1/logs" }))
+				const gone = yield* Effect.flip(client.text({ path: "/v1/gone" }))
+				return [redirect.status, gone.status]
+			}).pipe(Effect.withTracer(tracer)),
+		).pipe(
+			Effect.map((statuses) => {
+				assert.deepStrictEqual(statuses, [302, 404])
+				const outcomes = Arr.map(spans, (span) => {
+					const attributes = Rec.fromEntries([...span.attributes])
+					return [
+						attributes["http.response.status_code"],
+						span.status._tag === "Ended" && span.status.exit._tag,
+						attributes["error.type"],
+					]
+				})
+				assert.deepStrictEqual(outcomes, [
+					[302, "Success", "upstream"],
+					[404, "Success", "not_found"],
+				])
+			}),
+		)
+	})
 })

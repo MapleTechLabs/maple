@@ -89,7 +89,7 @@ export const GET: APIRoute = ({ site }) => {
 
 			"## Features",
 			"",
-			`One page per capability: tracing, session replay, logs, metrics, service catalog, error tracking, MCP, Kubernetes. ${CONVENTION("feature")}`,
+			`One page per capability, ${features.length} in all. Each states what it costs, how long it keeps data, and links its setup doc. ${CONVENTION("feature")}`,
 			"",
 			...Arr.map(
 				features,

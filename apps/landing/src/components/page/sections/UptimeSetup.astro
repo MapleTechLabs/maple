@@ -4,43 +4,9 @@
  * limits a buyer or an agent needs before choosing Maple's checks over a dedicated tool.
  */
 import * as m from "../../../paraglide/messages.js";
+import { UPTIME_SETUP_WAYS } from "../../../lib/feature-sections";
 
-const ways = [
-	{
-		label: m.uptime_setup_way_agent(),
-		code: `> Add an uptime check for https://api.example.com/health,
-  every minute, linked to the checkout service.
-
-create_uptime_monitor({
-  kind: "http",
-  name: "checkout-api",
-  url: "https://api.example.com/health",
-  interval_seconds: 60,
-  service: "checkout",
-})`,
-	},
-	{
-		label: m.uptime_setup_way_terraform(),
-		code: `resource "maple_uptime_monitor" "checkout_api" {
-  name             = "checkout-api"
-  interval_seconds = 60
-  service_name     = "checkout"
-  config = jsonencode({
-    type = "http"
-    url  = "https://api.example.com/health"
-  })
-}`,
-	},
-	{
-		label: m.uptime_setup_way_api(),
-		code: `curl https://api.maple.dev/v2/uptime_monitors \\
-  -H "Authorization: Bearer $MAPLE_API_KEY" \\
-  -H "Content-Type: application/json" \\
-  -d '{"name": "checkout-api", "kind": "http",
-       "config": {"type": "http", "url": "https://api.example.com/health"},
-       "interval_seconds": 60, "service_name": "checkout"}'`,
-	},
-];
+const ways = UPTIME_SETUP_WAYS.map((way) => ({ label: way.label(), code: way.code }));
 
 const facts = [
 	{ title: m.uptime_setup_fact_1_title(), body: m.uptime_setup_fact_1_body() },

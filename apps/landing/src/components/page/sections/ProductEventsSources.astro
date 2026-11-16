@@ -14,51 +14,23 @@ import { getRelativeLocaleUrl } from "astro:i18n";
 import { Code } from "astro:components";
 import * as m from "../../../paraglide/messages.js";
 import { codeTheme } from "../../../lib/code-theme.mjs";
+import { PRODUCT_EVENT_SOURCES } from "../../../lib/feature-sections";
 import PixelIcon, { type PixelIconName } from "../../icons/PixelIcon.astro";
 
 const locale = Astro.currentLocale ?? "en";
 
-const sources: {
-	label: string;
-	icon: PixelIconName;
-	title: string;
-	body: string;
-	file: string;
-	lang: "ts" | "bash";
-	code: string;
-	href: string;
-}[] = [
-	{
-		label: "browser",
-		icon: "globe",
-		title: m.pe_src_browser_title(),
-		body: m.pe_src_browser_body(),
-		file: "checkout.tsx",
-		lang: "ts",
-		code: 'MapleBrowser.track("checkout_completed", {\n  plan: "pro",\n  seats: 12,\n})',
-		href: "/docs/session-replay/browser-sdk#custom-events",
-	},
-	{
-		label: "span",
-		icon: "sitemap",
-		title: m.pe_src_span_title(),
-		body: m.pe_src_span_body(),
-		file: "billing.ts",
-		lang: "ts",
-		code: 'span.setAttributes({\n  "maple.product_event.name": "plan_started",\n  "maple.product_event.user_id": user.id,\n})',
-		href: "/docs/product-events/from-traces",
-	},
-	{
-		label: "server",
-		icon: "cloud",
-		title: m.pe_src_server_title(),
-		body: m.pe_src_server_body(),
-		file: "terminal",
-		lang: "bash",
-		code: 'curl https://ingest.maple.dev/v1/events \\\n  -H "Authorization: Bearer $INGEST_KEY" \\\n  -H "Content-Type: application/x-ndjson" \\\n  -d \'{"name":"plan_started","user_id":"u_123"}\'',
-		href: "/docs/product-events/api",
-	},
-];
+const ICONS = {
+	browser: "globe",
+	span: "sitemap",
+	server: "cloud",
+} satisfies Record<(typeof PRODUCT_EVENT_SOURCES)[number]["label"], PixelIconName>;
+
+const sources = PRODUCT_EVENT_SOURCES.map((source) => ({
+	...source,
+	icon: ICONS[source.label],
+	title: source.title(),
+	body: source.body(),
+}));
 ---
 
 <section class="border-t border-border bg-bg">

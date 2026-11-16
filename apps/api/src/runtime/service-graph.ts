@@ -137,6 +137,7 @@ import { ProductEventsService } from "@maple/backend/services/product-events/Pro
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { AuditTrailService } from "@maple/backend/services/audit-trail/AuditTrailService"
 import { AuditDetectionsService } from "@maple/backend/services/audit-trail/AuditDetectionsService"
+import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { TelemetryReadService } from "@maple/backend/services/warehouse/TelemetryReadService"
@@ -252,6 +253,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	AuditLogService.layer,
 	AuditTrailService.layer,
 	AuditDetectionsService.layer,
+	IntegrationInventoryService.layer,
 	WarehouseQueryService.layer,
 	QueryEngineService.layer,
 	RuntimeReleaseCatalog.layer,

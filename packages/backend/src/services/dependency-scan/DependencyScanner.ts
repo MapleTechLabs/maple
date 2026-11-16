@@ -16,7 +16,18 @@ import {
 } from "@maple/domain/http"
 import { type PackageAdvisory, PackageEcosystem, packageKey } from "@maple/domain/package-advisories"
 import { parseLockfile, unsupportedReason } from "@maple/lockfiles"
-import { Cause, Clock, Context, Effect, Layer, Option, Schema, String as Str, Array as Arr } from "effect"
+import {
+	Cause,
+	Clock,
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Result,
+	Schema,
+	String as Str,
+	Array as Arr,
+} from "effect"
 import type {
 	VcsProviderClient,
 	VcsTreeFile,
@@ -48,11 +59,11 @@ import { RESCAN_AFTER_MS } from "./production"
 
 const PARSE_CACHE_BUCKET = "lockfile-packages"
 /** Part of the parse cache key: bump it when a parser fix should reach lockfiles already cached. */
-const PARSER_VERSION = 2
+const PARSER_VERSION = 3
 const PARSE_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
 const PLAN_CACHE_BUCKET = "dependency-scan-plan"
 /** Part of the plan cache key: bump it when lockfile or manifest selection changes. */
-const PLAN_VERSION = 1
+const PLAN_VERSION = 2
 /** Larger lockfiles are recorded as too large rather than read into the Worker's memory. */
 export const MAX_LOCKFILE_BYTES = 8 * 1024 * 1024
 /** Two lockfiles at a time keeps a monorepo's largest pair well inside a Worker's memory. */
@@ -107,8 +118,8 @@ const planOf = (files: ReadonlyArray<VcsTreeFile>): ScanPlan => {
 	}
 }
 
-/** Internal: a cut-short tree listing, never cached as a plan. */
-class TreeTruncated extends Schema.TaggedError<TreeTruncated>()("@maple/dependency-scan/TreeTruncated", {}) {}
+/** A commit's plan, or null when its tree is too large to list: a commit's tree never changes. */
+const CachedPlan = Schema.NullOr(ScanPlan)
 
 export class DependencyScanError extends Schema.TaggedError<DependencyScanError>()(
 	"@maple/dependency-scan/DependencyScanError",
@@ -140,6 +151,15 @@ export type DependencyScanOutcome =
 	| { readonly _tag: "Unchanged" }
 	/** The tracked branch has no commit yet. */
 	| { readonly _tag: "EmptyRepository" }
+	/** The provider will not show the repository: blocked, gone, or the installation removed. */
+	| { readonly _tag: "RepositoryUnreachable"; readonly reason: UnreachableReason }
+	/** The tree is too large to list; the failed scan row says so. */
+	| { readonly _tag: "TreeTooLarge"; readonly scan: DependencyScanRow }
+
+type UnreachableReason = "blocked" | "unavailable" | "installation_gone"
+
+const unreachable = (reason: UnreachableReason) => () =>
+	Effect.succeed(Result.fail<UnreachableReason>(reason))
 
 export interface DependencyScannerApi {
 	readonly scan: (
@@ -342,24 +362,13 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 								":",
 							),
 							ttlSeconds: PARSE_CACHE_TTL_SECONDS,
-							schema: ScanPlan,
+							schema: CachedPlan,
 						},
 						provider
 							.fetchTreeFiles(installation, repo, commitSha)
-							.pipe(
-								Effect.flatMap((tree) =>
-									tree.truncated
-										? Effect.fail(new TreeTruncated())
-										: Effect.succeed(planOf(tree.files)),
-								),
-							),
+							.pipe(Effect.map((tree) => (tree.truncated ? null : planOf(tree.files)))),
 					)
-					.pipe(
-						Effect.map(({ value }) => Option.some(value)),
-						Effect.catchTag("@maple/dependency-scan/TreeTruncated", () =>
-							Effect.succeed(Option.none<ScanPlan>()),
-						),
-					)
+					.pipe(Effect.map(({ value }) => Option.fromNullOr(value)))
 
 			const matchesOf = (
 				reads: ReadonlyArray<ReadLockfile>,
@@ -431,12 +440,33 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 					const provider = yield* sources
 						.resolve(repository.provider)
 						.pipe(Effect.mapError(scanError("Could not use the repository's provider")))
-					const headOpt =
+					// A repository the provider refuses to show is an answer, not a failed scan.
+					const resolved =
 						request.commitSha === undefined
-							? yield* provider
-									.resolveRef(installation, repo, ref)
-									.pipe(Effect.mapError(scanError(`Could not resolve ${ref}`)))
-							: Option.some(request.commitSha)
+							? yield* provider.resolveRef(installation, repo, ref).pipe(
+									Effect.map((head) => Result.succeed(head)),
+									Effect.catchTags({
+										"@maple/http/errors/VcsRepositoryBlockedError":
+											unreachable("blocked"),
+										"@maple/http/errors/VcsRepoUnavailableError":
+											unreachable("unavailable"),
+										"@maple/http/errors/VcsInstallationGoneError":
+											unreachable("installation_gone"),
+									}),
+									Effect.mapError(scanError(`Could not resolve ${ref}`)),
+								)
+							: Result.succeed(Option.some(request.commitSha))
+					if (Result.isFailure(resolved)) {
+						yield* Effect.annotateCurrentSpan({
+							"maple.depscan.outcome": "repository_unreachable",
+							"maple.depscan.skip_reason": resolved.failure,
+						})
+						return {
+							_tag: "RepositoryUnreachable",
+							reason: resolved.failure,
+						} satisfies DependencyScanOutcome
+					}
+					const headOpt = resolved.success
 					if (Option.isNone(headOpt))
 						return { _tag: "EmptyRepository" } satisfies DependencyScanOutcome
 					const commitSha = headOpt.value
@@ -592,13 +622,17 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 						.pipe(Effect.mapError(scanError("Could not record the scan")))
 					yield* Effect.annotateCurrentSpan({ "maple.depscan.scan_id": started.id })
 
+					// A cut-short listing would read as deleted lockfiles and mark their findings fixed, so the
+					// scan is recorded as failed. A known limit, not a fault: the span stays Ok.
+					if (truncated) {
+						const failed = yield* store
+							.failScan({ orgId, scanId: started.id, error: TREE_TOO_LARGE })
+							.pipe(Effect.mapError(scanError("Could not record the scan")))
+						yield* Effect.annotateCurrentSpan({ "maple.depscan.outcome": "tree_too_large" })
+						return { _tag: "TreeTooLarge", scan: failed } satisfies DependencyScanOutcome
+					}
+
 					const run = Effect.gen(function* () {
-						// A cut-short listing would read as deleted lockfiles and mark their findings fixed.
-						if (truncated)
-							return yield* new DependencyScanError({
-								message: TREE_TOO_LARGE,
-								repositoryId: repository.id,
-							})
 						// A scheduled precheck already asked OSV; its answer is reused, not asked for again.
 						const reads = Option.isSome(precheck)
 							? precheck.value.reads
