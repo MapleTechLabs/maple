@@ -284,11 +284,17 @@ const reraisesDismissedPrivacy = (
 
 /** A `path:line` (or `path#L42`), quoted or not, and a code span: the assigning code in `source`. */
 const CITED_LINE = /(?:^|[\s(`"'[])[^\s`"'():#]+(?::|#L)\d+\b/
-const CODE_SPAN = /`[^`\n]+`/
+const CODE_SPANS = /`([^`\n]+)`/g
+const BARE_LOCATION = /^[^\s`"'():#]+(?::|#L)\d+(?:-L?\d+)?$/
 
-/** Whether a finding's `source` cites the code that assigns its value. */
+/** Whether a finding's `source` cites a line and, in a separate code span, the expression there. */
 const citesSource = (finding: Pick<PrReviewFinding, "source">) =>
-	finding.source !== undefined && CITED_LINE.test(finding.source) && CODE_SPAN.test(finding.source)
+	finding.source !== undefined &&
+	CITED_LINE.test(finding.source) &&
+	Arr.some(Arr.fromIterable(Str.matchAll(CODE_SPANS)(finding.source)), (span) => {
+		const code = Str.trim(span[1] ?? "")
+		return code !== "" && !BARE_LOCATION.test(code)
+	})
 
 /**
  * Whether a new finding is a near-exact restatement of one already tracked: same file, lens and

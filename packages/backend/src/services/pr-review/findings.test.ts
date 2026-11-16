@@ -481,12 +481,16 @@ describe("credential findings and the replies to them", () => {
 			privacy({ severity: "warn", title: "`user.email` logged" }),
 			// Worded like the scan's own titles: no exemption for that.
 			privacy({ title: "Credential `obj.legacyApiKey` written to a log" }),
+			// A location alone, backticked or as a GitHub anchor, names no assigning expression.
+			privacy({ title: "API key logged", source: "`src/auth.ts:42`" }),
+			privacy({ title: "API key logged", source: "see `src/auth.ts#L42`" }),
+			privacy({ title: "API key logged", source: 'src/auth.ts#L42 `apiKey = vault.read("stripe")`' }),
 		])
 		assert.deepEqual(
 			Arr.map(findings, (finding) => finding.severity),
-			["warn", "warn", "critical", "critical", "warn", "warn"],
+			["warn", "warn", "critical", "critical", "warn", "warn", "warn", "warn", "critical"],
 		)
-		assert.equal(downgraded.length, 3)
+		assert.equal(downgraded.length, 5)
 	})
 
 	it("keeps a critical where the scan recognized the value on those lines", () => {
