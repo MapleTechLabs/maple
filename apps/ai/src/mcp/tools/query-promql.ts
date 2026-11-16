@@ -51,9 +51,10 @@ export function registerQueryPromqlTool(server: McpToolRegistrar) {
 				})
 			}
 			const stepSeconds = instant ? 0 : (requested ?? defaultStepSeconds((endMs - startMs) / 1000))
-			if (!instant && (endMs - startMs) / (stepSeconds * 1000) > MAX_STEPS) {
+			// The engine evaluates floor(range / step) + 1 points, the end included.
+			if (!instant && Math.floor((endMs - startMs) / (stepSeconds * 1000)) + 1 > MAX_STEPS) {
 				return yield* new McpInvalidInputError({
-					message: `step "${params.step ?? `${stepSeconds}s`}" gives more than ${MAX_STEPS} points over this window; use at least ${Math.ceil((endMs - startMs) / 1000 / MAX_STEPS)}s.`,
+					message: `step "${params.step ?? `${stepSeconds}s`}" gives more than ${MAX_STEPS} points over this window; use at least ${Math.ceil((endMs - startMs) / 1000 / (MAX_STEPS - 1))}s.`,
 					parameter: "step",
 					example: `${defaultStepSeconds((endMs - startMs) / 1000)}s`,
 				})
