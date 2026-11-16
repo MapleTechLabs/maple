@@ -46,6 +46,7 @@ import {
 	componentId,
 	incident,
 	incidentId,
+	updateId,
 	statusPage,
 	statusPageConfig,
 } from "../shared/test-pages"
@@ -1732,6 +1733,46 @@ describe("header", () => {
 				expectView(text("Database upgrade")).toExist(),
 				expectView(text("Auto-complete")).toExist(),
 			),
+		)
+		const reopened = loaded({
+			tab: "maintenance",
+			incidents: [
+				incident(3, {
+					kind: "maintenance",
+					title: "Reopened upgrade",
+					status: "completed",
+					impact: "none",
+					resolved_at: "2026-10-01T11:00:00.000Z",
+					updates: [
+						{
+							id: updateId(3),
+							status: "completed",
+							body: "Done.",
+							source: "dashboard",
+							created_at: "2026-10-01T11:00:00.000Z",
+						},
+						{
+							id: updateId(2),
+							status: "in_progress",
+							body: "Back on it.",
+							source: "dashboard",
+							created_at: "2026-10-01T10:30:00.000Z",
+						},
+						{
+							id: updateId(1),
+							status: "completed",
+							body: "The scheduled maintenance is complete.",
+							source: "auto",
+							created_at: "2026-10-01T10:00:00.000Z",
+						},
+					],
+				}),
+			],
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(reopened),
+			inside(role("table", { name: "Completed" }), expectView(text("Manually")).toExist()),
 		)
 		const completing = pageUpdate(
 			model,

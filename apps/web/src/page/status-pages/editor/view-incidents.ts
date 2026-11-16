@@ -3,7 +3,7 @@ import type { V2StatusPageIncident } from "@maple/domain/http/v2"
 import { INCIDENT_STATUS_LABEL } from "@maple/status-page"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { formatDateInTimezone } from "@maple/ui/lib/timezone-format"
-import { Array as Arr } from "effect"
+import { Option, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
@@ -225,7 +225,9 @@ const endsCell = (h: H, incident: V2StatusPageIncident, time: TimeInputs): Reado
 	if (incident.auto_complete) return ["Completing now"]
 	return [
 		hstack(h, { gap: "3", justify: "between" }, [
-			typography(h, { tone: "warning", className: "whitespace-nowrap" }, [`${durationLabel(overMs)} over`]),
+			typography(h, { tone: "warning", className: "whitespace-nowrap" }, [
+				`${durationLabel(overMs)} over`,
+			]),
 			button(
 				h,
 				{
@@ -243,18 +245,26 @@ const endsCell = (h: H, incident: V2StatusPageIncident, time: TimeInputs): Reado
 	]
 }
 
-/** Who completed it: the sweep at the window's end, or a person. */
+/** Who completed it, by its latest completion (updates are newest first): the sweep or a person. */
 const completedBy = (incident: V2StatusPageIncident): string =>
-	Arr.some(incident.updates, (update) => update.status === "completed" && update.source === "auto")
-		? "Automatically"
-		: "Manually"
+	Option.match(
+		Arr.findFirst(incident.updates, (update) => update.status === "completed"),
+		{
+			onNone: () => "Manually",
+			onSome: (update) => (update.source === "auto" ? "Automatically" : "Manually"),
+		},
+	)
 
 export const maintenanceTab = (h: H, model: Model, time: TimeInputs): Html => {
 	const maintenance = ofKind(model, "maintenance")
 	const components = (incident: V2StatusPageIncident) => [componentNames(model, incident)]
 	const window = (incident: V2StatusPageIncident) => windowLine(h, incident, time.timeZone) ?? ["Not set"]
 	const inProgress = Arr.filter(maintenance, (incident) => incident.status === "in_progress")
-	const whenItEnds: Column = { label: "When it ends", className: "w-40 px-3", cell: (incident) => [endsBadge(h, incident)] }
+	const whenItEnds: Column = {
+		label: "When it ends",
+		className: "w-40 px-3",
+		cell: (incident) => [endsBadge(h, incident)],
+	}
 	return vstack(h, { gap: "8" }, [
 		...(inProgress.length === 0
 			? []
@@ -268,7 +278,11 @@ export const maintenanceTab = (h: H, model: Model, time: TimeInputs): Html => {
 							{ label: "Window", className: "w-72 px-3", cell: window },
 							{ label: "Components", cell: components },
 							whenItEnds,
-							{ label: "Ends", className: "w-48 px-3", cell: (incident) => endsCell(h, incident, time) },
+							{
+								label: "Ends",
+								className: "w-48 px-3",
+								cell: (incident) => endsCell(h, incident, time),
+							},
 						],
 					}),
 				]),

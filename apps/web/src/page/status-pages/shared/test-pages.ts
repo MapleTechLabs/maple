@@ -26,7 +26,7 @@ export const componentId = (n: number) =>
 	Schema.decodeSync(StatusPageComponentId)(`0199a011-0000-7000-8000-00000000000${n}`)
 export const incidentId = (n: number) =>
 	Schema.decodeSync(StatusPageIncidentId)(`0199a012-0000-7000-8000-00000000000${n}`)
-const updateId = (n: number) =>
+export const updateId = (n: number) =>
 	Schema.decodeSync(StatusPageIncidentUpdateId)(`0199a013-0000-7000-8000-00000000000${n}`)
 
 export const statusPage = (fields: Partial<V2StatusPage> = {}): V2StatusPage => ({
