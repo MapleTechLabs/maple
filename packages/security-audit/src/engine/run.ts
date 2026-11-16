@@ -60,15 +60,25 @@ const assembleFindings = (s: EngineState): ReadonlyArray<Finding> => {
 
 const SETTLED: ReadonlySet<string> = new Set(["covered", "candidate"])
 
+/** Each unit's archived attempt count once planning ends: attempts past it are this run's. */
+const attemptBaseline = (ledger: ReadonlyArray<LedgerUnit>): ReadonlyMap<string, number> =>
+	new Map(Arr.map(ledger, (u) => [u.coverage_id, u.attempts.length] as const))
+
 /**
  * A run that settled no unit audited nothing, however its critics or budget ended. A unit counts
- * when it is settled now or was settled before a critic reopened it.
+ * when it is settled now or this run settled it before a critic reopened it; attempts archived by
+ * earlier runs are history, not this run's coverage.
  */
-const requireCoverage = Effect.fn("SecurityAudit.requireCoverage")(function* (engine: Engine) {
+const requireCoverage = Effect.fn("SecurityAudit.requireCoverage")(function* (
+	engine: Engine,
+	baseline: ReadonlyMap<string, number>,
+) {
 	const { ledger } = yield* Ref.get(engine.state)
 	const settled = Arr.filter(
 		ledger,
-		(u) => SETTLED.has(u.status) || Arr.some(u.attempts, (a) => SETTLED.has(a.status)),
+		(u) =>
+			SETTLED.has(u.status) ||
+			Arr.some(u.attempts.slice(baseline.get(u.coverage_id) ?? 0), (a) => SETTLED.has(a.status)),
 	).length
 	yield* Effect.annotateCurrentSpan({
 		"maple.security_audit.ledger_units": ledger.length,
@@ -83,9 +93,10 @@ export const runAudit = (input: AuditRunInput) =>
 		yield* engine.store.saveMetadata(metadata(input, "in_progress", []))
 
 		if (yield* runReconnaissance(engine)) {
+			const baseline = attemptBaseline((yield* Ref.get(engine.state)).ledger)
 			yield* runHunting(engine)
 			yield* runCandidateValidation(engine)
-			yield* requireCoverage(engine)
+			yield* requireCoverage(engine, baseline)
 			yield* runRecordVerification(engine)
 		}
 

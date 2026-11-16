@@ -1208,6 +1208,52 @@ describe("runAudit, skill block references", () => {
 		expect(result.status).toBe("complete")
 	})
 
+	it("keeps the first critic answer when the repair swaps new work for a unit the ledger holds", async () => {
+		const invented = {
+			...seed("audit", "Injection"),
+			ordinary_attack_class_block: BEARER,
+			reason: "unmapped",
+		}
+		const { result } = await runScripted(baseInput(), (i) =>
+			i.agentId === "critic-w1-post"
+				? json({
+						...emptyCritic,
+						missing_units: [{ ...EXPORT, reason: "unmapped" }, invented],
+						stop: false,
+					})
+				: i.agentId === "critic-w1-post-r1"
+					? json({ ...emptyCritic, missing_units: [{ ...KEYS, reason: "unmapped" }], stop: false })
+					: happy()(i),
+		)
+		expect(firstOf(result.ledger, (u) => u.surface === "POST /export")?.status).toBe("covered")
+	})
+
+	it("does not count attempts archived by an earlier run as this run's coverage", async () => {
+		// Run 1: a critic reopens the search unit, so its covered attempt is archived.
+		const { result: first } = await runScripted(baseInput(), (i) =>
+			i.agentId === "critic-w1-post"
+				? json({ ...emptyCritic, reassign_ids: [idOf(SEARCH)], stop: false })
+				: happy()(i),
+		)
+		// Run 2 is scoped away from search, and its one in-scope hunter never answers usably.
+		const { result } = await runScripted(
+			baseInput({
+				runId: "run-2",
+				prior: { runId: "run-1", sourceRef: "a", ledger: first.ledger, findings: first.findings },
+				scopePaths: ["src/routes/export.ts"],
+				changedSincePrior: () => true,
+			}),
+			(i) => (i.role === "hunter" ? "not json" : happy()(i)),
+		)
+		const search = firstOf(result.ledger, (u) => u.coverage_id === idOf(SEARCH))
+		expect(search && [search.status, Arr.map(search.attempts, (a) => a.status)]).toEqual([
+			"out_of_scope",
+			["covered"],
+		])
+		expect(result.status).toBe("incomplete")
+		expect(result.incompleteReasons).toContain(NO_UNITS_COVERED)
+	})
+
 	it("ends a run whose every proposal is refused incomplete with no_units_covered, one note per unit", async () => {
 		const invent = (unit: typeof KEYS) => ({ ...unit, ordinary_attack_class_block: BEARER })
 		const { result, recorded } = await runScripted(baseInput(), (i) =>
