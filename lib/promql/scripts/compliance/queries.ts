@@ -84,3 +84,21 @@ export const QUERIES: ReadonlyArray<string> = [
 	"avg_over_time(sum(node_memory_free_bytes)[10m:30s])",
 	"max_over_time(rate(http_requests_total[5m])[30m:])",
 ]
+
+/** Queries both engines must reject; any other Prometheus error is a failed case. */
+export const EXPECTED_ERRORS: ReadonlySet<string> = new Set([
+	'label_replace(http_requests_total, "host", "$1", "instance", "(")',
+	"http_requests_total + on(job) group_left(job) http_requests_total",
+])
+
+/**
+ * Queries where the engine follows a later Prometheus fix instead of 3.5. Reported, not failed.
+ * histogram_fraction: 3.5 answers NaN for a range inside the first bucket; upstream since starts
+ * positive buckets at 0, as histogram_quantile does.
+ */
+export const LATER_UPSTREAM_FIXES: ReadonlySet<string> = new Set([
+	"histogram_fraction(0, 0.2, http_request_duration_seconds_bucket)",
+])
+
+/** Every query the runner sends, expected errors included. */
+export const ALL_QUERIES: ReadonlyArray<string> = [...QUERIES, ...EXPECTED_ERRORS]
