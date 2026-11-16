@@ -16,6 +16,7 @@ import { compiledQueryOf } from "@maple/query-engine/execution"
 import { EdgeCacheService, makeEdgeCacheService, makeMemoryBackend } from "@maple/cache"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { DigestService } from "./DigestService"
+import { MAX_DIGEST_GROUPS_PER_TICK } from "./weekly-digest-tick"
 
 const createdDbs: TestDb[] = []
 
@@ -310,6 +311,26 @@ describe("DigestService.runDigestTick", () => {
 
 			assert.deepStrictEqual(sends, [])
 			assert.strictEqual(result.sentCount, 0)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("renders a bounded number of orgs per tick and leaves the rest for the next one", () => {
+		const { sends, layer } = makeHarness()
+		const orgCount = MAX_DIGEST_GROUPS_PER_TICK + 2
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(TICK_MS)
+			yield* Effect.forEach(Arr.range(1, orgCount), (n) =>
+				seedSub({ email: `org${n}@example.com`, orgId: OrgId.make(`org_digest_${n}`) }),
+			)
+
+			const digest = yield* DigestService
+			const first = yield* digest.runDigestTick()
+			assert.strictEqual(first.sentCount, MAX_DIGEST_GROUPS_PER_TICK)
+
+			yield* TestClock.adjust("15 minutes")
+			const second = yield* digest.runDigestTick()
+			assert.strictEqual(second.sentCount, 2)
+			assert.strictEqual(new Set(sends).size, orgCount)
 		}).pipe(Effect.provide(layer))
 	})
 

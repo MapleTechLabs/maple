@@ -17,6 +17,12 @@ import { type UnsubscribeKind, unsubscribeLinks } from "./unsubscribe-token"
 
 type SubscriptionId = DigestSubscriptionRow["id"]
 
+/**
+ * Orgs one tick renders. Each costs a dozen subrequests (warehouse, cache, Clerk, email), and one
+ * invocation has a cap; the rest stay unclaimed and go out on the next 15-minute tick that day.
+ */
+export const MAX_DIGEST_GROUPS_PER_TICK = 50
+
 /** One digest's columns: who receives it, and when it was last sent and attempted. */
 export interface DigestChannel {
 	readonly kind: UnsubscribeKind
@@ -68,7 +74,16 @@ export const runWeeklyDigestTick = <EP, ER, R>(input: WeeklyDigestTickInput<EP, 
 
 		const subs = yield* input.execute(channel.selectEnabled)
 		const due = Arr.filter(subs, (s) => isDigestDue(s, channel.lastActivity(s), now))
-		const groups = Rec.values(Arr.groupBy(due, input.groupBy))
+		const dueGroups = Rec.values(Arr.groupBy(due, input.groupBy))
+		const groups = Arr.take(dueGroups, MAX_DIGEST_GROUPS_PER_TICK)
+		if (groups.length < dueGroups.length) {
+			yield* Effect.logInfo("Deferring digest groups to the next tick").pipe(
+				Effect.annotateLogs({
+					digest: channel.kind,
+					deferredCount: dueGroups.length - groups.length,
+				}),
+			)
+		}
 
 		const sendTo = (sub: DigestSubscriptionRow, message: DigestEmail<ER>) =>
 			Effect.gen(function* () {
