@@ -2,6 +2,7 @@ import { assert, describe, it } from "@effect/vitest"
 import { type GitCommitSha, OrgId } from "@maple/domain/http"
 import {
 	Cause,
+	Deferred,
 	Duration,
 	Effect,
 	Exit,
@@ -97,7 +98,8 @@ const makeLayer = (providerCalls: string[], connected: { value: boolean } = { va
 
 	const repoLayer = Layer.succeed(VcsRepository, {
 		listInstallationsByOrg: (orgId: OrgId) => Effect.succeed(orgId === ORG ? [installation] : []),
-		listRepositoriesByInstallation: () => Effect.sync(() => (connected.value ? [repository] : [])),
+		listActiveRepositoriesByOrg: (orgId: OrgId) =>
+			Effect.sync(() => (connected.value && orgId === ORG ? [repository] : [])),
 	} as never)
 	const registryLayer = Layer.succeed(VcsProviderRegistry, {
 		ids: ["github"],
@@ -221,4 +223,63 @@ describe("VcsSourceService", () => {
 			assert.deepStrictEqual(calls, [])
 		}).pipe(Effect.provide(makeLayer(calls)))
 	})
+
+	it.live("reads installations and repositories at the same time, one repository read per call", () =>
+		Effect.gen(function* () {
+			const repositoriesStarted = yield* Deferred.make<void>()
+			const repositoryReads: OrgId[] = []
+			const suspended = {
+				...installation,
+				id: "00000000-0000-4000-8000-000000000003",
+				status: "suspended",
+			}
+			const second = { ...installation, id: "00000000-0000-4000-8000-000000000004" }
+			const repoLayer = Layer.succeed(VcsRepository, {
+				// Resolves only once the repository read has begun, so a sequential read never finishes.
+				listInstallationsByOrg: () =>
+					Deferred.await(repositoriesStarted).pipe(Effect.as([installation, suspended, second])),
+				listActiveRepositoriesByOrg: (orgId: OrgId) =>
+					Effect.sync(() => repositoryReads.push(orgId)).pipe(
+						Effect.andThen(Deferred.succeed(repositoriesStarted, undefined)),
+						Effect.as([
+							repository,
+							{
+								...repository,
+								id: "00000000-0000-4000-8000-000000000005",
+								installationId: suspended.id,
+								fullName: "octo/hidden",
+							},
+							{
+								...repository,
+								id: "00000000-0000-4000-8000-000000000006",
+								installationId: second.id,
+								fullName: "octo/api",
+							},
+						]),
+					),
+			} as never)
+			const registryLayer = Layer.succeed(VcsProviderRegistry, {
+				ids: ["github"],
+				resolve: () => Effect.die("unused"),
+			} as never)
+			const repositories = yield* Effect.gen(function* () {
+				const source = yield* VcsSourceService
+				return yield* source.listRepositories(ORG)
+			}).pipe(
+				Effect.provide(
+					Layer.effect(VcsSourceService, VcsSourceService.make).pipe(
+						Layer.provide(Layer.mergeAll(repoLayer, registryLayer)),
+					),
+				),
+				Effect.timeoutOrElse({
+					duration: Duration.seconds(2),
+					orElse: () => Effect.die("reads ran in sequence"),
+				}),
+			)
+			assert.deepStrictEqual(
+				[Arr.map(repositories, (repo) => repo.fullName), repositoryReads],
+				[["octo/api", "octo/shop"], [ORG]],
+			)
+		}),
+	)
 })
