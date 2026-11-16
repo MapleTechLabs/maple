@@ -11,6 +11,7 @@ import { Context, Effect, Layer, Option, Order, Result, Schema, Array as Arr, Re
 import {
 	DEFAULT_LIMITS,
 	evaluate,
+	MAX_POINTS_PER_SERIES,
 	type Expr,
 	parse,
 	planPushdowns,
@@ -67,8 +68,8 @@ export class PromqlExecutionError extends Schema.TaggedError<PromqlExecutionErro
 	{ message: Schema.String },
 ) {}
 
-/** Prometheus' own cap on points per series in a range query. */
-export const MAX_STEPS = 11_000
+/** Prometheus' cap on whole steps in a range query; the engine's `resolutionError` enforces it. */
+export const MAX_STEPS = MAX_POINTS_PER_SERIES
 
 /** Selectors one query may read; each is at least one warehouse query. */
 const MAX_SELECTORS = 20
@@ -133,20 +134,6 @@ const validate = (query: PromqlQuery): Effect.Effect<Expr, PromqlBadQueryError> 
 		}
 		if (endMs < startMs) {
 			return yield* new PromqlBadQueryError({ message: "end timestamp must not be before start time" })
-		}
-		if (endMs > startMs || query.instant === false) {
-			if (!(stepMs > 0)) {
-				return yield* new PromqlBadQueryError({
-					message:
-						"zero or negative query resolution step widths are not accepted. Try a positive integer",
-				})
-			}
-			// Whole steps, as Prometheus divides durations: 11,000 steps and a remainder still pass.
-			if (Math.floor((endMs - startMs) / stepMs) > MAX_STEPS) {
-				return yield* new PromqlBadQueryError({
-					message: `exceeded maximum resolution of ${MAX_STEPS.toLocaleString("en-US")} points per timeseries. Try decreasing the query resolution (?step=XX)`,
-				})
-			}
 		}
 		const parsed = parse(query.query)
 		if (Result.isFailure(parsed)) {
