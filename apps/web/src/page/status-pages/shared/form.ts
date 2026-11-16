@@ -176,6 +176,22 @@ export const updateBodyLengthIssue = (body: string): string | null => {
 /** A typed instant after `nowMs`, which the API refuses for when something started or ended. */
 const isFuture = (iso: string, nowMs: number): boolean => iso > new Date(nowMs).toISOString()
 
+/**
+ * Maintenance takes its status from its window: scheduled until it starts, in progress once its
+ * start has come, so what visitors see never contradicts the times.
+ */
+export const withMaintenanceStatus = (form: IncidentForm, timeZone: string, nowMs: number): IncidentForm =>
+	form.kind !== "maintenance"
+		? form
+		: {
+				...form,
+				status: Option.exists(localToIso(form.scheduledStart, timeZone), (start) =>
+					isFuture(start, nowMs),
+				)
+					? "scheduled"
+					: "in_progress",
+			}
+
 /** What stops the incident from being sent, by field; `null` where nothing does. */
 export type IncidentIssues = Readonly<{
 	title: string | null
@@ -197,7 +213,9 @@ export const incidentIssues = (form: IncidentForm, timeZone: string, nowMs: numb
 					? "Set when the maintenance starts and ends."
 					: start.value >= end.value
 						? "The maintenance must end after it starts."
-						: null,
+						: isFuture(end.value, nowMs)
+							? null
+							: "The maintenance must end in the future.",
 		started:
 			form.kind === "incident" &&
 			Option.exists(localToIso(form.startedAt, timeZone), (started) => isFuture(started, nowMs))

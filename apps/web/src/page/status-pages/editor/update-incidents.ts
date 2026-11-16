@@ -31,6 +31,7 @@ import {
 	incidentEditPayload,
 	type IncidentTextField,
 	incidentIssues,
+	withMaintenanceStatus,
 	incidentPayload,
 	updateBodyLengthIssue,
 	type UpdateForm,
@@ -181,14 +182,21 @@ export const toggleIncidentComponent = (model: Model, componentId: StatusPageCom
 export const reviewIncident = (model: Model, context: PageContext): Return =>
 	hasIncidentIssues(incidentIssues(model.incidentForm, context.timeZone, nowOf(model)))
 		? { model }
-		: { model: { ...model, composeStep: "review", incidentFailure: null } }
+		: {
+				model: {
+					...model,
+					incidentForm: withMaintenanceStatus(model.incidentForm, context.timeZone, nowOf(model)),
+					composeStep: "review",
+					incidentFailure: null,
+				},
+			}
 
 export const backToIncidentWrite = (model: Model): Return =>
 	model.isCreatingIncident ? { model } : { model: { ...model, composeStep: "write" } }
 
 /** Sent from the review step only: Publish (or Schedule) or Save as draft. */
 export const submitIncident = (model: Model, context: PageContext, isPublished: boolean): Return => {
-	const form = { ...model.incidentForm, isPublished }
+	const form = withMaintenanceStatus({ ...model.incidentForm, isPublished }, context.timeZone, nowOf(model))
 	return model.pageId === null ||
 		model.isCreatingIncident ||
 		model.composeStep !== "review" ||

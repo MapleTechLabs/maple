@@ -982,6 +982,43 @@ describe("posting an incident", () => {
 		)
 	})
 
+	test("maintenance takes its status from its window, so the dialog asks for none", () => {
+		const written = (start: string, end: string) =>
+			steps(loaded(), [
+				Message.ClickedNewIncident({ kind: "maintenance" }),
+				Message.ChangedIncidentField({ field: "title", value: "Database upgrade" }),
+				Message.ChangedIncidentField({ field: "body", value: "Read-only for a few minutes." }),
+				Message.ChangedIncidentField({ field: "scheduledStart", value: start }),
+				Message.ChangedIncidentField({ field: "scheduledEnd", value: end }),
+			])
+		scene(
+			{ update: pageUpdate, view },
+			given(written("2026-10-01T13:00", "2026-10-01T14:00")),
+			mounted,
+			expectView(role("combobox", { name: "Status" })).not.toExist(),
+		)
+		const post = (model: Model) =>
+			pageUpdate(
+				pageUpdate(model, Message.SubmittedIncidentWrite()).model,
+				Message.SubmittedIncident({ isPublished: true }),
+			).commands
+		// The clock reads 12:00.
+		expect(post(written("2026-10-01T13:00", "2026-10-01T14:00"))).toMatchObject([
+			{ name: "CreateStatusPageIncident", args: { payload: { status: "scheduled" } } },
+		])
+		expect(post(written("2026-10-01T11:00", "2026-10-01T14:00"))).toMatchObject([
+			{ name: "CreateStatusPageIncident", args: { payload: { status: "in_progress" } } },
+		])
+		const over = written("2026-10-01T10:00", "2026-10-01T11:00")
+		expect(post(over) ?? []).toEqual([])
+		scene(
+			{ update: pageUpdate, view },
+			given(over),
+			mounted,
+			expectView(text("The maintenance must end in the future.")).toExist(),
+		)
+	})
+
 	test("maintenance can stay in progress past its window: the choice, the review and the post", () => {
 		const writing = steps(loaded(), [
 			Message.ClickedNewIncident({ kind: "maintenance" }),

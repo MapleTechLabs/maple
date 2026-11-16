@@ -370,17 +370,18 @@ const composeWrite = (h: H, model: Model, page: V2StatusPage, time: TimeInputs, 
 						placeholder: isMaintenance ? "Database upgrade" : "Elevated API errors",
 						onInput: (value) => Message.ChangedIncidentField({ field: "title", value }),
 					}),
-					grid(h, { sm: 2, gap: "4" }, [
-						selectField(h, {
-							id: "status-page-incident-status",
-							label: "Status",
-							value: form.status,
-							entries: statusEntries(form.kind),
-							onInput: (value) => Message.ChangedIncidentField({ field: "status", value }),
-						}),
-						...(isMaintenance
-							? []
-							: [
+					...(isMaintenance
+						? []
+						: [
+								grid(h, { sm: 2, gap: "4" }, [
+									selectField(h, {
+										id: "status-page-incident-status",
+										label: "Status",
+										value: form.status,
+										entries: statusEntries(form.kind),
+										onInput: (value) =>
+											Message.ChangedIncidentField({ field: "status", value }),
+									}),
 									selectField(h, {
 										id: "status-page-incident-impact",
 										label: "Impact",
@@ -391,7 +392,7 @@ const composeWrite = (h: H, model: Model, page: V2StatusPage, time: TimeInputs, 
 											Message.ChangedIncidentField({ field: "impact", value }),
 									}),
 								]),
-					]),
+							]),
 					...(isMaintenance
 						? []
 						: [
@@ -416,6 +417,7 @@ const composeWrite = (h: H, model: Model, page: V2StatusPage, time: TimeInputs, 
 										label: "Starts",
 										type: "datetime-local",
 										value: form.scheduledStart,
+										hint: "Now or earlier puts it in progress as you publish.",
 										onInput: (value) =>
 											Message.ChangedIncidentField({ field: "scheduledStart", value }),
 									}),
