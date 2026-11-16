@@ -158,6 +158,23 @@ describe("parse errors", () => {
 		expect(positionOf("up + rate(x)")).toBe(10)
 	})
 
+	it("reads a leading-zero integer as octal, as Prometheus does", () => {
+		const value = (query: string) => {
+			const result = parse(query)
+			return Result.isSuccess(result) && result.success.type === "NumberLiteral"
+				? result.success.value
+				: undefined
+		}
+		expect(value("0755")).toBe(493)
+		expect(value("0_755")).toBe(493)
+		expect(value("08")).toBe(8)
+		expect(value("0755.5")).toBe(755.5)
+		const subquery = parse("vector(1)[010:1s]")
+		expect(
+			Result.isSuccess(subquery) && subquery.success.type === "Subquery" && subquery.success.rangeMs,
+		).toBe(8000)
+	})
+
 	it("rejects a repeated offset, including after offset 0s", () => {
 		expect(errorOf("x offset 0s offset 5m")).toMatch(/offset may not be set multiple times/)
 		expect(errorOf("x[5m] offset 1m offset 5m")).toMatch(/offset may not be set multiple times/)
