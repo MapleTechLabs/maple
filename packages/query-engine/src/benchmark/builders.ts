@@ -739,20 +739,25 @@ const alertingFixtures: ReadonlyArray<BuilderFixture> = [
 			}),
 	},
 
-	// backend AnomalyDetectionService, detector baselines on matched hours.
+	// backend AnomalyDetectionService, detector baselines on the hours its windows straddle.
 	{
 		module: "anomaly",
 		name: "anomalyTraceSignalsQuery",
-		label: "matchedHours",
-		compile: () =>
-			CH.compileUnsafe(CH.anomalyTraceSignalsQuery({ hoursOfDay: CH.matchedHoursOfDay(10) }), window),
+		label: "baselineHours",
+		compile: () => CH.compileUnsafe(CH.anomalyTraceSignalsQuery({ hoursOfDay: [8, 9, 10, 11] }), window),
+	},
+	// AnomalyDetectionService, the rolling 60-minute current window.
+	{
+		module: "anomaly",
+		name: "anomalyTraceSignalsWindowQuery",
+		label: "lastHour",
+		compile: () => CH.compileUnsafe(CH.anomalyTraceSignalsWindowQuery(), window),
 	},
 	{
 		module: "anomaly",
 		name: "anomalyLogVolumeQuery",
-		label: "matchedHours",
-		compile: () =>
-			CH.compileUnsafe(CH.anomalyLogVolumeQuery({ hoursOfDay: CH.matchedHoursOfDay(10) }), window),
+		label: "baselineHours",
+		compile: () => CH.compileUnsafe(CH.anomalyLogVolumeQuery({ hoursOfDay: [8, 9, 10, 11] }), window),
 	},
 	// AnomalyDetectionService, error-spike current and baseline windows.
 	{
