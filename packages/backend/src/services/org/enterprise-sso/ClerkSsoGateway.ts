@@ -124,8 +124,9 @@ export const scanClaimedDomains = (
 						Arr.forEach(conn.domains, (d) => next.add(Str.toLowerCase(d)))
 				})
 				const seen = page * CONNECTION_PAGE_SIZE + result.data.length
-				if (seen >= result.totalCount || result.data.length === 0) return Effect.succeed(next)
-				if (page + 1 >= maxPages) {
+				if (seen >= result.totalCount) return Effect.succeed(next)
+				// An empty page short of the total, or the page budget spent: the scan is incomplete.
+				if (result.data.length === 0 || page + 1 >= maxPages) {
 					return Effect.fail(
 						new ClerkRequestError({
 							operation: "Clerk.enterpriseConnections.list",

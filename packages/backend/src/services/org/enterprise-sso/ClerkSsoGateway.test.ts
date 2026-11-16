@@ -35,4 +35,13 @@ describe("scanClaimedDomains", () => {
 			assert.strictEqual(error._tag, "@maple/backend/services/auth/ClerkRequestError")
 		}),
 	)
+
+	it.effect("fails closed when Clerk sends an empty page before its own total", () =>
+		Effect.gen(function* () {
+			const short = (offset: number) =>
+				offset === 0 ? connections(250)(0) : Effect.succeed({ totalCount: 250, data: [] })
+			const error = yield* scanClaimedDomains(short, "ent_0", ["partner.io"]).pipe(Effect.flip)
+			assert.strictEqual(error._tag, "@maple/backend/services/auth/ClerkRequestError")
+		}),
+	)
 })
