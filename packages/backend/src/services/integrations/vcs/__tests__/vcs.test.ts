@@ -1719,6 +1719,37 @@ describe("VcsRepository", () => {
 		}).pipe(Effect.provide(repoLayer(testDb)))
 	})
 
+	it.effect(
+		"listActiveRepositoriesByOrg reads every installation's active repos, only the org's own",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const repo = yield* VcsRepository
+				const orgId = asOrgId("org_scope")
+				yield* repo.upsertInstallation({ orgId, ...installationSeed("42", "100") })
+				yield* repo.upsertInstallation({ orgId, ...installationSeed("43", "101") })
+				yield* repo.upsertInstallation({
+					orgId: asOrgId("org_other"),
+					...installationSeed("99", "102"),
+				})
+				yield* upsertReposFor(repo, "42", [
+					repoFixture({ externalRepoId: "7", fullName: "octo/a", name: "a" }),
+					repoFixture({ externalRepoId: "8", fullName: "octo/b", name: "b" }),
+				])
+				yield* upsertReposFor(repo, "43", [
+					repoFixture({ externalRepoId: "9", fullName: "octo/c", name: "c" }),
+				])
+				yield* upsertReposFor(repo, "99", [
+					repoFixture({ externalRepoId: "10", fullName: "other/d", name: "d" }),
+				])
+				yield* markRemovedFor(repo, orgId, "8")
+
+				const active = yield* repo.listActiveRepositoriesByOrg(orgId)
+				assert.deepStrictEqual(Arr.map(active, (r) => r.externalRepoId).sort(), ["7", "9"])
+			}).pipe(Effect.provide(repoLayer(testDb)))
+		},
+	)
+
 	it.effect("reports repository syncs and installation status on the installation's source", () => {
 		const testDb = createTestDb(trackedDbs)
 		const sourceState = Effect.promise(() =>
