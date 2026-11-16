@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS "cloud_security_service_states" (
 	"source" text NOT NULL,
 	"state" text NOT NULL,
 	"cursor_at" timestamp with time zone,
+	"window_ms" bigint,
 	"last_error" text,
 	"checked_at" timestamp with time zone NOT NULL,
 	CONSTRAINT "cloud_security_service_states_pkey" PRIMARY KEY ("org_id", "connection_id", "region", "source")

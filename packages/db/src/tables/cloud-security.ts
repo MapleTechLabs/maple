@@ -71,6 +71,8 @@ export const CloudSecurityServiceStates = PG.table("cloud_security_service_state
 		state: PG.brand(PG.text, CloudServiceState),
 		/** The newest `provider_updated_at` stored; the next poll reads from here. Null: never read. */
 		cursorAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "cursor_at" }),
+		/** For feeds read in time windows: the window size the last read ended on, where the next starts. */
+		windowMs: PG.column(PG.nullable(PG.int8), { name: "window_ms" }),
 		lastError: PG.column(PG.nullable(PG.text), { name: "last_error" }),
 		checkedAt: PG.column(PG.timestamptzMillis, { name: "checked_at" }),
 	},
