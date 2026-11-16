@@ -1,7 +1,7 @@
 import { OrgId } from "@maple/domain"
 import { CLOUD_FINDING_SOURCE_SPECS } from "@maple/domain/cloud-security"
 import { CloudFindingNotFoundError, CloudSecurityPersistenceError } from "@maple/domain/http"
-import { Result, Schema, Array as Arr } from "effect"
+import { Result, Schema, Array as Arr, String as Str } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -170,6 +170,25 @@ describe("security cloud findings", () => {
 			expectView(text("Waiting for the first read")).toExist(),
 			expectView(text("No active findings")).toBeAbsent(),
 		)
+	})
+
+	test("before the first read a filtered empty list still says it is waiting", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(listed(firstReadPendingOverview, noCloudFindings, { severity: "critical" })),
+			expectView(text("Waiting for the first read")).toExist(),
+			expectView(text("No findings match these filters")).toBeAbsent(),
+		)
+	})
+
+	test("a search longer than the API takes is cut to it, not dropped", () => {
+		const long = Str.repeat(250)("x")
+		expect(listRequestOf({ q: long })).toEqual({ search: Str.repeat(200)("x") })
+		const model = listed(populatedOverview(NOW), cloudFindingsOf(NOW))
+		const typed = pageUpdate(model, Message.ChangedSearchText({ value: long }))
+		expect(pageUpdate(typed.model, Message.SubmittedSearch()).outMessage).toMatchObject({
+			url: hrefOf(listRoute({ q: Str.repeat(200)("x") })),
+		})
 	})
 
 	test("no active finding anywhere reads as all clear", () => {

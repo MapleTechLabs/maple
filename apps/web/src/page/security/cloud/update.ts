@@ -6,7 +6,7 @@ import { type PageContext, PageOutMessage, type PageReturn } from "../../contrac
 import { appendedPage, fetchingNext, freshLaterPages } from "../../kit/infinite-pages"
 import { chain, slotStep } from "../../kit/keyed-step"
 import { FetchFinding, FetchFirstPage, FetchNextPage, FetchOverview, ReadCloudClock } from "./command"
-import { detailQueryOf, nextOffsetOf } from "./derive"
+import { detailQueryOf, nextOffsetOf, SEARCH_MAX_LENGTH } from "./derive"
 import { type LaterPages, Message, type Model, type Search, type SelectFilter } from "./model"
 
 type Return = PageReturn<Model, Message>
@@ -175,7 +175,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				withFilter(model.search, FILTER_KEY[filter], value),
 			),
 		ChangedSearchText: ({ value }) => ({ model: { ...model, searchText: value } }),
-		SubmittedSearch: () => navigate(model, withFilter(model.search, "q", Str.trim(model.searchText))),
+		SubmittedSearch: () =>
+			navigate(
+				model,
+				withFilter(model.search, "q", Str.slice(0, SEARCH_MAX_LENGTH)(Str.trim(model.searchText))),
+			),
 		ClearedSearch: () =>
 			model.search.q === undefined
 				? { model: { ...model, searchText: "" } }

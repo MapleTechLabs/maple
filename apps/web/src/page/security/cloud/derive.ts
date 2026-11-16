@@ -42,16 +42,20 @@ export const STATUS_LABEL = {
 
 export const sourceTitle = (source: CloudFindingSource): string => CLOUD_FINDING_SOURCE_SPECS[source].title
 
+/** The longest search the API takes. */
+export const SEARCH_MAX_LENGTH = 200
+
 /** The list request the URL's filters ask for; a value that names nothing is dropped. */
 export const listRequestOf = (search: Search): CloudFindingsListRequest => {
-	const q = Str.trim(search.q ?? "")
+	// A longer search is cut to what the API takes, never dropped: the box still shows it as applied.
+	const q = Str.slice(0, SEARCH_MAX_LENGTH)(Str.trim(search.q ?? ""))
 	return {
 		...(isStatus(search.status) ? { status: search.status } : undefined),
 		...(isSeverity(search.severity) ? { severities: [search.severity] } : undefined),
 		...(isSource(search.source) ? { sources: [search.source] } : undefined),
 		...(isAccount(search.account) ? { accountId: search.account } : undefined),
 		...(isRegion(search.region) ? { region: search.region } : undefined),
-		...(q !== "" && q.length <= 200 ? { search: q } : undefined),
+		...(q !== "" ? { search: q } : undefined),
 	}
 }
 

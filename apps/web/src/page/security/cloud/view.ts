@@ -320,6 +320,8 @@ const listBody = (h: H, model: Model, overview: Overview, clock: Clock): Html =>
 			const findings = findingsOf(model) ?? []
 			const isRefetching = Keyed.isInFlight(model.firstPage)
 			if (findings.length === 0 && isRefetching) return placeholderRows(h, 6)
+			// No service read yet: an empty list is neither an all clear nor a filter that matched nothing.
+			if (findings.length === 0 && overview.services.length === 0) return awaitingFirstRead(h)
 			if (findings.length === 0 && isFiltered(model.search))
 				return filteredEmpty(h, {
 					noun: "findings",
@@ -327,8 +329,6 @@ const listBody = (h: H, model: Model, overview: Overview, clock: Clock): Html =>
 					onClear: Message.ClickedClearFilters(),
 					className: "py-8",
 				})
-			// No service read yet: the empty list is not an all clear.
-			if (findings.length === 0 && overview.services.length === 0) return awaitingFirstRead(h)
 			if (findings.length === 0)
 				return allClear(
 					h,
