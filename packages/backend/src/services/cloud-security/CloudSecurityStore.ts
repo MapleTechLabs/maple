@@ -88,8 +88,11 @@ export interface CloudSecurityStoreApi {
 		orgId: OrgId,
 		connectionId: AwsConnectionId,
 	) => Effect.Effect<ReadonlyArray<CloudSecurityServiceStateRow>, IntegrationsPersistenceError>
-	/** Active and archived findings of one feed synced before `syncedBefore`, oldest sync first. */
-	readonly staleOpenIds: (
+	/**
+	 * Findings of one feed synced before `syncedBefore`, oldest sync first, resolved ones included:
+	 * a finding reopened in the console may not move its update time either.
+	 */
+	readonly staleIds: (
 		feed: CloudFeedRef,
 		syncedBefore: number,
 		limit: number,
@@ -234,7 +237,7 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 				)
 			})
 
-			const staleOpenIds = Effect.fn("CloudSecurityStore.staleOpenIds")(function* (
+			const staleIds = Effect.fn("CloudSecurityStore.staleIds")(function* (
 				feed: CloudFeedRef,
 				syncedBefore: number,
 				limit: number,
@@ -248,7 +251,6 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 								$.connectionId.eq(feed.connectionId),
 								$.region.eq(feed.region),
 								$.source.eq(feed.source),
-								$.status.neq("resolved"),
 								$.syncedAt.lt(syncedBefore),
 							])
 							.orderBy(($) => [[$.syncedAt, "asc"]])
@@ -309,7 +311,7 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 				upsertFindings,
 				recordServiceState,
 				serviceStates,
-				staleOpenIds,
+				staleIds,
 				resolve,
 				pruneClosed,
 			} satisfies CloudSecurityStoreApi

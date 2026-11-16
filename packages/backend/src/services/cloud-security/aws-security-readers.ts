@@ -356,9 +356,27 @@ const trackingNewest = <E>(sink: Sink<FindingRead, E>) =>
 			),
 	}))
 
-/** Where a read sorted by update time leaves the cursor: at the newest read, never behind the stored one. */
-const sortedCursor = (target: ReadTarget, newest: number | null): number | null =>
-	newest === null ? null : Num.max(newest, target.cursorAt ?? 0)
+/**
+ * Where a read sorted by update time leaves the cursor: at the newest read, never behind the stored
+ * one. A capped read that got no further than the stored instant holds more findings at that one
+ * time than a poll reads: it steps past the instant rather than read the same pages forever.
+ */
+const sortedProgress = (
+	target: ReadTarget,
+	newest: number | null,
+	complete: boolean,
+): { readonly cursorAt: number | null; readonly lastError: string | null } => {
+	if (complete)
+		return { cursorAt: newest === null ? null : Num.max(newest, target.cursorAt ?? 0), lastError: null }
+	if (newest !== null && target.cursorAt !== null && newest <= target.cursorAt) {
+		return {
+			cursorAt: target.cursorAt + 1,
+			lastError:
+				"More findings share one update time than a poll reads; the rest of that instant was skipped.",
+		}
+	}
+	return { cursorAt: newest === null ? null : Num.max(newest, target.cursorAt ?? 0), lastError: CAPPED }
+}
 
 const notEnabled: RegionRead = {
 	state: "not_enabled",
@@ -470,8 +488,7 @@ const readGuardDuty = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =>
 		return {
 			state: "enabled",
 			findings: read.count,
-			cursorAt: sortedCursor(target, newest),
-			lastError: read.complete ? null : CAPPED,
+			...sortedProgress(target, newest, read.complete),
 			seenIds: null,
 			windowMs: null,
 		} satisfies RegionRead
@@ -568,8 +585,7 @@ const readSecurityHub = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =>
 		return {
 			state: "enabled",
 			findings: read.count,
-			cursorAt: sortedCursor(target, newest),
-			lastError: read.complete ? null : CAPPED,
+			...sortedProgress(target, newest, read.complete),
 			seenIds: null,
 			windowMs: null,
 		} satisfies RegionRead
@@ -719,8 +735,8 @@ export const normalizeAccessAnalyzer = (
 }
 
 /**
- * Access Analyzer cannot filter by update time, so every poll reads the open and archived findings
- * whole. A whole read names every id it saw, and the poller resolves the stored ones it did not.
+ * Access Analyzer cannot filter by update time, so every poll reads its findings newest change
+ * first. A whole read names every id it saw, and the poller resolves the stored ones it did not.
  */
 const readAccessAnalyzer = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =>
 	Effect.gen(function* () {
@@ -759,10 +775,13 @@ const readAccessAnalyzer = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =
 							AccessAnalyzer.listFindingsV2({
 								region: target.region,
 								analyzerArn: analyzer.arn,
+								// Newest change first, resolutions included: a capped read still sees every
+								// recent change, and only a whole read resolves by absence.
 								filter: {
-									status: { eq: ["ACTIVE", "ARCHIVED"] },
+									status: { eq: ["ACTIVE", "ARCHIVED", "RESOLVED"] },
 									resourceOwnerAccount: { eq: [target.accountId] },
 								},
+								sort: { attributeName: "UpdatedAt", orderBy: "DESC" },
 								maxResults: 100,
 								nextToken: token,
 							}),

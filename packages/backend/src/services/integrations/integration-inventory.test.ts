@@ -640,6 +640,27 @@ describe("aws", () => {
 		expect(aws?.status).toBe("failing")
 		expect(aws?.problem).toContain("can no longer assume the role")
 	})
+
+	it("shows a security-module account's audit log failing while CloudTrail cannot be read", () => {
+		const security = { ...connection, modules: ["security"], grantedModules: ["security"] }
+		const auditLogOf = (
+			problems: ReadonlyArray<{ accountId: string; state: string; lastError: string | null }>,
+		) =>
+			providerOf(
+				{ awsConnections: [security], awsCloudTrailProblems: problems },
+				"aws",
+			)?.resources.find((resource) => resource.kind === "audit log")
+		expect(auditLogOf([])?.status).toBe("healthy")
+		const failing = auditLogOf([
+			{
+				accountId: security.accountId,
+				state: "denied",
+				lastError: "CloudTrail.LookupEvents: AccessDenied",
+			},
+		])
+		expect(failing?.status).toBe("failing")
+		expect(failing?.lastError).toContain("AccessDenied")
+	})
 })
 
 describe("supabase", () => {
