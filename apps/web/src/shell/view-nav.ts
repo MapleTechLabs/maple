@@ -51,6 +51,7 @@ export const shellNavGroups = (clerk: ShellClerk | null = null): ReadonlyArray<N
 	return navGroups(
 		{
 			cloudCost: flag("cloudCost"),
+			cloudSecurity: flag("cloudSecurity") && canReadSecurity,
 			productAnalytics: flag("productAnalytics"),
 			securityAudit: flag("securityAudit") && canReadSecurity,
 			statusPages: flag("statusPages"),

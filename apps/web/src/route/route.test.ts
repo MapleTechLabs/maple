@@ -253,6 +253,7 @@ describe("routes", () => {
 				flaggedRouteRedirect(parse(path), {
 					statusPages: false,
 					cloudCost: true,
+					cloudSecurity: false,
 					productAnalytics: true,
 				}),
 			).toEqual(Option.some({ url: "/", isReplace: true }))
@@ -260,6 +261,7 @@ describe("routes", () => {
 				flaggedRouteRedirect(parse(path), {
 					statusPages: true,
 					cloudCost: false,
+					cloudSecurity: false,
 					productAnalytics: true,
 				}),
 			).toEqual(Option.none())
@@ -268,13 +270,14 @@ describe("routes", () => {
 			flaggedRouteRedirect(parse("/services"), {
 				statusPages: false,
 				cloudCost: false,
+				cloudSecurity: false,
 				productAnalytics: false,
 			}),
 		).toEqual(Option.none())
 	})
 
 	test("an org outside the productAnalytics rollout is sent home from /product-analytics", () => {
-		const flags = { statusPages: true, cloudCost: true }
+		const flags = { statusPages: true, cloudCost: true, cloudSecurity: true }
 		for (const path of ["/product-analytics", "/product-analytics?tab=funnels&timePreset=7d"]) {
 			expect(flaggedRouteRedirect(parse(path), { ...flags, productAnalytics: false })).toEqual(
 				Option.some({ url: "/", isReplace: true }),
@@ -306,6 +309,7 @@ describe("routes", () => {
 				flaggedRouteRedirect(parse(path), {
 					statusPages: true,
 					cloudCost: false,
+					cloudSecurity: false,
 					productAnalytics: true,
 				}),
 			).toEqual(Option.some({ url: "/", isReplace: true }))
@@ -313,10 +317,38 @@ describe("routes", () => {
 				flaggedRouteRedirect(parse(path), {
 					statusPages: false,
 					cloudCost: true,
+					cloudSecurity: false,
 					productAnalytics: true,
 				}),
 			).toEqual(Option.none())
 		}
+	})
+
+	test("an org outside the cloudSecurity rollout is sent home from the Cloud findings and their detail", () => {
+		const flags = { statusPages: true, cloudCost: true, productAnalytics: true }
+		for (const path of ["/security/cloud?severity=critical", "/security/cloud/finding?id=f-1"]) {
+			expect(flaggedRouteRedirect(parse(path), { ...flags, cloudSecurity: false })).toEqual(
+				Option.some({ url: "/", isReplace: true }),
+			)
+			expect(flaggedRouteRedirect(parse(path), { ...flags, cloudSecurity: true })).toEqual(
+				Option.none(),
+			)
+		}
+	})
+
+	test("a cloud finding keeps an ARN with slashes and colons through its URL", () => {
+		const search = {
+			connection: "8a3c6f1e-6b8f-4e6b-9a1e-2f4c5d6e7f80",
+			region: "us-east-1",
+			source: "inspector",
+			id: "arn:aws:inspector2:us-east-1:111111111111:finding/0a1b2c",
+		}
+		expect(parse(hrefOf(AppRoute.SecurityCloudFinding({ search })))).toEqual(
+			AppRoute.SecurityCloudFinding({ search }),
+		)
+		expect(parse("/security/cloud?source=guardduty&q=ssh")).toEqual(
+			AppRoute.SecurityCloud({ search: { source: "guardduty", q: "ssh" } }),
+		)
 	})
 
 	test("a cost view's grouping, order, range and filters survive the URL", () => {
