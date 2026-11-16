@@ -446,4 +446,58 @@ describe("CloudSecurityStore", () => {
 			assert.deepStrictEqual(rows, [{ status: "archived" }])
 		}).pipe(Effect.provide(world.layer))
 	})
+
+	it.effect("keeps when a finding first closed across re-reads, and clears it on reopen", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const store = yield* CloudSecurityStore
+			const connection = yield* connect(orgId, "111111111111")
+			const closedAt = () =>
+				Effect.promise(() =>
+					queryRows<{ closed_at: string | null }>(
+						world.testDb,
+						"SELECT closed_at FROM cloud_security_findings",
+					),
+				)
+			// Stored open, seen closed at sync 100, read again closed at sync 900.
+			yield* store.upsertFindings([finding(connection, orgId, { providerUpdatedAt: 10 })], 1)
+			yield* store.upsertFindings(
+				[finding(connection, orgId, { status: "archived", providerUpdatedAt: 20 })],
+				100,
+			)
+			yield* store.upsertFindings(
+				[finding(connection, orgId, { status: "archived", providerUpdatedAt: 20 })],
+				900,
+			)
+			const [first] = yield* closedAt()
+			assert.strictEqual(
+				first?.closed_at === null ? null : new Date(first?.closed_at ?? 0).getTime(),
+				100,
+			)
+			yield* store.upsertFindings([finding(connection, orgId, { providerUpdatedAt: 30 })], 1000)
+			const [reopened] = yield* closedAt()
+			assert.strictEqual(reopened?.closed_at, null)
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("stores the window size a state carries", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const store = yield* CloudSecurityStore
+			const connection = yield* connect(orgId, "111111111111")
+			yield* store.recordServiceState({
+				orgId,
+				connectionId: connection.id,
+				region,
+				source: "inspector",
+				state: "enabled",
+				cursorAt: 5_000,
+				windowMs: 60_000,
+				lastError: null,
+				checkedAt: 1,
+			})
+			const [state] = yield* store.serviceStates(orgId, connection.id)
+			assert.strictEqual(state?.windowMs, 60_000)
+		}).pipe(Effect.provide(world.layer))
+	})
 })

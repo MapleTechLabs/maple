@@ -262,7 +262,29 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 									.values(Arr.map(chunk, (row) => ({ ...row, syncedAt })))
 									.onConflictDoUpdate({
 										target: ["orgId", "connectionId", "region", "source", "findingId"],
-										set: PG.excludedAll(),
+										// Every column from the new version but closed_at: the first time Maple saw the
+										// finding close stands while it stays closed, and the caller's (null) applies on reopen.
+										set: ($, excluded) => ({
+											accountId: excluded.accountId,
+											type: excluded.type,
+											title: excluded.title,
+											description: excluded.description,
+											severity: excluded.severity,
+											status: excluded.status,
+											resourceType: excluded.resourceType,
+											resourceId: excluded.resourceId,
+											resourceName: excluded.resourceName,
+											occurrences: excluded.occurrences,
+											firstSeenAt: excluded.firstSeenAt,
+											lastSeenAt: excluded.lastSeenAt,
+											providerUpdatedAt: excluded.providerUpdatedAt,
+											detail: excluded.detail,
+											syncedAt: excluded.syncedAt,
+											closedAt: PG.caseWhen(
+												[[excluded.status.eq("active"), excluded.closedAt]],
+												PG.coalesce($.closedAt, excluded.closedAt),
+											),
+										}),
 										// An older version read late never replaces a newer one; the same time does,
 										// since a console change can leave the service's update time alone.
 										where: (existing, excluded) =>
