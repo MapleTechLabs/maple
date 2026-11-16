@@ -81,6 +81,18 @@ describe("unsupported and malformed input", () => {
 		expect(error._tag).toBe("@maple/lockfiles/LockfileParseError")
 		expect(error.path).toBe(path)
 	})
+
+	it("names the yarn.lock entry the parser could not read, without echoing its range", async () => {
+		const missingVersion = await failure(
+			"yarn.lock",
+			'lodash@https://user:secret@host/lodash.tgz:\n  resolved "x"\n',
+		)
+		const notAnEntry = await failure("yarn.lock", 'a@^1:\n  version "1.0.0"\n<<<<<<< HEAD\n')
+		expect([missingVersion.message, notAnEntry.message]).toEqual([
+			"yarn.lock entry for lodash at line 1 has no version line",
+			"yarn.lock line 3 is neither an entry nor a field: <<<<<<< HEAD",
+		])
+	})
 })
 
 describe("npm lockfile details", () => {
@@ -261,6 +273,29 @@ describe("npm lockfile details", () => {
 		const parsed = await parse("bun.lock", lock)
 		expect(summary(parsed)).toEqual(["@scope/a@1.0.0:direct", "b@2.0.0:transitive"])
 		expect(parsed.warnings).toEqual(["skipped 1 non-registry packages (git, tarball or local)"])
+	})
+
+	it("bun.lock: a byte order mark and comments, which Bun reads, parse; comment text inside strings is kept", async () => {
+		const lock = `\uFEFF{
+  // written by hand
+  "lockfileVersion": 1, /* the text format */
+  "workspaces": { "": { "name": "app", "dependencies": { "a": "^1" } } },
+  "packages": {
+    "a": ["a@1.0.0", "", {}, "sha512-//x/*y*/"], // trailing
+  },
+}`
+		const parsed = await parse("bun.lock", lock)
+		expect(summary(parsed)).toEqual(["a@1.0.0:direct"])
+	})
+
+	it("package-lock.json with a byte order mark parses", async () => {
+		const lock = {
+			lockfileVersion: 3,
+			packages: { "": { dependencies: { a: "^1" } }, "node_modules/a": { version: "1.0.0" } },
+		}
+		expect(summary(await parse("package-lock.json", `\uFEFF${JSON.stringify(lock)}`))).toEqual([
+			"a@1.0.0:direct",
+		])
 	})
 
 	it("deduplicates by name and version, keeping the strongest relation", async () => {
