@@ -1,7 +1,7 @@
 import { PrReviewFinding, type PullRequestFile } from "@maple/domain/http"
 import { assert, describe, it } from "vitest"
 import { parsePatch } from "./diff"
-import { privacyFindings, privacyHitAt, withoutReviewerOverlap } from "./privacy"
+import { privacyFindings, privacyValueLines, privacyHitAt, withoutReviewerOverlap } from "./privacy"
 import { Array as Arr, String as Str } from "effect"
 
 const file = (
@@ -330,6 +330,34 @@ describe("privacyFindings", () => {
 				'logger.debug("using eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N")',
 			]),
 			["critical"],
+		)
+	})
+
+	it("anchors a grouped finding on the line whose value made it critical", () => {
+		const [finding] = privacyFindings([
+			file("src/a.ts", [
+				'logger.info("x", { password })',
+				'logger.debug("using eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N")',
+			]),
+		])
+		assert.deepStrictEqual([finding?.severity, finding?.line], ["critical", 11])
+		assert.match(finding?.body ?? "", /Also on line 10\./)
+	})
+
+	it("lists every line whose value the scan recognized, not only the grouped anchor", () => {
+		const token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N"
+		assert.deepStrictEqual(
+			privacyValueLines([
+				file("src/a.ts", [
+					'logger.info("x", { password })',
+					`logger.debug("using ${token}")`,
+					`logger.debug("again ${token}")`,
+				]),
+			]),
+			[
+				{ path: "src/a.ts", line: 11 },
+				{ path: "src/a.ts", line: 12 },
+			],
 		)
 	})
 

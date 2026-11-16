@@ -1,4 +1,4 @@
-import { DB_NODE_PREFIX, NS_LABEL_HEIGHT, NS_PADDING_X, NS_PADDING_Y } from "../graph/service-map-utils"
+import { NS_LABEL_HEIGHT, NS_PADDING_X, NS_PADDING_Y } from "../graph/service-map-utils"
 import { getValueHue } from "@maple/ui/lib/colors"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../ui/icon"
@@ -7,7 +7,7 @@ import type { MeasuredNode } from "../xyflow/geometry"
 import { flowNode } from "../xyflow/view"
 import type { EffectiveGraph } from "./graph"
 import type { Positions } from "./service-map"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr } from "effect"
 import { hstack } from "../../ui/stack"
 import { typography } from "../../ui/typography"
 
@@ -63,7 +63,7 @@ export interface NamespaceBox {
 	readonly height: number
 }
 
-/** Each namespace's box: its service nodes' extent (measured, else the fallback size) plus padding. */
+/** Each namespace's box: its nodes' extent (measured, else the fallback size) plus padding. */
 export const namespaceBoxRects = (
 	graph: EffectiveGraph,
 	positions: Positions,
@@ -72,7 +72,7 @@ export const namespaceBoxRects = (
 	const extents = new Map<string, { minX: number; minY: number; maxX: number; maxY: number }>()
 	for (const node of graph.nodes) {
 		const ns = node.data.namespace
-		if (Str.startsWith(DB_NODE_PREFIX)(node.id) || !ns) continue
+		if (!ns) continue
 		const w = measured[node.id]?.width ?? FALLBACK_NODE_WIDTH
 		const hgt = measured[node.id]?.height ?? FALLBACK_NODE_HEIGHT
 		const { x, y } = positions[node.id] ?? node.position
@@ -93,7 +93,7 @@ export const namespaceBoxRects = (
 	}))
 }
 
-/** One box per namespace around its measured service nodes, painted behind them. */
+/** One box per namespace around its measured nodes, painted behind them. */
 export const namespaceBoxes = <M>(
 	h: HtmlBuilder<M>,
 	graph: EffectiveGraph,

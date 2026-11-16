@@ -102,6 +102,7 @@ export const BillingFeatureId = Schema.Literals([
 	"logs",
 	"traces",
 	"metrics",
+	"profiles",
 	"browser_sessions",
 	"product_events",
 	"ai_credits",
@@ -211,7 +212,7 @@ export class BillingUsageFeature extends Schema.Class<BillingUsageFeature>("Bill
 }) {}
 
 export class BillingUsage extends Schema.Class<BillingUsage>("BillingUsage")({
-	// Keyed by Autumn featureId (logs/traces/metrics/browser_sessions/product_events).
+	// Keyed by Autumn featureId (logs/traces/metrics/profiles/browser_sessions/product_events).
 	total: Schema.optionalKey(Schema.Record(Schema.String, BillingUsageFeature)),
 }) {}
 
@@ -233,6 +234,8 @@ export class DailyVolume extends Schema.Class<DailyVolume>("DailyVolume")({
 	logsGB: Schema.Number,
 	tracesGB: Schema.Number,
 	metricsGB: Schema.Number,
+	/** Continuous profiling GB metered that day. Absent until the warehouse records profile bytes. */
+	profilesGB: Schema.optionalKey(Schema.Number),
 	browserSessions: Schema.Number,
 	/** Product events (browser `track()` + server events) metered that day. Absent until the API emits it. */
 	productEvents: Schema.optionalKey(Schema.Number),

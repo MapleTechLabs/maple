@@ -1,6 +1,6 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { DataIntegration } from "../../route/data-integrations"
-import { flowColumns, liveChecklist, savedBanner } from "../kit/connect-flow"
+import { flowColumns, liveChecklist } from "../kit/connect-flow"
 import { overviewOf } from "./derive"
 import { relativeTime } from "../kit/relative-time"
 import type { FlowStage } from "./flow"
@@ -29,8 +29,8 @@ const genericFlowView = (
 	return flowColumns(
 		h,
 		[
-			savedBanner(h, "Saved as a source. Safe to leave; collection keeps running."),
 			liveChecklist(h, {
+				saved: "Saved as a source. Safe to leave; collection keeps running.",
 				rows: [
 					{
 						state: "done",

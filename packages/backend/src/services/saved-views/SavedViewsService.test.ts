@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Array as Arr, Effect, Layer, Order, Schema } from "effect"
+import { Array as Arr, Effect, Layer, Order, Result, Schema, String as Str, Tracer } from "effect"
 import { OrgId, SavedViewId, UserId } from "@maple/domain/http"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { SAVED_VIEWS_PER_OWNER_LIMIT, type SavedViewCaller, SavedViewsService } from "./SavedViewsService"
@@ -258,6 +258,37 @@ describe("SavedViewsService", () => {
 			}),
 		),
 	)
+
+	it.effect("refuses a taken name without a failed database span", () => {
+		const spans: Array<Tracer.NativeSpan> = []
+		const tracer = Tracer.make({
+			span(options) {
+				const span = new Tracer.NativeSpan(options)
+				spans.push(span)
+				return span
+			},
+		})
+		return provide(
+			Effect.gen(function* () {
+				const views = yield* SavedViewsService
+				yield* views.create(ANA, { surface: "logs", name: "Errors", state: errorState })
+				const other = yield* views.create(ANA, { surface: "logs", name: "Other", state: errorState })
+				yield* Effect.flip(views.create(ANA, { surface: "logs", name: "Errors", state: errorState }))
+				yield* Effect.flip(views.update(ANA, other.id, { name: "Errors" }))
+				// Only the service call answering the 409 may fail; a database span failing opens an error issue.
+				const failures = Arr.filterMap(spans, (span) =>
+					span.status._tag === "Ended" && span.status.exit._tag === "Failure"
+						? Result.succeed(span.name)
+						: Result.failVoid,
+				)
+				assert.isAbove(failures.length, 0)
+				assert.deepStrictEqual(
+					Arr.filter(failures, (name) => !Str.startsWith("SavedViewsService.")(name)),
+					[],
+				)
+			}).pipe(Effect.withTracer(tracer)),
+		)
+	})
 
 	it.effect("stops one person at the per-explorer limit and leaves the other explorers open", () =>
 		provide(

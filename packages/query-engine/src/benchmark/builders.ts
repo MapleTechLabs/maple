@@ -1524,6 +1524,13 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 				},
 			),
 	},
+	// Audit log sources (AuditTrailService.ts `providerStats`): events per platform in the window.
+	{
+		module: "audit-trail",
+		name: "auditTrailSourcesQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.auditTrailSourcesQuery(), { orgId: ORG_ID, since: START_TIME }),
+	},
 	// Cancellation evidence (CancellationTelemetryEvidence.read).
 	{
 		module: "cancellation-evidence",

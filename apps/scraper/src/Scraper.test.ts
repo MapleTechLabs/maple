@@ -21,7 +21,7 @@ import { OtlpIngest } from "./OtlpIngest"
 import { scrapeError, type ScrapeError, type ScrapeFailureReason } from "./ScrapeError"
 import { otlpContext, Scraper } from "./Scraper"
 import { TargetFetcher } from "./TargetFetcher"
-import { type TargetGroup, targetKey } from "./TargetRegistry"
+import type { TargetGroup } from "./TargetRegistry"
 import { endedSpansNamed, makeCapturingTracer } from "./testing/capturing-tracer"
 
 const decodeTarget = Schema.decodeUnknownSync(InternalScrapeTarget)
@@ -71,10 +71,10 @@ const scraperLayer = (harness: Harness) =>
 		),
 	)
 
-const cycle = (harness: Harness, targets: TargetGroup, failing?: ReadonlyMap<string, ScrapeFailureReason>) =>
+const cycle = (harness: Harness, targets: TargetGroup) =>
 	Effect.gen(function* () {
 		const scraper = yield* Scraper
-		return yield* scraper.scrapeCycle(targets, (yield* Semaphore.make(10)).withPermits(1), failing)
+		return yield* scraper.scrapeCycle(targets, (yield* Semaphore.make(10)).withPermits(1))
 	}).pipe(Effect.provide(scraperLayer(harness)))
 
 /** A one-target cycle, failing with that target's result. */
@@ -139,7 +139,7 @@ describe("Scraper", () => {
 		}),
 	)
 
-	it.effect("names the target in the failure and closes the span as an error", () =>
+	it.effect("names the target in the failure and closes a target-side failure Ok", () =>
 		Effect.gen(function* () {
 			const tracer = makeCapturingTracer()
 			const harness = makeHarness()
@@ -157,9 +157,10 @@ describe("Scraper", () => {
 			assert.strictEqual(error.targetId, TARGET.id)
 			assert.strictEqual(error.targetHost, "node.example.com:9100")
 
+			// The target's 5xx is the customer's to fix: reported on its health, not an error issue.
 			const [span] = endedSpansNamed(tracer.ended, "scraper.scrape_target")
 			assert.isDefined(span)
-			assert.isTrue(Exit.isFailure(span.exit))
+			assert.isTrue(Exit.isSuccess(span.exit))
 			assert.strictEqual(span.attributes.get("error.type"), "target_error")
 			assert.strictEqual(span.attributes.get("http.response.status_code"), 500)
 			assert.strictEqual(span.attributes.get("maple.scraper.target_host"), "node.example.com:9100")
@@ -168,34 +169,29 @@ describe("Scraper", () => {
 
 	// A billing block is the ingest key's, so it fails every delivered sub-target.
 	// Its span lives on `OtlpIngest.send`; the fetch spans stay Ok.
-	it.effect("closes a streak's repeated failure Ok and a changed failure as an error", () =>
+	it.effect("closes only a scrape_failed failure as an error", () =>
 		Effect.gen(function* () {
 			const tracer = makeCapturingTracer()
 			const harness = makeHarness()
-			harness.fetch = () =>
-				Effect.fail(
-					scrapeError({ message: "returned HTTP 404", reason: "target_rejected", statusCode: 404 }),
-				)
-			const failingWith = (reason: ScrapeFailureReason) => new Map([[targetKey(TARGET), reason]])
-			const repeated = yield* cycle(harness, [TARGET], failingWith("target_rejected")).pipe(
-				Effect.provide(tracer.layer),
-			)
-			const changed = yield* cycle(harness, [TARGET], failingWith("target_error")).pipe(
-				Effect.provide(tracer.layer),
-			)
+			const reasons: ReadonlyArray<ScrapeFailureReason> = [
+				"auth_failed",
+				"target_rejected",
+				"rate_limited",
+				"scrape_failed",
+			]
+			yield* Effect.forEach(reasons, (reason) => {
+				harness.fetch = () => Effect.fail(scrapeError({ message: "failed", reason }))
+				return cycle(harness, [TARGET]).pipe(Effect.provide(tracer.layer))
+			})
 
-			// Both still report the failure; only the span status differs.
-			for (const outcome of [repeated, changed]) {
-				assert.isTrue(Result.isFailure(Arr.getUnsafe(outcome.scrapes, 0).result))
-			}
 			const spans = endedSpansNamed(tracer.ended, "scraper.scrape_target")
 			assert.deepStrictEqual(
-				Arr.map(spans, (span) => Exit.isSuccess(span.exit)),
-				[true, false],
+				Arr.map(spans, (span) => Exit.isFailure(span.exit)),
+				[false, false, false, true],
 			)
 			assert.deepStrictEqual(
-				Arr.map(spans, (span) => span.attributes.get("error.type")),
-				["target_rejected", "target_rejected"],
+				Arr.map(spans, (span) => String(span.attributes.get("error.type"))),
+				[...reasons],
 			)
 		}),
 	)

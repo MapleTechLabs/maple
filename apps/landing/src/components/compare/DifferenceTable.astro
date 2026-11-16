@@ -24,6 +24,8 @@
  */
 import * as m from "../../paraglide/messages.js";
 import type { DifferenceRow, Edge, Source } from "../../lib/competitors";
+import { SCALE_PROOF_STORY_PATH } from "../../lib/scale-proof";
+import { pricingPath } from "../../lib/page-registry";
 
 /** A registry row with its thunks already resolved by the template. */
 type Row = Omit<DifferenceRow, "topic" | "maple" | "competitor"> & {
@@ -51,6 +53,17 @@ const groups = [
 
 const edgeLabel = (edge: Edge) =>
 	edge === "maple" ? "Maple" : edge === "competitor" ? competitorName : m.cmp_diff_edge_even();
+
+// One line each under the table: proof of scale, then what Enterprise adds.
+const notes = [
+	{ label: m.scale_proof_label(), text: m.scale_proof(), href: SCALE_PROOF_STORY_PATH, link: m.scale_proof_link() },
+	{
+		label: m.enterprise_offer_label(),
+		text: m.enterprise_offer(),
+		href: pricingPath(Astro.currentLocale ?? "en"),
+		link: m.enterprise_offer_link(),
+	},
+];
 
 const topicLabel = m.cmp_diff_col_topic();
 const edgeCol = m.cmp_diff_col_edge();
@@ -157,6 +170,23 @@ const edgeCol = m.cmp_diff_col_edge();
 					}
 				</ul>
 			</div>
+
+			{
+				notes.map((note) => (
+					<p class="flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t border-border px-5 py-4 text-[13px] leading-relaxed text-fg md:px-6">
+						<span class="font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-fg-muted">
+							{note.label}
+							<span class="sr-only">:</span>
+						</span>
+						<span>
+							{note.text}{" "}
+							<a href={note.href} class="text-fg-muted underline underline-offset-2 hover:text-fg">
+								{note.link}
+							</a>
+						</span>
+					</p>
+				))
+			}
 		</div>
 	</div>
 </section>

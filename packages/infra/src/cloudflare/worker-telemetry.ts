@@ -77,6 +77,9 @@ export interface WorkerTelemetryOptions {
 	readonly serviceName: string
 	/** Added to the domain's `ANTICIPATED_ERROR_IDENTIFIERS` (e.g. the MCP set). */
 	readonly anticipatedErrorIdentifiers?: ReadonlyArray<string> | undefined
+	/** Expected failures a tag alone cannot single out, judged on the failure value. */
+	// BOUNDARY: the tracer hands over a cause's raw failure values.
+	readonly isAnticipatedError?: ((error: unknown) => boolean) | undefined
 	/** Span-name prefixes never exported. */
 	readonly dropSpanNames?: ReadonlyArray<string> | undefined
 }
@@ -91,6 +94,7 @@ export const workerTelemetryConfig = (options: WorkerTelemetryOptions): Telemetr
 		...ANTICIPATED_ERROR_IDENTIFIERS,
 		...(options.anticipatedErrorIdentifiers ?? []),
 	],
+	isAnticipatedError: options.isAnticipatedError,
 })
 
 export const WorkerTelemetry = (options: WorkerTelemetryOptions): Layer.Layer<never> =>

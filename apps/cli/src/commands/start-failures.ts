@@ -63,7 +63,8 @@ const StartFailureRecord = Schema.Struct({
 })
 export type StartFailureRecord = typeof StartFailureRecord.Type
 
-/** One error event per distinct failure per hour. */
+/** A transient failure reports once per hour while it loops. A non-restartable
+ *  refusal reports once per streak: it waits on a person, so repeats add nothing. */
 export const REPORT_INTERVAL_MS = 60 * 60 * 1000
 /** Failures further apart than this are not a restart loop. */
 export const STREAK_WINDOW_MS = 10 * 60 * 1000
@@ -88,6 +89,7 @@ export const decideStartFailure = (
 	fingerprint: string,
 	nowMs: number,
 	interactive: boolean,
+	reportIntervalMs: number = REPORT_INTERVAL_MS,
 ): StartFailureDecision => {
 	const streak = Option.filter(
 		previous,
@@ -96,7 +98,7 @@ export const decideStartFailure = (
 	const consecutive = Option.match(streak, { onNone: () => 1, onSome: (record) => record.consecutive + 1 })
 	const report = Option.match(streak, {
 		onNone: () => true,
-		onSome: (record) => nowMs - record.lastReportedAtMs >= REPORT_INTERVAL_MS,
+		onSome: (record) => nowMs - record.lastReportedAtMs >= reportIntervalMs,
 	})
 	const lastReportedAtMs = Option.match(
 		Option.filter(streak, () => !report),
@@ -158,9 +160,16 @@ const handleStartFailure = <E>(
 ) =>
 	Effect.gen(function* () {
 		const previous = yield* readStartFailureRecord(dataDir, name)
-		const decision = decideStartFailure(previous, startFailureFingerprint(error), nowMs, interactive)
+		const final = isNonRestartableStartFailure(error)
+		const decision = decideStartFailure(
+			previous,
+			startFailureFingerprint(error),
+			nowMs,
+			interactive,
+			final ? Number.POSITIVE_INFINITY : REPORT_INTERVAL_MS,
+		)
 		yield* writeRecord(dataDir, name, decision.record)
-		if (isNonRestartableStartFailure(error)) {
+		if (final) {
 			yield* Effect.sync(() => {
 				process.exitCode = EXIT_START_REFUSED
 			})
@@ -177,7 +186,7 @@ const handleStartFailure = <E>(
 			yield* Effect.sleep(Duration.millis(decision.backoffMs))
 		}
 		if (decision.report) return yield* Effect.fail(error)
-		// Already reported this hour: leave the root span `Ok`, but still exit
+		// Already reported in this streak: leave the root span `Ok`, but still exit
 		// non-zero so `Restart=on-failure` and `SuccessfulExit=false` keep retrying.
 		yield* annotateOutcome(`repeated:${describeFailure(error).tag}`)
 		yield* Effect.sync(() => {

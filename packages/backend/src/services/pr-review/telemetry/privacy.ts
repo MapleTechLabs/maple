@@ -610,51 +610,74 @@ const otherLines = (lines: ReadonlyArray<number>) =>
 		? ""
 		: ` Also on ${lines.length === 1 ? "line" : "lines"} ${Arr.join(Arr.map(lines.slice(0, 5), String), ", ")}${lines.length > 5 ? ` and ${lines.length - 5} more` : ""}.`
 
+const scannedFile = (file: PullRequestFile) =>
+	file.patch !== null &&
+	isRuntimeSource(file.path) &&
+	SCANNED_SOURCE.test(file.path) &&
+	!NOT_SCANNED.test(file.path)
+
+/**
+ * Every added line where the scan recognized a credential's value (a critical hit), one entry per
+ * line: the evidence a reviewer's critical on that line needs, which a grouped finding's one anchor
+ * cannot carry for each line.
+ */
+export const privacyValueLines = (
+	files: ReadonlyArray<PullRequestFile>,
+): ReadonlyArray<{ readonly path: string; readonly line: number }> =>
+	Arr.flatMap(Arr.filter(files, scannedFile), (file: PullRequestFile) => {
+		const lines = parsePatch(file.patch)
+		return Arr.flatMap(lines, (line, index) => {
+			const hit = privacyHitAt(lines, index)
+			return hit !== undefined && severityOf(hit) === "critical"
+				? [{ path: file.path, line: line.newLine }]
+				: []
+		})
+	})
+
 /** The diff's privacy findings: one per file and kind of data, on its first line, naming the others. */
 export const privacyFindings = (files: ReadonlyArray<PullRequestFile>): ReadonlyArray<PrReviewFinding> =>
-	Arr.flatMap(
-		Arr.filter(
-			files,
-			(file) =>
-				file.patch !== null &&
-				isRuntimeSource(file.path) &&
-				SCANNED_SOURCE.test(file.path) &&
-				!NOT_SCANNED.test(file.path),
-		),
-		(file: PullRequestFile) => {
-			const lines = parsePatch(file.patch)
-			const byKind = new Map<
-				PrivacyKind,
-				{ readonly hit: PrivacyHit; readonly lines: Array<number>; severity: PrReviewSeverity }
-			>()
-			Arr.forEach(lines, (line, index) => {
-				const hit = privacyHitAt(lines, index)
-				if (hit === undefined) return
-				const seen = byKind.get(hit.kind)
-				if (seen === undefined)
-					byKind.set(hit.kind, { hit, lines: [line.newLine], severity: severityOf(hit) })
-				else {
-					seen.lines.push(line.newLine)
-					// A recognized value on any line of the kind makes the one finding as severe as it.
-					if (SEVERITY_RANK[severityOf(hit)] > SEVERITY_RANK[seen.severity])
-						seen.severity = severityOf(hit)
+	Arr.flatMap(Arr.filter(files, scannedFile), (file: PullRequestFile) => {
+		const lines = parsePatch(file.patch)
+		const byKind = new Map<
+			PrivacyKind,
+			{ hit: PrivacyHit; readonly lines: Array<number>; severity: PrReviewSeverity; anchor: number }
+		>()
+		Arr.forEach(lines, (line, index) => {
+			const hit = privacyHitAt(lines, index)
+			if (hit === undefined) return
+			const seen = byKind.get(hit.kind)
+			if (seen === undefined)
+				byKind.set(hit.kind, {
+					hit,
+					lines: [line.newLine],
+					severity: severityOf(hit),
+					anchor: line.newLine,
+				})
+			else {
+				seen.lines.push(line.newLine)
+				// A recognized value on any line of the kind makes the one finding as severe as it,
+				// anchored on that line so the severity sits where the value is.
+				if (SEVERITY_RANK[severityOf(hit)] > SEVERITY_RANK[seen.severity]) {
+					seen.severity = severityOf(hit)
+					seen.hit = hit
+					seen.anchor = line.newLine
 				}
-			})
-			return Arr.map(
-				[...byKind.values()],
-				({ hit, severity, lines: [first = 1, ...others] }) =>
-					new PrReviewFinding({
-						path: file.path,
-						line: first,
-						category: "security",
-						checkId: "PII-01",
-						severity,
-						title: `${TITLE[hit.kind]} ${hit.subject} written to ${SINK_LABEL[hit.sink]}`,
-						body: `${WHY[hit.kind]}${otherLines(others)}`,
-					}),
-			)
-		},
-	)
+			}
+		})
+		return Arr.map(
+			[...byKind.values()],
+			({ hit, severity, lines: hitLines, anchor }) =>
+				new PrReviewFinding({
+					path: file.path,
+					line: anchor,
+					category: "security",
+					checkId: "PII-01",
+					severity,
+					title: `${TITLE[hit.kind]} ${hit.subject} written to ${SINK_LABEL[hit.sink]}`,
+					body: `${WHY[hit.kind]}${otherLines(Arr.filter(hitLines, (n) => n !== anchor))}`,
+				}),
+		)
+	})
 		.sort((a, b) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity])
 		.slice(0, MAX_PRIVACY_FINDINGS)
 

@@ -23,6 +23,9 @@ const envWith = (extra: Record<string, string>) =>
 				ConfigProvider.fromUnknown({
 					TINYBIRD_HOST: "https://api.tinybird.co",
 					TINYBIRD_TOKEN: "test-token",
+					// A multi-org deployment on Tinybird runs tenant reads on an org-scoped token.
+					TINYBIRD_SIGNING_KEY: "test-signing-key",
+					TINYBIRD_WORKSPACE_ID: "test-workspace",
 					MAPLE_AUTH_MODE: "clerk",
 					CLERK_SECRET_KEY: "sk_test_123",
 					CLERK_JWT_KEY: "jwt_test_123",

@@ -377,6 +377,37 @@ describe("OTLP/JSON hex ids", () => {
 		expect(row.links_span_id).toEqual([spanHex])
 	})
 
+	// ai_trace_index_mv reads only `maple_ai.*` keys and drops spans without a vendor id.
+	it("stamps a GenAI span's maple_ai keys into the encoded row, typed values as the Map holds them", () => {
+		const span = {
+			traceId: b64(hex),
+			spanId: b64("b7ad6b7169203331"),
+			name: "chat gpt-5",
+			kind: 3,
+			startTimeUnixNano: "1700000000000000000",
+			endTimeUnixNano: "1700000001500000000",
+			attributes: [
+				attr("gen_ai.operation.name", "chat"),
+				attr("gen_ai.conversation.id", "conv-7"),
+				attr("gen_ai.request.model", "gpt-5"),
+				{ key: "gen_ai.usage.input_tokens", value: { intValue: "120" } },
+				{ key: "gen_ai.usage.output_tokens", value: { doubleValue: 30 } },
+			],
+		}
+		const req = { resourceSpans: [{ scopeSpans: [{ scope: { name: "my-agent" }, spans: [span] }] }] }
+
+		const row = JSON.parse(Arr.getUnsafe(encodeTraces(req), 0).ndjson)
+		expect(row.span_attributes).toMatchObject({
+			"maple_ai.vendor.id": "unknown:genai",
+			"maple_ai.vendor.version": "0",
+			"maple_ai.session.id": "conv-7",
+			"maple_ai.llm_call": "1",
+			"maple_ai.model": "gpt-5",
+			"maple_ai.usage.input_tokens": "120",
+			"maple_ai.usage.output_tokens": "30",
+		})
+	})
+
 	it("rejects ids that decode to the wrong length, naming the field", () => {
 		// 24 bytes of base64 — what a hex trace id used to silently become.
 		const tooLong = Buffer.alloc(24, 1).toString("base64")

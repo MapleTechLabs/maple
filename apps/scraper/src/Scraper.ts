@@ -9,9 +9,9 @@ import {
 	type ScrapeOtlpContext,
 } from "@maple/prometheus-otlp"
 import { OtlpIngest } from "./OtlpIngest"
-import { ScrapeError, scrapeError, type ScrapeFailureReason, withScrapeSpan } from "./ScrapeError"
+import { ScrapeError, scrapeError, withScrapeSpan } from "./ScrapeError"
 import { scrapeTimeoutMs, TargetFetcher } from "./TargetFetcher"
-import { type TargetGroup, targetKey } from "./TargetRegistry"
+import type { TargetGroup } from "./TargetRegistry"
 
 export interface ScrapeSuccess {
 	/** Prometheus samples parsed from the exposition. */
@@ -44,15 +44,9 @@ export interface ScraperApi {
 	/**
 	 * Fetch every sub-target of one parent in parallel (one `permit` each),
 	 * convert each, and deliver the successful ones as one merged export. Never fails:
-	 * each sub-target carries its own result. `failing` holds each sub-target's ongoing
-	 * failure reason by `targetKey`: the same failure again closes its span `Ok`, so a
-	 * dead target opens one error per streak instead of one per scrape.
+	 * each sub-target carries its own result.
 	 */
-	readonly scrapeCycle: (
-		targets: TargetGroup,
-		permit: ScrapePermit,
-		failing?: ReadonlyMap<string, ScrapeFailureReason>,
-	) => Effect.Effect<ScrapeCycle>
+	readonly scrapeCycle: (targets: TargetGroup, permit: ScrapePermit) => Effect.Effect<ScrapeCycle>
 }
 
 /**
@@ -118,11 +112,7 @@ export class Scraper extends Context.Service<Scraper, ScraperApi>()("@maple/scra
 		const ingest = yield* OtlpIngest
 
 		// One span per sub-target, so dashboards and per-branch error issues keep their shape.
-		const collect = (
-			target: InternalScrapeTarget,
-			shared: boolean,
-			failingReason: ScrapeFailureReason | undefined,
-		) => {
+		const collect = (target: InternalScrapeTarget, shared: boolean) => {
 			const host = hostFromUrl(target.url)
 			return Effect.gen(function* () {
 				const scrapeTimeMs = yield* Clock.currentTimeMillis
@@ -164,60 +154,41 @@ export class Scraper extends Context.Service<Scraper, ScraperApi>()("@maple/scra
 					),
 				),
 				Effect.mapError((error) => attribute(error, target, host)),
-				withScrapeSpan(
-					"scraper.scrape_target",
-					{
-						attributes: {
-							orgId: target.orgId,
-							"maple.scraper.target_id": target.id,
-							"maple.scraper.target_name": target.name,
-							"maple.scraper.target_host": host,
-							"maple.scraper.interval_seconds": target.scrapeIntervalSeconds,
-							...(target.subTargetKey
-								? { "maple.scraper.sub_target_key": target.subTargetKey }
-								: undefined),
-							...(target.sourceId === undefined
-								? undefined
-								: { "maple.source.id": target.sourceId }),
-							...(failingReason === undefined
-								? undefined
-								: { "maple.scraper.failing_reason": failingReason }),
-						},
+				withScrapeSpan("scraper.scrape_target", {
+					attributes: {
+						orgId: target.orgId,
+						"maple.scraper.target_id": target.id,
+						"maple.scraper.target_name": target.name,
+						"maple.scraper.target_host": host,
+						"maple.scraper.interval_seconds": target.scrapeIntervalSeconds,
+						...(target.subTargetKey
+							? { "maple.scraper.sub_target_key": target.subTargetKey }
+							: undefined),
+						...(target.sourceId === undefined
+							? undefined
+							: { "maple.source.id": target.sourceId }),
 					},
-					(error) => error.reason === failingReason,
-				),
+				}),
 			)
 		}
 
-		const timedCollect = (
-			target: InternalScrapeTarget,
-			shared: boolean,
-			permit: ScrapePermit,
-			failingReason: ScrapeFailureReason | undefined,
-		) =>
+		const timedCollect = (target: InternalScrapeTarget, shared: boolean, permit: ScrapePermit) =>
 			permit(
 				Effect.gen(function* () {
 					const scrapedAt = yield* Clock.currentTimeMillis
-					const result = yield* Effect.result(collect(target, shared, failingReason))
+					const result = yield* Effect.result(collect(target, shared))
 					const fetchedAt = yield* Clock.currentTimeMillis
 					return { target, scrapedAt, fetchedAt, result } satisfies Collected
 				}),
 			)
 
-		const scrapeCycle = (
-			targets: TargetGroup,
-			permit: ScrapePermit,
-			failing: ReadonlyMap<string, ScrapeFailureReason> = new Map(),
-		) => {
+		const scrapeCycle = (targets: TargetGroup, permit: ScrapePermit) => {
 			const [first] = targets
 			return Effect.gen(function* () {
 				const collected = yield* Effect.forEach(
 					targets,
-					(target) =>
-						timedCollect(target, targets.length > 1, permit, failing.get(targetKey(target))),
-					{
-						concurrency: "unbounded",
-					},
+					(target) => timedCollect(target, targets.length > 1, permit),
+					{ concurrency: "unbounded" },
 				)
 				const requests = Arr.flatMap(collected, (entry) =>
 					Result.isSuccess(entry.result) && entry.result.success.request !== null

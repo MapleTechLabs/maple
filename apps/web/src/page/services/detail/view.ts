@@ -22,7 +22,7 @@ import {
 	apiBucketSeconds,
 	DEFAULT_PRESET,
 	environmentsOf,
-	SERVICE_TABS,
+	serviceTabs,
 	tabOf,
 	windowSeconds,
 } from "./derive"
@@ -34,6 +34,7 @@ import { apiTab } from "./view-api-tab"
 import { API_THEME_TOKENS } from "./view-api-charts"
 import { dependenciesTab } from "./view-dependencies"
 import { operationsTab } from "./view-operations"
+import { profilesTab } from "./view-profiles"
 import { overviewTab, THEME_TOKENS } from "./view-overview"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
@@ -72,10 +73,10 @@ const createAlert = (h: H, model: Model): Html =>
 	)
 
 /** The Overview tab's failure card offers Try again, so Reload steps aside; other tabs have no retry. */
-const isTabFailed = (model: Model): boolean =>
-	tabOf(model.search) === "overview" && AsyncData.isFailure(model.overview.data)
+const isTabFailed = (model: Model, inputs: PageViewInputs): boolean =>
+	tabOf(model.search, inputs.context) === "overview" && AsyncData.isFailure(model.overview.data)
 
-const headerActions = (h: H, model: Model): Html => {
+const headerActions = (h: H, model: Model, inputs: PageViewInputs): Html => {
 	const controls = timeControls(h, {
 		search: model.search,
 		defaultPreset: DEFAULT_PRESET,
@@ -83,7 +84,7 @@ const headerActions = (h: H, model: Model): Html => {
 		onReset: Message.ClickedResetTimeRange(),
 		onReload: Message.ClickedReload(),
 		isReloading: model.isReloading,
-		isReloadHidden: isTabFailed(model),
+		isReloadHidden: isTabFailed(model, inputs),
 		trigger: (label) =>
 			h.submodel({
 				slotId: "time-range-picker",
@@ -123,12 +124,12 @@ const titleContent = (h: H, model: Model): Html =>
 	])
 
 /** Route links. As TanStack Router did, a link whose search the URL contains is `active`, so Overview always is. */
-const tabs = (h: H, model: Model): Html => {
-	const active = tabOf(model.search)
+const tabs = (h: H, model: Model, inputs: PageViewInputs): Html => {
+	const active = tabOf(model.search, inputs.context)
 	return underlineTabStrip(
 		h,
 		{ label: "Service sections", navigation: true },
-		Arr.map(SERVICE_TABS, (tab) => {
+		Arr.map(serviceTabs(inputs.context), (tab) => {
 			const isCurrent = tab.value === active
 			const isLinkActive = tab.value === "overview" || model.search.tab === tab.value
 			return h.a(
@@ -148,9 +149,11 @@ const tabs = (h: H, model: Model): Html => {
 }
 
 const body = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<Html> => {
-	switch (tabOf(model.search)) {
+	switch (tabOf(model.search, inputs.context)) {
 		case "overview":
 			return [overviewTab(h, model, inputs.context)]
+		case "profiles":
+			return [profilesTab(h, model)]
 		case "operations":
 			return [operationsTab(h, model, model.themeColors)]
 		case "api": {
@@ -246,8 +249,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				h,
 				{
 					titleContent: titleContent(h, model),
-					actions: headerActions(h, model),
-					tabs: tabs(h, model),
+					actions: headerActions(h, model, inputs),
+					tabs: tabs(h, model, inputs),
 				},
 				body(h, model, inputs),
 			),

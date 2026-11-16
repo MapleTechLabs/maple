@@ -860,3 +860,24 @@ export class OAuthStatePersistenceError extends Schema.TaggedError<OAuthStatePer
 	{ message: Schema.String },
 	{ httpApiStatus: 503 },
 ) {}
+
+// The source reads behind the agent's code tools. Each is the answer to a wrong guess (a repository,
+// path or ref that does not exist), so the 404 keeps their spans out of error tracking.
+
+export class VcsSourceRepositoryNotFoundError extends Schema.TaggedError<VcsSourceRepositoryNotFoundError>()(
+	"@maple/backend/vcs/VcsSourceRepositoryNotFoundError",
+	{ repository: Schema.String, message: Schema.String },
+	{ httpApiStatus: 404 },
+) {}
+
+export class VcsSourceFileNotFoundError extends Schema.TaggedError<VcsSourceFileNotFoundError>()(
+	"@maple/backend/vcs/VcsSourceFileNotFoundError",
+	{ repository: Schema.String, path: Schema.String, ref: Schema.String, message: Schema.String },
+	{ httpApiStatus: 404 },
+) {}
+
+export class VcsSourceRefNotFoundError extends Schema.TaggedError<VcsSourceRefNotFoundError>()(
+	"@maple/backend/vcs/VcsSourceRefNotFoundError",
+	{ repository: Schema.String, ref: Schema.String, message: Schema.String },
+	{ httpApiStatus: 404 },
+) {}

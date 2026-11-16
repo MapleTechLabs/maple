@@ -831,11 +831,12 @@ export const resolveDecisionModel = (settings: LlmSettings): string | undefined 
  * The embedder the PR review's feedback filter compares findings with, on OpenRouter whichever
  * provider the agents run on: Workers AI's binding shim only answers chat. Its `OpenAiClient` is
  * private to this layer, so it never replaces the Workers AI one `layerLlm` provides. Without an
- * OpenRouter key there is no embedder, and the filter is off.
+ * OpenRouter key there is no embedder, and the filter is off. Nor in the EU: OpenRouter's EU
+ * endpoint serves no provider for the embedding model ("No endpoints found supporting your data region").
  */
 export const layerFindingEmbedder = (settings: LlmSettings): Layer.Layer<FindingEmbedder> => {
 	const apiKey = readSecret(settings, "OPENROUTER_API_KEY")
-	if (apiKey === undefined) return FindingEmbedder.none
+	if (apiKey === undefined || openRouterRegion(settings) === "eu") return FindingEmbedder.none
 	const model = DEFAULT_EMBEDDING_MODEL
 	return Layer.effect(FindingEmbedder)(
 		Effect.map(OpenAiEmbeddingModel.make({ model }), (embeddings) =>

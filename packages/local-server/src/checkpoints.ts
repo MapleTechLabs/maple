@@ -256,9 +256,24 @@ const checkpointErrorFields = {
 	cause: Schema.String,
 }
 
+/** Where creation failed. The CLI scrubs error messages from telemetry, so the span carries this instead. */
+export const CheckpointCreateStage = Schema.Literals([
+	"lock",
+	"prepare",
+	"backup",
+	"sync",
+	"control",
+	"commit",
+])
+export type CheckpointCreateStage = typeof CheckpointCreateStage.Type
+
 export class CheckpointCreateError extends Schema.TaggedError<CheckpointCreateError>()(
 	"@maple/cli/CheckpointCreateError",
-	{ ...checkpointErrorFields, checkpointId: CheckpointId },
+	{
+		...checkpointErrorFields,
+		checkpointId: CheckpointId,
+		stage: Schema.optionalKey(CheckpointCreateStage),
+	},
 ) {}
 
 /** Kept verbatim — it is the whole remedy the user gets. */
@@ -1797,12 +1812,22 @@ export const maintenanceOperation = <A, E>(options: {
 	readonly operation: string
 	readonly try: () => Promise<A>
 	readonly catch: (error: unknown) => E
+	/** A refusal the caller reports to the user: it leaves the span as a value, so the span closes `Ok`. */
+	readonly expected?: (error: E) => boolean
 }): Effect.Effect<A, E> =>
 	Effect.tryPromise({ try: options.try, catch: options.catch }).pipe(
 		Effect.uninterruptible,
+		Effect.map((value) => ({ ok: true as const, value })),
+		Effect.catchIf(
+			(error) => options.expected?.(error) === true,
+			(error) => Effect.succeed({ ok: false as const, error }),
+		),
 		Effect.withSpan("CheckpointService.maintenanceOperation", {
 			attributes: { "maple.checkpoint.maintenance_operation": options.operation },
 		}),
+		Effect.flatMap((outcome) =>
+			outcome.ok ? Effect.succeed(outcome.value) : Effect.fail(outcome.error),
+		),
 	)
 
 export const retireCheckpointIfEligible = async (
@@ -2256,14 +2281,17 @@ export const formatCheckpointRefreshBackoff = (
 const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (options: CheckpointOptions) {
 	const operationId = newCheckpointOperationId()
 	const checkpointId = newCheckpointId()
-	const createError = (error: unknown): CheckpointCreateError =>
-		new CheckpointCreateError({
-			dataDir: resolve(options.dataDir),
-			operationId,
-			checkpointId,
-			message: errorMessage(error),
-			cause: errorCause(error),
-		})
+	const createError =
+		(stage: CheckpointCreateStage) =>
+		(error: unknown): CheckpointCreateError =>
+			new CheckpointCreateError({
+				dataDir: resolve(options.dataDir),
+				operationId,
+				checkpointId,
+				stage,
+				message: errorMessage(error),
+				cause: errorCause(error),
+			})
 	yield* Effect.annotateCurrentSpan({
 		"maple.checkpoint.operation_id": operationId,
 		"maple.checkpoint.id": checkpointId,
@@ -2272,7 +2300,7 @@ const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (
 	// derives this span's status from that channel, and a refused precondition
 	// must not close `CheckpointService.create` as `Error`. `createCheckpoint`
 	// below re-raises it once the span has closed, so callers still see a failure.
-	return yield* withMaintenance(options.dataDir, operationId, createError, () =>
+	return yield* withMaintenance(options.dataDir, operationId, createError("lock"), () =>
 		Effect.gen(function* () {
 			const prepared = yield* Effect.tryPromise({
 				try: async () => {
@@ -2324,7 +2352,7 @@ const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (
 					await mkdir(snapshot, { mode: 0o700 })
 					return { oldState, operation, snapshot, startedAt }
 				},
-				catch: createError,
+				catch: createError("prepare"),
 			})
 			yield* postCheckpointBackup(options.host, options.port, options.dataDir, checkpointId).pipe(
 				Effect.mapError((error) =>
@@ -2339,7 +2367,7 @@ const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (
 								dataDir: resolve(options.dataDir),
 								message: MISSING_BACKUPS_CONFIG_MESSAGE,
 							})
-						: createError(error),
+						: createError("backup")(error),
 				),
 			)
 			const controlPath = eventingControlSnapshotPath(options.dataDir, checkpointId)
@@ -2349,10 +2377,10 @@ const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (
 					await assertNoSymlink(checkpointSnapshotsRoot(options.dataDir), controlPath)
 					await assertRealFile(controlPath, "checkpoint eventing control snapshot")
 				},
-				catch: createError,
+				catch: createError("sync"),
 			})
 			const controlValidation = yield* validateControlSnapshot(controlPath).pipe(
-				Effect.mapError(createError),
+				Effect.mapError(createError("control")),
 			)
 			const created = yield* Effect.tryPromise({
 				try: async () => {
@@ -2449,13 +2477,18 @@ const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (
 					)
 					return { checkpointId, path: snapshot, state, manifest }
 				},
-				catch: createError,
+				catch: createError("commit"),
 			})
 			const swept = yield* sweepUnreferencedCheckpoints(options.dataDir, created.state)
 			return { ...created, swept }
 		}),
 	).pipe(
 		Effect.tap(() => clearCheckpointFailures(options.dataDir)),
+		Effect.tapError((error) =>
+			error._tag === "@maple/cli/CheckpointCreateError" && error.stage !== undefined
+				? Effect.annotateCurrentSpan("maple.checkpoint.stage", error.stage)
+				: Effect.void,
+		),
 		Effect.tapError((error) => recordCheckpointFailure(options.dataDir, error.message)),
 		Effect.catchTag("@maple/cli/CheckpointPreconditionError", (refusal) =>
 			Effect.as(Effect.annotateCurrentSpan({ "maple.checkpoint.refused": refusal._tag }), refusal),

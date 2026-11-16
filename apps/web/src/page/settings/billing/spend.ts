@@ -35,6 +35,7 @@ export const SPEND_FEATURES = [
 	"logs",
 	"traces",
 	"metrics",
+	"profiles",
 	"browser_sessions",
 	"product_events",
 	"ai_credits",
@@ -45,6 +46,7 @@ export const FEATURE_LABELS: Record<SpendFeatureId, string> = {
 	logs: "Logs",
 	traces: "Traces",
 	metrics: "Metrics",
+	profiles: "Profiles",
 	browser_sessions: "Browser sessions",
 	product_events: "Product events",
 	ai_credits: "AI credits",
@@ -65,6 +67,8 @@ export const FEATURE_COLORS: Record<SpendFeatureId, string> = {
 	logs: "#3987e5",
 	traces: "#199e70",
 	metrics: "#9085e9",
+	// Rust: a flame-graph hue darker than amber and the lime of AI credits, so deutan CVD keeps them apart.
+	profiles: "#a3542f",
 	browser_sessions: "#d55181",
 	product_events: "light-dark(var(--chart-5), var(--chart-4))",
 	// Lime: lighter than the traces green, so the two stay apart under deutan CVD.
@@ -444,6 +448,7 @@ export interface CumulativePoint {
 	readonly logs: number | null
 	readonly traces: number | null
 	readonly metrics: number | null
+	readonly profiles: number | null
 	readonly browser_sessions: number | null
 	readonly product_events: number | null
 	readonly ai_credits: number | null
@@ -498,6 +503,7 @@ export function buildCumulativeSeries({
 		logs: (day) => day.logsGB,
 		traces: (day) => day.tracesGB,
 		metrics: (day) => day.metricsGB,
+		profiles: (day) => day.profilesGB ?? 0,
 		browser_sessions: (day) => day.browserSessions,
 		product_events: (day) => day.productEvents ?? 0,
 		ai_credits: (day) => aiCreditsByDate.get(day.date) ?? 0,
@@ -527,6 +533,7 @@ export function buildCumulativeSeries({
 		logs: 0,
 		traces: 0,
 		metrics: 0,
+		profiles: 0,
 		browser_sessions: 0,
 		product_events: 0,
 		ai_credits: 0,
@@ -567,6 +574,7 @@ export function buildCumulativeSeries({
 			logs: future ? null : accrued.logs,
 			traces: future ? null : accrued.traces,
 			metrics: future ? null : accrued.metrics,
+			profiles: future ? null : accrued.profiles,
 			browser_sessions: future ? null : accrued.browser_sessions,
 			product_events: future ? null : accrued.product_events,
 			ai_credits: future ? null : accrued.ai_credits,

@@ -896,14 +896,8 @@ describe("GcpMetricsService", () => {
 					2,
 				)
 				assert.notInclude(recorder.text(), "must not be stored")
-				// The request's Client span fails on the 403 (OTel client semantics); Maple's do not.
-				assert.deepStrictEqual(
-					Arr.filter(
-						recorder.failedSpans(),
-						(span) => !Str.startsWith("VendorHttp.request: ")(span),
-					),
-					[],
-				)
+				// A refused impersonation fails no span, the request's own Client span included.
+				assert.deepStrictEqual(recorder.failedSpans(), [])
 			}),
 			{ recorder },
 		)

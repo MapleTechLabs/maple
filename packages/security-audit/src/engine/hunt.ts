@@ -4,7 +4,7 @@
  * final-clean critic both accept no work.
  */
 import { Effect, Option, Ref, Schema, Array as Arr, Record as Rec } from "effect"
-import { criticPrompt, hunterPrompt } from "../prompts"
+import { criticPrompt, hunterPrompt, refusedBlockRefsRepair } from "../prompts"
 import { type Candidate, candidateErrors, CriticResult, HunterResult } from "../results"
 import { ledgerErrors } from "../validators"
 import {
@@ -14,13 +14,15 @@ import {
 	defer,
 	huntable,
 	type LedgerUnit,
+	present,
+	proposalNote,
 	reopen,
 	revert,
+	reviewProposal,
 	seedUnit,
-	unitRefusal,
 } from "./ledger"
 import type { AuditStoreError } from "./ports"
-import type { EngineState, Engine } from "./state"
+import type { EngineState, Engine, RepairReview } from "./state"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 const BUDGET_DEFER = "budget_cannot_reserve_critics_and_validation"
@@ -195,6 +197,39 @@ const runHunter = (
 		])
 	})
 
+/**
+ * A critic repair turn for proposals naming an unknown attack-class block. It runs only on spare
+ * budget: never for a gap critic (it defers what it accepts), and never at the cost of the
+ * final-clean critic or the validation reserve. It is kept only when it plans no less work, as
+ * `runCritic` would apply it to the same ledger.
+ */
+const unknownBlocksReview = (
+	engine: Engine,
+	kind: "post-wave" | "final-clean" | "gap",
+	accepted: (result: CriticResult) => number,
+): RepairReview<CriticResult> => ({
+	objection: (result) => {
+		const refs = Arr.dedupe(
+			Arr.flatMap(result.missing_units, (unit) => {
+				const review = reviewProposal(unit)
+				return review._tag === "Refused" ? review.unknownRefs : []
+			}),
+		)
+		return refs.length === 0 ? undefined : refusedBlockRefsRepair(refs)
+	},
+	affordable: Effect.gen(function* () {
+		if (kind === "gap") return false
+		if (engine.input.budget === null) return true
+		const quick = engine.input.profile === "quick"
+		const left = yield* engine.remaining
+		const finalCritic = kind === "post-wave" && !quick ? 1 : 0
+		const state = yield* Ref.get(engine.state)
+		const reserve = validationReserve(state, quick ? 1 : 2, left - finalCritic)
+		return left - finalCritic - reserve >= 1
+	}),
+	score: accepted,
+})
+
 /** The critic's short name for the ledger unit at `index`; `reassign_ids` answers with it. */
 const criticAlias = (index: number) => `U${index + 1}`
 
@@ -257,6 +292,76 @@ const resolveCriticIds = (ledger: ReadonlyArray<LedgerUnit>, ids: ReadonlyArray<
 	})
 
 /**
+ * What a critic's answer does to a ledger: the units it plans (new or reassigned), the ledger
+ * after it, and the proposals the ledger refused. Pure, so a repair turn is scored by the same rules.
+ */
+const planCritic = (
+	engine: Engine,
+	current: EngineState,
+	result: CriticResult,
+	agentId: string,
+	deferReason: string | undefined,
+) => {
+	// Aliases name units of the ledger the critic was shown.
+	const reassignIds = resolveCriticIds(current.ledger, result.reassign_ids)
+	const reviews = Arr.map(result.missing_units, (unit) => reviewProposal(unit))
+	const priorStatus = engine.input.prior === null ? "none" : "new"
+	const proposals = Arr.flatMap(reviews, (review) => (review._tag === "Admissible" ? [review.unit] : []))
+	// A proposal the ledger already holds is that unit (same canonical refs): neither new nor refused.
+	const seeded = Arr.filter(
+		Arr.map(proposals, (unit) => seedUnit(unit, { scope: engine.input.scopePaths, priorStatus })),
+		(unit) => !Arr.some(current.ledger, (existing) => existing.coverage_id === unit.coverage_id),
+	)
+	const admitted = admitUnits(current.ledger, seeded)
+	const newIds = new Set(
+		Arr.map(
+			Arr.filter(
+				admitted.ledger,
+				(u) => !Arr.some(current.ledger, (c) => c.coverage_id === u.coverage_id),
+			),
+			(u) => u.coverage_id,
+		),
+	)
+	const reassign = new Set(
+		Arr.filter(reassignIds, (id) =>
+			Arr.some(
+				current.ledger,
+				(u) =>
+					u.coverage_id === id &&
+					(u.status === "blocked" || u.status === "covered" || u.status === "candidate"),
+			),
+		),
+	)
+	const reopened = reopen(admitted.ledger, reassign, `coverage critic ${agentId} reassigned this unit`)
+	const resolved = new Set(result.resolved_prior_leads)
+	// A carried unit links its prior record through `carried_fingerprint`; earlier critics' marks stay.
+	const marked = Arr.map(reopened, (unit) => {
+		const linked =
+			unit.carried_fingerprint === undefined
+				? unit.result_fingerprints
+				: [...unit.result_fingerprints, unit.carried_fingerprint]
+		const leads = Arr.filter(linked, (fp) => resolved.has(fp))
+		return leads.length === 0
+			? unit
+			: {
+					...unit,
+					resolved_prior_leads: [...new Set([...(unit.resolved_prior_leads ?? []), ...leads])],
+				}
+	})
+	const planned = new Set(
+		Arr.filter([...newIds, ...reassign], (id) =>
+			Option.exists(
+				Arr.findFirst(marked, (u) => u.coverage_id === id),
+				(u) => u.status === "planned",
+			),
+		),
+	)
+	const ledger = deferReason === undefined ? marked : defer(marked, planned, deferReason)
+	const ledgerRefused = Arr.map(admitted.refused, (r) => `refused: ${r.coverage_id}: ${r.reason}`)
+	return { accepted: planned.size, ledgerRefused, ledger }
+}
+
+/**
  * Runs one critic and applies what it accepts. Returns the amount of accepted work, or undefined.
  * With `deferAccepted` (quick profile, or a budget that cannot fund another wave) accepted work is
  * recorded as deferred with `deferReason` instead of queued.
@@ -295,93 +400,53 @@ const runCritic = (
 			},
 			engine.context(agentId),
 		)
-		// One repair turn before the run loses its planning: a critic's JSON is long and easy to break.
-		const result = yield* engine.invokeRepairing("critic", agentId, prompt, CriticResult)
+		// One repair turn before the run loses its planning: a critic's JSON is long and easy to break,
+		// and its block references easy to invent.
+		const result = yield* engine.invokeRepairing(
+			"critic",
+			agentId,
+			prompt,
+			CriticResult,
+			unknownBlocksReview(
+				engine,
+				kind,
+				(answer) => planCritic(engine, s, answer, agentId, deferReason).accepted,
+			),
+		)
 		if (result === undefined) return undefined
-		// Aliases name units of the ledger the critic was shown.
-		const reassignIds = resolveCriticIds(s.ledger, result.reassign_ids)
-		const refusals = Arr.flatMap(result.missing_units, (unit) => {
-			const reason = unitRefusal(unit)
-			return reason === undefined ? [] : [`${unit.surface} / ${unit.attack_class}: ${reason}`]
-		})
+		const reviews = Arr.map(result.missing_units, (unit) => ({ unit, review: reviewProposal(unit) }))
+		const notes = Arr.flatMap(reviews, ({ unit, review }) => present(proposalNote(unit, review)))
+		const reviewRefused = Arr.filter(reviews, ({ review }) => review._tag === "Refused").length
 		const outcome = yield* engine.mutate((current) => {
-			const priorStatus = engine.input.prior === null ? "none" : "new"
-			const proposals = Arr.filter(result.missing_units, (unit) => unitRefusal(unit) === undefined)
-			// A proposal the ledger already holds is that unit (same canonical refs): neither new nor refused.
-			const seeded = Arr.filter(
-				Arr.map(proposals, (unit) => seedUnit(unit, { scope: engine.input.scopePaths, priorStatus })),
-				(unit) => !Arr.some(current.ledger, (existing) => existing.coverage_id === unit.coverage_id),
-			)
-			const admitted = admitUnits(current.ledger, seeded)
-			const newIds = new Set(
-				Arr.map(
-					Arr.filter(
-						admitted.ledger,
-						(u) => !Arr.some(current.ledger, (c) => c.coverage_id === u.coverage_id),
-					),
-					(u) => u.coverage_id,
-				),
-			)
-			const reassign = new Set(
-				Arr.filter(reassignIds, (id) =>
-					Arr.some(
-						current.ledger,
-						(u) =>
-							u.coverage_id === id &&
-							(u.status === "blocked" || u.status === "covered" || u.status === "candidate"),
-					),
-				),
-			)
-			const reopened = reopen(
-				admitted.ledger,
-				reassign,
-				`coverage critic ${agentId} reassigned this unit`,
-			)
-			const resolved = new Set(result.resolved_prior_leads)
-			// A carried unit links its prior record through `carried_fingerprint`; earlier critics' marks stay.
-			const marked = Arr.map(reopened, (unit) => {
-				const linked =
-					unit.carried_fingerprint === undefined
-						? unit.result_fingerprints
-						: [...unit.result_fingerprints, unit.carried_fingerprint]
-				const leads = Arr.filter(linked, (fp) => resolved.has(fp))
-				return leads.length === 0
-					? unit
-					: {
-							...unit,
-							resolved_prior_leads: [
-								...new Set([...(unit.resolved_prior_leads ?? []), ...leads]),
-							],
-						}
-			})
-			const planned = new Set(
-				Arr.filter([...newIds, ...reassign], (id) =>
-					Option.exists(
-						Arr.findFirst(marked, (u) => u.coverage_id === id),
-						(u) => u.status === "planned",
-					),
-				),
-			)
-			const ledger = deferReason === undefined ? marked : defer(marked, planned, deferReason)
-			const refused = [
-				...refusals,
-				...Arr.map(admitted.refused, (r) => `${r.coverage_id}: ${r.reason}`),
-			]
+			const plan = planCritic(engine, current, result, agentId, deferReason)
 			return [
-				{ accepted: planned.size, refused },
-				{ ...current, ledger, uncovered: [] },
+				{ accepted: plan.accepted, ledgerRefused: plan.ledgerRefused },
+				{ ...current, ledger: plan.ledger, uncovered: [] },
 			]
 		})
 		yield* engine.persist
-		// A proposal the ledger cannot take is disclosed coverage, never silently dropped.
-		if (outcome.refused.length > 0) {
-			yield* engine.gap(`${agentId} proposed ${outcome.refused.length} units the ledger refused`)
-			yield* Effect.forEach(outcome.refused, (message) =>
-				engine.event({ _tag: "Note", message: `critic unit refused: ${message}` }),
+		// A proposal the ledger cannot take is disclosed coverage, never silently dropped: one note per unit.
+		yield* Effect.forEach(
+			[...notes, ...outcome.ledgerRefused],
+			(message) => engine.event({ _tag: "Note", message: `critic unit ${message}` }),
+			{ discard: true },
+		)
+		const refusedCount = reviewRefused + outcome.ledgerRefused.length
+		yield* Effect.annotateCurrentSpan({
+			"maple.security_audit.proposed_units": result.missing_units.length,
+			"maple.security_audit.accepted_units": outcome.accepted,
+			"maple.security_audit.refused_units": refusedCount,
+		})
+		if (refusedCount > 0)
+			yield* engine.gap(
+				`${agentId} proposed ${refusedCount} of ${result.missing_units.length} units the ledger refused`,
 			)
-		}
 		return outcome.accepted
-	})
+	}).pipe(
+		Effect.withSpan("SecurityAudit.critic", {
+			attributes: { "maple.security_audit.critic_kind": kind, "maple.security_audit.wave": wave },
+		}),
+	)
 
 /** Phase 2 to completion: waves, post-wave critics, and the final-clean critic. */
 export const runHunting = (engine: Engine) =>

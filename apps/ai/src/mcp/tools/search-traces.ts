@@ -32,7 +32,9 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 				"Only this service (exact `service.name`), matched on the entry span, or on every span when `span_name` is set",
 			),
 			environment: P.environment(),
-			has_error: P.optionalFlag("Only spans with status Error"),
+			has_error: P.optionalFlag(
+				"true: only spans with status Error. false: only spans without it. Omit for both",
+			),
 			min_duration_ms: P.optionalNumber("Minimum duration in milliseconds"),
 			max_duration_ms: P.optionalNumber("Maximum duration in milliseconds"),
 			http_method: P.optionalText("Only spans with this HTTP method"),
@@ -62,7 +64,7 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
 				"maple.ai.service": params.service ?? "all",
-				"maple.ai.has_error": params.has_error ?? false,
+				"maple.ai.has_error": params.has_error === undefined ? "any" : params.has_error,
 				"maple.ai.limit": params.limit,
 				"maple.ai.offset": params.offset,
 			})
@@ -200,6 +202,14 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 				["Time range", `${output.timeRange.start} to ${output.timeRange.end}`],
 				["Service", filters.service],
 				["Environment", filters.environment],
+				[
+					"Status",
+					filters.hasError === undefined
+						? undefined
+						: filters.hasError
+							? "Error only"
+							: "non-Error only",
+				],
 				[
 					"Span name",
 					filters.spanName === undefined

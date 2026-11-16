@@ -92,6 +92,23 @@ describe("scoped delete plan", () => {
 		})
 		expect(problems).toContain("trace_list_mv_mv: writes excluded trace_list_mv from traces")
 	})
+
+	test("refuses a table fed from excluded session data that a rebuild would wipe", () => {
+		const problems = validateDeletePlan(LOCAL_SCHEMA_MANIFEST, {
+			...TABLE_DELETE_PLAN,
+			product_events: {
+				strategy: "scoped",
+				time: "Timestamp",
+				service: ["ServiceName"],
+				namespace: null,
+				env: null,
+				recompute: "views",
+			},
+		})
+		expect(problems).toContain(
+			"product_events_mv: writes product_events from excluded session_events with no keep predicate",
+		)
+	})
 })
 
 const HOUR_MS = 3_600_000
@@ -314,6 +331,10 @@ describeWithChdb("namespace delete against chDB", () => {
 			`INSERT INTO traces (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, Duration, StatusCode, ResourceAttributes, SpanAttributes) VALUES ${call("a", "web", "pr-1")}, ${call("b", "caller", "pr-2")}`,
 		)
 		for (const statement of await Effect.runPromise(serviceMapRollupInserts(hourMs))) db.exec(statement)
+		// A browser page view in the same hour; product_events_mv copies it into product_events.
+		db.exec(
+			`INSERT INTO session_events (OrgId, SessionId, Timestamp, Type, Url, Attributes) VALUES ('local', 'sess-1', '${iso(at)}', 'navigation', 'https://shop.test/cart', map())`,
+		)
 	}, 120_000)
 
 	afterAll(() => {
@@ -385,6 +406,9 @@ describeWithChdb("namespace delete against chDB", () => {
 		).toBe(1)
 		expect(edge("web")).toBe(0)
 		expect(edge("caller")).toBe(1)
+		// product_events was rebuilt for the hour, but its browser rows cannot be recomputed.
+		expect(strategy("product_events")).toBe("rebuild")
+		expect(count("SELECT toString(count()) AS n FROM product_events WHERE Source = 'browser'")).toBe(1)
 		expect(existsSync(pendingDeletePath(dataDir))).toBe(false)
 	})
 })

@@ -376,4 +376,41 @@ describe("McpToolExecutorLoader", () => {
 			prewarmed: ["prewarm", "reused"],
 		})
 	})
+
+	it("reports a tools/call that waited on another request's running build as joined, not reused", async () => {
+		const gate = Deferred.makeUnsafe<void>()
+		const entered = Deferred.makeUnsafe<void>()
+		const { counts, loader } = countingGraph({ failFirstBuild: false, gate, entered })
+		const kinds = await Effect.runPromise(
+			Effect.gen(function* () {
+				const executors = yield* McpToolExecutorLoader
+				const builder = yield* Effect.forkChild(executors.loadReportingBuild)
+				yield* Deferred.await(entered)
+				// Asks while the only build is held at the gate.
+				const waiter = yield* Effect.forkChild(executors.loadReportingBuild)
+				yield* Effect.yieldNow
+				yield* Deferred.succeed(gate, undefined)
+				const first = yield* Fiber.join(builder)
+				const second = yield* Fiber.join(waiter)
+				const third = yield* Effect.forkChild(executors.loadReportingBuild).pipe(
+					Effect.flatMap(Fiber.join),
+				)
+				return [first.build, second.build, third.build]
+			}).pipe(
+				Effect.provide(
+					loader.pipe(
+						Layer.provideMerge(
+							Layer.mergeAll(createTestDb(createdDbs).layer, SandboxFetcher.none),
+						),
+					),
+				),
+				Effect.scoped,
+			),
+		)
+		expect({ kinds, ...counts() }).toEqual({
+			kinds: ["inline", "joined", "reused"],
+			imports: 1,
+			builds: 1,
+		})
+	})
 })

@@ -2,6 +2,7 @@
 import { describe, it } from "@effect/vitest"
 import { Deferred, Effect, Array as Arr, String as Str } from "effect"
 import { beforeEach, expect, vi } from "vitest"
+import { MAX_TRACES_LIST_OFFSET } from "@maple/domain/query-engine"
 import { mockedWarehouse } from "./testing"
 
 const executeQueryEngineMock = vi.fn()
@@ -229,6 +230,23 @@ describe("tinybird traces attribute filter params", () => {
 			)
 
 			expect(isWarehouseApiError(error) && error._tag).toBe("@maple/web/errors/WarehouseTransformError")
+		}).pipe(mockedWarehouse),
+	)
+
+	it.effect("refuses an offset past the list's cap as invalid input, without reading", () =>
+		Effect.gen(function* () {
+			const error = yield* Effect.flip(
+				listTraces({
+					data: {
+						startTime: "2026-02-01 00:00:00",
+						endTime: "2026-02-01 01:00:00",
+						offset: MAX_TRACES_LIST_OFFSET + 100,
+					},
+				}),
+			)
+
+			expect(isWarehouseApiError(error) && error._tag).toBe("@maple/web/errors/WarehouseDecodeError")
+			expect(executeQueryEngineMock).not.toHaveBeenCalled()
 		}).pipe(mockedWarehouse),
 	)
 })

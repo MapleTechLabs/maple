@@ -5,9 +5,11 @@ import {
 	type AgentContext,
 	candidateVerifierPrompt,
 	companionFileOf,
+	criticPrompt,
 	hunterPrompt,
 	recordVerifierPrompt,
-	unknownBlockRefs,
+	refusedBlockRefsRepair,
+	synthesisPrompt,
 	VERBATIM,
 } from "./prompts"
 import {
@@ -15,6 +17,7 @@ import {
 	COMPANION_REQUIRED_SECTIONS,
 	findBlock,
 	ORDINARY_BLOCK_REFS,
+	SKILL_BLOCK_REFS,
 	skillFile,
 } from "./skill"
 import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
@@ -152,17 +155,6 @@ describe("companionFileOf", () => {
 	})
 })
 
-describe("unknownBlockRefs", () => {
-	it("flags a reference the skill does not define", () => {
-		expect(
-			unknownBlockRefs({
-				...plannedUnit,
-				selected_companion_blocks: ["DATA-ISOLATION-AND-LIFECYCLE.md#tenant-isolation"],
-			}),
-		).toEqual(["DATA-ISOLATION-AND-LIFECYCLE.md#tenant-isolation"])
-	})
-})
-
 describe("estimated severity", () => {
 	const estimate = {
 		likelihood: { score: "low", reason: "needs a leaked key id" },
@@ -202,5 +194,52 @@ describe("estimated severity", () => {
 		const confirmedPrompt = recordVerifierPrompt(confirmedRecord, context, null)
 		expect(confirmedPrompt).not.toContain("The record's current estimate")
 		expect(confirmedPrompt).not.toContain("The record carries no estimate yet")
+	})
+})
+
+describe("valid block references in planning prompts", () => {
+	const synthesis = synthesisPrompt(
+		{ target: "acme/api", profile: "deep", scopePaths: [], reconResults: [], priorSummary: "none" },
+		context,
+	)
+	const critic = criticPrompt(
+		{
+			kind: "post-wave",
+			architectureMd: "",
+			ledger: [],
+			candidateStates: [],
+			priorGapSummary: "none",
+			hunterUncovered: [],
+		},
+		context,
+	)
+	const lines = (text: string) => new Set(Str.split("\n")(text))
+
+	it("lists every block the skill defines, one per line, to the critic and to synthesis", () => {
+		const missing = (text: string) => Arr.filter(SKILL_BLOCK_REFS, (ref) => !lines(text).has(ref))
+		expect(missing(critic)).toEqual([])
+		expect(missing(synthesis)).toEqual([])
+	})
+
+	it("gives a critic repair turn the refused references and every valid one", () => {
+		const repair = refusedBlockRefsRepair([
+			"WEB-PROTOCOL-AND-AUTH.md#Bearer tokens",
+			"WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+			"DATA-ISOLATION-AND-LIFECYCLE.md#Export, backup, restore, and migration attack classes",
+		])
+		expect(
+			lines(repair).has(
+				"- DATA-ISOLATION-AND-LIFECYCLE.md#Export, backup, restore, and migration attack classes: a companion block, not an ordinary attack-class block; list it in selected_companion_blocks instead",
+			),
+		).toBe(true)
+		expect(lines(repair).has("- WEB-PROTOCOL-AND-AUTH.md#Bearer tokens: not a block of the skill")).toBe(
+			true,
+		)
+		expect(
+			lines(repair).has(
+				"- WEB-PROTOCOL-AND-AUTH.md#Core discipline: a section the parent adds to every unit; name an ordinary_attack_class_block instead",
+			),
+		).toBe(true)
+		expect(Arr.filter(SKILL_BLOCK_REFS, (ref) => !lines(repair).has(ref))).toEqual([])
 	})
 })

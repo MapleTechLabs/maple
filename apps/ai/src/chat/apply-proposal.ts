@@ -12,6 +12,7 @@
  * forensic context on the audit entry.
  */
 import {
+	chatSessionKind,
 	connectorApprovalTenant,
 	decidedBy,
 	orgIdFromChatSessionId,
@@ -128,7 +129,8 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 
 	const program = Effect.gen(function* () {
 		const executor = yield* McpToolExecutor
-		const tenant = yield* resolveTenant(orgId, input)
+		const resolved = yield* resolveTenant(orgId, input)
+		const tenant = { ...resolved, chatMode: chatSessionKind(input.sessionId).mode }
 		const result = yield* executor.execute(
 			tenant,
 			input.tool,

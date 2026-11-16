@@ -20,19 +20,30 @@ export type ActionBarOptions<M> = Readonly<{
 	attributes?: ReadonlyArray<Attribute<M>>
 }>
 
+// The `after` strip covers the bar's offset and its shadow the scroll padding below, so rows
+// scrolling past never show under the bar; a shadow adds no scroll height. A surface that is not
+// `background` sets `--action-bar-backdrop`.
 const BAR =
-	"sticky bottom-4 z-10 mt-auto rounded-lg border bg-popover py-2 pr-2 pl-4 text-popover-foreground shadow-popup"
+	"sticky bottom-4 z-10 mt-auto rounded-lg border bg-popover py-2 pr-2 pl-4 text-popover-foreground shadow-popup after:pointer-events-none after:absolute after:-inset-x-px after:top-full after:h-4 after:bg-(--action-bar-backdrop,var(--color-background)) after:shadow-backdrop-below"
 
 export const actionBar = <M>(h: HtmlBuilder<M>, options: ActionBarOptions<M>): Html => {
 	const attributes = [h.AriaLabel(options.label), ...(options.attributes ?? [])]
 	const row = hstack(h, { gap: "4", align: "center", justify: "between", wrap: true }, [
 		hstack(h, { gap: "2", align: "center", shrink: true }, [...(options.leading ?? [])]),
 		// The buttons wrap onto a second line on a narrow screen rather than run past the edge.
-		hstack(h, { gap: "1.5", align: "center", wrap: true, justify: "end", shrink: true, className: "ml-auto" }, options.actions),
+		hstack(
+			h,
+			{ gap: "1.5", align: "center", wrap: true, justify: "end", shrink: true, className: "ml-auto" },
+			options.actions,
+		),
 	])
 	const children =
 		options.notice === undefined || options.notice.length === 0
 			? [row]
 			: [vstack(h, { gap: "2", className: "pt-1" }, [...options.notice, row])]
-	return vstack(h, { as: options.as ?? "section", className: cn(BAR, options.className), attributes }, children)
+	return vstack(
+		h,
+		{ as: options.as ?? "section", className: cn(BAR, options.className), attributes },
+		children,
+	)
 }
