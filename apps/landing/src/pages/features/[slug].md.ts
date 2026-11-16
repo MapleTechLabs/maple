@@ -8,19 +8,25 @@
  * the same behaviour as a hazard for `getStaticPaths`, so don't "fix" it.
  *
  * Screenshots are dropped: their `alt` text describes a capture rather than
- * making the argument, which is noise in a text-only representation.
+ * making the argument, which is noise in a text-only representation. Extra
+ * sections are kept, since some carry the install commands themselves.
  */
 import type { APIRoute, GetStaticPaths } from "astro"
 import { featureBySlug, features } from "../../lib/features"
 import type { Feature } from "../../lib/page-registry"
 import { useCaseBySlug } from "../../lib/use-cases"
 import { absolute, blocks, docHeader, markdown } from "../../lib/page-markdown"
+import { planRows } from "../../lib/feature-plan"
+import { sectionMarkdown } from "../../lib/feature-sections"
+import { getOffer } from "../../lib/pricing-offer"
+import { scaleProofMarkdown } from "../../lib/scale-proof"
+import * as m from "../../paraglide/messages.js"
 import { Array as Arr } from "effect"
 
 export const getStaticPaths: GetStaticPaths = () =>
 	Arr.map(features, (feature) => ({ params: { slug: feature.slug }, props: { feature } }))
 
-export const GET: APIRoute = ({ props, site }) => {
+export const GET: APIRoute = async ({ props, site }) => {
 	const { feature } = props as { feature: Feature }
 
 	const facts = feature.panel
@@ -33,6 +39,24 @@ export const GET: APIRoute = ({ props, site }) => {
 				),
 			)
 		: undefined
+
+	const plan = blocks(
+		`## ${m.feat_plan_title()}`,
+		Arr.join(
+			Arr.map(planRows(feature.plan, await getOffer()), ({ key, value }) => `- **${key}**: ${value}`),
+			"\n",
+		),
+		scaleProofMarkdown(site),
+		Arr.join(
+			[
+				...(feature.plan.docs
+					? [`- [${m.feat_plan_docs()}](${absolute(site, `${feature.plan.docs}.md`)})`]
+					: []),
+				`- [${m.feat_plan_pricing()}](${absolute(site, "/pricing.md")})`,
+			],
+			"\n",
+		),
+	)
 
 	const related = blocks(
 		"## Related",
@@ -57,6 +81,8 @@ export const GET: APIRoute = ({ props, site }) => {
 		blocks(
 			docHeader(feature.heroTitle(), feature.heroLede()),
 			facts,
+			plan,
+			...Arr.map(feature.extraSections, (id) => sectionMarkdown(id, site)),
 			`## ${feature.capTitle()}`,
 			...Arr.map(feature.capabilities, (cap) => `### ${cap.op}: ${cap.title()}\n\n${cap.body()}`),
 			related,

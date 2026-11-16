@@ -1,6 +1,13 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
-import { GitCommitSha, VcsInstallation, VcsRepo } from "@maple/domain/http"
+import {
+	GitCommitSha,
+	VcsInstallation,
+	VcsInstallationGoneError,
+	VcsRepo,
+	VcsRepositoryBlockedError,
+	VcsRepoUnavailableError,
+} from "@maple/domain/http"
 import {
 	Deferred,
 	Effect,
@@ -21,7 +28,7 @@ import osvFixture from "../security/__fixtures__/osv.json"
 import { DependencyScanner, DependencySources, MAX_LOCKFILE_BYTES } from "./DependencyScanner"
 import { DependencyScanStore } from "./DependencyScanStore"
 import { RESCAN_AFTER_MS } from "./production"
-import { MAX_LOCKFILES, MAX_MANIFEST_BYTES } from "./lockfile-selection"
+import { MAX_LOCKFILES, MAX_MANIFEST_BYTES, MAX_SKIPPED_LOCKFILES } from "./lockfile-selection"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -107,6 +114,8 @@ interface World {
 	head: GitCommitSha | null
 	files: Map<string, { readonly sha: string; readonly content: string; readonly size?: number }>
 	truncated: boolean
+	/** What the provider answers a ref lookup with instead of the head. */
+	refusal: VcsRepositoryBlockedError | VcsRepoUnavailableError | VcsInstallationGoneError | undefined
 	osvDown: boolean
 	/** Where the branch head moves while the tree is read, as a concurrent push would. */
 	headAfterTree: GitCommitSha | null | undefined
@@ -131,6 +140,7 @@ const world = (files: Record<string, string>): World => ({
 		]),
 	),
 	truncated: false,
+	refusal: undefined,
 	osvDown: false,
 	headAfterTree: undefined,
 	stallBlobs: undefined,
@@ -142,9 +152,11 @@ const world = (files: Record<string, string>): World => ({
 
 const source = (state: World) => ({
 	resolveRef: () =>
-		Effect.sync(() => {
+		Effect.suspend(() => {
 			state.calls.resolveRef += 1
-			return Option.fromNullOr(state.head)
+			return state.refusal === undefined
+				? Effect.succeed(Option.fromNullOr(state.head))
+				: Effect.fail(state.refusal)
 		}),
 	fetchTreeFiles: () =>
 		Effect.sync(() => {
@@ -424,6 +436,50 @@ describe("DependencyScanner", () => {
 		}).pipe(Effect.provide(scannerFor(state)))
 	})
 
+	it.effect("records skipped lockfiles only up to a cap, and leaves a scan past it unreconciled", () => {
+		const total = MAX_LOCKFILES + MAX_SKIPPED_LOCKFILES + 5
+		const many = Rec.fromEntries(
+			Array.from({ length: total }, (_, i): [string, string] => [
+				`pkg${i}/package-lock.json`,
+				packageLock("4.17.15"),
+			]),
+		)
+		const state = world(many)
+		return Effect.gen(function* () {
+			const scanner = yield* DependencyScanner
+			const outcome = yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			assert.strictEqual(outcome._tag, "Scanned")
+			if (outcome._tag !== "Scanned") return
+			assert.strictEqual(outcome.scan.lockfiles.length, MAX_LOCKFILES + MAX_SKIPPED_LOCKFILES)
+			assert.strictEqual(
+				outcome.scan.error,
+				`5 lockfiles past the ${MAX_LOCKFILES + MAX_SKIPPED_LOCKFILES} a scan records were left out`,
+			)
+		}).pipe(Effect.provide(scannerFor(state)))
+	})
+
+	it.effect("rescans a push that adds a lockfile past the record cap to a full scan", () => {
+		const many = Rec.fromEntries(
+			Array.from({ length: MAX_LOCKFILES + MAX_SKIPPED_LOCKFILES }, (_, i): [string, string] => [
+				`pkg${i}/package-lock.json`,
+				packageLock("4.17.15"),
+			]),
+		)
+		const state = world(many)
+		return Effect.gen(function* () {
+			const scanner = yield* DependencyScanner
+			const first = yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			assert.isTrue(first._tag === "Scanned" && first.scan.error === null)
+			state.head = sha("b")
+			state.files.set("zzz/deep/new/package-lock.json", {
+				sha: "deep-1",
+				content: packageLock("4.17.15"),
+			})
+			const again = yield* scanner.scan(installation, repository, { trigger: "push" })
+			assert.strictEqual(again._tag, "Scanned")
+		}).pipe(Effect.provide(scannerFor(state)))
+	})
+
 	it.effect("rescans a yarn repository on every push, since package.json decides direct and dev", () => {
 		const yarnLock = '"lodash@4.17.15":\n  version "4.17.15"\n'
 		const state = world({
@@ -575,7 +631,7 @@ describe("DependencyScanner", () => {
 	})
 
 	it.effect(
-		"fails a scan whose tree listing was cut short instead of fixing the unlisted lockfiles' findings",
+		"records a scan whose tree listing was cut short as failed instead of fixing the unlisted lockfiles' findings",
 		() => {
 			const state = world({ "package-lock.json": packageLock("4.17.15") })
 			return Effect.gen(function* () {
@@ -584,10 +640,11 @@ describe("DependencyScanner", () => {
 				state.head = sha("b")
 				state.truncated = true
 				state.files.delete("package-lock.json")
-				const error = yield* Effect.flip(
-					scanner.scan(installation, repository, { trigger: "schedule" }),
-				)
-				assert.include(error.message, "too large")
+				const outcome = yield* scanner.scan(installation, repository, { trigger: "schedule" })
+				assert.strictEqual(outcome._tag, "TreeTooLarge")
+				if (outcome._tag !== "TreeTooLarge") return
+				assert.deepStrictEqual([outcome.scan.status, outcome.scan.commitSha], ["failed", sha("b")])
+				assert.include(outcome.scan.error ?? "", "too large")
 				assert.isTrue(Arr.every(yield* findingsOf, (finding) => finding.status === "open"))
 			}).pipe(Effect.provide(scannerFor(state)))
 		},
@@ -599,14 +656,41 @@ describe("DependencyScanner", () => {
 			const scanner = yield* DependencyScanner
 			const store = yield* DependencyScanStore
 			state.truncated = true
-			yield* Effect.flip(scanner.scan(installation, repository, { trigger: "push" }))
+			const first = yield* scanner.scan(installation, repository, { trigger: "push" })
+			assert.strictEqual(first._tag, "TreeTooLarge")
 			state.head = sha("b")
 			const again = yield* scanner.scan(installation, repository, { trigger: "push" })
 			assert.strictEqual(again._tag, "Unchanged")
 			assert.strictEqual((yield* store.listScans({ orgId: repository.orgId, limit: 10 })).length, 1)
 			// Scan now records its own result, so the page sees the scan it asked for.
-			yield* Effect.flip(scanner.scan(installation, repository, { trigger: "manual" }))
+			yield* scanner.scan(installation, repository, { trigger: "manual" })
 			assert.strictEqual((yield* store.listScans({ orgId: repository.orgId, limit: 10 })).length, 2)
+		}).pipe(Effect.provide(scannerFor(state)))
+	})
+
+	it.effect("answers a repository the provider blocks or lost as unreachable, recording no scan", () => {
+		const state = world({ "package-lock.json": packageLock("4.17.15") })
+		const refusals = [
+			new VcsRepositoryBlockedError({ message: "Repository access blocked", status: 451 }),
+			new VcsRepoUnavailableError({ message: "Not Found" }),
+			new VcsInstallationGoneError({ message: "Not Found" }),
+		]
+		return Effect.gen(function* () {
+			const scanner = yield* DependencyScanner
+			const store = yield* DependencyScanStore
+			const reasons = yield* Effect.forEach(refusals, (refusal) => {
+				state.refusal = refusal
+				return scanner
+					.scan(installation, repository, { trigger: "schedule" })
+					.pipe(
+						Effect.map((outcome) =>
+							outcome._tag === "RepositoryUnreachable" ? outcome.reason : outcome._tag,
+						),
+					)
+			})
+			assert.deepStrictEqual(reasons, ["blocked", "unavailable", "installation_gone"])
+			assert.strictEqual((yield* store.listScans({ orgId: repository.orgId, limit: 10 })).length, 0)
+			assert.strictEqual(state.calls.fetchTreeFiles, 0)
 		}).pipe(Effect.provide(scannerFor(state)))
 	})
 

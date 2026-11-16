@@ -1,0 +1,65 @@
+---
+/**
+ * PlanFacts: what the feature costs, how long it keeps data, the production
+ * proof and the setup doc. Rows come from `planRows`, which the `.md` twin also
+ * renders, so the two can't disagree. It sits between the ledger and the cross
+ * links on the same `bg-bg-deep` floor, so it takes a hairline, and its links stay
+ * neutral to keep the amber budget for the closing CTA.
+ */
+import * as m from "../../paraglide/messages.js";
+import type { PlanRow } from "../../lib/feature-plan";
+
+interface Props {
+	rows: PlanRow[];
+	docsHref: string | null;
+	pricingHref: string;
+	proofHref: string;
+	class?: string;
+}
+
+const { rows, docsHref, pricingHref, proofHref, class: className = "" } = Astro.props;
+---
+
+<section class={`bg-bg-deep ${className}`}>
+	<div class="shell py-16 md:py-24">
+		<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{m.feat_plan_eyebrow()}</p>
+		<h2
+			class="mt-4 max-w-[24ch] font-display text-2xl font-medium leading-[1.08] tracking-[-0.02em] text-fg md:text-3xl"
+		>
+			{m.feat_plan_title()}
+		</h2>
+
+		<dl class="mt-10">
+			{
+				rows.map((row) => (
+					<div class="grid gap-x-8 gap-y-1 border-t border-border py-4 lg:grid-cols-[20rem_1fr]">
+						<dt class="op-key pt-px leading-relaxed lg:normal-case lg:tracking-[0.08em]">{row.key}</dt>
+						<dd class="min-w-0 max-w-[72ch] text-[13px] leading-relaxed text-fg">{row.value}</dd>
+					</div>
+				))
+			}
+			<div class="border-t border-border" aria-hidden="true"></div>
+		</dl>
+
+		<p class="mt-6 max-w-[72ch] text-[13px] leading-relaxed text-fg-muted">
+			<span class="text-fg">{m.scale_proof_label()}:</span>
+			{m.scale_proof()}
+			<a href={proofHref} class="text-fg underline decoration-border underline-offset-4 hover:decoration-fg">
+				{m.scale_proof_link()}
+			</a>
+		</p>
+
+		<div class="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-[13px]">
+			{
+				docsHref && (
+					<a href={docsHref} class="text-fg underline decoration-border underline-offset-4 hover:decoration-fg">
+						{m.feat_plan_docs()} →
+					</a>
+				)
+			}
+			<a href={pricingHref} class="text-fg underline decoration-border underline-offset-4 hover:decoration-fg">
+				{m.feat_plan_pricing()} →
+			</a>
+		</div>
+	</div>
+</section>

@@ -5,6 +5,9 @@
 // contracts outside production so worker startup imports only this literal.
 
 export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
+	"@maple/backend/vcs/VcsSourceFileNotFoundError",
+	"@maple/backend/vcs/VcsSourceRefNotFoundError",
+	"@maple/backend/vcs/VcsSourceRepositoryNotFoundError",
 	"@maple/http/ai-sessions/AiSessionTooLargeError",
 	"@maple/http/ai-triage/AiTriageForbiddenError",
 	"@maple/http/ai-triage/AiTriageValidationError",
@@ -22,6 +25,11 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/dependency-scan/DependencyFindingNotFoundError",
 	"@maple/http/dependency-scan/DependencyScanForbiddenError",
 	"@maple/http/dependency-scan/DependencyScanRepositoryNotFoundError",
+	"@maple/http/enterprise-sso/EnterpriseSsoConflictError",
+	"@maple/http/enterprise-sso/EnterpriseSsoForbiddenError",
+	"@maple/http/enterprise-sso/EnterpriseSsoInvalidError",
+	"@maple/http/enterprise-sso/EnterpriseSsoNotEntitledError",
+	"@maple/http/enterprise-sso/EnterpriseSsoNotFoundError",
 	"@maple/http/errors/ActorNotFoundError",
 	"@maple/http/errors/AlertDestinationInUseError",
 	"@maple/http/errors/AlertDestinationNotFoundError",

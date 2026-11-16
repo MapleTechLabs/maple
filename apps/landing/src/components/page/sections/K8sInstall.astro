@@ -10,21 +10,9 @@
  * works or it isn't a button.
  */
 import * as m from "../../../paraglide/messages.js";
+import { K8S_INSTALL_STEPS } from "../../../lib/feature-sections";
 
-const installSteps = [
-	{
-		caption: m.page_k8s_install_step_1(),
-		code: "kubectl create namespace maple\nkubectl -n maple create secret generic maple-ingest-key \\\n  --from-literal=ingest-key=$MAPLE_INGEST_KEY",
-	},
-	{
-		caption: m.page_k8s_install_step_2(),
-		code: "helm upgrade --install maple-k8s-infra \\\n  oci://ghcr.io/mapletechlabs/charts/maple-k8s-infra \\\n  --namespace maple \\\n  --set maple.ingestKey.existingSecret.name=maple-ingest-key \\\n  --set maple.ingestKey.existingSecret.key=ingest-key \\\n  --set global.clusterName=production",
-	},
-	{
-		caption: m.page_k8s_install_step_3(),
-		code: "kubectl -n maple rollout status daemonset/maple-k8s-infra-agent",
-	},
-];
+const installSteps = K8S_INSTALL_STEPS.map((step) => ({ caption: step.caption(), code: step.code }));
 ---
 
 <section class="border-t border-border bg-bg">

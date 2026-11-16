@@ -82,10 +82,14 @@ export interface AgentBudget {
  *
  * Runaway guards only, far above the 54 calls the worst observed run made; the wall clock is what
  * ends a stuck pass. A run cost about $0.04 at 79% cache reads (2026-09-19), so a long one is cheap.
+ *
+ * 15 minutes: at 10, 17% of passes ran out of clock (2026-11-11..16) after 9-17 model calls that
+ * spent 90% of the pass streaming at about 45 tokens a second. The 80% warning at 10 minutes left
+ * room for one such call; at 12 it leaves room for two.
  */
 export const INVESTIGATION_BUDGET: AgentBudget = {
 	maxToolCalls: 200,
-	maxDuration: "10 minutes",
+	maxDuration: "15 minutes",
 	tokenBudget: 25_600_000,
 	completionReserveTokens: 64_000,
 	// Without its clock the pass ran into the 10-minute rail instead of submitting before it.
@@ -101,12 +105,18 @@ export const INVESTIGATION_BUDGET: AgentBudget = {
  */
 export const PR_REVIEW_BUDGET: AgentBudget = {
 	maxToolCalls: 500,
-	// Twice this plus the margin must stay under `TURN_STALE_MS`: a pass and its close-out.
+	// This plus `CLOSE_OUT_MAX_DURATION` and the margin must stay under `TURN_STALE_MS`.
 	maxDuration: "10 minutes",
 	tokenBudget: 64_000_000,
 	completionReserveTokens: 48_000,
 	runStatus: true,
 }
+
+/**
+ * The most a close-out run may take, whatever the pass had. One or two calls from the transcript
+ * (56-204s observed); the cap is what keeps a pass and its close-out under `TURN_STALE_MS`.
+ */
+export const CLOSE_OUT_MAX_DURATION: Duration.Input = "5 minutes"
 
 /** An answer on a pull request: narrower than a review, with room to read and to stage a fix. */
 export const PR_REPLY_BUDGET: AgentBudget = {

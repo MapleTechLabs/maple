@@ -100,7 +100,21 @@ export const platformFeatures = (): string[] => [
 	m.pricing_mcp_server(),
 	m.pricing_ai_triage(),
 	m.pricing_full_api(),
+	m.pricing_audit_log(),
 ]
+
+/**
+ * One Autumn request per build: every feature page reads the offer, in three
+ * locales. The response carries no localized text, so sharing it is safe; labels
+ * are still resolved per call. The site is fully static, so nothing outlives a build.
+ */
+let plansRequest: ReturnType<Autumn["plans"]["list"]> | undefined
+
+const listPlans = () =>
+	(plansRequest ??= new Autumn({
+		secretKey: import.meta.env.AUTUMN_SECRET_KEY,
+		xApiVersion: AUTUMN_API_VERSION,
+	}).plans.list())
 
 /**
  * The live offer, or the `autumn.config.ts` mirror if Autumn is unreachable at
@@ -111,11 +125,7 @@ export async function getOffer(): Promise<Offer> {
 	const labels = dataFeatureLabels()
 
 	try {
-		const autumn = new Autumn({
-			secretKey: import.meta.env.AUTUMN_SECRET_KEY,
-			xApiVersion: AUTUMN_API_VERSION,
-		})
-		const result = await autumn.plans.list()
+		const result = await listPlans()
 		const products = Arr.filter(result.list ?? [], (p) => !p.addOn)
 
 		if (products.length > 1) {

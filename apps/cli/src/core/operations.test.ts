@@ -62,6 +62,67 @@ describe("rawQuery instrumentation", () => {
 			assert.strictEqual(typeof span.attributes.get("db.duration_ms"), "number")
 		}),
 	)
+
+	it.effect("keeps the Client span Ok when the user's SQL does not parse", () =>
+		Effect.gen(function* () {
+			// SAFETY: this focused fetch stub returns the only response shape exercised by the query.
+			const request = (async () =>
+				new Response("Code: 62. DB::Exception: Syntax error: failed at position 8. (SYNTAX_ERROR)", {
+					status: 400,
+				})) as unknown as typeof fetch
+			const { spans, tracer } = makeRecordingTracer()
+			const modeLayer = Layer.succeed(Mode, {
+				resolve: Effect.succeed({ _tag: "local" as const, baseUrl: "http://127.0.0.1:4318" }),
+			})
+			const httpLayer = FetchHttpClient.layer.pipe(
+				Layer.provide(Layer.succeed(FetchHttpClient.Fetch, request)),
+			)
+
+			const error = yield* Effect.flip(
+				rawQuery({ sql: "SELECT FROM", range: RANGE }).pipe(
+					Effect.provide(Layer.merge(modeLayer, httpLayer)),
+					Effect.withTracer(tracer),
+				),
+			)
+
+			assert.strictEqual(error._tag, "@maple/http/errors/WarehouseInvalidSqlError")
+			const found = Arr.findFirst(spans, (candidate) => candidate.name === "WarehouseExecutor.rawQuery")
+			assert.ok(Option.isSome(found))
+			const status = found.value.status
+			assert.strictEqual(status._tag, "Ended")
+			assert.ok(status._tag === "Ended" && Exit.isSuccess(status.exit))
+			assert.strictEqual(found.value.attributes.get("error.type"), "SYNTAX_ERROR")
+		}),
+	)
+
+	it.effect("rejects SQL that fails validation without opening a failing span", () =>
+		Effect.gen(function* () {
+			const { spans, tracer } = makeRecordingTracer()
+			const modeLayer = Layer.succeed(Mode, {
+				resolve: Effect.succeed({ _tag: "local" as const, baseUrl: "http://127.0.0.1:4318" }),
+			})
+
+			const error = yield* Effect.flip(
+				rawQuery({
+					sql: "SELECT count() FROM traces WHERE $__timeFilter(Timestamp)",
+					range: RANGE,
+				}).pipe(
+					Effect.provide(Layer.merge(modeLayer, FetchHttpClient.layer)),
+					Effect.withTracer(tracer),
+				),
+			)
+
+			assert.strictEqual(error._tag, "@maple/cli/UsageError")
+			const failed = Arr.filter(
+				spans,
+				(span) => span.status._tag === "Ended" && Exit.isFailure(span.status.exit),
+			)
+			assert.deepStrictEqual(
+				Arr.map(failed, (span) => span.name),
+				[],
+			)
+		}),
+	)
 })
 
 describe("rawQuery failures", () => {

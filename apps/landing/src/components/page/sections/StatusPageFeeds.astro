@@ -7,14 +7,9 @@
  */
 import * as m from "../../../paraglide/messages.js";
 import { demoStatusJson } from "../../../lib/status-page-demo";
+import { STATUS_PAGE_ENDPOINTS } from "../../../lib/feature-sections";
 
 const json = JSON.stringify(demoStatusJson(), null, 2);
-
-const ENDPOINTS = [
-	{ path: "/feed.rss", what: "RSS" },
-	{ path: "/feed.atom", what: "Atom" },
-	{ path: "/badge.svg", what: "badge" },
-];
 
 const rules = [
 	{ title: m.status_feeds_rule_1_title(), body: m.status_feeds_rule_1_body() },
@@ -34,7 +29,7 @@ const rules = [
 				<pre class="spf-json" tabindex="0">{json}</pre>
 				<div class="spf-endpoints">
 					{
-						ENDPOINTS.map((endpoint) => (
+						STATUS_PAGE_ENDPOINTS.map((endpoint) => (
 							<div>
 								<span>{endpoint.path}</span>
 								<span>{endpoint.what}</span>

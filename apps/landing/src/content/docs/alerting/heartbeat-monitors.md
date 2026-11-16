@@ -98,7 +98,7 @@ On the [MCP server](/docs/reference/mcp), `create_uptime_monitor` with `kind` se
 
 The result includes the ping URL (`monitor.heartbeatUrl`) and a curl line for the job (`pingCommand`).
 
-In Terraform, use [`maple_uptime_monitor`](/docs/iac/terraform-resources#maple_uptime_monitor) with `type = "heartbeat"`. Its read-only `heartbeat_url` attribute is the ping URL. In [Pulumi](/docs/iac/pulumi) it is `maple.UptimeMonitor` and `heartbeatUrl`.
+In Terraform, use [`maple_uptime_monitor`](/docs/iac/terraform-resources#maple_uptime_monitor) and set `type = "heartbeat"` inside `config`, as in the [example](/docs/iac/terraform-resources#maple_uptime_monitor). Its read-only `heartbeat_url` attribute is the ping URL. In [Pulumi](/docs/iac/pulumi) it is `maple.UptimeMonitor` and `heartbeatUrl`.
 
 ## Limits
 

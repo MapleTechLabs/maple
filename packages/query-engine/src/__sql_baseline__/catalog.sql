@@ -197,7 +197,7 @@ SELECT
         LIMIT 2500
         FORMAT JSON
 
--- builder:anomaly:anomalyLogVolumeQuery:matchedHours  [16004c1b]
+-- builder:anomaly:anomalyLogVolumeQuery:baselineHours  [ed6267d2]
 SELECT
           logs_aggregates_hourly.ServiceName AS serviceName,
           logs_aggregates_hourly.DeploymentEnv AS deploymentEnv,
@@ -208,7 +208,7 @@ SELECT
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
           AND logs_aggregates_hourly.Hour >= '2026-01-01 10:30:00'
           AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
-          AND toHour(logs_aggregates_hourly.Hour) IN (9, 10, 11)
+          AND toHour(logs_aggregates_hourly.Hour) IN (8, 9, 10, 11)
         GROUP BY serviceName, deploymentEnv, hour
         LIMIT 25000
         FORMAT JSON
@@ -228,37 +228,50 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:anomaly:anomalyTraceSignalsQuery:matchedHours  [215fec55]
+-- builder:anomaly:anomalyTraceSignalsQuery:baselineHours  [5d5ecce5]
 SELECT
-          traces_aggregates_hourly.ServiceName AS serviceName,
-          traces_aggregates_hourly.DeploymentEnv AS deploymentEnv,
-          traces_aggregates_hourly.Hour AS hour,
-          sum(WeightedCount) AS requestCount,
-          sum(WeightedErrorCount) AS errorCount,
-          arrayElement(quantilesTDigestWeightedMerge(0.95)(DurationQuantiles), 1) / 1000000 AS p95Ms
-        FROM traces_aggregates_hourly
-        WHERE traces_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND traces_aggregates_hourly.IsEntryPoint = 1
-          AND traces_aggregates_hourly.Hour >= '2026-01-01 10:30:00'
-          AND traces_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
-          AND toHour(traces_aggregates_hourly.Hour) IN (9, 10, 11)
+          service_overview_hourly.ServiceName AS serviceName,
+          service_overview_hourly.DeploymentEnv AS deploymentEnv,
+          service_overview_hourly.Hour AS hour,
+          sum(service_overview_hourly.EstimatedSpanCount) AS requestCount,
+          sum(service_overview_hourly.EstimatedErrorCount) AS errorCount,
+          arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(DurationQuantiles), 2) / 1000000 AS p95Ms
+        FROM service_overview_hourly
+        WHERE service_overview_hourly.OrgId = 'org_sql_catalog'
+          AND service_overview_hourly.Hour >= '2026-01-01 10:30:00'
+          AND service_overview_hourly.Hour <= '2026-01-03 14:15:00'
+          AND toHour(service_overview_hourly.Hour) IN (8, 9, 10, 11)
         GROUP BY serviceName, deploymentEnv, hour
         LIMIT 25000
         FORMAT JSON
 
--- builder:anomaly:anomalyTraceSignalTimeseriesQuery:default  [a134b2f6]
+-- builder:anomaly:anomalyTraceSignalsWindowQuery:lastHour  [f1facc81]
 SELECT
-          traces_aggregates_hourly.Hour AS hour,
-          sum(WeightedCount) AS requestCount,
-          sum(WeightedErrorCount) AS errorCount,
-          arrayElement(quantilesTDigestWeightedMerge(0.95)(DurationQuantiles), 1) / 1000000 AS p95Ms
-        FROM traces_aggregates_hourly
-        WHERE traces_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND traces_aggregates_hourly.IsEntryPoint = 1
-          AND traces_aggregates_hourly.ServiceName = 'api'
-          AND traces_aggregates_hourly.DeploymentEnv = 'production'
-          AND traces_aggregates_hourly.Hour >= '2026-01-01 10:30:00'
-          AND traces_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
+          service_overview_minutely.ServiceName AS serviceName,
+          service_overview_minutely.DeploymentEnv AS deploymentEnv,
+          sum(service_overview_minutely.EstimatedSpanCount) AS requestCount,
+          sum(service_overview_minutely.EstimatedErrorCount) AS errorCount,
+          arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(DurationQuantiles), 2) / 1000000 AS p95Ms
+        FROM service_overview_minutely
+        WHERE service_overview_minutely.OrgId = 'org_sql_catalog'
+          AND service_overview_minutely.Minute >= '2026-01-01 10:30:00'
+          AND service_overview_minutely.Minute < '2026-01-03 14:15:00'
+        GROUP BY serviceName, deploymentEnv
+        LIMIT 25000
+        FORMAT JSON
+
+-- builder:anomaly:anomalyTraceSignalTimeseriesQuery:default  [e5db4c31]
+SELECT
+          service_overview_hourly.Hour AS hour,
+          sum(service_overview_hourly.EstimatedSpanCount) AS requestCount,
+          sum(service_overview_hourly.EstimatedErrorCount) AS errorCount,
+          arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(DurationQuantiles), 2) / 1000000 AS p95Ms
+        FROM service_overview_hourly
+        WHERE service_overview_hourly.OrgId = 'org_sql_catalog'
+          AND service_overview_hourly.ServiceName = 'api'
+          AND service_overview_hourly.DeploymentEnv = 'production'
+          AND service_overview_hourly.Hour >= '2026-01-01 10:30:00'
+          AND service_overview_hourly.Hour <= '2026-01-03 14:15:00'
         GROUP BY hour
         ORDER BY hour ASC
         LIMIT 200
@@ -452,6 +465,17 @@ SELECT
           AND (audit_trail_events.OccurredAt < '2026-01-03 14:15:00' OR (audit_trail_events.OccurredAt = '2026-01-03 14:15:00' AND audit_trail_events.Id < '0f6f2c1e7a554c0e9a3b0d2c7e5b9a11'))
         ORDER BY occurredAt DESC, id DESC, ingestedAt ASC
         LIMIT 51
+        FORMAT JSON
+
+-- builder:audit-trail:auditTrailSourcesQuery:default  [c248e070]
+SELECT
+          audit_trail_events.Provider AS provider,
+          uniqExact(audit_trail_events.Id) AS events,
+          toUnixTimestamp(max(audit_trail_events.OccurredAt)) AS lastOccurredAt
+        FROM audit_trail_events
+        WHERE audit_trail_events.OrgId = 'org_sql_catalog'
+          AND audit_trail_events.OccurredAt >= '2026-01-01 10:30:00'
+        GROUP BY provider
         FORMAT JSON
 
 -- builder:aws-ingest:awsIngestQuery:default  [c5891e34]

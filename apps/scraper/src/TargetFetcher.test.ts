@@ -269,19 +269,26 @@ describe("TargetFetcher", () => {
 		}).pipe(Effect.provide(FetcherLive)),
 	)
 
-	it.effect("classifies a transport failure as a target error", () =>
+	it.effect("classifies a transport failure as a target error and leaves the client span Ok", () =>
 		Effect.gen(function* () {
+			const tracer = makeCapturingTracer()
 			const fetcher = yield* TargetFetcher
 			const error = yield* fetcher.fetch(mkTarget()).pipe(
 				Effect.provideService(
 					FetchHttpClient.Fetch,
 					stubFetch([], () => Promise.reject(new TypeError("connection refused"))),
 				),
+				Effect.provide(tracer.layer),
 				Effect.flip,
 			)
 
 			assert.strictEqual(error.reason, "target_error")
 			assert.strictEqual(error.message, "request failed: connection refused")
+			// The customer's target is down, not Maple: no error issue, the reason stays on the span.
+			const [span] = endedSpansNamed(tracer.ended, "TargetFetcher.fetchTarget")
+			assert.isDefined(span)
+			assert.isTrue(Exit.isSuccess(span.exit))
+			assert.strictEqual(span.attributes.get("error.type"), "target_error")
 		}).pipe(Effect.provide(FetcherLive)),
 	)
 

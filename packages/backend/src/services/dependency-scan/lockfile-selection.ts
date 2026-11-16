@@ -7,6 +7,8 @@ import { Array as Arr, Option, String as Str } from "effect"
 
 /** Lockfiles read per scan; the rest are left out, deepest paths first. */
 export const MAX_LOCKFILES = 50
+/** Lockfiles past the read cap recorded by path; the rest are only counted, so a tree sets no row size. */
+export const MAX_SKIPPED_LOCKFILES = 200
 /** Manifests read for one yarn lockfile, which says nothing about direct and dev dependencies. */
 export const MAX_MANIFESTS = 20
 /** A package.json is a few KB; a larger one is skipped rather than read. */
@@ -36,6 +38,8 @@ export function selectLockfiles(files: ReadonlyArray<VcsTreeFile>): {
 	readonly selected: ReadonlyArray<SelectedLockfile>
 	/** Past the cap: recorded as skipped so their findings are kept, not read as deleted. */
 	readonly skipped: ReadonlyArray<SelectedLockfile>
+	/** Past both caps: neither read nor recorded, so the scan must not reconcile. */
+	readonly omitted: number
 } {
 	const candidates = Arr.flatMap(files, (file): ReadonlyArray<SelectedLockfile> => {
 		const kind = lockfileKindOf(file.path)
@@ -54,7 +58,12 @@ export function selectLockfiles(files: ReadonlyArray<VcsTreeFile>): {
 		const byDepth = depth(a.file.path) - depth(b.file.path)
 		return byDepth !== 0 ? byDepth : Str.localeCompare(b.file.path)(a.file.path)
 	})
-	return { selected: kept.slice(0, MAX_LOCKFILES), skipped: kept.slice(MAX_LOCKFILES) }
+	const recorded = MAX_LOCKFILES + MAX_SKIPPED_LOCKFILES
+	return {
+		selected: kept.slice(0, MAX_LOCKFILES),
+		skipped: kept.slice(MAX_LOCKFILES, recorded),
+		omitted: Math.max(0, kept.length - recorded),
+	}
 }
 
 /**

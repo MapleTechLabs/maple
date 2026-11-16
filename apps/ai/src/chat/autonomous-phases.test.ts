@@ -1,7 +1,8 @@
-import { Effect, Array as Arr } from "effect"
+import { Duration, Effect, Array as Arr } from "effect"
 import { assert, describe, it } from "vitest"
 import { AGENTS, type RowMode } from "./agents"
 import { makeAutonomousOutcome } from "./autonomous-outcome"
+import { CLOSE_OUT_MAX_DURATION } from "./budgets"
 import { type PhaseTurn, runAutonomousPhases } from "./autonomous-phases"
 
 /** Runs the phases over a scripted run: each phase files when `files` says so, and ends on `stop`. */
@@ -55,6 +56,20 @@ describe("runAutonomousPhases", () => {
 		assert.equal(turns[2]?.text, AGENTS["pr-review"].completion.closeOutPrompt)
 		assert.equal(outcome.failure(), "answered_in_prose")
 		assert.isFalse(outcome.submitted())
+	})
+
+	it("runs an investigation's close-out on its own short clock, not the pass's", async () => {
+		const { turns } = await phasesOf("investigate", (turn) => turn.closeOut === true)
+		const clock = (turn: PhaseTurn | undefined) =>
+			turn?.agent === undefined ? undefined : Duration.toMillis(turn.agent.budget.maxDuration)
+		assert.strictEqual(
+			clock(turns[1]),
+			Duration.toMillis(Duration.fromInputUnsafe(CLOSE_OUT_MAX_DURATION)),
+		)
+		assert.isBelow(
+			clock(turns[1]) ?? Infinity,
+			Duration.toMillis(Duration.fromInputUnsafe(AGENTS.investigate.budget.maxDuration)),
+		)
 	})
 
 	it("closes a reply out without a continuation, which only a review has", async () => {

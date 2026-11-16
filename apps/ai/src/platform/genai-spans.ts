@@ -23,6 +23,7 @@ import {
 	Duration,
 	Effect,
 	Exit,
+	Fiber,
 	Layer,
 	Option,
 	Predicate,
@@ -388,13 +389,13 @@ const callTimeout = (): AiError.AiError =>
 	streamTimeout(`Model stream did not finish within ${MODEL_CALL_TIMEOUT}`)
 
 /**
- * How an unattended model call is attempted: the first attempt is cut at `cap` and run again with
- * `retry` applied, on whatever is left of {@link MODEL_CALL_TIMEOUT}.
+ * How an unattended model call is attempted: past `cap` the call is asked again with `retry`
+ * applied while the first attempt keeps going, on whatever is left of {@link MODEL_CALL_TIMEOUT}.
  *
  * A slow call is a long generation, not a stalled one: the 190-231s calls of 2026-10-15 streamed
  * 5-6k reasoning tokens at about 34 per second, first chunk at 14s. Only a retry that reasons less
- * returns sooner, which is why `retry` exists. The first attempt is held until it finishes, because
- * the engine never repeats a call that streamed content; that costs nothing but live streaming.
+ * returns sooner, which is why `retry` exists. Each attempt is held until it finishes, because the
+ * engine never repeats a call that streamed content; that costs nothing but live streaming.
  */
 export interface ModelCallAttempts {
 	readonly cap: Duration.Duration
@@ -421,7 +422,7 @@ export const instrumentLanguageModel = <R>(
 	instrumentation: {
 		/** Join streamed deltas (see `coalesceDeltas`); for models only unattended runs use. */
 		readonly coalesceDeltas?: boolean
-		/** Cut and retry a long call (see {@link ModelCallAttempts}); for unattended runs only. */
+		/** Race a retry against a long call (see {@link ModelCallAttempts}); for unattended runs only. */
 		readonly attempts?: ModelCallAttempts
 	} = {},
 ): Effect.Effect<LanguageModel.LanguageModel, never, R> =>
@@ -492,25 +493,67 @@ export const instrumentLanguageModel = <R>(
 		}),
 	)
 
-/** The first attempt, replayed once it finishes inside the cap; otherwise the retry, streamed live. */
+/**
+ * The first attempt, replayed once it finishes inside the cap. Past the cap the retry starts beside
+ * it and whichever answers first is replayed: cutting the first attempt threw away its 90s, and the
+ * low-effort retry of an investigation took 83s more at the median (2026-11-16).
+ */
+/** A collected response whose finish part reports a provider failure. */
+const answeredWithError = (parts: ReadonlyArray<unknown>): boolean =>
+	Arr.some(
+		parts,
+		(part) =>
+			Predicate.hasProperty(part, "type") &&
+			part.type === "finish" &&
+			Predicate.hasProperty(part, "reason") &&
+			part.reason === "error",
+	)
+
 const retriedPastCap = <O, A, E, R>(
 	attempt: (options: O, ordinal: number) => Stream.Stream<A, E, R>,
 	options: O,
 	attempts: ModelCallAttempts,
 ): Stream.Stream<A, E, R> =>
 	Stream.unwrap(
-		Stream.runCollect(attempt(options, 1)).pipe(
-			Effect.timeoutOption(attempts.cap),
-			Effect.flatMap(
-				Option.match({
-					onSome: (parts) => Effect.succeed(Stream.fromIterable(parts)),
-					onNone: () =>
-						Effect.logWarning("Model call cut at its attempt cap; retrying").pipe(
-							Effect.annotateLogs({ capMillis: Duration.toMillis(attempts.cap) }),
-							Effect.as(attempts.retry(attempt(options, 2))),
-						),
-				}),
+		Effect.forkChild(Stream.runCollect(attempt(options, 1))).pipe(
+			Effect.flatMap((first) =>
+				Fiber.join(first).pipe(
+					Effect.timeoutOption(attempts.cap),
+					Effect.flatMap(
+						Option.match({
+							onSome: Effect.succeed,
+							onNone: () =>
+								Effect.logWarning("Model call past its attempt cap; racing a retry").pipe(
+									Effect.annotateLogs({ capMillis: Duration.toMillis(attempts.cap) }),
+									Effect.andThen(
+										Effect.forkChild(
+											Stream.runCollect(attempts.retry(attempt(options, 2))),
+										).pipe(
+											Effect.flatMap((retry) =>
+												Effect.race(
+													// A first attempt that answers with a failure waits for the retry,
+													// and is only replayed when the retry fails too.
+													Fiber.join(first).pipe(
+														Effect.filterOrElse(
+															(parts) => !answeredWithError(parts),
+															(parts) =>
+																Fiber.join(retry).pipe(
+																	Effect.orElseSucceed(() => parts),
+																),
+														),
+													),
+													Fiber.join(retry),
+												).pipe(Effect.ensuring(Fiber.interrupt(retry))),
+											),
+										),
+									),
+								),
+						}),
+					),
+					Effect.ensuring(Fiber.interrupt(first)),
+				),
 			),
+			Effect.map((parts) => Stream.fromIterable(parts)),
 		),
 	)
 

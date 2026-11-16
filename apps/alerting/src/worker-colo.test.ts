@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Deferred, Effect, Fiber } from "effect"
-import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http"
-import { ColoLookupError, isolateColoCache, lookupColo, TRACE_URL } from "./worker-colo"
+import { Deferred, Effect, Fiber, Option } from "effect"
+import { HttpClient, HttpClientError, HttpClientResponse, type HttpClientRequest } from "effect/http"
+import { isolateColoCache, lookupColo, TRACE_URL } from "./worker-colo"
 
 const TRACE_BODY =
 	"fl=29f1\nh=cloudflare.com\nip=2a06:98c0::1\nts=1760000000.1\nvisit_scheme=https\ncolo=IAD\nhttp=http/1.1\nloc=US\n"
@@ -23,19 +23,30 @@ describe("lookupColo", () => {
 		Effect.gen(function* () {
 			const { client, urls } = answering(TRACE_BODY)
 			const colo = yield* lookupColo().pipe(Effect.provideService(HttpClient.HttpClient, client))
-			expect(colo).toBe("IAD")
+			expect(colo).toEqual(Option.some("IAD"))
 			expect(urls).toEqual([TRACE_URL])
 		}),
 	)
 
-	it.effect("fails when the answer carries no colo, such as an error page", () =>
+	it.effect("answers none when the reply carries no colo, such as an error page", () =>
 		Effect.gen(function* () {
 			const { client } = answering("<html>blocked</html>", 403)
-			const error = yield* lookupColo().pipe(
-				Effect.provideService(HttpClient.HttpClient, client),
-				Effect.flip,
+			const colo = yield* lookupColo().pipe(Effect.provideService(HttpClient.HttpClient, client))
+			expect(colo).toEqual(Option.none())
+		}),
+	)
+
+	it.effect("answers none when the trace request fails", () =>
+		Effect.gen(function* () {
+			const client = HttpClient.make((request: HttpClientRequest.HttpClientRequest) =>
+				Effect.fail(
+					new HttpClientError.HttpClientError({
+						reason: new HttpClientError.TransportError({ request }),
+					}),
+				),
 			)
-			expect(error._tag).toBe("@maple/alerting/errors/ColoLookupError")
+			const colo = yield* lookupColo().pipe(Effect.provideService(HttpClient.HttpClient, client))
+			expect(colo).toEqual(Option.none())
 		}),
 	)
 })
@@ -49,7 +60,7 @@ describe("isolateColoCache", () => {
 				// The first lookup never settles, like one whose request the runtime has moved on from.
 				const lookup = Effect.suspend(() => {
 					calls++
-					return calls === 1 ? Effect.never : Effect.succeed("IAD")
+					return calls === 1 ? Effect.never : Effect.succeedSome("IAD")
 				})
 				const colo = yield* isolateColoCache(lookup)
 				const stalled = yield* Effect.forkChild(colo)
@@ -67,7 +78,7 @@ describe("isolateColoCache", () => {
 			const colo = yield* isolateColoCache(
 				Effect.suspend(() => {
 					calls++
-					return Effect.fail(new ColoLookupError({ message: "Trace request timed out" }))
+					return Effect.succeedNone
 				}),
 			)
 			expect(yield* colo).toBe("unknown")
@@ -85,12 +96,8 @@ describe("isolateColoCache", () => {
 				Effect.suspend(() => {
 					calls++
 					return calls === 1
-						? Deferred.await(release).pipe(
-								Effect.andThen(
-									Effect.fail(new ColoLookupError({ message: "Trace request timed out" })),
-								),
-							)
-						: Effect.succeed("IAD")
+						? Deferred.await(release).pipe(Effect.andThen(Effect.succeedNone))
+						: Effect.succeedSome("IAD")
 				}),
 			)
 			const slow = yield* Effect.forkChild(colo)
@@ -111,8 +118,8 @@ describe("isolateColoCache", () => {
 				Effect.suspend(() => {
 					calls++
 					return calls === 1
-						? Deferred.await(release).pipe(Effect.as("IAD"))
-						: Effect.fail(new ColoLookupError({ message: "Trace request timed out" }))
+						? Deferred.await(release).pipe(Effect.as(Option.some("IAD")))
+						: Effect.succeedNone
 				}),
 			)
 			const slow = yield* Effect.forkChild(colo)
