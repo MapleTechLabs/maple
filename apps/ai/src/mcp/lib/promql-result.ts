@@ -10,48 +10,50 @@ export type PromqlResult = Effect.Success<
 export const MAX_SERIES = 20
 export const MAX_POINTS = 200
 
-const unitSeconds = (unit: string | undefined): number => {
+const unitMs = (unit: string | undefined): number => {
 	switch (unit) {
 		case "ms":
-			return 0.001
-		case "m":
-			return 60
-		case "h":
-			return 3600
-		case "d":
-			return 86_400
-		case "w":
-			return 604_800
-		case "y":
-			return 31_536_000
-		default:
 			return 1
+		case "m":
+			return 60_000
+		case "h":
+			return 3_600_000
+		case "d":
+			return 86_400_000
+		case "w":
+			return 604_800_000
+		case "y":
+			return 31_536_000_000
+		default:
+			return 1000
 	}
 }
 
 const DURATION = /^(?:\d+(?:ms|s|m|h|d|w|y))+$/
 const DURATION_PART = /(\d+)(ms|s|m|h|d|w|y)/g
 
-/** A step the engine can run: a positive, finite, whole number of milliseconds. */
-const isEngineStep = (seconds: number): boolean => {
-	const ms = seconds * 1000
-	return Number.isSafeInteger(ms) && ms > 0
+/** Float seconds as whole milliseconds, when they are whole up to float noise (`1.001` is 1001). */
+const secondsToMs = (seconds: number): number => {
+	const ms = Math.round(seconds * 1000)
+	return Math.abs(seconds * 1000 - ms) <= 1e-6 * Math.max(1, ms) ? ms : Number.NaN
 }
 
 /**
- * A Prometheus duration (`1m`, `1h30m`) or float seconds, in seconds; undefined when neither, or
- * when it is not a whole number of milliseconds the engine can step by.
+ * A Prometheus duration (`1m`, `1h30m`) or float seconds, as whole milliseconds; undefined when
+ * neither, or when it is not a positive whole number of milliseconds the engine can step by.
  */
-export const parseStepSeconds = (raw: string): number | undefined => {
+export const parseStepMs = (raw: string): number | undefined => {
 	const text = Str.trim(raw)
-	const seconds = DURATION.test(text)
-		? Arr.reduce(Arr.fromIterable(Str.matchAll(DURATION_PART)(text)), 0, (total, part) => {
-				return total + Number(part[1]) * unitSeconds(part[2])
-			})
+	const ms = DURATION.test(text)
+		? Arr.reduce(
+				Arr.fromIterable(Str.matchAll(DURATION_PART)(text)),
+				0,
+				(total, part) => total + Number(part[1]) * unitMs(part[2]),
+			)
 		: text === ""
 			? Number.NaN
-			: Number(text)
-	return isEngineStep(seconds) ? seconds : undefined
+			: secondsToMs(Number(text))
+	return Number.isSafeInteger(ms) && ms > 0 ? ms : undefined
 }
 
 const NICE_STEPS = [15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10_800, 21_600, 43_200, 86_400]
