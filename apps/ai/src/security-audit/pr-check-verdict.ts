@@ -104,6 +104,8 @@ const cell = (value: string) =>
 /** GitHub refuses an annotation title over 255 characters, and a summary over 65,535. */
 const MAX_ANNOTATION_TITLE = 255
 const MAX_SUMMARY = 60_000
+/** GitHub refuses an annotation message over 64 KB; characters can take up to 4 bytes. */
+const MAX_ANNOTATION_MESSAGE = 16_000
 const clip = (value: string, max: number) =>
 	value.length <= max ? value : `${Str.slice(0, max - 1)(value)}…`
 
@@ -174,7 +176,9 @@ export const prCheckVerdict = (input: PrCheckVerdictInput): PrCheckVerdict => {
 				...(finished
 					? []
 					: [
-							`The security audit could not finish (${unfinishedReason}), so this check does not block the merge.`,
+							blocking > 0
+								? `The security audit could not finish (${unfinishedReason}), but the confirmed findings below already fail this check.`
+								: `The security audit could not finish (${unfinishedReason}), so this check does not block the merge.`,
 							"",
 						]),
 				thresholdLine,
@@ -219,7 +223,10 @@ export const prCheckVerdict = (input: PrCheckVerdictInput): PrCheckVerdict => {
 					`${c.severity === null ? "Unconfirmed lead" : `Security · ${c.severity}`}: ${c.finding.title}`,
 					MAX_ANNOTATION_TITLE,
 				),
-				message: `${STANDING_LABEL[c.standing]}. ${c.finding.description}`,
+				message: clip(
+					`${STANDING_LABEL[c.standing]}. ${c.finding.description}`,
+					MAX_ANNOTATION_MESSAGE,
+				),
 			},
 		]
 	})

@@ -748,6 +748,14 @@ export const runSecurityAuditWorkflow = (payload: SecurityAuditWorkflowPayload) 
 				? Effect.void
 				: Effect.gen(function* () {
 						const orgId = yield* Schema.decodeEffect(OrgId)(payload.orgId)
+						// A run that died before its body ran (loading the org key or settings) was never
+						// settled there: settle it here, so its check reports instead of staying pending.
+						// One the body settled keeps its outcome.
+						if (Exit.isFailure(exit))
+							yield* (yield* SecurityAuditStore).forOrg(orgId).finishRun(payload.runId, {
+								status: "failed",
+								error: Str.slice(0, 2_000)(Cause.pretty(exit.cause)),
+							})
 						yield* (yield* SecurityPrCheck).publish(orgId, payload.runId)
 					}).pipe(Effect.ignore),
 		),
