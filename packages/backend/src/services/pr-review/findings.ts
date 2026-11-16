@@ -286,6 +286,8 @@ const reraisesDismissedPrivacy = (
 const CITED_LINE = /(?:^|[\s(`"'[])[^\s`"'():#]+(?::|#L)\d+\b/
 const CODE_SPANS = /`([^`\n]+)`/g
 const BARE_LOCATION = /^[^\s`"'():#]+(?::|#L)\d+(?:-L?\d+)?$/
+/** An assignment, call, index or literal: code that sets or reads a value, not a field name alone. */
+const VALUE_EXPRESSION = /[=([]|["']/
 
 /** Whether a finding's `source` cites a line and, in a separate code span, the expression there. */
 const citesSource = (finding: Pick<PrReviewFinding, "source">) =>
@@ -293,7 +295,7 @@ const citesSource = (finding: Pick<PrReviewFinding, "source">) =>
 	CITED_LINE.test(finding.source) &&
 	Arr.some(Arr.fromIterable(Str.matchAll(CODE_SPANS)(finding.source)), (span) => {
 		const code = Str.trim(span[1] ?? "")
-		return code !== "" && !BARE_LOCATION.test(code)
+		return !BARE_LOCATION.test(code) && VALUE_EXPRESSION.test(code)
 	})
 
 /**
@@ -332,11 +334,18 @@ export const withoutRepeats = (
 		known.status !== "resolved" || known.resolvedSha == null || isScanFinding(finding)
 	const reraised = (finding: PrReviewFinding) =>
 		Arr.some(tracked, (known) => reraisesDismissedPrivacy(finding, known))
+	// A sourced privacy finding is new evidence against a dismissal, so a restatement does not block it.
+	const sourcedAgainst = (finding: PrReviewFinding, known: TrackedFinding) =>
+		known.status === "dismissed" && finding.checkId === "PII-01" && citesSource(finding)
 	const fresh = Arr.filter(
 		findings,
 		(finding) =>
 			!reraised(finding) &&
-			!Arr.some(tracked, (known) => blocks(finding, known) && restates(finding, known)),
+			!Arr.some(
+				tracked,
+				(known) =>
+					blocks(finding, known) && restates(finding, known) && !sourcedAgainst(finding, known),
+			),
 	)
 	return {
 		fresh,

@@ -625,32 +625,41 @@ export const privacyFindings = (files: ReadonlyArray<PullRequestFile>): Readonly
 			const lines = parsePatch(file.patch)
 			const byKind = new Map<
 				PrivacyKind,
-				{ readonly hit: PrivacyHit; readonly lines: Array<number>; severity: PrReviewSeverity }
+				{ hit: PrivacyHit; readonly lines: Array<number>; severity: PrReviewSeverity; anchor: number }
 			>()
 			Arr.forEach(lines, (line, index) => {
 				const hit = privacyHitAt(lines, index)
 				if (hit === undefined) return
 				const seen = byKind.get(hit.kind)
 				if (seen === undefined)
-					byKind.set(hit.kind, { hit, lines: [line.newLine], severity: severityOf(hit) })
+					byKind.set(hit.kind, {
+						hit,
+						lines: [line.newLine],
+						severity: severityOf(hit),
+						anchor: line.newLine,
+					})
 				else {
 					seen.lines.push(line.newLine)
-					// A recognized value on any line of the kind makes the one finding as severe as it.
-					if (SEVERITY_RANK[severityOf(hit)] > SEVERITY_RANK[seen.severity])
+					// A recognized value on any line of the kind makes the one finding as severe as it,
+					// anchored on that line so the severity sits where the value is.
+					if (SEVERITY_RANK[severityOf(hit)] > SEVERITY_RANK[seen.severity]) {
 						seen.severity = severityOf(hit)
+						seen.hit = hit
+						seen.anchor = line.newLine
+					}
 				}
 			})
 			return Arr.map(
 				[...byKind.values()],
-				({ hit, severity, lines: [first = 1, ...others] }) =>
+				({ hit, severity, lines: hitLines, anchor }) =>
 					new PrReviewFinding({
 						path: file.path,
-						line: first,
+						line: anchor,
 						category: "security",
 						checkId: "PII-01",
 						severity,
 						title: `${TITLE[hit.kind]} ${hit.subject} written to ${SINK_LABEL[hit.sink]}`,
-						body: `${WHY[hit.kind]}${otherLines(others)}`,
+						body: `${WHY[hit.kind]}${otherLines(Arr.filter(hitLines, (n) => n !== anchor))}`,
 					}),
 			)
 		},

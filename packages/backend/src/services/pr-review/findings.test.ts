@@ -484,13 +484,15 @@ describe("credential findings and the replies to them", () => {
 			// A location alone, backticked or as a GitHub anchor, names no assigning expression.
 			privacy({ title: "API key logged", source: "`src/auth.ts:42`" }),
 			privacy({ title: "API key logged", source: "see `src/auth.ts#L42`" }),
+			// A field name in a code span is the name again, not the value's source.
+			privacy({ title: "API key logged", source: "src/auth.ts:42 logs `legacyApiKey`" }),
 			privacy({ title: "API key logged", source: 'src/auth.ts#L42 `apiKey = vault.read("stripe")`' }),
 		])
 		assert.deepEqual(
 			Arr.map(findings, (finding) => finding.severity),
-			["warn", "warn", "critical", "critical", "warn", "warn", "warn", "warn", "critical"],
+			["warn", "warn", "critical", "critical", "warn", "warn", "warn", "warn", "warn", "critical"],
 		)
-		assert.equal(downgraded.length, 5)
+		assert.equal(downgraded.length, 6)
 	})
 
 	it("keeps a critical where the scan recognized the value on those lines", () => {
@@ -625,6 +627,20 @@ describe("credential findings and the replies to them", () => {
 					privacy({
 						line: 80,
 						title: "API key flag `legacyApiKey` leaks into telemetry",
+						source: "src/auth.ts:12 `obj.legacyApiKey = process.env.LEGACY_KEY`",
+					}),
+				],
+				[dismissed],
+			).fresh.length,
+			1,
+		)
+		// Same title and line as the dismissal, but sourced: the restatement check lets it through too.
+		assert.equal(
+			withoutRepeats(
+				[
+					privacy({
+						line: 50,
+						title: dismissed.title,
 						source: "src/auth.ts:12 `obj.legacyApiKey = process.env.LEGACY_KEY`",
 					}),
 				],

@@ -333,6 +333,17 @@ describe("privacyFindings", () => {
 		)
 	})
 
+	it("anchors a grouped finding on the line whose value made it critical", () => {
+		const [finding] = privacyFindings([
+			file("src/a.ts", [
+				'logger.info("x", { password })',
+				'logger.debug("using eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N")',
+			]),
+		])
+		assert.deepStrictEqual([finding?.severity, finding?.line], ["critical", 11])
+		assert.match(finding?.body ?? "", /Also on line 10\./)
+	})
+
 	it("skips tests, fixtures and docs", () => {
 		const leak = ['span.setAttribute("user.email", user.email)']
 		assert.lengthOf(

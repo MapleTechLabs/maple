@@ -275,7 +275,8 @@ export const normalizePrReviewFinding = (raw: PrReviewFindingSubmission): PrRevi
 		...(typeof raw.replacement === "string" && raw.replacement.length <= MAX_TEXT
 			? { replacement: Str.replace(/\n+$/, "")(raw.replacement) }
 			: undefined),
-		...(source ? { source: clip(source, MAX_BULLET) } : undefined),
+		// Not clipped for display: a citation past the first 200 characters must survive the check.
+		...(source ? { source: clip(source) } : undefined),
 	})
 }
 

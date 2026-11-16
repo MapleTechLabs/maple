@@ -15,7 +15,7 @@ import {
 	reviewerMention,
 	scorePrReview,
 } from "./pr-review-rules"
-import { Array as Arr } from "effect"
+import { Array as Arr, String as Str } from "effect"
 
 describe("normalizePrReviewSubmission", () => {
 	it("keeps a finding that names a file and a new-side line", () => {
@@ -112,6 +112,25 @@ describe("normalizePrReviewSubmission", () => {
 			],
 		})
 		assert.equal(report.findings[0]?.source, "src/auth.ts:42 `const token = req.headers.authorization`")
+	})
+
+	it("keeps a long source whole, so a citation past 200 characters survives", () => {
+		const source = `${Str.repeat(30)("Context. ")}src/auth.ts:42 \`const token = req.headers.authorization\``
+		const { report } = normalizePrReviewSubmission({
+			findings: [
+				{
+					path: "src/auth.ts",
+					line: 50,
+					category: "security",
+					checkId: "PII-01",
+					severity: "critical",
+					title: "Bearer token logged",
+					body: "b",
+					source,
+				},
+			],
+		})
+		assert.equal(report.findings[0]?.source, source)
 	})
 
 	it("drops a finding it cannot anchor to a line rather than inventing one", () => {
