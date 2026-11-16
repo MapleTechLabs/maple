@@ -107,10 +107,15 @@ export const bucketFraction = (lower: number, upper: number, input: ReadonlyArra
 	let rank = 0
 	let lowerRank: number | undefined
 	let upperRank: number | undefined
+	// As upstream Prometheus: positive buckets start at 0, and an infinite-width first bucket
+	// contributes its whole count instead of interpolating Inf/Inf.
+	const firstLowerBound = (buckets[0]?.upperBound ?? 0) <= 0 ? -Infinity : 0
 	for (const [i, b] of buckets.entries()) {
-		const lowerBound = i > 0 ? (buckets[i - 1]?.upperBound ?? -Infinity) : -Infinity
+		const lowerBound = i > 0 ? (buckets[i - 1]?.upperBound ?? -Infinity) : firstLowerBound
 		const interpolate = (v: number) =>
-			rank + ((b.count - rank) * (v - lowerBound)) / (b.upperBound - lowerBound)
+			lowerBound === -Infinity
+				? b.count
+				: rank + ((b.count - rank) * (v - lowerBound)) / (b.upperBound - lowerBound)
 		if (lowerRank === undefined && lowerBound >= lower) lowerRank = rank
 		if (upperRank === undefined && lowerBound >= upper) upperRank = rank
 		if (lowerRank !== undefined && upperRank !== undefined) break
