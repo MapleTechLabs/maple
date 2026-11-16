@@ -22,6 +22,7 @@ import {
 	type SecurityAuditWorkflowPayload,
 } from "@maple/domain/security-audit"
 import { durableStep } from "@maple/backend/platform/durable-step"
+import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { trackSecurityAuditCharge } from "@maple/backend/services/billing/autumn-tracker"
 import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRouterKeyService"
 import { ExecutorService } from "@maple/backend/services/sandbox/ExecutorService"
@@ -762,7 +763,14 @@ export const reportPullRequestCheckOnExit = (
 						error: Str.slice(0, 2_000)(Cause.pretty(exit.cause)),
 					})
 				yield* (yield* SecurityPrCheck).publish(orgId, payload.runId)
-			}).pipe(Effect.ignore)
+			}).pipe(
+				Effect.tapCause((cause) =>
+					Effect.logWarning("[SecurityPrCheck] could not settle or report a run on exit").pipe(
+						Effect.annotateLogs({ runId: payload.runId, cause: summarizeCause(cause) }),
+					),
+				),
+				Effect.ignore,
+			)
 
 const agentsOn = (
 	settings: LlmSettings,
