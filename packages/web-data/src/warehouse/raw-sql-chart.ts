@@ -7,7 +7,7 @@ import { rawSqlRowsForDisplay } from "@maple/query-engine"
 // Raw SQL chart server function (widget data source `raw_sql_chart`).
 //
 // Widget params shape:
-//   { sql, displayType, granularitySeconds?, startTime, endTime, ... }
+//   { sql, displayType?, granularitySeconds?, startTime, endTime, ... }
 //   displayType ∈ "line" | "area" | "bar" | "table" | "stat" | "pie" | "histogram" | "heatmap"
 //
 // Returns rows in a renderer-friendly shape:
@@ -25,9 +25,11 @@ import { rawSqlRowsForDisplay } from "@maple/query-engine"
 //   - heatmap            → raw rows; chart accepts `{ x, y, value }` or wide
 //     `{ name, …numeric }` formats.
 
+// Optional and open, like the stored source (`RawSqlWidgetDataSource`) and the share API: a widget
+// saved without one, or with a type this build does not know, gets its rows as returned.
 const GetRawSqlChartInputSchema = Schema.Struct({
 	sql: Schema.String,
-	displayType: RawSqlDisplayType,
+	displayType: Schema.optional(Schema.String),
 	startTime: WarehouseDateTimeString,
 	endTime: WarehouseDateTimeString,
 	granularitySeconds: Schema.optional(Schema.Number),
@@ -41,7 +43,7 @@ interface RawSqlChartResponse {
 		rowCount: number
 		columns: ReadonlyArray<string>
 		granularitySeconds: number
-		displayType: Schema.Schema.Type<typeof RawSqlDisplayType>
+		displayType: RawSqlDisplayType | undefined
 	}
 }
 
@@ -51,6 +53,7 @@ export const getRawSqlChart = Effect.fn("QueryEngine.getRawSqlChart")(function* 
 	data: GetRawSqlChartInput
 }) {
 	const input = yield* decodeInput(GetRawSqlChartInputSchema, data, "getRawSqlChart")
+	const displayType = Schema.is(RawSqlDisplayType)(input.displayType) ? input.displayType : undefined
 
 	const result = yield* runWarehouseQuery("rawSqlChart", () =>
 		Effect.gen(function* () {
@@ -58,7 +61,8 @@ export const getRawSqlChart = Effect.fn("QueryEngine.getRawSqlChart")(function* 
 			return yield* client.queryEngine.executeRawSql({
 				payload: new RawSqlExecuteRequest({
 					sql: input.sql,
-					displayType: input.displayType,
+					// The API does not read it; "table" names rows as returned.
+					displayType: displayType ?? "table",
 					startTime: input.startTime,
 					endTime: input.endTime,
 					granularitySeconds: input.granularitySeconds,
@@ -71,7 +75,7 @@ export const getRawSqlChart = Effect.fn("QueryEngine.getRawSqlChart")(function* 
 
 	// The same reshaping the share API applies server-side, so a raw-SQL line
 	// chart draws identically on a board and on its share link.
-	const chartRows = rawSqlRowsForDisplay(rows, input.displayType)
+	const chartRows = rawSqlRowsForDisplay(rows, displayType)
 
 	return {
 		data: chartRows,
@@ -79,7 +83,7 @@ export const getRawSqlChart = Effect.fn("QueryEngine.getRawSqlChart")(function* 
 			rowCount: result.meta.rowCount,
 			columns: result.meta.columns,
 			granularitySeconds: result.meta.granularitySeconds,
-			displayType: input.displayType,
+			displayType,
 		},
 	} satisfies RawSqlChartResponse
 })
