@@ -2,6 +2,7 @@ import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import { UserId } from "@maple/primitives"
 import {
+	AnomalyEnvironmentName,
 	AnomalyForbiddenError,
 	AnomalyIncidentNotFoundError,
 	AnomalyLinkedIssueNotFoundError,
@@ -281,8 +282,6 @@ export const V2AnomalyLinkIssueParams = Schema.Struct({
 	examples: [wireExample({ issue_id: "iss_YofPTrK9782DWwcnXhpcCw" })],
 })
 export type V2AnomalyLinkIssueParams = Schema.Schema.Type<typeof V2AnomalyLinkIssueParams>
-
-const AnomalyEnvironmentName = Schema.Trim.check(Schema.isMinLength(1), Schema.isMaxLength(200))
 
 export const V2AnomalySettingsUpdateParams = Schema.Struct({
 	enabled: Schema.optionalKey(Schema.Boolean.annotate({ description: "Enable or disable detection." })),

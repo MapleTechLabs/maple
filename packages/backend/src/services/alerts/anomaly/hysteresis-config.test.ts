@@ -40,7 +40,7 @@ describe("hysteresisConfigFor", () => {
 		expect(healthyTicksToResolve("latency_p95", 50)).toBe(healthyTicksToResolve("latency_p95", 2))
 	})
 
-	it("still resolves a recovered outage on the first healthy tick", () => {
-		expect(healthyTicksToResolve("throughput", 0)).toBe(1)
+	it("still resolves a recovered outage on the first healthy tick, even after reopens", () => {
+		for (const reopens of [0, 1, 5]) expect(healthyTicksToResolve("throughput", reopens)).toBe(1)
 	})
 })

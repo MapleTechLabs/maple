@@ -197,7 +197,7 @@ SELECT
         LIMIT 2500
         FORMAT JSON
 
--- builder:anomaly:anomalyLogVolumeQuery:matchedHours  [ed6267d2]
+-- builder:anomaly:anomalyLogVolumeQuery:baselineHours  [ed6267d2]
 SELECT
           logs_aggregates_hourly.ServiceName AS serviceName,
           logs_aggregates_hourly.DeploymentEnv AS deploymentEnv,
@@ -228,7 +228,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:anomaly:anomalyTraceSignalsQuery:matchedHours  [5d5ecce5]
+-- builder:anomaly:anomalyTraceSignalsQuery:baselineHours  [5d5ecce5]
 SELECT
           service_overview_hourly.ServiceName AS serviceName,
           service_overview_hourly.DeploymentEnv AS deploymentEnv,

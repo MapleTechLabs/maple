@@ -121,6 +121,9 @@ export class AnomalyDetectorSettingsDocument extends Schema.Class<AnomalyDetecto
 	updatedBy: Schema.NullOr(UserId),
 }) {}
 
+/** A `deployment.environment` name the detector should watch. */
+export const AnomalyEnvironmentName = Schema.Trim.check(Schema.isMinLength(1), Schema.isMaxLength(200))
+
 export class AnomalyDetectorSettingsUpdateRequest extends Schema.Class<AnomalyDetectorSettingsUpdateRequest>(
 	"AnomalyDetectorSettingsUpdateRequest",
 )({
@@ -128,9 +131,7 @@ export class AnomalyDetectorSettingsUpdateRequest extends Schema.Class<AnomalyDe
 	sensitivity: Schema.optionalKey(AnomalySensitivity),
 	mutedSignals: Schema.optionalKey(Schema.Array(AnomalySignalType)),
 	includedEnvironments: Schema.optionalKey(
-		Schema.Array(Schema.Trim.check(Schema.isMinLength(1), Schema.isMaxLength(200))).check(
-			Schema.isMaxLength(50),
-		),
+		Schema.Array(AnomalyEnvironmentName).check(Schema.isMaxLength(50)),
 	),
 }) {}
 

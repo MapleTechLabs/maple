@@ -1,21 +1,15 @@
 // Anomaly detection math — pure functions, no I/O.
 //
-// Baseline model: seasonal-naive. The current observation is always the last
-// 60 minutes. Each baseline sample is the same 60 minutes on one of the 7
-// previous days, shifted by -1, 0 or +1 hour (≤21 samples), blended from the
-// two sealed hourly rows the window straddles (`windowBaseline`). Robust bands
-// via median/MAD with a sigma floor so constant series (MAD = 0) aren't
-// hair-triggers.
-//
-// Comparing a few minutes of a fresh hour against full hours, or switching the
-// matched hours at :00, made p95 and rates jump right after every hour.
+// Baseline model: seasonal-naive. The current observation is the last 60 minutes;
+// each baseline sample is that window on one of the 7 previous days, shifted -1/0/+1
+// hour (`windowBaseline`). Robust bands via median/MAD with a sigma floor.
 //
 // Error/latency breaches require statistical, ratio, absolute-delta, and
 // volume guards. Throughput is deliberately stricter: only a near-total loss
 // of a historically continuous traffic stream is service-health evidence.
 
 import type { AnomalyIncidentSeverity, AnomalySensitivity, AnomalySignalType } from "@maple/domain/http"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, DateTime, String as Str } from "effect"
 
 export interface AnomalyEvaluation {
 	readonly detectorKey: string
@@ -146,10 +140,8 @@ const NON_PRODUCTION_TOKENS = new Set([
 ])
 
 /**
- * Whether a `deployment.environment` name reads as non-production (`staging`,
- * `dev-eu`, `pr-123`...). The zero-config detector skips those unless the org
- * lists them in its settings. An empty or unrecognised name counts as
- * production: many apps never set the attribute.
+ * Whether a `deployment.environment` name reads as non-production (`staging`, `dev-eu`, `pr-123`...).
+ * An empty or unrecognised name counts as production: many apps never set the attribute.
  */
 export function isNonProductionEnvironment(deploymentEnv: string): boolean {
 	const tokens = Str.split(Str.toLowerCase(deploymentEnv), /[^a-z0-9]+/)
@@ -162,19 +154,14 @@ export function isNonProductionEnvironment(deploymentEnv: string): boolean {
 	)
 }
 
-/** Whether the detector evaluates series in `deploymentEnv`, given the org's opted-in environments. */
+/** Whether the detector evaluates `deploymentEnv`, given the org's opted-in environments (case-insensitive). */
 export const isWatchedEnvironment = (deploymentEnv: string, included: ReadonlyArray<string>): boolean =>
-	!isNonProductionEnvironment(deploymentEnv) || included.includes(deploymentEnv)
-
-/** The previous and in-progress hour of day: the hourly rows a 60-minute window ending at `nowMs` touches. */
-export function currentWindowHoursOfDay(nowMs: number): readonly number[] {
-	const h = new Date(nowMs).getUTCHours()
-	return [(h + 23) % 24, h]
-}
+	!isNonProductionEnvironment(deploymentEnv) ||
+	Arr.some(included, (name) => Str.toLowerCase(name) === Str.toLowerCase(deploymentEnv))
 
 /** Hour-of-day values the blended baseline reads for the window ending at `nowMs`. */
 export function baselineHoursOfDay(nowMs: number): readonly number[] {
-	const h = new Date(nowMs).getUTCHours()
+	const h = DateTime.getPartUtc(DateTime.makeUnsafe(nowMs), "hour")
 	return [(h + 22) % 24, (h + 23) % 24, h, (h + 1) % 24]
 }
 
@@ -186,10 +173,8 @@ export interface BaselineWindows<S> {
 }
 
 /**
- * Baseline samples for the 60-minute window ending at `nowMs`, blended from
- * the two sealed hourly rows each window straddles (weight `f` on the later
- * hour). A window counts only when both hours had traffic: a series active in
- * scattered hours has no steady baseline to deviate from.
+ * Baseline windows for the 60 minutes ending at `nowMs`, each blended from the two sealed hourly rows
+ * it straddles. A window counts only when both hours had traffic.
  */
 export function windowBaseline<T, S>(
 	hours: ReadonlyMap<number, T>,
@@ -222,32 +207,31 @@ export interface GoldenHour {
 
 const lerp = (a: number, b: number, f: number) => a + (b - a) * f
 
+/** Share of the previous hour that the 60-minute window ending at `nowMs` still covers. */
+const previousHourShare = (nowMs: number) => 1 - (nowMs % HOUR_MS) / HOUR_MS
+
 export const blendGoldenHours = (a: GoldenHour, b: GoldenHour, f: number): GoldenHour => ({
 	requestCount: lerp(a.requestCount, b.requestCount, f),
 	errorCount: lerp(a.errorCount, b.errorCount, f),
 	p95Ms: lerp(a.p95Ms, b.p95Ms, f),
 })
 
-/**
- * The last 60 minutes from hourly rows, for sources with no minute grain: the
- * in-progress hour as is, plus the share of the previous hour the window still
- * covers. Counts are exact if the previous hour was uniform; p95 is blended.
- */
+/** The last 60 minutes from hourly rows: the in-progress hour plus the covered share of the previous one. */
 export const goldenWindowFromHours = (
 	previous: GoldenHour | undefined,
 	inProgress: GoldenHour | undefined,
 	nowMs: number,
 ): GoldenHour => {
-	const f = (nowMs % HOUR_MS) / HOUR_MS
+	const share = previousHourShare(nowMs)
 	return {
-		requestCount: (previous?.requestCount ?? 0) * (1 - f) + (inProgress?.requestCount ?? 0),
-		errorCount: (previous?.errorCount ?? 0) * (1 - f) + (inProgress?.errorCount ?? 0),
+		requestCount: (previous?.requestCount ?? 0) * share + (inProgress?.requestCount ?? 0),
+		errorCount: (previous?.errorCount ?? 0) * share + (inProgress?.errorCount ?? 0),
 		p95Ms:
 			previous === undefined
 				? (inProgress?.p95Ms ?? 0)
 				: inProgress === undefined
 					? previous.p95Ms
-					: lerp(previous.p95Ms, inProgress.p95Ms, f),
+					: lerp(inProgress.p95Ms, previous.p95Ms, share),
 	}
 }
 
@@ -257,7 +241,7 @@ export const logWindowFromHours = (
 	nowMs: number,
 ): { readonly errorLogCount: number } => ({
 	errorLogCount:
-		(previous?.errorLogCount ?? 0) * (1 - (nowMs % HOUR_MS) / HOUR_MS) + (inProgress?.errorLogCount ?? 0),
+		(previous?.errorLogCount ?? 0) * previousHourShare(nowMs) + (inProgress?.errorLogCount ?? 0),
 })
 
 export const blendLogHours = (
@@ -353,11 +337,7 @@ const skipped = (
 
 /** Minimum weighted request count in the current window before evaluating. */
 const GOLDEN_MIN_VOLUME = 50
-/**
- * Same-time-of-day windows needed before they can raise a threshold. A spike a
- * daily job causes at this time on most previous days is the series' normal,
- * yet the ±1h windows outvote it in the 21-sample median.
- */
+/** Same-time-of-day windows needed to raise a threshold: a daily job's spike is the series' normal. */
 const SAME_TIME_MIN_SAMPLES = 4
 /** An error-rate breach needs this many errors in the window, not only a rate: 2 of 50 is 4%. */
 const ERROR_RATE_MIN_ERRORS = 5
@@ -365,10 +345,7 @@ const ERROR_RATE_MIN_ERRORS = 5
 const LATENCY_MIN_RISE_MS = 100
 /** A latency anomaly is critical only when p95 is 4x the baseline and this much slower. */
 const LATENCY_CRITICAL_RISE_MS = 500
-/**
- * Minimum baseline rate (requests per minute) before a throughput drop is
- * evaluable: below it an empty hour is indistinguishable from a quiet one.
- */
+/** Minimum baseline requests per minute before a drop is evaluable: below it an empty hour looks quiet. */
 const THROUGHPUT_MIN_BASELINE_RPM = 1
 /**
  * A missing hourly aggregate means the service had no traffic in that hour;
@@ -380,12 +357,31 @@ const THROUGHPUT_MIN_BASELINE_SAMPLES = 14
 /** Only a near-total loss of an established traffic stream is a health issue. */
 const THROUGHPUT_OUTAGE_FRACTION = 0.05
 
-/** The higher of the thresholds the full baseline and this time of day on previous days give. */
-const seasonalThreshold = (
-	all: number[],
-	sameTime: number[],
-	thresholdOf: (values: number[]) => number,
-): number => Math.max(thresholdOf(all), sameTime.length >= SAME_TIME_MIN_SAMPLES ? thresholdOf(sameTime) : 0)
+interface Band {
+	readonly median: number
+	readonly sigma: number
+	readonly threshold: number
+}
+
+interface BandSpec {
+	readonly sigmaFloorAbs: number
+	readonly sigmaFloorRel: number
+	readonly thresholdOf: (median: number, sigma: number) => number
+}
+
+const bandOf = (values: number[], spec: BandSpec): Band => {
+	const m = median(values)
+	const sigma = robustSigma(values, m, spec.sigmaFloorAbs, spec.sigmaFloorRel)
+	return { median: m, sigma, threshold: spec.thresholdOf(m, sigma) }
+}
+
+/** The full baseline's band, its threshold raised to what this time of day on previous days allows. */
+const seasonalBand = (all: number[], sameTime: number[], spec: BandSpec): Band => {
+	const band = bandOf(all, spec)
+	return sameTime.length < SAME_TIME_MIN_SAMPLES
+		? band
+		: { ...band, threshold: Math.max(band.threshold, bandOf(sameTime, spec).threshold) }
+}
 
 type GoldenRows = GoldenSignalSeries["baseline"]
 const errorRates = (rows: GoldenRows): number[] =>
@@ -452,11 +448,14 @@ export function evaluateGoldenSignals(
 				evaluations.push(skipped(signal, serviceName, deploymentEnv, 0, currentCount))
 			} else {
 				const value = current.errorCount / currentCount
-				const m = median(rates)
-				const sigma = robustSigma(rates, m, 0.005, 0.25)
-				const threshold = seasonalThreshold(rates, errorRates(sameTime), (xs) => {
-					const mx = median(xs)
-					return Math.max(mx + k * robustSigma(xs, mx, 0.005, 0.25), mx * ratio, mx + 0.02, 0.01)
+				const {
+					median: m,
+					sigma,
+					threshold,
+				} = seasonalBand(rates, errorRates(sameTime), {
+					sigmaFloorAbs: 0.005,
+					sigmaFloorRel: 0.25,
+					thresholdOf: (mx, sx) => Math.max(mx + k * sx, mx * ratio, mx + 0.02, 0.01),
 				})
 				const breached = value > threshold && current.errorCount >= ERROR_RATE_MIN_ERRORS
 				const severity: AnomalyIncidentSeverity =
@@ -478,15 +477,15 @@ export function evaluateGoldenSignals(
 				evaluations.push(skipped(signal, serviceName, deploymentEnv, current.p95Ms, currentCount))
 			} else {
 				const value = current.p95Ms
-				const m = median(p95s)
-				const sigma = robustSigma(p95s, m, 5, 0.1)
-				const threshold = seasonalThreshold(p95s, latencies(sameTime), (xs) => {
-					const mx = median(xs)
-					return Math.max(
-						mx + k * robustSigma(xs, mx, 5, 0.1),
-						mx * (1 + (ratio - 1) / 2),
-						mx + LATENCY_MIN_RISE_MS,
-					)
+				const {
+					median: m,
+					sigma,
+					threshold,
+				} = seasonalBand(p95s, latencies(sameTime), {
+					sigmaFloorAbs: 5,
+					sigmaFloorRel: 0.1,
+					thresholdOf: (mx, sx) =>
+						Math.max(mx + k * sx, mx * (1 + (ratio - 1) / 2), mx + LATENCY_MIN_RISE_MS),
 				})
 				const breached = value > threshold
 				const severity: AnomalyIncidentSeverity =
@@ -533,12 +532,14 @@ export function evaluateLogVolume(series: LogVolumeSeries, config: DetectionConf
 	}
 
 	const perMinute = (rows: LogVolumeSeries["baseline"]) => Arr.map(rows, (b) => b.errorLogCount / 60)
-	const rates = perMinute(baseline)
-	const m = median(rates)
-	const sigma = robustSigma(rates, m, 0.5, 0.25)
-	const threshold = seasonalThreshold(rates, perMinute(sameTime), (xs) => {
-		const mx = median(xs)
-		return Math.max(mx + k * robustSigma(xs, mx, 0.5, 0.25), mx * ratio, mx + LOG_MIN_VOLUME / 60)
+	const {
+		median: m,
+		sigma,
+		threshold,
+	} = seasonalBand(perMinute(baseline), perMinute(sameTime), {
+		sigmaFloorAbs: 0.5,
+		sigmaFloorRel: 0.25,
+		thresholdOf: (mx, sx) => Math.max(mx + k * sx, mx * ratio, mx + LOG_MIN_VOLUME / 60),
 	})
 	const breached = ratePerMin > threshold
 

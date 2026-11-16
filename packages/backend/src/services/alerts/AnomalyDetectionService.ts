@@ -69,7 +69,6 @@ import {
 	blendLogHours,
 	capBusiestLogSeries,
 	CURRENT_WINDOW_MINUTES,
-	currentWindowHoursOfDay,
 	ERROR_SPIKE_MIN_COUNT,
 	excludeMaintenanceHours,
 	evaluateErrorSpike,
@@ -125,6 +124,8 @@ const decodeIssueIdSync = Schema.decodeUnknownSync(ErrorIssueIdSchema)
 
 const HOUR_MS = 60 * 60 * 1000
 const BASELINE_WINDOW_MS = 7 * 24 * HOUR_MS
+/** The earliest hour a baseline window reads: 7 days back, shifted an hour earlier, straddling two hours. */
+const BASELINE_LOOKBACK_MS = BASELINE_WINDOW_MS + 3 * HOUR_MS
 const SPIKE_WINDOW_MS = 30 * 60 * 1000
 /** Org-level claim lock TTL — slightly under the 5-minute tick cadence. */
 const ORG_LOCK_TTL_MS = 4 * 60 * 1000
@@ -144,8 +145,9 @@ const ERROR_SPIKE_BASELINE_CACHE_BUCKET = "anomaly-errbase"
  */
 const BASELINE_CACHE_READ_TIMEOUT_MS = 250
 /** Edge-cache buckets for the cached 7-day matched-hours baselines (golden + logs). */
-const GOLDEN_BASELINE_CACHE_BUCKET = "anomaly-goldenbase"
-const LOG_BASELINE_CACHE_BUCKET = "anomaly-logbase"
+// v2: blobs hold the hours the blended windows read (h-2..h+1, 7d+3h back); v1 blobs lack them.
+const GOLDEN_BASELINE_CACHE_BUCKET = "anomaly-v2-goldenbase"
+const LOG_BASELINE_CACHE_BUCKET = "anomaly-v2-logbase"
 /** Active-org discovery window — covers the in-progress hour plus the prior one
  *  so an org that just started sending telemetry is picked up within a tick. */
 const ANOMALY_ACTIVE_DISCOVERY_WINDOW_MS = 2 * HOUR_MS
@@ -1064,7 +1066,7 @@ const make: Effect.Effect<
 			const rows = yield* withOutboundPermit(
 				warehouse.compiledQuery(
 					tenant,
-					CH.compile(CH.anomalyTraceSignalsQuery({ hoursOfDay: currentWindowHoursOfDay(nowMs) }), {
+					CH.compile(CH.anomalyTraceSignalsQuery({}), {
 						orgId: tenant.orgId,
 						startTime: formatWarehouseDateTime(currentHourStartMs - HOUR_MS),
 						endTime: formatWarehouseDateTime(nowMs),
@@ -1109,7 +1111,7 @@ const make: Effect.Effect<
 					CH.anomalyTraceSignalsQuery({ hoursOfDay: baselineHoursOfDay(nowMs) }),
 					{
 						orgId: tenant.orgId,
-						startTime: formatWarehouseDateTime(nowMs - BASELINE_WINDOW_MS - 3 * HOUR_MS),
+						startTime: formatWarehouseDateTime(nowMs - BASELINE_LOOKBACK_MS),
 						endTime: formatWarehouseDateTime(currentHourStartMs),
 					},
 				)
@@ -1184,7 +1186,7 @@ const make: Effect.Effect<
 					CH.anomalyLogVolumeQuery({ hoursOfDay: baselineHoursOfDay(nowMs) }),
 					{
 						orgId: tenant.orgId,
-						startTime: formatWarehouseDateTime(nowMs - BASELINE_WINDOW_MS - 3 * HOUR_MS),
+						startTime: formatWarehouseDateTime(nowMs - BASELINE_LOOKBACK_MS),
 						endTime: formatWarehouseDateTime(currentHourStartMs),
 					},
 				)
@@ -1207,14 +1209,11 @@ const make: Effect.Effect<
 		)
 
 		// Logs have no minute grain: the window is the in-progress hour plus the covered share of the previous one.
-		const currentCompiled = CH.compile(
-			CH.anomalyLogVolumeQuery({ hoursOfDay: currentWindowHoursOfDay(nowMs) }),
-			{
-				orgId: tenant.orgId,
-				startTime: formatWarehouseDateTime(currentHourStartMs - HOUR_MS),
-				endTime: formatWarehouseDateTime(nowMs),
-			},
-		)
+		const currentCompiled = CH.compile(CH.anomalyLogVolumeQuery({}), {
+			orgId: tenant.orgId,
+			startTime: formatWarehouseDateTime(currentHourStartMs - HOUR_MS),
+			endTime: formatWarehouseDateTime(nowMs),
+		})
 		const currentRows = yield* withOutboundPermit(
 			warehouse.compiledQuery(tenant, currentCompiled, {
 				profile: "list",
@@ -1428,7 +1427,7 @@ const make: Effect.Effect<
 		const cachedBaselines = yield* readCachedBaselines(orgId, nowMs)
 		// One read of the maintenance occurrences that ran over the lookback.
 		const exclusions = yield* dbExecute((db) =>
-			selectBaselineExclusions(db, orgId, nowMs - BASELINE_WINDOW_MS - 3 * HOUR_MS, currentHourStartMs),
+			selectBaselineExclusions(db, orgId, nowMs - BASELINE_LOOKBACK_MS, currentHourStartMs),
 		)
 		yield* Effect.annotateCurrentSpan({ "maple.anomaly.maintenance_exclusions": exclusions.length })
 		const [goldenSeries, logSeries, spikes] = yield* Effect.all(
@@ -1502,7 +1501,9 @@ const make: Effect.Effect<
 			if (
 				state.signalType !== "error_spike" ||
 				state.fingerprintHash === null ||
-				observedSpikeKeys.has(state.detectorKey)
+				observedSpikeKeys.has(state.detectorKey) ||
+				// An environment the org stopped watching is not a recovery; the no-data sweep closes it.
+				!watched(state.deploymentEnv)
 			) {
 				continue
 			}

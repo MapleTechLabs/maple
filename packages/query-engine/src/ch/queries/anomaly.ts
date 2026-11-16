@@ -6,10 +6,8 @@
 // error_events_by_time) and returns at most a few thousand rows per org —
 // never a raw traces/logs scan.
 //
-// Baselines use the "matched hours" trick: `toHour(Hour) IN (h-1, h, h+1)`
-// over a trailing 7-day window returns ≤21 sealed same-hour-of-day samples.
-// The current observation is a rolling 60-minute window, so it is the same
-// length as a baseline sample at every minute of the hour.
+// Baselines read the sealed hourly rows on the hours of day the detector's
+// windows straddle; the current observation is a rolling 60-minute window.
 
 import type { DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
@@ -20,17 +18,8 @@ import { orgIdParam, utcSecondsParam } from "../tables"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 
 export interface AnomalyTraceSignalsOpts {
-	/** Hour-of-day values (0–23) to include: the hours the detector's baseline windows straddle. */
-	hoursOfDay: readonly number[]
-}
-
-export interface AnomalyTraceSignalsOutput {
-	readonly serviceName: string
-	readonly deploymentEnv: string
-	readonly hour: DateTime.Utc
-	readonly requestCount: number
-	readonly errorCount: number
-	readonly p95Ms: number
+	/** Hour-of-day values (0–23) to include; omitted reads every hour in the time range. */
+	readonly hoursOfDay?: readonly number[]
 }
 
 const SERVICE_OVERVIEW_P95_MS = CH.rawExpr(
@@ -57,19 +46,11 @@ export function anomalyTraceSignalsQuery(opts: AnomalyTraceSignalsOpts) {
 			$.OrgId.eq(orgIdParam),
 			$.Hour.gte(utcSecondsParam("startTime")),
 			$.Hour.lte(utcSecondsParam("endTime")),
-			CH.toHour($.Hour).in_(...opts.hoursOfDay),
+			opts.hoursOfDay === undefined ? undefined : CH.toHour($.Hour).in_(...opts.hoursOfDay),
 		])
 		.groupBy("serviceName", "deploymentEnv", "hour")
 		.limit(25000)
 		.format("JSON")
-}
-
-export interface AnomalyTraceSignalsWindowOutput {
-	readonly serviceName: string
-	readonly deploymentEnv: string
-	readonly requestCount: number
-	readonly errorCount: number
-	readonly p95Ms: number
 }
 
 /** Entry-point signals per series over `[startTime, endTime)`: the detector's rolling current window. */
@@ -116,7 +97,7 @@ export function anomalyLogVolumeQuery(opts: AnomalyTraceSignalsOpts) {
 			$.OrgId.eq(orgIdParam),
 			$.Hour.gte(utcSecondsParam("startTime")),
 			$.Hour.lte(utcSecondsParam("endTime")),
-			CH.toHour($.Hour).in_(...opts.hoursOfDay),
+			opts.hoursOfDay === undefined ? undefined : CH.toHour($.Hour).in_(...opts.hoursOfDay),
 		])
 		.groupBy("serviceName", "deploymentEnv", "hour")
 		.limit(25000)

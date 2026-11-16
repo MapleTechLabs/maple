@@ -720,7 +720,7 @@ const alertingFixtures: ReadonlyArray<BuilderFixture> = [
 	{
 		module: "anomaly",
 		name: "anomalyTraceSignalsQuery",
-		label: "matchedHours",
+		label: "baselineHours",
 		compile: () => CH.compileUnsafe(CH.anomalyTraceSignalsQuery({ hoursOfDay: [8, 9, 10, 11] }), window),
 	},
 	// AnomalyDetectionService, the rolling 60-minute current window.
@@ -733,7 +733,7 @@ const alertingFixtures: ReadonlyArray<BuilderFixture> = [
 	{
 		module: "anomaly",
 		name: "anomalyLogVolumeQuery",
-		label: "matchedHours",
+		label: "baselineHours",
 		compile: () => CH.compileUnsafe(CH.anomalyLogVolumeQuery({ hoursOfDay: [8, 9, 10, 11] }), window),
 	},
 	// AnomalyDetectionService, error-spike current and baseline windows.
