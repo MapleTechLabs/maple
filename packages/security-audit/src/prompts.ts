@@ -13,6 +13,7 @@ import {
 	companionWhenToUse,
 	fencedBlockAfter,
 	findBlock,
+	isCompanionRequiredSection,
 	ORDINARY_BLOCK_REFS,
 	sectionText,
 	textFrom,
@@ -264,6 +265,15 @@ export const synthesisPrompt = (
 export const companionFileOf = (ref: string): string =>
 	Option.match(Str.indexOf("#")(ref), { onNone: () => ref, onSome: (at) => Str.slice(0, at)(ref) })
 
+/** Why a refused attack-class reference cannot stand, and what the critic should name instead. */
+const refusalHint = (ref: string): string => {
+	const block = canonicalBlockRef(ref)
+	if (block === undefined) return "not a block of the skill"
+	return isCompanionRequiredSection(block)
+		? "a section the parent adds to every unit; name an ordinary_attack_class_block instead"
+		: "a companion block, not an ordinary attack-class block; list it in selected_companion_blocks instead"
+}
+
 /**
  * The repair turn's note for a critic whose proposals named unknown blocks: the refused references
  * and every valid one, so the fresh critic can map each to the skill's own spelling.
@@ -273,11 +283,7 @@ export const refusedBlockRefsRepair = (refused: ReadonlyArray<string>): string =
 		[
 			"## Block references the parent refused",
 			`A previous answer to this assignment proposed missing units whose attack-class blocks the parent could not use, so it refused those units. The refused references, and why:\n${Arr.join(
-				Arr.map(
-					refused,
-					(ref) =>
-						`- ${ref}: ${canonicalBlockRef(ref) === undefined ? "not a block of the skill" : "a companion section, not an ordinary attack-class block; list it in selected_companion_blocks instead"}`,
-				),
+				Arr.map(refused, (ref) => `- ${ref}: ${refusalHint(ref)}`),
 				"\n",
 			)}`,
 			"Answer the whole assignment again. Give every missing unit an ordinary_attack_class_block, selected_companion_blocks and excluded_blocks taken only from the valid references below; where a refused name was a finer topic, use the block that contains it. Return exactly one JSON object that matches the contract above, with no surrounding prose.",

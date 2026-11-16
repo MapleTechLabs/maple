@@ -225,13 +225,19 @@ describe("valid block references in planning prompts", () => {
 		const repair = refusedBlockRefsRepair([
 			"WEB-PROTOCOL-AND-AUTH.md#Bearer tokens",
 			"WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+			"DATA-ISOLATION-AND-LIFECYCLE.md#Export, backup, restore, and migration attack classes",
 		])
+		expect(
+			lines(repair).has(
+				"- DATA-ISOLATION-AND-LIFECYCLE.md#Export, backup, restore, and migration attack classes: a companion block, not an ordinary attack-class block; list it in selected_companion_blocks instead",
+			),
+		).toBe(true)
 		expect(lines(repair).has("- WEB-PROTOCOL-AND-AUTH.md#Bearer tokens: not a block of the skill")).toBe(
 			true,
 		)
 		expect(
 			lines(repair).has(
-				"- WEB-PROTOCOL-AND-AUTH.md#Core discipline: a companion section, not an ordinary attack-class block; list it in selected_companion_blocks instead",
+				"- WEB-PROTOCOL-AND-AUTH.md#Core discipline: a section the parent adds to every unit; name an ordinary_attack_class_block instead",
 			),
 		).toBe(true)
 		expect(Arr.filter(SKILL_BLOCK_REFS, (ref) => !lines(repair).has(ref))).toEqual([])
