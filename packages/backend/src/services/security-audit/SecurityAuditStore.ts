@@ -205,6 +205,14 @@ export interface SecurityAuditOrgStore extends AuditStoreApi {
 		runId: string,
 		actor: UserId,
 	) => Effect.Effect<Option.Option<SecurityAuditRunRow>, AuditStoreError>
+	/**
+	 * Like `cancelRun` for a run a newer one replaced: marks it `incomplete` with `reason` and keeps
+	 * its spend and tokens from its reservations and events. None when missing or already finished.
+	 */
+	readonly supersedeRun: (
+		runId: string,
+		reason: string,
+	) => Effect.Effect<Option.Option<SecurityAuditRunRow>, AuditStoreError>
 	/** Sets the run's totals (absolute, so a retried or replayed write cannot double-count). */
 	readonly setUsage: (runId: string, usage: RunUsage) => Effect.Effect<void, AuditStoreError>
 	readonly getRun: (runId: string) => Effect.Effect<Option.Option<SecurityAuditRunRow>, AuditStoreError>
@@ -1384,15 +1392,15 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					)
 				})
 
-				const cancelRun: SecurityAuditOrgStore["cancelRun"] = Effect.fn(
-					"SecurityAuditStore.cancelRun",
-				)(function* (rawRunId, actor) {
+				/** Stops an unfinished run whose Workflow will never settle it, keeping what it spent. */
+				const stopRun = Effect.fn("SecurityAuditStore.stopRun")(function* (
+					rawRunId: string,
+					reason: string,
+					note: string,
+				) {
 					const runId = yield* decodeRunId(rawRunId)
 					const now = yield* Clock.currentTimeMillis
-					const event = yield* eventRow(orgId, runId, {
-						_tag: "Note",
-						message: `Run cancelled by ${actor}`,
-					})
+					const event = yield* eventRow(orgId, runId, { _tag: "Note", message: note })
 					const cancelled = yield* dbExecute((db) =>
 						db.transaction(
 							Effect.gen(function* () {
@@ -1400,7 +1408,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 									PG.update(SecurityAuditRuns)
 										.set({
 											status: "incomplete",
-											incompleteReason: "cancelled",
+											incompleteReason: reason,
 											finishedAt: now,
 										})
 										.where(($) => [
@@ -1468,6 +1476,12 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					)
 					return cancelled ? yield* getRun(runId) : Option.none()
 				})
+
+				const cancelRun: SecurityAuditOrgStore["cancelRun"] = (runId, actor) =>
+					stopRun(runId, "cancelled", `Run cancelled by ${actor}`)
+
+				const supersedeRun: SecurityAuditOrgStore["supersedeRun"] = (runId, reason) =>
+					stopRun(runId, reason, `Run superseded: ${reason}`)
 
 				const setUsage: SecurityAuditOrgStore["setUsage"] = Effect.fn("SecurityAuditStore.setUsage")(
 					function* (rawRunId, usage) {
@@ -2251,6 +2265,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					startRun,
 					finishRun,
 					cancelRun,
+					supersedeRun,
 					setUsage,
 					getRun,
 					listRuns,

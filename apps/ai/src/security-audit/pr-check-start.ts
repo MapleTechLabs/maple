@@ -98,6 +98,13 @@ const checkPullRequest = Effect.fn("SecurityPrCheck.checkPullRequest")(function*
 	// older push never supersedes the run for a newer one.
 	const head = yield* provider.fetchPullRequestHead(installation, ref, job.number)
 	if (head.headSha !== headSha) return skipped("stale_head")
+	// A redelivery after this head's audit finished reuses its result rather than paying again.
+	const latest = yield* store.listRuns({ targetId: target.id, prNumber: job.number, limit: 1 })
+	const done = latest[0]
+	if (done !== undefined && done.sourceRef === headSha && done.status === "complete") {
+		yield* checks.publish(orgId, done.id)
+		return skipped("already_checked")
+	}
 
 	/**
 	 * Whether this head already has a run (a redelivery, api's retry): if so it answers. Any other
@@ -118,10 +125,10 @@ const checkPullRequest = Effect.fn("SecurityPrCheck.checkPullRequest")(function*
 						),
 					),
 					Effect.andThen(
-						store.finishRun(run.id, {
-							status: "incomplete",
-							reason: `superseded: a newer push (${Str.slice(0, 7)(headSha)}) is being checked`,
-						}),
+						store.supersedeRun(
+							run.id,
+							`superseded: a newer push (${Str.slice(0, 7)(headSha)}) is being checked`,
+						),
 					),
 					Effect.andThen(checks.publish(orgId, run.id)),
 				),
