@@ -874,78 +874,172 @@ type FindingSeed = Readonly<{
 	estimate?: "critical" | "high" | "medium" | "low" | null
 	ago: number
 	createdAgo?: number
+	/** The finding's own write-up; seeds without one share the tenant export story. */
+	story?: Story
 }>
 
+type Story = Readonly<{
+	description: string
+	entrypoint: Readonly<{ scope: string; description: string }>
+	sink: Readonly<{ file: string; line: number; scope: string; description: string }>
+	evidence: string
+	rootCause: string
+	intendedBehavior: string
+	conditions: ReadonlyArray<Readonly<{ kind: string; description: string }>>
+	attacker: string
+	payload: string
+	instructions: ReadonlyArray<string>
+	observed: string
+	strategy: string
+	fixedCode: string
+	likelihood: string
+	impact: string
+}>
+
+const TENANT_EXPORT: Story = {
+	description:
+		"POST /v1/exports reads tenantId from the JSON body and passes it to the export query. The session's tenant is never compared with it, so any signed-in user can export another tenant's data by changing one field.",
+	entrypoint: {
+		scope: "createExport",
+		description:
+			"Any authenticated session reaches the handler. The body is parsed without a tenant check.",
+	},
+	sink: {
+		file: "src/exports/query.ts",
+		line: 31,
+		scope: "selectRows",
+		description:
+			"The id goes straight into the WHERE clause. No other filter limits the rows to the caller.",
+	},
+	evidence: "tenantId is read from the body.",
+	rootCause: "The handler trusts a client-supplied tenant id instead of the one bound to the session.",
+	intendedBehavior:
+		"Exports are scoped to the caller's tenant. Every other route reads it from ctx.session.tenantId.",
+	conditions: [
+		{ kind: "authentication_level", description: "any signed-in user" },
+		{ kind: "data_state", description: "target tenant id known" },
+	],
+	attacker:
+		"A user with any account in a different tenant, using only the public API and their own session cookie.",
+	payload: 'POST /v1/exports\n{ "tenantId": "tn_8f21c0", "range": "last_90_days" }',
+	instructions: [
+		"Sign in to your own tenant and copy the session cookie.",
+		"Send the request above with another tenant's id. Ids appear in shared dashboard links.",
+		"Download the finished export from GET /v1/exports/:jobId.",
+	],
+	observed:
+		"Shown from source only: the query returns the other tenant's rows. Not executed, since audits cannot run code yet.",
+	strategy:
+		"Drop tenantId from the request schema and take it from the session, as the other export routes do.",
+	fixedCode: "const job = await exports.start({ tenantId: ctx.session.tenantId, range: body.range })",
+	likelihood: "Needs only a normal account and a tenant id, which appears in shared links.",
+	impact: "Full read of another tenant's event history, including user emails.",
+}
+
+const LINK_PREVIEW: Story = {
+	description:
+		"GET /v1/preview fetches whatever URL the query string names and returns the page's title and image. Nothing checks where the URL points, so a caller can make the gateway request internal hosts and the cloud metadata endpoint.",
+	entrypoint: {
+		scope: "previewLink",
+		description: "Any signed-in user reaches the handler. The url parameter is only checked to be a URL.",
+	},
+	sink: {
+		file: "src/http/fetch.ts",
+		line: 12,
+		scope: "fetchPage",
+		description: "The URL goes straight to fetch, redirects followed, with no host or address check.",
+	},
+	evidence: "url is read from the query string and fetched as given.",
+	rootCause: "The preview fetcher trusts the requested URL instead of resolving and checking its address.",
+	intendedBehavior:
+		"Previews fetch public pages only. Private, loopback and link-local addresses are refused.",
+	conditions: [{ kind: "authentication_level", description: "any signed-in user" }],
+	attacker: "A user with any account, using the public API and their own session cookie.",
+	payload: "GET /v1/preview?url=http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+	instructions: [
+		"Sign in and copy the session cookie.",
+		"Request a preview of the metadata URL above.",
+		"Read the instance role name from the returned title, then request it to get credentials.",
+	],
+	observed:
+		"Shown from source only: the handler fetches the address and echoes the response. Not executed, since audits cannot run code yet.",
+	strategy:
+		"Resolve the host first and refuse private, loopback and link-local addresses, after every redirect too.",
+	fixedCode: "const page = await fetchPublicPage(url, { blockPrivateAddresses: true, maxRedirects: 3 })",
+	likelihood: "Needs only a normal account; the endpoint is linked from the editor.",
+	impact: "Reads cloud instance credentials and reaches internal services behind the gateway.",
+}
+
+const CORS_EMBED: Story = {
+	description:
+		"The CORS middleware on /v1/embed copies the request's Origin into Access-Control-Allow-Origin and allows credentials, so any site can read the embed responses with a visitor's cookie.",
+	entrypoint: {
+		scope: "embedCors",
+		description: "Every cross-origin request to /v1/embed passes through the middleware.",
+	},
+	sink: {
+		file: "src/http/cors.ts",
+		line: 22,
+		scope: "setHeaders",
+		description: "The Origin header is echoed back with Access-Control-Allow-Credentials: true.",
+	},
+	evidence: "Access-Control-Allow-Origin is set from req.headers.origin.",
+	rootCause: "The middleware reflects any origin instead of checking it against the allowed list.",
+	intendedBehavior: "Only the embedding sites the org lists may read embed responses with credentials.",
+	conditions: [{ kind: "user_interaction", description: "a signed-in user visits the attacker's page" }],
+	attacker: "A site owner who gets a signed-in user to open their page.",
+	payload: 'fetch("https://api.acme.dev/v1/embed/widgets", { credentials: "include" })',
+	instructions: [
+		"Host a page that runs the request above.",
+		"Get a signed-in user to open it.",
+		"Read the embed response the browser hands back.",
+	],
+	observed:
+		"Shown from source only: the response carries the visitor's embed data. Not executed, since audits cannot run code yet.",
+	strategy: "Check the Origin against the org's embed allow list and drop credentials for anything else.",
+	fixedCode: 'if (allowedOrigins.has(origin)) res.setHeader("Access-Control-Allow-Origin", origin)',
+	likelihood: "Needs a signed-in user to visit another site.",
+	impact: "Reads the visitor's embed widgets, which hold only public data.",
+}
+
 const record = (seed: FindingSeed) => {
+	const story = seed.story ?? TENANT_EXPORT
 	const common = {
 		fingerprint: seed.fingerprint,
 		title: seed.title,
-		description:
-			"POST /v1/exports reads tenantId from the JSON body and passes it to the export query. The session's tenant is never compared with it, so any signed-in user can export another tenant's data by changing one field.",
+		description: story.description,
 		trace: [
 			{
 				kind: "entrypoint",
 				file: seed.file,
 				line: seed.line,
-				scope: "createExport",
-				description:
-					"Any authenticated session reaches the handler. The body is parsed without a tenant check.",
+				scope: story.entrypoint.scope,
+				description: story.entrypoint.description,
 			},
-			{
-				kind: "sink",
-				file: "src/exports/query.ts",
-				line: 31,
-				scope: "selectRows",
-				description:
-					"The id goes straight into the WHERE clause. No other filter limits the rows to the caller.",
-			},
+			{ kind: "sink", ...story.sink },
 		],
-		evidence: [{ file: seed.file, line: seed.line, description: "tenantId is read from the body." }],
+		evidence: [{ file: seed.file, line: seed.line, description: story.evidence }],
 	}
 	if (seed.verdict === "confirmed")
 		return {
 			...common,
 			verdict: "confirmed",
-			root_cause:
-				"The handler trusts a client-supplied tenant id instead of the one bound to the session.",
-			intended_behavior:
-				"Exports are scoped to the caller's tenant. Every other route reads it from ctx.session.tenantId.",
-			conditions: [
-				{ kind: "authentication_level", description: "any signed-in user" },
-				{ kind: "data_state", description: "target tenant id known" },
-			],
+			root_cause: story.rootCause,
+			intended_behavior: story.intendedBehavior,
+			conditions: story.conditions,
 			execution: {
-				attacker_perspective:
-					"A user with any account in a different tenant, using only the public API and their own session cookie.",
-				payloads: ['POST /v1/exports\n{ "tenantId": "tn_8f21c0", "range": "last_90_days" }'],
-				instructions: [
-					"Sign in to your own tenant and copy the session cookie.",
-					"Send the request above with another tenant's id. Ids appear in shared dashboard links.",
-					"Download the finished export from GET /v1/exports/:jobId.",
-				],
-				observed_result:
-					"Shown from source only: the query returns the other tenant's rows. Not executed, since audits cannot run code yet.",
+				attacker_perspective: story.attacker,
+				payloads: [story.payload],
+				instructions: story.instructions,
+				observed_result: story.observed,
 			},
 			remediation: {
-				strategy:
-					"Drop tenantId from the request schema and take it from the session, as the other export routes do.",
-				code_changes: [
-					{
-						file_name: seed.file,
-						fixed_code:
-							"const job = await exports.start({ tenantId: ctx.session.tenantId, range: body.range })",
-					},
-				],
+				strategy: story.strategy,
+				code_changes: [{ file_name: seed.file, fixed_code: story.fixedCode }],
 			},
 			severity: {
-				likelihood: {
-					score: "high",
-					reason: "Needs only a normal account and a tenant id, which appears in shared links.",
-				},
-				impact: {
-					score: seed.severity ?? "low",
-					reason: "Full read of another tenant's event history, including user emails.",
-				},
+				likelihood: { score: "high", reason: story.likelihood },
+				impact: { score: seed.severity ?? "low", reason: story.impact },
 				overall_severity: seed.severity ?? "low",
 			},
 			confidence: { score: "high", reason: "Every cited line was re-read and the trace reproduced." },
@@ -1214,6 +1308,7 @@ const PR_FINDINGS: ReadonlyArray<FindingSeed> = [
 		runId: RUN_IDS.gatewayPr,
 		ago: 31 * MINUTE,
 		createdAgo: 31 * MINUTE,
+		story: LINK_PREVIEW,
 	},
 	{
 		fingerprint: "cors-credentials-5e20",
@@ -1227,6 +1322,7 @@ const PR_FINDINGS: ReadonlyArray<FindingSeed> = [
 		runId: RUN_IDS.gatewayPr,
 		ago: 31 * MINUTE,
 		createdAgo: 31 * MINUTE,
+		story: CORS_EMBED,
 	},
 ]
 

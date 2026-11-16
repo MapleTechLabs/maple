@@ -16,14 +16,16 @@ import { PR_CHECK_BLOCK_LABEL, type PrCheckBlockChoice, prCheckBlockAtOf, prChec
 
 export const DIALOG_ID = "security-pr-check-settings"
 
-/** The select's rows, strictest first. */
-export const BLOCK_CHOICES: ReadonlyArray<PrCheckBlockChoice> = [
-	"critical",
-	"high",
-	"medium",
-	"low",
-	"report",
-]
+const BLOCK_CHOICES: ReadonlyArray<PrCheckBlockChoice> = ["critical", "high", "medium", "low", "report"]
+
+/**
+ * The select's rows, strictest first. Informational has a row only when the target already blocks
+ * at it (set through the API), so opening and saving never rewrites it.
+ */
+export const blockChoicesOf = (target: SecurityAuditTarget | null): ReadonlyArray<PrCheckBlockChoice> =>
+	target?.prCheckBlockAt === "informational"
+		? ["critical", "high", "medium", "low", "informational", "report"]
+		: BLOCK_CHOICES
 
 const isChoice = (value: string): value is PrCheckBlockChoice => value in PR_CHECK_BLOCK_LABEL
 
@@ -41,8 +43,11 @@ export const Model = Schema.Struct({
 })
 export type Model = typeof Model.Type
 
-const selectFor = (choice: PrCheckBlockChoice): Select.Model =>
-	Select.init(`${DIALOG_ID}-block-at`, { value: choice, selectedIndex: BLOCK_CHOICES.indexOf(choice) })
+const selectFor = (choice: PrCheckBlockChoice, target: SecurityAuditTarget | null = null): Select.Model =>
+	Select.init(`${DIALOG_ID}-block-at`, {
+		value: choice,
+		selectedIndex: blockChoicesOf(target).indexOf(choice),
+	})
 
 export const init = (): Model => ({
 	dialog: Dialog.init(DIALOG_ID, "dialog"),
@@ -103,7 +108,7 @@ export const open = (model: Model, target: SecurityAuditTarget): Return => {
 			dialog: step.model,
 			target,
 			enabled: Switch.init(target.prCheckEnabled),
-			blockAt: selectFor(prCheckChoiceOf(target.prCheckBlockAt)),
+			blockAt: selectFor(prCheckChoiceOf(target.prCheckBlockAt), target),
 			attempt: model.attempt + 1,
 		},
 		commands: dialogCommands(step.commands),

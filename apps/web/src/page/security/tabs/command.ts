@@ -36,6 +36,15 @@ export const FetchTargetRuns = Command.define("SecurityApiListTargetRuns", {
 		),
 })
 
+export const FetchBranchRuns = Command.define("SecurityApiListBranchRuns", {
+	args: { key: Schema.String, targetId: SecurityAuditTargetId },
+	messages: [Message.CompletedFetchBranchRuns],
+	execute: ({ key, targetId }) =>
+		Effect.map(listRuns(targetId, { branchOnly: true }), (result) =>
+			Message.CompletedFetchBranchRuns({ key, targetId, result }),
+		),
+})
+
 /** The search box's 300 ms debounce, as the errors hub's; a newer keystroke bumps the generation. */
 export const WaitSecuritySearchDebounce = Command.define("WaitSecuritySearchDebounce", {
 	args: { generation: Schema.Finite },

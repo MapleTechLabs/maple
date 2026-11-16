@@ -1272,6 +1272,104 @@ describe("pull request check", () => {
 		expect(clicked.prCheckSettings.dialog.isOpen).toBe(false)
 	})
 
+	test("pull request runs that fill the org's run list never hide a target's branch audit", () => {
+		const gatewayId = Schema.decodeSync(SecurityAuditTargetId)(TARGET_IDS.gateway)
+		const runs = runsOf(NOW).runs
+		const prRun = Option.getOrUndefined(Arr.findFirst(runs, (run) => run.kind === "pull_request"))
+		const branchRun = Option.getOrUndefined(Arr.findFirst(runs, (run) => run.id === RUN_IDS.gateway))
+		if (prRun === undefined || branchRun === undefined) throw new RangeError("fixture runs missing")
+		// Fifty pull request runs, newer than any branch audit: the most either list returns.
+		const crowd = Arr.map(Arr.range(1, 50), (index) => ({
+			...prRun,
+			id: Schema.decodeSync(SecurityAuditRunId)(`run_pr_${index}`),
+			startedAt: NOW - index * 1000,
+		}))
+		const entered = init(overview, context).model
+		const crowded = Arr.reduce(
+			[
+				Message.CompletedFetchTargets({
+					key: entered.targets.key ?? "",
+					result: Result.succeed(targetsOf(NOW)),
+				}),
+				Message.CompletedFetchRuns({
+					key: entered.runs.key ?? "",
+					result: Result.succeed({ runs: crowd }),
+				}),
+			],
+			entered,
+			(model, message) => pageUpdate(model, message).model,
+		)
+		const withOwn = pageUpdate(
+			crowded,
+			Message.CompletedFetchTargetRuns({
+				targetId: gatewayId,
+				key: crowded.targetRuns[TARGET_IDS.gateway]?.key ?? "",
+				result: Result.succeed({ runs: crowd }),
+			}),
+		).model
+		expect(latestRunFor(withOwn, TARGET_IDS.gateway)).toBeUndefined()
+		const answered = pageUpdate(
+			withOwn,
+			Message.CompletedFetchBranchRuns({
+				targetId: gatewayId,
+				key: withOwn.branchRuns[TARGET_IDS.gateway]?.key ?? "",
+				result: Result.succeed({ runs: [branchRun] }),
+			}),
+		)
+		expect(latestRunFor(answered.model, TARGET_IDS.gateway)?.id).toBe(RUN_IDS.gateway)
+		expect(names(answered.commands)).toContain("SecurityApiGetLatestRun")
+	})
+
+	test("the targets answer reads each target's branch audits on their own", () => {
+		const entered = init(overview, context).model
+		const sent = names(
+			pageUpdate(
+				entered,
+				Message.CompletedFetchTargets({
+					key: entered.targets.key ?? "",
+					result: Result.succeed(targetsOf(NOW)),
+				}),
+			).commands,
+		)
+		expect(Arr.filter(sent, (name) => name === "SecurityApiListBranchRuns")).toHaveLength(4)
+	})
+
+	test("a target that blocks at informational keeps it through the dialog; low reads low and above", () => {
+		const base = admin()
+		const targets = targetsOf(NOW).targets
+		const informational = Arr.map(targets, (target) =>
+			target.id === TARGET_IDS.gateway
+				? { ...target, prCheckBlockAt: "informational" as const }
+				: target,
+		)
+		const withInformational = pageUpdate(
+			base,
+			Message.CompletedFetchTargets({
+				key: base.targets.key ?? "",
+				result: Result.succeed({ targets: informational }),
+			}),
+		).model
+		const opened = pageUpdate(
+			withInformational,
+			Message.ClickedPrCheck({
+				targetId: Schema.decodeSync(SecurityAuditTargetId)(TARGET_IDS.gateway),
+			}),
+		).model
+		expect(saveArgs(opened)).toMatchObject({ payload: { prCheckBlockAt: "informational" } })
+		scene(
+			{ update: pageUpdate, view },
+			given(opened),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(text("Any confirmed finding")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(pick(opened, "low")),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(text("Low and above")).toExist(),
+		)
+	})
+
 	test("a pull request run never stands in for the target's latest audit of its branch", () => {
 		expect(latestRunFor(loaded(), TARGET_IDS.gateway)?.id).toBe(RUN_IDS.gateway)
 	})

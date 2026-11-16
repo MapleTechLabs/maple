@@ -30,8 +30,16 @@ export const listTargets = call((api) => api.securityAudit.listTargets())
 /** The org's monthly spend limit, this month's spend and its default models. */
 export const getSettings = call((api) => api.securityAudit.getSettings())
 
-export const listRuns = (targetId?: SecurityAuditTargetId) =>
-	call((api) => api.securityAudit.listRuns({ query: targetId === undefined ? {} : { targetId } }))
+/** `branchOnly` leaves out pull request runs: the target's audits of its branch. */
+export const listRuns = (
+	targetId?: SecurityAuditTargetId,
+	options: Readonly<{ branchOnly?: boolean }> = {},
+) =>
+	call((api) =>
+		api.securityAudit.listRuns({
+			query: { targetId, branchOnly: options.branchOnly === true ? "true" : undefined },
+		}),
+	)
 
 export const getRun = (runId: SecurityAuditRunId) =>
 	call((api) => api.securityAudit.getRun({ params: { runId } }))

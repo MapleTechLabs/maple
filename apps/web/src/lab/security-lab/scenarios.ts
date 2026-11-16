@@ -238,6 +238,23 @@ const tabs = (
 		...Arr.map(
 			Rec.values(TARGET_IDS),
 			(id) => (model: TabsPage.Model) =>
+				M.CompletedFetchBranchRuns({
+					targetId: targetId(id),
+					key: model.branchRuns[id]?.key ?? "",
+					result: Result.succeed({
+						runs:
+							options.empty === true
+								? []
+								: Arr.filter(
+										runsOf(nowMs).runs,
+										(run) => run.targetId === id && run.kind !== "pull_request",
+									),
+					}),
+				}),
+		),
+		...Arr.map(
+			Rec.values(TARGET_IDS),
+			(id) => (model: TabsPage.Model) =>
 				M.CompletedFetchFindings({
 					targetId: targetId(id),
 					key: model.findings[id]?.key ?? "",
@@ -667,7 +684,7 @@ export const build = (scenario: Scenario, nowMs: number): Built => {
 							R.GotTriageMessage({
 								message: ToggleGroup.Message.ClickedItem({
 									value: "accepted_risk",
-									index: 2,
+									index: 1,
 								}),
 							}),
 						() =>

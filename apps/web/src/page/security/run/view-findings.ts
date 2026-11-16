@@ -16,7 +16,7 @@ import { FINDING_STATUS_LABEL, gateOf, isLive, locationOf } from "../kit/format"
 import { gateState, placeholderRows } from "../kit/parts"
 import { countOf, hasFindingPage, isTriageable, openFindingOf } from "./derive"
 import { canManage, Message, type Model } from "./model"
-import { triageForm } from "../kit/triage-form"
+import { runTriageChoices, triageForm } from "../kit/triage-form"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -168,6 +168,7 @@ const sheetTriage = (h: H, model: Model, finding: SecurityAuditFinding): Readonl
 						? triageForm(h, {
 								idPrefix: "security-run-triage",
 								status: finding.status,
+								choices: runTriageChoices(finding.status),
 								triage: model.triage,
 								reason: model.reason,
 								isSubmitted: model.isTriageSubmitted,

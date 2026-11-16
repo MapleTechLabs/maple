@@ -37,6 +37,8 @@ export const Model = Schema.Struct({
 	runs: KeyedSchema(SecurityAuditRunsResponse, LoadFailure),
 	/** Each target's own runs: its latest run and this month's spend, past the global list's cap. */
 	targetRuns: Schema.Record(Schema.String, KeyedSchema(SecurityAuditRunsResponse, LoadFailure)),
+	/** Each target's audits of its branch, so pull request runs never crowd out its latest one. */
+	branchRuns: Schema.Record(Schema.String, KeyedSchema(SecurityAuditRunsResponse, LoadFailure)),
 	/** One read per target; findings are listed per target. */
 	findings: Schema.Record(Schema.String, KeyedSchema(SecurityAuditFindingsResponse, LoadFailure)),
 	/** Each target's latest run with its coverage counts. */
@@ -74,6 +76,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchTargets: result(SecurityAuditTargetsResponse),
 	CompletedFetchRuns: result(SecurityAuditRunsResponse),
 	CompletedFetchTargetRuns: { targetId: SecurityAuditTargetId, ...result(SecurityAuditRunsResponse) },
+	CompletedFetchBranchRuns: { targetId: SecurityAuditTargetId, ...result(SecurityAuditRunsResponse) },
 	CompletedFetchFindings: { targetId: SecurityAuditTargetId, ...result(SecurityAuditFindingsResponse) },
 	CompletedFetchLatestRun: { runId: SecurityAuditRunId, ...result(SecurityAuditRunDetail) },
 	CompletedFetchGithubStatus: result(GithubIntegrationStatus),

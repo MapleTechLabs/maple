@@ -13,7 +13,7 @@ import { typography } from "@maple/views/ui/typography"
 import { vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 import { PR_CHECK_BLOCK_LABEL, repositoryRulesHref } from "./format"
-import { BLOCK_CHOICES, DIALOG_ID, Message, type Model } from "./pr-check-settings"
+import { blockChoicesOf, DIALOG_ID, Message, type Model } from "./pr-check-settings"
 
 // The pull request check form inside the shared FormDialog.
 
@@ -23,10 +23,11 @@ const SWITCH_ID = `${DIALOG_ID}-enabled`
 const BLOCK_AT_LABEL_ID = `${DIALOG_ID}-block-at-label`
 const BLOCK_AT_DESCRIPTION_ID = `${DIALOG_ID}-block-at-description`
 
-const BLOCK_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = Arr.map(BLOCK_CHOICES, (choice) => ({
-	_tag: "Item",
-	item: { value: choice, label: PR_CHECK_BLOCK_LABEL[choice] },
-}))
+const blockEntriesOf = (model: Model): ReadonlyArray<SelectView.SelectEntry> =>
+	Arr.map(blockChoicesOf(model.target), (choice) => ({
+		_tag: "Item",
+		item: { value: choice, label: PR_CHECK_BLOCK_LABEL[choice] },
+	}))
 
 const enabledRow = (h: H, model: Model, branch: string): Html =>
 	settingRow(h, {
@@ -60,7 +61,7 @@ const blockAtField = (h: H, model: Model, branch: string): Html =>
 			model: model.blockAt,
 			view: SelectView.view,
 			viewInputs: {
-				entries: BLOCK_ENTRIES,
+				entries: blockEntriesOf(model),
 				labelledBy: BLOCK_AT_LABEL_ID,
 				describedBy: BLOCK_AT_DESCRIPTION_ID,
 				className: "w-full max-w-64",

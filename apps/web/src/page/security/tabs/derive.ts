@@ -181,6 +181,13 @@ const mergeRuns = (lists: ReadonlyArray<ReadonlyArray<SecurityAuditRun>>): Reado
 		}).values(),
 	].sort((a, b) => b.startedAt - a.startedAt)
 
+const branchRunsOf = (model: Model, targetId: string): ReadonlyArray<SecurityAuditRun> =>
+	Option.getOrNull(
+		Option.flatMap(Option.fromNullishOr(model.branchRuns[targetId]), (slot) =>
+			AsyncData.getData(slot.data),
+		),
+	)?.runs ?? []
+
 /** A target's runs: its own list and the polled global list together, so neither goes stale. */
 export const runsForTarget = (model: Model, targetId: string): ReadonlyArray<SecurityAuditRun> =>
 	mergeRuns([
@@ -189,11 +196,25 @@ export const runsForTarget = (model: Model, targetId: string): ReadonlyArray<Sec
 	])
 
 export const allRuns = (model: Model): ReadonlyArray<SecurityAuditRun> =>
-	mergeRuns([runsOf(model), ...Arr.map(targetsOf(model), (target) => targetRunsOf(model, target.id) ?? [])])
+	mergeRuns([
+		runsOf(model),
+		...Arr.flatMap(targetsOf(model), (target) => [
+			targetRunsOf(model, target.id) ?? [],
+			branchRunsOf(model, target.id),
+		]),
+	])
 
-/** The target's newest audit of its branch: a pull request run checks a diff, not the branch. */
+/**
+ * The target's newest audit of its branch: a pull request run checks a diff, not the branch. The
+ * branch-only list finds it however many pull request runs came after; the others keep it fresh.
+ */
 export const latestRunFor = (model: Model, targetId: string): SecurityAuditRun | undefined =>
-	Option.getOrUndefined(Arr.findFirst(runsForTarget(model, targetId), (run) => run.kind !== "pull_request"))
+	Option.getOrUndefined(
+		Arr.findFirst(
+			mergeRuns([branchRunsOf(model, targetId), runsForTarget(model, targetId)]),
+			(run) => run.kind !== "pull_request",
+		),
+	)
 
 /** The Runs tab's rows: one target's runs when narrowed to it, else every run held. */
 export const runsForTab = (

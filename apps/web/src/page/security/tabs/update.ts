@@ -23,6 +23,7 @@ import {
 	FetchRuns,
 	FetchSettings,
 	FetchTargetRuns,
+	FetchBranchRuns,
 	FetchTargets,
 	WaitSecuritySearchDebounce,
 	ReadSecurityClock,
@@ -118,19 +119,31 @@ const readFindings = (
 		(key) => FetchFindings({ key, targetId }),
 	)
 
+/** A target's own runs, and beside them its branch audits alone: its latest one, past any pull request runs. */
 const readTargetRuns = (
 	model: Model,
 	context: PageContext,
 	targetId: SecurityAuditTargetId,
 	mode: Keyed.ReadMode,
 ): Return =>
-	slotStep(
-		model,
-		Keyed.at(model.targetRuns, targetId),
-		(slot) => ({ targetRuns: { ...model.targetRuns, [targetId]: slot } }),
-		keyOf(context, "listRuns", { targetId }),
-		mode,
-		(key) => FetchTargetRuns({ key, targetId }),
+	chain(
+		slotStep(
+			model,
+			Keyed.at(model.targetRuns, targetId),
+			(slot) => ({ targetRuns: { ...model.targetRuns, [targetId]: slot } }),
+			keyOf(context, "listRuns", { targetId }),
+			mode,
+			(key) => FetchTargetRuns({ key, targetId }),
+		),
+		(next) =>
+			slotStep(
+				next,
+				Keyed.at(next.branchRuns, targetId),
+				(slot) => ({ branchRuns: { ...next.branchRuns, [targetId]: slot } }),
+				keyOf(context, "listRuns", { targetId, branchOnly: "true" }),
+				mode,
+				(key) => FetchBranchRuns({ key, targetId }),
+			),
 	)
 
 const readLatestRun = (
@@ -214,6 +227,7 @@ export const init = (route: SecurityTabsRoute, context: PageContext): Return => 
 		targets: Keyed.idle(),
 		runs: Keyed.idle(),
 		targetRuns: {},
+		branchRuns: {},
 		findings: {},
 		latestRuns: {},
 		githubStatus: Keyed.idle(),
@@ -461,6 +475,16 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					(run) => (updated: Model) => readLatestRun(updated, context, run, "Supersede"),
 				),
 			])
+		},
+		CompletedFetchBranchRuns: ({ targetId, key, result }) => {
+			const slot = model.branchRuns[targetId]
+			if (slot === undefined) return { model }
+			const next: Model = {
+				...model,
+				branchRuns: { ...model.branchRuns, [targetId]: Keyed.accept(slot, key, result) },
+			}
+			// The target's latest branch audit may be one neither run list held: read its coverage.
+			return followRuns(next, context, "Load")
 		},
 		CompletedFetchFindings: ({ targetId, key, result }) => {
 			const slot = model.findings[targetId]

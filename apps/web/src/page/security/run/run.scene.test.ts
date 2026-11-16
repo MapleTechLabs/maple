@@ -1,6 +1,7 @@
 import { OrgId } from "@maple/domain"
 import {
 	type SecurityAuditEvent,
+	type SecurityAuditFinding,
 	SecurityAuditPersistenceError,
 	SecurityAuditRunNotInProgressError,
 } from "@maple/domain/http"
@@ -540,7 +541,7 @@ describe("pull request run", () => {
 		Arr.reduce(
 			[
 				Message.GotTriageMessage({
-					message: ToggleGroup.Message.ClickedItem({ value: "dismissed", index: 1 }),
+					message: ToggleGroup.Message.ClickedItem({ value: "dismissed", index: 0 }),
 				}),
 				Message.GotReasonMessage({
 					message: Field.Message.ChangedValue({
@@ -622,11 +623,71 @@ describe("pull request run", () => {
 		)
 	})
 
+	/** The pull request run with its findings answered as `edit` leaves them. */
+	const withFindings = (edit: (finding: SecurityAuditFinding) => SecurityAuditFinding): Model => {
+		const model = loaded(RUN_IDS.gatewayPr)
+		return pageUpdate(
+			model,
+			Message.CompletedFetchFindings({
+				key: model.findings.key ?? "",
+				result: Result.succeed({
+					findings: Arr.map(runFindingsOf(NOW, RUN_IDS.gatewayPr).findings, edit),
+				}),
+			}),
+		).model
+	}
+
+	test("a fixed or open finding offers only Dismiss and Accept risk; a triaged one can be reopened", () => {
+		const fixed = pageUpdate(
+			withFindings((finding) =>
+				finding.fingerprint === BLOCKING ? { ...finding, status: "fixed" } : finding,
+			),
+			Message.ClickedFinding({ fingerprint: BLOCKING }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(fixed),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(role("button", { name: "Open" })).not.toExist(),
+			expectView(role("button", { name: "Accept risk" })).toExist(),
+			expectView(role("button", { name: "Update status" })).toHaveAttr("disabled", "true"),
+		)
+		const reasoned = pageUpdate(
+			fixed,
+			Message.GotReasonMessage({ message: Field.Message.ChangedValue({ value: "reopen it" }) }),
+		).model
+		expect(names(pageUpdate(reasoned, Message.SubmittedTriage()).commands)).toEqual([])
+		scene(
+			{ update: pageUpdate, view },
+			given(opened(ACCEPTED)),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(role("button", { name: "Open" })).toHaveAttr("aria-pressed", "false"),
+			expectView(role("button", { name: "Accept risk" })).toHaveAttr("aria-pressed", "true"),
+		)
+	})
+
+	test("an open finding the branch already follows still links its finding page", () => {
+		const followed = pageUpdate(
+			withFindings((finding) =>
+				finding.fingerprint === BLOCKING
+					? { ...finding, firstSeenRunId: Schema.decodeSync(SecurityAuditRunId)(RUN_IDS.gateway) }
+					: finding,
+			),
+			Message.ClickedFinding({ fingerprint: BLOCKING }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(followed),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(role("link", { name: /Open finding page/ })).toExist(),
+		)
+	})
+
 	test("a reason is required before anything is sent", () => {
 		const picked = pageUpdate(
 			opened(BLOCKING),
 			Message.GotTriageMessage({
-				message: ToggleGroup.Message.ClickedItem({ value: "accepted_risk", index: 2 }),
+				message: ToggleGroup.Message.ClickedItem({ value: "accepted_risk", index: 1 }),
 			}),
 		).model
 		const submitted = pageUpdate(picked, Message.SubmittedTriage())

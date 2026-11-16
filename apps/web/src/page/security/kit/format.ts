@@ -142,15 +142,16 @@ export const PR_CHECK_BLOCK_LABEL = {
 	critical: "Critical",
 	high: "High and above",
 	medium: "Medium and above",
-	low: "Any confirmed finding",
+	low: "Low and above",
+	informational: "Any confirmed finding",
 	report: "Never (report only)",
 } as const
 
 export type PrCheckBlockChoice = keyof typeof PR_CHECK_BLOCK_LABEL
 
-/** The select's value for a threshold; `informational` has no row of its own and reads as low. */
+/** The select's value for a threshold; null (report only) has its own row. */
 export const prCheckChoiceOf = (blockAt: SecurityAuditSeverity | null): PrCheckBlockChoice =>
-	blockAt === null ? "report" : blockAt === "informational" ? "low" : blockAt
+	blockAt === null ? "report" : blockAt
 
 export const prCheckBlockAtOf = (choice: PrCheckBlockChoice): SecurityAuditSeverity | null =>
 	choice === "report" ? null : choice
@@ -159,7 +160,8 @@ const PR_CHECK_SHORT = {
 	critical: "critical",
 	high: "high+",
 	medium: "medium+",
-	low: "any finding",
+	low: "low+",
+	informational: "any finding",
 	report: "report only",
 } satisfies Record<PrCheckBlockChoice, string>
 
@@ -171,7 +173,9 @@ export const prCheckPart = (target: SecurityAuditTarget): string | null =>
 export const prCheckRuleOf = (target: SecurityAuditTarget): string =>
 	target.prCheckBlockAt === null
 		? "Reports only, never blocks"
-		: `Fails at ${Str.toLowerCase(PR_CHECK_BLOCK_LABEL[prCheckChoiceOf(target.prCheckBlockAt)])}`
+		: target.prCheckBlockAt === "informational"
+			? "Fails on any confirmed finding"
+			: `Fails at ${Str.toLowerCase(PR_CHECK_BLOCK_LABEL[prCheckChoiceOf(target.prCheckBlockAt)])}`
 
 export const pullRequestHref = (repository: string, prNumber: number): string =>
 	`https://github.com/${repository}/pull/${prNumber}`

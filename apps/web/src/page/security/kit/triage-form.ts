@@ -18,11 +18,27 @@ export const TRIAGE_STATUSES: ReadonlyArray<SecurityAuditFindingTriageStatus> = 
 	"accepted_risk",
 ]
 
-const TRIAGE_OPTIONS: ReadonlyArray<{ value: SecurityAuditFindingTriageStatus; label: string }> = [
-	{ value: "open", label: "Open" },
-	{ value: "dismissed", label: "Dismiss" },
-	{ value: "accepted_risk", label: "Accept risk" },
-]
+const TRIAGE_LABEL = {
+	open: "Open",
+	dismissed: "Dismiss",
+	accepted_risk: "Accept risk",
+} satisfies Record<SecurityAuditFindingTriageStatus, string>
+
+/**
+ * What a pull request run's finding can be set to: reopening only undoes a dismissal or an accepted
+ * risk, so an open or fixed finding offers Dismiss and Accept risk alone.
+ */
+export const runTriageChoices = (
+	status: SecurityAuditFindingStatus,
+): ReadonlyArray<SecurityAuditFindingTriageStatus> =>
+	status === "dismissed" || status === "accepted_risk" ? TRIAGE_STATUSES : ["dismissed", "accepted_risk"]
+
+/** Whether saving `picked` would change the finding: a choice offered, and not the status it has. */
+export const isTriageChange = (
+	choices: ReadonlyArray<SecurityAuditFindingTriageStatus>,
+	picked: SecurityAuditFindingTriageStatus,
+	status: SecurityAuditFindingStatus,
+): boolean => Arr.contains(choices, picked) && (picked !== currentTriageOf(status) || status === "fixed")
 
 const REASON_MAX = 2000
 
@@ -51,6 +67,8 @@ export type TriageFormOptions<M> = Readonly<{
 	/** Prefixes the reason field's ids, so two forms on a page never share one. */
 	idPrefix: string
 	status: SecurityAuditFindingStatus
+	/** The statuses offered, in order; every one unless the owner narrows them. */
+	choices?: ReadonlyArray<SecurityAuditFindingTriageStatus>
 	triage: ToggleGroup.Model
 	reason: Field.Model
 	isSubmitted: boolean
@@ -65,7 +83,8 @@ export type TriageFormOptions<M> = Readonly<{
 /** The triage control, its hint, the reason and the Update status button, as one form. */
 export const triageForm = <M>(h: HtmlBuilder<M>, options: TriageFormOptions<M>): Html => {
 	const picked = pickedTriageOf(options.triage, options.status)
-	const isChange = picked !== currentTriageOf(options.status) || options.status === "fixed"
+	const choices = options.choices ?? TRIAGE_STATUSES
+	const isChange = isTriageChange(choices, picked, options.status)
 	const reasonError = options.isSubmitted ? reasonErrorOf(options.reason.value) : null
 	const ids: Field.FieldIds = {
 		control: `${options.idPrefix}-reason`,
@@ -80,7 +99,7 @@ export const triageForm = <M>(h: HtmlBuilder<M>, options: TriageFormOptions<M>):
 			ToggleGroup.view(h, {
 				model: options.triage,
 				toParentMessage: options.onTriage,
-				items: TRIAGE_OPTIONS,
+				items: Arr.map(choices, (value) => ({ value, label: TRIAGE_LABEL[value] })),
 				variant: "outline",
 				size: "xs",
 				className: "w-full",

@@ -13,7 +13,13 @@ import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { chainAll, slotStep } from "../../kit/keyed-step"
 import { FINDING_STATUS_LABEL, isLive } from "../kit/format"
-import { currentTriageOf, pickedTriageOf, reasonErrorOf } from "../kit/triage-form"
+import {
+	currentTriageOf,
+	isTriageChange,
+	pickedTriageOf,
+	reasonErrorOf,
+	runTriageChoices,
+} from "../kit/triage-form"
 import {
 	CancelRun,
 	EVENTS_PAGE,
@@ -372,7 +378,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			if (finding === null || model.isSaving || !isTriageable(model, finding)) return { model }
 			const status = pickedTriageOf(model.triage, finding.status)
 			const reason = Str.trim(model.reason.value)
-			if (status === currentTriageOf(finding.status) && finding.status !== "fixed") return { model }
+			if (!isTriageChange(runTriageChoices(finding.status), status, finding.status)) return { model }
 			if (reasonErrorOf(reason) !== null) return { model: { ...model, isTriageSubmitted: true } }
 			return {
 				model: { ...model, isTriageSubmitted: true, isSaving: true },
