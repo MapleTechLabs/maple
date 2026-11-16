@@ -178,6 +178,13 @@ const flatten = (result: QueryResult): ReadonlyArray<readonly [string, number, n
 	}
 }
 
+/** NaN and infinities compare exactly; finite values within a relative tolerance. */
+const sameValue = (v: number, w: number): boolean => {
+	if (Number.isNaN(v) || Number.isNaN(w)) return Number.isNaN(v) && Number.isNaN(w)
+	if (!Number.isFinite(v) || !Number.isFinite(w)) return v === w
+	return Math.abs(v - w) <= 1e-9 * Math.max(1, Math.abs(v), Math.abs(w))
+}
+
 /** The first point where the SQL path disagrees with the reference, or undefined. */
 const mismatch = (got: QueryResult, want: QueryResult): string | undefined => {
 	const sort = (rows: ReadonlyArray<readonly [string, number, number]>) =>
@@ -190,14 +197,20 @@ const mismatch = (got: QueryResult, want: QueryResult): string | undefined => {
 		if (other === undefined || other[0] !== k || other[1] !== t)
 			return `point ${i}: ${k}@${t}, want ${other?.[0]}@${other?.[1]}`
 		const w = other[2]
-		const same =
-			(Number.isNaN(v) && Number.isNaN(w)) ||
-			v === w ||
-			Math.abs(v - w) <= 1e-9 * Math.max(1, Math.abs(v), Math.abs(w))
-		if (!same) return `${k}@${t}: ${v}, want ${w}`
+		if (!sameValue(v, w)) return `${k}@${t}: ${v}, want ${w}`
 	}
 	return undefined
 }
+
+test("the comparison tells non-finite values apart", () => {
+	const scalar = (v: number): QueryResult => ({ resultType: "scalar", result: { t: 0, v } })
+	expect(mismatch(scalar(Infinity), scalar(1))).toBe("@0: Infinity, want 1")
+	expect(mismatch(scalar(-Infinity), scalar(Infinity))).toBe("@0: -Infinity, want Infinity")
+	expect(mismatch(scalar(Number.NaN), scalar(1))).toBe("@0: NaN, want 1")
+	expect(mismatch(scalar(Number.NaN), scalar(Number.NaN))).toBeUndefined()
+	expect(mismatch(scalar(Infinity), scalar(Infinity))).toBeUndefined()
+	expect(mismatch(scalar(1 + 1e-12), scalar(1))).toBeUndefined()
+})
 
 describeWithChdb("PromQL on the warehouse matches the reference", () => {
 	let root = ""
