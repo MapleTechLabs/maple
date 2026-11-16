@@ -28,7 +28,7 @@ import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { cachedRecoverable } from "@maple/infra/cached-recoverable"
 import { recordRenderedFailure } from "@maple/backend/http/rendered-failure"
 import { runAfterResponse } from "@maple/backend/platform/after-response"
-import { buildIsolateHandler, makeFetch } from "./worker/http"
+import { SHARE_BODY_MAX_BYTES, buildIsolateHandler, makeFetch } from "./worker/http"
 import { apiTelemetryOptions } from "./telemetry-options"
 
 /**
@@ -425,6 +425,20 @@ describe("the api Worker through alchemy's bridge", () => {
 			assert.strictEqual(response.status, 204)
 			assert.include(response.headers.get("access-control-allow-headers") ?? "", "Authorization")
 			assert.isNull(response.headers.get("timing-allow-origin"))
+		}),
+	)
+
+	it.effect("refuses an oversized share body before the route graph, and only on the share surface", () =>
+		Effect.gen(function* () {
+			const ok = Effect.succeed(Effect.succeed(HttpServerResponse.text("ok")))
+			const tooLarge = { "content-length": String(SHARE_BODY_MAX_BYTES + 1) }
+			const refused = yield* event("POST", "/v2/share/widget-data", Effect.die("not built"), tooLarge)
+			const small = yield* event("POST", "/v2/share/widget-data", ok, { "content-length": "512" })
+			const elsewhere = yield* event("POST", "/v2/dashboards", ok, tooLarge)
+			assert.strictEqual(refused.response.status, 413)
+			assert.strictEqual(refused.response.headers.get("access-control-allow-origin"), "*")
+			assert.strictEqual(small.response.status, 200)
+			assert.strictEqual(elsewhere.response.status, 200)
 		}),
 	)
 

@@ -146,6 +146,19 @@ const pathOf = (url: string): string => {
 
 const isV2Path = (path: string): boolean => path === "/v2" || Str.startsWith("/v2/")(path)
 
+/** The anonymous share bodies are a token and a few small fields; nothing legitimate comes close. */
+export const SHARE_BODY_MAX_BYTES = 64 * 1024
+
+/**
+ * A declared body too large for the anonymous share surface. Checked before the route graph,
+ * because the router buffers and decodes the body before the share rate limit can run.
+ */
+const oversizedShareBody = (path: string, headers: Readonly<Record<string, string | undefined>>) => {
+	if (!Str.startsWith("/v2/share/")(path)) return false
+	const declared = headers["content-length"]
+	return declared !== undefined && !(Number(declared) <= SHARE_BODY_MAX_BYTES)
+}
+
 /** The route graph could not finish bootstrapping: the canonical v2 fallback, or a plain 504 for the rest. */
 const unavailableResponse = (path: string) =>
 	HttpServerResponse.fromWeb(
@@ -225,6 +238,13 @@ export const makeFetch = <E>(
 			// span carries that shape. Counted before the graph builds, so build failures count too,
 			// and before the forward, so a forwarded call's cold cost splits by both isolates.
 			yield* isolateAge.record
+
+			if (oversizedShareBody(path, request.headers)) {
+				return HttpServerResponse.text("Request body too large.", {
+					status: 413,
+					headers: API_CORS_RESPONSE_HEADERS,
+				})
+			}
 
 			// The agent surfaces moved to maple-ai; this origin keeps serving them.
 			// Ahead of the route graph on purpose: that is the whole point of the
