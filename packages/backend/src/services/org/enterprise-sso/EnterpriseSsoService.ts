@@ -537,7 +537,12 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 					db.run(
 						PG.update(OrgSsoDomains)
 							.set({ status: "verified", clerkDomainId, verifiedAt: now })
-							.where(($) => [$.orgId.eq(orgId), $.domain.eq(domain)]),
+							// The row whose challenge was checked: one removed and re-added meanwhile stays pending.
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.domain.eq(domain),
+								$.challenge.eq(row.challenge),
+							]),
 					),
 				)
 				return yield* get(orgId)
@@ -860,7 +865,14 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 							),
 						),
 					)
-					return new ScimTokenIssued({ document, token })
+					// The token's own directory, even if a refresh raced a replacement.
+					return new ScimTokenIssued({
+						document: new EnterpriseSsoDocument({
+							...document,
+							directory: toDirectoryDocument(directory),
+						}),
+						token,
+					})
 				})
 
 			const createDirectory = Effect.fn("EnterpriseSsoService.createDirectory")(function* (

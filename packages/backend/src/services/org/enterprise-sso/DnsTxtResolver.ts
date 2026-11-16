@@ -59,6 +59,11 @@ const make = Effect.gen(function* () {
 		const body = yield* response.json.pipe(
 			Effect.flatMap(Schema.decodeUnknownEffect(DohAnswer)),
 			Effect.mapError(() => fail("DNS resolver answered in an unexpected shape")),
+			// Headers can arrive promptly with a stalled body: the read gets the same bound.
+			Effect.timeoutOrElse({
+				duration: Duration.seconds(5),
+				orElse: () => Effect.fail(fail("DNS lookup timed out")),
+			}),
 		)
 		if (body.Status === NXDOMAIN) return []
 		if (body.Status !== 0) return yield* fail(`DNS lookup failed with status ${body.Status}`)
