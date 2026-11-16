@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, String as Str } from "effect"
 import { LockfileParseError, LockfileUnsupportedError } from "./errors.ts"
 import { dedupePackages } from "./internal/collect.ts"
 import { parseBunLock } from "./parsers/bun.ts"
@@ -35,7 +35,9 @@ export const parseLockfile = Effect.fn("lockfiles.parseLockfile")(function* (
 	if (kind === "bun-lockb") {
 		return yield* new LockfileUnsupportedError({ path: input.path, message: BUN_LOCKB_UNSUPPORTED })
 	}
-	const output = yield* PARSERS[kind](input)
+	// An editor's byte order mark is not part of any format, and JSON.parse refuses it.
+	const content = Str.startsWith("\uFEFF")(input.content) ? Str.slice(1)(input.content) : input.content
+	const output = yield* PARSERS[kind]({ ...input, content })
 	return {
 		path: input.path,
 		kind: output.kind,

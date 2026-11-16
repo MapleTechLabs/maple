@@ -13,6 +13,9 @@ import {
 	type VcsInstallation,
 	type VcsRepo,
 	type VcsRepositoryRef,
+	VcsSourceFileNotFoundError,
+	VcsSourceRefNotFoundError,
+	VcsSourceRepositoryNotFoundError,
 } from "@maple/domain/http"
 import {
 	Cache,
@@ -31,15 +34,7 @@ import { VcsProviderRegistry } from "./VcsProviderRegistry"
 import { VcsRepository } from "./VcsRepository"
 import type { VcsCodeSearchMatch, VcsSourceFile } from "./VcsProviderClient"
 
-export class VcsSourceRepositoryNotFoundError extends Schema.TaggedError<VcsSourceRepositoryNotFoundError>()(
-	"@maple/backend/vcs/VcsSourceRepositoryNotFoundError",
-	{ repository: Schema.String, message: Schema.String },
-) {}
-
-export class VcsSourceFileNotFoundError extends Schema.TaggedError<VcsSourceFileNotFoundError>()(
-	"@maple/backend/vcs/VcsSourceFileNotFoundError",
-	{ repository: Schema.String, path: Schema.String, ref: Schema.String, message: Schema.String },
-) {}
+export { VcsSourceFileNotFoundError, VcsSourceRefNotFoundError, VcsSourceRepositoryNotFoundError }
 
 /**
  * Everything that can go wrong resolving *which* repository to talk to, before
@@ -55,11 +50,6 @@ type VcsRepositoryScopedError =
 	| VcsSourceRepositoryNotFoundError
 
 type VcsSourceError = VcsRepositoryScopedError | VcsSourceFileNotFoundError
-
-export class VcsSourceRefNotFoundError extends Schema.TaggedError<VcsSourceRefNotFoundError>()(
-	"@maple/backend/vcs/VcsSourceRefNotFoundError",
-	{ repository: Schema.String, ref: Schema.String, message: Schema.String },
-) {}
 
 /** A commit the sandbox can check out: the exact SHA a ref names, and how to clone it. */
 export interface RepositoryCheckout {
