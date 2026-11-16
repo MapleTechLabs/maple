@@ -467,6 +467,14 @@ describe("components under Settings > Monitors", () => {
 	test("switching to a tab that does not show the open component closes it", () => {
 		const left = routeChanged(selected(1), { _tag: "StatusPage", pageId: PUBLIC_ID, search: {} }, context)
 		expect(left.model.panel).toBeNull()
+		// A route change that skipped the field's blur still saves what was typed.
+		const typed = pageUpdate(
+			selected(1),
+			Message.ChangedComponentField({ field: "name", value: "Payments" }),
+		).model
+		const leftTyped = routeChanged(typed, { _tag: "StatusPage", pageId: PUBLIC_ID, search: {} }, context)
+		expect(leftTyped.model.panel).toBeNull()
+		expect(names(leftTyped.commands)).toContain("SaveStatusPageComponent")
 	})
 
 	test("a preview message that is not exactly a selection is ignored", () => {
@@ -872,6 +880,16 @@ describe("posting an incident", () => {
 		expect(created.model.panel).toEqual({ _tag: "Incident", incidentId: incidentId(2) })
 		expect(names(created.commands)).toContain("FetchStatusPageIncidents")
 		expect(created.outMessage).toMatchObject({ _tag: "RequestedToast", title: "Incident published" })
+		// With no incident list loaded to put it in, the sheet still shows the new incident.
+		const unloaded = {
+			...publishing.model,
+			incidents: { ...publishing.model.incidents, data: AsyncData.Loading() },
+		}
+		const shownAnyway = pageUpdate(
+			unloaded,
+			Message.CompletedCreateIncident({ result: Result.succeed(incident(2)) }),
+		)
+		expect(shownAnyway.model.sheetIncident?.id).toBe(incidentId(2))
 	})
 
 	test("Save as draft sends the same incident unpublished", () => {

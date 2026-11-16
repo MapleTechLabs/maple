@@ -230,6 +230,8 @@ export const createdIncident = (
 					{
 						...settled,
 						panel: { _tag: "Incident", incidentId: incident.id },
+						// Shown even while no incident list is loaded to put it in.
+						sheetIncident: incident,
 						// The sheet shows it at once; the re-read confirms it.
 						incidents: {
 							...settled.incidents,

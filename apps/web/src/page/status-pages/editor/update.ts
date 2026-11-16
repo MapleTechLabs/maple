@@ -304,9 +304,14 @@ const whenSettings =
 export const routeChanged = (model: Model, route: EditorRoute, context: PageContext): Return =>
 	withSheet(
 		chain(
-			showsPanel(model.panel, resolveView(route.search))
-				? { ...model, search: route.search }
-				: { ...model, search: route.search, panel: null, componentForm: emptyComponentForm },
+			{ ...model, search: route.search },
+			// A route change can skip the field's blur (a keyboard Back): typed edits save first.
+			(next) =>
+				showsPanel(next.panel, resolveView(route.search))
+					? { model: next }
+					: chain(next, commitComponent, (committed) => ({
+							model: { ...committed, panel: null, componentForm: emptyComponentForm },
+						})),
 			whenJson(context, "Refresh"),
 			whenSettings(context, "Refresh"),
 		),
