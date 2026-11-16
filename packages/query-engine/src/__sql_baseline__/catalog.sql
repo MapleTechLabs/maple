@@ -878,6 +878,23 @@ SELECT
           AND ci_runs.Result != 'skip'
         FORMAT JSON
 
+-- builder:cloud-resources:cloudResourceServicesQuery:default  [385a2650]
+SELECT
+          multiIf(traces.ResourceAttributes['host.id'] IN ('i-0abc123', 'checkout-fn'), traces.ResourceAttributes['host.id'], traces.ResourceAttributes['cloud.resource_id'] IN ('i-0abc123', 'checkout-fn'), traces.ResourceAttributes['cloud.resource_id'], traces.ResourceAttributes['faas.name'] IN ('i-0abc123', 'checkout-fn'), traces.ResourceAttributes['faas.name'], traces.ResourceAttributes['faas.id'] IN ('i-0abc123', 'checkout-fn'), traces.ResourceAttributes['faas.id'], traces.ResourceAttributes['aws.ecs.task.arn'] IN ('i-0abc123', 'checkout-fn'), traces.ResourceAttributes['aws.ecs.task.arn'], traces.ResourceAttributes['aws.ecs.cluster.arn'] IN ('i-0abc123', 'checkout-fn'), traces.ResourceAttributes['aws.ecs.cluster.arn'], traces.ResourceAttributes['k8s.cluster.name'] IN ('i-0abc123', 'checkout-fn'), traces.ResourceAttributes['k8s.cluster.name'], traces.ResourceAttributes['container.image.name'] IN ('i-0abc123', 'checkout-fn'), traces.ResourceAttributes['container.image.name'], '') AS resourceId,
+          traces.ServiceName AS service,
+          toUInt64(sum(traces.SampleRate)) AS requests
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.IsEntryPoint = 1
+          AND hasAny(mapValues(traces.ResourceAttributes), ['i-0abc123', 'checkout-fn']) = 1
+          AND (traces.ResourceAttributes['host.id'] IN ('i-0abc123', 'checkout-fn') OR traces.ResourceAttributes['cloud.resource_id'] IN ('i-0abc123', 'checkout-fn') OR traces.ResourceAttributes['faas.name'] IN ('i-0abc123', 'checkout-fn') OR traces.ResourceAttributes['faas.id'] IN ('i-0abc123', 'checkout-fn') OR traces.ResourceAttributes['aws.ecs.task.arn'] IN ('i-0abc123', 'checkout-fn') OR traces.ResourceAttributes['aws.ecs.cluster.arn'] IN ('i-0abc123', 'checkout-fn') OR traces.ResourceAttributes['k8s.cluster.name'] IN ('i-0abc123', 'checkout-fn') OR traces.ResourceAttributes['container.image.name'] IN ('i-0abc123', 'checkout-fn'))
+        GROUP BY resourceId, service
+        ORDER BY requests DESC
+        LIMIT 1000
+        FORMAT JSON
+
 -- builder:containers:containerCountersSummaryQuery:default  [1b4fe1f9]
 SELECT
           avg(hosts.memoryBytesAvg) AS memoryBytesAvg,

@@ -285,6 +285,20 @@ const securityTelemetryFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 ]
 
+// Security hub's Cloud tab: services carrying a finding's resource id (apps/api cloud-security.http.ts).
+const cloudResourceFixtures: ReadonlyArray<BuilderFixture> = [
+	{
+		module: "cloud-resources",
+		name: "cloudResourceServicesQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.cloudResourceServicesQuery({ resourceIds: ["i-0abc123", "checkout-fn"] }),
+				window,
+			),
+	},
+]
+
 // `/users` reads (user-activity.ts): the rollup scoped to a user and namespaces, and the raw
 // trace/log reads narrowed to the services its slices name.
 const USER_SCOPE = { userId: "user_catalog", namespaces: ["storefront"] }
@@ -1790,6 +1804,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	...webAnalyticsFixtures,
 	...webAnalyticsAiFixtures,
 	...securityTelemetryFixtures,
+	...cloudResourceFixtures,
 	...userActivityFixtures,
 
 	// Traces sidebar (query-engine runtime); the pipe fixtures cover the raw-only route.

@@ -1,0 +1,33 @@
+import { describe, expect, it } from "@effect/vitest"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
+import { OrgId } from "@maple/domain"
+import { cloudResourceServicesQuery } from "./cloud-resources"
+
+const compiled = () =>
+	compileUnsafe(cloudResourceServicesQuery({ resourceIds: ["i-0abc", "checkout-fn"] }), {
+		orgId: OrgId.make("org_1"),
+		startTime: "2026-11-15 00:00:00",
+		endTime: "2026-11-16 00:00:00",
+	}).sql
+
+describe("cloudResourceServicesQuery", () => {
+	it("reads only the org's entry-point spans in the window", () => {
+		const sql = compiled()
+		expect(sql).toContain("traces.OrgId = 'org_1'")
+		expect(sql).toContain("traces.IsEntryPoint = 1")
+		expect(sql).toContain("traces.Timestamp >= '2026-11-15 00:00:00'")
+	})
+
+	it("keeps only spans whose resource attributes carry one of the ids", () => {
+		const sql = compiled()
+		expect(sql).toContain("hasAny(mapValues(traces.ResourceAttributes), ['i-0abc', 'checkout-fn'])")
+		expect(sql).toContain("traces.ResourceAttributes['host.id'] IN ('i-0abc', 'checkout-fn')")
+		expect(sql).toContain("traces.ResourceAttributes['faas.name'] IN ('i-0abc', 'checkout-fn')")
+	})
+
+	it("groups by the matched id and service, busiest first", () => {
+		const sql = compiled()
+		expect(sql).toContain("GROUP BY resourceId, service")
+		expect(sql).toContain("ORDER BY requests DESC")
+	})
+})
