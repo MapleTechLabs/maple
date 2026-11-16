@@ -190,19 +190,19 @@ describe("query_promql", () => {
 		}),
 	)
 
-	it.effect("counts the window's end point, as the engine does, when refusing a step", () =>
+	it.effect("allows exactly the engine's step limit and refuses one step more", () =>
 		Effect.gen(function* () {
-			// 1 100 s at 100ms is exactly 11 000 steps, which the engine evaluates as 11 001 points.
+			// 1 100 s at 100ms is exactly 11 000 steps, which Prometheus and the engine accept.
+			const window = { start_time: "2026-11-15 10:00:00", end_time: "2026-11-15 10:18:20" }
+			const calls: Array<PromqlQuery> = []
+			yield* run(
+				{ query: "up", ...window, step: "100ms" },
+				() => Effect.succeed({ resultType: "matrix" as const, result: [] }),
+				calls,
+			)
+			expect(calls).toHaveLength(1)
 			const error = yield* Effect.flip(
-				run(
-					{
-						query: "up",
-						start_time: "2026-11-15 10:00:00",
-						end_time: "2026-11-15 10:18:20",
-						step: "100ms",
-					},
-					() => Effect.die("not reached"),
-				),
+				run({ query: "up", ...window, step: "99ms" }, () => Effect.die("not reached")),
 			)
 			expect(error).toMatchObject({ _tag: "@maple/mcp/errors/McpInvalidInputError", parameter: "step" })
 		}),
