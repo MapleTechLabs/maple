@@ -42,3 +42,13 @@ export const WorkerResult = Schema.Struct({
 	),
 })
 export type WorkerResult = typeof WorkerResult.Type
+
+export class WorkerFailed extends Schema.TaggedError<WorkerFailed>()(
+	"@maple-dev/effect-sdk/bench/WorkerFailed",
+	{
+		message: Schema.String,
+		scenario: Schema.String,
+		mode: Schema.String,
+		exitCode: Schema.NullOr(Schema.Number),
+	},
+) {}

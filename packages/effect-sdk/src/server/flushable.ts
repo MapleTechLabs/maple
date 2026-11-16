@@ -15,7 +15,7 @@
 //
 // Traces, logs, and Effect metric snapshots are flushed together.
 
-import { Effect, Layer, Tracer } from "effect"
+import { Cause, Effect, Exit, Layer, Option, Scope, Tracer } from "effect"
 import { FetchHttpClient } from "effect/http"
 import {
 	buildResolved,
@@ -91,8 +91,9 @@ export interface MapleFlushableConfig extends MapleSpanOptions {
 	/**
 	 * Continuous CPU profiling on Node and Bun: `true` for the defaults, or the options. Off by
 	 * default. It runs while `layer` is built and exports its own windows, apart from `flush`; a
-	 * second build of `layer` while one is running starts no second profiler. Off, with no
-	 * warning, wherever export is off (no ingest key against Maple's hosted ingest).
+	 * second build of `layer` while one is running starts no second profiler, and `dispose`
+	 * stops it. Off, with no warning, wherever export is off (no ingest key against Maple's
+	 * hosted ingest).
 	 */
 	readonly profiling?: boolean | ProfilingOptions | undefined
 }
@@ -123,36 +124,73 @@ const instrumentedTracer = (spans: SpanBuffer, timeline: SpanTimeline | undefine
 				Layer.provide(spans.tracerLayer),
 			)
 
+interface Profiler {
+	readonly layer: Layer.Layer<never>
+	/** Stops a running profiler, sending its last window, and keeps any later build from starting one. */
+	readonly stop: () => Promise<void>
+}
+
 /**
  * The profiler, sending to the endpoint and with the key the flushes use. One at a time: a layer
- * built again while a profiler runs (a second runtime, a per-request provide) adds none.
+ * built again while a profiler runs (a second runtime, a per-request provide) adds none. It runs
+ * in its own scope, so `dispose` can end it while the layer's runtime lives on.
  */
 const makeProfiler = (
 	config: MapleFlushableConfig,
 	profiling: ProfilingOptions,
 	timeline: SpanTimeline | undefined,
-): Layer.Layer<never> => {
-	let running = false
-	return Layer.unwrap(
+): Profiler => {
+	let active: Scope.Closeable | undefined
+	let stopped = false
+	const stopActive = Effect.suspend(() => {
+		const scope = active
+		active = undefined
+		return scope === undefined ? Effect.void : Scope.close(scope, Exit.void)
+	})
+	const layer = Layer.effectDiscard(
 		Effect.gen(function* () {
-			if (running) return Layer.empty
-			const resource = yield* resolveResource({ ...config, sdkType: "server" })
-			const resolved = buildResolved(resource, {
+			if (active !== undefined || stopped) return
+			// A resource that cannot be resolved turns profiling off, as it turns the flushes off.
+			const resource = yield* resolveResource({ ...config, sdkType: "server" }).pipe(
+				Effect.asSome,
+				Effect.catchCause((cause) =>
+					Effect.as(
+						Effect.logWarning(
+							"[MapleServerSDK] profiling is off: the resource could not be resolved",
+							Cause.squash(cause),
+						),
+						Option.none(),
+					),
+				),
+			)
+			if (Option.isNone(resource)) return
+			const resolved = buildResolved(resource.value, {
 				userAgent: USER_AGENT,
 				keyless: "disable-at-maple-ingest",
 			})
-			if (resolved.noOp) return Layer.empty
-			running = true
-			yield* Effect.addFinalizer(() => Effect.sync(() => (running = false)))
-			return profilerLayer({
-				baseUrl: resource.endpoint,
-				resource: resource.resource,
-				headers: resolved.headers,
-				profiling,
-				timeline,
-			}).pipe(Layer.provide(FetchHttpClient.layer))
+			if (resolved.noOp) return
+			const scope = yield* Scope.make()
+			active = scope
+			yield* Effect.addFinalizer(() => stopActive)
+			yield* Layer.buildWithScope(
+				profilerLayer({
+					baseUrl: resource.value.endpoint,
+					resource: resource.value.resource,
+					headers: resolved.headers,
+					profiling,
+					timeline,
+				}).pipe(Layer.provide(FetchHttpClient.layer)),
+				scope,
+			)
 		}),
 	)
+	return {
+		layer,
+		stop: () => {
+			stopped = true
+			return Effect.runPromise(stopActive)
+		},
+	}
 }
 
 export const make = (config: MapleFlushableConfig = {}): FlushableTelemetry => {
@@ -162,11 +200,12 @@ export const make = (config: MapleFlushableConfig = {}): FlushableTelemetry => {
 	const profiling =
 		config.profiling === true ? {} : config.profiling === false ? undefined : config.profiling
 	const timeline = profiling !== undefined && profiling.linkSpans !== false ? makeSpanTimeline() : undefined
+	const profiler = profiling === undefined ? undefined : makeProfiler(config, profiling, timeline)
 	const layer = Layer.mergeAll(
 		instrumentedTracer(spans, timeline),
 		logs.loggerLayer,
 		metrics.layer,
-		profiling === undefined ? Layer.empty : makeProfiler(config, profiling, timeline),
+		profiler?.layer ?? Layer.empty,
 	)
 
 	const tracesState = makeSignalState()
@@ -250,6 +289,8 @@ export const make = (config: MapleFlushableConfig = {}): FlushableTelemetry => {
 	}
 
 	const finalize = async (): Promise<void> => {
+		// First, so its last window goes out before the final flush.
+		await profiler?.stop()
 		if (timer !== undefined) {
 			clearInterval(timer)
 			timer = undefined

@@ -16,7 +16,7 @@ import { writeFileSync } from "node:fs"
 import { cpus } from "node:os"
 import { fileURLToPath } from "node:url"
 import { Array as Arr, Order, Schema } from "effect"
-import { type ProfilingSetting, type WorkerConfig, WorkerResult } from "./profiling-shared.ts"
+import { type ProfilingSetting, type WorkerConfig, WorkerFailed, WorkerResult } from "./profiling-shared.ts"
 
 const args = process.argv.slice(2)
 const flag = (name: string, fallback: string): string => {
@@ -98,7 +98,14 @@ const runWorker = (scenario: string, mode: WorkerConfig["mode"], rate: number): 
 		child.on("close", (code) => {
 			const line = stdout.split("\n").find((l) => l.startsWith("RESULT "))
 			if (code !== 0 || line === undefined) {
-				reject(new Error(`${scenario} ${mode} run exited ${code}`))
+				reject(
+					new WorkerFailed({
+						message: `${scenario} ${mode} run exited ${code} without a result`,
+						scenario,
+						mode,
+						exitCode: code,
+					}),
+				)
 				return
 			}
 			resolve({

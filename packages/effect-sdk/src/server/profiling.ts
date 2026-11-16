@@ -239,14 +239,21 @@ export const profilerLayer = (
 			const samplingIntervalMicros = samplingIntervalOf(options.profiling.samplingIntervalMicros)
 			const url = HttpClientRequest.appendUrl(HttpClientRequest.get(options.baseUrl), PROFILES_PATH).url
 
-			const session = yield* Effect.acquireRelease(
-				openSession(options.loadBuiltin ?? runtimeLoadBuiltin()),
-				(opened) => Effect.sync(() => opened.disconnect()),
-			)
-			yield* withinSetup(post(session, "Profiler.enable"))
-			yield* withinSetup(
-				post(session, "Profiler.setSamplingInterval", { interval: samplingIntervalMicros }),
-			)
+			const session = yield* openSession(options.loadBuiltin ?? runtimeLoadBuiltin())
+			let connected = true
+			// Disconnecting ends whatever the session started, the profiler included.
+			const endSession = Effect.sync(() => {
+				if (!connected) return
+				connected = false
+				session.disconnect()
+			})
+			yield* Effect.addFinalizer(() => endSession)
+			// A failed setup ends the session now, not at shutdown: a `Profiler.start` that ran
+			// but never answered would otherwise sample, unrotated, for the app's whole life.
+			const setup = <A>(effect: Effect.Effect<A, ProfilerFailed>) =>
+				withinSetup(effect).pipe(Effect.onError(() => endSession))
+			yield* setup(post(session, "Profiler.enable"))
+			yield* setup(post(session, "Profiler.setSamplingInterval", { interval: samplingIntervalMicros }))
 
 			// The profiler stamps `startTime` as it starts, so the clocks are read just before.
 			const start = Effect.gen(function* () {
@@ -336,7 +343,7 @@ export const profilerLayer = (
 
 			options.timeline?.setRecording(true)
 			// A profiler that never started leaves nothing recording.
-			const first = yield* withinSetup(start).pipe(
+			const first = yield* setup(start).pipe(
 				Effect.onError(() => Effect.sync(() => options.timeline?.setRecording(false))),
 			)
 			const current = yield* Ref.make(first)

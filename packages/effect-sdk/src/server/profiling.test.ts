@@ -222,10 +222,15 @@ describe("profilerLayer without an inspector", () => {
 	})
 
 	it.effect("builds without profiling when the inspector takes a session and never answers", () => {
+		const calls: Array<string> = []
 		class Silent implements InspectorSession {
 			connect() {}
-			disconnect() {}
-			post() {}
+			disconnect() {
+				calls.push("disconnect")
+			}
+			post(method: string) {
+				calls.push(method)
+			}
 		}
 		const harness = makeHarness()
 		return Effect.gen(function* () {
@@ -237,6 +242,36 @@ describe("profilerLayer without an inspector", () => {
 			expect(Exit.isSuccess(exit)).toBe(true)
 			expect(levels(harness)).toEqual(["Warn"])
 			expect(harness.logs[0]?.message).toContain("the inspector did not answer")
+			// Ended at once, with the app still running: nothing it started keeps sampling.
+			expect(calls).toEqual(["Profiler.enable", "disconnect"])
+		}).pipe(harness.run)
+	})
+
+	it.effect("ends the session at once when the first Profiler.start never answers", () => {
+		const calls: Array<string> = []
+		class LostStart implements InspectorSession {
+			connect() {}
+			disconnect() {
+				calls.push("disconnect")
+			}
+			post(...[method, , callback]: Parameters<InspectorSession["post"]>) {
+				calls.push(method)
+				if (method !== "Profiler.start") callback(null, {})
+			}
+		}
+		const harness = makeHarness()
+		return Effect.gen(function* () {
+			const building = yield* Effect.forkChild(
+				Layer.build(harness.layer({ loadBuiltin: () => ({ Session: LostStart }) })),
+			)
+			yield* TestClock.adjust(PROFILER_SETUP_TIMEOUT)
+			expect(Exit.isSuccess(yield* Fiber.await(building))).toBe(true)
+			expect(calls).toEqual([
+				"Profiler.enable",
+				"Profiler.setSamplingInterval",
+				"Profiler.start",
+				"disconnect",
+			])
 		}).pipe(harness.run)
 	})
 })

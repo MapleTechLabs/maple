@@ -215,11 +215,13 @@ const program = Effect.gen(function* () {
 	yield* run(config.durationMs, latencies)
 	const { stalls, peakRss } = sampler.stop()
 	const cpu = process.cpuUsage(cpuBefore)
+	// Both clocks stop before the result is summarized.
+	const wallMs = performance.now() - wallBefore
 	const sorted = latencies.sort((a, b) => a - b)
 	const round = (ms: number) => Math.round(ms * 100) / 100
 	const result: WorkerResult = {
 		completed: latencies.length,
-		wallMs: performance.now() - wallBefore,
+		wallMs,
 		cpuMicros: cpu.user + cpu.system,
 		latencies: {
 			p50: round(percentile(sorted, 0.5)),

@@ -470,6 +470,40 @@ describe("MapleFlush.make (server) with profiling", () => {
 		expect(sent[0]?.headers["authorization"]).toBe("Bearer secret")
 	})
 
+	it("still exports spans through the tracer that records span switches", async () => {
+		const { calls, restore: r } = setupFetch()
+		restore = r
+		const telemetry = make({ ...baseConfig, profiling })
+
+		await runProfiled(busy(20).pipe(Effect.provide(telemetry.layer)))
+		await telemetry.flush()
+
+		const traces = Arr.filter(calls, (call) => call.url === "https://collector.test/v1/traces")
+		expect(JSON.stringify(Arr.map(traces, (call) => call.body))).toContain('"name":"busy"')
+	})
+
+	it("dispose stops a running profiler, sending its last window, and no later build starts one", async () => {
+		const { calls, restore: r } = setupFetch()
+		restore = r
+		const telemetry = make({ ...baseConfig, profiling })
+
+		await runProfiled(
+			Effect.scoped(
+				Effect.gen(function* () {
+					yield* Layer.build(telemetry.layer)
+					yield* busy(100)
+					yield* Effect.promise(telemetry.dispose)
+					const afterDispose = Arr.filter(calls, (call) => call.url === PROFILES_URL).length
+					expect(afterDispose).toBe(1)
+					yield* Layer.build(telemetry.layer)
+					yield* busy(100)
+				}),
+			),
+		)
+
+		expect(Arr.filter(calls, (call) => call.url === PROFILES_URL)).toHaveLength(1)
+	})
+
 	it("starts no second profiler when the layer is built again while one runs", async () => {
 		const { calls, restore: r } = setupFetch()
 		restore = r
