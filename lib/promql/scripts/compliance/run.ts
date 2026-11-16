@@ -14,7 +14,7 @@ import { join } from "node:path"
 import { Result } from "effect"
 import { memorySource, type QueryResult, runQuery } from "../../src/index"
 import { buildDataset, DATA_END_MS, DATA_START_MS, toOpenMetrics } from "./dataset"
-import { ALL_QUERIES, EXPECTED_ERRORS } from "./queries"
+import { ALL_QUERIES, EXPECTED_ERRORS, LATER_UPSTREAM_FIXES } from "./queries"
 
 const IMAGE = "prom/prometheus:v3.5.0"
 const PORT = 19090
@@ -196,6 +196,7 @@ const main = async (): Promise<void> => {
 		}
 	}
 	let failures = 0
+	let upstreamFixed = 0
 	for (const c of cases) {
 		const { startMs, endMs, stepMs } = c.params
 		const expected =
@@ -222,12 +223,17 @@ const main = async (): Promise<void> => {
 					: Result.isFailure(result)
 						? `we failed: ${result.failure.message}`
 						: diff(expected, ours(result.success))
-		if (problem !== undefined) {
+		if (problem !== undefined && LATER_UPSTREAM_FIXES.has(c.query)) {
+			upstreamFixed += 1
+			console.log(`DIFF ${c.query}  [${c.name}] (follows a later Prometheus fix)\n     ${problem}`)
+		} else if (problem !== undefined) {
 			failures += 1
 			console.log(`FAIL ${c.query}  [${c.name}]\n     ${problem}`)
 		}
 	}
-	console.log(`\n${cases.length - failures}/${cases.length} cases match`)
+	console.log(
+		`\n${cases.length - failures - upstreamFixed}/${cases.length} cases match, ${upstreamFixed} follow a later Prometheus fix`,
+	)
 	if (!keep) docker("rm", "-f", CONTAINER)
 	process.exit(failures === 0 ? 0 : 1)
 }

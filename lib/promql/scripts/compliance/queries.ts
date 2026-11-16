@@ -89,5 +89,14 @@ export const EXPECTED_ERRORS: ReadonlySet<string> = new Set([
 	"http_requests_total + on(job) group_left(job) http_requests_total",
 ])
 
+/**
+ * Queries where the engine follows a later Prometheus fix instead of 3.5. Reported, not failed.
+ * histogram_fraction: 3.5 answers NaN for a range inside the first bucket; upstream since starts
+ * positive buckets at 0, as histogram_quantile does.
+ */
+export const LATER_UPSTREAM_FIXES: ReadonlySet<string> = new Set([
+	"histogram_fraction(0, 0.2, http_request_duration_seconds_bucket)",
+])
+
 /** Every query the runner sends, expected errors included. */
 export const ALL_QUERIES: ReadonlyArray<string> = [...QUERIES, ...EXPECTED_ERRORS]
