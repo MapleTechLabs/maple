@@ -161,6 +161,8 @@ export class WorkflowCancelError extends Schema.TaggedError<WorkflowCancelError>
 export interface SecurityAuditWorkflowControl extends WorkflowStarter<SecurityAuditWorkflowPayload> {
 	/** Terminates the run's instance; one that is already gone or finished is not an error. */
 	readonly cancel: (runId: string) => Effect.Effect<void, WorkflowCancelError>
+	/** Whether the run's instance exists, in any state; a lookup that fails is a start error. */
+	readonly exists: (runId: string) => Effect.Effect<boolean, WorkflowStartError>
 }
 
 /** One security-audit run, hosted by the ai Worker because the agents run there. Keyed by run id. */

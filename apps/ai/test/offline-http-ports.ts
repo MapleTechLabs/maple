@@ -16,7 +16,7 @@ const rejectIO = () => Effect.die("Unexpected external I/O in an offline graph")
 
 export const offlinePorts = Layer.mergeAll(
 	Layer.succeed(WorkersAiGateway, Option.none()),
-	Layer.succeed(SecurityAuditWorkflowStarter, { create: rejectIO, cancel: rejectIO }),
+	Layer.succeed(SecurityAuditWorkflowStarter, { create: rejectIO, cancel: rejectIO, exists: rejectIO }),
 	Layer.succeed(McpToolsRateLimit, { limit: rejectIO }),
 	Layer.succeed(DataSourceProductionCallLimit, { limit: rejectIO }),
 	Layer.succeed(DataSourceDevelopmentCallLimit, { limit: rejectIO }),

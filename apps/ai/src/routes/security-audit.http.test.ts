@@ -124,6 +124,7 @@ const makeHarness = (
 				: Effect.sync(() => {
 						started.push(payload)
 					}),
+		exists: (runId) => Effect.succeed(Arr.some(started, (p) => p.runId === runId)),
 		cancel: (runId) =>
 			options.cancelFails === true
 				? Effect.fail(new WorkflowCancelError({ message: "binding unavailable", cause: null }))
@@ -1431,6 +1432,41 @@ describe("/api/security-audit pull request run cancellation", () => {
 			})
 			const afterFix = await harness.call("GET", `/targets/${target.body.id}/findings`)
 			expect(afterFix.body.findings.map((f: { status: string }) => f.status)).toEqual(["fixed"])
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+describe("/api/security-audit target triage of a pull request finding", () => {
+	it("re-reports the pull request checks that reported a finding when it is triaged on the target", async () => {
+		const harness = makeHarness()
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const run = await harness.withStore((store) =>
+				Effect.gen(function* () {
+					const scoped = store.forOrg(ORG_A)
+					const started = yield* scoped.startRun({
+						targetId: target.body.id,
+						kind: "pull_request",
+						prNumber: 7,
+						sourceRef: "0123456789abcdef0123456789abcdef01234567",
+					})
+					yield* scoped.saveFindings(started.id, [confirmed("p1")], NO_ESTIMATES)
+					yield* scoped.finishRun(started.id, { status: "complete" })
+					return started
+				}),
+			)
+			await harness.call("PATCH", `/runs/${run.id}/findings/p1`, {
+				body: { status: "accepted_risk", reason: "behind SSO" },
+			})
+
+			const reopened = await harness.call("PATCH", `/targets/${target.body.id}/findings/p1`, {
+				body: { status: "open", reason: "SSO is optional" },
+			})
+
+			expect(reopened.status).toBe(200)
+			expect(harness.published).toEqual([run.id, run.id])
 		} finally {
 			await harness.dispose()
 		}

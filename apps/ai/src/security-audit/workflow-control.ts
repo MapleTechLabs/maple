@@ -73,6 +73,20 @@ export const securityAuditWorkflowControl = (handle: AuditWorkflowHandle): Secur
 				),
 			),
 		),
+	exists: (runId) =>
+		handle.get(runId).pipe(
+			Effect.as(true),
+			Effect.catchDefect((cause) =>
+				isInstanceNotFound(cause)
+					? Effect.succeed(false)
+					: Effect.fail(
+							new WorkflowStartError({
+								message: `security audit workflow ${runId} could not be looked up: ${defectMessage(cause) || "unknown error"}`,
+								cause,
+							}),
+						),
+			),
+		),
 	cancel: (runId) =>
 		handle.get(runId).pipe(
 			Effect.catchDefect((cause) =>

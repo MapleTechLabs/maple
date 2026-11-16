@@ -558,6 +558,13 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 							reason: payload.reason,
 						},
 					})
+					// Pull request checks that reported it follow: a reopened blocker fails them again.
+					const reporting = yield* orUnavailable(
+						store.listPullRequestRunsReporting(params.targetId, params.fingerprint),
+					)
+					yield* Effect.forEach(reporting, (runId) => prChecks.publish(tenant.orgId, runId), {
+						discard: true,
+					})
 					return { targetId: params.targetId, ...updated.value }
 				}).pipe(Effect.withSpan("HttpSecurityAudit.updateFindingStatus")),
 			)
