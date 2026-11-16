@@ -16,7 +16,9 @@ import {
 } from "@maple/domain/http"
 import type { WarehouseDriverError, WarehouseDriverFailureReason } from "./driver-error"
 import { detectQuotaSetting } from "../profiles"
-import { String as Str, Option } from "effect"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
+import { isDatasourceDefinition } from "@maple-dev/effect-orm/tinybird"
+import * as Datasources from "@maple/domain/tinybird"
 import { indexOfFrom } from "@maple/strings"
 
 /**
@@ -160,17 +162,68 @@ type ClassificationRule = {
 	readonly types?: ReadonlySet<string>
 	readonly pattern?: RegExp
 	readonly reasons?: ReadonlySet<WarehouseDriverFailureReason>
+	/** Any other condition, given what the database answered. */
+	readonly test?: (answer: DatabaseAnswer) => boolean
 	/** Restricts the rule to SQL with this authorship. Unset means either. */
 	readonly authoredBy?: SqlAuthorship
 	/** Construct the tagged error for this rule. `upstreamStatus` is only used by the rules that carry it. */
 	readonly make: (base: ClassifiedBase, upstreamStatus: number | undefined) => WarehouseClassifiedError
 }
 
+type DatabaseAnswer = {
+	readonly rawMessage: string
+	readonly code: string | undefined
+	readonly ruleType: string | undefined
+	readonly upstreamStatus: number | undefined
+}
+
+const MISSING_RESOURCE = /Resource '([^']*)' not found/i
+
+/** Every table Maple defines, the ones raw SQL may not read included. */
+const MAPLE_DATASOURCE_NAMES: ReadonlySet<string> = new Set(
+	Arr.map(Arr.filter(Rec.values(Datasources), isDatasourceDefinition), (ds) => ds._name),
+)
+
+/** Exception types about the server, the credential or Maple's own settings, never the statement. */
+const SERVER_SIDE_TYPES: ReadonlySet<string> = new Set([
+	"AUTHENTICATION_FAILED",
+	"ACCESS_DENIED",
+	"USER_DOESNT_EXIST",
+	"REQUIRED_PASSWORD",
+	"NETWORK_ERROR",
+	"SOCKET_TIMEOUT",
+	"TOO_MANY_SIMULTANEOUS_QUERIES",
+	"SERVER_OVERLOADED",
+	"CANNOT_SCHEDULE_TASK",
+	"KEEPER_EXCEPTION",
+	"ALL_CONNECTION_TRIES_FAILED",
+	"QUERY_WAS_CANCELLED",
+	"ABORTED",
+	"UNKNOWN_SETTING",
+])
+
+/**
+ * The database parsed a caller's statement and refused it: it named an exception type that is
+ * not about the server, or answered 400 with a bare code (`Code: 43`).
+ */
+const refusedStatement = ({ code, ruleType, upstreamStatus }: DatabaseAnswer): boolean =>
+	ruleType !== undefined ? !SERVER_SIDE_TYPES.has(ruleType) : code !== undefined && upstreamStatus === 400
+
 // Ordered rules — first match wins. A raw error can satisfy several patterns
 // (e.g. a 503 carrying an HTML body, or schema-drift text inside a transient
 // failure), so the order encodes precedence:
-// missing datasource > auth > upstream > config > client > schema_drift > (default) query.
+// missing datasource > auth > refused caller SQL > upstream > config > client > schema_drift > (default) query.
 const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
+	{
+		// A caller naming a table Maple never had (`FROM spans`, a CTE Tinybird cannot resolve) gets
+		// the same 403 as an undeployed datasource; only a Maple table missing is configuration.
+		authoredBy: "caller",
+		test: ({ rawMessage }) => {
+			const name = MISSING_RESOURCE.exec(rawMessage)?.[1]
+			return name !== undefined && !MAPLE_DATASOURCE_NAMES.has(name)
+		},
+		make: (base) => new WarehouseInvalidSqlError(base),
+	},
 	{
 		// Tinybird answers a missing datasource with a 403, so the auth rule's status match read a
 		// table still being deployed as rejected credentials. The text names the failure; it wins.
@@ -183,6 +236,13 @@ const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
 		pattern:
 			/authentication failed|access denied|not enough privileges|password is incorrect|invalid authentication token/i,
 		make: (base, upstreamStatus) => new WarehouseAuthError({ ...base, upstreamStatus }),
+	},
+	{
+		// Before the upstream rule: its patterns match anywhere in the message, which echoes the
+		// caller's SQL, so `LIKE '%fetch failed%'` read an unknown column as a network failure.
+		authoredBy: "caller",
+		test: refusedStatement,
+		make: (base) => new WarehouseInvalidSqlError(base),
 	},
 	{
 		status: (s) => s === 408 || s === 429 || (s >= 500 && s < 600),
@@ -415,7 +475,8 @@ export const mapWarehouseError = (
 				upstreamStatus !== undefined &&
 				rule.status(upstreamStatus)) ||
 			(rule.types !== undefined && ruleType !== undefined && rule.types.has(ruleType)) ||
-			(rule.pattern !== undefined && rule.pattern.test(rawMessage))
+			(rule.pattern !== undefined && rule.pattern.test(rawMessage)) ||
+			(rule.test !== undefined && rule.test({ rawMessage, code, ruleType, upstreamStatus }))
 		if (matches) return rule.make(base, upstreamStatus)
 	}
 	return new WarehouseQueryError(base)

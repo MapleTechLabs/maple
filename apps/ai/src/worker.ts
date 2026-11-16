@@ -17,7 +17,7 @@ import { ChatSessionObject } from "@maple/backend/platform/chat-sessions"
 import { ChatSessionLive } from "./chat/ChatSession"
 import { aiConfiguredEnv } from "./resources/env"
 import SecurityAuditWorkflow from "./security-audit/SecurityAuditWorkflow"
-import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./mcp/expected-failures"
+import { MCP_ANTICIPATED_ERROR_IDENTIFIERS, isAnticipatedMcpFailure } from "./mcp/expected-failures"
 import { WorkersAiGateway } from "./platform/WorkersAiHttpClient"
 import { aiPorts, AiBindingsLive, bindAiClients, WorkersAiGatewayLive } from "./worker/bindings"
 import { buildApp, buildMcpApp, makeFetch } from "./worker/http"
@@ -94,6 +94,7 @@ export default MapleAi.make(
 				// `chat/do-runtime.ts` passes the same set to its own tracer.
 				dropSpanNames: ["McpServer/Notifications."],
 				anticipatedErrorIdentifiers: MCP_ANTICIPATED_ERROR_IDENTIFIERS,
+				isAnticipatedError: isAnticipatedMcpFailure,
 			}),
 			// Read by the bridge's `HttpMiddleware.tracer`; cannot live in the app graph.
 			AlchemyTelemetry.layer(AiObservabilityLive),

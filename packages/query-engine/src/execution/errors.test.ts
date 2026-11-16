@@ -245,6 +245,82 @@ describe("mapWarehouseError", () => {
 		})
 	})
 
+	describe("caller SQL the database refused", () => {
+		// Shapes from production run_sql spans: each went out as a server error issue.
+		it.each([
+			[
+				"NOT_IMPLEMENTED",
+				"[Error] Correlated subqueries in aggregate function argument are not supported.",
+			],
+			["CANNOT_COMPILE_REGEXP", "[Error] OptimizedRegularExpression: cannot compile re2: {0,2500}"],
+			["SIZES_OF_ARRAYS_DONT_MATCH", "[Error] Arrays passed to arrayMap must have equal size."],
+			["UNSUPPORTED_METHOD", "[Error] Qualified matcher turns.* found a non-compound expression"],
+			["CANNOT_PARSE_NUMBER", "[Error] Cannot parse Float64 from String"],
+		])("reads a %s as invalid SQL", (type, message) => {
+			expect(classify("rawSqlQuery", { message, type, status: 400 }, "caller")).toBeInstanceOf(
+				WarehouseInvalidSqlError,
+			)
+		})
+
+		it("reads an unknown column as invalid SQL even when the echoed SQL looks like a network failure", () => {
+			const message =
+				"[Error] Unknown expression or function identifier `DeploymentEnv` in scope SELECT count() FROM traces WHERE StatusMessage LIKE '%fetch failed%'"
+			expect(classify("rawSqlQuery", { message, type: "UNKNOWN_IDENTIFIER" }, "caller")).toBeInstanceOf(
+				WarehouseInvalidSqlError,
+			)
+		})
+
+		it("reads a 400 with a bare exception code as invalid SQL", () => {
+			const mapped = classify(
+				"rawSqlQuery",
+				{
+					message:
+						"HTTP 400: [Error] Some columns need to be aggregated by using the -Merge suffix.",
+					code: "43",
+					status: 400,
+				},
+				"caller",
+			)
+			expect(mapped).toBeInstanceOf(WarehouseInvalidSqlError)
+		})
+
+		it("reads a table Maple never had as invalid SQL, and a missing Maple table as configuration", () => {
+			expect(
+				classify(
+					"rawSqlQuery",
+					{ message: "HTTP 403: Resource 'traces_hourly' not found", status: 403 },
+					"caller",
+				),
+			).toBeInstanceOf(WarehouseInvalidSqlError)
+			expect(
+				classify(
+					"rawSqlQuery",
+					{ message: "HTTP 403: Resource 'profiles' not found", status: 403 },
+					"caller",
+				),
+			).toBeInstanceOf(WarehouseConfigError)
+		})
+
+		it("keeps the same refusal of Maple's own SQL a query error", () => {
+			expect(
+				classify(
+					"p",
+					{
+						message: "[Error] Arrays passed to arrayMap must have equal size.",
+						type: "SIZES_OF_ARRAYS_DONT_MATCH",
+					},
+					"maple",
+				),
+			).toBeInstanceOf(WarehouseQueryError)
+		})
+
+		it("keeps transient failures upstream for caller SQL", () => {
+			expect(
+				classify("rawSqlQuery", { message: "blip", type: "SOCKET_TIMEOUT" }, "caller"),
+			).toBeInstanceOf(WarehouseUpstreamError)
+		})
+	})
+
 	describe("auth", () => {
 		it("classifies the auth ClickHouse type", () => {
 			expect(classify("p", { message: "nope", type: "AUTHENTICATION_FAILED" })).toBeInstanceOf(
