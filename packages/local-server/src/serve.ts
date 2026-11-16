@@ -108,6 +108,16 @@ import { describeError, errnoCode } from "./store-errors"
 import { RetiredDayAuthority, retireLiveDayInServer } from "./archives/retention"
 import { ensureMaintenanceToken, hasMaintenanceToken } from "./maintenance-auth"
 import { encodeJson } from "./json"
+import {
+	ingestSession,
+	SESSION_CHUNK_HEADERS,
+	SESSION_EVENTS_PATH,
+	SESSION_REPLAYS_BLOB_PATH,
+	SESSION_REPLAYS_META_PATH,
+	sessionBodyLimit,
+	type SessionRoute,
+	sessionRouteFor,
+} from "./session-ingest"
 
 /** Resolves a request path to a static asset (the bundled SPA). Returns
  *  `undefined` to fall through to the SPA shell (client-side routing). */
@@ -307,8 +317,9 @@ export const corsHeadersForAllowedOrigin = (
 				"access-control-allow-methods": "GET, POST, OPTIONS",
 				// Instrumented dashboards propagate W3C and B3 trace context on
 				// queries and status probes as well as SDK ingest requests. A profiles
-				// export names its wire version in a header of its own.
-				"access-control-allow-headers": `content-type, content-encoding, authorization, x-maple-sdk, x-maple-ingest-key, traceparent, tracestate, baggage, b3, ${PROFILES_VERSION_HEADER}`,
+				// export names its wire version in a header of its own, a replay chunk
+				// describes itself in the x-maple-* chunk headers.
+				"access-control-allow-headers": `content-type, content-encoding, authorization, x-maple-sdk, x-maple-ingest-key, traceparent, tracestate, baggage, b3, ${PROFILES_VERSION_HEADER}, ${Arr.join(SESSION_CHUNK_HEADERS, ", ")}`,
 				"access-control-allow-private-network": "true",
 				vary: "Origin",
 			}
@@ -949,6 +960,52 @@ const profilesIngestSpan = (
 					"maple.signal": "profiles",
 					"http.request.method": "POST",
 					"http.route": route,
+				},
+			}),
+		),
+	)
+
+const SESSION_ROUTE_PATHS = {
+	meta: SESSION_REPLAYS_META_PATH,
+	blob: SESSION_REPLAYS_BLOB_PATH,
+	events: SESSION_EVENTS_PATH,
+} as const satisfies Record<SessionRoute, string>
+
+/** One fixed `{method} {http.route}` span name per route. */
+const SESSION_SPAN_NAMES = {
+	meta: "POST /v1/sessionReplays/meta",
+	blob: "POST /v1/sessionReplays/blob",
+	events: "POST /v1/sessionEvents",
+} as const satisfies Record<SessionRoute, string>
+
+/** Browser session ingest as a `Server`-kind span, named and attributed like the Rust gateway's. */
+const sessionIngestSpan = (
+	inserts: Pick<InsertBatcher, "insert">,
+	status: Pick<ServerStatus, "lastIngestAtMs">,
+	route: SessionRoute,
+	req: Request,
+): Effect.Effect<Response> =>
+	recoverResponse(
+		Effect.gen(function* () {
+			const body = yield* Effect.promise(() => readBoundedBytes(req, sessionBodyLimit(route)))
+			const { response, accepted, dropped } = Result.isFailure(body)
+				? { response: bodyFailureResponse(body.failure), accepted: 0, dropped: 0 }
+				: yield* ingestSession(route, inserts, req.headers, body.success)
+			if (accepted > 0 && response.status < 300) status.lastIngestAtMs = yield* Clock.currentTimeMillis
+			yield* Effect.annotateCurrentSpan({
+				...(Result.isSuccess(body) ? { "http.request.body.size": body.success.length } : undefined),
+				"maple.ingest.item_count": accepted,
+				"maple.ingest.dropped_items": dropped,
+				"http.response.status_code": response.status,
+			})
+			return yield* recordServerResponse(response)
+		}).pipe(
+			Effect.withSpan(SESSION_SPAN_NAMES[route], {
+				kind: "server",
+				attributes: {
+					"maple.signal": route === "events" ? "session_events" : "session_replays",
+					"http.request.method": "POST",
+					"http.route": SESSION_ROUTE_PATHS[route],
 				},
 			}),
 		),
@@ -1873,6 +1930,17 @@ const makeFetch =
 						admitted(
 							gate,
 							profilesIngestSpan(context.inserts, context.status, url.pathname, req),
+							"wait",
+						),
+					),
+				)
+			const sessionRoute = sessionRouteFor(url.pathname)
+			if (sessionRoute !== undefined)
+				return respond(
+					await runSpan(
+						admitted(
+							gate,
+							sessionIngestSpan(context.inserts, context.status, sessionRoute, req),
 							"wait",
 						),
 					),
