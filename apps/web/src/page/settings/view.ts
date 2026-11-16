@@ -262,6 +262,7 @@ const ROLE_GATED_TABS: ReadonlySet<SettingsTab> = new Set([
 	"billing",
 	"keys",
 	"automation",
+	"sso",
 ])
 
 /** The session read failed: admin tabs and controls stay hidden, and the page says so where it matters. */
