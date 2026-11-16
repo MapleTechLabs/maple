@@ -117,6 +117,11 @@ export class AwsSecurityFindingsService extends Context.Service<
 			deadlineMs: number,
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId: row.orgId, "maple.aws.connection_id": row.id })
+			// Past the tick's budget: not even the role is assumed; the next tick starts with it.
+			if ((yield* Clock.currentTimeMillis) >= deadlineMs) {
+				yield* Effect.annotateCurrentSpan("maple.cloud_security.deferred_connection", true)
+				return { reads: 0, findings: 0, auditEvents: 0, failed: false } satisfies ConnectionPoll
+			}
 			const { enabledRegions, readCloudTrail, readSource, refreshFindings } = yield* readers
 			const session = yield* sessionOf(signerKey, row)
 			const states = yield* store.serviceStates(row.orgId, row.id)
