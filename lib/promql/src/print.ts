@@ -69,14 +69,13 @@ const modifiers = (offsetMs: number, at: AtModifier | undefined): string => {
 const matcher = (m: LabelMatcher): string => `${labelName(m.name)}${m.op}${quote(m.value)}`
 
 const selector = (s: VectorSelector, range: string): string => {
+	const isName = (m: LabelMatcher) => m.name === "__name__" && m.op === "=" && m.value === s.name
+	// A second name matcher only parses as `__name__=...` next to the first, never beside a bare name.
+	const spellOut = s.matchers.some((m) => m.name === "__name__" && !isName(m))
 	const nameIsIdentifier =
-		s.name !== undefined && IDENTIFIER.test(s.name) && !RESERVED.has(s.name.toLowerCase())
-	const rest = s.matchers.filter(
-		(m) => !(nameIsIdentifier && m.name === "__name__" && m.op === "=" && m.value === s.name),
-	)
-	const parts = rest.map((m) =>
-		m.name === "__name__" && m.op === "=" && s.name === m.value ? quote(m.value) : matcher(m),
-	)
+		!spellOut && s.name !== undefined && IDENTIFIER.test(s.name) && !RESERVED.has(s.name.toLowerCase())
+	const rest = s.matchers.filter((m) => !(nameIsIdentifier && isName(m)))
+	const parts = rest.map((m) => (!spellOut && isName(m) ? quote(m.value) : matcher(m)))
 	const head = nameIsIdentifier ? (s.name ?? "") : ""
 	const block = parts.length > 0 || head === "" ? `{${parts.join(", ")}}` : ""
 	return `${head}${block}${range}${modifiers(s.offsetMs, s.at)}`

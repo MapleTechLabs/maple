@@ -1,5 +1,8 @@
-import { kahanInc } from "./aggregate"
+import { kahanInc, quantile } from "./aggregate"
 import type { SampleBucket } from "./types"
+
+// quantile_over_time shares the aggregation's quantile, so both read infinities the same way.
+export { quantile }
 
 /** Index of the first bucket whose `end` is greater than `t` (buckets sorted by `end`). */
 const upperBound = (buckets: ReadonlyArray<SampleBucket>, t: number): number => {
@@ -285,23 +288,6 @@ export const windowValues = (w: Window): number[] => {
 		else out.push(b.lastV)
 	}
 	return out
-}
-
-/** Prometheus' `quantile` over a value list (used by quantile_over_time). */
-export const quantile = (q: number, values: ReadonlyArray<number>): number => {
-	if (values.length === 0 || Number.isNaN(q)) return Number.NaN
-	if (q < 0) return Number.NEGATIVE_INFINITY
-	if (q > 1) return Number.POSITIVE_INFINITY
-	// NaN first, as Prometheus' quantile sorts it.
-	const sorted = [...values].sort((a, b) =>
-		Number.isNaN(a) ? (Number.isNaN(b) ? 0 : -1) : Number.isNaN(b) ? 1 : a - b,
-	)
-	const n = sorted.length
-	const rank = q * (n - 1)
-	const lower = Math.max(0, Math.floor(rank))
-	const upper = Math.min(n - 1, lower + 1)
-	const weight = rank - Math.floor(rank)
-	return (sorted[lower] ?? Number.NaN) * (1 - weight) + (sorted[upper] ?? Number.NaN) * weight
 }
 
 /** double_exponential_smoothing (formerly holt_winters), Prometheus semantics. */
