@@ -115,8 +115,9 @@ const operand = (child: Expr, parentOp: string, side: "lhs" | "rhs"): string => 
 		const regroups = own < parent || (own === parent && (rightAssoc ? side === "lhs" : side === "rhs"))
 		return regroups ? `(${print(child)})` : print(child)
 	}
-	// `-a ^ b` is `-(a ^ b)`, so a negated base needs its parentheses.
-	if (child.type === "Unary" && parentOp === "^" && side === "lhs") return `(${print(child)})`
+	// `-a ^ b` and `-2 ^ b` are `-(a ^ b)`, so a negated base needs its parentheses.
+	const negated = child.type === "Unary" || (child.type === "NumberLiteral" && child.value < 0)
+	if (negated && parentOp === "^" && side === "lhs") return `(${print(child)})`
 	return print(child)
 }
 
