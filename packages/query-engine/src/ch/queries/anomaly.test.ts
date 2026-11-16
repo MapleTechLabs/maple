@@ -7,8 +7,8 @@ import {
 	anomalyLogVolumeQuery,
 	anomalyLogVolumeTimeseriesQuery,
 	anomalyTraceSignalsQuery,
+	anomalyTraceSignalsWindowQuery,
 	anomalyTraceSignalTimeseriesQuery,
-	matchedHoursOfDay,
 } from "./anomaly"
 import { OrgId } from "@maple/domain"
 
@@ -18,36 +18,33 @@ const baseParams = {
 	endTime: "2024-01-08 00:00:00",
 }
 
-describe("matchedHoursOfDay", () => {
-	it("returns hour ±1", () => {
-		expect(matchedHoursOfDay(14)).toEqual([13, 14, 15])
-	})
-
-	it("wraps at midnight", () => {
-		expect(matchedHoursOfDay(0)).toEqual([23, 0, 1])
-		expect(matchedHoursOfDay(23)).toEqual([22, 23, 0])
-	})
-})
-
 describe("anomalyTraceSignalsQuery", () => {
-	it("reads the hourly MV with entry-point + matched-hour filters", () => {
-		const q = anomalyTraceSignalsQuery({ hoursOfDay: matchedHoursOfDay(14) })
+	it("reads the hourly entry-point rollup on the requested hours of day", () => {
+		const q = anomalyTraceSignalsQuery({ hoursOfDay: [12, 13, 14, 15] })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("FROM traces_aggregates_hourly")
-		expect(sql).toContain("IsEntryPoint = 1")
-		expect(sql).toContain("toHour(traces_aggregates_hourly.Hour) IN (13, 14, 15)")
-		expect(sql).toContain("sum(WeightedCount) AS requestCount")
-		expect(sql).toContain("sum(WeightedErrorCount) AS errorCount")
-		expect(sql).toContain("quantilesTDigestWeightedMerge(0.95)(DurationQuantiles)")
+		expect(sql).toContain("FROM service_overview_hourly")
+		expect(sql).toContain("toHour(service_overview_hourly.Hour) IN (12, 13, 14, 15)")
+		expect(sql).toContain("quantilesTDigestMerge(0.5, 0.95, 0.99)(DurationQuantiles), 2)")
 		expect(sql).toContain("OrgId = 'org_1'")
 		expect(sql).toContain("GROUP BY serviceName, deploymentEnv, hour")
 		expect(sql).toContain("LIMIT 25000")
 	})
 })
 
+describe("anomalyTraceSignalsWindowQuery", () => {
+	it("reads the minutely twin over a half-open window, one row per series", () => {
+		const { sql } = compileUnsafe(anomalyTraceSignalsWindowQuery(), baseParams)
+		expect(sql).toContain("FROM service_overview_minutely")
+		expect(sql).toMatch(/Minute >= .*2024-01-01 00:00:00/)
+		expect(sql).toMatch(/Minute < .*2024-01-08 00:00:00/)
+		expect(sql).toContain("GROUP BY serviceName, deploymentEnv")
+		expect(sql).toContain("OrgId = 'org_1'")
+	})
+})
+
 describe("anomalyLogVolumeQuery", () => {
 	it("reads logs_aggregates_hourly with severity-class sums", () => {
-		const q = anomalyLogVolumeQuery({ hoursOfDay: matchedHoursOfDay(0) })
+		const q = anomalyLogVolumeQuery({ hoursOfDay: [23, 0, 1] })
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM logs_aggregates_hourly")
 		expect(sql).toContain("toHour(logs_aggregates_hourly.Hour) IN (23, 0, 1)")
@@ -100,12 +97,10 @@ describe("anomalyTraceSignalTimeseriesQuery", () => {
 	it("returns a continuous hourly window for one service/env series", () => {
 		const q = anomalyTraceSignalTimeseriesQuery()
 		const { sql } = compileUnsafe(q, seriesParams)
-		expect(sql).toContain("FROM traces_aggregates_hourly")
-		expect(sql).toContain("IsEntryPoint = 1")
+		// The rollup the detector reads, so the chart plots the series it judged.
+		expect(sql).toContain("FROM service_overview_hourly")
 		expect(sql).toContain("ServiceName = 'checkout'")
 		expect(sql).toContain("DeploymentEnv = 'prod'")
-		expect(sql).toContain("sum(WeightedCount) AS requestCount")
-		expect(sql).toContain("quantilesTDigestWeightedMerge(0.95)(DurationQuantiles)")
 		expect(sql).toContain("OrgId = 'org_1'")
 		// No matched-hours filter — the chart wants every bucket in the window.
 		expect(sql).not.toContain("toHour(Hour)")
