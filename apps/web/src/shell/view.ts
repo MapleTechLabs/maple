@@ -314,7 +314,10 @@ export const paletteLayerView = Submodel.defineView<Model, Message, OverlayInput
 							audience: shellAudience(inputs.clerk ?? null),
 							visibleFlagged: Arr.flatMap(shellNavGroups(inputs.clerk ?? null), (group) =>
 								Arr.flatMap(group.items, (item) =>
-									FLAGGED_HREFS.has(item.href) ? [item.href] : [],
+									Arr.filter(
+										[item.href, ...Arr.map(item.subItems ?? [], (sub) => sub.href)],
+										(href) => FLAGGED_HREFS.has(href),
+									),
 								),
 							),
 						},

@@ -146,8 +146,13 @@ const navigationEntries = (): ReadonlyArray<PaletteEntry> => {
 			glyph: icon(row.icon),
 			target: href(row.href),
 		}
-		// A child of a flagged section is behind the same flag as the section's own row.
-		return FLAGGED_HREFS.has(row.section) ? { ...entry, flaggedBy: row.section } : entry
+		// A flagged page, or a child of a flagged section, is behind that flag.
+		const flag = FLAGGED_HREFS.has(row.href)
+			? row.href
+			: FLAGGED_HREFS.has(row.section)
+				? row.section
+				: undefined
+		return flag === undefined ? entry : { ...entry, flaggedBy: flag }
 	})
 }
 
