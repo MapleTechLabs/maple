@@ -21,8 +21,11 @@ import {
 	rejectedRecord,
 	runScripted,
 	SEARCH,
+	seed,
 } from "./__fixtures__/harness"
-import type { AgentInvocation } from "./ports"
+import { SKILL_BLOCK_REFS } from "../skill"
+import type { AgentInvocation, AuditEvent } from "./ports"
+import { NO_UNITS_COVERED } from "./run"
 import { isMaterial } from "./validate"
 
 const ALL = Arr.map([KEYS, SEARCH, EXPORT], idOf)
@@ -1101,5 +1104,183 @@ describe("runAudit, estimated severity", () => {
 		)
 		expect(Arr.map(recorded.findings, (f) => f.verdict)).toEqual(["confirmed"])
 		expect(recorded.estimates.size).toBe(0)
+	})
+})
+
+describe("runAudit, skill block references", () => {
+	const BEARER = "WEB-PROTOCOL-AND-AUTH.md#Bearer tokens"
+	const REVOCATION = "DATA-ISOLATION-AND-LIFECYCLE.md#Revocation and retention"
+	const FIREWALL = "CLOUD-AND-DEPLOYMENT.md#Firewall and tunnel"
+	const notes = (events: ReadonlyArray<AuditEvent>) =>
+		Arr.flatMap(events, (e) => (e._tag === "Note" ? [e.message] : []))
+
+	it("asks the critic once more, listing the refused and valid references, and admits the repair", async () => {
+		const invented = { ...EXPORT, ordinary_attack_class_block: BEARER, reason: "unmapped" }
+		const { result, recorded } = await runScripted(baseInput(), (i) =>
+			i.agentId === "critic-w1-post"
+				? json({ ...emptyCritic, missing_units: [invented], stop: false })
+				: i.agentId === "critic-w1-post-r1"
+					? json({
+							...emptyCritic,
+							missing_units: [{ ...EXPORT, reason: "unmapped" }],
+							stop: false,
+						})
+					: happy()(i),
+		)
+		const repairs = Arr.filter(recorded.invocations, (i) => Str.startsWith("critic-w1-post-")(i.agentId))
+		expect(Arr.map(repairs, (i) => i.agentId)).toEqual(["critic-w1-post-r1"])
+		const lines = new Set(Str.split("\n")(repairs[0]?.prompt ?? ""))
+		expect(lines.has(`- ${BEARER}: not a block of the skill`)).toBe(true)
+		expect(Arr.filter(SKILL_BLOCK_REFS, (ref) => !lines.has(ref))).toEqual([])
+		expect(firstOf(result.ledger, (u) => u.surface === "POST /export")?.status).toBe("covered")
+		expect(result.status).toBe("complete")
+	})
+
+	it("keeps the first critic answer when the repair turn answers unusably", async () => {
+		const invented = { ...EXPORT, ordinary_attack_class_block: BEARER, reason: "unmapped" }
+		const { result } = await runScripted(baseInput(), (i) =>
+			i.agentId === "critic-w1-post"
+				? json({ ...emptyCritic, missing_units: [invented], stop: false })
+				: i.agentId === "critic-w1-post-r1"
+					? "not json"
+					: happy()(i),
+		)
+		expect(Arr.map(result.ledger, (u) => u.surface)).toEqual(expect.not.arrayContaining(["POST /export"]))
+		expect(result.gaps).toContain("critic-w1-post proposed 1 of 1 units the ledger refused")
+	})
+
+	it("keeps the first critic answer when the repair admits fewer units", async () => {
+		const invented = { ...EXPORT, ordinary_attack_class_block: BEARER, reason: "unmapped" }
+		const extra = { ...seed("audit", "Injection"), reason: "unmapped" }
+		const { result } = await runScripted(baseInput(), (i) =>
+			i.agentId === "critic-w1-post"
+				? json({ ...emptyCritic, missing_units: [invented, extra], stop: false })
+				: i.agentId === "critic-w1-post-r1"
+					? json({ ...emptyCritic, missing_units: [], stop: false })
+					: happy()(i),
+		)
+		expect(Arr.map(result.ledger, (u) => u.surface)).toContain("POST /audit")
+	})
+
+	it("gives a gap critic no repair turn: what it accepts is only deferred", async () => {
+		const invented = { ...EXPORT, ordinary_attack_class_block: BEARER, reason: "unmapped" }
+		const extra = { ...seed("audit", "Injection"), reason: "unmapped" }
+		// The post-wave critic accepts work at the wave cap, so the gap critic records it.
+		const { recorded } = await runScripted(baseInput({ maxWaves: 1 }), (i) =>
+			i.role === "critic"
+				? json({ ...emptyCritic, missing_units: [extra, invented], stop: false })
+				: happy()(i),
+		)
+		const critics = Arr.map(
+			Arr.filter(recorded.invocations, (i) => i.role === "critic"),
+			(i) => i.agentId,
+		)
+		expect(critics).toEqual(["critic-w1-post", "critic-w1-post-r1", "critic-w1-gap"])
+	})
+
+	it("admits a unit whose unknown excluded and companion references are dropped, without a repair", async () => {
+		const unit = {
+			...EXPORT,
+			selected_companion_blocks: [
+				BEARER,
+				"data-isolation-and-lifecycle.md#export, backup, restore, and migration attack classes",
+			],
+			excluded_blocks: [
+				{ block: REVOCATION, reason: "no deletion path" },
+				{ block: FIREWALL, reason: "no ingress config" },
+			],
+			reason: "unmapped",
+		}
+		const { result, recorded } = await runScripted(baseInput(), (i) =>
+			i.agentId === "critic-w1-post"
+				? json({ ...emptyCritic, missing_units: [unit], stop: false })
+				: happy()(i),
+		)
+		expect(Arr.some(recorded.invocations, (i) => i.agentId === "critic-w1-post-r1")).toBe(false)
+		const exported = firstOf(result.ledger, (u) => u.surface === "POST /export")
+		expect(exported?.selected_companion_blocks).toEqual([
+			"DATA-ISOLATION-AND-LIFECYCLE.md#Export, backup, restore, and migration attack classes",
+		])
+		expect(exported?.excluded_blocks).toEqual([])
+		expect(notes(recorded.events)).toContain(
+			`critic unit kept: POST /export / Feature abuse and data leakage: dropped 3 unknown block references (${BEARER}, ${REVOCATION}, ${FIREWALL})`,
+		)
+		expect(result.status).toBe("complete")
+	})
+
+	it("keeps the first critic answer when the repair swaps new work for a unit the ledger holds", async () => {
+		const invented = {
+			...seed("audit", "Injection"),
+			ordinary_attack_class_block: BEARER,
+			reason: "unmapped",
+		}
+		const { result } = await runScripted(baseInput(), (i) =>
+			i.agentId === "critic-w1-post"
+				? json({
+						...emptyCritic,
+						missing_units: [{ ...EXPORT, reason: "unmapped" }, invented],
+						stop: false,
+					})
+				: i.agentId === "critic-w1-post-r1"
+					? json({ ...emptyCritic, missing_units: [{ ...KEYS, reason: "unmapped" }], stop: false })
+					: happy()(i),
+		)
+		expect(firstOf(result.ledger, (u) => u.surface === "POST /export")?.status).toBe("covered")
+	})
+
+	it("does not count attempts archived by an earlier run as this run's coverage", async () => {
+		// Run 1: a critic reopens the search unit, so its covered attempt is archived.
+		const { result: first } = await runScripted(baseInput(), (i) =>
+			i.agentId === "critic-w1-post"
+				? json({ ...emptyCritic, reassign_ids: [idOf(SEARCH)], stop: false })
+				: happy()(i),
+		)
+		// Run 2 is scoped away from search, and its one in-scope hunter never answers usably.
+		const { result } = await runScripted(
+			baseInput({
+				runId: "run-2",
+				prior: { runId: "run-1", sourceRef: "a", ledger: first.ledger, findings: first.findings },
+				scopePaths: ["src/routes/export.ts"],
+				changedSincePrior: () => true,
+			}),
+			(i) => (i.role === "hunter" ? "not json" : happy()(i)),
+		)
+		const search = firstOf(result.ledger, (u) => u.coverage_id === idOf(SEARCH))
+		expect(search && [search.status, Arr.map(search.attempts, (a) => a.status)]).toEqual([
+			"out_of_scope",
+			["covered"],
+		])
+		expect(result.status).toBe("incomplete")
+		expect(result.incompleteReasons).toContain(NO_UNITS_COVERED)
+	})
+
+	it("ends a run whose every proposal is refused incomplete with no_units_covered, one note per unit", async () => {
+		const invent = (unit: typeof KEYS) => ({ ...unit, ordinary_attack_class_block: BEARER })
+		const { result, recorded } = await runScripted(baseInput(), (i) =>
+			i.role === "synthesis"
+				? json({ architecture_md: "An API.", units: [invent(KEYS), invent(SEARCH)] })
+				: i.role === "critic"
+					? json({ ...emptyCritic, missing_units: [{ ...invent(EXPORT), reason: "unmapped" }] })
+					: happy()(i),
+		)
+		expect(result.ledger).toEqual([])
+		expect(result.status).toBe("incomplete")
+		expect(result.incompleteReasons).toEqual([NO_UNITS_COVERED])
+		const refusedNotes = Arr.filter(notes(recorded.events), (m) => Str.includes(" unit refused: ")(m))
+		expect(refusedNotes).toContain(
+			`seed unit refused: POST /keys / Access control: unknown ordinary attack-class block: ${BEARER}`,
+		)
+		expect(Arr.filter(refusedNotes, (m) => Str.startsWith("seed unit ")(m))).toHaveLength(2)
+		// Each critic and its one repair turn: no critic is asked a third time.
+		const critics = Arr.map(
+			Arr.filter(recorded.invocations, (i) => i.role === "critic"),
+			(i) => i.agentId,
+		)
+		expect(critics).toEqual([
+			"critic-w1-post",
+			"critic-w1-post-r1",
+			"critic-w1-final",
+			"critic-w1-final-r1",
+		])
 	})
 })

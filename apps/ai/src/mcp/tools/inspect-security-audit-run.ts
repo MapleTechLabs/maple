@@ -11,6 +11,9 @@ import { McpInvalidInputError, McpQueryError, McpUnavailableError, type McpToolR
 const TOOL = "inspect_security_audit_run"
 const MAX_UNITS = 40
 const MAX_EVENTS = 40
+/** Notes carry the engine's reasons (a refused unit and its references), so they get more room. */
+const NOTE_CHARS = 800
+const EVENT_CHARS = 300
 
 type Output = typeof InspectSecurityAuditRunOutput.Type
 
@@ -194,7 +197,7 @@ export function registerInspectSecurityAuditRunTool(server: McpToolRegistrar) {
 							),
 							": ",
 						),
-						300,
+						e.kind === "Note" ? NOTE_CHARS : EVENT_CHARS,
 					),
 					costUsd:
 						e.detail === null || e.detail.costUsd === null
