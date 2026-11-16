@@ -8,6 +8,7 @@ import type { CoverageUnit, EstimatedSeverity, Finding, Profile, Severity, Verdi
 import {
 	COMPANION_FILES,
 	COMPANION_REQUIRED_SECTIONS,
+	canonicalBlockRef,
 	companionBlockRefs,
 	companionWhenToUse,
 	fencedBlockAfter,
@@ -271,8 +272,12 @@ export const refusedBlockRefsRepair = (refused: ReadonlyArray<string>): string =
 	Arr.join(
 		[
 			"## Block references the parent refused",
-			`A previous answer to this assignment proposed missing units whose attack-class blocks are not blocks of the skill, so the parent refused those units. The refused references:\n${Arr.join(
-				Arr.map(refused, (ref) => `- ${ref}`),
+			`A previous answer to this assignment proposed missing units whose attack-class blocks the parent could not use, so it refused those units. The refused references, and why:\n${Arr.join(
+				Arr.map(
+					refused,
+					(ref) =>
+						`- ${ref}: ${canonicalBlockRef(ref) === undefined ? "not a block of the skill" : "a companion section, not an ordinary attack-class block; list it in selected_companion_blocks instead"}`,
+				),
 				"\n",
 			)}`,
 			"Answer the whole assignment again. Give every missing unit an ordinary_attack_class_block, selected_companion_blocks and excluded_blocks taken only from the valid references below; where a refused name was a finer topic, use the block that contains it. Return exactly one JSON object that matches the contract above, with no surrounding prose.",

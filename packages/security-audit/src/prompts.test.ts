@@ -222,8 +222,18 @@ describe("valid block references in planning prompts", () => {
 	})
 
 	it("gives a critic repair turn the refused references and every valid one", () => {
-		const repair = refusedBlockRefsRepair(["WEB-PROTOCOL-AND-AUTH.md#Bearer tokens"])
-		expect(lines(repair).has("- WEB-PROTOCOL-AND-AUTH.md#Bearer tokens")).toBe(true)
+		const repair = refusedBlockRefsRepair([
+			"WEB-PROTOCOL-AND-AUTH.md#Bearer tokens",
+			"WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+		])
+		expect(lines(repair).has("- WEB-PROTOCOL-AND-AUTH.md#Bearer tokens: not a block of the skill")).toBe(
+			true,
+		)
+		expect(
+			lines(repair).has(
+				"- WEB-PROTOCOL-AND-AUTH.md#Core discipline: a companion section, not an ordinary attack-class block; list it in selected_companion_blocks instead",
+			),
+		).toBe(true)
 		expect(Arr.filter(SKILL_BLOCK_REFS, (ref) => !lines(repair).has(ref))).toEqual([])
 	})
 })

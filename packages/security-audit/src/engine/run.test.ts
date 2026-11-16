@@ -1130,7 +1130,7 @@ describe("runAudit, skill block references", () => {
 		const repairs = Arr.filter(recorded.invocations, (i) => Str.startsWith("critic-w1-post-")(i.agentId))
 		expect(Arr.map(repairs, (i) => i.agentId)).toEqual(["critic-w1-post-r1"])
 		const lines = new Set(Str.split("\n")(repairs[0]?.prompt ?? ""))
-		expect(lines.has(`- ${BEARER}`)).toBe(true)
+		expect(lines.has(`- ${BEARER}: not a block of the skill`)).toBe(true)
 		expect(Arr.filter(SKILL_BLOCK_REFS, (ref) => !lines.has(ref))).toEqual([])
 		expect(firstOf(result.ledger, (u) => u.surface === "POST /export")?.status).toBe("covered")
 		expect(result.status).toBe("complete")
