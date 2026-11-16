@@ -859,25 +859,29 @@ const aws = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry 
 					return stream(state._tag === "silent" ? "stale" : "healthy", null, regions)
 			}
 		})()
-		// CloudTrail feeds the audit log once the role grants the security module, and reads.
-		const granted = c.grantedModules !== null && Arr.contains(c.grantedModules, "security")
+		// CloudTrail feeds the audit log once the role grants the security module. Before that there is
+		// no feed: the Sources panel reads off and points at the setup script.
+		const granted =
+			Arr.contains(c.modules, "security") &&
+			c.grantedModules !== null &&
+			Arr.contains(c.grantedModules, "security")
 		const trailProblem = Arr.findFirst(
 			inputs.awsCloudTrailProblems ?? [],
 			(problem) => problem.accountId === c.accountId,
 		)
-		const auditLog: ReadonlyArray<IntegrationResource> = !Arr.contains(c.modules, "security")
+		const auditLog: ReadonlyArray<IntegrationResource> = !granted
 			? []
 			: [
 					{
 						kind: "audit log",
 						name: c.accountId,
-						status: !granted ? "pending" : Option.isSome(trailProblem) ? "failing" : "healthy",
+						status: Option.isSome(trailProblem) ? "failing" : "healthy",
 						lastSuccessAt: null,
 						lastError: Option.isSome(trailProblem)
 							? (trailProblem.value.lastError ??
 								`CloudTrail could not be read (${trailProblem.value.state})`)
 							: null,
-						note: granted ? null : "run the setup script again to grant the security module",
+						note: null,
 					},
 				]
 		return [role, ...streams, ...auditLog]

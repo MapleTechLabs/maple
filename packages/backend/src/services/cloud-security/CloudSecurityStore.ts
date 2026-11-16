@@ -106,7 +106,10 @@ const SEVERITY_RANK = { critical: 0, high: 1, medium: 2, low: 3, info: 4 } as co
 /** Rows per INSERT: a finding carries a jsonb detail, and Postgres caps one statement's parameters. */
 const UPSERT_CHUNK = 100
 
-/** A closed finding is kept this long after the service last touched it. */
+/** How long after it closed a resolved finding is still refreshed by id, for a console reopen. */
+const REOPEN_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+
+/** A closed finding is kept this long after Maple saw it close. */
 export const CLOSED_FINDING_RETENTION_MS = 90 * 24 * 60 * 60 * 1000
 
 const toPersistenceError = makePersistenceErrorMapper(
@@ -159,7 +162,7 @@ export interface CloudSecurityStoreApi {
 		ids: { readonly only: ReadonlyArray<string> } | { readonly except: ReadonlyArray<string> },
 		at: number,
 	) => Effect.Effect<number, IntegrationsPersistenceError>
-	/** Deletes the org's closed findings the service last touched before `beforeMs`. */
+	/** Deletes the org's findings closed (as Maple first saw them closed) before `beforeMs`. */
 	readonly pruneClosed: (
 		orgId: OrgId,
 		beforeMs: number,
@@ -183,8 +186,11 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 				readonly findingId: string
 			}) => `${row.orgId}\n${row.connectionId}\n${row.region}\n${row.source}\n${row.findingId}`
 
-			/** The closed rows among `rows` that are stored already: a finding first seen closed is not kept. */
-			const storedClosed = (rows: ReadonlyArray<CloudFindingWrite>) => {
+			/**
+			 * The closed rows among `rows` that are stored already, with when each closed: a finding first
+			 * seen closed is not kept, and one that closes now is stamped with this sync.
+			 */
+			const storedClosed = (rows: ReadonlyArray<CloudFindingWrite>, syncedAt: number) => {
 				const closed = Arr.filter(rows, (row) => row.status !== "active")
 				// Each lookup is pinned to one org and connection, whatever mix of rows a caller passes.
 				const groups = Arr.flatMap(
@@ -202,6 +208,8 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 										region: $.region,
 										source: $.source,
 										findingId: $.findingId,
+										status: $.status,
+										closedAt: $.closedAt,
 									}))
 									.where(($) => [
 										$.orgId.eq(chunk[0].orgId),
@@ -215,8 +223,16 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 						),
 					),
 					(found) => {
-						const keys = new Set(Arr.map(Arr.flatten(found), keyOf))
-						return Arr.filter(closed, (row) => keys.has(keyOf(row)))
+						const stored = new Map(
+							Arr.map(Arr.flatten(found), (row) => [keyOf(row), row] as const),
+						)
+						return Arr.flatMap(closed, (row) => {
+							const existing = stored.get(keyOf(row))
+							if (existing === undefined) return []
+							const closedAt =
+								existing.status === "active" ? syncedAt : (existing.closedAt ?? syncedAt)
+							return [{ ...row, closedAt }]
+						})
 					},
 				)
 			}
@@ -225,9 +241,12 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 				rows: ReadonlyArray<CloudFindingWrite>,
 				syncedAt: number,
 			) {
-				const closed = yield* storedClosed(rows)
+				const closed = yield* storedClosed(rows, syncedAt)
 				const kept = Arr.appendAll(
-					Arr.filter(rows, (row) => row.status === "active"),
+					Arr.map(
+						Arr.filter(rows, (row) => row.status === "active"),
+						(row) => ({ ...row, closedAt: null }),
+					),
 					closed,
 				)
 				yield* Effect.annotateCurrentSpan({
@@ -308,6 +327,11 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 								$.region.eq(feed.region),
 								$.source.eq(feed.source),
 								$.syncedAt.lt(syncedBefore),
+								// A resolved finding is rechecked for a week after it closed, for a console reopen.
+								PG.or(
+									$.status.neq("resolved"),
+									$.closedAt.gte(syncedBefore - REOPEN_WINDOW_MS),
+								),
 							])
 							.orderBy(($) => [[$.syncedAt, "asc"]])
 							.limit(limit),
@@ -322,27 +346,31 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 				at: number,
 			) {
 				if ("only" in ids && ids.only.length === 0) return 0
-				const updated = yield* dbExecute((db) =>
-					db.run(
-						PG.update(CloudSecurityFindings)
-							// Not the provider time: the service may still report this finding, at its own time.
-							.set({ status: "resolved", syncedAt: at })
-							.where(($) => [
-								$.orgId.eq(feed.orgId),
-								$.connectionId.eq(feed.connectionId),
-								$.region.eq(feed.region),
-								$.source.eq(feed.source),
-								$.status.neq("resolved"),
-								...("only" in ids
-									? [PG.inList($.findingId, ids.only)]
-									: ids.except.length === 0
-										? []
-										: [PG.notInList($.findingId, ids.except)]),
-							])
-							.returning(($) => ({ findingId: $.findingId })),
-					),
-				)
-				return updated.length
+				// An open finding closes now; an archived one keeps the time it closed. Not the provider
+				// time either: the service may still report this finding, at its own time.
+				const resolveWhere = (from: "active" | "archived", set: { readonly closedAt?: number }) =>
+					dbExecute((db) =>
+						db.run(
+							PG.update(CloudSecurityFindings)
+								.set({ status: "resolved", syncedAt: at, ...set })
+								.where(($) => [
+									$.orgId.eq(feed.orgId),
+									$.connectionId.eq(feed.connectionId),
+									$.region.eq(feed.region),
+									$.source.eq(feed.source),
+									$.status.eq(from),
+									...("only" in ids
+										? [PG.inList($.findingId, ids.only)]
+										: ids.except.length === 0
+											? []
+											: [PG.notInList($.findingId, ids.except)]),
+								])
+								.returning(($) => ({ findingId: $.findingId })),
+						),
+					)
+				const opened = yield* resolveWhere("active", { closedAt: at })
+				const archived = yield* resolveWhere("archived", {})
+				return opened.length + archived.length
 			})
 
 			const pruneClosed = Effect.fn("CloudSecurityStore.pruneClosed")(function* (
@@ -355,7 +383,7 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 							.where(($) => [
 								$.orgId.eq(orgId),
 								$.status.neq("active"),
-								$.providerUpdatedAt.lt(beforeMs),
+								$.closedAt.lt(beforeMs),
 							])
 							.returning(($) => ({ findingId: $.findingId })),
 					),

@@ -154,9 +154,9 @@ const callAs =
 							}),
 						),
 				}),
-				Effect.withSpan(`AwsSecurity.${what}`, {
+				Effect.withSpan("AwsSecurity.call", {
 					kind: "client",
-					attributes: { "maple.aws.region": target.region },
+					attributes: { "maple.aws.region": target.region, "maple.aws.operation": what },
 				}),
 			)
 		})
@@ -764,7 +764,14 @@ const readAccessAnalyzer = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =
 				kind: "failing",
 			})
 		}
-		if (active.length === 0) return notEnabled
+		if (listed.analyzers.length === 0) return notEnabled
+		// Analyzers that exist but are still being created, or failed, are not "off": ask again next poll.
+		if (active.length === 0) {
+			return yield* new AwsSecurityReadError({
+				message: `AccessAnalyzer: no analyzer is active yet (${Arr.join(Arr.dedupe(Arr.map(listed.analyzers, (analyzer) => analyzer.status)), ", ")})`,
+				kind: "failing",
+			})
+		}
 		const seen = yield* Ref.make<ReadonlyArray<string>>([])
 		const reads = yield* Effect.forEach(active, (analyzer) =>
 			pagesOf(
