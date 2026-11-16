@@ -65,6 +65,7 @@ import { groupedOrder, moved } from "./update-components"
 import { customDomainOf } from "./update-domain"
 import { canvasDocument } from "./view-canvas"
 import { maintenanceDurationMs } from "./view-incidents"
+import { type Focused, popupOwnsEscape } from "./subscription"
 import { removeComponentCopy, view as pageView } from "./view"
 
 const ADMIN = Policy.grantsOf(["org:admin"])
@@ -3025,8 +3026,134 @@ describe("the sheet, the previews and the reads they wait on", () => {
 				args: { componentId: componentId(1), payload: { name: "Payments" } },
 			},
 		])
-		expect(switched.model.componentSave).toBe("saving")
+		expect(switched.model.componentSave).toEqual({ _tag: "Saving", componentId: componentId(1) })
 		expect(switched.model.componentForm.name).toBe("Component 2")
+	})
+
+	/** Component 1's name blurred (its save in flight), then its description typed. */
+	const savingThenTyped = () =>
+		steps(selected(1), [
+			Message.ChangedComponentField({ field: "name", value: "Payments" }),
+			Message.CommittedComponent(),
+			Message.ChangedComponentField({ field: "description", value: "Card payments" }),
+		])
+
+	test("an edit typed while a save is in flight is queued when another component opens, and sent once the save lands", () => {
+		const switched = pageUpdate(
+			savingThenTyped(),
+			Message.ClickedComponent({ componentId: componentId(2) }),
+		)
+		expect(names(switched.commands)).not.toContain("SaveStatusPageComponent")
+		const landed = pageUpdate(
+			switched.model,
+			Message.CompletedSaveComponent({ result: Result.succeed(component(1, { name: "Payments" })) }),
+		)
+		expect(landed.commands).toContainEqual(
+			expect.objectContaining({
+				name: "SaveStatusPageComponent",
+				args: expect.objectContaining({
+					componentId: componentId(1),
+					payload: expect.objectContaining({ name: "Payments", description: "Card payments" }),
+				}),
+			}),
+		)
+		expect(landed.model.queuedComponentForms).toEqual([])
+	})
+
+	test("Escape queues an edit typed while a save is in flight, too", () => {
+		const escaped = pageUpdate(savingThenTyped(), Message.PressedEscape()).model
+		expect(Arr.map(escaped.queuedComponentForms, (form) => form.description)).toEqual(["Card payments"])
+	})
+
+	test("a refused save stays on its own component and its queued edit is never sent behind its back", () => {
+		const switched = pageUpdate(
+			savingThenTyped(),
+			Message.ClickedComponent({ componentId: componentId(2) }),
+		).model
+		const refused = pageUpdate(
+			switched,
+			Message.CompletedSaveComponent({ result: Result.fail(toLoadFailure(new Error("refused"))) }),
+		)
+		expect(names(refused.commands)).not.toContain("SaveStatusPageComponent")
+		expect(refused.model.queuedComponentForms).toEqual([])
+		expect(refused.model.componentSave).toMatchObject({ _tag: "Failed", componentId: componentId(1) })
+		scene(
+			{ update: pageUpdate, view },
+			given(refused.model),
+			revealed,
+			expectView(text("Couldn't save the component")).not.toExist(),
+		)
+		// Closing the other component or opening a third sends nothing of the abandoned form.
+		expect(names(pageUpdate(refused.model, Message.PressedEscape()).commands)).not.toContain(
+			"SaveStatusPageComponent",
+		)
+		const third = pageUpdate(refused.model, Message.ClickedComponent({ componentId: componentId(3) }))
+		expect(names(third.commands)).not.toContain("SaveStatusPageComponent")
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(refused.model, Message.ClickedComponent({ componentId: componentId(1) })).model),
+			revealed,
+			expectView(text("Couldn't save the component")).toExist(),
+		)
+	})
+
+	test("opening a component after a JSON apply renamed an untouched one sends no stale PATCH", () => {
+		const opened = selected(1, { components: [component(1, { name: "API" }), component(2)] })
+		const advanced = routeChanged(
+			opened,
+			{ _tag: "StatusPage", pageId: PUBLIC_ID, search: { view: "settings", section: "advanced" } },
+			context,
+		).model
+		// The apply's re-read lands the rename made in the JSON.
+		const renamed = pageUpdate(
+			advanced,
+			Message.CompletedFetchComponents({
+				key: advanced.components.key ?? "",
+				result: Result.succeed([component(1, { name: "Payments" }), component(2)]),
+			}),
+		).model
+		const back = routeChanged(
+			renamed,
+			{ _tag: "StatusPage", pageId: PUBLIC_ID, search: { view: "settings", section: "monitors" } },
+			context,
+		).model
+		expect(
+			names(pageUpdate(back, Message.ClickedComponent({ componentId: componentId(2) })).commands),
+		).not.toContain("SaveStatusPageComponent")
+	})
+
+	test("Escape closes an expanded component row, but an open popup trigger or list keeps it", () => {
+		const focused = (attributes: Readonly<Record<string, string>>, inList = false): Focused => ({
+			getAttribute: (name) => attributes[name] ?? null,
+			isInside: () => inList,
+		})
+		expect(popupOwnsEscape(focused({ "aria-expanded": "true" }))).toBe(false)
+		expect(popupOwnsEscape(focused({ "aria-expanded": "true", "aria-haspopup": "listbox" }))).toBe(true)
+		expect(popupOwnsEscape(focused({ "aria-expanded": "false", "aria-haspopup": "menu" }))).toBe(false)
+		expect(popupOwnsEscape(focused({}, true))).toBe(true)
+	})
+
+	test("a deleted incident's closing sheet keeps showing it after the re-read drops it", () => {
+		const deleting = steps(
+			pageUpdate(
+				loaded({ tab: "incidents", incidents: [incident(1)] }),
+				Message.ClickedIncident({ incidentId: incidentId(1) }),
+			).model,
+			[
+				Message.ClickedDeleteIncident({ incidentId: incidentId(1) }),
+				Message.ClickedConfirmDeleteIncident(),
+			],
+		)
+		const deleted = pageUpdate(
+			deleting,
+			Message.CompletedDeleteIncident({ result: Result.succeed(undefined) }),
+		).model
+		const reread = pageUpdate(
+			deleted,
+			Message.CompletedFetchIncidents({ key: deleted.incidents.key ?? "", result: Result.succeed([]) }),
+		).model
+		expect(reread.panel).toBeNull()
+		expect(reread.sheetIncident?.id).toBe(incidentId(1))
 	})
 
 	test("completed maintenance lasts from its first In progress update to completion, else its window", () => {

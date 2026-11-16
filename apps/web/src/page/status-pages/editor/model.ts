@@ -68,9 +68,16 @@ export const Panel = Schema.Union([
 ])
 export type Panel = typeof Panel.Type
 
-/** The component form's autosave: each commit is a PATCH, its outcome shown next to the title. */
-export const SaveState = Schema.Literals(["idle", "saving", "saved", "failed"])
-export type SaveState = typeof SaveState.Type
+/**
+ * The last component save, for the component it belongs to: in flight, landed, or refused with why.
+ * Its row shows it; another component's row shows nothing of it.
+ */
+export const ComponentSave = Schema.Union([
+	Schema.TaggedStruct("Saving", { componentId: StatusPageComponentId }),
+	Schema.TaggedStruct("Saved", { componentId: StatusPageComponentId }),
+	Schema.TaggedStruct("Failed", { componentId: StatusPageComponentId, failure: LoadFailure }),
+])
+export type ComponentSave = typeof ComponentSave.Type
 
 export const Model = Schema.Struct({
 	search: StatusPageSearch,
@@ -92,6 +99,8 @@ export const Model = Schema.Struct({
 	panelSheet: Dialog.Model,
 	/** What the sheet shows: the last incident or Add `panel` held, kept while the sheet closes. */
 	sheetPanel: Schema.NullOr(Panel),
+	/** The incident the sheet last showed, so a closing sheet keeps it after a delete. */
+	sheetIncident: Schema.NullOr(V2StatusPageIncident),
 	// Preview
 	previewScheme: PreviewScheme,
 	/** Looking only, like the scheme: neither is saved with the page. */
@@ -103,8 +112,9 @@ export const Model = Schema.Struct({
 	// Components
 	/** The selected component as its inputs hold it; each commit saves what differs. */
 	componentForm: ComponentForm,
-	componentSave: SaveState,
-	componentFailure: Schema.NullOr(LoadFailure),
+	componentSave: Schema.NullOr(ComponentSave),
+	/** Forms committed while a save was in flight, one per component, sent in turn as saves land. */
+	queuedComponentForms: Schema.Array(ComponentForm),
 	confirmDeleteComponentId: Schema.NullOr(StatusPageComponentId),
 	deleteComponentDialog: Dialog.Model,
 	isDeletingComponent: Schema.Boolean,

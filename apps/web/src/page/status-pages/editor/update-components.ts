@@ -66,23 +66,18 @@ export const deleteComponentDialog = (model: Model, step: ReturnType<typeof Dial
 
 /**
  * Opens the component in its row, which scrolls itself into view as it mounts. The one open before
- * saves what was typed first; a save in flight keeps its state, so a second cannot start beside it.
+ * saves what was typed first, or queues it behind a save in flight.
  */
 export const selectComponent = (model: Model, componentId: StatusPageComponentId): Return => {
 	const found = Arr.findFirst(componentsOf(model), (row) => row.id === componentId)
 	if (Option.isNone(found)) return { model }
-	return chain(model, commitComponent, (next) => {
-		const isSaving = next.componentSave === "saving"
-		return {
-			model: {
-				...next,
-				panel: { _tag: "Component", componentId },
-				componentForm: componentFormOf(found.value),
-				componentSave: isSaving ? "saving" : "idle",
-				componentFailure: isSaving ? next.componentFailure : null,
-			},
-		}
-	})
+	return chain(model, commitComponent, (next) => ({
+		model: {
+			...next,
+			panel: { _tag: "Component", componentId },
+			componentForm: componentFormOf(found.value),
+		},
+	}))
 }
 
 export const changeComponent = (model: Model, field: ComponentTextField, value: string): Return => ({
@@ -92,43 +87,74 @@ export const changeComponent = (model: Model, field: ComponentTextField, value: 
 const isSame = (form: ComponentForm, component: V2StatusPageComponent): boolean =>
 	encodeJson(componentPayload(form)) === encodeJson(componentPayload(componentFormOf(component)))
 
-/** Saves the form when it differs from the component; a save in flight re-commits when it lands. */
-export const commitComponent = (model: Model): Return => {
-	const form = model.componentForm
+const withoutQueued = (model: Model, componentId: string | null): Model => ({
+	...model,
+	queuedComponentForms: Arr.filter(model.queuedComponentForms, (form) => form.editingId !== componentId),
+})
+
+/**
+ * Saves `form` when it differs from its component. With a save in flight it waits in the queue,
+ * replacing any older form of the same component.
+ */
+const commitForm = (model: Model, form: ComponentForm): Return => {
 	const found = Arr.findFirst(componentsOf(model), (row) => row.id === form.editingId)
 	if (
 		!canManage(model) ||
 		model.pageId === null ||
 		Option.isNone(found) ||
-		model.componentSave === "saving" ||
 		Str.trim(form.name) === "" ||
 		isSame(form, found.value)
 	)
-		return { model }
-	const saved = found.value
+		return { model: withoutQueued(model, form.editingId) }
+	const rest = withoutQueued(model, form.editingId)
+	if (model.componentSave?._tag === "Saving")
+		return { model: { ...rest, queuedComponentForms: [...rest.queuedComponentForms, form] } }
 	return {
-		model: { ...model, componentSave: "saving", componentFailure: null },
+		model: { ...rest, componentSave: { _tag: "Saving", componentId: found.value.id } },
 		commands: [
-			SaveComponent({ pageId: model.pageId, componentId: saved.id, payload: componentPayload(form) }),
+			SaveComponent({
+				pageId: model.pageId,
+				componentId: found.value.id,
+				payload: componentPayload(form),
+			}),
 		],
 	}
 }
+
+/** Saves the open component's form; nothing while no component is open. */
+export const commitComponent = (model: Model): Return =>
+	model.panel?._tag === "Component" && model.panel.componentId === model.componentForm.editingId
+		? commitForm(model, model.componentForm)
+		: { model }
+
+/** The next queued form, once the save before it landed. */
+const commitQueued = (model: Model): Return =>
+	Option.match(Arr.head(model.queuedComponentForms), {
+		onNone: () => ({ model }),
+		onSome: (form) => commitForm(model, form),
+	})
 
 /** Components and the page revision change together: both are read again. */
 const reread = (model: Model, context: PageContext): Return =>
 	chain(model, readComponents(context, "Supersede"), readPage(context, "Supersede"))
 
+/**
+ * A save landed for the component it was sent for. A refused one is shown on that component's row,
+ * and its queued edits are dropped rather than sent behind its back; other components' queue on.
+ */
 export const savedComponent = (
 	model: Model,
 	result: Result.Result<V2StatusPageComponent, LoadFailure>,
 	context: PageContext,
-): Return =>
-	Result.match(result, {
+): Return => {
+	const save = model.componentSave
+	if (save?._tag !== "Saving") return { model }
+	return Result.match(result, {
 		onSuccess: (component): Return => {
 			// The saved row replaces the listed one at once, so the next commit diffs against it.
 			const next: Model = {
 				...model,
-				componentSave: "saved",
+				componentSave: { _tag: "Saved", componentId: save.componentId },
 				components: {
 					...model.components,
 					data: AsyncData.map(model.components.data, (rows) =>
@@ -136,12 +162,17 @@ export const savedComponent = (
 					),
 				},
 			}
-			return chain(next, (settled) => reread(settled, context), commitComponent)
+			return chain(next, (settled) => reread(settled, context), commitQueued)
 		},
-		onFailure: (componentFailure): Return => ({
-			model: { ...model, componentSave: "failed", componentFailure },
-		}),
+		onFailure: (failure): Return =>
+			commitQueued(
+				withoutQueued(
+					{ ...model, componentSave: { _tag: "Failed", componentId: save.componentId, failure } },
+					save.componentId,
+				),
+			),
 	})
+}
 
 type Groupable = { readonly id: StatusPageComponentId; readonly group: string | null }
 
@@ -243,7 +274,7 @@ export const deletedComponent = (
 				closed.model.panel?._tag === "Component" && closed.model.panel.componentId === removedId
 					? null
 					: closed.model.panel
-			const refreshed = reread({ ...closed.model, panel }, context)
+			const refreshed = reread(withoutQueued({ ...closed.model, panel }, removedId), context)
 			return {
 				model: refreshed.model,
 				commands: [...(closed.commands ?? []), ...(refreshed.commands ?? [])],

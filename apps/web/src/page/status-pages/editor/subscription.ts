@@ -10,18 +10,32 @@ import { resolveView } from "./update"
 // Escape closes the open component, from its inputs too; an open dialog (the sheet included), menu
 // or listbox keeps its own Escape. A click in the live page's frame opens what it landed on.
 
-/** An open popup owns Escape: a dialog, or a dropdown whose trigger or list has focus. */
-const isPopupOpen = (target: EventTarget | null): boolean =>
-	isDialogOpen() ||
-	(target instanceof Element &&
-		(target.getAttribute("aria-expanded") === "true" ||
-			target.closest('[role="listbox"], [role="menu"]') !== null))
+/** What Escape's owner is read from on the focused element. */
+export type Focused = Readonly<{
+	getAttribute: (name: string) => string | null
+	isInside: (selector: string) => boolean
+}>
+
+/**
+ * A focused popup owns Escape: an open popup trigger, or a list or menu. A disclosure such as a
+ * component's row is expanded but no popup, so Escape still closes it.
+ */
+export const popupOwnsEscape = (focused: Focused): boolean =>
+	(focused.getAttribute("aria-expanded") === "true" && focused.getAttribute("aria-haspopup") !== null) ||
+	focused.isInside('[role="listbox"], [role="menu"]')
+
+const focusedOf = (element: Element): Focused => ({
+	getAttribute: (name) => element.getAttribute(name),
+	isInside: (selector) => element.closest(selector) !== null,
+})
 
 const escapes: Stream.Stream<Message> = Dom.streamFromEventFilterMap({
 	target: () => document,
 	type: "keydown",
 	filterMapEvent: (event) =>
-		event.key !== "Escape" || isPopupOpen(event.target)
+		event.key !== "Escape" ||
+		isDialogOpen() ||
+		(event.target instanceof Element && popupOwnsEscape(focusedOf(event.target)))
 			? Option.none()
 			: Option.some(Message.PressedEscape()),
 })

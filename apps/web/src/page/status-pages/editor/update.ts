@@ -201,6 +201,7 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		panel: null,
 		panelSheet: Dialog.init("status-page-panel", "sheet"),
 		sheetPanel: null,
+		sheetIncident: null,
 		previewScheme: "light",
 		previewWidth: "desktop",
 		previewState: "live",
@@ -208,8 +209,8 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		previewShown: 0,
 		previewHistory: [],
 		componentForm: emptyComponentForm,
-		componentSave: "idle",
-		componentFailure: null,
+		componentSave: null,
+		queuedComponentForms: [],
 		confirmDeleteComponentId: null,
 		deleteComponentDialog: Dialog.init("status-page-delete-component", "alert-dialog"),
 		isDeletingComponent: false,
@@ -302,11 +303,9 @@ const whenSettings =
 export const routeChanged = (model: Model, route: EditorRoute, context: PageContext): Return =>
 	withSheet(
 		chain(
-			{
-				...model,
-				search: route.search,
-				panel: showsPanel(model.panel, resolveView(route.search)) ? model.panel : null,
-			},
+			showsPanel(model.panel, resolveView(route.search))
+				? { ...model, search: route.search }
+				: { ...model, search: route.search, panel: null, componentForm: emptyComponentForm },
 			whenJson(context, "Refresh"),
 			whenSettings(context, "Refresh"),
 		),
@@ -347,7 +346,7 @@ const closePanel = (model: Model): Return => {
 	if (panel === null) return { model }
 	return panel._tag === "Component"
 		? {
-				model: { ...model, panel: null },
+				model: { ...model, panel: null, componentForm: emptyComponentForm },
 				commands: [FocusEditorElement({ id: componentRowId(panel.componentId) })],
 			}
 		: { model: { ...model, panel: null } }
@@ -356,13 +355,27 @@ const closePanel = (model: Model): Return => {
 const sheetCommands = (step: ReturnType<typeof Dialog.update>) =>
 	FoldkitCommand.mapMessages(step.commands ?? [], (message) => Message.GotPanelSheetMessage({ message }))
 
+/** The open incident as listed, else the one the sheet last showed. */
+const shownIncident = (model: Model): Model["sheetIncident"] => {
+	const panel = model.panel
+	if (panel?._tag !== "Incident") return model.sheetIncident
+	return Option.getOrElse(
+		Arr.findFirst(incidentsOf(model), (row) => row.id === panel.incidentId),
+		() => model.sheetIncident,
+	)
+}
+
 /**
  * Opens the sheet while an incident or Add is open and closes it otherwise, whatever opened them.
- * The sheet keeps showing the last of them while it animates out.
+ * The sheet keeps showing the last of them, the incident as last listed, while it animates out.
  */
 const withSheet = (result: Return): Return => {
 	const isWanted = result.model.panel !== null && result.model.panel._tag !== "Component"
-	const model = { ...result.model, sheetPanel: isWanted ? result.model.panel : result.model.sheetPanel }
+	const model = {
+		...result.model,
+		sheetPanel: isWanted ? result.model.panel : result.model.sheetPanel,
+		sheetIncident: shownIncident(result.model),
+	}
 	if (isWanted === model.panelSheet.isOpen) return { ...result, model }
 	const step = isWanted ? Dialog.open(model.panelSheet) : Dialog.close(model.panelSheet)
 	return {

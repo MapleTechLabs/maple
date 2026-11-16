@@ -276,10 +276,11 @@ const panelSheet = (h: H, model: Model, time: TimeInputs): Html => {
 			footer: (close) => addSheetFooter(h, model, close),
 			toParentMessage,
 		})
-	const incident =
-		panel?._tag === "Incident"
-			? Option.getOrUndefined(Arr.findFirst(incidentsOf(model), (row) => row.id === panel.incidentId))
-			: undefined
+	const id = panel?._tag === "Incident" ? panel.incidentId : null
+	const listed = Option.getOrUndefined(Arr.findFirst(incidentsOf(model), (row) => row.id === id))
+	// A closing sheet (its incident just deleted) keeps what it showed.
+	const kept = model.panel === null && model.sheetIncident?.id === id ? model.sheetIncident : undefined
+	const incident = listed ?? kept
 	return sidePanelSheet(h, {
 		sheet: model.panelSheet,
 		title: incident?.title ?? "Incident",

@@ -28,7 +28,7 @@ import { selectField, textField } from "../shared/fields"
 import { onYourPage } from "../shared/preview"
 import { RevealOpenComponent } from "./command"
 import { Message } from "./message"
-import { canManage, type Model } from "./model"
+import { canManage, type ComponentSave, type Model } from "./model"
 import { componentsOf, incidentsOf, monitorsOf } from "./reads"
 import { componentRowId, groupedOrder, moved } from "./update-components"
 import { settingsOf } from "./update-settings"
@@ -48,18 +48,25 @@ const LABEL_TONE = {
 	crit: "error",
 } as const satisfies Partial<Record<Tone, TypographyTone>>
 
-const SAVE_LABEL = { idle: "", saving: "Saving", saved: "Saved", failed: "Not saved" } as const
+const SAVE_LABEL = { Saving: "Saving", Saved: "Saved", Failed: "Not saved" } as const satisfies Record<
+	ComponentSave["_tag"],
+	string
+>
 
-const saveIndicator = (h: H, model: Model): Html =>
+/** The last save, when it was this component's. */
+const saveOf = (model: Model, component: V2StatusPageComponent): ComponentSave | null =>
+	model.componentSave?.componentId === component.id ? model.componentSave : null
+
+const saveIndicator = (h: H, save: ComponentSave | null): Html =>
 	typography(
 		h,
 		{
 			size: "xs",
 			mono: true,
-			tone: model.componentSave === "failed" ? "destructive" : "muted",
+			tone: save?._tag === "Failed" ? "destructive" : "muted",
 			attributes: [h.AriaLive("polite")],
 		},
-		[SAVE_LABEL[model.componentSave]],
+		[save === null ? "" : SAVE_LABEL[save._tag]],
 	)
 
 /** The page's other groups as one-click picks, so a group is never retyped (or mistyped). */
@@ -105,6 +112,7 @@ const componentForm = (h: H, model: Model, page: V2StatusPage, component: V2Stat
 	const hasMonitor = form.monitorId !== ""
 	const uptimeId = "status-page-panel-uptime"
 	const reason = statusReason(component, monitorsOf(model), incidentsOf(model))
+	const save = saveOf(model, component)
 	const settings = Option.getOrElse(settingsOf(model), () => settingsFormOf(page))
 	return vstack(
 		h,
@@ -225,7 +233,7 @@ const componentForm = (h: H, model: Model, page: V2StatusPage, component: V2Stat
 					className: "h-48",
 				}),
 			),
-			...failureAlert(h, "Couldn't save the component", model.componentFailure),
+			...failureAlert(h, "Couldn't save the component", save?._tag === "Failed" ? save.failure : null),
 			hstack(h, { gap: "3", justify: "between", wrap: true }, [
 				isReadOnly
 					? h.span([], [])
@@ -240,7 +248,7 @@ const componentForm = (h: H, model: Model, page: V2StatusPage, component: V2Stat
 							},
 							["Remove from page"],
 						),
-				saveIndicator(h, model),
+				saveIndicator(h, save),
 			]),
 		],
 	)
