@@ -20,7 +20,7 @@ import * as Field from "@maple/views/ui/field"
 import * as Menu from "@maple/views/ui/menu"
 import * as Select from "@maple/views/ui/select"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
-import { clerkTry, currentClerkOrganization } from "../../../platform/clerk"
+import { ClerkActionError, clerkTry, currentClerkOrganization } from "../../../platform/clerk"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { memberDisplayName } from "../kit/members"
 import { normalizeDomain } from "../domains/update"
@@ -54,28 +54,43 @@ export const FetchEnterpriseSso = Command.define("FetchEnterpriseSso", {
 	),
 })
 
+/** Every member, page by page; capped so a runaway org cannot loop the picker forever. */
+const MAX_MEMBER_PAGES = 50
+
 const FetchSsoMembers = Command.define("FetchSsoMembers", {
 	messages: [Message.CompletedFetchMembers],
 	execute: currentClerkOrganization.pipe(
-		Effect.flatMap((organization) =>
-			clerkTry("Couldn't load members", () =>
-				organization.getMemberships({ pageSize: MEMBERS_PAGE_SIZE }),
-			),
-		),
-		Effect.map((page) =>
-			Arr.flatMap(page.data, (member): ReadonlyArray<MemberOption> => {
-				const user = member.publicUserData
-				return user?.userId === undefined
-					? []
-					: [
-							{
-								userId: user.userId,
-								name: memberDisplayName(user) ?? user.identifier,
-								identifier: user.identifier,
-							},
-						]
-			}),
-		),
+		Effect.flatMap((organization) => {
+			const fetchFrom = (
+				page: number,
+				collected: ReadonlyArray<MemberOption>,
+			): Effect.Effect<ReadonlyArray<MemberOption>, ClerkActionError> =>
+				clerkTry("Couldn't load members", () =>
+					organization.getMemberships({ initialPage: page, pageSize: MEMBERS_PAGE_SIZE }),
+				).pipe(
+					Effect.flatMap((result) => {
+						const next = Arr.appendAll(
+							collected,
+							Arr.flatMap(result.data, (member): ReadonlyArray<MemberOption> => {
+								const user = member.publicUserData
+								return user?.userId === undefined
+									? []
+									: [
+											{
+												userId: user.userId,
+												name: memberDisplayName(user) ?? user.identifier,
+												identifier: user.identifier,
+											},
+										]
+							}),
+						)
+						return result.data.length < MEMBERS_PAGE_SIZE || page >= MAX_MEMBER_PAGES
+							? Effect.succeed(next)
+							: fetchFrom(page + 1, next)
+					}),
+				)
+			return fetchFrom(1, [])
+		}),
 		settleTo((result) => Message.CompletedFetchMembers({ result })),
 	),
 })

@@ -8,7 +8,7 @@ import type {
 	SsoProvider,
 } from "@maple/domain/http"
 import { ssoProtocolOf } from "@maple/domain/http"
-import { Array as Arr, Option, String as Str } from "effect"
+import { Array as Arr, Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
@@ -1123,21 +1123,6 @@ const tokenDialog = (h: H, model: Model): Html => {
 	})
 }
 
-const emailDomain = (email: string): string =>
-	Str.toLowerCase(Option.getOrElse(Arr.last(Str.split(email, "@")), () => ""))
-
-/** Why the picker offers nobody: no member on the SSO domains, or all of them already added. */
-const emptyBypassReason = (model: Model, document: EnterpriseSsoDocument | null): string => {
-	const domains = document?.connection?.domains ?? []
-	const onDomains = Arr.filter(
-		AsyncData.getOrElse(model.members, () => []),
-		(member) => Arr.contains(domains, emailDomain(member.identifier)),
-	)
-	return onDomains.length === 0
-		? `No member has a verified email on ${Arr.join(domains, ", ")} yet.`
-		: "Every member on the SSO domains already has break-glass access."
-}
-
 const bypassEntries = (
 	model: Model,
 	document: EnterpriseSsoDocument,
@@ -1145,9 +1130,8 @@ const bypassEntries = (
 	Arr.flatMap(
 		AsyncData.getOrElse(model.members, () => []),
 		(member): ReadonlyArray<SelectView.SelectEntry> =>
-			// The API takes only members with an email on the connection's domains.
-			Arr.some(document.bypassUsers, (user) => user.userId === member.userId) ||
-			!Arr.contains(document.connection?.domains ?? [], emailDomain(member.identifier))
+			// Any verified email can qualify, not just the one shown, so the API decides and says why.
+			Arr.some(document.bypassUsers, (user) => user.userId === member.userId)
 				? []
 				: [
 						{
@@ -1186,7 +1170,7 @@ const bypassDialog = (h: H, model: Model, document: EnterpriseSsoDocument | null
 					? adminOnlyNote(h, ["Couldn't load members. Close this and try again."])
 					: AsyncData.isSuccess(model.members) || AsyncData.isRefreshing(model.members)
 						? entries.length === 0
-							? adminOnlyNote(h, [emptyBypassReason(model, document)])
+							? adminOnlyNote(h, ["Every member already has break-glass access."])
 							: selectControl(h, model, {
 									key: "bypass",
 									value: model.bypassPick ?? "",
