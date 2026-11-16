@@ -7,7 +7,7 @@ import {
 	UserId,
 	WarehouseConfigError,
 } from "@maple/domain/http"
-import { Clock, ConfigProvider, Effect, Layer, Record, Schema, Array as Arr } from "effect"
+import { Clock, ConfigProvider, Effect, Layer, Record, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { CacheBackend, EdgeCacheService, makeMemoryBackend } from "@maple/cache"
 import { formatWarehouseDateTime } from "@maple/query-engine"
@@ -213,6 +213,12 @@ describe("AnomalyDetectionService settings", () => {
 	)
 })
 
+/** The `Hour >= '…'` lower bound of a compiled chart query, in epoch ms. */
+const queryStartMs = (sql: string): number => {
+	const bound = /Hour >= '([0-9-]+ [0-9:]+)'/.exec(sql)?.[1]
+	return bound === undefined ? Number.NaN : Date.parse(`${Str.replace(" ", "T")(bound)}Z`)
+}
+
 describe("AnomalyDetectionService incident chart", () => {
 	it.effect("plots the detector's 60-minute observation for the in-progress hour", () =>
 		Effect.gen(function* () {
@@ -272,6 +278,53 @@ describe("AnomalyDetectionService incident chart", () => {
 		}),
 	)
 
+	it.effect("plots zero for the in-progress hour when the last 60 minutes saw no traffic", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(createdDbs)
+			yield* TestClock.setTime(Date.parse("2026-11-16T10:30:00Z"))
+			const hourStart = Date.parse("2026-11-16T10:00:00Z")
+			const incidentId = Schema.decodeSync(AnomalyIncidentId)("00000000-0000-4000-8000-000000000073")
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO anomaly_incidents
+					   (id, org_id, detector_key, signal_type, service_name, deployment_env, status, severity,
+					    opened_value, baseline_median, baseline_sigma, threshold_value, last_observed_value,
+					    last_sample_count, first_triggered_at, last_triggered_at, triage_status, dedupe_key,
+					    fingerprints_json, reopen_count, created_at, updated_at)
+					 VALUES ($1, $2, 'throughput:production:payments', 'throughput', 'payments', 'production',
+					         'open', 'warning', 1, 100, 10, 5, 1, 60, to_timestamp($3 / 1000.0),
+					         to_timestamp($3 / 1000.0), 'none', $1, '[]'::jsonb, 0, now(), now())`,
+					[incidentId, ORG, hourStart - HOUR_MS],
+				),
+			)
+			const warehouse = makeWarehouseServiceStub({
+				compiledQuery: (_tenant, compiled, options) =>
+					compiledQueryOf(compiled)
+						.decodeRows(
+							options?.context === "anomalyTraceSignalTimeseries"
+								? [
+										{
+											hour: formatWarehouseDateTime(hourStart - HOUR_MS),
+											requestCount: 6000,
+											errorCount: 0,
+											p95Ms: 100,
+										},
+									]
+								: [],
+						)
+						.pipe(Effect.orDie),
+			})
+			const series = yield* AnomalyDetectionService.use((service) =>
+				service.getIncidentTimeseries(systemTenant(ORG, ALERTING_SYSTEM_USER_ID), incidentId, {}),
+			).pipe(Effect.provide(makeLayer(testDb, warehouse)))
+			expect(Arr.map(series.buckets, (b) => [b.bucket, b.value, b.sampleCount])).toEqual([
+				["2026-11-16T09:00:00.000Z", 100, 6000],
+				["2026-11-16T10:00:00.000Z", 0, 0],
+			])
+		}),
+	)
+
 	it.effect("draws the live error-log point from the previous hour when this hour has no logs yet", () =>
 		Effect.gen(function* () {
 			const testDb = createTestDb(createdDbs)
@@ -296,7 +349,9 @@ describe("AnomalyDetectionService incident chart", () => {
 				compiledQuery: (_tenant, compiled, options) =>
 					compiledQueryOf(compiled)
 						.decodeRows(
-							options?.context === "anomalyLogVolumeTimeseries"
+							// Like the real query, the 09:00 row comes back only when the range starts by 09:00.
+							options?.context === "anomalyLogVolumeTimeseries" &&
+								queryStartMs(compiledQueryOf(compiled).sql) <= hourStart - HOUR_MS
 								? [{ hour: formatWarehouseDateTime(hourStart - HOUR_MS), errorLogCount: 60 }]
 								: [],
 						)
@@ -305,7 +360,13 @@ describe("AnomalyDetectionService incident chart", () => {
 			const series = yield* AnomalyDetectionService.use((service) =>
 				service.getIncidentTimeseries(systemTenant(ORG, ALERTING_SYSTEM_USER_ID), incidentId, {}),
 			).pipe(Effect.provide(makeLayer(testDb, warehouse)))
-			// Half of 09:00's 60 logs fall in the window 09:30 to 10:30.
+			// Half of 09:00's 60 logs fall in the window 09:30 to 10:30, even when the chart starts at 10:20.
+			const recent = yield* AnomalyDetectionService.use((service) =>
+				service.getIncidentTimeseries(systemTenant(ORG, ALERTING_SYSTEM_USER_ID), incidentId, {
+					startTime: "2026-11-16 10:20:00",
+				}),
+			).pipe(Effect.provide(makeLayer(testDb, warehouse)))
+			expect(Arr.map(recent.buckets, (b) => b.sampleCount)).toEqual([30])
 			expect(Arr.map(series.buckets, (b) => [b.bucket, b.value, b.sampleCount])).toEqual([
 				["2026-11-16T09:00:00.000Z", 1, 60],
 				["2026-11-16T10:00:00.000Z", 0.5, 30],

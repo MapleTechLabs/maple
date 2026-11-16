@@ -948,8 +948,10 @@ const make: Effect.Effect<
 			bucketSeconds = 3600
 			const compiled = CH.compile(CH.anomalyLogVolumeTimeseriesQuery(), {
 				...queryWindow,
-				// One hour earlier, so the in-progress point can blend in the previous hour.
-				startTime: formatWarehouseDateTime(startMs - HOUR_MS),
+				// From the hour before the first one drawn, so the in-progress point can blend in the previous hour.
+				startTime: formatWarehouseDateTime(
+					Math.floor(Math.min(startMs, currentHourStartMs) / HOUR_MS) * HOUR_MS - HOUR_MS,
+				),
 				serviceName: row.serviceName,
 				deploymentEnv: row.deploymentEnv,
 			})
