@@ -82,3 +82,12 @@ export const QUERIES: ReadonlyArray<string> = [
 	"avg_over_time(sum(node_memory_free_bytes)[10m:30s])",
 	"max_over_time(rate(http_requests_total[5m])[30m:])",
 ]
+
+/** Queries both engines must reject; any other Prometheus error is a failed case. */
+export const EXPECTED_ERRORS: ReadonlySet<string> = new Set([
+	'label_replace(http_requests_total, "host", "$1", "instance", "(")',
+	"http_requests_total + on(job) group_left(job) http_requests_total",
+])
+
+/** Every query the runner sends, expected errors included. */
+export const ALL_QUERIES: ReadonlyArray<string> = [...QUERIES, ...EXPECTED_ERRORS]

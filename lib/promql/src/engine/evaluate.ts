@@ -22,6 +22,7 @@ import {
 	isInstant,
 	MAX_POINTS_PER_SERIES,
 	type QueryParams,
+	resolutionError,
 	resolveAt,
 	subqueryGrid,
 	type TimeGrid,
@@ -615,6 +616,12 @@ class Evaluator {
 					return yield* this.call(expr, grid)
 				case "Unary": {
 					const inner = yield* this.eval(expr.expr, grid)
+					if (expr.op === "+" && inner.kind === "vector") {
+						// Evaluated, not selected: `timestamp(+x)` reads the evaluation time, as in Prometheus.
+						return yield* this.perStep(inner, (vec, _i, t) =>
+							Result.succeed(vec.map((s) => ({ ...s, t }))),
+						)
+					}
 					if (expr.op === "+") return inner
 					if (inner.kind === "scalar") return { ...inner, values: inner.values.map((v) => -v) }
 					if (inner.kind === "string") return yield* err("unary minus on a string")
@@ -718,6 +725,9 @@ class Evaluator {
 /** Evaluate a planned query once the source has answered every request of `planRequests`. */
 export const evaluate = (input: EvaluationInput): R<QueryResult> => {
 	const { expr, params } = input
+	// Callers may skip `runQuery`; refuse a grid that would be too large before building it.
+	const resolution = resolutionError(expr, params)
+	if (resolution !== undefined) return err(resolution)
 	const evaluator = new Evaluator(params, input.data, input.limits ?? DEFAULT_LIMITS)
 	const instant = isInstant(params)
 	const grid: TimeGrid = instant
