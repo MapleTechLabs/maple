@@ -189,6 +189,8 @@ const restartProbe = (setting: ProfilingSetting) =>
 	})
 
 const program = Effect.gen(function* () {
+	// The layer, and so the profiler, is up before this runs.
+	const profilingFrom = performance.now()
 	yield* loadCode(config.loadFunctions)
 	if (config.mode === "restart" && config.profiling !== false) {
 		yield* closedLoop(config.warmupMs, [])
@@ -200,6 +202,7 @@ const program = Effect.gen(function* () {
 			latencies: { p50: 0, p99: 0, p999: 0, max: 0 },
 			stalls: [],
 			peakRssBytes: 0,
+			profiledMs: 0,
 			restarts,
 		}
 		return result
@@ -231,6 +234,7 @@ const program = Effect.gen(function* () {
 		},
 		stalls,
 		peakRssBytes: peakRss,
+		profiledMs: performance.now() - profilingFrom,
 	}
 	return result
 })

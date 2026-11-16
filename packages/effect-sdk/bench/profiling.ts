@@ -168,8 +168,6 @@ const rate =
 					2,
 			)
 const latencyRuns = await runRounds("latency", rate)
-/** How long each run profiled for: warmup plus the measured phase. */
-const profiledMs = (number("warmup", 5) + number("duration", 20)) * 1000
 const profiled = scenarios.filter((s) => SCENARIOS.get(s) !== false)
 const restartRuns = await runRounds("restart", 0, profiled)
 collector.close()
@@ -272,15 +270,19 @@ const report = Arr.join(
 						0,
 					),
 					fmt(
-						of(latencyRuns, s, (run) => ((run.profiles.bytes / profiledMs) * 3_600_000) / 1e6),
+						of(
+							latencyRuns,
+							s,
+							(run) => ((run.profiles.bytes / run.result.profiledMs) * 3_600_000) / 1e6,
+						),
 						1,
 					),
 				]),
 		),
 		"",
-		"### Window restart: V8's share of the stall",
+		"### Window restart: what V8 itself costs",
 		"",
-		"`Profiler.stop` + `Profiler.start` timed directly under the same load and window. The worst stall above minus this is the SDK's own decode, encode and send on the main thread.",
+		"`Profiler.stop` and `Profiler.start` timed directly, under saturated load rather than the fixed load above, so it shows how long V8's own restart takes, not an exact share of the stalls above.",
 		"",
 		table(
 			["scenario", "stop ms (median)", "stop ms (max)", "start ms (median)", "profile nodes"],

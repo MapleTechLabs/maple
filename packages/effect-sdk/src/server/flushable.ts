@@ -15,7 +15,7 @@
 //
 // Traces, logs, and Effect metric snapshots are flushed together.
 
-import { Cause, Effect, Exit, Layer, Option, Scope, Tracer } from "effect"
+import { Cause, Duration, Effect, Exit, Layer, Option, Scope, Tracer } from "effect"
 import { FetchHttpClient } from "effect/http"
 import {
 	buildResolved,
@@ -91,8 +91,8 @@ export interface MapleFlushableConfig extends MapleSpanOptions {
 	/**
 	 * Continuous CPU profiling on Node and Bun: `true` for the defaults, or the options. Off by
 	 * default. It runs while `layer` is built and exports its own windows, apart from `flush`; a
-	 * second build of `layer` while one is running starts no second profiler, and `dispose`
-	 * stops it. Off, with no warning, wherever export is off (no ingest key against Maple's
+	 * second build of `layer` while one is running starts no second profiler, the last build to
+	 * close stops it, and so does `dispose`. Off, with no warning, wherever export is off (no ingest key against Maple's
 	 * hosted ingest).
 	 */
 	readonly profiling?: boolean | ProfilingOptions | undefined
@@ -131,15 +131,23 @@ interface Profiler {
 }
 
 /**
- * The profiler, sending to the endpoint and with the key the flushes use. One at a time: a layer
- * built again while a profiler runs (a second runtime, a per-request provide) adds none. It runs
- * in its own scope, so `dispose` can end it while the layer's runtime lives on.
+ * Bounds the profiler's stop and last export at shutdown, under a typical 3 s dispose budget so
+ * the final trace, log and metric flush still has time.
+ */
+const PROFILER_SHUTDOWN_TIMEOUT = Duration.millis(1500)
+
+/**
+ * The profiler, sending to the endpoint and with the key the flushes use. One per telemetry: every
+ * build of `layer` holds it, the first starts it and the last to close stops it, so build the
+ * layer once for a long-lived runtime (a per-request provide starts and stops it each request).
+ * It runs in its own scope, so `dispose` can end it while a runtime lives on.
  */
 const makeProfiler = (
 	config: MapleFlushableConfig,
 	profiling: ProfilingOptions,
 	timeline: SpanTimeline | undefined,
 ): Profiler => {
+	let holders = 0
 	let active: Scope.Closeable | undefined
 	let stopped = false
 	const stopActive = Effect.suspend(() => {
@@ -147,9 +155,17 @@ const makeProfiler = (
 		active = undefined
 		return scope === undefined ? Effect.void : Scope.close(scope, Exit.void)
 	})
+	const release = Effect.suspend(() => {
+		holders -= 1
+		return holders === 0 ? stopActive : Effect.void
+	})
 	const layer = Layer.effectDiscard(
 		Effect.gen(function* () {
-			if (active !== undefined || stopped) return
+			if (stopped) return
+			// The hold is taken before anything yields, so two builds at once start one profiler.
+			holders += 1
+			yield* Effect.addFinalizer(() => release)
+			if (holders > 1) return
 			// A resource that cannot be resolved turns profiling off, as it turns the flushes off.
 			const resource = yield* resolveResource({ ...config, sdkType: "server" }).pipe(
 				Effect.asSome,
@@ -168,10 +184,11 @@ const makeProfiler = (
 				userAgent: USER_AGENT,
 				keyless: "disable-at-maple-ingest",
 			})
-			if (resolved.noOp) return
+			// Checked again after the resolve yielded: `dispose`, or the last holder closing, may have
+			// run meanwhile, and nothing would stop a profiler started after it.
+			if (resolved.noOp || stopped || holders === 0 || active !== undefined) return
 			const scope = yield* Scope.make()
 			active = scope
-			yield* Effect.addFinalizer(() => stopActive)
 			yield* Layer.buildWithScope(
 				profilerLayer({
 					baseUrl: resource.value.endpoint,
@@ -179,6 +196,7 @@ const makeProfiler = (
 					headers: resolved.headers,
 					profiling,
 					timeline,
+					shutdownTimeout: PROFILER_SHUTDOWN_TIMEOUT,
 				}).pipe(Layer.provide(FetchHttpClient.layer)),
 				scope,
 			)

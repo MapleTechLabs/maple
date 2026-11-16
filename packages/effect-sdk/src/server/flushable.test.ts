@@ -1,5 +1,16 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Duration, Effect, Fiber, Layer, Option, Array as Arr, Record as Rec, String as Str } from "effect"
+import {
+	Duration,
+	Effect,
+	Exit,
+	Fiber,
+	Layer,
+	Scope,
+	Option,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { FetchHttpClient } from "effect/http"
 import { TestClock } from "effect/testing"
 import { afterEach, expect, vi } from "vitest"
@@ -520,6 +531,29 @@ describe("MapleFlush.make (server) with profiling", () => {
 		)
 
 		expect(Arr.filter(calls, (call) => call.url === PROFILES_URL)).toHaveLength(1)
+	})
+
+	it("keeps profiling until the last build that holds the profiler closes", async () => {
+		const { calls, restore: r } = setupFetch()
+		restore = r
+		const telemetry = make({ ...baseConfig, profiling })
+		const profilesSent = () => Arr.filter(calls, (call) => call.url === PROFILES_URL).length
+
+		await runProfiled(
+			Effect.gen(function* () {
+				const first = yield* Scope.make()
+				const second = yield* Scope.make()
+				yield* Layer.buildWithScope(telemetry.layer, first)
+				yield* Layer.buildWithScope(telemetry.layer, second)
+				yield* busy(100)
+				yield* Scope.close(first, Exit.void)
+				// The second build still holds it: nothing stopped, nothing sent yet.
+				expect(profilesSent()).toBe(0)
+				yield* busy(100)
+				yield* Scope.close(second, Exit.void)
+				expect(profilesSent()).toBe(1)
+			}),
+		)
 	})
 
 	it("does not profile where export is off: no key against Maple's hosted ingest", async () => {

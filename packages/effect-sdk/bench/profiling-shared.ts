@@ -36,6 +36,8 @@ export const WorkerResult = Schema.Struct({
 	}),
 	stalls: Schema.Array(Schema.Struct({ atMs: Schema.Number, ms: Schema.Number })),
 	peakRssBytes: Schema.Number,
+	/** From the profiler starting to the run ending: warmup, the measured phase and any draining. */
+	profiledMs: Schema.Number,
 	/** Restart mode: V8's own cost of ending one window and starting the next, per window. */
 	restarts: Schema.optionalKey(
 		Schema.Array(Schema.Struct({ stopMs: Schema.Number, startMs: Schema.Number, nodes: Schema.Number })),
