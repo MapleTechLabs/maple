@@ -45,7 +45,7 @@ export function registerQueryPromqlTool(server: McpToolRegistrar) {
 			const requested = params.step === undefined ? undefined : parseStepSeconds(params.step)
 			if (params.step !== undefined && requested === undefined) {
 				return yield* new McpInvalidInputError({
-					message: `step "${params.step}" is not a Prometheus duration or a number of seconds.`,
+					message: `step "${params.step}" is not a Prometheus duration or a number of seconds, in whole milliseconds.`,
 					parameter: "step",
 					example: "1m",
 				})
