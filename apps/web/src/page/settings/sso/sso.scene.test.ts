@@ -56,7 +56,7 @@ const loaded = (document: EnterpriseSsoDocument, canManage = true): Model =>
 const names = (step: { readonly commands?: ReadonlyArray<{ readonly name: string }> }) =>
 	Arr.map(step.commands ?? [], (command) => command.name)
 
-const view = withViewInputs(ssoView, {})()
+const view = withViewInputs(ssoView, { isKnownMember: true })()
 
 const dialogMounted = Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog())
 
@@ -305,5 +305,14 @@ describe("sso tab", () => {
 			Message.CompletedFetchMembers({ result: Result.fail(toLoadFailure(new Error("Clerk down"))) }),
 		).model
 		expect(names(update(failed, Message.ClickedAddBypass()))).toContain("FetchSsoMembers")
+	})
+
+	test("an unconfirmed role never claims the viewer is not an admin", () => {
+		scene(
+			{ update, view: withViewInputs(ssoView, { isKnownMember: false })() },
+			given(loaded(doc({ domains: [verifiedDomain], connection }), false)),
+			expectView(text("Only admins can change SSO and SCIM settings.")).not.toExist(),
+			expectView(role("button", { name: "Edit" })).not.toExist(),
+		)
 	})
 })

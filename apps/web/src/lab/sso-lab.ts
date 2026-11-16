@@ -235,7 +235,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 				slotId: "lab-sso",
 				model: model.sso,
 				view: SsoView.view,
-				viewInputs: {},
+				viewInputs: { isKnownMember: true },
 				toParentMessage: (message: SsoModel.Message) => Message.GotSsoMessage({ message }),
 			}),
 		],

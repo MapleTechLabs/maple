@@ -1266,12 +1266,20 @@ const dialogs = (h: H, model: Model, document: EnterpriseSsoDocument | null): Re
 	]
 }
 
-const loaded = (h: H, model: Model, document: EnterpriseSsoDocument): ReadonlyArray<Html> => {
+const loaded = (
+	h: H,
+	model: Model,
+	document: EnterpriseSsoDocument,
+	isKnownMember: boolean,
+): ReadonlyArray<Html> => {
 	const hasState = document.domains.length > 0 || document.connection !== null
 	if (!document.entitled && !hasState) return [notEntitled(h)]
 	return [
 		...(document.entitled ? [] : [notEntitled(h)]),
-		...(model.canManage ? [] : [adminOnlyNote(h, ["Only admins can change SSO and SCIM settings."])]),
+		// While the role is unknown the page banner speaks; nothing claims the viewer is not an admin.
+		...(model.canManage || !isKnownMember
+			? []
+			: [adminOnlyNote(h, ["Only admins can change SSO and SCIM settings."])]),
 		domainsSection(h, model, document),
 		connectionSection(h, model, document),
 		bypassSection(h, model, document),
@@ -1287,23 +1295,24 @@ const loaded = (h: H, model: Model, document: EnterpriseSsoDocument): ReadonlyAr
 const loadingSkeleton = (h: H): Html =>
 	vstack(h, { gap: "3", align: "stretch" }, [skeleton(h, "h-32 w-full"), skeleton(h, "h-40 w-full")])
 
-export const view = Submodel.defineView<Model, Message, Readonly<{}>>((model, _inputs, h) =>
-	settingsSections(h, [
-		...AsyncData.match(model.document, {
-			onIdle: () => [loadingSkeleton(h)],
-			onLoading: () => [loadingSkeleton(h)],
-			onFailure: (failure) => [
-				errorState(h, {
-					failure,
-					title: "Couldn't load SSO settings",
-					variant: "row",
-					onRetry: Message.ClickedRetry(),
-				}),
-			],
-			onSuccess: (document) => loaded(h, model, document),
-			onRefreshing: (document) => loaded(h, model, document),
-			onStale: ({ data }) => loaded(h, model, data),
-		}),
-		...dialogs(h, model, documentOf(model)),
-	]),
+export const view = Submodel.defineView<Model, Message, Readonly<{ isKnownMember: boolean }>>(
+	(model, inputs, h) =>
+		settingsSections(h, [
+			...AsyncData.match(model.document, {
+				onIdle: () => [loadingSkeleton(h)],
+				onLoading: () => [loadingSkeleton(h)],
+				onFailure: (failure) => [
+					errorState(h, {
+						failure,
+						title: "Couldn't load SSO settings",
+						variant: "row",
+						onRetry: Message.ClickedRetry(),
+					}),
+				],
+				onSuccess: (document) => loaded(h, model, document, inputs.isKnownMember),
+				onRefreshing: (document) => loaded(h, model, document, inputs.isKnownMember),
+				onStale: ({ data }) => loaded(h, model, data, inputs.isKnownMember),
+			}),
+			...dialogs(h, model, documentOf(model)),
+		]),
 )

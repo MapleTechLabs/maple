@@ -203,7 +203,7 @@ const tabContent = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<H
 					model: tab.model,
 					view: SsoView.view,
 					toParentMessage: (message) => Message.GotSsoMessage({ message }),
-					viewInputs: {},
+					viewInputs: { isKnownMember: isKnownMember(model) },
 				}),
 			]
 		case "Billing":
