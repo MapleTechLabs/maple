@@ -6,12 +6,12 @@ import { diagnoseScrapeError } from "./scrape-error-diagnosis"
 import { button } from "@maple/views/ui/button"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import {
+	connectionTabItem,
 	type CheckRow,
 	flowColumns,
 	flowRail,
 	liveChecklist,
 	type RailItem,
-	savedBanner,
 	statusRow,
 	stepCard,
 	whereToFind,
@@ -126,11 +126,7 @@ const showsUpRail = (h: H, integration: ScrapeIntegration): Html =>
 				title: "Dashboards and alerts",
 				detail: "Chart any scraped metric or alert when a scrape fails",
 			},
-			{
-				icon: "GearIcon",
-				title: "Source page",
-				detail: "Sync now, Edit data, Disconnect",
-			},
+			connectionTabItem("Sync now, Edit data, Disconnect"),
 		],
 		docs: docsOf(integration),
 	})
@@ -434,8 +430,8 @@ const liveStep = (h: H, model: Model, integration: ScrapeIntegration, timeZone: 
 	return flowColumns(
 		h,
 		[
-			savedBanner(h, "Saved as a source. Safe to leave; scrapes keep running."),
 			liveChecklist(h, {
+				saved: "Saved as a source. Safe to leave; scrapes keep running.",
 				title:
 					target === null
 						? "Going live"

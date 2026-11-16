@@ -6,14 +6,16 @@ import { button } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { meter } from "@maple/views/ui/meter"
+import { skeleton } from "@maple/views/ui/skeleton"
 import { columnHead, dataTable } from "../kit/data-table"
 import {
+	CHANGE_LATER_NOTE,
 	type CheckRow,
+	connectionTabItem,
 	flowColumns,
 	flowRail,
 	foundChips,
 	liveChecklist,
-	savedBanner,
 	statusRow,
 	stepCard,
 } from "../kit/connect-flow"
@@ -83,13 +85,9 @@ const showsUpRail = (h: H): Html =>
 			},
 			{ icon: "LayersIcon", title: "Traces", detail: "Spans with a commit SHA link to GitHub" },
 			{ icon: "PullRequestIcon", title: "Code review", detail: "Rules, models and analytics" },
-			{
-				icon: "GearIcon",
-				title: "Connection tab",
-				detail: "On the source page: these switches, tracked branches, Disconnect",
-			},
+			connectionTabItem("switches, tracked branches, Disconnect"),
 		],
-		trust: "Large repos can take a few minutes to backfill. Nothing here needs you to stay.",
+		timeNote: "Large repos take a few minutes to backfill",
 		docs: DOCS_HREF === undefined ? null : { label: "Docs", href: DOCS_HREF },
 	})
 
@@ -362,8 +360,8 @@ const liveStep = (h: H, model: Model): Html => {
 	return flowColumns(
 		h,
 		[
-			savedBanner(h, "Saved as a source. Safe to leave; sync keeps running."),
 			liveChecklist(h, {
+				saved: "Saved as a source. Safe to leave; sync keeps running.",
 				title: isLive ? "GitHub is live" : "Going live",
 				rows:
 					status === null
@@ -382,20 +380,36 @@ const liveStep = (h: H, model: Model): Html => {
 					: []),
 			// Once everything synced the checklist says so; the table only lists what still needs a look.
 			...(unsynced.length > 0 ? [repoTable(h, unsynced)] : []),
-			...(status !== null && status.connected && !isDiscovering && !discoveryFailed
-				? [
-						stepCard(h, { title: "What Maple does with it" }, [
-							githubFeatures(h, model, status),
-							typography(h, { size: "xs", tone: "muted", as: "p" }, [
-								"Change these any time on the source's Connection tab.",
-							]),
-						]),
-					]
-				: []),
+		],
+		showsUpRail(h),
+	)
+}
+
+/** Choose data: CI traces and PR review, saved as they flip. */
+const chooseStep = (h: H, model: Model): Html => {
+	const status = githubStatusOf(model)
+	const discovery = status?.repositoryDiscovery
+	return flowColumns(
+		h,
+		[
+			stepCard(
+				h,
+				{ icon: "SlidersIcon", title: "Choose what Maple does", note: CHANGE_LATER_NOTE },
+				status === null ? [skeleton(h, "h-32 w-full")] : [githubFeatures(h, model, status)],
+			),
+			// Discovery can still be running (or have failed) when Connect hands over.
+			...(discovery?._tag === "Pending"
+				? [statusRow(h, { tone: "working", text: "Discovering repositories…" })]
+				: discovery?._tag === "Failed"
+					? [
+							statusRow(h, { tone: "error", text: discovery.message }),
+							githubReconnectButton(h, model),
+						]
+					: []),
 		],
 		showsUpRail(h),
 	)
 }
 
 export const githubFlowView = (h: H, model: Model, stage: FlowStage): Html =>
-	stage === "live" ? liveStep(h, model) : connectStep(h, model)
+	stage === "live" ? liveStep(h, model) : stage === "choose" ? chooseStep(h, model) : connectStep(h, model)
