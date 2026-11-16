@@ -1,6 +1,7 @@
 import { Result } from "effect"
 import { describe, expect, it } from "vitest"
 import type { Expr } from "./ast"
+import { formatDuration, parseDurationMs } from "./literals"
 import { parse } from "./parser"
 import { print } from "./print"
 
@@ -199,6 +200,11 @@ describe("parse errors", () => {
 		expect(selectorOf("x @ -0.0004")?.at).toEqual({ kind: "time", timeMs: 0 })
 		expect(selectorOf("x @ -0.0005")?.at).toEqual({ kind: "time", timeMs: -1 })
 		expect(selectorOf("x @ 0.0005")?.at).toEqual({ kind: "time", timeMs: 1 })
+	})
+
+	it("formats negative durations so they parse back", () => {
+		expect(formatDuration(-90_000)).toBe("-1m30s")
+		expect(parseDurationMs(formatDuration(5_400_000))).toBe(5_400_000)
 	})
 
 	it("rejects a repeated offset, including after offset 0s", () => {
