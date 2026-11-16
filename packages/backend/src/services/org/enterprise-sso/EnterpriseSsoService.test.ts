@@ -28,6 +28,9 @@ interface FakeClerk {
 	bypass: Array<string>
 	/** Org members, and each user's verified email domains. */
 	members: Set<string>
+	/** What Clerk says about a deprovisioned user now, or that it cannot be reached. */
+	deprovisioned: "yes" | "no" | "unreachable"
+	deprovisionLookups: number
 	emailDomains: Map<string, Array<string>>
 	nextId: number
 	/** The next `createConnection` fails with this Clerk status and message. */
@@ -47,6 +50,8 @@ const fakeClerk = (): FakeClerk => ({
 	verifiedDomains: [],
 	mappings: new Map(),
 	bypass: [],
+	deprovisioned: "yes",
+	deprovisionLookups: 0,
 	members: new Set(["user_admin", "user_breakglass", "user_contractor", "user_dual"]),
 	emailDomains: new Map([
 		["user_breakglass", ["acme.com"]],
@@ -185,7 +190,20 @@ const gatewayLayer = (clerk: FakeClerk) =>
 					),
 				),
 			),
-		isDeprovisioned: () => Effect.succeed(true),
+		isDeprovisioned: () =>
+			Effect.suspend(() => {
+				clerk.deprovisionLookups++
+				return clerk.deprovisioned === "unreachable"
+					? Effect.fail(
+							new ClerkRequestError({
+								operation: "get",
+								message: "down",
+								status: 503,
+								cause: null,
+							}),
+						)
+					: Effect.succeed(clerk.deprovisioned === "yes")
+			}),
 		isMember: (_orgId, userId) => Effect.sync(() => clerk.members.has(userId)),
 		verifiedEmailDomains: (userId) => Effect.sync(() => clerk.emailDomains.get(userId) ?? []),
 		listBypassUsers: () =>
@@ -791,4 +809,27 @@ describe("EnterpriseSsoService", () => {
 			}),
 		)
 	})
+
+	it.live(
+		"sweeps a deprovision only while Clerk still stands behind it, retrying a blip and then failing closed",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const world = { clerk: fakeClerk(), dns: new Map<string, Array<string>>(), entitled: true }
+			return run(
+				testDb,
+				world,
+				Effect.gen(function* () {
+					const sso = yield* EnterpriseSsoService
+					assert.isTrue(yield* sso.confirmDeprovisioned(ADMIN))
+					world.clerk.deprovisioned = "no"
+					assert.isFalse(yield* sso.confirmDeprovisioned(ADMIN))
+					world.clerk.deprovisioned = "unreachable"
+					world.clerk.deprovisionLookups = 0
+					assert.isTrue(yield* sso.confirmDeprovisioned(ADMIN))
+					// One attempt and two retries before it gives up and sweeps.
+					assert.strictEqual(world.clerk.deprovisionLookups, 3)
+				}),
+			)
+		},
+	)
 })
