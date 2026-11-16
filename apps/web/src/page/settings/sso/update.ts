@@ -334,8 +334,7 @@ export const mappingRows = (model: Model): ReadonlyArray<MappingDraft> =>
 		role: mapping.role,
 	}))
 
-/** Every row names a group, and no group twice. */
-/** Why the rows can't be saved, or null when they can. */
+/** Why the rows can't be saved (a row without a group, or a group twice), or null when they can. */
 export const mappingsProblem = (rows: ReadonlyArray<MappingDraft>): string | null =>
 	Arr.some(rows, (row) => row.groupId === "")
 		? "Pick a group for every row."
@@ -349,9 +348,8 @@ export const hasUnmappedGroup = (
 	rows: ReadonlyArray<MappingDraft>,
 ): boolean => Arr.some(document.groups, (group) => !Arr.some(rows, (row) => row.groupId === group.groupId))
 
-export const isMappingsValid = (rows: ReadonlyArray<MappingDraft>): boolean =>
-	Arr.every(rows, (row) => row.groupId !== "") &&
-	Arr.dedupe(Arr.map(rows, (row) => row.groupId)).length === rows.length
+/** One rule: what disables Save is exactly what the footer explains. */
+export const isMappingsValid = (rows: ReadonlyArray<MappingDraft>): boolean => mappingsProblem(rows) === null
 
 const isHttps = (value: string): boolean => Str.startsWith("https://")(Str.trim(value))
 
