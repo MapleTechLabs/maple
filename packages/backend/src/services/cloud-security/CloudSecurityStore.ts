@@ -144,8 +144,11 @@ export interface CloudSecurityStoreApi {
 	readonly orgServiceStates: (
 		orgId: OrgId,
 	) => Effect.Effect<ReadonlyArray<CloudSecurityServiceStateRow>, IntegrationsPersistenceError>
-	/** Active and archived findings of one feed synced before `syncedBefore`, oldest sync first. */
-	readonly staleOpenIds: (
+	/**
+	 * Findings of one feed synced before `syncedBefore`, oldest sync first, resolved ones included:
+	 * a finding reopened in the console may not move its update time either.
+	 */
+	readonly staleIds: (
 		feed: CloudFeedRef,
 		syncedBefore: number,
 		limit: number,
@@ -241,6 +244,10 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 									.onConflictDoUpdate({
 										target: ["orgId", "connectionId", "region", "source", "findingId"],
 										set: PG.excludedAll(),
+										// An older version read late never replaces a newer one; the same time does,
+										// since a console change can leave the service's update time alone.
+										where: (existing, excluded) =>
+											existing.providerUpdatedAt.lte(excluded.providerUpdatedAt),
 									}),
 							),
 						),
@@ -286,7 +293,7 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 				)
 			})
 
-			const staleOpenIds = Effect.fn("CloudSecurityStore.staleOpenIds")(function* (
+			const staleIds = Effect.fn("CloudSecurityStore.staleIds")(function* (
 				feed: CloudFeedRef,
 				syncedBefore: number,
 				limit: number,
@@ -300,7 +307,6 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 								$.connectionId.eq(feed.connectionId),
 								$.region.eq(feed.region),
 								$.source.eq(feed.source),
-								$.status.neq("resolved"),
 								$.syncedAt.lt(syncedBefore),
 							])
 							.orderBy(($) => [[$.syncedAt, "asc"]])
@@ -319,7 +325,8 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 				const updated = yield* dbExecute((db) =>
 					db.run(
 						PG.update(CloudSecurityFindings)
-							.set({ status: "resolved", providerUpdatedAt: at, syncedAt: at })
+							// Not the provider time: the service may still report this finding, at its own time.
+							.set({ status: "resolved", syncedAt: at })
 							.where(($) => [
 								$.orgId.eq(feed.orgId),
 								$.connectionId.eq(feed.connectionId),
@@ -480,7 +487,7 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 				getFinding,
 				summary,
 				orgServiceStates,
-				staleOpenIds,
+				staleIds,
 				resolve,
 				pruneClosed,
 			} satisfies CloudSecurityStoreApi

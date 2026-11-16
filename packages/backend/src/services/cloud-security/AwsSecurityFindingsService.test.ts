@@ -939,4 +939,61 @@ describe("AwsSecurityFindingsService", () => {
 			assert.strictEqual(new Set(Arr.map(dense, ({ event }) => event.providerEventId)).size, 1900)
 		}).pipe(Effect.provide(world.layer))
 	})
+
+	it.effect("steps past an update time shared by more findings than a poll reads", () => {
+		const world = makeWorld()
+		const tie = NOW - 3600_000
+		const region = {
+			guardduty: Arr.makeBy(MAX_PAGES * 50 + 100, (index) =>
+				sshBruteForce({ id: `gd-tie-${index}`, updatedAtMs: tie }),
+			),
+		}
+		world.aws.regions["us-east-1"] = region
+		return Effect.gen(function* () {
+			const connection = yield* connect(world)
+			yield* poll
+			yield* TestClock.adjust("5 minutes")
+			yield* poll
+			region.guardduty = [
+				...region.guardduty,
+				sshBruteForce({ id: "gd-after", updatedAtMs: tie + 60_000 }),
+			]
+			yield* TestClock.adjust("5 minutes")
+			yield* poll
+			const store = yield* CloudSecurityStore
+			const [state] = Arr.filter(
+				yield* store.serviceStates(orgId, connection.id),
+				(row) => row.source === "guardduty",
+			)
+			assert.isAbove(state?.cursorAt ?? 0, tie)
+			assert.isTrue(Arr.some(yield* findingRows(world), (row) => row.finding_id === "gd-after"))
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("brings back a Security Hub finding resolved and then reopened in the console", () => {
+		const world = makeWorld()
+		const control = {
+			id: "sh-1",
+			productName: "Security Hub",
+			generatorId: "EC2.19",
+			title: "Security group open to the world",
+			label: "HIGH",
+			updatedAtMs: NOW - 3600_000,
+		}
+		const newer = { ...control, id: "sh-2", generatorId: "S3.1", updatedAtMs: NOW - 60_000 }
+		const region = { securityhub: [control, newer] }
+		world.aws.regions["us-east-1"] = region
+		return Effect.gen(function* () {
+			yield* connect(world)
+			yield* poll
+			region.securityhub = [{ ...control, workflow: "RESOLVED" as const }, newer]
+			yield* TestClock.adjust(RECONCILE_AFTER_MS + 60_000)
+			yield* poll
+			assert.strictEqual((yield* findingRows(world))[0]?.status, "resolved")
+			region.securityhub = [{ ...control, workflow: "NEW" as const }, newer]
+			yield* TestClock.adjust(RECONCILE_AFTER_MS + 60_000)
+			yield* poll
+			assert.strictEqual((yield* findingRows(world))[0]?.status, "active")
+		}).pipe(Effect.provide(world.layer))
+	})
 })

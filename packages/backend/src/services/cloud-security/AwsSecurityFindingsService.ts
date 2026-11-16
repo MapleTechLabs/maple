@@ -10,7 +10,7 @@ import { CloudSecurityFeed, type CloudServiceState } from "@maple/domain/cloud-s
 import type { IntegrationsPersistenceError } from "@maple/domain/http"
 import { IntegrationsPersistenceError as PersistenceError } from "@maple/domain/http"
 import { AwsRegion } from "@maple/primitives"
-import { Array as Arr, Clock, Context, Effect, Layer, Option, Order, Schema } from "effect"
+import { Array as Arr, Clock, Context, Effect, Layer, Option, Order, Random, Schema } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -234,7 +234,7 @@ export class AwsSecurityFindingsService extends Context.Service<
 						// Inspector too: a second it skipped may hold updates no later read sees.
 						const beforeDeadline = (yield* Clock.currentTimeMillis) < deadlineMs
 						if (read.state === "enabled" && source !== "access_analyzer" && beforeDeadline) {
-							const stale = yield* store.staleOpenIds(
+							const stale = yield* store.staleIds(
 								feed,
 								now - RECONCILE_AFTER_MS,
 								RECONCILE_BATCH,
@@ -285,8 +285,10 @@ export class AwsSecurityFindingsService extends Context.Service<
 				Effect.map(featureFlags.flags(row.orgId), (flags) => flags.cloudSecurity),
 			)
 			const deadlineMs = (yield* Clock.currentTimeMillis) + TICK_BUDGET_MS
+			// A random order each tick: when the budget runs out, no connection is always the one left out.
+			const order = yield* Random.shuffle(eligible)
 			const polls = yield* pollFleet(
-				eligible,
+				order,
 				(row) => pollConnection(signer, row, deadlineMs),
 				{
 					message: "AWS security findings poll failed",

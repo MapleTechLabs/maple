@@ -416,4 +416,25 @@ describe("CloudSecurityStore", () => {
 			])
 		}).pipe(Effect.provide(world.layer))
 	})
+
+	it.effect("never lets an older version of a finding replace a newer one", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const store = yield* CloudSecurityStore
+			const connection = yield* connect(orgId, "111111111111")
+			yield* store.upsertFindings([finding(connection, orgId, { providerUpdatedAt: 1_000 })], 1)
+			yield* store.upsertFindings(
+				[finding(connection, orgId, { status: "archived", providerUpdatedAt: 5_000 })],
+				1,
+			)
+			yield* store.upsertFindings(
+				[finding(connection, orgId, { status: "active", providerUpdatedAt: 4_000 })],
+				2,
+			)
+			const rows = yield* Effect.promise(() =>
+				queryRows<{ status: string }>(world.testDb, "SELECT status FROM cloud_security_findings"),
+			)
+			assert.deepStrictEqual(rows, [{ status: "archived" }])
+		}).pipe(Effect.provide(world.layer))
+	})
 })

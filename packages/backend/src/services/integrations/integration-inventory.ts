@@ -207,6 +207,12 @@ export interface IntegrationInventoryInputs {
 		readonly streamLastError: string | null
 		readonly createdAt: number
 	}>
+	/** CloudTrail regions the security poller could not read, by account. Absent: none known. */
+	readonly awsCloudTrailProblems?: ReadonlyArray<{
+		readonly accountId: string
+		readonly state: string
+		readonly lastError: string | null
+	}>
 	/** Its grant is the `oauthConnections` row with provider "supabase". */
 	readonly supabaseConnection: {
 		readonly organizationName: string
@@ -853,25 +859,27 @@ const aws = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry 
 					return stream(state._tag === "silent" ? "stale" : "healthy", null, regions)
 			}
 		})()
-		// CloudTrail feeds the audit log once the role grants the security module.
-		const auditLog: ReadonlyArray<IntegrationResource> = Arr.contains(c.modules, "security")
-			? [
+		// CloudTrail feeds the audit log once the role grants the security module, and reads.
+		const granted = c.grantedModules !== null && Arr.contains(c.grantedModules, "security")
+		const trailProblem = Arr.findFirst(
+			inputs.awsCloudTrailProblems ?? [],
+			(problem) => problem.accountId === c.accountId,
+		)
+		const auditLog: ReadonlyArray<IntegrationResource> = !Arr.contains(c.modules, "security")
+			? []
+			: [
 					{
 						kind: "audit log",
 						name: c.accountId,
-						status:
-							c.grantedModules !== null && Arr.contains(c.grantedModules, "security")
-								? "healthy"
-								: "pending",
+						status: !granted ? "pending" : Option.isSome(trailProblem) ? "failing" : "healthy",
 						lastSuccessAt: null,
-						lastError: null,
-						note:
-							c.grantedModules !== null && Arr.contains(c.grantedModules, "security")
-								? null
-								: "run the setup script again to grant the security module",
+						lastError: Option.isSome(trailProblem)
+							? (trailProblem.value.lastError ??
+								`CloudTrail could not be read (${trailProblem.value.state})`)
+							: null,
+						note: granted ? null : "run the setup script again to grant the security module",
 					},
 				]
-			: []
 		return [role, ...streams, ...auditLog]
 	})
 	return entry("aws", now, {
