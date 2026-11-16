@@ -17,6 +17,7 @@ import { EdgeCacheService, makeEdgeCacheService, makeMemoryBackend } from "@mapl
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { DigestService } from "./DigestService"
 import { MAX_DIGEST_GROUPS_PER_TICK } from "./weekly-digest-tick"
+import { quarantineOrgWarehouse } from "@maple/backend/services/warehouse/warehouse-org-quarantine"
 
 const createdDbs: TestDb[] = []
 
@@ -159,6 +160,7 @@ const makeHarness = (
 				messages.push({ to, html, headers: options?.headers ?? {} })
 			}),
 	})
+	const edgeCache = makeEdgeCacheService(makeMemoryBackend())
 	const testDb = createTestDb(createdDbs)
 	const base = testDb.layer.pipe(Layer.provideMerge(Env.layer), Layer.provide(testConfig()))
 	const layer = Layer.effect(DigestService, DigestService.make).pipe(
@@ -166,13 +168,13 @@ const makeHarness = (
 			Layer.mergeAll(
 				emailStub,
 				makeWarehouseStub(fixture, seen, failing),
-				Layer.succeed(EdgeCacheService, makeEdgeCacheService(makeMemoryBackend())),
+				Layer.succeed(EdgeCacheService, edgeCache),
 				SecureRandom.layerWebCrypto,
 			),
 		),
 		Layer.provideMerge(base),
 	)
-	return { sends, messages, layer }
+	return { sends, messages, layer, edgeCache }
 }
 
 const seedSub = (
@@ -331,6 +333,28 @@ describe("DigestService.runDigestTick", () => {
 			const second = yield* digest.runDigestTick()
 			assert.strictEqual(second.sentCount, 2)
 			assert.strictEqual(new Set(sends).size, orgCount)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("quarantined orgs ahead in line do not use up the per-tick budget", () => {
+		const { sends, layer, edgeCache } = makeHarness()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(TICK_MS)
+			const parkedIds = yield* Effect.forEach(Arr.range(1, MAX_DIGEST_GROUPS_PER_TICK), (n) =>
+				Effect.gen(function* () {
+					const orgId = `org_parked_${n}`
+					yield* quarantineOrgWarehouse(edgeCache, orgId, TICK_MS)
+					return yield* seedSub({ email: `parked${n}@example.com`, orgId: OrgId.make(orgId) })
+				}),
+			)
+			yield* seedSub({ email: "healthy@example.com", orgId: OrgId.make("org_healthy") })
+
+			const digest = yield* DigestService
+			yield* digest.runDigestTick()
+
+			assert.deepStrictEqual(sends, ["healthy@example.com"])
+			const parked = yield* getSub(parkedIds[0] ?? "")
+			assert.strictEqual(parked.lastAttemptedAt, null)
 		}).pipe(Effect.provide(layer))
 	})
 

@@ -18,10 +18,10 @@ import { type UnsubscribeKind, unsubscribeLinks } from "./unsubscribe-token"
 type SubscriptionId = DigestSubscriptionRow["id"]
 
 /**
- * Orgs one tick renders. Each costs a dozen subrequests (warehouse, cache, Clerk, email), and one
- * invocation has a cap; the rest stay unclaimed and go out on the next 15-minute tick that day.
+ * Groups one digest renders per tick. Each costs a dozen subrequests and both digests share one
+ * invocation's cap; the rest stay unclaimed for the next 15-minute tick that day.
  */
-export const MAX_DIGEST_GROUPS_PER_TICK = 50
+export const MAX_DIGEST_GROUPS_PER_TICK = 30
 
 /** One digest's columns: who receives it, and when it was last sent and attempted. */
 export interface DigestChannel {
@@ -74,16 +74,11 @@ export const runWeeklyDigestTick = <EP, ER, R>(input: WeeklyDigestTickInput<EP, 
 
 		const subs = yield* input.execute(channel.selectEnabled)
 		const due = Arr.filter(subs, (s) => isDigestDue(s, channel.lastActivity(s), now))
-		const dueGroups = Rec.values(Arr.groupBy(due, input.groupBy))
-		const groups = Arr.take(dueGroups, MAX_DIGEST_GROUPS_PER_TICK)
-		if (groups.length < dueGroups.length) {
-			yield* Effect.logInfo("Deferring digest groups to the next tick").pipe(
-				Effect.annotateLogs({
-					digest: channel.kind,
-					deferredCount: dueGroups.length - groups.length,
-				}),
-			)
-		}
+		const groups = Rec.values(Arr.groupBy(due, input.groupBy))
+		// Only renders count against the budget, so quarantined groups ahead in line never starve
+		// the rest. The groups run one at a time, so a plain counter is safe.
+		let rendered = 0
+		let deferred = 0
 
 		const sendTo = (sub: DigestSubscriptionRow, message: DigestEmail<ER>) =>
 			Effect.gen(function* () {
@@ -119,6 +114,10 @@ export const runWeeklyDigestTick = <EP, ER, R>(input: WeeklyDigestTickInput<EP, 
 			groups,
 			(group) => {
 				const [head] = group
+				const skip = Effect.sync(() => {
+					deferred++
+					return []
+				})
 				const sendGroup = Effect.gen(function* () {
 					const claim = yield* input.execute((db) =>
 						channel.claim(
@@ -143,11 +142,12 @@ export const runWeeklyDigestTick = <EP, ER, R>(input: WeeklyDigestTickInput<EP, 
 						)
 					}
 					if (claimed.length === 0) return []
+					rendered++
 					const message = yield* input.prepare(head)
 					if (message === undefined) return []
 					return yield* Effect.forEach(claimed, (sub) => sendTo(sub, message), { concurrency: 1 })
 				})
-				return runWarehouseOrgTurn(input.edgeCache, head.orgId, now, sendGroup, {
+				const turn = runWarehouseOrgTurn(input.edgeCache, head.orgId, now, sendGroup, {
 					skipped: [],
 					failed: Effect.sync(() => Arr.map(group, () => ({ sent: false }))),
 					failureMessage: input.failureMessage,
@@ -156,9 +156,16 @@ export const runWeeklyDigestTick = <EP, ER, R>(input: WeeklyDigestTickInput<EP, 
 						? undefined
 						: { logQuarantine: input.logQuarantine }),
 				})
+				return Effect.suspend(() => (rendered >= MAX_DIGEST_GROUPS_PER_TICK ? skip : turn))
 			},
 			{ concurrency: 1 },
 		)
+
+		if (deferred > 0) {
+			yield* Effect.logInfo("Deferring digest groups to the next tick").pipe(
+				Effect.annotateLogs({ digest: channel.kind, deferredCount: deferred }),
+			)
+		}
 
 		const all = results.flat()
 		const sentCount = Arr.filter(all, (r) => r.sent).length
