@@ -1,5 +1,4 @@
 import { auditActionLabel, auditMetadataValueLabel, auditResourceLabel } from "@maple/domain/audit-actions"
-import { internalAgentLabel } from "@maple/domain/system-agents"
 import {
 	encodePublicId,
 	PublicIdPrefixes,
@@ -7,7 +6,7 @@ import {
 	type V2AuditLogEntry,
 } from "@maple/domain/http/v2"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
-import type { AuditResourceLink } from "../kit/audit-log-resource"
+import { auditActorName, type AuditResourceLink } from "../kit/audit-log-resource"
 import { DateTime, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
@@ -240,10 +239,6 @@ const isLabelledKey = (key: string): key is keyof typeof METADATA_LABELS =>
 const metadataLabel = (key: string): string =>
 	isLabelledKey(key) ? METADATA_LABELS[key] : Str.capitalize(Str.replaceAll("_", " ")(key))
 
-/** The name frozen on an entry, with Maple's own agent names (`chat-connector-slack`) in words. */
-export const auditActorName = (name: string | null): string | null =>
-	name === null ? null : (internalAgentLabel(name) ?? name)
-
 /** The audit log ending at one entry, with that entry open. */
 export const entryHref = (entry: V2AuditLogEntry): string =>
 	auditEntryHref(
@@ -320,7 +315,7 @@ export const auditDetail = (
 	const actionText = auditActionLabel(entry.action)
 	const changes = entry.changes
 	const metadata = entry.metadata
-	const actorName = auditActorName(entry.actor_name) ?? memberName(model, entry.actor_id)
+	const actorName = auditActorName(entry.actor_name, entry.actor_type) ?? memberName(model, entry.actor_id)
 	const affectedName = memberName(model, entry.affected_user)
 	return h.div(
 		[h.Class("border-border-subtle space-y-4 border-t px-4 py-3 @md:pl-11")],
