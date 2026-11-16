@@ -105,6 +105,6 @@ export const UpdateRunFindingStatus = Command.define("SecurityApiUpdateRunFindin
 	messages: [Message.CompletedTriage],
 	execute: ({ runId, fingerprint, status, reason }) =>
 		Effect.map(updateRunFindingStatus(runId, fingerprint, status, reason), (result) =>
-			Message.CompletedTriage({ result }),
+			Message.CompletedTriage({ fingerprint, result }),
 		),
 })

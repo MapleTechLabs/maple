@@ -148,7 +148,7 @@ export const init = (route: SecurityRunRoute, context: PageContext): Return => {
 		triage: initTriage(),
 		reason: Field.init(),
 		isTriageSubmitted: false,
-		isSaving: false,
+		savingFingerprint: null,
 		isDetailsOpen: null,
 		unitFilter: "all",
 		eventFilter: "all",
@@ -350,8 +350,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			},
 		}),
 		ClickedFinding: ({ fingerprint }) => {
-			// Another finding starts on its own status, not the last one's draft.
-			const isSame = fingerprint === model.openFingerprint || model.isSaving
+			// Another finding starts on its own status, never the last one's draft, even mid-save.
+			const isSame = fingerprint === model.openFingerprint
 			const status = Option.match(
 				Arr.findFirst(resultsOf(model), (finding) => finding.fingerprint === fingerprint),
 				{ onNone: () => "open" as const, onSome: (finding) => finding.status },
@@ -375,13 +375,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		SubmittedTriage: () => {
 			const finding = openFindingOf(model)
-			if (finding === null || model.isSaving || !isTriageable(model, finding)) return { model }
+			if (finding === null || model.savingFingerprint !== null || !isTriageable(model, finding))
+				return { model }
 			const status = pickedTriageOf(model.triage, finding.status)
 			const reason = Str.trim(model.reason.value)
 			if (!isTriageChange(runTriageChoices(finding.status), status, finding.status)) return { model }
 			if (reasonErrorOf(reason) !== null) return { model: { ...model, isTriageSubmitted: true } }
 			return {
-				model: { ...model, isTriageSubmitted: true, isSaving: true },
+				model: { ...model, isTriageSubmitted: true, savingFingerprint: finding.fingerprint },
 				commands: [
 					UpdateRunFindingStatus({
 						runId: model.runId,
@@ -392,8 +393,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				],
 			}
 		},
-		CompletedTriage: ({ result }) =>
-			Result.match(result, {
+		CompletedTriage: ({ fingerprint, result }) => {
+			if (fingerprint !== model.savingFingerprint) return { model }
+			// The draft belongs to the saved finding: reset it only while that finding is the one open.
+			const isStillOpen = model.openFingerprint === fingerprint
+			return Result.match(result, {
 				onSuccess: (triage) => {
 					// The row shows the new status at once; the read that follows brings the rest.
 					const findings = {
@@ -412,18 +416,17 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 							),
 						})),
 					}
-					const refreshed = readFindings(
-						{
-							...model,
-							findings,
-							isSaving: false,
-							isTriageSubmitted: false,
-							triage: initTriage(triage.status),
-							reason: Field.init(),
-						},
-						context,
-						"Supersede",
-					)
+					const settled: Model = isStillOpen
+						? {
+								...model,
+								findings,
+								savingFingerprint: null,
+								isTriageSubmitted: false,
+								triage: initTriage(triage.status),
+								reason: Field.init(),
+							}
+						: { ...model, findings, savingFingerprint: null }
+					const refreshed = readFindings(settled, context, "Supersede")
 					return {
 						...refreshed,
 						outMessage: toast(
@@ -434,10 +437,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					}
 				},
 				onFailure: (failure) => ({
-					model: { ...model, isSaving: false },
+					model: { ...model, savingFingerprint: null },
 					outMessage: toast("error", failure.title, failure.message),
 				}),
-			}),
+			})
+		},
 		ToggledDetails: () => ({
 			model: { ...model, isDetailsOpen: !(model.isDetailsOpen ?? isDetailsOpenByDefault(model)) },
 		}),

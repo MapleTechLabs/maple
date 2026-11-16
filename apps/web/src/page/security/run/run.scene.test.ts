@@ -25,7 +25,7 @@ import {
 } from "../../../lab/security-fixture"
 import { AppRoute } from "../../../route"
 import type { PageContext } from "../../contract"
-import { eventsOf as eventLogOf, openFindingOf, phasesOf } from "./derive"
+import { eventsOf as eventLogOf, openFindingOf, phasesOf, resultsOf } from "./derive"
 import { subscriptions } from "./index"
 import { Message, type Model } from "./model"
 import { init, update } from "./update"
@@ -562,7 +562,7 @@ describe("pull request run", () => {
 				"https://github.com/acme/api-gateway/pull/482",
 			),
 			expectView(text(" into main @ c0de482")).toExist(),
-			expectView(text("Fails at high and above")).toExist(),
+			expectView(text("Current rule: fails at high and above")).toExist(),
 			expectView(text("Accepted risk")).toExist(),
 		)
 	})
@@ -602,6 +602,7 @@ describe("pull request run", () => {
 		const done = pageUpdate(
 			submitted.model,
 			Message.CompletedTriage({
+				fingerprint: BLOCKING,
 				result: Result.succeed({
 					targetId: Schema.decodeSync(SecurityAuditTargetId)(TARGET_IDS.gateway),
 					fingerprint: BLOCKING,
@@ -681,6 +682,89 @@ describe("pull request run", () => {
 			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
 			expectView(role("link", { name: /Open finding page/ })).toExist(),
 		)
+	})
+
+	test("a save in flight lands on its own finding; another finding opened meanwhile keeps its own draft", () => {
+		const saving = pageUpdate(dismissed(opened(BLOCKING)), Message.SubmittedTriage()).model
+		const onOther = pageUpdate(saving, Message.ClickedFinding({ fingerprint: ACCEPTED })).model
+		expect([onOther.triage.values, onOther.reason.value]).toEqual([["accepted_risk"], ""])
+		// One save at a time: the other finding cannot send while the first is in flight.
+		const typed = pageUpdate(
+			pageUpdate(
+				onOther,
+				Message.GotTriageMessage({
+					message: ToggleGroup.Message.ClickedItem({ value: "open", index: 0 }),
+				}),
+			).model,
+			Message.GotReasonMessage({ message: Field.Message.ChangedValue({ value: "Back to open." }) }),
+		).model
+		expect(names(pageUpdate(typed, Message.SubmittedTriage()).commands)).toEqual([])
+		const savedA = pageUpdate(
+			typed,
+			Message.CompletedTriage({
+				fingerprint: BLOCKING,
+				result: Result.succeed({
+					targetId: Schema.decodeSync(SecurityAuditTargetId)(TARGET_IDS.gateway),
+					fingerprint: BLOCKING,
+					status: "dismissed",
+					statusReason: "Previews go through the egress proxy.",
+					statusChangedAt: NOW,
+				}),
+			}),
+		).model
+		expect([savedA.triage.values, savedA.reason.value, openFindingOf(savedA)?.status]).toEqual([
+			["open"],
+			"Back to open.",
+			"accepted_risk",
+		])
+		expect(
+			Option.getOrUndefined(
+				Option.map(
+					Arr.findFirst(resultsOf(savedA), (finding) => finding.fingerprint === BLOCKING),
+					(finding) => finding.status,
+				),
+			),
+		).toBe("dismissed")
+		// Now the other finding's own draft is what it sends.
+		expect(
+			Option.getOrUndefined(
+				Arr.findFirst(
+					pageUpdate(savedA, Message.SubmittedTriage()).commands ?? [],
+					(command) => command.name === "SecurityApiUpdateRunFindingStatus",
+				),
+			)?.args,
+		).toMatchObject({ fingerprint: ACCEPTED, status: "open", reason: "Back to open." })
+	})
+
+	test("a failed save frees the form without moving its draft to the finding open now", () => {
+		const saving = pageUpdate(dismissed(opened(BLOCKING)), Message.SubmittedTriage()).model
+		const onOther = pageUpdate(saving, Message.ClickedFinding({ fingerprint: ACCEPTED })).model
+		const failed = pageUpdate(
+			onOther,
+			Message.CompletedTriage({
+				fingerprint: BLOCKING,
+				result: Result.fail(toLoadFailure(new SecurityAuditPersistenceError({ message: "down" }))),
+			}),
+		)
+		expect(failed.outMessage).toMatchObject({ type: "error" })
+		expect([failed.model.savingFingerprint, failed.model.triage.values]).toEqual([
+			null,
+			["accepted_risk"],
+		])
+		// Unchanged and unreasoned, the open finding sends nothing.
+		expect(names(pageUpdate(failed.model, Message.SubmittedTriage()).commands)).toEqual([])
+		// An answer for a save no longer in flight is dropped.
+		expect(
+			pageUpdate(
+				failed.model,
+				Message.CompletedTriage({
+					fingerprint: BLOCKING,
+					result: Result.fail(
+						toLoadFailure(new SecurityAuditPersistenceError({ message: "late" })),
+					),
+				}),
+			).outMessage,
+		).toBeUndefined()
 	})
 
 	test("a reason is required before anything is sent", () => {

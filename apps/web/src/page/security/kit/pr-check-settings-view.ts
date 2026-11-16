@@ -40,6 +40,7 @@ const enabledRow = (h: H, model: Model, branch: string): Html =>
 		description:
 			"Each push to a pull request runs a quick audit of the files it changes and reports the result on GitHub.",
 		filled: model.enabled.isChecked,
+		disabled: model.isPending,
 		control: Switch.switchControl(h, {
 			id: SWITCH_ID,
 			inputId: `${SWITCH_ID}-input`,
@@ -47,6 +48,7 @@ const enabledRow = (h: H, model: Model, branch: string): Html =>
 			labelledBy: `${SWITCH_ID}-label`,
 			describedBy: `${SWITCH_ID}-description`,
 			isFilled: model.enabled.isChecked,
+			isDisabled: model.isPending,
 			onToggle: Message.GotEnabledMessage({ message: Switch.Message.ToggledSwitch() }),
 		}),
 	})
@@ -65,6 +67,7 @@ const blockAtField = (h: H, model: Model, branch: string): Html =>
 				labelledBy: BLOCK_AT_LABEL_ID,
 				describedBy: BLOCK_AT_DESCRIPTION_ID,
 				className: "w-full max-w-64",
+				isDisabled: model.isPending,
 				toView: (parts) => h.div([h.Class("contents")], parts),
 			},
 			toParentMessage: (message) => Message.GotBlockAtMessage({ message }),

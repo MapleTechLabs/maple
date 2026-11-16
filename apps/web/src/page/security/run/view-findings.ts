@@ -172,7 +172,8 @@ const sheetTriage = (h: H, model: Model, finding: SecurityAuditFinding): Readonl
 								triage: model.triage,
 								reason: model.reason,
 								isSubmitted: model.isTriageSubmitted,
-								isSaving: model.isSaving,
+								// One save at a time: another finding's in flight holds this form too.
+								isSaving: model.savingFingerprint !== null,
 								hint: "A dismissed or accepted finding stops failing this pull request's check, which is reported again.",
 								onTriage: (message) => Message.GotTriageMessage({ message }),
 								onReason: (message) => Message.GotReasonMessage({ message }),

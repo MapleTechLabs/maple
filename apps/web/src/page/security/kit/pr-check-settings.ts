@@ -131,16 +131,22 @@ export const update = (model: Model, message: Message): Return =>
 			const step = Dialog.update(model.dialog, inner)
 			return { model: { ...model, dialog: step.model }, commands: dialogCommands(step.commands) }
 		},
-		GotEnabledMessage: ({ message: inner }) => ({
-			model: { ...model, enabled: Switch.update(model.enabled, inner).model, failure: null },
-		}),
+		// A save in flight holds the form to what it sent, so what shows is what gets saved.
+		GotEnabledMessage: ({ message: inner }) =>
+			model.isPending
+				? { model }
+				: { model: { ...model, enabled: Switch.update(model.enabled, inner).model, failure: null } },
 		GotBlockAtMessage: ({ message: inner }) => {
 			const step = Select.update(model.blockAt, inner)
-			const picked = step.outMessage
+			// The popup still opens and closes; only a pick is held back while a save is in flight.
+			const picked = model.isPending ? undefined : step.outMessage
 			return {
 				model: {
 					...model,
-					blockAt: picked === undefined ? step.model : { ...step.model, value: picked.value },
+					blockAt:
+						picked === undefined
+							? { ...step.model, value: model.blockAt.value }
+							: { ...step.model, value: picked.value },
 					failure: null,
 				},
 				commands: Command.mapMessages(step.commands ?? [], (next) =>

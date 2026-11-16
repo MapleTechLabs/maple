@@ -75,7 +75,8 @@ export const Model = Schema.Struct({
 	triage: ToggleGroup.Model,
 	reason: Field.Model,
 	isTriageSubmitted: Schema.Boolean,
-	isSaving: Schema.Boolean,
+	/** The finding whose triage save is in flight; its answer lands on that finding only. */
+	savingFingerprint: Schema.NullOr(Schema.String),
 	/** Phases, totals, ledger and events: open while live, folded once the run finished. */
 	isDetailsOpen: Schema.NullOr(Schema.Boolean),
 	unitFilter: UnitFilter,
@@ -122,7 +123,10 @@ export const Message = defineMessageUnion({
 	GotTriageMessage: { message: ToggleGroup.Message },
 	GotReasonMessage: { message: Field.Message },
 	SubmittedTriage: {},
-	CompletedTriage: { result: Schema.Result(SecurityAuditFindingTriageResult, LoadFailure) },
+	CompletedTriage: {
+		fingerprint: Schema.String,
+		result: Schema.Result(SecurityAuditFindingTriageResult, LoadFailure),
+	},
 	ToggledDetails: {},
 	PickedUnitFilter: { filter: UnitFilter },
 	PickedEventFilter: { filter: EventFilter },

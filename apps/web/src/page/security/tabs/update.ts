@@ -483,8 +483,20 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				...model,
 				branchRuns: { ...model.branchRuns, [targetId]: Keyed.accept(slot, key, result) },
 			}
-			// The target's latest branch audit may be one neither run list held: read its coverage.
-			return followRuns(next, context, "Load")
+			// This list can be the first to see a run finish: its findings and run detail changed.
+			const finished = finishedSince(allRuns(model), allRuns(next))
+			return chainAll(next, [
+				// The target's latest branch audit may be one neither run list held: read its coverage.
+				(updated) => followRuns(updated, context, "Load"),
+				...Arr.map(
+					finished,
+					(run) => (updated: Model) => readFindings(updated, context, run.targetId, "Supersede"),
+				),
+				...Arr.map(
+					finished,
+					(run) => (updated: Model) => readLatestRun(updated, context, run, "Supersede"),
+				),
+			])
 		},
 		CompletedFetchFindings: ({ targetId, key, result }) => {
 			const slot = model.findings[targetId]

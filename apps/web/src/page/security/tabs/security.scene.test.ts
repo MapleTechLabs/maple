@@ -1217,6 +1217,39 @@ describe("pull request check", () => {
 		})
 	})
 
+	test("while a save is in flight the switch and threshold hold what was sent", () => {
+		const gateway = pageUpdate(
+			admin(),
+			Message.ClickedPrCheck({
+				targetId: Schema.decodeSync(SecurityAuditTargetId)(TARGET_IDS.gateway),
+			}),
+		).model
+		const pending = send(gateway, PrCheckSettings.Message.Submitted()).model
+		const nudged = pick(toggle(pending), "report")
+		expect([nudged.prCheckSettings.enabled.isChecked, nudged.prCheckSettings.blockAt.value]).toEqual([
+			true,
+			"high",
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(pending),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(role("switch", { name: "Check pull requests into main" })).toHaveAttr(
+				"aria-disabled",
+				"true",
+			),
+			expectView(role("combobox", { name: "Fail the check at" })).toHaveAttr("disabled", "true"),
+		)
+		const answered = send(
+			nudged,
+			PrCheckSettings.Message.CompletedSave({
+				attempt: nudged.prCheckSettings.attempt,
+				result: Result.succeed({ ...targetsOf(NOW).targets[0]!, prCheckEnabled: true }),
+			}),
+		)
+		expect(answered.outMessage).toMatchObject({ title: "Pull request check on for acme/api-gateway" })
+	})
+
 	test("a save closes the dialog, says so and reads the targets again; a refusal stays in the form", () => {
 		const opened = pageUpdate(
 			admin(),
@@ -1318,6 +1351,46 @@ describe("pull request check", () => {
 		)
 		expect(latestRunFor(answered.model, TARGET_IDS.gateway)?.id).toBe(RUN_IDS.gateway)
 		expect(names(answered.commands)).toContain("SecurityApiGetLatestRun")
+	})
+
+	test("a branch audit seen finishing first in the branch-only list refreshes its findings and detail", () => {
+		const gatewayId = Schema.decodeSync(SecurityAuditTargetId)(TARGET_IDS.gateway)
+		const branchRun = Option.getOrUndefined(
+			Arr.findFirst(runsOf(NOW).runs, (run) => run.id === RUN_IDS.gateway),
+		)
+		if (branchRun === undefined) throw new RangeError("fixture run missing")
+		const live = { ...branchRun, status: "in_progress" as const, finishedAt: null }
+		const base = loaded()
+		const withLive = pageUpdate(
+			base,
+			Message.CompletedFetchBranchRuns({
+				targetId: gatewayId,
+				key: base.branchRuns[TARGET_IDS.gateway]?.key ?? "",
+				result: Result.succeed({ runs: [live] }),
+			}),
+		).model
+		// The other lists still hold it live; only the branch-only list has it finished.
+		const asLive = (runs: ReadonlyArray<typeof branchRun>) =>
+			Arr.map(runs, (run) => (run.id === RUN_IDS.gateway ? live : run))
+		const stale = pageUpdate(
+			withLive,
+			Message.CompletedFetchRuns({
+				key: withLive.runs.key ?? "",
+				result: Result.succeed({ runs: asLive(runsOf(NOW).runs) }),
+			}),
+		).model
+		const reread = pageUpdate(stale, Message.TickedPoll({ nowMs: NOW }))
+		const finished = pageUpdate(
+			reread.model,
+			Message.CompletedFetchBranchRuns({
+				targetId: gatewayId,
+				key: reread.model.branchRuns[TARGET_IDS.gateway]?.key ?? "",
+				result: Result.succeed({ runs: [branchRun] }),
+			}),
+		)
+		expect(names(finished.commands)).toEqual(
+			expect.arrayContaining(["SecurityApiListFindings", "SecurityApiGetLatestRun"]),
+		)
 	})
 
 	test("the targets answer reads each target's branch audits on their own", () => {

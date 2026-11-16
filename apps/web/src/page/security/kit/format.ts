@@ -169,13 +169,16 @@ const PR_CHECK_SHORT = {
 export const prCheckPart = (target: SecurityAuditTarget): string | null =>
 	target.prCheckEnabled ? `PR check · ${PR_CHECK_SHORT[prCheckChoiceOf(target.prCheckBlockAt)]}` : null
 
-/** What fails a pull request run's check, for the run page. */
+/**
+ * What fails the target's check now, for a pull request run's page. A run checked under the rule of
+ * its day, which may have changed since, so the page calls this the current rule.
+ */
 export const prCheckRuleOf = (target: SecurityAuditTarget): string =>
 	target.prCheckBlockAt === null
-		? "Reports only, never blocks"
+		? "Current rule: reports only, never blocks"
 		: target.prCheckBlockAt === "informational"
-			? "Fails on any confirmed finding"
-			: `Fails at ${Str.toLowerCase(PR_CHECK_BLOCK_LABEL[prCheckChoiceOf(target.prCheckBlockAt)])}`
+			? "Current rule: fails on any confirmed finding"
+			: `Current rule: fails at ${Str.toLowerCase(PR_CHECK_BLOCK_LABEL[prCheckChoiceOf(target.prCheckBlockAt)])}`
 
 export const pullRequestHref = (repository: string, prNumber: number): string =>
 	`https://github.com/${repository}/pull/${prNumber}`
