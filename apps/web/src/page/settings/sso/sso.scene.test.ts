@@ -414,4 +414,43 @@ describe("sso tab", () => {
 		)
 		expect(refused.outMessage).toMatchObject({ title: "Couldn't verify the domain" })
 	})
+
+	test("mapping rows explain a disabled Save and stop at one row per group", () => {
+		const directory = {
+			endpointUrl: "https://api.maple.dev/scim/v2/abc",
+			enabled: true,
+			paused: false,
+			createdAt: CREATED,
+		}
+		const groups = [
+			{ groupId: "grp_eng", displayName: "Engineering" },
+			{ groupId: "grp_admins", displayName: "Admins" },
+		]
+		const start = loaded(doc({ domains: [verifiedDomain], connection, directory, groups }))
+		const both = update(
+			update(start, Message.ClickedAddMapping()).model,
+			Message.ClickedAddMapping(),
+		).model
+		// Every group has a row: a third Add mapping does nothing, and the button says so.
+		expect(update(both, Message.ClickedAddMapping()).model.mappings?.length).toBe(2)
+		scene(
+			{ update, view },
+			given(both),
+			expectView(role("button", { name: "Add mapping" })).toBeDisabled(),
+		)
+		// Pointing both rows at one group disables Save, with the reason beside it.
+		const duplicate = update(
+			both,
+			Message.GotSelectMessage({
+				key: "group-new-1",
+				message: Select.Message.SelectedItem({ index: 0, value: "grp_eng" }),
+			}),
+		).model
+		scene(
+			{ update, view },
+			given(duplicate),
+			expectView(text("Map each group to one role only.")).toExist(),
+			expectView(role("button", { name: "Save" })).toBeDisabled(),
+		)
+	})
 })

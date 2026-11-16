@@ -335,6 +335,20 @@ export const mappingRows = (model: Model): ReadonlyArray<MappingDraft> =>
 	}))
 
 /** Every row names a group, and no group twice. */
+/** Why the rows can't be saved, or null when they can. */
+export const mappingsProblem = (rows: ReadonlyArray<MappingDraft>): string | null =>
+	Arr.some(rows, (row) => row.groupId === "")
+		? "Pick a group for every row."
+		: Arr.dedupe(Arr.map(rows, (row) => row.groupId)).length !== rows.length
+			? "Map each group to one role only."
+			: null
+
+/** Whether a group the IdP pushed is not mapped yet, so another row can be added. */
+export const hasUnmappedGroup = (
+	document: EnterpriseSsoDocument,
+	rows: ReadonlyArray<MappingDraft>,
+): boolean => Arr.some(document.groups, (group) => !Arr.some(rows, (row) => row.groupId === group.groupId))
+
 export const isMappingsValid = (rows: ReadonlyArray<MappingDraft>): boolean =>
 	Arr.every(rows, (row) => row.groupId !== "") &&
 	Arr.dedupe(Arr.map(rows, (row) => row.groupId)).length === rows.length
@@ -917,6 +931,9 @@ export const update = (model: Model, message: Message): Return =>
 		ClickedConfirmRemoveDirectory: () => startWrite(model, "deleteDirectory", DeleteScimDirectory()),
 		ClickedAddMapping: () => {
 			const rows = mappingRows(model)
+			const document = documentOf(model)
+			// Every group already has a row: another would only be a duplicate.
+			if (document === null || !hasUnmappedGroup(document, rows)) return { model }
 			const used = Arr.map(rows, (row) => row.groupId)
 			const groupId = Option.match(
 				Arr.findFirst(documentOf(model)?.groups ?? [], (group) => !used.includes(group.groupId)),

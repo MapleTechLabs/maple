@@ -57,6 +57,8 @@ import { type ConnectionDraft, type DraftField, type MappingDraft, Message, type
 import {
 	documentOf,
 	isMappingsValid,
+	mappingsProblem,
+	hasUnmappedGroup,
 	MAPPED_ROLES,
 	mappingRows,
 	normalizeDomain,
@@ -821,6 +823,7 @@ const mappingsSection = (h: H, model: Model, document: EnterpriseSsoDocument): H
 	const rows = mappingRows(model)
 	const isDirty = model.mappings !== null
 	const hasGroups = document.groups.length > 0
+	const problem = mappingsProblem(rows)
 	return settingsSection(
 		h,
 		{
@@ -857,7 +860,7 @@ const mappingsSection = (h: H, model: Model, document: EnterpriseSsoDocument): H
 									{
 										variant: "ghost",
 										size: "sm",
-										isDisabled: !hasGroups || isBusy(model),
+										isDisabled: !hasUnmappedGroup(document, rows) || isBusy(model),
 										attributes: [h.OnClick(Message.ClickedAddMapping())],
 									},
 									[
@@ -868,6 +871,10 @@ const mappingsSection = (h: H, model: Model, document: EnterpriseSsoDocument): H
 									],
 								),
 								hstack(h, { gap: "2" }, [
+									// A greyed-out Save says why.
+									...(isDirty && problem !== null
+										? [typography(h, { size: "xs", tone: "muted" }, [problem])]
+										: []),
 									...(isDirty
 										? [
 												button(
