@@ -25,11 +25,6 @@ export interface EnvConfig {
 	readonly TINYBIRD_WORKSPACE_ID: Option.Option<string>
 	/** Optional Tinybird-enforced RPS ceiling, bucketed independently per org. */
 	readonly TINYBIRD_RAW_SQL_JWT_RPS_LIMIT: Option.Option<number>
-	/**
-	 * Read the managed Tinybird warehouse with an org-scoped JWT instead of the shared token, so
-	 * Tinybird itself keeps a query to its tenant's rows. Set per Worker; needs the signing key.
-	 */
-	readonly MAPLE_WAREHOUSE_ORG_SCOPED_READS: boolean
 	readonly CLICKHOUSE_URL: Option.Option<string>
 	readonly CLICKHOUSE_PROVIDER: string
 	readonly CLICKHOUSE_USER: string
@@ -206,9 +201,6 @@ const envConfig = Config.all({
 	TINYBIRD_SIGNING_KEY: optionalRedacted("TINYBIRD_SIGNING_KEY"),
 	TINYBIRD_WORKSPACE_ID: optionalString("TINYBIRD_WORKSPACE_ID"),
 	TINYBIRD_RAW_SQL_JWT_RPS_LIMIT: Config.option(Config.Number("TINYBIRD_RAW_SQL_JWT_RPS_LIMIT")),
-	MAPLE_WAREHOUSE_ORG_SCOPED_READS: stringWithDefault("MAPLE_WAREHOUSE_ORG_SCOPED_READS", "false").pipe(
-		Config.map((value) => value === "1" || value === "true"),
-	),
 	CLICKHOUSE_URL: optionalString("CLICKHOUSE_URL"),
 	CLICKHOUSE_PROVIDER: stringWithDefault("CLICKHOUSE_PROVIDER", "tinybird"),
 	CLICKHOUSE_USER: stringWithDefault("CLICKHOUSE_USER", "default"),
@@ -378,11 +370,17 @@ const makeEnv = Effect.gen(function* () {
 		})
 	}
 
-	// At boot, not at the first query: with the flag on, every read of this Worker needs the token.
-	if (env.MAPLE_WAREHOUSE_ORG_SCOPED_READS && managedReadsAreTinybird(env) && !hasTinybirdSigningKey) {
+	// At boot, not at the first query: with several orgs on one Tinybird workspace, every tenant read
+	// runs on an org-scoped token so Tinybird itself keeps it to its org. Single-org self-hosted has
+	// nothing to isolate and may leave the key unset.
+	if (
+		Str.toLowerCase(env.MAPLE_AUTH_MODE) !== "self_hosted" &&
+		managedReadsAreTinybird(env) &&
+		!hasTinybirdSigningKey
+	) {
 		return yield* new EnvValidationError({
 			message:
-				"MAPLE_WAREHOUSE_ORG_SCOPED_READS needs TINYBIRD_SIGNING_KEY and TINYBIRD_WORKSPACE_ID to mint the org-scoped read token",
+				"A multi-org deployment reading Tinybird needs TINYBIRD_SIGNING_KEY and TINYBIRD_WORKSPACE_ID: every tenant read runs on an org-scoped token",
 		})
 	}
 
@@ -445,6 +443,14 @@ const makeEnv = Effect.gen(function* () {
 export const managedReadsAreTinybird = (
 	env: Pick<EnvConfig, "CLICKHOUSE_URL" | "CLICKHOUSE_PROVIDER">,
 ): boolean => Option.isNone(env.CLICKHOUSE_URL) || env.CLICKHOUSE_PROVIDER === "tinybird"
+
+/**
+ * Whether a tenant read runs on an org-scoped token: managed reads are Tinybird and the signing key
+ * is set. Multi-org deployments must set it (checked at boot); single-org self-hosted may not.
+ */
+export const orgScopedReadsApply = (
+	env: Pick<EnvConfig, "CLICKHOUSE_URL" | "CLICKHOUSE_PROVIDER" | "TINYBIRD_SIGNING_KEY">,
+): boolean => managedReadsAreTinybird(env) && Option.isSome(env.TINYBIRD_SIGNING_KEY)
 
 /** The config, plus the keys every service that encrypts or hashes would otherwise parse itself. */
 export interface EnvApi extends EnvConfig {
