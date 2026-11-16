@@ -104,11 +104,33 @@ export const capSeries = (result: PromqlResult): ReadonlyArray<typeof PromqlSeri
 					([, series]) => series,
 				)
 			: all
-	return Arr.map(kept, (series) => ({
-		labels: series.labels,
-		points: Arr.map(Arr.takeRight(series.points, MAX_POINTS), (p) => ({ t: p.t, v: encodeSample(p.v) })),
-		totalPoints: series.points.length,
-	}))
+	return Arr.map(kept, (series) => {
+		const stats = seriesStats(series)
+		return {
+			labels: series.labels,
+			points: Arr.map(Arr.takeRight(series.points, MAX_POINTS), (p) => ({
+				t: p.t,
+				v: encodeSample(p.v),
+			})),
+			totalPoints: series.points.length,
+			...(stats === undefined ? undefined : { stats }),
+		}
+	})
+}
+
+/** Min, average and max over every point before the cap; infinities count, NaN does not. */
+const seriesStats = (series: RawSeries) => {
+	const values = Arr.filter(
+		Arr.map(series.points, (p) => p.v),
+		(v) => !Number.isNaN(v),
+	)
+	if (values.length === 0) return undefined
+	const sum = Arr.reduce(values, 0, (a, b) => a + b)
+	return {
+		min: encodeSample(Arr.reduce(values, Infinity, (a, b) => Math.min(a, b))),
+		avg: encodeSample(sum / values.length),
+		max: encodeSample(Arr.reduce(values, -Infinity, (a, b) => Math.max(a, b))),
+	}
 }
 
 export const toOutput = (input: {
