@@ -7,8 +7,12 @@ const compiled = () =>
 	compileUnsafe(
 		cloudResourceServicesQuery({
 			candidates: [
-				{ key: "host.id", value: "i-0abc" },
-				{ key: "faas.name", value: "checkout-fn" },
+				{ key: "host.id", value: "i-0abc", scope: null },
+				{
+					key: "faas.name",
+					value: "checkout-fn",
+					scope: { accountId: "111111111111", region: "us-east-1" },
+				},
 			],
 		}),
 		{
@@ -34,9 +38,15 @@ describe("cloudResourceServicesQuery", () => {
 		expect(sql).not.toContain("k8s.cluster.name")
 	})
 
-	it("groups by the matched id and service, busiest first", () => {
+	it("scopes a name to the finding's account and region", () => {
 		const sql = compiled()
-		expect(sql).toContain("GROUP BY attributeKey, resourceId, service")
+		expect(sql).toContain("traces.ResourceAttributes['cloud.account.id'] IN ('', '111111111111')")
+		expect(sql).toContain("traces.ResourceAttributes['cloud.region'] IN ('', 'us-east-1')")
+	})
+
+	it("groups by the matched candidate and service, busiest first", () => {
+		const sql = compiled()
+		expect(sql).toContain("GROUP BY match, service")
 		expect(sql).toContain("ORDER BY requests DESC")
 	})
 })

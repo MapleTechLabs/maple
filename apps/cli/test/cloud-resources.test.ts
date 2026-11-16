@@ -11,7 +11,7 @@ import { decodeJsonEachRow } from "@maple/local-server/chdb-rows"
 import schemaSql from "@maple/local-server/schema/local-schema.sql" with { type: "text" }
 import { Chdb } from "@maple/local-server/chdb"
 import { OrgId } from "@maple/domain"
-import { Array as Arr, Order, Record as Rec, Schema } from "effect"
+import { Array as Arr, Order, Record as Rec, Schema, String as Str } from "effect"
 import { describeWithChdb } from "./libchdb-test-support"
 
 const ORG = "org_cloud"
@@ -60,6 +60,20 @@ describeWithChdb("cloudResourceServicesQuery on chDB", () => {
 			{ service: "checkout-api", at: "2026-11-10 12:00:00", resource: { "host.id": "i-0abc" } },
 			// A resource no finding names.
 			{ service: "search", resource: { "host.id": "i-0zzz" } },
+			// The same function name in another account does not count.
+			{
+				service: "intruder",
+				resource: {
+					"faas.name": "cart-fn",
+					"cloud.account.id": "222222222222",
+					"cloud.region": "us-east-1",
+				},
+			},
+			// An ECS task's span carries its cluster too: both findings get it.
+			{
+				service: "orders",
+				resource: { "aws.ecs.task.arn": "arn:task/1", "aws.ecs.cluster.arn": "arn:cluster/main" },
+			},
 		]
 		db.exec(
 			`INSERT INTO traces (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, ResourceAttributes, SpanAttributes) VALUES ${Arr.join(Arr.map(seeds, row), ", ")}`,
@@ -75,8 +89,14 @@ describeWithChdb("cloudResourceServicesQuery on chDB", () => {
 		const compiled = CH.compileUnsafe(
 			CH.cloudResourceServicesQuery({
 				candidates: [
-					{ key: "host.id", value: "i-0abc" },
-					{ key: "faas.name", value: "cart-fn" },
+					{ key: "host.id", value: "i-0abc", scope: null },
+					{
+						key: "faas.name",
+						value: "cart-fn",
+						scope: { accountId: "111111111111", region: "us-east-1" },
+					},
+					{ key: "aws.ecs.task.arn", value: "arn:task/1", scope: null },
+					{ key: "aws.ecs.cluster.arn", value: "arn:cluster/main", scope: null },
 				],
 			}),
 			{
@@ -89,13 +109,16 @@ describeWithChdb("cloudResourceServicesQuery on chDB", () => {
 		const sorted = Arr.sort(
 			Arr.map(
 				rows,
-				(entry) => [entry.attributeKey, entry.resourceId, entry.service, entry.requests] as const,
+				(entry) =>
+					[Str.replaceAll("\u001f", "|")(entry.match), entry.service, entry.requests] as const,
 			),
-			Order.mapInput(Order.String, (entry: readonly [string, string, string, number]) => entry[2]),
+			Order.mapInput(Order.String, (entry: readonly [string, string, number]) => entry[0]),
 		)
 		expect(sorted).toEqual([
-			["faas.name", "cart-fn", "cart", 4],
-			["host.id", "i-0abc", "checkout-api", 3],
+			["aws.ecs.cluster.arn||arn:cluster/main", "orders", 1],
+			["aws.ecs.task.arn||arn:task/1", "orders", 1],
+			["faas.name|111111111111/us-east-1|cart-fn", "cart", 4],
+			["host.id||i-0abc", "checkout-api", 3],
 		])
 	})
 })

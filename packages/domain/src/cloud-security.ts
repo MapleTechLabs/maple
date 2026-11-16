@@ -122,11 +122,20 @@ export const CLOUD_RESOURCE_ATTRIBUTE_KEYS = [
 ] as const
 export type CloudResourceAttributeKey = (typeof CLOUD_RESOURCE_ATTRIBUTE_KEYS)[number]
 
-/** One value telemetry may carry for a resource, on the one attribute that would carry it. */
+/**
+ * One value telemetry may carry for a resource, on the one attribute that would carry it. A name
+ * (`faas.name`, `k8s.cluster.name`) is only unique within an account and region, so it carries the
+ * finding's: a span counts for it only when its `cloud.account.id` and `cloud.region` agree or are unset.
+ */
 export interface CloudResourceCandidate {
 	readonly key: CloudResourceAttributeKey
 	readonly value: string
+	readonly scope: { readonly accountId: string; readonly region: string } | null
 }
+
+/** One candidate as the telemetry query names the matches it finds: key, scope and value. */
+export const cloudResourceMatchTag = (candidate: CloudResourceCandidate): string =>
+	`${candidate.key}\u001f${candidate.scope === null ? "" : `${candidate.scope.accountId}/${candidate.scope.region}`}\u001f${candidate.value}`
 
 /** An ARN is matched whole on the attributes that hold ARNs. */
 const ARN_KEYS: ReadonlyArray<CloudResourceAttributeKey> = [
@@ -139,7 +148,7 @@ const ARN_KEYS: ReadonlyArray<CloudResourceAttributeKey> = [
 const EC2_INSTANCE_ID = /^i-[0-9a-f]{8,17}$/u
 
 /** The name part of an ARN's resource for the services whose name telemetry carries; undefined otherwise. */
-const arnName = (arn: string): CloudResourceCandidate | undefined => {
+const arnName = (arn: string): Omit<CloudResourceCandidate, "scope"> | undefined => {
 	// arn:partition:service:region:account:resource, where resource may itself hold ':' and '/'.
 	const parts = Str.split(":")(arn)
 	const service = parts[2] ?? ""
@@ -173,17 +182,25 @@ const arnName = (arn: string): CloudResourceCandidate | undefined => {
 export const cloudResourceCandidates = (resource: {
 	readonly resourceId: string
 	readonly resourceType: string
+	readonly accountId: string
+	readonly region: string
 }): ReadonlyArray<CloudResourceCandidate> => {
 	const id = Str.trim(resource.resourceId)
 	if (id === "") return []
+	const scope = { accountId: resource.accountId, region: resource.region }
+	// Names are scoped to the finding's account and region; ids and ARNs are unique on their own.
+	const scoped = (candidate: Omit<CloudResourceCandidate, "scope">): CloudResourceCandidate => ({
+		...candidate,
+		scope: candidate.key === "faas.name" || candidate.key === "k8s.cluster.name" ? scope : null,
+	})
 	if (Str.startsWith("arn:")(id)) {
 		const name = arnName(id)
-		const whole = Arr.map(ARN_KEYS, (key): CloudResourceCandidate => ({ key, value: id }))
-		return name === undefined ? whole : Arr.append(whole, name)
+		const whole = Arr.map(ARN_KEYS, (key): CloudResourceCandidate => ({ key, value: id, scope: null }))
+		return name === undefined ? whole : Arr.append(whole, scoped(name))
 	}
 	const type = Str.toLowerCase(resource.resourceType)
-	if (EC2_INSTANCE_ID.test(id)) return [{ key: "host.id", value: id }]
-	if (Str.includes("lambda")(type)) return [{ key: "faas.name", value: id }]
-	if (Str.includes("eks")(type)) return [{ key: "k8s.cluster.name", value: id }]
+	if (EC2_INSTANCE_ID.test(id)) return [scoped({ key: "host.id", value: id })]
+	if (Str.includes("lambda")(type)) return [scoped({ key: "faas.name", value: id })]
+	if (Str.includes("eks")(type)) return [scoped({ key: "k8s.cluster.name", value: id })]
 	return []
 }

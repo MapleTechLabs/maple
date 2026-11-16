@@ -65,20 +65,17 @@ const makeWorld = (flags: OrganizationFeatureFlags, warehouse: Warehouse = "answ
 				: query
 						.decodeRows([
 							{
-								attributeKey: "host.id",
-								resourceId: "i-0abc1234def567890",
+								match: matchTag("host.id", "", "i-0abc1234def567890"),
 								service: "checkout-api",
 								requests: "1200",
 							},
 							{
-								attributeKey: "host.id",
-								resourceId: "i-0abc1234def567890",
+								match: matchTag("host.id", "", "i-0abc1234def567890"),
 								service: "cart",
 								requests: "40",
 							},
 							{
-								attributeKey: "faas.name",
-								resourceId: "checkout-fn",
+								match: matchTag("faas.name", "111111111111/us-east-1", "checkout-fn"),
 								service: "payments",
 								requests: "9",
 							},
@@ -140,37 +137,51 @@ const finding = (
 	...overrides,
 })
 
+const matchTag = (key: string, scope: string, value: string) => `${key}\u001f${scope}\u001f${value}`
+
 describe("affectedServicesOf", () => {
 	it("sums a resource's services over its ARN and name, busiest first, on the right attribute", () => {
 		const services = affectedServicesOf(
 			{
 				resourceId: "arn:aws:lambda:us-east-1:111111111111:function:checkout-fn",
 				resourceType: "AwsLambdaFunction",
+				accountId: "111111111111",
+				region: "us-east-1",
 			},
 			[
-				{ attributeKey: "faas.name", resourceId: "checkout-fn", service: "payments", requests: 9 },
 				{
-					attributeKey: "cloud.resource_id",
-					resourceId: "arn:aws:lambda:us-east-1:111111111111:function:checkout-fn",
+					match: matchTag("faas.name", "111111111111/us-east-1", "checkout-fn"),
+					service: "payments",
+					requests: 9,
+				},
+				{
+					match: matchTag(
+						"cloud.resource_id",
+						"",
+						"arn:aws:lambda:us-east-1:111111111111:function:checkout-fn",
+					),
 					service: "payments",
 					requests: 1,
 				},
 				{
-					attributeKey: "faas.name",
-					resourceId: "checkout-fn",
+					match: matchTag("faas.name", "111111111111/us-east-1", "checkout-fn"),
 					service: "checkout-api",
 					requests: 50,
 				},
 				// The same name on another kind of resource: a cluster called checkout-fn.
 				{
-					attributeKey: "k8s.cluster.name",
-					resourceId: "checkout-fn",
+					match: matchTag("k8s.cluster.name", "111111111111/us-east-1", "checkout-fn"),
 					service: "orders",
 					requests: 400,
 				},
+				// The same function name in another account.
 				{
-					attributeKey: "host.id",
-					resourceId: "i-0abc1234def567890",
+					match: matchTag("faas.name", "222222222222/us-east-1", "checkout-fn"),
+					service: "intruder",
+					requests: 700,
+				},
+				{
+					match: matchTag("host.id", "", "i-0abc1234def567890"),
 					service: "cart",
 					requests: 999,
 				},

@@ -7,9 +7,10 @@ import * as T from "@maple-dev/effect-orm/clickhouse"
 import * as Datasources from "@maple/domain/tinybird/datasources"
 import {
 	CLOUD_RESOURCE_ATTRIBUTE_KEYS as DOMAIN_RESOURCE_KEYS,
+	type CloudResourceAttributeKey,
 	type CloudResourceCandidate,
 } from "@maple/domain/cloud-security"
-import { Array as Arr, Result, Schema } from "effect"
+import { Array as Arr, Record as Rec, Result, Schema } from "effect"
 import { CHNumber } from "../schema"
 import { orgIdParam } from "../tables"
 
@@ -25,47 +26,74 @@ export interface CloudResourceServicesOpts {
 }
 
 export const cloudResourceServicesRowSchema = Schema.Struct({
-	/** The attribute the value matched on: a finding joins on it and the value together. */
-	attributeKey: Schema.String,
-	/** The candidate value that matched. */
-	resourceId: Schema.String,
+	/** What matched, as `cloudResourceMatchTag` names a candidate: attribute, scope and value. */
+	match: Schema.String,
 	service: Schema.String,
 	/** Sample-weighted entry-point spans in the window. */
 	requests: CHNumber,
 })
 export type CloudResourceServicesOutput = typeof cloudResourceServicesRowSchema.Type
 
-/** Services that served requests from each resource over the window, busiest first. */
+const SEPARATOR = "\u001f"
+
+interface CandidateGroup {
+	readonly key: CloudResourceAttributeKey
+	readonly scope: CloudResourceCandidate["scope"]
+	readonly values: Arr.NonEmptyReadonlyArray<string>
+}
+
+/** The candidates by attribute and scope, each value once per group. */
+const groupsOf = (candidates: ReadonlyArray<CloudResourceCandidate>): ReadonlyArray<CandidateGroup> => {
+	const scopeTag = (scope: CloudResourceCandidate["scope"]) =>
+		scope === null ? "" : `${scope.accountId}/${scope.region}`
+	const grouped = Arr.groupBy(
+		candidates,
+		(candidate) => `${candidate.key}${SEPARATOR}${scopeTag(candidate.scope)}`,
+	)
+	return Arr.filterMap(Rec.values(grouped), (group) =>
+		group === undefined
+			? Result.failVoid
+			: Result.succeed({
+					key: group[0].key,
+					scope: group[0].scope,
+					values: Arr.dedupe(Arr.map(group, (candidate) => candidate.value)),
+				}),
+	)
+}
+
+/**
+ * Services that served requests from each candidate over the window, busiest first. A span counts
+ * once for every candidate it carries (an ECS task and its cluster both get it), and a name only
+ * when the span's account and region agree with the finding's or are unset.
+ */
 export function cloudResourceServicesQuery(opts: CloudResourceServicesOpts) {
-	// Each value appears once per attribute it may sit on, so the query stays small for long ARNs.
-	const byKey = Arr.filterMap(CLOUD_RESOURCE_ATTRIBUTE_KEYS, (key) => {
-		const values = Arr.dedupe(
-			Arr.map(
-				Arr.filter(opts.candidates, (candidate) => candidate.key === key),
-				(candidate) => candidate.value,
-			),
-		)
-		return Arr.isReadonlyArrayNonEmpty(values) ? Result.succeed({ key, values }) : Result.failVoid
-	})
+	const groups = groupsOf(opts.candidates)
 	const allValues = Arr.dedupe(Arr.map(opts.candidates, (candidate) => candidate.value))
 	return from(Datasources.traces)
 		.select(($) => {
 			const attribute = (key: string) => $.ResourceAttributes.get(key)
-			// Most specific attribute first: a span carrying two candidates counts once, for the first.
+			const holds = (group: CandidateGroup) => {
+				const named = CH.inList(attribute(group.key), group.values)
+				return group.scope === null
+					? named
+					: named
+							.and(CH.inList(attribute("cloud.account.id"), ["", group.scope.accountId]))
+							.and(CH.inList(attribute("cloud.region"), ["", group.scope.region]))
+			}
+			const tagOf = (group: CandidateGroup) =>
+				`${group.key}${SEPARATOR}${group.scope === null ? "" : `${group.scope.accountId}/${group.scope.region}`}${SEPARATOR}`
 			return {
-				attributeKey: CH.multiIf(
-					Arr.map(
-						byKey,
-						({ key, values }) => [CH.inList(attribute(key), values), CH.lit(key)] as const,
+				// One row per group the span matches; "" for the groups it does not, dropped below.
+				match: CH.arrayJoin(
+					CH.arrayOf(
+						...Arr.map(groups, (group) =>
+							CH.if_(
+								holds(group),
+								CH.concat(CH.lit(tagOf(group)), attribute(group.key)),
+								CH.lit(""),
+							),
+						),
 					),
-					CH.lit(""),
-				),
-				resourceId: CH.multiIf(
-					Arr.map(
-						byKey,
-						({ key, values }) => [CH.inList(attribute(key), values), attribute(key)] as const,
-					),
-					CH.lit(""),
 				),
 				service: $.ServiceName,
 				requests: CH.toUInt64(CH.sum($.SampleRate)),
@@ -83,9 +111,12 @@ export function cloudResourceServicesQuery(opts: CloudResourceServicesOpts) {
 				CH.mapValues($.ResourceAttributes),
 				CH.arrayOf(...Arr.map(allValues, (value) => CH.lit(value))),
 			).eq(1),
-			CH.or(...Arr.map(byKey, ({ key, values }) => CH.inList($.ResourceAttributes.get(key), values))),
+			CH.or(
+				...Arr.map(groups, (group) => CH.inList($.ResourceAttributes.get(group.key), group.values)),
+			),
 		])
-		.groupBy("attributeKey", "resourceId", "service")
+		.groupBy("match", "service")
+		.having(() => [CH.dynamicColumn("match", T.string).neq("")])
 		.orderBy(["requests", "desc"])
 		.limit(CLOUD_RESOURCE_SERVICES_MAX_ROWS)
 		.format("JSON")

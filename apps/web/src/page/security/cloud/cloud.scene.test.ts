@@ -7,6 +7,7 @@ import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import {
 	allClearOverview,
+	firstReadPendingOverview,
 	CLOUD_DETAIL_SEARCH,
 	cloudFindingDetailOf,
 	cloudFindingsOf,
@@ -159,6 +160,15 @@ describe("security cloud findings", () => {
 			expectView(
 				text("Telemetry could not be read just now, so affected services are not shown."),
 			).toExist(),
+		)
+	})
+
+	test("before the first read an empty list says it is waiting, not all clear", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(listed(firstReadPendingOverview)),
+			expectView(text("Waiting for the first read")).toExist(),
+			expectView(text("No active findings")).toBeAbsent(),
 		)
 	})
 

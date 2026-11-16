@@ -1,6 +1,7 @@
 import {
 	cloudFindingConsoleUrl,
 	cloudResourceCandidates,
+	cloudResourceMatchTag,
 	type CloudResourceCandidate,
 	CloudFindingSource,
 } from "@maple/domain/cloud-security"
@@ -40,8 +41,8 @@ export const TELEMETRY_MATCH_WINDOW_MS = 24 * 60 * 60 * 1000
 
 /** One matched (attribute, value, service) the warehouse answered with. */
 export interface ResourceServiceMatch {
-	readonly attributeKey: string
-	readonly resourceId: string
+	/** The matched candidate, as `cloudResourceMatchTag` names it. */
+	readonly match: string
 	readonly service: string
 	readonly requests: number
 }
@@ -51,6 +52,8 @@ const NO_MATCHES: ReadonlyArray<ResourceServiceMatch> = []
 interface FindingResource {
 	readonly resourceId: string
 	readonly resourceType: string
+	readonly accountId: string
+	readonly region: string
 }
 
 /** The services one resource affects, summed over the values it may carry, busiest first. */
@@ -58,12 +61,11 @@ export const affectedServicesOf = (
 	resource: FindingResource,
 	matches: ReadonlyArray<ResourceServiceMatch>,
 ): ReadonlyArray<CloudFindingAffectedService> => {
-	// On the attribute and the value together: a Lambda named `prod` is not the `prod` cluster.
-	const candidates = new Set(
-		Arr.map(cloudResourceCandidates(resource), (candidate) => `${candidate.key}\n${candidate.value}`),
-	)
+	// On attribute, scope and value together: a Lambda named `prod` is not the `prod` cluster, nor
+	// the `prod` function of another account.
+	const candidates = new Set(Arr.map(cloudResourceCandidates(resource), cloudResourceMatchTag))
 	const totals = Arr.reduce(
-		Arr.filter(matches, (match) => candidates.has(`${match.attributeKey}\n${match.resourceId}`)),
+		Arr.filter(matches, (match) => candidates.has(match.match)),
 		new Map<string, number>(),
 		(acc, match) => acc.set(match.service, (acc.get(match.service) ?? 0) + match.requests),
 	)

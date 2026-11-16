@@ -50,7 +50,7 @@ import {
 import { Message, type Model, type Overview, type SelectFilter } from "./model"
 import { cloudSeverityBadge } from "./parts"
 import { detailBody } from "./view-detail"
-import { allClear, serviceNotices, setupState } from "./view-setup"
+import { allClear, awaitingFirstRead, serviceNotices, setupState } from "./view-setup"
 import { panelToolbar } from "../../kit/panel-toolbar"
 
 type H = HtmlBuilder<Message>
@@ -327,6 +327,8 @@ const listBody = (h: H, model: Model, overview: Overview, clock: Clock): Html =>
 					onClear: Message.ClickedClearFilters(),
 					className: "py-8",
 				})
+			// No service read yet: the empty list is not an all clear.
+			if (findings.length === 0 && overview.services.length === 0) return awaitingFirstRead(h)
 			if (findings.length === 0)
 				return allClear(
 					h,

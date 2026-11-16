@@ -5,7 +5,12 @@ import { cloudResourceCandidates } from "./cloud-security"
 const valuesOn = (resourceId: string, resourceType: string, key: string) =>
 	Arr.map(
 		Arr.filter(
-			cloudResourceCandidates({ resourceId, resourceType }),
+			cloudResourceCandidates({
+				resourceId,
+				resourceType,
+				accountId: "111111111111",
+				region: "us-east-1",
+			}),
 			(candidate) => candidate.key === key,
 		),
 		(candidate) => candidate.value,
@@ -17,7 +22,15 @@ describe("cloudResourceCandidates", () => {
 		expect(valuesOn(arn, "AwsLambdaFunction", "faas.name")).toEqual(["checkout"])
 		expect(valuesOn(arn, "AwsLambdaFunction", "k8s.cluster.name")).toEqual([])
 		expect(
-			Arr.map(cloudResourceCandidates({ resourceId: arn, resourceType: "" }), (c) => c.value),
+			Arr.map(
+				cloudResourceCandidates({
+					resourceId: arn,
+					resourceType: "",
+					accountId: "111111111111",
+					region: "us-east-1",
+				}),
+				(c) => c.value,
+			),
 		).not.toContain("prod")
 	})
 
@@ -42,6 +55,8 @@ describe("cloudResourceCandidates", () => {
 		const candidates = cloudResourceCandidates({
 			resourceId: "arn:aws:iam::111111111111:role/admin",
 			resourceType: "AwsIamRole",
+			accountId: "111111111111",
+			region: "us-east-1",
 		})
 		expect(Arr.map(candidates, (candidate) => candidate.value)).not.toContain("admin")
 	})
@@ -49,6 +64,13 @@ describe("cloudResourceCandidates", () => {
 	it("reads a bare id only where its type says what it is", () => {
 		expect(valuesOn("i-0abc12345678", "Instance", "host.id")).toEqual(["i-0abc12345678"])
 		expect(valuesOn("cart-fn", "Lambda", "faas.name")).toEqual(["cart-fn"])
-		expect(cloudResourceCandidates({ resourceId: "my-bucket", resourceType: "S3Bucket" })).toEqual([])
+		expect(
+			cloudResourceCandidates({
+				resourceId: "my-bucket",
+				resourceType: "S3Bucket",
+				accountId: "1",
+				region: "us-east-1",
+			}),
+		).toEqual([])
 	})
 })

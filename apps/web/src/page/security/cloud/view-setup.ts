@@ -125,6 +125,22 @@ export const serviceNotices = <M>(h: HtmlBuilder<M>, notices: ReadonlyArray<Serv
 				Arr.map(notices, (notice) => noticeAlert(h, notice)),
 			)
 
+/** Granted, but no service has been read yet: the quiet is not a result yet. */
+export const awaitingFirstRead = <M>(h: HtmlBuilder<M>): Html =>
+	empty(
+		h,
+		[
+			emptyHeader(h, [
+				emptyMedia(h, { variant: "icon" }, [icon(h, "HistoryIcon")]),
+				emptyTitle(h, ["Waiting for the first read"]),
+				emptyDescription(h, [
+					"Maple reads the account's security services every five minutes. Findings show here once the first read is done.",
+				]),
+			]),
+		],
+		"py-14",
+	)
+
 /**
  * No active finding: what was checked, so the quiet reads as a result. With a service that could
  * not be read, it says the quiet covers only the ones that answered.

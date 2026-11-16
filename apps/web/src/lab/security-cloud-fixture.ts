@@ -86,6 +86,13 @@ export const allClearOverview = (nowMs: number): CloudSecurityOverviewResponse =
 		services: enabledEverywhere(nowMs),
 	})
 
+/** Granted, and no service read yet. */
+export const firstReadPendingOverview: CloudSecurityOverviewResponse = decodeOverview({
+	connections: connections("granted"),
+	summary: { total: 0, bySeverity: ZERO_SEVERITY, bySource: ZERO_SOURCE },
+	services: [],
+})
+
 export const failingOverview = (nowMs: number): CloudSecurityOverviewResponse =>
 	decodeOverview({
 		connections: connections("granted"),
