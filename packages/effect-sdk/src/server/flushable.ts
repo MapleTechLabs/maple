@@ -15,7 +15,7 @@
 //
 // Traces, logs, and Effect metric snapshots are flushed together.
 
-import { Cause, Duration, Effect, Exit, Layer, Option, Scope, Tracer } from "effect"
+import { Cause, Duration, Effect, Layer, Option, Scope, Tracer } from "effect"
 import { FetchHttpClient } from "effect/http"
 import {
 	buildResolved,
@@ -30,6 +30,7 @@ import { type LogBuffer, makeLogBuffer } from "../shared/flushable-logger.js"
 import { makeMetricBuffer } from "../shared/flushable-metrics.js"
 import { makeSpanBuffer, type SpanBuffer } from "../shared/flushable-tracer.js"
 import type { MapleSpanOptions } from "../shared/span-options.js"
+import { closeWithin } from "../shared/close-within.js"
 import { makeNoOpNotice } from "../shared/no-op-notice.js"
 import { makeSpanTimeline, type SpanTimeline } from "../shared/span-timeline.js"
 import { SDK_VERSION } from "../version.js"
@@ -131,8 +132,8 @@ interface Profiler {
 }
 
 /**
- * Bounds the profiler's stop and last export at shutdown, under a typical 3 s dispose budget so
- * the final trace, log and metric flush still has time.
+ * Bounds the whole profiler stop at shutdown, its last export included, under a typical 3 s
+ * dispose budget so the final trace, log and metric flush still has time.
  */
 const PROFILER_SHUTDOWN_TIMEOUT = Duration.millis(1500)
 
@@ -153,7 +154,9 @@ const makeProfiler = (
 	const stopActive = Effect.suspend(() => {
 		const scope = active
 		active = undefined
-		return scope === undefined ? Effect.void : Scope.close(scope, Exit.void)
+		// Bounded from outside: a rotation command still waiting out its own timeout when shutdown
+		// starts must not stretch the stop past the budget.
+		return scope === undefined ? Effect.void : closeWithin(scope, PROFILER_SHUTDOWN_TIMEOUT)
 	})
 	const release = Effect.suspend(() => {
 		holders -= 1
