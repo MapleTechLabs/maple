@@ -2,11 +2,12 @@ import { EnterpriseSsoDocument, ScimTokenIssued } from "@maple/domain/http"
 import { Array as Arr, Option, Result, Schema } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
 import * as Select from "@maple/views/ui/select"
 import { type DraftField, Message, type Model } from "./model"
-import { init, requestOf, update } from "./update"
+import { draftProblem, init, requestOf, update } from "./update"
 import { view as ssoView } from "./view"
 
 const CREATED = "2026-11-16T10:00:00.000Z"
@@ -265,7 +266,44 @@ describe("sso tab", () => {
 			["entityId", "acme"],
 		])
 		expect(Option.flatMap(Option.fromNullishOr(manual.draft), requestOf)._tag).toBe("None")
+		// A disabled submit names what is missing.
+		expect(Option.map(Option.fromNullishOr(manual.draft), draftProblem)).toEqual(
+			Option.some("Add the IdP signing certificate."),
+		)
 		const signed = typed(manual, [["certificate", "CERT"]])
+		expect(Option.map(Option.fromNullishOr(signed.draft), draftProblem)).toEqual(Option.some(null))
 		expect(names(update(signed, Message.SubmittedConnection()))).toEqual(["SaveSsoConnection"])
+	})
+
+	test("an org that left Enterprise can still relax SSO and pause or remove SCIM, but not set anything up", () => {
+		const model = loaded(
+			doc({
+				entitled: false,
+				domains: [verifiedDomain],
+				connection: { ...connection, enforced: true },
+				directory: {
+					endpointUrl: "https://api.clerk.com/scim/v2",
+					enabled: true,
+					paused: false,
+					createdAt: CREATED,
+				},
+			}),
+		)
+		scene(
+			{ update, view },
+			given(model),
+			expectView(role("switch", { name: "Require SSO" })).toBeEnabled(),
+			expectView(role("button", { name: "Pause" })).toExist(),
+			expectView(role("button", { name: "Edit" })).not.toExist(),
+			expectView(role("button", { name: "Rotate token" })).not.toExist(),
+		)
+	})
+
+	test("a failed member list loads again when the break-glass dialog reopens", () => {
+		const failed = update(
+			loaded(doc({ domains: [verifiedDomain], connection })),
+			Message.CompletedFetchMembers({ result: Result.fail(toLoadFailure(new Error("Clerk down"))) }),
+		).model
+		expect(names(update(failed, Message.ClickedAddBypass()))).toContain("FetchSsoMembers")
 	})
 })

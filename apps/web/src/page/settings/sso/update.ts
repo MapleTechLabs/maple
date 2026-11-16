@@ -237,8 +237,18 @@ export const init = (canManage: boolean): Return => ({
 
 export const revisit = (model: Model): Return => {
 	const document = revisitData(model.document, FetchEnterpriseSso)
-	return { model: { ...model, document: document.data }, commands: document.commands }
+	const members = retryMembers(model)
+	return {
+		model: { ...model, document: document.data, members: members.data },
+		commands: [...document.commands, ...members.commands],
+	}
 }
+
+/** A failed member list is fetched again; one that loaded or is loading is left alone. */
+const retryMembers = (model: Model) =>
+	model.canManage && AsyncData.isFailure(model.members)
+		? { data: AsyncData.Loading(), commands: [FetchSsoMembers()] }
+		: { data: model.members, commands: [] }
 
 // Derived
 
@@ -303,6 +313,28 @@ export const requestOf = (draft: ConnectionDraft): Option.Option<SsoConnectionRe
 			...(value("certificate") !== "" && { certificate: value("certificate") }),
 		},
 	})
+}
+
+/** What keeps a draft from submitting, in words, or null when `requestOf` accepts it. */
+export const draftProblem = (draft: ConnectionDraft): string | null => {
+	const value = (field: DraftField) => draftValue(draft, field)
+	const isCreate = draft.mode === "create"
+	if (value("name") === "") return "Give the connection a name."
+	if (value("name").length > 120) return "Keep the name to 120 characters."
+	if (draft.domains.length === 0) return "Pick at least one verified domain."
+	if (draft.domains.length > 20) return "Pick at most 20 domains."
+	if (ssoProtocolOf(draft.provider) === "oidc") {
+		if (!isHttps(value("discoveryUrl"))) return "The discovery URL must start with https://."
+		if (value("clientId") === "") return "Add the client ID."
+		if (isCreate && value("clientSecret") === "") return "Add the client secret."
+	} else if (draft.samlMode === "metadata") {
+		if (!isHttps(value("metadataUrl"))) return "The metadata URL must start with https://."
+	} else {
+		if (!isHttps(value("ssoUrl"))) return "The SSO URL must start with https://."
+		if (value("entityId") === "") return "Add the IdP entity ID."
+		if (isCreate && value("certificate") === "") return "Add the IdP signing certificate."
+	}
+	return Option.isNone(requestOf(draft)) ? "One of the values is too long." : null
 }
 
 const fieldsOf = (values: Partial<Record<DraftField, string>>): ConnectionDraft["fields"] => ({
@@ -544,10 +576,13 @@ export const update = (model: Model, message: Message): Return =>
 		CompletedFetchMembers: ({ result }) => ({
 			model: { ...model, members: AsyncData.settle(model.members, result) },
 		}),
-		ClickedRetry: () => ({
-			model: { ...model, document: AsyncData.Loading() },
-			commands: [FetchEnterpriseSso()],
-		}),
+		ClickedRetry: () => {
+			const members = retryMembers(model)
+			return {
+				model: { ...model, document: AsyncData.Loading(), members: members.data },
+				commands: [FetchEnterpriseSso(), ...members.commands],
+			}
+		},
 		CompletedWrite: ({ action, result }) =>
 			Result.match(result, {
 				onSuccess: (document) => settled(model, action, document),
@@ -695,8 +730,12 @@ export const update = (model: Model, message: Message): Return =>
 		ClickedConfirmRemoveConnection: () => startWrite(model, "deleteConnection", DeleteSsoConnection()),
 
 		// Break-glass
-		ClickedAddBypass: () =>
-			model.canManage ? openDialog({ ...model, bypassPick: null }, "bypassDialog") : { model },
+		ClickedAddBypass: () => {
+			if (!model.canManage) return { model }
+			const members = retryMembers(model)
+			const opened = openDialog({ ...model, bypassPick: null, members: members.data }, "bypassDialog")
+			return { ...opened, commands: [...(opened.commands ?? []), ...members.commands] }
+		},
 		GotBypassDialogMessage: ({ message: child }) => updateDialog(model, "bypassDialog", child),
 		SubmittedBypass: () =>
 			Option.match(Schema.decodeUnknownOption(UserId)(model.bypassPick), {

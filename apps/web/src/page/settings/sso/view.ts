@@ -63,6 +63,7 @@ import {
 	normalizeDomain,
 	PROVIDERS,
 	requestOf,
+	draftProblem,
 	verifiedDomains,
 } from "./update"
 
@@ -97,9 +98,12 @@ const ROLE_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = Arr.map(MAPPED_ROLES
 	item: { value: role, label: ROLE_LABELS[role] },
 }))
 
-/** Writes are open to admins on an entitled org. */
+/** Set-up writes are open to admins on an entitled org. */
 const canEdit = (model: Model, document: EnterpriseSsoDocument): boolean =>
 	model.canManage && document.entitled
+
+/** Turning things off or removing them stays open to admins after the plan lapses, as the API allows. */
+const canExit = (model: Model): boolean => model.canManage
 
 const isBusy = (model: Model): boolean => model.pending !== null
 
@@ -362,6 +366,7 @@ const connectionPanel = (
 	connection: SsoConnectionDocument,
 ): ReadonlyArray<Html> => {
 	const isEditable = canEdit(model, document)
+	const isExitable = canExit(model)
 	const sp = spValues(h, model, connection)
 	return [
 		vstack(h, { gap: "4", align: "stretch" }, [
@@ -372,19 +377,23 @@ const connectionPanel = (
 						? badge(h, { variant: "done" }, ["Required"])
 						: badge(h, { variant: "muted" }, ["Optional"]),
 				]),
-				...(isEditable
+				...(isExitable
 					? [
 							hstack(h, { gap: "2" }, [
-								button(
-									h,
-									{
-										variant: "outline",
-										size: "sm",
-										isDisabled: isBusy(model),
-										attributes: [h.OnClick(Message.ClickedEditConnection())],
-									},
-									["Edit"],
-								),
+								...(isEditable
+									? [
+											button(
+												h,
+												{
+													variant: "outline",
+													size: "sm",
+													isDisabled: isBusy(model),
+													attributes: [h.OnClick(Message.ClickedEditConnection())],
+												},
+												["Edit"],
+											),
+										]
+									: []),
 								button(
 									h,
 									{
@@ -415,7 +424,8 @@ const connectionPanel = (
 				label: "Require SSO",
 				description: `Everyone with an email on ${Arr.join(connection.domains, ", ")} must sign in through ${connection.name}. Break-glass members can still sign in with an email code.`,
 				isChecked: connection.enforced,
-				isDisabled: !isEditable || isBusy(model),
+				// Without the plan, an enforced connection can still be relaxed, never enforced again.
+				isDisabled: !(isEditable || (isExitable && connection.enforced)) || isBusy(model),
 				onToggle: Message.ToggledEnforcement(),
 			}),
 		]),
@@ -486,18 +496,20 @@ const bypassSection = (h: H, model: Model, document: EnterpriseSsoDocument): Htm
 				"These members can sign in with an email code when the identity provider is down. Only members with a verified email on the SSO domains can be added.",
 			],
 			padded: false,
-			actions: isEditable
-				? button(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							isDisabled: isBusy(model),
-							attributes: [h.OnClick(Message.ClickedAddBypass())],
-						},
-						["Add member"],
-					)
-				: undefined,
+			// Nobody qualifies before a connection names the SSO domains.
+			actions:
+				isEditable && document.connection !== null
+					? button(
+							h,
+							{
+								size: "sm",
+								variant: "outline",
+								isDisabled: isBusy(model),
+								attributes: [h.OnClick(Message.ClickedAddBypass())],
+							},
+							["Add member"],
+						)
+					: undefined,
 		},
 		document.bypassUsers.length === 0
 			? [sectionNote(h, "No break-glass members. Add one before you require SSO.")]
@@ -524,7 +536,7 @@ const bypassSection = (h: H, model: Model, document: EnterpriseSsoDocument): Htm
 														),
 													]),
 										]),
-										...(isEditable
+										...(canExit(model)
 											? [
 													iconButton(
 														h,
@@ -561,6 +573,8 @@ const directoryPanel = (
 	directory: ScimDirectoryDocument,
 ): ReadonlyArray<Html> => {
 	const isEditable = canEdit(model, document)
+	// Pausing and removing stay open without the plan; resuming and rotating need it.
+	const canTogglePause = directory.paused ? isEditable : canExit(model)
 	return [
 		vstack(h, { gap: "4", align: "stretch" }, [
 			hstack(h, { gap: "2", justify: "between", wrap: true }, [
@@ -570,30 +584,40 @@ const directoryPanel = (
 						? badge(h, { variant: "warn" }, ["Paused"])
 						: badge(h, { variant: "done" }, ["Active"]),
 				]),
-				...(isEditable
+				...(canExit(model)
 					? [
 							hstack(h, { gap: "2", wrap: true }, [
-								button(
-									h,
-									{
-										variant: "outline",
-										size: "sm",
-										isLoading: model.pending === "pause" || model.pending === "resume",
-										isDisabled: isBusy(model),
-										attributes: [h.OnClick(Message.ClickedTogglePaused())],
-									},
-									[directory.paused ? "Resume" : "Pause"],
-								),
-								button(
-									h,
-									{
-										variant: "outline",
-										size: "sm",
-										isDisabled: isBusy(model),
-										attributes: [h.OnClick(Message.ClickedRotateToken())],
-									},
-									["Rotate token"],
-								),
+								...(canTogglePause
+									? [
+											button(
+												h,
+												{
+													variant: "outline",
+													size: "sm",
+													isLoading:
+														model.pending === "pause" ||
+														model.pending === "resume",
+													isDisabled: isBusy(model),
+													attributes: [h.OnClick(Message.ClickedTogglePaused())],
+												},
+												[directory.paused ? "Resume" : "Pause"],
+											),
+										]
+									: []),
+								...(isEditable
+									? [
+											button(
+												h,
+												{
+													variant: "outline",
+													size: "sm",
+													isDisabled: isBusy(model),
+													attributes: [h.OnClick(Message.ClickedRotateToken())],
+												},
+												["Rotate token"],
+											),
+										]
+									: []),
 								button(
 									h,
 									{
@@ -997,6 +1021,9 @@ const protocolFields = (h: H, draft: ConnectionDraft): ReadonlyArray<Html> => {
 	]
 }
 
+const footerReason = (h: H, reason: string | null): { readonly footerStart?: Html } =>
+	reason === null ? {} : { footerStart: typography(h, { size: "xs", tone: "muted" }, [reason]) }
+
 const connectionDialog = (h: H, model: Model, document: EnterpriseSsoDocument | null): Html => {
 	const draft = model.draft
 	const verified = document === null ? [] : verifiedDomains(document)
@@ -1011,6 +1038,8 @@ const connectionDialog = (h: H, model: Model, document: EnterpriseSsoDocument | 
 		submitLabel: isEdit ? "Save" : "Connect",
 		isPending: model.pending === "createConnection" || model.pending === "updateConnection",
 		isSubmitDisabled: draft === null || Option.isNone(requestOf(draft)),
+		// A disabled submit says why, so the admin knows what to fix.
+		...footerReason(h, draft === null ? null : draftProblem(draft)),
 		fields:
 			draft === null
 				? []
@@ -1097,6 +1126,18 @@ const tokenDialog = (h: H, model: Model): Html => {
 const emailDomain = (email: string): string =>
 	Str.toLowerCase(Option.getOrElse(Arr.last(Str.split(email, "@")), () => ""))
 
+/** Why the picker offers nobody: no member on the SSO domains, or all of them already added. */
+const emptyBypassReason = (model: Model, document: EnterpriseSsoDocument | null): string => {
+	const domains = document?.connection?.domains ?? []
+	const onDomains = Arr.filter(
+		AsyncData.getOrElse(model.members, () => []),
+		(member) => Arr.contains(domains, emailDomain(member.identifier)),
+	)
+	return onDomains.length === 0
+		? `No member has a verified email on ${Arr.join(domains, ", ")} yet.`
+		: "Every member on the SSO domains already has break-glass access."
+}
+
 const bypassEntries = (
 	model: Model,
 	document: EnterpriseSsoDocument,
@@ -1145,7 +1186,7 @@ const bypassDialog = (h: H, model: Model, document: EnterpriseSsoDocument | null
 					? adminOnlyNote(h, ["Couldn't load members. Close this and try again."])
 					: AsyncData.isSuccess(model.members) || AsyncData.isRefreshing(model.members)
 						? entries.length === 0
-							? adminOnlyNote(h, ["Every member already has break-glass access."])
+							? adminOnlyNote(h, [emptyBypassReason(model, document)])
 							: selectControl(h, model, {
 									key: "bypass",
 									value: model.bypassPick ?? "",
