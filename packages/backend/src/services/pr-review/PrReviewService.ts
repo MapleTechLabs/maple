@@ -1018,6 +1018,13 @@ const inlineComment = (finding: PrReviewFinding, key: string | undefined): PullR
 })
 
 /**
+ * A vector as one `float4[]` literal. Bound as a number array, the driver types each element on
+ * its own, so a component that is exactly `0` reads as int4 beside float8 and the insert fails.
+ */
+const float4ArrayParam = (vector: ReadonlyArray<number>) =>
+	PG.sql(PG.array(PG.float4))`${`{${Arr.join(Arr.map(vector, String), ",")}}`}::float4[]`
+
+/**
  * What the review posts: a check run with every finding as an annotation, a summary comment of
  * its own that replaces its "reviewing" notice, and inline comments for new
  * findings at or above the repository's inline threshold (`warn` by default). `keys` maps a
@@ -2912,7 +2919,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 											orgId,
 											repositoryId: review.repositoryId,
 											model: embedder.model,
-											embedding: [...(vectors[i] ?? [])],
+											embedding: float4ArrayParam(vectors[i] ?? []),
 											createdAt: nowMs,
 										})),
 									)

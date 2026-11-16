@@ -157,13 +157,12 @@ export class SavedViewsService extends Context.Service<SavedViewsService, SavedV
 			const database = yield* Database
 			const dbExecute = makeDbExecute(database, "SavedViewsService", toPersistenceError)
 			// The owner's names are unique per explorer: a taken one lands on the index.
+			const nameTaken = (name: string) =>
+				new SavedViewNameTakenError({ message: `You already have a view named "${name}"`, name })
 			const dbExecuteNamed = (name: string) =>
 				makeDbExecute(database, "SavedViewsService", (error: DatabaseError) =>
 					postgresSqlState(error) === UNIQUE_VIOLATION
-						? new SavedViewNameTakenError({
-								message: `You already have a view named "${name}"`,
-								name,
-							})
+						? nameTaken(name)
 						: toPersistenceError(error),
 				)
 
@@ -270,6 +269,8 @@ export class SavedViewsService extends Context.Service<SavedViewsService, SavedV
 										createdAt: now,
 										updatedAt: now,
 									})
+									// A taken name is an answer, not a failed statement: no row comes back.
+									.onConflictDoNothing()
 									.returning(storedColumns),
 							)
 							return Option.some(rows[0])
@@ -283,9 +284,7 @@ export class SavedViewsService extends Context.Service<SavedViewsService, SavedV
 					})
 				}
 				const row = inserted.value
-				if (row === undefined) {
-					return yield* new SavedViewPersistenceError({ message: "Insert returned no row" })
-				}
+				if (row === undefined) return yield* nameTaken(input.name)
 				return yield* Option.match(toView(caller, row), {
 					onNone: unreadable,
 					onSome: Effect.succeed,
@@ -311,6 +310,24 @@ export class SavedViewsService extends Context.Service<SavedViewsService, SavedV
 						onNone: unreadable,
 						onSome: Effect.succeed,
 					})
+				}
+				// Checked first so a taken name never reaches the index as a failed statement.
+				const newName = input.name
+				if (newName !== undefined && newName !== existing.name) {
+					const clash = yield* dbExecute((db) =>
+						db.run(
+							PG.from(SavedViews)
+								.select(($) => ({ id: $.id }))
+								.where(($) => [
+									$.orgId.eq(caller.orgId),
+									$.ownerUserId.eq(caller.userId),
+									$.surface.eq(existing.surface),
+									$.name.eq(newName),
+								])
+								.limit(1),
+						),
+					)
+					if (clash.length > 0) return yield* nameTaken(newName)
 				}
 				const now = yield* Clock.currentTimeMillis
 				const rows = yield* dbExecuteNamed(input.name ?? existing.name)((db) =>

@@ -1,5 +1,6 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema, Array as Arr, String as Str } from "effect"
+import { MAX_TRACES_LIST_OFFSET } from "@maple/domain/query-engine"
+import { Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import {
 	click,
 	Command,
@@ -190,6 +191,59 @@ describe("traces list", () => {
 		const retried = pageUpdate(failed.model, Message.ClickedRetryNextPage())
 		expect(names(retried.commands)).toEqual([FetchNextPage.name])
 		expect(retried.model.pagination).toMatchObject({ isFailed: false, isFetching: true })
+	})
+
+	test("paging stops at the API's deepest offset even when hidden noise keeps the shown rows few", () => {
+		// Ten traces shown from each hundred read: the offset reaches the cap long before the rows do.
+		const sparse = (pageIndex: number): TracesPage => ({
+			rows: Array.from({ length: 10 }, (_, i) => trace(`p${pageIndex}-${i}`)),
+			scannedCount: 100,
+			hiddenCount: 90,
+		})
+		type Asked = ReturnType<typeof pageUpdate>["commands"]
+		const nextOffsetOf = (commands: Asked): number | null => {
+			const [command] = commands ?? []
+			return command?.name === FetchNextPage.name &&
+				command.args !== undefined &&
+				"offset" in command.args
+				? Number(command.args.offset)
+				: null
+		}
+		type State = { model: Model; asked: Asked; offsets: ReadonlyArray<number> }
+		// An appended page that leaves the view near the end asks for the next one itself.
+		const step = (state: State, pageIndex: number): State => {
+			const near =
+				nextOffsetOf(state.asked) === null
+					? pageUpdate(state.model, windowOver(0, allRows(state.model).length))
+					: { model: state.model, commands: state.asked }
+			const offset = nextOffsetOf(near.commands)
+			if (offset === null) return { ...state, model: near.model, asked: [] }
+			const answered = pageUpdate(
+				near.model,
+				Message.CompletedFetchNextPage({
+					key: near.model.pagination.key ?? "",
+					generation: near.model.pagination.generation,
+					offset,
+					result: Result.succeed(sparse(pageIndex)),
+				}),
+			)
+			return { model: answered.model, asked: answered.commands, offsets: [...state.offsets, offset] }
+		}
+		const initial: State = { model: loaded(sparse(0)), asked: [], offsets: [] }
+		const { model, offsets } = Arr.reduce(Arr.range(1, 25), initial, step)
+		expect(Arr.last(offsets)).toEqual(Option.some(MAX_TRACES_LIST_OFFSET))
+		expect(Arr.every(offsets, (offset) => offset <= MAX_TRACES_LIST_OFFSET)).toBe(true)
+		expect(allRows(model)).toHaveLength(10 + offsets.length * 10)
+		expect(nextOffsetOf(pageUpdate(model, windowOver(0, allRows(model).length)).commands)).toBeNull()
+		// The footer says the list was cut short, not that these are all the traces.
+		const shown = allRows(model).length
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			Mount.resolve(VirtualizeTraces, windowOver(0, shown)),
+			Mount.resolve(MountPeekRows, Message.ClickedPeekRow({ index: 999 })),
+			expectView(text(`Showing first ${shown} traces, narrow the filters to see more`)).toExist(),
+		)
 	})
 
 	test("a next page answers only its own request: filter A, B, then A again appends page 2 once", () => {

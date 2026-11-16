@@ -5,10 +5,12 @@ import { randomUUID } from "node:crypto"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { bold, dim, green, amber } from "../lib/style"
+import { CliUsageError } from "../lib/errors"
 import {
 	formatMigrationPlan,
 	identityFromMarker,
 	abandonLocalStoreMigrationPreservingSource,
+	MigrationResolutionError,
 	migrationStatus,
 	planMigration,
 	runLocalStoreMigration,
@@ -29,8 +31,17 @@ class SchemaCommandError extends Schema.TaggedError<SchemaCommandError>()("@mapl
 	message: Schema.String,
 }) {}
 
-const commandError = (error: unknown): SchemaCommandError =>
-	new SchemaCommandError({ message: error instanceof Error ? error.message : String(error) })
+/** No registered migration path is a refusal with a remedy, not a Maple failure. */
+const commandError = (error: unknown): SchemaCommandError | CliUsageError =>
+	error instanceof MigrationResolutionError
+		? new CliUsageError({ message: error.message, hint: MIGRATION_REFUSED_HINT })
+		: new SchemaCommandError({ message: error instanceof Error ? error.message : String(error) })
+
+const MIGRATION_REFUSED_HINT =
+	"run the maple that wrote this store, or start over with the destructive `maple start --reset` (checkpoints are kept)"
+
+const isRefusal = (error: SchemaCommandError | CliUsageError): boolean =>
+	error._tag === "@maple/cli/UsageError"
 
 const defaultDataDir = (): string => join(homedir(), ".maple", "data")
 
@@ -76,7 +87,11 @@ const markerIdentity = (dataDir: string) => {
 	const marker = readMarker(dataDir)
 	if (!marker) throw new Error("no readable local-store marker was found")
 	const identity = identityFromMarker(marker)
-	if (!identity) throw new Error(`the store fingerprint ${marker.schema || "<none>"} is not registered`)
+	if (!identity)
+		throw new MigrationResolutionError(
+			"unknown-schema",
+			`the store fingerprint ${marker.schema || "<none>"} is not registered`,
+		)
 	return { marker, identity }
 }
 
@@ -186,6 +201,7 @@ export const schemaMigrate = Command.make("migrate", {
 				operation: "schema.migrate_preview",
 				try: () => runLocalStoreMigration({ dataDir, dryRun: true }),
 				catch: commandError,
+				expected: isRefusal,
 			})
 			if (preview instanceof Object && "chain" in preview) {
 				const plan = preview

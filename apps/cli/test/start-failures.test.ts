@@ -56,6 +56,20 @@ describe("decideStartFailure", () => {
 		expect(decision.record.lastReportedAtMs).toBe(REPORT_INTERVAL_MS)
 	})
 
+	it("reports a non-restartable refusal once per streak, however long it loops", () => {
+		const first = decideStartFailure(Option.none(), fp, 0, false, Number.POSITIVE_INFINITY).record
+		const looping = { ...first, consecutive: 500, lastAtMs: 24 * REPORT_INTERVAL_MS - MINUTE }
+		const decision = decideStartFailure(
+			Option.some(looping),
+			fp,
+			24 * REPORT_INTERVAL_MS,
+			false,
+			Number.POSITIVE_INFINITY,
+		)
+		expect(decision.report).toBe(false)
+		expect(decision.record.lastReportedAtMs).toBe(0)
+	})
+
 	it("starts a new streak for a different failure or after a quiet gap", () => {
 		const first = decideStartFailure(Option.none(), fp, 0, false).record
 		expect(decideStartFailure(Option.some(first), "other", MINUTE, false).report).toBe(true)
