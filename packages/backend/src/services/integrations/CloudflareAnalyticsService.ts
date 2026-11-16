@@ -1908,7 +1908,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 												: undefined),
 										updatedAt: now,
 									}
-									const key = `${settingsJson}|${quantilesAvailable}|${set.enabled ?? ""}`
+									const key = `${settingsJson}|${quantilesAvailable}|${disabled ? "false" : settings?.enabled === true && cloudflareDatasetUnavailable(row.settingsJson) ? "true" : ""}`
 									const group = updates.get(key)
 									if (group) group.ids.push(row.id)
 									else updates.set(key, { ids: [row.id], set })
@@ -2557,11 +2557,15 @@ export class CloudflareAnalyticsService extends Context.Service<
 				if (settingsWrote) rows = yield* loadStateRows(orgId, accountId)
 				// A valid connection cannot recover a dataset the upstream settings deny. Record that
 				// capability using the existing cache + enabled flag, not an old OAuth/query failure.
-				const unavailable = rows.filter((row) => cloudflareDatasetUnavailable(row.settingsJson))
+				const unavailable = Arr.filter(rows, (row) => cloudflareDatasetUnavailable(row.settingsJson))
 				yield* updateRows(
-					unavailable
-						.filter((row) => row.enabled || row.lastError !== null || row.lastErrorAt !== null)
-						.map((row) => row.id),
+					Arr.map(
+						Arr.filter(
+							unavailable,
+							(row) => row.enabled || row.lastError !== null || row.lastErrorAt !== null,
+						),
+						(row) => row.id,
+					),
 					{ enabled: false, lastError: null, lastErrorAt: null, updatedAt: now },
 				)
 				for (const row of unavailable) {
@@ -3136,6 +3140,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 						: [],
 				),
 			)
+			const zoneSettings = yield* loadZoneSettings(orgId)
 			const plan =
 				pollable.length === 0
 					? []
@@ -3147,7 +3152,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 							Arr.filter(stateRows, (row) => !disabled.has(row.dataset)),
 							planNow,
 							grantCap,
-							yield* loadZoneSettings(orgId),
+							zoneSettings,
 						)
 			const sourceId = stampedSourceId(linkedSource)
 			const backedOff = yield* Effect.forEach(backoffs, ([accountId, backoff]) =>

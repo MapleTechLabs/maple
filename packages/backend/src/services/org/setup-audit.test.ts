@@ -1435,6 +1435,21 @@ describe("integration checks", () => {
 		},
 	)
 
+	it("CFG-INTEG-02 caps unavailable entities on a passing result and retains the total", () => {
+		const states = Arr.makeBy(25, (index) => ({
+			dataset: "firewall_events",
+			zoneName: `zone-${index}.example.com`,
+			lastSuccessAt: null,
+			lastErrorAt: null,
+			lastError: null,
+			settingsJson: JSON.stringify({ enabled: false }),
+		}))
+		const result = check(runSetupAudit(inputs({ cloudflareAnalytics: states })), "CFG-INTEG-02")
+		expect(result.status).toBe("pass")
+		expect(result.affected).toHaveLength(20)
+		expect(result.affectedCount).toBe(25)
+	})
+
 	it("CFG-INTEG-02 keeps available failures failing alongside unavailable datasets", () => {
 		const state = {
 			dataset: "firewall_events",

@@ -367,14 +367,15 @@ const mockCloudflareFetch = (options: FetchOptions = {}): typeof globalThis.fetc
 			if (errors.length > 0) {
 				return jsonResponse({
 					data: null,
-					errors: options.graphqlFirstErrorOnly ? errors.slice(0, 1) : errors,
+					errors: options.graphqlFirstErrorOnly ? Arr.take(errors, 1) : errors,
 				})
 			}
-			if (body.query.includes("MapleCfDatasetSettings"))
+			if (Str.includes("MapleCfDatasetSettings")(body.query))
 				return jsonResponse({ data: options.settingsData ?? settingsData })
-			if (body.query.includes("MapleCfZoneAnalytics"))
+			if (Str.includes("MapleCfZoneAnalytics")(body.query))
 				return jsonResponse({ data: options.zoneData ?? httpData })
-			if (body.query.includes("MapleCfAccountAnalytics")) return jsonResponse({ data: workersData })
+			if (Str.includes("MapleCfAccountAnalytics")(body.query))
+				return jsonResponse({ data: workersData })
 			return jsonResponse({ data: null, errors: [{ message: "unknown query" }] })
 		}
 		if (Str.includes("/hyperdrive/configs")(url)) {
@@ -1368,9 +1369,12 @@ describe("CloudflareAnalyticsService", () => {
 			yield* seedGrantCap(20)
 			const result = yield* CloudflareAnalyticsService.use((service) => service.pollOrg(ORG))
 			assert.strictEqual(result.callsMade, 20)
-			const paused = (yield* loadStateRows).find(
-				(row) => row.accountId === IDLE && row.dataset === "http_requests",
-			)!
+			const paused = Option.getOrThrow(
+				Arr.findFirst(
+					yield* loadStateRows,
+					(row) => row.accountId === IDLE && row.dataset === "http_requests",
+				),
+			)
 			assert.isFalse(paused.enabled)
 			assert.strictEqual(paused.settingsFetchedAt, T0 - 25 * 60 * MIN)
 		}).pipe(Effect.provide(makeLayer(testDb, [])))
@@ -1544,19 +1548,22 @@ describe("CloudflareAnalyticsService", () => {
 						lastErrorAt: T0 - MIN,
 					})
 					const summary = yield* CloudflareAnalyticsService.use((service) => service.pollOrg(ORG))
-					const row = (yield* loadStateRows).find((row) => row.dataset === "firewall_events")!
+					const row = Option.getOrThrow(
+						Arr.findFirst(yield* loadStateRows, (row) => row.dataset === "firewall_events"),
+					)
 					assert.isFalse(row.enabled)
 					assert.isAbove(enabledDuringRequests.length, 0)
-					assert.isFalse(enabledDuringRequests.some(Boolean))
+					assert.isFalse(Arr.some(enabledDuringRequests, Boolean))
 					assert.isNull(row.lastError)
 					assert.isNull(row.lastErrorAt)
 					assert.isNull(row.lastSuccessAt)
 					assert.strictEqual(summary.failures.length, 0)
 					assert.isFalse(
-						queries.some(
+						Arr.some(
+							queries,
 							(query) =>
-								query.includes("MapleCfZoneAnalytics") &&
-								query.includes("firewallEventsAdaptiveGroups"),
+								Str.includes("MapleCfZoneAnalytics")(query) &&
+								Str.includes("firewallEventsAdaptiveGroups")(query),
 						),
 					)
 				}).pipe(
@@ -1592,7 +1599,7 @@ describe("CloudflareAnalyticsService", () => {
 							{
 								zoneTag: ZONE_ID,
 								settings: {
-									...settingsData.viewer.zones[0]!.settings,
+									...settingsData.viewer.zones[0].settings,
 									firewallEventsAdaptiveGroups: {
 										enabled: true,
 										maxDuration: 3600,
@@ -1621,16 +1628,19 @@ describe("CloudflareAnalyticsService", () => {
 					settingsFetchedAt: T0 - 25 * 60 * MIN,
 				})
 				yield* CloudflareAnalyticsService.use((service) => service.pollOrg(ORG))
-				const row = (yield* loadStateRows).find((row) => row.dataset === "firewall_events")!
+				const row = Option.getOrThrow(
+					Arr.findFirst(yield* loadStateRows, (row) => row.dataset === "firewall_events"),
+				)
 				assert.isTrue(row.enabled)
 				assert.strictEqual(row.lastSuccessAt, T0)
 				assert.isNotNull(row.watermarkAt)
-				assert.isTrue(queries.some((query) => query.includes("MapleCfDatasetSettings")))
+				assert.isTrue(Arr.some(queries, Str.includes("MapleCfDatasetSettings")))
 				assert.isTrue(
-					queries.some(
+					Arr.some(
+						queries,
 						(query) =>
-							query.includes("MapleCfZoneAnalytics") &&
-							query.includes("firewallEventsAdaptiveGroups"),
+							Str.includes("MapleCfZoneAnalytics")(query) &&
+							Str.includes("firewallEventsAdaptiveGroups")(query),
 					),
 				)
 			}).pipe(Effect.provide(makeLayer(testDb, [], options)))
@@ -1671,9 +1681,11 @@ describe("CloudflareAnalyticsService", () => {
 					),
 				)
 				yield* CloudflareAnalyticsService.use((service) => service.pollOrg(ORG))
-				const row = (yield* loadStateRows).find((row) => row.dataset === "firewall_events")!
+				const row = Option.getOrThrow(
+					Arr.findFirst(yield* loadStateRows, (row) => row.dataset === "firewall_events"),
+				)
 				assert.isFalse(row.enabled)
-				assert.isFalse(queries.some((query) => query.includes("MapleCfZoneAnalytics")))
+				assert.isFalse(Arr.some(queries, Str.includes("MapleCfZoneAnalytics")))
 			}).pipe(
 				Effect.provide(
 					makeLayer(testDb, [], {
@@ -1708,19 +1720,18 @@ describe("CloudflareAnalyticsService", () => {
 				settingsFetchedAt: T0 - 25 * 60 * MIN,
 			})
 			yield* CloudflareAnalyticsService.use((service) => service.pollOrg(ORG))
-			const row = (yield* loadStateRows).find((row) => row.dataset === "firewall_events")!
+			const row = Option.getOrThrow(
+				Arr.findFirst(yield* loadStateRows, (row) => row.dataset === "firewall_events"),
+			)
 			assert.include(row.settingsJson!, '"enabled":false')
 			assert.isFalse(row.enabled)
-			assert.isFalse(queries.some((query) => query.includes("MapleCfZoneAnalytics")))
+			assert.isFalse(Arr.some(queries, Str.includes("MapleCfZoneAnalytics")))
 			// The probe is stamped, so the denied row waits a full TTL instead of costing a settings call every tick.
 			assert.strictEqual(row.settingsFetchedAt, T0)
-			const probes = queries.filter((query) => query.includes("MapleCfDatasetSettings")).length
+			const probes = Arr.filter(queries, Str.includes("MapleCfDatasetSettings")).length
 			yield* TestClock.adjust(10 * MIN)
 			yield* CloudflareAnalyticsService.use((service) => service.pollOrg(ORG))
-			assert.strictEqual(
-				queries.filter((query) => query.includes("MapleCfDatasetSettings")).length,
-				probes,
-			)
+			assert.strictEqual(Arr.filter(queries, Str.includes("MapleCfDatasetSettings")).length, probes)
 		}).pipe(
 			Effect.provide(
 				makeLayer(testDb, [], {
@@ -1764,9 +1775,9 @@ describe("CloudflareAnalyticsService", () => {
 				},
 			})
 			// One layer for the whole test; each tick swaps the settings answer it returns.
-			const options: { settingsData: ReturnType<typeof answer> } = { settingsData: answer(null) }
+			const options = { settingsData: answer(null) }
 			const workers = Effect.map(loadStateRows, (rows) =>
-				rows.find((row) => row.dataset === "workers_invocations")!,
+				Option.getOrThrow(Arr.findFirst(rows, (row) => row.dataset === "workers_invocations")),
 			)
 			return Effect.gen(function* () {
 				yield* TestClock.setTime(T0)
@@ -1823,13 +1834,15 @@ describe("CloudflareAnalyticsService", () => {
 				),
 			)
 			yield* CloudflareAnalyticsService.use((service) =>
-				service.setZoneSettings(ORG, Schema.decodeUnknownSync(UserId)("user_1"), {
+				service.setZoneSettings(ORG, Schema.decodeSync(UserId)("user_1"), {
 					accountId: ACCOUNT_ID,
 					watchNewZones: true,
 					zones: [{ zoneId: ZONE_ID, watched: true }],
 				}),
 			)
-			const row = (yield* loadStateRows).find((row) => row.dataset === "firewall_events")!
+			const row = Option.getOrThrow(
+				Arr.findFirst(yield* loadStateRows, (row) => row.dataset === "firewall_events"),
+			)
 			assert.isFalse(row.enabled)
 		}).pipe(Effect.provide(makeLayer(testDb, [])))
 	})
@@ -1849,11 +1862,13 @@ describe("CloudflareAnalyticsService", () => {
 				settingsFetchedAt: T0,
 			})
 			yield* CloudflareAnalyticsService.use((service) => service.pollOrg(ORG))
-			const row = (yield* loadStateRows).find((row) => row.dataset === "firewall_events")!
+			const row = Option.getOrThrow(
+				Arr.findFirst(yield* loadStateRows, (row) => row.dataset === "firewall_events"),
+			)
 			assert.isFalse(row.enabled)
 			assert.isNull(row.settingsJson)
 			assert.isNull(row.settingsFetchedAt)
-			assert.isFalse(queries.some((query) => query.includes("MapleCfZoneAnalytics")))
+			assert.isFalse(Arr.some(queries, Str.includes("MapleCfZoneAnalytics")))
 		}).pipe(Effect.provide(makeLayer(testDb, [], { zones: [], graphqlQueries: queries })))
 	})
 

@@ -567,21 +567,25 @@ describe("Cloudflare unavailable dataset audit projection", () => {
 				)
 			}
 			const report = yield* SetupAuditService.use((audit) => audit.run(tenant))
-			const check = report.checks.find((check) => check.id === "CFG-INTEG-02")!
+			const check = Option.getOrThrow(
+				Arr.findFirst(report.checks, (check) => check.id === "CFG-INTEG-02"),
+			)
 			assert.strictEqual(check.status, "fail")
 			assert.include(check.detail!, "1 unavailable")
 			assert.isTrue(
-				check.affected.some(
+				Arr.some(
+					check.affected,
 					(entity) =>
 						entity.name === "firewall_events · example.com" &&
-						entity.note?.includes("unavailable"),
+						Str.includes("unavailable")(entity.note ?? ""),
 				),
 			)
 			assert.isTrue(
-				check.affected.some(
+				Arr.some(
+					check.affected,
 					(entity) =>
 						entity.name === "http_requests · example.com" &&
-						entity.note?.includes("upstream timeout"),
+						Str.includes("upstream timeout")(entity.note ?? ""),
 				),
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, "present")))

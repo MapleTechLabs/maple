@@ -329,7 +329,7 @@ const passingDisclosure = (
 										h,
 										{
 											gap: "3",
-											align: "center",
+											align: "start",
 											as: "li",
 											className: "px-4 py-2.5",
 											attributes: [h.Key(check.id)],
@@ -344,7 +344,42 @@ const passingDisclosure = (
 														size: 14,
 														className: "text-foreground-subtle shrink-0",
 													}),
-											h.span([h.Class("min-w-0 flex-1 text-xs")], [check.title]),
+											vstack(h, { gap: "1.5", shrink: true, grow: true }, [
+												typography(h, { size: "xs" }, [check.title]),
+												...(check.detail === null || check.status === "skip"
+													? []
+													: [
+															typography(
+																h,
+																{ size: "xs", tone: "muted", as: "p" },
+																[check.detail],
+															),
+														]),
+												...(check.affected.length === 0
+													? []
+													: [
+															hstack(h, { gap: "1.5", wrap: true }, [
+																...Arr.map(check.affected, (entity, index) =>
+																	affectedChip(h, entity, index),
+																),
+																...(check.affected_count >
+																check.affected.length
+																	? [
+																			typography(
+																				h,
+																				{
+																					size: "2xs",
+																					tone: "subtle",
+																				},
+																				[
+																					`+${check.affected_count - check.affected.length} more`,
+																				],
+																			),
+																		]
+																	: []),
+															]),
+														]),
+											]),
 											...(check.status === "skip"
 												? [
 														badge(h, { variant: "secondary", size: "xs" }, [

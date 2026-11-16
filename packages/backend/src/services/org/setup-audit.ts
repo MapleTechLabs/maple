@@ -1101,8 +1101,8 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 					? PASS
 					: {
 							status: "pass",
-							detail: capability.trim(),
-							affected: unavailableEntities.slice(0, AUDIT_AFFECTED_LIMIT),
+							detail: Str.trim(capability),
+							affected: Arr.take(unavailableEntities, AUDIT_AFFECTED_LIMIT),
 							affectedCount: unavailableEntities.length,
 						}
 			// The detail states the dataset count; affectedCount stays the row count v2 clients expect.
