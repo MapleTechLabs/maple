@@ -1,6 +1,6 @@
 import { CloudflareIntegrationStatus, GithubIntegrationStatus } from "@maple/domain/http"
 import { V2PlanetScaleIntegration, V2PlanetScaleOrganizationList } from "@maple/domain/http/v2"
-import { Result, Schema, Array as Arr } from "effect"
+import { Result, Schema, Array as Arr, String as Str } from "effect"
 import type { PageContext } from "../page/contract"
 import { Message as IntegrationsMessage } from "../page/integrations/message"
 import type { Model as IntegrationsModel } from "../page/integrations/model"
@@ -30,7 +30,11 @@ export type IntegrationLabPage = (typeof INTEGRATION_PAGES)[number]
 type LabIntegration = "cloudflare" | "planetscale" | "github"
 
 const integrationOf = (page: IntegrationLabPage): LabIntegration =>
-	page.startsWith("cloudflare") ? "cloudflare" : page.startsWith("planetscale") ? "planetscale" : "github"
+	Str.startsWith("cloudflare")(page)
+		? "cloudflare"
+		: Str.startsWith("planetscale")(page)
+			? "planetscale"
+			: "github"
 
 const NOW = Date.UTC(2026, 10, 6, 12)
 
@@ -126,7 +130,7 @@ const GITHUB = Schema.decodeSync(GithubIntegrationStatus)({
 	ciTracesEnabled: true,
 	repositoryDiscovery: null,
 	repositories: Arr.map(REPOS, (name, index) => ({
-		id: `0199a005-0000-7000-8000-${String(index).padStart(12, "0")}`,
+		id: `0199a005-0000-7000-8000-${Str.padStart(12, "0")(String(index))}`,
 		fullName: `acme/${name}`,
 		htmlUrl: `https://github.com/acme/${name}`,
 		isPrivate: false,
@@ -212,5 +216,5 @@ export const integrationFlowModel = (
 			: withStatus
 	const next = [NewMessage.ClickedContinue(), NewMessage.CompletedScrollToTop()]
 	const once = Arr.reduce(next, ready, step)
-	return page.endsWith("-live") && once.stage !== "live" ? Arr.reduce(next, once, step) : once
+	return Str.endsWith("-live")(page) && once.stage !== "live" ? Arr.reduce(next, once, step) : once
 }
