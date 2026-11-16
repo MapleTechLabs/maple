@@ -81,7 +81,7 @@ const showsUpRail = (h: H): Html =>
 			},
 			connectionTabItem("Reconnect, Disconnect"),
 		],
-		trust: "Nothing to apply in Cloudflare. Maple reads through the OAuth grant; no Logpush jobs, Workers or rules are created.",
+		trust: "Maple reads through the OAuth grant; no Logpush jobs, Workers or rules are created.",
 		timeNote: `First data within ${FIRST_DATA_MINUTES} minutes`,
 		docs: DOCS_HREF === undefined ? null : { label: "Docs", href: DOCS_HREF },
 	})

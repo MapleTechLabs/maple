@@ -196,7 +196,7 @@ export const integrationCardModel = (page: IntegrationLabPage, context: PageCont
 	return integration === "planetscale" ? step(withStatus, organizationsLoaded(withStatus)) : withStatus
 }
 
-/** The connect flow, one Continue past Connect, or on through to Go live. */
+/** The connect flow at Choose data, or on through to Go live. */
 export const integrationFlowModel = (
 	page: IntegrationLabPage,
 	context: PageContext,
@@ -213,7 +213,10 @@ export const integrationFlowModel = (
 		integration === "planetscale"
 			? inner(withStatus, organizationsLoaded(withStatus.integrations))
 			: withStatus
+	// Continue until the page's stage: Go live for `-live`, else the step after Connect.
+	const target = Str.endsWith("-live")(page) ? "live" : "choose"
 	const next = [NewMessage.ClickedContinue(), NewMessage.CompletedScrollToTop()]
-	const once = Arr.reduce(next, ready, step)
-	return Str.endsWith("-live")(page) && once.stage !== "live" ? Arr.reduce(next, once, step) : once
+	return Arr.reduce([1, 2], ready, (model) =>
+		model.stage === target || model.stage === "live" ? model : Arr.reduce(next, model, step),
+	)
 }
