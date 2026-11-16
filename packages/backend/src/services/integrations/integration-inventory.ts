@@ -859,7 +859,10 @@ const aws = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry 
 					{
 						kind: "audit log",
 						name: c.accountId,
-						status: c.grantedModules !== null && Arr.contains(c.grantedModules, "security") ? "healthy" : "pending",
+						status:
+							c.grantedModules !== null && Arr.contains(c.grantedModules, "security")
+								? "healthy"
+								: "pending",
 						lastSuccessAt: null,
 						lastError: null,
 						note:
