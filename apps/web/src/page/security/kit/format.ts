@@ -174,11 +174,13 @@ export const prCheckPart = (target: SecurityAuditTarget): string | null =>
  * its day, which may have changed since, so the page calls this the current rule.
  */
 export const prCheckRuleOf = (target: SecurityAuditTarget): string =>
-	target.prCheckBlockAt === null
-		? "Current rule: reports only, never blocks"
-		: target.prCheckBlockAt === "informational"
-			? "Current rule: fails on any confirmed finding"
-			: `Current rule: fails at ${Str.toLowerCase(PR_CHECK_BLOCK_LABEL[prCheckChoiceOf(target.prCheckBlockAt)])}`
+	!target.prCheckEnabled
+		? "Current rule: the pull request check is off"
+		: target.prCheckBlockAt === null
+			? "Current rule: reports only, never blocks"
+			: target.prCheckBlockAt === "informational"
+				? "Current rule: fails on any confirmed finding"
+				: `Current rule: fails at ${Str.toLowerCase(PR_CHECK_BLOCK_LABEL[prCheckChoiceOf(target.prCheckBlockAt)])}`
 
 export const pullRequestHref = (repository: string, prNumber: number): string =>
 	`https://github.com/${repository}/pull/${prNumber}`
