@@ -57,6 +57,9 @@ describe("parseExternalUrl", () => {
 		// it, so a blocklist keyed on the bare name used to miss it entirely.
 		"http://localhost./",
 		"http://metadata.google.internal./computeMetadata/v1/",
+		// The URL parser drops only one trailing dot, so `127.0.0.1..` stays a name.
+		"http://127.0.0.1../",
+		"http://localhost../",
 		// Link-local is fe80::/10, not fe80::/16 — everything up to febf: is in range.
 		"http://[fe9f::1]/",
 		"http://[fea0::1]/",
