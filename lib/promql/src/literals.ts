@@ -22,7 +22,10 @@ const HEX = /^0x[0-9a-f]+$/
 const parsePlainNumber = (text: string): number | undefined => {
 	const lower = text.toLowerCase()
 	if (HEX.test(lower)) return Number.parseInt(lower.slice(2), 16)
-	return DECIMAL.test(lower) ? Number(lower.replaceAll("_", "")) : undefined
+	if (!DECIMAL.test(lower)) return undefined
+	const digits = lower.replaceAll("_", "")
+	// As Go's ParseInt with base 0: a leading 0 makes an octal integer (`0755` is 493); `08` stays decimal.
+	return /^0[0-7]+$/.test(digits) ? Number.parseInt(digits, 8) : Number(digits)
 }
 
 /** A Prometheus duration (`1h30m`, `5m`, `250ms`) or a plain number of seconds, in ms. Undefined when invalid. */
