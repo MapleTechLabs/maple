@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import type { PullRequestFile } from "@maple/domain/http"
-import { prScopePaths } from "./pr-check-scope"
+import { prScope } from "./pr-check-scope"
 
 const file = (path: string, status: PullRequestFile["status"] = "modified"): PullRequestFile => ({
 	path,
@@ -11,17 +11,26 @@ const file = (path: string, status: PullRequestFile["status"] = "modified"): Pul
 	patch: null,
 })
 
-describe("prScopePaths", () => {
-	it("audits the files a pull request adds or changes, not the ones it removes or unsafe paths", () => {
+describe("prScope", () => {
+	it("audits the files a pull request adds or changes, not the ones it removes", () => {
 		expect(
-			prScopePaths([
+			prScope([
 				file("src/api/keys.ts"),
 				file("src/api/new.ts", "added"),
 				file("src/old.ts", "removed"),
-				file("../escape.ts"),
 				file("src/api/keys.ts"),
 			]),
-		).toEqual(["src/api/keys.ts", "src/api/new.ts"])
+		).toEqual({ kind: "paths", paths: ["src/api/keys.ts", "src/api/new.ts"] })
+	})
+
+	it("folds a path the audit refuses into its nearest accepted directory, never dropping it", () => {
+		expect(prScope([file("src/aux/handler.ts"), file("src/ok.ts")])).toEqual({
+			kind: "paths",
+			paths: ["src", "src/ok.ts"],
+		})
+		// No accepted directory above it: the whole repository is audited instead.
+		expect(prScope([file("con.ts"), file("src/ok.ts")])).toEqual({ kind: "repository" })
+		expect(prScope([file("../escape.ts")])).toEqual({ kind: "repository" })
 	})
 
 	it("folds a large diff into the deepest directories that fit, keeping root files whole", () => {
@@ -31,15 +40,18 @@ describe("prScopePaths", () => {
 			...Array.from({ length: 4 }, (_, i) => file(`apps/api/src/routes/r${i}.ts`)),
 		]
 
-		expect(prScopePaths(files, 3)).toEqual(["README.md", "apps/web/src/page", "apps/api/src/routes"])
-		expect(prScopePaths(files, 2)).toEqual(["README.md", "apps"])
+		expect(prScope(files, 3)).toEqual({
+			kind: "paths",
+			paths: ["README.md", "apps/web/src/page", "apps/api/src/routes"],
+		})
+		expect(prScope(files, 2)).toEqual({ kind: "paths", paths: ["README.md", "apps"] })
 	})
 
-	it("refuses a diff that cannot fit even by top-level directory", () => {
-		expect(prScopePaths([file("a/x.ts"), file("b/x.ts"), file("c/x.ts")], 2)).toBeNull()
+	it("audits the whole repository when even top-level directories do not fit", () => {
+		expect(prScope([file("a/x.ts"), file("b/x.ts"), file("c/x.ts")], 2)).toEqual({ kind: "repository" })
 	})
 
-	it("answers no paths for a pull request that only removes files", () => {
-		expect(prScopePaths([file("src/old.ts", "removed")])).toEqual([])
+	it("answers empty for a pull request that only removes files", () => {
+		expect(prScope([file("src/old.ts", "removed")])).toEqual({ kind: "empty" })
 	})
 })

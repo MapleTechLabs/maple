@@ -16,7 +16,7 @@ import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepos
 import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import type { Finding, Severity } from "@maple/security-audit"
-import { Array as Arr, Effect, Layer } from "effect"
+import { Array as Arr, Effect, Layer, Stream } from "effect"
 import { SecurityPrCheck } from "./pr-check"
 
 const trackedDbs: TestDb[] = []
@@ -90,10 +90,10 @@ const providerWith = (writeCheck: VcsProviderClient["writePullRequestCheck"]): V
 		fetchBlobText: unused,
 		fetchSourceFile: unused,
 		fetchWorkflowJobAnnotations: unused,
-		streamWorkflowJobLog: unused,
+		streamWorkflowJobLog: () => Stream.die("not used by the security check"),
 		canReadWorkflowLogs: unused,
 		fetchBillingUsage: unused,
-		installationSettingsUrl: unused,
+		installationSettingsUrl: () => "https://github.com/settings/installations/42",
 	}
 }
 
@@ -249,5 +249,65 @@ describe("SecurityPrCheck.publish", () => {
 		)
 
 		expect(harness.checks).toEqual([])
+	})
+})
+
+describe("SecurityPrCheck.publish branch findings and reruns", () => {
+	it("keeps a branch finding from blocking even after a person reopened it", async () => {
+		const harness = makeHarness()
+		await harness.run(
+			Effect.gen(function* () {
+				const { store, target } = yield* harness.seeded
+				const checks = yield* SecurityPrCheck
+				const branchRun = yield* store.startRun({
+					targetId: target.id,
+					kind: "manual",
+					sourceRef: "main",
+				})
+				yield* store.saveFindings(branchRun.id, [confirmed("old", "critical")], new Map())
+				yield* store.finishRun(branchRun.id, { status: "complete" })
+				yield* store.setFindingStatus(target.id, "old", "dismissed", "noise", user)
+				yield* store.setFindingStatus(target.id, "old", "open", "real after all", user)
+				const run = yield* store.startRun({
+					targetId: target.id,
+					kind: "pull_request",
+					prNumber: 9,
+					sourceRef: HEAD,
+				})
+				yield* store.saveFindings(run.id, [confirmed("old", "critical")], new Map())
+				yield* store.finishRun(run.id, { status: "complete" })
+				yield* checks.publish(orgId, run.id)
+			}),
+		)
+
+		expect(Arr.map(harness.checks, (c) => c.state)).toEqual(["success"])
+	})
+
+	it("does not overwrite a newer run's check on the same head", async () => {
+		const harness = makeHarness()
+		await harness.run(
+			Effect.gen(function* () {
+				const { store, target } = yield* harness.seeded
+				const checks = yield* SecurityPrCheck
+				const older = yield* store.startRun({
+					targetId: target.id,
+					kind: "pull_request",
+					prNumber: 9,
+					sourceRef: HEAD,
+				})
+				yield* store.finishRun(older.id, { status: "complete" })
+				const newer = yield* store.startRun({
+					targetId: target.id,
+					kind: "pull_request",
+					prNumber: 9,
+					sourceRef: HEAD,
+				})
+				yield* store.finishRun(newer.id, { status: "complete" })
+				yield* checks.publish(orgId, older.id)
+				yield* checks.publish(orgId, newer.id)
+			}),
+		)
+
+		expect(Arr.map(harness.checks, (c) => c.state)).toEqual(["success"])
 	})
 })

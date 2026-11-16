@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Array as Arr } from "effect"
+import { Array as Arr, String as Str } from "effect"
 import type { Finding, Severity } from "@maple/security-audit"
 import { type FindingLifecycle, prCheckVerdict, type PrCheckVerdictInput } from "./pr-check-verdict"
 
@@ -93,15 +93,15 @@ describe("prCheckVerdict", () => {
 		expect([leads.conclusion, Arr.map(leads.findings, (f) => f.standing)]).toEqual(["success", ["lead"]])
 	})
 
-	it("lets a dismissal, an accepted risk or a finding the branch already has through", () => {
+	it("lets a dismissal, an accepted risk or a finding the branch's own audit reported through", () => {
 		const lifecycle = new Map<string, FindingLifecycle>([
-			["dismissed", { status: "dismissed", statusChangedAt: 1 }],
-			["accepted", { status: "accepted_risk", statusChangedAt: 1 }],
-			["branch", { status: "open", statusChangedAt: null }],
-			// Reopened by a person: the branch's own audit did not leave it open, so it blocks again.
-			["reopened", { status: "open", statusChangedAt: 5 }],
+			["dismissed", { status: "dismissed", seenOnBranch: true }],
+			["accepted", { status: "accepted_risk", seenOnBranch: false }],
+			["branch", { status: "open", seenOnBranch: true }],
+			// Reopened after a person triaged it on a pull request: the branch never had it, so it blocks.
+			["reopened", { status: "open", seenOnBranch: false }],
 			// Fixed on the branch and back in this pull request: a regression it brings.
-			["regressed", { status: "fixed", statusChangedAt: null }],
+			["regressed", { status: "fixed", seenOnBranch: true }],
 		])
 		const findings = Arr.map(["dismissed", "accepted", "branch", "reopened", "regressed"], (f) =>
 			confirmed(f, "critical"),
@@ -127,7 +127,8 @@ describe("prCheckVerdict", () => {
 		const quiet = verdictOf({ run: incomplete, findings: [confirmed("med", "medium")] })
 		expect([quiet.conclusion, quiet.title]).toEqual(["neutral", "Could not finish · not blocking"])
 		expect(quiet.summary).toContain("budget exhausted")
-		expect(verdictOf({ run: failed }).summary).toContain("sandbox unavailable")
+		expect(verdictOf({ run: failed }).summary).toContain("the audit hit an error")
+		expect(verdictOf({ run: failed }).summary).not.toContain("sandbox unavailable")
 		expect(verdictOf({ run: incomplete, findings: [confirmed("crit", "critical")] }).conclusion).toBe(
 			"failure",
 		)
@@ -135,7 +136,7 @@ describe("prCheckVerdict", () => {
 
 	it("annotates each finding at its sink, and none for a dismissed one", () => {
 		const lifecycle = new Map<string, FindingLifecycle>([
-			["gone", { status: "dismissed", statusChangedAt: 1 }],
+			["gone", { status: "dismissed", seenOnBranch: false }],
 		])
 		const { annotations } = verdictOf({
 			findings: [confirmed("crit", "critical", "src/a.ts"), confirmed("gone", "high"), lead("l1")],
@@ -152,5 +153,21 @@ describe("prCheckVerdict", () => {
 		const finding = { ...confirmed("pipe", "low"), title: "a | b\nc" }
 
 		expect(verdictOf({ findings: [finding] }).summary).toContain("a \\| b c")
+	})
+})
+
+describe("prCheckVerdict GitHub limits", () => {
+	it("keeps annotation lines at 1 or more and titles within 255 characters", () => {
+		const long = { ...confirmed("long", "critical"), title: Str.repeat(400)("x") }
+		const atZero: Finding = {
+			...confirmed("zero", "high"),
+			trace: [{ kind: "sink", file: "src/z.ts", line: 0, scope: "z", description: "z" }],
+		}
+		const { annotations } = verdictOf({ findings: [long, atZero] })
+
+		expect(Arr.map(annotations, (a) => [a.title.length <= 255, a.startLine])).toEqual([
+			[true, 42],
+			[true, 1],
+		])
 	})
 })

@@ -5,7 +5,7 @@
  *
  * A finding blocks when it is confirmed at or above the target's threshold and the pull request
  * brought it: not one a person dismissed or accepted, and not one the branch already had (a
- * finding the target follows, open, that no person has touched). Unconfirmed leads never block.
+ * finding the branch's own audit has seen, still open). Unconfirmed leads never block.
  * A run that could not finish fails open: neutral, so an outage never holds a merge.
  */
 import type { PullRequestCheckAnnotation } from "@maple/domain/http"
@@ -24,8 +24,8 @@ export const SEVERITY_RANK = {
 /** The target's follow-up of a fingerprint, as far as the gate reads it. */
 export interface FindingLifecycle {
 	readonly status: SecurityAuditFindingStatus
-	/** Null until a person triages it; a row only an audit wrote is the branch's own. */
-	readonly statusChangedAt: number | null
+	/** An audit of the branch itself has reported it: the code is already merged. */
+	readonly seenOnBranch: boolean
 }
 
 export interface PrCheckVerdictInput {
@@ -77,7 +77,7 @@ export const classifyFinding = (
 	const standing: FindingStanding =
 		lifecycle?.status === "dismissed" || lifecycle?.status === "accepted_risk"
 			? "accepted"
-			: lifecycle?.status === "open" && lifecycle.statusChangedAt === null
+			: lifecycle?.status === "open" && lifecycle.seenOnBranch
 				? "preexisting"
 				: blockAt !== null && SEVERITY_RANK[severity] >= SEVERITY_RANK[blockAt]
 					? "blocking"
@@ -97,7 +97,14 @@ export const findingLocation = (
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
-const cell = (value: string) => Str.replace(/\n/g, " ")(Str.replace(/[\\|]/g, "\\$&")(value))
+const cell = (value: string) =>
+	Str.replace(/`/g, "'")(Str.replace(/\n/g, " ")(Str.replace(/[\\|]/g, "\\$&")(value)))
+
+/** GitHub refuses an annotation title over 255 characters, and a summary over 65,535. */
+const MAX_ANNOTATION_TITLE = 255
+const MAX_SUMMARY = 60_000
+const clip = (value: string, max: number) =>
+	value.length <= max ? value : `${Str.slice(0, max - 1)(value)}…`
 
 const STANDING_LABEL = {
 	blocking: "Blocks merge",
@@ -137,10 +144,12 @@ export const prCheckVerdict = (input: PrCheckVerdictInput): PrCheckVerdict => {
 	const finished = input.run.status === "complete"
 	const conclusion = blocking > 0 ? "failure" : finished ? "success" : "neutral"
 
+	// A failure's text is internal (stack traces, sandbox output): GitHub gets a plain reason, and
+	// the run page keeps the detail.
 	const unfinishedReason =
 		input.run.status === "failed"
-			? (input.run.error ?? "the run failed")
-			: (input.run.incompleteReason ?? "the run ended early")
+			? "the audit hit an error"
+			: clip(input.run.incompleteReason ?? "the run ended early", 200)
 	const title =
 		blocking > 0
 			? `${plural(blocking, "security issue")} ${blocking === 1 ? "blocks" : "block"} this merge`
@@ -158,38 +167,41 @@ export const prCheckVerdict = (input: PrCheckVerdictInput): PrCheckVerdict => {
 		const where = findingLocation(c.finding)
 		return `| ${STANDING_LABEL[c.standing]} | ${c.severity ?? "–"} | ${cell(c.finding.title)} | ${where === null ? "–" : `\`${cell(where.file)}:${where.line}\``} |`
 	})
-	const summary = Arr.join(
-		[
-			...(finished
-				? []
-				: [
-						`The security audit could not finish (${unfinishedReason}), so this check does not block the merge.`,
-						"",
-					]),
-			thresholdLine,
-			"",
-			...(classified.length === 0
-				? [
-						finished
-							? "The audit of this pull request's changed files found nothing."
-							: "No findings so far.",
-					]
-				: [
-						"| | Severity | Finding | Where |",
-						"|---|---|---|---|",
-						...rows,
-						...(classified.length > MAX_TABLE_ROWS
-							? [``, `${classified.length - MAX_TABLE_ROWS} more on the run page.`]
-							: []),
-					]),
-			"",
-			...(blocking > 0
-				? [
-						`To unblock: push a fix, or dismiss the finding or accept its risk with a reason on [the run page](${input.runUrl}). Either re-reports this check.`,
-					]
-				: [`Details, evidence and fixes: [the run page](${input.runUrl}).`]),
-		],
-		"\n",
+	const summary = clip(
+		Arr.join(
+			[
+				...(finished
+					? []
+					: [
+							`The security audit could not finish (${unfinishedReason}), so this check does not block the merge.`,
+							"",
+						]),
+				thresholdLine,
+				"",
+				...(classified.length === 0
+					? [
+							finished
+								? "The audit of this pull request's changed files found nothing."
+								: "No findings so far.",
+						]
+					: [
+							"| | Severity | Finding | Where |",
+							"|---|---|---|---|",
+							...rows,
+							...(classified.length > MAX_TABLE_ROWS
+								? [``, `${classified.length - MAX_TABLE_ROWS} more on the run page.`]
+								: []),
+						]),
+				"",
+				...(blocking > 0
+					? [
+							`To unblock: push a fix, or dismiss the finding or accept its risk with a reason on [the run page](${input.runUrl}). Either re-reports this check.`,
+						]
+					: [`Details, evidence and fixes: [the run page](${input.runUrl}).`]),
+			],
+			"\n",
+		),
+		MAX_SUMMARY,
 	)
 
 	const annotations = Arr.flatMap(classified, (c): ReadonlyArray<PullRequestCheckAnnotation> => {
@@ -199,10 +211,13 @@ export const prCheckVerdict = (input: PrCheckVerdictInput): PrCheckVerdict => {
 		return [
 			{
 				path: where.file,
-				startLine: where.line,
-				endLine: where.line,
+				startLine: Math.max(1, where.line),
+				endLine: Math.max(1, where.line),
 				level,
-				title: `${c.severity === null ? "Unconfirmed lead" : `Security · ${c.severity}`}: ${c.finding.title}`,
+				title: clip(
+					`${c.severity === null ? "Unconfirmed lead" : `Security · ${c.severity}`}: ${c.finding.title}`,
+					MAX_ANNOTATION_TITLE,
+				),
 				message: `${STANDING_LABEL[c.standing]}. ${c.finding.description}`,
 			},
 		]

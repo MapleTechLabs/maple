@@ -135,7 +135,7 @@ export const readCode = (tenant: TenantContext) =>
 			(target) =>
 				Effect.all({
 					findings: store.listFindings(target.id),
-					runs: store.listRuns({ targetId: target.id, limit: 1 }),
+					runs: store.listRuns({ targetId: target.id, branchOnly: true, limit: 1 }),
 				}).pipe(
 					Effect.map(({ findings, runs }): CodeTarget => ({
 						target,

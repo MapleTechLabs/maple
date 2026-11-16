@@ -206,6 +206,10 @@ export interface SecurityAuditOrgStore extends AuditStoreApi {
 	readonly listRuns: (options?: {
 		readonly targetId?: SecurityAuditTargetId
 		readonly statuses?: Arr.NonEmptyReadonlyArray<SecurityAuditRunStatus>
+		/** Only the target's own runs, without its pull requests'. */
+		readonly branchOnly?: boolean
+		/** Only the runs checking this pull request. */
+		readonly prNumber?: number
 		readonly limit?: number
 	}) => Effect.Effect<ReadonlyArray<SecurityAuditRunRow>, AuditStoreError>
 	readonly listUnits: (runId: string) => Effect.Effect<ReadonlyArray<SecurityAuditUnitRow>, AuditStoreError>
@@ -1495,6 +1499,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					function* (options) {
 						const targetId = options?.targetId
 						const statuses = options?.statuses
+						const prNumber = options?.prNumber
 						return yield* dbExecute((db) =>
 							db.run(
 								selectRuns()
@@ -1502,6 +1507,8 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 										$.orgId.eq(orgId),
 										targetId === undefined ? undefined : $.targetId.eq(targetId),
 										statuses === undefined ? undefined : $.status.in_(...statuses),
+										options?.branchOnly === true ? $.prNumber.isNull() : undefined,
+										prNumber === undefined ? undefined : $.prNumber.eq(prNumber),
 									])
 									.orderBy(($) => [[$.startedAt, "desc"]])
 									.limit(options?.limit ?? DEFAULT_RUN_LIST_LIMIT),
@@ -1968,6 +1975,33 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 								)
 								const finding = reported[0]
 								if (finding === undefined) return Option.none()
+								const triage = {
+									targetId: run.targetId,
+									fingerprint,
+									status,
+									statusReason: reason,
+									statusChangedAt: now,
+								}
+								// Open is every reported finding's state already: only a row the target follows changes.
+								if (status === "open") {
+									yield* db.run(
+										PG.update(SecurityAuditFindings)
+											.set({
+												status,
+												statusReason: reason,
+												statusChangedBy: actor,
+												statusChangedAt: now,
+												fixedRunId: null,
+												updatedAt: now,
+											})
+											.where(($) => [
+												$.orgId.eq(orgId),
+												$.targetId.eq(run.targetId),
+												$.fingerprint.eq(fingerprint),
+											]),
+									)
+									return Option.some(triage)
+								}
 								yield* db.run(
 									PG.insertInto(SecurityAuditFindings)
 										.values({
@@ -2001,13 +2035,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 											where: ($) => $.orgId.eq(orgId),
 										}),
 								)
-								return Option.some({
-									targetId: run.targetId,
-									fingerprint,
-									status,
-									statusReason: reason,
-									statusChangedAt: now,
-								})
+								return Option.some(triage)
 							}),
 						),
 					)

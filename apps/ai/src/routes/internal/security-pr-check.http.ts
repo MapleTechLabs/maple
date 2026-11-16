@@ -3,7 +3,11 @@
  * Worker, where audits run, decides whether it starts the `Maple / security` check. Reached only
  * over the service binding with the internal service token.
  */
-import { MapleAiApi, SecurityPrCheckUnauthorizedError } from "@maple/domain/http"
+import {
+	MapleAiApi,
+	SecurityPrCheckUnauthorizedError,
+	SecurityPrCheckUnavailableError,
+} from "@maple/domain/http"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/http-api"
@@ -17,12 +21,20 @@ export const HttpSecurityPrCheckLive = HttpApiBuilder.group(MapleAiApi, "securit
 				headers.authorization,
 				(message) => new SecurityPrCheckUnauthorizedError({ message }),
 			)
+			// Past a matched target every failure is reported on GitHub; one before it (the flags, the
+			// target lookup) is a 503, so api retries rather than leave a required check unposted.
 			return yield* startPullRequestCheck(payload.orgId, payload.job).pipe(
-				// Before a target matched nothing was owed to GitHub; the delivery itself stands.
 				Effect.catchCause((cause) =>
 					Effect.logError("[SecurityPrCheck] pull request event failed").pipe(
 						Effect.annotateLogs({ orgId: payload.orgId, cause: summarizeCause(cause) }),
-						Effect.as({ outcome: "skipped" as const, reason: "error" }),
+						Effect.andThen(
+							Effect.fail(
+								new SecurityPrCheckUnavailableError({
+									message:
+										"Could not read whether a security audit target checks this pull request",
+								}),
+							),
+						),
 					),
 				),
 			)

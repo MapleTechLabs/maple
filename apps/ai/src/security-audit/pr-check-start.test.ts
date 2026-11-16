@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import type { PullRequestEventJob, PullRequestFile } from "@maple/domain/http"
+import { GitCommitSha, type PullRequestEventJob, type PullRequestFile } from "@maple/domain/http"
 import {
 	DISABLED_ORGANIZATION_FEATURE_FLAGS,
 	ENABLED_ORGANIZATION_FEATURE_FLAGS,
@@ -23,7 +23,7 @@ import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepos
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
-import { Array as Arr, Effect, Layer, Order, String as Str } from "effect"
+import { Array as Arr, Effect, Layer, Order, Schema, Stream, String as Str } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { SecurityPrCheck } from "./pr-check"
 import { startPullRequestCheck } from "./pr-check-start"
@@ -32,8 +32,8 @@ const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
 const orgId = asOrgId("org_pr_check")
-const HEAD = "1111111111111111111111111111111111111111"
-const NEXT_HEAD = "2222222222222222222222222222222222222222"
+const HEAD = Schema.decodeSync(GitCommitSha)("1111111111111111111111111111111111111111")
+const NEXT_HEAD = Schema.decodeSync(GitCommitSha)("2222222222222222222222222222222222222222")
 
 const file = (path: string, status: PullRequestFile["status"] = "modified"): PullRequestFile => ({
 	path,
@@ -103,10 +103,10 @@ const providerWith = (files: () => Effect.Effect<ReadonlyArray<PullRequestFile>>
 		fetchBlobText: unused,
 		fetchSourceFile: unused,
 		fetchWorkflowJobAnnotations: unused,
-		streamWorkflowJobLog: unused,
+		streamWorkflowJobLog: () => Stream.die("not used by the security check"),
 		canReadWorkflowLogs: unused,
 		fetchBillingUsage: unused,
-		installationSettingsUrl: unused,
+		installationSettingsUrl: () => "https://github.com/settings/installations/42",
 	}
 }
 
@@ -122,6 +122,7 @@ const makeHarness = (
 	const started: Array<SecurityAuditWorkflowPayload> = []
 	const cancelled: Array<string> = []
 	const notices: Array<string> = []
+	const published: Array<string> = []
 	const layer = Layer.mergeAll(
 		SecurityAuditStore.layer.pipe(Layer.provide(db.layer)),
 		testRepoLayer(db),
@@ -146,7 +147,7 @@ const makeHarness = (
 								: `${Str.slice(0, 4)(headSha)}:unchecked:${notice.reason}`,
 						),
 				),
-			publish: () => Effect.void,
+			publish: (_org, runId) => Effect.sync(() => void published.push(runId)),
 		}),
 		options.noCredits === true
 			? Layer.succeed(AiCredits, {
@@ -222,7 +223,7 @@ const makeHarness = (
 			)
 		})
 
-	return { run, seeded, started, cancelled, notices, runsOf }
+	return { run, seeded, started, cancelled, notices, published, runsOf }
 }
 
 describe("startPullRequestCheck", () => {
@@ -342,5 +343,53 @@ describe("startPullRequestCheck", () => {
 			"1111:unchecked:an error stopped the check from starting",
 		])
 		expect([broke.started, removals.started, down.started]).toEqual([[], [], []])
+	})
+})
+
+describe("startPullRequestCheck deliveries", () => {
+	it("lets a redelivery of the same head leave the running check alone", async () => {
+		const harness = makeHarness()
+		const outcomes = await harness.run(
+			Effect.gen(function* () {
+				yield* harness.seeded
+				return [
+					yield* startPullRequestCheck(orgId, job()),
+					yield* startPullRequestCheck(orgId, job({ action: "synchronize" })),
+				]
+			}),
+		)
+
+		expect(Arr.map(outcomes, (o) => o.reason ?? o.outcome)).toEqual(["started", "already_checking"])
+		expect([harness.started.length, harness.cancelled, harness.notices]).toEqual([
+			1,
+			[],
+			["1111:running"],
+		])
+	})
+
+	it("settles a superseded run's own check, since its stopped Workflow never reports", async () => {
+		const harness = makeHarness()
+		await harness.run(
+			Effect.gen(function* () {
+				yield* harness.seeded
+				yield* startPullRequestCheck(orgId, job())
+				yield* startPullRequestCheck(orgId, job({ action: "synchronize", headSha: NEXT_HEAD }))
+			}),
+		)
+
+		expect(harness.published).toEqual([harness.started[0]?.runId])
+		expect(harness.notices).toEqual(["1111:running", "2222:running"])
+	})
+
+	it("audits the whole repository when a changed path cannot be scoped", async () => {
+		const harness = makeHarness({ files: () => Effect.succeed([file("con.ts"), file("src/ok.ts")]) })
+		await harness.run(
+			Effect.gen(function* () {
+				yield* harness.seeded
+				yield* startPullRequestCheck(orgId, job())
+			}),
+		)
+
+		expect(Arr.map(harness.started, (p) => p.scopePaths)).toEqual([[]])
 	})
 })

@@ -32,13 +32,20 @@ export class SecurityPrCheckUnauthorizedError extends Schema.TaggedError<Securit
 	{ httpApiStatus: 401 },
 ) {}
 
+/** Whether a target checks this pull request could not be read; api retries the delivery. */
+export class SecurityPrCheckUnavailableError extends Schema.TaggedError<SecurityPrCheckUnavailableError>()(
+	"@maple/http/errors/SecurityPrCheckUnavailableError",
+	{ message: Schema.String },
+	{ httpApiStatus: 503 },
+) {}
+
 export class SecurityPrCheckApiGroup extends HttpApiGroup.make("securityPrCheck")
 	.add(
 		HttpApiEndpoint.post("pullRequest", "/pull-request", {
 			headers: Schema.Struct({ authorization: Schema.String }),
 			payload: SecurityPrCheckRequest,
 			success: SecurityPrCheckOutcome,
-			error: [SecurityPrCheckUnauthorizedError],
+			error: [SecurityPrCheckUnauthorizedError, SecurityPrCheckUnavailableError],
 		}),
 	)
 	.prefix("/internal/security-pr-check") {}

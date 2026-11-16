@@ -89,7 +89,7 @@ export function registerInspectSecurityAuditRunTool(server: McpToolRegistrar) {
 					})
 				const pages = yield* Effect.forEach(
 					matching,
-					(t) => store.listRuns({ targetId: t.id, limit: 1 }),
+					(t) => store.listRuns({ targetId: t.id, branchOnly: true, limit: 1 }),
 					{ concurrency: 4 },
 				).pipe(Effect.mapError(storeError))
 				return Option.fromUndefinedOr(
