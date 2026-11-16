@@ -545,7 +545,7 @@ const bypassSection = (h: H, model: Model, document: EnterpriseSsoDocument): Htm
 													iconButton(
 														h,
 														{
-															label: "Remove break-glass access",
+															label: `Remove break-glass access for ${memberLabel(model, user.userId, user.identifier)}`,
 															isDisabled: isBusy(model),
 															attributes: [
 																h.OnClick(
@@ -725,8 +725,10 @@ const mappingRow = (
 	index: number,
 	count: number,
 	isEditable: boolean,
-): Html =>
-	h.li(
+): Html => {
+	// Names each row's buttons, so a screen reader can tell the rows apart.
+	const rowName = row.groupId === "" ? `row ${index + 1}` : groupLabel(document, row.groupId)
+	return h.li(
 		[h.Key(row.key)],
 		[
 			hstack(h, { gap: "2", className: "px-4 py-2.5" }, [
@@ -764,7 +766,7 @@ const mappingRow = (
 							iconButton(
 								h,
 								{
-									label: "Move up",
+									label: `Move ${rowName} up`,
 									isDisabled: index === 0 || isBusy(model),
 									attributes: [
 										h.OnClick(Message.ClickedMoveMapping({ key: row.key, by: -1 })),
@@ -775,7 +777,7 @@ const mappingRow = (
 							iconButton(
 								h,
 								{
-									label: "Move down",
+									label: `Move ${rowName} down`,
 									isDisabled: index === count - 1 || isBusy(model),
 									attributes: [
 										h.OnClick(Message.ClickedMoveMapping({ key: row.key, by: 1 })),
@@ -786,7 +788,7 @@ const mappingRow = (
 							iconButton(
 								h,
 								{
-									label: "Remove mapping",
+									label: `Remove mapping for ${rowName}`,
 									isDisabled: isBusy(model),
 									attributes: [h.OnClick(Message.ClickedRemoveMapping({ key: row.key }))],
 								},
@@ -797,6 +799,7 @@ const mappingRow = (
 			]),
 		],
 	)
+}
 
 const mappingsSection = (h: H, model: Model, document: EnterpriseSsoDocument): Html => {
 	const isEditable = canEdit(model, document)
