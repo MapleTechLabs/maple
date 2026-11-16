@@ -87,6 +87,7 @@ const connection = (enforced: boolean) =>
 		idpCertificateExpiresAt: iso("2029-03-01T00:00:00.000Z"),
 		oidcDiscoveryUrl: null,
 		oidcClientId: null,
+		oidcRedirectUri: null,
 		createdAt: iso("2026-11-14T09:20:00.000Z"),
 	})
 

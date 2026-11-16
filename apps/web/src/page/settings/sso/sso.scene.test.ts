@@ -27,6 +27,7 @@ const connection = {
 	idpCertificateExpiresAt: null,
 	oidcDiscoveryUrl: null,
 	oidcClientId: null,
+	oidcRedirectUri: null,
 	createdAt: CREATED,
 } as const
 
@@ -313,6 +314,28 @@ describe("sso tab", () => {
 			given(loaded(doc({ domains: [verifiedDomain], connection }), false)),
 			expectView(text("Only admins can change SSO and SCIM settings.")).not.toExist(),
 			expectView(role("button", { name: "Edit" })).not.toExist(),
+		)
+	})
+
+	test("an OIDC connection shows the redirect URI to allow in the IdP", () => {
+		const oidc = {
+			...connection,
+			provider: "oidc_custom" as const,
+			protocol: "oidc" as const,
+			acsUrl: null,
+			spEntityId: null,
+			spMetadataUrl: null,
+			idpMetadataUrl: null,
+			oidcDiscoveryUrl: "https://id.acme.com/.well-known/openid-configuration",
+			oidcClientId: "maple",
+			oidcRedirectUri: "https://clerk.maple.dev/v1/oauth_callback",
+		}
+		scene(
+			{ update, view },
+			given(loaded(doc({ domains: [verifiedDomain], connection: oidc }))),
+			expectView(text("Redirect URI")).toExist(),
+			expectView(text("https://clerk.maple.dev/v1/oauth_callback")).toExist(),
+			expectView(text("ACS URL")).not.toExist(),
 		)
 	})
 })

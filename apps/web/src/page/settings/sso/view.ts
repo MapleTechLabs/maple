@@ -334,6 +334,7 @@ const spValues = (h: H, model: Model, connection: SsoConnectionDocument): Readon
 			["acs", "ACS URL", connection.acsUrl],
 			["entity", "SP entity ID", connection.spEntityId],
 			["metadata", "SP metadata URL", connection.spMetadataUrl],
+			["redirect", "Redirect URI", connection.oidcRedirectUri],
 		] as const,
 		([key, label, value]) => (value === null ? [] : [copyValue(h, model, `sp-${key}`, label, value)]),
 	)
@@ -375,7 +376,7 @@ const connectionPanel = (
 					typography(h, { size: "sm", weight: "medium" }, [connection.name]),
 					connection.enforced
 						? badge(h, { variant: "done" }, ["Required"])
-						: badge(h, { variant: "muted" }, ["Optional"]),
+						: badge(h, { variant: "muted" }, ["Off"]),
 				]),
 				...(isExitable
 					? [
@@ -412,7 +413,9 @@ const connectionPanel = (
 				? []
 				: [
 						typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" }, [
-							"Paste these into your identity provider.",
+							connection.protocol === "saml"
+								? "Paste these into your identity provider. Its SAML response must send the email as `mail`; `firstName` and `lastName` are optional."
+								: "Add this redirect URI to the OIDC application. Request the openid, email and profile scopes; the IdP must return the email and email_verified claims.",
 						]),
 						keyValueList(h, { layout: "stacked" }, sp),
 					]),
@@ -1033,7 +1036,8 @@ const connectionDialog = (h: H, model: Model, document: EnterpriseSsoDocument | 
 		model: model.connectionDialog,
 		toParentMessage: (message) => Message.GotConnectionDialogMessage({ message }),
 		title: isEdit ? "Edit identity provider" : "Connect identity provider",
-		description: "Members on the chosen domains can sign in through this provider.",
+		description:
+			"Nobody signs in through it until you require SSO. Then everyone on the chosen domains must.",
 		onSubmit: Message.SubmittedConnection(),
 		submitLabel: isEdit ? "Save" : "Connect",
 		isPending: model.pending === "createConnection" || model.pending === "updateConnection",
