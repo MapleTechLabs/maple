@@ -8,6 +8,7 @@ import {
 	WarehouseConfigError,
 } from "@maple/domain/http"
 import { Clock, ConfigProvider, Effect, Layer, Record, Schema, Array as Arr } from "effect"
+import { TestClock } from "effect/testing"
 import { CacheBackend, EdgeCacheService, makeMemoryBackend } from "@maple/cache"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { Env } from "@maple/backend/platform/Env"
@@ -213,9 +214,11 @@ describe("AnomalyDetectionService settings", () => {
 })
 
 describe("AnomalyDetectionService incident chart", () => {
-	it.live("plots the detector's 60-minute observation for the in-progress hour", () =>
+	it.effect("plots the detector's 60-minute observation for the in-progress hour", () =>
 		Effect.gen(function* () {
 			const testDb = createTestDb(createdDbs)
+			// A fixed mid-hour clock, so the in-progress hour cannot roll over during the test.
+			yield* TestClock.setTime(Date.parse("2026-11-16T10:30:00Z"))
 			const nowMs = yield* Clock.currentTimeMillis
 			const hourStart = Math.floor(nowMs / HOUR_MS) * HOUR_MS
 			const incidentId = Schema.decodeSync(AnomalyIncidentId)("00000000-0000-4000-8000-000000000071")
