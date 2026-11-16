@@ -597,7 +597,8 @@ describe("EnterpriseSsoService", () => {
 					),
 					253,
 				)
-				const tooLong = yield* sso.addDomain(ORG, ADMIN, `x${longest}`).pipe(Effect.flip)
+				// One more character in the last label: every label stays valid, only the total breaks.
+				const tooLong = yield* sso.addDomain(ORG, ADMIN, `${longest}x`).pipe(Effect.flip)
 				assert.strictEqual(tooLong._tag, "@maple/http/enterprise-sso/EnterpriseSsoInvalidError")
 				const notADomain = yield* sso.addDomain(ORG, ADMIN, "https://acme.com/path").pipe(Effect.flip)
 				assert.strictEqual(notADomain._tag, "@maple/http/enterprise-sso/EnterpriseSsoInvalidError")
