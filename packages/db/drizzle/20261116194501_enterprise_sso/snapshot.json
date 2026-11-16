@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "24fe01e1e14727a6af35609d1b4729fc95ca400925198675ba15a9900e5bbbc4",
+	"id": "75b4049adc78107337bac1a8bd120084c0f4f876c628f910c048736b7e77449e",
 	"prevIds": [
-		"5fa05f5b16fe30b3669d13615281ef6457c8ed2742d1203703e4c696a396bb47"
+		"9d6e8b6218558b21171920ac6617574c35fa06490caafd45e4b31417c66d6058"
 	],
 	"entities": [
 		{
@@ -3909,8 +3909,18 @@
 		{
 			"kind": "column",
 			"table": "anomaly_detector_settings",
-			"name": "last_tick_at",
+			"name": "included_environments_json",
 			"position": 4,
+			"type": "jsonb",
+			"notNull": true,
+			"default": "'[]'",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "anomaly_detector_settings",
+			"name": "last_tick_at",
+			"position": 5,
 			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
@@ -3920,16 +3930,6 @@
 			"kind": "column",
 			"table": "anomaly_detector_settings",
 			"name": "created_at",
-			"position": 5,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "anomaly_detector_settings",
-			"name": "updated_at",
 			"position": 6,
 			"type": "timestamp with time zone",
 			"notNull": true,
@@ -3939,8 +3939,18 @@
 		{
 			"kind": "column",
 			"table": "anomaly_detector_settings",
-			"name": "updated_by",
+			"name": "updated_at",
 			"position": 7,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "anomaly_detector_settings",
+			"name": "updated_by",
+			"position": 8,
 			"type": "text",
 			"notNull": false,
 			"default": null,
