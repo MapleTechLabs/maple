@@ -20,10 +20,11 @@ export type ActionBarOptions<M> = Readonly<{
 	attributes?: ReadonlyArray<Attribute<M>>
 }>
 
-// The `after` strip covers the bar offset and the scroll area padding under it, so rows scrolling
-// past never show below it. A surface that is not `background` sets `--action-bar-backdrop`.
+// The `after` strip covers the bar's offset and its shadow the scroll padding below, so rows
+// scrolling past never show under the bar; a shadow adds no scroll height. A surface that is not
+// `background` sets `--action-bar-backdrop`.
 const BAR =
-	"sticky bottom-4 z-10 mt-auto rounded-lg border bg-popover py-2 pr-2 pl-4 text-popover-foreground shadow-popup after:pointer-events-none after:absolute after:-inset-x-px after:top-full after:h-10 after:bg-(--action-bar-backdrop,var(--color-background))"
+	"sticky bottom-4 z-10 mt-auto rounded-lg border bg-popover py-2 pr-2 pl-4 text-popover-foreground shadow-popup after:pointer-events-none after:absolute after:-inset-x-px after:top-full after:h-4 after:bg-(--action-bar-backdrop,var(--color-background)) after:shadow-backdrop-below"
 
 export const actionBar = <M>(h: HtmlBuilder<M>, options: ActionBarOptions<M>): Html => {
 	const attributes = [h.AriaLabel(options.label), ...(options.attributes ?? [])]

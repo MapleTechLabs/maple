@@ -6,6 +6,7 @@ import { button } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { meter } from "@maple/views/ui/meter"
+import { skeleton } from "@maple/views/ui/skeleton"
 import { columnHead, dataTable } from "../kit/data-table"
 import {
 	CHANGE_LATER_NOTE,
@@ -387,14 +388,24 @@ const liveStep = (h: H, model: Model): Html => {
 /** Choose data: CI traces and PR review, saved as they flip. */
 const chooseStep = (h: H, model: Model): Html => {
 	const status = githubStatusOf(model)
+	const discovery = status?.repositoryDiscovery
 	return flowColumns(
 		h,
 		[
 			stepCard(
 				h,
 				{ icon: "SlidersIcon", title: "Choose what Maple does", note: CHANGE_LATER_NOTE },
-				status === null ? [] : [githubFeatures(h, model, status)],
+				status === null ? [skeleton(h, "h-32 w-full")] : [githubFeatures(h, model, status)],
 			),
+			// Discovery can still be running (or have failed) when Connect hands over.
+			...(discovery?._tag === "Pending"
+				? [statusRow(h, { tone: "working", text: "Discovering repositories…" })]
+				: discovery?._tag === "Failed"
+					? [
+							statusRow(h, { tone: "error", text: discovery.message }),
+							githubReconnectButton(h, model),
+						]
+					: []),
 		],
 		showsUpRail(h),
 	)

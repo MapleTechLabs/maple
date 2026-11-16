@@ -2,7 +2,7 @@ import type { GithubIntegrationStatus, GithubRepoSummary } from "@maple/domain/h
 import { countLabel } from "@maple/ui/lib/format"
 import type { FlowSpec, LiveHealth } from "./flow"
 import type { Model } from "./model"
-import { githubStatusOf } from "./update-github"
+import { ciTracesShown, githubStatusOf } from "./update-github"
 import { Array as Arr } from "effect"
 
 // GitHub's place in the connect flow: install the app, choose what Maple does with it, then Go live.
@@ -43,7 +43,7 @@ export const githubFlow = (model: Model): FlowSpec => {
 		stages: ["connect", "choose", "live"],
 		connected,
 		// Both features are optional, so any choice is a valid one.
-		chosen: status === null ? null : status.ciTracesEnabled ? "CI traces on" : "CI traces off",
+		chosen: status === null ? null : ciTracesShown(model) ? "CI traces on" : "CI traces off",
 		live,
 		hint: {
 			connect:

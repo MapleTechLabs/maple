@@ -582,6 +582,7 @@ describe("github connect flow", () => {
 			click(role("button", { name: "Continue" })),
 			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			expectView(role("listitem", { name: "Installed on acme (done)" })).toExist(),
+			expectView(role("listitem", { name: "CI traces on (done)" })).toExist(),
 			expectView(role("listitem", { current: "step", name: "Go live" })).toExist(),
 			expectView(text("Repositories syncing")).toExist(),
 			expectView(text("acme/api")).toExist(),

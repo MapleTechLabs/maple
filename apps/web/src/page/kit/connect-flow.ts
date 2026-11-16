@@ -273,7 +273,7 @@ export const flowRail = <M>(h: HtmlBuilder<M>, options: RailOptions): Html =>
 		],
 	)
 
-/** The choose step's header note: switches save as they flip, and live on afterwards. */
+/** A switch card's header note: where its switches live once the flow is done. */
 export const CHANGE_LATER_NOTE = "Change later on the Connection tab"
 
 /** The rail's last item on every source: where its settings live once the flow is done. */
