@@ -75,7 +75,12 @@ export const startPullRequestCheck = Effect.fn("SecurityPrCheck.start")(function
 	if (!flags.securityAudit) {
 		// A run already at this head owns its check: never complete it as neutral mid-audit.
 		const latest = yield* store.listRuns({ targetId: target.value.id, prNumber: job.number, limit: 1 })
-		if (latest[0]?.sourceRef === headSha) return skipped("already_checking")
+		const owner = latest[0]
+		if (owner?.sourceRef === headSha) {
+			// A finished one says its result again, in case an earlier write of it never landed.
+			if (owner.finishedAt !== null) yield* checks.publish(orgId, owner.id)
+			return skipped("already_checking")
+		}
 		return yield* report("security audits are not enabled for this organization")
 	}
 	// A branch rule waits forever on a check nobody posts: past this point every failure reports.
@@ -123,8 +128,11 @@ const checkPullRequest = Effect.fn("SecurityPrCheck.checkPullRequest")(function*
 		done.sourceRef === headSha &&
 		done.finishedAt !== null &&
 		job.action === "edited"
-	)
+	) {
+		// Its result again, in case an earlier write of it never landed.
+		yield* checks.publish(orgId, done.id)
 		return skipped("already_checked")
+	}
 
 	/**
 	 * Whether this head already has a run (a redelivery, api's retry): if so it answers. Any other
