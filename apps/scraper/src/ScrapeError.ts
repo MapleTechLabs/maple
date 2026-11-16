@@ -10,7 +10,8 @@ import { ScrapeTargetId } from "@maple/domain/http"
  * - `target_error`: the target answered another 5xx, was unreachable, or timed out.
  * - `target_rejected`: the target answered another 4xx (404 for a moved or deleted endpoint).
  * - `delivery_blocked`: our ingest gateway refused the export with 402 (org over its billing limit).
- * - `scrape_failed`: anything else; the only reason that holds the configured cadence.
+ * - `scrape_failed`: anything else; the only reason that holds the configured cadence
+ *   and the only one that closes a span as an error (see `isExpectedFailure`).
  */
 export const ScrapeFailureReason = Schema.Literals([
 	"rate_limited",
@@ -50,8 +51,12 @@ export const scrapeError = (fields: {
 		retryAfterMs: fields.retryAfterMs ?? null,
 	})
 
-/** A billing block is a caller-side condition, not a fault: its spans stay `Ok`. */
-const isDeliveryBlocked = (error: ScrapeError): boolean => error.reason === "delivery_blocked"
+/**
+ * Whether the failure is the target's or the org's side rather than ours: the target
+ * down, rejecting its credential or path, rate limiting, or a billing block. The org
+ * sees these on its target's health; only `scrape_failed` is a fault Maple can fix.
+ */
+export const isExpectedFailure = (reason: ScrapeFailureReason): boolean => reason !== "scrape_failed"
 
 const annotateFailure = (error: ScrapeError) =>
 	Effect.annotateCurrentSpan({
@@ -61,18 +66,17 @@ const annotateFailure = (error: ScrapeError) =>
 
 /**
  * `Effect.withSpan` with the scraper's span-status rule in one place: every
- * failure annotates `error.type`, but an expected one (a billing block, or what
- * `isExpected` adds) is re-raised outside the span so it closes `Ok` instead of
- * minting an error event every interval.
+ * failure annotates `error.type`, but an expected one is re-raised outside the
+ * span so it closes `Ok` instead of opening an error issue for a customer's target.
  */
 export const withScrapeSpan =
-	(name: string, options?: Tracer.SpanOptionsNoTrace, isExpected?: (error: ScrapeError) => boolean) =>
+	(name: string, options?: Tracer.SpanOptionsNoTrace) =>
 	<A, R>(self: Effect.Effect<A, ScrapeError, R>): Effect.Effect<A, ScrapeError, R> =>
 		self.pipe(
 			Effect.map((value): Result.Result<A, ScrapeError> => Result.succeed(value)),
 			Effect.tapError(annotateFailure),
 			Effect.catchIf(
-				(error) => isDeliveryBlocked(error) || isExpected?.(error) === true,
+				(error) => isExpectedFailure(error.reason),
 				(error) => Effect.succeed(Result.fail(error)),
 			),
 			Effect.withSpan(name, options),
