@@ -1,6 +1,7 @@
 import type { StatusPageVisibility } from "@maple/domain"
 import type { V2StatusPage } from "@maple/domain/http/v2"
 import { Option, Array as Arr } from "effect"
+import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { button, linkButton } from "@maple/views/ui/button"
@@ -12,12 +13,16 @@ import { failureMessage } from "@maple/views/data/load-failure"
 import { adminOnlyNote, settingsSection } from "../../kit/settings-section"
 import { statusPageViewHref } from "../shared/commands"
 import { textField } from "../shared/fields"
+import type { SettingsForm } from "../shared/form"
+import { fragmentFrame, onYourPage } from "../shared/preview"
+import { draftSnapshot } from "./view-canvas"
+import { renderAccessPage } from "@maple/status-page"
 import { Message } from "./message"
 import { canChangeAccess, type Model } from "./model"
 import { passwordIssue } from "./update-access"
 import { customDomainOf } from "./update-domain"
 
-// The Settings tab's Access section: public, behind a password, or members only.
+// Settings > Access: public, behind a password, or members only, and the password form visitors meet.
 
 type H = HtmlBuilder<Message>
 
@@ -49,12 +54,15 @@ const VISIBILITIES: ReadonlyArray<{
 const blockedReason = (model: Model, page: V2StatusPage, value: StatusPageVisibility): string | null => {
 	if (value === page.visibility) return null
 	if (value === "password" && !page.has_password) return "Set a password below first."
-	const hasDomain = Option.match(customDomainOf(model), {
-		onNone: () => false,
-		onSome: (domain) => domain.hostname !== null,
+	if (value !== "internal") return null
+	// An internal page answers no custom domain, so one must be known to be absent first.
+	return Option.match(customDomainOf(model), {
+		onSome: (domain) => (domain.hostname === null ? null : "Remove the custom domain first."),
+		onNone: () =>
+			AsyncData.hasError(model.customDomain.data)
+				? "Couldn't check for a custom domain. Try again under Basic settings."
+				: "Checking for a custom domain…",
 	})
-	if (value === "internal" && hasDomain) return "Remove the custom domain first."
-	return null
 }
 
 const visibilityChoice = (h: H, model: Model, page: V2StatusPage, option: (typeof VISIBILITIES)[number]) => {
@@ -115,9 +123,12 @@ const passwordForm = (h: H, model: Model, draft: string): Html => {
 }
 
 const passwordRow = (h: H, model: Model, page: V2StatusPage): Html => {
-	if (model.passwordDraft !== null && canChangeAccess(model)) return passwordForm(h, model, model.passwordDraft)
+	if (model.passwordDraft !== null && canChangeAccess(model))
+		return passwordForm(h, model, model.passwordDraft)
 	return hstack(h, { gap: "3", justify: "between", wrap: true }, [
-		typography(h, { size: "sm", as: "p" }, [page.has_password ? "A page password is set" : "No page password"]),
+		typography(h, { size: "sm", as: "p" }, [
+			page.has_password ? "A page password is set" : "No page password",
+		]),
 		...(canChangeAccess(model)
 			? [
 					hstack(h, { gap: "2" }, [
@@ -153,7 +164,7 @@ const passwordRow = (h: H, model: Model, page: V2StatusPage): Html => {
 	])
 }
 
-export const accessSection = (h: H, model: Model, page: V2StatusPage): Html =>
+export const accessSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm): Html =>
 	settingsSection(
 		h,
 		{
@@ -177,10 +188,11 @@ export const accessSection = (h: H, model: Model, page: V2StatusPage): Html =>
 								typography(h, { size: "xs", tone: "muted", as: "p" }, [
 									"Members read the page inside Maple.",
 								]),
-								linkButton(h, { size: "sm", variant: "outline", href: statusPageViewHref(page.id) }, [
-									icon(h, "EyeIcon"),
-									"Open page",
-								]),
+								linkButton(
+									h,
+									{ size: "sm", variant: "outline", href: statusPageViewHref(page.id) },
+									[icon(h, "EyeIcon"), "Open page"],
+								),
 							]),
 						]
 					: []),
@@ -193,6 +205,25 @@ export const accessSection = (h: H, model: Model, page: V2StatusPage): Html =>
 								alertDescription(h, [failureMessage(model.accessFailure)]),
 							]),
 						]),
+				...(page.visibility === "password"
+					? [
+							onYourPage(
+								h,
+								fragmentFrame(h, {
+									title: "The password form visitors see first",
+									document: renderAccessPage(
+										draftSnapshot(model, page, form, "live"),
+										undefined,
+										{
+											inDashboard: true,
+										},
+									),
+									className: "h-96",
+								}),
+								"What visitors see",
+							),
+						]
+					: []),
 			]),
 		],
 	)

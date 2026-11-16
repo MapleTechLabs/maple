@@ -349,6 +349,15 @@ export const FocusEditorElement = Command.define("FocusStatusPageEditorElement",
 		Dom.focus(`#${CSS.escape(id)}`).pipe(Effect.ignore, Effect.as(Message.CompletedFocus())),
 })
 
+/** Scrolls a component opened from the page preview into view as its row mounts. */
+export const RevealOpenComponent = Mount.define("RevealStatusPageComponent", {
+	messages: [Message.CompletedFocus],
+	execute: ({ element }) =>
+		Effect.sync(() => element.scrollIntoView({ block: "nearest" })).pipe(
+			Effect.as(Message.CompletedFocus()),
+		),
+})
+
 /** Focuses the element as it mounts, in the same render, so no keystroke lands elsewhere first. */
 export const FocusNewRow = Mount.define("FocusStatusPageEditorRow", {
 	messages: [Message.CompletedFocus],
