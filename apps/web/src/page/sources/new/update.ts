@@ -52,12 +52,12 @@ const navigate = (url: string): PageOutMessage =>
 	PageOutMessage.RequestedNavigation({ url, isReplace: false })
 
 /** The push page's form, fresh for each platform pick; a created source keeps its own snippet tabs. */
-const withForm = (model: Model, platform: PushSourcePlatform | null): Model => ({
+const withForm = (model: Model, platform: PushSourcePlatform | null, context: PageContext): Model => ({
 	...model,
 	platform,
 	name: platform === null ? "" : defaultSourceName(platform),
 	isAdvancedOpen: false,
-	rules: Rules.init(null),
+	rules: Rules.init(null, context.hasProfiling === true),
 	isSaving: false,
 	setup: model.created !== null || platform === null ? model.setup : Setup.init(platform),
 })
@@ -116,7 +116,7 @@ export const init = (route: NewRoute, context: PageContext): Return => {
 			platform: null,
 			name: "",
 			isAdvancedOpen: false,
-			rules: Rules.init(null),
+			rules: Rules.init(null, context.hasProfiling === true),
 			isSaving: false,
 			list: Keyed.idle(),
 			created: null,
@@ -129,6 +129,7 @@ export const init = (route: NewRoute, context: PageContext): Return => {
 			stage: "connect",
 		},
 		platform,
+		context,
 	)
 	const lifted = liftIntegrations(model, embedded)
 	// An integration's step reads the list too: once connected it links to the source it made.
@@ -179,6 +180,7 @@ const enterRoute = (model: Model, route: NewRoute, context: PageContext): Return
 	const next = withForm(
 		{ ...entered.model, list: platform === null ? Keyed.idle() : entered.model.list },
 		platform,
+		context,
 	)
 	if (model.created !== null) return { ...entered, model: next }
 	// Back to the picker clears the form's list; an integration's step reads it again.

@@ -2,11 +2,11 @@ import type { GithubIntegrationStatus, GithubRepoSummary } from "@maple/domain/h
 import { countLabel } from "@maple/ui/lib/format"
 import type { FlowSpec, LiveHealth } from "./flow"
 import type { Model } from "./model"
-import { githubStatusOf } from "./update-github"
+import { ciTracesShown, githubStatusOf } from "./update-github"
 import { Array as Arr } from "effect"
 
-// GitHub's place in the connect flow: install the app, then Go live. Repositories are picked on
-// GitHub during install, so there is no Choose data step.
+// GitHub's place in the connect flow: install the app, choose what Maple does with it, then Go live.
+// Repositories are picked on GitHub during install; Choose data holds the feature switches.
 
 export const activeRepos = (status: GithubIntegrationStatus): ReadonlyArray<GithubRepoSummary> =>
 	Arr.filter(status.repositories, (repo) => repo.status === "active")
@@ -40,9 +40,10 @@ export const githubFlow = (model: Model): FlowSpec => {
 	const repos = status === null ? 0 : activeRepos(status).length
 	const live = liveOf(status)
 	return {
-		stages: ["connect", "live"],
+		stages: ["connect", "choose", "live"],
 		connected,
-		chosen: null,
+		// Both features are optional, so any choice is a valid one.
+		chosen: status === null ? null : ciTracesShown(model) ? "CI traces on" : "CI traces off",
 		live,
 		hint: {
 			connect:
@@ -57,7 +58,7 @@ export const githubFlow = (model: Model): FlowSpec => {
 								: model.connect.active !== null
 									? "Waiting for GitHub to send you back."
 									: "Connect GitHub to continue.",
-			choose: "",
+			choose: "Switches save as you flip them.",
 			live:
 				status?.repositoryDiscovery?._tag === "Pending"
 					? "Discovering repositories. Checks keep running if you leave."

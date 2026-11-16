@@ -626,7 +626,33 @@ export function buildFlowElements({
 		}
 	}
 
+	assignDbNamespaces(nodeById, flowEdges)
 	return { nodes: flowNodes, edges: flowEdges }
+}
+
+/**
+ * A database joins its callers' namespace when every traffic caller shares one non-empty
+ * namespace. Structural Hyperdrive origin edges are not callers.
+ */
+function assignDbNamespaces(
+	nodeById: ReadonlyMap<string, Node<ServiceNodeData>>,
+	edges: ReadonlyArray<Edge<ServiceEdgeData>>,
+): void {
+	// Per database: its callers' shared namespace, or null once they disagree or one has none.
+	const shared = new Map<string, string | null>()
+	for (const edge of edges) {
+		if (edge.data?.relation === "hyperdrive-origin") continue
+		const target = nodeById.get(edge.target)
+		if (target?.data.kind !== "database") continue
+		const source = nodeById.get(edge.source)
+		const ns = source === undefined ? undefined : nodeNamespace(source)
+		const prior = shared.get(edge.target)
+		shared.set(edge.target, ns === undefined || (prior !== undefined && prior !== ns) ? null : ns)
+	}
+	for (const [id, ns] of shared) {
+		const node = nodeById.get(id)
+		if (node && ns !== null) node.data.namespace = ns
+	}
 }
 
 /**
@@ -1000,9 +1026,9 @@ export function computeFlatPositions(
 	return positions
 }
 
-/** A service node's namespace, or undefined for db nodes / no namespace. */
+/** A service's or database's namespace (a database has one when all its callers share it). */
 export function nodeNamespace(node: Node<ServiceNodeData>): string | undefined {
-	if (node.data.kind !== "service") return undefined
+	if (node.data.kind !== "service" && node.data.kind !== "database") return undefined
 	const ns = node.data.namespace
 	return ns && ns.length > 0 ? ns : undefined
 }
@@ -1030,8 +1056,8 @@ export function computeNodePositions(
 	// crossing-minimized within-column order (indexInLayer) we reuse inside lanes.
 	const layers = computeLayers(nodes, edges, previous)
 
-	// Partition into one lane per namespace + an ungrouped lane (db nodes and
-	// namespace-less services).
+	// Partition into one lane per namespace + an ungrouped lane (namespace-less
+	// services and databases called from outside one namespace).
 	const lanes = new Map<string, Node<ServiceNodeData>[]>()
 	const ungrouped: Node<ServiceNodeData>[] = []
 	for (const node of nodes) {
@@ -1106,7 +1132,7 @@ export function computeNodePositions(
 		yOffset = laneTop + laneHeight + NS_PADDING_Y + NS_CLUSTER_GAP
 	}
 
-	// Ungrouped (databases + namespace-less services) below all lanes, no box.
+	// Ungrouped (namespace-less services and databases) below all lanes, no box.
 	if (ungrouped.length > 0) {
 		placeLane(ungrouped, yOffset + NS_CLUSTER_GAP)
 	}

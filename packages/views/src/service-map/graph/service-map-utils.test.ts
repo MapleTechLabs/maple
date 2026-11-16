@@ -17,6 +17,9 @@ import type {
 } from "./service-map-types"
 import { Array as Arr, String as Str, Option } from "effect"
 
+const nodeById = <N extends { id: string }>(nodes: ReadonlyArray<N>, id: string): N =>
+	Option.getOrThrow(Arr.findFirst(nodes, (n) => n.id === id))
+
 const baseEdge = (overrides: Partial<ServiceMapEdgeRow> = {}): ServiceMapEdgeRow => ({
 	sourceService: "api",
 	targetService: "auth",
@@ -376,19 +379,72 @@ describe("buildFlowElements database node metrics", () => {
 })
 
 describe("buildFlowElements namespace", () => {
-	it("attaches namespace to service nodes but not db nodes", () => {
+	it("gives a database its callers' namespace when they all share one", () => {
 		const result = buildFlowElements({
 			edges: [baseEdge()],
-			dbEdges: [baseDbEdge({ dbSystem: "postgresql" })],
-			serviceOverviews: [baseOverview({ serviceName: "api", serviceNamespace: "backend" })],
+			dbEdges: [
+				baseDbEdge({ sourceService: "api", dbSystem: "postgresql" }),
+				baseDbEdge({ sourceService: "auth", dbSystem: "postgresql" }),
+			],
+			serviceOverviews: [
+				baseOverview({ serviceName: "api", serviceNamespace: "backend" }),
+				baseOverview({ serviceName: "auth", serviceNamespace: "backend" }),
+			],
 			durationSeconds: 60,
 		})
-		const apiNode = Option.getOrUndefined(Arr.findFirst(result.nodes, (n) => n.id === "api"))
-		const dbNode = Option.getOrUndefined(
-			Arr.findFirst(result.nodes, (n) => n.id === dbNodeId("postgresql", "")),
-		)
-		expect(apiNode!.data.namespace).toBe("backend")
-		expect(dbNode!.data.namespace).toBeUndefined()
+		expect(nodeById(result.nodes, "api").data.namespace).toBe("backend")
+		expect(nodeById(result.nodes, dbNodeId("postgresql", "")).data.namespace).toBe("backend")
+	})
+
+	it("leaves a database out when its callers' namespaces differ or one has none", () => {
+		const result = buildFlowElements({
+			edges: [baseEdge({ sourceService: "api", targetService: "auth" })],
+			dbEdges: [
+				baseDbEdge({ sourceService: "api", dbSystem: "postgresql" }),
+				baseDbEdge({ sourceService: "web", dbSystem: "postgresql" }),
+				baseDbEdge({ sourceService: "api", dbSystem: "redis" }),
+				baseDbEdge({ sourceService: "auth", dbSystem: "redis" }),
+			],
+			serviceOverviews: [
+				baseOverview({ serviceName: "api", serviceNamespace: "backend" }),
+				baseOverview({ serviceName: "web", serviceNamespace: "frontend" }),
+			],
+			durationSeconds: 60,
+		})
+		expect(nodeById(result.nodes, dbNodeId("postgresql", "")).data.namespace).toBeUndefined()
+		expect(nodeById(result.nodes, dbNodeId("redis", "")).data.namespace).toBeUndefined()
+	})
+
+	it("ignores the dashed Hyperdrive origin edge when choosing a database's namespace", () => {
+		const result = buildFlowElements({
+			edges: [baseEdge()],
+			dbEdges: [
+				baseDbEdge({ sourceService: "api", dbSystem: "postgresql", dbNamespace: "hyperdrive" }),
+				baseDbEdge({ sourceService: "worker", dbSystem: "mysql", dbNamespace: "maple" }),
+			],
+			serviceOverviews: [
+				baseOverview({ serviceName: "api", serviceNamespace: "edge" }),
+				baseOverview({ serviceName: "worker", serviceNamespace: "data" }),
+			],
+			durationSeconds: 60,
+			planetscaleDatabases: new Map([
+				["maple", { name: "maple", kind: "mysql", branchCount: 1, branches: [] }],
+			]),
+			hyperdriveConfigs: [
+				{
+					id: Str.repeat(32)("a"),
+					name: "maple-db",
+					originHost: "aws.connect.psdb.cloud",
+					originPort: 3306,
+					originScheme: "mysql",
+					originDatabase: "maple",
+					originUser: "reader",
+				},
+			],
+		})
+		expect(Arr.some(result.edges, (e) => e.data?.relation === "hyperdrive-origin")).toBe(true)
+		expect(nodeById(result.nodes, dbNodeId("postgresql", "hyperdrive")).data.namespace).toBe("edge")
+		expect(nodeById(result.nodes, dbNodeId("mysql", "maple")).data.namespace).toBe("data")
 	})
 
 	it("treats an empty namespace string as no namespace", () => {
@@ -438,19 +494,49 @@ describe("computeNodePositions namespace clustering", () => {
 		expect(disjoint).toBe(true)
 	})
 
-	it("lays out databases below the namespaced clusters", () => {
+	it("places a database inside its callers' namespace lane", () => {
 		const { nodes, edges } = buildFlowElements({
-			edges: [baseEdge({ sourceService: "api", targetService: "auth" })],
-			dbEdges: [baseDbEdge({ sourceService: "api", dbSystem: "postgresql" })],
+			edges: [
+				baseEdge({ sourceService: "api", targetService: "auth" }),
+				baseEdge({ sourceService: "web", targetService: "cart" }),
+			],
+			dbEdges: [baseDbEdge({ sourceService: "auth", dbSystem: "postgresql" })],
 			serviceOverviews: [
 				baseOverview({ serviceName: "api", serviceNamespace: "backend" }),
 				baseOverview({ serviceName: "auth", serviceNamespace: "backend" }),
+				baseOverview({ serviceName: "web", serviceNamespace: "frontend" }),
+				baseOverview({ serviceName: "cart", serviceNamespace: "frontend" }),
+			],
+			durationSeconds: 3600,
+		})
+		const pos = computeNodePositions(nodes, edges)
+		const ys = (ids: string[]) => Arr.map(ids, (id) => pos.get(id)!.y)
+		const NODE_H = 70
+		const backend = ys(["api", "auth", dbNodeId("postgresql", "")])
+		const frontend = ys(["web", "cart"])
+		// The backend lane, database included, does not overlap the frontend lane.
+		const backendMax = Math.max(...backend) + NODE_H
+		const frontendMax = Math.max(...frontend) + NODE_H
+		expect(backendMax <= Math.min(...frontend) || frontendMax <= Math.min(...backend)).toBe(true)
+	})
+
+	it("lays out a database shared across namespaces below the namespaced clusters", () => {
+		const { nodes, edges } = buildFlowElements({
+			edges: [baseEdge({ sourceService: "api", targetService: "auth" })],
+			dbEdges: [
+				baseDbEdge({ sourceService: "api", dbSystem: "postgresql" }),
+				baseDbEdge({ sourceService: "web", dbSystem: "postgresql" }),
+			],
+			serviceOverviews: [
+				baseOverview({ serviceName: "api", serviceNamespace: "backend" }),
+				baseOverview({ serviceName: "auth", serviceNamespace: "backend" }),
+				baseOverview({ serviceName: "web", serviceNamespace: "frontend" }),
 			],
 			durationSeconds: 3600,
 		})
 		const pos = computeNodePositions(nodes, edges)
 		const dbY = pos.get(dbNodeId("postgresql", ""))!.y
-		const maxServiceY = Math.max(pos.get("api")!.y, pos.get("auth")!.y)
+		const maxServiceY = Math.max(pos.get("api")!.y, pos.get("auth")!.y, pos.get("web")!.y)
 		expect(dbY).toBeGreaterThan(maxServiceY)
 	})
 })

@@ -21,6 +21,8 @@
  *    built by the pure helpers below rather than by `getRelativeLocaleUrl`.
  */
 
+import type { FeaturePlan } from "./feature-plan"
+
 type Locale = "en" | "ja" | "ko"
 
 /** A Paraglide message, uncalled. See rule 1 above. */
@@ -54,6 +56,7 @@ export type SectionId =
 	| "github-ci"
 	| "github-after-merge"
 	| "uptime-check-trace"
+	| "uptime-setup"
 	| "status-page-feeds"
 
 /**
@@ -137,6 +140,8 @@ export interface Feature {
 	gallery: GalleryShot[]
 	capTitle: Msg
 	capabilities: Capability[]
+	/** Price, retention and setup doc: the facts agents and buyers ask for first. */
+	plan: FeaturePlan
 	/** Hand-picked, so no slug ends up with zero inbound links. */
 	related: string[]
 	relatedUseCases: string[]
@@ -191,6 +196,8 @@ const localePath = (locale: string, path: string) => (locale === "en" ? path : `
 export const featurePath = (locale: string, slug: string) => localePath(locale, `/features/${slug}`)
 
 export const useCasePath = (locale: string, slug: string) => localePath(locale, `/use-cases/${slug}`)
+
+export const pricingPath = (locale: string) => localePath(locale, "/pricing")
 
 /**
  * A story is only allowed to pin its pane when at least two plates are real.

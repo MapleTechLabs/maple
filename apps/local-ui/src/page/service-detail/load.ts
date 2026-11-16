@@ -6,13 +6,13 @@ import { type Keyed, requestKeepingFailure } from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { keyOf } from "../../data/local-query"
 import { type PageContext, rangeOf } from "../contract"
-import { FetchGoldenSignals, FetchOperations, FetchOverview, FetchTimeseries } from "./command"
+import { FetchGoldenSignals, FetchOperations, FetchOverview, FetchProfile, FetchTimeseries } from "./command"
 import type { Message } from "./message"
 import type { Model } from "./model"
 
 const CHART_SERIES_LIMIT = 8
 
-export type SlotName = "overview" | "operations" | "timeseries" | "golden"
+export type SlotName = "overview" | "operations" | "timeseries" | "golden" | "profile"
 
 export const boundsOf = (model: Model, context: PageContext): Option.Option<TimeBounds> =>
 	Option.map(model.maybeAnchorMs, (anchorMs) => boundsForRange(rangeOf(context), anchorMs))
@@ -64,6 +64,7 @@ export const load = (
 					boundsKey,
 				}),
 				golden: keyOf("service-golden-signals", { serviceName, bucketSeconds, boundsKey }),
+				profile: keyOf("service-profile", { serviceName, boundsKey }),
 			}
 			// A key the slot has no rows for opens on its cached result; a forced refetch does not.
 			const readsCache = (slot: SlotName) => !forced.includes(slot) && model[slot].key !== keys[slot]
@@ -77,6 +78,7 @@ export const load = (
 			const timeseries =
 				spanNames.length === 0 ? Option.none() : requested(model.timeseries, "timeseries")
 			const golden = requested(model.golden, "golden")
+			const profile = requested(model.profile, "profile")
 			return {
 				model: {
 					...model,
@@ -84,6 +86,7 @@ export const load = (
 					operations: Option.getOrElse(operations, () => model.operations),
 					timeseries: Option.getOrElse(timeseries, () => model.timeseries),
 					golden: Option.getOrElse(golden, () => model.golden),
+					profile: Option.getOrElse(profile, () => model.profile),
 				},
 				commands: Array.getSomes([
 					Option.map(overview, () =>
@@ -112,6 +115,9 @@ export const load = (
 							bucketSeconds,
 							readsCache: readsCache("golden"),
 						}),
+					),
+					Option.map(profile, () =>
+						FetchProfile({ key: keys.profile, ...window, readsCache: readsCache("profile") }),
 					),
 				]),
 			}

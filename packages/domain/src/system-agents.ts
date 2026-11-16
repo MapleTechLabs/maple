@@ -57,5 +57,10 @@ const INTERNAL_AGENT_LABELS = new Map<string, string>([
  * one of Maple's own — the raw agent name stays authoritative in the audit
  * trail, this is display only.
  */
-export const internalAgentLabel = (agentName: string): string | null =>
-	INTERNAL_AGENT_LABELS.get(agentName) ?? null
+export const internalAgentLabel = (agentName: string): string | null => {
+	const fixed = INTERNAL_AGENT_LABELS.get(agentName)
+	if (fixed !== undefined) return fixed
+	if (!Str.startsWith(CHAT_CONNECTOR_AGENT_PREFIX)(agentName)) return null
+	const connector = Str.slice(CHAT_CONNECTOR_AGENT_PREFIX.length)(agentName)
+	return connector === "" ? null : `Maple bot in ${Str.capitalize(connector)}`
+}

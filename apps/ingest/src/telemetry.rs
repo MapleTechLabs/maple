@@ -1,10 +1,11 @@
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};
 use std::hash::{Hash, Hasher};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex, OnceLock};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, Condvar, LazyLock, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use crate::clickhouse_insert_mappings::{self, InsertMapping};
@@ -13,7 +14,9 @@ use crate::otel::{
     encode_rows_internal_span, export_client_span, record_stage_error, wal_commit_internal_span,
 };
 use crate::outbound;
+use crate::row_budget::{self, json_len, RowEstimate, RowPiece, RowPlan};
 use crate::wal_store::{ClaimRelease, OrphanedSegment, OwnerClaim, WalSegmentStore};
+use bytes::Bytes;
 use chrono::Utc;
 use crc32fast::Hasher as Crc32;
 use dashmap::DashMap;
@@ -23,11 +26,13 @@ use opentelemetry::trace::{SpanContext, TraceContextExt};
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
 use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
 use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
-use opentelemetry_proto::tonic::common::v1::{any_value, AnyValue, KeyValue};
+use opentelemetry_proto::tonic::common::v1::{any_value, AnyValue, InstrumentationScope, KeyValue};
 use opentelemetry_proto::tonic::logs::v1::LogRecord;
 use opentelemetry_proto::tonic::metrics::v1::{
-    metric, number_data_point, Exemplar, NumberDataPoint,
+    metric, number_data_point, Exemplar, ExponentialHistogramDataPoint, HistogramDataPoint,
+    NumberDataPoint,
 };
+use opentelemetry_proto::tonic::resource::v1::Resource;
 use opentelemetry_proto::tonic::trace::v1::{span, status, Span};
 #[cfg(test)]
 use reqwest::Client;
@@ -148,7 +153,7 @@ fn clickhouse_export_span(
     datasource: &str,
     attempt: u32,
     rows: usize,
-    compressed: &bytes::Bytes,
+    compressed: &Bytes,
 ) -> tracing::Span {
     let span = export_client_span(
         "clickhouse.export",
@@ -178,7 +183,13 @@ fn record_failing_frame(shard: usize, lane: usize, datasource: &str) {
 
 /// Fill in the deferred fields on an `ingest.encode_rows` span. Shared by the
 /// three OTLP accept paths, which differ only in which encoder they call.
-fn record_encode_stats(span: &tracing::Span, frames: &[EncodedFrame], stats: &AcceptStats) {
+fn record_encode_stats(
+    span: &tracing::Span,
+    frames: &[EncodedFrame],
+    stats: &AcceptStats,
+    rows: &RowEstimate,
+) {
+    span.record("maple.ingest.row_bytes_estimate", rows.row_bytes());
     span.record("maple.ingest.row_count", stats.rows);
     span.record("maple.ingest.frame_count", frames.len());
     span.record("maple.ingest.sampled_dropped", stats.dropped);
@@ -536,6 +547,9 @@ pub enum TelemetrySignal {
     /// Audit events from provider feeds (a Vercel audit drain, GCP audit logs),
     /// gateway-written into `audit_trail_events`, never as OTLP logs.
     AuditTrail,
+    /// OTLP profiles, flattened by the gateway into rows of `profiles`
+    /// (see `crate::profiles`).
+    Profiles,
 }
 
 impl TelemetrySignal {
@@ -553,6 +567,7 @@ impl TelemetrySignal {
             Self::SessionEvents => "session_events",
             Self::ProductEvents => "product_events",
             Self::AuditTrail => "audit_trail",
+            Self::Profiles => "profiles",
         }
     }
 }
@@ -573,6 +588,22 @@ pub struct DatasourceNames {
 }
 
 impl DatasourceNames {
+    /// The longest name, which bounds a WAL frame head.
+    fn longest(&self) -> usize {
+        [
+            &self.traces,
+            &self.logs,
+            &self.metrics_sum,
+            &self.metrics_gauge,
+            &self.metrics_histogram,
+            &self.metrics_exponential_histogram,
+        ]
+        .iter()
+        .map(|name| name.len())
+        .max()
+        .unwrap_or(0)
+    }
+
     /// Canonical datasource names (match the deployed Tinybird datasources and
     /// the embedded chDB schema). Single source of truth for local + tests.
     pub fn defaults() -> Self {
@@ -652,6 +683,7 @@ pub struct TinybirdConfig {
     pub datasource_session_replay_events: String,
     pub datasource_session_events: String,
     pub datasource_product_events: String,
+    pub datasource_profiles: String,
 }
 
 impl TinybirdConfig {
@@ -733,6 +765,11 @@ impl Default for SamplingPolicy {
 }
 
 impl SamplingPolicy {
+    /// Whether any span can be dropped: below a ratio of one.
+    pub(crate) fn samples(&self) -> bool {
+        self.clamped_ratio() < 1.0
+    }
+
     fn clamped_ratio(&self) -> f64 {
         if !self.trace_sample_ratio.is_finite() {
             return 1.0;
@@ -803,13 +840,18 @@ pub enum PipelineError {
     Throttled(&'static str),
     QueueUnavailable(String),
     Encode(String),
+    /// A request whose rows could never be queued whole: more than the org queue
+    /// cap, its WAL lane's cap or its channel holds. Resending fails the same way.
+    TooLarge(String),
 }
 
 impl std::fmt::Display for PipelineError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Backpressure(message) | Self::Throttled(message) => f.write_str(message),
-            Self::QueueUnavailable(message) | Self::Encode(message) => f.write_str(message),
+            Self::QueueUnavailable(message) | Self::Encode(message) | Self::TooLarge(message) => {
+                f.write_str(message)
+            }
         }
     }
 }
@@ -824,6 +866,7 @@ impl PipelineError {
             Self::Throttled(_) => "throttle",
             Self::QueueUnavailable(_) => "queue_unavailable",
             Self::Encode(_) => "encode",
+            Self::TooLarge(_) => "rows_exceed_queue",
         }
     }
 
@@ -834,16 +877,117 @@ impl PipelineError {
     /// `pipeline_error_fault_split_matches_http_status`.
     pub fn is_server_fault(&self) -> bool {
         match self {
-            Self::Backpressure(_) | Self::Throttled(_) => false,
+            Self::Backpressure(_) | Self::Throttled(_) | Self::TooLarge(_) => false,
             Self::QueueUnavailable(_) | Self::Encode(_) => true,
         }
     }
+}
+
+/// A commit that stopped part way. Frames commit in order, so the ones before
+/// the refused one are stored and will be exported: `frames_committed` of them.
+#[derive(Debug)]
+struct CommitError {
+    error: PipelineError,
+    frames_committed: usize,
+}
+
+impl From<CommitError> for PipelineError {
+    fn from(refused: CommitError) -> Self {
+        refused.error
+    }
+}
+
+/// `accept_row_batches_to` refused part way: `committed_rows` of the request's
+/// rows, the batches before the refused one, are stored and will be exported.
+#[derive(Debug)]
+pub struct RowBatchesError {
+    pub error: PipelineError,
+    pub committed_rows: usize,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct AcceptStats {
     pub rows: usize,
     pub dropped: usize,
+}
+
+impl AcceptStats {
+    fn add(&mut self, other: &Self) {
+        self.rows += other.rows;
+        self.dropped += other.dropped;
+    }
+}
+
+/// A decoded request, with what its rows are built with.
+#[derive(Clone, Copy, Debug)]
+pub enum RowSource<'a> {
+    Traces {
+        request: &'a ExportTraceServiceRequest,
+        policy: &'a SamplingPolicy,
+        mappings: &'a [AttributeMappingRule],
+    },
+    Logs(&'a ExportLogsServiceRequest),
+    Metrics(&'a ExportMetricsServiceRequest),
+}
+
+impl RowSource<'_> {
+    /// The request's rows, in pieces of about `piece_bytes` each.
+    pub fn plan(&self, org_id: &str, piece_bytes: u64) -> RowPlan {
+        match *self {
+            Self::Traces {
+                request,
+                policy,
+                mappings,
+            } => row_budget::trace_plan(org_id, request, policy, mappings, piece_bytes),
+            Self::Logs(request) => row_budget::log_plan(org_id, request, piece_bytes),
+            Self::Metrics(request) => row_budget::metric_plan(org_id, request, piece_bytes),
+        }
+    }
+
+    const fn signal_path(&self) -> &'static str {
+        match self {
+            Self::Traces { .. } => "traces",
+            Self::Logs(_) => "logs",
+            Self::Metrics(_) => "metrics",
+        }
+    }
+
+    const fn signal(&self) -> TelemetrySignal {
+        match self {
+            Self::Traces { .. } => TelemetrySignal::Traces,
+            Self::Logs(_) => TelemetrySignal::Logs,
+            Self::Metrics(_) => TelemetrySignal::Metrics,
+        }
+    }
+
+    fn encode(
+        &self,
+        datasources: &DatasourceNames,
+        org_id: &str,
+        plan: &RowPlan,
+        piece: &RowPiece,
+    ) -> Result<(Vec<EncodedFrame>, AcceptStats), PipelineError> {
+        let routing_key = plan.routing_key;
+        match *self {
+            Self::Traces {
+                request,
+                policy,
+                mappings,
+            } => encode_traces(
+                datasources,
+                org_id,
+                request,
+                policy,
+                mappings,
+                routing_key,
+                piece,
+            ),
+            Self::Logs(request) => encode_logs(datasources, org_id, request, routing_key, piece),
+            Self::Metrics(request) => {
+                encode_metrics(datasources, org_id, request, routing_key, piece)
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -884,7 +1028,8 @@ struct QueuedFrame {
     destination: ExportDestination,
     datasource: String,
     row_count: usize,
-    payload: Vec<u8>,
+    /// Shared with the WAL append that wrote it, so the rows are held once.
+    payload: Bytes,
     /// Trace context of the request that enqueued this frame, so the export
     /// batch can link back to it. In-memory only — deliberately not part of the
     /// WAL frame, because a frame replayed after a restart belongs to a trace
@@ -906,7 +1051,7 @@ struct EncodedFrame {
     destination: ExportDestination,
     datasource: String,
     row_count: usize,
-    payload: Vec<u8>,
+    payload: Bytes,
 }
 
 impl TelemetryPipeline {
@@ -1072,6 +1217,8 @@ impl TelemetryPipeline {
         }
     }
 
+    /// Tests and benches only: skips the request memory budget the gateway admits on.
+    #[doc(hidden)]
     pub async fn accept_traces(
         &self,
         org_id: &str,
@@ -1089,7 +1236,8 @@ impl TelemetryPipeline {
         .await
     }
 
-    #[hotpath::measure]
+    /// Tests and benches only: skips the request memory budget the gateway admits on.
+    #[doc(hidden)]
     pub async fn accept_traces_to(
         &self,
         org_id: &str,
@@ -1098,23 +1246,16 @@ impl TelemetryPipeline {
         attribute_mappings: &[AttributeMappingRule],
         destination: ExportDestination,
     ) -> Result<AcceptStats, PipelineError> {
-        let (frames, stats) = {
-            let span = encode_rows_internal_span("traces");
-            let _guard = span.enter();
-            let (frames, stats) = encode_traces(
-                &self.inner.cfg.datasources,
-                org_id,
-                request,
-                sampling_policy,
-                attribute_mappings,
-            )?;
-            record_encode_stats(&span, &frames, &stats);
-            (frames, stats)
+        let source = RowSource::Traces {
+            request,
+            policy: sampling_policy,
+            mappings: attribute_mappings,
         };
-        self.commit_frames(frames, destination).await?;
-        Ok(stats)
+        self.accept_rows(org_id, source, destination).await
     }
 
+    /// Tests and benches only: skips the request memory budget the gateway admits on.
+    #[doc(hidden)]
     pub async fn accept_logs(
         &self,
         org_id: &str,
@@ -1124,24 +1265,20 @@ impl TelemetryPipeline {
             .await
     }
 
-    #[hotpath::measure]
+    /// Tests and benches only: skips the request memory budget the gateway admits on.
+    #[doc(hidden)]
     pub async fn accept_logs_to(
         &self,
         org_id: &str,
         request: &ExportLogsServiceRequest,
         destination: ExportDestination,
     ) -> Result<AcceptStats, PipelineError> {
-        let (frames, stats) = {
-            let span = encode_rows_internal_span("logs");
-            let _guard = span.enter();
-            let (frames, stats) = encode_logs(&self.inner.cfg.datasources, org_id, request)?;
-            record_encode_stats(&span, &frames, &stats);
-            (frames, stats)
-        };
-        self.commit_frames(frames, destination).await?;
-        Ok(stats)
+        self.accept_rows(org_id, RowSource::Logs(request), destination)
+            .await
     }
 
+    /// Tests and benches only: skips the request memory budget the gateway admits on.
+    #[doc(hidden)]
     pub async fn accept_metrics(
         &self,
         org_id: &str,
@@ -1151,21 +1288,203 @@ impl TelemetryPipeline {
             .await
     }
 
-    #[hotpath::measure]
+    /// Tests and benches only: skips the request memory budget the gateway admits on.
+    #[doc(hidden)]
     pub async fn accept_metrics_to(
         &self,
         org_id: &str,
         request: &ExportMetricsServiceRequest,
         destination: ExportDestination,
     ) -> Result<AcceptStats, PipelineError> {
+        self.accept_rows(org_id, RowSource::Metrics(request), destination)
+            .await
+    }
+
+    /// Every piece of the request, in order, outside the memory budget the gateway
+    /// admits on; for tests and benches only.
+    #[doc(hidden)]
+    pub async fn accept_rows(
+        &self,
+        org_id: &str,
+        source: RowSource<'_>,
+        destination: ExportDestination,
+    ) -> Result<AcceptStats, PipelineError> {
+        let plan = source.plan(org_id, row_budget::ROW_PIECE_BYTES);
+        self.accept_planned(org_id, source, destination, &plan)
+            .await
+            .map_err(|failure| failure.error)
+    }
+
+    /// Every piece of `plan`, in order, each written to the WAL before the next is
+    /// built. The whole plan's queue room is reserved first, so a full queue, lane or
+    /// org cap refuses the request before anything is written.
+    pub async fn accept_planned(
+        &self,
+        org_id: &str,
+        source: RowSource<'_>,
+        destination: ExportDestination,
+        plan: &RowPlan,
+    ) -> Result<AcceptStats, PlannedFailure> {
+        let mut grant = self
+            .reserve_plan(org_id, source.signal(), destination, plan)
+            .map_err(|error| PlannedFailure {
+                error,
+                pieces_written: 0,
+                frames_written: 0,
+            })?;
+        let mut progress = PieceProgress::new(
+            source.signal_path(),
+            plan.pieces.len(),
+            Arc::clone(&grant.frames_written),
+        );
+        let mut stats = AcceptStats::default();
+        for piece in &plan.pieces {
+            let piece_stats = self
+                .accept_piece(org_id, source, destination, plan, piece, &mut grant)
+                .await
+                .map_err(|error| progress.failed(error))?;
+            progress.written += 1;
+            stats.add(&piece_stats);
+        }
+        progress.finished();
+        Ok(stats)
+    }
+
+    /// Reserves everything `plan`'s pieces will queue before the first is built:
+    /// the org's queue bytes, room under the WAL lane cap and a channel slot per
+    /// frame. A plan that could never fit is `TooLarge`; one that does not fit now
+    /// is the retryable error the per-frame check would have given.
+    fn reserve_plan(
+        &self,
+        org_id: &str,
+        signal: TelemetrySignal,
+        destination: ExportDestination,
+        plan: &RowPlan,
+    ) -> Result<PlanGrant, PipelineError> {
+        let frames: usize = plan
+            .pieces
+            .iter()
+            .map(|piece| {
+                piece
+                    .estimate
+                    .payload_bytes
+                    .iter()
+                    .filter(|bytes| **bytes > 0)
+                    .count()
+            })
+            .sum();
+        let reserve = PlanReserve {
+            routing_key: plan.routing_key,
+            frames,
+            row_bytes: plan.total.row_bytes(),
+            longest_datasource: self.inner.cfg.datasources.longest(),
+        };
+        self.reserve_frames(org_id, signal, destination, &reserve)
+    }
+
+    /// Reserves `reserve`'s frames on one lane before the first is written; see
+    /// `reserve_plan`.
+    fn reserve_frames(
+        &self,
+        org_id: &str,
+        signal: TelemetrySignal,
+        destination: ExportDestination,
+        reserve: &PlanReserve,
+    ) -> Result<PlanGrant, PipelineError> {
+        let cfg = &self.inner.cfg;
+        let PlanReserve {
+            routing_key,
+            frames,
+            row_bytes,
+            longest_datasource,
+        } = *reserve;
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "routing_key is a hash; commit_frames routes it the same way"
+        )]
+        let shard = (routing_key as usize) % cfg.wal_shards;
+        let lane = lane_index(shard, destination);
+        let wal_lane = self
+            .inner
+            .wal
+            .lane(lane)
+            .map_err(PipelineError::QueueUnavailable)?;
+        let head_bytes = (WAL_V3_HEADER_LEN + org_id.len() + longest_datasource) as u64;
+        let wal_bytes = row_bytes.saturating_add((frames as u64).saturating_mul(head_bytes));
+        let never_fits = if row_bytes > cfg.org_queue_max_bytes {
+            Some(format!(
+                "rows of {row_bytes} bytes exceed the org queue limit of {} bytes",
+                cfg.org_queue_max_bytes
+            ))
+        } else if wal_bytes > wal_lane.max_bytes {
+            Some(format!(
+                "rows of {wal_bytes} bytes exceed the WAL lane limit of {} bytes",
+                wal_lane.max_bytes
+            ))
+        } else if frames > cfg.queue_channel_capacity {
+            Some(format!(
+                "{frames} frames exceed the lane channel capacity of {}",
+                cfg.queue_channel_capacity
+            ))
+        } else {
+            None
+        };
+        if let Some(detail) = never_fits {
+            return Err(PipelineError::TooLarge(detail));
+        }
+
+        self.reserve_org_queue_bytes(org_id, row_bytes)?;
+        let org = OrgBytesReservation {
+            counters: Arc::clone(&self.inner.org_queue_bytes),
+            org_id: org_id.to_owned(),
+            bytes: row_bytes,
+            committed: false,
+        };
+        let mut permits = Vec::with_capacity(frames);
+        for _ in 0..frames {
+            let Ok(permit) = self.inner.lane_senders[lane].clone().try_reserve_owned() else {
+                metrics::backpressure_shed(org_id, destination.as_str(), signal.as_str());
+                return Err(PipelineError::Backpressure("Telemetry queue is full"));
+            };
+            permits.push(permit);
+        }
+        if !wal_lane.try_reserve(wal_bytes) {
+            metrics::wal_shard_full(shard, destination.as_str());
+            return Err(PipelineError::QueueUnavailable(
+                "Telemetry WAL lane is full".to_owned(),
+            ));
+        }
+        Ok(PlanGrant {
+            lane,
+            org,
+            wal_lane,
+            wal_bytes,
+            permits,
+            frames_written: Arc::new(AtomicUsize::new(0)),
+        })
+    }
+
+    /// Builds one piece of `plan`'s rows into buffers sized from its estimate and
+    /// commits them from `grant`. `plan` is `source.plan` of the same org.
+    #[hotpath::measure]
+    async fn accept_piece(
+        &self,
+        org_id: &str,
+        source: RowSource<'_>,
+        destination: ExportDestination,
+        plan: &RowPlan,
+        piece: &RowPiece,
+        grant: &mut PlanGrant,
+    ) -> Result<AcceptStats, PipelineError> {
         let (frames, stats) = {
-            let span = encode_rows_internal_span("metrics");
+            let span = encode_rows_internal_span(source.signal_path());
             let _guard = span.enter();
-            let (frames, stats) = encode_metrics(&self.inner.cfg.datasources, org_id, request)?;
-            record_encode_stats(&span, &frames, &stats);
+            let (frames, stats) =
+                source.encode(&self.inner.cfg.datasources, org_id, plan, piece)?;
+            record_encode_stats(&span, &frames, &stats, &piece.estimate);
             (frames, stats)
         };
-        self.commit_frames(frames, destination).await?;
+        self.commit_frames(frames, destination, Some(grant)).await?;
         Ok(stats)
     }
 
@@ -1190,7 +1509,59 @@ impl TelemetryPipeline {
         // The rows are copied into the frame payload above; free them before the
         // WAL append rather than holding both across the await.
         drop(rows);
-        self.commit_frames(frames, destination).await?;
+        self.commit_frames(frames, destination, None).await?;
+        Ok(stats)
+    }
+
+    /// Accept pre-serialized NDJSON rows too many for one export batch: each of
+    /// `batches` is a frame, and they commit through one `commit_frames` call like
+    /// the frames of an OTLP request, with the same outcome when one is refused.
+    #[hotpath::measure]
+    pub async fn accept_row_batches_to(
+        &self,
+        org_id: &str,
+        datasource: &str,
+        batches: Vec<Vec<Vec<u8>>>,
+        signal: TelemetrySignal,
+        destination: ExportDestination,
+    ) -> Result<AcceptStats, RowBatchesError> {
+        let routing_key = hash64(org_id);
+        let mut frames = Vec::with_capacity(batches.len());
+        // Each batch is freed once its frame holds a copy, not held across the commit.
+        for rows in batches {
+            frames.extend(rows_to_frames(
+                org_id,
+                routing_key,
+                signal,
+                datasource.to_owned(),
+                &rows,
+            ));
+        }
+        let frame_rows: Vec<usize> = frames.iter().map(|frame| frame.row_count).collect();
+        let stats = AcceptStats {
+            rows: frame_rows.iter().sum(),
+            dropped: 0,
+        };
+        // Reserved whole first, like a planned request: a full queue, lane or org cap
+        // refuses the export before any frame is written, so a retry stores nothing twice.
+        let reserve = PlanReserve {
+            routing_key,
+            frames: frames.len(),
+            row_bytes: frames.iter().map(|frame| frame.payload.len() as u64).sum(),
+            longest_datasource: datasource.len(),
+        };
+        let mut grant = self
+            .reserve_frames(org_id, signal, destination, &reserve)
+            .map_err(|error| RowBatchesError {
+                error,
+                committed_rows: 0,
+            })?;
+        self.commit_frames(frames, destination, Some(&mut grant))
+            .await
+            .map_err(|refused| RowBatchesError {
+                committed_rows: frame_rows.iter().take(refused.frames_committed).sum(),
+                error: refused.error,
+            })?;
         Ok(stats)
     }
 
@@ -1199,7 +1570,8 @@ impl TelemetryPipeline {
         &self,
         frames: Vec<EncodedFrame>,
         destination: ExportDestination,
-    ) -> Result<(), PipelineError> {
+        mut grant: Option<&mut PlanGrant>,
+    ) -> Result<(), CommitError> {
         if frames.is_empty() {
             return Ok(());
         }
@@ -1233,8 +1605,11 @@ impl TelemetryPipeline {
                 // Route to the destination's own lane so a stalled ClickHouse export
                 // cannot fill the Tinybird channel for the same shard (and vice versa).
                 let lane = lane_index(shard, destination);
+                // A planned request's frames draw on what it reserved up front.
+                let mut grant = grant.as_deref_mut().filter(|grant| grant.lane == lane);
+                let granted = grant.as_mut().and_then(|grant| grant.permits.pop());
                 let sender = self.inner.lane_senders[lane].clone();
-                let Ok(permit) = sender.try_reserve_owned() else {
+                let Some(permit) = granted.or_else(|| sender.try_reserve_owned().ok()) else {
                     metrics::backpressure_shed(
                         &frame.org_id,
                         frame.destination.as_str(),
@@ -1247,33 +1622,35 @@ impl TelemetryPipeline {
                     return Err(PipelineError::Backpressure("Telemetry queue is full"));
                 };
                 let queued_bytes = frame.payload.len() as u64;
-                self.reserve_org_queue_bytes(&frame.org_id, queued_bytes)
-                    .inspect_err(|_| record_failing_frame(shard, lane, &frame.datasource))?;
                 // The delivery owns the reservation: it commits when the frame
                 // reaches the lane, and dropping it instead (a failed encode, or a
                 // refused or failed append) releases it.
-                let reservation = OrgBytesReservation {
-                    counters: Arc::clone(&self.inner.org_queue_bytes),
-                    org_id: frame.org_id.clone(),
-                    bytes: queued_bytes,
-                    committed: false,
-                };
+                let reservation = self
+                    .frame_org_bytes(&frame, grant.as_deref_mut())
+                    .inspect_err(|_| record_failing_frame(shard, lane, &frame.datasource))?;
                 let datasource = frame.datasource.clone();
-                let encoded = encode_wal_frame(&frame).map_err(|error| {
+                let head = wal_frame_head(&frame).map_err(|error| {
                     record_failing_frame(shard, lane, &datasource);
                     PipelineError::QueueUnavailable(error)
                 })?;
+                let added = (head.len() + frame.payload.len()) as u64;
+                // Room the plan reserved under the lane cap is already counted there,
+                // and moves into the append so a dropped request cannot return it early.
+                let hold = grant.as_deref_mut().map(|grant| grant.hold_frame(added));
+                let reserved = hold.as_ref().is_some_and(|hold| hold.wal_bytes > 0);
+                // The append writes the rows from the frame's own buffer.
+                let payload = frame.payload.clone();
                 let deliver =
-                    queued_delivery(frame, shard, permit, reservation, source_span.clone());
+                    queued_delivery(frame, shard, permit, reservation, source_span.clone(), hold);
                 let appended = self
                     .inner
                     .wal
-                    .append_delivering(lane, encoded, true, deliver)
-                    .await
-                    .map_err(|error| {
-                        record_failing_frame(shard, lane, &datasource);
-                        PipelineError::QueueUnavailable(error)
-                    })?;
+                    .append_delivering(lane, head, payload, !reserved, deliver)
+                    .await;
+                let appended = appended.map_err(|error| {
+                    record_failing_frame(shard, lane, &datasource);
+                    PipelineError::QueueUnavailable(error)
+                })?;
                 committed_bytes += queued_bytes;
                 frames_committed += 1;
                 batch_frames = batch_frames.max(appended.batch_frames);
@@ -1308,7 +1685,29 @@ impl TelemetryPipeline {
                 error.is_server_fault(),
             );
         }
-        result
+        result.map_err(|error| CommitError {
+            error,
+            frames_committed,
+        })
+    }
+
+    /// `frame`'s org queue bytes, taken from `grant` where it reserved them.
+    fn frame_org_bytes(
+        &self,
+        frame: &EncodedFrame,
+        grant: Option<&mut PlanGrant>,
+    ) -> Result<OrgBytesReservation, PipelineError> {
+        let bytes = frame.payload.len() as u64;
+        let mut reservation = OrgBytesReservation {
+            counters: Arc::clone(&self.inner.org_queue_bytes),
+            org_id: frame.org_id.clone(),
+            bytes: grant.map_or(0, |grant| grant.org.split(bytes)),
+            committed: false,
+        };
+        // Dropped on a refusal, which returns the granted part too.
+        self.reserve_org_queue_bytes(&frame.org_id, bytes - reservation.bytes)?;
+        reservation.bytes = bytes;
+        Ok(reservation)
     }
 
     fn reserve_org_queue_bytes(&self, org_id: &str, bytes: u64) -> Result<(), PipelineError> {
@@ -1446,6 +1845,9 @@ struct WalLane {
     /// Bytes held by every segment on disk, the exported prefix included. Drives
     /// the lane cap and the `wal_shard_bytes` gauge.
     live_bytes: AtomicU64,
+    /// Bytes requests have reserved for frames not yet appended (`PlanGrant`); the
+    /// cap counts them so a planned request is never refused part way through.
+    reserved_bytes: AtomicU64,
     /// Cumulative bytes handed to export and marked exported since this lane
     /// was opened. Their difference is the backlog, and it stays exact across
     /// rotation and deletion, which nothing derived from file sizes does.
@@ -1497,6 +1899,156 @@ fn while_caller_waits(deliver: Delivery, lane: Arc<WalLane>) -> (WaitingCaller, 
     (waiting, guarded)
 }
 
+/// What `reserve_frames` reserves: `frames` frames on `routing_key`'s lane holding
+/// `row_bytes` of rows, each headed by a datasource name of at most
+/// `longest_datasource` bytes.
+#[derive(Clone, Copy)]
+struct PlanReserve {
+    routing_key: u64,
+    frames: usize,
+    row_bytes: u64,
+    longest_datasource: usize,
+}
+
+/// What a request reserved for its whole plan before its first piece: the org's
+/// queue bytes, room under its WAL lane's cap and a channel slot per frame. Its
+/// pieces draw on it, and dropping it returns what they did not use.
+struct PlanGrant {
+    lane: usize,
+    org: OrgBytesReservation,
+    wal_lane: Arc<WalLane>,
+    wal_bytes: u64,
+    permits: Vec<mpsc::OwnedPermit<QueuedFrame>>,
+    /// Frames of the plan already durable, shared with its `PieceProgress`.
+    frames_written: Arc<AtomicUsize>,
+}
+
+impl PlanGrant {
+    /// Moves one frame's lane room (when the plan still holds it) into a hold that
+    /// lives as long as the frame's append, wherever that ends.
+    fn hold_frame(&mut self, bytes: u64) -> FrameHold {
+        let wal_bytes = if self.wal_bytes >= bytes { bytes } else { 0 };
+        self.wal_bytes -= wal_bytes;
+        FrameHold {
+            frames_written: Arc::clone(&self.frames_written),
+            wal_lane: Arc::clone(&self.wal_lane),
+            wal_bytes,
+        }
+    }
+}
+
+/// A planned frame's share of its grant, carried by the frame's delivery: it counts
+/// the frame when delivered and returns its lane room once the append is done.
+struct FrameHold {
+    frames_written: Arc<AtomicUsize>,
+    wal_lane: Arc<WalLane>,
+    wal_bytes: u64,
+}
+
+impl Drop for FrameHold {
+    fn drop(&mut self) {
+        self.wal_lane.release_reserved(self.wal_bytes);
+    }
+}
+
+impl Drop for PlanGrant {
+    fn drop(&mut self) {
+        self.wal_lane.release_reserved(self.wal_bytes);
+    }
+}
+
+/// A planned request that failed, and how much of it was already durable and will
+/// be exported. Any frame written means a resend stores that part again.
+#[derive(Debug)]
+pub struct PlannedFailure {
+    pub error: PipelineError,
+    pub pieces_written: usize,
+    /// Frames written, counting those of a piece that failed part way.
+    pub frames_written: usize,
+}
+
+impl PlannedFailure {
+    pub const fn stored_any(&self) -> bool {
+        self.frames_written > 0
+    }
+}
+
+impl std::fmt::Display for PlannedFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} ({} pieces, {} frames written)",
+            self.error, self.pieces_written, self.frames_written
+        )
+    }
+}
+
+impl std::error::Error for PlannedFailure {}
+
+/// Counts a request that stops after any of its frames were written, including
+/// one dropped mid-way (a request timeout or a closed connection).
+struct PieceProgress {
+    signal: &'static str,
+    pieces: usize,
+    written: usize,
+    frames: Arc<AtomicUsize>,
+    done: bool,
+}
+
+impl PieceProgress {
+    const fn new(signal: &'static str, pieces: usize, frames: Arc<AtomicUsize>) -> Self {
+        Self {
+            signal,
+            pieces,
+            written: 0,
+            frames,
+            done: false,
+        }
+    }
+
+    fn frames_written(&self) -> usize {
+        self.frames.load(Ordering::Relaxed)
+    }
+
+    fn failed(&mut self, error: PipelineError) -> PlannedFailure {
+        self.done = true;
+        let frames_written = self.frames_written();
+        if frames_written > 0 {
+            self.record(error.kind());
+        }
+        PlannedFailure {
+            error,
+            pieces_written: self.written,
+            frames_written,
+        }
+    }
+
+    fn finished(&mut self) {
+        self.done = true;
+    }
+
+    fn record(&self, reason: &str) {
+        warn!(
+            signal = self.signal,
+            pieces = self.pieces,
+            pieces_written = self.written,
+            frames_written = self.frames_written(),
+            reason,
+            "Request stopped after part of it was written"
+        );
+        tracing::Span::current().record("maple.ingest.row_pieces_written", self.written);
+        metrics::partial_write(self.signal, reason);
+    }
+}
+
+impl Drop for PieceProgress {
+    fn drop(&mut self) {
+        if !self.done && self.frames_written() > 0 {
+            self.record("cancelled");
+        }
+    }
+}
+
 /// Hands a durable frame to its lane's export channel, committing its org
 /// reservation. Dropped unrun, the reservation releases instead.
 fn queued_delivery(
@@ -1505,8 +2057,12 @@ fn queued_delivery(
     permit: mpsc::OwnedPermit<QueuedFrame>,
     reservation: OrgBytesReservation,
     source_span: Option<SpanContext>,
+    hold: Option<FrameHold>,
 ) -> Delivery {
     Box::new(move |segment, start, end| {
+        if let Some(hold) = &hold {
+            hold.frames_written.fetch_add(1, Ordering::Relaxed);
+        }
         let queued_bytes = reservation.bytes;
         reservation.commit();
         permit.send(QueuedFrame {
@@ -1700,6 +2256,7 @@ impl WalLane {
             segment_max_bytes,
             active_seq: AtomicU64::new(next_seq),
             live_bytes: AtomicU64::new(on_disk),
+            reserved_bytes: AtomicU64::new(0),
             // Whatever survived the last boot is backlog this lane still owes.
             committed_bytes: AtomicU64::new(on_disk.saturating_sub(cursor.offset)),
             exported_bytes: AtomicU64::new(0),
@@ -1727,13 +2284,17 @@ impl WalLane {
     /// Group commit: frames written while a sync is in flight share the next
     /// one, so a slow fsync costs each append about two syncs, not one per
     /// append queued ahead of it. `deliver` runs once the frame is durable.
+    ///
+    /// The frame is `head` then `payload`, written in turn so its rows are
+    /// never copied into one buffer first.
     fn append_blocking(
         &self,
-        encoded: &[u8],
+        head: &[u8],
+        payload: &[u8],
         enforce_cap: bool,
         deliver: Delivery,
     ) -> Result<Appended, String> {
-        let added = encoded.len() as u64;
+        let added = (head.len() + payload.len()) as u64;
         let append_started = Instant::now();
         let state = self.lock_append()?;
         // Everything before this point was queueing behind other appenders on
@@ -1744,6 +2305,7 @@ impl WalLane {
             && self
                 .live_bytes
                 .load(Ordering::Relaxed)
+                .saturating_add(self.reserved_bytes.load(Ordering::Relaxed))
                 .saturating_add(added)
                 > self.max_bytes
         {
@@ -1751,7 +2313,8 @@ impl WalLane {
             return Err("Telemetry WAL lane is full".to_owned());
         }
         (&*state.file)
-            .write_all(encoded)
+            .write_all(head)
+            .and_then(|()| (&*state.file).write_all(payload))
             .map_err(|error| format!("write WAL: {error}"))?;
         let seq = state.seq;
         let start = state.len;
@@ -2040,6 +2603,30 @@ impl WalLane {
     fn forget_committed(&self, bytes: u64) {
         self.committed_bytes.fetch_sub(bytes, Ordering::Relaxed);
     }
+
+    /// Reserves room for `bytes` of frames under the lane cap, or refuses at once.
+    fn try_reserve(&self, bytes: u64) -> bool {
+        let mut reserved = self.reserved_bytes.load(Ordering::Relaxed);
+        loop {
+            let live = self.live_bytes.load(Ordering::Relaxed);
+            if live.saturating_add(reserved).saturating_add(bytes) > self.max_bytes {
+                return false;
+            }
+            match self.reserved_bytes.compare_exchange(
+                reserved,
+                reserved + bytes,
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return true,
+                Err(observed) => reserved = observed,
+            }
+        }
+    }
+
+    fn release_reserved(&self, bytes: u64) {
+        self.reserved_bytes.fetch_sub(bytes, Ordering::AcqRel);
+    }
 }
 
 /// What WAL orphan recovery did with one segment's source object.
@@ -2210,7 +2797,7 @@ impl ShardedWal {
                     destination: frame.destination,
                     datasource: frame.datasource,
                     row_count: frame.row_count,
-                    payload: frame.payload,
+                    payload: Bytes::from(frame.payload),
                 };
                 // Bypass the per-lane byte cap: these frames were already accepted
                 // and are merely being relocated, so we must not reject them.
@@ -2448,7 +3035,7 @@ impl ShardedWal {
                 destination: frame.destination,
                 datasource: frame.datasource,
                 row_count: frame.row_count,
-                payload: frame.payload,
+                payload: Bytes::from(frame.payload),
             };
             // Bypass the lane cap: these frames were accepted by the task that
             // died, and rejecting them here is the loss this whole tier exists
@@ -2543,7 +3130,7 @@ impl ShardedWal {
         let deliver: Delivery = Box::new(move |seq, start, end| {
             sender.send((seq, start, end)).ok();
         });
-        self.append_delivering(lane, encode_wal_frame(frame)?, true, deliver)
+        self.append_delivering(lane, encode_wal_frame(frame)?, Bytes::new(), true, deliver)
             .await?;
         landed
             .recv()
@@ -2554,7 +3141,7 @@ impl ShardedWal {
     /// lane replays them from disk.
     async fn append_relocated(&self, lane: usize, frame: &EncodedFrame) -> Result<(), String> {
         let encoded = encode_wal_frame(frame)?;
-        self.append_delivering(lane, encoded, false, Box::new(|_, _, _| {}))
+        self.append_delivering(lane, encoded, Bytes::new(), false, Box::new(|_, _, _| {}))
             .await
             .map(|_| ())
     }
@@ -2565,7 +3152,8 @@ impl ShardedWal {
     async fn append_delivering(
         &self,
         lane: usize,
-        encoded: Vec<u8>,
+        head: Vec<u8>,
+        payload: Bytes,
         enforce_cap: bool,
         deliver: Delivery,
     ) -> Result<Appended, String> {
@@ -2574,7 +3162,7 @@ impl ShardedWal {
         // with a retryable error, so its frame must not reach export as well.
         let (waiting, deliver) = while_caller_waits(deliver, Arc::clone(&lane_ref));
         let appended = tokio::task::spawn_blocking(move || {
-            lane_ref.append_blocking(&encoded, enforce_cap, deliver)
+            lane_ref.append_blocking(&head, &payload, enforce_cap, deliver)
         })
         .await
         .map_err(|error| format!("join WAL append: {error}"))?;
@@ -2645,10 +3233,10 @@ impl WalLaneBench {
             destination: ExportDestination::Tinybird,
             datasource: "logs".to_owned(),
             row_count: 1,
-            payload,
+            payload: Bytes::from(payload),
         })?;
         self.lane
-            .append_blocking(&encoded, true, Box::new(|_, _, _| {}))
+            .append_blocking(&encoded, &[], true, Box::new(|_, _, _| {}))
             .map(|_| ())
     }
 }
@@ -2822,7 +3410,7 @@ fn replay_lane(lane: usize, lane_ref: &WalLane) -> Result<Vec<QueuedFrame>, Stri
                 destination: frame.destination,
                 datasource: frame.datasource,
                 row_count: frame.row_count,
-                payload: frame.payload,
+                payload: Bytes::from(frame.payload),
                 // Replayed from disk after a restart: the originating trace is gone.
                 source_span: None,
                 // Stamped now, not at the original commit, which did not survive
@@ -2887,7 +3475,15 @@ fn read_legacy_frames(path: &Path, cursor_path: &Path) -> Result<Vec<DecodedWalF
     Ok(frames)
 }
 
+/// A whole WAL frame in one buffer, for frames moved between logs at boot.
 fn encode_wal_frame(frame: &EncodedFrame) -> Result<Vec<u8>, String> {
+    let mut out = wal_frame_head(frame)?;
+    out.extend_from_slice(&frame.payload);
+    Ok(out)
+}
+
+/// Everything of a WAL frame but its payload, which follows it in the segment.
+fn wal_frame_head(frame: &EncodedFrame) -> Result<Vec<u8>, String> {
     let datasource = frame.datasource.as_bytes();
     let org_id = frame.org_id.as_bytes();
     // Every length below is written into a fixed-width header field, so the
@@ -2907,9 +3503,7 @@ fn encode_wal_frame(frame: &EncodedFrame) -> Result<Vec<u8>, String> {
     crc.update(&frame.payload);
     let checksum = crc.finalize();
 
-    let mut out = Vec::with_capacity(
-        WAL_V3_HEADER_LEN + org_id.len() + datasource.len() + frame.payload.len(),
-    );
+    let mut out = Vec::with_capacity(WAL_V3_HEADER_LEN + org_id.len() + datasource.len());
     out.extend_from_slice(WAL_MAGIC);
     out.push(3);
     out.push(signal_tag(frame.signal));
@@ -2921,7 +3515,6 @@ fn encode_wal_frame(frame: &EncodedFrame) -> Result<Vec<u8>, String> {
     out.extend_from_slice(&checksum.to_le_bytes());
     out.extend_from_slice(org_id);
     out.extend_from_slice(datasource);
-    out.extend_from_slice(&frame.payload);
     Ok(out)
 }
 
@@ -3073,6 +3666,7 @@ fn signal_tag(signal: TelemetrySignal) -> u8 {
         TelemetrySignal::SessionEvents => 5,
         TelemetrySignal::ProductEvents => 6,
         TelemetrySignal::AuditTrail => 7,
+        TelemetrySignal::Profiles => 8,
     }
 }
 
@@ -3085,6 +3679,7 @@ fn signal_from_tag(tag: u8) -> Option<TelemetrySignal> {
         5 => Some(TelemetrySignal::SessionEvents),
         6 => Some(TelemetrySignal::ProductEvents),
         7 => Some(TelemetrySignal::AuditTrail),
+        8 => Some(TelemetrySignal::Profiles),
         _ => None,
     }
 }
@@ -3139,6 +3734,14 @@ struct OrgBytesReservation {
 }
 
 impl OrgBytesReservation {
+    /// Moves up to `bytes` of this reservation to the caller, who now owns their
+    /// release; returns how many moved.
+    fn split(&mut self, bytes: u64) -> u64 {
+        let moved = bytes.min(self.bytes);
+        self.bytes -= moved;
+        moved
+    }
+
     /// The frame is on its way to the lane; the export worker owns the release
     /// from here.
     fn commit(mut self) {
@@ -3442,7 +4045,7 @@ impl ExportWorker {
             endpoint.trim_end_matches('/'),
             datasource
         );
-        let compressed = bytes::Bytes::from(gzip(&body)?);
+        let compressed = Bytes::from(gzip(&body)?);
         // `gzip` only borrows now, so nothing else frees this. The uncompressed
         // batch is up to INGEST_BATCH_MAX_BYTES and is never read again — during
         // an upstream outage the retry loop below runs for minutes, and holding
@@ -3606,7 +4209,7 @@ impl ExportWorker {
             return Ok(ClickHouseExportOutcome::Dropped);
         };
 
-        let compressed = bytes::Bytes::from(gzip(&body)?);
+        let compressed = Bytes::from(gzip(&body)?);
         // `gzip` only borrows now, so nothing else frees this. The uncompressed
         // batch is up to INGEST_BATCH_MAX_BYTES and is never read again — during
         // an upstream outage the retry loop below runs for minutes, and holding
@@ -4077,49 +4680,487 @@ fn gzip(body: &[u8]) -> Result<Vec<u8>, String> {
         .map_err(|error| format!("finish gzip Tinybird body: {error}"))
 }
 
+/// The row shapes a request encodes to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RowKind {
+    Trace,
+    Log,
+    Gauge,
+    Sum,
+    Histogram,
+    ExponentialHistogram,
+}
+
+impl RowKind {
+    /// The `RowEstimate` slot holding this shape's bytes: one per datasource a
+    /// request can write to.
+    pub(crate) const fn slot(self) -> usize {
+        match self {
+            Self::Trace | Self::Log | Self::Gauge => 0,
+            Self::Sum => 1,
+            Self::Histogram => 2,
+            Self::ExponentialHistogram => 3,
+        }
+    }
+}
+
+/// Bytes of a `kind` row with nothing in it, newline included: its keys,
+/// punctuation and fixed-width values, which every row of that shape carries.
+pub(crate) fn empty_row_len(kind: RowKind) -> u64 {
+    static LENGTHS: LazyLock<[u64; 6]> = LazyLock::new(|| {
+        let attrs = Map::new();
+        let context = RowContext::new(&attrs, "", None, &attrs, "");
+        let metric = opentelemetry_proto::tonic::metrics::v1::Metric::default();
+        let point = || metric_row(&metric, &context, &PointParts::default());
+        // A counter takes every byte, so measuring a row cannot fail.
+        let len = |row: Result<u64, serde_json::Error>| row.unwrap_or(4096) + 1;
+        [
+            len(json_len(&trace_row(
+                &Span::default(),
+                &context,
+                "",
+                Map::new(),
+            ))),
+            len(json_len(&log_row(
+                &LogRecord::default(),
+                &context,
+                String::new(),
+            ))),
+            len(json_len(&MetricRow {
+                value: Some(0.0),
+                ..point()
+            })),
+            len(json_len(&MetricRow {
+                value: Some(0.0),
+                aggregation_temporality: Some(0),
+                is_monotonic: Some(false),
+                ..point()
+            })),
+            len(json_len(&histogram_row(
+                &HistogramDataPoint::default(),
+                0,
+                point(),
+            ))),
+            len(json_len(&exponential_histogram_row(
+                &ExponentialHistogramDataPoint::default(),
+                0,
+                point(),
+            ))),
+        ]
+    });
+    LENGTHS[kind as usize]
+}
+
+/// What a piece whose rows outgrew their reservation fails with.
+pub const ROWS_OVER_ESTIMATE: &str = "rows exceeded the memory reserved for them";
+
+/// One datasource's rows, written straight into the payload its frame carries.
+struct RowBuffer {
+    payload: Vec<u8>,
+    /// What the payload was sized for: the estimate this request was admitted on.
+    estimate: u64,
+    rows: usize,
+}
+
+impl RowBuffer {
+    /// Allocated once at the estimate, so the rows are never held twice.
+    fn with_capacity(estimate: u64) -> Self {
+        Self {
+            payload: Vec::with_capacity(usize::try_from(estimate).unwrap_or(0)),
+            estimate,
+            rows: 0,
+        }
+    }
+
+    /// Refuses a row that takes the payload past its estimate before writing past it,
+    /// so the buffer never grows beyond what was reserved and the piece is not written.
+    fn push(&mut self, row: &impl Serialize) -> Result<(), PipelineError> {
+        let before = self.payload.len();
+        let limit = usize::try_from(self.estimate).unwrap_or(usize::MAX);
+        let mut out = BoundedWriter {
+            out: &mut self.payload,
+            limit,
+        };
+        let written = serde_json::to_writer(&mut out, row)
+            .and_then(|()| out.write_all(b"\n").map_err(serde_json::Error::io));
+        match written {
+            Ok(()) => {
+                self.rows += 1;
+                Ok(())
+            }
+            Err(error) => {
+                self.payload.truncate(before);
+                if !error.is_io() {
+                    return Err(PipelineError::Encode(error.to_string()));
+                }
+                error!(
+                    estimate = self.estimate,
+                    payload_bytes = before,
+                    "Encoded rows exceeded the memory reserved for them"
+                );
+                Err(PipelineError::Encode(ROWS_OVER_ESTIMATE.to_owned()))
+            }
+        }
+    }
+
+    fn into_frame(
+        self,
+        org_id: &str,
+        routing_key: u64,
+        signal: TelemetrySignal,
+        datasource: &str,
+    ) -> Option<EncodedFrame> {
+        if self.rows == 0 {
+            return None;
+        }
+        let mut payload = self.payload;
+        // The estimate can far exceed the rows; queued frames are charged their
+        // length, so give back spare room over a quarter before queueing.
+        if payload.capacity() - payload.len() > payload.len() / 4 {
+            payload.shrink_to_fit();
+        }
+        Some(EncodedFrame {
+            routing_key,
+            org_id: org_id.to_owned(),
+            signal,
+            destination: ExportDestination::Tinybird,
+            datasource: datasource.to_owned(),
+            row_count: self.rows,
+            payload: Bytes::from(payload),
+        })
+    }
+}
+
+/// Appends to a buffer up to `limit` bytes; a write past it fails whole, so the
+/// buffer never reallocates beyond its reservation.
+struct BoundedWriter<'a> {
+    out: &'a mut Vec<u8>,
+    limit: usize,
+}
+
+impl Write for BoundedWriter<'_> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.write_all(buf).map(|()| buf.len())
+    }
+
+    fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
+        if self.out.len().saturating_add(buf.len()) > self.limit {
+            return Err(std::io::Error::other(ROWS_OVER_ESTIMATE));
+        }
+        self.out.extend_from_slice(buf);
+        Ok(())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// What every row under one resource and scope repeats.
+struct RowContext<'a> {
+    service_name: &'a str,
+    resource_schema_url: &'a str,
+    resource_attrs: &'a Map<String, Value>,
+    scope_schema_url: &'a str,
+    scope_name: &'a str,
+    scope_version: &'a str,
+    scope_attrs: &'a Map<String, Value>,
+}
+
+impl<'a> RowContext<'a> {
+    fn new(
+        resource_attrs: &'a Map<String, Value>,
+        resource_schema_url: &'a str,
+        scope: Option<&'a InstrumentationScope>,
+        scope_attrs: &'a Map<String, Value>,
+        scope_schema_url: &'a str,
+    ) -> Self {
+        Self {
+            service_name: resource_attrs
+                .get("service.name")
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+            resource_schema_url,
+            resource_attrs,
+            scope_schema_url,
+            scope_name: scope.map_or("", |scope| scope.name.as_str()),
+            scope_version: scope.map_or("", |scope| scope.version.as_str()),
+            scope_attrs,
+        }
+    }
+}
+
+fn resource_attr_map(resource: Option<&Resource>) -> Map<String, Value> {
+    resource
+        .map(|resource| attr_map(&resource.attributes))
+        .unwrap_or_default()
+}
+
+fn scope_attr_map(scope: Option<&InstrumentationScope>) -> Map<String, Value> {
+    scope
+        .map(|scope| attr_map(&scope.attributes))
+        .unwrap_or_default()
+}
+
+/// Where a group of a request's items lies against the piece being built.
+enum Reach {
+    Before,
+    Inside,
+    After,
+}
+
+/// Walks a request's items in order and hands out the ones in one piece, so a piece
+/// builds no resource or scope map it stores no row under.
+struct PieceRange {
+    start: usize,
+    end: usize,
+    /// The next item's number.
+    index: usize,
+}
+
+impl PieceRange {
+    const fn new(piece: &RowPiece) -> Self {
+        Self {
+            start: piece.start,
+            end: piece.end,
+            index: 0,
+        }
+    }
+
+    /// A group of `len` items about to be walked; one with none in the piece is passed.
+    fn enter(&mut self, len: usize) -> Reach {
+        if self.index >= self.end {
+            return Reach::After;
+        }
+        if len == 0 || self.index.saturating_add(len) <= self.start {
+            self.index += len;
+            return Reach::Before;
+        }
+        Reach::Inside
+    }
+
+    /// The items of `items` in the piece, `None` when there are none.
+    fn take<'a, T>(&mut self, items: &'a [T]) -> Option<&'a [T]> {
+        let index = self.index;
+        self.index += items.len();
+        if items.is_empty() || index >= self.end || self.index <= self.start {
+            return None;
+        }
+        let from = self.start.saturating_sub(index);
+        let to = (self.end - index).min(items.len());
+        items.get(from..to)
+    }
+}
+
+/// Data points a scope stores rows for: summaries are not stored.
+fn scope_points(scope: &opentelemetry_proto::tonic::metrics::v1::ScopeMetrics) -> usize {
+    scope
+        .metrics
+        .iter()
+        .map(|metric| match metric.data.as_ref() {
+            Some(metric::Data::Gauge(gauge)) => gauge.data_points.len(),
+            Some(metric::Data::Sum(sum)) => sum.data_points.len(),
+            Some(metric::Data::Histogram(histogram)) => histogram.data_points.len(),
+            Some(metric::Data::ExponentialHistogram(exp)) => exp.data_points.len(),
+            Some(metric::Data::Summary(_)) | None => 0,
+        })
+        .sum()
+}
+
+fn count_dropped_summaries(request: &ExportMetricsServiceRequest) {
+    let metrics = request
+        .resource_metrics
+        .iter()
+        .flat_map(|resource| &resource.scope_metrics)
+        .flat_map(|scope| &scope.metrics);
+    for metric in metrics {
+        if matches!(metric.data, Some(metric::Data::Summary(_)) | None) {
+            metrics::metrics_summary_dropped();
+        }
+    }
+}
+
+/// The shard key a request's rows have always gone to: its last span's trace id.
+pub(crate) fn trace_routing_key(org_id: &str, request: &ExportTraceServiceRequest) -> u64 {
+    let spans = request
+        .resource_spans
+        .iter()
+        .rev()
+        .flat_map(|resource| resource.scope_spans.iter().rev())
+        .flat_map(|scope| scope.spans.iter().rev());
+    spans
+        .map(|span| bytes_hex(&span.trace_id))
+        .find(|trace_id| !trace_id.is_empty())
+        .map_or_else(|| hash64(org_id), |trace_id| hash64(&trace_id))
+}
+
+/// The last log record's trace id, as for spans.
+pub(crate) fn log_routing_key(org_id: &str, request: &ExportLogsServiceRequest) -> u64 {
+    let logs = request
+        .resource_logs
+        .iter()
+        .rev()
+        .flat_map(|resource| resource.scope_logs.iter().rev())
+        .flat_map(|scope| scope.log_records.iter().rev());
+    logs.map(|log| bytes_hex(&log.trace_id))
+        .find(|trace_id| !trace_id.is_empty())
+        .map_or_else(|| hash64(org_id), |trace_id| hash64(&trace_id))
+}
+
+/// The last metric's name.
+pub(crate) fn metric_routing_key(org_id: &str, request: &ExportMetricsServiceRequest) -> u64 {
+    request
+        .resource_metrics
+        .iter()
+        .rev()
+        .flat_map(|resource| resource.scope_metrics.iter().rev())
+        .flat_map(|scope| scope.metrics.iter().rev())
+        .next()
+        .map_or_else(|| hash64(org_id), |metric| hash64(&metric.name))
+}
+
+/// One span as the traces datasource stores it. The fields are in key order, the
+/// order rows have always been written in; shared strings are borrowed, not copied.
+#[derive(Serialize)]
+struct TraceRow<'a> {
+    duration: u64,
+    events_attributes: Vec<Map<String, Value>>,
+    events_name: Vec<&'a str>,
+    events_timestamp: Vec<String>,
+    links_attributes: Vec<Map<String, Value>>,
+    links_span_id: Vec<String>,
+    links_trace_id: Vec<String>,
+    links_trace_state: Vec<&'a str>,
+    parent_span_id: String,
+    resource_attributes: &'a Map<String, Value>,
+    resource_schema_url: &'a str,
+    scope_attributes: &'a Map<String, Value>,
+    scope_name: &'a str,
+    scope_schema_url: &'a str,
+    scope_version: &'a str,
+    service_name: &'a str,
+    span_attributes: Map<String, Value>,
+    span_id: String,
+    span_kind: &'static str,
+    span_name: &'a str,
+    start_time: String,
+    status_code: &'static str,
+    status_message: &'a str,
+    trace_id: &'a str,
+    trace_state: &'a str,
+}
+
+fn trace_row<'a>(
+    span: &'a Span,
+    context: &RowContext<'a>,
+    trace_id: &'a str,
+    span_attributes: Map<String, Value>,
+) -> TraceRow<'a> {
+    let status = span.status.as_ref();
+    TraceRow {
+        duration: span
+            .end_time_unix_nano
+            .saturating_sub(span.start_time_unix_nano),
+        events_attributes: span
+            .events
+            .iter()
+            .map(|event| attr_map(&event.attributes))
+            .collect(),
+        events_name: span
+            .events
+            .iter()
+            .map(|event| event.name.as_str())
+            .collect(),
+        events_timestamp: span
+            .events
+            .iter()
+            .map(|event| format_timestamp_nano(event.time_unix_nano))
+            .collect(),
+        links_attributes: span
+            .links
+            .iter()
+            .map(|link| attr_map(&link.attributes))
+            .collect(),
+        links_span_id: span
+            .links
+            .iter()
+            .map(|link| bytes_hex(&link.span_id))
+            .collect(),
+        links_trace_id: span
+            .links
+            .iter()
+            .map(|link| bytes_hex(&link.trace_id))
+            .collect(),
+        links_trace_state: span
+            .links
+            .iter()
+            .map(|link| link.trace_state.as_str())
+            .collect(),
+        parent_span_id: bytes_hex(&span.parent_span_id),
+        resource_attributes: context.resource_attrs,
+        resource_schema_url: context.resource_schema_url,
+        scope_attributes: context.scope_attrs,
+        scope_name: context.scope_name,
+        scope_schema_url: context.scope_schema_url,
+        scope_version: context.scope_version,
+        service_name: context.service_name,
+        span_attributes,
+        span_id: bytes_hex(&span.span_id),
+        span_kind: span_kind(span.kind),
+        span_name: &span.name,
+        start_time: format_timestamp_nano(span.start_time_unix_nano),
+        status_code: status_code(status.map(|status| status.code).unwrap_or_default()),
+        status_message: status.map_or("", |status| status.message.as_str()),
+        trace_id,
+        trace_state: &span.trace_state,
+    }
+}
+
 #[hotpath::measure]
-#[expect(
-    clippy::too_many_lines,
-    reason = "one branch per OTLP shape, flattened into the row this datasource stores"
-)]
 fn encode_traces(
     datasources: &DatasourceNames,
     org_id: &str,
     request: &ExportTraceServiceRequest,
     policy: &SamplingPolicy,
     attribute_mappings: &[AttributeMappingRule],
+    routing_key: u64,
+    piece: &RowPiece,
 ) -> Result<(Vec<EncodedFrame>, AcceptStats), PipelineError> {
-    let mut rows = Vec::with_capacity(count_trace_rows(request));
+    let rows = &piece.estimate;
+    let mut out = RowBuffer::with_capacity(rows.payload_bytes[RowKind::Trace.slot()]);
     let mut dropped = 0usize;
-    let mut routing_key = hash64(org_id);
     let sample_ratio = policy.clamped_ratio();
     let sample_rate = 1.0 / sample_ratio;
+    let mut range = PieceRange::new(piece);
 
     for resource_spans in &request.resource_spans {
-        let resource = resource_spans.resource.as_ref();
-        let resource_attrs = resource
-            .map(|resource| attr_map(&resource.attributes))
-            .unwrap_or_default();
-        let service_name = resource_attrs
-            .get("service.name")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_owned();
+        let items = resource_spans
+            .scope_spans
+            .iter()
+            .map(|scope| scope.spans.len());
+        match range.enter(items.sum()) {
+            Reach::Before => continue,
+            Reach::After => break,
+            Reach::Inside => {}
+        }
+        let resource_attrs = resource_attr_map(resource_spans.resource.as_ref());
 
         for scope_spans in &resource_spans.scope_spans {
+            let Some(spans) = range.take(&scope_spans.spans) else {
+                continue;
+            };
             let scope = scope_spans.scope.as_ref();
-            let scope_attrs = scope
-                .map(|scope| attr_map(&scope.attributes))
-                .unwrap_or_default();
-            let scope_name = scope.map_or("", |scope| scope.name.as_str());
-            let scope_version = scope.map_or("", |scope| scope.version.as_str());
+            let scope_attrs = scope_attr_map(scope);
+            let context = RowContext::new(
+                &resource_attrs,
+                &resource_spans.schema_url,
+                scope,
+                &scope_attrs,
+                &scope_spans.schema_url,
+            );
 
-            for span in &scope_spans.spans {
+            for span in spans {
                 let trace_id = bytes_hex(&span.trace_id);
-                if !trace_id.is_empty() {
-                    routing_key = hash64(&trace_id);
-                }
-
                 let should_keep = should_keep_trace(org_id, &trace_id, span, policy);
                 if !should_keep {
                     dropped += 1;
@@ -4138,82 +5179,73 @@ fn encode_traces(
                 }
                 apply_attribute_mappings(attribute_mappings, &resource_attrs, &mut span_attrs);
 
-                let events_timestamp: Vec<Value> = span
-                    .events
-                    .iter()
-                    .map(|event| json!(format_timestamp_nano(event.time_unix_nano)))
-                    .collect();
-                let events_name: Vec<Value> =
-                    span.events.iter().map(|event| json!(event.name)).collect();
-                let events_attributes: Vec<Value> = span
-                    .events
-                    .iter()
-                    .map(|event| Value::Object(attr_map(&event.attributes)))
-                    .collect();
-                let links_trace_id: Vec<Value> = span
-                    .links
-                    .iter()
-                    .map(|link| json!(bytes_hex(&link.trace_id)))
-                    .collect();
-                let links_span_id: Vec<Value> = span
-                    .links
-                    .iter()
-                    .map(|link| json!(bytes_hex(&link.span_id)))
-                    .collect();
-                let links_trace_state: Vec<Value> = span
-                    .links
-                    .iter()
-                    .map(|link| json!(link.trace_state))
-                    .collect();
-                let links_attributes: Vec<Value> = span
-                    .links
-                    .iter()
-                    .map(|link| Value::Object(attr_map(&link.attributes)))
-                    .collect();
-
-                rows.push(json_line(json!({
-                    "start_time": format_timestamp_nano(span.start_time_unix_nano),
-                    "trace_id": trace_id,
-                    "span_id": bytes_hex(&span.span_id),
-                    "parent_span_id": bytes_hex(&span.parent_span_id),
-                    "trace_state": span.trace_state,
-                    "span_name": span.name,
-                    "span_kind": span_kind(span.kind),
-                    "service_name": service_name,
-                    "resource_schema_url": resource_spans.schema_url,
-                    "resource_attributes": resource_attrs,
-                    "scope_schema_url": scope_spans.schema_url,
-                    "scope_name": scope_name,
-                    "scope_version": scope_version,
-                    "scope_attributes": scope_attrs,
-                    "duration": span.end_time_unix_nano.saturating_sub(span.start_time_unix_nano),
-                    "status_code": status_code(span.status.as_ref().map(|status| status.code).unwrap_or_default()),
-                    "status_message": span.status.as_ref().map_or("", |status| status.message.as_str()),
-                    "span_attributes": span_attrs,
-                    "events_timestamp": events_timestamp,
-                    "events_name": events_name,
-                    "events_attributes": events_attributes,
-                    "links_trace_id": links_trace_id,
-                    "links_span_id": links_span_id,
-                    "links_trace_state": links_trace_state,
-                    "links_attributes": links_attributes
-                }))?);
+                out.push(&trace_row(span, &context, &trace_id, span_attrs))?;
             }
         }
     }
 
     let stats = AcceptStats {
-        rows: rows.len(),
+        rows: out.rows,
         dropped,
     };
-    let frames = rows_to_frames(
-        org_id,
-        routing_key,
-        TelemetrySignal::Traces,
-        datasources.traces.clone(),
-        &rows,
-    );
+    let frames = out
+        .into_frame(
+            org_id,
+            routing_key,
+            TelemetrySignal::Traces,
+            &datasources.traces,
+        )
+        .into_iter()
+        .collect();
     Ok((frames, stats))
+}
+
+/// One log record as the logs datasource stores it, fields in key order.
+#[derive(Serialize)]
+struct LogRow<'a> {
+    body: Cow<'a, str>,
+    flags: u32,
+    log_attributes: Map<String, Value>,
+    resource_attributes: &'a Map<String, Value>,
+    resource_schema_url: &'a str,
+    scope_attributes: &'a Map<String, Value>,
+    scope_name: &'a str,
+    scope_schema_url: &'a str,
+    scope_version: &'a str,
+    service_name: &'a str,
+    severity_number: i32,
+    severity_text: &'a str,
+    span_id: String,
+    timestamp: String,
+    trace_id: String,
+}
+
+fn log_row<'a>(log: &'a LogRecord, context: &RowContext<'a>, trace_id: String) -> LogRow<'a> {
+    LogRow {
+        body: log.body.as_ref().map(any_value_text).unwrap_or_default(),
+        flags: log.flags,
+        log_attributes: attr_map(&log.attributes),
+        resource_attributes: context.resource_attrs,
+        resource_schema_url: context.resource_schema_url,
+        scope_attributes: context.scope_attrs,
+        scope_name: context.scope_name,
+        scope_schema_url: context.scope_schema_url,
+        scope_version: context.scope_version,
+        service_name: context.service_name,
+        severity_number: log.severity_number,
+        severity_text: if log.severity_text.is_empty() {
+            severity_number_to_text(log.severity_number)
+        } else {
+            log.severity_text.as_str()
+        },
+        span_id: bytes_hex(&log.span_id),
+        timestamp: format_timestamp_nano(if log.time_unix_nano != 0 {
+            log.time_unix_nano
+        } else {
+            log.observed_time_unix_nano
+        }),
+        trace_id,
+    }
 }
 
 #[hotpath::measure]
@@ -4221,94 +5253,243 @@ fn encode_logs(
     datasources: &DatasourceNames,
     org_id: &str,
     request: &ExportLogsServiceRequest,
+    routing_key: u64,
+    piece: &RowPiece,
 ) -> Result<(Vec<EncodedFrame>, AcceptStats), PipelineError> {
-    let mut rows = Vec::with_capacity(count_log_rows(request));
-    let mut routing_key = hash64(org_id);
+    let mut out = RowBuffer::with_capacity(piece.estimate.payload_bytes[RowKind::Log.slot()]);
+    let mut range = PieceRange::new(piece);
 
     for resource_logs in &request.resource_logs {
-        let resource = resource_logs.resource.as_ref();
-        let resource_attrs = resource
-            .map(|resource| attr_map(&resource.attributes))
-            .unwrap_or_default();
-        let service_name = resource_attrs
-            .get("service.name")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_owned();
+        let items = resource_logs
+            .scope_logs
+            .iter()
+            .map(|scope| scope.log_records.len());
+        match range.enter(items.sum()) {
+            Reach::Before => continue,
+            Reach::After => break,
+            Reach::Inside => {}
+        }
+        let resource_attrs = resource_attr_map(resource_logs.resource.as_ref());
 
         for scope_logs in &resource_logs.scope_logs {
+            let Some(logs) = range.take(&scope_logs.log_records) else {
+                continue;
+            };
             let scope = scope_logs.scope.as_ref();
-            let scope_attrs = scope
-                .map(|scope| attr_map(&scope.attributes))
-                .unwrap_or_default();
-            let scope_name = scope.map_or("", |scope| scope.name.as_str());
-            let scope_version = scope.map_or("", |scope| scope.version.as_str());
+            let scope_attrs = scope_attr_map(scope);
+            let context = RowContext::new(
+                &resource_attrs,
+                &resource_logs.schema_url,
+                scope,
+                &scope_attrs,
+                &scope_logs.schema_url,
+            );
 
-            for log in &scope_logs.log_records {
-                let trace_id = bytes_hex(&log.trace_id);
-                if !trace_id.is_empty() {
-                    routing_key = hash64(&trace_id);
-                }
-                rows.push(encode_log_row(
-                    log,
-                    &service_name,
-                    &resource_logs.schema_url,
-                    &resource_attrs,
-                    &scope_logs.schema_url,
-                    scope_name,
-                    scope_version,
-                    &scope_attrs,
-                )?);
+            for log in logs {
+                out.push(&log_row(log, &context, bytes_hex(&log.trace_id)))?;
             }
         }
     }
 
     let stats = AcceptStats {
-        rows: rows.len(),
+        rows: out.rows,
         dropped: 0,
     };
-    let frames = rows_to_frames(
-        org_id,
-        routing_key,
-        TelemetrySignal::Logs,
-        datasources.logs.clone(),
-        &rows,
-    );
+    let frames = out
+        .into_frame(
+            org_id,
+            routing_key,
+            TelemetrySignal::Logs,
+            &datasources.logs,
+        )
+        .into_iter()
+        .collect();
     Ok((frames, stats))
 }
 
+/// One data point as its metrics datasource stores it, fields in key order. Each
+/// shape writes the columns it has: a column left `None` is not written, and a
+/// histogram's `Some(None)` minimum or maximum is written as null.
+#[derive(Serialize)]
 #[expect(
-    clippy::too_many_arguments,
-    reason = "each argument is one column of the row being encoded; grouping them into a struct \
-              would only move the same list one level away from the JSON it builds"
+    clippy::option_option,
+    reason = "a histogram writes a missing minimum as null, a number row does not write the column"
 )]
-fn encode_log_row(
-    log: &LogRecord,
-    service_name: &str,
-    resource_schema_url: &str,
-    resource_attrs: &Map<String, Value>,
-    scope_schema_url: &str,
-    scope_name: &str,
-    scope_version: &str,
-    scope_attrs: &Map<String, Value>,
-) -> Result<Vec<u8>, PipelineError> {
-    json_line(json!({
-        "timestamp": format_timestamp_nano(if log.time_unix_nano != 0 { log.time_unix_nano } else { log.observed_time_unix_nano }),
-        "trace_id": bytes_hex(&log.trace_id),
-        "span_id": bytes_hex(&log.span_id),
-        "flags": log.flags,
-        "severity_text": if log.severity_text.is_empty() { severity_number_to_text(log.severity_number) } else { log.severity_text.as_str() },
-        "severity_number": log.severity_number,
-        "service_name": service_name,
-        "body": log.body.as_ref().map(any_value_string).unwrap_or_default(),
-        "resource_schema_url": resource_schema_url,
-        "resource_attributes": resource_attrs,
-        "scope_schema_url": scope_schema_url,
-        "scope_name": scope_name,
-        "scope_version": scope_version,
-        "scope_attributes": scope_attrs,
-        "log_attributes": attr_map(&log.attributes)
-    }))
+struct MetricRow<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    aggregation_temporality: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bucket_counts: Option<&'a [u64]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    count: Option<u64>,
+    exemplars_filtered_attributes: Vec<Map<String, Value>>,
+    exemplars_span_id: Vec<String>,
+    exemplars_timestamp: Vec<String>,
+    exemplars_trace_id: Vec<String>,
+    exemplars_value: Vec<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    explicit_bounds: Option<&'a [f64]>,
+    flags: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    is_monotonic: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max: Option<Option<f64>>,
+    metric_attributes: Map<String, Value>,
+    metric_description: &'a str,
+    metric_name: &'a str,
+    metric_unit: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    min: Option<Option<f64>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    negative_bucket_counts: Option<&'a [u64]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    negative_offset: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    positive_bucket_counts: Option<&'a [u64]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    positive_offset: Option<i32>,
+    resource_attributes: &'a Map<String, Value>,
+    resource_schema_url: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scale: Option<i32>,
+    scope_attributes: &'a Map<String, Value>,
+    scope_name: &'a str,
+    scope_schema_url: &'a str,
+    scope_version: &'a str,
+    service_name: &'a str,
+    start_timestamp: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sum: Option<f64>,
+    timestamp: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    value: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    zero_count: Option<u64>,
+}
+
+/// What every shape of data point carries.
+#[derive(Default)]
+struct PointParts<'a> {
+    attributes: &'a [KeyValue],
+    start_time_unix_nano: u64,
+    time_unix_nano: u64,
+    flags: u32,
+    exemplars: &'a [Exemplar],
+}
+
+/// A data point's row with the columns every shape shares; the caller adds its own.
+fn metric_row<'a>(
+    metric: &'a opentelemetry_proto::tonic::metrics::v1::Metric,
+    context: &RowContext<'a>,
+    point: &PointParts<'a>,
+) -> MetricRow<'a> {
+    let exemplars = encode_exemplars(point.exemplars);
+    MetricRow {
+        aggregation_temporality: None,
+        bucket_counts: None,
+        count: None,
+        exemplars_filtered_attributes: exemplars.filtered_attributes,
+        exemplars_span_id: exemplars.span_ids,
+        exemplars_timestamp: exemplars.timestamps,
+        exemplars_trace_id: exemplars.trace_ids,
+        exemplars_value: exemplars.values,
+        explicit_bounds: None,
+        flags: point.flags,
+        is_monotonic: None,
+        max: None,
+        metric_attributes: attr_map(point.attributes),
+        metric_description: &metric.description,
+        metric_name: &metric.name,
+        metric_unit: &metric.unit,
+        min: None,
+        negative_bucket_counts: None,
+        negative_offset: None,
+        positive_bucket_counts: None,
+        positive_offset: None,
+        resource_attributes: context.resource_attrs,
+        resource_schema_url: context.resource_schema_url,
+        scale: None,
+        scope_attributes: context.scope_attrs,
+        scope_name: context.scope_name,
+        scope_schema_url: context.scope_schema_url,
+        scope_version: context.scope_version,
+        service_name: context.service_name,
+        start_timestamp: format_timestamp_nano(point.start_time_unix_nano),
+        sum: None,
+        timestamp: format_timestamp_nano(point.time_unix_nano),
+        value: None,
+        zero_count: None,
+    }
+}
+
+fn number_row<'a>(
+    point: &'a NumberDataPoint,
+    metric: &'a opentelemetry_proto::tonic::metrics::v1::Metric,
+    context: &RowContext<'a>,
+) -> MetricRow<'a> {
+    let value = match point.value {
+        Some(number_data_point::Value::AsDouble(value)) => value,
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "the row carries one numeric column, so int points widen to f64 on the way in"
+        )]
+        Some(number_data_point::Value::AsInt(value)) => value as f64,
+        None => 0.0,
+    };
+    MetricRow {
+        value: Some(value),
+        ..metric_row(
+            metric,
+            context,
+            &PointParts {
+                attributes: &point.attributes,
+                start_time_unix_nano: point.start_time_unix_nano,
+                time_unix_nano: point.time_unix_nano,
+                flags: point.flags,
+                exemplars: &point.exemplars,
+            },
+        )
+    }
+}
+
+fn histogram_row<'a>(
+    point: &'a HistogramDataPoint,
+    aggregation_temporality: i32,
+    row: MetricRow<'a>,
+) -> MetricRow<'a> {
+    MetricRow {
+        aggregation_temporality: Some(aggregation_temporality),
+        bucket_counts: Some(&point.bucket_counts),
+        count: Some(point.count),
+        explicit_bounds: Some(&point.explicit_bounds),
+        max: Some(point.max),
+        min: Some(point.min),
+        sum: Some(point.sum.unwrap_or(0.0)),
+        ..row
+    }
+}
+
+fn exponential_histogram_row<'a>(
+    point: &'a ExponentialHistogramDataPoint,
+    aggregation_temporality: i32,
+    row: MetricRow<'a>,
+) -> MetricRow<'a> {
+    let positive = point.positive.as_ref();
+    let negative = point.negative.as_ref();
+    MetricRow {
+        aggregation_temporality: Some(aggregation_temporality),
+        count: Some(point.count),
+        max: Some(point.max),
+        min: Some(point.min),
+        negative_bucket_counts: Some(negative.map_or(&[], |buckets| &buckets.bucket_counts)),
+        negative_offset: Some(negative.map_or(0, |buckets| buckets.offset)),
+        positive_bucket_counts: Some(positive.map_or(&[], |buckets| &buckets.bucket_counts)),
+        positive_offset: Some(positive.map_or(0, |buckets| buckets.offset)),
+        scale: Some(point.scale),
+        sum: Some(point.sum.unwrap_or(0.0)),
+        zero_count: Some(point.zero_count),
+        ..row
+    }
 }
 
 #[hotpath::measure]
@@ -4320,169 +5501,127 @@ fn encode_metrics(
     datasources: &DatasourceNames,
     org_id: &str,
     request: &ExportMetricsServiceRequest,
+    routing_key: u64,
+    piece: &RowPiece,
 ) -> Result<(Vec<EncodedFrame>, AcceptStats), PipelineError> {
-    let mut by_datasource: BTreeMap<String, Vec<Vec<u8>>> = BTreeMap::new();
-    let mut row_count = 0usize;
-    let mut routing_key = hash64(org_id);
+    // One buffer per shape, each going to its own datasource.
+    let rows = &piece.estimate;
+    let buffer = |kind: RowKind| RowBuffer::with_capacity(rows.payload_bytes[kind.slot()]);
+    let mut gauges = buffer(RowKind::Gauge);
+    let mut sums = buffer(RowKind::Sum);
+    let mut histograms = buffer(RowKind::Histogram);
+    let mut exponential_histograms = buffer(RowKind::ExponentialHistogram);
+    let mut range = PieceRange::new(piece);
+    if piece.start == 0 {
+        // Counted once per request, by its first piece.
+        count_dropped_summaries(request);
+    }
 
     for resource_metrics in &request.resource_metrics {
-        let resource = resource_metrics.resource.as_ref();
-        let resource_attrs = resource
-            .map(|resource| attr_map(&resource.attributes))
-            .unwrap_or_default();
-        let service_name = resource_attrs
-            .get("service.name")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_owned();
+        let items = resource_metrics.scope_metrics.iter().map(scope_points);
+        match range.enter(items.sum()) {
+            Reach::Before => continue,
+            Reach::After => break,
+            Reach::Inside => {}
+        }
+        let resource_attrs = resource_attr_map(resource_metrics.resource.as_ref());
 
         for scope_metrics in &resource_metrics.scope_metrics {
+            match range.enter(scope_points(scope_metrics)) {
+                Reach::Before => continue,
+                Reach::After => break,
+                Reach::Inside => {}
+            }
             let scope = scope_metrics.scope.as_ref();
-            let scope_attrs = scope
-                .map(|scope| attr_map(&scope.attributes))
-                .unwrap_or_default();
-            let scope_name = scope.map_or("", |scope| scope.name.as_str());
-            let scope_version = scope.map_or("", |scope| scope.version.as_str());
+            let scope_attrs = scope_attr_map(scope);
+            let context = RowContext::new(
+                &resource_attrs,
+                &resource_metrics.schema_url,
+                scope,
+                &scope_attrs,
+                &scope_metrics.schema_url,
+            );
 
             for metric in &scope_metrics.metrics {
-                routing_key = hash64(&metric.name);
                 match metric.data.as_ref() {
                     Some(metric::Data::Gauge(gauge)) => {
-                        for point in &gauge.data_points {
-                            push_metric_number_row(
-                                &mut by_datasource,
-                                &datasources.metrics_gauge,
-                                point,
-                                metric,
-                                &service_name,
-                                &resource_metrics.schema_url,
-                                &resource_attrs,
-                                &scope_metrics.schema_url,
-                                scope_name,
-                                scope_version,
-                                &scope_attrs,
-                                None,
-                                None,
-                            )?;
-                            row_count += 1;
+                        for point in range.take(&gauge.data_points).unwrap_or_default() {
+                            gauges.push(&number_row(point, metric, &context))?;
                         }
                     }
                     Some(metric::Data::Sum(sum)) => {
-                        for point in &sum.data_points {
-                            push_metric_number_row(
-                                &mut by_datasource,
-                                &datasources.metrics_sum,
-                                point,
-                                metric,
-                                &service_name,
-                                &resource_metrics.schema_url,
-                                &resource_attrs,
-                                &scope_metrics.schema_url,
-                                scope_name,
-                                scope_version,
-                                &scope_attrs,
-                                Some(sum.aggregation_temporality),
-                                Some(sum.is_monotonic),
-                            )?;
-                            row_count += 1;
+                        for point in range.take(&sum.data_points).unwrap_or_default() {
+                            sums.push(&MetricRow {
+                                aggregation_temporality: Some(sum.aggregation_temporality),
+                                is_monotonic: Some(sum.is_monotonic),
+                                ..number_row(point, metric, &context)
+                            })?;
                         }
                     }
                     Some(metric::Data::Histogram(histogram_data)) => {
-                        for point in &histogram_data.data_points {
-                            let row = metric_common_row(
+                        let points = range.take(&histogram_data.data_points);
+                        for point in points.unwrap_or_default() {
+                            let row = metric_row(
                                 metric,
-                                &service_name,
-                                &resource_metrics.schema_url,
-                                &resource_attrs,
-                                &scope_metrics.schema_url,
-                                scope_name,
-                                scope_version,
-                                &scope_attrs,
-                                &point.attributes,
-                                point.start_time_unix_nano,
-                                point.time_unix_nano,
-                                point.flags,
-                                &point.exemplars,
+                                &context,
+                                &PointParts {
+                                    attributes: &point.attributes,
+                                    start_time_unix_nano: point.start_time_unix_nano,
+                                    time_unix_nano: point.time_unix_nano,
+                                    flags: point.flags,
+                                    exemplars: &point.exemplars,
+                                },
                             );
-                            push_json(
-                                &mut by_datasource,
-                                &datasources.metrics_histogram,
-                                extend(
-                                    row,
-                                    &json!({
-                                        "count": point.count,
-                                        "sum": point.sum.unwrap_or(0.0),
-                                        "bucket_counts": point.bucket_counts,
-                                        "explicit_bounds": point.explicit_bounds,
-                                        "min": point.min,
-                                        "max": point.max,
-                                        "aggregation_temporality": histogram_data.aggregation_temporality
-                                    }),
-                                ),
-                            )?;
-                            row_count += 1;
+                            histograms.push(&histogram_row(
+                                point,
+                                histogram_data.aggregation_temporality,
+                                row,
+                            ))?;
                         }
                     }
                     Some(metric::Data::ExponentialHistogram(exp)) => {
-                        for point in &exp.data_points {
-                            let row = metric_common_row(
+                        for point in range.take(&exp.data_points).unwrap_or_default() {
+                            let row = metric_row(
                                 metric,
-                                &service_name,
-                                &resource_metrics.schema_url,
-                                &resource_attrs,
-                                &scope_metrics.schema_url,
-                                scope_name,
-                                scope_version,
-                                &scope_attrs,
-                                &point.attributes,
-                                point.start_time_unix_nano,
-                                point.time_unix_nano,
-                                point.flags,
-                                &point.exemplars,
+                                &context,
+                                &PointParts {
+                                    attributes: &point.attributes,
+                                    start_time_unix_nano: point.start_time_unix_nano,
+                                    time_unix_nano: point.time_unix_nano,
+                                    flags: point.flags,
+                                    exemplars: &point.exemplars,
+                                },
                             );
-                            let positive = point.positive.as_ref();
-                            let negative = point.negative.as_ref();
-                            push_json(
-                                &mut by_datasource,
-                                &datasources.metrics_exponential_histogram,
-                                extend(
-                                    row,
-                                    &json!({
-                                        "count": point.count,
-                                        "sum": point.sum.unwrap_or(0.0),
-                                        "scale": point.scale,
-                                        "zero_count": point.zero_count,
-                                        "positive_offset": positive.map_or(0, |b| b.offset),
-                                        "positive_bucket_counts": positive.map(|b| b.bucket_counts.clone()).unwrap_or_default(),
-                                        "negative_offset": negative.map_or(0, |b| b.offset),
-                                        "negative_bucket_counts": negative.map(|b| b.bucket_counts.clone()).unwrap_or_default(),
-                                        "min": point.min,
-                                        "max": point.max,
-                                        "aggregation_temporality": exp.aggregation_temporality
-                                    }),
-                                ),
-                            )?;
-                            row_count += 1;
+                            exponential_histograms.push(&exponential_histogram_row(
+                                point,
+                                exp.aggregation_temporality,
+                                row,
+                            ))?;
                         }
                     }
-                    Some(metric::Data::Summary(_)) | None => {
-                        metrics::metrics_summary_dropped();
-                    }
+                    Some(metric::Data::Summary(_)) | None => {}
                 }
             }
         }
     }
 
-    let mut frames = Vec::with_capacity(by_datasource.len());
-    for (datasource, rows) in by_datasource {
-        frames.extend(rows_to_frames(
-            org_id,
-            routing_key,
-            TelemetrySignal::Metrics,
-            datasource,
-            &rows,
-        ));
-    }
+    let row_count = gauges.rows + sums.rows + histograms.rows + exponential_histograms.rows;
+    let mut frames: Vec<EncodedFrame> = [
+        (gauges, &datasources.metrics_gauge),
+        (sums, &datasources.metrics_sum),
+        (histograms, &datasources.metrics_histogram),
+        (
+            exponential_histograms,
+            &datasources.metrics_exponential_histogram,
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(buffer, datasource)| {
+        buffer.into_frame(org_id, routing_key, TelemetrySignal::Metrics, datasource)
+    })
+    .collect();
+    // Committed in datasource order, as the frames always were.
+    frames.sort_by(|a, b| a.datasource.cmp(&b.datasource));
 
     Ok((
         frames,
@@ -4493,111 +5632,13 @@ fn encode_metrics(
     ))
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "each argument is one column of the row being encoded; grouping them into a struct \
-              would only move the same list one level away from the JSON it builds"
-)]
-fn push_metric_number_row(
-    by_datasource: &mut BTreeMap<String, Vec<Vec<u8>>>,
-    datasource: &str,
-    point: &NumberDataPoint,
-    metric: &opentelemetry_proto::tonic::metrics::v1::Metric,
-    service_name: &str,
-    resource_schema_url: &str,
-    resource_attrs: &Map<String, Value>,
-    scope_schema_url: &str,
-    scope_name: &str,
-    scope_version: &str,
-    scope_attrs: &Map<String, Value>,
-    aggregation_temporality: Option<i32>,
-    is_monotonic: Option<bool>,
-) -> Result<(), PipelineError> {
-    let value = match point.value {
-        Some(number_data_point::Value::AsDouble(value)) => value,
-        #[expect(
-            clippy::cast_precision_loss,
-            reason = "the row carries one numeric column, so int points widen to f64 on the way in"
-        )]
-        Some(number_data_point::Value::AsInt(value)) => value as f64,
-        None => 0.0,
-    };
-    let mut extra = json!({ "value": value });
-    if let Some(aggregation_temporality) = aggregation_temporality {
-        extra["aggregation_temporality"] = json!(aggregation_temporality);
-    }
-    if let Some(is_monotonic) = is_monotonic {
-        extra["is_monotonic"] = json!(is_monotonic);
-    }
-    let row = metric_common_row(
-        metric,
-        service_name,
-        resource_schema_url,
-        resource_attrs,
-        scope_schema_url,
-        scope_name,
-        scope_version,
-        scope_attrs,
-        &point.attributes,
-        point.start_time_unix_nano,
-        point.time_unix_nano,
-        point.flags,
-        &point.exemplars,
-    );
-    push_json(by_datasource, datasource, extend(row, &extra))
-}
-
-#[expect(
-    clippy::too_many_arguments,
-    reason = "each argument is one column of the row being encoded; grouping them into a struct \
-              would only move the same list one level away from the JSON it builds"
-)]
-fn metric_common_row(
-    metric: &opentelemetry_proto::tonic::metrics::v1::Metric,
-    service_name: &str,
-    resource_schema_url: &str,
-    resource_attrs: &Map<String, Value>,
-    scope_schema_url: &str,
-    scope_name: &str,
-    scope_version: &str,
-    scope_attrs: &Map<String, Value>,
-    attributes: &[KeyValue],
-    start_time_unix_nano: u64,
-    time_unix_nano: u64,
-    flags: u32,
-    exemplars: &[Exemplar],
-) -> Value {
-    let exemplars = encode_exemplars(exemplars);
-    json!({
-        "resource_attributes": resource_attrs,
-        "resource_schema_url": resource_schema_url,
-        "scope_name": scope_name,
-        "scope_version": scope_version,
-        "scope_attributes": scope_attrs,
-        "scope_schema_url": scope_schema_url,
-        "service_name": service_name,
-        "metric_name": metric.name,
-        "metric_description": metric.description,
-        "metric_unit": metric.unit,
-        "metric_attributes": attr_map(attributes),
-        "start_timestamp": format_timestamp_nano(start_time_unix_nano),
-        "timestamp": format_timestamp_nano(time_unix_nano),
-        "flags": flags,
-        "exemplars_trace_id": exemplars.trace_ids,
-        "exemplars_span_id": exemplars.span_ids,
-        "exemplars_timestamp": exemplars.timestamps,
-        "exemplars_value": exemplars.values,
-        "exemplars_filtered_attributes": exemplars.filtered_attributes
-    })
-}
-
 /// The exemplar columns of one metric row: five parallel arrays, one per column.
 struct EncodedExemplars {
     trace_ids: Vec<String>,
     span_ids: Vec<String>,
     timestamps: Vec<String>,
     values: Vec<f64>,
-    filtered_attributes: Vec<Value>,
+    filtered_attributes: Vec<Map<String, Value>>,
 }
 
 fn encode_exemplars(exemplars: &[Exemplar]) -> EncodedExemplars {
@@ -4623,7 +5664,7 @@ fn encode_exemplars(exemplars: &[Exemplar]) -> EncodedExemplars {
             }
             None => 0.0,
         });
-        filtered_attributes.push(Value::Object(attr_map(&exemplar.filtered_attributes)));
+        filtered_attributes.push(attr_map(&exemplar.filtered_attributes));
     }
     EncodedExemplars {
         trace_ids,
@@ -4634,27 +5675,7 @@ fn encode_exemplars(exemplars: &[Exemplar]) -> EncodedExemplars {
     }
 }
 
-fn push_json(
-    by_datasource: &mut BTreeMap<String, Vec<Vec<u8>>>,
-    datasource: &str,
-    value: Value,
-) -> Result<(), PipelineError> {
-    by_datasource
-        .entry(datasource.to_owned())
-        .or_default()
-        .push(json_line(value)?);
-    Ok(())
-}
-
-fn extend(mut base: Value, extra: &Value) -> Value {
-    if let (Some(base), Some(extra)) = (base.as_object_mut(), extra.as_object()) {
-        for (key, value) in extra {
-            base.insert(key.clone(), value.clone());
-        }
-    }
-    base
-}
-
+/// Pre-serialized rows as one frame, each row followed by a newline.
 fn rows_to_frames(
     org_id: &str,
     routing_key: u64,
@@ -4677,12 +5698,13 @@ fn rows_to_frames(
         destination: ExportDestination::Tinybird,
         datasource,
         row_count: rows.len(),
-        payload,
+        payload: Bytes::from(payload),
     }]
 }
 
-fn json_line<T: Serialize>(value: T) -> Result<Vec<u8>, PipelineError> {
-    serde_json::to_vec(&value).map_err(|error| PipelineError::Encode(error.to_string()))
+/// Whether the encoder stores `span` under `policy`, for the row estimate.
+pub(crate) fn keeps_span(org_id: &str, span: &Span, policy: &SamplingPolicy) -> bool {
+    should_keep_trace(org_id, &bytes_hex(&span.trace_id), span, policy)
 }
 
 fn should_keep_trace(org_id: &str, trace_id: &str, span: &Span, policy: &SamplingPolicy) -> bool {
@@ -4744,24 +5766,28 @@ fn format_sample_rate(sample_rate: f64) -> String {
 fn attr_map(attributes: &[KeyValue]) -> Map<String, Value> {
     let mut out = Map::with_capacity(attributes.len());
     for attribute in attributes {
-        out.insert(
-            attribute.key.clone(),
-            json!(attribute
-                .value
-                .as_ref()
-                .map(any_value_string)
-                .unwrap_or_default()),
-        );
+        // The value's text moves into the map: a row holds one copy of it.
+        let value = attribute
+            .value
+            .as_ref()
+            .map(any_value_string)
+            .unwrap_or_default();
+        out.insert(attribute.key.clone(), Value::String(value));
     }
     out
 }
 
 pub(crate) fn any_value_string(value: &AnyValue) -> String {
+    any_value_text(value).into_owned()
+}
+
+/// A value as the text a row stores, borrowed where it already is that text.
+fn any_value_text(value: &AnyValue) -> Cow<'_, str> {
     match value.value.as_ref() {
-        Some(any_value::Value::StringValue(value)) => value.clone(),
-        Some(any_value::Value::BoolValue(value)) => value.to_string(),
-        Some(any_value::Value::IntValue(value)) => value.to_string(),
-        Some(any_value::Value::DoubleValue(value)) => value.to_string(),
+        Some(any_value::Value::StringValue(value)) => Cow::Borrowed(value),
+        Some(any_value::Value::BoolValue(value)) => Cow::Owned(value.to_string()),
+        Some(any_value::Value::IntValue(value)) => Cow::Owned(value.to_string()),
+        Some(any_value::Value::DoubleValue(value)) => Cow::Owned(value.to_string()),
         // Text sent as bytes (LangSmith's prompt and completion) stays
         // readable. Binary is hex, including binary that happens to be valid
         // UTF-8: a control character other than whitespace marks it.
@@ -4771,16 +5797,16 @@ pub(crate) fn any_value_string(value: &AnyValue) -> String {
                     .chars()
                     .any(|c| c.is_control() && !matches!(c, '\t' | '\n' | '\r')) =>
             {
-                text.to_owned()
+                Cow::Borrowed(text)
             }
-            _ => bytes_hex(value),
+            _ => Cow::Owned(bytes_hex(value)),
         },
         Some(any_value::Value::ArrayValue(_) | any_value::Value::KvlistValue(_)) => {
-            serde_json::to_string(&any_value_json(value)).unwrap_or_default()
+            Cow::Owned(serde_json::to_string(&any_value_json(value)).unwrap_or_default())
         }
         // String-table references (OTLP 1.9 experimental encoding) cannot be resolved
         // without the sender's dictionary, which the gateway does not accept yet.
-        Some(any_value::Value::StringValueStrindex(_)) | None => String::new(),
+        Some(any_value::Value::StringValueStrindex(_)) | None => Cow::Borrowed(""),
     }
 }
 
@@ -4837,7 +5863,7 @@ fn severity_number_to_text(n: i32) -> &'static str {
     }
 }
 
-fn bytes_hex(bytes: &[u8]) -> String {
+pub(crate) fn bytes_hex(bytes: &[u8]) -> String {
     if bytes.is_empty() || bytes.iter().all(|byte| *byte == 0) {
         return String::new();
     }
@@ -4850,7 +5876,7 @@ fn bytes_hex(bytes: &[u8]) -> String {
     out
 }
 
-fn format_timestamp_nano(unix_nano: u64) -> String {
+pub(crate) fn format_timestamp_nano(unix_nano: u64) -> String {
     // DateTime64(9) is an Int64 of nanoseconds: anything past i64::MAX (year 2262+)
     // fails the whole insert with DECIMAL_OVERFLOW, so it maps to epoch like 0 does.
     let Ok(unix_nano) = i64::try_from(unix_nano) else {
@@ -4873,22 +5899,75 @@ fn hash64(value: &str) -> u64 {
     hasher.finish()
 }
 
-fn count_trace_rows(request: &ExportTraceServiceRequest) -> usize {
-    request
-        .resource_spans
-        .iter()
-        .flat_map(|rs| &rs.scope_spans)
-        .map(|ss| ss.spans.len())
-        .sum()
+/// Each frame's rows for a request, planned and then encoded piece by piece as
+/// `accept_*` does but with no pipeline behind it: for the benches and the tests.
+#[doc(hidden)]
+pub fn encode_frames(
+    org_id: &str,
+    source: RowSource<'_>,
+    piece_bytes: u64,
+) -> Result<Vec<(String, Bytes)>, PipelineError> {
+    let plan = source.plan(org_id, piece_bytes);
+    let mut out = Vec::new();
+    encode_pieces(org_id, source, &plan, |frames| out.extend(frames))?;
+    Ok(out)
 }
 
-fn count_log_rows(request: &ExportLogsServiceRequest) -> usize {
-    request
-        .resource_logs
-        .iter()
-        .flat_map(|rl| &rl.scope_logs)
-        .map(|sl| sl.log_records.len())
-        .sum()
+/// Each piece of `plan` in turn, handed to `sink` before the next is built.
+#[doc(hidden)]
+pub fn encode_pieces(
+    org_id: &str,
+    source: RowSource<'_>,
+    plan: &RowPlan,
+    mut sink: impl FnMut(Vec<(String, Bytes)>),
+) -> Result<(), PipelineError> {
+    let datasources = DatasourceNames::defaults();
+    for piece in &plan.pieces {
+        let (frames, _) = source.encode(&datasources, org_id, plan, piece)?;
+        sink(
+            frames
+                .into_iter()
+                .map(|frame| (frame.datasource, frame.payload))
+                .collect(),
+        );
+    }
+    Ok(())
+}
+
+fn payloads(frames: Vec<(String, Bytes)>) -> Vec<Bytes> {
+    frames.into_iter().map(|(_, payload)| payload).collect()
+}
+
+#[doc(hidden)]
+pub fn encode_trace_rows(
+    org_id: &str,
+    request: &ExportTraceServiceRequest,
+    policy: &SamplingPolicy,
+    attribute_mappings: &[AttributeMappingRule],
+) -> Result<Vec<Bytes>, PipelineError> {
+    let source = RowSource::Traces {
+        request,
+        policy,
+        mappings: attribute_mappings,
+    };
+    encode_frames(org_id, source, row_budget::ROW_PIECE_BYTES).map(payloads)
+}
+
+#[doc(hidden)]
+pub fn encode_log_rows(request: &ExportLogsServiceRequest) -> Result<Vec<Bytes>, PipelineError> {
+    encode_frames("org", RowSource::Logs(request), row_budget::ROW_PIECE_BYTES).map(payloads)
+}
+
+#[doc(hidden)]
+pub fn encode_metric_rows(
+    request: &ExportMetricsServiceRequest,
+) -> Result<Vec<Bytes>, PipelineError> {
+    encode_frames(
+        "org",
+        RowSource::Metrics(request),
+        row_budget::ROW_PIECE_BYTES,
+    )
+    .map(payloads)
 }
 
 #[cfg(test)]
@@ -4906,6 +5985,114 @@ mod tests {
         let bytes = crate::decompress::gunzip_bounded(body, usize::MAX).expect("gzip NDJSON");
         String::from_utf8(bytes).expect("UTF-8 NDJSON")
     }
+    /// Rows encoded as a request's are: estimated, then written into buffers of
+    /// that size. Every encoder test so checks its rows fit their estimate.
+    fn within_estimate(
+        rows: &RowEstimate,
+        encoded: Result<(Vec<EncodedFrame>, AcceptStats), PipelineError>,
+    ) -> Result<(Vec<EncodedFrame>, AcceptStats), PipelineError> {
+        let (frames, stats) = encoded?;
+        let written: usize = frames.iter().map(|frame| frame.payload.len()).sum();
+        assert!(
+            written as u64 <= rows.row_bytes(),
+            "{written} bytes of rows against an estimate of {}",
+            rows.row_bytes()
+        );
+        assert_eq!(stats.rows as u64, rows.rows, "the estimate counts the rows");
+        Ok((frames, stats))
+    }
+
+    /// The whole request as one piece, checked against its estimate.
+    fn encode_whole(
+        datasources: &DatasourceNames,
+        org_id: &str,
+        source: RowSource<'_>,
+    ) -> Result<(Vec<EncodedFrame>, AcceptStats), PipelineError> {
+        let plan = source.plan(org_id, u64::MAX);
+        assert_eq!(
+            plan.pieces.len(),
+            1,
+            "an unbounded piece holds the whole request"
+        );
+        let encoded = source.encode(datasources, org_id, &plan, &plan.pieces[0]);
+        within_estimate(&plan.total, encoded)
+    }
+
+    /// Rows past what was reserved for them are refused, not written.
+    #[test]
+    fn a_row_past_its_reservation_is_refused() {
+        let mut buffer = RowBuffer::with_capacity(16);
+        buffer
+            .push(&json!({"a": 1}))
+            .expect("within the reservation");
+        let (written, capacity) = (buffer.payload.clone(), buffer.payload.capacity());
+        let error = buffer
+            .push(&json!({"long": "x".repeat(64)}))
+            .expect_err("past the reservation");
+        assert!(matches!(error, PipelineError::Encode(ref detail) if detail == ROWS_OVER_ESTIMATE));
+        assert_eq!(buffer.payload.capacity(), capacity, "the buffer never grew");
+        assert_eq!(
+            buffer.payload, written,
+            "the refused row left nothing behind"
+        );
+        assert_eq!(buffer.rows, 1);
+    }
+
+    /// Pieces cover every item of a request once, in order, and each stays near its
+    /// byte budget unless one row is larger.
+    #[test]
+    fn a_request_is_planned_in_pieces_that_cover_it_once() {
+        let mut logs = populated_log_request();
+        let records = &mut logs.resource_logs[0].scope_logs[0].log_records;
+        *records = vec![records[0].clone(); 1_000];
+        logs.resource_logs.push(logs.resource_logs[0].clone());
+        let source = RowSource::Logs(&logs);
+        let whole = source.plan("org", u64::MAX);
+        let plan = source.plan("org", 4 * 1024);
+        assert_eq!(plan.total, whole.total, "splitting changes no estimate");
+        assert!(plan.pieces.len() > 10);
+        let mut next = 0;
+        for piece in &plan.pieces {
+            assert_eq!(piece.start, next, "pieces are contiguous");
+            assert!(piece.end > piece.start);
+            assert!(piece.estimate.row_bytes() <= 4 * 1024 || piece.estimate.rows == 1);
+            next = piece.end;
+        }
+        assert_eq!(next, 2_000, "every record is in a piece");
+        assert_eq!(plan.routing_key, whole.routing_key);
+    }
+
+    fn encode_traces(
+        datasources: &DatasourceNames,
+        org_id: &str,
+        request: &ExportTraceServiceRequest,
+        policy: &SamplingPolicy,
+        mappings: &[AttributeMappingRule],
+    ) -> Result<(Vec<EncodedFrame>, AcceptStats), PipelineError> {
+        let source = RowSource::Traces {
+            request,
+            policy,
+            mappings,
+        };
+        encode_whole(datasources, org_id, source)
+    }
+
+    fn encode_logs(
+        datasources: &DatasourceNames,
+        org_id: &str,
+        request: &ExportLogsServiceRequest,
+    ) -> Result<(Vec<EncodedFrame>, AcceptStats), PipelineError> {
+        encode_whole(datasources, org_id, RowSource::Logs(request))
+    }
+
+    fn encode_metrics(
+        datasources: &DatasourceNames,
+        org_id: &str,
+        request: &ExportMetricsServiceRequest,
+    ) -> Result<(Vec<EncodedFrame>, AcceptStats), PipelineError> {
+        encode_whole(datasources, org_id, RowSource::Metrics(request))
+    }
+
     use opentelemetry_proto::tonic::common::v1::{ArrayValue, InstrumentationScope, KeyValueList};
     use opentelemetry_proto::tonic::metrics::v1::{
         exponential_histogram_data_point, metric, AggregationTemporality, ExponentialHistogram,
@@ -4937,7 +6124,7 @@ mod tests {
             destination: ExportDestination::Tinybird,
             datasource: "spans".to_owned(),
             row_count: 0,
-            payload: Vec::new(),
+            payload: Bytes::new(),
             source_span,
             enqueued_at: Instant::now(),
         }
@@ -5031,6 +6218,7 @@ mod tests {
             datasource_session_replay_events: "session_replay_events".to_owned(),
             datasource_session_events: "session_events".to_owned(),
             datasource_product_events: "product_events".to_owned(),
+            datasource_profiles: "profiles".to_owned(),
         }
     }
 
@@ -5332,7 +6520,7 @@ mod tests {
             destination: ExportDestination::ClickHouse,
             datasource: "traces".to_owned(),
             row_count: 1,
-            payload: br#"{"a":1}"#.to_vec(),
+            payload: Bytes::from_static(br#"{"a":1}"#),
         };
         let encoded = encode_wal_frame(&frame).unwrap();
         let path = std::env::temp_dir().join(format!("maple-wal-test-{}.wal", std::process::id()));
@@ -6533,6 +7721,7 @@ mod tests {
         assert_eq!(TelemetrySignal::SessionEvents.as_str(), "session_events");
         assert_eq!(TelemetrySignal::ProductEvents.as_str(), "product_events");
         assert_eq!(TelemetrySignal::AuditTrail.as_str(), "audit_trail");
+        assert_eq!(TelemetrySignal::Profiles.as_str(), "profiles");
     }
 
     #[test]
@@ -6547,6 +7736,7 @@ mod tests {
             TelemetrySignal::SessionEvents,
             TelemetrySignal::ProductEvents,
             TelemetrySignal::AuditTrail,
+            TelemetrySignal::Profiles,
         ] {
             assert_eq!(signal_from_tag(signal_tag(signal)), Some(signal));
         }
@@ -6755,6 +7945,270 @@ mod tests {
             queued(),
             0,
             "the batch left memory, so it no longer counts against the org"
+        );
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    /// A request stored in several pieces of 4 KiB, and its plan.
+    fn many_piece_logs() -> (ExportLogsServiceRequest, RowPlan) {
+        let mut logs = populated_log_request();
+        let records = &mut logs.resource_logs[0].scope_logs[0].log_records;
+        *records = vec![records[0].clone(); 400];
+        let plan = RowSource::Logs(&logs).plan("org_planned", 4 * 1024);
+        assert!(plan.pieces.len() > 5, "several pieces");
+        (logs, plan)
+    }
+
+    fn org_queued(pipeline: &TelemetryPipeline, org_id: &str) -> u64 {
+        pipeline
+            .inner
+            .org_queue_bytes
+            .get(org_id)
+            .map_or(0, |entry| entry.value().load(Ordering::Relaxed))
+    }
+
+    /// A one-piece metrics request writes one frame per datasource; dropped after the
+    /// first of them, it is counted as a partial write though no whole piece was.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_request_dropped_inside_its_first_piece_is_counted() {
+        let (primary_url, _primary_rx) = spawn_fake_tinybird().await;
+        let queue_dir = unique_test_dir("planned-cancel");
+        let metrics = one_of_each_metric_request();
+        let plan = RowSource::Metrics(&metrics).plan("org_cancel", crate::row_budget::ROW_PIECE_BYTES);
+        assert_eq!(plan.pieces.len(), 1, "one piece");
+        let mut cfg = test_cfg();
+        cfg.endpoint = primary_url;
+        cfg.queue_dir = queue_dir.clone();
+        cfg.wal_shards = 1;
+        cfg.queue_channel_capacity = 1_000;
+        let pipeline = TelemetryPipeline::new(cfg, Client::new()).await.unwrap();
+        let source = RowSource::Metrics(&metrics);
+
+        let before = metrics::partial_write_count("cancelled");
+        let mut accept = Box::pin(pipeline.accept_planned(
+            "org_cancel",
+            source,
+            ExportDestination::Tinybird,
+            &plan,
+        ));
+        let mut poll_once = async || {
+            std::future::poll_fn(|cx| {
+                std::task::Poll::Ready(std::future::Future::poll(accept.as_mut(), cx).is_ready())
+            })
+            .await
+        };
+        // Frames are appended one after another, so once a second has reached disk
+        // the first is written; drop the request there, before its last frame.
+        let mut seen = 0;
+        let mut landed = 0;
+        while landed < 2 {
+            assert!(!poll_once().await, "dropped before its last frame");
+            let backlog = pipeline.wal_backlog_bytes();
+            if backlog > seen {
+                landed += 1;
+            }
+            seen = backlog;
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+        drop(poll_once);
+        assert_eq!(
+            metrics::partial_write_count("cancelled"),
+            before,
+            "not counted while the request runs"
+        );
+        drop(accept);
+        assert_eq!(metrics::partial_write_count("cancelled"), before + 1);
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    /// The whole plan's queue bytes are taken before its first piece: a request that
+    /// does not fit is refused with nothing written, then stored once when it does.
+    #[tokio::test]
+    async fn a_planned_request_reserves_its_whole_queue_room_before_writing() {
+        let (primary_url, mut primary_rx) = spawn_fake_tinybird().await;
+        let queue_dir = unique_test_dir("planned-reservation");
+        let (logs, plan) = many_piece_logs();
+        let rows = plan.total.row_bytes();
+        let mut cfg = test_cfg();
+        cfg.endpoint = primary_url;
+        cfg.queue_dir = queue_dir.clone();
+        cfg.wal_shards = 1;
+        cfg.batch_max_wait = Duration::from_millis(1);
+        cfg.queue_channel_capacity = 1_000;
+        cfg.queue_max_bytes = 64 * 1024 * 1024;
+        cfg.org_queue_max_bytes = 2 * rows;
+        let pipeline = TelemetryPipeline::new(cfg, Client::new()).await.unwrap();
+        let source = RowSource::Logs(&logs);
+        let accept =
+            || pipeline.accept_planned("org_planned", source, ExportDestination::Tinybird, &plan);
+
+        // Room for every piece but the last: per piece, all but one would be written.
+        let held = rows + 1;
+        pipeline
+            .reserve_org_queue_bytes("org_planned", held)
+            .unwrap();
+        let failure = accept()
+            .await
+            .expect_err("the org queue cannot take it whole");
+        assert!(matches!(failure.error, PipelineError::Throttled(_)));
+        assert_eq!(failure.pieces_written, 0);
+        assert_eq!(failure.frames_written, 0);
+        assert_eq!(pipeline.wal_backlog_bytes(), 0, "nothing written");
+        assert_eq!(
+            org_queued(&pipeline, "org_planned"),
+            held,
+            "nothing left reserved"
+        );
+
+        // Once the queue drains the same request is stored, once.
+        release_org_queue_bytes(&pipeline.inner.org_queue_bytes, "org_planned", held);
+        let stats = accept().await.expect("fits now");
+        assert_eq!(stats.rows as u64, plan.total.rows);
+        let mut exported = 0;
+        while exported < plan.total.rows {
+            let import = tokio::time::timeout(Duration::from_secs(5), primary_rx.recv())
+                .await
+                .expect("the pieces are exported")
+                .unwrap();
+            exported += import.body.lines().count() as u64;
+        }
+        assert_eq!(exported, plan.total.rows);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), primary_rx.recv())
+                .await
+                .is_err(),
+            "no row exported twice"
+        );
+        for _ in 0..100 {
+            if org_queued(&pipeline, "org_planned") == 0 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(
+            org_queued(&pipeline, "org_planned"),
+            0,
+            "the unused remainder is returned"
+        );
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    /// Rows that no queue limit could hold are refused outright, and a full channel or
+    /// WAL lane refuses before the first piece.
+    #[tokio::test]
+    async fn a_planned_request_that_cannot_be_queued_writes_nothing() {
+        let queue_dir = unique_test_dir("planned-refusals");
+        let (logs, plan) = many_piece_logs();
+        let rows = plan.total.row_bytes();
+        let source = RowSource::Logs(&logs);
+        let start = |name: &str, mut cfg: TinybirdConfig| {
+            cfg.queue_dir = cfg.queue_dir.join(name.replace(' ', "-"));
+            async move { TelemetryPipeline::new(cfg, Client::new()).await.unwrap() }
+        };
+        let mut cfg = test_cfg();
+        // Nothing listens, so committed frames stay queued.
+        cfg.endpoint = "http://127.0.0.1:1".to_owned();
+        cfg.queue_dir = queue_dir.clone();
+        cfg.wal_shards = 1;
+        cfg.queue_channel_capacity = 1_000;
+        cfg.queue_max_bytes = 64 * 1024 * 1024;
+        cfg.org_queue_max_bytes = 2 * rows;
+
+        for (name, never_fits) in [
+            (
+                "org queue",
+                TinybirdConfig {
+                    org_queue_max_bytes: rows - 1,
+                    ..cfg.clone()
+                },
+            ),
+            (
+                "WAL lane",
+                TinybirdConfig {
+                    queue_max_bytes: 2 * rows,
+                    ..cfg.clone()
+                },
+            ),
+            (
+                "channel",
+                TinybirdConfig {
+                    queue_channel_capacity: plan.pieces.len() - 1,
+                    ..cfg.clone()
+                },
+            ),
+        ] {
+            let pipeline = start(name, never_fits).await;
+            let failure = pipeline
+                .accept_planned("org_planned", source, ExportDestination::Tinybird, &plan)
+                .await
+                .expect_err(name);
+            assert!(
+                matches!(failure.error, PipelineError::TooLarge(_)),
+                "{name}: {failure}"
+            );
+            assert!(!failure.error.is_server_fault(), "{name}");
+            assert_eq!(failure.pieces_written, 0, "{name}");
+            assert_eq!(failure.frames_written, 0, "{name}");
+            assert_eq!(pipeline.wal_backlog_bytes(), 0, "{name}: nothing written");
+            assert_eq!(org_queued(&pipeline, "org_planned"), 0, "{name}");
+        }
+
+        // A channel with room for all but one frame of it refuses it whole.
+        let pipeline = start(
+            "short channel",
+            TinybirdConfig {
+                queue_channel_capacity: plan.pieces.len() + 1,
+                ..cfg.clone()
+            },
+        )
+        .await;
+        let lane = lane_index(0, ExportDestination::Tinybird);
+        let held: Vec<_> = (0..2)
+            .map(|_| {
+                pipeline.inner.lane_senders[lane]
+                    .clone()
+                    .try_reserve_owned()
+                    .unwrap()
+            })
+            .collect();
+        let failure = pipeline
+            .accept_planned("org_planned", source, ExportDestination::Tinybird, &plan)
+            .await
+            .expect_err("the channel is short one slot");
+        assert!(matches!(failure.error, PipelineError::Backpressure(_)));
+        assert_eq!(pipeline.wal_backlog_bytes(), 0, "channel: nothing written");
+        assert_eq!(
+            org_queued(&pipeline, "org_planned"),
+            0,
+            "channel: bytes returned"
+        );
+        drop(held);
+        drop(pipeline);
+
+        // A WAL lane other requests have reserved most of refuses it whole too.
+        let pipeline = start(
+            "reserved lane",
+            TinybirdConfig {
+                queue_max_bytes: 4 * rows,
+                ..cfg.clone()
+            },
+        )
+        .await;
+        let wal_lane = pipeline.inner.wal.lane(lane).unwrap();
+        assert!(wal_lane.try_reserve(wal_lane.max_bytes - rows));
+        let failure = pipeline
+            .accept_planned("org_planned", source, ExportDestination::Tinybird, &plan)
+            .await
+            .expect_err("the lane is reserved");
+        assert!(matches!(failure.error, PipelineError::QueueUnavailable(_)));
+        assert_eq!(pipeline.wal_backlog_bytes(), 0, "WAL lane: nothing written");
+        assert_eq!(
+            org_queued(&pipeline, "org_planned"),
+            0,
+            "WAL lane: bytes returned"
         );
 
         drop(std::fs::remove_dir_all(queue_dir));
@@ -7135,7 +8589,7 @@ mod tests {
             destination: ExportDestination::Tinybird,
             datasource: "traces".to_owned(),
             row_count: 1,
-            payload: br#"{"a":1}"#.to_vec(),
+            payload: Bytes::from_static(br#"{"a":1}"#),
         };
         let ch_frame = EncodedFrame {
             routing_key: 0,
@@ -7144,7 +8598,7 @@ mod tests {
             destination: ExportDestination::ClickHouse,
             datasource: "logs".to_owned(),
             row_count: 1,
-            payload: br#"{"b":2}"#.to_vec(),
+            payload: Bytes::from_static(br#"{"b":2}"#),
         };
         let mut legacy = Vec::new();
         legacy.extend(encode_wal_frame(&tb_frame).unwrap());
@@ -7160,7 +8614,7 @@ mod tests {
                 destination: ExportDestination::Tinybird,
                 datasource: "traces".to_owned(),
                 row_count: 1,
-                payload: br#"{"c":3}"#.to_vec(),
+                payload: Bytes::from_static(br#"{"c":3}"#),
             })
             .unwrap(),
         )
@@ -7190,14 +8644,14 @@ mod tests {
         assert_eq!(tb_frames.len(), 2);
         assert_eq!(tb_frames[0].org_id, "org_a");
         assert_eq!(tb_frames[0].destination, ExportDestination::Tinybird);
-        assert_eq!(tb_frames[0].payload, br#"{"a":1}"#);
+        assert_eq!(&tb_frames[0].payload[..], br#"{"a":1}"#);
         assert_eq!(tb_frames[1].org_id, "org_c");
-        assert_eq!(tb_frames[1].payload, br#"{"c":3}"#);
+        assert_eq!(&tb_frames[1].payload[..], br#"{"c":3}"#);
         assert_eq!(ch_frames.len(), 1);
         assert_eq!(ch_frames[0].org_id, "org_b");
         assert_eq!(ch_frames[0].destination, ExportDestination::ClickHouse);
         assert_eq!(ch_frames[0].datasource, "logs");
-        assert_eq!(ch_frames[0].payload, br#"{"b":2}"#);
+        assert_eq!(&ch_frames[0].payload[..], br#"{"b":2}"#);
 
         drop(std::fs::remove_dir_all(queue_dir));
     }
@@ -8135,7 +9589,7 @@ mod tests {
             destination: ExportDestination::Tinybird,
             datasource: "traces".to_owned(),
             row_count: 1,
-            payload: vec![0u8; payload_bytes],
+            payload: vec![0u8; payload_bytes].into(),
         }
     }
 
@@ -8202,7 +9656,7 @@ mod tests {
                         delivered.lock().expect("delivered").push(start);
                         sender.send(end).ok();
                     });
-                    lane.append_blocking(&encoded_test_frame(256), true, deliver)
+                    lane.append_blocking(&encoded_test_frame(256), &[], true, deliver)
                         .expect("append");
                     // Delivered before the append returned, and only after a
                     // sync that started with this frame's bytes in the file.
@@ -8243,12 +9697,12 @@ mod tests {
 
         let (gone, deliver) = while_caller_waits(counting(), Arc::clone(&lane));
         drop(gone);
-        lane.append_blocking(&encoded_test_frame(64), true, deliver)
+        lane.append_blocking(&encoded_test_frame(64), &[], true, deliver)
             .expect("the frame is still made durable");
         assert_eq!(ran.load(Ordering::SeqCst), 0, "but never reaches export");
 
         let (waiting, deliver) = while_caller_waits(counting(), Arc::clone(&lane));
-        lane.append_blocking(&encoded_test_frame(64), true, deliver)
+        lane.append_blocking(&encoded_test_frame(64), &[], true, deliver)
             .expect("append");
         drop(waiting);
         assert_eq!(
@@ -8267,7 +9721,7 @@ mod tests {
 
         let (gone, deliver) = while_caller_waits(nothing(), Arc::clone(&lane));
         drop(gone);
-        lane.append_blocking(&encoded_test_frame(64), true, deliver)
+        lane.append_blocking(&encoded_test_frame(64), &[], true, deliver)
             .expect("append");
         assert_eq!(
             lane.backlog_bytes(),
@@ -8277,7 +9731,7 @@ mod tests {
 
         let delivered = encoded_test_frame(64);
         let (waiting, deliver) = while_caller_waits(nothing(), Arc::clone(&lane));
-        lane.append_blocking(&delivered, true, deliver)
+        lane.append_blocking(&delivered, &[], true, deliver)
             .expect("append");
         drop(waiting);
         assert_eq!(
@@ -8299,7 +9753,7 @@ mod tests {
                 ran.fetch_add(1, Ordering::SeqCst);
             })
         };
-        lane.append_blocking(&encoded_test_frame(64), true, counting())
+        lane.append_blocking(&encoded_test_frame(64), &[], true, counting())
             .err()
             .expect("an unsynced frame is not acknowledged");
         assert_eq!(
@@ -8310,7 +9764,7 @@ mod tests {
         assert_eq!(lane.backlog_bytes(), 0, "nor counted as backlog");
 
         probe.fail.store(false, Ordering::SeqCst);
-        lane.append_blocking(&encoded_test_frame(64), true, counting())
+        lane.append_blocking(&encoded_test_frame(64), &[], true, counting())
             .expect("the next sync succeeds");
         assert_eq!(ran.load(Ordering::SeqCst), 1);
         drop(std::fs::remove_dir_all(queue_dir));

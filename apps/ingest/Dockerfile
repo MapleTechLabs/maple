@@ -1,4 +1,4 @@
-# Build context: apps/ingest/ (via Railway rootDirectory)
+# Build context: apps/ingest/
 #
 # The self-contained source build, used by a local `alchemy deploy` when
 # dist/maple-ingest is absent; CI always takes Dockerfile.prebuilt instead. The

@@ -19,7 +19,8 @@ import type { Model } from "./model"
 import type { SpanDetail } from "../trace-source"
 import { getCloudPlatform } from "./platform"
 import { cacheSummary, panelHeader, platformSummary, summaryStats } from "./view-header"
-import { spanLogs, tabsView } from "./view-tabs"
+import { spanLogs, spanProfileTab, tabsView } from "./view-tabs"
+import { TAB_VALUES } from "./update"
 import { sidePanelFrame } from "../../ui/side-panel"
 import { hstack } from "../../ui/stack"
 import { typography } from "../../ui/typography"
@@ -207,10 +208,18 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 	const spanAttrs = loadedOr(model, (detail) => detail.spanAttributes, span.spanAttributes)
 	const platform = getCloudPlatform(spanAttrs)
 	const { infraTab } = inputs
-	const values =
-		infraTab === undefined
-			? (["details", "logs"] as const)
-			: (["details", "logs", "infrastructure"] as const)
+	// Shown when the span has samples, and when the read failed: a failure is not "no samples".
+	const hasProfileTab = AsyncData.matchData(model.profile.data, {
+		onEmpty: () => false,
+		onFailure: () => true,
+		// No samples, or a source with no profile read: both answer null, and neither has a tab.
+		onData: (profile) => profile !== null,
+	})
+	const values = Arr.filter(
+		TAB_VALUES,
+		(value) =>
+			(value !== "profile" || hasProfileTab) && (value !== "infrastructure" || infraTab !== undefined),
+	)
 	return sidePanelFrame(h, [
 		panelHeader(h, model),
 		scrollArea(h, { className: "min-h-0 flex-1", idPrefix: "span-panel-scroll" }, [
@@ -240,9 +249,11 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 								],
 							),
 						]
-					: value === "logs" || infraTab === undefined
-						? [spanLogs(h, model, inputs.timeZone, inputs.logsDocsHref)]
-						: [h.div([h.Class("p-3")], [infraTab()])],
+					: value === "profile" && hasProfileTab
+						? [spanProfileTab(h, model)]
+						: value === "infrastructure" && infraTab !== undefined
+							? [h.div([h.Class("p-3")], [infraTab()])]
+							: [spanLogs(h, model, inputs.timeZone, inputs.logsDocsHref)],
 			),
 		]),
 	])

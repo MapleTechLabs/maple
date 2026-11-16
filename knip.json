@@ -26,6 +26,8 @@
 				"scripts/screenshots/replay-shop/*.ts"
 			],
 			"ignore": ["src/components/blog/foldkit/iso/**"],
+			// The screenshot scripts encode webp with the system cwebp (Homebrew).
+			"ignoreBinaries": ["cwebp"],
 			"ignoreDependencies": [
 				"@paper-design/shaders",
 				"@fontsource-variable/geist",

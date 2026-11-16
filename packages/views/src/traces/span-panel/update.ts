@@ -1,9 +1,18 @@
+import { PROFILE_SPAN_IDS_MAX } from "@maple/domain/http"
 import { Option, Record, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
+import * as ProfileFlamegraph from "../../profiles/profile-flamegraph"
 import * as Tabs from "../../ui/tabs"
 import type { SpanNodeData } from "../trace-data"
 import type { TraceSource } from "../trace-source"
-import { FetchSpanDetail, FetchSpanLogs, LOG_LIMIT, WaitSpanCopyStatus, WriteSpanClipboard } from "./command"
+import {
+	FetchSpanDetail,
+	FetchSpanLogs,
+	FetchSpanProfile,
+	LOG_LIMIT,
+	WaitSpanCopyStatus,
+	WriteSpanClipboard,
+} from "./command"
 import { Message, OutMessage } from "./message"
 import { acceptRead, type CopyStatus, idleRead, type Model, type PanelState, type Read } from "./model"
 
@@ -19,11 +28,54 @@ export type Return = Readonly<{ model: Model; commands?: Commands; outMessage?: 
 
 type StateReturn<S> = Readonly<{ model: S; commands?: Commands; outMessage?: OutMessage }>
 
-export const TAB_VALUES = ["details", "logs", "infrastructure"] as const
+export const TAB_VALUES = ["details", "logs", "infrastructure", "profile"] as const
+
+/**
+ * The tabs model over the tabs on screen. Its indexes count against `shown` alone: the highlight
+ * follows its tab by value, and one left by a longer earlier set falls back to the selected tab.
+ */
+export const tabsOver = (tabs: Tabs.Model, shown: ReadonlyArray<string>): Tabs.Model => {
+	const selected = shown.includes(tabs.selected) ? tabs.selected : (shown[0] ?? tabs.selected)
+	const highlighted = tabs.values[tabs.highlightedIndex]
+	const kept = highlighted === undefined ? -1 : shown.indexOf(highlighted)
+	return {
+		...tabs,
+		values: shown,
+		selected,
+		highlightedIndex: kept >= 0 ? kept : Math.max(0, shown.indexOf(selected)),
+	}
+}
+
+/** Span ids one profile read names, the API's limit: a deeper subtree is cut off, widest levels first. */
+export const PROFILE_SPAN_CAP = PROFILE_SPAN_IDS_MAX
+
+/** The span and its descendants, breadth first: a sample belongs to the innermost running span. */
+export const subtreeSpanIds = (span: SpanNodeData): ReadonlyArray<string> => {
+	const ids: Array<string> = []
+	let level: ReadonlyArray<SpanNodeData> = [span]
+	while (level.length > 0 && ids.length < PROFILE_SPAN_CAP) {
+		ids.push(...Arr.map(level, (node) => node.spanId))
+		level = Arr.flatMap(level, (node) => node.children)
+	}
+	return ids.slice(0, PROFILE_SPAN_CAP)
+}
+
+/** Whether more spans sit under `span` than one read names, so its profile covers only some. */
+export const subtreeIsCut = (span: SpanNodeData): boolean => {
+	let count = 0
+	let level: ReadonlyArray<SpanNodeData> = [span]
+	while (level.length > 0) {
+		count += level.length
+		if (count > PROFILE_SPAN_CAP) return true
+		level = Arr.flatMap(level, (node) => node.children)
+	}
+	return false
+}
 
 /** A read's key: the span it is for (the panel is mounted per span). */
 export const detailKeyOf = (span: SpanNodeData): string => `span-detail:${span.traceId}:${span.spanId}`
 export const logsKeyOf = (span: SpanNodeData): string => `span-logs:${span.traceId}:${span.spanId}`
+export const profileKeyOf = (span: SpanNodeData): string => `span-profile:${span.traceId}:${span.spanId}`
 
 /** The panel's reads: the logs always, the full attributes unless the span is missing from the trace. */
 const fetches = (span: SpanNodeData, readsCache: boolean): Commands => [
@@ -41,6 +93,15 @@ const fetches = (span: SpanNodeData, readsCache: boolean): Commands => [
 	...(span.isMissing === true
 		? []
 		: [
+				FetchSpanProfile({
+					key: profileKeyOf(span),
+					request: {
+						traceId: span.traceId,
+						spanIds: subtreeSpanIds(span),
+						startTime: span.startTime,
+						durationMs: span.durationMs,
+					},
+				}),
 				FetchSpanDetail({
 					key: detailKeyOf(span),
 					request: { traceId: span.traceId, spanId: span.spanId, timestamp: span.startTime },
@@ -64,6 +125,9 @@ export const init = (input: InitInput): Return => {
 			detail:
 				span.isMissing === true ? idleRead() : { key: detailKeyOf(span), data: AsyncData.Loading() },
 			logs: { key: logsKeyOf(span), data: AsyncData.Loading() },
+			profile:
+				span.isMissing === true ? idleRead() : { key: profileKeyOf(span), data: AsyncData.Loading() },
+			flamegraph: ProfileFlamegraph.init(`span-profile-${span.spanId}`),
 			tabs: Tabs.init({ idBase: 32, values: TAB_VALUES, selected: "details" }),
 			copies: {},
 			openIds: [],
@@ -80,7 +144,12 @@ const revalidate = <A>(read: Read<A>): Read<A> =>
 
 /** The reader refreshed: ask the source again past any cache, the current data staying up. */
 export const refresh = (model: Model): Return => ({
-	model: { ...model, detail: revalidate(model.detail), logs: revalidate(model.logs) },
+	model: {
+		...model,
+		detail: revalidate(model.detail),
+		logs: revalidate(model.logs),
+		profile: revalidate(model.profile),
+	},
 	commands: fetches(model.span, false),
 })
 
@@ -162,15 +231,30 @@ export const updateState = <S extends PanelState>(model: S, message: Message): S
 				isExclude: filter.isExclude,
 			}),
 		}),
-		// The panel's own tab strip; a holder without it keeps its state.
+		// The panel's own tab strip and profile; a holder without them keeps its state.
 		GotTabsMessage: () => ({ model }),
+		CompletedFetchProfile: () => ({ model }),
+		GotFlamegraphMessage: () => ({ model }),
 	})
 
 export const update = (model: Model, message: Message): Return => {
+	if (message._tag === "CompletedFetchProfile")
+		return { model: { ...model, profile: acceptRead(model.profile, message.key, message.result) } }
+	if (message._tag === "GotFlamegraphMessage")
+		return {
+			model: {
+				...model,
+				flamegraph: ProfileFlamegraph.update(model.flamegraph, message.message).model,
+			},
+		}
 	if (message._tag !== "GotTabsMessage") return updateState(model, message)
-	const next = Tabs.update(model.tabs, message.message)
+	// The strip only draws the shown tabs, so the tabs update runs over those.
+	const { shown } = message
+	const next = Tabs.update(tabsOver(model.tabs, shown), message.message)
 	return {
 		model: { ...model, tabs: next.model },
-		commands: Command.mapMessages(next.commands ?? [], (tab) => Message.GotTabsMessage({ message: tab })),
+		commands: Command.mapMessages(next.commands ?? [], (tab) =>
+			Message.GotTabsMessage({ message: tab, shown }),
+		),
 	}
 }

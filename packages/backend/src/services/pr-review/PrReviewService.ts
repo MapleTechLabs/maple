@@ -53,6 +53,7 @@ import {
 	type PullRequestEventJob,
 	type PullRequestReviewComment,
 	type PullRequestReviewPublication,
+	type PullRequestReviewThread,
 	type SubmitPrReviewRequest,
 	type VcsInstallation,
 	type VcsRepo,
@@ -103,7 +104,7 @@ import {
 import { FindingEmbedder } from "./FindingEmbedder"
 import { isRuntimeSource, lineEmitting } from "./telemetry/diff"
 import { POST_MERGE_FIRST_LOOK } from "./telemetry/post-merge"
-import { privacyFindings, withoutReviewerOverlap } from "./telemetry/privacy"
+import { privacyFindings, privacyValueLines, withoutReviewerOverlap } from "./telemetry/privacy"
 import { PrReviewTelemetryService } from "./telemetry/PrReviewTelemetryService"
 import {
 	buildChecklist,
@@ -124,6 +125,8 @@ import {
 	withDismissals,
 } from "./telemetry/render"
 import {
+	capUnsourcedPrivacyCriticals,
+	latestReplies,
 	settledFindings,
 	nextHandles,
 	pathIgnored,
@@ -1015,6 +1018,13 @@ const inlineComment = (finding: PrReviewFinding, key: string | undefined): PullR
 })
 
 /**
+ * A vector as one `float4[]` literal. Bound as a number array, the driver types each element on
+ * its own, so a component that is exactly `0` reads as int4 beside float8 and the insert fails.
+ */
+const float4ArrayParam = (vector: ReadonlyArray<number>) =>
+	PG.sql(PG.array(PG.float4))`${`{${Arr.join(Arr.map(vector, String), ",")}}`}::float4[]`
+
+/**
  * What the review posts: a check run with every finding as an annotation, a summary comment of
  * its own that replaces its "reviewing" notice, and inline comments for new
  * findings at or above the repository's inline threshold (`warn` by default). `keys` maps a
@@ -1428,6 +1438,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						detected,
 						verdicts: new Map<string, NameVerdict>(verdicts.flat()),
 						privacy: privacyFindings(files),
+						privacyValues: privacyValueLines(files),
 					}
 				}).pipe(
 					Effect.timeout("15 seconds"),
@@ -1577,7 +1588,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			/**
 			 * Read the pull request's threads once and record what people did with the findings: the
 			 * 👍 / 👎 on each inline comment, and the open ones a person dismissed. Answers the
-			 * findings still open afterwards. A failed read changes nothing.
+			 * findings still open afterwards, the ones it dismissed, and the threads it read. A failed
+			 * read changes nothing.
 			 */
 			const syncThreads = Effect.fn("PrReviewService.syncThreads")(function* (
 				orgId: OrgId,
@@ -1591,7 +1603,10 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				const open = Arr.filter(tracked, (finding) => finding.status === "open")
 				const commented = Arr.filter(tracked, (finding) => finding.commentId !== null)
 				const upstream = yield* upstreamFor(orgId, repo)
-				if (commented.length === 0 || Option.isNone(upstream)) return open
+				const noThreads: ReadonlyArray<PullRequestReviewThread> = []
+				const noneDismissed: ReadonlyArray<TrackedFinding> = []
+				if (commented.length === 0 || Option.isNone(upstream))
+					return { open, dismissed: noneDismissed, threads: noThreads }
 				const { provider, installation, ref } = upstream.value
 				const threads = yield* provider
 					.fetchReviewThreads(installation, ref, number)
@@ -1634,10 +1649,15 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					"maple.pr_review.reactions_up": up,
 					"maple.pr_review.reactions_down": down,
 				})
-				return Arr.filter(
-					open,
-					(finding) => !settled.dismissed.includes(finding) && !settled.resolved.includes(finding),
-				)
+				return {
+					open: Arr.filter(
+						open,
+						(finding) =>
+							!settled.dismissed.includes(finding) && !settled.resolved.includes(finding),
+					),
+					dismissed: settled.dismissed,
+					threads,
+				}
 			})
 
 			/**
@@ -1679,7 +1699,14 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				// A rewritten history has no trustworthy delta, so resolved threads stay with the reviewer.
 				const changedPaths =
 					changes?.paths === undefined || changes.rewritten ? undefined : new Set(changes.paths)
-				const open = yield* syncThreads(orgId, repo, number, tracked, nowMs, changedPaths)
+				const synced = yield* syncThreads(orgId, repo, number, tracked, nowMs, changedPaths)
+				const { open } = synced
+				const dismissed = [
+					...Arr.filter(tracked, (finding) => finding.status === "dismissed"),
+					...synced.dismissed,
+				]
+				// Every reply a person left, verdict or not, so the reviewer weighs a rebuttal itself.
+				const replies = latestReplies([...open, ...dismissed], synced.threads)
 				// A defect fixed since the last whole-diff pass, or one still open that this push may
 				// fix: this pass re-reads every file, so the fix is checked in the pass that sees it.
 				const recheck =
@@ -1689,8 +1716,10 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					"maple.pr_review.changed_since": changes?.paths?.length ?? -1,
 					"maple.pr_review.history_rewritten": changes?.rewritten ?? false,
 					"maple.pr_review.recheck": recheck,
+					"maple.pr_review.carried_dismissed": dismissed.length,
+					"maple.pr_review.carried_replies": replies.size,
 				})
-				return renderFollowUp({ previousSha, changes, open, recheck })
+				return renderFollowUp({ previousSha, changes, open, recheck, replies, dismissed })
 			})
 
 			/** A review of the same pull request still running, whose head this delivery replaces. */
@@ -2616,12 +2645,66 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					],
 					(a, b) => a === b,
 				)
-				const stillOpen = Arr.filter(open, (finding) => !resolved.includes(finding))
+				// Ones the reviewer agrees do not hold, usually on a person's reply; a fix wins over both.
+				const dismissedReasons = new Map(
+					Arr.map(request.dismissed ?? [], (item) => [item.handle, item.reason] as const),
+				)
+				const dismissedByReviewer = Arr.filter(
+					resolvedByHandle([...dismissedReasons.keys()], open),
+					(finding) => !resolved.includes(finding),
+				)
+				const stillOpen = Arr.filter(
+					open,
+					(finding) => !resolved.includes(finding) && !dismissedByReviewer.includes(finding),
+				)
+				if (dismissedByReviewer.length > 0) {
+					yield* Effect.logInfo("[PrReview] reviewer dismissed earlier findings").pipe(
+						Effect.annotateLogs({
+							orgId,
+							reviewId,
+							dismissed: Arr.join(
+								Arr.map(
+									dismissedByReviewer,
+									(finding) =>
+										`${finding.handle} ${finding.path}:${finding.line}: ${dismissedReasons.get(finding.handle) ?? ""}`,
+								),
+								" | ",
+							),
+						}),
+					)
+				}
+				// A value the scan recognized on the finding's lines is the evidence itself.
+				const sourced = capUnsourcedPrivacyCriticals(request.report.findings, (own) =>
+					Arr.some(
+						read?.privacyValues ?? [],
+						(value) =>
+							value.path === own.path &&
+							value.line >= own.line &&
+							value.line <= (own.endLine ?? own.line),
+					),
+				)
+				if (sourced.downgraded.length > 0) {
+					yield* Effect.logInfo(
+						"[PrReview] credential findings without a cited source filed as warnings",
+					).pipe(
+						Effect.annotateLogs({
+							orgId,
+							reviewId,
+							downgraded: Arr.join(
+								Arr.map(
+									sourced.downgraded,
+									(finding) => `${finding.path}:${finding.line} ${finding.title}`,
+								),
+								" | ",
+							),
+						}),
+					)
+				}
 				// The model's findings weighed by production traffic, and the facts the service files
 				// itself. The repository's settings are enforced here, not only stated in the kickoff.
-				const scanned = withoutReviewerOverlap(read?.privacy ?? [], request.report.findings)
+				const scanned = withoutReviewerOverlap(read?.privacy ?? [], sourced.findings)
 				const proposed = [
-					...weighByTraffic(request.report.findings, telemetry),
+					...weighByTraffic(sourced.findings, telemetry),
 					...telemetryFindings(telemetry),
 					...scanned,
 				]
@@ -2633,9 +2716,15 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							config.categories.length === 0 ||
 							config.categories.includes(finding.category)),
 				)
-				const { fresh, repeated } = withoutRepeats(
+				const { fresh, repeated, reraisedDismissed } = withoutRepeats(
 					allowed,
-					Arr.filter(tracked, (finding) => !resolved.includes(finding)),
+					Arr.map(
+						Arr.filter(tracked, (finding) => !resolved.includes(finding)),
+						(finding): TrackedFinding =>
+							dismissedByReviewer.includes(finding)
+								? { ...finding, status: "dismissed" }
+								: finding,
+					),
 				)
 				// The team's votes on earlier findings, applied to what is left; never to security or
 				// critical findings. A suppressed finding is neither stored nor posted.
@@ -2722,6 +2811,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					"maple.pr_review.confidence_capped": confidence?.capped === true,
 					"maple.pr_review.findings": report.findings.length,
 					"maple.pr_review.repeated": repeated,
+					"maple.pr_review.reraised_dismissed": reraisedDismissed,
+					"maple.pr_review.dismissed_by_reviewer": dismissedByReviewer.length,
+					"maple.pr_review.privacy.downgraded": sourced.downgraded.length,
 					"maple.pr_review.suppressed": feedback.suppressed.length,
 					"maple.pr_review.ignored": proposed.length - allowed.length,
 					"maple.pr_review.privacy.scanned": read?.privacy.length ?? 0,
@@ -2827,7 +2919,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 											orgId,
 											repositoryId: review.repositoryId,
 											model: embedder.model,
-											embedding: [...(vectors[i] ?? [])],
+											embedding: float4ArrayParam(vectors[i] ?? []),
 											createdAt: nowMs,
 										})),
 									)
@@ -2846,6 +2938,12 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					orgId,
 					Arr.map(resolved, (finding) => finding.id),
 					{ status: "resolved", resolvedSha: review.headSha, updatedAt: nowMs },
+				)
+				yield* setFindingStatus(
+					orgId,
+					Arr.map(dismissedByReviewer, (finding) => finding.id),
+					{ status: "dismissed", updatedAt: nowMs },
+					{ onlyOpen: true },
 				)
 				// Like findings, a partial's steps were never posted, so they are not tracked.
 				if (request.partial !== true) {

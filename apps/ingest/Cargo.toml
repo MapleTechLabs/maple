@@ -37,8 +37,10 @@ opentelemetry-otlp = { version = "0.32", default-features = false, features = [
 	"logs",
 	"metrics",
 ] }
-opentelemetry-proto = { version = "0.32", features = ["gen-tonic", "trace", "logs", "metrics", "with-serde"] }
+opentelemetry-proto = { version = "0.32", features = ["gen-tonic", "trace", "logs", "metrics", "profiles", "with-serde"] }
 prost = "0.14.3"
+# Prometheus remote write bodies are snappy blocks; only `decompress.rs` may decode them.
+snap = "1.1"
 # The `regex` crate's engine; ingest rules use it directly to read each regex's compiled size.
 regex-automata = { version = "0.4.14", default-features = false, features = ["std", "syntax", "meta", "perf", "unicode", "hybrid", "nfa-backtrack"] }
 crc32fast = "1.5"
@@ -58,8 +60,8 @@ url = "2.5.7"
 uuid = { version = "1", features = ["v4"] }
 moka = { version = "0.12", features = ["future"] }
 # Postgres key store (INGEST_KEY_STORE_BACKEND=postgres): a pooled direct
-# connection to PlanetScale Postgres (PSBouncer 6432, no Hyperdrive — Railway
-# dials PlanetScale). TLS via rustls (ring provider; reqwest already pulls rustls).
+# connection to PlanetScale Postgres (PSBouncer 6432, no Hyperdrive — the ECS
+# fleet dials PlanetScale). TLS via rustls (ring provider; reqwest already pulls rustls).
 tokio-postgres = "0.7"
 deadpool-postgres = "0.14"
 tokio-postgres-rustls = "0.13"
@@ -150,6 +152,10 @@ harness = false
 
 [[bench]]
 name = "wal_append_bench"
+harness = false
+
+[[bench]]
+name = "row_encode_bench"
 harness = false
 
 # Reads fixture-shaped cases as JSON lines on stdin and prints each outcome; driven by

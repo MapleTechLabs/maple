@@ -7,7 +7,7 @@ import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/back
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { runtimeTelemetry } from "@maple/infra/worker-telemetry"
 import { Effect, Layer, Schema } from "effect"
-import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
+import { MCP_ANTICIPATED_ERROR_IDENTIFIERS, isAnticipatedMcpFailure } from "../mcp/expected-failures"
 import type { AiSessionPortsLayer } from "../worker/bindings"
 import { provideSessionPorts } from "./session-ports"
 
@@ -46,6 +46,7 @@ const ENGINE_BOOKKEEPING_SPANS = [
 export const chatTelemetry = runtimeTelemetry({
 	serviceName: "maple-chat",
 	anticipatedErrorIdentifiers: MCP_ANTICIPATED_ERROR_IDENTIFIERS,
+	isAnticipatedError: isAnticipatedMcpFailure,
 	dropSpanNames: ENGINE_BOOKKEEPING_SPANS,
 })
 

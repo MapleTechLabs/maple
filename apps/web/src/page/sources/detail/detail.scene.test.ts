@@ -232,6 +232,38 @@ describe("source detail", () => {
 		)
 	})
 
+	test("the Profiles signal is offered only to an org in the profiling rollout", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(source(), "settings")),
+			resolveTheme,
+			expectView(text("Traces")).toExist(),
+			expectView(text("/v1development/profiles")).not.toExist(),
+		)
+		const profiling: PageContext = { ...context, hasProfiling: true }
+		const entered = init(route("settings"), profiling).model
+		const withFlag = Arr.reduce(
+			[
+				Message.ReadClock({ nowMs: NOW }),
+				Message.CompletedFetchList({
+					key: entered.list.key ?? "",
+					result: Result.succeed([source()]),
+				}),
+			],
+			entered,
+			(model, message) => update(model, message, profiling).model,
+		)
+		scene(
+			{
+				update: (model: Model, message: Message) => update(model, message, profiling),
+				view: withViewInputs(pageView, { context: profiling })(),
+			},
+			given(withFlag),
+			resolveTheme,
+			expectView(text("/v1development/profiles")).toExist(),
+		)
+	})
+
 	test("the default source has no token actions", () => {
 		scene(
 			{ update: pageUpdate, view },

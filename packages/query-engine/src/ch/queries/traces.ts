@@ -1260,6 +1260,8 @@ export function spanSearchQuery(opts: SpanSearchOpts) {
 export interface TracesRootListOpts extends TracesQueryOpts {
 	limit?: number
 	offset?: number
+	/** Only this trace's entry spans, seeked through `trace_index` within the query window. */
+	traceId?: string
 	/**
 	 * Keyset pagination cursor. When set, only root spans with `Timestamp < cursor`
 	 * are returned. Strictly preferred over `offset` for deep pagination. Pass
@@ -1482,6 +1484,8 @@ export function tracesRootListQuery(opts: TracesRootListOpts) {
 	): Array<CH.Condition | undefined> => [
 		...buildWhereConditions($, { ...opts, rootOnly: true }),
 		CH.when(cursor, (v: DateTime.Utc | CH.Expr<DateTime.Utc>) => $.Timestamp.lt(v)),
+		CH.when(opts.traceId, (v: string) => $.TraceId.eq(v)),
+		CH.when(opts.traceId, (v: string) => inTraces((id) => id.eq(v), paramTraceWindow())),
 	]
 
 	// Stage 1: cheap scan — only `Timestamp` is read, sharing the same WHERE

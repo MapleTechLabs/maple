@@ -99,13 +99,15 @@ export const Model = Schema.Struct({
 	token: Schema.String,
 	search: ShareSearch,
 	resolve: Resolve,
-	/** Reloads and auto-refresh ticks so far (non-zero stops snapping). */
-	refreshTick: Schema.Number,
+	/** What read `nowMs`: only a Reload unsnaps the window and refetches tiles whose key held still. */
+	clockRead: Schema.Literals(["Navigation", "AutoRefresh", "Reload"]),
 	window: Schema.NullOr(ShareWindow),
 	/** Each mounted tile's measured `maxDataPoints`. */
 	options: Schema.Record(Schema.String, Schema.Number),
 	/** The request key each widget was last fetched under. */
 	requested: Schema.Record(Schema.String, Schema.String),
+	/** The key each widget's last answer failed under; a tick retries it once, until the retry answers. */
+	failedKeys: Schema.Record(Schema.String, Schema.String),
 	isFlushScheduled: Schema.Boolean,
 	/** Batches after the one in flight; each is awaited before the next is sent. */
 	queuedBatches: Schema.Array(QueuedBatch),

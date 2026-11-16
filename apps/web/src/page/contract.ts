@@ -26,6 +26,8 @@ export interface PageContext {
 	readonly audience?: NavAudience
 	/** The org is in the `productAnalytics` rollout, so pages may link to it; absent means it is not. */
 	readonly hasProductAnalytics?: boolean
+	/** The org is in the `profiling` rollout, so a service page shows its Profiles tab; absent means it is not. */
+	readonly hasProfiling?: boolean
 }
 
 /** The sidebar's last-hour presence probe (`null` until it answers) and the integration statuses. */

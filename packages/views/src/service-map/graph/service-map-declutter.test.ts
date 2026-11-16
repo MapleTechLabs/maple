@@ -207,6 +207,39 @@ describe("applyDeclutter — focus", () => {
 })
 
 describe("applyDeclutter — namespace collapse", () => {
+	it("keeps merged Hyperdrive origin edges structural through the traffic filter", () => {
+		const origin: Partial<ServiceEdgeData> = {
+			callCount: 0,
+			callsPerSecond: 0,
+			estimatedCallsPerSecond: 0,
+			relation: "hyperdrive-origin",
+		}
+		const nodes = [
+			node("edge"),
+			node("data", { namespace: "data" }),
+			node("db:hyperdrive:main", { kind: "database" }),
+			node("db:postgresql:orders", { kind: "database", namespace: "data" }),
+			node("db:postgresql:ledger", { kind: "database", namespace: "data" }),
+		]
+		const edges = [
+			edge("edge", "db:hyperdrive:main", { callCount: 500, callsPerSecond: 50 }),
+			edge("data", "db:postgresql:orders"),
+			edge("data", "db:postgresql:ledger"),
+			edge("db:hyperdrive:main", "db:postgresql:orders", origin),
+			edge("db:hyperdrive:main", "db:postgresql:ledger", origin),
+		]
+		const result = applyDeclutter(
+			nodes,
+			edges,
+			state({ collapsedNamespaces: ["data"], minTrafficPct: 1 }),
+		)
+		const merged = Arr.findFirst(
+			result.edges,
+			(e) => e.id === edgeIdFor("db:hyperdrive:main", nsAggregateId("data")),
+		)
+		expect(Option.getOrUndefined(merged)?.data?.relation).toBe("hyperdrive-origin")
+	})
+
 	// payments: [checkout, ledger]; platform: [gateway]; db node; external svc
 	const graph = () => ({
 		nodes: [
@@ -280,6 +313,25 @@ describe("applyDeclutter — namespace collapse", () => {
 		const a = applyDeclutter(nodes, edges, state({ collapsedNamespaces: ["payments"] }))
 		const b = applyDeclutter(nodes, [...edges].reverse(), state({ collapsedNamespaces: ["payments"] }))
 		expect(topologyKey(a.nodes, a.edges)).toBe(topologyKey(b.nodes, b.edges))
+	})
+
+	it("folds a database in the collapsed namespace into its aggregate", () => {
+		const { nodes, edges } = graph()
+		const db = "db:postgresql:payments"
+		const result = applyDeclutter(
+			[...nodes, node(db, { kind: "database", namespace: "payments", throughput: 500 })],
+			[...edges, edge("ledger", db, { callCount: 70, callsPerSecond: 7 })],
+			state({ collapsedNamespaces: ["payments"] }),
+		)
+		const ids = Arr.map(result.nodes, (n) => n.id)
+		expect(ids).not.toContain(db)
+		// The shared database outside the namespace stays its own node.
+		expect(ids).toContain("db:postgresql:main")
+		expect(Arr.some(result.edges, (e) => e.source === db || e.target === db)).toBe(false)
+		// Still two services and their request throughput: the database adds to neither.
+		const agg = Option.getOrThrow(Arr.findFirst(result.nodes, (n) => n.id === nsAggregateId("payments")))
+		expect(agg.data.nsMemberCount).toBe(2)
+		expect(agg.data.throughput).toBe(40)
 	})
 
 	it("collapsing both endpoints' namespaces links the two aggregates", () => {

@@ -1,11 +1,27 @@
-import { auditResourceLabel } from "@maple/domain/audit-actions"
+import { auditResourceLabel, auditToolCallerLabel } from "@maple/domain/audit-actions"
+import { internalAgentLabel } from "@maple/domain/system-agents"
 import { decodePublicId, PublicIdPrefixes, type V2AuditLogEntry } from "@maple/domain/http/v2"
 import { Option, String as Str } from "effect"
 
 type AuditEntryResource = Pick<
 	V2AuditLogEntry,
 	"action" | "resource_type" | "resource_id" | "affected_user" | "metadata"
->
+> &
+	Partial<Pick<V2AuditLogEntry, "actor_name" | "actor_type">>
+
+/**
+ * The name frozen on an entry, with Maple's own agent names (`chat-connector-slack`) in words.
+ * Agents only: an API key's name is free text, and one named like a Maple agent is still a key.
+ */
+export const auditActorName = (name: string | null, actorType: string | null | undefined): string | null =>
+	name === null ? null : actorType === "agent" ? (internalAgentLabel(name) ?? name) : name
+
+/** True when the actor column already names one of Maple's own agents for this entry. */
+const actorIsMapleAgent = (entry: AuditEntryResource, caller: string): boolean =>
+	entry.actor_name === caller ||
+	(entry.actor_type === "agent" &&
+		typeof entry.actor_name === "string" &&
+		internalAgentLabel(entry.actor_name) !== null)
 
 /** Where a resource lives in the app. Only routes the web really has. */
 export type AuditResourceLink =
@@ -123,6 +139,17 @@ export function auditResourceDisplay(entry: AuditEntryResource): AuditResourceDi
 	if (method !== null && path !== null) return { text: `${method} ${path}`, link: null }
 	if (entry.resource_type === null) {
 		return id === null ? null : { text: shortPublicId(id), link: null }
+	}
+	// A tool call names who made it (a customer's MCP client or one of Maple's agents) and the tool's title.
+	if (entry.resource_type === "mcp_tool") {
+		const caller = auditToolCallerLabel(
+			stringField(entry.metadata, "surface"),
+			stringField(entry.metadata, "agent"),
+		)
+		const tool = stringField(entry.metadata, "tool_title") ?? stringField(entry.metadata, "tool")
+		// The actor column already names Maple's agent (a code review pass, the chat bot); say the tool once.
+		if (tool !== null && actorIsMapleAgent(entry, caller)) return { text: tool, link: null }
+		return { text: tool === null ? caller : `${caller} · ${tool}`, link: null }
 	}
 	const typeLabel = auditResourceLabel(entry.resource_type) ?? entry.resource_type
 	const name = resourceName(entry, id)

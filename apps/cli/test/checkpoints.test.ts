@@ -2,7 +2,7 @@
 import { describe, it } from "@effect/vitest"
 import { createHash } from "node:crypto"
 import { sha256File } from "@maple/local-server/checkpoint-digest"
-import { Clock, Duration, Effect, Exit, Option, Array as Arr, String as Str } from "effect"
+import { Clock, Duration, Effect, Exit, Option, Tracer, Array as Arr, String as Str } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { deepStrictEqual, match, ok, rejects, strictEqual, throws } from "node:assert"
 import {
@@ -30,9 +30,11 @@ import {
 	checkpointStatePath,
 	checkpointFailuresPath,
 	checkpointRefreshBackoff,
+	createCheckpoint,
 	formatCheckpointRefreshBackoff,
 	isMissingBackupConfigurationError,
 	listPreservedCheckpointPins,
+	maintenanceOperation,
 	releasePreservedCheckpoints,
 	sweepUnreferencedCheckpoints,
 	LocalQueryError,
@@ -1196,6 +1198,62 @@ describe("live restore transaction reconciliation", () => {
 			await rejects(Effect.runPromise(reconcileCheckpointRecovery(dataDir)), /real directory/)
 			strictEqual(readFileSync(join(outside, "sentinel"), "utf8"), "preserve")
 		})
+	})
+})
+
+describe("checkpoint create failures", () => {
+	it("names the stage that failed, since telemetry drops the message", async () => {
+		await withDataDir(async (dataDir) => {
+			const http = HttpClient.make((request) =>
+				Effect.succeed(
+					HttpClientResponse.fromWeb(request, new Response("backup failed", { status: 500 })),
+				),
+			)
+			const error = await Effect.runPromise(
+				Effect.flip(
+					createCheckpoint({ dataDir, host: "127.0.0.1", port: 1 }).pipe(
+						Effect.provideService(HttpClient.HttpClient, http),
+					),
+				),
+			)
+			strictEqual(error._tag, "@maple/cli/CheckpointCreateError")
+			ok(error._tag === "@maple/cli/CheckpointCreateError" && error.stage === "backup")
+		})
+	})
+})
+
+describe("maintenance operations", () => {
+	const spanExit = async (expected?: (error: string) => boolean) => {
+		const spans: Array<Tracer.NativeSpan> = []
+		const tracer = Tracer.make({
+			span(options) {
+				const span = new Tracer.NativeSpan(options)
+				spans.push(span)
+				return span
+			},
+		})
+		const exit = await Effect.runPromiseExit(
+			maintenanceOperation({
+				operation: "test",
+				try: () => Promise.reject(new Error("no registered migration")),
+				catch: () => "refused",
+				...(expected === undefined ? undefined : { expected }),
+			}).pipe(Effect.withTracer(tracer)),
+		)
+		const status = spans[0]?.status
+		return { exit, spanOk: status?._tag === "Ended" && Exit.isSuccess(status.exit) }
+	}
+
+	it("closes the span Ok for a refusal the caller expects, and still fails", async () => {
+		const { exit, spanOk } = await spanExit((error) => error === "refused")
+		ok(Exit.isFailure(exit))
+		strictEqual(spanOk, true)
+	})
+
+	it("closes the span Error for any other failure", async () => {
+		const { exit, spanOk } = await spanExit()
+		ok(Exit.isFailure(exit))
+		strictEqual(spanOk, false)
 	})
 })
 

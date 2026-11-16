@@ -46,6 +46,8 @@ import { FallbackReason, FetchDashboardFallback } from "./command-fallback"
 import {
 	awaitsRefresh,
 	isSameTimeRange,
+	planModeOf,
+	type PlanMode,
 	replan,
 	replanTile,
 	shownDocumentOf,
@@ -83,6 +85,7 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		snapshot: { _tag: "Idle" },
 		nowMs: null,
 		refreshVersion: 0,
+		clockRead: "Navigation",
 		isReloading: false,
 		gridWidth: 0,
 		widgets: {},
@@ -146,7 +149,8 @@ const isRangeMoved = (before: Model, after: Model): boolean => {
 /** A `var-*` change re-plans the tiles that read the variable; a `range` change reads the clock first. */
 export const routeChanged = (model: Model, route: Route, context: PageContext): Return => {
 	const next = { ...model, search: route.search }
-	if (isRangeMoved(model, next)) return { model: next, commands: [ReadClock()] }
+	if (isRangeMoved(model, next))
+		return { model: { ...next, clockRead: "Navigation" }, commands: [ReadClock()] }
 	return sameValues(variableValuesFromSearch(model.search), variableValuesFromSearch(route.search))
 		? { model: next }
 		: withReplan(next, context, "Load")
@@ -182,11 +186,11 @@ const editModeHref = (model: Model): string => {
 	return dashboardHref(model, { ...kept, mode: "edit" })
 }
 
-/** A new clock, an unsnapped window and the Reload spinner. */
-const reload = (model: Model): Return => {
+/** A new clock and the Reload spinner; a Reload also unsnaps the window, a tick keeps it snapped. */
+const reload = (model: Model, clockRead: "AutoRefresh" | "Reload"): Return => {
 	const refreshVersion = model.refreshVersion + 1
 	return {
-		model: { ...model, refreshVersion, isReloading: true },
+		model: { ...model, refreshVersion, clockRead, isReloading: true },
 		commands: [ReadClock(), CompleteReloadSpin({ version: refreshVersion })],
 	}
 }
@@ -294,7 +298,7 @@ const replanAfter = (stepped: Return, context: PageContext): Return => {
 	return { ...stepped, model: planned.model, commands: [...(stepped.commands ?? []), ...planned.commands] }
 }
 
-const withReplan = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
+const withReplan = (model: Model, context: PageContext, mode: PlanMode): Return => {
 	const planned = replan(model, context, mode)
 	return { model: planned.model, commands: planned.commands }
 }
@@ -349,7 +353,7 @@ const receiveDocument = (
 			const ended = cancelStaleGesture(settled, context)
 			// A new saved range this viewer shows: the clock is read first, and its answer plans.
 			const replanned: Return = isRangeMoved(model, ended.model)
-				? { model: ended.model, commands: [ReadClock()] }
+				? { model: { ...ended.model, clockRead: "Navigation" }, commands: [ReadClock()] }
 				: withReplan(ended.model, context, "Load")
 			const planned: Return = {
 				...replanned,
@@ -604,7 +608,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				? readSnapshot(model, "retry")
 				: { model, outMessage: PageOutMessage.RequestedReconnectOrgCollections() },
 		CompletedReadClock: ({ nowMs }) =>
-			withReplan({ ...model, nowMs }, context, model.refreshVersion > 0 ? "Refresh" : "Load"),
+			withReplan({ ...model, nowMs }, context, planModeOf(model.clockRead)),
 		MeasuredGrid: ({ width }) => cancelStaleGesture({ ...model, gridWidth: width }, context),
 		MeasuredWidget: ({ widgetId, widthPx }) => {
 			const slot = slotOf(model, widgetId)
@@ -703,8 +707,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				},
 			})
 		},
-		TickedAutoRefresh: () => reload(model),
-		ClickedReload: () => reload(model),
+		TickedAutoRefresh: () => reload(model, "AutoRefresh"),
+		ClickedReload: () => reload(model, "Reload"),
 		CompletedReloadSpin: ({ version }) =>
 			version === model.refreshVersion ? { model: { ...model, isReloading: false } } : { model },
 		ClickedToggleEdit: () => toggleEdit(model),

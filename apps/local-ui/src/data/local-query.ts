@@ -32,15 +32,16 @@ const resolve = <T>(compiled: CompiledQueryInput<T>): Effect.Effect<CompiledQuer
  * Retries with fixed delays: only a request that never got an
  * answer is retried, twice, after 1 s and 2 s.
  */
-const run = (sql: string, apiBase: string) =>
+const retried = (sql: string, apiBase: string) =>
 	executeLocalQuery(sql, apiBase).pipe(
 		Effect.retry({
 			schedule: Schedule.exponential(Duration.seconds(1)),
 			times: 2,
 			while: (error: LocalQueryError) => error._tag === "@maple/query-engine/LocalQueryUnreachable",
 		}),
-		Effect.mapError(localFailure),
 	)
+
+const run = (sql: string, apiBase: string) => retried(sql, apiBase).pipe(Effect.mapError(localFailure))
 
 /** `executeLocalCompiledQuery`: every row, decoded with the query's own row schema. */
 export const queryRows = <T>(
@@ -50,6 +51,25 @@ export const queryRows = <T>(
 	Effect.gen(function* () {
 		const query = yield* resolve(compiled)
 		const rows = yield* run(query.sql, apiBase)
+		return yield* query.decodeRows(rows).pipe(Effect.mapError(localFailure))
+	})
+
+/**
+ * `queryRows` for a table a store may predate: a store from before its schema version has no
+ * such table, and reads as having no rows. Any other failure still fails.
+ */
+export const queryRowsIfTableExists = <T>(
+	compiled: CompiledQueryInput<T>,
+	apiBase: string,
+): Effect.Effect<ReadonlyArray<T>, LoadFailure, HttpClient.HttpClient> =>
+	Effect.gen(function* () {
+		const query = yield* resolve(compiled)
+		const rows = yield* retried(query.sql, apiBase).pipe(
+			Effect.catchTag("@maple/query-engine/LocalQueryFailed", (error) =>
+				error.type === "UNKNOWN_TABLE" ? Effect.succeed([]) : Effect.fail(error),
+			),
+			Effect.mapError(localFailure),
+		)
 		return yield* query.decodeRows(rows).pipe(Effect.mapError(localFailure))
 	})
 

@@ -86,6 +86,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/domains",
+		title: "Verified domains",
+		description:
+			"The settings domains tab as an admin: verified and unverified domains, none yet, and the add and verify dialogs (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/members",
 		title: "Members",
 		description:
@@ -460,10 +468,18 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/service-profiles",
+		title: "Service profiles",
+		description:
+			"The service page's Profiles tab over one hour of checkout-api: the flame chart and the top functions from 31 hand-written stacks; ?state=empty is a service that sent no profiles, ?state=failed a failed read.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/service-map-runtimes",
 		title: "Service map runtimes",
 		description:
-			"The service map over a small fleet topology with fleet-api (Cloud Run) selected; ?tab=infrastructure opens the panel's Infrastructure tab.",
+			"The service map over a small fleet topology with fleet-api (Cloud Run) selected; ?tab=infrastructure opens the panel's Infrastructure tab, ?topology=namespaces shows two namespaces with their own and a shared database.",
 		kind: "lab",
 		session: "none",
 	},

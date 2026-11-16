@@ -2,7 +2,8 @@ import { Context, Effect, Option, Schema, String as Str } from "effect"
 import type { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { AuditedRead, type AuditLogSource, type TenantContext } from "@maple/domain/http"
-import { CONNECTOR_TENANT_USER_ID, type ChatTurnOrigin } from "@maple/domain/chat-session"
+import { CONNECTOR_TENANT_USER_ID, type ChatMode, type ChatTurnOrigin } from "@maple/domain/chat-session"
+import { mapleAgentLabel } from "@maple/domain/audit-actions"
 import { chatConnectorAgentName } from "@maple/domain/system-agents"
 import type { ActorId, OrgId, UserId } from "@maple/primitives"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
@@ -71,6 +72,7 @@ export interface AuditTenant {
 	readonly actorId?: ActorId | undefined
 	readonly mcpClientName?: string | undefined
 	readonly turnOrigin?: ChatTurnOrigin | undefined
+	readonly chatMode?: ChatMode | undefined
 }
 
 /**
@@ -87,7 +89,9 @@ export const auditAttribution = (tenant: AuditTenant, info: AuditActorInfo | und
 	const origin = tenant.turnOrigin
 	// Maple acting on its own, through an internal token or a pass nobody is reading.
 	if (info?.type === "system" || origin?.kind === "autonomous") {
-		return { actor: { type: "system" }, source: "system" }
+		// Named for the agent pass that ran ("Maple code review"), so it does not read as a bare "System".
+		const label = tenant.chatMode !== undefined ? mapleAgentLabel(tenant.chatMode) : null
+		return { actor: { type: "system", ...(label !== null ? { label } : undefined) }, source: "system" }
 	}
 	// A person on a chat platform, holding that platform's identity and no Maple
 	// user: the connector's agent is the actor, and who asked is metadata. The
@@ -192,6 +196,8 @@ export const withAuditedRead =
 export interface McpToolAuditInput {
 	readonly tenant: TenantContext
 	readonly name: string
+	/** The tool's human title, so the audit log can read "Search Repository Checkout", not `sandbox_grep`. */
+	readonly title?: string | undefined
 	readonly input: unknown
 	readonly surface: McpToolSurface
 	readonly isError: boolean
@@ -213,7 +219,10 @@ export const recordMcpToolAudit = (input: McpToolAuditInput) =>
 			action: "mcp_tool.called",
 			metadata: {
 				tool: input.name,
+				...(input.title !== undefined ? { tool_title: input.title } : undefined),
 				surface: input.surface,
+				// Which Maple agent ran it (investigation, code review, ...); absent for a public MCP call.
+				...(input.tenant.chatMode !== undefined ? { agent: input.tenant.chatMode } : undefined),
 				is_error: input.isError,
 				params: snapshot(input.input),
 				...originMetadata(input.tenant.turnOrigin),

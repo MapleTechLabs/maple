@@ -50,17 +50,55 @@ export const SpanLogsRequest = Schema.Struct({
 })
 export type SpanLogsRequest = typeof SpanLogsRequest.Type
 
+/** The CPU a span and its descendants used, as the stacks sampled while they ran. */
+export const SpanProfile = Schema.Struct({
+	sampleType: Schema.String,
+	sampleUnit: Schema.String,
+	totalValue: Schema.Number,
+	stacks: Schema.Array(
+		Schema.Struct({
+			frames: Schema.Array(Schema.String),
+			files: Schema.Array(Schema.String),
+			lines: Schema.Array(Schema.Number),
+			value: Schema.Number,
+		}),
+	),
+})
+export type SpanProfile = typeof SpanProfile.Type
+
+export const SpanProfileRequest = Schema.Struct({
+	traceId: TraceId,
+	/** The span and every span under it. */
+	spanIds: Schema.Array(Schema.String),
+	startTime: Schema.String,
+	durationMs: Schema.Number,
+})
+export type SpanProfileRequest = typeof SpanProfileRequest.Type
+
 export type Cached<A> = Readonly<{ data: A; isFresh: boolean }>
 
 export class TraceSource extends Context.Service<
 	TraceSource,
 	{
 		/** None: the source has no row for the span (the trace's trimmed maps stand in). */
-		readonly spanDetail: (request: SpanDetailRequest) => Effect.Effect<Option.Option<SpanDetail>, LoadFailure>
+		readonly spanDetail: (
+			request: SpanDetailRequest,
+		) => Effect.Effect<Option.Option<SpanDetail>, LoadFailure>
 		/** At most `request.limit` logs, newest first. */
 		readonly spanLogs: (request: SpanLogsRequest) => Effect.Effect<ReadonlyArray<LogEntry>, LoadFailure>
 		/** A source with a result cache: its answer is shown first, then revalidated unless fresh. */
-		readonly cachedSpanDetail?: (request: SpanDetailRequest) => Effect.Effect<Option.Option<Cached<SpanDetail>>>
-		readonly cachedSpanLogs?: (request: SpanLogsRequest) => Effect.Effect<Option.Option<Cached<ReadonlyArray<LogEntry>>>>
+		readonly cachedSpanDetail?: (
+			request: SpanDetailRequest,
+		) => Effect.Effect<Option.Option<Cached<SpanDetail>>>
+		/**
+		 * None: no profile sample is linked to these spans. A source without profiles leaves this
+		 * out, and the panel then has no Profile tab.
+		 */
+		readonly spanProfile?: (
+			request: SpanProfileRequest,
+		) => Effect.Effect<Option.Option<SpanProfile>, LoadFailure>
+		readonly cachedSpanLogs?: (
+			request: SpanLogsRequest,
+		) => Effect.Effect<Option.Option<Cached<ReadonlyArray<LogEntry>>>>
 	}
 >()("@maple/views/traces/TraceSource") {}
