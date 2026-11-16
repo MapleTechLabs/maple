@@ -33,7 +33,8 @@ const SCIM_TOKEN = "scim_secret_value_shown_once"
 const CLIENT_SECRET = "oidc-client-secret-value"
 
 const document = new EnterpriseSsoDocument({
-	entitled: true,
+	ssoEntitled: true,
+	scimEntitled: true,
 	domains: [],
 	connection: null,
 	directory: null,

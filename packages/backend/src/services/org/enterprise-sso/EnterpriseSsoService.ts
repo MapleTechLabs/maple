@@ -1,4 +1,4 @@
-import { customerHasFlag, ENTERPRISE_SSO_FEATURE_ID } from "@maple/domain/billing"
+import { customerHasFlag, ENTERPRISE_SCIM_FEATURE_ID, ENTERPRISE_SSO_FEATURE_ID } from "@maple/domain/billing"
 import {
 	EnterpriseSsoConflictError,
 	EnterpriseSsoDocument,
@@ -62,6 +62,18 @@ import {
 import { DnsTxtResolver } from "./DnsTxtResolver"
 
 type Entitlement = "entitled" | "not_entitled" | "unknown"
+/** Which add-on a write needs. */
+type AddOn = "sso" | "scim"
+interface Entitlements {
+	readonly sso: Entitlement
+	readonly scim: Entitlement
+}
+
+const ADD_ON_FEATURES = { sso: ENTERPRISE_SSO_FEATURE_ID, scim: ENTERPRISE_SCIM_FEATURE_ID } as const
+const ADD_ON_REFUSALS = {
+	sso: "Single sign-on is a $100/month add-on. Add it under Settings, SSO & SCIM.",
+	scim: "SCIM provisioning is a $100/month add-on. Add it under Settings, SSO & SCIM.",
+} as const
 
 export type SsoWriteError =
 	| EnterpriseSsoUnavailableError
@@ -223,8 +235,10 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 			const dbExecute = makeDbExecute(database, "EnterpriseSsoService", toPersistenceError)
 
 			// Billing that is not configured (self-hosted, local dev) sells nothing: everything is on.
-			const entitlement = (orgId: OrgId): Effect.Effect<Entitlement> =>
-				billingCustomers.customerFor(orgId).pipe(
+			// One customer read answers both add-ons.
+			const entitlements = (orgId: OrgId): Effect.Effect<Entitlements> => {
+				const all = (state: Entitlement): Entitlements => ({ sso: state, scim: state })
+				return billingCustomers.customerFor(orgId).pipe(
 					Effect.flatMap((customerId) =>
 						readCustomerCached(
 							edgeCache,
@@ -233,45 +247,45 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 						),
 					),
 					Effect.flatMap(({ result }) => ensureOk(result)),
-					Effect.map((customer): Entitlement =>
-						customerHasFlag(customer, ENTERPRISE_SSO_FEATURE_ID) ? "entitled" : "not_entitled",
-					),
+					Effect.map((customer): Entitlements => ({
+						sso: customerHasFlag(customer, ADD_ON_FEATURES.sso) ? "entitled" : "not_entitled",
+						scim: customerHasFlag(customer, ADD_ON_FEATURES.scim) ? "entitled" : "not_entitled",
+					})),
 					Effect.catchTags({
-						"@maple/http/errors/BillingNotConfiguredError": () =>
-							Effect.succeed<Entitlement>("entitled"),
+						"@maple/http/errors/BillingNotConfiguredError": () => Effect.succeed(all("entitled")),
 						"@maple/http/errors/BillingUpstreamError": (error) =>
-							Effect.logWarning("Could not read the enterprise SSO entitlement").pipe(
+							Effect.logWarning("Could not read the SSO add-on entitlements").pipe(
 								Effect.annotateLogs({ orgId, error: error.message }),
-								Effect.as<Entitlement>("unknown"),
+								Effect.as(all("unknown")),
 							),
 						"@maple/http/errors/BillingAccountPersistenceError": (error) =>
-							Effect.logWarning("Could not read the enterprise SSO entitlement").pipe(
+							Effect.logWarning("Could not read the SSO add-on entitlements").pipe(
 								Effect.annotateLogs({ orgId, error: error.message }),
-								Effect.as<Entitlement>("unknown"),
+								Effect.as(all("unknown")),
 							),
 					}),
 				)
+			}
 
-			/** Every write starts here: Clerk mode, and the org holds `enterprise_sso`. */
+			/** Every write starts here: Clerk mode, and the org holds the add-on the write needs. */
 			const requireEntitled = Effect.fn("EnterpriseSsoService.requireEntitled")(function* (
 				orgId: OrgId,
+				addOn: AddOn,
 			) {
+				yield* Effect.annotateCurrentSpan({ "maple.sso.add_on": addOn })
 				if (!clerk.available) {
 					return yield* new EnterpriseSsoInvalidError({
 						message:
 							"Single sign-on needs Maple's hosted sign-in; this deployment runs without it.",
 					})
 				}
-				const state = yield* entitlement(orgId)
+				const state = (yield* entitlements(orgId))[addOn]
 				if (state === "not_entitled") {
-					return yield* new EnterpriseSsoNotEntitledError({
-						message:
-							"SSO and SCIM provisioning are part of the Enterprise plan. Contact sales to enable them.",
-					})
+					return yield* new EnterpriseSsoNotEntitledError({ message: ADD_ON_REFUSALS[addOn] })
 				}
 				if (state === "unknown") {
 					return yield* new EnterpriseSsoUnavailableError({
-						message: "Could not confirm the plan with billing.",
+						message: "Could not confirm the add-on with billing.",
 					})
 				}
 			})
@@ -362,7 +376,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 			const get = Effect.fn("EnterpriseSsoService.get")(function* (orgId: OrgId) {
 				yield* Effect.annotateCurrentSpan({ orgId })
 				const [domains, row, entitled] = yield* Effect.all(
-					[loadDomains(orgId), loadConnectionRow(orgId), entitlement(orgId)],
+					[loadDomains(orgId), loadConnectionRow(orgId), entitlements(orgId)],
 					{ concurrency: "unbounded" },
 				)
 				const empty = {
@@ -450,7 +464,8 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				const side = yield* clerkSide
 				return new EnterpriseSsoDocument({
 					// An outage reads as entitled: the page should not flash an upsell at a paying org.
-					entitled: entitled !== "not_entitled",
+					ssoEntitled: entitled.sso !== "not_entitled",
+					scimEntitled: entitled.scim !== "not_entitled",
 					domains: Arr.sort(Arr.map(domains, toDomainDocument), byDomain),
 					...side,
 				})
@@ -461,7 +476,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				userId: UserId,
 				raw: string,
 			) {
-				yield* requireEntitled(orgId)
+				yield* requireEntitled(orgId, "sso")
 				const domain = normalizeDomain(raw)
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.sso.domain": domain })
 				if (!isDomainName(domain)) {
@@ -509,7 +524,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				orgId: OrgId,
 				raw: string,
 			) {
-				yield* requireEntitled(orgId)
+				yield* requireEntitled(orgId, "sso")
 				const domain = normalizeDomain(raw)
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.sso.domain": domain })
 				const row = yield* requireDomainRow(orgId, domain)
@@ -636,7 +651,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				userId: UserId,
 				request: SsoConnectionRequest,
 			) {
-				yield* requireEntitled(orgId)
+				yield* requireEntitled(orgId, "sso")
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.sso.provider": request.provider })
 				const existing = yield* reconcileRow(orgId)
 				if (Option.isSome(existing)) {
@@ -676,7 +691,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				orgId: OrgId,
 				request: SsoConnectionRequest,
 			) {
-				yield* requireEntitled(orgId)
+				yield* requireEntitled(orgId, "sso")
 				const row = yield* requireConnectionRow(orgId)
 				const current = yield* clerk
 					.getConnection(row.clerkConnectionId)
@@ -706,7 +721,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				enforced: boolean,
 			) {
 				// Relaxing is always allowed: an org that lost the plan must still be able to get out.
-				if (enforced) yield* requireEntitled(orgId)
+				if (enforced) yield* requireEntitled(orgId, "sso")
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.sso.enforced": enforced })
 				const row = yield* requireConnectionRow(orgId)
 				yield* clerk
@@ -841,7 +856,8 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 								Effect.map(
 									(domains) =>
 										new EnterpriseSsoDocument({
-											entitled: true,
+											ssoEntitled: true,
+											scimEntitled: true,
 											domains: Arr.sort(Arr.map(domains, toDomainDocument), byDomain),
 											connection: null,
 											directory: toDirectoryDocument(directory),
@@ -853,7 +869,8 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 								Effect.orElseSucceed(
 									() =>
 										new EnterpriseSsoDocument({
-											entitled: true,
+											ssoEntitled: true,
+											scimEntitled: true,
 											domains: [],
 											connection: null,
 											directory: toDirectoryDocument(directory),
@@ -878,7 +895,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 			const createDirectory = Effect.fn("EnterpriseSsoService.createDirectory")(function* (
 				orgId: OrgId,
 			) {
-				yield* requireEntitled(orgId)
+				yield* requireEntitled(orgId, "scim")
 				yield* Effect.annotateCurrentSpan({ orgId })
 				const reconciled = yield* reconcileRow(orgId)
 				if (Option.isNone(reconciled)) {
@@ -932,7 +949,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 			const rotateDirectoryToken = Effect.fn("EnterpriseSsoService.rotateDirectoryToken")(function* (
 				orgId: OrgId,
 			) {
-				yield* requireEntitled(orgId)
+				yield* requireEntitled(orgId, "scim")
 				yield* Effect.annotateCurrentSpan({ orgId })
 				const directoryId = yield* requireConnectionRow(orgId).pipe(
 					Effect.flatMap(requireDirectoryId),
@@ -955,7 +972,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				orgId: OrgId,
 				paused: boolean,
 			) {
-				if (!paused) yield* requireEntitled(orgId)
+				if (!paused) yield* requireEntitled(orgId, "scim")
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.sso.directory_paused": paused })
 				const directoryId = yield* requireConnectionRow(orgId).pipe(
 					Effect.flatMap(requireDirectoryId),
@@ -980,7 +997,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				orgId: OrgId,
 				mappings: ReadonlyArray<{ readonly groupId: string; readonly role: SsoMappedRole }>,
 			) {
-				yield* requireEntitled(orgId)
+				yield* requireEntitled(orgId, "scim")
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.sso.role_mappings": mappings.length })
 				const directoryId = yield* requireConnectionRow(orgId).pipe(
 					Effect.flatMap(requireDirectoryId),
@@ -1036,7 +1053,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				orgId: OrgId,
 				userId: UserId,
 			) {
-				yield* requireEntitled(orgId)
+				yield* requireEntitled(orgId, "sso")
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.sso.bypass_user": userId })
 				const row = yield* requireConnectionRow(orgId)
 				// The allowlist is instance-wide, so Maple scopes it: a member of this org with a

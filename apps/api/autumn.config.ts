@@ -3,6 +3,9 @@ import {
 	AI_CREDITS_FEATURE_ID,
 	AI_CREDITS_MARKUP_PERCENT,
 	BILLING_SUB_ORGS_FEATURE_ID,
+	ENTERPRISE_SCIM_ADDON_ID,
+	ENTERPRISE_SCIM_FEATURE_ID,
+	ENTERPRISE_SSO_ADDON_ID,
 	ENTERPRISE_SSO_FEATURE_ID,
 	OPENROUTER_BYOK_ADDON_ID,
 	OPENROUTER_BYOK_FEATURE_ID,
@@ -113,10 +116,16 @@ export const billingSubOrgs = feature({
 	type: "boolean",
 })
 
-// SSO (SAML/OIDC) and SCIM provisioning. Enterprise is sales-led: granted per customer in Autumn.
+// Single sign-on (one SAML/OIDC connection) and SCIM provisioning, granted by their add-ons below.
 export const enterpriseSso = feature({
 	id: ENTERPRISE_SSO_FEATURE_ID,
-	name: "Enterprise SSO and SCIM",
+	name: "Single sign-on",
+	type: "boolean",
+})
+
+export const enterpriseScim = feature({
+	id: ENTERPRISE_SCIM_FEATURE_ID,
+	name: "SCIM provisioning",
 	type: "boolean",
 })
 
@@ -259,4 +268,35 @@ export const onboardingChecklistReward = reward({
 	type: "fixed_discount",
 	value: 30,
 	duration: { type: "one_off" },
+})
+
+// Self-serve on any plan: one SSO connection, and SCIM provisioning on top of it, $100/month each.
+export const enterpriseSsoAddOn = plan({
+	id: ENTERPRISE_SSO_ADDON_ID,
+	name: "Single sign-on",
+	addOn: true,
+	price: {
+		amount: 100,
+		interval: "month",
+	},
+	items: [
+		{
+			featureId: ENTERPRISE_SSO_FEATURE_ID,
+		},
+	],
+})
+
+export const enterpriseScimAddOn = plan({
+	id: ENTERPRISE_SCIM_ADDON_ID,
+	name: "SCIM provisioning",
+	addOn: true,
+	price: {
+		amount: 100,
+		interval: "month",
+	},
+	items: [
+		{
+			featureId: ENTERPRISE_SCIM_FEATURE_ID,
+		},
+	],
 })

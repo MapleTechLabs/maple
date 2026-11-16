@@ -255,14 +255,23 @@ const dnsLayer = (records: Map<string, Array<string>>, onLookup: MidRequestHook)
 
 const die = () => Effect.die(new Error("not used by this test"))
 
-const autumnStub = (entitled: boolean) =>
+/** `true` holds both add-ons, `"sso-only"` just single sign-on, `false` neither. */
+const autumnStub = (entitled: boolean | "sso-only") =>
 	Layer.succeed(AutumnClient, {
 		getOrCreateCustomer: () =>
 			Effect.succeed<AutumnResult>({
 				statusCode: 200,
 				response: {
 					id: ORG,
-					flags: entitled ? { enterprise_sso: { featureId: "enterprise_sso" } } : {},
+					flags:
+						entitled === false
+							? {}
+							: entitled === "sso-only"
+								? { enterprise_sso: { featureId: "enterprise_sso" } }
+								: {
+										enterprise_sso: { featureId: "enterprise_sso" },
+										enterprise_scim: { featureId: "enterprise_scim" },
+									},
 				},
 			}),
 		aggregateEvents: die,
@@ -295,7 +304,7 @@ const run = <A, E>(
 	world: {
 		clerk: FakeClerk
 		dns: Map<string, Array<string>>
-		entitled: boolean
+		entitled: boolean | "sso-only"
 		onLookup?: MidRequestHook
 	},
 	effect: Effect.Effect<A, E, EnterpriseSsoService>,
@@ -506,7 +515,8 @@ describe("EnterpriseSsoService", () => {
 				Effect.gen(function* () {
 					const sso = yield* EnterpriseSsoService
 					const doc = yield* sso.get(ORG)
-					assert.isFalse(doc.entitled)
+					assert.isFalse(doc.ssoEntitled)
+					assert.isFalse(doc.scimEntitled)
 					assert.strictEqual(doc.connection?.enforced, true)
 
 					for (const write of [
@@ -940,4 +950,28 @@ describe("EnterpriseSsoService", () => {
 			)
 		},
 	)
+
+	it.effect("sells SSO and SCIM separately: the SSO add-on alone connects an IdP but not SCIM", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = {
+			clerk: fakeClerk(),
+			dns: new Map<string, Array<string>>(),
+			entitled: "sso-only" as const,
+		}
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				const sso = yield* EnterpriseSsoService
+				yield* verifiedDomain(world.dns, "acme.com")
+				const connected = yield* sso.createConnection(ORG, ADMIN, samlRequest(["acme.com"]))
+				assert.isTrue(connected.ssoEntitled)
+				assert.isFalse(connected.scimEntitled)
+				const scim = yield* sso.createDirectory(ORG).pipe(Effect.flip)
+				assert.strictEqual(scim._tag, "@maple/http/enterprise-sso/EnterpriseSsoNotEntitledError")
+				assert.match(scim.message, /SCIM provisioning is a \$100\/month add-on/)
+				assert.strictEqual(world.clerk.directories.size, 0)
+			}),
+		)
+	})
 })

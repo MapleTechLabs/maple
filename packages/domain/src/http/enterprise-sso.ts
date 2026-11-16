@@ -95,8 +95,10 @@ export class SsoBypassUserDocument extends Schema.Class<SsoBypassUserDocument>("
 
 /** The whole Security tab in one read. */
 export class EnterpriseSsoDocument extends Schema.Class<EnterpriseSsoDocument>("EnterpriseSsoDocument")({
-	/** The org holds the `enterprise_sso` feature. Reads still answer when it does not. */
-	entitled: Schema.Boolean,
+	/** The org holds the single sign-on add-on (`enterprise_sso`). Reads answer either way. */
+	ssoEntitled: Schema.Boolean,
+	/** The org holds the SCIM provisioning add-on (`enterprise_scim`). */
+	scimEntitled: Schema.Boolean,
 	domains: Schema.Array(SsoDomainDocument),
 	connection: Schema.NullOr(SsoConnectionDocument),
 	directory: Schema.NullOr(ScimDirectoryDocument),
@@ -194,14 +196,14 @@ export class EnterpriseSsoForbiddenError extends HttpTaggedError<EnterpriseSsoFo
 	},
 ) {}
 
-/** The org does not hold the `enterprise_sso` feature (the Enterprise plan). */
+/** The org does not hold the add-on the write needs (single sign-on or SCIM provisioning). */
 export class EnterpriseSsoNotEntitledError extends HttpTaggedError<EnterpriseSsoNotEntitledError>()(
 	"@maple/http/enterprise-sso/EnterpriseSsoNotEntitledError",
 	{ message: Schema.String },
 	{
 		status: 402,
 		code: "enterprise_sso_not_entitled",
-		title: "Enterprise plan required",
+		title: "Add-on required",
 		retry: "never",
 		recovery: "fix_request",
 		exposure: "public_message",
