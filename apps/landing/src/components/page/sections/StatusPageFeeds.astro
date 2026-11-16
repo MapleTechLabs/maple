@@ -7,14 +7,11 @@
  */
 import * as m from "../../../paraglide/messages.js";
 import { demoStatusJson } from "../../../lib/status-page-demo";
+import { STATUS_PAGE_ENDPOINTS } from "../../../lib/feature-sections";
 
 const json = JSON.stringify(demoStatusJson(), null, 2);
 
-const ENDPOINTS = [
-	{ path: "/feed.rss", what: "RSS" },
-	{ path: "/feed.atom", what: "Atom" },
-	{ path: "/badge.svg", what: "badge" },
-];
+const ENDPOINTS = STATUS_PAGE_ENDPOINTS;
 
 const rules = [
 	{ title: m.status_feeds_rule_1_title(), body: m.status_feeds_rule_1_body() },

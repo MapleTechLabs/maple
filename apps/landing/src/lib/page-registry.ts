@@ -21,6 +21,8 @@
  *    built by the pure helpers below rather than by `getRelativeLocaleUrl`.
  */
 
+import type { FeaturePlan } from "./feature-plan"
+
 type Locale = "en" | "ja" | "ko"
 
 /** A Paraglide message, uncalled. See rule 1 above. */
@@ -137,6 +139,8 @@ export interface Feature {
 	gallery: GalleryShot[]
 	capTitle: Msg
 	capabilities: Capability[]
+	/** Price, retention and setup doc: the facts agents and buyers ask for first. */
+	plan: FeaturePlan
 	/** Hand-picked, so no slug ends up with zero inbound links. */
 	related: string[]
 	relatedUseCases: string[]
