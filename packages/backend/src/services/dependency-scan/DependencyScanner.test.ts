@@ -821,6 +821,32 @@ describe("DependencyScanner scheduled rescans", () => {
 			),
 	)
 
+	it.effect("scans in full after a failed scan, so the repository does not stay failed", () => {
+		const state = world(LOCKFILE)
+		return Effect.gen(function* () {
+			const scanner = yield* DependencyScanner
+			const store = yield* DependencyScanStore
+			yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			yield* TestClock.adjust("1 hour")
+			// A transient failure at the same commit, newer than the completed scan.
+			const failed = yield* store.startScan({
+				orgId: repository.orgId,
+				repositoryId: repository.id,
+				commitSha: sha("a"),
+				ref: "main",
+				trigger: "push",
+				defaultBranchHead: true,
+			})
+			yield* store.failScan({ orgId: repository.orgId, scanId: failed.id, error: "rate limited" })
+			yield* TestClock.adjust("12 hours")
+
+			const outcome = yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			assert.strictEqual(outcome._tag, "Scanned")
+			const latest = yield* store.latestBranchScans({ orgId: repository.orgId })
+			assert.strictEqual(latest[0]?.status, "completed")
+		}).pipe(Effect.provide(scannerFor(state)))
+	})
+
 	it.effect("scans in full when the branch moved to another commit", () => {
 		const state = world(LOCKFILE)
 		return Effect.gen(function* () {

@@ -483,10 +483,13 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 											orgId,
 											repositoryId: repository.id,
 											defaultBranchHead: true,
+											// A newer failed scan is what the repository shows; only a full scan clears it.
+											anyStatus: true,
 										})
 										.pipe(Effect.mapError(scanError("Could not read the last scan")))
 									if (
 										Option.isNone(latest) ||
+										latest.value.status !== "completed" ||
 										latest.value.commitSha !== commitSha ||
 										latest.value.error !== null ||
 										latest.value.advisoryFingerprint === null

@@ -168,6 +168,8 @@ export interface DependencyScanStoreApi {
 		readonly commitSha?: GitCommitSha
 		/** Only scans of the tracked branch head (true) or only scans of other commits (false). */
 		readonly defaultBranchHead?: boolean
+		/** The newest scan whatever its status, not only a completed one. */
+		readonly anyStatus?: boolean
 	}) => Effect.Effect<Option.Option<DependencyScanRow>, DependencyScanPersistenceError>
 	/** Each repository's newest scan of its tracked branch head, any status. */
 	readonly latestBranchScans: (input: {
@@ -799,7 +801,7 @@ export class DependencyScanStore extends Context.Service<DependencyScanStore, De
 							.where(($) => [
 								$.orgId.eq(input.orgId),
 								$.repositoryId.eq(input.repositoryId),
-								$.status.eq("completed"),
+								input.anyStatus === true ? undefined : $.status.eq("completed"),
 								input.commitSha === undefined ? undefined : $.commitSha.eq(input.commitSha),
 								input.defaultBranchHead === undefined
 									? undefined
