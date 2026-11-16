@@ -31,6 +31,7 @@ export const SpendFeatureId = Schema.Literals([
 	"logs",
 	"traces",
 	"metrics",
+	"profiles",
 	"browser_sessions",
 	"product_events",
 	"ai_credits",

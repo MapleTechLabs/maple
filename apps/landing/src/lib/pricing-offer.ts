@@ -13,7 +13,7 @@
  * `label: m.pricing_logs()` freezes whichever locale rendered first and every
  * other locale inherits it.
  */
-import { PRICING_CARD_FEATURE_IDS, isPricingCardFeature } from "@maple/domain/billing"
+import { PRICING_CARD_FEATURE_IDS, isAdvertisedPricingFeature } from "@maple/domain/billing"
 import { Autumn } from "autumn-js"
 import * as m from "../paraglide/messages.js"
 import { Array as Arr } from "effect"
@@ -142,7 +142,7 @@ export async function getOffer(): Promise<Offer> {
 				hasTrial: !!product.freeTrial,
 				trialDuration: product.freeTrial?.durationLength,
 				allotments: Arr.map(
-					Arr.filter(product.items, (item) => isPricingCardFeature(item.featureId)),
+					Arr.filter(product.items, (item) => isAdvertisedPricingFeature(item.featureId)),
 					(item) => {
 						const featureId = item.featureId
 						const unit = unitFor(featureId)

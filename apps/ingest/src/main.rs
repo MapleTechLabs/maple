@@ -1500,6 +1500,9 @@ const BROWSER_SESSIONS_FEATURE_ID: &str = "browser_sessions";
 /// server-side one; only the transport differs).
 const PRODUCT_EVENTS_FEATURE_ID: &str = "product_events";
 
+/// The Autumn feature profiles bill as, in GB of decoded OTLP profiles like the byte signals.
+const PROFILES_FEATURE_ID: &str = "profiles";
+
 /// What a DENIED Autumn entitlement means for the batch in flight.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum OnDenied {
@@ -5640,7 +5643,7 @@ fn profile_resource_stamps(
 
 /// `POST /v1development/profiles`, and `/v1/profiles` where the spec moves it: an
 /// OTLP profiles export, flattened to rows of `profiles` by `maple_ingest::profiles`.
-/// Metered per org but neither gated nor billed: profiles have no plan feature yet.
+/// Gated on the org's `profiles` plan feature and billed per GB decoded, like the byte signals.
 async fn handle_profiles_inner(
     state: &AppState,
     headers: &HeaderMap,
@@ -5684,6 +5687,12 @@ async fn handle_profiles_inner(
     }
     let pipeline =
         native_rows_pipeline_for(state, destination, "Profile storage is not configured")?;
+    // Before the body is read: an org without the feature, or past its cap, gets a 402.
+    if org_id != SENTINEL_ORG_ID {
+        if let Some(error) = entitlement_rejection(state, &org_id, PROFILES_FEATURE_ID).await {
+            return Err(error);
+        }
+    }
 
     let (payload_format, gzip) = profiles_body_encoding(headers)?;
     let rules = profile_redaction_rules(state, &org_id).await?;
@@ -5748,10 +5757,17 @@ async fn handle_profiles_inner(
     }
 
     commit_profile_rows(state, pipeline, &org_id, rows, destination).await?;
-    // The usage counters only: nothing is reported to Autumn until profiles are priced.
+    // Recorded once the rows are durable, as the byte signals are. An export refused part way
+    // (only a WAL write failing, since the whole export is reserved first) bills nothing: its
+    // resend bills the whole export, so billing the stored part too would count it twice.
     if let Some(usage) = &state.usage_metrics {
         let signal = TelemetrySignal::Profiles.as_str();
         usage.record(&org_id, signal, decoded_bytes as u64, count as u64);
+    }
+    if org_id != SENTINEL_ORG_ID && decoded_bytes > 0 {
+        if let Some(tracker) = &state.autumn_tracker {
+            tracker.track(&org_id, PROFILES_FEATURE_ID, billable_gb(decoded_bytes as u64));
+        }
     }
     state.resolver.note_source_use(&resolved_key, false);
     Ok(accepted)
@@ -15164,6 +15180,88 @@ mod tests {
             axum::serve(listener, app).await.unwrap();
         });
         base
+    }
+
+    // Profiles are a plan feature: checked before the body is read, billed in GB once stored.
+    #[tokio::test]
+    async fn profiles_are_gated_and_billed_on_the_profiles_feature() {
+        let queue_dir = unique_main_test_dir("profiles-billing");
+        let key = "maple_sk_test_profiles_billing";
+        let store = private_key_store(key, "org_profiles_billing", false);
+        let (state, mut imports) = profiles_test_state(store, queue_dir.clone()).await;
+        let (state, mut rx) = with_fake_autumn(state).await;
+
+        assert_eq!(
+            send_sdk_profiles(&state, key).await.expect("an allowed org stores profiles"),
+            PROFILES_SDK_ROWS
+        );
+        assert_eq!(
+            imported_profile_rows(&mut imports, PROFILES_SDK_ROWS).await.len(),
+            PROFILES_SDK_ROWS
+        );
+        let calls = drain_autumn_calls(&mut rx).await;
+        assert!(checks(&calls)
+            .iter()
+            .any(|call| call.feature_id() == PROFILES_FEATURE_ID));
+        let billed = tracked(&calls);
+        assert_eq!(billed.len(), 1, "{billed:?}");
+        assert_eq!(billed[0].0, PROFILES_FEATURE_ID);
+        let expected = billable_gb(PROFILES_SDK_EXPORT.len() as u64);
+        assert!((billed[0].1 - expected).abs() < 1e-12, "{billed:?}");
+
+        // An org Autumn denies is refused before anything is decoded or stored.
+        let denied_dir = unique_main_test_dir("profiles-billing-denied");
+        let store = private_key_store(key, "org_profiles_denied", false);
+        let (state, mut imports) = profiles_test_state(store, denied_dir.clone()).await;
+        let state = with_autumn_denying(state, "org_profiles_denied").await;
+        let refused = send_sdk_profiles(&state, key)
+            .await
+            .expect_err("a denied org is refused");
+        assert_eq!(refused.status, StatusCode::PAYMENT_REQUIRED);
+        assert_eq!(state.decode_memory.reserved_bytes(), 0);
+        assert!(no_profiles_are_stored(&mut imports).await);
+        drop(std::fs::remove_dir_all(&queue_dir));
+        drop(std::fs::remove_dir_all(&denied_dir));
+    }
+
+    // A refused commit bills nothing, whatever it stored before the refusal: the resend bills the
+    // whole export, once. Any commit error returns before usage is recorded.
+    #[tokio::test]
+    async fn a_refused_profiles_commit_bills_nothing_and_its_resend_bills_once() {
+        let key = "maple_sk_test_profiles_refused_billing";
+        let refused_dir = unique_main_test_dir("profiles-refused-billing");
+        let store = private_key_store(key, "org_profiles_refused_billing", false);
+        // The org's queue cannot hold the export, so the commit is refused.
+        let (state, mut imports) =
+            profiles_test_state_with_org_queue(store, refused_dir.clone(), 100 * 1024).await;
+        let (state, mut rx) = with_fake_autumn(state).await;
+        let refused = send_sdk_profiles(&state, key)
+            .await
+            .expect_err("the export is past the org's queue");
+        assert_eq!(refused.status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert!(no_profiles_are_stored(&mut imports).await);
+        assert!(tracked(&drain_autumn_calls(&mut rx).await).is_empty());
+
+        // The resend to a gateway with room is stored and billed whole, once.
+        let resent_dir = unique_main_test_dir("profiles-resent-billing");
+        let store = private_key_store(key, "org_profiles_refused_billing", false);
+        let (state, mut imports) = profiles_test_state(store, resent_dir.clone()).await;
+        let (state, mut rx) = with_fake_autumn(state).await;
+        assert_eq!(
+            send_sdk_profiles(&state, key).await.expect("the resend is stored"),
+            PROFILES_SDK_ROWS
+        );
+        assert_eq!(
+            imported_profile_rows(&mut imports, PROFILES_SDK_ROWS).await.len(),
+            PROFILES_SDK_ROWS
+        );
+        let calls = drain_autumn_calls(&mut rx).await;
+        let billed = tracked(&calls);
+        assert_eq!(billed.len(), 1, "{billed:?}");
+        let expected = billable_gb(PROFILES_SDK_EXPORT.len() as u64);
+        assert!((billed[0].1 - expected).abs() < 1e-12, "{billed:?}");
+        drop(std::fs::remove_dir_all(&refused_dir));
+        drop(std::fs::remove_dir_all(&resent_dir));
     }
 
     // The spec's development path and the path it moves to both take an export.
