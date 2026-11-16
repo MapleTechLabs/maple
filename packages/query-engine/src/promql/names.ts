@@ -193,13 +193,48 @@ export const matchesValue = (matcher: LabelMatcher, value: string): boolean => {
  * The stored metrics a selector's `__name__` matchers select. Each stored metric and component
  * answers to one name: the first of its names, in preference order, that every matcher accepts.
  */
+// One query resolves up to MAX_SELECTORS selectors against the same catalog: derive each metric's
+// names once, and index them so an exact `__name__` reads only its candidates.
+const namesByMetric = new WeakMap<CatalogMetric, ReadonlyArray<PromName>>()
+const metricsByName = new WeakMap<
+	ReadonlyArray<CatalogMetric>,
+	ReadonlyMap<string, ReadonlyArray<CatalogMetric>>
+>()
+
+const cachedPromNames = (metric: CatalogMetric): ReadonlyArray<PromName> => {
+	const known = namesByMetric.get(metric)
+	if (known !== undefined) return known
+	const names = promNamesOf(metric)
+	namesByMetric.set(metric, names)
+	return names
+}
+
+const nameIndex = (
+	catalog: ReadonlyArray<CatalogMetric>,
+): ReadonlyMap<string, ReadonlyArray<CatalogMetric>> => {
+	const known = metricsByName.get(catalog)
+	if (known !== undefined) return known
+	const index = new Map<string, Array<CatalogMetric>>()
+	for (const metric of catalog) {
+		for (const name of unique(Arr.map(cachedPromNames(metric), (n) => n.promName))) {
+			const metrics = index.get(name)
+			if (metrics === undefined) index.set(name, [metric])
+			else metrics.push(metric)
+		}
+	}
+	metricsByName.set(catalog, index)
+	return index
+}
+
 export const resolveSelectorName = (
 	nameMatchers: ReadonlyArray<LabelMatcher>,
 	catalog: ReadonlyArray<CatalogMetric>,
-): ReadonlyArray<PromNameTarget> =>
-	Arr.flatMap(catalog, (metric) => {
+): ReadonlyArray<PromNameTarget> => {
+	const exact = Arr.findFirst(nameMatchers, (m) => m.op === "=")
+	const candidates = Option.isSome(exact) ? (nameIndex(catalog).get(exact.value.value) ?? []) : catalog
+	return Arr.flatMap(candidates, (metric) => {
 		const picked = new Map<MetricComponent, string>()
-		for (const { promName, component } of promNamesOf(metric)) {
+		for (const { promName, component } of cachedPromNames(metric)) {
 			if (picked.has(component)) continue
 			if (Arr.every(nameMatchers, (m) => matchesValue(m, promName))) picked.set(component, promName)
 		}
@@ -211,3 +246,4 @@ export const resolveSelectorName = (
 			unit: metric.unit,
 		}))
 	})
+}
