@@ -4,10 +4,13 @@ import { IsoDateTimeString, UserId } from "@maple/primitives"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
 
-/** Lower-cased hostname with at least one dot, no wildcard and no trailing dot. */
+/**
+ * Lower-cased hostname with at least one dot, no wildcard and no trailing dot. Capped at 236 so
+ * `_maple-challenge.<domain>` stays within DNS's 253-character name limit.
+ */
 export const SsoDomainName = Schema.String.check(
-	Schema.isMaxLength(253),
-	Schema.isPattern(/^(?=.{1,253}$)(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!-))+$/),
+	Schema.isMaxLength(236),
+	Schema.isPattern(/^(?=.{1,236}$)(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!-))+$/),
 )
 
 /** Where the TXT challenge is published: `_maple-challenge.<domain>`. */

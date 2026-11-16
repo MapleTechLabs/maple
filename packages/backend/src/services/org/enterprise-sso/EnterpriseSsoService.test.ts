@@ -586,6 +586,19 @@ describe("EnterpriseSsoService", () => {
 					"@maple/http/enterprise-sso/EnterpriseSsoInvalidError",
 				)
 
+				// The challenge name adds 17 characters, so a domain may be at most 236 long.
+				const longest = `${Str.repeat(63)("a")}.${Str.repeat(63)("b")}.${Str.repeat(63)("c")}.${Str.repeat(44)("d")}`
+				assert.strictEqual(longest.length, 236)
+				const fits = yield* sso.addDomain(ORG, ADMIN, longest)
+				assert.strictEqual(
+					Arr.findFirst(fits.domains, (d) => d.domain === longest).pipe(
+						Option.map((d) => d.recordName.length),
+						Option.getOrElse(() => 0),
+					),
+					253,
+				)
+				const tooLong = yield* sso.addDomain(ORG, ADMIN, `x${longest}`).pipe(Effect.flip)
+				assert.strictEqual(tooLong._tag, "@maple/http/enterprise-sso/EnterpriseSsoInvalidError")
 				const notADomain = yield* sso.addDomain(ORG, ADMIN, "https://acme.com/path").pipe(Effect.flip)
 				assert.strictEqual(notADomain._tag, "@maple/http/enterprise-sso/EnterpriseSsoInvalidError")
 			}),
