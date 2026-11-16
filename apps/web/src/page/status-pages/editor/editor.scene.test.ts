@@ -994,7 +994,9 @@ describe("posting an incident", () => {
 			given(writing),
 			mounted,
 			expectView(role("radio", { name: "Complete automatically" })).toBeChecked(),
-			expectView(role("radio", { name: "Keep it in progress until someone completes it" })).not.toBeChecked(),
+			expectView(
+				role("radio", { name: "Keep it in progress until someone completes it" }),
+			).not.toBeChecked(),
 		)
 		const reviewed = steps(writing, [
 			Message.ChangedIncidentAutoComplete({ autoComplete: false }),
@@ -1010,9 +1012,9 @@ describe("posting an incident", () => {
 				),
 			).toExist(),
 		)
-		expect(pageUpdate(reviewed, Message.SubmittedIncident({ isPublished: true })).commands).toMatchObject([
-			{ name: "CreateStatusPageIncident", args: { payload: { auto_complete: false } } },
-		])
+		expect(pageUpdate(reviewed, Message.SubmittedIncident({ isPublished: true })).commands).toMatchObject(
+			[{ name: "CreateStatusPageIncident", args: { payload: { auto_complete: false } } }],
+		)
 	})
 
 	test("an incident can be backdated: the review says when it started and the post carries it", () => {
@@ -1968,6 +1970,11 @@ describe("settings", () => {
 			given({ ...edited, search: { view: "settings", section: "appearance" } }),
 			expectView(text("Fix the fields marked in Basic settings.")).toExist(),
 			expectView(role("button", { name: "Save" })).toBeDisabled(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given({ ...edited, search: { view: "settings", section: "access" } }),
+			expectView(text("Fix the fields marked in Basic settings.")).toExist(),
 		)
 	})
 

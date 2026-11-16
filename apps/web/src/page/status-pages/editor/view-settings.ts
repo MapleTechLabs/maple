@@ -332,7 +332,10 @@ const deleteSection = (h: H): Html =>
 /** Basic settings and Appearance share one form: a problem in the other still blocks the save. */
 const saveContext = (model: Model, form: SettingsForm, section: SettingsSection): string | undefined => {
 	if (hasSettingsIssues(form)) {
-		const isHere = section === "appearance" ? hasAppearanceIssues(form) : hasPageFieldIssues(form)
+		const isHere =
+			section === "appearance"
+				? hasAppearanceIssues(form)
+				: section === "basic" && hasPageFieldIssues(form)
 		return isHere
 			? "Fix the fields marked above."
 			: `Fix the fields marked in ${hasPageFieldIssues(form) ? "Basic settings" : "Appearance"}.`
