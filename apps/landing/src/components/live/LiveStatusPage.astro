@@ -22,22 +22,15 @@ const outage = demoPageHtml(MAPLE_DARK, "outage")
 		</span>
 	</div>
 
+	<!-- inert: the frames are pictures. It keeps their buttons and links out of the tab order
+	     and hides them from assistive tech, which reads this sentence instead. -->
+	<p class="sr-only">
+		A demo of the Acme status page: all systems operational, then a major outage of Checkout API with an
+		open incident.
+	</p>
 	<div class="lsp-stage">
-		<iframe
-			class="lsp-page lsp-page--before"
-			srcdoc={operational}
-			sandbox=""
-			loading="lazy"
-			tabindex="-1"
-			aria-hidden="true"
-			title="Acme status page, all systems operational"></iframe>
-		<iframe
-			class="lsp-page lsp-page--after"
-			srcdoc={outage}
-			sandbox=""
-			loading="lazy"
-			tabindex="-1"
-			title="Acme status page during a major outage of Checkout API"></iframe>
+		<iframe class="lsp-page lsp-page--before" srcdoc={operational} sandbox="" loading="lazy" inert title="Acme status page, operational"></iframe>
+		<iframe class="lsp-page lsp-page--after" srcdoc={outage} sandbox="" loading="lazy" inert title="Acme status page, major outage"></iframe>
 	</div>
 
 	<div
