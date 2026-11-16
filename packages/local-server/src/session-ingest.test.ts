@@ -141,6 +141,22 @@ describe("POST /v1/sessionReplays/meta", () => {
 		expect(bad.response.status).toBe(400)
 	})
 
+	it("normalizes an ISO start time and drops an impossible one", async () => {
+		const sink = recorder()
+		const result = await run(
+			ingestSessionMeta(
+				sink.inserts,
+				new Headers(),
+				ndjson(
+					{ ...metaRow, start_time: "2026-11-16T10:00:00.123456Z" },
+					{ ...metaRow, session_id: "sess_2", start_time: "2026-13-45 99:99:99" },
+				),
+			),
+		)
+		expect(await result.response.json()).toEqual({ accepted: 1 })
+		expect(sink.rows()[0]).toMatchObject({ start_time: "2026-11-16 10:00:00.123456" })
+	})
+
 	it("reads a gzip content-encoding", async () => {
 		const sink = recorder()
 		const result = await run(

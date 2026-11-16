@@ -2271,7 +2271,6 @@ export const __testables = {
 	loginSpan,
 	profilesIngestSpan,
 	readBoundedJson,
-	sessionIngestSpan,
 	ReadinessRecovery,
 	recordServerResponse,
 	RequestQuiescenceGate,

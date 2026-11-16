@@ -34,9 +34,9 @@ export const SESSION_CHUNK_HEADERS = [
 
 /** NDJSON bodies (meta, events) above this, sent or inflated, are refused. */
 export const MAX_SESSION_NDJSON_BYTES = 8 * 1024 * 1024
-/** A replay chunk above this, sent or inflated, is refused. Its row is one SQL literal,
- *  which escaping can triple, so this stays well under chDB's 64 MiB max_query_size. */
-export const MAX_REPLAY_CHUNK_BYTES = 16 * 1024 * 1024
+/** A replay chunk above this, sent or inflated, is refused. Its row is one SQL literal and
+ *  JSON plus SQL escaping can grow a byte up to 4x, so 15 MiB stays under chDB's 64 MiB max_query_size. */
+export const MAX_REPLAY_CHUNK_BYTES = 15 * 1024 * 1024
 
 // Caps from apps/ingest/src/session_analytics.rs.
 const SESSION_EVENT_TYPES = new Set(["navigation", "click", "input", "console", "network", "error", "custom"])
@@ -167,7 +167,19 @@ const mappings: typeof InsertMappings.Type = Option.getOrElse(
 export const sessionColumns = (datasource: string): ReadonlyArray<ColumnSpec> =>
 	parseInputSchema(mappings.datasources[datasource]?.inputSchema ?? "")
 
-const DATETIME_TEXT = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d{1,9})?Z?$/
+const DATETIME_TEXT = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(\.\d{1,9})?Z?$/
+
+/** `YYYY-MM-DD hh:mm:ss[.f]` (UTC) as chDB's basic DateTime64 parser accepts it, or none
+ *  for another shape or an impossible date, which would fail the whole batched insert. */
+const chDateTime = (value: string): Option.Option<string> => {
+	const match = DATETIME_TEXT.exec(value)
+	if (match === null) return Option.none()
+	const [, date = "", time = "", fraction = ""] = match
+	const parsed = new Date(`${date}T${time}Z`)
+	return Number.isNaN(parsed.getTime()) || !Str.startsWith(`${date}T${time}`)(parsed.toISOString())
+		? Option.none()
+		: Option.some(`${date} ${time}${fraction}`)
+}
 
 const stringifyValue = (value: unknown): string => (typeof value === "string" ? value : encodeJson(value))
 
@@ -186,7 +198,7 @@ const coerce = (value: unknown, spec: ColumnSpec): Option.Option<unknown> => {
 				: Option.none()
 		}
 		case "datetime":
-			return typeof value === "string" && DATETIME_TEXT.test(value) ? Option.some(value) : Option.none()
+			return typeof value === "string" ? chDateTime(value) : Option.none()
 		case "stringArray":
 			return Arr.isArray(value)
 				? Option.some(Arr.filter(value, (item): item is string => typeof item === "string"))
