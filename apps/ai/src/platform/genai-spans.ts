@@ -498,6 +498,17 @@ export const instrumentLanguageModel = <R>(
  * it and whichever answers first is replayed: cutting the first attempt threw away its 90s, and the
  * low-effort retry of an investigation took 83s more at the median (2026-11-16).
  */
+/** A collected response whose finish part reports a provider failure. */
+const answeredWithError = (parts: ReadonlyArray<unknown>): boolean =>
+	Arr.some(
+		parts,
+		(part) =>
+			Predicate.hasProperty(part, "type") &&
+			part.type === "finish" &&
+			Predicate.hasProperty(part, "reason") &&
+			part.reason === "error",
+	)
+
 const retriedPastCap = <O, A, E, R>(
 	attempt: (options: O, ordinal: number) => Stream.Stream<A, E, R>,
 	options: O,
@@ -515,9 +526,25 @@ const retriedPastCap = <O, A, E, R>(
 								Effect.logWarning("Model call past its attempt cap; racing a retry").pipe(
 									Effect.annotateLogs({ capMillis: Duration.toMillis(attempts.cap) }),
 									Effect.andThen(
-										Effect.race(
-											Fiber.join(first),
+										Effect.forkChild(
 											Stream.runCollect(attempts.retry(attempt(options, 2))),
+										).pipe(
+											Effect.flatMap((retry) =>
+												Effect.race(
+													// A first attempt that answers with a failure waits for the retry,
+													// and is only replayed when the retry fails too.
+													Fiber.join(first).pipe(
+														Effect.filterOrElse(
+															(parts) => !answeredWithError(parts),
+															(parts) =>
+																Fiber.join(retry).pipe(
+																	Effect.orElseSucceed(() => parts),
+																),
+														),
+													),
+													Fiber.join(retry),
+												).pipe(Effect.ensuring(Fiber.interrupt(retry))),
+											),
 										),
 									),
 								),
