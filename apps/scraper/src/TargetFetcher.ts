@@ -4,7 +4,7 @@ import type { InternalScrapeTarget } from "@maple/domain/http"
 import { describeHttpClientError, guardPinned, readTextWithin } from "@maple/safe-fetch"
 import { HostResolver } from "@maple/safe-fetch/dns"
 import { classifyTargetStatus } from "./policy"
-import { scrapeError, type ScrapeError } from "./ScrapeError"
+import { scrapeError, type ScrapeError, withScrapeSpan } from "./ScrapeError"
 
 interface TargetResponse {
 	readonly status: number
@@ -70,87 +70,88 @@ export class TargetFetcher extends Context.Service<TargetFetcher, TargetFetcherA
 			// `peer.service` is deliberately low-cardinality (one per managed provider plus
 			// `scrape-target`, never per target): a per-target name would fragment the
 			// service map into a node per scrape target.
-			const fetchTarget = Effect.fn("TargetFetcher.fetchTarget", { kind: "client" })(function* (
-				target: InternalScrapeTarget,
-			) {
-				const parsed = Option.liftThrowable(() => new URL(target.scrapeUrl))()
-				// Annotated before the fetch so a failed or timed-out scrape still
-				// draws its service-map edge.
-				yield* Effect.annotateCurrentSpan({
-					"peer.service": peerServiceOf(target.targetType),
-					"http.request.method": "GET",
-					"maple.scrape.target_type": target.targetType,
-					...(Option.isSome(parsed)
-						? { "server.address": parsed.value.host, "url.path": parsed.value.pathname }
-						: undefined),
-				})
+			//
+			// A timeout or reset is the target's, so the span closes Ok (`withScrapeSpan`).
+			const fetchTarget = (target: InternalScrapeTarget) =>
+				Effect.gen(function* () {
+					const parsed = Option.liftThrowable(() => new URL(target.scrapeUrl))()
+					// Annotated before the fetch so a failed or timed-out scrape still
+					// draws its service-map edge.
+					yield* Effect.annotateCurrentSpan({
+						"peer.service": peerServiceOf(target.targetType),
+						"http.request.method": "GET",
+						"maple.scrape.target_type": target.targetType,
+						...(Option.isSome(parsed)
+							? { "server.address": parsed.value.host, "url.path": parsed.value.pathname }
+							: undefined),
+					})
 
-				const result = yield* client
-					.execute(
-						HttpClientRequest.get(target.scrapeUrl, {
-							headers: { ...DEFAULT_HEADERS, ...target.authHeaders },
-						}),
-					)
-					.pipe(
-						Effect.flatMap((response) =>
-							Effect.map(
-								readTextWithin(response, MAX_SCRAPE_RESPONSE_BYTES),
-								(body): TargetResponse => ({
-									status: response.status,
-									body,
-									retryAfterSeconds: parseRetryAfterSeconds(
-										response.headers["retry-after"] ?? null,
-									),
-								}),
+					const result = yield* client
+						.execute(
+							HttpClientRequest.get(target.scrapeUrl, {
+								headers: { ...DEFAULT_HEADERS, ...target.authHeaders },
+							}),
+						)
+						.pipe(
+							Effect.flatMap((response) =>
+								Effect.map(
+									readTextWithin(response, MAX_SCRAPE_RESPONSE_BYTES),
+									(body): TargetResponse => ({
+										status: response.status,
+										body,
+										retryAfterSeconds: parseRetryAfterSeconds(
+											response.headers["retry-after"] ?? null,
+										),
+									}),
+								),
 							),
-						),
-						Effect.timeout(scrapeTimeoutMs(target.scrapeIntervalSeconds)),
-						// A URL failing SSRF validation is a config fault no cadence clears; an
-						// unreachable or stalled target backs off like an upstream 5xx.
-						Effect.catchTags({
-							"@maple/safe-fetch/UrlValidationError": (cause) =>
-								Effect.fail(
-									scrapeError({
-										message: `url rejected: ${cause.message}`,
-										reason: "scrape_failed",
-									}),
-								),
-							"@maple/safe-fetch/ResponseTooLargeError": () =>
-								Effect.fail(
-									scrapeError({
-										message: `response exceeded ${MAX_SCRAPE_RESPONSE_BYTES / (1024 * 1024)} MiB`,
-										reason: "scrape_failed",
-									}),
-								),
-							"@maple/safe-fetch/HostResolutionError": (cause) =>
-								Effect.fail(
-									scrapeError({
-										message: `dns failed: ${cause.message}`,
-										reason: "target_error",
-									}),
-								),
-							HttpClientError: (cause) =>
-								Effect.fail(
-									scrapeError({
-										message: `request failed: ${describeHttpClientError(cause)}`,
-										reason: "target_error",
-									}),
-								),
-							TimeoutError: () =>
-								Effect.fail(
-									scrapeError({ message: "request timed out", reason: "target_error" }),
-								),
-						}),
-					)
+							Effect.timeout(scrapeTimeoutMs(target.scrapeIntervalSeconds)),
+							// A URL failing SSRF validation is a config fault no cadence clears; an
+							// unreachable or stalled target backs off like an upstream 5xx.
+							Effect.catchTags({
+								"@maple/safe-fetch/UrlValidationError": (cause) =>
+									Effect.fail(
+										scrapeError({
+											message: `url rejected: ${cause.message}`,
+											reason: "scrape_failed",
+										}),
+									),
+								"@maple/safe-fetch/ResponseTooLargeError": () =>
+									Effect.fail(
+										scrapeError({
+											message: `response exceeded ${MAX_SCRAPE_RESPONSE_BYTES / (1024 * 1024)} MiB`,
+											reason: "scrape_failed",
+										}),
+									),
+								"@maple/safe-fetch/HostResolutionError": (cause) =>
+									Effect.fail(
+										scrapeError({
+											message: `dns failed: ${cause.message}`,
+											reason: "target_error",
+										}),
+									),
+								HttpClientError: (cause) =>
+									Effect.fail(
+										scrapeError({
+											message: `request failed: ${describeHttpClientError(cause)}`,
+											reason: "target_error",
+										}),
+									),
+								TimeoutError: () =>
+									Effect.fail(
+										scrapeError({ message: "request timed out", reason: "target_error" }),
+									),
+							}),
+						)
 
-				yield* Effect.annotateCurrentSpan({
-					"http.response.status_code": result.status,
-					// Decoded character count, not wire bytes — hence the vendor
-					// namespace rather than `http.response.body.size`.
-					"maple.scrape.response_chars": result.body.length,
-				})
-				return result
-			})
+					yield* Effect.annotateCurrentSpan({
+						"http.response.status_code": result.status,
+						// Decoded character count, not wire bytes — hence the vendor
+						// namespace rather than `http.response.body.size`.
+						"maple.scrape.response_chars": result.body.length,
+					})
+					return result
+				}).pipe(withScrapeSpan("TargetFetcher.fetchTarget", { kind: "client" }))
 
 			// Classified outside the client span: a target's 4xx/5xx answer leaves
 			// `TargetFetcher.fetchTarget` Ok, the scrape span carries the failure.
