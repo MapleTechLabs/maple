@@ -4,6 +4,8 @@ import { assert, describe, it } from "@effect/vitest"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { v2WorkerUnavailableDefinition } from "@maple/domain/http/v2-worker-unavailable"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
+import { McpOAuthProtocolError } from "@maple/backend/services/auth/McpOAuthService"
+import { TransitionConflictError } from "@maple/backend/platform/transition-row"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import type { HttpEffect } from "alchemy/Http"
 import {
@@ -27,6 +29,7 @@ import { cachedRecoverable } from "@maple/infra/cached-recoverable"
 import { recordRenderedFailure } from "@maple/backend/http/rendered-failure"
 import { runAfterResponse } from "@maple/backend/platform/after-response"
 import { buildIsolateHandler, makeFetch } from "./worker/http"
+import { apiTelemetryOptions } from "./telemetry-options"
 
 /**
  * One request the way alchemy's bridge runs it — `makeRequestHandler` is the
@@ -90,17 +93,17 @@ const stubFetch = (recorded: Array<RecordedRequest>): typeof globalThis.fetch =>
 		return new Response("{}", { status: 200 })
 	}) as typeof globalThis.fetch
 
-const serverSpans = (recorded: ReadonlyArray<RecordedRequest>): Array<ExportedSpan> => {
+const exportedSpans = (recorded: ReadonlyArray<RecordedRequest>): Array<ExportedSpan> => {
 	const traceRequests = Arr.filter(recorded, (request) => Str.endsWith("/v1/traces")(request.url))
 	const resources = Arr.flatMap(
 		traceRequests,
 		(request) => decodeExportedTraces(JSON.parse(request.body ?? "{}")).resourceSpans ?? [],
 	)
-	const spans = Arr.flatMap(resources, (resource) =>
-		Arr.flatMap(resource.scopeSpans, (scope) => scope.spans),
-	)
-	return Arr.filter(spans, (span) => span.kind === SERVER_KIND)
+	return Arr.flatMap(resources, (resource) => Arr.flatMap(resource.scopeSpans, (scope) => scope.spans))
 }
+
+const serverSpans = (recorded: ReadonlyArray<RecordedRequest>): Array<ExportedSpan> =>
+	Arr.filter(exportedSpans(recorded), (span) => span.kind === SERVER_KIND)
 
 const logBodies = (recorded: ReadonlyArray<RecordedRequest>): Array<string> => {
 	const logRequests = Arr.filter(recorded, (request) => Str.endsWith("/v1/logs")(request.url))
@@ -179,6 +182,15 @@ const notFoundApp: Effect.Effect<HttpEffect> = Effect.succeed(
 const renderedServerErrorApp: Effect.Effect<HttpEffect> = Effect.succeed(
 	Effect.succeed(HttpServerResponse.text("", { status: 500 })),
 )
+
+/** A handler whose inner span fails with `error`, which the route answers as a 4xx. */
+const answeredAs4xx = (error: McpOAuthProtocolError | TransitionConflictError): Effect.Effect<HttpEffect> =>
+	Effect.succeed(
+		Effect.fail(error).pipe(
+			Effect.withSpan("Probe.inner"),
+			Effect.orElseSucceed(() => HttpServerResponse.text("", { status: 400 })),
+		),
+	)
 
 /** A graph whose handler dies, so the cause is still live when it leaves the router. */
 const dyingApp: Effect.Effect<HttpEffect> = Effect.succeed(Effect.die(new Error("handler exploded")))
@@ -267,9 +279,9 @@ const event = (
 		// One tag under two types: the SDK reads its env where the bridge provides the Worker's.
 		const services = yield* Layer.buildWithScope(
 			Layer.mergeAll(
-				MapleCloudflareSDK.make(
-					workerTelemetryConfig({ serviceName: "maple-api" }),
-				).requestLayer.pipe(Layer.provide(Layer.succeed(MapleCloudflareSDK.WorkerEnvironment, env))),
+				MapleCloudflareSDK.make(workerTelemetryConfig(apiTelemetryOptions)).requestLayer.pipe(
+					Layer.provide(Layer.succeed(MapleCloudflareSDK.WorkerEnvironment, env)),
+				),
 				Layer.succeed(Cloudflare.WorkerEnvironment, env),
 			),
 			request,
@@ -287,7 +299,13 @@ const event = (
 		const body = yield* Effect.promise(() => response.text())
 		yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 0)))
 		yield* Scope.close(request, Exit.void)
-		return { response, body, server: serverSpans(recorded), logs: logBodies(recorded) }
+		return {
+			response,
+			body,
+			server: serverSpans(recorded),
+			spans: exportedSpans(recorded),
+			logs: logBodies(recorded),
+		}
 	}).pipe(Effect.scoped)
 
 describe("the api Worker through alchemy's bridge", () => {
@@ -535,6 +553,34 @@ describe("the api Worker through alchemy's bridge", () => {
 			const { server } = yield* event("GET", "/recording", app)
 			assert.strictEqual(exceptionTypeOf(server[0]), "WarehouseQueryError")
 		}),
+	)
+
+	it.effect("a backend failure the api answers as a 4xx never exports as an Error span", () =>
+		Effect.forEach(
+			[
+				new McpOAuthProtocolError({ error: "invalid_request", message: "Request body is too large" }),
+				new TransitionConflictError({
+					message: "moved first",
+					table: "investigations",
+					id: "inv",
+					expected: ["diagnosed"],
+					target: "investigating",
+				}),
+			],
+			(error) =>
+				Effect.gen(function* () {
+					const { response, spans } = yield* event("POST", "/register", answeredAs4xx(error))
+					assert.strictEqual(response.status, 400)
+					const inner = Arr.findFirst(spans, (span) => span.name === "Probe.inner")
+					assert.isTrue(Option.isSome(inner), error._tag)
+					assert.deepStrictEqual(
+						Arr.filter(spans, (span) => span.status.code === 2 /* Error */),
+						[],
+						error._tag,
+					)
+				}),
+			{ discard: true },
+		),
 	)
 
 	it.effect("a routed answer is recorded as a server span with its status", () =>
