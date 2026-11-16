@@ -14,6 +14,9 @@ import { buildReports } from "./report"
 import { type AuditRunInput, type EngineState, makeEngine } from "./state"
 import { finalFindings, runCandidateValidation, runRecordVerification } from "./validate"
 
+/** The incomplete reason for a run that ends with no unit covered or carrying a candidate. */
+export const NO_UNITS_COVERED = "no_units_covered"
+
 export interface AuditRunResult {
 	readonly status: Exclude<RunStatus, "in_progress">
 	readonly incompleteReasons: ReadonlyArray<string>
@@ -62,6 +65,17 @@ export const runAudit = (input: AuditRunInput) =>
 
 		if (yield* runReconnaissance(engine)) {
 			yield* runHunting(engine)
+			// A run whose hunters settled no unit audited nothing, however its critics or budget ended.
+			const hunted = yield* Ref.get(engine.state)
+			const covered = Arr.filter(
+				hunted.ledger,
+				(u) => u.status === "covered" || u.status === "candidate",
+			)
+			yield* Effect.annotateCurrentSpan({
+				"maple.security_audit.ledger_units": hunted.ledger.length,
+				"maple.security_audit.covered_units": covered.length,
+			})
+			if (covered.length === 0) yield* engine.fail(NO_UNITS_COVERED)
 			yield* runCandidateValidation(engine)
 			yield* runRecordVerification(engine)
 		}

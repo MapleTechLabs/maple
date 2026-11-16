@@ -304,20 +304,53 @@ export const makeEngine = (input: AuditRunInput) =>
 			)
 
 		/**
-		 * `invoke` with one repair turn: a result that breaks its contract goes to a fresh `-r1` agent
-		 * told where it broke (the decoder's paths only, never its message, which can quote output).
+		 * `invoke` with one repair turn, given to a fresh `-r1` agent. A result that breaks its contract
+		 * is told where it broke (the decoder's paths only, never its message, which can quote output).
+		 * A decoded result `review` objects to is told the review's note; when that repair cannot run
+		 * or answers unusably, the first result stands.
 		 */
 		const invokeRepairing = <S extends Schema.Top>(
 			role: AuditRole,
 			agentId: string,
 			prompt: string,
 			schema: S,
+			review?: (value: S["Type"]) => string | undefined,
 		) =>
 			Effect.gen(function* () {
 				const first = yield* attempt(role, agentId, prompt, schema)
-				if (first._tag === "Decoded") return first.value
 				if (first._tag === "None") return undefined
-				return yield* invoke(role, `${agentId}-r1`, repairPrompt(prompt, first.issuePaths), schema)
+				if (first._tag === "Discarded")
+					return yield* invoke(
+						role,
+						`${agentId}-r1`,
+						repairPrompt(prompt, first.issuePaths),
+						schema,
+					).pipe(
+						Effect.withSpan("SecurityAudit.repairTurn", {
+							attributes: {
+								"maple.security_audit.agent_id": agentId,
+								"maple.security_audit.repair_reason": "contract",
+							},
+						}),
+					)
+				const objection = review?.(first.value)
+				if (objection === undefined) return first.value
+				const repaired = yield* Effect.gen(function* () {
+					const answer = yield* invoke(role, `${agentId}-r1`, `${prompt}\n\n${objection}`, schema)
+					yield* Effect.annotateCurrentSpan(
+						"maple.security_audit.repair_used",
+						answer !== undefined,
+					)
+					return answer
+				}).pipe(
+					Effect.withSpan("SecurityAudit.repairTurn", {
+						attributes: {
+							"maple.security_audit.agent_id": agentId,
+							"maple.security_audit.repair_reason": "review",
+						},
+					}),
+				)
+				return repaired ?? first.value
 			})
 
 		/**

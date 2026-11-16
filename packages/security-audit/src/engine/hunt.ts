@@ -4,7 +4,7 @@
  * final-clean critic both accept no work.
  */
 import { Effect, Option, Ref, Schema, Array as Arr, Record as Rec } from "effect"
-import { criticPrompt, hunterPrompt } from "../prompts"
+import { criticPrompt, hunterPrompt, refusedBlockRefsRepair } from "../prompts"
 import { type Candidate, candidateErrors, CriticResult, HunterResult } from "../results"
 import { ledgerErrors } from "../validators"
 import {
@@ -14,10 +14,12 @@ import {
 	defer,
 	huntable,
 	type LedgerUnit,
+	present,
+	proposalNote,
 	reopen,
 	revert,
+	reviewProposal,
 	seedUnit,
-	unitRefusal,
 } from "./ledger"
 import type { AuditStoreError } from "./ports"
 import type { EngineState, Engine } from "./state"
@@ -195,6 +197,17 @@ const runHunter = (
 		])
 	})
 
+/** A critic repair turn's note when any proposal names an unknown attack-class block. */
+const repairUnknownBlocks = (result: CriticResult): string | undefined => {
+	const refs = Arr.dedupe(
+		Arr.flatMap(result.missing_units, (unit) => {
+			const review = reviewProposal(unit)
+			return review._tag === "Refused" ? review.unknownRefs : []
+		}),
+	)
+	return refs.length === 0 ? undefined : refusedBlockRefsRepair(refs)
+}
+
 /** The critic's short name for the ledger unit at `index`; `reassign_ids` answers with it. */
 const criticAlias = (index: number) => `U${index + 1}`
 
@@ -295,18 +308,26 @@ const runCritic = (
 			},
 			engine.context(agentId),
 		)
-		// One repair turn before the run loses its planning: a critic's JSON is long and easy to break.
-		const result = yield* engine.invokeRepairing("critic", agentId, prompt, CriticResult)
+		// One repair turn before the run loses its planning: a critic's JSON is long and easy to break,
+		// and its block references easy to invent.
+		const result = yield* engine.invokeRepairing(
+			"critic",
+			agentId,
+			prompt,
+			CriticResult,
+			repairUnknownBlocks,
+		)
 		if (result === undefined) return undefined
 		// Aliases name units of the ledger the critic was shown.
 		const reassignIds = resolveCriticIds(s.ledger, result.reassign_ids)
-		const refusals = Arr.flatMap(result.missing_units, (unit) => {
-			const reason = unitRefusal(unit)
-			return reason === undefined ? [] : [`${unit.surface} / ${unit.attack_class}: ${reason}`]
-		})
+		const reviews = Arr.map(result.missing_units, (unit) => ({ unit, review: reviewProposal(unit) }))
+		const notes = Arr.flatMap(reviews, ({ unit, review }) => present(proposalNote(unit, review)))
+		const reviewRefused = Arr.filter(reviews, ({ review }) => review._tag === "Refused").length
 		const outcome = yield* engine.mutate((current) => {
 			const priorStatus = engine.input.prior === null ? "none" : "new"
-			const proposals = Arr.filter(result.missing_units, (unit) => unitRefusal(unit) === undefined)
+			const proposals = Arr.flatMap(reviews, ({ review }) =>
+				review._tag === "Admissible" ? [review.unit] : [],
+			)
 			// A proposal the ledger already holds is that unit (same canonical refs): neither new nor refused.
 			const seeded = Arr.filter(
 				Arr.map(proposals, (unit) => seedUnit(unit, { scope: engine.input.scopePaths, priorStatus })),
@@ -363,25 +384,35 @@ const runCritic = (
 				),
 			)
 			const ledger = deferReason === undefined ? marked : defer(marked, planned, deferReason)
-			const refused = [
-				...refusals,
-				...Arr.map(admitted.refused, (r) => `${r.coverage_id}: ${r.reason}`),
-			]
+			const ledgerRefused = Arr.map(admitted.refused, (r) => `${r.coverage_id}: refused, ${r.reason}`)
 			return [
-				{ accepted: planned.size, refused },
+				{ accepted: planned.size, ledgerRefused },
 				{ ...current, ledger, uncovered: [] },
 			]
 		})
 		yield* engine.persist
-		// A proposal the ledger cannot take is disclosed coverage, never silently dropped.
-		if (outcome.refused.length > 0) {
-			yield* engine.gap(`${agentId} proposed ${outcome.refused.length} units the ledger refused`)
-			yield* Effect.forEach(outcome.refused, (message) =>
-				engine.event({ _tag: "Note", message: `critic unit refused: ${message}` }),
+		// A proposal the ledger cannot take is disclosed coverage, never silently dropped: one note per unit.
+		yield* Effect.forEach(
+			[...notes, ...outcome.ledgerRefused],
+			(message) => engine.event({ _tag: "Note", message: `critic unit ${message}` }),
+			{ discard: true },
+		)
+		const refusedCount = reviewRefused + outcome.ledgerRefused.length
+		yield* Effect.annotateCurrentSpan({
+			"maple.security_audit.proposed_units": result.missing_units.length,
+			"maple.security_audit.accepted_units": outcome.accepted,
+			"maple.security_audit.refused_units": refusedCount,
+		})
+		if (refusedCount > 0)
+			yield* engine.gap(
+				`${agentId} proposed ${refusedCount} of ${result.missing_units.length} units the ledger refused`,
 			)
-		}
 		return outcome.accepted
-	})
+	}).pipe(
+		Effect.withSpan("SecurityAudit.critic", {
+			attributes: { "maple.security_audit.critic_kind": kind, "maple.security_audit.wave": wave },
+		}),
+	)
 
 /** Phase 2 to completion: waves, post-wave critics, and the final-clean critic. */
 export const runHunting = (engine: Engine) =>

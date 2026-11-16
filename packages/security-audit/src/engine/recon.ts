@@ -6,7 +6,15 @@ import { Effect, Option, Ref, Array as Arr, Record as Rec } from "effect"
 import { focusedReconPrompt, RECON_AGENTS, reconPrompt, synthesisPrompt } from "../prompts"
 import { SynthesisResult } from "../results"
 import type { CoverageUnit, Finding, Profile } from "../schema"
-import { admitUnits, type LedgerUnit, scoped, seedUnit, unitRefusal } from "./ledger"
+import {
+	admitUnits,
+	type LedgerUnit,
+	present,
+	proposalNote,
+	reviewProposal,
+	scoped,
+	seedUnit,
+} from "./ledger"
 import { type CarriedRecord, type Engine, type PriorRun, rereadPrompt, type TextAnswer } from "./state"
 
 /** The calls the skill reserves before any reconnaissance agent may launch. */
@@ -243,18 +251,13 @@ export const runReconnaissance = (engine: Engine) =>
 		}
 
 		const priorStatus = input.prior === null ? "none" : "new"
-		const refusals = Arr.flatMap(synthesis.units, (seed) => {
-			const reason = unitRefusal(seed)
-			return reason === undefined ? [] : [`${seed.surface} / ${seed.attack_class}: ${reason}`]
-		})
-		const seeds = Arr.map(
-			Arr.filter(synthesis.units, (seed) => unitRefusal(seed) === undefined),
-			(seed) =>
-				seedUnit(seed, {
-					scope: input.scopePaths,
-					priorStatus,
-					priority: seed.priority,
-				}),
+		const reviews = Arr.map(synthesis.units, (seed) => ({ seed, review: reviewProposal(seed) }))
+		const notes = Arr.flatMap(reviews, ({ seed, review }) => present(proposalNote(seed, review)))
+		const reviewRefused = Arr.filter(reviews, ({ review }) => review._tag === "Refused").length
+		const seeds = Arr.flatMap(reviews, ({ seed, review }) =>
+			review._tag === "Admissible"
+				? [seedUnit(review.unit, { scope: input.scopePaths, priorStatus, priority: seed.priority })]
+				: [],
 		)
 		// Prior units first: their identity is the stable one across runs. They pass the same scope check.
 		const priorUnits = Arr.map(prior?.units ?? [], (unit) => scoped(unit, input.scopePaths))
@@ -271,12 +274,21 @@ export const runReconnaissance = (engine: Engine) =>
 			admitUnits([], priorUnits).ledger,
 			Arr.filter(seeds, (seed) => !priorIds.has(seed.coverage_id)),
 		)
-		const refused = [...refusals, ...Arr.map(admitted.refused, (r) => `${r.coverage_id}: ${r.reason}`)]
-		yield* Effect.forEach(refused, (message) =>
-			engine.event({ _tag: "Note", message: `seed unit refused: ${message}` }),
+		const ledgerRefused = Arr.map(admitted.refused, (r) => `${r.coverage_id}: refused, ${r.reason}`)
+		yield* Effect.forEach(
+			[...notes, ...ledgerRefused],
+			(message) => engine.event({ _tag: "Note", message: `seed unit ${message}` }),
+			{ discard: true },
 		)
-		if (refused.length > 0)
-			yield* engine.gap(`synthesis proposed ${refused.length} units the ledger refused`)
+		const refusedCount = reviewRefused + ledgerRefused.length
+		yield* Effect.annotateCurrentSpan({
+			"maple.security_audit.proposed_units": synthesis.units.length,
+			"maple.security_audit.refused_units": refusedCount,
+		})
+		if (refusedCount > 0)
+			yield* engine.gap(
+				`synthesis proposed ${refusedCount} of ${synthesis.units.length} units the ledger refused`,
+			)
 		yield* engine.mutate((s) => [
 			undefined,
 			{
