@@ -141,6 +141,23 @@ export const sectionMarkdown = (id: SectionId, site: URL | undefined): string =>
 					{ title: m.uptime_trace_rule_3_title, body: m.uptime_trace_rule_3_body },
 				]),
 			)
+		case "uptime-setup":
+			return section(
+				m.uptime_setup_title(),
+				m.uptime_setup_lede(),
+				...rules([
+					{ title: m.uptime_setup_fact_1_title, body: m.uptime_setup_fact_1_body },
+					{ title: m.uptime_setup_fact_2_title, body: m.uptime_setup_fact_2_body },
+					{ title: m.uptime_setup_fact_3_title, body: m.uptime_setup_fact_3_body },
+				]),
+				Arr.join(
+					[
+						`- [${m.uptime_setup_link_checks()}](${absolute(site, "/docs/alerting/uptime-checks")})`,
+						`- [${m.uptime_setup_link_heartbeats()}](${absolute(site, "/docs/alerting/heartbeat-monitors")})`,
+					],
+					"\n",
+				),
+			)
 		case "status-page-feeds":
 			return section(
 				m.status_feeds_title(),
