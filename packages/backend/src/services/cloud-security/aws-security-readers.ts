@@ -741,6 +741,13 @@ const readAccessAnalyzer = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =
 		)
 		const listed = { analyzers: yield* Ref.get(analyzers) }
 		const active = Arr.filter(listed.analyzers, (analyzer) => analyzer.status === "ACTIVE")
+		// A listing the deadline cut short says nothing about analyzers it did not reach.
+		if (active.length === 0 && !listing.complete) {
+			return yield* new AwsSecurityReadError({
+				message: "AccessAnalyzer.ListAnalyzers: the listing was cut short",
+				kind: "failing",
+			})
+		}
 		if (active.length === 0) return notEnabled
 		const seen = yield* Ref.make<ReadonlyArray<string>>([])
 		const reads = yield* Effect.forEach(active, (analyzer) =>
@@ -1037,8 +1044,12 @@ export const readCloudTrail = <E>(
 	return Effect.gen(function* () {
 		// The few minutes behind the cursor, for events CloudTrail listed late: one capped window of
 		// their own, so a burst there can neither stall the read nor regrow its span.
+		// Not while the cursor sits on a dense second: that second gets every page of this poll.
+		const onDenseSecond = target.windowMs !== null && target.windowMs <= MIN_WINDOW_MS
 		const overlapFrom =
-			target.cursorAt === null ? startMs : Num.max(oldestKept, startMs - CLOUDTRAIL_OVERLAP_MS)
+			target.cursorAt === null || onDenseSecond
+				? startMs
+				: Num.max(oldestKept, startMs - CLOUDTRAIL_OVERLAP_MS)
 		const overlap =
 			overlapFrom < startMs
 				? yield* lookupWindow(overlapFrom, startMs, WINDOW_PAGES)

@@ -891,4 +891,52 @@ describe("AwsSecurityFindingsService", () => {
 			assert.strictEqual(new Set(Arr.map(burst, ({ event }) => event.providerEventId)).size, 1500)
 		}).pipe(Effect.provide(world.layer))
 	})
+
+	it.effect("gives a dense second at the cursor every page of a poll, even with writes behind it", () => {
+		const world = makeWorld()
+		const cursor = NOW - 40 * 60_000
+		const write = (id: string, eventTimeMs: number) => ({
+			eventId: id,
+			eventTimeMs,
+			record: {
+				eventSource: "ec2.amazonaws.com",
+				eventName: "RunInstances",
+				userIdentity: { type: "IAMUser", userName: "ci" },
+			},
+		})
+		world.aws.regions["us-east-1"] = {
+			cloudtrail: [
+				// One write a second in the minutes behind the cursor.
+				...Arr.makeBy(180, (index) => write(`behind-${index}`, cursor - 180_000 + index * 1000)),
+				// 1,900 writes in one second just past it: 38 pages, under a poll's 40.
+				...Arr.makeBy(1900, (index) => write(`dense-${index}`, cursor + 500)),
+			],
+		}
+		return Effect.gen(function* () {
+			const connection = yield* connect(world)
+			const store = yield* CloudSecurityStore
+			yield* store.recordServiceState({
+				orgId,
+				connectionId: connection.id,
+				region: Schema.decodeSync(AwsRegion)("us-east-1"),
+				source: "cloudtrail",
+				state: "enabled",
+				cursorAt: cursor,
+				windowMs: 60_000,
+				lastError: null,
+				checkedAt: NOW - 60_000,
+			})
+			yield* Effect.forEach(
+				Arr.range(1, 5),
+				() => Effect.andThen(poll, TestClock.adjust("5 minutes")),
+				{
+					discard: true,
+				},
+			)
+			const dense = Arr.filter(world.audit, ({ event }) =>
+				Str.startsWith("dense-")(event.providerEventId),
+			)
+			assert.strictEqual(new Set(Arr.map(dense, ({ event }) => event.providerEventId)).size, 1900)
+		}).pipe(Effect.provide(world.layer))
+	})
 })
