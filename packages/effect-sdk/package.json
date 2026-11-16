@@ -59,6 +59,7 @@
 	},
 	"scripts": {
 		"build": "tsdown",
+		"bench:profiling": "tsdown && node bench/profiling.ts",
 		"typecheck": "tsrs --noEmit",
 		"test": "vitest run"
 	},

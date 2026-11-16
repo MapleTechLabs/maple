@@ -1,5 +1,16 @@
 import { describe, it } from "@effect/vitest"
-import { Effect, Exit, Layer, Logger, Predicate, References, Scope, Array as Arr } from "effect"
+import {
+	Effect,
+	Exit,
+	Fiber,
+	Layer,
+	Logger,
+	String as Str,
+	Predicate,
+	References,
+	Scope,
+	Array as Arr,
+} from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { TestClock } from "effect/testing"
 import { makeSpanTimeline, type SpanTimeline } from "../shared/span-timeline"
@@ -7,6 +18,7 @@ import { expect, vi } from "vitest"
 import {
 	type InspectorModule,
 	type InspectorSession,
+	PROFILER_SETUP_TIMEOUT,
 	PROFILES_PATH,
 	type ProfilerLayerOptions,
 	profilerLayer,
@@ -219,6 +231,63 @@ describe("profilerLayer without an inspector", () => {
 			"could not open an inspector session",
 		)
 	})
+
+	it.effect("builds without profiling when the inspector takes a session and never answers", () => {
+		const calls: Array<string> = []
+		class Silent implements InspectorSession {
+			connect() {}
+			disconnect() {
+				calls.push("disconnect")
+			}
+			post(method: string) {
+				calls.push(method)
+			}
+		}
+		const harness = makeHarness()
+		const cleared = vi.spyOn(globalThis, "clearTimeout")
+		return Effect.gen(function* () {
+			const building = yield* Effect.forkChild(
+				Layer.build(harness.layer({ loadBuiltin: () => ({ Session: Silent }) })),
+			)
+			yield* TestClock.adjust(PROFILER_SETUP_TIMEOUT)
+			const exit = yield* Fiber.await(building)
+			expect(Exit.isSuccess(exit)).toBe(true)
+			expect(levels(harness)).toEqual(["Warn"])
+			expect(harness.logs[0]?.message).toContain("the inspector did not answer")
+			// Ended at once, with the app still running: nothing it started keeps sampling.
+			expect(calls).toEqual(["Profiler.enable", "disconnect"])
+			// The interrupted command's own timer is cleared, so it cannot hold the process open.
+			expect(cleared).toHaveBeenCalled()
+		}).pipe(harness.run, Effect.ensuring(Effect.sync(() => cleared.mockRestore())))
+	})
+
+	it.effect("ends the session at once when the first Profiler.start never answers", () => {
+		const calls: Array<string> = []
+		class LostStart implements InspectorSession {
+			connect() {}
+			disconnect() {
+				calls.push("disconnect")
+			}
+			post(...[method, , callback]: Parameters<InspectorSession["post"]>) {
+				calls.push(method)
+				if (method !== "Profiler.start") callback(null, {})
+			}
+		}
+		const harness = makeHarness()
+		return Effect.gen(function* () {
+			const building = yield* Effect.forkChild(
+				Layer.build(harness.layer({ loadBuiltin: () => ({ Session: LostStart }) })),
+			)
+			yield* TestClock.adjust(PROFILER_SETUP_TIMEOUT)
+			expect(Exit.isSuccess(yield* Fiber.await(building))).toBe(true)
+			expect(calls).toEqual([
+				"Profiler.enable",
+				"Profiler.setSamplingInterval",
+				"Profiler.start",
+				"disconnect",
+			])
+		}).pipe(harness.run)
+	})
 })
 
 describe("profilerLayer", () => {
@@ -303,6 +372,33 @@ describe("profilerLayer", () => {
 			expect(harness.events).not.toContain("Profiler.stop")
 			yield* TestClock.adjust("1 millis")
 			expect(stopsIn(harness)).toHaveLength(1)
+		}).pipe(harness.run)
+	})
+
+	it.effect("an inspector that stops answering mid-run cannot hang shutdown", () => {
+		class GoesSilent implements InspectorSession {
+			connect() {}
+			disconnect() {}
+			post(...[method, , callback]: Parameters<InspectorSession["post"]>) {
+				// Answers setup, then never answers a stop: the rotation and the shutdown both wait on one.
+				if (method !== "Profiler.stop") callback(null, {})
+			}
+		}
+		const harness = makeHarness()
+		const realWait = (ms: number) =>
+			Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, ms)))
+		return Effect.gen(function* () {
+			const scope = yield* Scope.make()
+			yield* Layer.buildWithScope(
+				harness.layer({ loadBuiltin: () => ({ Session: GoesSilent }), commandTimeout: "20 millis" }),
+				scope,
+			)
+			yield* TestClock.adjust(WINDOW)
+			yield* realWait(100)
+			// Closing returns: the unanswered stops time out instead of holding the scope open.
+			yield* Scope.close(scope, Exit.void)
+			expect(harness.requests).toEqual([])
+			expect(Arr.some(harness.logs, (line) => Str.includes("window dropped")(line.message))).toBe(true)
 		}).pipe(harness.run)
 	})
 

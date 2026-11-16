@@ -34,6 +34,10 @@ const MIN_SAMPLING_INTERVAL_MICROS = 100
 /** A collector that accepts the request and never answers must not hold the next window up. */
 const EXPORT_TIMEOUT = Duration.seconds(10)
 export const DEFAULT_SAMPLING_INTERVAL_MICROS = 10_000
+/** An inspector that takes a session and never answers must not hold the app's startup up. */
+export const PROFILER_SETUP_TIMEOUT = Duration.seconds(5)
+/** How long any one inspector command may go unanswered before it counts as failed. */
+export const PROFILER_COMMAND_TIMEOUT = Duration.seconds(5)
 
 /** The OTLP path profiles are exported on until the signal reaches release candidate. */
 export const PROFILES_PATH = "/v1development/profiles"
@@ -130,11 +134,44 @@ const openSession = (loadBuiltin: LoadBuiltin | undefined) =>
 		})
 	})
 
-const post = (session: InspectorSession, method: string, params: InspectorParams = {}) =>
+/**
+ * One inspector command, failed after `timeoutMs` with no answer. The bound is a timer, not an
+ * interruption, so it also holds inside the uninterruptible window rotation: a silent inspector
+ * costs a window there, never a shutdown that waits forever.
+ */
+const post = (session: InspectorSession, method: string, params: InspectorParams, timeoutMs: number) =>
 	Effect.callback<InspectorReply | undefined, ProfilerFailed>((resume) => {
-		session.post(method, params, (error, reply) =>
-			resume(error === null ? Effect.succeed(reply) : Effect.fail(failed(`${method} failed`)(error))),
-		)
+		let settled = false
+		// @effect-diagnostics-next-line globalTimersInEffect:off -- an Effect sleep would be interrupted, and the rotation that calls this is uninterruptible
+		const timer = setTimeout(() => {
+			if (settled) return
+			settled = true
+			resume(Effect.fail(failed(`${method} got no answer`)(`no answer within ${timeoutMs} ms`)))
+		}, timeoutMs)
+		session.post(method, params, (error, reply) => {
+			if (settled) return
+			settled = true
+			clearTimeout(timer)
+			resume(error === null ? Effect.succeed(reply) : Effect.fail(failed(`${method} failed`)(error)))
+		})
+		// An interrupted wait (a setup timeout, a bounded shutdown) clears the timer, which would
+		// otherwise keep the process alive until it fired.
+		return Effect.sync(() => {
+			settled = true
+			clearTimeout(timer)
+		})
+	})
+
+/** A setup command that fails, rather than waits forever, when the inspector never answers it. */
+const withinSetup = <A>(effect: Effect.Effect<A, ProfilerFailed>) =>
+	Effect.timeoutOrElse(effect, {
+		duration: PROFILER_SETUP_TIMEOUT,
+		orElse: () =>
+			Effect.fail(
+				failed("the inspector did not answer")(
+					`no answer within ${Duration.format(PROFILER_SETUP_TIMEOUT)}`,
+				),
+			),
 	})
 
 /** The profile a `Profiler.stop` reply carries: what was sampled since `Profiler.start`. */
@@ -196,6 +233,8 @@ export interface ProfilerLayerOptions {
 	readonly shutdownTimeout?: Duration.Input | undefined
 	/** Loads `node:inspector`. Default: the runtime's `process.getBuiltinModule`, when it has one. */
 	readonly loadBuiltin?: LoadBuiltin | undefined
+	/** How long one inspector command may go unanswered. Default `PROFILER_COMMAND_TIMEOUT`. */
+	readonly commandTimeout?: Duration.Input | undefined
 }
 
 /**
@@ -225,12 +264,29 @@ export const profilerLayer = (
 			const samplingIntervalMicros = samplingIntervalOf(options.profiling.samplingIntervalMicros)
 			const url = HttpClientRequest.appendUrl(HttpClientRequest.get(options.baseUrl), PROFILES_PATH).url
 
-			const session = yield* Effect.acquireRelease(
-				openSession(options.loadBuiltin ?? runtimeLoadBuiltin()),
-				(opened) => Effect.sync(() => opened.disconnect()),
+			const session = yield* openSession(options.loadBuiltin ?? runtimeLoadBuiltin())
+			const commandTimeoutMs = Duration.toMillis(
+				Option.getOrElse(
+					Duration.fromInput(options.commandTimeout ?? PROFILER_COMMAND_TIMEOUT),
+					() => PROFILER_COMMAND_TIMEOUT,
+				),
 			)
-			yield* post(session, "Profiler.enable")
-			yield* post(session, "Profiler.setSamplingInterval", { interval: samplingIntervalMicros })
+			const command = (method: string, params: InspectorParams = {}) =>
+				post(session, method, params, commandTimeoutMs)
+			let connected = true
+			// Disconnecting ends whatever the session started, the profiler included.
+			const endSession = Effect.sync(() => {
+				if (!connected) return
+				connected = false
+				session.disconnect()
+			})
+			yield* Effect.addFinalizer(() => endSession)
+			// A failed setup ends the session now, not at shutdown: a `Profiler.start` that ran
+			// but never answered would otherwise sample, unrotated, for the app's whole life.
+			const setup = <A>(effect: Effect.Effect<A, ProfilerFailed>) =>
+				withinSetup(effect).pipe(Effect.onError(() => endSession))
+			yield* setup(command("Profiler.enable"))
+			yield* setup(command("Profiler.setSamplingInterval", { interval: samplingIntervalMicros }))
 
 			// The profiler stamps `startTime` as it starts, so the clocks are read just before.
 			const start = Effect.gen(function* () {
@@ -239,7 +295,7 @@ export const profilerLayer = (
 					// @effect-diagnostics-next-line globalDateInEffect:off -- must be the same instant as the performance.now() above
 					startedAtEpochMs: Date.now(),
 				}
-				yield* post(session, "Profiler.start")
+				yield* command("Profiler.start")
 				return started
 			})
 
@@ -276,7 +332,7 @@ export const profilerLayer = (
 			const stop = (started: WindowStart) =>
 				Effect.gen(function* () {
 					const stoppedAtPerfMs = performance.now()
-					const reply = yield* post(session, "Profiler.stop")
+					const reply = yield* command("Profiler.stop")
 					return { started, stoppedAtPerfMs, reply, spanEvents: options.timeline?.drain() }
 				})
 
@@ -320,7 +376,7 @@ export const profilerLayer = (
 
 			options.timeline?.setRecording(true)
 			// A profiler that never started leaves nothing recording.
-			const first = yield* start.pipe(
+			const first = yield* setup(start).pipe(
 				Effect.onError(() => Effect.sync(() => options.timeline?.setRecording(false))),
 			)
 			const current = yield* Ref.make(first)
@@ -351,7 +407,7 @@ export const profilerLayer = (
 							error,
 						)
 						options.timeline?.drain()
-						yield* Effect.ignore(post(session, "Profiler.stop"))
+						yield* Effect.ignore(command("Profiler.stop"))
 						const next = yield* start
 						yield* Ref.set(current, next)
 					}),
@@ -390,7 +446,7 @@ export const profilerLayer = (
 						Effect.gen(function* () {
 							options.timeline?.setRecording(false)
 							yield* Ref.set(running, false)
-							yield* Effect.ignore(post(session, "Profiler.stop"))
+							yield* Effect.ignore(command("Profiler.stop"))
 							yield* Effect.logWarning("[MapleProfiler] stopped", Cause.squash(cause))
 						}),
 				),
