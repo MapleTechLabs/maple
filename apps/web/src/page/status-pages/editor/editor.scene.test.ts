@@ -2185,6 +2185,24 @@ describe("settings", () => {
 		)
 	})
 
+	test("every Settings section shows the whole page beside it, as the unsaved settings render it", () => {
+		const page = srcdocOf("Globex with these settings")
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ tab: "settings" })),
+			type(role("textbox", { name: "Name" }), "Globex"),
+			tap(({ html }) => {
+				expect(page(html)).toContain("Globex")
+				expect(page(html)).toContain("Component 1")
+			}),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(ADVANCED)),
+			expectView(role("region", { name: "Page preview" })).toExist(),
+		)
+	})
+
 	test("Basic settings preview the header, the tab title, the search result and the footer as typed", () => {
 		const footer = srcdocOf("The page footer as visitors see it")
 		scene(

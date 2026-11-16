@@ -40,7 +40,7 @@ import { appearanceSection, brandingSection } from "./view-appearance"
 import { customDomainSection } from "./view-domain"
 import { jsonTab } from "./view-json"
 import { monitorsSection } from "./view-monitors"
-import { draftName, fragmentPreview, tabPreview } from "./view-canvas"
+import { draftName, fragmentPreview, settingsPagePreview, tabPreview } from "./view-canvas"
 import { activeCustomDomain, pageUrlOf } from "./update-domain"
 import { Message } from "./message"
 import { canBreakGlass, canManage, type Model } from "./model"
@@ -398,7 +398,11 @@ const sectionMenu = (h: H, page: V2StatusPage, section: SettingsSection): Html =
 export const settingsView = (h: H, model: Model, page: V2StatusPage, section: SettingsSection): Html => {
 	const form = Option.getOrElse(settingsOf(model), () => settingsFormOf(page))
 	return h.div(
-		[h.Class("grid items-start gap-6 md:grid-cols-[12rem_minmax(0,1fr)] lg:gap-10")],
+		[
+			h.Class(
+				"grid items-start gap-6 md:grid-cols-[12rem_minmax(0,1fr)] lg:gap-10 min-[1360px]:grid-cols-[11rem_minmax(26rem,1fr)_minmax(20rem,1fr)]",
+			),
+		],
 		[
 			sectionMenu(h, page, section),
 			vstack(h, { className: "min-w-0 max-w-3xl" }, [
@@ -430,6 +434,10 @@ export const settingsView = (h: H, model: Model, page: V2StatusPage, section: Se
 					isSaveDisabled: hasSettingsIssues(form) || model.isApplyingJson,
 				}),
 			]),
+			h.aside(
+				[h.Class("hidden min-w-0 min-[1360px]:sticky min-[1360px]:top-6 min-[1360px]:block")],
+				[settingsPagePreview(h, model, page, form)],
+			),
 		],
 	)
 }

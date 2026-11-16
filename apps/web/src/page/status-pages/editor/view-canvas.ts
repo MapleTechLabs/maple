@@ -166,6 +166,41 @@ export const tabPreview = (
 		],
 	)
 
+/**
+ * The whole page as the unsaved `form` would publish it, beside Settings: a 2x document scaled to
+ * half so the narrow column shows the desktop layout. Waits for the statuses like any preview.
+ */
+export const settingsPagePreview = (h: H, model: Model, page: V2StatusPage, form: SettingsForm): Html =>
+	vstack(h, { gap: "1.5", as: "section", attributes: [h.AriaLabel("Page preview")] }, [
+		typography(h, { size: "xs", tone: "muted", as: "p" }, ["Your page with these settings"]),
+		!statusReadsReady(model)
+			? statusReadsFailed(model)
+				? typography(h, { size: "xs", tone: "muted", as: "p" }, [
+						"No preview: the page's components didn't load.",
+					])
+				: skeleton(h, "h-[calc(100vh-14rem)] w-full rounded-lg")
+			: h.div(
+					[
+						h.Class(
+							"relative h-[calc(100vh-14rem)] min-h-96 overflow-hidden rounded-lg border bg-background",
+						),
+					],
+					[
+						fragmentFrame(h, {
+							title: `${draftName(page, form)} with these settings`,
+							document: previewDocument({
+								snapshot: draftSnapshot(model, page, form, "live"),
+								nowMs: nowOf(model, page),
+								isSelectable: false,
+								publicUrl: pageUrlOf(model, page),
+							}),
+							className:
+								"absolute top-0 left-0 h-[200%] w-[200%] origin-top-left scale-50 rounded-none border-0",
+						}),
+					],
+				),
+	])
+
 /** The saved page as visitors get it, with the monitors' history; components and incidents click. */
 export const canvasDocument = (model: Model, page: V2StatusPage): string =>
 	previewDocument({
