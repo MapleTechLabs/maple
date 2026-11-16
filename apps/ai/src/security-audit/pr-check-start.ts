@@ -132,35 +132,45 @@ const checkPullRequest = Effect.fn("SecurityPrCheck.checkPullRequest")(function*
 
 	/**
 	 * The head's run answers, but its Workflow may never have been created (the delivery that started
-	 * it was cut off). Creating it again is a no-op for one that exists; one that did not exist starts
-	 * now and says so on the check. Never re-posts a running check over one that may have finished.
+	 * it was cut off). One that exists is left alone; a missing one starts now and says so on the
+	 * check. A start that fails settles the run as failed, so its check reports and the head is free.
+	 * Never re-posts a running check over one that may have finished.
 	 */
 	const resume = (run: SecurityAuditRunRow) =>
-		run.discoveryModel === null || run.validationModel === null
-			? Effect.void
-			: workflow
-					.create({
-						orgId,
-						runId: run.id,
-						repository: target.repository,
-						ref: headSha,
-						profile: run.profile,
-						scopePaths: run.scopePaths,
-						budget: run.budget,
-						models: { discovery: run.discoveryModel, validation: run.validationModel },
-						priorRunId: null,
-					})
-					.pipe(
-						Effect.andThen(
-							checks.notify(orgId, target, headSha, {
-								kind: "running",
-								runId: run.id,
-								scopePaths: run.scopePaths.length,
-							}),
-						),
-						// Already exists: the run is in hand.
-						Effect.ignore,
-					)
+		Effect.gen(function* () {
+			if (yield* workflow.exists(run.id)) return
+			if (run.discoveryModel === null || run.validationModel === null)
+				return yield* settleOrphan(run, "the run has no recorded models")
+			yield* workflow
+				.create({
+					orgId,
+					runId: run.id,
+					repository: target.repository,
+					ref: headSha,
+					profile: run.profile,
+					scopePaths: run.scopePaths,
+					budget: run.budget,
+					models: { discovery: run.discoveryModel, validation: run.validationModel },
+					priorRunId: null,
+				})
+				.pipe(
+					Effect.andThen(
+						checks.notify(orgId, target, headSha, {
+							kind: "running",
+							runId: run.id,
+							scopePaths: run.scopePaths.length,
+						}),
+					),
+					Effect.catchTag("@maple/backend/platform/WorkflowStartError", (error) =>
+						settleOrphan(run, error.message),
+					),
+				)
+		})
+
+	const settleOrphan = (run: SecurityAuditRunRow, why: string) =>
+		store
+			.finishRun(run.id, { status: "failed", error: `start_failed: ${why}` })
+			.pipe(Effect.andThen(checks.publish(orgId, run.id)))
 
 	const answering = yield* supersede
 	if (Option.isSome(answering)) {
@@ -218,10 +228,13 @@ const checkPullRequest = Effect.fn("SecurityPrCheck.checkPullRequest")(function*
 	const outcome = yield* start.pipe(
 		Effect.map((run) => ({ _tag: "Started" as const, run })),
 		Effect.catchTags({
-			// Another delivery started a run in between: the same head answers itself, an older one
-			// is superseded and this start tried once more.
+			// Another delivery started a run in between. A push since this one was read makes this
+			// delivery the stale one: it stands down. Otherwise the same head answers itself, an older
+			// one is superseded and this start tried once more.
 			"@maple/backend/security-audit/RunInProgress": () =>
 				Effect.gen(function* () {
+					const now = yield* provider.fetchPullRequestHead(installation, ref, job.number)
+					if (now.headSha !== headSha) return { _tag: "Stale" as const }
 					const raced = yield* supersede
 					if (Option.isSome(raced)) return { _tag: "Checking" as const }
 					const retriedRun = yield* start.pipe(
@@ -237,6 +250,7 @@ const checkPullRequest = Effect.fn("SecurityPrCheck.checkPullRequest")(function*
 		}),
 	)
 	if (outcome._tag === "Checking") return skipped("already_checking")
+	if (outcome._tag === "Stale") return skipped("stale_head")
 	if (outcome._tag === "Disabled") return skipped("target_disabled")
 	const run = outcome.run
 	if (Option.isNone(run)) return yield* report("another check of this pull request is starting")

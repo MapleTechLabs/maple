@@ -168,6 +168,11 @@ export interface SecurityAuditOrgStore extends AuditStoreApi {
 		repository: string,
 		branch: string,
 	) => Effect.Effect<Option.Option<SecurityAuditTargetRow>, AuditStoreError>
+	/** The finished pull request runs of a target that reported this finding, newest first. */
+	readonly listPullRequestRunsReporting: (
+		targetId: SecurityAuditTargetId,
+		fingerprint: string,
+	) => Effect.Effect<ReadonlyArray<SecurityAuditRunId>, AuditStoreError>
 	/** The unfinished runs checking this pull request, which a newer head supersedes. */
 	readonly listOpenPullRequestRuns: (
 		targetId: SecurityAuditTargetId,
@@ -1945,6 +1950,36 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					).pipe(Effect.flatMap(lenientRuns))
 				})
 
+				const listPullRequestRunsReporting: SecurityAuditOrgStore["listPullRequestRunsReporting"] =
+					Effect.fn("SecurityAuditStore.listPullRequestRunsReporting")(
+						function* (targetId, fingerprint) {
+							const rows = yield* dbExecute((db) =>
+								db.run(
+									PG.from(SecurityAuditRuns)
+										.select("id")
+										.where(($) => [
+											$.orgId.eq(orgId),
+											$.targetId.eq(targetId),
+											$.prNumber.isNotNull(),
+											$.finishedAt.isNotNull(),
+											PG.inSubquery(
+												$.id,
+												PG.from(SecurityAuditRunFindings)
+													.select("runId")
+													.where(($f) => [
+														$f.orgId.eq(orgId),
+														$f.fingerprint.eq(fingerprint),
+													]),
+											),
+										])
+										.orderBy(($) => [[$.startedAt, "desc"]])
+										.limit(20),
+								),
+							)
+							return Arr.map(rows, (row) => row.id)
+						},
+					)
+
 				const setRunFindingStatus: SecurityAuditOrgStore["setRunFindingStatus"] = Effect.fn(
 					"SecurityAuditStore.setRunFindingStatus",
 				)(function* (runId, fingerprint, status, reason, actor) {
@@ -2198,6 +2233,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					updateTarget,
 					findPullRequestTarget,
 					listOpenPullRequestRuns,
+					listPullRequestRunsReporting,
 					setRunFindingStatus,
 					setFindingStatus,
 					reserveOrgInvocation,

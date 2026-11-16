@@ -133,6 +133,8 @@ const providerWith = (
 const makeHarness = (
 	options: {
 		readonly files?: () => Effect.Effect<ReadonlyArray<PullRequestFile>>
+		/** Every Workflow create fails, as with the binding down or the instance limit reached. */
+		readonly createFails?: boolean
 		readonly enabled?: boolean
 		readonly noCredits?: boolean
 		readonly prCheckEnabled?: boolean
@@ -162,9 +164,10 @@ const makeHarness = (
 		Layer.succeed(SecurityAuditWorkflowStarter, {
 			// One instance per run id, as Cloudflare Workflows keep them.
 			create: (payload) =>
-				Arr.some(started, (p) => p.runId === payload.runId)
-					? Effect.fail(new WorkflowStartError({ message: "instance already exists", cause: null }))
+				options.createFails === true || Arr.some(started, (p) => p.runId === payload.runId)
+					? Effect.fail(new WorkflowStartError({ message: "instance limit reached", cause: null }))
 					: Effect.sync(() => void started.push(payload)),
+			exists: (runId) => Effect.succeed(Arr.some(started, (p) => p.runId === runId)),
 			cancel: (runId) => Effect.sync(() => void cancelled.push(runId)),
 		}),
 		Layer.succeed(SecurityPrCheck, {
@@ -464,5 +467,62 @@ describe("startPullRequestCheck ordering and recovery", () => {
 			[orphan.id, ["src/orders.ts"]],
 		])
 		expect(harness.notices).toEqual(["1111:running"])
+	})
+})
+
+describe("startPullRequestCheck races and failed recovery", () => {
+	it("stands down when a newer push started its run while this delivery was reading", async () => {
+		const hook = { onFiles: Effect.void }
+		const harness = makeHarness({
+			files: () => hook.onFiles.pipe(Effect.as([file("src/orders.ts")])),
+		})
+		const result = await harness.run(
+			Effect.gen(function* () {
+				const target = yield* harness.seeded
+				const store = (yield* SecurityAuditStore).forOrg(orgId)
+				// While delivery A reads its files, push B lands and its run starts.
+				hook.onFiles = store
+					.startRun({
+						targetId: target.id,
+						kind: "pull_request",
+						prNumber: 612,
+						sourceRef: NEXT_HEAD,
+					})
+					.pipe(
+						Effect.tap(() => Effect.sync(() => (harness.currentHead.sha = NEXT_HEAD))),
+						Effect.asVoid,
+						Effect.orDie,
+					)
+				const outcome = yield* startPullRequestCheck(orgId, job())
+				return { outcome, runs: yield* harness.runsOf(target.id) }
+			}),
+		)
+
+		expect(result.outcome.reason).toBe("stale_head")
+		expect(harness.cancelled).toEqual([])
+		expect(Arr.map(result.runs, (r) => r.status)).toEqual(["in_progress"])
+	})
+
+	it("settles an orphaned run whose Workflow cannot be started, instead of answering for it", async () => {
+		const harness = makeHarness({ createFails: true })
+		const result = await harness.run(
+			Effect.gen(function* () {
+				const target = yield* harness.seeded
+				const store = (yield* SecurityAuditStore).forOrg(orgId)
+				const orphan = yield* store.startRun({
+					targetId: target.id,
+					kind: "pull_request",
+					prNumber: 612,
+					sourceRef: HEAD,
+					discoveryModel: "discovery/model",
+					validationModel: "validation/model",
+				})
+				yield* startPullRequestCheck(orgId, job({ action: "synchronize" }))
+				return { orphan, runs: yield* harness.runsOf(target.id) }
+			}),
+		)
+
+		expect(harness.published).toEqual([result.orphan.id])
+		expect(Arr.map(result.runs, (r) => r.status)).toEqual(["failed"])
 	})
 })
