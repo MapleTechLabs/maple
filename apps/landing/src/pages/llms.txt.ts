@@ -15,6 +15,7 @@ import { features } from "../lib/features"
 import { useCases } from "../lib/use-cases"
 import { allGuides } from "../lib/guides"
 import { absolute, plainText } from "../lib/page-markdown"
+import { scaleProofMarkdown } from "../lib/scale-proof"
 import { API_ORIGIN, API_PATHS, GITHUB_URL, SITE_PATHS } from "../lib/agent-resources"
 import { Array as Arr } from "effect"
 
@@ -33,6 +34,8 @@ export const GET: APIRoute = ({ site }) => {
 			"# Maple",
 			"",
 			"> Maple is a source-available observability platform for traces, logs, and metrics, built on OpenTelemetry. Send OTLP from any instrumented app; there are no proprietary agents.",
+			"",
+			scaleProofMarkdown(site),
 			"",
 			"For AI agents and automation, use the resources below.",
 			"",
