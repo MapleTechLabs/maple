@@ -125,9 +125,12 @@ export const openComposer = (model: Model, kind: StatusPageIncidentKind): Return
 					componentIds: Arr.map(affected, (component) => component.id),
 					impact: IMPACT_OF_STATUS[worstStatus(Arr.map(affected, statusOf))],
 				}
-	return composeDialog(
-		{ ...model, incidentForm: form, composeStep: "write", incidentFailure: null },
-		Dialog.open(model.composeDialog),
+	// The editor may have sat open: the window's checks and derived status read a fresh clock.
+	return withClock(
+		composeDialog(
+			{ ...model, incidentForm: form, composeStep: "write", incidentFailure: null },
+			Dialog.open(model.composeDialog),
+		),
 	)
 }
 
@@ -157,7 +160,9 @@ export const changeIncident = (model: Model, field: IncidentTextField, value: st
 				onSome: (status) => ({ model: { ...model, incidentForm: { ...form, status } } }),
 			})
 		case "startedAt":
-			return withClock({ model: { ...model, incidentForm: { ...form, startedAt: value } } })
+		case "scheduledStart":
+		case "scheduledEnd":
+			return withClock({ model: { ...model, incidentForm: { ...form, [field]: value } } })
 		default:
 			return { model: { ...model, incidentForm: { ...form, [field]: value } } }
 	}

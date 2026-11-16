@@ -168,7 +168,8 @@ export const tabPreview = (
 
 /**
  * The whole page as the unsaved `form` would publish it, beside Settings: a 2x document scaled to
- * half so the narrow column shows the desktop layout. Waits for the statuses like any preview.
+ * half so the narrow column shows the desktop layout, scrolling inside its frame. Waits for the
+ * statuses like any preview.
  */
 export const settingsPagePreview = (h: H, model: Model, page: V2StatusPage, form: SettingsForm): Html =>
 	vstack(h, { gap: "1.5", as: "section", attributes: [h.AriaLabel("Page preview")] }, [
@@ -186,7 +187,8 @@ export const settingsPagePreview = (h: H, model: Model, page: V2StatusPage, form
 						),
 					],
 					[
-						fragmentFrame(h, {
+						// Not inert like a fragment: visitors scroll the page, so the preview scrolls too.
+						previewFrame(h, {
 							title: `${draftName(page, form)} with these settings`,
 							document: previewDocument({
 								snapshot: draftSnapshot(model, page, form, "live"),

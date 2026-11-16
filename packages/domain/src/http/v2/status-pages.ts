@@ -1014,7 +1014,8 @@ export const V2StatusPageIncidentCreateParams = Schema.Struct({
 	),
 	status: Schema.optionalKey(
 		StatusPageIncidentStatus.annotate({
-			description: "Defaults to `investigating` for an incident and `scheduled` for maintenance.",
+			description:
+				"Defaults to `investigating` for an incident. Open maintenance takes its status from its window: `scheduled` before `scheduled_start`, `in_progress` after; a window that already ended is refused unless `completed`.",
 		}),
 	),
 	body: UpdateBody.annotate({ description: "The first public update." }),

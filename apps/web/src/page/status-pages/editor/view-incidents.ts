@@ -28,7 +28,7 @@ import { relativeTime } from "../../kit/relative-time"
 import { sectionHeading } from "../../kit/section-heading"
 import { IMPACT_LABEL, IMPACT_TONE, isOpenIncident } from "../shared/derive"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canPostIncidents, type Model } from "./model"
 import { componentsOf, incidentsOf } from "./reads"
 import { type TimeInputs, windowLine } from "./view-panel"
 
@@ -215,7 +215,12 @@ const endsBadge = (h: H, incident: V2StatusPageIncident): Html =>
  * When in-progress maintenance ends: a countdown, or once a manual one runs past its window, how
  * far over it is with the button that completes it.
  */
-const endsCell = (h: H, incident: V2StatusPageIncident, time: TimeInputs): ReadonlyArray<Html | string> => {
+const endsCell = (
+	h: H,
+	model: Model,
+	incident: V2StatusPageIncident,
+	time: TimeInputs,
+): ReadonlyArray<Html | string> => {
 	if (incident.scheduled_end === null) return ["\u2013"]
 	const overMs = time.nowMs - toEpochMs(incident.scheduled_end)
 	if (overMs < 0)
@@ -228,19 +233,27 @@ const endsCell = (h: H, incident: V2StatusPageIncident, time: TimeInputs): Reado
 			typography(h, { tone: "warning", className: "whitespace-nowrap" }, [
 				`${durationLabel(overMs)} over`,
 			]),
-			button(
-				h,
-				{
-					variant: "outline",
-					size: "xs",
-					attributes: [
-						h.OnClick(Message.ClickedPostUpdate({ incidentId: incident.id, isResolving: true }), {
-							propagation: "Stop",
-						}),
-					],
-				},
-				["Complete"],
-			),
+			...(canPostIncidents(model)
+				? [
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "xs",
+								attributes: [
+									h.OnClick(
+										Message.ClickedPostUpdate({
+											incidentId: incident.id,
+											isResolving: true,
+										}),
+										{ propagation: "Stop" },
+									),
+								],
+							},
+							["Complete"],
+						),
+					]
+				: []),
 		]),
 	]
 }
@@ -281,7 +294,7 @@ export const maintenanceTab = (h: H, model: Model, time: TimeInputs): Html => {
 							{
 								label: "Ends",
 								className: "w-48 px-3",
-								cell: (incident) => endsCell(h, incident, time),
+								cell: (incident) => endsCell(h, model, incident, time),
 							},
 						],
 					}),

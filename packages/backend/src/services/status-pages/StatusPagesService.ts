@@ -424,10 +424,28 @@ const validateWindow = (
 		: Effect.fail(invalid("Maintenance must end after it starts"))
 }
 
+/**
+ * Open maintenance takes its status from its window as it is created, whatever the caller sent:
+ * scheduled before its start, in progress once it has come. One that already ended is refused, so
+ * the sweep never announces a start and an end at once; completed maintenance is a record of the
+ * past and keeps its status.
+ */
+const openMaintenanceStatus = (
+	kind: StatusPageIncidentKind,
+	status: StatusPageIncidentStatus,
+	scheduledStart: number | null,
+	scheduledEnd: number | null,
+	now: number,
+) => {
+	if (kind !== "maintenance" || status === "completed" || scheduledStart === null || scheduledEnd === null)
+		return Effect.succeed(status)
+	if (scheduledEnd <= now)
+		return Effect.fail(invalid("Maintenance must end in the future; record finished work as completed"))
+	return Effect.succeed<StatusPageIncidentStatus>(scheduledStart > now ? "scheduled" : "in_progress")
+}
+
 const validateAutoComplete = (kind: StatusPageIncidentKind) =>
-	kind === "maintenance"
-		? Effect.void
-		: Effect.fail(invalid("Only maintenance completes on its own"))
+	kind === "maintenance" ? Effect.void : Effect.fail(invalid("Only maintenance completes on its own"))
 
 /**
  * A window edit on maintenance: completed keeps its window, an open one must end in the future, a
@@ -1006,7 +1024,9 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 										...(patch.autoIncidents === undefined
 											? undefined
 											: { autoIncidents: patch.autoIncidents }),
-										...(patch.visibility === undefined ? undefined : { visibility: patch.visibility }),
+										...(patch.visibility === undefined
+											? undefined
+											: { visibility: patch.visibility }),
 										updatedAt: now,
 									})
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(pageId)]),
@@ -1446,10 +1466,18 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				const scheduledEnd = input.scheduledEnd ?? null
 				yield* validateStatusForKind(input.kind, input.status)
 				yield* validateWindow(input.kind, scheduledStart, scheduledEnd)
-				if (input.autoComplete !== undefined) yield* validateAutoComplete(input.kind)
+				// `true` is every incident's default, so only turning it off is maintenance-only.
+				if (input.autoComplete === false) yield* validateAutoComplete(input.kind)
 				const componentIds = [...new Set(input.componentIds)]
 				const now = yield* Clock.currentTimeMillis
 				if (input.startedAt !== undefined) yield* validateStartedAt(input.kind, input.startedAt, now)
+				const status = yield* openMaintenanceStatus(
+					input.kind,
+					input.status,
+					scheduledStart,
+					scheduledEnd,
+					now,
+				)
 				const id = StatusPageIncidentId.make(randomUUID())
 				const createdBy = input.createdBy ?? null
 				yield* dbExecute((db) =>
@@ -1465,14 +1493,14 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 									kind: input.kind,
 									title,
 									impact: input.impact,
-									status: input.status,
+									status,
 									published: input.published ?? true,
 									alertIncidentId: null,
 									scheduledStart,
 									scheduledEnd,
 									autoComplete: input.autoComplete ?? true,
 									startedAt: input.startedAt ?? scheduledStart ?? now,
-									resolvedAt: isClosedStatus(input.status) ? now : null,
+									resolvedAt: isClosedStatus(status) ? now : null,
 									createdBy,
 									createdAt: now,
 									updatedAt: now,
@@ -1483,7 +1511,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 									id: StatusPageIncidentUpdateId.make(randomUUID()),
 									orgId,
 									incidentId: id,
-									status: input.status,
+									status,
 									body,
 									source: input.source,
 									createdBy,
@@ -1593,7 +1621,12 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 								if (scheduledStart !== null && scheduledEnd !== null)
 									yield* validateWindowEdit(current, scheduledStart, scheduledEnd, now)
 							}
-							if (patch.autoComplete !== undefined) yield* validateAutoComplete(current.kind)
+							// An unchanged value (an incident read and written back) is no change.
+							if (
+								patch.autoComplete !== undefined &&
+								patch.autoComplete !== current.autoComplete
+							)
+								yield* validateAutoComplete(current.kind)
 							const startedAt = patch.startedAt ?? current.startedAt
 							if (patch.startedAt !== undefined)
 								yield* validateStartedAt(current.kind, patch.startedAt, now)

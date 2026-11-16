@@ -539,16 +539,16 @@ describe("v2 status pages", () => {
 				kind: "maintenance",
 				title: "Database upgrade",
 				body: "We are upgrading the primary database.",
-				scheduled_start: "2026-08-01T02:00:00.000Z",
-				scheduled_end: "2026-08-01T03:00:00.000Z",
+				scheduled_start: "2099-08-01T02:00:00.000Z",
+				scheduled_end: "2099-08-01T03:00:00.000Z",
 			})
 			expect(scheduled.body).toMatchObject({
 				kind: "maintenance",
 				status: "scheduled",
 				impact: "none",
-				scheduled_start: "2026-08-01T02:00:00.000Z",
-				scheduled_end: "2026-08-01T03:00:00.000Z",
-				started_at: "2026-08-01T02:00:00.000Z",
+				scheduled_start: "2099-08-01T02:00:00.000Z",
+				scheduled_end: "2099-08-01T03:00:00.000Z",
+				started_at: "2099-08-01T02:00:00.000Z",
 			})
 			const noWindow = await harness.request("POST", "/v2/status_page_incidents", token, {
 				page_id: page.body.id,

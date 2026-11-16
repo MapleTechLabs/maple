@@ -162,8 +162,8 @@ describe("status page tools", () => {
 			page: "acme-status",
 			title: "Database upgrade",
 			message: "The API may be read-only for a few minutes.",
-			starts_at: "2026-08-01 02:00:00",
-			ends_at: "2026-08-01T03:00:00Z",
+			starts_at: "2099-08-01 02:00:00",
+			ends_at: "2099-08-01T03:00:00Z",
 			components: ["API"],
 		})
 		const output = decode(StatusPageIncidentMutationOutput, result)
@@ -172,8 +172,8 @@ describe("status page tools", () => {
 			kind: "maintenance",
 			status: "scheduled",
 			published: false,
-			scheduledStart: "2026-08-01T02:00:00.000Z",
-			scheduledEnd: "2026-08-01T03:00:00.000Z",
+			scheduledStart: "2099-08-01T02:00:00.000Z",
+			scheduledEnd: "2099-08-01T03:00:00.000Z",
 		})
 		expect(markdown(result)).toContain("draft")
 

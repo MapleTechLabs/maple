@@ -513,7 +513,8 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 				whenJson(context, "Supersede"),
 			),
 		GotPageMenuMessage: ({ message: child }) => updatePageMenu(model, child),
-		CompletedFocus: () => ({ model }),
+		// A reveal happens once: a later remount of the same row (back from another section) stays put.
+		CompletedFocus: () => ({ model: { ...model, revealComponentId: null } }),
 		// Preview and selection
 		ElapsedPreviewDebounce: ({ generation }) =>
 			generation !== model.previewGeneration

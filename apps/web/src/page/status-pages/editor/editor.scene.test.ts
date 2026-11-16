@@ -440,7 +440,13 @@ describe("components under Settings > Monitors", () => {
 		)
 		expect(landed.model.panel).toEqual({ _tag: "Component", componentId: componentId(3) })
 		// Opened from the page, its row scrolls into view as it mounts.
-		scene({ update: pageUpdate, view }, given(landed.model), revealed)
+		// Once: the reveal's completion drops it, so a later remount of the row stays put.
+		scene(
+			{ update: pageUpdate, view },
+			given(landed.model),
+			revealed,
+			Mount.expectEnded(RevealOpenComponent),
+		)
 		const incidentPicked = pageUpdate(
 			model,
 			Message.ReceivedPreviewSelection({ kind: "incident", id: incidentId(1) }),
@@ -1805,6 +1811,25 @@ describe("header", () => {
 			{ update: pageUpdate, view },
 			given(reopened),
 			inside(role("table", { name: "Completed" }), expectView(text("Manually")).toExist()),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			inside(
+				role("table", { name: "In progress" }),
+				expectView(role("button", { name: "Complete" })).toExist(),
+			),
+		)
+		// Without the post grant the overrun still shows, with nothing to press.
+		const withoutPost = { ...model, grants: [] }
+		scene(
+			{ update: pageUpdate, view },
+			given(withoutPost),
+			inside(
+				role("table", { name: "In progress" }),
+				expectView(text("2h over")).toExist(),
+				expectView(role("button", { name: "Complete" })).not.toExist(),
+			),
 		)
 		const completing = pageUpdate(
 			model,
