@@ -155,7 +155,13 @@ const isPrivateIPv6 = (host: string): boolean => {
  * keyed on the bare name never matched it. Strip every trailing dot before each name
  * comparison: the parser itself removes only one, so `127.0.0.1..` stays a name.
  */
-const canonicalHostname = (hostname: string): string => Str.replace(/\.+$/, "")(Str.toLowerCase(hostname))
+const canonicalHostname = (hostname: string): string => {
+	const lower = Str.toLowerCase(hostname)
+	// A scan from the end, not /\.+$/: that regex retries from every internal dot (quadratic).
+	let end = lower.length
+	while (end > 0 && lower[end - 1] === ".") end -= 1
+	return Str.slice(0, end)(lower)
+}
 
 const isPrivateHost = (hostname: string): boolean => {
 	const lower = canonicalHostname(hostname)

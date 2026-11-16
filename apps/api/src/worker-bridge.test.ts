@@ -435,10 +435,21 @@ describe("the api Worker through alchemy's bridge", () => {
 			const refused = yield* event("POST", "/v2/share/widget-data", Effect.die("not built"), tooLarge)
 			const small = yield* event("POST", "/v2/share/widget-data", ok, { "content-length": "512" })
 			const elsewhere = yield* event("POST", "/v2/dashboards", ok, tooLarge)
+			const chunked = yield* event("POST", "/v2/share/widget-data", Effect.die("not built"), {
+				"transfer-encoding": "chunked",
+			})
+			const read = yield* event("GET", "/v2/share/resolve", ok)
 			assert.strictEqual(refused.response.status, 413)
 			assert.strictEqual(refused.response.headers.get("access-control-allow-origin"), "*")
+			const body: unknown = JSON.parse(refused.body)
+			assert.nestedInclude(body, {
+				"error.code": "payload_too_large",
+				"error.type": "invalid_request_error",
+			})
+			assert.strictEqual(chunked.response.status, 413)
 			assert.strictEqual(small.response.status, 200)
 			assert.strictEqual(elsewhere.response.status, 200)
+			assert.strictEqual(read.response.status, 200)
 		}),
 	)
 

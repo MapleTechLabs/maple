@@ -594,6 +594,8 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 							// An incomplete scan never reconciled, so its findings are not current.
 							latest.value.error === null &&
 							!truncated &&
+							// Lockfiles past the record cap are not on the last scan, so it cannot match.
+							omitted === 0 &&
 							// Skipped lockfiles are on the last scan too, so they count toward "unchanged".
 							sameLockfiles(latest.value.lockfiles, [...selected, ...skipped])
 						) {
