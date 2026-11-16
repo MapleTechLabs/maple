@@ -112,19 +112,21 @@ export const scanClaimedDomains = (
 	domains: ReadonlyArray<string>,
 	maxPages: number = MAX_CONNECTION_PAGES,
 ): Effect.Effect<ReadonlyArray<string>, ClerkRequestError> => {
+	// The offset advances by what Clerk returned, never by the limit: a page may come back short.
 	const step = (
 		page: number,
+		offset: number,
 		claimed: ReadonlySet<string>,
 	): Effect.Effect<ReadonlySet<string>, ClerkRequestError> =>
-		fetchPage(page * CONNECTION_PAGE_SIZE).pipe(
+		fetchPage(offset).pipe(
 			Effect.flatMap((result) => {
 				const next = new Set(claimed)
 				Arr.forEach(result.data, (conn) => {
 					if (conn.id !== connectionId)
 						Arr.forEach(conn.domains, (d) => next.add(Str.toLowerCase(d)))
 				})
-				const seen = page * CONNECTION_PAGE_SIZE + result.data.length
-				if (seen >= result.totalCount) return Effect.succeed(next)
+				const read = offset + result.data.length
+				if (read >= result.totalCount) return Effect.succeed(next)
 				// An empty page short of the total, or the page budget spent: the scan is incomplete.
 				if (result.data.length === 0 || page + 1 >= maxPages) {
 					return Effect.fail(
@@ -136,10 +138,10 @@ export const scanClaimedDomains = (
 						}),
 					)
 				}
-				return step(page + 1, next)
+				return step(page + 1, read, next)
 			}),
 		)
-	return step(0, new Set()).pipe(Effect.map((claimed) => Arr.filter(domains, (d) => claimed.has(d))))
+	return step(0, 0, new Set()).pipe(Effect.map((claimed) => Arr.filter(domains, (d) => claimed.has(d))))
 }
 
 const RoleMappingList = Schema.Struct({ data: Schema.Array(RoleMappingJson) })

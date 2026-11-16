@@ -44,4 +44,40 @@ describe("scanClaimedDomains", () => {
 			assert.strictEqual(error._tag, "@maple/backend/services/auth/ClerkRequestError")
 		}),
 	)
+
+	it.effect("follows short pages by what Clerk returned, so no connection is skipped", () => {
+		const offsets: Array<number> = []
+		// 50 per page although the limit is 100; the partner connection is number 75.
+		const shortPages = (offset: number) => {
+			offsets.push(offset)
+			return Effect.succeed({
+				totalCount: 150,
+				data: Arr.map(Arr.range(offset, Math.min(offset + 50, 150) - 1), (i) => ({
+					id: `ent_${i}`,
+					domains: i === 75 ? ["partner.io"] : [`org${i}.example`],
+				})),
+			})
+		}
+		return Effect.gen(function* () {
+			const claimed = yield* scanClaimedDomains(shortPages, "ent_0", ["partner.io"])
+			assert.deepStrictEqual(claimed, ["partner.io"])
+			assert.deepStrictEqual(offsets, [0, 50, 100])
+		})
+	})
+
+	it.effect("fails closed when a short page is followed by an empty one before the total", () =>
+		Effect.gen(function* () {
+			const pages = (offset: number) =>
+				Effect.succeed(
+					offset === 0
+						? {
+								totalCount: 100,
+								data: Arr.map(Arr.range(0, 49), (i) => ({ id: `ent_${i}`, domains: [] })),
+							}
+						: { totalCount: 100, data: [] },
+				)
+			const error = yield* scanClaimedDomains(pages, "ent_0", ["partner.io"]).pipe(Effect.flip)
+			assert.strictEqual(error._tag, "@maple/backend/services/auth/ClerkRequestError")
+		}),
+	)
 })
