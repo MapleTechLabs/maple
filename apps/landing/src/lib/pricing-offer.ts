@@ -13,7 +13,7 @@
  * `label: m.pricing_logs()` freezes whichever locale rendered first and every
  * other locale inherits it.
  */
-import { PRICING_CARD_FEATURE_IDS, isPricingCardFeature } from "@maple/domain/billing"
+import { PRICING_CARD_FEATURE_IDS, isAdvertisedPricingFeature } from "@maple/domain/billing"
 import { Autumn } from "autumn-js"
 import * as m from "../paraglide/messages.js"
 import { Array as Arr } from "effect"
@@ -82,7 +82,6 @@ const dataFeatureLabels = (): Record<string, string> => ({
 	logs: m.pricing_logs(),
 	traces: m.pricing_traces(),
 	metrics: m.pricing_metrics(),
-	profiles: m.pricing_profiles(),
 	browser_sessions: m.nav_browser_sessions(),
 	product_events: m.pricing_product_events(),
 	ai_credits: m.pricing_ai_usage(),
@@ -143,7 +142,7 @@ export async function getOffer(): Promise<Offer> {
 				hasTrial: !!product.freeTrial,
 				trialDuration: product.freeTrial?.durationLength,
 				allotments: Arr.map(
-					Arr.filter(product.items, (item) => isPricingCardFeature(item.featureId)),
+					Arr.filter(product.items, (item) => isAdvertisedPricingFeature(item.featureId)),
 					(item) => {
 						const featureId = item.featureId
 						const unit = unitFor(featureId)
@@ -192,14 +191,6 @@ export async function getOffer(): Promise<Offer> {
 				unit: "gb",
 				included: 100,
 				rate: 0.3,
-				rateUnits: 1,
-			},
-			{
-				featureId: "profiles",
-				label: labels.profiles,
-				unit: "gb",
-				included: 10,
-				rate: 0.6,
 				rateUnits: 1,
 			},
 			{

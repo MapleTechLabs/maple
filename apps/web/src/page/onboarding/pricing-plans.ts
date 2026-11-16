@@ -1,5 +1,5 @@
 import type { CatalogPlan, CatalogPlanItem } from "@maple/domain/http"
-import { isPricingCardFeature } from "@maple/domain/billing"
+import { isAdvertisedPricingFeature } from "@maple/domain/billing"
 import { formatCurrency } from "@maple/domain/format"
 import { formatCount, formatQuoteUnits, quoteUnits } from "../kit/billing/usage"
 import type { IconName } from "@maple/views/ui/icon"
@@ -93,7 +93,6 @@ export const ENTERPRISE_DATA_FEATURES: ReadonlyArray<FeatureRow> = [
 	{ featureId: "logs", label: "Logs", value: "Custom", detail: null },
 	{ featureId: "traces", label: "Traces", value: "Custom", detail: null },
 	{ featureId: "metrics", label: "Metrics", value: "Custom", detail: null },
-	{ featureId: "profiles", label: "Profiles", value: "Custom", detail: null },
 	{ featureId: "browser_sessions", label: "Browser sessions", value: "Custom", detail: null },
 	{ featureId: "product_events", label: "Product events", value: "Custom", detail: null },
 ]
@@ -137,7 +136,7 @@ export type FeatureRow = Readonly<{ featureId: string; label: string; value: str
 
 export const getFeatureRows = (plan: CatalogPlan): ReadonlyArray<FeatureRow> =>
 	Arr.map(
-		Arr.filter(plan.items, (item) => isPricingCardFeature(item.featureId)),
+		Arr.filter(plan.items, (item) => isAdvertisedPricingFeature(item.featureId)),
 		(item) => {
 			const detail = formatDetail(item)
 			return {

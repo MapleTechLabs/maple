@@ -27,11 +27,12 @@ describe("getFeatureRows", () => {
 		expect(Arr.map(getFeatureRows(plan), (row) => row.featureId)).toEqual(["logs", "ai_credits"])
 	})
 
-	it("lists profiles as a GB feature with its own label", () => {
+	it("leaves profiles off the plan cards until they are advertised", () => {
 		const plan = new CatalogPlan({
 			id: "startup",
 			name: "Startup",
 			items: [
+				new CatalogPlanItem({ featureId: "logs", included: 100 }),
 				new CatalogPlanItem({
 					featureId: "profiles",
 					included: 10,
@@ -40,9 +41,7 @@ describe("getFeatureRows", () => {
 			],
 		})
 
-		expect(getFeatureRows(plan)).toEqual([
-			{ featureId: "profiles", label: "Profiles", value: "10 GB", detail: "then $0.60 per GB" },
-		])
+		expect(Arr.map(getFeatureRows(plan), (row) => row.featureId)).toEqual(["logs"])
 	})
 
 	it("quotes an overage rate in whole cents and leaves sub-cent rates alone", () => {
