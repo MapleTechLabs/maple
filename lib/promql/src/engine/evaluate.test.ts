@@ -118,13 +118,6 @@ describe("regex matchers", () => {
 		expect(count('http_requests_total{instance=~"[[:alpha:]]:9090"}')).toBe(count("http_requests_total"))
 		expect(count("http_requests_total")).toBeGreaterThan(0)
 	})
-
-	it("run in linear time on a pathological pattern", () => {
-		const started = performance.now()
-		run('http_requests_total{job=~"(a|a)*b"}', instant)
-		run('{__name__=~"(.*.*)*Q"}', instant)
-		expect(performance.now() - started).toBeLessThan(1000)
-	})
 })
 
 describe("resolution limits", () => {

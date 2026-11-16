@@ -148,6 +148,12 @@ describe("parse errors", () => {
 		expect(errorOf("clamp(x, 1)")).toMatch(/argument/)
 	})
 
+	it("rejects a repeated offset, including after offset 0s", () => {
+		expect(errorOf("x offset 0s offset 5m")).toMatch(/offset may not be set multiple times/)
+		expect(errorOf("x[5m] offset 1m offset 5m")).toMatch(/offset may not be set multiple times/)
+		expect(errorOf("x offset 0s @ 100")).toBe("parsed")
+	})
+
 	it("rejects selectors that match everything and bad regexes", () => {
 		expect(errorOf('{a=""}')).toMatch(/non-empty matcher/)
 		expect(errorOf('{a=~".*"}')).toMatch(/non-empty matcher/)
