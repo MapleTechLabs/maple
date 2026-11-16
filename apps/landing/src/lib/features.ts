@@ -557,17 +557,37 @@ export const features: Feature[] = [
 
 	{
 		slug: "status-pages",
-		// No engraving yet: the prompt is in public/art/features/status-pages-prompt.md.
+		illustration: "/art/features/status-pages.webp",
 		navLabel: m.nav_status_pages,
 		navDesc: m.nav_desc_status_pages,
 		seoTitle: m.feat_status_seo_title,
 		seoDescription: m.feat_status_seo_desc,
 		heroTitle: m.feat_status_hero_title,
 		heroLede: m.feat_status_hero_lede,
-		// No panel: there is no status page capture yet. TODO: a real capture of a published
-		// page (components, bars, an open incident) as the panel plate. Until then the live
-		// page carries the surface, and the feeds section shows what it publishes for code.
-		panel: null,
+		// Plates come from the real public-page renderer: `bun run screenshots:status-pages`.
+		panel: {
+			route: "status.acme.com",
+			constant: "theme maple",
+			plate: {
+				src: "/screenshots/status-page-panel.webp",
+				width: 2640,
+				height: 2520,
+				alt: "A published status page mid-incident: a major outage banner, the open incident, upcoming maintenance and 90-day uptime bars",
+			},
+			facts: [
+				{
+					key: "status",
+					value: "operational · degraded · partial_outage · major_outage · maintenance",
+				},
+				{ key: "incident", value: "investigating → identified → monitoring → resolved" },
+				{ key: "maintenance", value: "scheduled → in_progress → completed" },
+				{ key: "history", value: "90 days per component" },
+				{ key: "theme", value: "default · maple · mono · midnight · paper" },
+				{ key: "feeds", value: "rss · atom · status.json · badge.svg" },
+			],
+			title: m.feat_status_panel_title,
+			lede: m.feat_status_panel_lede,
+		},
 		artifact: {
 			id: "status-page",
 			title: m.feat_status_artifact_title,
@@ -575,7 +595,20 @@ export const features: Feature[] = [
 			wide: true,
 		},
 		extraSections: ["status-page-feeds"],
-		gallery: [],
+		gallery: [
+			{
+				id: "gallery-status-page-uptime",
+				route: "status.acme.com",
+				title: "90 days per component",
+				alt: "System status with a 90-day bar per component, the days with failed checks or downtime marked, above the incident calendar",
+			},
+			{
+				id: "gallery-status-page-paper",
+				route: "status.acme.com",
+				title: "The same page in the paper theme",
+				alt: "The status page in the light paper theme with a serif font, showing the major outage banner and the open incident",
+			},
+		],
 		capTitle: m.feat_status_cap_title,
 		capabilities: [
 			{ op: "CNAME", title: m.feat_status_cap_1_title, body: m.feat_status_cap_1_body },
