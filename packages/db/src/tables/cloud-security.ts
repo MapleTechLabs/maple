@@ -40,6 +40,8 @@ export const CloudSecurityFindings = PG.table("cloud_security_findings", {
 		lastSeenAt: PG.column(PG.timestamptzMillis, { name: "last_seen_at" }),
 		/** The service's own updated time; the poller's cursor moves along it. */
 		providerUpdatedAt: PG.column(PG.timestamptzMillis, { name: "provider_updated_at" }),
+		/** When Maple first saw it closed (archived or resolved); null while open. Pruning counts from it. */
+		closedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "closed_at" }),
 		/** The service's finding, trimmed; null when it was too large to keep. */
 		detail: PG.nullable(PG.jsonb(Schema.Record(Schema.String, Schema.Unknown))),
 		syncedAt: PG.column(PG.timestamptzMillis, { name: "synced_at" }),

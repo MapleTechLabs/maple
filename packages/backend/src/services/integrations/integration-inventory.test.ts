@@ -654,6 +654,12 @@ describe("aws", () => {
 				),
 			)
 		expect(auditLogOf([])?.status).toBe("healthy")
+		// Asked for but not granted yet: no feed, so the Sources panel reads off.
+		const ungranted = providerOf(
+			{ awsConnections: [{ ...security, grantedModules: [] }] },
+			"aws",
+		)?.resources
+		expect(Arr.some(ungranted ?? [], (resource) => resource.kind === "audit log")).toBe(false)
 		const failing = auditLogOf([
 			{
 				accountId: security.accountId,

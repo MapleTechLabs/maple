@@ -137,13 +137,14 @@ describe("CloudSecurityStore", () => {
 				checkedAt: 2,
 			})
 			const [state] = yield* store.serviceStates(orgId, connection.id)
+			assert.strictEqual(state?.windowMs, null)
 			assert.strictEqual(state?.state, "failing")
 			assert.strictEqual(state?.cursorAt, 4_000)
 			assert.strictEqual(state?.lastError, "throttled")
 		}).pipe(Effect.provide(world.layer))
 	})
 
-	it.effect("prunes only the org's closed findings older than the cutoff", () => {
+	it.effect("prunes only the org's findings closed before the cutoff", () => {
 		const world = makeWorld()
 		return Effect.gen(function* () {
 			const store = yield* CloudSecurityStore
@@ -155,27 +156,35 @@ describe("CloudSecurityStore", () => {
 				finding(mine, orgId, { findingId: "new-closed", providerUpdatedAt: 50 }),
 				finding(theirs, otherOrgId, { findingId: "their-closed", providerUpdatedAt: 50 }),
 			]
-			yield* store.upsertFindings(open, 1)
+			yield* store.upsertFindings(
+				[...open, finding(mine, orgId, { findingId: "old-active", providerUpdatedAt: 50 })],
+				1,
+			)
+			// Closed at sync 100 (theirs too) and at sync 900: pruning counts from when Maple saw it close.
 			yield* store.upsertFindings(
 				[
 					finding(mine, orgId, {
 						findingId: "old-closed",
 						status: "resolved",
-						providerUpdatedAt: 100,
+						providerUpdatedAt: 60,
 					}),
-					finding(mine, orgId, {
-						findingId: "new-closed",
-						status: "archived",
-						providerUpdatedAt: 900,
-					}),
-					finding(mine, orgId, { findingId: "old-active", providerUpdatedAt: 100 }),
 					finding(theirs, otherOrgId, {
 						findingId: "their-closed",
 						status: "resolved",
-						providerUpdatedAt: 100,
+						providerUpdatedAt: 60,
 					}),
 				],
-				1,
+				100,
+			)
+			yield* store.upsertFindings(
+				[
+					finding(mine, orgId, {
+						findingId: "new-closed",
+						status: "archived",
+						providerUpdatedAt: 60,
+					}),
+				],
+				900,
 			)
 			assert.strictEqual(yield* store.pruneClosed(orgId, 500), 1)
 			const left = yield* Effect.promise(() =>
