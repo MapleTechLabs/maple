@@ -338,4 +338,13 @@ describe("sso tab", () => {
 			expectView(text("ACS URL")).not.toExist(),
 		)
 	})
+
+	test("an org that left Enterprise can still open a domain's menu to remove it", () => {
+		scene(
+			{ update, view },
+			given(loaded(doc({ entitled: false, domains: [verifiedDomain] }))),
+			expectView(role("button", { name: "Actions for acme.com" })).toExist(),
+			expectView(role("button", { name: "Add domain" })).not.toExist(),
+		)
+	})
 })

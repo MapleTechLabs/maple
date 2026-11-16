@@ -207,14 +207,15 @@ const domainRow = (h: H, model: Model, domain: SsoDomainDocument, isEditable: bo
 			tableCell(h, [domainStatus(h, domain)], "w-28"),
 			tableCell(
 				h,
-				isEditable
+				// Removing stays open after the plan lapses, as the API allows; verifying needs the plan.
+				canExit(model)
 					? [
 							rowActionsMenu(h, {
 								slotId: menuId,
 								model: model.domainMenus[menuId] ?? Menu.init(menuId),
 								label: `Actions for ${domain.domain}`,
 								entries: [
-									...(domain.status === "verified"
+									...(domain.status === "verified" || !isEditable
 										? []
 										: [
 												{

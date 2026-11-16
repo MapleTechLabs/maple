@@ -77,23 +77,33 @@ const toMemberOption = (member: {
 			]
 }
 
-/** Every member: the first page says how many, the rest load four at a time. */
+type MembershipPage = {
+	readonly total_count: number
+	readonly data: ReadonlyArray<Parameters<typeof toMemberOption>[0]>
+}
+
+/** Every member: the first page says how many, the rest load four at a time, capped at 50 pages. */
+export const fetchAllMembers = <E>(
+	page: (initialPage: number) => Effect.Effect<MembershipPage, E>,
+): Effect.Effect<ReadonlyArray<MemberOption>, E> =>
+	Effect.gen(function* () {
+		const first = yield* page(1)
+		const pageCount = Math.min(Math.ceil(first.total_count / MEMBERS_PAGE_SIZE), MAX_MEMBER_PAGES)
+		const rest = yield* Effect.forEach(pageCount > 1 ? Arr.range(2, pageCount) : [], page, {
+			concurrency: 4,
+		})
+		return Arr.flatMap([first, ...rest], (result) => Arr.flatMap(result.data, toMemberOption))
+	})
+
 const FetchSsoMembers = Command.define("FetchSsoMembers", {
 	messages: [Message.CompletedFetchMembers],
 	execute: currentClerkOrganization.pipe(
 		Effect.flatMap((organization) =>
-			Effect.gen(function* () {
-				const page = (initialPage: number) =>
-					clerkTry("Couldn't load members", () =>
-						organization.getMemberships({ initialPage, pageSize: MEMBERS_PAGE_SIZE }),
-					)
-				const first = yield* page(1)
-				const pageCount = Math.min(Math.ceil(first.total_count / MEMBERS_PAGE_SIZE), MAX_MEMBER_PAGES)
-				const rest = yield* Effect.forEach(pageCount > 1 ? Arr.range(2, pageCount) : [], page, {
-					concurrency: 4,
-				})
-				return Arr.flatMap([first, ...rest], (result) => Arr.flatMap(result.data, toMemberOption))
-			}),
+			fetchAllMembers((initialPage) =>
+				clerkTry("Couldn't load members", () =>
+					organization.getMemberships({ initialPage, pageSize: MEMBERS_PAGE_SIZE }),
+				),
+			),
 		),
 		settleTo((result) => Message.CompletedFetchMembers({ result })),
 	),
