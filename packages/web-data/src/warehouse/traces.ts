@@ -1,6 +1,7 @@
 import { Clock, Effect, Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { formatWarehouseDateTime, CH } from "@maple/query-engine"
 import {
+	MAX_TRACES_LIST_OFFSET,
 	QueryEngineExecuteRequest,
 	TracesFacetDimension,
 	type AttributeFilter,
@@ -63,7 +64,13 @@ const ListTracesInputSchema = Schema.Struct({
 	limit: Schema.optional(
 		Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(1000)),
 	),
-	offset: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+	// Bounded here so a deeper offset is a typed decode error, not a throw from the request constructor.
+	offset: Schema.optional(
+		Schema.Int.check(
+			Schema.isGreaterThanOrEqualTo(0),
+			Schema.isLessThanOrEqualTo(MAX_TRACES_LIST_OFFSET),
+		),
+	),
 	sortBy: Schema.optional(Schema.Literals(["timestamp", "durationMs"])),
 	sortDir: Schema.optional(Schema.Literals(["asc", "desc"])),
 	startTime: Schema.optional(WarehouseDateTimeString),

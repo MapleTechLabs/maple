@@ -1,5 +1,6 @@
 import { pickerStep } from "../../kit/page-time"
 import type { RequestMode } from "@maple/views/data/keyed"
+import { MAX_TRACES_LIST_OFFSET } from "@maple/domain/query-engine"
 import { Array as Arr, Option, Result } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
@@ -67,9 +68,14 @@ export const hiddenCount = (model: Model): number =>
 			first.hiddenCount + Arr.reduce(model.pagination.pages, 0, (sum, page) => sum + page.hiddenCount),
 	})
 
+/** The warehouse rows the pages so far consumed: the next page starts there. */
+const nextOffset = (pagination: Pagination): number => (pagination.pages.length + 1) * PAGE_SIZE
+
 /** More pages exist when the last warehouse page came back full before the noise filter. */
 export const hasNextPage = (model: Model): boolean => {
 	if (allRows(model).length >= MAX_RETAINED_TRACES || model.pagination.isStopped) return false
+	// Hidden noise traces keep the shown rows under the cap while the offset passes the API's.
+	if (nextOffset(model.pagination) > MAX_TRACES_LIST_OFFSET) return false
 	const first = AsyncData.getData(model.firstPage.data)
 	if (Option.isNone(first) || AsyncData.isFailure(model.firstPage.data)) return false
 	const last = Arr.last(model.pagination.pages)
@@ -144,8 +150,6 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 		commands,
 	}
 }
-
-const nextOffset = (pagination: Pagination): number => (pagination.pages.length + 1) * PAGE_SIZE
 
 /** Asks for the next page, one at a time; also the retry of a page that failed. */
 const fetchNext = (model: Model, context: PageContext): Return => {
