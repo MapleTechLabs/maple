@@ -151,7 +151,8 @@ export class CloudSecurityReadService extends Context.Service<
 			resources: ReadonlyArray<FindingResource>,
 		) {
 			const all: ReadonlyArray<CloudResourceCandidate> = Arr.flatMap(resources, cloudResourceCandidates)
-			const ids = Arr.dedupeWith(all, (a, b) => a.key === b.key && a.value === b.value)
+			// The query groups by attribute, scope and value: dedupe on all three, as its match tag names them.
+			const ids = Arr.dedupeWith(all, (a, b) => cloudResourceMatchTag(a) === cloudResourceMatchTag(b))
 			if (!Arr.isReadonlyArrayNonEmpty(ids)) {
 				return { matches: NO_MATCHES, matched: true }
 			}

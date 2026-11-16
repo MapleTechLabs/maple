@@ -241,6 +241,31 @@ describe("CloudSecurityReadService", () => {
 		}).pipe(Effect.provide(world.layer))
 	})
 
+	it.effect("asks for a function name once per account and region it is named in", () => {
+		const world = makeWorld(ENABLED_ORGANIZATION_FEATURE_FLAGS)
+		return Effect.gen(function* () {
+			const store = yield* CloudSecurityStore
+			const reads = yield* CloudSecurityReadService
+			const connection = yield* connect(["security"])
+			const lambda = { resourceType: "Lambda", resourceId: "checkout-fn" }
+			yield* store.upsertFindings(
+				[
+					finding(connection, { ...lambda, findingId: "f-east" }),
+					finding(connection, {
+						...lambda,
+						findingId: "f-west",
+						region: Schema.decodeSync(AwsRegion)("eu-west-1"),
+					}),
+				],
+				5,
+			)
+			yield* reads.listFindings(tenant, {})
+			const sql = world.reads[0] ?? ""
+			assert.include(sql, "['cloud.region'] IN ('', 'us-east-1')")
+			assert.include(sql, "['cloud.region'] IN ('', 'eu-west-1')")
+		}).pipe(Effect.provide(world.layer))
+	})
+
 	it.effect("still lists findings, flagged unmatched, when the warehouse fails", () => {
 		const world = makeWorld(ENABLED_ORGANIZATION_FEATURE_FLAGS, "fails")
 		return Effect.gen(function* () {
