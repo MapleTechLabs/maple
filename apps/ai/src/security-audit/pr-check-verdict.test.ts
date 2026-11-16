@@ -132,6 +132,9 @@ describe("prCheckVerdict", () => {
 		expect(verdictOf({ run: incomplete, findings: [confirmed("crit", "critical")] }).conclusion).toBe(
 			"failure",
 		)
+		const stopped = verdictOf({ run: incomplete, findings: [confirmed("crit", "critical")] })
+		expect(stopped.summary).toContain("already fail this check")
+		expect(stopped.summary).not.toContain("does not block")
 	})
 
 	it("annotates each finding at its sink, and none for a dismissed one", () => {

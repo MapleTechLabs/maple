@@ -135,6 +135,8 @@ const makeHarness = (
 		readonly files?: () => Effect.Effect<ReadonlyArray<PullRequestFile>>
 		/** Every Workflow create fails, as with the binding down or the instance limit reached. */
 		readonly createFails?: boolean
+		/** Every run's Workflow reads as existing, as when another delivery created it first. */
+		readonly workflowsExist?: boolean
 		readonly enabled?: boolean
 		readonly noCredits?: boolean
 		readonly prCheckEnabled?: boolean
@@ -168,7 +170,10 @@ const makeHarness = (
 				options.createFails === true || Arr.some(started, (p) => p.runId === payload.runId)
 					? Effect.fail(new WorkflowStartError({ message: "instance limit reached", cause: null }))
 					: Effect.sync(() => void started.push(payload)),
-			exists: (runId) => Effect.succeed(Arr.some(started, (p) => p.runId === runId)),
+			exists: (runId) =>
+				Effect.succeed(
+					options.workflowsExist === true || Arr.some(started, (p) => p.runId === runId),
+				),
 			cancel: (runId) => Effect.sync(() => void cancelled.push(runId)),
 		}),
 		Layer.succeed(SecurityPrCheck, {
@@ -710,5 +715,43 @@ describe("startPullRequestCheck flags read as off after a finished audit", () =>
 		expect(outcome.reason).toBe("already_checking")
 		expect(harness.published).toEqual([harness.started[0]?.runId])
 		expect(harness.notices).toEqual(["1111:running"])
+	})
+})
+
+describe("startPullRequestCheck owned runs without a Workflow", () => {
+	it("settles a cut-off run as failed when the rollout reads as off, so its check reports", async () => {
+		const harness = makeHarness({ enabled: false })
+		const result = await harness.run(
+			Effect.gen(function* () {
+				const target = yield* harness.seeded
+				const store = (yield* SecurityAuditStore).forOrg(orgId)
+				const orphan = yield* store.startRun({
+					targetId: target.id,
+					kind: "pull_request",
+					prNumber: 612,
+					sourceRef: HEAD,
+				})
+				const outcome = yield* startPullRequestCheck(orgId, job({ action: "synchronize" }))
+				return { orphan, outcome, runs: yield* harness.runsOf(target.id) }
+			}),
+		)
+
+		expect(result.outcome.outcome).toBe("reported")
+		expect(harness.published).toEqual([result.orphan.id])
+		expect(Arr.map(result.runs, (r) => r.status)).toEqual(["failed"])
+	})
+
+	it("keeps a fresh run whose create lost to another delivery that created its Workflow", async () => {
+		const harness = makeHarness({ createFails: true, workflowsExist: true })
+		const result = await harness.run(
+			Effect.gen(function* () {
+				const target = yield* harness.seeded
+				const outcome = yield* startPullRequestCheck(orgId, job())
+				return { outcome, runs: yield* harness.runsOf(target.id) }
+			}),
+		)
+
+		expect(result.outcome).toEqual({ outcome: "started" })
+		expect(Arr.map(result.runs, (r) => r.status)).toEqual(["in_progress"])
 	})
 })

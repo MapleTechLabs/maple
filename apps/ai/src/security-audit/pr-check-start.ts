@@ -78,8 +78,23 @@ export const startPullRequestCheck = Effect.fn("SecurityPrCheck.start")(function
 		const owner = latest[0]
 		if (owner?.sourceRef === headSha) {
 			// A finished one says its result again, in case an earlier write of it never landed.
-			if (owner.finishedAt !== null) yield* checks.publish(orgId, owner.id)
-			return skipped("already_checking")
+			if (owner.finishedAt !== null) {
+				yield* checks.publish(orgId, owner.id)
+				return skipped("already_checking")
+			}
+			// An unfinished one with no Workflow was cut off before it started: with the rollout off it
+			// is not started now, but settled, so its check reports instead of staying pending.
+			const workflow = yield* SecurityAuditWorkflowStarter
+			if (yield* workflow.exists(owner.id)) return skipped("already_checking")
+			yield* store.finishRun(owner.id, {
+				status: "failed",
+				error: "start_failed: security audits are off",
+			})
+			yield* checks.publish(orgId, owner.id)
+			return {
+				outcome: "reported",
+				reason: "security audits are not enabled for this organization",
+			} satisfies SecurityPrCheckOutcome
 		}
 		return yield* report("security audits are not enabled for this organization")
 	}
@@ -284,7 +299,11 @@ const checkPullRequest = Effect.fn("SecurityPrCheck.checkPullRequest")(function*
 					if (now.headSha !== headSha) return { _tag: "Stale" as const }
 					const raced = yield* supersede
 					if (raced._tag === "Stale") return { _tag: "Stale" as const }
-					if (raced._tag === "Answering") return { _tag: "Checking" as const }
+					if (raced._tag === "Answering") {
+						// The other delivery may have been cut off before creating its Workflow.
+						yield* resume(raced.run)
+						return { _tag: "Checking" as const }
+					}
 					const retriedRun = yield* start.pipe(
 						Effect.catchTag(
 							"@maple/backend/security-audit/RunInProgress",
@@ -323,10 +342,20 @@ const checkPullRequest = Effect.fn("SecurityPrCheck.checkPullRequest")(function*
 		})
 		.pipe(
 			Effect.as(true),
+			// Another delivery may have resumed the run and created its Workflow first: that one runs.
 			Effect.catch((error) =>
-				store
-					.finishRun(run.value.id, { status: "failed", error: `start_failed: ${error.message}` })
-					.pipe(Effect.as(false)),
+				workflow.exists(run.value.id).pipe(
+					Effect.flatMap((exists) =>
+						exists
+							? Effect.succeed(true)
+							: store
+									.finishRun(run.value.id, {
+										status: "failed",
+										error: `start_failed: ${error.message}`,
+									})
+									.pipe(Effect.as(false)),
+					),
+				),
 			),
 		)
 	if (!started) return yield* report("the audit could not start")
