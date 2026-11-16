@@ -16912,6 +16912,104 @@ SELECT
         LIMIT 25
         FORMAT JSON
 
+-- pipe:list_traces:ok-only:baseline  [8c2aa4dd]
+SELECT
+          traces.TraceId AS traceId,
+          traces.Timestamp AS startTime,
+          traces.Timestamp AS endTime,
+          intDiv(traces.Duration, 1000) AS durationMicros,
+          toUInt64(1) AS spanCount,
+          [traces.ServiceName] AS services,
+          traces.SpanId AS rootSpanId,
+          traces.SpanName AS rootSpanName,
+          traces.SpanKind AS rootSpanKind,
+          traces.StatusCode AS rootSpanStatusCode,
+          traces.StatusMessage AS rootSpanStatusMessage,
+          if(traces.SpanAttributes['http.method'] != '', traces.SpanAttributes['http.method'], traces.SpanAttributes['http.request.method']) AS rootHttpMethod,
+          traces.SpanAttributes['http.route'] AS rootHttpRoute,
+          if(traces.SpanAttributes['http.status_code'] != '', traces.SpanAttributes['http.status_code'], traces.SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
+          toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
+          coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) AS rootDeploymentEnv,
+          traces.ResourceAttributes['service.version'] AS rootServiceVersion,
+          if(traces.StatusCode = 'Error', 1, 0) AS hasError
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (traces.SpanKind IN ('Server', 'Consumer') OR traces.ParentSpanId = '')
+          AND traces.StatusCode != 'Error'
+          AND traces.Timestamp >= (SELECT min(ts) FROM (SELECT
+          traces.Timestamp AS ts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (traces.SpanKind IN ('Server', 'Consumer') OR traces.ParentSpanId = '')
+          AND traces.StatusCode != 'Error'
+        ORDER BY ts DESC
+        LIMIT 100))
+        ORDER BY startTime DESC
+        LIMIT 100
+        FORMAT JSON
+
+-- pipe:list_traces:trace-id:baseline  [18275485]
+SELECT
+          traces.TraceId AS traceId,
+          traces.Timestamp AS startTime,
+          traces.Timestamp AS endTime,
+          intDiv(traces.Duration, 1000) AS durationMicros,
+          toUInt64(1) AS spanCount,
+          [traces.ServiceName] AS services,
+          traces.SpanId AS rootSpanId,
+          traces.SpanName AS rootSpanName,
+          traces.SpanKind AS rootSpanKind,
+          traces.StatusCode AS rootSpanStatusCode,
+          traces.StatusMessage AS rootSpanStatusMessage,
+          if(traces.SpanAttributes['http.method'] != '', traces.SpanAttributes['http.method'], traces.SpanAttributes['http.request.method']) AS rootHttpMethod,
+          traces.SpanAttributes['http.route'] AS rootHttpRoute,
+          if(traces.SpanAttributes['http.status_code'] != '', traces.SpanAttributes['http.status_code'], traces.SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
+          toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
+          coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) AS rootDeploymentEnv,
+          traces.ResourceAttributes['service.version'] AS rootServiceVersion,
+          if(traces.StatusCode = 'Error', 1, 0) AS hasError
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (traces.SpanKind IN ('Server', 'Consumer') OR traces.ParentSpanId = '')
+          AND traces.TraceId = '0af7651916cd43dd8448eb211c80319c'
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId = '0af7651916cd43dd8448eb211c80319c'
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-03 14:15:00', 9))
+          AND traces.Timestamp >= (SELECT min(ts) FROM (SELECT
+          traces.Timestamp AS ts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (traces.SpanKind IN ('Server', 'Consumer') OR traces.ParentSpanId = '')
+          AND traces.TraceId = '0af7651916cd43dd8448eb211c80319c'
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId = '0af7651916cd43dd8448eb211c80319c'
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-03 14:15:00', 9))
+        ORDER BY ts DESC
+        LIMIT 100))
+        ORDER BY startTime DESC
+        LIMIT 100
+        FORMAT JSON
+
 -- pipe:logs_count:default:baseline  [fa7ccb7f]
 SELECT
           sum(counts.total) AS total
@@ -18790,6 +18888,38 @@ SELECT
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
+        ORDER BY ts DESC
+        LIMIT 20))
+        ORDER BY timestamp DESC
+        LIMIT 20
+        FORMAT JSON
+
+-- pipe:span_search:ok-only:baseline  [2113e854]
+SELECT
+          traces.TraceId AS traceId,
+          traces.SpanId AS spanId,
+          traces.SpanName AS spanName,
+          traces.ServiceName AS serviceName,
+          traces.Duration / 1000000 AS durationMs,
+          traces.StatusCode AS statusCode,
+          traces.StatusMessage AS statusMessage,
+          traces.SpanAttributes AS spanAttributes,
+          traces.ResourceAttributes AS resourceAttributes,
+          traces.Timestamp AS timestamp
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (traces.SpanName IN ('GET /v1/x', 'GET', 'http.server GET') AND (traces.SpanName = 'GET /v1/x' OR if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) = 'GET /v1/x'))
+          AND traces.StatusCode != 'Error'
+          AND traces.Timestamp >= (SELECT min(ts) FROM (SELECT
+          traces.Timestamp AS ts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (traces.SpanName IN ('GET /v1/x', 'GET', 'http.server GET') AND (traces.SpanName = 'GET /v1/x' OR if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) = 'GET /v1/x'))
+          AND traces.StatusCode != 'Error'
         ORDER BY ts DESC
         LIMIT 20))
         ORDER BY timestamp DESC
