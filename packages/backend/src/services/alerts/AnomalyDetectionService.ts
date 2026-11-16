@@ -876,10 +876,8 @@ const make: Effect.Effect<
 		)
 
 		const currentHourStartMs = Math.floor(nowMs / HOUR_MS) * HOUR_MS
-		const trailingMinutes = Math.max(1, Math.floor((nowMs - currentHourStartMs) / 60_000))
-		/** Per-minute rate matching evaluateGoldenSignals: sealed hours divide by 60, the in-progress hour by elapsed minutes. */
-		const perMinute = (count: number, bucketStartMs: number) =>
-			count / (bucketStartMs >= currentHourStartMs ? trailingMinutes : 60)
+		// The in-progress hour's point is the detector's own observation: the last 60 minutes.
+		const isLiveBucket = (hourMs: number) => hourMs >= currentHourStartMs
 
 		const queryWindow = {
 			orgId,
@@ -942,13 +940,16 @@ const make: Effect.Effect<
 				profile: "list",
 				context: "anomalyLogVolumeTimeseries",
 			})
+			const byHour = new Map(Arr.map(rows, (r) => [DateTime.toEpochMillis(r.hour), r]))
 			buckets = Arr.map(rows, (r) => {
 				const hourMs = DateTime.toEpochMillis(r.hour)
-				const errorLogCount = r.errorLogCount
+				const errorLogCount = isLiveBucket(hourMs)
+					? logWindowFromHours(byHour.get(hourMs - HOUR_MS), r, nowMs).errorLogCount
+					: r.errorLogCount
 				return new AnomalyTimeseriesBucket({
 					bucket: isoFromEpoch(hourMs),
-					value: perMinute(errorLogCount, hourMs),
-					sampleCount: errorLogCount,
+					value: errorLogCount / CURRENT_WINDOW_MINUTES,
+					sampleCount: Math.round(errorLogCount),
 				})
 			})
 		} else {
@@ -969,11 +970,13 @@ const make: Effect.Effect<
 					: signalType === "latency_p95"
 						? "milliseconds"
 						: "per_minute"
+			const live = Arr.some(rows, (r) => isLiveBucket(DateTime.toEpochMillis(r.hour)))
+				? (yield* fetchGoldenWindow(tenant, nowMs, currentHourStartMs)).get(seriesKey(row))
+				: undefined
 			buckets = Arr.map(rows, (r) => {
 				const hourMs = DateTime.toEpochMillis(r.hour)
-				const requestCount = r.requestCount
-				const errorCount = r.errorCount
-				const p95Ms = r.p95Ms
+				const observed = isLiveBucket(hourMs) && live !== undefined ? live : r
+				const { requestCount, errorCount, p95Ms } = observed
 				const value =
 					signalType === "error_rate"
 						? requestCount > 0
@@ -981,11 +984,11 @@ const make: Effect.Effect<
 							: 0
 						: signalType === "latency_p95"
 							? p95Ms
-							: perMinute(requestCount, hourMs)
+							: requestCount / CURRENT_WINDOW_MINUTES
 				return new AnomalyTimeseriesBucket({
 					bucket: isoFromEpoch(hourMs),
 					value,
-					sampleCount: requestCount,
+					sampleCount: Math.round(requestCount),
 				})
 			})
 		}

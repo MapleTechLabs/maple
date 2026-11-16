@@ -210,10 +210,11 @@ const lerp = (a: number, b: number, f: number) => a + (b - a) * f
 /** Share of the previous hour that the 60-minute window ending at `nowMs` still covers. */
 const previousHourShare = (nowMs: number) => 1 - (nowMs % HOUR_MS) / HOUR_MS
 
+/** Counts blend by the window's share of each hour; a p95 cannot be averaged, so it is the majority hour's. */
 export const blendGoldenHours = (a: GoldenHour, b: GoldenHour, f: number): GoldenHour => ({
 	requestCount: lerp(a.requestCount, b.requestCount, f),
 	errorCount: lerp(a.errorCount, b.errorCount, f),
-	p95Ms: lerp(a.p95Ms, b.p95Ms, f),
+	p95Ms: f < 0.5 ? a.p95Ms : b.p95Ms,
 })
 
 /** The last 60 minutes from hourly rows: the in-progress hour plus the covered share of the previous one. */
@@ -226,12 +227,12 @@ export const goldenWindowFromHours = (
 	return {
 		requestCount: (previous?.requestCount ?? 0) * share + (inProgress?.requestCount ?? 0),
 		errorCount: (previous?.errorCount ?? 0) * share + (inProgress?.errorCount ?? 0),
+		// The hour holding most of the window's requests; percentiles do not average.
 		p95Ms:
-			previous === undefined
+			previous === undefined ||
+			(inProgress !== undefined && inProgress.requestCount >= previous.requestCount * share)
 				? (inProgress?.p95Ms ?? 0)
-				: inProgress === undefined
-					? previous.p95Ms
-					: lerp(inProgress.p95Ms, previous.p95Ms, share),
+				: previous.p95Ms,
 	}
 }
 

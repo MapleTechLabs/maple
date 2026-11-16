@@ -498,6 +498,46 @@ describe("windowBaseline", () => {
 	})
 })
 
+describe("latency baseline across hours with different distributions", () => {
+	it("keeps each window's p95 a real hourly p95, so a 2x regression still breaches", () => {
+		// Every previous day: 100 ms at 08:00 and 09:00, 1,000 ms at 10:00 and 11:00. At 10:30 the
+		// windows' true p95s are about 100, 1,000 and 1,000 ms; averaging would invent 550 ms samples.
+		const now = Date.parse("2026-11-10T10:30:00Z")
+		const midnight = Date.parse("2026-11-10T00:00:00Z")
+		const hours = new Map<number, { requestCount: number; errorCount: number; p95Ms: number }>()
+		for (let day = 1; day <= 7; day++) {
+			for (const [h, p95Ms] of [
+				[8, 100],
+				[9, 100],
+				[10, 1000],
+				[11, 1000],
+			] as const) {
+				hours.set(midnight - day * 24 * 60 * 60 * 1000 + h * 60 * 60 * 1000, {
+					requestCount: 6000,
+					errorCount: 0,
+					p95Ms,
+				})
+			}
+		}
+		const { all, sameTime } = windowBaseline(hours, now, blendGoldenHours)
+		expect(new Set(Arr.map(all, (w) => w.p95Ms))).toEqual(new Set([100, 1000]))
+		const e = byKey(
+			evaluateGoldenSignals(
+				{
+					serviceName: "api",
+					deploymentEnv: "production",
+					current: { requestCount: 6000, errorCount: 0, p95Ms: 2000 },
+					baseline: all,
+					sameTime,
+				},
+				normalConfig,
+			),
+			"latency_p95",
+		)
+		expect(e.status).toBe("breached")
+	})
+})
+
 describe("goldenWindowFromHours", () => {
 	it("adds the share of the previous hour the 60-minute window still covers", () => {
 		const now = Date.parse("2026-11-10T10:15:00Z")
@@ -508,7 +548,8 @@ describe("goldenWindowFromHours", () => {
 		)
 		expect(w.requestCount).toBe(400)
 		expect(w.errorCount).toBe(35)
-		expect(w.p95Ms).toBe(250)
+		// 300 of the window's 400 requests fall in the previous hour: its p95 stands.
+		expect(w.p95Ms).toBe(200)
 	})
 })
 
