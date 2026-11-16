@@ -638,3 +638,55 @@ describe("startPullRequestCheck flags read as off mid-audit", () => {
 		expect(harness.notices).toEqual(["1111:running"])
 	})
 })
+
+describe("startPullRequestCheck fail-open reports", () => {
+	it("reports not blocking once the org's monthly audit spend limit is reached", async () => {
+		const harness = makeHarness()
+		const outcome = await harness.run(
+			Effect.gen(function* () {
+				const target = yield* harness.seeded
+				const store = (yield* SecurityAuditStore).forOrg(orgId)
+				yield* store.saveSettings({
+					monthlySpendLimitUsd: 1,
+					discoveryModel: "discovery/model",
+					validationModel: "validation/model",
+					updatedBy: asUserId("user_1"),
+				})
+				// A branch audit already spent past the limit this month.
+				const branch = yield* store.startRun({
+					targetId: target.id,
+					kind: "manual",
+					sourceRef: "main",
+				})
+				yield* store.reserveOrgInvocation(branch.id, "hunter-1", {
+					since: 0,
+					limitUsd: 1000,
+					sandboxFeeUsd: 5,
+				})
+				yield* store.finishRun(branch.id, { status: "complete" })
+				return yield* startPullRequestCheck(orgId, job())
+			}),
+		)
+
+		expect(outcome.outcome).toBe("reported")
+		expect(harness.notices).toEqual([
+			"1111:unchecked:the organization reached its monthly security audit spend limit",
+		])
+		expect(harness.started).toEqual([])
+	})
+
+	it("settles a fresh run whose Workflow cannot start and reports not blocking", async () => {
+		const harness = makeHarness({ createFails: true })
+		const result = await harness.run(
+			Effect.gen(function* () {
+				const target = yield* harness.seeded
+				const outcome = yield* startPullRequestCheck(orgId, job())
+				return { outcome, runs: yield* harness.runsOf(target.id) }
+			}),
+		)
+
+		expect(result.outcome.outcome).toBe("reported")
+		expect(harness.notices).toEqual(["1111:running", "1111:unchecked:the audit could not start"])
+		expect(Arr.map(result.runs, (r) => r.status)).toEqual(["failed"])
+	})
+})
