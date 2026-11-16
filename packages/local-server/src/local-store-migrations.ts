@@ -1228,13 +1228,17 @@ export const runLocalStoreMigration = async (
 						chdb: journal.sourceChdb,
 					}
 	if (!sourceIdentity)
-		throw new Error(
+		throw new MigrationResolutionError(
+			"unknown-schema",
 			`the source fingerprint ${markerState?.schema ?? journal?.sourceFingerprint ?? "<none>"} is not registered; use an explicit reset only if data loss is acceptable`,
 		)
 
 	const compatibility = checkStoreCompatible(dataDir)
 	if (!compatibility.compatible)
-		throw new Error(`source is not compatible with this chDB build: ${compatibility.found}`)
+		throw new MigrationResolutionError(
+			"chdb-mismatch",
+			`source is not compatible with this chDB build: ${compatibility.found}`,
+		)
 	const plan = journal === null ? planMigration(sourceIdentity) : null
 	if (options.dryRun) {
 		if (plan !== null) return plan
