@@ -322,12 +322,18 @@ export const makeFakeAwsSecurity = (fallback: HttpClient.HttpClient): FakeAwsSec
 				const account = asString(
 					asRecord(Option.getOrUndefined(Arr.head(asArray(criteria["awsAccountId"]))))?.["value"],
 				)
+				const arns = Arr.getSomes(
+					Arr.map(asArray(criteria["findingArn"]), (filter) =>
+						Option.fromUndefinedOr(asString(asRecord(filter)?.["value"])),
+					),
+				)
 				const matching = Arr.filter(
 					fake.inspector ?? [],
 					(finding) =>
 						(since === undefined || finding.updatedAtMs / 1000 >= since) &&
 						(until === undefined || finding.updatedAtMs / 1000 <= until) &&
-						(account === undefined || account === (finding.accountId ?? OWN_ACCOUNT)),
+						(account === undefined || account === (finding.accountId ?? OWN_ACCOUNT)) &&
+						(arns.length === 0 || arns.includes(finding.arn)),
 				)
 				const page = pageOf(matching, body["nextToken"], asNumber(body["maxResults"]) ?? 100)
 				return json(200, {

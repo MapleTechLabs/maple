@@ -156,7 +156,11 @@ const callAs =
 				}),
 				Effect.withSpan("AwsSecurity.call", {
 					kind: "client",
-					attributes: { "maple.aws.region": target.region, "maple.aws.operation": what },
+					attributes: {
+						"peer.service": "aws",
+						"maple.aws.region": target.region,
+						"maple.aws.operation": what,
+					},
 				}),
 			)
 		})
