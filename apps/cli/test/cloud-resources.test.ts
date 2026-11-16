@@ -87,12 +87,15 @@ describeWithChdb("cloudResourceServicesQuery on chDB", () => {
 		)
 		const rows = decode(db.query(normalizeSqlForClickHouseClient(compiled.sql)))
 		const sorted = Arr.sort(
-			Arr.map(rows, (entry) => [entry.resourceId, entry.service, entry.requests] as const),
-			Order.mapInput(Order.String, (entry: readonly [string, string, number]) => entry[1]),
+			Arr.map(
+				rows,
+				(entry) => [entry.attributeKey, entry.resourceId, entry.service, entry.requests] as const,
+			),
+			Order.mapInput(Order.String, (entry: readonly [string, string, string, number]) => entry[2]),
 		)
 		expect(sorted).toEqual([
-			["cart-fn", "cart", 4],
-			["i-0abc", "checkout-api", 3],
+			["faas.name", "cart-fn", "cart", 4],
+			["host.id", "i-0abc", "checkout-api", 3],
 		])
 	})
 })

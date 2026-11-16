@@ -64,9 +64,24 @@ const makeWorld = (flags: OrganizationFeatureFlags, warehouse: Warehouse = "answ
 					)
 				: query
 						.decodeRows([
-							{ resourceId: "i-0abc1234def567890", service: "checkout-api", requests: "1200" },
-							{ resourceId: "i-0abc1234def567890", service: "cart", requests: "40" },
-							{ resourceId: "checkout-fn", service: "payments", requests: "9" },
+							{
+								attributeKey: "host.id",
+								resourceId: "i-0abc1234def567890",
+								service: "checkout-api",
+								requests: "1200",
+							},
+							{
+								attributeKey: "host.id",
+								resourceId: "i-0abc1234def567890",
+								service: "cart",
+								requests: "40",
+							},
+							{
+								attributeKey: "faas.name",
+								resourceId: "checkout-fn",
+								service: "payments",
+								requests: "9",
+							},
 						])
 						.pipe(Effect.orDie)
 		},
@@ -126,21 +141,39 @@ const finding = (
 })
 
 describe("affectedServicesOf", () => {
-	it("sums a resource's services over its ARN and tail, busiest first", () => {
+	it("sums a resource's services over its ARN and name, busiest first, on the right attribute", () => {
 		const services = affectedServicesOf(
 			{
 				resourceId: "arn:aws:lambda:us-east-1:111111111111:function:checkout-fn",
 				resourceType: "AwsLambdaFunction",
 			},
 			[
-				{ resourceId: "checkout-fn", service: "payments", requests: 9 },
+				{ attributeKey: "faas.name", resourceId: "checkout-fn", service: "payments", requests: 9 },
 				{
+					attributeKey: "cloud.resource_id",
 					resourceId: "arn:aws:lambda:us-east-1:111111111111:function:checkout-fn",
 					service: "payments",
 					requests: 1,
 				},
-				{ resourceId: "checkout-fn", service: "checkout-api", requests: 50 },
-				{ resourceId: "i-0abc1234def567890", service: "cart", requests: 999 },
+				{
+					attributeKey: "faas.name",
+					resourceId: "checkout-fn",
+					service: "checkout-api",
+					requests: 50,
+				},
+				// The same name on another kind of resource: a cluster called checkout-fn.
+				{
+					attributeKey: "k8s.cluster.name",
+					resourceId: "checkout-fn",
+					service: "orders",
+					requests: 400,
+				},
+				{
+					attributeKey: "host.id",
+					resourceId: "i-0abc1234def567890",
+					service: "cart",
+					requests: 999,
+				},
 			],
 		)
 		assert.deepStrictEqual(services, [

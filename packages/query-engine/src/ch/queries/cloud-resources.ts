@@ -25,6 +25,8 @@ export interface CloudResourceServicesOpts {
 }
 
 export const cloudResourceServicesRowSchema = Schema.Struct({
+	/** The attribute the value matched on: a finding joins on it and the value together. */
+	attributeKey: Schema.String,
 	/** The candidate value that matched. */
 	resourceId: Schema.String,
 	service: Schema.String,
@@ -49,7 +51,15 @@ export function cloudResourceServicesQuery(opts: CloudResourceServicesOpts) {
 	return from(Datasources.traces)
 		.select(($) => {
 			const attribute = (key: string) => $.ResourceAttributes.get(key)
+			// Most specific attribute first: a span carrying two candidates counts once, for the first.
 			return {
+				attributeKey: CH.multiIf(
+					Arr.map(
+						byKey,
+						({ key, values }) => [CH.inList(attribute(key), values), CH.lit(key)] as const,
+					),
+					CH.lit(""),
+				),
 				resourceId: CH.multiIf(
 					Arr.map(
 						byKey,
@@ -75,7 +85,7 @@ export function cloudResourceServicesQuery(opts: CloudResourceServicesOpts) {
 			).eq(1),
 			CH.or(...Arr.map(byKey, ({ key, values }) => CH.inList($.ResourceAttributes.get(key), values))),
 		])
-		.groupBy("resourceId", "service")
+		.groupBy("attributeKey", "resourceId", "service")
 		.orderBy(["requests", "desc"])
 		.limit(CLOUD_RESOURCE_SERVICES_MAX_ROWS)
 		.format("JSON")

@@ -36,7 +36,7 @@ describe("cloudResourceServicesQuery", () => {
 
 	it("groups by the matched id and service, busiest first", () => {
 		const sql = compiled()
-		expect(sql).toContain("GROUP BY resourceId, service")
+		expect(sql).toContain("GROUP BY attributeKey, resourceId, service")
 		expect(sql).toContain("ORDER BY requests DESC")
 	})
 })

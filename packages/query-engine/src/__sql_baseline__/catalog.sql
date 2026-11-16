@@ -878,8 +878,9 @@ SELECT
           AND ci_runs.Result != 'skip'
         FORMAT JSON
 
--- builder:cloud-resources:cloudResourceServicesQuery:default  [085d21be]
+-- builder:cloud-resources:cloudResourceServicesQuery:default  [914933e2]
 SELECT
+          multiIf(traces.ResourceAttributes['host.id'] IN ('i-0abc123'), 'host.id', traces.ResourceAttributes['cloud.resource_id'] IN ('arn:aws:lambda:us-east-1:123456789012:function:checkout-fn'), 'cloud.resource_id', traces.ResourceAttributes['faas.name'] IN ('checkout-fn'), 'faas.name', '') AS attributeKey,
           multiIf(traces.ResourceAttributes['host.id'] IN ('i-0abc123'), traces.ResourceAttributes['host.id'], traces.ResourceAttributes['cloud.resource_id'] IN ('arn:aws:lambda:us-east-1:123456789012:function:checkout-fn'), traces.ResourceAttributes['cloud.resource_id'], traces.ResourceAttributes['faas.name'] IN ('checkout-fn'), traces.ResourceAttributes['faas.name'], '') AS resourceId,
           traces.ServiceName AS service,
           toUInt64(sum(traces.SampleRate)) AS requests
@@ -890,7 +891,7 @@ SELECT
           AND traces.IsEntryPoint = 1
           AND hasAny(mapValues(traces.ResourceAttributes), ['i-0abc123', 'checkout-fn', 'arn:aws:lambda:us-east-1:123456789012:function:checkout-fn']) = 1
           AND (traces.ResourceAttributes['host.id'] IN ('i-0abc123') OR traces.ResourceAttributes['cloud.resource_id'] IN ('arn:aws:lambda:us-east-1:123456789012:function:checkout-fn') OR traces.ResourceAttributes['faas.name'] IN ('checkout-fn'))
-        GROUP BY resourceId, service
+        GROUP BY attributeKey, resourceId, service
         ORDER BY requests DESC
         LIMIT 1000
         FORMAT JSON
