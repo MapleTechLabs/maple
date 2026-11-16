@@ -24,8 +24,15 @@ function scannerWhere($: ScannerAccessor) {
 	]
 }
 
-/** The service answered with a success: whatever was probed for was likely served. */
-const answered = ($: ScannerAccessor) => $.HttpStatus.gte(200).and($.HttpStatus.lt(300))
+/**
+ * A success for a probe in the path: whatever was probed for was likely served. `Path` holds no
+ * query, so a token found only in the query (`/?page=/etc/passwd`) fails the second test: routes
+ * ignore unknown parameters, so their 2xx says nothing.
+ */
+const answered = ($: ScannerAccessor) =>
+	$.HttpStatus.gte(200)
+		.and($.HttpStatus.lt(300))
+		.and(CH.positionCaseInsensitive($.Path, $.Signature).gt(0))
 
 export interface ScannerSignaturesOutput {
 	/** A `PROBE_SIGNATURES` token, `''` for a named scanner on an ordinary path. */

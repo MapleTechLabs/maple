@@ -72,6 +72,15 @@ const SPANS: ReadonlyArray<SeedSpan> = [
 		status: "404",
 		client: "203.0.113.7",
 	},
+	// A probe only in the query, answered by a route that ignores it: probe traffic, not an answer.
+	{
+		traceId: "q2",
+		service: "edge",
+		path: "/",
+		query: "page=/etc/passwd",
+		status: "200",
+		resource: { "process.runtime.name": "workerd" },
+	},
 	// A named scanner on an ordinary path.
 	{ traceId: "s1", path: "/", status: "200", client: "192.0.2.9", userAgent: "Mozilla/5.0 zgrab/0.x" },
 	// The same address with a browser user agent: the source row keeps the scanner's own.
@@ -232,6 +241,7 @@ describe.skipIf(!clickhouseE2eEnabled)("security telemetry materialization", () 
 				["p4", "/.env", "", "/api/.ENV.production", 200, "203.0.113.7"],
 				["p5", "/wp-login.php", "", "/wp-login.php", 200, "198.51.100.2"],
 				["q1", "../", "", "/index.php", 404, "203.0.113.7"],
+				["q2", "/etc/passwd", "", "/", 200, ""],
 				["s1", "", "ZGrab", "/", 200, "192.0.2.9"],
 				["s2", "/.git/", "", "/.git/HEAD", 404, "192.0.2.9"],
 				["s3", "", "Nuclei", "/", 200, "192.0.2.9"],
@@ -302,6 +312,7 @@ describe.skipIf(!clickhouseE2eEnabled)("security telemetry materialization", () 
 			"/wp-login.php": [2, 1, 1],
 			"/server-status": [1, 0, 1],
 			"../": [3, 0, 2],
+			"/etc/passwd": [1, 0, 0],
 			"": [5, 5, 3],
 		})
 		const sources = await read(CH.scannerSourcesQuery())
@@ -358,7 +369,7 @@ describe.skipIf(!clickhouseE2eEnabled)("security telemetry materialization", () 
 			[
 				["api", "nodejs", "18.20.8", "", 20],
 				["billing", "cpython", "3.12.4", "", 1],
-				["edge", "workerd", "", "", 1],
+				["edge", "workerd", "", "", 2],
 				["worker", "nodejs", "24.3.0", "bun", 1],
 			],
 		)

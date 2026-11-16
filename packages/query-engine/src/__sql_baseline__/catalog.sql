@@ -6195,7 +6195,7 @@ SELECT
         LIMIT 1000
         FORMAT JSON
 
--- builder:security-telemetry:scannerExposedQuery:default  [d1c58739]
+-- builder:security-telemetry:scannerExposedQuery:default  [03f87486]
 SELECT
           scanner_requests.ServiceName AS service,
           scanner_requests.Host AS host,
@@ -6210,18 +6210,18 @@ SELECT
           AND scanner_requests.Timestamp >= '2026-01-01 10:30:00'
           AND scanner_requests.Timestamp <= '2026-01-03 14:15:00'
           AND scanner_requests.Signature IN ('/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', '/actuator/env', '/actuator/heapdump', '/actuator/configprops', '/actuator/gateway', '/server-status', '/server-info', 'phpinfo', '/info.php', '/_profiler', '/debug/pprof', '/telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci')
-          AND (scanner_requests.HttpStatus >= 200 AND scanner_requests.HttpStatus < 300)
+          AND ((scanner_requests.HttpStatus >= 200 AND scanner_requests.HttpStatus < 300) AND positionCaseInsensitive(scanner_requests.Path, scanner_requests.Signature) > 0)
         GROUP BY service, host, path, signature, httpStatus
         ORDER BY lastSeen DESC
         LIMIT 50
         FORMAT JSON
 
--- builder:security-telemetry:scannerSignaturesQuery:default  [60ddb44e]
+-- builder:security-telemetry:scannerSignaturesQuery:default  [0d5b791b]
 SELECT
           scanner_requests.Signature AS signature,
           scanner_requests.ServiceName AS service,
           uniq(scanner_requests.TraceId) AS requests,
-          uniqIf(scanner_requests.TraceId, (scanner_requests.HttpStatus >= 200 AND scanner_requests.HttpStatus < 300)) AS answered,
+          uniqIf(scanner_requests.TraceId, ((scanner_requests.HttpStatus >= 200 AND scanner_requests.HttpStatus < 300) AND positionCaseInsensitive(scanner_requests.Path, scanner_requests.Signature) > 0)) AS answered,
           uniqIf(scanner_requests.ClientAddress, scanner_requests.ClientAddress != '') AS sources,
           max(scanner_requests.Timestamp) AS lastSeen
         FROM scanner_requests
@@ -6255,11 +6255,11 @@ SELECT
         LIMIT 20
         FORMAT JSON
 
--- builder:security-telemetry:scannerTimelineQuery:default  [6cddc38a]
+-- builder:security-telemetry:scannerTimelineQuery:default  [ed94980f]
 SELECT
           toStartOfInterval(scanner_requests.Timestamp, INTERVAL 3600 SECOND) AS bucket,
           uniq(scanner_requests.TraceId) AS requests,
-          uniqIf(scanner_requests.TraceId, (scanner_requests.HttpStatus >= 200 AND scanner_requests.HttpStatus < 300)) AS answered
+          uniqIf(scanner_requests.TraceId, ((scanner_requests.HttpStatus >= 200 AND scanner_requests.HttpStatus < 300) AND positionCaseInsensitive(scanner_requests.Path, scanner_requests.Signature) > 0)) AS answered
         FROM scanner_requests
         WHERE scanner_requests.OrgId = 'org_sql_catalog'
           AND scanner_requests.Timestamp >= '2026-01-01 10:30:00'
