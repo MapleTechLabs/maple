@@ -491,14 +491,14 @@ export const mapleAgentLabel = (agent: string): string | null => MAPLE_AGENT_LAB
 
 export const auditToolCallerLabel = (surface: string | null, agent: string | null): string => {
 	if (surface === null || surface === "mcp") return "MCP tool"
-	if (surface === "bot") return "Maple chat bot"
+	if (surface === "bot") return "Maple bot"
 	return (agent !== null ? mapleAgentLabel(agent) : null) ?? "Maple agent"
 }
 
 const SURFACE_LABELS = new Map<string, string>([
 	["mcp", "MCP client"],
 	["chat", "Maple agent"],
-	["bot", "Maple chat bot"],
+	["bot", "Maple bot"],
 	["workflow", "Maple agent"],
 	["rpc", "Maple internal"],
 ])

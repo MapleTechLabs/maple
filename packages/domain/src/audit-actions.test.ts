@@ -43,7 +43,7 @@ describe("names for Maple's own agents and codes", () => {
 		expect(auditToolCallerLabel("chat", "investigate")).toBe("Maple investigation")
 		expect(auditToolCallerLabel("chat", null)).toBe("Maple agent")
 		expect(auditToolCallerLabel("chat", "toString")).toBe("Maple agent")
-		expect(auditToolCallerLabel("bot", null)).toBe("Maple chat bot")
+		expect(auditToolCallerLabel("bot", null)).toBe("Maple bot")
 		expect(auditToolCallerLabel("mcp", null)).toBe("MCP tool")
 	})
 
