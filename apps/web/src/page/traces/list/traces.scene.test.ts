@@ -235,6 +235,15 @@ describe("traces list", () => {
 		expect(Arr.every(offsets, (offset) => offset <= MAX_TRACES_LIST_OFFSET)).toBe(true)
 		expect(allRows(model)).toHaveLength(10 + offsets.length * 10)
 		expect(nextOffsetOf(pageUpdate(model, windowOver(0, allRows(model).length)).commands)).toBeNull()
+		// The footer says the list was cut short, not that these are all the traces.
+		const shown = allRows(model).length
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			Mount.resolve(VirtualizeTraces, windowOver(0, shown)),
+			Mount.resolve(MountPeekRows, Message.ClickedPeekRow({ index: 999 })),
+			expectView(text(`Showing first ${shown} traces, narrow the filters to see more`)).toExist(),
+		)
 	})
 
 	test("a next page answers only its own request: filter A, B, then A again appends page 2 once", () => {
