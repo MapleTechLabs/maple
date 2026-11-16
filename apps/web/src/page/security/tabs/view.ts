@@ -2,6 +2,7 @@ import { Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
 import type { PageViewInputs } from "../../contract"
 import { addTargetView } from "../kit/add-target-view"
+import { prCheckSettingsView } from "../kit/pr-check-settings-view"
 import { spendSettingsView } from "../kit/spend-settings-view"
 import { securityLayout } from "../kit/layout"
 import { gateState } from "../kit/parts"
@@ -30,6 +31,13 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			view: spendSettingsView,
 			viewInputs: {},
 			toParentMessage: (message) => Message.GotSpendSettingsMessage({ message }),
+		}),
+		h.submodel({
+			slotId: "security-pr-check-settings-form",
+			model: model.prCheckSettings,
+			view: prCheckSettingsView,
+			viewInputs: {},
+			toParentMessage: (message) => Message.GotPrCheckSettingsMessage({ message }),
 		}),
 	]
 	switch (model.tab) {

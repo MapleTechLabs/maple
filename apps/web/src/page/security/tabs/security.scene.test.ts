@@ -22,7 +22,16 @@ import {
 	String as Str,
 } from "effect"
 import { TestClock } from "effect/testing"
-import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	displayValue,
+	expect as expectView,
+	given,
+	Mount,
+	role,
+	scene,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import {
@@ -39,8 +48,10 @@ import { AppRoute, hrefOf } from "../../../route"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
 import * as Select from "@maple/views/ui/select"
+import * as Switch from "@maple/views/ui/switch"
 import type { PageContext } from "../../contract"
 import * as AddTarget from "../kit/add-target"
+import * as PrCheckSettings from "../kit/pr-check-settings"
 import * as SpendSettings from "../kit/spend-settings"
 import { toCreateFailure } from "../kit/api"
 import { sectionsOf } from "../kit/findings"
@@ -1120,5 +1131,160 @@ describe("retrying failed targets", () => {
 			}),
 		).model
 		expect(answered.targets.data._tag).toBe("Success")
+	})
+})
+
+describe("pull request check", () => {
+	const admin = () =>
+		pageUpdate(loaded(), Message.CompletedReadGrants({ grants: Policy.allPermissions })).model
+	const send = (model: Model, message: PrCheckSettings.Message) =>
+		pageUpdate(model, Message.GotPrCheckSettingsMessage({ message }))
+	const pick = (model: Model, value: PrCheckSettings.Model["blockAt"]["value"]) =>
+		send(
+			model,
+			PrCheckSettings.Message.GotBlockAtMessage({
+				message: Select.Message.SelectedItem({ index: 0, value }),
+			}),
+		).model
+	const toggle = (model: Model) =>
+		send(model, PrCheckSettings.Message.GotEnabledMessage({ message: Switch.Message.ToggledSwitch() }))
+			.model
+	const saveArgs = (model: Model) =>
+		Option.getOrUndefined(
+			Arr.findFirst(
+				send(model, PrCheckSettings.Message.Submitted()).commands ?? [],
+				(command) => command.name === "SecurityApiUpdateTarget",
+			),
+		)?.args
+
+	test("a target row shows the check it gates pull requests on, and none while it is off", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(admin()),
+			expectView(text("PR check · high+")).toExist(),
+			expectView(text("PR check · report only")).not.toExist(),
+		)
+	})
+
+	test("an admin opens the dialog from the row, and saving sends the switch and the picked threshold", () => {
+		const opened = pageUpdate(
+			admin(),
+			Message.ClickedPrCheck({
+				targetId: Schema.decodeSync(SecurityAuditTargetId)(TARGET_IDS.dashboard),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(admin()),
+			expectView(role("button", { name: "Pull request check for acme/web-dashboard" })).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(toggle(opened)),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(role("switch", { name: "Check pull requests into main" })).toHaveAttr(
+				"aria-checked",
+				"true",
+			),
+			expectView(displayValue("Maple / security")).toExist(),
+			expectView(role("link", { name: "Open repository rules on GitHub" })).toHaveAttr(
+				"href",
+				"https://github.com/acme/web-dashboard/settings/rules",
+			),
+		)
+		expect([opened.prCheckSettings.dialog.isOpen, opened.prCheckSettings.target?.repository]).toEqual([
+			true,
+			"acme/web-dashboard",
+		])
+		expect(saveArgs(pick(toggle(opened), "critical"))).toMatchObject({
+			targetId: TARGET_IDS.dashboard,
+			payload: { prCheckEnabled: true, prCheckBlockAt: "critical" },
+		})
+	})
+
+	test("report only saves no threshold, and switching the check off keeps the threshold it had", () => {
+		const gateway = pageUpdate(
+			admin(),
+			Message.ClickedPrCheck({
+				targetId: Schema.decodeSync(SecurityAuditTargetId)(TARGET_IDS.gateway),
+			}),
+		).model
+		expect(saveArgs(pick(gateway, "report"))).toMatchObject({
+			payload: { prCheckEnabled: true, prCheckBlockAt: null },
+		})
+		expect(saveArgs(toggle(gateway))).toMatchObject({
+			payload: { prCheckEnabled: false, prCheckBlockAt: "high" },
+		})
+	})
+
+	test("a save closes the dialog, says so and reads the targets again; a refusal stays in the form", () => {
+		const opened = pageUpdate(
+			admin(),
+			Message.ClickedPrCheck({
+				targetId: Schema.decodeSync(SecurityAuditTargetId)(TARGET_IDS.dashboard),
+			}),
+		).model
+		const pending = send(toggle(opened), PrCheckSettings.Message.Submitted()).model
+		const target = targetsOf(NOW).targets[1]
+		if (target === undefined) throw new RangeError("no dashboard target")
+		const saved = send(
+			pending,
+			PrCheckSettings.Message.CompletedSave({
+				attempt: pending.prCheckSettings.attempt,
+				result: Result.succeed({ ...target, prCheckEnabled: true }),
+			}),
+		)
+		expect(saved.model.prCheckSettings.dialog.isOpen).toBe(false)
+		expect(saved.outMessage).toMatchObject({ title: "Pull request check on for acme/web-dashboard" })
+		expect(names(saved.commands)).toContain("SecurityApiListTargets")
+		const refused = send(
+			pending,
+			PrCheckSettings.Message.CompletedSave({
+				attempt: pending.prCheckSettings.attempt,
+				result: Result.fail(
+					toLoadFailure(new SecurityAuditForbiddenError({ message: "Admins only" })),
+				),
+			}),
+		).model
+		expect([refused.prCheckSettings.dialog.isOpen, refused.prCheckSettings.failure?.message]).toEqual([
+			true,
+			"Admins only",
+		])
+	})
+
+	test.each([
+		["member", MEMBER],
+		["engineer", Policy.grantsOf(["org:engineer"])],
+	])("a %s sees no pull request check control and cannot open it", (_role, grants) => {
+		const member = pageUpdate(loaded(), Message.CompletedReadGrants({ grants })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(member),
+			expectView(role("button", { name: "Pull request check for acme/api-gateway" })).not.toExist(),
+			expectView(text("PR check · high+")).toExist(),
+		)
+		const clicked = pageUpdate(
+			member,
+			Message.ClickedPrCheck({
+				targetId: Schema.decodeSync(SecurityAuditTargetId)(TARGET_IDS.gateway),
+			}),
+		).model
+		expect(clicked.prCheckSettings.dialog.isOpen).toBe(false)
+	})
+
+	test("a pull request run never stands in for the target's latest audit of its branch", () => {
+		expect(latestRunFor(loaded(), TARGET_IDS.gateway)?.id).toBe(RUN_IDS.gateway)
+	})
+
+	test("the runs list links a pull request run to its pull request on GitHub", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(AppRoute.SecurityCodeRuns({ search: {} }))),
+			expectView(role("link", { name: "Pull request #482" })).toHaveAttr(
+				"href",
+				"https://github.com/acme/api-gateway/pull/482",
+			),
+			expectView(text("c0de482")).toExist(),
+		)
 	})
 })

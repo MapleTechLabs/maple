@@ -26,7 +26,7 @@ import {
 	refLabel,
 	runToneOf,
 } from "../kit/format"
-import { placeholderRows, repositoryName, runStatusBadge } from "../kit/parts"
+import { placeholderRows, pullRequestLink, repositoryName, runStatusBadge } from "../kit/parts"
 import {
 	coverageOf,
 	latestDetailOf,
@@ -161,6 +161,7 @@ const runRow = (
 	const nowMs = model.nowMs
 	const href = hrefOf(AppRoute.SecurityRun({ runId: run.id }))
 	const repository = repositoryOf(targets, run.targetId)
+	const isKnownTarget = Arr.some(targets, (target) => target.id === run.targetId)
 	return tableRow(
 		h,
 		[
@@ -196,9 +197,15 @@ const runRow = (
 				[
 					vstack(h, { shrink: true, as: "span" }, [
 						repositoryName(h, repository, "text-sm"),
-						typography(h, { size: "xs", tone: "muted", mono: true, truncate: true }, [
-							refLabel(run.sourceRef),
-						]),
+						run.kind === "pull_request" && run.prNumber !== null && isKnownTarget
+							? typography(h, { size: "xs", tone: "muted", truncate: true }, [
+									pullRequestLink(h, repository, run.prNumber),
+									" · ",
+									typography(h, { mono: true }, [refLabel(run.sourceRef)]),
+								])
+							: typography(h, { size: "xs", tone: "muted", mono: true, truncate: true }, [
+									refLabel(run.sourceRef),
+								]),
 					]),
 				],
 				WIDE_COLUMN,

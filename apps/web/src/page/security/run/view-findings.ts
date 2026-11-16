@@ -14,8 +14,9 @@ import { bucketOf, countByBucket, sectionsOf, type SeverityBucket } from "../kit
 import { findingBadge, findingGroups, severityTabs, trailingText } from "../kit/findings-view"
 import { FINDING_STATUS_LABEL, gateOf, isLive, locationOf } from "../kit/format"
 import { gateState, placeholderRows } from "../kit/parts"
-import { countOf, openFindingOf } from "./derive"
-import { Message, type Model } from "./model"
+import { countOf, hasFindingPage, isTriageable, openFindingOf } from "./derive"
+import { canManage, Message, type Model } from "./model"
+import { triageForm } from "../kit/triage-form"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -156,7 +157,33 @@ export const findingsSection = (h: H, model: Model, run: SecurityAuditRunDetail)
 		},
 	})
 
-/** The open finding's record in a side sheet, with the way to its own page for triage. */
+/** A pull request run's triage of the open finding: dismissing or accepting it stops it failing the check. */
+const sheetTriage = (h: H, model: Model, finding: SecurityAuditFinding): ReadonlyArray<Html> =>
+	!isTriageable(model, finding)
+		? []
+		: [
+				vstack(h, { gap: "3", className: "border-b pb-4" }, [
+					typography(h, { size: "sm", weight: "medium" }, ["Triage"]),
+					canManage(model)
+						? triageForm(h, {
+								idPrefix: "security-run-triage",
+								status: finding.status,
+								triage: model.triage,
+								reason: model.reason,
+								isSubmitted: model.isTriageSubmitted,
+								isSaving: model.isSaving,
+								hint: "A dismissed or accepted finding stops failing this pull request's check, which is reported again.",
+								onTriage: (message) => Message.GotTriageMessage({ message }),
+								onReason: (message) => Message.GotReasonMessage({ message }),
+								onSubmit: Message.SubmittedTriage(),
+							})
+						: typography(h, { size: "xs", tone: "muted", as: "p" }, [
+								"Only org admins and engineers can change a finding's status.",
+							]),
+				]),
+			]
+
+/** The open finding's record in a side sheet, with triage for a pull request run or the way to its own page. */
 export const findingSheet = (h: H, model: Model): Html => {
 	const finding = openFindingOf(model)
 	const id = model.findingDialog.id
@@ -181,28 +208,35 @@ export const findingSheet = (h: H, model: Model): Html => {
 									]),
 								]),
 								DialogView.dialogTitle(h, "sheet", id, finding.record.title),
-								h.div(
-									[h.Class("pt-1")],
-									[
-										linkButton(
-											h,
-											{
-												size: "sm",
-												variant: "outline",
-												href: hrefOf(
-													AppRoute.SecurityFinding({
-														targetId: finding.targetId,
-														fingerprint: finding.fingerprint,
-													}),
-												),
-											},
-											["Open finding page", icon(h, "ArrowRightIcon")],
-										),
-									],
-								),
+								...(!hasFindingPage(model, finding)
+									? []
+									: [
+											h.div(
+												[h.Class("pt-1")],
+												[
+													linkButton(
+														h,
+														{
+															size: "sm",
+															variant: "outline",
+															href: hrefOf(
+																AppRoute.SecurityFinding({
+																	targetId: finding.targetId,
+																	fingerprint: finding.fingerprint,
+																}),
+															),
+														},
+														["Open finding page", icon(h, "ArrowRightIcon")],
+													),
+												],
+											),
+										]),
 							]),
 							DialogView.dialogPanel(h, "sheet", id, [
-								vstack(h, { gap: "4" }, findingBody(h, finding)),
+								vstack(h, { gap: "4" }, [
+									...sheetTriage(h, model, finding),
+									...findingBody(h, finding),
+								]),
 							]),
 						],
 		},

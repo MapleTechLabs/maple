@@ -207,6 +207,17 @@ export const openFindingOf = (model: Model): SecurityAuditFinding | null =>
 		Arr.findFirst(resultsOf(model), (finding) => finding.fingerprint === model.openFingerprint),
 	)
 
+/** A pull request run's confirmed findings are triaged here: it is how a person unblocks the check. */
+export const isTriageable = (model: Model, finding: SecurityAuditFinding): boolean =>
+	runOf(model)?.kind === "pull_request" && finding.verdict === "confirmed"
+
+/**
+ * The finding page is keyed by target and fingerprint, and has a row only once the target follows the
+ * finding: a pull request run's finding nobody triaged yet has none.
+ */
+export const hasFindingPage = (model: Model, finding: SecurityAuditFinding): boolean =>
+	runOf(model)?.kind !== "pull_request" || finding.status !== "open" || finding.statusChangedAt !== null
+
 /** How the run ran stays open while it is live; a finished run leads with what it found. */
 export const isDetailsOpenByDefault = (model: Model): boolean => {
 	const run = runOf(model)

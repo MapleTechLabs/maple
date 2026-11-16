@@ -1,5 +1,5 @@
 import { readClock } from "@maple/views/data/timing"
-import { SECURITY_AUDIT_EVENTS_DEFAULT_LIMIT } from "@maple/domain/http"
+import { SECURITY_AUDIT_EVENTS_DEFAULT_LIMIT, SecurityAuditFindingTriageStatus } from "@maple/domain/http"
 import { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
@@ -13,6 +13,7 @@ import {
 	listRunUnits,
 	listTargets,
 	startRun,
+	updateRunFindingStatus,
 } from "../kit/api"
 import { Message } from "./model"
 
@@ -91,4 +92,19 @@ export const ParseSecurityReports = Command.define("ParseSecurityReports", {
 	messages: [Message.CompletedParseReports],
 	execute: ({ texts }) =>
 		Effect.map(parseMarkdownTexts(texts), (parsed) => Message.CompletedParseReports({ parsed })),
+})
+
+/** Triage of one of a pull request run's findings; the server re-reports the pull request's check. */
+export const UpdateRunFindingStatus = Command.define("SecurityApiUpdateRunFindingStatus", {
+	args: {
+		runId: SecurityAuditRunId,
+		fingerprint: Schema.String,
+		status: SecurityAuditFindingTriageStatus,
+		reason: Schema.String,
+	},
+	messages: [Message.CompletedTriage],
+	execute: ({ runId, fingerprint, status, reason }) =>
+		Effect.map(updateRunFindingStatus(runId, fingerprint, status, reason), (result) =>
+			Message.CompletedTriage({ result }),
+		),
 })

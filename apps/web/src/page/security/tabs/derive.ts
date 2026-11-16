@@ -191,8 +191,9 @@ export const runsForTarget = (model: Model, targetId: string): ReadonlyArray<Sec
 export const allRuns = (model: Model): ReadonlyArray<SecurityAuditRun> =>
 	mergeRuns([runsOf(model), ...Arr.map(targetsOf(model), (target) => targetRunsOf(model, target.id) ?? [])])
 
+/** The target's newest audit of its branch: a pull request run checks a diff, not the branch. */
 export const latestRunFor = (model: Model, targetId: string): SecurityAuditRun | undefined =>
-	runsForTarget(model, targetId)[0]
+	Option.getOrUndefined(Arr.findFirst(runsForTarget(model, targetId), (run) => run.kind !== "pull_request"))
 
 /** The Runs tab's rows: one target's runs when narrowed to it, else every run held. */
 export const runsForTab = (

@@ -7,6 +7,7 @@ import {
 	SecurityAuditSpendLimitReachedError,
 	type SecurityAuditStartRunRequest,
 	type SecurityAuditUpdateSettingsRequest,
+	type SecurityAuditUpdateTargetRequest,
 } from "@maple/domain/http"
 import type { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
@@ -109,6 +110,13 @@ export const updateSettings = (payload: SecurityAuditUpdateSettingsRequest) =>
 		return yield* api.securityAudit.updateSettings({ payload })
 	}).pipe(Effect.mapError(toCreateFailure), Effect.result)
 
+/** A target's pull request check: on or off, and the severity that fails it. */
+export const updateTarget = (targetId: SecurityAuditTargetId, payload: SecurityAuditUpdateTargetRequest) =>
+	Effect.gen(function* () {
+		const api = yield* MapleAiClient
+		return yield* api.securityAudit.updateTarget({ params: { targetId }, payload })
+	}).pipe(Effect.mapError(toCreateFailure), Effect.result)
+
 const isSpendLimitReached = Schema.is(SecurityAuditSpendLimitReachedError)
 const isNotInPlan = Schema.is(SecurityAuditNotInPlanError)
 const isCreditsUsedUp = Schema.is(SecurityAuditCreditsUsedUpError)
@@ -159,6 +167,20 @@ export const updateFindingStatus = (
 	call((api) =>
 		api.securityAudit.updateFindingStatus({
 			params: { targetId, fingerprint },
+			payload: { status, reason },
+		}),
+	)
+
+/** Triage of a finding a pull request run reported; the server re-reports that pull request's check. */
+export const updateRunFindingStatus = (
+	runId: SecurityAuditRunId,
+	fingerprint: string,
+	status: SecurityAuditFindingTriageStatus,
+	reason: string,
+) =>
+	call((api) =>
+		api.securityAudit.updateRunFindingStatus({
+			params: { runId, fingerprint },
 			payload: { status, reason },
 		}),
 	)

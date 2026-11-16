@@ -137,6 +137,49 @@ export const targetParts = (target: SecurityAuditTarget): ReadonlyArray<string> 
 	...(target.scopePaths.length === 0 ? [] : [scopeLabel(target.scopePaths)]),
 ]
 
+/** The `Maple / security` check's threshold, each as the dialog's select names it. */
+export const PR_CHECK_BLOCK_LABEL = {
+	critical: "Critical",
+	high: "High and above",
+	medium: "Medium and above",
+	low: "Any confirmed finding",
+	report: "Never (report only)",
+} as const
+
+export type PrCheckBlockChoice = keyof typeof PR_CHECK_BLOCK_LABEL
+
+/** The select's value for a threshold; `informational` has no row of its own and reads as low. */
+export const prCheckChoiceOf = (blockAt: SecurityAuditSeverity | null): PrCheckBlockChoice =>
+	blockAt === null ? "report" : blockAt === "informational" ? "low" : blockAt
+
+export const prCheckBlockAtOf = (choice: PrCheckBlockChoice): SecurityAuditSeverity | null =>
+	choice === "report" ? null : choice
+
+const PR_CHECK_SHORT = {
+	critical: "critical",
+	high: "high+",
+	medium: "medium+",
+	low: "any finding",
+	report: "report only",
+} satisfies Record<PrCheckBlockChoice, string>
+
+/** A target's pull request check in a few words, for its row; null while it is off. */
+export const prCheckPart = (target: SecurityAuditTarget): string | null =>
+	target.prCheckEnabled ? `PR check · ${PR_CHECK_SHORT[prCheckChoiceOf(target.prCheckBlockAt)]}` : null
+
+/** What fails a pull request run's check, for the run page. */
+export const prCheckRuleOf = (target: SecurityAuditTarget): string =>
+	target.prCheckBlockAt === null
+		? "Reports only, never blocks"
+		: `Fails at ${Str.toLowerCase(PR_CHECK_BLOCK_LABEL[prCheckChoiceOf(target.prCheckBlockAt)])}`
+
+export const pullRequestHref = (repository: string, prNumber: number): string =>
+	`https://github.com/${repository}/pull/${prNumber}`
+
+/** GitHub's repository rules, where a branch rule makes the check required. */
+export const repositoryRulesHref = (repository: string): string =>
+	`https://github.com/${repository}/settings/rules`
+
 /** A model's name from the catalogue; an id it no longer lists reads as the id. */
 export const modelLabel = (id: string): string => securityAuditModelOption(id)?.label ?? id
 

@@ -19,13 +19,14 @@ import {
 	isLive,
 	modelLabel,
 	PROFILE_LABEL,
+	prCheckRuleOf,
 	RUN_KIND_LABEL,
 	runElapsed,
 	scopeLabel,
 	refLabel,
 } from "../kit/format"
 import { leadsLine, type StopAction, stopNoteOf } from "../kit/outcome"
-import { iconTile, metaItem, placeholder, runStatusBadge } from "../kit/parts"
+import { iconTile, metaItem, placeholder, pullRequestLink, runStatusBadge } from "../kit/parts"
 import { meter } from "@maple/views/ui/meter"
 import { countOf, gapCount, type Phase, type PhaseState, type Verdicts } from "./derive"
 import { canRunAudits, Message, type Model } from "./model"
@@ -76,9 +77,19 @@ export const runTitle = (
 				h,
 				{ align: "center", wrap: true, className: "gap-x-4 gap-y-1 text-sm text-muted-foreground" },
 				[
-					metaItem(h, "BranchForkIcon", [
-						`${target?.branch ?? "branch"} @ ${refLabel(run.sourceRef)}`,
-					]),
+					...(run.kind === "pull_request" && run.prNumber !== null && target !== null
+						? [
+								metaItem(h, "PullRequestIcon", [
+									pullRequestLink(h, target.repository, run.prNumber),
+									` into ${target.branch} @ ${refLabel(run.sourceRef)}`,
+								]),
+								metaItem(h, null, [prCheckRuleOf(target)]),
+							]
+						: [
+								metaItem(h, "BranchForkIcon", [
+									`${target?.branch ?? "branch"} @ ${refLabel(run.sourceRef)}`,
+								]),
+							]),
 					metaItem(h, run.scopePaths.length === 0 ? null : "FolderIcon", [
 						h.span([h.Title(Arr.join(run.scopePaths, "\n"))], [scopeLabel(run.scopePaths)]),
 					]),

@@ -13,7 +13,15 @@ import {
 } from "@maple/views/ui/empty"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { severityBadge } from "../../kit/issue-severity"
-import { type Gate, issueSeverityOf, runLabelOf, runToneOf, SECURITY_SEVERITY_LABEL } from "./format"
+import {
+	type Gate,
+	issueSeverityOf,
+	pullRequestHref,
+	runLabelOf,
+	runToneOf,
+	SECURITY_SEVERITY_LABEL,
+} from "./format"
+import { textLink } from "@maple/views/ui/text-link"
 import { String as Str, Option } from "effect"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
@@ -128,3 +136,21 @@ export const metaItem = <M>(
 		...(name === null ? [] : [icon(h, name, { size: 14, className: "text-muted-foreground" })]),
 		...children,
 	])
+
+/** "Pull request #42", opening the pull request on GitHub in a new tab. */
+export const pullRequestLink = <M>(
+	h: HtmlBuilder<M>,
+	repository: string,
+	prNumber: number,
+	className?: string,
+): Html =>
+	textLink(
+		h,
+		{
+			href: pullRequestHref(repository, prNumber),
+			tone: "inherit",
+			className,
+			attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
+		},
+		[`Pull request #${prNumber}`],
+	)

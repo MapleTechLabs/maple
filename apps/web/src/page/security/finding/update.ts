@@ -18,7 +18,8 @@ import {
 	ReadFindingGrants,
 	UpdateFindingStatus,
 } from "./command"
-import { currentTriageOf, findingOf, pickedTriageOf, reasonErrorOf } from "./derive"
+import { currentTriageOf, findingOf, pickedTriageOf } from "./derive"
+import { reasonErrorOf } from "../kit/triage-form"
 import { Message, type Model } from "./model"
 
 type Return = PageReturn<Model, Message>

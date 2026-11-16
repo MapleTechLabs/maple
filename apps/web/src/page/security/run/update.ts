@@ -1,15 +1,19 @@
 import * as Policy from "@maple/domain/policy"
 import type { SecurityAuditEvent } from "@maple/domain/http"
-import { Option, Result, Array as Arr } from "effect"
+import type { SecurityAuditFindingStatus } from "@maple/domain/security-audit"
+import { Option, Result, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
 import { isClerkAuthEnabled } from "../../../platform/auth-mode"
 import { AppRoute, hrefOf } from "../../../route"
 import * as Dialog from "@maple/views/ui/dialog"
+import * as Field from "@maple/views/ui/field"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { chainAll, slotStep } from "../../kit/keyed-step"
-import { isLive } from "../kit/format"
+import { FINDING_STATUS_LABEL, isLive } from "../kit/format"
+import { currentTriageOf, pickedTriageOf, reasonErrorOf } from "../kit/triage-form"
 import {
 	CancelRun,
 	EVENTS_PAGE,
@@ -23,8 +27,17 @@ import {
 	ReadRunGrants,
 	ParseSecurityReports,
 	StartAnotherRun,
+	UpdateRunFindingStatus,
 } from "./command"
-import { eventsOf, isDetailsOpenByDefault, mergeEvents, runOf } from "./derive"
+import {
+	eventsOf,
+	isDetailsOpenByDefault,
+	isTriageable,
+	mergeEvents,
+	openFindingOf,
+	resultsOf,
+	runOf,
+} from "./derive"
 import { Message, type Model } from "./model"
 
 type Return = PageReturn<Model, Message>
@@ -88,6 +101,24 @@ const readFindings = (model: Model, context: PageContext, mode: Keyed.ReadMode):
 		(key) => FetchRunFindings({ key, runId: model.runId }),
 	)
 
+/** The control starts on the finding's own status. */
+const initTriage = (status: SecurityAuditFindingStatus = "open"): ToggleGroup.Model =>
+	ToggleGroup.init({ label: "Status", values: [currentTriageOf(status)] })
+
+/** The control shows the finding's status until someone picks another; a second click keeps it. */
+const triageStep = (model: Model, message: ToggleGroup.Message): Return => {
+	const step = ToggleGroup.update(model.triage, message)
+	const finding = openFindingOf(model)
+	const current = finding === null ? "open" : pickedTriageOf(model.triage, finding.status)
+	const values = step.model.values.length === 0 ? [current] : step.model.values
+	return {
+		model: { ...model, triage: { ...step.model, values }, isTriageSubmitted: false },
+		commands: Command.mapMessages(step.commands ?? [], (inner) =>
+			Message.GotTriageMessage({ message: inner }),
+		),
+	}
+}
+
 export const init = (route: SecurityRunRoute, context: PageContext): Return => {
 	const model: Model = {
 		runId: route.runId,
@@ -108,6 +139,10 @@ export const init = (route: SecurityRunRoute, context: PageContext): Return => {
 		collapsed: ["rejected"],
 		openFingerprint: null,
 		findingDialog: Dialog.init("security-run-finding", "sheet"),
+		triage: initTriage(),
+		reason: Field.init(),
+		isTriageSubmitted: false,
+		isSaving: false,
 		isDetailsOpen: null,
 		unitFilter: "all",
 		eventFilter: "all",
@@ -308,14 +343,95 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					: [...model.collapsed, bucket],
 			},
 		}),
-		ClickedFinding: ({ fingerprint }) =>
-			dialogStep(
-				{ ...model, openFingerprint: fingerprint },
-				"findingDialog",
-				Dialog.open(model.findingDialog),
-			),
+		ClickedFinding: ({ fingerprint }) => {
+			// Another finding starts on its own status, not the last one's draft.
+			const isSame = fingerprint === model.openFingerprint || model.isSaving
+			const status = Option.match(
+				Arr.findFirst(resultsOf(model), (finding) => finding.fingerprint === fingerprint),
+				{ onNone: () => "open" as const, onSome: (finding) => finding.status },
+			)
+			const next: Model = isSame
+				? { ...model, openFingerprint: fingerprint }
+				: {
+						...model,
+						openFingerprint: fingerprint,
+						triage: initTriage(status),
+						reason: Field.init(),
+						isTriageSubmitted: false,
+					}
+			return dialogStep(next, "findingDialog", Dialog.open(model.findingDialog))
+		},
 		GotFindingDialogMessage: ({ message: inner }) =>
 			dialogStep(model, "findingDialog", Dialog.update(model.findingDialog, inner)),
+		GotTriageMessage: ({ message: inner }) => triageStep(model, inner),
+		GotReasonMessage: ({ message: inner }) => ({
+			model: { ...model, reason: Field.update(model.reason, inner).model },
+		}),
+		SubmittedTriage: () => {
+			const finding = openFindingOf(model)
+			if (finding === null || model.isSaving || !isTriageable(model, finding)) return { model }
+			const status = pickedTriageOf(model.triage, finding.status)
+			const reason = Str.trim(model.reason.value)
+			if (status === currentTriageOf(finding.status) && finding.status !== "fixed") return { model }
+			if (reasonErrorOf(reason) !== null) return { model: { ...model, isTriageSubmitted: true } }
+			return {
+				model: { ...model, isTriageSubmitted: true, isSaving: true },
+				commands: [
+					UpdateRunFindingStatus({
+						runId: model.runId,
+						fingerprint: finding.fingerprint,
+						status,
+						reason,
+					}),
+				],
+			}
+		},
+		CompletedTriage: ({ result }) =>
+			Result.match(result, {
+				onSuccess: (triage) => {
+					// The row shows the new status at once; the read that follows brings the rest.
+					const findings = {
+						...model.findings,
+						data: AsyncData.map(model.findings.data, (data) => ({
+							...data,
+							findings: Arr.map(data.findings, (finding) =>
+								finding.fingerprint === triage.fingerprint
+									? {
+											...finding,
+											status: triage.status,
+											statusReason: triage.statusReason,
+											statusChangedAt: triage.statusChangedAt,
+										}
+									: finding,
+							),
+						})),
+					}
+					const refreshed = readFindings(
+						{
+							...model,
+							findings,
+							isSaving: false,
+							isTriageSubmitted: false,
+							triage: initTriage(triage.status),
+							reason: Field.init(),
+						},
+						context,
+						"Supersede",
+					)
+					return {
+						...refreshed,
+						outMessage: toast(
+							"success",
+							`Marked ${Str.toLowerCase(FINDING_STATUS_LABEL[triage.status])}`,
+							"The pull request's check is reported again.",
+						),
+					}
+				},
+				onFailure: (failure) => ({
+					model: { ...model, isSaving: false },
+					outMessage: toast("error", failure.title, failure.message),
+				}),
+			}),
 		ToggledDetails: () => ({
 			model: { ...model, isDetailsOpen: !(model.isDetailsOpen ?? isDetailsOpenByDefault(model)) },
 		}),

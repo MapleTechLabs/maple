@@ -17,6 +17,7 @@ import { SeverityBucket } from "../kit/findings"
 import { SecurityFindingStatusTab, SecurityFindingsSearch, SecurityRunsSearch } from "../../../route/search"
 import * as Select from "@maple/views/ui/select"
 import * as AddTarget from "../kit/add-target"
+import * as PrCheckSettings from "../kit/pr-check-settings"
 import * as SpendSettings from "../kit/spend-settings"
 
 // `/security/code`, `/security/code/findings` and `/security/code/runs` as one page instance: the three tabs read
@@ -45,6 +46,8 @@ export const Model = Schema.Struct({
 	settings: KeyedSchema(SecurityAuditSettings, LoadFailure),
 	addTarget: AddTarget.Model,
 	spendSettings: SpendSettings.Model,
+	/** A target's pull request check, opened from its row. */
+	prCheckSettings: PrCheckSettings.Model,
 	startingTargetId: Schema.NullOr(SecurityAuditTargetId),
 	searchDraft: Schema.String,
 	/** Bumped per keystroke; only the last one's debounce commits the search to the URL. */
@@ -81,6 +84,8 @@ export const Message = defineMessageUnion({
 	GotAddTargetMessage: { message: AddTarget.Message },
 	ClickedSpendAndModels: {},
 	GotSpendSettingsMessage: { message: SpendSettings.Message },
+	ClickedPrCheck: { targetId: SecurityAuditTargetId },
+	GotPrCheckSettingsMessage: { message: PrCheckSettings.Message },
 	ClickedStartRun: { targetId: SecurityAuditTargetId },
 	CompletedStartRun: {
 		targetId: SecurityAuditTargetId,

@@ -4,17 +4,21 @@ import {
 	SecurityAuditPersistenceError,
 	SecurityAuditRunNotInProgressError,
 } from "@maple/domain/http"
-import { SecurityAuditRunId } from "@maple/domain/security-audit"
-import { Result, Schema, Array as Arr, String as Str } from "effect"
-import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
+import { Option, Result, Schema, Array as Arr, String as Str } from "effect"
+import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Field from "@maple/views/ui/field"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import {
 	DEEP_RUN_IDS,
 	eventsOf,
 	labTargetsOf,
 	RUN_IDS,
 	runDetailOf,
+	TARGET_IDS,
 	runFindingsOf,
 	unitsOf,
 } from "../../../lab/security-fixture"
@@ -524,5 +528,118 @@ describe("security run", () => {
 		const older = pageUpdate(loaded(RUN_IDS.dashboard), Message.ClickedLoadOlder())
 		expect(names(older.commands)).toEqual(["SecurityApiListOlderRunEvents"])
 		expect(older.model.isLoadingOlder).toBe(true)
+	})
+})
+
+describe("pull request run", () => {
+	const BLOCKING = "preview-ssrf-3a1f"
+	const ACCEPTED = "cors-credentials-5e20"
+	const opened = (fingerprint: string) =>
+		pageUpdate(loaded(RUN_IDS.gatewayPr), Message.ClickedFinding({ fingerprint })).model
+	const dismissed = (model: Model) =>
+		Arr.reduce(
+			[
+				Message.GotTriageMessage({
+					message: ToggleGroup.Message.ClickedItem({ value: "dismissed", index: 1 }),
+				}),
+				Message.GotReasonMessage({
+					message: Field.Message.ChangedValue({
+						value: "  Previews go through the egress proxy.  ",
+					}),
+				}),
+			],
+			model,
+			(next, message) => pageUpdate(next, message).model,
+		)
+
+	test("the header links the pull request on GitHub at its head commit and says what fails the check", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(RUN_IDS.gatewayPr)),
+			expectView(role("link", { name: "Pull request #482" })).toHaveAttr(
+				"href",
+				"https://github.com/acme/api-gateway/pull/482",
+			),
+			expectView(text(" into main @ c0de482")).toExist(),
+			expectView(text("Fails at high and above")).toExist(),
+			expectView(text("Accepted risk")).toExist(),
+		)
+	})
+
+	test("a confirmed finding opens with triage and, untriaged, no finding page to 404 on", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(opened(BLOCKING)),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(role("button", { name: "Dismiss" })).toExist(),
+			expectView(role("button", { name: "Update status" })).toExist(),
+			expectView(role("link", { name: /Open finding page/ })).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(opened(ACCEPTED)),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(role("link", { name: /Open finding page/ })).toExist(),
+		)
+	})
+
+	test("dismissing sends the run's finding triage, then the row reads dismissed", () => {
+		const submitted = pageUpdate(dismissed(opened(BLOCKING)), Message.SubmittedTriage())
+		expect(
+			Option.getOrUndefined(
+				Arr.findFirst(
+					submitted.commands ?? [],
+					(command) => command.name === "SecurityApiUpdateRunFindingStatus",
+				),
+			)?.args,
+		).toEqual({
+			runId: RUN_IDS.gatewayPr,
+			fingerprint: BLOCKING,
+			status: "dismissed",
+			reason: "Previews go through the egress proxy.",
+		})
+		const done = pageUpdate(
+			submitted.model,
+			Message.CompletedTriage({
+				result: Result.succeed({
+					targetId: Schema.decodeSync(SecurityAuditTargetId)(TARGET_IDS.gateway),
+					fingerprint: BLOCKING,
+					status: "dismissed",
+					statusReason: "Previews go through the egress proxy.",
+					statusChangedAt: NOW,
+				}),
+			}),
+		)
+		expect(names(done.commands)).toContain("SecurityApiListRunFindings")
+		expect(done.outMessage).toMatchObject({ title: "Marked dismissed" })
+		scene(
+			{ update: pageUpdate, view },
+			given(done.model),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			// The row under the sheet, and the sheet's control, both read the new status.
+			expectView(text("Dismissed")).toExist(),
+			expectView(role("button", { name: "Dismiss" })).toHaveAttr("aria-pressed", "true"),
+		)
+	})
+
+	test("a reason is required before anything is sent", () => {
+		const picked = pageUpdate(
+			opened(BLOCKING),
+			Message.GotTriageMessage({
+				message: ToggleGroup.Message.ClickedItem({ value: "accepted_risk", index: 2 }),
+			}),
+		).model
+		const submitted = pageUpdate(picked, Message.SubmittedTriage())
+		expect([names(submitted.commands), submitted.model.isTriageSubmitted]).toEqual([[], true])
+	})
+
+	test("a branch audit's findings are triaged on the finding page, not from the run", () => {
+		const model = dismissed(
+			pageUpdate(
+				loaded(RUN_IDS.billing),
+				Message.ClickedFinding({ fingerprint: "webhook-replay-77aa" }),
+			).model,
+		)
+		expect(names(pageUpdate(model, Message.SubmittedTriage()).commands)).toEqual([])
 	})
 })

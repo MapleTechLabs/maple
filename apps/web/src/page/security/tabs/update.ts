@@ -1,7 +1,7 @@
 import * as Policy from "@maple/domain/policy"
 import type { SecurityAuditRun } from "@maple/domain/http"
 import type { SecurityAuditTargetId } from "@maple/domain/security-audit"
-import { Result, Array as Arr, String as Str } from "effect"
+import { Option, Result, Array as Arr, String as Str } from "effect"
 import { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
@@ -13,6 +13,7 @@ import * as Select from "@maple/views/ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { chain, chainAll, slotStep } from "../../kit/keyed-step"
 import * as AddTarget from "../kit/add-target"
+import * as PrCheckSettings from "../kit/pr-check-settings"
 import * as SpendSettings from "../kit/spend-settings"
 import { isLive } from "../kit/format"
 import {
@@ -37,7 +38,7 @@ import {
 	settingsOf,
 	targetsOf,
 } from "./derive"
-import { Message, type Model, type Tab } from "./model"
+import { canRunAudits, Message, type Model, type Tab } from "./model"
 
 type Return = PageReturn<Model, Message>
 
@@ -219,6 +220,7 @@ export const init = (route: SecurityTabsRoute, context: PageContext): Return => 
 		settings: Keyed.idle(),
 		addTarget: AddTarget.init(),
 		spendSettings: SpendSettings.init(),
+		prCheckSettings: PrCheckSettings.init(),
 		startingTargetId: null,
 		searchDraft: searches.findingsSearch.q ?? "",
 		searchGeneration: 0,
@@ -379,6 +381,31 @@ const spendSettingsStep = (model: Model, message: SpendSettings.Message, context
 	}
 }
 
+const prCheckSettingsStep = (
+	model: Model,
+	message: PrCheckSettings.Message,
+	context: PageContext,
+): Return => {
+	const step = PrCheckSettings.update(model.prCheckSettings, message)
+	const next: Return = {
+		model: { ...model, prCheckSettings: step.model },
+		commands: Command.mapMessages(step.commands ?? [], (inner) =>
+			Message.GotPrCheckSettingsMessage({ message: inner }),
+		),
+	}
+	if (step.outMessage === undefined) return next
+	const { target } = step.outMessage
+	return {
+		...chain(next, (updated) => readTargets(updated, context, "Supersede")),
+		outMessage: toast(
+			"success",
+			target.prCheckEnabled
+				? `Pull request check on for ${target.repository}`
+				: `Pull request check off for ${target.repository}`,
+		),
+	}
+}
+
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
@@ -507,6 +534,24 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			}
 		},
 		GotSpendSettingsMessage: ({ message: inner }) => spendSettingsStep(model, inner, context),
+		ClickedPrCheck: ({ targetId }) =>
+			Option.match(
+				// Admins only (`security_audit:run`): the control is hidden from everyone else.
+				Arr.findFirst(targetsOf(model), (target) => canRunAudits(model) && target.id === targetId),
+				{
+					onNone: () => ({ model }),
+					onSome: (target) => {
+						const opened = PrCheckSettings.open(model.prCheckSettings, target)
+						return {
+							model: { ...model, prCheckSettings: opened.model },
+							commands: Command.mapMessages(opened.commands ?? [], (inner) =>
+								Message.GotPrCheckSettingsMessage({ message: inner }),
+							),
+						}
+					},
+				},
+			),
+		GotPrCheckSettingsMessage: ({ message: inner }) => prCheckSettingsStep(model, inner, context),
 		ClickedStartRun: ({ targetId }) =>
 			model.startingTargetId !== null
 				? { model }

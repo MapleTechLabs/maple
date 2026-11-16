@@ -9,7 +9,9 @@ import { AppRoute, hrefOf } from "../../../route"
 import { button } from "@maple/views/ui/button"
 import { textLink } from "@maple/views/ui/text-link"
 import { errorState } from "@maple/views/ui/error-state"
+import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
 import { meter } from "@maple/views/ui/meter"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { skeletonSlowNote } from "@maple/views/ui/skeleton"
@@ -39,6 +41,7 @@ import {
 	SECURITY_SEVERITY_LABEL,
 	runToneOf,
 	refLabel,
+	prCheckPart,
 	targetParts,
 } from "../kit/format"
 import {
@@ -416,6 +419,23 @@ const targetModelOf = (model: Model, target: SecurityAuditTarget): string | null
 	return id === null ? null : modelLabel(id)
 }
 
+/** Admins open the target's pull request check from its row; a member gets no control. */
+const prCheckControl = (h: H, model: Model, target: SecurityAuditTarget): ReadonlyArray<Html> =>
+	canRunAudits(model)
+		? [
+				iconButton(
+					h,
+					{
+						label: `Pull request check for ${target.repository}`,
+						size: "icon-2xs",
+						className: cn("shrink-0", ROW_LINK_LIFT),
+						attributes: [h.OnClick(Message.ClickedPrCheck({ targetId: target.id }))],
+					},
+					[icon(h, "PullRequestIcon", { size: 14 })],
+				),
+			]
+		: []
+
 const targetRow = (h: H, model: Model, target: SecurityAuditTarget): Html => {
 	const run = latestRunFor(model, target.id)
 	const findings = findingsOfTarget(model, target.id)
@@ -423,6 +443,7 @@ const targetRow = (h: H, model: Model, target: SecurityAuditTarget): Html => {
 	const isFindingsKnown = typeof findings === "object" && findings !== null
 	// Model first so a long scope path is what truncates.
 	const parts = Arr.filter([targetModelOf(model, target), ...targetParts(target)], (part) => part !== null)
+	const prCheck = prCheckPart(target)
 	const meta = Arr.join(parts, " · ")
 	const leads = isFindingsKnown
 		? run === undefined || run.status === "failed"
@@ -437,15 +458,22 @@ const targetRow = (h: H, model: Model, target: SecurityAuditTarget): Html => {
 		h,
 		[
 			tableCell(h, [
-				// The name is the row's link, stretched over the whole row.
-				rowLink(h, { href, className: hstackClass({ gap: "2.5", shrink: true }) }, [
+				// An empty link stretched over the whole row; the admin control sits above it.
+				rowLink(h, { href, label: target.repository }),
+				hstack(h, { gap: "2.5", shrink: true }, [
 					icon(h, "GithubIcon", { size: 16, className: "shrink-0 text-muted-foreground" }),
 					vstack(h, { shrink: true, as: "span" }, [
-						repositoryName(
-							h,
-							target.repository,
-							typographyClass({ size: "sm", weight: "medium" }),
-						),
+						hstack(h, { gap: "2", shrink: true, as: "span" }, [
+							repositoryName(
+								h,
+								target.repository,
+								typographyClass({ size: "sm", weight: "medium" }),
+							),
+							...(prCheck === null
+								? []
+								: [badge(h, { variant: "meta", className: "shrink-0" }, [prCheck])]),
+							...prCheckControl(h, model, target),
+						]),
 						metaLine(h, parts, meta),
 						// Phones drop the run and leads columns, so their gist rides here.
 						h.span(
@@ -634,7 +662,7 @@ const recentRunsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAudi
 	return panel(h, { className: "overflow-hidden" }, [
 		panelHeader(h, {
 			title: "Recent runs",
-			action: typography(h, { size: "xs", tone: "muted" }, ["Manual runs only for now"]),
+			action: typography(h, { size: "xs", tone: "muted" }, ["Manual and pull request runs"]),
 		}),
 		runs.length === 0
 			? emptyMessage(h, {}, ["No runs yet. Start one from a target."])

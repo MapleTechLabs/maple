@@ -87,6 +87,8 @@ export const SCENARIOS = [
 	"add-target-invalid",
 	"add-target-exists",
 	"spend-and-models",
+	"pr-check",
+	"pr-check-off",
 	"findings",
 	"findings-fixed",
 	"findings-member",
@@ -97,6 +99,8 @@ export const SCENARIOS = [
 	"run-cancelled",
 	"run-deep-incomplete",
 	"run-deep-live",
+	"run-pull-request",
+	"run-pull-request-triage",
 	"finding",
 	"finding-triage",
 	"finding-member",
@@ -609,6 +613,20 @@ export const build = (scenario: Scenario, nowMs: number): Built => {
 				_tag: "Tabs",
 				step: fold(tabs(overviewRoute, nowMs), tabsUpdate, [() => M.ClickedSpendAndModels()]),
 			}
+		case "pr-check":
+			return {
+				_tag: "Tabs",
+				step: fold(tabs(overviewRoute, nowMs), tabsUpdate, [
+					() => M.ClickedPrCheck({ targetId: targetId(TARGET_IDS.gateway) }),
+				]),
+			}
+		case "pr-check-off":
+			return {
+				_tag: "Tabs",
+				step: fold(tabs(overviewRoute, nowMs), tabsUpdate, [
+					() => M.ClickedPrCheck({ targetId: targetId(TARGET_IDS.dashboard) }),
+				]),
+			}
 		case "findings":
 			return { _tag: "Tabs", step: tabs(AppRoute.SecurityCodeFindings({ search: {} }), nowMs) }
 		case "findings-fixed":
@@ -635,6 +653,32 @@ export const build = (scenario: Scenario, nowMs: number): Built => {
 			return { _tag: "Run", step: run(DEEP_RUN_IDS.incomplete, nowMs) }
 		case "run-deep-live":
 			return { _tag: "Run", step: run(DEEP_RUN_IDS.live, nowMs) }
+		case "run-pull-request":
+			return { _tag: "Run", step: run(RUN_IDS.gatewayPr, nowMs) }
+		case "run-pull-request-triage":
+			return {
+				_tag: "Run",
+				step: fold(
+					run(RUN_IDS.gatewayPr, nowMs),
+					(model, message) => RunUpdate.update(model, message, context),
+					[
+						() => R.ClickedFinding({ fingerprint: "preview-ssrf-3a1f" }),
+						() =>
+							R.GotTriageMessage({
+								message: ToggleGroup.Message.ClickedItem({
+									value: "accepted_risk",
+									index: 2,
+								}),
+							}),
+						() =>
+							R.GotReasonMessage({
+								message: Field.Message.ChangedValue({
+									value: "Previews only fetch through the egress proxy, which blocks private ranges.",
+								}),
+							}),
+					],
+				),
+			}
 		case "finding":
 			return { _tag: "Finding", step: finding(nowMs) }
 		case "finding-triage":

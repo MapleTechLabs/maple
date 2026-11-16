@@ -3,6 +3,7 @@ import {
 	SecurityAuditEvent,
 	SecurityAuditEventsResponse,
 	SecurityAuditFindingsResponse,
+	SecurityAuditFindingTriageResult,
 	SecurityAuditRun,
 	SecurityAuditRunDetail,
 	SecurityAuditTargetsResponse,
@@ -14,6 +15,8 @@ import { defineMessageUnion } from "foldkit/message"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
+import * as Field from "@maple/views/ui/field"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { ParsedMarkdown } from "../../kit/markdown"
 import { SeverityBucket } from "../kit/findings"
 
@@ -68,6 +71,11 @@ export const Model = Schema.Struct({
 	/** The finding open in the side sheet. */
 	openFingerprint: Schema.NullOr(Schema.String),
 	findingDialog: Dialog.Model,
+	/** A pull request run's triage of the open finding: the control, the reason and the save. */
+	triage: ToggleGroup.Model,
+	reason: Field.Model,
+	isTriageSubmitted: Schema.Boolean,
+	isSaving: Schema.Boolean,
 	/** Phases, totals, ledger and events: open while live, folded once the run finished. */
 	isDetailsOpen: Schema.NullOr(Schema.Boolean),
 	unitFilter: UnitFilter,
@@ -81,6 +89,10 @@ export const Model = Schema.Struct({
 	parsedReports: Schema.Array(ParsedMarkdown),
 })
 export type Model = typeof Model.Type
+
+/** The viewer may triage findings (`security:manage`). */
+export const canManage = (model: Pick<Model, "grants">): boolean =>
+	Policy.has(model.grants, "security:manage")
 
 /** The viewer may add targets, change settings and start or stop runs (`security_audit:run`). */
 export const canRunAudits = (model: Pick<Model, "grants">): boolean =>
@@ -107,6 +119,10 @@ export const Message = defineMessageUnion({
 	ToggledSection: { bucket: SeverityBucket },
 	ClickedFinding: { fingerprint: Schema.String },
 	GotFindingDialogMessage: { message: Dialog.Message },
+	GotTriageMessage: { message: ToggleGroup.Message },
+	GotReasonMessage: { message: Field.Message },
+	SubmittedTriage: {},
+	CompletedTriage: { result: Schema.Result(SecurityAuditFindingTriageResult, LoadFailure) },
 	ToggledDetails: {},
 	PickedUnitFilter: { filter: UnitFilter },
 	PickedEventFilter: { filter: EventFilter },

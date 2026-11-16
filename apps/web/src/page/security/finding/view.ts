@@ -1,23 +1,15 @@
-import type {
-	SecurityAuditFinding,
-	SecurityAuditFindingTriageStatus,
-	SecurityAuditTarget,
-} from "@maple/domain/http"
+import type { SecurityAuditFinding, SecurityAuditTarget } from "@maple/domain/http"
 import type { SecurityAuditRunId } from "@maple/domain/security-audit"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import type { BreadcrumbEntry } from "../../../shell"
-import { button } from "@maple/views/ui/button"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import { copyButton } from "@maple/views/ui/copy-button"
 import { detailRailGroup, detailRailRow } from "@maple/views/ui/detail-rail"
 import { badge } from "@maple/views/ui/display"
-import * as Field from "@maple/views/ui/field"
 import { errorState } from "@maple/views/ui/error-state"
-import * as ToggleGroup from "@maple/views/ui/toggle-group"
-import { textarea } from "@maple/views/ui/textarea"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { detailTitle, detailTitleSkeleton } from "../../kit/detail-header"
@@ -33,7 +25,8 @@ import {
 } from "../kit/format"
 import { codeCrumbs, stack } from "../kit/layout"
 import { gateState, metaItem, placeholder, securitySeverityBadge } from "../kit/parts"
-import { currentTriageOf, findingOf, pickedTriageOf, reasonErrorOf, targetOf } from "./derive"
+import { findingOf, targetOf } from "./derive"
+import { triageForm } from "../kit/triage-form"
 import { canManage, Message, type Model } from "./model"
 import { findingBody } from "../kit/finding-body"
 import { findingBadge } from "../kit/findings-view"
@@ -46,12 +39,6 @@ import { String as Str } from "effect"
 // `/security/code/findings/$targetId/$fingerprint`: the record on the left, triage and facts on the right.
 
 type H = HtmlBuilder<Message>
-
-const TRIAGE_OPTIONS: ReadonlyArray<{ value: SecurityAuditFindingTriageStatus; label: string }> = [
-	{ value: "open", label: "Open" },
-	{ value: "dismissed", label: "Dismiss" },
-	{ value: "accepted_risk", label: "Accept risk" },
-]
 
 const runHref = (runId: SecurityAuditRunId) => hrefOf(AppRoute.SecurityRun({ runId }))
 
@@ -132,87 +119,28 @@ const title = (
 		],
 	})
 
-const triagePanel = (h: H, model: Model, finding: SecurityAuditFinding): Html => {
-	const picked = pickedTriageOf(model, finding)
-	const isChange = picked !== currentTriageOf(finding) || finding.status === "fixed"
-	const reasonError = model.isTriageSubmitted ? reasonErrorOf(model.reason.value) : null
-	const ids: Field.FieldIds = {
-		control: "security-triage-reason",
-		label: "security-triage-reason-label",
-		error: "security-triage-reason-error",
-		description: "security-triage-reason-description",
-	}
-	const state = Field.stateOf(model.reason, reasonError !== null)
-	if (!canManage(model))
-		return detailRailGroup(h, "Triage", [
-			typography(h, { size: "xs", tone: "muted", as: "p" }, [
-				"Only org admins and engineers can change a finding's status.",
-			]),
-		])
-	return detailRailGroup(h, "Triage", [
-		h.form(
-			[h.Class(vstackClass({ gap: "3" })), h.OnSubmit(Message.SubmittedTriage())],
-			[
-				ToggleGroup.view(h, {
-					model: model.triage,
-					toParentMessage: (message) => Message.GotTriageMessage({ message }),
-					items: TRIAGE_OPTIONS,
-					variant: "outline",
-					size: "xs",
-					className: "w-full",
-					itemClassName: "min-w-0 flex-1 px-1",
-				}),
-				typography(h, { size: "xs", tone: "muted", as: "p" }, [
-					finding.status === "fixed"
-						? "A later run no longer finds this. Reopen it, dismiss it or accept the risk."
-						: "Fixed is set by a later run that no longer finds this fingerprint. A fixed finding reopens if it comes back.",
+const triagePanel = (h: H, model: Model, finding: SecurityAuditFinding): Html =>
+	detailRailGroup(h, "Triage", [
+		canManage(model)
+			? triageForm(h, {
+					idPrefix: "security-triage",
+					status: finding.status,
+					triage: model.triage,
+					reason: model.reason,
+					isSubmitted: model.isTriageSubmitted,
+					isSaving: model.isSaving,
+					hint:
+						finding.status === "fixed"
+							? "A later run no longer finds this. Reopen it, dismiss it or accept the risk."
+							: "Fixed is set by a later run that no longer finds this fingerprint. A fixed finding reopens if it comes back.",
+					onTriage: (message) => Message.GotTriageMessage({ message }),
+					onReason: (message) => Message.GotReasonMessage({ message }),
+					onSubmit: Message.SubmittedTriage(),
+				})
+			: typography(h, { size: "xs", tone: "muted", as: "p" }, [
+					"Only org admins and engineers can change a finding's status.",
 				]),
-				Field.field(h, { state }, [
-					Field.fieldLabel(h, { ids, state }, "Reason"),
-					textarea(h, {
-						id: ids.control,
-						attributes: [
-							h.Placeholder(
-								picked !== "open"
-									? "Why is this being dismissed or accepted?"
-									: finding.status === "open"
-										? "Pick Dismiss or Accept risk, then say why"
-										: "Why is this being reopened?",
-							),
-							h.AriaLabelledBy(ids.label),
-							h.AriaDescribedBy(reasonError === null ? (ids.description ?? "") : ids.error),
-							h.AriaInvalid(reasonError !== null),
-							h.Rows(3),
-							h.Value(model.reason.value),
-							h.OnInput((value) =>
-								Message.GotReasonMessage({ message: Field.Message.ChangedValue({ value }) }),
-							),
-							h.OnBlur(Message.GotReasonMessage({ message: Field.Message.BlurredControl() })),
-						],
-					}),
-					reasonError === null
-						? Field.fieldDescription(
-								h,
-								{ ids, state },
-								"Required. Recorded in the org audit log with your name.",
-							)
-						: Field.fieldError(h, { ids, state, attributes: [h.Role("alert")] }, reasonError),
-				]),
-				button(
-					h,
-					{
-						type: "submit",
-						variant: "outline",
-						isLoading: model.isSaving,
-						isDisabled: !isChange || model.isSaving,
-						className: "w-full",
-					},
-					["Update status"],
-				),
-			],
-		),
 	])
-}
 
 const railValue = (h: H, text: string): Html =>
 	typography(h, { size: "sm", truncate: true, className: "capitalize" }, [text])

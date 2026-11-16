@@ -3,9 +3,13 @@ import type {
 	SecurityAuditFindingTriageStatus,
 	SecurityAuditTarget,
 } from "@maple/domain/http"
-import { Option, String as Str, Array as Arr } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Model } from "./model"
+import {
+	currentTriageOf as currentStatusTriage,
+	pickedTriageOf as pickedStatusTriage,
+} from "../kit/triage-form"
 
 // The finding the route names, and what the triage form would send.
 
@@ -25,28 +29,9 @@ export const targetOf = (model: Model): SecurityAuditTarget | null =>
 
 /** `fixed` is the engine's; a person triages a fixed finding as if it were open. */
 export const currentTriageOf = (finding: SecurityAuditFinding): SecurityAuditFindingTriageStatus =>
-	finding.status === "fixed" ? "open" : finding.status
+	currentStatusTriage(finding.status)
 
 export const pickedTriageOf = (
 	model: Model,
 	finding: SecurityAuditFinding,
-): SecurityAuditFindingTriageStatus =>
-	Option.getOrElse(
-		Arr.findFirst(TRIAGE_STATUSES, (status) => status === model.triage.values[0]),
-		() => currentTriageOf(finding),
-	)
-
-export const TRIAGE_STATUSES: ReadonlyArray<SecurityAuditFindingTriageStatus> = [
-	"open",
-	"dismissed",
-	"accepted_risk",
-]
-
-const REASON_MAX = 2000
-
-export const reasonErrorOf = (reason: string): string | null =>
-	Str.trim(reason) === ""
-		? "A reason is required. It is recorded in the org audit log with your name."
-		: Str.trim(reason).length > REASON_MAX
-			? `Keep the reason under ${REASON_MAX} characters.`
-			: null
+): SecurityAuditFindingTriageStatus => pickedStatusTriage(model.triage, finding.status)

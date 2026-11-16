@@ -30,7 +30,12 @@ export const RUN_IDS = {
 	billing: "run_a20f9d63c1",
 	terraform: "run_e41b77d012",
 	billingCancelled: "run_51be0c9f44",
+	/** The `Maple / security` check on the gateway's pull request #482. */
+	gatewayPr: "run_c0de482f1a",
 } as const
+
+/** The pull request the gateway's check run audited. */
+export const GATEWAY_PR_NUMBER = 482
 
 /** A deep target kept out of the overview's four, for the stop-reason and live-wave scenarios. */
 export const DEEP_TARGET_ID = "5ec0a0d1-0000-4000-8000-000000000005"
@@ -93,6 +98,8 @@ export const labTargetsOf = (now: number) =>
 
 type RunSeed = Readonly<{
 	id: string
+	kind?: "manual" | "pull_request"
+	prNumber?: number
 	targetId: string
 	status: "in_progress" | "complete" | "incomplete" | "failed"
 	profile: "deep" | "quick"
@@ -111,8 +118,8 @@ type RunSeed = Readonly<{
 const run = (seed: RunSeed) => ({
 	id: seed.id,
 	targetId: seed.targetId,
-	kind: "manual",
-	prNumber: null,
+	kind: seed.kind ?? "manual",
+	prNumber: seed.prNumber ?? null,
 	status: seed.status,
 	sourceRef: seed.sourceRef,
 	profile: seed.profile,
@@ -134,6 +141,22 @@ const run = (seed: RunSeed) => ({
 })
 
 const runSeeds = (now: number): ReadonlyArray<RunSeed> => [
+	{
+		id: RUN_IDS.gatewayPr,
+		kind: "pull_request",
+		prNumber: GATEWAY_PR_NUMBER,
+		targetId: TARGET_IDS.gateway,
+		status: "complete",
+		profile: "quick",
+		scopePaths: ["src/routes/preview.ts", "src/http/cors.ts"],
+		sourceRef: "c0de482f1a9b3d5e7f0a2c4e6b8d0f1a3c5e7b9d",
+		spent: 14,
+		input: 610_000,
+		output: 24_000,
+		cost: 3.12,
+		startedAt: now - 38 * MINUTE,
+		finishedAt: now - 31 * MINUTE,
+	},
 	{
 		id: RUN_IDS.dashboard,
 		targetId: TARGET_IDS.dashboard,
@@ -291,7 +314,7 @@ const findingCountsOf = (now: number, runIds: ReadonlyArray<string>) =>
 
 export const runsOf = (now: number) => {
 	const runs = Arr.map(runSeeds(now), run)
-	return Schema.decodeUnknownSync(SecurityAuditRunsResponse)({
+	return Schema.decodeSync(SecurityAuditRunsResponse)({
 		runs,
 		findingCounts: findingCountsOf(
 			now,
@@ -317,6 +340,7 @@ const UNIT_COUNTS = new Map<string, Readonly<Record<string, number>>>([
 	[RUN_IDS.billing, { covered: 33, candidate: 5, deferred: 12, blocked: 3, planned: 1 }],
 	[RUN_IDS.billingCancelled, { covered: 10, planned: 30 }],
 	[RUN_IDS.terraform, {}],
+	[RUN_IDS.gatewayPr, { covered: 6 }],
 	[DEEP_RUN_IDS.incomplete, { covered: 31, not_applicable: 2, deferred: 20, planned: 8 }],
 	[DEEP_RUN_IDS.live, { covered: 12, candidate: 2, in_progress: 4, planned: 14 }],
 ])
@@ -337,7 +361,7 @@ export const runDetailOf = (now: number, runId: string) => {
 	if (Option.isNone(found)) throw new RangeError(`No fixture run ${runId}`)
 	const seed = found.value
 	const counts = UNIT_COUNTS.get(seed.id) ?? {}
-	return Schema.decodeUnknownSync(SecurityAuditRunDetail)({
+	return Schema.decodeSync(SecurityAuditRunDetail)({
 		...run(seed),
 		reports: seed.finishedAt === null || seed.status === "failed" ? null : REPORTS,
 		architectureMd: null,
@@ -1174,6 +1198,43 @@ const DEEP_FINDINGS: ReadonlyArray<FindingSeed> = [
 	deepLead("share-enum-18c7", "Share tokens can be enumerated", "src/share/routes.ts", 12, "rejected"),
 ]
 
+/**
+ * What the gateway's pull request run reported: a high it brought, still failing the check, and one a
+ * person accepted. Only the run lists them; the target follows neither.
+ */
+const PR_FINDINGS: ReadonlyArray<FindingSeed> = [
+	{
+		fingerprint: "preview-ssrf-3a1f",
+		targetId: TARGET_IDS.gateway,
+		verdict: "confirmed",
+		severity: "high",
+		title: "Link preview fetches any URL, internal hosts included",
+		file: "src/routes/preview.ts",
+		line: 34,
+		runId: RUN_IDS.gatewayPr,
+		ago: 31 * MINUTE,
+		createdAgo: 31 * MINUTE,
+	},
+	{
+		fingerprint: "cors-credentials-5e20",
+		targetId: TARGET_IDS.gateway,
+		verdict: "confirmed",
+		severity: "high",
+		status: "accepted_risk",
+		title: "CORS reflects any origin with credentials on /v1/embed",
+		file: "src/http/cors.ts",
+		line: 18,
+		runId: RUN_IDS.gatewayPr,
+		ago: 31 * MINUTE,
+		createdAgo: 31 * MINUTE,
+	},
+]
+
+const STATUS_REASON = {
+	dismissed: "The edge proxy overwrites X-Forwarded-For before the request reaches us.",
+	accepted_risk: "The embed route serves public data only; the cookie it sends is not a session.",
+} as const
+
 const findingOf = (seed: FindingSeed, now: number) => ({
 	fingerprint: seed.fingerprint,
 	targetId: seed.targetId,
@@ -1182,11 +1243,10 @@ const findingOf = (seed: FindingSeed, now: number) => ({
 	estimatedSeverity: seed.verdict === "needs_validation" ? (seed.estimate ?? null) : null,
 	status: seed.status ?? "open",
 	statusReason:
-		seed.status === "dismissed"
-			? "The edge proxy overwrites X-Forwarded-For before the request reaches us."
-			: null,
-	statusChangedBy: seed.status === "dismissed" ? "user_maya" : null,
-	statusChangedAt: seed.status === "dismissed" ? now - HOUR : null,
+		seed.status === "dismissed" || seed.status === "accepted_risk" ? STATUS_REASON[seed.status] : null,
+	statusChangedBy: seed.status === "dismissed" || seed.status === "accepted_risk" ? "user_maya" : null,
+	statusChangedAt:
+		seed.status === "dismissed" ? now - HOUR : seed.status === "accepted_risk" ? now - 20 * MINUTE : null,
 	record: record(seed),
 	firstSeenRunId: seed.firstRunId ?? seed.runId,
 	lastSeenRunId: seed.runId,
@@ -1210,7 +1270,7 @@ export const runFindingsOf = (now: number, runId: string) =>
 	Schema.decodeUnknownSync(SecurityAuditFindingsResponse)({
 		findings: Arr.map(
 			Arr.filter(
-				[...FINDINGS, ...DEEP_FINDINGS],
+				[...FINDINGS, ...DEEP_FINDINGS, ...PR_FINDINGS],
 				(seed) => seed.runId === runId || seed.firstRunId === runId,
 			),
 			(seed) => findingOf(seed, now),
