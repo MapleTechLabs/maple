@@ -740,26 +740,29 @@ export const runSecurityAuditWorkflow = (payload: SecurityAuditWorkflowPayload) 
 				ownKey: Option.isSome(orgKey),
 			},
 		)
-	}).pipe(
-		// A pull request run reports its result as the `Maple / security` check once it settles or
-		// dies. An eviction is neither: the replay finishes the run and reports then.
-		Effect.onExit((exit) =>
-			Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
-				? Effect.void
-				: Effect.gen(function* () {
-						const orgId = yield* Schema.decodeEffect(OrgId)(payload.orgId)
-						// A run that died before its body ran (loading the org key or settings) was never
-						// settled there: settle it here, so its check reports instead of staying pending.
-						// One the body settled keeps its outcome.
-						if (Exit.isFailure(exit))
-							yield* (yield* SecurityAuditStore).forOrg(orgId).finishRun(payload.runId, {
-								status: "failed",
-								error: Str.slice(0, 2_000)(Cause.pretty(exit.cause)),
-							})
-						yield* (yield* SecurityPrCheck).publish(orgId, payload.runId)
-					}).pipe(Effect.ignore),
-		),
-	)
+	}).pipe(Effect.onExit((exit) => reportPullRequestCheckOnExit(payload, exit)))
+
+/**
+ * A pull request run reports its result as the `Maple / security` check once it settles or dies.
+ * A run that died before its body ran (loading the org key or settings) was never settled there:
+ * it is settled here, so its check reports instead of staying pending; one the body settled keeps
+ * its outcome. An eviction is neither: the replay finishes the run and reports then.
+ */
+export const reportPullRequestCheckOnExit = (
+	payload: Pick<SecurityAuditWorkflowPayload, "orgId" | "runId">,
+	exit: Exit.Exit<unknown, unknown>,
+) =>
+	Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
+		? Effect.void
+		: Effect.gen(function* () {
+				const orgId = yield* Schema.decodeEffect(OrgId)(payload.orgId)
+				if (Exit.isFailure(exit))
+					yield* (yield* SecurityAuditStore).forOrg(orgId).finishRun(payload.runId, {
+						status: "failed",
+						error: Str.slice(0, 2_000)(Cause.pretty(exit.cause)),
+					})
+				yield* (yield* SecurityPrCheck).publish(orgId, payload.runId)
+			}).pipe(Effect.ignore)
 
 const agentsOn = (
 	settings: LlmSettings,
