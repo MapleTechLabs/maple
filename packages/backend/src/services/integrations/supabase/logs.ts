@@ -94,7 +94,7 @@ export const queryLogs = Effect.fnUntraced(function* (
 	if (Option.isNone(body)) {
 		return yield* new SupabaseApiError({
 			message: "Supabase returned an unexpected body while reading project logs",
-			kind: "upstream",
+			kind: "invalid_response",
 		})
 	}
 	if ("error" in body.value) {

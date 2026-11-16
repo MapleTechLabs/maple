@@ -123,7 +123,10 @@ export const decodeStatements = (raw: ReadonlyArray<unknown>) =>
 	)
 
 const unexpectedBody = (what: string) =>
-	new SupabaseApiError({ message: `Supabase returned an unexpected body while ${what}`, kind: "upstream" })
+	new SupabaseApiError({
+		message: `Supabase returned an unexpected body while ${what}`,
+		kind: "invalid_response",
+	})
 
 export const getAdvisors = Effect.fnUntraced(function* (
 	httpClient: HttpClient.HttpClient,
