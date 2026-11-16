@@ -260,7 +260,12 @@ export function registerProfileHotspotsTool(server: McpToolRegistrar) {
 					),
 					doc.next(
 						"get_service_top_operations",
-						{ service: output.serviceName, environment: output.environment },
+						{
+							service: output.serviceName,
+							environment: output.environment,
+							start_time: output.timeRange.start,
+							end_time: output.timeRange.end,
+						},
 						"find the operations that run this code",
 					),
 				],
