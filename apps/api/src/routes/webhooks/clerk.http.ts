@@ -246,6 +246,15 @@ const handler = Effect.gen(function* () {
 				// Clerk sets this only once every directory managing the user has deprovisioned them,
 				// and then the user cannot sign in anywhere, so every org's credentials go too.
 				yield* Effect.annotateCurrentSpan({ "maple.webhook.deprovisioned": true })
+				// Deliveries are unordered: an old one after a reactivation must not take new keys away.
+				const stillDeprovisioned = yield* sso.confirmDeprovisioned(userId.value)
+				if (!stillDeprovisioned) {
+					yield* Effect.annotateCurrentSpan({
+						"http.response.status_code": 200,
+						"maple.webhook.outcome": "stale_deprovision",
+					})
+					return webhookText("ok", 200)
+				}
 				return yield* revoke(revocation.revokeUser(userId.value))
 			}
 			yield* Effect.annotateCurrentSpan({

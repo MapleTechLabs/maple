@@ -758,6 +758,40 @@ describe("ClerkWebhookRouter", () => {
 		}),
 	)
 
+	it.live("ignores a deprovision delivery Clerk no longer stands behind (the user was reactivated)", () =>
+		Effect.gen(function* () {
+			const revocation = recordingRevocation()
+			const { handler, dispose } = HttpRouter.toWebHandler(
+				makeRouterLayer(
+					ClerkWebhookRoute,
+					{ CLERK_WEBHOOK_SECRET: CLERK_SECRET },
+					recordingProductEvents().layer,
+					revocation.layer,
+					undefined,
+					undefined,
+					undefined,
+					undefined,
+					EnterpriseSsoService.webhookOnly(
+						() => Effect.succeed("not_here" as const),
+						() => Effect.succeed(false),
+					),
+				),
+				{ disableLogger: true },
+			)
+			yield* Effect.gen(function* () {
+				const now = yield* Clock.currentTimeMillis
+				const body = JSON.stringify({
+					type: "user.updated",
+					data: { id: "user_7", deprovisioned: true },
+				})
+				const headers = yield* signedHeaders(CLERK_SECRET, body, now, "msg_stale")
+				const response = yield* post(handler, "/webhooks/clerk", body, headers)
+				assert.strictEqual(response.status, 200)
+				assert.deepStrictEqual(revocation.calls, [])
+			}).pipe(Effect.ensuring(Effect.promise(dispose)))
+		}),
+	)
+
 	it.live("500s a directory group the database could not save, so Clerk redelivers it", () =>
 		Effect.gen(function* () {
 			const failing = EnterpriseSsoService.webhookOnly(() =>

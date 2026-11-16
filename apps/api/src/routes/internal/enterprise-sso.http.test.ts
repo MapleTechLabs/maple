@@ -69,6 +69,7 @@ const recordingService = (calls: Array<string>) => {
 		addBypassUser: ok("addBypassUser"),
 		removeBypassUser: ok("removeBypassUser"),
 		applyDirectoryGroup: () => Effect.fail(new EnterpriseSsoUnavailableError({ message: "unused" })),
+		confirmDeprovisioned: () => Effect.succeed(true),
 	}
 	return Layer.succeed(EnterpriseSsoService, api)
 }

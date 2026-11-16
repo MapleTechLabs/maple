@@ -90,6 +90,8 @@ const RoleMappingJson = Schema.Struct({
 	precedence: Schema.Number,
 })
 const byPrecedence = Order.mapInput(Num.Order, (m: { readonly precedence: number }) => m.precedence)
+const UserFlags = Schema.Struct({ deprovisioned: Schema.optionalKey(Schema.NullOr(Schema.Boolean)) })
+
 const RoleMappingList = Schema.Struct({ data: Schema.Array(RoleMappingJson) })
 
 export interface ClerkSsoRoleMapping {
@@ -150,6 +152,8 @@ export interface ClerkSsoGatewayApi {
 		connectionId: string,
 		domains: ReadonlyArray<string>,
 	) => Effect.Effect<ReadonlyArray<string>, ClerkRequestError>
+	/** True when Clerk holds the user deprovisioned, or no longer has the user at all. */
+	readonly isDeprovisioned: (userId: UserId) => Effect.Effect<boolean, ClerkRequestError>
 	readonly isMember: (orgId: OrgId, userId: UserId) => Effect.Effect<boolean, ClerkRequestError>
 	/** The domains of the user's verified email addresses, lower-cased. */
 	readonly verifiedEmailDomains: (userId: UserId) => Effect.Effect<ReadonlyArray<string>, ClerkRequestError>
@@ -450,6 +454,14 @@ const make = Effect.gen(function* () {
 							return Arr.filter(domains, (d) => claimed.has(d))
 						},
 					),
+		isDeprovisioned: (userId) =>
+			raw("Clerk.users.get", "GET", `/users/${encodeURIComponent(userId)}`, { decode: UserFlags }).pipe(
+				Effect.map((user) => user?.deprovisioned === true),
+				Effect.catchIf(
+					(e) => e.status === 404,
+					() => Effect.succeed(true),
+				),
+			),
 		isMember: (orgId, userId) =>
 			sdk("Clerk.organizations.getOrganizationMembershipList", { orgId }, (c) =>
 				c.organizations.getOrganizationMembershipList({

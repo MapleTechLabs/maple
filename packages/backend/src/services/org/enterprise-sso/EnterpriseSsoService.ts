@@ -190,6 +190,12 @@ export interface EnterpriseSsoServiceApi {
 	readonly applyDirectoryGroup: (
 		event: DirectoryGroupEvent,
 	) => Effect.Effect<"applied" | "not_here", EnterpriseSsoUnavailableError>
+	/**
+	 * Whether Clerk still holds the user deprovisioned, asked before a `deprovisioned` webhook
+	 * sweeps: deliveries are unordered, so an old one must not revoke keys made after reactivation.
+	 * Fails closed: an unanswered lookup or a deleted user reads as deprovisioned.
+	 */
+	readonly confirmDeprovisioned: (userId: UserId) => Effect.Effect<boolean>
 }
 
 export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, EnterpriseSsoServiceApi>()(
@@ -784,16 +790,35 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				const bypass = yield* clerk
 					.listBypassUsers(row.clerkConnectionId)
 					.pipe(orEmpty, Effect.mapError(fromClerk))
+				const ownDomains = yield* orMissing(clerk.getConnection(row.clerkConnectionId)).pipe(
+					Effect.mapBoth({
+						onSuccess: Option.match({ onNone: () => [], onSome: (c) => c.domains }),
+						onFailure: fromClerk,
+					}),
+				)
 				yield* Effect.forEach(
 					bypass,
 					(u) =>
-						clerk.removeBypassUser(decodeUserId(u.userId)).pipe(
-							Effect.catchIf(
-								(e) => e.status === 404,
-								() => Effect.void,
-							),
-							Effect.mapError(fromClerk),
-						),
+						Effect.gen(function* () {
+							const userId = decodeUserId(u.userId)
+							// Another org's SSO also covers them: its entry is the same one, so it stays.
+							const elsewhere = yield* coveredElsewhere(
+								userId,
+								row.clerkConnectionId,
+								ownDomains,
+							)
+							if (elsewhere.length > 0) {
+								return yield* Effect.logWarning(
+									"Kept a bypass entry another org's SSO also serves",
+								).pipe(Effect.annotateLogs({ orgId, userId }))
+							}
+							yield* clerk.removeBypassUser(userId).pipe(
+								Effect.catchIf(
+									(e) => e.status === 404,
+									() => Effect.void,
+								),
+							)
+						}).pipe(Effect.mapError(fromClerk)),
 					{ concurrency: 4, discard: true },
 				)
 				if (row.clerkDirectoryId !== null) yield* dropDirectory(orgId, row.clerkDirectoryId)
@@ -891,7 +916,12 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 							db.run(
 								PG.update(OrgSsoConnections)
 									.set({ clerkDirectoryId: created.id, updatedAt: now })
-									.where(($) => [$.orgId.eq(orgId), $.clerkDirectoryId.isNull()])
+									.where(($) => [
+										$.orgId.eq(orgId),
+										// The connection it was made for: a replaced connection must not inherit it.
+										$.clerkConnectionId.eq(row.clerkConnectionId),
+										$.clerkDirectoryId.isNull(),
+									])
 									.returning("orgId"),
 							),
 						).pipe(Effect.onError(() => dropCreated))
@@ -992,6 +1022,25 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				return yield* get(orgId)
 			})
 
+			/**
+			 * The user's verified email domains another org's connection serves. Clerk's bypass entry
+			 * is per user across every connection serving them, so adding or removing one for such a
+			 * user would also change that other org's SSO.
+			 */
+			const coveredElsewhere = (
+				userId: UserId,
+				connectionId: string,
+				ownDomains: ReadonlyArray<string>,
+			) =>
+				clerk.verifiedEmailDomains(userId).pipe(
+					Effect.flatMap((domains) =>
+						clerk.domainsClaimedElsewhere(
+							connectionId,
+							Arr.filter(domains, (d) => !Arr.contains(ownDomains, d)),
+						),
+					),
+				)
+
 			const addBypassUser = Effect.fn("EnterpriseSsoService.addBypassUser")(function* (
 				orgId: OrgId,
 				userId: UserId,
@@ -1051,6 +1100,19 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 						message: "That person is not on this organization's bypass list.",
 					})
 				}
+				const connection = yield* clerk
+					.getConnection(row.clerkConnectionId)
+					.pipe(Effect.mapError(fromClerk))
+				const elsewhere = yield* coveredElsewhere(
+					userId,
+					row.clerkConnectionId,
+					connection.domains,
+				).pipe(Effect.mapError(fromClerk))
+				if (elsewhere.length > 0) {
+					return yield* new EnterpriseSsoConflictError({
+						message: `This person also has an email on ${Arr.join(elsewhere, ", ")}, which another organization's SSO covers. Removing them here would remove that organization's break-glass access too; contact support.`,
+					})
+				}
 				yield* clerk.removeBypassUser(userId).pipe(Effect.mapError(fromClerk))
 				return yield* get(orgId)
 			})
@@ -1102,7 +1164,24 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				return "applied" as const
 			})
 
+			const confirmDeprovisioned = Effect.fn("EnterpriseSsoService.confirmDeprovisioned")(function* (
+				userId: UserId,
+			) {
+				const state = yield* clerk
+					.isDeprovisioned(userId)
+					.pipe(
+						Effect.catch((error) =>
+							Effect.logWarning(
+								"Could not confirm a deprovisioning with Clerk; sweeping anyway",
+							).pipe(Effect.annotateLogs({ userId, error: error.message }), Effect.as(true)),
+						),
+					)
+				yield* Effect.annotateCurrentSpan({ "maple.sso.still_deprovisioned": state })
+				return state
+			})
+
 			return {
+				confirmDeprovisioned,
 				get,
 				addDomain,
 				verifyDomain,
@@ -1135,7 +1214,10 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 	)
 
 	/** Serves only the webhook's directory-group path, for route tests; settings calls fail. */
-	static readonly webhookOnly = (apply: EnterpriseSsoServiceApi["applyDirectoryGroup"]) => {
+	static readonly webhookOnly = (
+		apply: EnterpriseSsoServiceApi["applyDirectoryGroup"],
+		confirmDeprovisioned: EnterpriseSsoServiceApi["confirmDeprovisioned"] = () => Effect.succeed(true),
+	) => {
 		const unserved = Effect.fail(
 			new EnterpriseSsoUnavailableError({ message: "webhookOnly serves webhooks only" }),
 		)
@@ -1156,6 +1238,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 			addBypassUser: () => unserved,
 			removeBypassUser: () => unserved,
 			applyDirectoryGroup: apply,
+			confirmDeprovisioned,
 		})
 	}
 }

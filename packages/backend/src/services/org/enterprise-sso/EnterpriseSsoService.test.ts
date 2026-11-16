@@ -185,6 +185,7 @@ const gatewayLayer = (clerk: FakeClerk) =>
 					),
 				),
 			),
+		isDeprovisioned: () => Effect.succeed(true),
 		isMember: (_orgId, userId) => Effect.sync(() => clerk.members.has(userId)),
 		verifiedEmailDomains: (userId) => Effect.sync(() => clerk.emailDomains.get(userId) ?? []),
 		listBypassUsers: () =>
@@ -759,6 +760,34 @@ describe("EnterpriseSsoService", () => {
 					new SsoConnectionRequest({ ...manual(), name: "Acme Corp IdP" }),
 				)
 				assert.strictEqual(renamed.connection?.name, "Acme Corp IdP")
+			}),
+		)
+	})
+
+	it.effect("never removes a break-glass entry another org's SSO also relies on", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = { clerk: fakeClerk(), dns: new Map<string, Array<string>>(), entitled: true }
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				const sso = yield* EnterpriseSsoService
+				yield* verifiedDomain(world.dns, "acme.com")
+				yield* sso.createConnection(ORG, ADMIN, samlRequest(["acme.com"]))
+				// Another org added the user while they were only on its domain; both now serve them.
+				world.clerk.bypass.push("user_dual")
+				world.clerk.connections.set("ent_partner", {
+					...[...world.clerk.connections.values()][0],
+					id: "ent_partner",
+					organizationId: OTHER_ORG,
+					domains: ["partner.io"],
+				})
+				const refused = yield* sso
+					.removeBypassUser(ORG, Schema.decodeSync(UserId)("user_dual"))
+					.pipe(Effect.flip)
+				assert.strictEqual(refused._tag, "@maple/http/enterprise-sso/EnterpriseSsoConflictError")
+				yield* sso.deleteConnection(ORG)
+				assert.deepStrictEqual(world.clerk.bypass, ["user_dual"])
 			}),
 		)
 	})
