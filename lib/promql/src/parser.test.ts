@@ -121,6 +121,7 @@ describe("parse", () => {
 			"sum without (instance) (rate(x[5m])) / on(job) group_left(team) team_info",
 			'{"a.b", c="d"}[1m] offset 1h',
 			'{__name__="a", __name__="b"}',
+			'{__name__="a.b", __name__="a.b"}',
 			'{__name__="a.b", __name__=~"a.*"}',
 			"-x + 2",
 			"x @ start()",
@@ -175,6 +176,29 @@ describe("parse errors", () => {
 		expect(
 			Result.isSuccess(subquery) && subquery.success.type === "Subquery" && subquery.success.rangeMs,
 		).toBe(8000)
+	})
+
+	it("converts numeric durations and @ times the way Prometheus does", () => {
+		const selectorOf = (query: string) => {
+			const result = parse(query)
+			if (Result.isFailure(result)) throw new Error(result.failure.message)
+			const expr = result.success
+			return expr.type === "MatrixSelector"
+				? expr.vector
+				: expr.type === "VectorSelector"
+					? expr
+					: undefined
+		}
+		// Nanoseconds, then truncated to milliseconds: 1.0006s is a 1000ms range.
+		const range = parse("x[1.0006]")
+		expect(
+			Result.isSuccess(range) && range.success.type === "MatrixSelector" && range.success.rangeMs,
+		).toBe(1000)
+		expect(selectorOf("x offset 1.0006")?.offsetMs).toBe(1000)
+		// @ rounds to whole milliseconds, halves away from zero.
+		expect(selectorOf("x @ -0.0004")?.at).toEqual({ kind: "time", timeMs: 0 })
+		expect(selectorOf("x @ -0.0005")?.at).toEqual({ kind: "time", timeMs: -1 })
+		expect(selectorOf("x @ 0.0005")?.at).toEqual({ kind: "time", timeMs: 1 })
 	})
 
 	it("rejects a repeated offset, including after offset 0s", () => {
