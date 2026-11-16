@@ -197,8 +197,9 @@ describe("query_promql", () => {
 
 	it.effect("refuses a sub-millisecond or overflowing step before querying", () =>
 		Effect.gen(function* () {
-			const errors = yield* Effect.forEach(["0.0004", "1e308", "999999999999999999y"], (step) =>
-				Effect.flip(run({ query: "up", ...WINDOW, step }, () => Effect.die("not reached"))),
+			const errors = yield* Effect.forEach(
+				["0.0004", "1000.0004", "1000.0005", "1e308", "999999999999999999y"],
+				(step) => Effect.flip(run({ query: "up", ...WINDOW, step }, () => Effect.die("not reached"))),
 			)
 			expect(errors).toMatchObject(
 				Arr.map(errors, () => ({
