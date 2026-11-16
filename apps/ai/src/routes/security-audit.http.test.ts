@@ -1472,3 +1472,45 @@ describe("/api/security-audit target triage of a pull request finding", () => {
 		}
 	})
 })
+
+describe("/api/security-audit target triage behind newer pull request runs", () => {
+	it("finds a run that reported the finding even behind many newer runs that did not", async () => {
+		const harness = makeHarness()
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const reporter = await harness.withStore((store) =>
+				Effect.gen(function* () {
+					const scoped = store.forOrg(ORG_A)
+					const startPr = (prNumber: number) =>
+						scoped.startRun({
+							targetId: target.body.id,
+							kind: "pull_request",
+							prNumber,
+							sourceRef: "0123456789abcdef0123456789abcdef01234567",
+						})
+					const first = yield* startPr(1)
+					yield* scoped.saveFindings(first.id, [confirmed("old")], NO_ESTIMATES)
+					yield* scoped.finishRun(first.id, { status: "complete" })
+					yield* Effect.forEach(
+						Arr.range(2, 26),
+						(n) =>
+							startPr(n).pipe(
+								Effect.flatMap((run) => scoped.finishRun(run.id, { status: "complete" })),
+							),
+						{ discard: true },
+					)
+					yield* scoped.setRunFindingStatus(first.id, "old", "accepted_risk", "ok", USER)
+					return first
+				}),
+			)
+
+			await harness.call("PATCH", `/targets/${target.body.id}/findings/old`, {
+				body: { status: "open", reason: "not ok" },
+			})
+
+			expect(harness.published).toEqual([reporter.id])
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
