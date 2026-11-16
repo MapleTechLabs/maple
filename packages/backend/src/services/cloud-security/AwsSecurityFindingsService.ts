@@ -229,7 +229,8 @@ export class AwsSecurityFindingsService extends Context.Service<
 							yield* store.resolve(feed, { except: read.seenIds }, now)
 						}
 						// Inspector too: a second it skipped may hold updates no later read sees.
-						if (read.state === "enabled" && source !== "access_analyzer") {
+						const beforeDeadline = (yield* Clock.currentTimeMillis) < deadlineMs
+						if (read.state === "enabled" && source !== "access_analyzer" && beforeDeadline) {
 							const stale = yield* store.staleOpenIds(
 								feed,
 								now - RECONCILE_AFTER_MS,

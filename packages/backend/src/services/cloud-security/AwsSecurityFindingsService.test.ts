@@ -728,7 +728,7 @@ describe("AwsSecurityFindingsService", () => {
 		}).pipe(Effect.provide(world.layer))
 	})
 
-	it.effect("moves past a minute in which Inspector updated more findings than one window reads", () => {
+	it.effect("reads a second in which Inspector updated more findings than one window takes, whole", () => {
 		const world = makeWorld()
 		const massUpdate = NOW - 30 * 60_000
 		const total = WINDOW_PAGES * 100 + 200
@@ -753,13 +753,15 @@ describe("AwsSecurityFindingsService", () => {
 		return Effect.gen(function* () {
 			const connection = yield* connect(world)
 			yield* Effect.forEach(
-				Arr.range(1, 6),
+				Arr.range(1, 8),
 				() => Effect.andThen(poll, TestClock.adjust("5 minutes")),
 				{
 					discard: true,
 				},
 			)
 			const rows = yield* findingRows(world)
+			// Fewer than a poll's pages: the second is read whole, not skipped.
+			assert.strictEqual(rows.length, total + 1)
 			assert.isTrue(Arr.some(rows, (row) => Str.endsWith("/later")(row.finding_id)))
 			const store = yield* CloudSecurityStore
 			const [state] = Arr.filter(
@@ -839,6 +841,54 @@ describe("AwsSecurityFindingsService", () => {
 			yield* TestClock.adjust("5 minutes")
 			yield* poll
 			assert.strictEqual((yield* findingRows(world))[0]?.status, "active")
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("reads a burst just past the cursor whole, however busy the minutes behind it", () => {
+		const world = makeWorld()
+		const cursor = NOW - 40 * 60_000
+		const write = (id: string, eventTimeMs: number) => ({
+			eventId: id,
+			eventTimeMs,
+			record: {
+				eventSource: "ec2.amazonaws.com",
+				eventName: "RunInstances",
+				userIdentity: { type: "IAMUser", userName: "ci" },
+			},
+		})
+		world.aws.regions["us-east-1"] = {
+			cloudtrail: [
+				// Already read: the overlap behind the cursor finds them again.
+				...Arr.makeBy(400, (index) => write(`before-${index}`, cursor - 120_000 + index * 100)),
+				// 1,500 writes in the 5 s after the cursor: thirty pages.
+				...Arr.makeBy(1500, (index) => write(`burst-${index}`, cursor + 1 + Math.floor(index * 3.3))),
+			],
+		}
+		return Effect.gen(function* () {
+			const connection = yield* connect(world)
+			const store = yield* CloudSecurityStore
+			yield* store.recordServiceState({
+				orgId,
+				connectionId: connection.id,
+				region: Schema.decodeSync(AwsRegion)("us-east-1"),
+				source: "cloudtrail",
+				state: "enabled",
+				cursorAt: cursor,
+				windowMs: 3132,
+				lastError: null,
+				checkedAt: NOW - 60_000,
+			})
+			yield* Effect.forEach(
+				Arr.range(1, 4),
+				() => Effect.andThen(poll, TestClock.adjust("5 minutes")),
+				{
+					discard: true,
+				},
+			)
+			const burst = Arr.filter(world.audit, ({ event }) =>
+				Str.startsWith("burst-")(event.providerEventId),
+			)
+			assert.strictEqual(new Set(Arr.map(burst, ({ event }) => event.providerEventId)).size, 1500)
 		}).pipe(Effect.provide(world.layer))
 	})
 })
