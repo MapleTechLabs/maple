@@ -251,16 +251,25 @@ const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
 		// A caller naming a table Maple never had (`FROM spans`, a CTE Tinybird cannot resolve) gets
 		// the same 403 as an undeployed datasource; only a Maple table missing is configuration.
 		authoredBy: "caller",
-		test: ({ rawMessage }) => {
-			const name = MISSING_RESOURCE.exec(rawMessage)?.[1]
-			return name !== undefined && !MAPLE_DATASOURCE_NAMES.has(name)
+		// Only a gateway answer with no ClickHouse identity, or a statement refusal: the message can
+		// echo the caller's SQL, so a timeout quoting `Resource 'x' not found` must not match.
+		test: (answer) => {
+			const name = MISSING_RESOURCE.exec(answer.rawMessage)?.[1]
+			const hasIdentity = answer.code !== undefined || answer.ruleType !== undefined
+			return (
+				name !== undefined &&
+				!MAPLE_DATASOURCE_NAMES.has(name) &&
+				(!hasIdentity || refusedStatement(answer))
+			)
 		},
 		make: (base) => new WarehouseInvalidSqlError(base),
 	},
 	{
 		// Tinybird answers a missing datasource with a 403, so the auth rule's status match read a
-		// table still being deployed as rejected credentials. The text names the failure; it wins.
-		pattern: /Resource '[^']*' not found/i,
+		// table still being deployed as rejected credentials. The text names the failure; it wins,
+		// unless a ClickHouse identity says the text is only echoed SQL.
+		test: ({ rawMessage, code, ruleType }) =>
+			MISSING_RESOURCE.test(rawMessage) && code === undefined && ruleType === undefined,
 		make: (base) => new WarehouseConfigError(base),
 	},
 	{

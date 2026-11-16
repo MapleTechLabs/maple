@@ -341,6 +341,19 @@ describe("mapWarehouseError", () => {
 			expect(mapped).not.toBeInstanceOf(WarehouseInvalidSqlError)
 		})
 
+		it("keeps a timeout whose message echoes a missing table upstream", () => {
+			expect(
+				classify(
+					"rawSqlQuery",
+					{
+						message: "timed out running: SELECT 1 -- Resource 'spans' not found",
+						type: "SOCKET_TIMEOUT",
+					},
+					"caller",
+				),
+			).toBeInstanceOf(WarehouseUpstreamError)
+		})
+
 		it("keeps transient failures upstream for caller SQL", () => {
 			expect(
 				classify("rawSqlQuery", { message: "blip", type: "SOCKET_TIMEOUT" }, "caller"),
