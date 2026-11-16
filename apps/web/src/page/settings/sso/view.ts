@@ -12,7 +12,7 @@ import { Array as Arr, Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
-import { button, linkButton } from "@maple/views/ui/button"
+import { button } from "@maple/views/ui/button"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import { copyableField } from "@maple/views/ui/copyable-field"
@@ -51,7 +51,6 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import { textarea } from "@maple/views/ui/textarea"
 import { typography } from "@maple/views/ui/typography"
-import { ENTERPRISE_CONTACT_URL } from "../../onboarding/pricing-cards"
 import { switchRow } from "../../kit/switch-row"
 import { adminOnlyNote, sectionNote, settingsSection, settingsSections } from "../../kit/settings-section"
 import { type ConnectionDraft, type DraftField, type MappingDraft, Message, type Model } from "./model"
@@ -98,9 +97,15 @@ const ROLE_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = Arr.map(MAPPED_ROLES
 	item: { value: role, label: ROLE_LABELS[role] },
 }))
 
-/** Set-up writes are open to admins on an entitled org. */
+/** SSO set-up writes are open to admins on an org with the single sign-on add-on. */
 const canEdit = (model: Model, document: EnterpriseSsoDocument): boolean =>
-	model.canManage && document.entitled
+	model.canManage && document.ssoEntitled
+
+/** SCIM set-up writes need the SCIM provisioning add-on. */
+const canEditScim = (model: Model, document: EnterpriseSsoDocument): boolean =>
+	model.canManage && document.scimEntitled
+
+const ADD_ON_PRICE = "$100/month"
 
 /** Turning things off or removing them stays open to admins after the plan lapses, as the API allows. */
 const canExit = (model: Model): boolean => model.canManage
@@ -169,25 +174,30 @@ const selectControl = (h: H, model: Model, options: SelectOptions): Html => {
 
 // Not entitled
 
-const notEntitled = (h: H): Html =>
+/** An add-on button for admins, a pointer to them for everyone else. */
+const addOnAction = (h: H, model: Model, addOn: "sso" | "scim", label: string): Html =>
+	model.canManage
+		? button(
+				h,
+				{
+					size: "sm",
+					isLoading: model.isAttachingAddOn && model.addOn === addOn,
+					isDisabled: model.isAttachingAddOn,
+					attributes: [h.OnClick(Message.ClickedAddAddOn({ addOn }))],
+				},
+				[label],
+			)
+		: typography(h, { size: "sm", tone: "muted" }, ["Ask an admin to add it."])
+
+const notEntitled = (h: H, model: Model): Html =>
 	alert(h, { role: "status" }, [
 		icon(h, "LockIcon"),
-		alertTitle(h, ["SSO and SCIM are part of the Enterprise plan"]),
+		alertTitle(h, [`Single sign-on is a ${ADD_ON_PRICE} add-on`]),
 		alertDescription(h, [
 			typography(h, { size: "sm", tone: "muted", as: "p", className: "font-prose" }, [
-				"Sign in through Okta, Entra ID, Google Workspace or any SAML or OIDC provider, and provision members over SCIM.",
+				"Sign in through Okta, Entra ID, Google Workspace or any SAML or OIDC provider. SCIM provisioning is a separate add-on once single sign-on is connected.",
 			]),
-			hstack(h, { gap: "2", className: "mt-3" }, [
-				linkButton(
-					h,
-					{
-						size: "sm",
-						href: ENTERPRISE_CONTACT_URL,
-						attributes: [h.Target("_blank"), h.Rel("noreferrer")],
-					},
-					["Contact sales"],
-				),
-			]),
+			hstack(h, { gap: "2", className: "mt-3" }, [addOnAction(h, model, "sso", "Add single sign-on")]),
 		]),
 	])
 
@@ -576,7 +586,7 @@ const directoryPanel = (
 	document: EnterpriseSsoDocument,
 	directory: ScimDirectoryDocument,
 ): ReadonlyArray<Html> => {
-	const isEditable = canEdit(model, document)
+	const isEditable = canEditScim(model, document)
 	// Pausing and removing stay open without the plan; resuming and rotating need it.
 	const canTogglePause = directory.paused ? isEditable : canExit(model)
 	return [
@@ -654,10 +664,12 @@ const noDirectory = (h: H, model: Model, document: EnterpriseSsoDocument): Html 
 			emptyMedia(h, {}, [icon(h, "UsersIcon", { size: 20 })]),
 			emptyTitle(h, ["SCIM is not set up"]),
 			emptyDescription(h, [
-				"Let your identity provider add and remove members, and set their role from its groups.",
+				document.scimEntitled
+					? "Let your identity provider add and remove members, and set their role from its groups."
+					: `Let your identity provider add and remove members, and set their role from its groups. SCIM provisioning is a ${ADD_ON_PRICE} add-on.`,
 			]),
 		]),
-		...(canEdit(model, document)
+		...(canEditScim(model, document)
 			? [
 					emptyContent(h, [
 						button(
@@ -672,7 +684,9 @@ const noDirectory = (h: H, model: Model, document: EnterpriseSsoDocument): Html 
 						),
 					]),
 				]
-			: []),
+			: document.scimEntitled
+				? []
+				: [emptyContent(h, [addOnAction(h, model, "scim", "Add SCIM provisioning")])]),
 	])
 
 const scimSection = (h: H, model: Model, document: EnterpriseSsoDocument): Html =>
@@ -802,7 +816,7 @@ const mappingRow = (
 }
 
 const mappingsSection = (h: H, model: Model, document: EnterpriseSsoDocument): Html => {
-	const isEditable = canEdit(model, document)
+	const isEditable = canEditScim(model, document)
 	const rows = mappingRows(model)
 	const isDirty = model.mappings !== null
 	const hasGroups = document.groups.length > 0
@@ -1265,6 +1279,21 @@ const dialogs = (h: H, model: Model, document: EnterpriseSsoDocument | null): Re
 		}),
 		tokenDialog(h, model),
 		confirmDialog(h, {
+			slotId: "sso-add-on",
+			model: model.addOnDialog,
+			toParentMessage: (message) => Message.GotAddOnDialogMessage({ message }),
+			tone: "default",
+			title:
+				model.addOn === "scim"
+					? `Add SCIM provisioning for ${ADD_ON_PRICE}?`
+					: `Add single sign-on for ${ADD_ON_PRICE}?`,
+			description:
+				"If your organization has a payment method on file, the add-on is attached right away and billed with your plan. Otherwise you continue to checkout.",
+			confirmLabel: "Add to plan",
+			onConfirm: Message.ClickedConfirmAddOn(),
+			isPending: model.isAttachingAddOn,
+		}),
+		confirmDialog(h, {
 			slotId: "sso-directory-remove",
 			model: model.removeDirectoryDialog,
 			toParentMessage: (message) => Message.GotRemoveDirectoryDialogMessage({ message }),
@@ -1285,9 +1314,9 @@ const loaded = (
 	isKnownMember: boolean,
 ): ReadonlyArray<Html> => {
 	const hasState = document.domains.length > 0 || document.connection !== null
-	if (!document.entitled && !hasState) return [notEntitled(h)]
+	if (!document.ssoEntitled && !hasState) return [notEntitled(h, model)]
 	return [
-		...(document.entitled ? [] : [notEntitled(h)]),
+		...(document.ssoEntitled ? [] : [notEntitled(h, model)]),
 		// While the role is unknown the page banner speaks; nothing claims the viewer is not an admin.
 		...(model.canManage || !isKnownMember
 			? []

@@ -21,7 +21,8 @@ import type { Resources } from "../platform/resources"
 import { keepLocal } from "./local-commands"
 
 // `/lab/sso`: the settings SSO & SCIM tab over fixtures. `?state=` picks one: not-entitled, empty,
-// pending (a domain awaiting its TXT record), connected, oidc, configured, token, enforce, member.
+// pending (a domain awaiting its TXT record), connected, oidc, sso-only (SCIM add-on not bought),
+// configured, token, enforce, member.
 
 export const LabState = Schema.Literals([
 	"not-entitled",
@@ -29,6 +30,7 @@ export const LabState = Schema.Literals([
 	"pending",
 	"connected",
 	"oidc",
+	"sso-only",
 	"configured",
 	"token",
 	"enforce",
@@ -129,7 +131,8 @@ const bypass = [new SsoBypassUserDocument({ userId: userId("user_ada"), identifi
 
 const documentOf = (state: LabState): EnterpriseSsoDocument => {
 	const base = {
-		entitled: true,
+		ssoEntitled: true,
+		scimEntitled: true,
 		domains: [] as Array<SsoDomainDocument>,
 		connection: null,
 		directory: null,
@@ -139,7 +142,7 @@ const documentOf = (state: LabState): EnterpriseSsoDocument => {
 	}
 	switch (state) {
 		case "not-entitled":
-			return new EnterpriseSsoDocument({ ...base, entitled: false })
+			return new EnterpriseSsoDocument({ ...base, ssoEntitled: false, scimEntitled: false })
 		case "empty":
 			return new EnterpriseSsoDocument(base)
 		case "pending":
@@ -150,6 +153,14 @@ const documentOf = (state: LabState): EnterpriseSsoDocument => {
 				...base,
 				domains: [verifiedDomain, pendingDomain],
 				connection: connection(false),
+				bypassUsers: bypass,
+			})
+		case "sso-only":
+			return new EnterpriseSsoDocument({
+				...base,
+				scimEntitled: false,
+				domains: [verifiedDomain],
+				connection: connection(true),
 				bypassUsers: bypass,
 			})
 		case "oidc":

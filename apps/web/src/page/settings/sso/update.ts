@@ -1,4 +1,6 @@
+import { ENTERPRISE_SCIM_ADDON_ID, ENTERPRISE_SSO_ADDON_ID } from "@maple/domain/billing"
 import {
+	AttachRequest,
 	type EnterpriseSsoDocument,
 	ScimDirectoryStateRequest,
 	ScimRoleMappingsRequest,
@@ -21,6 +23,8 @@ import * as Menu from "@maple/views/ui/menu"
 import * as Select from "@maple/views/ui/select"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 import { clerkTry, currentClerkOrganization } from "../../../platform/clerk"
+import { buildCheckoutSuccessUrl } from "../../kit/billing/checkout-return"
+import { trackProduct } from "../../../data/analytics"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { memberDisplayName } from "../kit/members"
 import { normalizeDomain } from "../domains/update"
@@ -123,6 +127,34 @@ const AddSsoDomain = Command.define("AddSsoDomain", {
 		Effect.flatMap(MapleInternalApiClient, (client) =>
 			client.enterpriseSso.addDomain({ payload: new SsoAddDomainRequest({ domain }) }),
 		).pipe(written("addDomain")),
+})
+
+const ADD_ON_PLANS = { sso: ENTERPRISE_SSO_ADDON_ID, scim: ENTERPRISE_SCIM_ADDON_ID } as const
+
+/** Stripe's checkout returns to this tab; with a card on file the add-on attaches at once. */
+const AttachSsoAddOn = Command.define("AttachSsoAddOn", {
+	args: { planId: Schema.String },
+	messages: [Message.CompletedAttachAddOn],
+	execute: ({ planId }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalApiClient
+			const successUrl = yield* Effect.sync(() => buildCheckoutSuccessUrl(window.location.href))
+			return yield* client.billing.attach({ payload: new AttachRequest({ planId, successUrl }) })
+		}).pipe(settleTo((result) => Message.CompletedAttachAddOn({ result }))),
+})
+
+const OpenSsoAddOnCheckout = Command.define("OpenSsoAddOnCheckout", {
+	args: { url: Schema.String, planId: Schema.String },
+	messages: [Message.CompletedOpenAddOnCheckout],
+	execute: ({ url, planId }) =>
+		trackProduct("plan_checkout_started", { plan_id: planId }).pipe(
+			Effect.andThen(
+				Effect.sync(() => {
+					window.location.href = url
+				}),
+			),
+			Effect.as(Message.CompletedOpenAddOnCheckout()),
+		),
 })
 
 const VerifySsoDomain = Command.define("VerifySsoDomain", {
@@ -257,6 +289,9 @@ export const init = (canManage: boolean): Return => ({
 		removeDirectoryDialog: Dialog.init("sso-directory-remove", "alert-dialog"),
 		rotateDialog: Dialog.init("sso-token-rotate", "alert-dialog"),
 		tokenDialog: Dialog.init("sso-token", "dialog"),
+		addOn: null,
+		addOnDialog: Dialog.init("sso-add-on", "alert-dialog"),
+		isAttachingAddOn: false,
 		issuedToken: null,
 		mappings: null,
 		nextMappingKey: 0,
@@ -416,6 +451,7 @@ type DialogKey =
 	| "removeDirectoryDialog"
 	| "rotateDialog"
 	| "tokenDialog"
+	| "addOnDialog"
 
 const dialogMessage = (key: DialogKey, message: Dialog.Message): Message => {
 	switch (key) {
@@ -439,6 +475,8 @@ const dialogMessage = (key: DialogKey, message: Dialog.Message): Message => {
 			return Message.GotRotateDialogMessage({ message })
 		case "tokenDialog":
 			return Message.GotTokenDialogMessage({ message })
+		case "addOnDialog":
+			return Message.GotAddOnDialogMessage({ message })
 	}
 }
 
@@ -791,6 +829,52 @@ export const update = (model: Model, message: Message): Return =>
 			const paused = !directory.paused
 			return startWrite(model, paused ? "pause" : "resume", SetScimDirectoryState({ paused }))
 		},
+		// Add-ons
+		ClickedAddAddOn: ({ addOn }) =>
+			!model.canManage || model.isAttachingAddOn
+				? { model }
+				: openDialog({ ...model, addOn }, "addOnDialog"),
+		GotAddOnDialogMessage: ({ message: child }) =>
+			model.isAttachingAddOn ? { model } : updateDialog(model, "addOnDialog", child),
+		ClickedConfirmAddOn: () =>
+			model.isAttachingAddOn || model.addOn === null
+				? { model }
+				: {
+						model: { ...model, isAttachingAddOn: true },
+						commands: [AttachSsoAddOn({ planId: ADD_ON_PLANS[model.addOn] })],
+					},
+		CompletedAttachAddOn: ({ result }) => {
+			const planId = model.addOn === null ? "" : ADD_ON_PLANS[model.addOn]
+			const closed = dialogStep(
+				{ ...model, isAttachingAddOn: false, addOn: null },
+				"addOnDialog",
+				Dialog.close(model.addOnDialog),
+			)
+			return Result.match(result, {
+				onSuccess: ({ paymentUrl }) =>
+					paymentUrl !== undefined && paymentUrl !== null && paymentUrl !== ""
+						? {
+								...closed,
+								commands: [
+									...(closed.commands ?? []),
+									OpenSsoAddOnCheckout({ url: paymentUrl, planId }),
+								],
+							}
+						: {
+								model: { ...closed.model, document: AsyncData.Loading() },
+								commands: [...(closed.commands ?? []), FetchEnterpriseSso()],
+								// The add-on is on the app's customer too: the root re-reads it.
+								outMessage: PageOutMessage.RequestedCustomerRefresh({
+									toast: { type: "success", title: "Add-on added", description: "" },
+								}),
+							},
+				onFailure: (error) => ({
+					...closed,
+					outMessage: toast("error", "Couldn't add the add-on", failureMessage(error)),
+				}),
+			})
+		},
+		CompletedOpenAddOnCheckout: () => ({ model }),
 		ClickedRotateToken: () => (model.canManage ? openDialog(model, "rotateDialog") : { model }),
 		GotRotateDialogMessage: ({ message: child }) => updateDialog(model, "rotateDialog", child),
 		ClickedConfirmRotate: () => startWrite(model, "rotateToken", IssueScimToken({ kind: "rotate" })),

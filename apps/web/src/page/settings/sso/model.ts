@@ -1,4 +1,10 @@
-import { EnterpriseSsoDocument, ScimTokenIssued, SsoMappedRole, SsoProvider } from "@maple/domain/http"
+import {
+	AttachResult,
+	EnterpriseSsoDocument,
+	ScimTokenIssued,
+	SsoMappedRole,
+	SsoProvider,
+} from "@maple/domain/http"
 import { Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
@@ -43,6 +49,10 @@ export const WriteAction = Schema.Literals([
 	"removeBypass",
 ])
 export type WriteAction = typeof WriteAction.Type
+
+/** The two self-serve add-ons the tab sells: single sign-on, and SCIM provisioning on top. */
+export const AddOn = Schema.Literals(["sso", "scim"])
+export type AddOn = typeof AddOn.Type
 
 export const SamlMode = Schema.Literals(["metadata", "manual"])
 export type SamlMode = typeof SamlMode.Type
@@ -104,6 +114,10 @@ export const Model = Schema.Struct({
 	tokenDialog: Dialog.Model,
 	/** The SCIM token, only while its reveal dialog is open. */
 	issuedToken: Schema.NullOr(Schema.String),
+	/** The add-on the confirm dialog offers, while it is open or its checkout is starting. */
+	addOn: Schema.NullOr(AddOn),
+	addOnDialog: Dialog.Model,
+	isAttachingAddOn: Schema.Boolean,
 	/** `null` while the rows match the saved mappings. */
 	mappings: Schema.NullOr(Schema.Array(MappingDraft)),
 	nextMappingKey: Schema.Number,
@@ -158,6 +172,11 @@ export const Message = defineMessageUnion({
 	ClickedRemoveDirectory: {},
 	GotRemoveDirectoryDialogMessage: { message: Dialog.Message },
 	ClickedConfirmRemoveDirectory: {},
+	ClickedAddAddOn: { addOn: AddOn },
+	GotAddOnDialogMessage: { message: Dialog.Message },
+	ClickedConfirmAddOn: {},
+	CompletedAttachAddOn: { result: Schema.Result(AttachResult, LoadFailure) },
+	CompletedOpenAddOnCheckout: {},
 	ClickedAddMapping: {},
 	ClickedMoveMapping: { key: Schema.String, by: Schema.Literals([-1, 1]) },
 	ClickedRemoveMapping: { key: Schema.String },

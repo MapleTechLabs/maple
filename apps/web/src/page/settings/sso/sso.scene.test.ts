@@ -1,4 +1,4 @@
-import { EnterpriseSsoDocument, ScimTokenIssued } from "@maple/domain/http"
+import { AttachResult, EnterpriseSsoDocument, ScimTokenIssued } from "@maple/domain/http"
 import { Array as Arr, Option, Result, Schema } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
@@ -41,7 +41,8 @@ const verifiedDomain = {
 
 const doc = (overrides: Partial<typeof EnterpriseSsoDocument.Encoded> = {}): EnterpriseSsoDocument =>
 	Schema.decodeSync(EnterpriseSsoDocument)({
-		entitled: true,
+		ssoEntitled: true,
+		scimEntitled: true,
 		domains: [],
 		connection: null,
 		directory: null,
@@ -62,12 +63,12 @@ const view = withViewInputs(ssoView, { isKnownMember: true })()
 const dialogMounted = Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog())
 
 describe("sso tab", () => {
-	test("an org without the Enterprise plan sees one notice and no setup actions", () => {
+	test("an org without the add-on sees one notice to buy it, and no setup actions", () => {
 		scene(
 			{ update, view },
-			given(loaded(doc({ entitled: false }))),
-			expectView(text("SSO and SCIM are part of the Enterprise plan")).toExist(),
-			expectView(role("link", { name: "Contact sales" })).toExist(),
+			given(loaded(doc({ ssoEntitled: false, scimEntitled: false }))),
+			expectView(text("Single sign-on is a $100/month add-on")).toExist(),
+			expectView(role("button", { name: "Add single sign-on" })).toExist(),
 			expectView(role("button", { name: "Add domain" })).not.toExist(),
 			expectView(text("Identity provider")).not.toExist(),
 		)
@@ -279,7 +280,8 @@ describe("sso tab", () => {
 	test("an org that left Enterprise can still relax SSO and pause or remove SCIM, but not set anything up", () => {
 		const model = loaded(
 			doc({
-				entitled: false,
+				ssoEntitled: false,
+				scimEntitled: false,
 				domains: [verifiedDomain],
 				connection: { ...connection, enforced: true },
 				directory: {
@@ -342,9 +344,52 @@ describe("sso tab", () => {
 	test("an org that left Enterprise can still open a domain's menu to remove it", () => {
 		scene(
 			{ update, view },
-			given(loaded(doc({ entitled: false, domains: [verifiedDomain] }))),
+			given(loaded(doc({ ssoEntitled: false, scimEntitled: false, domains: [verifiedDomain] }))),
 			expectView(role("button", { name: "Actions for acme.com" })).toExist(),
 			expectView(role("button", { name: "Add domain" })).not.toExist(),
 		)
+	})
+
+	test("an admin buys the SSO add-on through a confirm, which attaches the enterprise_sso plan", () => {
+		const model = loaded(doc({ ssoEntitled: false, scimEntitled: false }))
+		const opened = update(model, Message.ClickedAddAddOn({ addOn: "sso" })).model
+		expect(opened.addOn).toBe("sso")
+		const confirmed = update(opened, Message.ClickedConfirmAddOn())
+		expect(confirmed.commands?.[0]).toMatchObject({
+			name: "AttachSsoAddOn",
+			args: { planId: "enterprise_sso" },
+		})
+		// A member cannot start a purchase.
+		expect(
+			names(
+				update(
+					loaded(doc({ ssoEntitled: false, scimEntitled: false }), false),
+					Message.ClickedAddAddOn({ addOn: "sso" }),
+				),
+			),
+		).toEqual([])
+	})
+
+	test("SCIM is its own add-on: with SSO bought, the SCIM section offers it and checkout follows", () => {
+		const model = loaded(doc({ scimEntitled: false, domains: [verifiedDomain], connection }))
+		scene(
+			{ update, view },
+			given(model),
+			expectView(role("button", { name: "Add SCIM provisioning" })).toExist(),
+			expectView(role("button", { name: "Set up SCIM" })).not.toExist(),
+		)
+		const opened = update(model, Message.ClickedAddAddOn({ addOn: "scim" })).model
+		const confirmed = update(opened, Message.ClickedConfirmAddOn())
+		expect(confirmed.commands?.[0]).toMatchObject({
+			name: "AttachSsoAddOn",
+			args: { planId: "enterprise_scim" },
+		})
+		const checkout = update(
+			confirmed.model,
+			Message.CompletedAttachAddOn({
+				result: Result.succeed(new AttachResult({ paymentUrl: "https://checkout.stripe.test/c" })),
+			}),
+		)
+		expect(names(checkout)).toContain("OpenSsoAddOnCheckout")
 	})
 })

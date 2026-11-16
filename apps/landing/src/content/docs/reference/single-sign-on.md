@@ -1,13 +1,22 @@
 ---
 title: "Single sign-on and SCIM provisioning"
-description: "Sign in to Maple through your identity provider with SAML 2.0 or OIDC, verify your email domains, enforce SSO, and provision members, roles and deprovisioning with SCIM 2.0."
+description: "Sign in to Maple through your identity provider with SAML 2.0 or OIDC, verify your email domains, enforce SSO, and provision members, roles and deprovisioning with SCIM 2.0. Self-serve add-ons on every plan."
 group: "Reference"
 order: 11
 ---
 
 Single sign-on (SSO) lets members sign in to Maple through your identity provider (IdP). SCIM provisioning lets the IdP create, update and remove Maple members, and set their roles from IdP groups.
 
-Both are available on the Enterprise plan. Only organization admins can configure them, under **Settings → SSO & SCIM** in the dashboard. Every change is recorded in the organization's audit log, under **Security → Audit log**.
+Both are self-serve add-ons on every plan, added by an organization admin under **Settings → SSO & SCIM** in the dashboard:
+
+| Add-on            | Price      | Includes                                                      |
+| ----------------- | ---------- | ------------------------------------------------------------- |
+| Single sign-on    | $100/month | One SAML or OIDC connection, domain verification, break-glass |
+| SCIM provisioning | $100/month | Provisioning, deprovisioning and group to role mapping        |
+
+SCIM provisioning needs single sign-on connected first. If an add-on ends, everything you set up keeps working as it is, and admins can still turn SSO off, pause or remove SCIM, and remove the connection.
+
+Only organization admins can configure SSO and SCIM. Every change is recorded in the organization's audit log, under **Security → Audit log**.
 
 SSO and SCIM work the same for organizations in the US and EU [regions](/docs/reference/regions).
 
@@ -72,7 +81,7 @@ Existing members don't need to do anything in advance. On their next sign-in the
 
 ## Set up SCIM provisioning
 
-SCIM needs a connected IdP. Once the connection from step 2 is in place, click **Set up SCIM**. Maple shows:
+SCIM needs a connected IdP and the SCIM provisioning add-on. Once the connection from step 2 is in place, add the add-on if you haven't, then click **Set up SCIM**. Maple shows:
 
 - a SCIM 2.0 base URL
 - a bearer token
