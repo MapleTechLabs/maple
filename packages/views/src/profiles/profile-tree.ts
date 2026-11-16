@@ -1,22 +1,12 @@
 import { codeUnitAt } from "@maple/strings"
 import { Array as Arr, Option, Order, Schema, String as Str } from "effect"
+import { frameKey, type ProfileInput, type ProfileStack } from "@maple/domain/profiles"
 
 // A profile as a tree: the stacks a window holds, folded frame by frame from the root, plus the
 // icicle geometry and the per-function totals read off it.
 
-/** One distinct stack and its summed value; `frames` runs root first, the others are parallel. */
-export interface ProfileStack {
-	readonly frames: ReadonlyArray<string>
-	readonly files: ReadonlyArray<string>
-	readonly lines: ReadonlyArray<number>
-	readonly value: number
-}
-
-export interface ProfileInput {
-	readonly stacks: ReadonlyArray<ProfileStack>
-	/** Every stack in scope, including those past the cap: the gap is drawn as one node. */
-	readonly totalValue: number
-}
+export type { FunctionTotal, ProfileInput, ProfileStack } from "@maple/domain/profiles"
+export { topFunctions } from "@maple/domain/profiles"
 
 export interface ProfileNode {
 	/** Stable for a given path, so a zoom survives a refetch. */
@@ -89,9 +79,6 @@ const trees = new WeakMap<
 	{ readonly totalValue: number; readonly tree: ProfileNode }
 >()
 
-/** A function's identity: same-named closures in one file are told apart by the line they start on. */
-const frameKey = (name: string, file: string, line: number): string => `${name}\u0000${file}\u0000${line}`
-
 /** The stacks folded into one tree under a synthetic root that holds the whole window. */
 export const profileTree = (input: ProfileInput): ProfileNode => {
 	const cached = trees.get(input.stacks)
@@ -150,46 +137,6 @@ export const profileTree = (input: ProfileInput): ProfileNode => {
 	const tree = freeze(root)
 	trees.set(input.stacks, { totalValue: input.totalValue, tree })
 	return tree
-}
-
-export interface FunctionTotal {
-	readonly name: string
-	readonly file: string
-	readonly line: number
-	/** Value sampled in the function itself. */
-	readonly self: number
-	/** Value of every stack the function is on, each stack counted once. */
-	readonly total: number
-}
-
-const bySelf = Order.mapInput(Order.flip(Order.Number), (row: FunctionTotal) => row.self)
-const byTotal = Order.mapInput(Order.flip(Order.Number), (row: FunctionTotal) => row.total)
-
-/** Functions by their own value, heaviest first: where the time (or the bytes) actually went. */
-export const topFunctions = (input: ProfileInput, limit: number): ReadonlyArray<FunctionTotal> => {
-	const totals = new Map<
-		string,
-		{ name: string; file: string; line: number; self: number; total: number }
-	>()
-	Arr.forEach(input.stacks, (stack) => {
-		if (stack.value <= 0) return
-		const seen = new Set<string>()
-		const leaf = stack.frames.length - 1
-		Arr.forEach(stack.frames, (name, index) => {
-			const file = stack.files[index] ?? ""
-			const line = stack.lines[index] ?? 0
-			const key = frameKey(name, file, line)
-			const row = totals.get(key) ?? { name, file, line, self: 0, total: 0 }
-			totals.set(key, row)
-			if (index === leaf) row.self += stack.value
-			// Recursion puts a function on a stack more than once; its time is counted once.
-			if (!seen.has(key)) {
-				seen.add(key)
-				row.total += stack.value
-			}
-		})
-	})
-	return Arr.take(Arr.sort([...totals.values()], Order.combine(bySelf, byTotal)), limit)
 }
 
 /** Whether a frame matches a search: its name or its file, ignoring case. */
