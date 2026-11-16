@@ -2,14 +2,17 @@ import { DailySpendResponse, DailyVolume, WarehouseQueryError, type TenantContex
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import { Context, DateTime, Effect, Layer, String as Str } from "effect"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { isMissingProductEvents } from "@maple/backend/services/warehouse/missing-table"
+import {
+	isMissingProductEvents,
+	isMissingServiceUsageProfiles,
+} from "@maple/backend/services/warehouse/missing-table"
 import * as Integrations from "@maple/query-engine-integrations"
 
 /**
  * The daily volume series behind the billing page's cumulative spend chart.
  *
  * Autumn reports cycle totals only, so the daily shape comes from the warehouse:
- * `service_usage` for log/trace/metric bytes and `session_replays` for browser
+ * `service_usage` for log/trace/metric/profile bytes and `session_replays` for browser
  * sessions. Volume only — this service never prices anything. Dollars are the
  * client's job, computed from the same catalog rates the cost breakdown uses, so
  * the chart and the invoice can't tell two stories.
@@ -68,12 +71,17 @@ export class DailySpendService extends Context.Service<DailySpendService, DailyS
 				// Two queries rather than a UNION: the tables disagree on the bucket
 				// column's type and unifying branches has produced 502s before. Both are
 				// pre-aggregated reads, so the second round-trip is cheap.
-				const signalRows = yield* warehouse
-					.compiledQuery(tenant, CH.compile(Integrations.dailySignalVolumeQuery(), params), {
-						profile: "list",
-						context: "billingDailySignalVolume",
-					})
-					.pipe(Effect.mapError(toQueryError))
+				const signalVolume = (profiles: boolean) =>
+					warehouse.compiledQuery(
+						tenant,
+						CH.compile(Integrations.dailySignalVolumeQuery({ profiles }), params),
+						{ profile: "list", context: "billingDailySignalVolume" },
+					)
+				// A cluster whose service_usage predates migration 0068 has no profile bytes to show.
+				const signalRows = yield* signalVolume(true).pipe(
+					Effect.catchIf(isMissingServiceUsageProfiles, () => signalVolume(false)),
+					Effect.mapError(toQueryError),
+				)
 
 				const sessionRows = yield* warehouse
 					.compiledQuery(tenant, CH.compile(Integrations.dailySessionCountQuery(), params), {
@@ -82,12 +90,16 @@ export class DailySpendService extends Context.Service<DailySpendService, DailyS
 					})
 					.pipe(Effect.mapError(toQueryError))
 
-				const byDay = new Map<string, { logsGB: number; tracesGB: number; metricsGB: number }>()
+				const byDay = new Map<
+					string,
+					{ logsGB: number; tracesGB: number; metricsGB: number; profilesGB: number }
+				>()
 				for (const row of signalRows) {
 					byDay.set(toUtcDateKey(DateTime.toEpochMillis(row.day)), {
 						logsGB: row.logBytes / BYTES_PER_BILLED_GB,
 						tracesGB: row.traceBytes / BYTES_PER_BILLED_GB,
 						metricsGB: row.metricBytes / BYTES_PER_BILLED_GB,
+						profilesGB: row.profileBytes / BYTES_PER_BILLED_GB,
 					})
 				}
 
@@ -125,6 +137,7 @@ export class DailySpendService extends Context.Service<DailySpendService, DailyS
 							logsGB: signals?.logsGB ?? 0,
 							tracesGB: signals?.tracesGB ?? 0,
 							metricsGB: signals?.metricsGB ?? 0,
+							profilesGB: signals?.profilesGB ?? 0,
 							browserSessions: sessionsByDay.get(key) ?? 0,
 							productEvents: eventsByDay.get(key) ?? 0,
 						}),

@@ -5,6 +5,7 @@ import {
 } from "@maple/query-engine"
 import { Option, Schema, Array as Arr } from "effect"
 import type { TimeWindow } from "../../../data/time-range"
+import type { PageContext } from "../../contract"
 import type { ServiceSearch } from "../../../route/search"
 
 // Pure halves of the route and the service panels: tab, environment scope, query inputs.
@@ -16,7 +17,7 @@ export const DEFAULT_PRESET = "12h"
 /** The switcher's "no environment filter" option. */
 export const ALL_ENVIRONMENTS = "all"
 
-export const ServiceTab = Schema.Literals(["overview", "api", "operations", "dependencies"])
+export const ServiceTab = Schema.Literals(["overview", "api", "operations", "dependencies", "profiles"])
 export type ServiceTab = typeof ServiceTab.Type
 const decodeTab = Schema.decodeUnknownOption(ServiceTab)
 
@@ -25,11 +26,23 @@ export const SERVICE_TABS: ReadonlyArray<{ readonly value: ServiceTab; readonly 
 	{ value: "api", label: "API" },
 	{ value: "operations", label: "Operations" },
 	{ value: "dependencies", label: "Dependencies" },
+	{ value: "profiles", label: "Profiles" },
 ]
 
-/** An unknown `?tab=` (a stale link) falls back to Overview. */
-export const tabOf = (search: Search): ServiceTab =>
-	Option.getOrElse(decodeTab(search.tab), (): ServiceTab => "overview")
+type Rollouts = Pick<PageContext, "hasProfiling">
+
+/** The tabs the org is shown: Profiles only inside the `profiling` rollout. */
+export const serviceTabs = (context: Rollouts): ReadonlyArray<(typeof SERVICE_TABS)[number]> =>
+	context.hasProfiling === true ? SERVICE_TABS : Arr.filter(SERVICE_TABS, (tab) => tab.value !== "profiles")
+
+/**
+ * An unknown `?tab=` (a stale link) falls back to Overview, and so does Profiles outside the
+ * `profiling` rollout, which is also what a caller without the context reads.
+ */
+export const tabOf = (search: Search, context: Rollouts = {}): ServiceTab => {
+	const tab = Option.getOrElse(decodeTab(search.tab), (): ServiceTab => "overview")
+	return tab === "profiles" && context.hasProfiling !== true ? "overview" : tab
+}
 
 /** `environments=[""]` from old links reads as "all"; `undefined` is every environment. */
 export const environmentsOf = (search: Search): ReadonlyArray<string> | undefined => {

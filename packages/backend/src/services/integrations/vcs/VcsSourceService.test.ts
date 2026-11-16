@@ -1,6 +1,18 @@
 import { assert, describe, it } from "@effect/vitest"
 import { type GitCommitSha, OrgId } from "@maple/domain/http"
-import { Duration, Effect, Exit, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
+import {
+	Cause,
+	Deferred,
+	Duration,
+	Effect,
+	Exit,
+	Layer,
+	Option,
+	Predicate,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { TestClock } from "effect/testing"
 import { VcsProviderRegistry } from "./VcsProviderRegistry"
 import { VcsRepository } from "./VcsRepository"
@@ -55,7 +67,8 @@ const makeLayer = (providerCalls: string[], connected: { value: boolean } = { va
 		resolveRef: (_installation, repo, ref) =>
 			Effect.sync(() => {
 				providerCalls.push(`resolve:${repo.owner}/${repo.name}:${ref}`)
-				return ref === "gone" ? Option.none() : Option.some(Str.repeat(40)("d") as GitCommitSha)
+				if (ref === "gone" || ref === Str.repeat(40)("f")) return Option.none()
+				return Option.some((/^[0-9a-f]{40}$/.test(ref) ? ref : Str.repeat(40)("d")) as GitCommitSha)
 			}),
 		repositorySizeBytes: (_installation, repo) =>
 			Effect.sync(() => {
@@ -85,7 +98,8 @@ const makeLayer = (providerCalls: string[], connected: { value: boolean } = { va
 
 	const repoLayer = Layer.succeed(VcsRepository, {
 		listInstallationsByOrg: (orgId: OrgId) => Effect.succeed(orgId === ORG ? [installation] : []),
-		listRepositoriesByInstallation: () => Effect.sync(() => (connected.value ? [repository] : [])),
+		listActiveRepositoriesByOrg: (orgId: OrgId) =>
+			Effect.sync(() => (connected.value && orgId === ORG ? [repository] : [])),
 	} as never)
 	const registryLayer = Layer.succeed(VcsProviderRegistry, {
 		ids: ["github"],
@@ -132,7 +146,7 @@ describe("VcsSourceService", () => {
 		}).pipe(Effect.provide(makeLayer(calls)))
 	})
 
-	it.effect("resolves a checkout at the tracked branch, at a named ref, and straight from a SHA", () => {
+	it.effect("resolves a checkout at the tracked branch, at a named ref, and at a confirmed SHA", () => {
 		const calls: string[] = []
 		return Effect.gen(function* () {
 			const source = yield* VcsSourceService
@@ -150,8 +164,9 @@ describe("VcsSourceService", () => {
 			assert.isTrue(Exit.isFailure(missing))
 			assert.deepStrictEqual(calls, [
 				"resolve:octo/shop:production",
-				// The second checkout reuses the first one's clone token.
 				"clone:octo/shop",
+				// The second checkout reuses the first one's clone token.
+				`resolve:octo/shop:${Str.repeat(40)("e")}`,
 				"resolve:octo/shop:gone",
 			])
 		}).pipe(Effect.provide(makeLayer(calls)))
@@ -165,17 +180,36 @@ describe("VcsSourceService", () => {
 			const source = yield* VcsSourceService
 			yield* source.resolveCheckout(ORG, "octo/shop", sha)
 			yield* source.resolveCheckout(ORG, "octo/shop", sha)
-			assert.deepStrictEqual(calls, ["clone:octo/shop"])
+			assert.deepStrictEqual(calls, [`resolve:octo/shop:${sha}`, "clone:octo/shop"])
 
 			yield* TestClock.adjust(Duration.sum(CLONE_CREDENTIALS_REUSE, Duration.seconds(1)))
 			yield* source.resolveCheckout(ORG, "octo/shop", sha)
-			assert.deepStrictEqual(calls, ["clone:octo/shop", "clone:octo/shop"])
+			assert.deepStrictEqual(calls, [`resolve:octo/shop:${sha}`, "clone:octo/shop", "clone:octo/shop"])
 
 			// Disconnected inside the reuse window: the cached token is never handed out.
 			connected.value = false
 			const gone = yield* Effect.exit(source.resolveCheckout(ORG, "octo/shop", sha))
 			assert.isTrue(Exit.isFailure(gone))
 		}).pipe(Effect.provide(makeLayer(calls, connected)))
+	})
+
+	it.effect("refuses a SHA the repository does not have, and asks again on the next call", () => {
+		const calls: string[] = []
+		const invented = Str.repeat(40)("f")
+		return Effect.gen(function* () {
+			const source = yield* VcsSourceService
+			const first = yield* Effect.exit(source.resolveCheckout(ORG, "octo/shop", invented))
+			const second = yield* Effect.exit(source.resolveCheckout(ORG, "octo/shop", invented))
+			const tagOf = (exit: typeof first) => {
+				const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
+				return Predicate.hasProperty(error, "_tag") ? error._tag : undefined
+			}
+			assert.deepStrictEqual(Arr.map([first, second], tagOf), [
+				"@maple/backend/vcs/VcsSourceRefNotFoundError",
+				"@maple/backend/vcs/VcsSourceRefNotFoundError",
+			])
+			assert.deepStrictEqual(calls, [`resolve:octo/shop:${invented}`, `resolve:octo/shop:${invented}`])
+		}).pipe(Effect.provide(makeLayer(calls)))
 	})
 
 	it.effect("does not expose repositories across organizations", () => {
@@ -189,4 +223,63 @@ describe("VcsSourceService", () => {
 			assert.deepStrictEqual(calls, [])
 		}).pipe(Effect.provide(makeLayer(calls)))
 	})
+
+	it.live("reads installations and repositories at the same time, one repository read per call", () =>
+		Effect.gen(function* () {
+			const repositoriesStarted = yield* Deferred.make<void>()
+			const repositoryReads: OrgId[] = []
+			const suspended = {
+				...installation,
+				id: "00000000-0000-4000-8000-000000000003",
+				status: "suspended",
+			}
+			const second = { ...installation, id: "00000000-0000-4000-8000-000000000004" }
+			const repoLayer = Layer.succeed(VcsRepository, {
+				// Resolves only once the repository read has begun, so a sequential read never finishes.
+				listInstallationsByOrg: () =>
+					Deferred.await(repositoriesStarted).pipe(Effect.as([installation, suspended, second])),
+				listActiveRepositoriesByOrg: (orgId: OrgId) =>
+					Effect.sync(() => repositoryReads.push(orgId)).pipe(
+						Effect.andThen(Deferred.succeed(repositoriesStarted, undefined)),
+						Effect.as([
+							repository,
+							{
+								...repository,
+								id: "00000000-0000-4000-8000-000000000005",
+								installationId: suspended.id,
+								fullName: "octo/hidden",
+							},
+							{
+								...repository,
+								id: "00000000-0000-4000-8000-000000000006",
+								installationId: second.id,
+								fullName: "octo/api",
+							},
+						]),
+					),
+			} as never)
+			const registryLayer = Layer.succeed(VcsProviderRegistry, {
+				ids: ["github"],
+				resolve: () => Effect.die("unused"),
+			} as never)
+			const repositories = yield* Effect.gen(function* () {
+				const source = yield* VcsSourceService
+				return yield* source.listRepositories(ORG)
+			}).pipe(
+				Effect.provide(
+					Layer.effect(VcsSourceService, VcsSourceService.make).pipe(
+						Layer.provide(Layer.mergeAll(repoLayer, registryLayer)),
+					),
+				),
+				Effect.timeoutOrElse({
+					duration: Duration.seconds(2),
+					orElse: () => Effect.die("reads ran in sequence"),
+				}),
+			)
+			assert.deepStrictEqual(
+				[Arr.map(repositories, (repo) => repo.fullName), repositoryReads],
+				[["octo/api", "octo/shop"], [ORG]],
+			)
+		}),
+	)
 })

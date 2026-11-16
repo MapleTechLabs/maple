@@ -11,12 +11,25 @@ import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { Cause, Clock, Duration, Effect } from "effect"
 import type { AgentCompletion, AgentDefinition } from "./agents"
 import type { AutonomousOutcome, PhaseKind } from "./autonomous-outcome"
+import { CLOSE_OUT_MAX_DURATION } from "./budgets"
 import { withToolTranscript } from "./close-out"
 import { reviewFailureReason } from "./review/failure"
 import type { ChatRunOutcome } from "./run"
 
 /** A phase with less than this much of the pass's clock left is not started. */
 const MIN_CONTINUE_MS = 2 * 60 * 1000
+
+/** The session's agent on the close-out's own clock, so a long pass cannot push the turn past its watchdog. */
+export const closeOutAgent = (agent: AgentDefinition): AgentDefinition => ({
+	...agent,
+	budget: {
+		...agent.budget,
+		maxDuration: Duration.min(
+			Duration.fromInputUnsafe(agent.budget.maxDuration),
+			Duration.fromInputUnsafe(CLOSE_OUT_MAX_DURATION),
+		),
+	},
+})
 
 /** One run of the turn. */
 export interface PhaseTurn {
@@ -125,6 +138,7 @@ export const runAutonomousPhases = <E, R>(input: AutonomousPhasesInput<E, R>): E
 				text: completion.closeOutPrompt,
 				history: withToolTranscript(input.transcript()),
 				closeOut: true,
+				agent: closeOutAgent(agent),
 			})
 			yield* Effect.annotateCurrentSpan(completion.closedOutAttribute, closeOut.submitted)
 		}

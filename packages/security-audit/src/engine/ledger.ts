@@ -6,7 +6,12 @@
 import type { HunterUnitResult, MissingUnit, SeedUnit } from "../results"
 import type { CoverageUnit } from "../schema"
 import { coverageId, isSafeRelativePath, ledgerErrors, safeCoverageId } from "../validators"
-import { unknownBlockRefs } from "../prompts"
+import {
+	canonicalBlockRef,
+	isCompanionRequiredSection,
+	ORDINARY_BLOCK_REFS,
+	type SkillBlockRef,
+} from "../skill"
 import { Array as Arr, String as Str } from "effect"
 
 type PriorStatus = CoverageUnit["prior_status"]
@@ -47,23 +52,132 @@ export const scoped = (unit: LedgerUnit, scope: ReadonlyArray<string>): LedgerUn
 	}
 }
 
-/** Why a proposed unit cannot enter the ledger, or undefined when it can. */
-export const unitRefusal = (seed: SeedUnit | MissingUnit): string | undefined => {
-	if (safeCoverageId(seed.canonical_refs) === undefined) return "invalid canonical reference"
-	const unknown = unknownBlockRefs(seed)
-	if (unknown.length > 0) return `unknown skill block references: ${Arr.join(unknown, ", ")}`
-	if (seed.starting_paths.length === 0) return "no starting paths"
-	const unsafe = Arr.filter(seed.starting_paths, (path) => !isSafeRelativePath(path))
-	if (unsafe.length > 0) return `unsafe starting paths: ${Arr.join(unsafe, ", ")}`
-	if ((seed.lifecycle === undefined) !== (seed.canonical_refs.lifecycle === undefined)) {
-		return "lifecycle and canonical_refs.lifecycle must appear together"
+type Proposal = SeedUnit | MissingUnit
+
+/** A proposed unit whose block references are the skill's own: only `reviewProposal` builds one. */
+export interface CanonicalProposal extends Pick<
+	Proposal,
+	"canonical_refs" | "surface" | "boundary" | "subsystem" | "attack_class" | "starting_paths" | "lifecycle"
+> {
+	readonly ordinary_attack_class_block: SkillBlockRef | null
+	readonly selected_companion_blocks: ReadonlyArray<SkillBlockRef>
+	readonly excluded_blocks: ReadonlyArray<CanonicalExclusion>
+}
+
+interface CanonicalExclusion {
+	readonly block: SkillBlockRef
+	readonly reason: string
+}
+
+/**
+ * `Admissible`: the unit with canonical block references, and the unknown companion or excluded
+ * references dropped from it. `Refused`: why it cannot enter the ledger; `unknownRefs` is set when
+ * the unit's attack-class block is unknown, which a critic repair turn can fix.
+ */
+export type ProposalReview =
+	| {
+			readonly _tag: "Admissible"
+			readonly unit: CanonicalProposal
+			readonly dropped: ReadonlyArray<string>
+	  }
+	| { readonly _tag: "Refused"; readonly reason: string; readonly unknownRefs: ReadonlyArray<string> }
+
+const refused = (reason: string, unknownRefs: ReadonlyArray<string> = []): ProposalReview => ({
+	_tag: "Refused",
+	reason,
+	unknownRefs,
+})
+
+/** `value` as a zero- or one-element array, for `Arr.flatMap`. */
+export const present = <A>(value: A | undefined): ReadonlyArray<A> => (value === undefined ? [] : [value])
+
+/** Up to five items and a count of the rest, so one unit's note stays readable. */
+const listSome = (items: ReadonlyArray<string>): string =>
+	`${Arr.join(items.slice(0, 5), ", ")}${items.length > 5 ? ` (+${items.length - 5} more)` : ""}`
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`
+
+/**
+ * Whether a proposed unit can enter the ledger, with its block references canonicalised. An unknown
+ * ordinary block refuses the unit, as does a unit left with no attack-class block at all; an
+ * unknown companion or excluded reference is only dropped.
+ */
+export const reviewProposal = (seed: Proposal): ProposalReview => {
+	if (safeCoverageId(seed.canonical_refs) === undefined) return refused("invalid canonical reference")
+	const ordinary =
+		seed.ordinary_attack_class_block === null ? null : canonicalBlockRef(seed.ordinary_attack_class_block)
+	if (ordinary === undefined) {
+		const raw = seed.ordinary_attack_class_block ?? ""
+		return refused(`unknown ordinary attack-class block: ${raw}`, [raw])
 	}
-	return undefined
+	// A companion section is a known block but not an ordinary one: the repair turn can fix it too.
+	if (ordinary !== null && !ORDINARY_BLOCK_REFS.includes(ordinary)) {
+		return refused(`not an ordinary attack-class block: ${ordinary}`, [ordinary])
+	}
+	const unknownSelected = Arr.filter(
+		seed.selected_companion_blocks,
+		(ref) => canonicalBlockRef(ref) === undefined,
+	)
+	const selected = Arr.dedupe(
+		Arr.flatMap(seed.selected_companion_blocks, (ref) => present(canonicalBlockRef(ref))),
+	)
+	if (ordinary === null && !Arr.some(selected, (ref) => !isCompanionRequiredSection(ref))) {
+		const detail =
+			unknownSelected.length === 0
+				? "no companion block names an attack class"
+				: `${plural(unknownSelected.length, "unknown companion block reference")} (${listSome(unknownSelected)})`
+		return refused(`no known attack-class block: ${detail}`, unknownSelected)
+	}
+	if (seed.starting_paths.length === 0) return refused("no starting paths")
+	const unsafe = Arr.filter(seed.starting_paths, (path) => !isSafeRelativePath(path))
+	if (unsafe.length > 0) return refused(`unsafe starting paths: ${Arr.join(unsafe, ", ")}`)
+	if ((seed.lifecycle === undefined) !== (seed.canonical_refs.lifecycle === undefined)) {
+		return refused("lifecycle and canonical_refs.lifecycle must appear together")
+	}
+	const unknownExcluded = Arr.filter(
+		Arr.map(seed.excluded_blocks, (excluded) => excluded.block),
+		(ref) => canonicalBlockRef(ref) === undefined,
+	)
+	// Two spellings of one block, or a block both selected and excluded, keep the first selection.
+	const excluded = Arr.reduce<Proposal["excluded_blocks"][number], ReadonlyArray<CanonicalExclusion>>(
+		seed.excluded_blocks,
+		[],
+		(acc, entry) => {
+			const block = canonicalBlockRef(entry.block)
+			return block === undefined ||
+				selected.includes(block) ||
+				Arr.some(acc, (kept) => kept.block === block)
+				? acc
+				: [...acc, { block, reason: entry.reason }]
+		},
+	)
+	const base: CanonicalProposal = {
+		canonical_refs: seed.canonical_refs,
+		surface: seed.surface,
+		boundary: seed.boundary,
+		subsystem: seed.subsystem,
+		attack_class: seed.attack_class,
+		starting_paths: seed.starting_paths,
+		ordinary_attack_class_block: ordinary,
+		selected_companion_blocks: selected,
+		excluded_blocks: excluded,
+	}
+	// Optional keys are left out, never set to undefined: the stored schema rejects an undefined value.
+	const unit = seed.lifecycle === undefined ? base : { ...base, lifecycle: seed.lifecycle }
+	return { _tag: "Admissible", unit, dropped: [...unknownSelected, ...unknownExcluded] }
+}
+
+/** One note for a reviewed proposal: why it was refused, or what was dropped from it; none when clean. */
+export const proposalNote = (seed: Proposal, review: ProposalReview): string | undefined => {
+	const label = `${seed.surface} / ${seed.attack_class}`
+	if (review._tag === "Refused") return `refused: ${label}: ${review.reason}`
+	if (review.dropped.length === 0) return undefined
+	return `kept: ${label}: dropped ${plural(review.dropped.length, "unknown block reference")} (${listSome(review.dropped)})`
 }
 
 /** A seeded unit: `planned` in scope, otherwise `out_of_scope` with the reason. */
 export const seedUnit = (
-	seed: SeedUnit | MissingUnit,
+	seed: CanonicalProposal,
 	options: {
 		readonly scope: ReadonlyArray<string>
 		readonly priorStatus: PriorStatus

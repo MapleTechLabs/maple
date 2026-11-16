@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest"
-import { auditActionLabel, auditActions, AuditResources, auditResourceLabel } from "./audit-actions"
+import {
+	auditActionLabel,
+	auditActions,
+	auditMetadataValueLabel,
+	AuditResources,
+	auditResourceLabel,
+	auditToolCallerLabel,
+} from "./audit-actions"
+import { internalAgentLabel } from "./system-agents"
 import { Record as Rec, String as Str } from "effect"
 
 describe("audit action labels", () => {
@@ -26,5 +34,31 @@ describe("audit action labels", () => {
 		expect(auditActionLabel("dashboard.exploded")).toBeNull()
 		expect(auditActionLabel("toString")).toBeNull()
 		expect(auditResourceLabel("spaceship")).toBeNull()
+	})
+})
+
+describe("names for Maple's own agents and codes", () => {
+	it("says which Maple agent called a tool, and keeps MCP for a customer's own client", () => {
+		expect(auditToolCallerLabel("chat", "pr-review")).toBe("Maple code review")
+		expect(auditToolCallerLabel("chat", "investigate")).toBe("Maple investigation")
+		expect(auditToolCallerLabel("chat", null)).toBe("Maple agent")
+		expect(auditToolCallerLabel("chat", "toString")).toBe("Maple agent")
+		expect(auditToolCallerLabel("bot", null)).toBe("Maple bot")
+		expect(auditToolCallerLabel("mcp", null)).toBe("MCP tool")
+	})
+
+	it("puts internal metadata codes in words and leaves everything else as recorded", () => {
+		expect(auditMetadataValueLabel("surface", "chat")).toBe("Maple agent")
+		expect(auditMetadataValueLabel("agent", "pr-review")).toBe("Maple code review")
+		expect(auditMetadataValueLabel("context", "mcp.run_sql")).toBe("run_sql tool")
+		expect(auditMetadataValueLabel("context", "somethingNew")).toBeNull()
+		expect(auditMetadataValueLabel("tool", "chat")).toBeNull()
+	})
+
+	it("names a chat connector's agent after its platform", () => {
+		expect(internalAgentLabel("chat-connector-slack")).toBe("Maple bot in Slack")
+		expect(internalAgentLabel("maple-triage-agent")).toBe("Maple Triage")
+		expect(internalAgentLabel("chat-connector-")).toBeNull()
+		expect(internalAgentLabel("my-agent")).toBeNull()
 	})
 })

@@ -149,7 +149,7 @@ describe("google cloud connect flow", () => {
 				}),
 			),
 			expectView(role("listitem", { name: "Live (done)" })).toExist(),
-			expectView(text("Confirmed: data shows up in Maple on its own from now on.")).toExist(),
+			expectView(text("Google Cloud is live")).toExist(),
 			expectView(text("Run this script in Cloud Shell")).not.toExist(),
 		)
 	})

@@ -25,6 +25,7 @@ export const SIGNALS: ReadonlyArray<{ value: SourceSignal; label: string; hint: 
 	{ value: "metrics", label: "Metrics", hint: "/v1/metrics" },
 	{ value: "sessions", label: "Sessions", hint: "Replays and session events" },
 	{ value: "events", label: "Events", hint: "Product events and track()" },
+	{ value: "profiles", label: "Profiles", hint: "/v1development/profiles" },
 ]
 
 export const MODE_LABELS = {

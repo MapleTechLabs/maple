@@ -75,6 +75,7 @@ export const PRICING_CARD_FEATURE_IDS = [
 	"logs",
 	"traces",
 	"metrics",
+	"profiles",
 	"browser_sessions",
 	"product_events",
 	"ai_credits",
@@ -84,6 +85,13 @@ const pricingCardFeatureIds: ReadonlySet<string> = new Set(PRICING_CARD_FEATURE_
 
 export const isPricingCardFeature = (featureId: string | null | undefined): featureId is string =>
 	featureId !== null && featureId !== undefined && pricingCardFeatureIds.has(featureId)
+
+/** Billed features not yet advertised: kept off the public pricing page and the onboarding plan cards. */
+const UNADVERTISED_FEATURE_IDS: ReadonlySet<string> = new Set(["profiles"])
+
+/** A pricing card feature the public pricing surfaces list; the billing page lists every card feature. */
+export const isAdvertisedPricingFeature = (featureId: string | null | undefined): featureId is string =>
+	isPricingCardFeature(featureId) && !UNADVERTISED_FEATURE_IDS.has(featureId)
 
 /** Does a raw Autumn customer carry this boolean feature? Autumn keys granted ones under `flags`. */
 export const customerHasFlag = (response: unknown, featureId: string): boolean =>

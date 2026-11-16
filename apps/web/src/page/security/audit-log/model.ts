@@ -1,4 +1,4 @@
-import { AuditTrailListResponse } from "@maple/domain/http"
+import { AuditTrailListResponse, AuditTrailSourcesResponse } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
@@ -16,6 +16,10 @@ export type Search = SecurityAuditLogSearch
 /** One page of events and the cursor of the next. */
 export const EventsPage = AuditTrailListResponse
 export type EventsPage = typeof EventsPage.Type
+
+/** Every platform that can feed the log, connected or not, and what each sent lately. */
+export const Sources = AuditTrailSourcesResponse
+export type Sources = typeof Sources.Type
 
 /** The pages after the first, for the current first-page key. */
 export const LaterPages = Schema.Struct({
@@ -35,6 +39,7 @@ export const Model = Schema.Struct({
 	/** False until the session answers: the page says nothing about access before it knows. */
 	isGrantsRead: Schema.Boolean,
 	firstPage: KeyedSchema(EventsPage, LoadFailure),
+	sources: KeyedSchema(Sources, LoadFailure),
 	laterPages: LaterPages,
 	/** The events whose detail is open, by id. */
 	expanded: Schema.Array(Schema.String),
@@ -49,6 +54,7 @@ export const Message = defineMessageUnion({
 	ReadClock: { nowMs: Schema.Finite },
 	CompletedReadGrants: SessionGrants,
 	CompletedFetchFirstPage: { key: Schema.String, result: Schema.Result(EventsPage, LoadFailure) },
+	CompletedFetchSources: { key: Schema.String, result: Schema.Result(Sources, LoadFailure) },
 	CompletedFetchNextPage: {
 		key: Schema.String,
 		generation: Schema.Number,

@@ -132,7 +132,8 @@ const servicesItem: NavItem = {
 	],
 }
 
-const exploreItem: NavItem = {
+/** Explore's signals; Product analytics joins them for an org in the productAnalytics rollout. */
+const exploreItem = (productAnalytics: boolean): NavItem => ({
 	title: "Explore",
 	href: "/traces",
 	icon: "LayersIcon",
@@ -141,10 +142,19 @@ const exploreItem: NavItem = {
 		{ title: "Logs", href: "/logs", icon: "FileIcon" },
 		{ title: "Metrics", href: "/metrics", icon: "ChartLineIcon" },
 		{ title: "Replays", href: "/replays", icon: "PlayRotateClockwiseIcon" },
+		...(productAnalytics
+			? [
+					{
+						title: "Product analytics",
+						href: "/product-analytics",
+						icon: "ChartBarTrendUpIcon",
+					} as const,
+				]
+			: []),
 		{ title: "Agent sessions", href: "/agent-sessions", icon: "SquareSparkleIcon" },
 		{ title: "MCP servers", href: "/mcp-servers", icon: "PlugIcon" },
 	],
-}
+})
 
 const alertsItem: NavItem = {
 	title: "Alerts",
@@ -273,17 +283,8 @@ const operatorNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 		id: "analyze",
 		label: "Analyze",
 		items: [
-			exploreItem,
+			exploreItem(flags.productAnalytics),
 			{ title: "Web analytics", href: "/analytics", icon: "ChartBarHorizontalIcon" },
-			...(flags.productAnalytics
-				? [
-						{
-							title: "Product analytics",
-							href: "/product-analytics",
-							icon: "ChartBarTrendUpIcon",
-						} as const,
-					]
-				: []),
 			{ title: "Users", href: "/users", icon: "UsersIcon" },
 			{ title: "Dashboards", href: "/dashboards", icon: "GridSquareCirclePlusIcon" },
 		],

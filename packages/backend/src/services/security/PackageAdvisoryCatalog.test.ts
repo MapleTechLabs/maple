@@ -5,7 +5,7 @@ import { type PackageRef, packageKey } from "@maple/domain/package-advisories"
 import { Effect, Layer, Option, Array as Arr, String as Str } from "effect"
 import { HttpClient, type HttpClientRequest, HttpClientResponse } from "effect/http"
 import fixture from "./__fixtures__/osv.json"
-import { MAX_VULNERABILITIES, PackageAdvisoryCatalog } from "./PackageAdvisoryCatalog"
+import { fingerprintOf, MAX_VULNERABILITIES, PackageAdvisoryCatalog } from "./PackageAdvisoryCatalog"
 
 interface Query {
 	readonly package: { readonly ecosystem: string; readonly name: string }
@@ -175,5 +175,38 @@ describe("PackageAdvisoryCatalog", () => {
 				MAX_VULNERABILITIES,
 			)
 		}).pipe(Effect.provide(catalogWith(fake)))
+	})
+})
+
+describe("fingerprintOf", () => {
+	const lodash: PackageRef = { ecosystem: "npm", name: "lodash", version: "4.17.15" }
+	const leftPad: PackageRef = { ecosystem: "npm", name: "left-pad", version: "1.3.0" }
+	const vuln = (id: string, modified = "2026-01-01T00:00:00Z") => ({ id, modified })
+	const of = (
+		packages: ReadonlyArray<PackageRef>,
+		found: ReadonlyArray<readonly [PackageRef, ReadonlyArray<{ id: string; modified: string }>]>,
+		version = 2,
+	) =>
+		fingerprintOf(
+			{ packages, found: new Map(Arr.map(found, ([ref, v]) => [packageKey(ref), v])) },
+			version,
+		)
+
+	it("is the same for the same answer in any order", () => {
+		assert.strictEqual(
+			of([lodash, leftPad], [[lodash, [vuln("A"), vuln("B")]]]),
+			of([leftPad, lodash], [[lodash, [vuln("B"), vuln("A")]]]),
+		)
+	})
+
+	it("changes with a new advisory, a new modification time, a new package or a parser version", () => {
+		const base = of([lodash], [[lodash, [vuln("A")]]])
+		const variants = [
+			of([lodash], [[lodash, [vuln("A"), vuln("B")]]]),
+			of([lodash], [[lodash, [vuln("A", "2026-02-01T00:00:00Z")]]]),
+			of([lodash, leftPad], [[lodash, [vuln("A")]]]),
+			of([lodash], [[lodash, [vuln("A")]]], 3),
+		]
+		assert.strictEqual(new Set([base, ...variants]).size, 5)
 	})
 })

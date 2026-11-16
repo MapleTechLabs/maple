@@ -1,33 +1,15 @@
 ---
 /**
  * Status pages · what a page publishes besides HTML: the statuspage.io-style
- * `status.json`, the feeds, the Slack command and the badge. The JSON mirrors
- * `renderStatusJson` (`@maple/status-page`) for the artifact's partial outage, trimmed
- * to the fields a reader checks. Media-left so it alternates with the copy-left
- * ledger below, like UptimeCheckTrace.
+ * `status.json`, the feeds, the Slack command and the badge. The JSON is the real
+ * `renderStatusJson` output for the artifact's demo page (`lib/status-page-demo.ts`).
+ * Media-left so it alternates with the copy-left ledger below, like UptimeCheckTrace.
  */
 import * as m from "../../../paraglide/messages.js";
+import { demoStatusJson } from "../../../lib/status-page-demo";
+import { STATUS_PAGE_ENDPOINTS } from "../../../lib/feature-sections";
 
-const JSON_LINES = [
-	"{",
-	'  "page": { "name": "Acme", "status_url": "https://status.acme.com" },',
-	'  "status": { "indicator": "major", "description": "Partial System Outage" },',
-	'  "components": [',
-	'    { "name": "Checkout API", "group": "API", "status": "partial_outage" },',
-	'    { "name": "Auth", "group": "API", "status": "operational" }',
-	"  ],",
-	'  "incidents": [',
-	'    { "name": "Failed payments at checkout", "status": "investigating", "impact": "major" }',
-	"  ],",
-	'  "scheduled_maintenances": [{ "name": "Database upgrade", "status": "scheduled" }]',
-	"}",
-];
-
-const ENDPOINTS = [
-	{ path: "/feed.rss", what: "RSS" },
-	{ path: "/feed.atom", what: "Atom" },
-	{ path: "/badge.svg", what: "badge" },
-];
+const json = JSON.stringify(demoStatusJson(), null, 2);
 
 const rules = [
 	{ title: m.status_feeds_rule_1_title(), body: m.status_feeds_rule_1_body() },
@@ -44,10 +26,10 @@ const rules = [
 					<span>GET /api/v1/status.json</span>
 					<span>200</span>
 				</div>
-				<pre class="spf-json">{JSON_LINES.join("\n")}</pre>
+				<pre class="spf-json" tabindex="0">{json}</pre>
 				<div class="spf-endpoints">
 					{
-						ENDPOINTS.map((endpoint) => (
+						STATUS_PAGE_ENDPOINTS.map((endpoint) => (
 							<div>
 								<span>{endpoint.path}</span>
 								<span>{endpoint.what}</span>
@@ -88,7 +70,8 @@ const rules = [
 	.spf-json {
 		margin: 0;
 		padding: 12px 14px;
-		overflow-x: auto;
+		max-height: 340px;
+		overflow: auto;
 		font-size: 10.5px;
 		line-height: 1.6;
 		color: var(--foreground);

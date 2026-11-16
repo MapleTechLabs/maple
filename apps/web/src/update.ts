@@ -260,6 +260,12 @@ export const pageContextOf: (model: Model) => Option.Option<PageContext> = lastB
 									clerkOrganizationOf(model),
 									(organization) => organization.flags.productAnalytics,
 								),
+							hasProfiling:
+								!isClerkAuthEnabled ||
+								Option.exists(
+									clerkOrganizationOf(model),
+									(organization) => organization.flags.profiling,
+								),
 						})),
 					),
 	}),

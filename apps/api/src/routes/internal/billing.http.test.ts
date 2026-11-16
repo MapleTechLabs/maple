@@ -402,7 +402,7 @@ describe("decodeInvoices", () => {
 })
 
 describe("sumDailySpend", () => {
-	const day = (date: string, logsGB: number, productEvents?: number) =>
+	const day = (date: string, logsGB: number, productEvents?: number, profilesGB?: number) =>
 		new DailyVolume({
 			date,
 			logsGB,
@@ -410,19 +410,27 @@ describe("sumDailySpend", () => {
 			metricsGB: 0,
 			browserSessions: 2,
 			...(productEvents === undefined ? undefined : { productEvents }),
+			...(profilesGB === undefined ? undefined : { profilesGB }),
 		})
 	const series = (days: ReadonlyArray<DailyVolume>) =>
 		new DailySpendResponse({ cycleStart: 10, cycleEnd: 20, days })
 
 	it("adds a billing org's members into its series, day by day", () => {
-		const total = sumDailySpend(series([day("2026-10-01", 1, 3), day("2026-10-02", 2)]), [
-			series([day("2026-10-01", 0.5), day("2026-10-02", 4, 1)]),
+		const total = sumDailySpend(series([day("2026-10-01", 1, 3, 0.25), day("2026-10-02", 2)]), [
+			series([day("2026-10-01", 0.5, undefined, 0.5), day("2026-10-02", 4, 1)]),
 		])
 		assert.deepStrictEqual(
-			Arr.map(total.days, (d) => [d.date, d.logsGB, d.tracesGB, d.browserSessions, d.productEvents]),
+			Arr.map(total.days, (d) => [
+				d.date,
+				d.logsGB,
+				d.tracesGB,
+				d.browserSessions,
+				d.productEvents,
+				d.profilesGB,
+			]),
 			[
-				["2026-10-01", 1.5, 2, 4, 3],
-				["2026-10-02", 6, 2, 4, 1],
+				["2026-10-01", 1.5, 2, 4, 3, 0.75],
+				["2026-10-02", 6, 2, 4, 1, 0],
 			],
 		)
 		assert.strictEqual(total.cycleStart, 10)

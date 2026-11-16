@@ -1,6 +1,6 @@
 import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { isRegistryVersion, pkg, splitNameAt } from "../internal/collect.ts"
-import { decodeJson, stripTrailingCommas } from "../internal/decode.ts"
+import { decodeJson, stripJsonc } from "../internal/decode.ts"
 import type { LockedPackage, LockfileInput, Relation } from "../types.ts"
 import type { ParserOutput } from "./types.ts"
 
@@ -48,7 +48,7 @@ const namesOf = (workspaces: ReadonlyArray<Workspace>): DepNames => ({
 })
 
 export const parseBunLock = Effect.fn("lockfiles.parseBunLock")(function* (input: LockfileInput) {
-	const lock = yield* decodeJson(BunLock, input.path, stripTrailingCommas(input.content))
+	const lock = yield* decodeJson(BunLock, input.path, stripJsonc(input.content))
 	const workspaces = Rec.values(lock.workspaces ?? {})
 	const all = namesOf(workspaces)
 	const byWorkspaceName = new Map(

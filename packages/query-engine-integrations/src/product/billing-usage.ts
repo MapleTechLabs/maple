@@ -4,11 +4,11 @@
 // per-day volume per billable signal. Autumn only reports cycle *totals*
 // (`aggregateEvents`), so the daily shape comes from the warehouse:
 //
-//   `dailySignalVolumeQuery`  — logs/traces/metrics bytes per UTC day, from the
+//   `dailySignalVolumeQuery`: logs/traces/metrics/profiles bytes per UTC day, from the
 //     hourly `service_usage` MV. Same source the usage cards read, so the
 //     chart's totals reconcile with them rather than telling a second story.
 //
-//   `dailySessionCountQuery`  — browser sessions per UTC day, from
+//   `dailySessionCountQuery`: browser sessions per UTC day, from
 //     `session_replays` (several rows per session). Kept as a separate query rather
 //     than a UNION branch: the two tables disagree on column types (byte sums
 //     are UInt64, the session count is UInt64 but the bucket column comes from
@@ -33,10 +33,11 @@ export interface DailySignalVolumeOutput {
 	readonly logBytes: number
 	readonly traceBytes: number
 	readonly metricBytes: number
+	readonly profileBytes: number
 }
 
 /**
- * Per-UTC-day log/trace/metric bytes for one org.
+ * Per-UTC-day log/trace/metric/profile bytes for one org.
  *
  * `service_usage` is keyed on top-of-hour `Hour`, so both bounds snap to their
  * hour floor — the same correction `serviceUsageQuery` makes. A billing cycle
@@ -45,8 +46,11 @@ export interface DailySignalVolumeOutput {
  * "Metrics" sums all four metric-type columns: the plan meters one `metrics`
  * feature, and splitting sum/gauge/histogram/exp-histogram would price bytes
  * the customer is never billed for separately.
+ *
+ * `profiles: false` reads 0 profile bytes, for a cluster whose `service_usage`
+ * predates migration 0068's profile columns.
  */
-export function dailySignalVolumeQuery() {
+export function dailySignalVolumeQuery(options: { readonly profiles?: boolean } = {}) {
 	return from(Datasources.serviceUsage)
 		.select(($) => ({
 			day: CH.toStartOfInterval($.Hour, DAY_SECONDS),
@@ -56,6 +60,7 @@ export function dailySignalVolumeQuery() {
 				.add(CH.sum($.GaugeMetricSizeBytes))
 				.add(CH.sum($.HistogramMetricSizeBytes))
 				.add(CH.sum($.ExpHistogramMetricSizeBytes)),
+			profileBytes: options.profiles === false ? CH.lit(0) : CH.sum($.ProfileSizeBytes),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),

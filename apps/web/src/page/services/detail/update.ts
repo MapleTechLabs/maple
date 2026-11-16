@@ -14,6 +14,8 @@ import { Option, type Result, Array as Arr, Record as Rec, Order } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
+import * as ProfileFlamegraph from "@maple/views/profiles/profile-flamegraph"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
 import { commitDetailKey, isResolvableSha } from "../../kit/commit-card"
@@ -37,6 +39,7 @@ import {
 	FetchIssues,
 	FetchOperations,
 	FetchOverview,
+	FetchProfile,
 	FetchRefinement,
 	FetchUptimeMonitors,
 	FetchUsage,
@@ -158,6 +161,27 @@ const dependenciesStep =
 			mode,
 			(dependencies) => ({ dependencies }),
 			(key) => FetchDependencies({ key, input }),
+		)
+	}
+
+/** The Profiles tab's flame chart and top functions: one environment at most. */
+const profileStep =
+	(context: PageContext, window: TimeWindow, mode: RequestMode) =>
+	(model: Model): Step => {
+		const deploymentEnv = singleDeploymentEnv(environmentsOf(model.search))
+		const input = {
+			serviceName: model.serviceName,
+			startTime: window.startTime,
+			endTime: window.endTime,
+			// The request's optional keys are left out, never `undefined`.
+			...(deploymentEnv !== undefined && { deploymentEnv }),
+		}
+		return keyed(
+			model.profile,
+			requestKey(context.orgId, "getProfile", { data: input }),
+			mode,
+			(profile) => ({ profile }),
+			(key) => FetchProfile({ key, input }),
 		)
 	}
 
@@ -310,9 +334,11 @@ const overviewTabSteps = (context: PageContext, window: TimeWindow, mode: Reques
 ]
 
 const tabSteps = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Steps => {
-	switch (tabOf(model.search)) {
+	switch (tabOf(model.search, context)) {
 		case "overview":
 			return overviewTabSteps(context, window, mode)
+		case "profiles":
+			return [profileStep(context, window, mode)]
 		case "operations":
 			return [operationsStep(context, window, mode)]
 		case "dependencies":
@@ -638,6 +664,9 @@ export const init = (
 		workloads: Keyed.idle(),
 		runtimes: Keyed.idle(),
 		dependencies: Keyed.idle(),
+		profile: Keyed.idle(),
+		flamegraph: ProfileFlamegraph.init("service-profile"),
+		profileSnippetCopy: CopyButton.init(),
 		commits: {},
 		markerCard: initMarkerCard("service-marker-card"),
 		isDeploysExpanded: false,
@@ -666,7 +695,10 @@ export const routeChanged = (
 	if (searchHref(model.serviceName, model.search) === searchHref(route.serviceName, route.search))
 		return { model }
 	const next = { ...model, search: route.search }
-	return isWindowChange(model.search, route.search) ? resolveClock(next) : sync(next, context, "Load")
+	return followProfile(
+		model,
+		isWindowChange(model.search, route.search) ? resolveClock(next) : sync(next, context, "Load"),
+	)
 }
 
 /** The window re-resolves against now on a window or zone change. */
@@ -787,10 +819,27 @@ const retrying = (model: Model, target: RetryTarget): Model => {
 			return { ...model, apiOverview: Keyed.idle() }
 		case "StatusBreakdown":
 			return { ...model, statusBreakdown: Keyed.idle() }
+		case "Profile":
+			return { ...model, profile: Keyed.idle() }
 	}
 }
 
+/**
+ * A profile read for another window, environment or release opens on its whole flame graph: the
+ * zoom, the selection and the search were the last profile's. A refresh of the same read keeps them.
+ */
+const followProfile = (before: Model, step: Return): Return => {
+	const was = before.profile.key
+	const now = step.model.profile.key
+	return was === null || now === null || Keyed.baseKey(was) === Keyed.baseKey(now)
+		? step
+		: { ...step, model: { ...step.model, flamegraph: ProfileFlamegraph.reset(step.model.flamegraph) } }
+}
+
 export const update = (model: Model, message: Message, context: PageContext): Return =>
+	followProfile(model, updateMessage(model, message, context))
+
+const updateMessage = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		CompletedResolveClock: ({ nowMs, mode }) => sync({ ...model, nowMs }, context, mode),
 		CompletedFetchOverview: ({ key, result }) =>
@@ -913,6 +962,21 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchDependencies: ({ key, result }) => ({
 			model: { ...model, dependencies: Keyed.accept(model.dependencies, key, result) },
 		}),
+		CompletedFetchProfile: ({ key, result }) => ({
+			model: { ...model, profile: Keyed.accept(model.profile, key, result) },
+		}),
+		GotFlamegraphMessage: ({ message: inner }) => ({
+			model: { ...model, flamegraph: ProfileFlamegraph.update(model.flamegraph, inner).model },
+		}),
+		GotProfileSnippetCopyMessage: ({ message: inner }) => {
+			const next = CopyButton.update(model.profileSnippetCopy, inner)
+			return {
+				model: { ...model, profileSnippetCopy: next.model },
+				commands: Command.mapMessages(next.commands ?? [], (copy) =>
+					Message.GotProfileSnippetCopyMessage({ message: copy }),
+				),
+			}
+		},
 		CompletedFetchCommit: ({ sha, result }) => ({ model: settleCommit(model, sha, result) }),
 		CompletedMountLinkedCursor: () => ({ model }),
 		// A push, so Back returns to the window the drag started in.
