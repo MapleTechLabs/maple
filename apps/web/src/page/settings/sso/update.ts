@@ -20,7 +20,7 @@ import * as Field from "@maple/views/ui/field"
 import * as Menu from "@maple/views/ui/menu"
 import * as Select from "@maple/views/ui/select"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
-import { ClerkActionError, clerkTry, currentClerkOrganization } from "../../../platform/clerk"
+import { clerkTry, currentClerkOrganization } from "../../../platform/clerk"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { memberDisplayName } from "../kit/members"
 import { normalizeDomain } from "../domains/update"
@@ -54,43 +54,47 @@ export const FetchEnterpriseSso = Command.define("FetchEnterpriseSso", {
 	),
 })
 
-/** Every member, page by page; capped so a runaway org cannot loop the picker forever. */
+/** Past this the picker stops listing; the API still accepts anyone it allows. */
 const MAX_MEMBER_PAGES = 50
 
+const toMemberOption = (member: {
+	readonly publicUserData?: {
+		readonly userId?: string
+		readonly identifier: string
+		readonly firstName: string | null
+		readonly lastName: string | null
+	} | null
+}): ReadonlyArray<MemberOption> => {
+	const user = member.publicUserData
+	return user === null || user === undefined || user.userId === undefined
+		? []
+		: [
+				{
+					userId: user.userId,
+					name: memberDisplayName(user) ?? user.identifier,
+					identifier: user.identifier,
+				},
+			]
+}
+
+/** Every member: the first page says how many, the rest load four at a time. */
 const FetchSsoMembers = Command.define("FetchSsoMembers", {
 	messages: [Message.CompletedFetchMembers],
 	execute: currentClerkOrganization.pipe(
-		Effect.flatMap((organization) => {
-			const fetchFrom = (
-				page: number,
-				collected: ReadonlyArray<MemberOption>,
-			): Effect.Effect<ReadonlyArray<MemberOption>, ClerkActionError> =>
-				clerkTry("Couldn't load members", () =>
-					organization.getMemberships({ initialPage: page, pageSize: MEMBERS_PAGE_SIZE }),
-				).pipe(
-					Effect.flatMap((result) => {
-						const next = Arr.appendAll(
-							collected,
-							Arr.flatMap(result.data, (member): ReadonlyArray<MemberOption> => {
-								const user = member.publicUserData
-								return user?.userId === undefined
-									? []
-									: [
-											{
-												userId: user.userId,
-												name: memberDisplayName(user) ?? user.identifier,
-												identifier: user.identifier,
-											},
-										]
-							}),
-						)
-						return result.data.length < MEMBERS_PAGE_SIZE || page >= MAX_MEMBER_PAGES
-							? Effect.succeed(next)
-							: fetchFrom(page + 1, next)
-					}),
-				)
-			return fetchFrom(1, [])
-		}),
+		Effect.flatMap((organization) =>
+			Effect.gen(function* () {
+				const page = (initialPage: number) =>
+					clerkTry("Couldn't load members", () =>
+						organization.getMemberships({ initialPage, pageSize: MEMBERS_PAGE_SIZE }),
+					)
+				const first = yield* page(1)
+				const pageCount = Math.min(Math.ceil(first.total_count / MEMBERS_PAGE_SIZE), MAX_MEMBER_PAGES)
+				const rest = yield* Effect.forEach(pageCount > 1 ? Arr.range(2, pageCount) : [], page, {
+					concurrency: 4,
+				})
+				return Arr.flatMap([first, ...rest], (result) => Arr.flatMap(result.data, toMemberOption))
+			}),
+		),
 		settleTo((result) => Message.CompletedFetchMembers({ result })),
 	),
 })

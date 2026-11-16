@@ -414,7 +414,7 @@ const connectionPanel = (
 				: [
 						typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" }, [
 							connection.protocol === "saml"
-								? "Paste these into your identity provider. Its SAML response must send the email as `mail`; `firstName` and `lastName` are optional."
+								? "Paste these into your identity provider. Its SAML response must send the email as mail; firstName and lastName are optional."
 								: "Add this redirect URI to the OIDC application. Request the openid, email and profile scopes; the IdP must return the email and email_verified claims.",
 						]),
 						keyValueList(h, { layout: "stacked" }, sp),
@@ -967,6 +967,10 @@ const certificateInput = (h: H, draft: ConnectionDraft): Html => {
 				h.Rows(5),
 				h.Placeholder("-----BEGIN CERTIFICATE-----"),
 				h.AriaLabelledBy(ids.label),
+				// The edit-mode hint below is the only description, so it is linked only when shown.
+				...(draft.mode === "edit" && ids.description !== undefined
+					? [h.AriaDescribedBy(ids.description)]
+					: []),
 				h.Value(model.value),
 				h.OnInput((value) =>
 					Message.GotDraftFieldMessage({
