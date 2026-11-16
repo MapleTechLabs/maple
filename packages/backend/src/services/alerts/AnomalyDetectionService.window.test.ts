@@ -1,6 +1,12 @@
 import { describe, expect, it } from "@effect/vitest"
 import { afterEach } from "vitest"
-import { OrgId, WarehouseConfigError } from "@maple/domain/http"
+import {
+	AnomalyDetectorSettingsUpdateRequest,
+	AnomalyIncidentId,
+	OrgId,
+	UserId,
+	WarehouseConfigError,
+} from "@maple/domain/http"
 import { Clock, ConfigProvider, Effect, Layer, Record, Schema, Array as Arr } from "effect"
 import { CacheBackend, EdgeCacheService, makeMemoryBackend } from "@maple/cache"
 import { formatWarehouseDateTime } from "@maple/query-engine"
@@ -12,6 +18,8 @@ import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { AnomalyDetectionService } from "./AnomalyDetectionService"
 import { InvestigationStarter } from "@maple/backend/services/errors/InvestigationStarter"
+import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/auth/system-tenant"
+import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
 
 const ORG = Schema.decodeSync(OrgId)("org_anomaly_window")
 const HOUR_MS = 60 * 60_000
@@ -49,7 +57,30 @@ interface Scenario {
 	readonly includedEnvironments: ReadonlyArray<string>
 	/** The cluster has not applied `service_overview_minutely`. */
 	readonly withoutMinutely: boolean
+	/** Save `includedEnvironments` through `updateSettings` instead of seeding the row. */
+	readonly viaSettingsUpdate?: boolean
 }
+
+const makeLayer = (testDb: TestDb, warehouse: WarehouseQueryServiceApi) =>
+	Layer.effect(AnomalyDetectionService, AnomalyDetectionService.make).pipe(
+		Layer.provide(InvestigationStarter.layer),
+		Layer.provide(
+			Layer.mergeAll(
+				Layer.succeed(WarehouseQueryService, warehouse),
+				OrgClickHouseSettingsService.layer,
+			),
+		),
+		Layer.provide(
+			Layer.mergeAll(
+				testDb.layer,
+				EdgeCacheService.layer.pipe(
+					Layer.provide(Layer.succeed(CacheBackend, CacheBackend.of(makeMemoryBackend()))),
+				),
+				Env.layer.pipe(Layer.provide(configLive)),
+			),
+		),
+		Layer.provide(configLive),
+	)
 
 /** A week at 1% errors in both environments; the last 60 minutes run at 20%. */
 const run = (scenario: Scenario) =>
@@ -99,35 +130,34 @@ const run = (scenario: Scenario) =>
 				return compiledQueryOf(compiled).decodeRows(rows).pipe(Effect.orDie)
 			},
 		})
-		const layer = Layer.effect(AnomalyDetectionService, AnomalyDetectionService.make).pipe(
-			Layer.provide(InvestigationStarter.layer),
-			Layer.provide(
-				Layer.mergeAll(
-					Layer.succeed(WarehouseQueryService, warehouse),
-					OrgClickHouseSettingsService.layer,
+		const layer = makeLayer(testDb, warehouse)
+		if (scenario.viaSettingsUpdate !== true) {
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO anomaly_detector_settings
+					   (org_id, enabled, sensitivity, muted_signals_json, included_environments_json, created_at, updated_at)
+					 VALUES ($1, true, 'normal', '[]'::jsonb, $2::jsonb, now(), now())`,
+					[ORG, JSON.stringify(scenario.includedEnvironments)],
 				),
-			),
-			Layer.provide(
-				Layer.mergeAll(
-					testDb.layer,
-					EdgeCacheService.layer.pipe(
-						Layer.provide(Layer.succeed(CacheBackend, CacheBackend.of(makeMemoryBackend()))),
-					),
-					Env.layer.pipe(Layer.provide(configLive)),
-				),
-			),
-			Layer.provide(configLive),
-		)
-		yield* Effect.promise(() =>
-			executeSql(
-				testDb,
-				`INSERT INTO anomaly_detector_settings
-				   (org_id, enabled, sensitivity, muted_signals_json, included_environments_json, created_at, updated_at)
-				 VALUES ($1, true, 'normal', '[]'::jsonb, $2::jsonb, now(), now())`,
-				[ORG, JSON.stringify(scenario.includedEnvironments)],
-			),
-		)
-		yield* AnomalyDetectionService.use((service) => service.runTick).pipe(Effect.provide(layer))
+			)
+		}
+		const saved = yield* AnomalyDetectionService.use((service) =>
+			Effect.gen(function* () {
+				const settings =
+					scenario.viaSettingsUpdate === true
+						? yield* service.updateSettings(
+								ORG,
+								Schema.decodeSync(UserId)("user_window_test"),
+								new AnomalyDetectorSettingsUpdateRequest({
+									includedEnvironments: scenario.includedEnvironments,
+								}),
+							)
+						: yield* service.getSettings(ORG)
+				yield* service.runTick
+				return settings.includedEnvironments
+			}),
+		).pipe(Effect.provide(layer))
 		const states = yield* Effect.promise(() =>
 			testDb.pglite.query<{ deployment_env: string; last_status: string }>(
 				`SELECT deployment_env, last_status FROM anomaly_detector_states
@@ -136,6 +166,7 @@ const run = (scenario: Scenario) =>
 			),
 		)
 		return {
+			saved,
 			contexts,
 			statusByEnv: Record.fromEntries(
 				Arr.map(states.rows, (r) => [r.deployment_env, r.last_status] as const),
@@ -163,6 +194,78 @@ describe("AnomalyDetectionService current window and environments", () => {
 			const { contexts, statusByEnv } = yield* run({ includedEnvironments: [], withoutMinutely: true })
 			expect(contexts).toContain("anomalyTraceSignalsCurrentHourly")
 			expect(statusByEnv).toEqual({ production: "breached" })
+		}),
+	)
+})
+
+describe("AnomalyDetectionService settings", () => {
+	it.live("saves opted-in environments once each and the next tick watches them", () =>
+		Effect.gen(function* () {
+			const { saved, statusByEnv } = yield* run({
+				includedEnvironments: ["staging", "staging"],
+				withoutMinutely: false,
+				viaSettingsUpdate: true,
+			})
+			expect(saved).toEqual(["staging"])
+			expect(statusByEnv).toEqual({ production: "breached", staging: "breached" })
+		}),
+	)
+})
+
+describe("AnomalyDetectionService incident chart", () => {
+	it.live("plots the detector's 60-minute observation for the in-progress hour", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(createdDbs)
+			const nowMs = yield* Clock.currentTimeMillis
+			const hourStart = Math.floor(nowMs / HOUR_MS) * HOUR_MS
+			const incidentId = Schema.decodeSync(AnomalyIncidentId)("00000000-0000-4000-8000-000000000071")
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO anomaly_incidents
+					   (id, org_id, detector_key, signal_type, service_name, deployment_env, status, severity,
+					    opened_value, baseline_median, baseline_sigma, threshold_value, last_observed_value,
+					    last_sample_count, first_triggered_at, last_triggered_at, triage_status, dedupe_key,
+					    fingerprints_json, reopen_count, created_at, updated_at)
+					 VALUES ($1, $2, 'throughput:production:payments', 'throughput', 'payments', 'production',
+					         'open', 'warning', 1, 100, 10, 5, 1, 60, to_timestamp($3 / 1000.0),
+					         to_timestamp($3 / 1000.0), 'none', $1, '[]'::jsonb, 0, now(), now())`,
+					[incidentId, ORG, hourStart - HOUR_MS],
+				),
+			)
+			const warehouse = makeWarehouseServiceStub({
+				compiledQuery: (_tenant, compiled, options) =>
+					compiledQueryOf(compiled)
+						.decodeRows(
+							options?.context === "anomalyTraceSignalTimeseries"
+								? [
+										{
+											hour: formatWarehouseDateTime(hourStart - HOUR_MS),
+											requestCount: 6000,
+											errorCount: 0,
+											p95Ms: 100,
+										},
+										// The in-progress hour's partial row; the chart must not show it as the current value.
+										{
+											hour: formatWarehouseDateTime(hourStart),
+											requestCount: 7,
+											errorCount: 0,
+											p95Ms: 100,
+										},
+									]
+								: options?.context === "anomalyTraceSignalsCurrent"
+									? [row("production", hourStart, 3000, 0)]
+									: [],
+						)
+						.pipe(Effect.orDie),
+			})
+			const series = yield* AnomalyDetectionService.use((service) =>
+				service.getIncidentTimeseries(systemTenant(ORG, ALERTING_SYSTEM_USER_ID), incidentId, {}),
+			).pipe(Effect.provide(makeLayer(testDb, warehouse)))
+			expect(Arr.map(series.buckets, (b) => [b.value, b.sampleCount])).toEqual([
+				[100, 6000],
+				[50, 3000],
+			])
 		}),
 	)
 })
