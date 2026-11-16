@@ -106,6 +106,46 @@ describe.skipIf(!ENABLED)("SCIM conformance (live Clerk dev instance)", () => {
 						`connection ${connection.id}: created inactive, ACS ${connection.saml?.acsUrl}`,
 					)
 
+					// Names are unique per provider type across the Clerk instance: a second org choosing the
+					// same one still connects, under a name made unique by its own domain.
+					const otherOrg = yield* Effect.promise(() =>
+						clerk.organizations.createOrganization({ name: `SCIM conformance other ${suffix}` }),
+					)
+					yield* undoLater(
+						Effect.promise(() => clerk.organizations.deleteOrganization(otherOrg.id)),
+					)
+					const otherDomain = `other-${suffix}.maple.dev`
+					const otherOrgId = Schema.decodeSync(OrgId)(otherOrg.id)
+					const otherDomainId = yield* gateway.ensureOrgDomain(otherOrgId, otherDomain)
+					yield* gateway.verifyOrgDomainOwnership(otherOrgId, otherDomainId)
+					const twin = yield* gateway.createConnection(otherOrgId, "saml_custom", {
+						name: "Conformance IdP",
+						domains: [otherDomain],
+						saml: {
+							ssoUrl: "https://idp.example.com/sso",
+							entityId: "https://idp.example.com/other",
+							certificate: CONFORMANCE_IDP_CERTIFICATE,
+						},
+					})
+					yield* gateway.deleteConnection(twin.id)
+					assert.strictEqual(twin.name, `Conformance IdP (${otherDomain})`)
+					yield* step(`second org, same SAML name: created as "${twin.name}"`)
+
+					// OIDC: the redirect URI the IdP must allow, which @clerk/backend's class drops.
+					const oidc = yield* gateway.createConnection(otherOrgId, "oidc_custom", {
+						name: `Conformance OIDC ${suffix}`,
+						domains: [otherDomain],
+						oidc: {
+							discoveryUrl: "https://accounts.google.com/.well-known/openid-configuration",
+							clientId: "conformance",
+							clientSecret: "conformance-secret",
+						},
+					})
+					yield* undoLater(gateway.deleteConnection(oidc.id))
+					const oidcRead = yield* gateway.getConnection(oidc.id)
+					assert.match(oidcRead.oidc?.redirectUri ?? "", /\/v1\/oauth_callback$/)
+					yield* step(`OIDC connection: redirect URI ${oidcRead.oidc?.redirectUri}`)
+
 					const directory = yield* gateway.createDirectory(connection.id, "custom")
 					yield* undoLater(gateway.deleteDirectory(directory.id))
 					const firstKey = directory.api_key ?? ""

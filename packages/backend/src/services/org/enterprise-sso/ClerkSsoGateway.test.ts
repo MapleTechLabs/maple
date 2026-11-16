@@ -1,6 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Array as Arr, Effect } from "effect"
-import { scanClaimedDomains } from "./ClerkSsoGateway"
+import { ClerkRequestError } from "@maple/backend/services/auth/clerk-request"
+import { disambiguatedName, isNameTaken, scanClaimedDomains } from "./ClerkSsoGateway"
 
 /** `total` connections, the last one serving `partner.io`; pages of 100 like Clerk's. */
 const connections = (total: number) => (offset: number) =>
@@ -80,4 +81,27 @@ describe("scanClaimedDomains", () => {
 			assert.strictEqual(error._tag, "@maple/backend/services/auth/ClerkRequestError")
 		}),
 	)
+})
+
+describe("connection name collisions", () => {
+	const clerkError = (status: number, errors: unknown) =>
+		new ClerkRequestError({ operation: "create", message: "x", status, cause: { errors } })
+
+	it("recognises Clerk's taken-name error, and nothing else", () => {
+		assert.isTrue(
+			isNameTaken(clerkError(422, [{ code: "form_identifier_exists", meta: { paramName: "name" } }])),
+		)
+		assert.isFalse(
+			isNameTaken(
+				clerkError(422, [{ code: "form_identifier_exists", meta: { paramName: "domains" } }]),
+			),
+		)
+		assert.isFalse(
+			isNameTaken(clerkError(400, [{ code: "form_identifier_exists", meta: { paramName: "name" } }])),
+		)
+	})
+
+	it("disambiguates with the org's own domain", () => {
+		assert.strictEqual(disambiguatedName("Okta", ["acme.com", "acme.io"]), "Okta (acme.com)")
+	})
 })

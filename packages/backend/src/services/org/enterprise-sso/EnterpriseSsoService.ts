@@ -346,6 +346,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 							: iso(c.saml.certificateExpiresAt),
 					oidcDiscoveryUrl: c.oidc?.discoveryUrl ?? null,
 					oidcClientId: c.oidc?.clientId ?? null,
+					oidcRedirectUri: c.oidc?.redirectUri ?? null,
 					createdAt: iso(c.createdAt),
 				})
 			}
@@ -798,41 +799,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId })
 				const row = yield* requireConnectionRow(orgId)
-				// Bypass entries are instance-wide and would outlive the connection that justified them.
-				const bypass = yield* clerk
-					.listBypassUsers(row.clerkConnectionId)
-					.pipe(orEmpty, Effect.mapError(fromClerk))
-				const ownDomains = yield* orMissing(clerk.getConnection(row.clerkConnectionId)).pipe(
-					Effect.mapBoth({
-						onSuccess: Option.match({ onNone: () => [], onSome: (c) => c.domains }),
-						onFailure: fromClerk,
-					}),
-				)
-				yield* Effect.forEach(
-					bypass,
-					(u) =>
-						Effect.gen(function* () {
-							const userId = decodeUserId(u.userId)
-							// Another org's SSO also covers them: its entry is the same one, so it stays.
-							const elsewhere = yield* coveredElsewhere(
-								userId,
-								row.clerkConnectionId,
-								ownDomains,
-							)
-							if (elsewhere.length > 0) {
-								return yield* Effect.logWarning(
-									"Kept a bypass entry another org's SSO also serves",
-								).pipe(Effect.annotateLogs({ orgId, userId }))
-							}
-							yield* clerk.removeBypassUser(userId).pipe(
-								Effect.catchIf(
-									(e) => e.status === 404,
-									() => Effect.void,
-								),
-							)
-						}).pipe(Effect.mapError(fromClerk)),
-					{ concurrency: 4, discard: true },
-				)
+				// Clerk removes the connection's bypass entries itself when the connection is deleted.
 				if (row.clerkDirectoryId !== null) yield* dropDirectory(orgId, row.clerkDirectoryId)
 				yield* clerk.deleteConnection(row.clerkConnectionId).pipe(
 					Effect.catchIf(

@@ -62,6 +62,8 @@ export class SsoConnectionDocument extends Schema.Class<SsoConnectionDocument>("
 	idpCertificateExpiresAt: Schema.NullOr(IsoDateTimeString),
 	oidcDiscoveryUrl: Schema.NullOr(Schema.String),
 	oidcClientId: Schema.NullOr(Schema.String),
+	/** OIDC only: the redirect URI the admin allows in the IdP application. */
+	oidcRedirectUri: Schema.NullOr(Schema.String),
 	createdAt: IsoDateTimeString,
 }) {}
 

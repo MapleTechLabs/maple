@@ -109,7 +109,11 @@ const gatewayLayer = (clerk: FakeClerk) =>
 					oidc:
 						input.oidc === undefined
 							? null
-							: { discoveryUrl: input.oidc.discoveryUrl, clientId: input.oidc.clientId },
+							: {
+									discoveryUrl: input.oidc.discoveryUrl,
+									clientId: input.oidc.clientId,
+									redirectUri: "https://clerk.test/v1/oauth_callback",
+								},
 				}
 				clerk.connections.set(id, c)
 				return Effect.succeed(c)
@@ -127,7 +131,15 @@ const gatewayLayer = (clerk: FakeClerk) =>
 				clerk.connections.set(id, next)
 				return Effect.succeed(next)
 			}),
-		deleteConnection: (id) => Effect.sync(() => void clerk.connections.delete(id)),
+		// Like Clerk: deleting a connection drops the bypass entries no remaining connection serves.
+		deleteConnection: (id) =>
+			Effect.sync(() => {
+				clerk.connections.delete(id)
+				const served = new Set(Arr.flatMap([...clerk.connections.values()], (c) => c.domains))
+				clerk.bypass = Arr.filter(clerk.bypass, (userId) =>
+					Arr.some(clerk.emailDomains.get(userId) ?? [], (d) => served.has(d)),
+				)
+			}),
 		createDirectory: (connectionId, provider) =>
 			Effect.sync(() => {
 				const id = `dir_${clerk.nextId++}`

@@ -52,7 +52,12 @@ export interface ClerkSsoConnection {
 		readonly idpEntityId: string | null
 		readonly certificateExpiresAt: number | null
 	} | null
-	readonly oidc: { readonly discoveryUrl: string | null; readonly clientId: string | null } | null
+	readonly oidc: {
+		readonly discoveryUrl: string | null
+		readonly clientId: string | null
+		/** What the admin registers in the IdP as the allowed redirect (Clerk's `oauth_callback`). */
+		readonly redirectUri: string | null
+	} | null
 }
 
 export interface ClerkSsoConnectionInput {
@@ -246,8 +251,103 @@ const toConnection = (c: EnterpriseConnection): ClerkSsoConnection => ({
 	oidc:
 		c.oauthConfig === null
 			? null
-			: { discoveryUrl: c.oauthConfig.discoveryUrl ?? null, clientId: c.oauthConfig.clientId ?? null },
+			: {
+					discoveryUrl: c.oauthConfig.discoveryUrl ?? null,
+					clientId: c.oauthConfig.clientId ?? null,
+					// @clerk/backend drops `redirect_uri`; reads that show it go through `getConnection`.
+					redirectUri: null,
+				},
 })
+
+const nullable = <S extends Schema.Top>(schema: S) => Schema.optionalKey(Schema.NullOr(schema))
+
+/** The connection as the Backend API sends it, `oauth_config.redirect_uri` included. */
+const ConnectionJson = Schema.Struct({
+	id: Schema.String,
+	name: Schema.String,
+	provider: Schema.String,
+	domains: Schema.Array(Schema.String),
+	organization_id: nullable(Schema.String),
+	active: Schema.Boolean,
+	created_at: Schema.Number,
+	saml_connection: nullable(
+		Schema.Struct({
+			acs_url: nullable(Schema.String),
+			sp_entity_id: nullable(Schema.String),
+			sp_metadata_url: nullable(Schema.String),
+			idp_metadata_url: nullable(Schema.String),
+			idp_sso_url: nullable(Schema.String),
+			idp_entity_id: nullable(Schema.String),
+			idp_certificate_expires_at: nullable(Schema.Number),
+		}),
+	),
+	oauth_config: nullable(
+		Schema.Struct({
+			discovery_url: nullable(Schema.String),
+			client_id: nullable(Schema.String),
+			redirect_uri: nullable(Schema.String),
+		}),
+	),
+})
+
+const orNull = (value: string | null | undefined): string | null =>
+	value === undefined || value === null || value === "" ? null : value
+
+const fromConnectionJson = (c: typeof ConnectionJson.Type): ClerkSsoConnection => ({
+	id: c.id,
+	name: c.name,
+	provider: c.provider,
+	domains: c.domains,
+	organizationId: c.organization_id ?? null,
+	active: c.active,
+	createdAt: c.created_at,
+	saml:
+		c.saml_connection === undefined || c.saml_connection === null
+			? null
+			: {
+					acsUrl: orNull(c.saml_connection.acs_url),
+					spEntityId: orNull(c.saml_connection.sp_entity_id),
+					spMetadataUrl: orNull(c.saml_connection.sp_metadata_url),
+					idpMetadataUrl: orNull(c.saml_connection.idp_metadata_url),
+					idpSsoUrl: orNull(c.saml_connection.idp_sso_url),
+					idpEntityId: orNull(c.saml_connection.idp_entity_id),
+					certificateExpiresAt: c.saml_connection.idp_certificate_expires_at ?? null,
+				},
+	oidc:
+		c.oauth_config === undefined || c.oauth_config === null
+			? null
+			: {
+					discoveryUrl: orNull(c.oauth_config.discovery_url),
+					clientId: orNull(c.oauth_config.client_id),
+					redirectUri: orNull(c.oauth_config.redirect_uri),
+				},
+})
+
+/**
+ * Clerk keeps connection names unique across the whole instance (`form_identifier_exists` on
+ * `name`), so two customers both naming theirs "Okta" collide.
+ */
+export const isNameTaken = (error: ClerkRequestError): boolean => {
+	if (error.status !== 422) return false
+	const cause: unknown = error.cause
+	if (!Predicate.isObject(cause) || !Predicate.hasProperty(cause, "errors") || !Arr.isArray(cause.errors)) {
+		return false
+	}
+	return Arr.some(cause.errors, (entry: unknown) => {
+		if (!Predicate.isObject(entry) || !Predicate.hasProperty(entry, "code")) return false
+		const meta = Predicate.hasProperty(entry, "meta") && Predicate.isObject(entry.meta) ? entry.meta : {}
+		const param = Predicate.hasProperty(meta, "paramName")
+			? meta.paramName
+			: Predicate.hasProperty(meta, "param_name")
+				? meta.param_name
+				: undefined
+		return entry.code === "form_identifier_exists" && param === "name"
+	})
+}
+
+/** A taken name made unique by the org's own domain, which no other org can hold. */
+export const disambiguatedName = (name: string, domains: ReadonlyArray<string>): string =>
+	Option.match(Arr.head(domains), { onNone: () => name, onSome: (domain) => `${name} (${domain})` })
 
 const samlParams = (saml: NonNullable<ClerkSsoConnectionInput["saml"]>): EnterpriseConnectionSamlParams => {
 	if (saml.metadataUrl !== undefined) return { idpMetadataUrl: saml.metadataUrl }
@@ -449,17 +549,52 @@ const make = Effect.gen(function* () {
 				c.organizations.deleteOrganizationDomain({ organizationId: orgId, domainId }),
 			).pipe(Effect.asVoid),
 		getConnection: (id) =>
-			sdk("Clerk.enterpriseConnections.get", {}, (c) =>
-				c.enterpriseConnections.getEnterpriseConnection(id),
-			).pipe(Effect.map(toConnection)),
-		createConnection: (orgId, provider, input) =>
-			sdk("Clerk.enterpriseConnections.create", { orgId, provider }, (c) =>
-				c.enterpriseConnections.createEnterpriseConnection(createParams(orgId, provider, input)),
-			).pipe(Effect.map(toConnection)),
-		updateConnection: (id, input) =>
-			sdk("Clerk.enterpriseConnections.update", {}, (c) =>
-				c.enterpriseConnections.updateEnterpriseConnection(id, updateParams(input)),
-			).pipe(Effect.map(toConnection)),
+			raw(
+				"Clerk.enterpriseConnections.get",
+				"GET",
+				`/enterprise_connections/${encodeURIComponent(id)}`,
+				{
+					decode: ConnectionJson,
+				},
+			).pipe(
+				Effect.filterOrFail(
+					(c): c is typeof ConnectionJson.Type => c !== undefined,
+					() =>
+						new ClerkRequestError({
+							operation: "Clerk.enterpriseConnections.get",
+							message: "Clerk sent no connection",
+							status: null,
+							cause: null,
+						}),
+				),
+				Effect.map(fromConnectionJson),
+			),
+		createConnection: (orgId, provider, input) => {
+			const create = (name: string) =>
+				sdk("Clerk.enterpriseConnections.create", { orgId, provider }, (c) =>
+					c.enterpriseConnections.createEnterpriseConnection(
+						createParams(orgId, provider, { ...input, name }),
+					),
+				)
+			return create(input.name).pipe(
+				Effect.catchIf(isNameTaken, () => create(disambiguatedName(input.name, input.domains))),
+				Effect.map(toConnection),
+			)
+		},
+		updateConnection: (id, input) => {
+			const update = (patch: typeof input) =>
+				sdk("Clerk.enterpriseConnections.update", {}, (c) =>
+					c.enterpriseConnections.updateEnterpriseConnection(id, updateParams(patch)),
+				)
+			return update(input).pipe(
+				Effect.catchIf(
+					(error) => input.name !== undefined && isNameTaken(error),
+					() =>
+						update({ ...input, name: disambiguatedName(input.name ?? "", input.domains ?? []) }),
+				),
+				Effect.map(toConnection),
+			)
+		},
 		deleteConnection: (id) =>
 			sdk("Clerk.enterpriseConnections.delete", {}, (c) =>
 				c.enterpriseConnections.deleteEnterpriseConnection(id),
