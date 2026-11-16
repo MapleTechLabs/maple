@@ -591,6 +591,20 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 				},
 			)
 
+			// The org's active repositories in one read, whatever installation owns them.
+			const listActiveRepositoriesByOrg = Effect.fn("VcsRepository.listActiveRepositoriesByOrg")(
+				function* (orgId: OrgId) {
+					const rows = yield* dbRead("vcs_repositories")((db) =>
+						db.run(
+							PG.from(VcsRepositories)
+								.select(repoColumns)
+								.where(($) => [$.orgId.eq(orgId), $.status.eq("active")]),
+						),
+					)
+					return yield* decodeAll("vcs_repositories", rows, rowToRepo)
+				},
+			)
+
 			// THE external → internal resolver for repositories. Returns the whole row
 			// (including internal `id` and `installationId`) so the sync path never needs
 			// a separate refetch. Org-scoped so a tenant can't read another's repo.
@@ -1372,6 +1386,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 				markInstallationStatus,
 				setCiTracesEnabled,
 				listRepositoriesByInstallation,
+				listActiveRepositoriesByOrg,
 				resolveRepository,
 				getRepositoryById,
 				getRepositoriesByIds,
