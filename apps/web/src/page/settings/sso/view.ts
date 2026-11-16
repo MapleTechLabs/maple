@@ -745,12 +745,13 @@ const mappingRow = (
 	return h.li(
 		[h.Key(row.key)],
 		[
-			hstack(h, { gap: "2", className: "px-4 py-2.5" }, [
+			// Wraps on narrow screens: the group picker keeps 12rem, role and buttons drop below it.
+			hstack(h, { gap: "2", wrap: true, className: "px-4 py-2.5" }, [
 				typography(h, { size: "xs", tone: "muted", numeric: true, className: "w-5 shrink-0" }, [
 					String(index + 1),
 				]),
 				h.div(
-					[h.Class("min-w-0 flex-1")],
+					[h.Class("min-w-48 flex-1")],
 					[
 						selectControl(h, model, {
 							key: `group-${row.key}`,
