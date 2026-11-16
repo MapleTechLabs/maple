@@ -128,6 +128,28 @@ describe("regex matchers", () => {
 	})
 })
 
+describe("the first evaluation window", () => {
+	// One sample 10m before the first step: inside a 15m range, outside the 5m lookback.
+	const M = 60_000
+	const start = DATA_START_MS + 3600_000
+	const src = memorySource([{ labels: { __name__: "m" }, samples: [[start - 10 * M + 1, 7]] }])
+	const steps = [
+		{ startMs: start, endMs: start + 15 * M, stepMs: 15 * M },
+		{ startMs: start, endMs: start + 15 * M, stepMs: 7 * M },
+		{ startMs: start, endMs: start, stepMs: 0 },
+	]
+
+	it("counts a sample the range reaches back to, at any step", () => {
+		expect(Arr.map(steps, (params) => flatten(run("count_over_time(m[15m])", params, src)))).toEqual(
+			Arr.map(steps, () => [["{}", start, 1]]),
+		)
+	})
+
+	it("leaves it out of a bare selector, whose lookback is 5m", () => {
+		expect(Arr.map(steps, (params) => flatten(run("m", params, src)))).toEqual(Arr.map(steps, () => []))
+	})
+})
+
 describe("explicit instant queries", () => {
 	it("read only their start, whatever end the caller passes", () => {
 		const requests: Array<SelectorRequest> = []
