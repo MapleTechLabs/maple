@@ -105,6 +105,8 @@ export type SecurityAuditUpdateSettingsRequest = typeof SecurityAuditUpdateSetti
 
 export const SecurityAuditListRunsQuery = Schema.Struct({
 	targetId: Schema.optional(SecurityAuditTargetId),
+	/** `true` leaves out pull request runs: each target's own audits only. */
+	branchOnly: Schema.optional(Schema.Literals(["true", "false"])),
 })
 
 export const SecurityAuditListEventsQuery = Schema.Struct({

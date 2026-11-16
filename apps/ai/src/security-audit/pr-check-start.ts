@@ -6,7 +6,7 @@
  */
 import type { PullRequestEventJob, SecurityPrCheckOutcome } from "@maple/domain/http"
 import { SecurityAuditRunId, securityAuditSpendWindow } from "@maple/domain/security-audit"
-import type { SecurityAuditTargetRow } from "@maple/db/tables"
+import type { SecurityAuditRunRow, SecurityAuditTargetRow } from "@maple/db/tables"
 import type { OrgId } from "@maple/primitives"
 import { SecurityAuditWorkflowStarter } from "@maple/backend/platform/bindings"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -89,6 +89,16 @@ const checkPullRequest = Effect.fn("SecurityPrCheck.checkPullRequest")(function*
 	const workflow = yield* SecurityAuditWorkflowStarter
 	const checks = yield* SecurityPrCheck
 
+	const repo = yield* (yield* VcsRepository).resolveRepository(orgId, job.provider, job.externalRepoId)
+	if (Option.isNone(repo)) return skipped("repository_not_connected")
+	const upstream = yield* (yield* makeRepoUpstream).upstreamFor(orgId, repo.value)
+	if (Option.isNone(upstream)) return skipped("no_installation")
+	const { provider, installation, ref } = upstream.value
+	// Deliveries can arrive out of order: only the pull request's current head is checked, so an
+	// older push never supersedes the run for a newer one.
+	const head = yield* provider.fetchPullRequestHead(installation, ref, job.number)
+	if (head.headSha !== headSha) return skipped("stale_head")
+
 	/**
 	 * Whether this head already has a run (a redelivery, api's retry): if so it answers. Any other
 	 * unfinished run is for an older head, made moot: stopped before it spends more, and its own
@@ -96,7 +106,8 @@ const checkPullRequest = Effect.fn("SecurityPrCheck.checkPullRequest")(function*
 	 */
 	const supersede = Effect.gen(function* () {
 		const open = yield* store.listOpenPullRequestRuns(target.id, job.number)
-		if (Arr.some(open, (run) => run.sourceRef === headSha)) return "checking" as const
+		const same = Arr.findFirst(open, (run) => run.sourceRef === headSha)
+		if (Option.isSome(same)) return same
 		yield* Effect.forEach(
 			open,
 			(run) =>
@@ -116,15 +127,47 @@ const checkPullRequest = Effect.fn("SecurityPrCheck.checkPullRequest")(function*
 				),
 			{ discard: true },
 		)
-		return "clear" as const
+		return Option.none<SecurityAuditRunRow>()
 	})
-	if ((yield* supersede) === "checking") return skipped("already_checking")
 
-	const repo = yield* (yield* VcsRepository).resolveRepository(orgId, job.provider, job.externalRepoId)
-	if (Option.isNone(repo)) return skipped("repository_not_connected")
-	const upstream = yield* (yield* makeRepoUpstream).upstreamFor(orgId, repo.value)
-	if (Option.isNone(upstream)) return skipped("no_installation")
-	const { provider, installation, ref } = upstream.value
+	/**
+	 * The head's run answers, but its Workflow may never have been created (the delivery that started
+	 * it was cut off). Creating it again is a no-op for one that exists; one that did not exist starts
+	 * now and says so on the check. Never re-posts a running check over one that may have finished.
+	 */
+	const resume = (run: SecurityAuditRunRow) =>
+		run.discoveryModel === null || run.validationModel === null
+			? Effect.void
+			: workflow
+					.create({
+						orgId,
+						runId: run.id,
+						repository: target.repository,
+						ref: headSha,
+						profile: run.profile,
+						scopePaths: run.scopePaths,
+						budget: run.budget,
+						models: { discovery: run.discoveryModel, validation: run.validationModel },
+						priorRunId: null,
+					})
+					.pipe(
+						Effect.andThen(
+							checks.notify(orgId, target, headSha, {
+								kind: "running",
+								runId: run.id,
+								scopePaths: run.scopePaths.length,
+							}),
+						),
+						// Already exists: the run is in hand.
+						Effect.ignore,
+					)
+
+	const answering = yield* supersede
+	if (Option.isSome(answering)) {
+		yield* resume(answering.value)
+		return skipped("already_checking")
+	}
+
 	const files = yield* provider.fetchPullRequestFiles(installation, ref, job.number)
 	const scope = prScope(files)
 	if (scope.kind === "empty") return yield* report("the pull request changes no file to audit")
@@ -179,7 +222,8 @@ const checkPullRequest = Effect.fn("SecurityPrCheck.checkPullRequest")(function*
 			// is superseded and this start tried once more.
 			"@maple/backend/security-audit/RunInProgress": () =>
 				Effect.gen(function* () {
-					if ((yield* supersede) === "checking") return { _tag: "Checking" as const }
+					const raced = yield* supersede
+					if (Option.isSome(raced)) return { _tag: "Checking" as const }
 					const retriedRun = yield* start.pipe(
 						Effect.catchTag(
 							"@maple/backend/security-audit/RunInProgress",
