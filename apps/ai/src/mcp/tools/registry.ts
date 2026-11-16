@@ -650,6 +650,11 @@ export const readToolCall = (
 	}
 }
 
+const titlesByName = new Map(Arr.map(mapleToolDefinitions, ({ name, title }) => [name, title]))
+
+/** A tool's human title ("Search Repository Checkout"), or undefined for a name outside the registry. */
+export const mapleToolTitle = (name: string): string | undefined => titlesByName.get(name)
+
 const phrasesByName = new Map(Arr.map(mapleToolDefinitions, ({ name, phrases }) => [name, phrases]))
 
 /**
