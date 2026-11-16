@@ -279,6 +279,8 @@ const reraisesDismissedPrivacy = (
 ) => {
 	if (known.status !== "dismissed" || known.category !== "security") return false
 	if (finding.checkId !== "PII-01" || finding.path !== known.path || citesSource(finding)) return false
+	// A scan critical recognized the value itself, which is new evidence; a scan name-only warning stays muted.
+	if (isPrivacyScanFinding(finding) && finding.severity === "critical") return false
 	return sameIdentifier(subjectOf(finding.title), subjectOf(known.title))
 }
 

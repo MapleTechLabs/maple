@@ -634,6 +634,16 @@ describe("credential findings and the replies to them", () => {
 			).fresh.length,
 			1,
 		)
+		// The scan's own finding elsewhere in the file: a recognized value is new evidence, a name is not.
+		const scanHit = (severity: "warn" | "critical") =>
+			privacy({ line: 120, severity, title: "Credential `obj.legacyApiKey` written to a log" })
+		assert.deepEqual(
+			Arr.map(
+				withoutRepeats([scanHit("critical"), scanHit("warn")], [dismissed]).fresh,
+				(f) => f.severity,
+			),
+			["critical"],
+		)
 		// Same title and line as the dismissal, but sourced: the restatement check lets it through too.
 		assert.equal(
 			withoutRepeats(
