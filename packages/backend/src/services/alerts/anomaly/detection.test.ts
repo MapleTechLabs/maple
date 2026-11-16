@@ -538,6 +538,16 @@ describe("latency baseline across hours with different distributions", () => {
 	})
 })
 
+describe("blendGoldenHours", () => {
+	it("takes the p95 of the hour with most of the window's requests, not most of its time", () => {
+		// 10:15: 45 min of a quiet hour (75 requests) and 15 min of a busy one (2,500 requests).
+		const quiet = { requestCount: 100, errorCount: 0, p95Ms: 100 }
+		const busy = { requestCount: 10_000, errorCount: 0, p95Ms: 1000 }
+		expect(blendGoldenHours(quiet, busy, 0.25).p95Ms).toBe(1000)
+		expect(blendGoldenHours(busy, quiet, 0.75).p95Ms).toBe(1000)
+	})
+})
+
 describe("goldenWindowFromHours", () => {
 	it("adds the share of the previous hour the 60-minute window still covers", () => {
 		const now = Date.parse("2026-11-10T10:15:00Z")

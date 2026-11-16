@@ -297,6 +297,16 @@ export interface AnomalyDetectionServiceApi {
 	) => Effect.Effect<AnomalyDetectorSettingsDocument, AnomalyPersistenceError>
 }
 
+/** The settings columns an update writes: only the fields the request supplied, plus the audit pair. */
+interface AnomalySettingsPatch {
+	enabled?: AnomalyDetectorSettingsRow["enabled"]
+	sensitivity?: AnomalyDetectorSettingsRow["sensitivity"]
+	mutedSignalsJson?: AnomalyDetectorSettingsRow["mutedSignalsJson"]
+	includedEnvironmentsJson?: AnomalyDetectorSettingsRow["includedEnvironmentsJson"]
+	readonly updatedAt: number
+	readonly updatedBy: AnomalyDetectorSettingsRow["updatedBy"]
+}
+
 const make: Effect.Effect<
 	AnomalyDetectionServiceApi,
 	never,
@@ -597,18 +607,16 @@ const make: Effect.Effect<
 		yield* Effect.annotateCurrentSpan({ orgId })
 		const nowMs = yield* Clock.currentTimeMillis
 		const existing = yield* ensureSettingsRow(orgId, nowMs)
-		const next = {
-			enabled: request.enabled === undefined ? existing.enabled : request.enabled,
-			sensitivity: request.sensitivity ?? existing.sensitivity,
-			mutedSignalsJson:
-				request.mutedSignals === undefined ? existing.mutedSignalsJson : request.mutedSignals,
-			includedEnvironmentsJson:
-				request.includedEnvironments === undefined
-					? existing.includedEnvironmentsJson
-					: Arr.dedupe(request.includedEnvironments),
+		// Only the supplied fields: writing back the rest of an earlier read would undo a concurrent PATCH.
+		const next: AnomalySettingsPatch = {
 			updatedAt: nowMs,
 			updatedBy: userId,
 		}
+		if (request.enabled !== undefined) next.enabled = request.enabled
+		if (request.sensitivity !== undefined) next.sensitivity = request.sensitivity
+		if (request.mutedSignals !== undefined) next.mutedSignalsJson = request.mutedSignals
+		if (request.includedEnvironments !== undefined)
+			next.includedEnvironmentsJson = Arr.dedupe(request.includedEnvironments)
 		yield* dbExecute((db) =>
 			db.run(
 				PG.update(AnomalyDetectorSettings)
@@ -933,6 +941,8 @@ const make: Effect.Effect<
 			bucketSeconds = 3600
 			const compiled = CH.compile(CH.anomalyLogVolumeTimeseriesQuery(), {
 				...queryWindow,
+				// One hour earlier, so the in-progress point can blend in the previous hour.
+				startTime: formatWarehouseDateTime(startMs - HOUR_MS),
 				serviceName: row.serviceName,
 				deploymentEnv: row.deploymentEnv,
 			})
@@ -941,17 +951,20 @@ const make: Effect.Effect<
 				context: "anomalyLogVolumeTimeseries",
 			})
 			const byHour = new Map(Arr.map(rows, (r) => [DateTime.toEpochMillis(r.hour), r]))
-			buckets = Arr.map(rows, (r) => {
-				const hourMs = DateTime.toEpochMillis(r.hour)
-				const errorLogCount = isLiveBucket(hourMs)
-					? logWindowFromHours(byHour.get(hourMs - HOUR_MS), r, nowMs).errorLogCount
-					: r.errorLogCount
-				return new AnomalyTimeseriesBucket({
-					bucket: isoFromEpoch(hourMs),
-					value: errorLogCount / CURRENT_WINDOW_MINUTES,
-					sampleCount: Math.round(errorLogCount),
-				})
-			})
+			buckets = Arr.map(
+				Arr.filter(rows, (r) => DateTime.toEpochMillis(r.hour) >= startMs),
+				(r) => {
+					const hourMs = DateTime.toEpochMillis(r.hour)
+					const errorLogCount = isLiveBucket(hourMs)
+						? logWindowFromHours(byHour.get(hourMs - HOUR_MS), r, nowMs).errorLogCount
+						: r.errorLogCount
+					return new AnomalyTimeseriesBucket({
+						bucket: isoFromEpoch(hourMs),
+						value: errorLogCount / CURRENT_WINDOW_MINUTES,
+						sampleCount: Math.round(errorLogCount),
+					})
+				},
+			)
 		} else {
 			bucketSeconds = 3600
 			const compiled = CH.compile(CH.anomalyTraceSignalTimeseriesQuery(), {
