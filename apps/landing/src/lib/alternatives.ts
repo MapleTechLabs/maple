@@ -93,8 +93,8 @@ const dash0: AlternativesPage = {
 		},
 		{
 			team: "Must self-host and keep PromQL",
-			pick: "SigNoz or Grafana",
-			why: "Both take PromQL and have mature self-hosted installs (Docker and Helm).",
+			pick: "SigNoz or Grafana, or Maple without alerting",
+			why: "All three take PromQL. SigNoz and Grafana have mature self-hosted installs (Docker and Helm) with alerting; Maple self-hosts as one container, without alerting yet.",
 		},
 		{
 			team: "Need phone and SMS paging",
@@ -149,7 +149,7 @@ const dash0: AlternativesPage = {
 			id: "signoz",
 			name: "SigNoz",
 			url: "https://signoz.io",
-			pickIf: "You want an open-source, self-hosted platform and need to keep PromQL.",
+			pickIf: "You want an open-source, self-hosted platform with alerting and need to keep PromQL.",
 			pricing: "$49/mo including $49 of usage, then $0.30 per GB of logs and traces",
 			openSource: "MIT core, SSO and RBAC under a commercial license; self-hostable",
 			promql: "Yes",
