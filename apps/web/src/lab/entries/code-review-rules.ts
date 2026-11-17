@@ -8,12 +8,13 @@ import { defineLabWithFlags } from "../define"
 
 // `/lab/code-review-rules`: the organization's default review rules as two roles see them.
 // `?as=engineer` may edit the rules but not turn automatic approval on; `?as=admin` may do both.
+// `&approval=on` starts with approval saved on, which an engineer may turn off.
 // TODO(lab-save): Save changes nothing; the fixture rules exist nowhere to write to.
 
 const Viewer = Schema.Literals(["admin", "engineer"])
 type Viewer = typeof Viewer.Type
 
-const Flags = Schema.Struct({ viewer: Viewer })
+const Flags = Schema.Struct({ viewer: Viewer, approvalOn: Schema.Boolean })
 type Flags = typeof Flags.Type
 
 const Model = Schema.Struct({ viewer: Viewer, form: RulesForm.Model })
@@ -22,11 +23,12 @@ type Model = typeof Model.Type
 const Message = defineMessageUnion({ GotFormMessage: { message: RulesForm.Message } })
 type Message = typeof Message.Type
 
-const RULES = new PrReviewRepositoryConfig({
-	instructions: "Flag any query that does not filter by organization.",
-	ignorePaths: ["docs/", "*.snap"],
-	autoApprove: true,
-})
+const rules = (approvalOn: boolean) =>
+	new PrReviewRepositoryConfig({
+		instructions: "Flag any query that does not filter by organization.",
+		ignorePaths: ["docs/", "*.snap"],
+		autoApprove: approvalOn,
+	})
 
 const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 	h.div(
@@ -50,9 +52,13 @@ export const lab = defineLabWithFlags("Code review rules", {
 			Schema.decodeUnknownOption(Viewer)(new URLSearchParams(window.location.search).get("as")),
 			(): Viewer => "engineer",
 		),
+		approvalOn: new URLSearchParams(window.location.search).get("approval") === "on",
 	})),
 	init: (flags: Flags) => ({
-		model: { viewer: flags.viewer, form: RulesForm.init("lab-rules", "organization", RULES, null) },
+		model: {
+			viewer: flags.viewer,
+			form: RulesForm.init("lab-rules", "organization", rules(flags.approvalOn), null),
+		},
 	}),
 	update: (model, message) =>
 		Message.match(message, {

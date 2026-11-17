@@ -207,6 +207,10 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 	const inheritedSeverity = SEVERITY_LABELS[parent.minInlineSeverity ?? BUILT_IN.minInlineSeverity]
 	const inheritedFeedback = FEEDBACK_LABELS[parent.feedbackScope ?? BUILT_IN.feedbackScope]
 	const inheritedDrafts = (parent.reviewDrafts ?? BUILT_IN.reviewDrafts) ? "Review drafts" : "Skip drafts"
+	// Whether approval is on as last saved, its own setting or the one it inherits.
+	const approvalSavedOn =
+		model.saved.autoApprove === "on" ||
+		(model.saved.autoApprove === INHERIT && (parent.autoApprove ?? BUILT_IN.autoApprove))
 	const inheritOption = (label: string): ReadonlyArray<readonly [string, string]> =>
 		isRepository ? [[INHERIT, `Organization default (${label})`]] : []
 	return h.fieldset(
@@ -334,8 +338,9 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 				label: RULES_COPY.autoApprove.label,
 				description: RULES_COPY.autoApprove.description,
 				inherited: parent.autoApprove ?? BUILT_IN.autoApprove,
-				// Shown locked only to someone who could otherwise edit: the footer already locks the rest.
-				...(inputs.canEdit && !inputs.canAutoApprove
+				// Locked only where a save could turn approval on: someone who can edit may always turn
+				// it off, so a control that is saved on stays free. The footer already locks the rest.
+				...(inputs.canEdit && !inputs.canAutoApprove && !approvalSavedOn
 					? { lockReason: denialReason("code_review:auto_approve") }
 					: undefined),
 			}),
