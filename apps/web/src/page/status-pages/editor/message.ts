@@ -80,6 +80,10 @@ export const Message = defineMessageUnion({
 	GotDiscardComponentDialogMessage: { message: Dialog.Message },
 	/** A grip drag let go over `index`, the slot within the component's group; the order waits on Save. */
 	DroppedComponent: { componentId: StatusPageComponentId, index: Schema.Number },
+	/** A group's grip let go over `index` among the groups (`null` is "No group"); waits on Save. */
+	DroppedGroup: { group: Schema.NullOr(Schema.String), index: Schema.Number },
+	/** ArrowUp (-1) or ArrowDown (1) on a group's grip. */
+	PressedMoveGroup: { group: Schema.NullOr(Schema.String), offset: Schema.Number },
 	/** ArrowUp (-1) or ArrowDown (1) on a component's grip. */
 	PressedMoveComponent: { componentId: StatusPageComponentId, offset: Schema.Number },
 	CompletedReorder: { result: LoadOutcome(Schema.Array(V2StatusPageComponent)) },

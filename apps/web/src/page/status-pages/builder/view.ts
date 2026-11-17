@@ -48,6 +48,7 @@ import {
 	DOMAIN_ID,
 	FIELDS_ID,
 	gripIdOf,
+	groupGripIdOf,
 	monitorsOf,
 	NAME_ID,
 	nameIssue,
@@ -191,6 +192,8 @@ const componentRows = (h: H, model: Model): Html =>
 		grants: model,
 		isReorderBusy: model.submitting !== null,
 		hintId: ROW_HINT_ID,
+		onMoveGroup: (group, offset) => Message.PressedMoveGroup({ group, offset }),
+		groupGripId: groupGripIdOf,
 		rows: Arr.map(orderedRows(model), (row) => {
 			const isOpen = model.openKey === row.key
 			const name = Str.trim(row.form.name)

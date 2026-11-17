@@ -81,12 +81,16 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 			dependenciesToStream: ({ canDrag }) =>
 				canDrag
 					? componentDrags.pipe(
-							Stream.flatMap(({ key, index }) =>
-								Option.match(decodeComponentId(key), {
-									onNone: () => Stream.empty,
-									onSome: (componentId) =>
-										Stream.make(Message.DroppedComponent({ componentId, index })),
-								}),
+							Stream.flatMap(({ kind, key, index }): Stream.Stream<Message> =>
+								kind === "group"
+									? Stream.make(
+											Message.DroppedGroup({ group: key === "" ? null : key, index }),
+										)
+									: Option.match(decodeComponentId(key), {
+											onNone: (): Stream.Stream<Message> => Stream.empty,
+											onSome: (componentId) =>
+												Stream.make(Message.DroppedComponent({ componentId, index })),
+										}),
 							),
 						)
 					: Stream.empty,

@@ -78,7 +78,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
 import { groupedOrder } from "../shared/component-order"
-import { componentGripId } from "./update-components"
+import { componentGripId, groupGripId } from "./update-components"
 import { customDomainOf } from "./update-domain"
 import { canvasDocument } from "./view-canvas"
 import { maintenanceDurationMs } from "./view-incidents"
@@ -695,6 +695,39 @@ describe("components under Settings > Monitors", () => {
 			{
 				name: "ReorderStatusPageComponents",
 				args: { componentIds: [componentId(3), componentId(2), componentId(1), componentId(4)] },
+			},
+		])
+	})
+
+	test("a group moves with its components, by its grip or the arrow keys, and waits for Save", () => {
+		const rows = [
+			component(1, { group: "Core" }),
+			component(2, { group: "Edge" }),
+			component(3, { group: "Core" }),
+			component(4),
+		]
+		const model = loaded({ ...MONITORS, components: rows })
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(role("button", { name: "Reorder group Core" })).toExist(),
+			expectView(role("button", { name: "Reorder group No group" })).toExist(),
+		)
+		const dropped = steps(model, [Message.DroppedGroup({ group: "Edge", index: 0 })])
+		expect(pageUpdate(dropped, Message.ClickedSaveMonitors()).commands).toMatchObject([
+			{
+				name: "ReorderStatusPageComponents",
+				args: { componentIds: [componentId(2), componentId(1), componentId(3), componentId(4)] },
+			},
+		])
+		const nudged = pageUpdate(model, Message.PressedMoveGroup({ group: null, offset: -1 }))
+		expect(nudged.commands).toMatchObject([
+			{ name: "FocusStatusPageEditorElement", args: { id: groupGripId(null) } },
+		])
+		expect(pageUpdate(nudged.model, Message.ClickedSaveMonitors()).commands).toMatchObject([
+			{
+				name: "ReorderStatusPageComponents",
+				args: { componentIds: [componentId(1), componentId(3), componentId(4), componentId(2)] },
 			},
 		])
 	})

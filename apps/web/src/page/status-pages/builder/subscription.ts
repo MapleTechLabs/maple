@@ -16,7 +16,13 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 			}),
 			dependenciesToStream: ({ canDrag }) =>
 				canDrag
-					? componentDrags.pipe(Stream.map(({ key, index }) => Message.DroppedRow({ key, index })))
+					? componentDrags.pipe(
+							Stream.map(({ kind, key, index }) =>
+								kind === "group"
+									? Message.DroppedGroup({ group: key === "" ? null : key, index })
+									: Message.DroppedRow({ key, index }),
+							),
+						)
 					: Stream.empty,
 		},
 	),

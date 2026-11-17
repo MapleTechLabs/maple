@@ -31,7 +31,7 @@ import { monitorKey, PickerMessage } from "../shared/picker"
 import { statusPage } from "../shared/test-pages"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { init, previewDraft as BuilderUpdatePreviewDraft, update } from "./update"
+import { init, orderedRows, previewDraft as BuilderUpdatePreviewDraft, update } from "./update"
 import { view as builderView } from "./view"
 
 const ENGINEER = Policy.grantsOf(["org:engineer"])
@@ -219,6 +219,30 @@ describe("status page builder", () => {
 					},
 				},
 			},
+		])
+	})
+
+	test("a group moves with its rows among the groups, and the page lists them in that order", () => {
+		const grouped = Arr.reduce(
+			[
+				Message.ClickedRow({ key: monitorKey(downMonitor().id) }),
+				group(Combobox.Message.ClickedItem({ value: groupPickerValue.create("Payments") })),
+				Message.DroppedGroup({ group: "Payments", index: 0 }),
+			],
+			named(withMonitors([httpMonitor(), downMonitor(), tcpMonitor()])),
+			(current, message) => builderUpdate(current, message).model,
+		)
+		expect(Arr.map(orderedRows(grouped), (row) => row.form.name)).toEqual([
+			"payments-api",
+			"checkout-api",
+			"postgres",
+		])
+		const nudged = builderUpdate(grouped, Message.PressedMoveGroup({ group: "Payments", offset: 1 }))
+		expect(names(nudged.commands)).toContain("FocusStatusPageBuilderField")
+		expect(Arr.map(orderedRows(nudged.model), (row) => row.form.name)).toEqual([
+			"checkout-api",
+			"postgres",
+			"payments-api",
 		])
 	})
 

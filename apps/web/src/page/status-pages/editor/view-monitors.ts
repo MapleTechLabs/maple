@@ -22,7 +22,13 @@ import { Message } from "./message"
 import { canManage, type ComponentSave, type Model } from "./model"
 import { gatedControl } from "../../kit/session-grants"
 import { componentsOf, incidentsOf, listedComponentsOf, monitorsOf } from "./reads"
-import { componentGripId, componentRowId, unsavedComponent, unsavedOrder } from "./update-components"
+import {
+	componentGripId,
+	componentRowId,
+	groupGripId,
+	unsavedComponent,
+	unsavedOrder,
+} from "./update-components"
 import { failureAlert } from "./view-panel"
 
 // Settings > Monitors: the page's components by group, each opening in place with its fields and
@@ -110,6 +116,8 @@ const componentListView = (h: H, model: Model): Html =>
 		grants: model,
 		isReorderBusy: model.isSavingOrder,
 		hintId: REORDER_HINT_ID,
+		onMoveGroup: (group, offset) => Message.PressedMoveGroup({ group, offset }),
+		groupGripId,
 		leading:
 			model.orderFailure === null
 				? []

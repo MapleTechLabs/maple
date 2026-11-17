@@ -37,6 +37,10 @@ export const Message = defineMessageUnion({
 	ClickedRemoveRow: { key: Schema.String },
 	/** A grip drag let go over `index`, the slot within the row's group. */
 	DroppedRow: { key: Schema.String, index: Schema.Number },
+	/** A group's grip let go over `index` among the groups (`null` is "No group"). */
+	DroppedGroup: { group: Schema.NullOr(Schema.String), index: Schema.Number },
+	/** ArrowUp (-1) or ArrowDown (1) on a group's grip. */
+	PressedMoveGroup: { group: Schema.NullOr(Schema.String), offset: Schema.Number },
 	/** ArrowUp (-1) or ArrowDown (1) on a row's grip. */
 	PressedMoveRow: { key: Schema.String, offset: Schema.Number },
 	ClickedAddComponents: {},

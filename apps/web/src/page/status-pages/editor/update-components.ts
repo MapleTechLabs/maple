@@ -13,7 +13,7 @@ import {
 	type ComponentForm,
 	emptyComponentForm,
 } from "../shared/form"
-import { groupIndexOf, moved } from "../shared/component-order"
+import { groupIndexOf, groupOrder, moved, movedGroup } from "../shared/component-order"
 import type * as Combobox from "@maple/views/ui/combobox"
 import { updateGroupPicker } from "../shared/group-picker"
 import {
@@ -305,6 +305,32 @@ export const nudgeComponent = (model: Model, componentId: StatusPageComponentId,
 	return next === null
 		? { model }
 		: { model: next, commands: [FocusEditorElement({ id: componentGripId(componentId) })] }
+}
+
+/** A group's drag grip in the Monitors list. */
+export const groupGripId = (group: string | null): string =>
+	`status-page-group-grip-${group === null ? "none" : encodeURIComponent(group)}`
+
+/** The listed order with `group` at `index` among the groups, waiting on Save; `null` when nothing moves. */
+const reorderGroup = (model: Model, group: string | null, index: number): Model | null => {
+	const next = movedGroup(listedComponentsOf(model), group, index)
+	return next === null || model.isSavingOrder || !canManage(model)
+		? null
+		: { ...model, pendingOrder: Arr.map(next, (component) => component.id) }
+}
+
+/** A group's drop: its components take the group's new place together. */
+export const moveGroup = (model: Model, group: string | null, index: number): Return => ({
+	model: reorderGroup(model, group, index) ?? model,
+})
+
+/** An arrow key on a group's grip: one place up or down, focus kept on its grip. */
+export const nudgeGroup = (model: Model, group: string | null, offset: number): Return => {
+	const from = groupOrder(listedComponentsOf(model)).indexOf(group)
+	const next = from === -1 ? null : reorderGroup(model, group, from + offset)
+	return next === null
+		? { model }
+		: { model: next, commands: [FocusEditorElement({ id: groupGripId(group) })] }
 }
 
 /** The ids Save sends as the new order, while the listed order differs from the saved one. */

@@ -19,7 +19,7 @@ import type { AppRoute } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { UPTIME_LIST_LIMIT } from "../../kit/uptime/commands"
 import { statusPageHref } from "../shared/commands"
-import { groupedOrder, groupIndexOf, moved } from "../shared/component-order"
+import { groupedOrder, groupIndexOf, groupOrder, moved, movedGroup } from "../shared/component-order"
 import { componentPayload, type ComponentForm, emptyComponentForm, orNull } from "../shared/form"
 import type * as Combobox from "@maple/views/ui/combobox"
 import { initGroupPicker, updateGroupPicker } from "../shared/group-picker"
@@ -105,6 +105,10 @@ export const rowIdOf = (key: string): string => `${PICKER_ID}-row-${safeKey(key)
 
 /** A row's drag grip in the list. */
 export const gripIdOf = (key: string): string => `${PICKER_ID}-grip-${safeKey(key)}`
+
+/** A group's drag grip in the list. */
+export const groupGripIdOf = (group: string | null): string =>
+	`${PICKER_ID}-group-grip-${group === null ? "none" : encodeURIComponent(group)}`
 
 /** The rows as the order helpers take them: the key as the id, a blank group as none. */
 const placed = (rows: ReadonlyArray<DraftRow>) =>
@@ -279,6 +283,23 @@ const nudgeRow = (model: Model, key: string, offset: number): Return => {
 	return { ...step, commands: [...(step.commands ?? []), FocusBuilderField({ id: gripIdOf(key) })] }
 }
 
+/** The group's rows, together, at the `index`th place among the groups. */
+const moveGroupTo = (model: Model, group: string | null, index: number): Model | null => {
+	const next = movedGroup(placed(model.rows), group, index)
+	return next === null ? null : { ...model, rows: Arr.map(next, (item) => item.row) }
+}
+
+const nudgeGroup = (model: Model, group: string | null, offset: number): Return => {
+	const from = groupOrder(placed(model.rows)).indexOf(group)
+	const next = from === -1 ? null : moveGroupTo(model, group, from + offset)
+	if (next === null) return { model }
+	const step = edited(next)
+	return {
+		...step,
+		commands: [...(step.commands ?? []), FocusBuilderField({ id: groupGripIdOf(group) })],
+	}
+}
+
 const removeRow = (model: Model, key: string): Return =>
 	edited({
 		...model,
@@ -388,6 +409,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			return next === null ? { model } : edited(next)
 		},
 		PressedMoveRow: ({ key, offset }) => nudgeRow(model, key, offset),
+		DroppedGroup: ({ group, index }) => {
+			const next = moveGroupTo(model, group, index)
+			return next === null ? { model } : edited(next)
+		},
+		PressedMoveGroup: ({ group, offset }) => nudgeGroup(model, group, offset),
 		ClickedAddComponents: () => openAdd(model),
 		GotAddSheetMessage: ({ message: child }) => {
 			const step = Dialog.update(model.addSheet, child)

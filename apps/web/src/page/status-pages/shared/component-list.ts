@@ -16,7 +16,16 @@ import { Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { expandChevron } from "../../kit/expand-chevron"
 import { gatedControl, type Grants } from "../../kit/session-grants"
-import { GRIP_ATTRIBUTE, LIST_ATTRIBUTE, ROW_ATTRIBUTE, SLOT_ATTRIBUTE } from "./component-drag"
+import {
+	GRIP_ATTRIBUTE,
+	GROUP_GRIP_ATTRIBUTE,
+	GROUP_LIST_ATTRIBUTE,
+	GROUP_ROW_ATTRIBUTE,
+	GROUP_SLOT_ATTRIBUTE,
+	LIST_ATTRIBUTE,
+	ROW_ATTRIBUTE,
+	SLOT_ATTRIBUTE,
+} from "./component-drag"
 import { COMPONENT_STATUS_LABEL, COMPONENT_STATUS_OPTIONS, COMPONENT_STATUS_TONE } from "./derive"
 import type { ComponentForm, ComponentTextField } from "./form"
 import { selectField, textField } from "./fields"
@@ -59,7 +68,53 @@ export type ComponentListOptions<M> = Readonly<{
 	hintId: string
 	/** Above the groups: an alert for a refused order save. */
 	leading?: ReadonlyArray<Html>
+	/** A group's grip, dragged or moved with the arrow keys among the groups (`null` is "No group"). */
+	onMoveGroup: (group: string | null, offset: -1 | 1) => M
+	/** The id of a group's grip, so a keyboard move keeps its focus. */
+	groupGripId: (group: string | null) => string
 }>
+
+const GROUP_HINT = "Drag, or press the up and down arrow keys, to move the group and its components."
+
+/** A group's handle: like a row's, it moves the group's whole block among the groups. */
+const groupGrip = <M>(h: HtmlBuilder<M>, options: ComponentListOptions<M>, group: string | null): Html =>
+	gatedControl(
+		h,
+		options.grants,
+		"status_pages:edit",
+		(isDisabled) =>
+			dragGrip(h, {
+				label: `Reorder group ${group ?? "No group"}`,
+				onMove: (offset) => options.onMoveGroup(group, offset),
+				className: "self-stretch px-1",
+				attributes: isDisabled
+					? [h.Disabled(true)]
+					: [
+							h.Id(options.groupGripId(group)),
+							h.DataAttribute(GROUP_GRIP_ATTRIBUTE, ""),
+							h.AriaDescribedBy(`${options.hintId}-group`),
+							h.AriaDisabled(options.isReorderBusy === true),
+						],
+			}),
+		{ className: "self-stretch" },
+	)
+
+/** The dashed outline a drag moves to where the held row or group lands; under the rows, as wide. */
+const slotOutline = <M>(h: HtmlBuilder<M>, attribute: string): Html =>
+	h.div(
+		[
+			h.DataAttribute(attribute, ""),
+			h.AriaHidden(true),
+			h.Class(
+				"pointer-events-none invisible absolute inset-x-0 top-0 rounded-md border border-dashed border-primary-a4 bg-primary-a1 data-dragging:visible",
+			),
+		],
+		[],
+	)
+
+/** Held while dragged: lifted over the rest, as a row is. */
+const HELD_CLASS =
+	"data-dragging:relative data-dragging:z-10 data-dragging:rounded-md data-dragging:bg-card data-dragging:shadow-popup data-dragging:outline data-dragging:outline-primary-a4"
 
 /**
  * The row's handle: dragged, or moved a slot with the arrow keys, within its group. Locked, it
@@ -94,9 +149,7 @@ const rowView = <M>(h: HtmlBuilder<M>, options: ComponentListOptions<M>, row: Co
 		[
 			h.Key(row.key),
 			h.DataAttribute(ROW_ATTRIBUTE, row.key),
-			h.Class(
-				"border-t first:border-t-0 data-dragging:relative data-dragging:z-10 data-dragging:rounded-md data-dragging:bg-card data-dragging:shadow-popup data-dragging:outline data-dragging:outline-primary-a4",
-			),
+			h.Class(cn("border-t first:border-t-0", HELD_CLASS)),
 		],
 		[
 			hstack(h, { gap: "1", className: "pl-2" }, [
@@ -138,37 +191,26 @@ const rowView = <M>(h: HtmlBuilder<M>, options: ComponentListOptions<M>, row: Co
 export const componentList = <M>(h: HtmlBuilder<M>, options: ComponentListOptions<M>): Html => {
 	const groups = Arr.dedupe(Arr.map(options.rows, (row) => row.group))
 	const hasGroups = Arr.some(groups, (group) => group !== null)
-	return vstack(h, { attributes: [h.AriaLabel("Components")] }, [
-		h.span(
-			[h.Id(options.hintId), h.Class("sr-only")],
-			["Drag, or press the up and down arrow keys, to move it within its group."],
-		),
-		...(options.leading ?? []),
-		...Arr.map(groups, (group) =>
-			vstack(h, { attributes: [h.Key(group ?? "")] }, [
+	const block = (group: string | null): Html =>
+		vstack(
+			h,
+			{
+				className: cn("bg-background", HELD_CLASS),
+				attributes: [h.Key(group ?? ""), h.DataAttribute(GROUP_ROW_ATTRIBUTE, group ?? "")],
+			},
+			[
 				...(hasGroups
 					? [
-							h.div(
-								[h.Class("bg-surface-sunken px-4 py-2")],
-								[eyebrow(h, {}, [group ?? "No group"])],
-							),
+							hstack(h, { gap: "1", className: "bg-surface-sunken pl-2" }, [
+								...(groups.length > 1 ? [groupGrip(h, options, group)] : []),
+								h.div([h.Class("px-2 py-2")], [eyebrow(h, {}, [group ?? "No group"])]),
+							]),
 						]
 					: []),
-				// The slot outline sits under the rows, as wide as they are; a drag moves it to where
-				// the held row lands.
 				h.div(
 					[h.DataAttribute(LIST_ATTRIBUTE, ""), h.Class("relative")],
 					[
-						h.div(
-							[
-								h.DataAttribute(SLOT_ATTRIBUTE, ""),
-								h.AriaHidden(true),
-								h.Class(
-									"pointer-events-none invisible absolute inset-x-0 top-0 rounded-md border border-dashed border-primary-a4 bg-primary-a1 data-dragging:visible",
-								),
-							],
-							[],
-						),
+						slotOutline(h, SLOT_ATTRIBUTE),
 						h.ul(
 							[h.AriaLabel(group ?? "No group")],
 							Arr.map(
@@ -178,7 +220,18 @@ export const componentList = <M>(h: HtmlBuilder<M>, options: ComponentListOption
 						),
 					],
 				),
-			]),
+			],
+		)
+	return vstack(h, { attributes: [h.AriaLabel("Components")] }, [
+		h.span(
+			[h.Id(options.hintId), h.Class("sr-only")],
+			["Drag, or press the up and down arrow keys, to move it within its group."],
+		),
+		h.span([h.Id(`${options.hintId}-group`), h.Class("sr-only")], [GROUP_HINT]),
+		...(options.leading ?? []),
+		h.div(
+			[h.DataAttribute(GROUP_LIST_ATTRIBUTE, ""), h.Class("relative")],
+			[slotOutline(h, GROUP_SLOT_ATTRIBUTE), ...Arr.map(groups, block)],
 		),
 	])
 }

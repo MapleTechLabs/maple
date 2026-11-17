@@ -49,3 +49,25 @@ export const moved = <A extends Groupable>(
 		component.group === item.value.group ? [rank + 1, order[rank] ?? component] : [rank, component],
 	)[1]
 }
+
+/** The groups in page order, `null` for the ungrouped components. */
+export const groupOrder = <A extends Groupable>(components: ReadonlyArray<A>): ReadonlyArray<string | null> =>
+	Arr.dedupe(Arr.map(components, (component) => component.group))
+
+/**
+ * The list with `group`'s members moved, together, to the `index`th place among the groups (clamped);
+ * every group keeps its members' order. `null` when the group is not listed or already there.
+ */
+export const movedGroup = <A extends Groupable>(
+	components: ReadonlyArray<A>,
+	group: string | null,
+	index: number,
+): ReadonlyArray<A> | null => {
+	const groups = groupOrder(components)
+	const from = groups.indexOf(group)
+	const to = Math.min(Math.max(index, 0), groups.length - 1)
+	if (from === -1 || from === to) return null
+	const rest = Arr.filter(groups, (entry) => entry !== group)
+	const order = [...Arr.take(rest, to), group, ...Arr.drop(rest, to)]
+	return Arr.flatMap(order, (entry) => Arr.filter(components, (component) => component.group === entry))
+}
