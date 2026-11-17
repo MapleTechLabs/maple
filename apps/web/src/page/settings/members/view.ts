@@ -32,7 +32,7 @@ import { settingsSection, settingsSections } from "../../kit/settings-section"
 import { canManage, type InvitationRow, type MemberRow, Message, type Model } from "./model"
 import { hasMore, roleSelectFor } from "./update"
 import { denialReason, gatedControl } from "../../kit/session-grants"
-import { typographyClass } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { Array as Arr, String as Str } from "effect"
@@ -69,6 +69,12 @@ const COLUMN = {
 
 /** Without the actions column the date column ends the row, so it sits flush right. */
 const dateAlign = (hasActions: boolean): string | undefined => (hasActions ? undefined : "text-right")
+
+/** The date line under a name on a phone, where the date column collapses. */
+const phoneDate = (h: H, label: string, valueMs: number, timeZone: string): Html =>
+	typography(h, { size: "xs", tone: "muted", truncate: true, className: "sm:hidden" }, [
+		`${label} ${formatDateInTimezone(valueMs, { timeZone })}`,
+	])
 
 const loadMore = (h: H, isLoading: boolean, onClick: Message): Html =>
 	hstack(h, { align: "stretch", justify: "center", className: "border-t p-2" }, [
@@ -157,6 +163,7 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 								text: member.identifier,
 								className: typographyClass({ size: "xs", tone: "muted" }),
 							}),
+							phoneDate(h, "Joined", member.createdAtMs, inputs.timeZone),
 						],
 					),
 				]),
@@ -320,7 +327,13 @@ const invitationRow = (h: H, model: Model, invitation: InvitationRow, inputs: In
 			truncatedTableCell(h, [
 				hstack(h, { gap: "3" }, [
 					personAvatar(h, { name: invitation.email }),
-					truncatedText(h, { text: invitation.email, className: "text-xs" }),
+					h.div(
+						[h.Class("min-w-0")],
+						[
+							truncatedText(h, { text: invitation.email, className: "text-xs" }),
+							phoneDate(h, "Invited", invitation.createdAtMs, inputs.timeZone),
+						],
+					),
 				]),
 			]),
 			tableCell(h, [roleText(h, invitation.role, canManage(model))]),
