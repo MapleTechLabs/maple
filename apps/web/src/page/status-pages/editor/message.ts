@@ -24,7 +24,6 @@ import {
 } from "@maple/domain/status-page"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import * as Combobox from "@maple/views/ui/combobox"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
@@ -70,7 +69,6 @@ export const Message = defineMessageUnion({
 	PressedEscape: {},
 	// Components
 	ChangedComponentField: { field: ComponentTextField, value: Schema.String },
-	GotGroupPickerMessage: { message: Combobox.Message },
 	ToggledComponentUptime: {},
 	/** The Monitors save bar: a moved order and the open component's edits, together. */
 	ClickedSaveMonitors: {},

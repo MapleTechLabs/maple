@@ -29,12 +29,7 @@ type Common<M> = Readonly<{
 	onInput: (value: string) => M
 }>
 
-/** A control none of the fields below draws (a picker), under the same label; `id` is the control's. */
-export const controlField = <M>(
-	h: HtmlBuilder<M>,
-	options: Omit<Common<M>, "onInput">,
-	control: Html,
-): Html => {
+const frame = <M>(h: HtmlBuilder<M>, options: Common<M>, control: Html): Html => {
 	const error = options.error ?? null
 	const state: FieldState = {
 		isInvalid: error !== null,
@@ -89,7 +84,7 @@ export const textField = <M>(
 		],
 		className: options.trailing === undefined ? undefined : "min-w-0 flex-1",
 	})
-	return controlField(
+	return frame(
 		h,
 		options,
 		options.trailing === undefined ? control : hstack(h, { gap: "2" }, [control, options.trailing]),
@@ -106,7 +101,7 @@ export const textareaField = <M>(
 			controlClassName?: string
 		}>,
 ): Html =>
-	controlField(
+	frame(
 		h,
 		options,
 		textarea(h, {
@@ -131,7 +126,7 @@ export const selectField = <M>(
 			leading?: Html
 		}>,
 ): Html =>
-	controlField(
+	frame(
 		h,
 		options,
 		nativeSelect(

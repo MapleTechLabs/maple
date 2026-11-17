@@ -1,3 +1,4 @@
+import { cn } from "@maple/ui/lib/utils"
 import type { V2StatusPage } from "@maple/domain/http/v2"
 import { Array as Arr, Option } from "effect"
 import { absurd } from "effect/Function"
@@ -338,7 +339,7 @@ const sectionBody = (
 		case "monitors":
 			return [monitorsSection(h, model)]
 		case "appearance":
-			return [brandingSection(h, model, page, form), appearanceSection(h, model, form)]
+			return [brandingSection(h, model, form), appearanceSection(h, model, form)]
 		case "access":
 			return [accessSection(h, model, page, form)]
 		case "advanced":
@@ -375,10 +376,14 @@ const settingsNav = (h: H, page: V2StatusPage, section: SettingsSection): Html =
 		"Settings sections",
 	)
 
+/** The sections whose fields change how the page looks, so the preview sits beside them. */
+const PREVIEWED: ReadonlyArray<SettingsSection> = ["basic", "monitors", "appearance"]
+
 /**
- * Settings below the page's header and tabs: the section menu, the section's form and the page
- * it shapes, side by side, each scrolling on its own so the menu and preview stay in place. The
- * preview needs the room of `xl`; below `md` the menu sits above the form.
+ * Settings below the page's header and tabs: the section menu, the section's form and, for the
+ * sections that change how the page looks, the page itself, side by side, each scrolling on its
+ * own so the menu and preview stay in place. The preview needs the room of `xl`; below `md` the
+ * menu sits above the form.
  */
 export const settingsLayout = (
 	h: H,
@@ -386,11 +391,15 @@ export const settingsLayout = (
 	page: V2StatusPage,
 	section: SettingsSection,
 	content: Html,
-): Html =>
-	h.div(
+): Html => {
+	const hasPreview = PREVIEWED.includes(section)
+	return h.div(
 		[
 			h.Class(
-				"grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] md:grid-cols-[13rem_minmax(0,1fr)] md:grid-rows-1 xl:grid-cols-[13rem_minmax(0,1fr)_minmax(20rem,0.8fr)]",
+				cn(
+					"grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] md:grid-cols-[13rem_minmax(0,1fr)] md:grid-rows-1",
+					hasPreview && "xl:grid-cols-[13rem_minmax(0,1fr)_minmax(20rem,0.8fr)]",
+				),
 			),
 		],
 		[
@@ -399,19 +408,24 @@ export const settingsLayout = (
 				[settingsNav(h, page, section)],
 			),
 			h.div([h.Class("min-h-0 overflow-y-auto px-(--page-gutter) pb-6")], [content]),
-			h.aside(
-				[h.Class("hidden min-h-0 border-l xl:flex xl:flex-col")],
-				[
-					settingsPagePreview(
-						h,
-						model,
-						page,
-						Option.getOrElse(settingsOf(model), () => settingsFormOf(page)),
-					),
-				],
-			),
+			...(hasPreview
+				? [
+						h.aside(
+							[h.Class("hidden min-h-0 border-l xl:flex xl:flex-col")],
+							[
+								settingsPagePreview(
+									h,
+									model,
+									page,
+									Option.getOrElse(settingsOf(model), () => settingsFormOf(page)),
+								),
+							],
+						),
+					]
+				: []),
 		],
 	)
+}
 
 /** One bar at a time: under Monitors a moved order or an open component's edits take it over the page's settings. */
 const saveBars = (h: H, model: Model, form: SettingsForm, section: SettingsSection): ReadonlyArray<Html> => {

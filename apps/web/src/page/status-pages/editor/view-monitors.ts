@@ -2,8 +2,6 @@ import type { V2StatusPageComponent } from "@maple/domain/http/v2"
 import { Array as Arr, Option, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
-import * as Combobox from "@maple/views/ui/combobox"
-import { comboboxPicker, triggerIdOf } from "@maple/views/ui/combobox-picker"
 import { dragGrip } from "@maple/views/ui/drag-grip"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
@@ -26,7 +24,7 @@ import {
 	componentStatus,
 	statusReason,
 } from "../shared/derive"
-import { controlField, selectField, textField } from "../shared/fields"
+import { selectField, textField } from "../shared/fields"
 import { RevealOpenComponent } from "./command"
 import { GRIP_ATTRIBUTE, LIST_ATTRIBUTE, ROW_ATTRIBUTE, SLOT_ATTRIBUTE } from "./component-drag"
 import { Message } from "./message"
@@ -35,7 +33,6 @@ import { componentsOf, incidentsOf, listedComponentsOf, monitorsOf } from "./rea
 import {
 	componentGripId,
 	componentRowId,
-	GROUP_PICKER_ID,
 	groupedOrder,
 	unsavedComponent,
 	unsavedOrder,
@@ -74,49 +71,6 @@ const saveIndicator = (h: H, save: ComponentSave | null): Html =>
 		},
 		[save === null ? "" : SAVE_LABEL[save._tag]],
 	)
-
-/**
- * Group: the page's groups and "No group" in a list, the search naming a new one. A component
- * that shares its group with others is listed under it.
- */
-const groupPicker = (h: H, model: Model, isReadOnly: boolean): Html => {
-	const form = model.componentForm
-	const current = { ...model.groupPicker, selected: [form.group] }
-	const groups = Arr.dedupe([
-		...Arr.flatMap(componentsOf(model), (row) => (row.group === null ? [] : [row.group])),
-		...(Str.trim(form.group) === "" ? [] : [form.group]),
-	])
-	const typed = Str.trim(Combobox.queryOf(current))
-	const items =
-		typed === ""
-			? ["", ...groups]
-			: [...Combobox.filterItems(groups, typed), ...(groups.includes(typed) ? [] : [typed])]
-	const triggerId = triggerIdOf(GROUP_PICKER_ID)
-	return controlField(
-		h,
-		{ id: triggerId, label: "Group" },
-		h.submodel({
-			slotId: `${GROUP_PICKER_ID}-slot`,
-			model: current,
-			view: comboboxPicker,
-			toParentMessage: (message) => Message.GotGroupPickerMessage({ message }),
-			viewInputs: {
-				items,
-				// The label replaces the trigger's text for screen readers, so it carries the pick.
-				ariaLabel: form.group === "" ? "Group" : `Group: ${form.group}`,
-				searchPlaceholder: "Find or name a group",
-				emptyText: "No groups yet",
-				trigger: [form.group === "" ? "No group" : form.group],
-				isPlaceholder: form.group === "",
-				isDisabled: isReadOnly,
-				triggerClassName: "h-8 w-full sm:h-8",
-				renderItem: (_h, value) =>
-					value === "" ? ["No group"] : groups.includes(value) ? [value] : [`New group "${value}"`],
-				toView: (parts) => h.div([], parts),
-			},
-		}),
-	)
-}
 
 /** Why the component shows what it shows, when that is not its monitor's plain reading. */
 const reasonLine = (h: H, model: Model, component: V2StatusPageComponent): ReadonlyArray<Html> => {
@@ -162,7 +116,14 @@ const componentForm = (h: H, model: Model, component: V2StatusPageComponent): Ht
 					error: Str.trim(form.name) === "" ? "Add a name." : null,
 					onInput: (value) => Message.ChangedComponentField({ field: "name", value }),
 				}),
-				groupPicker(h, model, isReadOnly),
+				textField(h, {
+					id: "status-page-panel-group",
+					label: "Group",
+					value: form.group,
+					placeholder: "No group",
+					isDisabled: isReadOnly,
+					onInput: (value) => Message.ChangedComponentField({ field: "group", value }),
+				}),
 			]),
 			textField(h, {
 				id: "status-page-panel-description",

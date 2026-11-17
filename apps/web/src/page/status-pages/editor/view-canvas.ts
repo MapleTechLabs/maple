@@ -1,11 +1,10 @@
 import { StatusPageComponentStatus, UptimeMonitorId } from "@maple/domain"
 import type { V2StatusPage, V2StatusPageComponent } from "@maple/domain/http/v2"
 import type { StatusPageSnapshot } from "@maple/domain/status-page"
-import { pageTitle, previewSnapshot } from "@maple/status-page"
+import { previewSnapshot } from "@maple/status-page"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { Option, Schema, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { browserTabMockup } from "@maple/views/ui/page-mockup"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
@@ -112,17 +111,6 @@ export const draftSnapshot = (
 
 /** The name the unsaved `form` gives the page; the saved one while the field is empty. */
 export const draftName = (page: V2StatusPage, form: SettingsForm): string => orNull(form.name) ?? page.name
-
-/**
- * The page's browser tab (title, favicon, address) as the unsaved `form` has them: what the page
- * preview beside Settings cannot show.
- */
-export const tabPreview = (h: H, page: V2StatusPage, form: SettingsForm, address: string | null): Html =>
-	browserTabMockup(
-		h,
-		{ title: pageTitle(draftName(page, form)), iconUrl: orNull(form.faviconUrl), address },
-		[],
-	)
 
 /**
  * The whole page as the unsaved `form` would publish it, filling the page's right panel at its

@@ -39,7 +39,6 @@ import {
 } from "foldkit/scene"
 import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
-import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
 import { MountDialog } from "@maple/views/ui/dialog"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -75,7 +74,7 @@ import {
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
-import { componentGripId, GROUP_PICKER_ID, groupedOrder } from "./update-components"
+import { componentGripId, groupedOrder } from "./update-components"
 import { customDomainOf } from "./update-domain"
 import { canvasDocument } from "./view-canvas"
 import { maintenanceDurationMs } from "./view-incidents"
@@ -305,23 +304,6 @@ const selected = (componentNumber: number, fixture: Fixture = {}) =>
 	).model
 
 const revealed = Mount.resolve(RevealOpenComponent, Message.CompletedFocus())
-
-/** The Group list's open animation, `generation` counting its open and close transitions. */
-const pickerOpened = (generation: number) => [
-	Mount.resolve(Combobox.MountCombobox, Combobox.Message.CompletedMountCombobox()),
-	Command.resolve(Animation.WaitForPaint, Animation.Message.CompletedWaitForPaint({ generation })),
-	Command.resolve(Animation.WaitForAnimationSettled, Animation.Message.EndedAnimation({ generation })),
-]
-
-/** The Group list's close animation. */
-const pickerClosed = (generation: number) => [
-	Command.resolve(Animation.WaitForPaint, Animation.Message.CompletedWaitForPaint({ generation })),
-	Command.resolve(
-		Combobox.WaitForComboboxExit({ id: GROUP_PICKER_ID, generation }),
-		Animation.Message.EndedAnimation({ generation }),
-	),
-	Mount.expectEnded(Combobox.MountCombobox),
-]
 
 type ArgsSchema = Schema.Top & { readonly DecodingServices: never }
 
@@ -644,7 +626,7 @@ describe("components under Settings > Monitors", () => {
 			Mount.expectNone(),
 			expectView(role("button", { name: /^API/u })).toHaveAttr("aria-expanded", "true"),
 			expectView(role("textbox", { name: "Shown as" })).toHaveValue("API"),
-			expectView(role("combobox", { name: "Group: Core" })).toHaveText("Core"),
+			expectView(role("textbox", { name: "Group" })).toHaveValue("Core"),
 			expectView(text("Degraded, set under Override status.")).toExist(),
 			click(role("button", { name: /^API/u })),
 			Command.resolve(FocusEditorElement, Message.CompletedFocus()),
@@ -915,30 +897,18 @@ describe("components under Settings > Monitors", () => {
 		)
 	})
 
-	test("Group lists the page's groups and No group, a search names a new one, and a pick fills it in without saving", () => {
+	test("Group is typed, a new one included, and waits for Save", () => {
 		const rows = [component(1, { group: "Core" }), component(2, { group: "Edge" }), component(3)]
 		scene(
 			{ update: pageUpdate, view },
 			given(selected(3, { components: rows })),
-			expectView(role("combobox", { name: "Group" })).toHaveText("No group"),
-			click(role("combobox", { name: "Group" })),
-			...pickerOpened(1),
-			inside(role("listbox"), expectAll(all.role("option")).toHaveCount(3)),
-			click(role("option", { name: "Core" })),
-			...pickerClosed(2),
-			expectView(role("combobox", { name: "Group: Core" })).toHaveText("Core"),
+			type(role("textbox", { name: "Group" }), "Payments"),
 			expectView(text("Unsaved changes")).toExist(),
-			click(role("combobox", { name: "Group: Core" })),
-			...pickerOpened(3),
-			type(role("combobox", { name: "Search Group: Core" }), "Payments"),
-			click(role("option", { name: 'New group "Payments"' })),
-			...pickerClosed(4),
-			expectView(role("combobox", { name: "Group: Payments" })).toHaveText("Payments"),
 		)
-		const picked = steps(selected(3, { components: rows }), [
-			Message.GotGroupPickerMessage({ message: Combobox.Message.ClickedItem({ value: "Edge" }) }),
+		const typed = steps(selected(3, { components: rows }), [
+			Message.ChangedComponentField({ field: "group", value: "Edge" }),
 		])
-		expect(pageUpdate(picked, Message.ClickedSaveMonitors()).commands).toMatchObject([
+		expect(pageUpdate(typed, Message.ClickedSaveMonitors()).commands).toMatchObject([
 			{
 				name: "SaveStatusPageComponent",
 				args: { componentId: componentId(3), payload: { group: "Edge" } },
@@ -2663,7 +2633,6 @@ describe("settings", () => {
 				expect(header(html)).toContain(`<img src="https://acme.example/logo.svg"`)
 				expect(header(html)).toContain(`<link rel="icon" href="https://acme.example/favicon.png">`)
 			}),
-			expectView(selector('img[src="https://acme.example/favicon.png"]')).toExist(),
 			inside(role("group", { name: "Mode" }), click(role("button", { name: "Dark" }))),
 			tap(({ html }) =>
 				expect(header(html)).toContain(`<img src="https://acme.example/logo-dark.svg"`),
@@ -2671,7 +2640,7 @@ describe("settings", () => {
 		)
 	})
 
-	test("every Settings section shows the whole page beside it, as the unsaved settings render it", () => {
+	test("the sections that shape the page show it beside them, as the unsaved settings render it", () => {
 		const page = srcdocOf("Globex with these settings")
 		scene(
 			{ update: pageUpdate, view },
@@ -2685,7 +2654,7 @@ describe("settings", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(ADVANCED)),
-			expectView(role("region", { name: "Page preview" })).toExist(),
+			expectView(role("region", { name: "Page preview" })).not.toExist(),
 		)
 	})
 
@@ -2708,8 +2677,18 @@ describe("settings", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(ADVANCED)),
-			tap(({ html }) => expect(page(html)).toContain("Powered by")),
 			click(role("switch", { name: "Show powered by Maple" })),
+			expectView(text("Unsaved changes")).toExist(),
+		)
+		const basic = { tab: "settings", section: "basic" } as const
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(basic)),
+			tap(({ html }) => expect(page(html)).toContain("Powered by")),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(loaded(basic), Message.ToggledPoweredBy()).model),
 			tap(({ html }) => expect(page(html)).not.toContain("Powered by")),
 		)
 	})

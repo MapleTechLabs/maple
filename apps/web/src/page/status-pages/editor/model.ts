@@ -12,7 +12,6 @@ import { Schema } from "effect"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { StatusPageSearch } from "../../../route/search"
-import * as Combobox from "@maple/views/ui/combobox"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
@@ -134,7 +133,6 @@ export const Model = Schema.Struct({
 	componentForm: ComponentForm,
 	componentSave: Schema.NullOr(ComponentSave),
 	/** The open component's Group list: the page's groups, "No group" and a typed new one. */
-	groupPicker: Combobox.Model,
 	/** The leave waiting on the discard confirm; kept while the dialog fades out, so its title holds. */
 	pendingLeave: Schema.NullOr(PendingLeave),
 	discardComponentDialog: Dialog.Model,

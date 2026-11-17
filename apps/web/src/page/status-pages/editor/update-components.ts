@@ -2,9 +2,8 @@ import { encodeJson } from "@maple/views/data/request-key"
 import type { StatusPageComponentId } from "@maple/domain"
 import type { V2StatusPageComponent, V2UptimeMonitor } from "@maple/domain/http/v2"
 import { Option, Result, Array as Arr, String as Str } from "effect"
-import { AsyncData, Command as FoldkitCommand } from "foldkit"
+import { AsyncData } from "foldkit"
 import type { LoadFailure } from "@maple/views/data/load-failure"
-import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
 import type { PageContext } from "../../contract"
 import {
@@ -188,25 +187,6 @@ const editComponent = (model: Model, componentForm: ComponentForm): Return => ({
 		componentSave: model.componentSave?._tag === "Saved" ? null : model.componentSave,
 	},
 })
-
-/** The Group list's id; `GotGroupPickerMessage` carries its steps. */
-export const GROUP_PICKER_ID = "status-page-panel-group"
-
-/** A pick from the Group list (a group, "" for "No group", or a typed new one) becomes the form's group. */
-export const groupPickerStep = (model: Model, message: Combobox.Message): Return => {
-	const step = Combobox.update({ ...model.groupPicker, selected: [model.componentForm.group] }, message)
-	const picked = { ...model, groupPicker: step.model }
-	const next =
-		step.outMessage?._tag === "ChangedValue"
-			? editComponent(picked, { ...picked.componentForm, group: step.outMessage.value })
-			: { model: picked }
-	return {
-		...next,
-		commands: FoldkitCommand.mapMessages(step.commands ?? [], (child) =>
-			Message.GotGroupPickerMessage({ message: child }),
-		),
-	}
-}
 
 /** One PATCH of the whole component, while it differs, has a name and no save is in flight. */
 const saveComponent = (model: Model): Return => {
