@@ -28,6 +28,8 @@ const LabState = Schema.Literals([
 	"set-password",
 	"internal",
 	"member",
+	/** A custom domain just added: the CNAME and the ownership record to publish. */
+	"domain-pending",
 	/** Uploaded logo, dark logo and favicon; the theme in Auto, so only the accent has a picker. */
 	"appearance",
 	/** Forced dark with colour overrides: every colour has a picker. */
@@ -73,10 +75,10 @@ const pageFor = (state: LabState) =>
 				: state === "appearance-empty"
 					? {}
 					: state === "password"
-			? { visibility: "password", has_password: true }
-			: state === "internal"
-				? { name: "Ops board", slug: "acme-ops", visibility: "internal" }
-				: { break_glass_token_suffix: "x7Qk" },
+						? { visibility: "password", has_password: true }
+						: state === "internal"
+							? { name: "Ops board", slug: "acme-ops", visibility: "internal" }
+							: { break_glass_token_suffix: "x7Qk" },
 	)
 
 const NO_DOMAIN: V2StatusPageCustomDomain = {
@@ -91,6 +93,25 @@ const NO_DOMAIN: V2StatusPageCustomDomain = {
 	last_checked_at: null,
 	activated_at: null,
 	created_at: null,
+}
+
+const PENDING_DOMAIN: V2StatusPageCustomDomain = {
+	...NO_DOMAIN,
+	hostname: "status.acme.com",
+	status: "pending_dns",
+	dns_records: [
+		{ type: "CNAME", name: "status.acme.com", value: "status-domains.maple.dev", purpose: "routing" },
+		{
+			type: "TXT",
+			name: "_maple-challenge.status.acme.com",
+			value: "maple-status-page=1c2ba8fdad86fbbe9cdd85449b0e85c6",
+			purpose: "ownership",
+		},
+	],
+	last_error:
+		"Maple did not find the ownership TXT record yet. DNS changes can take a few minutes to appear.",
+	last_checked_at: "2026-10-01T12:01:00.000Z",
+	created_at: "2026-10-01T12:00:00.000Z",
 }
 
 const editorFor = (state: LabState): EditorModel => {
@@ -119,7 +140,7 @@ const editorFor = (state: LabState): EditorModel => {
 			M.CompletedFetchMonitors({ key: entered.monitors.key ?? "", result: Result.succeed([]) }),
 			M.CompletedFetchCustomDomain({
 				key: entered.customDomain.key ?? "",
-				result: Result.succeed(NO_DOMAIN),
+				result: Result.succeed(state === "domain-pending" ? PENDING_DOMAIN : NO_DOMAIN),
 			}),
 			...(state === "set-password" ? [M.PickedVisibility({ visibility: "password" })] : []),
 		],
@@ -144,8 +165,7 @@ const update = (model: Model, message: Message): Return =>
 						// Picking and reading an upload stay in the browser: try a real file.
 						...Arr.filter(next.commands ?? [], (command) => BRANDING_COMMANDS.has(command.name)),
 					],
-					(inner) =>
-					Message.GotEditorMessage({ message: inner }),
+					(inner) => Message.GotEditorMessage({ message: inner }),
 				),
 			}
 		},

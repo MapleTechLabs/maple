@@ -1,5 +1,8 @@
 import type { V2StatusPage, V2StatusPageCustomDomain } from "@maple/domain/http/v2"
-import type { StatusPageCustomDomainRecordPurpose } from "@maple/domain/status-page"
+import {
+	isCustomDomainChallengeRecord,
+	type StatusPageCustomDomainRecordPurpose,
+} from "@maple/domain/status-page"
 import { Array as Arr, Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -41,11 +44,25 @@ const STATUS_NOTE = {
 	failed: "The domain stopped. Fix what is described below, then check again.",
 } as const satisfies Record<DomainStatus, string>
 
+/** While the ownership record is still to be found: both records are needed, and for how long. */
+const OWNERSHIP_NOTE =
+	"Add both records below at your DNS provider: the CNAME points the domain at Maple and the TXT record proves you own it. You can remove the TXT record once the domain is active. Maple checks every minute for the first hour, then every ten minutes."
+
+const statusNote = (domain: V2StatusPageCustomDomain, status: DomainStatus): string =>
+	status === "pending_dns" && Arr.some(domain.dns_records, isCustomDomainChallengeRecord)
+		? OWNERSHIP_NOTE
+		: STATUS_NOTE[status]
+
 const PURPOSE_LABEL = {
 	routing: "Points the domain at Maple",
 	ownership: "Proves you own it (optional with the CNAME in place)",
 	certificate: "Lets the certificate be issued",
 } as const satisfies Record<StatusPageCustomDomainRecordPurpose, string>
+
+const purposeLabel = (record: V2StatusPageCustomDomain["dns_records"][number]): string =>
+	isCustomDomainChallengeRecord(record)
+		? "Proves you own the domain (needed until it is active)"
+		: PURPOSE_LABEL[record.purpose]
 
 const copyCell = (h: H, model: Model, key: string, value: string, label: string): Html =>
 	hstack(h, { gap: "1", align: "center" }, [
@@ -72,7 +89,7 @@ const recordsTable = (h: H, model: Model, domain: V2StatusPageCustomDomain): Htm
 					tableCell(h, [
 						vstack(h, { gap: "1" }, [
 							typography(h, { size: "xs", mono: true, weight: "medium" }, [record.type]),
-							typography(h, { size: "xs", tone: "muted" }, [PURPOSE_LABEL[record.purpose]]),
+							typography(h, { size: "xs", tone: "muted" }, [purposeLabel(record)]),
 						]),
 					]),
 					tableCell(h, [
@@ -137,7 +154,7 @@ const domainState = (h: H, model: Model, domain: V2StatusPageCustomDomain): Read
 					),
 				]),
 			]),
-			typography(h, { size: "sm", tone: "muted", as: "p" }, [STATUS_NOTE[status]]),
+			typography(h, { size: "sm", tone: "muted", as: "p" }, [statusNote(domain, status)]),
 			...(domain.last_error === null || status === "active"
 				? []
 				: [
