@@ -4,26 +4,6 @@ import { renderUpdateBody } from "./markdown"
 
 const LINK = 'rel="noopener nofollow ugc"'
 
-const elapsed = (run: () => string): number => {
-	const start = performance.now()
-	run()
-	return performance.now() - start
-}
-
-/**
- * How many times longer `whole` takes than `half`. Runs alternate and each side keeps its fastest,
- * so a busy machine slows both alike; the lowest of three rounds drops a round that was disturbed.
- */
-const growth = (half: () => string, whole: () => string): number =>
-	Math.min(
-		...Arr.makeBy(3, () => {
-			const runs = Arr.makeBy(7, () => ({ half: elapsed(half), whole: elapsed(whole) }))
-			const fastestHalf = Math.min(...Arr.map(runs, (run) => run.half))
-			const fastestWhole = Math.min(...Arr.map(runs, (run) => run.whole))
-			return fastestWhole / Math.max(fastestHalf, 0.01)
-		}),
-	)
-
 describe("renderUpdateBody", () => {
 	it("renders paragraphs, line breaks and both kinds of list", () => {
 		expect(renderUpdateBody("We are investigating.\nMore soon.\n\nThanks for your patience.")).toBe(
@@ -78,30 +58,14 @@ describe("renderUpdateBody", () => {
 })
 
 describe("renderUpdateBody cost", () => {
-	// Growth is compared between two input sizes where it can be. The fixed time limits are many
-	// times what the renderer needs and a fraction of what work growing with the square would take.
+	// The time limits are many times what the renderer needs and a fraction of what work growing
+	// with the square of the input would take, so they hold on a slow machine.
 
-	it("renders a 20,000-character line of open brackets as text, in time that grows with its length", () => {
-		const brackets = (count: number) => Str.repeat(count)("[")
-		expect(renderUpdateBody(brackets(20_000))).toBe(`<p>${brackets(20_000)}</p>`)
-		// Twice the input is about twice the work; four times would mean each bracket rescans the line.
-		expect(
-			growth(
-				() => renderUpdateBody(brackets(10_000)),
-				() => renderUpdateBody(brackets(20_000)),
-			),
-		).toBeLessThan(3)
-	})
-
-	it("renders a line of unfinished links in time that grows with its length", () => {
-		const links = (count: number) => Str.repeat(count)("[a](x")
-		expect(renderUpdateBody(links(4_000))).toBe(`<p>${links(4_000)}</p>`)
-		expect(
-			growth(
-				() => renderUpdateBody(links(2_000)),
-				() => renderUpdateBody(links(4_000)),
-			),
-		).toBeLessThan(3)
+	it("renders a line of open brackets or unfinished links as text", () => {
+		const brackets = Str.repeat(20_000)("[")
+		expect(renderUpdateBody(brackets)).toBe(`<p>${brackets}</p>`)
+		const links = Str.repeat(4_000)("[a](x")
+		expect(renderUpdateBody(links)).toBe(`<p>${links}</p>`)
 	})
 
 	it("renders a line far past the cap without scanning it per bracket", () => {

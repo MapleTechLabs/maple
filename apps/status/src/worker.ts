@@ -54,7 +54,7 @@ export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
 		})
 		// Password attempts on one page from every address together.
 		const pageLimiter = yield* Cloudflare.RateLimit("STATUS_PAGE_ACCESS_RATE_LIMITER", {
-			namespaceId: 2026111701,
+			namespaceId: 2026111702,
 			simple: { limit: 100, period: 60 },
 		})
 
