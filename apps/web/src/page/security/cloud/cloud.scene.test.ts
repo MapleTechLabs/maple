@@ -158,7 +158,7 @@ describe("security cloud findings", () => {
 			),
 			expectView(text("No telemetry")).toBeAbsent(),
 			expectView(
-				text("Telemetry could not be read just now, so affected services are not shown."),
+				text("Telemetry could not be fully read just now, so affected services may be missing."),
 			).toExist(),
 		)
 	})

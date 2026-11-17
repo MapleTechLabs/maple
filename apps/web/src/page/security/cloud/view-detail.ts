@@ -61,6 +61,13 @@ const missing = (h: H): Html =>
 const affectedServices = (h: H, detail: CloudFindingDetail, isMatched: boolean): Html =>
 	vstack(h, { gap: "2" }, [
 		eyebrow(h, { variant: "mono" }, ["Affected services, last 24 hours"]),
+		...(isMatched || detail.affectedServices.length === 0
+			? []
+			: [
+					typography(h, { size: "xs", tone: "muted", as: "p" }, [
+						"Telemetry could not be fully read just now, so this list may be incomplete.",
+					]),
+				]),
 		detail.affectedServices.length === 0
 			? typography(h, { size: "sm", tone: "muted", as: "p" }, [
 					isMatched

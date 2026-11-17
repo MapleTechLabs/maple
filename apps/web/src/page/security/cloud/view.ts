@@ -358,7 +358,7 @@ const listBody = (h: H, model: Model, overview: Overview, clock: Clock): Html =>
 									h,
 									{ size: "xs", tone: "muted", as: "p", className: "border-t px-4 py-2" },
 									[
-										"Telemetry could not be read just now, so affected services are not shown.",
+										"Telemetry could not be fully read just now, so affected services may be missing.",
 									],
 								),
 							]),
