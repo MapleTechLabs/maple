@@ -11,6 +11,7 @@ import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { colorInput } from "@maple/views/ui/color-input"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { settingsSection } from "../../kit/settings-section"
+import { switchRow } from "../../kit/switch-row"
 import { selectField, textField } from "../shared/fields"
 import {
 	type SettingsForm,
@@ -104,7 +105,7 @@ const colorField = (
 	])
 }
 
-/** The logos and tab icon: what carries the brand besides the colours. */
+/** The logos, tab icon and footer credit: what carries the brand besides the colours. */
 export const brandingSection = (h: H, model: Model, form: SettingsForm): Html => {
 	const issues = settingsIssues(form)
 	const isReadOnly = !canManage(model)
@@ -148,6 +149,14 @@ export const brandingSection = (h: H, model: Model, form: SettingsForm): Html =>
 						onInput: (value) => Message.ChangedSetting({ field: "faviconUrl", value }),
 					}),
 				]),
+				switchRow(h, {
+					id: "status-page-powered-by",
+					label: "Show powered by Maple",
+					description: "A small credit in the page footer.",
+					isChecked: form.showPoweredBy,
+					isDisabled: isReadOnly,
+					onToggle: Message.ToggledPoweredBy(),
+				}),
 			]),
 		],
 	)
