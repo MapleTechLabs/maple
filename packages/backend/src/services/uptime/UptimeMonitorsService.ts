@@ -51,6 +51,7 @@ import {
 	type UptimeMonitorStateSnapshot,
 	type UptimeProbeConfig,
 } from "@maple/domain/uptime"
+import { urlHoldsRedaction } from "@maple/domain/url-redaction"
 import {
 	Array as Arr,
 	Clock,
@@ -268,6 +269,19 @@ const decodeConfig = Schema.decodeUnknownEffect(UptimeMonitorConfig)
 const decodeStoredConfig = Schema.decodeUnknownEffect(StoredUptimeMonitorConfig)
 
 /** The config as stored: schema checks, the kind it belongs to, and hosts Maple may reach. */
+/**
+ * A URL read back from a response that hid its query values would save the marker as the value.
+ * Unlike a header or a body it is refused, not restored: the stored URL may no longer be this one.
+ */
+const refuseRedactedUrl = (url: string) =>
+	urlHoldsRedaction(url, UPTIME_REDACTED_HEADER_VALUE)
+		? Effect.fail(
+				invalid(
+					`The URL holds a hidden value (${UPTIME_REDACTED_HEADER_VALUE}). Send the real value, or leave the config out of the update.`,
+				),
+			)
+		: Effect.void
+
 const validateConfig = Effect.fnUntraced(function* (kind: UptimeMonitorKind, raw: UptimeMonitorConfig) {
 	const config = yield* decodeConfig(raw).pipe(
 		Effect.mapError((error) => invalid(`Invalid config: ${error.message}`)),
@@ -281,6 +295,7 @@ const validateConfig = Effect.fnUntraced(function* (kind: UptimeMonitorKind, raw
 			}
 			const headerIssue = headersProblem(config.headers)
 			if (headerIssue !== null) return yield* invalid(headerIssue)
+			yield* refuseRedactedUrl(config.url)
 			yield* validateUrl(config.url)
 			break
 		}
@@ -307,6 +322,7 @@ const validateConfig = Effect.fnUntraced(function* (kind: UptimeMonitorKind, raw
 					),
 				)
 			if (problem !== null) return yield* invalid(problem)
+			yield* Effect.forEach(config.steps, (step) => refuseRedactedUrl(step.url), { discard: true })
 			// A URL built from a variable is checked when it is sent; the scraper refuses private hosts then.
 			yield* Effect.forEach(
 				Arr.filter(config.steps, (step) => variablesIn(step.url).length === 0),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { redactUrlCredentials } from "./url-redaction"
+import { redactUrlCredentials, urlHoldsRedaction } from "./url-redaction"
 
 describe("redactUrlCredentials", () => {
 	const redact = (url: string) => redactUrlCredentials(url, "[redacted]")
@@ -24,5 +24,23 @@ describe("redactUrlCredentials", () => {
 		)
 		expect(redact("https://{{host}}/orders?key=abc")).toBe("https://{{host}}/orders?key=[redacted]")
 		expect(redact("{{next_url}}")).toBe("{{next_url}}")
+	})
+})
+
+describe("urlHoldsRedaction", () => {
+	const holds = (url: string) => urlHoldsRedaction(url, "[redacted]")
+
+	it("finds the marker a redacted URL carries, plain or percent-encoded", () => {
+		expect(holds(redactUrlCredentials("https://api.example.com/health?token=abc", "[redacted]"))).toBe(
+			true,
+		)
+		expect(holds("https://api.example.com/health?token=%5Bredacted%5D&page=2")).toBe(true)
+		expect(holds("https://{{host}}/items?key=[redacted]")).toBe(true)
+	})
+
+	it("leaves a real URL alone, the marker in a path included", () => {
+		expect(holds("https://api.example.com/health?token=abc")).toBe(false)
+		expect(holds("https://api.example.com/[redacted]/health")).toBe(false)
+		expect(holds("https://api.example.com/health")).toBe(false)
 	})
 })

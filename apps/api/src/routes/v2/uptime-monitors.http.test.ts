@@ -460,6 +460,21 @@ describe("v2 uptime monitors", () => {
 				headers: { "X-Api-Key": "key-123" },
 			})
 			expect(updated.body.config.steps[1].url).toBe("https://api.example.com/v2/orders/{{order}}")
+
+			// A URL as a reader was sent it is refused, not saved with the marker as its value.
+			const reused = await harness.request("PATCH", `/v2/uptime_monitors/${http.body.id}`, admin, {
+				config: { ...httpConfig, url: memberHttp.body.config.url },
+			})
+			expect(reused.status).toBe(400)
+			const reusedStep = await harness.request("PATCH", `/v2/uptime_monitors/${flow.body.id}`, admin, {
+				config: {
+					...stepsConfig,
+					steps: [{ ...stepsConfig.steps[0], url: memberFlow.body.config.steps[0].url }],
+				},
+			})
+			expect(reusedStep.status).toBe(400)
+			const kept = await harness.request("GET", `/v2/uptime_monitors/${http.body.id}`, admin)
+			expect(kept.body.config.url).toBe(httpConfig.url)
 		}))
 
 	it("answers an oversized config with a 400 that does not echo it", () =>

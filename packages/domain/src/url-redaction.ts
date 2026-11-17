@@ -35,3 +35,23 @@ export const redactUrlCredentials = (raw: string, marker: string): string => {
 	)
 	return `${scheme}${host}${path}${pairs.length === 0 ? "" : `?${Arr.join(pairs, "&")}`}`
 }
+
+/**
+ * Whether a URL (or URL template) carries `marker` where {@link redactUrlCredentials} writes it:
+ * as a query value, plain or percent-encoded. Such a URL was read back from a redacted response,
+ * and saving it would replace the real value with the marker.
+ */
+export const urlHoldsRedaction = (raw: string, marker: string): boolean => {
+	const [, , , , query] = URL_TEMPLATE_PARTS.exec(Str.trim(raw)) ?? []
+	if (query === undefined) return false
+	const markers = [marker, encodeURIComponent(marker)]
+	return Arr.some(
+		Str.split(Str.slice(1)(query), "&"),
+		(pair) =>
+			Arr.contains(markers, pair) ||
+			Option.match(Str.indexOf("=")(pair), {
+				onNone: () => false,
+				onSome: (equals) => Arr.contains(markers, Str.slice(equals + 1)(pair)),
+			}),
+	)
+}

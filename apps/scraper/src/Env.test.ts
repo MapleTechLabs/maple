@@ -33,7 +33,12 @@ describe("ScraperEnv", () => {
 			const env = yield* loadEnv({ UPTIME_ORG_CONCURRENCY: "7" })
 			assert.strictEqual(env.UPTIME_ORG_CONCURRENCY, 7)
 			const unset = yield* loadEnv({})
-			assert.isAtMost(unset.UPTIME_ORG_CONCURRENCY, unset.UPTIME_CONCURRENCY)
+			assert.isBelow(unset.UPTIME_ORG_CONCURRENCY, unset.UPTIME_CONCURRENCY)
+			// Unset, it follows the shared permits down, so another org always has one left.
+			const lowered = yield* loadEnv({ UPTIME_CONCURRENCY: "4" })
+			assert.strictEqual(lowered.UPTIME_ORG_CONCURRENCY, 2)
+			const single = yield* loadEnv({ UPTIME_CONCURRENCY: "1" })
+			assert.strictEqual(single.UPTIME_ORG_CONCURRENCY, 1)
 			const error = yield* loadEnv({ UPTIME_ORG_CONCURRENCY: "0" }).pipe(Effect.flip)
 			assert.strictEqual(error._tag, "ConfigError")
 		}),
