@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Array as Arr, ConfigProvider, Effect, Layer, Schema } from "effect"
+import { Array as Arr, ConfigProvider, Effect, Layer, Result, Schema } from "effect"
 import { HttpClient } from "effect/http"
 import { AwsAccountId, AwsRegion, OrgId, UserId } from "@maple/primitives"
 import { Env } from "@maple/backend/platform/Env"
@@ -327,6 +327,54 @@ describe("CloudSecurityStore", () => {
 			})
 			const [state] = yield* store.serviceStates(orgId, connection.id)
 			assert.strictEqual(state?.windowMs, 60_000)
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("keeps the newest of two versions of one finding in a single write", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const store = yield* CloudSecurityStore
+			const connection = yield* connect(orgId, "111111111111")
+			yield* store.upsertFindings(
+				[
+					finding(connection, orgId, { severity: "high", providerUpdatedAt: 9_000 }),
+					finding(connection, orgId, { severity: "low", providerUpdatedAt: 1_000 }),
+				],
+				1,
+			)
+			const rows = yield* Effect.promise(() =>
+				queryRows<{ severity: string }>(world.testDb, "SELECT severity FROM cloud_security_findings"),
+			)
+			assert.deepStrictEqual(rows, [{ severity: "high" }])
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("stamps a closed finding written without a close time with the sync", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const store = yield* CloudSecurityStore
+			const connection = yield* connect(orgId, "111111111111")
+			yield* store.upsertFindings([finding(connection, orgId, { providerUpdatedAt: 10 })], 1)
+			yield* store.upsertFindings(
+				[finding(connection, orgId, { status: "resolved", providerUpdatedAt: 20 })],
+				5_000,
+			)
+			assert.strictEqual(yield* store.pruneClosed(orgId, 4_000), 0)
+			assert.strictEqual(yield* store.pruneClosed(orgId, 6_000), 1)
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("refuses a write that names another org's connection", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const store = yield* CloudSecurityStore
+			const theirs = yield* connect(otherOrgId, "222222222222")
+			const result = yield* Effect.result(store.upsertFindings([finding(theirs, orgId)], 1))
+			assert.isTrue(Result.isFailure(result))
+			const rows = yield* Effect.promise(() =>
+				queryRows(world.testDb, "SELECT 1 FROM cloud_security_findings"),
+			)
+			assert.strictEqual(rows.length, 0)
 		}).pipe(Effect.provide(world.layer))
 	})
 })

@@ -39,6 +39,9 @@ CREATE TABLE IF NOT EXISTS "cloud_security_service_states" (
 );
 --> statement-breakpoint
 -- metadata
+CREATE UNIQUE INDEX IF NOT EXISTS "aws_connections_org_id_idx" ON "aws_connections" USING btree ("org_id", "id");
+--> statement-breakpoint
+-- metadata
 CREATE INDEX IF NOT EXISTS "cloud_security_findings_org_resource_idx" ON "cloud_security_findings" USING btree ("org_id", "resource_id");
 --> statement-breakpoint
 -- metadata
@@ -48,7 +51,7 @@ CREATE INDEX IF NOT EXISTS "cloud_security_findings_org_status_idx" ON "cloud_se
 CREATE INDEX IF NOT EXISTS "cloud_security_service_states_org_idx" ON "cloud_security_service_states" USING btree ("org_id");
 --> statement-breakpoint
 -- metadata
-ALTER TABLE "cloud_security_findings" ADD CONSTRAINT "cloud_security_findings_connection_id_aws_connections_id_fk" FOREIGN KEY ("connection_id") REFERENCES "aws_connections" ("id") ON DELETE CASCADE;
+ALTER TABLE "cloud_security_findings" ADD CONSTRAINT "cloud_security_findings_ujhY2Pd3JWVy_fk" FOREIGN KEY ("org_id", "connection_id") REFERENCES "aws_connections" ("org_id", "id") ON DELETE CASCADE;
 --> statement-breakpoint
 -- metadata
-ALTER TABLE "cloud_security_service_states" ADD CONSTRAINT "cloud_security_service_states_7oH82X5J7LvC_fk" FOREIGN KEY ("connection_id") REFERENCES "aws_connections" ("id") ON DELETE CASCADE;
+ALTER TABLE "cloud_security_service_states" ADD CONSTRAINT "cloud_security_service_states_jHft8OtcW6A2_fk" FOREIGN KEY ("org_id", "connection_id") REFERENCES "aws_connections" ("org_id", "id") ON DELETE CASCADE;
