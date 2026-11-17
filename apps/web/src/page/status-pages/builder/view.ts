@@ -44,6 +44,8 @@ import { canManage, type DraftRow, type Model } from "./model"
 import {
 	ADD_PICKER_ID,
 	canSubmit,
+	customDomainError,
+	DOMAIN_ID,
 	FIELDS_ID,
 	gripIdOf,
 	monitorsOf,
@@ -55,7 +57,7 @@ import {
 	slugError,
 } from "./update"
 import { typography } from "@maple/views/ui/typography"
-import { hstack, vstack } from "@maple/views/ui/stack"
+import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 
 // `/status-pages/new`: the form on the left, the page as visitors get it on the right, and the
 // publish bar under both. Below 1000px the preview stacks under the form.
@@ -95,6 +97,57 @@ const pageSection = (h: H, model: Model): Html =>
 			}),
 		]),
 	])
+
+const DOMAIN_STEPS: ReadonlyArray<string> = [
+	"Pick a subdomain you own, like status.acme.com. A bare domain (acme.com) can't point at Maple.",
+	"Once the page is created, Maple shows the DNS record to add at your DNS provider: a CNAME from that subdomain to Maple.",
+	"Maple checks the record and issues the HTTPS certificate, usually within minutes. Until then visitors use the page's Maple address.",
+]
+
+const domainSection = (h: H, model: Model): Html =>
+	settingsSection(
+		h,
+		{
+			id: "status-page-builder-domain",
+			title: "Custom domain",
+			description: ["Optional. Serve the page on your own subdomain instead of its Maple address."],
+		},
+		[
+			vstack(h, { gap: "4" }, [
+				textField(h, {
+					id: DOMAIN_ID,
+					label: "Domain",
+					value: model.customDomain,
+					placeholder: "status.acme.com",
+					isMono: true,
+					isDisabled: model.submitting !== null,
+					hint: "Leave it empty to add one later under Settings.",
+					error: customDomainError(model),
+					onInput: (value) => Message.ChangedCustomDomain({ value }),
+				}),
+				vstack(h, { gap: "2" }, [
+					typography(h, { size: "xs", weight: "medium", tone: "muted", as: "p" }, ["How it works"]),
+					h.ol(
+						[h.Class(vstackClass({ gap: "2" }))],
+						Arr.map(DOMAIN_STEPS, (step, index) =>
+							hstack(
+								h,
+								{ gap: "2.5", align: "start", as: "li", attributes: [h.Key(String(index))] },
+								[
+									typography(
+										h,
+										{ size: "xs", tone: "muted", mono: true, className: "shrink-0" },
+										[String(index + 1)],
+									),
+									typography(h, { size: "xs", tone: "muted" }, [step]),
+								],
+							),
+						),
+					),
+				]),
+			]),
+		],
+	)
 
 const ROW_HINT_ID = "status-page-builder-reorder-hint"
 
@@ -438,6 +491,7 @@ const builder = (h: H, model: Model): Html =>
 			[
 				vstack(h, { gap: "8", shrink: true, className: "pb-16" }, [
 					pageSection(h, model),
+					domainSection(h, model),
 					componentsSection(h, model),
 					lookSection(h, model),
 					...(model.createFailure === null

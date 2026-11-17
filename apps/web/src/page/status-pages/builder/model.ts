@@ -30,6 +30,8 @@ export const Model = Schema.Struct({
 	isSeeded: Schema.Boolean,
 	name: Schema.String,
 	slug: Schema.String,
+	/** An optional custom domain (`status.acme.com`), set right after the page is created. */
+	customDomain: Schema.String,
 	/** The user typed an address; until then it follows the name. */
 	isSlugEdited: Schema.Boolean,
 	isNameTouched: Schema.Boolean,

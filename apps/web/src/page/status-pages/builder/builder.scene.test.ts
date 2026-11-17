@@ -382,6 +382,80 @@ describe("status page builder", () => {
 		).toBeNull()
 	})
 
+	test("a custom domain is optional, checked as typed, and blocks the create while it is invalid", () => {
+		const model = named(withMonitors([httpMonitor()]))
+		scene(
+			{ update: builderUpdate, view },
+			given(model),
+			expectView(role("textbox", { name: "Domain" })).toHaveValue(""),
+			expectView(text(/^Pick a subdomain you own/u)).toExist(),
+			expectView(role("button", { name: "Publish page" })).toBeEnabled(),
+		)
+		const apex = builderUpdate(model, Message.ChangedCustomDomain({ value: "acme.com" })).model
+		scene(
+			{ update: builderUpdate, view },
+			given(apex),
+			expectView(
+				text("Use a subdomain, like status.acme.com: an apex domain cannot point at Maple."),
+			).toExist(),
+			expectView(role("button", { name: "Publish page" })).toBeDisabled(),
+		)
+	})
+
+	test("with a custom domain, the page is created, the domain set, and the page opens on its DNS records", () => {
+		const model = builderUpdate(
+			named(withMonitors([httpMonitor()])),
+			Message.ChangedCustomDomain({ value: " Status.Acme.com " }),
+		).model
+		const page = statusPage()
+		const created = builderUpdate(
+			builderUpdate(model, Message.ClickedSubmit({ mode: "publish" })).model,
+			Message.CompletedCreate({ mode: "publish", result: Result.succeed(page) }),
+		)
+		expect(created.outMessage).toBeUndefined()
+		expect(created.model.submitting).toBe("publish")
+		expect(created.commands).toMatchObject([
+			{ name: "TrackStatusPageCreated" },
+			{ name: "SetStatusPageBuilderCustomDomain", args: { hostname: "status.acme.com" } },
+		])
+		const domain = {
+			object: "status_page_custom_domain" as const,
+			page_id: page.id,
+			available: true,
+			cname_target: "status-domains.maple.dev",
+			hostname: "status.acme.com",
+			status: "pending_dns" as const,
+			dns_records: [],
+			last_error: null,
+			last_checked_at: null,
+			activated_at: null,
+			created_at: null,
+		}
+		expect(
+			builderUpdate(
+				created.model,
+				Message.CompletedSetCustomDomain({ page, result: Result.succeed(domain) }),
+			).outMessage,
+		).toMatchObject({
+			_tag: "RequestedNavigation",
+			url: statusPageHref(page.id, "settings", "basic"),
+			toast: { type: "success" },
+		})
+		expect(
+			builderUpdate(
+				created.model,
+				Message.CompletedSetCustomDomain({
+					page,
+					result: Result.fail(toLoadFailure(new Error("Custom domains are unavailable"))),
+				}),
+			).outMessage,
+		).toMatchObject({
+			_tag: "RequestedNavigation",
+			url: statusPageHref(page.id, "settings", "basic"),
+			toast: { type: "error", title: "Acme Status created, but its custom domain wasn't set" },
+		})
+	})
+
 	test("Cancel sits in the publish bar beside the two ways to save, back to the list", () => {
 		scene(
 			{ update: builderUpdate, view },

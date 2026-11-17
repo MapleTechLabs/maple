@@ -1,4 +1,9 @@
-import { StatusPagePreviewParams, V2StatusPage, V2UptimeMonitor } from "@maple/domain/http/v2"
+import {
+	StatusPagePreviewParams,
+	V2StatusPage,
+	V2StatusPageCustomDomain,
+	V2UptimeMonitor,
+} from "@maple/domain/http/v2"
 import {
 	StatusPagePublicSnapshot,
 	StatusPageThemeAppearance,
@@ -23,6 +28,7 @@ export const Message = defineMessageUnion({
 	ChangedName: { value: Schema.String },
 	BlurredName: {},
 	ChangedSlug: { value: Schema.String },
+	ChangedCustomDomain: { value: Schema.String },
 	/** A row's head: opens it in place, or closes it when open. */
 	ClickedRow: { key: Schema.String },
 	ChangedRowField: { field: ComponentTextField, value: Schema.String },
@@ -50,6 +56,8 @@ export const Message = defineMessageUnion({
 	},
 	ClickedSubmit: { mode: SubmitMode },
 	CompletedCreate: { mode: SubmitMode, result: LoadOutcome(V2StatusPage) },
+	/** The custom domain asked for, set on the page just created. */
+	CompletedSetCustomDomain: { page: V2StatusPage, result: LoadOutcome(V2StatusPageCustomDomain) },
 	/** A `trackProduct` call was handed to the session SDK. */
 	CompletedTrackProduct: {},
 })

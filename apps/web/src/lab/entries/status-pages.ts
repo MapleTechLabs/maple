@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { StatusPagePublicId, V2StatusPage, V2StatusPageComponent } from "@maple/domain/http/v2"
-import { Effect, Option, Result, Schema, Array as Arr } from "effect"
+import { Effect, Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import { Command, Subscription, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -31,7 +31,15 @@ import { subscriptions as editorSubscriptions } from "../../page/status-pages/ed
 import { init as editorInit, update as editorUpdate } from "../../page/status-pages/editor/update"
 import { view as editorView } from "../../page/status-pages/editor/view"
 import { componentPayload } from "../../page/status-pages/shared/form"
-import { component, incident, incidentId, statusPage } from "../../page/status-pages/shared/test-pages"
+import { GroupDialogMessage } from "../../page/status-pages/shared/group-dialog"
+import { monitorKey } from "../../page/status-pages/shared/picker"
+import {
+	component,
+	componentId,
+	incident,
+	incidentId,
+	statusPage,
+} from "../../page/status-pages/shared/test-pages"
 import { downMonitor, httpMonitor, monitorId } from "../../page/kit/uptime/test-monitors"
 import type { Resources } from "../../platform/resources"
 import { keepLocal } from "../local-commands"
@@ -42,7 +50,8 @@ import { labGrants, LabRole, readLabRole } from "../viewer-role"
 
 // `/lab/status-pages`: the status pages list, the look picker and the form fields over fixture
 // pages, the list with no page yet, a page's editor open on an incident, on Settings > Monitors
-// with grouped components to drag, or the new page builder (`?page=list|empty|editor|monitors|new`),
+// with grouped components to drag (`monitors-group` with a Group dialog open), or the new page
+// builder (`new`, `new-empty`, `new-add`, `new-group`, `new-domain`),
 // as the viewer `?role=` names: an analyst reads the incident and gets no control that posts, edits
 // or deletes one. The editor runs for real with no API: a reorder, a component's Save and an Access
 // save land at once, every other read and write is dropped.
@@ -53,11 +62,24 @@ const context: PageContext = {
 	timeZone: "UTC",
 }
 
-const PAGES = ["list", "empty", "editor", "monitors", "new"] as const
+const PAGES = [
+	"list",
+	"empty",
+	"editor",
+	"monitors",
+	"monitors-group",
+	"new",
+	"new-empty",
+	"new-add",
+	"new-group",
+	"new-domain",
+] as const
 const LabPage = Schema.Literals(PAGES)
 type LabPage = typeof LabPage.Type
 /** The list over the fixture pages, or over none for its empty state. */
 const isListPage = (page: LabPage): boolean => page === "list" || page === "empty"
+/** The new page builder, in one of its states. */
+const isBuilderPage = (page: LabPage): boolean => Str.startsWith("new")(page)
 const decodePage = Schema.decodeUnknownOption(LabPage)
 
 const Model = Schema.Struct({ page: LabPage, list: ListModel, editor: EditorModel, builder: BuilderModel })
@@ -161,9 +183,49 @@ const editorModel = (role: LabRole, page: "editor" | "monitors"): EditorModel =>
 }
 
 /** The builder over five monitors, all on the page from the start. */
-const builderModel = (role: LabRole): BuilderModel => {
-	const step = (model: BuilderModel, message: BuilderMessage) =>
-		builderUpdate(model, message, context).model
+const LAB_MONITORS = [
+	httpMonitor(),
+	downMonitor(),
+	httpMonitor({ id: monitorId(3), name: "dashboard" }),
+	httpMonitor({ id: monitorId(4), name: "webhooks" }),
+	httpMonitor({ id: monitorId(5), name: "docs" }),
+]
+
+const groupOf = (message: GroupDialogMessage) => BuilderMessage.GotGroupDialogMessage({ message })
+
+/** The steps after the monitors read that put the builder in `page`'s state. */
+const builderSteps = (page: LabPage): ReadonlyArray<BuilderMessage> => {
+	switch (page) {
+		case "new-add":
+			return [
+				BuilderMessage.ClickedRemoveRow({ key: monitorKey(monitorId(4)) }),
+				BuilderMessage.ClickedRemoveRow({ key: monitorKey(monitorId(5)) }),
+				BuilderMessage.ClickedAddComponents(),
+			]
+		case "new-group":
+			return [
+				BuilderMessage.ClickedRow({ key: monitorKey(httpMonitor().id) }),
+				groupOf(GroupDialogMessage.ClickedOpen()),
+				groupOf(GroupDialogMessage.ChangedDraft({ value: "Core" })),
+				groupOf(GroupDialogMessage.SubmittedDraft()),
+				BuilderMessage.ClickedRow({ key: monitorKey(downMonitor().id) }),
+				groupOf(GroupDialogMessage.ClickedOpen()),
+			]
+		case "new-domain":
+			return [BuilderMessage.ChangedCustomDomain({ value: "status.acme.com" })]
+		default:
+			return []
+	}
+}
+
+/**
+ * The builder over five monitors, all on the page from the start (none with `new-empty`); `new-add`
+ * opens Add components, `new-group` a Group dialog, `new-domain` fills the custom domain.
+ */
+const builderModel = (
+	role: LabRole,
+	page: LabPage,
+): Update.Return<BuilderModel, BuilderMessage, Resources> => {
 	const entered = builderInit({ _tag: "StatusPageNew" }, context).model
 	return Arr.reduce(
 		[
@@ -171,18 +233,16 @@ const builderModel = (role: LabRole): BuilderModel => {
 			BuilderMessage.CompletedFetchSession({ orgId: LAB_ORG, grants: labGrants(role) }),
 			BuilderMessage.CompletedFetchMonitors({
 				key: entered.monitors.key ?? "",
-				result: Result.succeed([
-					httpMonitor(),
-					downMonitor(),
-					httpMonitor({ id: monitorId(3), name: "dashboard" }),
-					httpMonitor({ id: monitorId(4), name: "webhooks" }),
-					httpMonitor({ id: monitorId(5), name: "docs" }),
-				]),
+				result: Result.succeed(page === "new-empty" ? [] : LAB_MONITORS),
 			}),
 			BuilderMessage.ChangedName({ value: "Acme Status" }),
+			...builderSteps(page),
 		],
-		entered,
-		step,
+		{ model: entered, commands: [] } as Update.Return<BuilderModel, BuilderMessage, Resources>,
+		(current, message) => {
+			const next = builderUpdate(current.model, message, context)
+			return { model: next.model, commands: [...(current.commands ?? []), ...keepLocal(next.commands)] }
+		},
 	)
 }
 
@@ -296,7 +356,7 @@ const update = (model: Model, message: Message): Return =>
 /** The editor's own: Escape closes what is open, a grip drags its row. */
 const editorSubscriptionsLifted = Subscription.lift(editorSubscriptions)<Model, Message>({
 	read: (model) =>
-		model.page === "editor" || model.page === "monitors"
+		model.page === "editor" || model.page === "monitors" || model.page === "monitors-group"
 			? Option.some({ model: model.editor, context })
 			: Option.none(),
 	toParentMessage: (message) => Message.GotEditorMessage({ message }),
@@ -304,12 +364,13 @@ const editorSubscriptionsLifted = Subscription.lift(editorSubscriptions)<Model, 
 
 /** The builder's own: a grip drags its row. */
 const builderSubscriptionsLifted = Subscription.lift(builderSubscriptions)<Model, Message>({
-	read: (model) => (model.page === "new" ? Option.some({ model: model.builder, context }) : Option.none()),
+	read: (model) =>
+		isBuilderPage(model.page) ? Option.some({ model: model.builder, context }) : Option.none(),
 	toParentMessage: (message) => Message.GotBuilderMessage({ message }),
 })
 
 const view = (model: Model, h: HtmlBuilder<Message>): Html =>
-	model.page === "new"
+	isBuilderPage(model.page)
 		? h.submodel({
 				slotId: "status-pages-lab-builder",
 				model: model.builder,
@@ -394,14 +455,50 @@ export const lab = defineShellLab("Status pages", {
 		),
 		role,
 	})),
-	init: (flags: Flags) => ({
-		model: {
-			page: flags.page,
-			list: listModel(flags.role, flags.page === "empty" ? [] : LAB_PAGES),
-			editor: editorModel(flags.role, flags.page === "monitors" ? "monitors" : "editor"),
-			builder: builderModel(flags.role),
-		},
-	}),
+	init: (flags: Flags) => {
+		const builder = builderModel(flags.role, flags.page)
+		const editor = editorModel(flags.role, flags.page === "editor" ? "editor" : "monitors")
+		// `monitors-group`: API open, its Group dialog over it.
+		const grouped =
+			flags.page === "monitors-group"
+				? Arr.reduce(
+						[
+							EditorMessage.ClickedComponent({ componentId: componentId(1) }),
+							EditorMessage.GotGroupDialogMessage({
+								message: GroupDialogMessage.ClickedOpen(),
+							}),
+						],
+						{ model: editor, commands: [] } as Update.Return<
+							EditorModel,
+							EditorMessage,
+							Resources
+						>,
+						(current, message) => {
+							const next = editorUpdate(current.model, message, context)
+							return {
+								model: next.model,
+								commands: [...(current.commands ?? []), ...keepLocal(next.commands)],
+							}
+						},
+					)
+				: { model: editor, commands: [] }
+		return {
+			model: {
+				page: flags.page,
+				list: listModel(flags.role, flags.page === "empty" ? [] : LAB_PAGES),
+				editor: grouped.model,
+				builder: builder.model,
+			},
+			commands: [
+				...Command.mapMessages(builder.commands ?? [], (message) =>
+					Message.GotBuilderMessage({ message }),
+				),
+				...Command.mapMessages(grouped.commands ?? [], (message) =>
+					Message.GotEditorMessage({ message }),
+				),
+			],
+		}
+	},
 	update,
 	subscriptions: { ...editorSubscriptionsLifted, ...builderSubscriptionsLifted },
 	view,

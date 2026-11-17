@@ -4,7 +4,11 @@ import type {
 	V2StatusPageCreateParams,
 	V2UptimeMonitor,
 } from "@maple/domain/http/v2"
-import { STATUS_PAGE_PRESET_DEFAULTS } from "@maple/domain/status-page"
+import {
+	customDomainIssue,
+	normalizeCustomDomain,
+	STATUS_PAGE_PRESET_DEFAULTS,
+} from "@maple/domain/status-page"
 import { Option, Result, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -39,6 +43,7 @@ import {
 	FetchBuilderPreview,
 	FetchBuilderSession,
 	FocusBuilderField,
+	SetBuilderCustomDomain,
 	ReadBuilderClock,
 	TrackMonitorCreated,
 	TrackPageCreated,
@@ -57,6 +62,7 @@ export const ADD_PICKER_ID = "status-page-builder-add"
 export const FIELDS_ID = "status-page-builder-component"
 export const NAME_ID = "status-page-builder-name"
 export const SLUG_ID = "status-page-builder-slug"
+export const DOMAIN_ID = "status-page-builder-domain-input"
 
 const SLUG_TAKEN = "status_page_slug_taken"
 
@@ -73,6 +79,12 @@ const readMonitors = (model: Model, context: PageContext, mode: Keyed.ReadMode):
 	})
 
 export const monitorsOf = (model: Model) => AsyncData.getOrElse(model.monitors.data, () => [])
+
+const hasCustomDomain = (model: Model): boolean => Str.trim(model.customDomain) !== ""
+
+/** Why the typed custom domain cannot be set; nothing while the field is empty (it is optional). */
+export const customDomainError = (model: Model): string | null =>
+	hasCustomDomain(model) ? customDomainIssue(normalizeCustomDomain(model.customDomain)) : null
 
 export const nameIssue = (model: Model): string | null =>
 	model.isNameTouched && Str.trim(model.name) === "" ? "Add a name." : null
@@ -111,7 +123,8 @@ export const canSubmit = (model: Model): boolean =>
 	Str.trim(model.name) !== "" &&
 	slugIssue(model.slug) === null &&
 	model.takenSlug !== model.slug &&
-	Arr.every(model.rows, isNamed)
+	Arr.every(model.rows, isNamed) &&
+	customDomainError(model) === null
 
 /** The preset carries its own font and corners; the builder offers no other choice of either. */
 const themeOf = (model: Model) => ({
@@ -157,6 +170,7 @@ export const init = (_route: BuilderRoute, context: PageContext): Return => {
 		isSeeded: false,
 		name: "",
 		slug: "",
+		customDomain: "",
 		isSlugEdited: false,
 		isNameTouched: false,
 		rows: [],
@@ -438,23 +452,36 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedSubmit: ({ mode }) => submit(model, mode),
 		CompletedCreate: ({ mode, result }) =>
 			Result.match(result, {
-				onSuccess: (page): Return => ({
-					model: { ...model, submitting: null },
-					commands: [TrackPageCreated()],
-					outMessage: PageOutMessage.RequestedNavigation({
-						url: statusPageHref(page.id, mode === "publish" ? "live" : undefined),
-						isReplace: true,
-						...(mode === "draft"
-							? {
-									toast: {
-										type: "success",
-										title: "Saved as a draft",
-										description: page.name,
-									},
-								}
-							: undefined),
-					}),
-				}),
+				// With a custom domain the buttons keep spinning until it is set too.
+				onSuccess: (page): Return =>
+					hasCustomDomain(model)
+						? {
+								model,
+								commands: [
+									TrackPageCreated(),
+									SetBuilderCustomDomain({
+										page,
+										hostname: normalizeCustomDomain(model.customDomain),
+									}),
+								],
+							}
+						: {
+								model: { ...model, submitting: null },
+								commands: [TrackPageCreated()],
+								outMessage: PageOutMessage.RequestedNavigation({
+									url: statusPageHref(page.id, mode === "publish" ? "live" : undefined),
+									isReplace: true,
+									...(mode === "draft"
+										? {
+												toast: {
+													type: "success",
+													title: "Saved as a draft",
+													description: page.name,
+												},
+											}
+										: undefined),
+								}),
+							},
 				onFailure: (failure): Return =>
 					failure.code === SLUG_TAKEN
 						? {
@@ -463,5 +490,26 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 							}
 						: { model: { ...model, submitting: null, createFailure: failure } },
 			}),
+		// Either way the page exists: it opens on its Custom domain, with the DNS records to add.
+		CompletedSetCustomDomain: ({ page, result }) => ({
+			model: { ...model, submitting: null },
+			outMessage: PageOutMessage.RequestedNavigation({
+				url: statusPageHref(page.id, "settings", "basic"),
+				isReplace: true,
+				toast: Result.match(result, {
+					onSuccess: (domain) => ({
+						type: "success" as const,
+						title: `${page.name} created`,
+						description: `Add the DNS records shown for ${domain.hostname ?? "your domain"} to finish.`,
+					}),
+					onFailure: (failure) => ({
+						type: "error" as const,
+						title: `${page.name} created, but its custom domain wasn't set`,
+						description: failure.message,
+					}),
+				}),
+			}),
+		}),
+		ChangedCustomDomain: ({ value }) => ({ model: { ...model, customDomain: value } }),
 		CompletedTrackProduct: () => ({ model }),
 	})
