@@ -6,11 +6,11 @@ import { CostCurrency, CostFilters, CostMetric } from "../cost"
 import { CostBudgetAmount, CostBudgetBasis, CostBudgetPeriod, CostBudgetProgress } from "../cost-budget"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
-import { CloudCostDisabledError, CloudCostPersistenceError, costEndpointErrors } from "./query-engine"
+import { CloudCostPersistenceError, costEndpointErrors } from "./query-engine"
 
 // Cost budgets: an amount per calendar period over a slice of the org's spend. Each one is a
 // hidden `cost_budget` alert rule, so its incidents and notifications are the alerting ones.
-// Dashboard only, behind the `cloudCost` rollout (but for delete); writes need `alerts:manage`.
+// Dashboard only; writes need `alerts:manage`.
 
 /** Each budget reads the warehouse once an hour and once per list; the cap bounds that per org. */
 export const MAX_COST_BUDGETS_PER_ORG = 50
@@ -143,11 +143,7 @@ export class CostBudgetInvalidError extends HttpTaggedError<CostBudgetInvalidErr
 	},
 ) {}
 
-const budgetWriteErrors = [
-	CloudCostDisabledError,
-	CloudCostPersistenceError,
-	CostBudgetForbiddenError,
-] as const
+const budgetWriteErrors = [CloudCostPersistenceError, CostBudgetForbiddenError] as const
 
 export class CostBudgetsApiGroup extends HttpApiGroup.make("costBudgets")
 	.add(
@@ -160,7 +156,7 @@ export class CostBudgetsApiGroup extends HttpApiGroup.make("costBudgets")
 		HttpApiEndpoint.get("get", "/:id", {
 			params: { id: AlertRuleId },
 			success: CostBudget,
-			error: [CloudCostDisabledError, CloudCostPersistenceError, CostBudgetNotFoundError],
+			error: [CloudCostPersistenceError, CostBudgetNotFoundError],
 		}),
 	)
 	.add(
@@ -182,7 +178,6 @@ export class CostBudgetsApiGroup extends HttpApiGroup.make("costBudgets")
 		HttpApiEndpoint.delete("remove", "/:id", {
 			params: { id: AlertRuleId },
 			success: CostBudgetDeleteResponse,
-			// Open to an org outside the rollout, so it never answers `CloudCostDisabledError`.
 			error: [CloudCostPersistenceError, CostBudgetForbiddenError, CostBudgetNotFoundError],
 		}),
 	)

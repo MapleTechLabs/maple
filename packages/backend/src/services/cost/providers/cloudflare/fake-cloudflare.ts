@@ -1,11 +1,9 @@
 // A fake Cloudflare for tests: the accounts, billable usage and subscription calls answered from
 // a mutable world, with every call recorded. Usage is served the way the real API was seen to:
 // a billing period's days before `to`, and only when the period starts inside `[from, to)`.
-import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
-import { DateTime, Effect, Layer, Array as Arr, String as Str } from "effect"
+import { DateTime, Layer, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import type { TestDb } from "@maple/backend/testing/test-pglite"
 import { CostConnectionStore } from "../../CostConnectionStore"
 import { fakeCostEnvConfig } from "../fake-cost-env"
@@ -43,8 +41,6 @@ export interface FakeCloudflare {
 	canRead: ReadonlyArray<FakeReach>
 	/** A probe Cloudflare answers with a status that is neither access nor a refusal. */
 	brokenProbe: { readonly reach: FakeReach; readonly status: number } | null
-	/** Whether the org is in the `cloudCost` rollout. */
-	cloudCost: boolean
 	readonly urls: Array<string>
 	readonly authorizations: Array<string | null>
 }
@@ -65,7 +61,6 @@ export const makeFakeCloudflare = (overrides: Partial<FakeCloudflare> = {}): Fak
 	subscriptionsNeverReturned: 0,
 	canRead: [],
 	brokenProbe: null,
-	cloudCost: true,
 	urls: [],
 	authorizations: [],
 	...overrides,
@@ -204,20 +199,7 @@ export const fakeCloudflareDeps = (
 	encryptionKey?: string,
 ) =>
 	Layer.effect(CostConnectionStore, CostConnectionStore.make).pipe(
-		Layer.provideMerge(
-			Layer.mergeAll(
-				FetchHttpClient.layer,
-				Layer.succeed(OrganizationFeatureFlagsService, {
-					flags: () =>
-						Effect.sync(() => ({
-							...DISABLED_ORGANIZATION_FEATURE_FLAGS,
-							cloudCost: world.cloudCost,
-						})),
-				}),
-				testDb.layer,
-				Env.layer,
-			),
-		),
+		Layer.provideMerge(Layer.mergeAll(FetchHttpClient.layer, testDb.layer, Env.layer)),
 		Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchStub(world))),
 		Layer.provide(fakeCostEnvConfig(encryptionKey)),
 	)

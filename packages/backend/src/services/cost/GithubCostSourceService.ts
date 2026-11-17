@@ -4,7 +4,6 @@
  * removing deletes it. No credential is kept: pulls mint the installation's token.
  */
 import {
-	CloudCostDisabledError,
 	GithubCostInstallation,
 	type GithubCostInstallationState,
 	GithubCostInstallationNotFoundError,
@@ -22,7 +21,6 @@ import { randomUUID } from "node:crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import type { CostProviderError } from "./CostProvider"
 import { monthOf, needsBillingGrant, readUsageMonth } from "./providers/github/billing-usage"
 import { utcToday } from "./sync-plan"
@@ -66,10 +64,7 @@ export interface GithubCostSourceServiceApi {
 	/** The org's GitHub installations, with whether each can be a cost source or already is one. */
 	readonly list: (
 		orgId: OrgId,
-	) => Effect.Effect<
-		ReadonlyArray<GithubCostInstallation>,
-		GithubCostUnavailableError | CloudCostDisabledError
-	>
+	) => Effect.Effect<ReadonlyArray<GithubCostInstallation>, GithubCostUnavailableError>
 	/**
 	 * Makes the installation's cost source once GitHub has let Maple read its billing report.
 	 * `created` is false when it was a source already.
@@ -83,7 +78,6 @@ export interface GithubCostSourceServiceApi {
 		| GithubCostInstallationNotFoundError
 		| GithubCostNotReadyError
 		| GithubCostPermissionMissingError
-		| CloudCostDisabledError
 	>
 	/** The organization of the source it removed, or null when there was none. */
 	readonly remove: (
@@ -98,24 +92,13 @@ export class GithubCostSourceService extends Context.Service<
 >()("@maple/backend/services/cost/GithubCostSourceService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
-		const featureFlags = yield* OrganizationFeatureFlagsService
 		const registry = yield* VcsProviderRegistry
 		// The registry always has GitHub: a miss is a broken build, not a request's failure.
 		const github = yield* Effect.orDie(registry.resolve("github"))
 		const dbExecute = makeDbExecute(database, "GithubCostSourceService", toUnavailable)
 
-		const requireRollout = Effect.fnUntraced(function* (orgId: OrgId) {
-			const flags = yield* featureFlags.flags(orgId)
-			if (!flags.cloudCost) {
-				return yield* new CloudCostDisabledError({
-					message: "Cloud cost is not enabled for this organization.",
-				})
-			}
-		})
-
 		const list = Effect.fn("GithubCostSourceService.list")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan({ orgId })
-			yield* requireRollout(orgId)
 			const rows = yield* dbExecute((db) =>
 				db.run(
 					PG.from(VcsInstallations, "i")
@@ -154,7 +137,6 @@ export class GithubCostSourceService extends Context.Service<
 			installationId: VcsInstallationId,
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.cost.provider": "github" })
-			yield* requireRollout(orgId)
 			// By org as well as id: another org's installation is not found.
 			const [installation] = yield* dbExecute((db) =>
 				db.run(
@@ -253,7 +235,5 @@ export class GithubCostSourceService extends Context.Service<
 		return { list, add, remove } satisfies GithubCostSourceServiceApi
 	}),
 }) {
-	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(VcsProviderRegistry.layer, OrganizationFeatureFlagsService.layer)),
-	)
+	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(VcsProviderRegistry.layer))
 }

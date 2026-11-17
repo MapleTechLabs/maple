@@ -8,7 +8,7 @@ import {
 	type StatusPageSnapshotIncident,
 	type StatusPageTheme,
 } from "@maple/domain/status-page"
-import { type PreviewComponent, renderPage } from "@maple/status-page"
+import { type PreviewComponent, previewSnapshot, renderPage } from "@maple/status-page"
 import { cn } from "@maple/ui/lib/utils"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
@@ -139,6 +139,41 @@ export const simulatePreview = (
 	}
 }
 
+/**
+ * A built snapshot as it would read in `state`, in `scheme` for an Auto page: the in-app viewer's
+ * counterpart of `simulatePreview`, from the components' saved status rather than the editor's reads.
+ */
+export const simulateSnapshot = (
+	snapshot: StatusPagePublicSnapshot,
+	state: PreviewState,
+	scheme: PreviewScheme,
+): StatusPagePublicSnapshot => {
+	const page = { ...snapshot.page, theme: previewTheme(snapshot.page.theme, scheme) }
+	if (state === "live") return { ...snapshot, page }
+	const shown = simulatePreview(state, {
+		components: Arr.map(snapshot.components, (component) => ({
+			id: component.id,
+			name: component.name,
+			description: component.description,
+			group: component.group,
+			monitorStatus: null,
+			manualStatus: component.baseStatus,
+			showUptime: component.showUptime,
+			monitored: component.monitored,
+			days: component.days,
+		})),
+		incidents: snapshot.incidents,
+		nowMs: snapshot.generatedAt,
+	})
+	return previewSnapshot({
+		pageId: snapshot.pageId,
+		page,
+		components: shown.components,
+		incidents: shown.incidents,
+		nowMs: snapshot.generatedAt,
+	})
+}
+
 const msOrNull = (value: string | null): number | null => (value === null ? null : toEpochMs(value))
 
 /** Whether visitors see the incident now, by the publisher's own rule. */
@@ -238,7 +273,8 @@ export const previewDocument = (options: PreviewDocumentOptions): string => {
 			? { preview, inDashboard: true }
 			: { preview, inDashboard: true, publicUrl: options.publicUrl },
 	)
-	const stay = `<script>${stayInFrameScript(options.opensLinks === true)}</script><script>${KEEP_SCROLL_SCRIPT}</script>`
+	// No rubber-band at the frame's edges: it bounced the page and chained the scroll to Maple's.
+	const stay = `<style>html,body{overscroll-behavior:none}</style><script>${stayInFrameScript(options.opensLinks === true)}</script><script>${KEEP_SCROLL_SCRIPT}</script>`
 	if (!options.isSelectable) return Str.replace("</body>", `${stay}</body>`)(html)
 	const extra = `<style>${SELECTABLE_STYLES}</style><script>${SELECT_SCRIPT}</script>${stay}`
 	return Str.replace("</body>", `${extra}</body>`)(html)

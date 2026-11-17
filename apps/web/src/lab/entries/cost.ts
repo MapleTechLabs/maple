@@ -3,7 +3,7 @@ import { breadcrumbs, Flags, flags, init, Message, Model, update, view } from ".
 
 // `/lab/cost`: the cost page over synthetic cost (`?state=`).
 
-export const lab = defineShellLab("Cost", {
+export const lab = defineShellLab("Cloud cost", {
 	Model,
 	Message,
 	Flags,
