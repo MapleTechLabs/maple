@@ -2355,6 +2355,118 @@ describe("PrReviewService auto-approve", () => {
 		}).pipe(Effect.provide(layerFor(testDb, { published })))
 	})
 
+	it.effect(
+		"does not approve once an earlier review held back a warning, even if later ones do not",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const published: Array<PullRequestReviewPublication> = []
+			const warning = new PrReviewFinding({
+				path: "src/orders.ts",
+				line: 3,
+				category: "correctness",
+				severity: "warn",
+				title: "Unchecked null",
+				body: "b",
+			})
+			return Effect.gen(function* () {
+				const repositoryId = yield* seed(true)
+				const repo = yield* VcsRepository
+				yield* repo.setPrReviewConfig(
+					orgId,
+					repositoryId,
+					new PrReviewRepositoryConfig({ autoApprove: true, categories: ["security"] }),
+				)
+				const reviews = yield* PrReviewService
+				const first = yield* reviews.onPullRequestEvent(orgId, job())
+				yield* reviews.submitReview(
+					orgId,
+					first.reviewId!,
+					new SubmitPrReviewRequest({ report: lowRisk([warning]) }),
+				)
+				assert.strictEqual(published[0].approval?.action, "withdraw")
+				const stored = Option.getOrThrow(yield* reviews.getReview(orgId, first.reviewId!))
+				assert.strictEqual(stored.report?.heldBack, 1)
+
+				const second = yield* reviews.onPullRequestEvent(
+					orgId,
+					job({ action: "synchronize", headSha: HEAD_2 }),
+				)
+				yield* reviews.submitReview(
+					orgId,
+					second.reviewId!,
+					new SubmitPrReviewRequest({ report: lowRisk() }),
+				)
+				const refused = published[1].approval
+				assert.strictEqual(refused?.action, "withdraw")
+				if (refused?.action === "withdraw") assert.include(refused.reason, "held back")
+			}).pipe(Effect.provide(layerFor(testDb, { published })))
+		},
+	)
+
+	it.effect("does not approve when Maple cannot read the diff itself", () => {
+		const testDb = createTestDb(trackedDbs)
+		const published: Array<PullRequestReviewPublication> = []
+		return Effect.gen(function* () {
+			const repositoryId = yield* seed(true)
+			const repo = yield* VcsRepository
+			yield* repo.setPrReviewConfig(
+				orgId,
+				repositoryId,
+				new PrReviewRepositoryConfig({ autoApprove: true }),
+			)
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({ report: lowRisk() }),
+			)
+			const refused = published[0].approval
+			assert.strictEqual(refused?.action, "withdraw")
+			if (refused?.action === "withdraw") assert.include(refused.reason, "could not read the diff")
+		}).pipe(Effect.provide(layerFor(testDb, { published, filesUnreadable: { value: true } })))
+	})
+
+	it.effect("does not approve a diff with a file whose patch GitHub withholds", () => {
+		const testDb = createTestDb(trackedDbs)
+		const published: Array<PullRequestReviewPublication> = []
+		return Effect.gen(function* () {
+			const repositoryId = yield* seed(true)
+			const repo = yield* VcsRepository
+			yield* repo.setPrReviewConfig(
+				orgId,
+				repositoryId,
+				new PrReviewRepositoryConfig({ autoApprove: true }),
+			)
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({ report: lowRisk() }),
+			)
+			const refused = published[0].approval
+			assert.strictEqual(refused?.action, "withdraw")
+			if (refused?.action === "withdraw") assert.include(refused.reason, "no patch")
+		}).pipe(
+			Effect.provide(
+				layerFor(testDb, {
+					published,
+					prFiles: [
+						{
+							path: "src/generated.ts",
+							previousPath: null,
+							status: "modified",
+							additions: 4000,
+							deletions: 10,
+							patch: null,
+						},
+					],
+				}),
+			),
+		)
+	})
+
 	it.effect("asks nothing about approval when the repository has not turned it on", () => {
 		const testDb = createTestDb(trackedDbs)
 		const published: Array<PullRequestReviewPublication> = []

@@ -43,11 +43,11 @@ When a reviewed pull request merges, Maple waits for the deploy that carries it,
 
 Turn on **Approve low-risk pull requests** and the review approves a pull request on GitHub when it is safe to merge without a person reading it. Every one of these must hold:
 
-- The review read the whole diff, not only the commits since the last review, and finished. No changed file is under an ignored path.
+- The review read the whole diff, not only the commits since the last review, and finished. Maple could read the diff itself, every changed file has a patch to read (a binary file, or one too large for GitHub to show, needs a person), and no changed file is under an ignored path.
 - No warning or critical finding is open, including ones from earlier pushes. Notes are fine.
 - No warning or critical on the pull request was ever dismissed, or held back by the repository's lenses or the team's feedback. A person set it aside, so a person approves.
 - The review rated the risk low. Auth, tenancy, migrations, billing and concurrency are never low.
-- Tests cover the change, or it needs none.
+- The review judged that tests cover the change, or that it needs none. A review that did not assess tests does not approve.
 - No step before merge is left unticked, and no telemetry contract is broken.
 - The confidence is 9 or more.
 - The pull request is open and not a draft, its head is still the commit reviewed, and its author can push to the repository.

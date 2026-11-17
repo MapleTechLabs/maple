@@ -361,6 +361,11 @@ export class PrReviewReport extends Schema.Class<PrReviewReport>("PrReviewReport
 	wholeDiff: Schema.optionalKey(Schema.Boolean),
 	/** What production telemetry says about the change; set by the service, never by the model. */
 	telemetry: Schema.optionalKey(PrReviewTelemetry),
+	/**
+	 * Warnings and criticals the repository's lenses or the team's feedback kept off this report;
+	 * set by the service. Later reviews read it, so auto-approval never forgets them.
+	 */
+	heldBack: Schema.optionalKey(Schema.Number),
 	/** What has to happen outside the diff before merge; diff steps are set by the service. */
 	beforeMerge: Schema.optionalKey(Schema.Array(PrReviewMergeStep)),
 }) {}

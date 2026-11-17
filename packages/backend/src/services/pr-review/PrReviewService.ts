@@ -1212,7 +1212,10 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					),
 				).pipe(Effect.map((rows) => Arr.map(rows, toTracked)))
 
-			/** The pull request's completed reviews, newest first, and whether each read the whole diff. */
+			/**
+			 * The pull request's completed reviews, newest first: whether each read the whole diff, and
+			 * whether the repository's settings held back a warning or critical from it.
+			 */
 			const loadReviewHistory = (orgId: OrgId, repositoryId: VcsRepositoryId, number: number) =>
 				dbExecute((db) =>
 					db.run(
@@ -1223,6 +1226,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								wholeDiff: PG.sql(
 									PG.bool,
 								)`coalesce((${$.reportJson}->>'wholeDiff')::boolean, false)`,
+								heldBack: PG.sql(
+									PG.bool,
+								)`coalesce((${$.reportJson}->>'heldBack')::int, 0) > 0`,
 							}))
 							.where(($) => [
 								$.orgId.eq(orgId),
@@ -1452,6 +1458,10 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					)
 					return {
 						paths: Arr.map(files, (file) => file.path),
+						patchless: Arr.map(
+							Arr.filter(files, (file) => file.patch === null),
+							(file) => file.path,
+						),
 						detected,
 						verdicts: new Map<string, NameVerdict>(verdicts.flat()),
 						privacy: privacyFindings(files),
@@ -2802,23 +2812,29 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					)
 				}
 				// What auto-approval must also know, beyond the report: issues a person set aside or the
-				// repository's rules kept off it, and files the review was told never to read. An unread
-				// diff with ignored paths configured counts as having some.
+				// repository's rules kept off it, now or in an earlier review, and files no review read.
+				// A diff Maple could not read itself refuses on its own.
 				const isIssue = (finding: { readonly severity: PrReviewSeverity }) =>
 					finding.severity !== "info"
+				const heldBack =
+					Arr.filter(proposed, (finding) => isIssue(finding) && !allowed.includes(finding)).length +
+					Arr.filter(feedback.suppressed, isIssue).length
+				const heldBackBefore =
+					config.autoApprove === true
+						? yield* loadReviewHistory(orgId, review.repositoryId, review.number).pipe(
+								Effect.map((history) => Arr.filter(history, (row) => row.heldBack).length),
+							)
+						: 0
+				const unignored = (paths: ReadonlyArray<string>) =>
+					Arr.filter(paths, (path) => !pathIgnored(path, config.ignorePaths))
 				const approvalSignals = {
-					ignoredFiles:
-						read === undefined
-							? (config.ignorePaths?.length ?? 0) > 0
-								? 1
-								: 0
-							: Arr.filter(read.paths, (path) => pathIgnored(path, config.ignorePaths)).length,
+					diffUnavailable: read === undefined,
+					patchlessFiles: read === undefined ? 0 : unignored(read.patchless).length,
+					ignoredFiles: read === undefined ? 0 : read.paths.length - unignored(read.paths).length,
 					dismissedIssues:
 						Arr.filter(tracked, (finding) => finding.status === "dismissed" && isIssue(finding))
 							.length + Arr.filter(dismissedByReviewer, isIssue).length,
-					filteredIssues:
-						Arr.filter(proposed, (finding) => isIssue(finding) && !allowed.includes(finding))
-							.length + Arr.filter(feedback.suppressed, isIssue).length,
+					filteredIssues: heldBack + heldBackBefore,
 				}
 				const handles = nextHandles(
 					Arr.map(tracked, (finding) => finding.handle),
@@ -2838,6 +2854,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					...submitted,
 					...(telemetry === undefined ? undefined : { telemetry }),
 					...(beforeMerge.length > 0 ? { beforeMerge } : undefined),
+					...(heldBack > 0 ? { heldBack } : undefined),
 					findings,
 					verdict: hasIssues
 						? "issues"

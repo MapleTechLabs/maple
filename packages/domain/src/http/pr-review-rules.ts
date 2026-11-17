@@ -801,6 +801,8 @@ export type PrReviewAutoApprovalRefusal =
 	| "partial"
 	| "not_whole_diff"
 	| "unread"
+	| "diff_unavailable"
+	| "patchless"
 	| "ignored_files"
 	| "dismissed"
 	| "filtered"
@@ -844,11 +846,18 @@ export const prReviewAutoApproval = (input: {
 	readonly carriedOpen?: ReadonlyArray<{ readonly severity: PrReviewSeverity; readonly category?: string }>
 	readonly partial?: boolean
 	readonly uncheckedFixes?: number
+	/** Maple could not read the diff itself, so nothing below about its files was checked. */
+	readonly diffUnavailable?: boolean
+	/** Files of the diff whose patch GitHub withholds (binary, or too large): no review read them. */
+	readonly patchlessFiles?: number
 	/** Files of the diff under the repository's ignored paths: the review never read them. */
 	readonly ignoredFiles?: number
 	/** Warnings and criticals on the pull request a person or the reviewer dismissed, ever. */
 	readonly dismissedIssues?: number
-	/** Warnings and criticals the review found but the repository's lenses or feedback held back. */
+	/**
+	 * Warnings and criticals the repository's lenses or feedback held back, in this review or any
+	 * earlier one of the pull request.
+	 */
 	readonly filteredIssues?: number
 }): PrReviewAutoApproval => {
 	const { report } = input
@@ -859,6 +868,10 @@ export const prReviewAutoApproval = (input: {
 		return refuse("not_whole_diff", "the review read only the commits since the last one")
 	}
 	if ((report.unreviewed?.length ?? 0) > 0) return refuse("unread", "some reviewed files were not read")
+	if (input.diffUnavailable === true) return refuse("diff_unavailable", "Maple could not read the diff")
+	if ((input.patchlessFiles ?? 0) > 0) {
+		return refuse("patchless", "some files have no patch to read (binary, or too large)")
+	}
 	if ((input.ignoredFiles ?? 0) > 0) return refuse("ignored_files", "some files are under ignored paths")
 	if ((input.dismissedIssues ?? 0) > 0) {
 		return refuse("dismissed", "a warning or critical on the pull request was dismissed")
@@ -873,8 +886,8 @@ export const prReviewAutoApproval = (input: {
 		return refuse("findings", "a warning or critical finding is open")
 	}
 	if (report.risk !== "low") return refuse("risk", `the risk is ${report.risk ?? "not rated"}`)
-	if (report.tests === "missing" || report.tests === "partial") {
-		return refuse("tests", `tests are ${report.tests}`)
+	if (report.tests !== "covered" && report.tests !== "not_needed") {
+		return refuse("tests", `tests are ${report.tests ?? "not assessed"}`)
 	}
 	if (Arr.some(report.beforeMerge ?? [], (step) => step.done !== true)) {
 		return refuse("merge_steps", "a step before merge is open")

@@ -36,6 +36,11 @@ const unrated = () => {
 	return new PrReviewReport(rest)
 }
 
+const untested = () => {
+	const { tests: _tests, ...rest } = approvable()
+	return new PrReviewReport(rest)
+}
+
 const telemetryWithBreak = new PrReviewTelemetry({
 	windowDays: 7,
 	services: [],
@@ -99,6 +104,8 @@ describe("prReviewAutoApproval", () => {
 			{ report: approvable({ wholeDiff: false }) },
 			"not_whole_diff",
 		],
+		["a diff Maple could not read", { report: approvable(), diffUnavailable: true }, "diff_unavailable"],
+		["a file with no patch", { report: approvable(), patchlessFiles: 1 }, "patchless"],
 		["a file under an ignored path", { report: approvable(), ignoredFiles: 1 }, "ignored_files"],
 		["a warning someone dismissed", { report: approvable(), dismissedIssues: 1 }, "dismissed"],
 		[
@@ -122,6 +129,7 @@ describe("prReviewAutoApproval", () => {
 		["an unrated risk", { report: unrated() }, "risk"],
 		["missing tests", { report: approvable({ tests: "missing" }) }, "tests"],
 		["partial tests", { report: approvable({ tests: "partial" }) }, "tests"],
+		["tests not assessed", { report: untested() }, "tests"],
 		[
 			"an open step before merge",
 			{
