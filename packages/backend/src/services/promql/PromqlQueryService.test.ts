@@ -595,6 +595,17 @@ describe("PromqlQueryService discovery", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
+	it.effect("honors a discovery limit on metadata and label values", () => {
+		const { layer } = recordingWarehouse()
+		return Effect.gen(function* () {
+			const service = yield* PromqlQueryService
+			const metadata = yield* service.metadata(tenant, { ...window, limit: 1 })
+			expect([...metadata.keys()]).toEqual(["http_duration_seconds"])
+			const filtered = yield* service.metadata(tenant, { ...window, metric: "http_requests_total" })
+			expect([...filtered.keys()]).toEqual(["http_requests_total"])
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("refuses an invalid label name", () =>
 		Effect.gen(function* () {
 			const service = yield* PromqlQueryService
