@@ -392,7 +392,7 @@ const deliveryNote = (h: H, live: ReadonlyArray<CloudFindingSource> | null): Rea
 			? "Checked every five minutes, and live once AWS sends a finding event. A connection set up before live updates needs its AWS setup script run again."
 			: live.length === CLOUD_FINDING_SOURCES.length
 				? "Live: findings arrive as AWS reports them."
-				: `Live for ${Arr.join(Arr.map(live, sourceTitle), ", ")}: their findings arrive as AWS reports them. The other services are checked every five minutes.`
+				: `Live for ${Arr.join(Arr.map(live, sourceTitle), ", ")}: their findings arrive as AWS reports them. The other enabled services are checked every five minutes.`
 	return [typography(h, { size: "xs", tone: "muted", as: "p" }, [text])]
 }
 
