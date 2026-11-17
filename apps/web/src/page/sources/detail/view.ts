@@ -24,7 +24,7 @@ import { sourceStatusBadge } from "../kit/status"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import { shownTabsOf, sourceOf } from "./update"
-import { integrationActions, sourceActions } from "./view-actions"
+import { integrationActions, lockedSourceActions, sourceActions } from "./view-actions"
 import { overviewTab } from "./view-overview"
 import { settingsTab, setupTab } from "./view-tabs"
 import { typography } from "@maple/views/ui/typography"
@@ -114,14 +114,20 @@ const connectionPart = (
  */
 const headerActions = (h: H, model: Model, source: V2Source, timeZone: string): Html | undefined => {
 	if (source.is_default) return undefined
-	if (hasToken(source))
-		return canManage(model) ? detailActions(h, sourceActions(h, model, source)) : undefined
+	// Until the grants answer, nothing shows: a locked row that then unlocks would flash.
+	const isLocked = model.grants !== null && !canManage(model)
+	if (hasToken(source)) {
+		if (canManage(model)) return detailActions(h, sourceActions(h, model, source))
+		return isLocked ? detailActions(h, lockedSourceActions(h, source, true)) : undefined
+	}
 	const connection =
 		model.connection !== null && canManageIntegrations(model.connection)
 			? connectionPart(h, model, source, timeZone, "actions")
 			: null
 	if (canManage(model)) return detailActions(h, integrationActions(h, model, source, connection))
-	return connection === null ? undefined : detailActions(h, [connection])
+	const own = isLocked ? lockedSourceActions(h, source, false) : []
+	const all = connection === null ? own : [...own, connection]
+	return all.length === 0 ? undefined : detailActions(h, all)
 }
 
 const found = (h: H, model: Model, source: V2Source, inputs: PageViewInputs, nowMs: number): Html => {

@@ -10,7 +10,7 @@ import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { badge } from "@maple/views/ui/display"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
-import type { MenuEntry } from "@maple/views/ui/menu-view"
+import type { MenuEntry, MenuItemEntry } from "@maple/views/ui/menu-view"
 import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
@@ -31,7 +31,8 @@ import {
 	pageStatus,
 } from "../shared/derive"
 import { Message } from "./message"
-import { canBreakGlass, canManage, canPostIncidents, type Model } from "./model"
+import { canBreakGlass, canManage, type Model } from "./model"
+import { denialReason, gatedControl } from "../../kit/session-grants"
 import { componentsOf, incidentsOf, monitorsOf, pageOf, statusReadsReady } from "./reads"
 import { type EditorTab, PAGE_MENU_ID, resolveView } from "./update"
 import { livePage } from "./view-canvas"
@@ -85,34 +86,39 @@ const stateLine = (h: H, model: Model, page: V2StatusPage, timeZone: string): Ht
 /** An internal page has no public address to post to, so it has no break-glass token. */
 const menuEntries = (model: Model, page: V2StatusPage): ReadonlyArray<MenuEntry> => {
 	const hasBreakGlass = canBreakGlass(model) && page.visibility !== "internal"
+	const remove: MenuItemEntry = {
+		_tag: "Item",
+		value: "delete",
+		label: "Delete",
+		icon: "TrashIcon",
+		variant: "destructive",
+	}
+	const lockedRemove: MenuItemEntry = {
+		...remove,
+		isDisabled: true,
+		tooltip: { content: [denialReason("status_pages:edit")] },
+	}
 	return [
 		...(hasBreakGlass
 			? ([{ _tag: "Item", value: "break-glass", label: "Break-glass token", icon: "KeyIcon" }] as const)
 			: []),
-		...(canManage(model)
-			? ([
-					...(hasBreakGlass ? ([{ _tag: "Separator" }] as const) : []),
-					{
-						_tag: "Item",
-						value: "delete",
-						label: "Delete",
-						icon: "TrashIcon",
-						variant: "destructive",
-					},
-				] as const)
-			: []),
+		...(hasBreakGlass ? ([{ _tag: "Separator" }] as const) : []),
+		canManage(model) ? remove : lockedRemove,
 	]
 }
 
 const publishButton = (h: H, model: Model): Html =>
-	button(
-		h,
-		{
-			size: "sm",
-			isLoading: model.isPublishing,
-			attributes: [h.OnClick(Message.ClickedPublish())],
-		},
-		[icon(h, "PaperPlaneIcon"), "Publish page"],
+	gatedControl(h, model, "status_pages:edit", (isDisabled) =>
+		button(
+			h,
+			{
+				size: "sm",
+				isLoading: model.isPublishing,
+				isDisabled,
+				attributes: isDisabled ? [] : [h.OnClick(Message.ClickedPublish())],
+			},
+			[icon(h, "PaperPlaneIcon"), "Publish page"],
+		),
 	)
 
 /** The public page in a new tab; disabled, with the reason on hover, while it has no address. */
@@ -149,32 +155,32 @@ const openPageButton = (h: H, model: Model, page: V2StatusPage): Html => {
 const headerActions = (h: H, model: Model, page: V2StatusPage): Html => {
 	const tab = resolveView(model.search).tab
 	if (tab === "incidents" || tab === "maintenance")
-		return detailActions(
-			h,
-			canPostIncidents(model)
-				? [
-						button(
-							h,
-							{
-								size: "sm",
-								attributes: [
+		return detailActions(h, [
+			gatedControl(h, model, "status_page_incidents:post", (isDisabled) =>
+				button(
+					h,
+					{
+						size: "sm",
+						isDisabled,
+						attributes: isDisabled
+							? []
+							: [
 									h.OnClick(
 										Message.ClickedNewIncident({
 											kind: tab === "incidents" ? "incident" : "maintenance",
 										}),
 									),
 								],
-							},
-							tab === "incidents"
-								? [icon(h, "PlusIcon"), "Declare incident"]
-								: [icon(h, "CalendarIcon"), "Schedule maintenance"],
-						),
-					]
-				: [],
-		)
+					},
+					tab === "incidents"
+						? [icon(h, "PlusIcon"), "Declare incident"]
+						: [icon(h, "CalendarIcon"), "Schedule maintenance"],
+				),
+			),
+		])
 	const entries = menuEntries(model, page)
 	return detailActions(h, [
-		...(canManage(model) && page.draft ? [publishButton(h, model)] : []),
+		...(page.draft ? [publishButton(h, model)] : []),
 		openPageButton(h, model, page),
 		...(entries.length === 0
 			? []

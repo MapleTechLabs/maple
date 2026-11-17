@@ -2,6 +2,8 @@ import { PrReviewRepositoryConfig } from "@maple/domain/http"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
+import { lockedControl } from "@maple/views/ui/locked-control"
+import { denialReason } from "../../kit/session-grants"
 import { field, fieldDescription, fieldLabel } from "@maple/views/ui/field"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import type * as Select from "@maple/views/ui/select"
@@ -138,6 +140,16 @@ const limitPlaceholder = (model: Model, value: number | undefined) =>
 const footer = (h: H, model: Model, canEdit: boolean): ReadonlyArray<Html> => {
 	const problem = validate(model.state)
 	const isDirty = !sameState(model.state, model.saved)
+	const save = (isLocked: boolean): Html =>
+		button(
+			h,
+			{
+				isLoading: model.isSaving,
+				isDisabled: isLocked || !isDirty || problem !== null,
+				attributes: [h.OnClick(Message.ClickedSave())],
+			},
+			["Save"],
+		)
 	return [
 		...(model.error !== null
 			? [
@@ -149,14 +161,6 @@ const footer = (h: H, model: Model, canEdit: boolean): ReadonlyArray<Html> => {
 				? [typography(h, { size: "xs", tone: "muted", as: "p" }, [problem])]
 				: []),
 		hstack(h, { gap: "3", align: "center", justify: "end", className: "border-t pt-4" }, [
-			...(canEdit
-				? []
-				: [
-						h.p(
-							[h.Class("mr-auto text-xs text-muted-foreground")],
-							["Only organization admins can change these settings."],
-						),
-					]),
 			button(
 				h,
 				{
@@ -166,15 +170,7 @@ const footer = (h: H, model: Model, canEdit: boolean): ReadonlyArray<Html> => {
 				},
 				["Reset"],
 			),
-			button(
-				h,
-				{
-					isLoading: model.isSaving,
-					isDisabled: !canEdit || !isDirty || problem !== null,
-					attributes: [h.OnClick(Message.ClickedSave())],
-				},
-				["Save"],
-			),
+			canEdit ? save(false) : lockedControl(h, denialReason("code_review:configure"), save(true)),
 		]),
 	]
 }

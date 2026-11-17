@@ -36,6 +36,7 @@ import { settingsPagePreview } from "./view-canvas"
 import { pageUrlOf } from "./update-domain"
 import { Message } from "./message"
 import { canBreakGlass, canManage, type Model } from "./model"
+import { gatedControl } from "../../kit/session-grants"
 import { isSettingsDirty, settingsOf } from "./update-settings"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { grid } from "@maple/views/ui/grid"
@@ -297,17 +298,24 @@ const jsonSection = (h: H, model: Model): Html => {
 	])
 }
 
-const deleteSection = (h: H): Html =>
+const deleteSection = (h: H, model: Model): Html =>
 	dangerZone(h, { id: "status-page-settings-danger" }, [
 		dangerRow(h, {
 			title: "Delete status page",
 			description: [
 				"Takes the page offline and deletes its components and incidents. This cannot be undone.",
 			],
-			action: button(
-				h,
-				{ variant: "destructive", size: "sm", attributes: [h.OnClick(Message.ClickedDeletePage())] },
-				["Delete status page"],
+			action: gatedControl(h, model, "status_pages:edit", (isDisabled) =>
+				button(
+					h,
+					{
+						variant: "destructive",
+						size: "sm",
+						isDisabled,
+						attributes: [h.OnClick(Message.ClickedDeletePage())],
+					},
+					["Delete status page"],
+				),
 			),
 		}),
 	])
@@ -349,7 +357,7 @@ const sectionBody = (
 				// Break-glass posts at the public address, which an internal page does not answer on.
 				...(page.visibility === "internal" ? [] : [breakGlassSection(h, model, page)]),
 				jsonSection(h, model),
-				...(canManage(model) ? [deleteSection(h)] : []),
+				deleteSection(h, model),
 			]
 	}
 }

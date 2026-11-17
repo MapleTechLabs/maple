@@ -8,7 +8,8 @@ import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { failureKey } from "@maple/views/data/load-failure"
 import type * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
-import { button, linkButton } from "@maple/views/ui/button"
+import { button } from "@maple/views/ui/button"
+import { lockedControl } from "@maple/views/ui/locked-control"
 import {
 	empty,
 	emptyContent,
@@ -37,7 +38,9 @@ import { budgetFormHref } from "./kit/budget-format"
 import { Message } from "./message"
 import { LONG_RANGE_MAX_SECONDS } from "../../route/session-time-range"
 import { keyMark } from "./marks"
-import { canManageBudgets, canManageSources, cannotManageSources, sourcesOf, type Model } from "./model"
+import { canManageSources, cannotManageSources, sourcesOf, type Model } from "./model"
+import { denialReason, gatedControl } from "../kit/session-grants"
+import { gatedLinkButton } from "../kit/gated-controls"
 import { DEFAULT_PRESET } from "./update"
 import { addSourceDialog, removeSourceDialog } from "./view-add-source"
 import { dailyChart } from "./view-chart"
@@ -49,6 +52,21 @@ import { breakdownTable } from "./view-table"
 const DAY_SECONDS = 24 * 60 * 60
 
 type H = HtmlBuilder<Message>
+
+/** The on-ramp's Add a cost source: locked with who can when the viewer may not add one. */
+const addSourceButton = (h: H, options: Readonly<{ canManage: boolean; isBusy: boolean }>): Html => {
+	const control = button(
+		h,
+		{
+			variant: "default",
+			size: "sm",
+			isDisabled: !options.canManage || options.isBusy,
+			attributes: [h.OnClick(Message.ClickedAddSource())],
+		},
+		["Add a cost source"],
+	)
+	return options.canManage ? control : lockedControl(h, denialReason("integrations:manage"), control)
+}
 
 /** No cost source: how to get one. Never a sample of what the page would show. */
 const onRamp = (
@@ -79,27 +97,9 @@ const onRamp = (
 				],
 				"max-w-md",
 			),
-			...(options.canManage
-				? [
-						emptyContent(
-							h,
-							[
-								emptyActions(h, [
-									button(
-										h,
-										{
-											variant: "default",
-											size: "sm",
-											isDisabled: options.isBusy,
-											attributes: [h.OnClick(Message.ClickedAddSource())],
-										},
-										["Add a cost source"],
-									),
-								]),
-							],
-							"max-w-md",
-						),
-					]
+			// Shown once the grants are read: enabled for who may add one, else locked with who can.
+			...(options.canManage || options.cannotManage
+				? [emptyContent(h, [emptyActions(h, [addSourceButton(h, options)])], "max-w-md")]
 				: []),
 		],
 		emptyFrameClass("dashed"),
@@ -277,10 +277,15 @@ const body = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> =>
 		onData: ({ sources }) => {
 			const isBusy = model.sourceWrite !== "Idle"
 			const canManage = canManageSources(model)
+			const cannotManage = cannotManageSources(model)
 			if (sources.length === 0) {
-				return [onRamp(h, { canManage, cannotManage: cannotManageSources(model), isBusy })]
+				return [onRamp(h, { canManage, cannotManage, isBusy })]
 			}
-			const section = sourcesSection(h, sources, model.nowMs, timeZone, { isBusy, canManage })
+			const section = sourcesSection(h, sources, model.nowMs, timeZone, {
+				isBusy,
+				showsActions: canManage || cannotManage,
+				lockReason: cannotManage ? denialReason("integrations:manage") : null,
+			})
 			return hasSynced(sources) ? [...content(h, model), section] : [firstSync(h, sources), section]
 		},
 	})
@@ -323,10 +328,12 @@ const headerActions = (h: H, model: Model): Html | undefined => {
 	const time = timeActions(h, model)
 	const hasFilters = activeFilters(model.search).length > 0
 	const buttons = [
-		...(canManageBudgets(model) && showsData(model)
+		...(model.grants !== null && showsData(model)
 			? [
-					linkButton(
+					gatedLinkButton(
 						h,
+						{ grants: model.grants },
+						"alerts:manage",
 						{ variant: "outline", size: "sm", href: budgetFormHref(budgetSearch(model)) },
 						[
 							icon(h, "GaugeIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
@@ -335,20 +342,24 @@ const headerActions = (h: H, model: Model): Html | undefined => {
 					),
 				]
 			: []),
-		...(canManageSources(model) && sourcesOf(model).length > 0
+		...(model.grants !== null && sourcesOf(model).length > 0
 			? [
-					button(
-						h,
-						{
-							variant: "outline",
-							size: "sm",
-							isDisabled: model.sourceWrite !== "Idle",
-							attributes: [h.OnClick(Message.ClickedAddSource())],
-						},
-						[
-							icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
-							"Add source",
-						],
+					gatedControl(h, { grants: model.grants }, "integrations:manage", (isLocked) =>
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "sm",
+								isDisabled: isLocked || model.sourceWrite !== "Idle",
+								attributes: [h.OnClick(Message.ClickedAddSource())],
+							},
+							[
+								icon(h, "PlusIcon", {
+									attributes: [h.DataAttribute("icon", "inline-start")],
+								}),
+								"Add source",
+							],
+						),
 					),
 				]
 			: []),

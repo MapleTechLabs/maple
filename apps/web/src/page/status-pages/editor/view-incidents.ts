@@ -28,7 +28,8 @@ import { relativeTime } from "../../kit/relative-time"
 import { sectionHeading } from "../../kit/section-heading"
 import { IMPACT_LABEL, IMPACT_TONE, isOpenIncident } from "../shared/derive"
 import { Message } from "./message"
-import { canPostIncidents, type Model } from "./model"
+import type { Model } from "./model"
+import { gatedControl } from "../../kit/session-grants"
 import { componentsOf, incidentsOf } from "./reads"
 import { type TimeInputs, windowLine } from "./view-panel"
 
@@ -233,27 +234,26 @@ const endsCell = (
 			typography(h, { tone: "warning", className: "whitespace-nowrap" }, [
 				`${durationLabel(overMs)} over`,
 			]),
-			...(canPostIncidents(model)
-				? [
-						button(
-							h,
-							{
-								variant: "outline",
-								size: "xs",
-								attributes: [
-									h.OnClick(
-										Message.ClickedPostUpdate({
-											incidentId: incident.id,
-											isResolving: true,
-										}),
-										{ propagation: "Stop" },
-									),
-								],
-							},
-							["Complete"],
-						),
-					]
-				: []),
+			gatedControl(h, model, "status_page_incidents:post", (isDisabled) =>
+				button(
+					h,
+					{
+						variant: "outline",
+						size: "xs",
+						isDisabled,
+						attributes: [
+							h.OnClick(
+								Message.ClickedPostUpdate({
+									incidentId: incident.id,
+									isResolving: true,
+								}),
+								{ propagation: "Stop" },
+							),
+						],
+					},
+					["Complete"],
+				),
+			),
 		]),
 	]
 }

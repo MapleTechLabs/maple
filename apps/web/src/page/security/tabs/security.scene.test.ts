@@ -485,12 +485,13 @@ describe("security tabs", () => {
 	test.each([
 		["member", MEMBER],
 		["engineer", Policy.grantsOf(["org:engineer"])],
-	])("a %s sees no Add target or Start run control", (_role, grants) => {
+	])("a %s sees Add target and Start run locked", (_role, grants) => {
 		const member = pageUpdate(loaded(), Message.CompletedReadGrants({ grants })).model
 		scene(
 			{ update: pageUpdate, view },
 			given(member),
-			expectView(role("button", { name: "Add target" })).not.toExist(),
+			expectView(role("button", { name: "Add target" })).toBeDisabled(),
+			expectView(role("group", { name: Policy.denialFor("security_audit:run").message })).toExist(),
 		)
 		const runsTab = routeChanged(
 			member,
@@ -500,7 +501,7 @@ describe("security tabs", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(runsTab),
-			expectView(role("button", { name: "Start run" })).not.toExist(),
+			expectView(role("button", { name: "Start run" })).toBeDisabled(),
 			expectView(role("link", { name: "Runs" })).toExist(),
 		)
 	})
@@ -880,13 +881,13 @@ describe("spend and models", () => {
 		])
 	})
 
-	test("a member gets no Spend & models control", () => {
+	test("a member sees Spend & models and Edit limit locked", () => {
 		const member = pageUpdate(withSettings(), Message.CompletedReadGrants({ grants: MEMBER })).model
 		scene(
 			{ update: pageUpdate, view },
 			given(member),
-			expectView(role("button", { name: "Spend & models" })).not.toExist(),
-			expectView(text("Edit limit")).not.toExist(),
+			expectView(role("button", { name: "Spend & models" })).toBeDisabled(),
+			expectView(role("button", { name: "Edit limit" })).toBeDisabled(),
 		)
 	})
 })

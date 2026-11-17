@@ -432,7 +432,7 @@ describe("SLO page", () => {
 		)
 	})
 
-	test("a member sees the SLO without edit or delete, and the switch only shows the state", () => {
+	test("a member sees edit, delete and the alerting switch locked, with who can use them", () => {
 		const member = pageUpdate(
 			withStatus("healthy"),
 			Message.CompletedFetchSession({ orgId: ORG, grants: MEMBER }),
@@ -442,7 +442,9 @@ describe("SLO page", () => {
 			given(member),
 			themeResolved(),
 			expectView(role("link", { name: "Edit" })).not.toExist(),
-			expectView(role("button", { name: "Delete" })).not.toExist(),
+			expectView(role("button", { name: "Edit" })).toBeDisabled(),
+			expectView(role("button", { name: "Delete" })).toBeDisabled(),
+			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
 			expectView(within(alertingPanel, role("switch", { name: "Burn-rate alerting" }))).toHaveAttr(
 				"aria-disabled",
 				"true",

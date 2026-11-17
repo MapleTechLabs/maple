@@ -130,7 +130,7 @@ describe("alerts hub, Silences tab", () => {
 		)
 	})
 
-	test("ending a silence sends it once and a member cannot end one", () => {
+	test("ending a silence sends it once and a member sees End now locked", () => {
 		const model = onSilences(ENGINEER, [silence({ startMin: -10, endMin: 50 })])
 		const step = pageUpdate(
 			model,
@@ -147,8 +147,9 @@ describe("alerts hub, Silences tab", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(onSilences(MEMBER, [silence({ startMin: -10, endMin: 50 })])),
-			expectView(role("button", { name: "End now" })).not.toExist(),
-			expectView(role("button", { name: "New silence" })).not.toExist(),
+			expectView(role("button", { name: "End now" })).toBeDisabled(),
+			expectView(role("button", { name: "New silence" })).toBeDisabled(),
+			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
 		)
 	})
 

@@ -201,7 +201,7 @@ describe("alerts hub, Uptime tab", () => {
 		)
 	})
 
-	test("a member sees monitors but no way to create, edit, pause or delete them", () => {
+	test("a member sees monitors with create, edit, pause and delete locked", () => {
 		const asMember = (model: Model) =>
 			pageUpdate(model, Message.CompletedFetchSession({ orgId: ORG, grants: MEMBER })).model
 		scene(
@@ -209,11 +209,14 @@ describe("alerts hub, Uptime tab", () => {
 			given(asMember(withMonitors([]))),
 			expectView(text("No uptime checks yet")).toExist(),
 			expectView(role("link", { name: "New uptime check" })).not.toExist(),
+			expectView(role("button", { name: "New uptime check" })).toBeDisabled(),
+			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given(asMember(withMonitors(THREE))),
-			expectView(role("button", { name: `Actions for ${httpMonitor().name}` })).not.toExist(),
+			// The row menu stays, its items disabled with who can use them.
+			expectView(role("button", { name: `Actions for ${httpMonitor().name}` })).toExist(),
 		)
 	})
 

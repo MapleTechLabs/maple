@@ -2099,7 +2099,7 @@ describe("cost page", () => {
 		expect(previousPeriodOf(aws, window, 30, {})).toBe("synced")
 	})
 
-	test("a member who may not manage integrations is offered no source action the API would refuse", () => {
+	test("a member who may not manage integrations sees every source action locked, with who can", () => {
 		const openRouter = source({
 			id: "0190f2b3-0000-7000-8000-00000000c060",
 			provider: "openrouter",
@@ -2113,10 +2113,13 @@ describe("cost page", () => {
 			resolveTheme,
 			// The sources still show how their sync is doing.
 			expectView(text("user_2openrouterAccount")).toExist(),
-			expectView(role("button", { name: "Add source" })).not.toExist(),
-			expectView(role("button", { name: /^Replace/ })).not.toExist(),
-			expectView(role("button", { name: /^Remove/ })).not.toExist(),
+			expectView(role("button", { name: "Add source" })).toBeDisabled(),
+			expectView(role("button", { name: /^Replace/ })).toBeDisabled(),
+			expectView(role("button", { name: /^Remove/ })).toBeDisabled(),
 			expectView(role("link", { name: /^Manage/ })).not.toExist(),
+			expectView(
+				role("group", { name: "Only org admins and engineers can manage integrations." }),
+			).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
@@ -2124,7 +2127,7 @@ describe("cost page", () => {
 			resolveTheme,
 			expectView(text("No cost source yet")).toExist(),
 			expectView(text("Only organization admins and engineers can add a cost source.")).toExist(),
-			expectView(role("button", { name: "Add a cost source" })).not.toExist(),
+			expectView(role("button", { name: "Add a cost source" })).toBeDisabled(),
 		)
 		// Before the viewer's roles are known the page neither offers the button nor says who can add.
 		scene(
