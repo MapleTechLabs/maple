@@ -187,6 +187,25 @@ describe("ApiKeysService.roll", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("holds the ceiling when time passes between a caller's check and the insert", () => {
+		const testDb = createTestDb(trackedDbs)
+
+		return Effect.gen(function* () {
+			const svc = yield* ApiKeysService
+			// The caller checked a 60 s lifetime against a key with exactly 60 s left.
+			const ceiling = (yield* Clock.currentTimeMillis) + 60_000
+			yield* TestClock.adjust("5 seconds")
+			const created = yield* svc.create(asOrgId("org_a"), asUserId("user_a"), {
+				name: "boundary",
+				expiresInSeconds: 60,
+				expiresAtCeiling: ceiling,
+			})
+			assert.strictEqual(created.expiresAt, ceiling)
+			const stored = yield* svc.get(asOrgId("org_a"), created.id)
+			assert.strictEqual(stored.expiresAt, ceiling)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("refuses to roll an MCP OAuth access key or a device key", () => {
 		const testDb = createTestDb(trackedDbs)
 
