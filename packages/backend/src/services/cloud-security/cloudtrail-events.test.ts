@@ -37,6 +37,43 @@ describe("cloudTrailAuditEvent", () => {
 		expect(event?.occurredAtMs).toBe(at.getTime())
 	})
 
+	it("reads a failed MFA or role-switch step as a failure, though it has no error code", () => {
+		for (const eventName of ["CheckMfa", "SwitchRole"]) {
+			const step = mapped({
+				eventSource: "signin.amazonaws.com",
+				eventName,
+				userIdentity: { type: "IAMUser", userName: "bob" },
+				responseElements: { [eventName]: "Failure" },
+			})
+			expect(step, eventName).toMatchObject({ category: "authentication", outcome: "failure" })
+		}
+	})
+
+	it("files network exposure changes as configuration, and an ACL change as a permission", () => {
+		const category = (eventSource: string, eventName: string) =>
+			mapped({ eventSource, eventName, userIdentity: { type: "IAMUser", userName: "bob" } })?.category
+		expect(category("ec2.amazonaws.com", "AuthorizeSecurityGroupIngress")).toBe("configuration")
+		expect(category("ec2.amazonaws.com", "CreateNetworkAclEntry")).toBe("configuration")
+		expect(category("ec2.amazonaws.com", "DeleteFlowLogs")).toBe("configuration")
+		expect(category("s3.amazonaws.com", "PutBucketAcl")).toBe("permission")
+		expect(category("ec2.amazonaws.com", "RunInstances")).toBe("resource")
+	})
+
+	it("reads a federated session named by an email as the person, and a workload's as a service", () => {
+		const actor = (session: string) =>
+			mapped({
+				eventSource: "s3.amazonaws.com",
+				eventName: "DeleteBucket",
+				userIdentity: {
+					type: "AssumedRole",
+					arn: `arn:aws:sts::111111111111:assumed-role/OktaAdmin/${session}`,
+					sessionContext: { sessionIssuer: { userName: "OktaAdmin" } },
+				},
+			})?.actor
+		expect(actor("dana@example.com")).toMatchObject({ type: "user", name: "dana@example.com" })
+		expect(actor("i-0abc123")).toMatchObject({ type: "service", name: "i-0abc123" })
+	})
+
 	it("reads a failed console sign-in as a failure, and a refused call as denied", () => {
 		const login = mapped({
 			eventSource: "signin.amazonaws.com",
