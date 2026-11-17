@@ -9,7 +9,8 @@ import { icon } from "@maple/views/ui/icon"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { failureMessage } from "@maple/views/data/load-failure"
-import { adminOnlyNote, settingsSection } from "../../kit/settings-section"
+import { sectionHeading } from "../../kit/section-heading"
+import { adminOnlyNote } from "../../kit/settings-section"
 import { statusPageViewHref } from "../shared/commands"
 import { textField } from "../shared/fields"
 import { Message } from "./message"
@@ -17,7 +18,7 @@ import { canChangeAccess, type Model } from "./model"
 import { passwordIssue } from "./update-access"
 import { customDomainOf } from "./update-domain"
 
-// The Settings tab's Access section: public, behind a password, or members only.
+// Basic settings' access group: public, behind a password, or members only.
 
 type H = HtmlBuilder<Message>
 
@@ -153,16 +154,18 @@ const passwordRow = (h: H, model: Model, page: V2StatusPage): Html => {
 	])
 }
 
-export const accessSection = (h: H, model: Model, page: V2StatusPage): Html =>
-	settingsSection(
-		h,
-		{
-			id: "status-page-settings-access",
-			title: "Who can view",
-			description: ["Public, behind a password, or only for members of this organization."],
-		},
+/** Who can view the page, a group inside Basic settings. It applies at once, not with the save bar. */
+export const accessGroup = (h: H, model: Model, page: V2StatusPage): Html =>
+	h.div(
+		[h.Role("group"), h.AriaLabelledBy("status-page-settings-access"), h.Class("mt-6 border-t pt-6")],
 		[
 			vstack(h, { gap: "4" }, [
+				vstack(h, { gap: "1" }, [
+					sectionHeading(h, { id: "status-page-settings-access", title: "Who can view", as: "h3" }),
+					typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" }, [
+						"Public, behind a password, or only for members of this organization. Changes apply at once.",
+					]),
+				]),
 				...(canChangeAccess(model)
 					? []
 					: [adminOnlyNote(h, ["Only org admins can change who can view a status page."])]),

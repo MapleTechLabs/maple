@@ -24,7 +24,7 @@ import { foldLabToasts, initLabToasts } from "./toasts"
 
 export type ShellLabPage<PageModel, PageMessage extends { _tag: string }, PageFlags> = Readonly<{
 	Model: Schema.Codec<PageModel, unknown>
-	Message: Schema.Codec<PageMessage, unknown>
+	Message: Schema.Codec<PageMessage, unknown, unknown, unknown>
 	Flags: Schema.Codec<PageFlags, unknown>
 	flags: Effect.Effect<PageFlags, never, Resources>
 	init: (flags: PageFlags) => Update.Return<PageModel, PageMessage, Resources>

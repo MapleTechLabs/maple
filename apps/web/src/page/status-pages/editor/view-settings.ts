@@ -20,7 +20,7 @@ import {
 	settingsFormOf,
 	settingsIssues,
 } from "../shared/form"
-import { accessSection } from "./view-access"
+import { accessGroup } from "./view-access"
 import { appearanceSection, brandingSection, previewPanel } from "./view-appearance"
 import { customDomainSection } from "./view-domain"
 import { pageUrlOf } from "./update-domain"
@@ -40,7 +40,7 @@ const AUTO_INCIDENT_ENTRIES = [
 	{ value: "publish", label: "Open and publish an incident" },
 ]
 
-const pageSection = (h: H, model: Model, form: SettingsForm): Html => {
+const pageSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm): Html => {
 	const issues = settingsIssues(form)
 	const isReadOnly = !canManage(model)
 	return settingsSection(
@@ -48,7 +48,9 @@ const pageSection = (h: H, model: Model, form: SettingsForm): Html => {
 		{
 			id: "status-page-settings-page",
 			title: "Basic settings",
-			description: ["The page's name, address and links, and what happens when a monitor goes down."],
+			description: [
+				"The page's name, address and links, who can view it, and what happens when a monitor goes down.",
+			],
 		},
 		[
 			h.div(
@@ -131,6 +133,7 @@ const pageSection = (h: H, model: Model, form: SettingsForm): Html => {
 					}),
 				],
 			),
+			accessGroup(h, model, page),
 		],
 	)
 }
@@ -308,9 +311,8 @@ const formView = (
 
 export const settingsView = (h: H, model: Model, page: V2StatusPage): Html =>
 	formView(h, model, page, "settings", (form) => [
-		pageSection(h, model, form),
+		pageSection(h, model, page, form),
 		customDomainSection(h, model, page),
-		accessSection(h, model, page),
 		// Break-glass posts at the public address, which an internal page does not answer on.
 		...(page.visibility === "internal" ? [] : [breakGlassSection(h, model, page)]),
 		...(canManage(model) ? [deleteSection(h)] : []),

@@ -468,6 +468,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/status-page-settings",
+		title: "Status page settings",
+		description:
+			"The status page editor's Settings tab: Basic settings with Who can view, custom domain, break-glass token and delete (`?state=public|password|set-password|internal|member`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/condition-builder",
 		title: "Condition builder",
 		description:
