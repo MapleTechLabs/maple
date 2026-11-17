@@ -142,9 +142,9 @@ const metaCell = (h: H, text: string | null): Html =>
 
 /** The database engine's logo, named for screen readers and on hover. */
 const engineIcon = (h: H, kind: string): Html => {
-	const label = kind === "postgresql" ? "Postgres" : "MySQL"
+	const label = kind === "postgresql" ? "Postgres" : "MySQL / Vitess"
 	return hstack(h, { as: "span", inline: true, shrink: false, attributes: [h.Title(label)] }, [
-		icon(h, kind === "postgresql" ? "PostgresIcon" : "MysqlDolphinIcon", {
+		icon(h, kind === "postgresql" ? "PostgresIcon" : "VitessIcon", {
 			size: 14,
 			attributes: [h.Role("img"), h.AriaLabel(label)],
 		}),
