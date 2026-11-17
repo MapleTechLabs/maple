@@ -56,8 +56,14 @@ const roleText = (h: H, role: string, isInset: boolean): Html =>
 const roleHead = (h: H, isInset: boolean): Html =>
 	tableHead(h, [h.span([h.Class(cn(isInset && "px-2.5"))], ["Role"])], COLUMN.role)
 
-/** One set of column widths for the members and invitations tables, on a fixed layout. */
-const COLUMN = { role: "w-36", date: "w-36", actions: "w-12" } as const
+/** One set of column widths for the members and invitations tables, on a fixed layout. On a phone
+ *  the date column collapses to nothing (not `hidden`: the confirm strip's colspan counts it) and
+ *  the role column narrows, so the name keeps the spare width. */
+const COLUMN = {
+	role: "w-34 sm:w-36",
+	date: "w-0 overflow-hidden max-sm:px-0 sm:w-36",
+	actions: "w-12",
+} as const
 
 /** Without the actions column the date column ends the row, so it sits flush right. */
 const dateAlign = (hasActions: boolean): string | undefined => (hasActions ? undefined : "text-right")
@@ -80,7 +86,7 @@ const skeletonRow = (h: H, hasActions: boolean, index: number): Html =>
 				]),
 			]),
 			tableCell(h, [skeleton(h, "h-3 w-16")]),
-			tableCell(h, [skeleton(h, cn("h-3 w-20", !hasActions && "ml-auto"))]),
+			tableCell(h, [skeleton(h, cn("h-3 w-20", !hasActions && "ml-auto"))], COLUMN.date),
 			...(hasActions ? [tableCell(h, [])] : []),
 		],
 		undefined,
@@ -160,7 +166,7 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 						label: formatDateInTimezone(member.createdAtMs, { timeZone: inputs.timeZone }),
 					}),
 				],
-				cn(typographyClass({ size: "xs", tone: "muted" }), dateAlign(canManage(model))),
+				cn(typographyClass({ size: "xs", tone: "muted" }), COLUMN.date, dateAlign(canManage(model))),
 			),
 			...(canManage(model)
 				? [
@@ -327,7 +333,7 @@ const invitationRow = (h: H, model: Model, invitation: InvitationRow, inputs: In
 						label: formatDateInTimezone(invitation.createdAtMs, { timeZone: inputs.timeZone }),
 					}),
 				],
-				cn(typographyClass({ size: "xs", tone: "muted" }), dateAlign(canManage(model))),
+				cn(typographyClass({ size: "xs", tone: "muted" }), COLUMN.date, dateAlign(canManage(model))),
 			),
 			...(canManage(model)
 				? [
