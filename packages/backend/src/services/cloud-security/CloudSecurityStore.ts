@@ -41,6 +41,8 @@ export interface CloudFindingWrite {
 	readonly firstSeenAt: number
 	readonly lastSeenAt: number
 	readonly providerUpdatedAt: number
+	/** When Maple first saw it closed; absent on a closed finding means now. */
+	readonly closedAt?: number | null
 	readonly detail: Record<string, unknown> | null
 }
 
@@ -241,10 +243,19 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 				rows: ReadonlyArray<CloudFindingWrite>,
 				syncedAt: number,
 			) {
-				const closed = yield* storedClosed(rows, syncedAt)
+				// One row per finding, its newest version: Postgres refuses an upsert that names a key twice.
+				const newest = new Map<string, CloudFindingWrite>()
+				Arr.forEach(rows, (row) => {
+					const key = `${row.orgId}\n${row.connectionId}\n${row.region}\n${row.source}\n${row.findingId}`
+					const seen = newest.get(key)
+					if (seen === undefined || seen.providerUpdatedAt <= row.providerUpdatedAt)
+						newest.set(key, row)
+				})
+				const unique = Arr.fromIterable(newest.values())
+				const closed = yield* storedClosed(unique, syncedAt)
 				const kept = Arr.appendAll(
 					Arr.map(
-						Arr.filter(rows, (row) => row.status === "active"),
+						Arr.filter(unique, (row) => row.status === "active"),
 						(row) => ({ ...row, closedAt: null }),
 					),
 					closed,
@@ -259,7 +270,15 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 						dbExecute((db) =>
 							db.run(
 								PG.insertInto(CloudSecurityFindings)
-									.values(Arr.map(chunk, (row) => ({ ...row, syncedAt })))
+									.values(
+										// A closed finding without a close time closed now, as far as Maple knows.
+										Arr.map(chunk, (row) => ({
+											...row,
+											closedAt:
+												row.closedAt ?? (row.status === "active" ? null : syncedAt),
+											syncedAt,
+										})),
+									)
 									.onConflictDoUpdate({
 										target: ["orgId", "connectionId", "region", "source", "findingId"],
 										// Every column from the new version but closed_at: the first time Maple saw the

@@ -1,7 +1,7 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "b1e5dc6813147a0762981a0725d9851ba54770dd750ff8861b46420ea03e1acc",
+	"id": "7e60170d4790d4476090fa7b8b69322e0dbe50fa239d1b5273ddc53682cd8db6",
 	"prevIds": [
 		"633dfcaec2d9da67578a0b6b77229d7b3d47443e70af34face1eee2e876e7a8d"
 	],
@@ -21031,6 +21031,18 @@
 		{
 			"kind": "index",
 			"table": "aws_connections",
+			"name": "aws_connections_org_id_idx",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "aws_connections",
 			"name": "aws_connections_source_idx",
 			"unique": false,
 			"method": "btree",
@@ -23478,12 +23490,14 @@
 		{
 			"kind": "foreign_key",
 			"table": "cloud_security_findings",
-			"name": "cloud_security_findings_connection_id_aws_connections_id_fk",
+			"name": "cloud_security_findings_ujhY2Pd3JWVy_fk",
 			"columns": [
+				"org_id",
 				"connection_id"
 			],
 			"foreignTable": "aws_connections",
 			"foreignColumns": [
+				"org_id",
 				"id"
 			],
 			"onDelete": "CASCADE",
@@ -23492,12 +23506,14 @@
 		{
 			"kind": "foreign_key",
 			"table": "cloud_security_service_states",
-			"name": "cloud_security_service_states_7oH82X5J7LvC_fk",
+			"name": "cloud_security_service_states_jHft8OtcW6A2_fk",
 			"columns": [
+				"org_id",
 				"connection_id"
 			],
 			"foreignTable": "aws_connections",
 			"foreignColumns": [
+				"org_id",
 				"id"
 			],
 			"onDelete": "CASCADE",
