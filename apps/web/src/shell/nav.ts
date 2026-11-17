@@ -51,6 +51,8 @@ export interface NavItem {
 	readonly badge?: string
 	/** Routes with no row of their own that this row stands in for (`/anomalies` under Alerts). */
 	readonly alsoActive?: ReadonlyArray<string>
+	/** Sets the row apart from the ones above it with a small gap, no heading. */
+	readonly startsGroup?: boolean
 }
 
 export interface NavGroup {
@@ -233,7 +235,14 @@ export const navGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 				? [{ title: "Security", href: "/security", icon: "ShieldCheckIcon", badge: "Beta" } as const]
 				: []),
 			...(flags.statusPages
-				? [{ title: "Status pages", href: "/status-pages", icon: "WindowChartLineIcon" } as const]
+				? [
+						{
+							title: "Status pages",
+							href: "/status-pages",
+							icon: "WindowChartLineIcon",
+							startsGroup: true,
+						} as const,
+					]
 				: []),
 		],
 	},
