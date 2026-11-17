@@ -77,11 +77,8 @@ const typeItem =
 					justify: "between",
 					as: "span",
 					className: "w-full",
-					attributes: [
-						...(dataPoints === undefined
-							? []
-							: [h.Title(`${formatNumber(dataPoints)} data points`)]),
-					],
+					attributes:
+						dataPoints === undefined ? [] : [h.Title(`${formatNumber(dataPoints)} data points`)],
 				},
 				[
 					option.label,

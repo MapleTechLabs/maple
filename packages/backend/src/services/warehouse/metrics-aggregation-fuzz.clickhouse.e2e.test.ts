@@ -253,8 +253,7 @@ const referenceSeries = (world: ReadonlyArray<Series>, q: FuzzQuery) => {
 			([group]) => group,
 		),
 	)
-	for (const row of out.values())
-		for (const group of [...row.keys()]) if (!kept.has(group)) row.delete(group)
+	for (const row of out.values()) for (const group of row.keys()) if (!kept.has(group)) row.delete(group)
 	return out
 }
 
