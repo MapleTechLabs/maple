@@ -336,7 +336,7 @@ describe("AWS setup scripts", () => {
 	})
 
 	it("renders a forwarder that sends the region's finding events to the main region's default bus", () => {
-		const template = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))(
+		const template = Schema.decodeSync(Schema.fromJsonString(Schema.Unknown))(
 			renderAwsEventsForwarderCloudFormation(
 				Schema.decodeSync(AwsConnectionId)("8a3c6f1e-6b8f-4e6b-9a1e-2f4c5d6e7f80"),
 			),
