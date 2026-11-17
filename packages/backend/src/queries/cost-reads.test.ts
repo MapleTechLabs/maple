@@ -871,7 +871,7 @@ describe("makeCostReads", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			yield* insertSources(testDb, [{ id: SOURCE_A }])
-			const { reads, statements } = yield* makeHarness(testDb, {}, { statusPages: true })
+			const { reads, statements } = yield* makeHarness(testDb, {}, { dataSources: true })
 			const refusals = yield* Effect.all([
 				Effect.flip(reads.totals(tenant, new CostTotalsRequest(WINDOW))),
 				Effect.flip(reads.timeseries(tenant, new CostTimeseriesRequest(WINDOW))),

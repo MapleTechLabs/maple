@@ -1,7 +1,13 @@
-import { McpInvalidInputError, McpQueryBudgetError, type McpToolRegistrar } from "./types"
+import {
+	McpAuthInvalidError,
+	McpInvalidInputError,
+	McpQueryBudgetError,
+	type McpToolRegistrar,
+} from "./types"
 import { Effect, Schema, Struct, Array as Arr, String as Str } from "effect"
 import { IsoDateTimeString } from "@maple/domain"
 import { AlertRulePreviewRequest, type AlertRulePreviewResponse } from "@maple/domain/http"
+import { scopeAllows } from "@maple/domain/http/v2"
 import { PreviewAlertRuleOutput } from "@maple/domain/mcp-outputs"
 import { rawAlertPerformanceHints, rawAlertSampleCountWarning } from "@maple/domain/raw-sql"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
@@ -181,6 +187,19 @@ export function registerPreviewAlertRuleTool(server: McpToolRegistrar) {
 					message:
 						"An anomaly rule has no query to replay: it pages on the anomaly detector's open incidents. Use list_alert_incidents to see what it opened.",
 					parameter: "signal_type",
+				})
+			}
+
+			// As on /v2: replaying raw SQL runs the caller's query, which creating the rule needs
+			// `alerts:write` for. Keys carry root roles, so scope is what tells a narrower key apart.
+			if (
+				request.rule.signalType === "raw_query" &&
+				!scopeAllows(tenant.scopes, { family: "alerts", access: "write" })
+			) {
+				return yield* new McpAuthInvalidError({
+					message:
+						"Previewing a raw SQL alert runs your query against the warehouse, which needs the `alerts:write` scope. Add it to the key, or use a full-access key.",
+					reason: "insufficient_scope",
 				})
 			}
 

@@ -13,6 +13,7 @@ const CATEGORY_BY_RESOURCE = {
 	agent: "resource",
 	agent_feedback: "other",
 	ai_provider_key: "credential",
+	enterprise_sso: "authentication",
 	alert_destination: "configuration",
 	alert_rule: "configuration",
 	alert_silence: "configuration",
@@ -70,6 +71,8 @@ const CATEGORY_BY_RESOURCE = {
 const CATEGORY_BY_ACTION = {
 	"source.rolled": "credential",
 	"status_page.break_glass_rotated": "credential",
+	"enterprise_sso.directory_key_rotated": "credential",
+	"enterprise_sso.directory_created": "credential",
 	"status_page.break_glass_revoked": "credential",
 	"status_page.password_set": "credential",
 	"status_page.password_removed": "credential",

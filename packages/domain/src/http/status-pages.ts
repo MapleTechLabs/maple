@@ -142,20 +142,6 @@ export class StatusPagePersistenceError extends HttpTaggedError<StatusPagePersis
 	},
 ) {}
 
-/** The org is not in the `statusPages` rollout. */
-export class StatusPagesDisabledError extends HttpTaggedError<StatusPagesDisabledError>()(
-	"@maple/http/errors/StatusPagesDisabledError",
-	{ message: Schema.String },
-	{
-		status: 403,
-		code: "status_pages_disabled",
-		title: "Status pages are not enabled",
-		retry: "never",
-		recovery: "contact_support",
-		exposure: "public_message",
-	},
-) {}
-
 /** The page has no custom domain to check or remove. */
 export class StatusPageCustomDomainNotFoundError extends HttpTaggedError<StatusPageCustomDomainNotFoundError>()(
 	"@maple/http/errors/StatusPageCustomDomainNotFoundError",
@@ -277,6 +263,8 @@ export const StatusPageIncidentRecord = Schema.Struct({
 	published: Schema.Boolean,
 	scheduledStart: Schema.NullOr(Schema.Number),
 	scheduledEnd: Schema.NullOr(Schema.Number),
+	/** Maintenance only: the sweep completes it when its window ends. */
+	autoComplete: Schema.Boolean,
 	startedAt: Schema.Number,
 	resolvedAt: Schema.NullOr(Schema.Number),
 	componentIds: Schema.Array(StatusPageComponentId),

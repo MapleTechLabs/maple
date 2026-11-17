@@ -62,6 +62,7 @@ import { registerIngestRuleTools } from "./ingest-rules"
 import { registerStatusPageTools } from "./status-pages"
 import { registerGetInstrumentationRecommendationsTool } from "./get-instrumentation-recommendations"
 import { registerGetServiceTopOperationsTool } from "./get-service-top-operations"
+import { registerProfileHotspotsTool } from "./profile-hotspots"
 import { registerServiceDeploymentsTool } from "./service-deployments"
 import { registerRouteUsageTool } from "./route-usage"
 import { registerSearchConsoleQueriesTool } from "./search-console-queries"
@@ -213,6 +214,7 @@ const MAPLE_TOOL_REGISTERS: ReadonlyArray<McpToolRegister> = [
 	registerExploreAttributesTool,
 	registerListServicesTool,
 	registerGetServiceTopOperationsTool,
+	registerProfileHotspotsTool,
 	registerServiceDeploymentsTool,
 	registerRouteUsageTool,
 	registerIngestFreshnessTool,

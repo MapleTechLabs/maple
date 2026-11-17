@@ -44,6 +44,14 @@ describe("shareOgId", () => {
 		expect(verifyShareOgId(ogId, "another-key")).toBeUndefined()
 	})
 
+	it("rejects an alias of a valid id that only adds characters the decoder skips", () => {
+		const ogId = shareOgId(SHARE_ID, KEY)
+
+		expect(verifyShareOgId(`!!${ogId}`, KEY)).toBeUndefined()
+		expect(verifyShareOgId(`%$${ogId}`, KEY)).toBeUndefined()
+		expect(verifyShareOgId(Str.replace(".", "=.")(ogId), KEY)).toBeUndefined()
+	})
+
 	it("rejects malformed input rather than throwing", () => {
 		expect(verifyShareOgId("", KEY)).toBeUndefined()
 		expect(verifyShareOgId("no-separator", KEY)).toBeUndefined()

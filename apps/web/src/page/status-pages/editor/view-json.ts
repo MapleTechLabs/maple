@@ -18,7 +18,7 @@ import { isSettingsDirty } from "./update-settings"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
-// The JSON tab: the page as one document to copy, and for admins an editor that applies it.
+// Settings > Advanced: the page as one document to copy, and for admins an editor that applies it.
 
 type H = HtmlBuilder<Message>
 

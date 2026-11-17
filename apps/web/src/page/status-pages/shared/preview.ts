@@ -10,15 +10,16 @@ import {
 } from "@maple/domain/status-page"
 import { type PreviewComponent, renderPage } from "@maple/status-page"
 import { cn } from "@maple/ui/lib/utils"
+import { eyebrow } from "@maple/views/ui/eyebrow"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { Option, Schema, Stream, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // The live preview: the public renderer's page in a sandboxed frame, with the monitors' real
-// history, and in the editor a click on a component or incident posted back to select it.
+// history, and in the editor a click on a component or incident posted back to open it.
 
 /** The scheme the preview shows an Auto page in; the page itself follows each visitor. */
 export const PreviewScheme = Schema.Literals(["light", "dark"])
@@ -193,44 +194,16 @@ const decodeSelect = Schema.decodeUnknownOption(SelectMessage)
 export const selectionOf = (data: unknown): Option.Option<PreviewSelection> =>
 	Option.map(decodeSelect(data), ({ kind, id }) => ({ kind, id }))
 
-const isSafeId = (id: string) => /^[A-Za-z0-9_-]{1,64}$/u.test(id)
-
 /** Inert in the frame: it only posts what was clicked; the frame has no same-origin access. */
-const SELECT_SCRIPT = `(function(){var q="[data-component-id],[data-incident-id]";document.addEventListener("click",function(e){var t=e.target&&e.target.closest?e.target.closest(q):null;if(!t)return;e.preventDefault();var c=t.getAttribute("data-component-id");parent.postMessage(c?{type:"select",kind:"component",id:c}:{type:"select",kind:"incident",id:t.getAttribute("data-incident-id")},"*")});var s=document.querySelector("[data-sp-first]");if(s)window.scrollTo(0,Math.max(0,s.getBoundingClientRect().top+window.scrollY-window.innerHeight/3))})();`
+const SELECT_SCRIPT = `(function(){var q="[data-component-id],[data-incident-id]";document.addEventListener("click",function(e){var t=e.target&&e.target.closest?e.target.closest(q):null;if(!t)return;e.preventDefault();var c=t.getAttribute("data-component-id");parent.postMessage(c?{type:"select",kind:"component",id:c}:{type:"select",kind:"incident",id:t.getAttribute("data-incident-id")},"*")})})();`
 
-const selectionStyles = (selectedIds: ReadonlyArray<string>): string => {
-	const ids = Arr.filter(selectedIds, isSafeId)
-	const selected = Arr.join(
-		Arr.flatMap(ids, (id) => [`[data-component-id="${id}"]`, `[data-incident-id="${id}"]`]),
-		",",
-	)
-	return Arr.join(
-		[
-			`[data-component-id],[data-incident-id]{cursor:pointer;border-radius:6px;transition:outline-color .12s}`,
-			`[data-component-id]:hover,[data-incident-id]:hover{outline:1px dashed color-mix(in srgb,currentColor 35%,transparent);outline-offset:3px}`,
-			selected === "" ? "" : `${selected}{outline:2px solid #3b82f6;outline-offset:3px}`,
-		],
-		"",
-	)
-}
-
-/** Marks the first selected element so the frame scrolls its own view to it after a reload. */
-const markFirst = (html: string, selectedIds: ReadonlyArray<string>): string => {
-	const found = Arr.findFirst(selectedIds, isSafeId)
-	if (Option.isNone(found)) return html
-	const first = found.value
-	const attr = Str.includes(`data-component-id="${first}"`)(html)
-		? `data-component-id="${first}"`
-		: `data-incident-id="${first}"`
-	return Str.replace(attr, `${attr} data-sp-first`)(html)
-}
+const SELECTABLE_STYLES = `[data-component-id],[data-incident-id]{cursor:pointer;border-radius:6px}[data-component-id]:hover,[data-incident-id]:hover{outline:1px dashed color-mix(in srgb,currentColor 35%,transparent);outline-offset:3px}`
 
 export type PreviewDocumentOptions = Readonly<{
 	snapshot: StatusPagePublicSnapshot
 	nowMs: number
-	/** The editor's preview: components and incidents can be clicked, and the selection drawn. */
+	/** The editor's preview: components and incidents can be clicked. */
 	isSelectable: boolean
-	selectedIds: ReadonlyArray<string>
 	/** Where visitors read the page, for its Slack command; `null` while no status domain is configured. */
 	publicUrl: string | null
 	/**
@@ -261,8 +234,8 @@ export const previewDocument = (options: PreviewDocumentOptions): string => {
 	)
 	const stay = `<script>${stayInFrameScript(options.opensLinks === true)}</script>`
 	if (!options.isSelectable) return Str.replace("</body>", `${stay}</body>`)(html)
-	const extra = `<style>${selectionStyles(options.selectedIds)}</style><script>${SELECT_SCRIPT}</script>${stay}`
-	return Str.replace("</body>", `${extra}</body>`)(markFirst(html, options.selectedIds))
+	const extra = `<style>${SELECTABLE_STYLES}</style><script>${SELECT_SCRIPT}</script>${stay}`
+	return Str.replace("</body>", `${extra}</body>`)(html)
 }
 
 export const PREVIEW_FRAME_ID = "status-page-preview-frame"
@@ -391,3 +364,28 @@ export const previewFrame = <M>(
 		],
 		[],
 	)
+
+/**
+ * A small frame of one part of the page (`renderFragment`): fully sandboxed, no scripts, and it
+ * takes no clicks, so nothing in it navigates the frame.
+ */
+export const fragmentFrame = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{ document: string; title: string; className?: string }>,
+): Html =>
+	h.iframe(
+		[
+			h.Title(options.title),
+			h.Sandbox(""),
+			h.Tabindex(-1),
+			h.Srcdoc(options.document),
+			h.Class(
+				cn("pointer-events-none block w-full rounded-lg border bg-background", options.className),
+			),
+		],
+		[],
+	)
+
+/** A setting's preview: a label, then the part of the page the setting changes. */
+export const onYourPage = <M>(h: HtmlBuilder<M>, preview: Html, label = "On your page"): Html =>
+	vstack(h, { gap: "1.5" }, [eyebrow(h, {}, [label]), preview])

@@ -1,83 +1,69 @@
 import { StatusPageComponentStatus, UptimeMonitorId } from "@maple/domain"
-import type { V2StatusPage, V2StatusPageComponent, V2StatusPageIncident } from "@maple/domain/http/v2"
-import { previewSnapshot } from "@maple/status-page"
-import { TONE_FILL } from "@maple/ui/lib/tone"
-import { cn } from "@maple/ui/lib/utils"
+import type { V2StatusPage, V2StatusPageComponent } from "@maple/domain/http/v2"
+import type { StatusPageSnapshot } from "@maple/domain/status-page"
+import { type FragmentPart, pageTitle, previewSnapshot, renderFragment } from "@maple/status-page"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 import { Option, Schema, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "@maple/views/ui/button"
-import { eyebrow } from "@maple/views/ui/eyebrow"
-import { icon } from "@maple/views/ui/icon"
-import { iconButton } from "@maple/views/ui/icon-button"
-import { pressable } from "@maple/views/ui/pressable"
-import {
-	COMPONENT_STATUS_LABEL,
-	COMPONENT_STATUS_TONE,
-	componentStatus,
-	isOpenIncident,
-	monitorStatusOf,
-} from "../shared/derive"
+import { browserTabMockup } from "@maple/views/ui/page-mockup"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
+import { monitorStatusOf } from "../shared/derive"
+import { orNull, type SettingsForm, settingsFormOf, themeOf } from "../shared/form"
 import {
 	daysOf,
+	fragmentFrame,
 	isListedIncident,
 	previewControls,
 	previewDocument,
 	previewExampleNote,
 	previewFrame,
+	type PreviewState,
 	previewTheme,
 	simulatePreview,
 	toSnapshotIncident,
 } from "../shared/preview"
 import { Message } from "./message"
+import type { Model } from "./model"
+import { componentsOf, incidentsOf, monitorsOf, statusReadsFailed, statusReadsReady } from "./reads"
 import { pageUrlOf } from "./update-domain"
-import { canManage, canPostIncidents, type Model } from "./model"
-import { componentsOf, incidentsOf, monitorsOf } from "./reads"
-import { addPanel, componentPanel, incidentPanel, type TimeInputs } from "./view-panel"
-import { typography } from "@maple/views/ui/typography"
-import { hstack, vstack } from "@maple/views/ui/stack"
 
-// The page itself as the editor: a sidebar beside the preview. The sidebar lists what is on the
-// page; an opened component, incident or Add takes its place. Below `lg` the sidebar stacks on top.
+// The Live page tab: the page as visitors get it, full width; a click on a component or incident
+// opens it where it is edited. Also the snapshot every smaller preview of a setting renders from.
 
 type H = HtmlBuilder<Message>
 
 const decodeMonitorId = Schema.decodeUnknownOption(UptimeMonitorId)
 const decodeStatus = Schema.decodeUnknownOption(StatusPageComponentStatus)
 
-/** The component as the panel's unsaved inputs have it, so the preview follows every keystroke. */
-const asEdited = (model: Model, component: V2StatusPageComponent) => {
+/** The component as its open form has it, so previews follow every keystroke. */
+const asEdited = (model: Model, component: V2StatusPageComponent): V2StatusPageComponent => {
 	const form = model.componentForm
 	if (model.panel?._tag !== "Component" || form.editingId !== component.id) return component
 	return {
 		...component,
 		name: Str.trim(form.name) === "" ? component.name : Str.trim(form.name),
-		description: Str.trim(form.description) === "" ? null : Str.trim(form.description),
-		group: Str.trim(form.group) === "" ? null : Str.trim(form.group),
+		description: orNull(form.description),
+		group: orNull(form.group),
 		monitor_id: Option.getOrNull(decodeMonitorId(form.monitorId)),
 		manual_status: Option.getOrNull(decodeStatus(form.manualStatus)),
 		show_uptime: form.showUptime,
 	}
 }
 
-/** What the preview outlines: the open component or incident. */
-export const selectedIds = (model: Model): ReadonlyArray<string> => {
-	const panel = model.panel
-	if (panel === null) return []
-	switch (panel._tag) {
-		case "Component":
-			return [panel.componentId]
-		case "Incident":
-			return [panel.incidentId]
-		case "Add":
-			return []
-	}
-}
+const nowOf = (model: Model, page: V2StatusPage): number => model.nowMs ?? toEpochMs(page.updated_at)
 
-/** The saved page as visitors get it, with the monitors' history and the panel's edits. */
-export const canvasDocument = (model: Model, page: V2StatusPage): string => {
-	const nowMs = model.nowMs ?? 0
+/** The page as the editor would publish it: `form`'s fields, the open component's edits, in `state`. */
+export const draftSnapshot = (
+	model: Model,
+	page: V2StatusPage,
+	form: SettingsForm,
+	state: PreviewState,
+): StatusPageSnapshot => {
+	const nowMs = nowOf(model, page)
 	const monitors = monitorsOf(model)
-	const shown = simulatePreview(model.previewState, {
+	const shown = simulatePreview(state, {
 		components: Arr.map(componentsOf(model), (saved) => {
 			const component = asEdited(model, saved)
 			return {
@@ -98,263 +84,135 @@ export const canvasDocument = (model: Model, page: V2StatusPage): string => {
 		),
 		nowMs,
 	})
-	const snapshot = previewSnapshot({
+	return previewSnapshot({
 		pageId: page.id,
 		page: {
-			name: page.name,
-			slug: page.slug,
-			description: page.description,
-			websiteUrl: page.website_url,
-			logoUrl: page.logo_url,
-			logoDarkUrl: page.logo_dark_url,
-			faviconUrl: page.favicon_url,
-			supportUrl: page.support_url,
-			privacyUrl: page.privacy_url,
-			termsUrl: page.terms_url,
+			name: draftName(page, form),
+			slug: form.slug,
+			description: orNull(form.description),
+			websiteUrl: orNull(form.websiteUrl),
+			logoUrl: orNull(form.logoUrl),
+			logoDarkUrl: orNull(form.logoDarkUrl),
+			faviconUrl: orNull(form.faviconUrl),
+			supportUrl: orNull(form.supportUrl),
+			privacyUrl: orNull(form.privacyUrl),
+			termsUrl: orNull(form.termsUrl),
 			customDomain: null,
 			visibility: page.visibility,
-			showPoweredBy: page.show_powered_by,
-			theme: previewTheme(page.theme, model.previewScheme),
+			showPoweredBy: form.showPoweredBy,
+			theme: previewTheme(themeOf(form.theme), model.previewScheme),
 		},
 		components: shown.components,
 		incidents: shown.incidents,
 		nowMs,
 	})
-	return previewDocument({
-		snapshot,
-		nowMs,
-		isSelectable: true,
-		selectedIds: selectedIds(model),
-		publicUrl: pageUrlOf(model, page),
+}
+
+/** The name the unsaved `form` gives the page; the saved one while the field is empty. */
+export const draftName = (page: V2StatusPage, form: SettingsForm): string => orNull(form.name) ?? page.name
+
+/**
+ * One part of the page as the unsaved `form` would render it, in a small inert frame: a setting's
+ * own preview. A banner or component waits for the statuses' reads, and says so when they failed,
+ * rather than read all clear.
+ */
+export const fragmentPreview = (
+	h: H,
+	model: Model,
+	page: V2StatusPage,
+	form: SettingsForm,
+	options: Readonly<{
+		title: string
+		parts: ReadonlyArray<FragmentPart>
+		componentId?: string
+		className: string
+	}>,
+): Html => {
+	const needsStatuses = Arr.some(options.parts, (part) => part === "hero" || part === "components")
+	if (needsStatuses && !statusReadsReady(model))
+		return statusReadsFailed(model)
+			? typography(h, { size: "xs", tone: "muted", as: "p" }, [
+					"No preview: the page's components didn't load.",
+				])
+			: skeleton(h, `w-full rounded-lg ${options.className}`)
+	return fragmentFrame(h, {
+		title: options.title,
+		document: renderFragment(
+			draftSnapshot(model, page, form, "live"),
+			{ parts: options.parts, componentId: options.componentId, nowMs: nowOf(model, page) },
+			{ inDashboard: true },
+		),
+		className: options.className,
 	})
 }
 
-const statusDot = (h: H, status: StatusPageComponentStatus): Html =>
-	h.span(
-		[
-			h.AriaHidden(true),
-			h.Class(cn("inline-block size-2 shrink-0 rounded-xs", TONE_FILL[COMPONENT_STATUS_TONE[status]])),
-		],
-		[],
-	)
-
-const itemClass = (isSelected: boolean) =>
-	cn(
-		"flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring",
-		isSelected
-			? "bg-muted font-medium text-foreground"
-			: "text-muted-foreground hover:bg-surface-sunken hover:text-foreground active:bg-surface-sunken active:text-foreground",
-	)
-
-const componentItem = (
+/** The page's browser tab (title, favicon, address) over its header, as the unsaved `form` has them. */
+export const tabPreview = (
 	h: H,
 	model: Model,
-	component: V2StatusPageComponent,
-	position: Readonly<{ isFirst: boolean; isLast: boolean }>,
-): Html => {
-	const status = componentStatus(component, monitorsOf(model), incidentsOf(model))
-	const isSelected = model.panel?._tag === "Component" && model.panel.componentId === component.id
-	return hstack(
+	page: V2StatusPage,
+	form: SettingsForm,
+	address: string | null,
+): Html =>
+	browserTabMockup(
 		h,
-		{ gap: "1", align: "center", as: "li", className: "group", attributes: [h.Key(component.id)] },
+		{ title: pageTitle(draftName(page, form)), iconUrl: orNull(form.faviconUrl), address },
 		[
-			pressable(
-				h,
-				{
-					onClick: Message.ClickedComponent({ componentId: component.id }),
-					isSelected,
-					className: itemClass(isSelected),
-					attributes: [h.Id(`status-page-item-${component.id}`)],
-				},
-				[
-					statusDot(h, status),
-					typography(h, { truncate: true }, [component.name]),
-					h.span([h.Class("sr-only")], [`: ${COMPONENT_STATUS_LABEL[status]}`]),
-					...(component.group === null
-						? []
-						: [
-								h.span(
-									[h.Class("ml-auto truncate font-mono text-2xs text-muted-foreground")],
-									[component.group],
-								),
-							]),
-				],
-			),
-			...(canManage(model)
-				? [
-						hstack(
-							h,
-							{
-								align: "stretch",
-								className:
-									"shrink-0 opacity-60 group-hover:opacity-100 group-focus-within:opacity-100",
-							},
-							[
-								iconButton(
-									h,
-									{
-										label: `Move ${component.name} up`,
-										size: "icon-2xs",
-										isDisabled: position.isFirst || model.isReordering,
-										attributes: [
-											h.OnClick(
-												Message.ClickedMoveComponent({
-													componentId: component.id,
-													offset: -1,
-												}),
-											),
-										],
-									},
-									[icon(h, "ChevronUpIcon")],
-								),
-								iconButton(
-									h,
-									{
-										label: `Move ${component.name} down`,
-										size: "icon-2xs",
-										isDisabled: position.isLast || model.isReordering,
-										attributes: [
-											h.OnClick(
-												Message.ClickedMoveComponent({
-													componentId: component.id,
-													offset: 1,
-												}),
-											),
-										],
-									},
-									[icon(h, "ChevronDownIcon")],
-								),
-							],
-						),
-					]
-				: []),
+			fragmentPreview(h, model, page, form, {
+				title: "The page header as visitors see it",
+				parts: ["header"],
+				className: "h-20 rounded-none border-0",
+			}),
 		],
 	)
-}
 
-const incidentItem = (h: H, model: Model, incident: V2StatusPageIncident): Html => {
-	const isSelected = model.panel?._tag === "Incident" && model.panel.incidentId === incident.id
-	return h.li(
-		[h.Key(incident.id)],
-		[
-			pressable(
-				h,
-				{
-					onClick: Message.ClickedIncident({ incidentId: incident.id }),
-					isSelected,
-					className: itemClass(isSelected),
-					attributes: [h.Id(`status-page-item-${incident.id}`)],
-				},
-				[
-					icon(h, incident.kind === "incident" ? "CircleWarningIcon" : "CalendarIcon", {
-						size: 14,
-						className: isOpenIncident(incident) ? "text-severity-warn" : "text-muted-foreground",
-					}),
-					typography(h, { truncate: true }, [incident.title]),
-					...(incident.published
-						? []
-						: [h.span([h.Class("ml-auto font-mono text-2xs text-muted-foreground")], ["Draft"])]),
-				],
-			),
-		],
-	)
-}
-
-const onThisPage = (h: H, model: Model): Html => {
-	const components = componentsOf(model)
-	const open = Arr.filter(incidentsOf(model), isOpenIncident)
-	const recent = Arr.filter(incidentsOf(model), (incident) => !isOpenIncident(incident)).slice(0, 5)
-	return vstack(
-		h,
-		{
-			gap: "5",
-			shrink: true,
-			as: "nav",
-			className: "outline-none",
-			attributes: [h.Id("status-page-on-this-page"), h.Tabindex(-1), h.AriaLabel("On this page")],
-		},
-		[
-			vstack(h, { gap: "1.5" }, [
-				eyebrow(h, { as: "h2", className: "px-2" }, ["On this page"]),
-				components.length === 0
-					? h.p(
-							[h.Class("px-2 text-xs text-muted-foreground")],
-							[
-								canManage(model)
-									? "Nothing yet. Add a monitor and visitors see its status and uptime."
-									: "No monitors on this page yet.",
-							],
-						)
-					: vstack(
-							h,
-							{ gap: "0.5", as: "ul", attributes: [h.AriaLabel("Components")] },
-							Arr.map(components, (component, index) =>
-								componentItem(h, model, component, {
-									isFirst: index === 0,
-									isLast: index === components.length - 1,
-								}),
-							),
+/**
+ * The whole page as the unsaved `form` would publish it, beside Settings: a 2x document scaled to
+ * half so the narrow column shows the desktop layout, scrolling inside its frame. Waits for the
+ * statuses like any preview.
+ */
+export const settingsPagePreview = (h: H, model: Model, page: V2StatusPage, form: SettingsForm): Html =>
+	vstack(h, { gap: "1.5", as: "section", attributes: [h.AriaLabel("Page preview")] }, [
+		typography(h, { size: "xs", tone: "muted", as: "p" }, ["Your page with these settings"]),
+		!statusReadsReady(model)
+			? statusReadsFailed(model)
+				? typography(h, { size: "xs", tone: "muted", as: "p" }, [
+						"No preview: the page's components didn't load.",
+					])
+				: skeleton(h, "h-[calc(100vh-14rem)] w-full rounded-lg")
+			: h.div(
+					[
+						h.Class(
+							"relative h-[calc(100vh-14rem)] min-h-96 overflow-hidden rounded-lg border bg-background",
 						),
-				...(canManage(model)
-					? [
-							button(
-								h,
-								{
-									size: "sm",
-									variant: "outline",
-									className: "mt-1.5",
-									// Reopened mid-save, Add would list the monitors being added again.
-									isLoading: model.isAddingComponents,
-									attributes: [h.OnClick(Message.ClickedAddComponent())],
-								},
-								[icon(h, "PlusIcon"), "Add monitor"],
-							),
-						]
-					: []),
-			]),
-			vstack(h, { gap: "1.5" }, [
-				eyebrow(h, { as: "h2", className: "px-2" }, ["Incidents"]),
-				open.length + recent.length === 0
-					? h.p(
-							[h.Class("px-2 text-xs text-muted-foreground")],
-							[
-								canPostIncidents(model)
-									? "Nothing posted. Post incident when something breaks."
-									: "Nothing posted.",
-							],
-						)
-					: vstack(
-							h,
-							{ gap: "0.5", as: "ul", attributes: [h.AriaLabel("Incidents")] },
-							Arr.map([...open, ...recent], (incident) => incidentItem(h, model, incident)),
-						),
-			]),
-		],
-	)
-}
+					],
+					[
+						// Not inert like a fragment: visitors scroll the page, so the preview scrolls too.
+						previewFrame(h, {
+							title: `${draftName(page, form)} with these settings`,
+							document: previewDocument({
+								snapshot: draftSnapshot(model, page, form, "live"),
+								nowMs: nowOf(model, page),
+								isSelectable: false,
+								publicUrl: pageUrlOf(model, page),
+							}),
+							className:
+								"absolute top-0 left-0 h-[200%] w-[200%] origin-top-left scale-50 rounded-none border-0",
+						}),
+					],
+				),
+	])
 
-const panelView = (h: H, model: Model, time: TimeInputs): ReadonlyArray<Html> => {
-	const panel = model.panel
-	if (panel === null) return []
-	switch (panel._tag) {
-		case "Component": {
-			return Option.match(
-				Arr.findFirst(componentsOf(model), (row) => row.id === panel.componentId),
-				{ onNone: () => [], onSome: (component) => [componentPanel(h, model, component)] },
-			)
-		}
-		case "Incident": {
-			return Option.match(
-				Arr.findFirst(incidentsOf(model), (row) => row.id === panel.incidentId),
-				{ onNone: () => [], onSome: (incident) => [incidentPanel(h, model, incident, time)] },
-			)
-		}
-		case "Add":
-			return [addPanel(h, model)]
-	}
-}
+/** The saved page as visitors get it, with the monitors' history; components and incidents click. */
+export const canvasDocument = (model: Model, page: V2StatusPage): string =>
+	previewDocument({
+		snapshot: draftSnapshot(model, page, settingsFormOf(page), model.previewState),
+		nowMs: nowOf(model, page),
+		isSelectable: true,
+		publicUrl: pageUrlOf(model, page),
+	})
 
-const previewColumn = (h: H, model: Model, page: V2StatusPage): Html =>
+export const livePage = (h: H, model: Model, page: V2StatusPage): Html =>
 	vstack(h, { gap: "2", shrink: true, as: "section", attributes: [h.AriaLabel("Page preview")] }, [
 		hstack(h, { gap: "3", justify: "between", wrap: true, className: "min-h-7" }, [
 			typography(h, { size: "xs", tone: "muted", as: "p" }, [
@@ -379,22 +237,3 @@ const previewColumn = (h: H, model: Model, page: V2StatusPage): Html =>
 			className: "h-[640px] lg:h-[calc(100vh-16rem)] lg:min-h-[520px]",
 		}),
 	])
-
-export const canvas = (h: H, model: Model, page: V2StatusPage, time: TimeInputs): Html => {
-	const panel = panelView(h, model, time)
-	return h.div(
-		[
-			h.Class(
-				"grid items-start gap-6 lg:grid-cols-[18rem_minmax(0,1fr)] xl:grid-cols-[22rem_minmax(0,1fr)]",
-			),
-		],
-		[
-			h.div(
-				// Only the short list pins; a tall panel scrolls with the page to its buttons.
-				[h.Class(cn("min-w-0", panel.length === 0 && "lg:sticky lg:top-0"))],
-				panel.length === 0 ? [onThisPage(h, model)] : panel,
-			),
-			h.div([h.Class("min-w-0")], [previewColumn(h, model, page)]),
-		],
-	)
-}

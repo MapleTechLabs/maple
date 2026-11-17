@@ -8,7 +8,12 @@ import type { DateTime } from "effect"
 import { param, from } from "@maple-dev/effect-orm/clickhouse"
 import type { CHQuery, ColumnDefs, ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
-import { AUTONOMOUS_SCANNER_NAMES, CRITICAL_PROBE_SIGNATURES } from "@maple/domain/security-telemetry"
+import {
+	AUTONOMOUS_SCANNER_NAMES,
+	CRITICAL_PROBE_SIGNATURES,
+	OTHER_PROBE_SIGNATURES,
+	type ProbeSignature,
+} from "@maple/domain/security-telemetry"
 import * as Datasources from "@maple/domain/tinybird/datasources"
 import { orgIdParam, utcSecondsParam } from "../tables"
 import { utcHourFloor } from "./query-helpers"
@@ -24,14 +29,55 @@ function scannerWhere($: ScannerAccessor) {
 	]
 }
 
-/** The service answered with a success: whatever was probed for was likely served. */
-const answered = ($: ScannerAccessor) => $.HttpStatus.gte(200).and($.HttpStatus.lt(300))
+const tokensOf = (signatures: ReadonlyArray<ProbeSignature>) =>
+	CH.arrayOf(...Arr.map(signatures, (signature) => CH.lit(signature.token)))
+
+// Same needles as the write filter: an anchored token only matches at the start of the path.
+const pathIndex = ($: ScannerAccessor, signatures: ReadonlyArray<ProbeSignature>) =>
+	CH.compileFnCall<number>(
+		"multiSearchFirstIndexCaseInsensitive",
+		CH.concat(CH.lit(" "), $.Path),
+		CH.arrayOf(
+			...Arr.map(signatures, (signature) =>
+				CH.lit(signature.anchored === true ? ` ${signature.token}` : signature.token),
+			),
+		),
+	)
+
+/**
+ * The token the request path itself matches, a critical one first; `''` for a probe only in the
+ * query. The stored `Signature` was matched across path and query, so `/.git/config?f=/.env` holds
+ * `/.env`; `Path` holds no query.
+ */
+const pathSignature = ($: ScannerAccessor) =>
+	CH.if_(
+		pathIndex($, CRITICAL_PROBE_SIGNATURES).gt(0),
+		CH.arrayElement(tokensOf(CRITICAL_PROBE_SIGNATURES), pathIndex($, CRITICAL_PROBE_SIGNATURES)),
+		CH.arrayElement(tokensOf(OTHER_PROBE_SIGNATURES), pathIndex($, OTHER_PROBE_SIGNATURES)),
+	)
+
+const inPath = ($: ScannerAccessor) => pathSignature($).neq("")
+
+/** What a request is filed under: the path's own token, else the stored one (query probe or ''). */
+const fileSignature = ($: ScannerAccessor) => CH.if_(inPath($), pathSignature($), $.Signature)
+
+/**
+ * A success for a probe in the path: whatever was probed for was likely served. A probe only in the
+ * query never counts: routes ignore unknown parameters, so their 2xx says nothing. A named scanner
+ * on an ordinary path (`Signature = ''`) keeps its plain 2xx count.
+ */
+const answered = ($: ScannerAccessor) =>
+	$.HttpStatus.gte(200)
+		.and($.HttpStatus.lt(300))
+		.and($.Signature.eq("").or(inPath($)))
 
 export interface ScannerSignaturesOutput {
 	/** A `PROBE_SIGNATURES` token, `''` for a named scanner on an ordinary path. */
 	readonly signature: string
 	readonly service: string
 	readonly requests: number
+	/** Requests whose path holds the token; the rest probed only in the query. */
+	readonly inPath: number
 	readonly answered: number
 	readonly sources: number
 	readonly lastSeen: DateTime.Utc
@@ -44,10 +90,11 @@ export const SCANNER_SIGNATURES_MAX_ROWS = 5000
 export function scannerSignaturesQuery(): CHQuery<ColumnDefs, ScannerSignaturesOutput> {
 	return from(Datasources.scannerRequests)
 		.select(($) => ({
-			signature: $.Signature,
+			signature: fileSignature($),
 			service: $.ServiceName,
 			// uniq, not count: a proxied request has several Server spans.
 			requests: CH.uniq($.TraceId),
+			inPath: CH.uniqIf($.TraceId, inPath($)),
 			answered: CH.uniqIf($.TraceId, answered($)),
 			sources: CH.uniqIf($.ClientAddress, $.ClientAddress.neq("")),
 			lastSeen: CH.max_($.Timestamp),
@@ -83,7 +130,7 @@ export function scannerExposedQuery(
 			service: $.ServiceName,
 			host: $.Host,
 			path: $.Path,
-			signature: $.Signature,
+			signature: fileSignature($),
 			httpStatus: $.HttpStatus,
 			requests: CH.uniq($.TraceId),
 			lastSeen: CH.max_($.Timestamp),
@@ -92,7 +139,7 @@ export function scannerExposedQuery(
 		.where(($) => [
 			...scannerWhere($),
 			CH.inList(
-				$.Signature,
+				fileSignature($),
 				Arr.map(CRITICAL_PROBE_SIGNATURES, (signature) => signature.token),
 			),
 			answered($),

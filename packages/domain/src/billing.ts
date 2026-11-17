@@ -49,6 +49,15 @@ export const OPENROUTER_BYOK_FEATURE_ID = "openrouter_byok"
  */
 export const BILLING_SUB_ORGS_FEATURE_ID = "billing_sub_orgs"
 
+/**
+ * Self-serve add-ons on any plan, $100/month each: single sign-on (one SAML/OIDC connection) and
+ * SCIM provisioning on top of it. Each add-on plan grants the boolean feature of the same id.
+ */
+export const ENTERPRISE_SSO_ADDON_ID = "enterprise_sso"
+export const ENTERPRISE_SSO_FEATURE_ID = "enterprise_sso"
+export const ENTERPRISE_SCIM_ADDON_ID = "enterprise_scim"
+export const ENTERPRISE_SCIM_FEATURE_ID = "enterprise_scim"
+
 /** AI usage in dollars: one credit is one dollar. Chat, triage, reviews and security audits draw on it. */
 export const AI_CREDITS_FEATURE_ID = "ai_credits"
 

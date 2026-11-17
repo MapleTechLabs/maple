@@ -172,6 +172,10 @@ const PURGE_ORDER: ReadonlyArray<TableName> = [
 	"SupabaseConnections",
 	// The org's own OpenRouter key: a recreated org with the same id must not inherit it.
 	"OrgOpenRouterKeys",
+	// Enterprise SSO domains, connection ids and SCIM groups; the Clerk side goes with the Clerk org.
+	"OrgSsoDomains",
+	"OrgSsoConnections",
+	"OrgDirectoryGroups",
 	// A surviving key would keep Maple reading the deleted org's OpenRouter spend.
 	"OpenRouterCostConnections",
 	// The same for every provider read with a pasted credential.

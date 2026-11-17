@@ -57,7 +57,6 @@ export const FLAGGED_HREFS: ReadonlySet<string> = new Set([
 	"/cost",
 	"/product-analytics",
 	"/security",
-	"/status-pages",
 	"/users",
 ])
 
@@ -68,7 +67,6 @@ const EVERY_FLAG = {
 	cloudCost: true,
 	productAnalytics: true,
 	securityAudit: true,
-	statusPages: true,
 }
 
 /** A page's palette row under each title the nav gives it: the section, its children, their views. */

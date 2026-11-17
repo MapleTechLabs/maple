@@ -246,7 +246,6 @@ describe("re-render on change only", () => {
 				productAnalytics: false,
 				profiling: false,
 				securityAudit: false,
-				statusPages: false,
 			},
 		}),
 		memberships: [],
