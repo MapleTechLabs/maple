@@ -329,6 +329,12 @@ fn cases() -> Vec<Measured> {
             Profiles,
             &empty_entries(1, 200_000),
         ),
+        // The dictionary in a hundred occurrences, which decode into one string table.
+        protobuf_case::<ExportProfilesServiceRequest>(
+            "empty split dictionary",
+            Profiles,
+            &nest(2, &empty_entries(5, 1_400)).repeat(100),
+        ),
         profiles_json_case("profiles json", SDK_PROFILES),
         profiles_json_case(
             "keyed sample values json",
