@@ -89,18 +89,25 @@ const linked = (grants: ReadonlyArray<Policy.Permission>): Model => {
 }
 
 describe("anomaly detail, analyst", () => {
-	test("an analyst reads the anomaly and is not offered Resolve, Link issue or an investigation", () => {
+	test("an analyst reads the anomaly and sees Resolve, Link issue and Open investigation locked", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(ANALYST)),
 			themed(),
 			expectView(text("Not linked to an issue")).toExist(),
 			expectView(text("Details")).toExist(),
-			expectView(role("button", { name: "Resolve" })).toBeAbsent(),
-			expectView(role("button", { name: "Resolve anomaly" })).toBeAbsent(),
-			expectView(role("button", { name: "Link issue" })).toBeAbsent(),
-			expectView(role("button", { name: "Open investigation" })).toBeAbsent(),
-			expectView(text("Actions")).toBeAbsent(),
+			expectView(role("button", { name: "Resolve" })).toBeDisabled(),
+			expectView(role("button", { name: "Resolve anomaly" })).toBeDisabled(),
+			expectView(role("button", { name: "Link issue" })).toBeDisabled(),
+			expectView(role("button", { name: "Open investigation" })).toBeDisabled(),
+			expectView(
+				role("group", {
+					name: "Only org admins, engineers and members can acknowledge and resolve incidents.",
+				}),
+			).toExist(),
+			expectView(
+				role("group", { name: "Only org admins, engineers and members can start investigations." }),
+			).toExist(),
 		)
 	})
 
@@ -116,21 +123,26 @@ describe("anomaly detail, analyst", () => {
 		)
 	})
 
-	test("an analyst can open the linked issue and cannot relink or unlink it; a member can", () => {
+	test("an analyst can open the linked issue and sees relink and unlink locked; a member can use them", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(linked(ANALYST)),
 			themed(),
 			expectView(role("link", { name: "Open issue" })).toExist(),
-			expectView(role("button", { name: "Link a different issue" })).toBeAbsent(),
-			expectView(role("button", { name: "Unlink issue" })).toBeAbsent(),
+			expectView(role("button", { name: "Link a different issue" })).toBeDisabled(),
+			expectView(role("button", { name: "Unlink issue" })).toBeDisabled(),
+			expectView(
+				role("group", {
+					name: "Only org admins, engineers and members can acknowledge and resolve incidents.",
+				}),
+			).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given(linked(MEMBER)),
 			themed(),
-			expectView(role("button", { name: "Link a different issue" })).toExist(),
-			expectView(role("button", { name: "Unlink issue" })).toExist(),
+			expectView(role("button", { name: "Link a different issue" })).toBeEnabled(),
+			expectView(role("button", { name: "Unlink issue" })).toBeEnabled(),
 		)
 	})
 

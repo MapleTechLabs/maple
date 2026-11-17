@@ -19,13 +19,7 @@ import {
 import { emptyComponentForm, emptyIncidentForm } from "../shared/form"
 import { emptyPicker } from "../shared/picker"
 import { historyFrom } from "../shared/preview"
-import {
-	FetchEditorPreview,
-	FetchEditorSession,
-	FocusEditorElement,
-	ReadEditorClock,
-	WaitEditorPreview,
-} from "./command"
+import { FetchEditorPreview, FetchEditorSession, ReadEditorClock, WaitEditorPreview } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import {
@@ -46,17 +40,21 @@ import {
 	addPickerStep,
 	askDeleteComponent,
 	changeComponent,
-	commitComponent,
-	componentRowId,
 	confirmDeleteComponent,
+	confirmDiscardComponent,
 	deleteComponentDialog,
 	deletedComponent,
+	discardComponentDialog,
+	discardMonitors,
+	leaveComponent,
 	moveComponent,
-	openAdd,
+	nudgeComponent,
 	reordered,
+	saveMonitors,
 	savedComponent,
-	selectComponent,
 	submitAdd,
+	toggleComponentUptime,
+	unsavedComponent,
 } from "./update-components"
 import {
 	askDeleteIncident,
@@ -107,15 +105,7 @@ import {
 	changeTheme,
 	updateTokenCopy,
 } from "./update-settings"
-import {
-	cancelPassword,
-	changedAccess,
-	changePassword,
-	openPassword,
-	pickVisibility,
-	removePassword,
-	submitPassword,
-} from "./update-access"
+import { changedAccess, changePassword, discardAccess, pickVisibility, saveAccess } from "./update-access"
 import {
 	appliedJson,
 	applyJson,
@@ -211,11 +201,14 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		previewHistory: [],
 		componentForm: emptyComponentForm,
 		componentSave: null,
-		queuedComponentForms: [],
+		pendingLeave: null,
+		discardComponentDialog: Dialog.init("status-page-discard-component", "alert-dialog"),
 		confirmDeleteComponentId: null,
 		deleteComponentDialog: Dialog.init("status-page-delete-component", "alert-dialog"),
 		isDeletingComponent: false,
-		isReordering: false,
+		pendingOrder: null,
+		isSavingOrder: false,
+		orderFailure: null,
 		addPicker: emptyPicker,
 		isAddingComponents: false,
 		addSession: 0,
@@ -248,7 +241,8 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		deletePageDialog: Dialog.init("status-page-delete", "alert-dialog"),
 		isDeletingPage: false,
 		accessAction: null,
-		passwordDraft: null,
+		visibilityDraft: null,
+		passwordDraft: "",
 		accessFailure: null,
 		customDomain: Keyed.idle(),
 		customDomainDraft: null,
@@ -298,20 +292,31 @@ const whenSettings =
 		resolveView(model.search).tab === "settings" ? readCustomDomain(context, mode)(model) : { model }
 
 /**
- * A tab switch is a search change; what is open stays open only where the new tab shows it.
- * Opening Advanced re-reads the config, since other sections write too.
+ * What is open stays open only where `location` shows it. A navigation cannot wait on a confirm, so
+ * a component's unsaved edits stay in the form, neither saved nor dropped, and Monitors opens on them.
+ */
+const settlePanel = (model: Model, location: EditorLocation): Model =>
+	showsPanel(model.panel, location)
+		? model
+		: Option.match(unsavedComponent(model), {
+				onNone: () => ({ ...model, panel: null, componentForm: emptyComponentForm }),
+				onSome: (component) => ({
+					...model,
+					panel:
+						location.tab === "settings" && location.section === "monitors"
+							? { _tag: "Component", componentId: component.id }
+							: null,
+				}),
+			})
+
+/**
+ * A tab switch is a search change. Opening Advanced re-reads the config, since other sections
+ * write too.
  */
 export const routeChanged = (model: Model, route: EditorRoute, context: PageContext): Return =>
 	withSheet(
 		chain(
-			{ ...model, search: route.search },
-			// A route change can skip the field's blur (a keyboard Back): typed edits save first.
-			(next) =>
-				showsPanel(next.panel, resolveView(route.search))
-					? { model: next }
-					: chain(next, commitComponent, (committed) => ({
-							model: { ...committed, panel: null, componentForm: emptyComponentForm },
-						})),
+			settlePanel({ ...model, search: route.search }, resolveView(route.search)),
 			whenJson(context, "Refresh"),
 			whenSettings(context, "Refresh"),
 		),
@@ -346,15 +351,11 @@ const schedulePreview = (model: Model): Return => {
 
 // PANEL
 
-/** Closing a component hands focus back to its row; the sheet hands it back on its own. */
+/** A component closes once its unsaved edits are dealt with; the sheet hands focus back on its own. */
 const closePanel = (model: Model): Return => {
-	const panel = model.panel
-	if (panel === null) return { model }
-	return panel._tag === "Component"
-		? {
-				model: { ...model, panel: null, componentForm: emptyComponentForm },
-				commands: [FocusEditorElement({ id: componentRowId(panel.componentId) })],
-			}
+	if (model.panel === null) return { model }
+	return model.panel._tag === "Component"
+		? leaveComponent(model, { _tag: "Close" })
 		: { model: { ...model, panel: null } }
 }
 
@@ -414,14 +415,10 @@ const selectFromPreview = (model: Model, kind: "component" | "incident", id: str
 			Arr.findFirst(componentsOf(model), (row) => row.id === id),
 			{
 				onNone: () => ({ model }),
-				onSome: (component) => {
-					const selected = selectComponent(model, component.id)
-					return {
-						...selected,
-						model: { ...selected.model, revealComponentId: component.id },
-						outMessage: navigate(statusPageHref(pageId, "settings", "monitors")),
-					}
-				},
+				onSome: (component) => ({
+					...leaveComponent(model, { _tag: "Open", componentId: component.id, isRevealed: true }),
+					outMessage: navigate(statusPageHref(pageId, "settings", "monitors")),
+				}),
 			},
 		)
 	return Option.match(
@@ -543,28 +540,28 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 						}),
 					}),
 		ReceivedPreviewSelection: ({ kind, id }) => selectFromPreview(model, kind, id),
-		// A second click on the open component closes it; its fields saved on blur.
+		// A second click on the open component closes it.
 		ClickedComponent: ({ componentId }) =>
-			model.panel?._tag === "Component" && model.panel.componentId === componentId
-				? closePanel(model)
-				: selectComponent(model, componentId),
+			leaveComponent(
+				model,
+				model.panel?._tag === "Component" && model.panel.componentId === componentId
+					? { _tag: "Close" }
+					: { _tag: "Open", componentId, isRevealed: false },
+			),
 		ClickedIncident: ({ incidentId }) => selectIncident(model, incidentId),
 		GotPanelSheetMessage: ({ message: child }) => updatePanelSheet(model, child),
-		// Escape skips the field's blur, so a component panel saves its typed edits before it closes.
-		PressedEscape: () =>
-			model.panel?._tag === "Component" ? chain(model, commitComponent, closePanel) : closePanel(model),
+		PressedEscape: () => closePanel(model),
 		// Components
 		ChangedComponentField: ({ field, value }) => changeComponent(model, field, value),
-		CommittedComponent: () => commitComponent(model),
-		PickedComponentField: ({ field, value }) =>
-			commitComponent(changeComponent(model, field, value).model),
-		ToggledComponentUptime: () =>
-			commitComponent({
-				...model,
-				componentForm: { ...model.componentForm, showUptime: !model.componentForm.showUptime },
-			}),
+		ToggledComponentUptime: () => toggleComponentUptime(model),
+		ClickedSaveMonitors: () => saveMonitors(model),
+		ClickedDiscardMonitors: () => discardMonitors(model),
 		CompletedSaveComponent: ({ result }) => savedComponent(model, result, context),
-		ClickedMoveComponent: ({ componentId, offset }) => moveComponent(model, componentId, offset),
+		ClickedConfirmDiscardComponent: () => confirmDiscardComponent(model),
+		GotDiscardComponentDialogMessage: ({ message: child }) =>
+			discardComponentDialog(model, Dialog.update(model.discardComponentDialog, child)),
+		DroppedComponent: ({ componentId, index }) => moveComponent(model, componentId, index),
+		PressedMoveComponent: ({ componentId, offset }) => nudgeComponent(model, componentId, offset),
 		CompletedReorder: ({ result }) => reordered(model, result, context),
 		ClickedDeleteComponent: ({ componentId }) => askDeleteComponent(model, componentId),
 		ClickedConfirmDeleteComponent: () => confirmDeleteComponent(model),
@@ -573,7 +570,7 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 			whenIdle(model.isDeletingComponent, model, () =>
 				deleteComponentDialog(model, Dialog.update(model.deleteComponentDialog, child)),
 			),
-		ClickedAddComponent: () => openAdd(model),
+		ClickedAddComponent: () => leaveComponent(model, { _tag: "Add" }),
 		GotAddPickerMessage: ({ message: child }) => addPickerStep(model, child),
 		CompletedCreateMonitor: ({ session, result }) => addMonitorCreated(model, session, result),
 		CompletedTrackMonitorCreated: () => ({ model }),
@@ -668,11 +665,9 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 		ClickedDismissToken: () => ({ model: { ...model, revealedToken: null } }),
 		// Access
 		PickedVisibility: ({ visibility }) => pickVisibility(model, visibility),
-		ClickedChangePassword: () => openPassword(model),
 		ChangedPassword: ({ value }) => changePassword(model, value),
-		ClickedCancelPassword: () => cancelPassword(model),
-		SubmittedPassword: () => submitPassword(model),
-		ClickedRemovePassword: () => removePassword(model),
+		ClickedDiscardAccess: () => discardAccess(model),
+		ClickedSaveAccess: () => saveAccess(model),
 		CompletedAccessChange: ({ action, result }) => changedAccess(model, action, result),
 		// Custom domain
 		CompletedFetchCustomDomain: ({ key, result }) => ({

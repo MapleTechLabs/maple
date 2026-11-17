@@ -167,7 +167,7 @@ describe("alerts hub", () => {
 			given(loaded({ tab: "routing" })),
 			expectView(role("button", { name: "Add destination" })).toExist(),
 		)
-		// A viewer who can't create a section's thing gets no header action there.
+		// A viewer who can't create a section's thing sees its header action locked, with who can.
 		const asMember = pageUpdate(
 			loaded({ tab: "silences" }),
 			Message.CompletedFetchSession({ orgId: ORG, grants: Policy.grantsOf(["org:member"]) }),
@@ -175,7 +175,8 @@ describe("alerts hub", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(asMember),
-			expectView(role("button", { name: "New silence" })).not.toExist(),
+			expectView(role("button", { name: "New silence" })).toBeDisabled(),
+			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
 			expectView(newRule).not.toExist(),
 		)
 	})

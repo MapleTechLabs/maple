@@ -1,0 +1,19 @@
+// A self-signed `CN=uptime.test` certificate and its key, for tests that stand up a TLS server.
+// Test only: nothing trusts it, and the key protects nothing.
+
+export const TEST_TLS_CERT = `-----BEGIN CERTIFICATE-----
+MIIBGjCBwgIJAKe8Di3pk/pXMAoGCCqGSM49BAMCMBYxFDASBgNVBAMMC3VwdGlt
+ZS50ZXN0MB4XDTI2MTExNTE0MzQzMFoXDTM2MTExMjE0MzQzMFowFjEUMBIGA1UE
+AwwLdXB0aW1lLnRlc3QwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQymVW4AKRK
+vs2cDbKbjS9CaHv1suS+yjXyrj0t0VFQ+/McJpNu78PM3wrN+o85sAUR2kOCSGvX
+g3QxBNOpqU6CMAoGCCqGSM49BAMCA0cAMEQCIBcRz/KBDq3FhUCVDoOWaUlYAorA
+WD9hu4Bn4TrmSAStAiA6P6RT9sy4nDCrEI2rF2kUqK9nMnjDv2u9X8O9pG+jNw==
+-----END CERTIFICATE-----
+`
+
+export const TEST_TLS_KEY = `-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgfofsm6wGgSbCZ9Cp
+c5ZMUcnW9AlkUu8BpO0AIiVnSJihRANCAAQymVW4AKRKvs2cDbKbjS9CaHv1suS+
+yjXyrj0t0VFQ+/McJpNu78PM3wrN+o85sAUR2kOCSGvXg3QxBNOpqU6C
+-----END PRIVATE KEY-----
+`

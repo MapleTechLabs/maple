@@ -211,7 +211,7 @@ export const AUTO_INCIDENT_OPEN_RETRY_MS = 15 * 60_000
 
 /**
  * Opens page incidents the open hook missed (it runs after the alert commit, bounded, and may
- * fail). Only for alerts opened in the last 15 minutes, so a page incident someone deleted while
+ * fail), for critical alerts only: a warning, such as an expiring certificate, is not an outage. Only for alerts opened in the last 15 minutes, so a page incident someone deleted while
  * its alert stays open is not brought back. Each alert in its own transaction; returns how many.
  */
 export const repairMissingAutoIncidents = (db: MapleDb, at: number) =>
@@ -231,6 +231,7 @@ export const repairMissingAutoIncidents = (db: MapleDb, at: number) =>
 				JOIN alert_incidents a ON a.org_id = m.org_id AND a.rule_id = m.alert_rule_id
 				LEFT JOIN status_page_incidents i ON i.alert_incident_id = a.id AND i.page_id = p.id
 				WHERE a.status <> 'resolved'
+					AND a.severity = 'critical'
 					AND a.first_triggered_at >= ${msToSqlTimestamp(at - AUTO_INCIDENT_OPEN_RETRY_MS)}::timestamptz
 					AND i.id IS NULL
 				ORDER BY first_triggered_ms

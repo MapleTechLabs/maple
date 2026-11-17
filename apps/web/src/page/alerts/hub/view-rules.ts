@@ -39,7 +39,7 @@ import { stripClass, dividedList } from "@maple/views/ui/rule"
 import { hstack } from "@maple/views/ui/stack"
 import { borderedBox } from "@maple/views/ui/bordered-box"
 import { Array as Arr, String as Str } from "effect"
-import { canManageAlerts } from "../../kit/session-grants"
+import { gatedEntries } from "../../kit/gated-controls"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -368,17 +368,15 @@ const ruleRow = (h: H, model: Model, row: RowInputs): Html => {
 		),
 		h.span(
 			[h.Class(ROW_LINK_LIFT)],
-			canManageAlerts(model)
-				? [
-						rowActionsMenu(h, {
-							slotId: menuId,
-							model: model.menus[menuId] ?? Menu.init(menuId),
-							entries,
-							label: `Actions for ${rule.name}`,
-							toParentMessage: (message) => Message.GotRowMenuMessage({ menuId, message }),
-						}),
-					]
-				: [],
+			[
+				rowActionsMenu(h, {
+					slotId: menuId,
+					model: model.menus[menuId] ?? Menu.init(menuId),
+					entries: gatedEntries(model, "alerts:manage", entries, ["open"]),
+					label: `Actions for ${rule.name}`,
+					toParentMessage: (message) => Message.GotRowMenuMessage({ menuId, message }),
+				}),
+			],
 		),
 	])
 }

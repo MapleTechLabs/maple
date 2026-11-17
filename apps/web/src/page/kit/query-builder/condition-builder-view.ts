@@ -66,13 +66,14 @@ const fieldItem = (
 	switch (item._tag) {
 		case "Field":
 			return [
-				row(item.field.label, [
-					...(item.field.group === "common"
+				row(
+					item.field.label,
+					item.field.group === "common"
 						? [hint(item.field.key)]
 						: isSearching
 							? [hint(GROUP_SHORT[item.field.group])]
-							: []),
-				]),
+							: [],
+				),
 			]
 		case "Group":
 			return [

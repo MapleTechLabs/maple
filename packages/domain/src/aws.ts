@@ -63,16 +63,24 @@ export const AWS_MODULE_SPECS = {
 	},
 	security: {
 		title: "Security scan",
-		summary: "Misconfigurations and findings, ranked by the traffic they are exposed to.",
+		summary:
+			"GuardDuty, Security Hub, Inspector and Access Analyzer findings, matched to the services they affect, and the CloudTrail audit log.",
 		available: false,
+		rolloutFlag: "cloudSecurity",
 		managedPolicies: ["arn:aws:iam::aws:policy/SecurityAudit"],
+		// Every read the findings poller and the CloudTrail feed make, so none hangs on the managed policy.
 		actions: [
-			"securityhub:GetFindings",
+			"account:ListRegions",
 			"guardduty:ListDetectors",
 			"guardduty:ListFindings",
 			"guardduty:GetFindings",
+			"securityhub:DescribeHub",
+			"securityhub:GetFindings",
+			"inspector2:BatchGetAccountStatus",
 			"inspector2:ListFindings",
+			"access-analyzer:ListAnalyzers",
 			"access-analyzer:ListFindingsV2",
+			"cloudtrail:LookupEvents",
 		],
 	},
 	cost: {
@@ -144,6 +152,8 @@ export const awsConnectionResourceNames = (connectionId: AwsConnectionId) => {
 		/** The stack of one region's metric stream; the same name in every region it runs in. */
 		metricsStackName: `maple-metrics-${hex}`,
 		metricStreamName: `maple-${hex}`,
+		/** The stack that forwards one region's finding events to the main stack's region. */
+		eventsStackName: `maple-events-${hex}`,
 	}
 }
 
@@ -214,6 +224,7 @@ export interface AwsSetupPlan {
 	readonly stackName: string
 	readonly metricsStackName: string
 	readonly metricStreamName: string
+	readonly eventsStackName: string
 	readonly roleArn: string
 	/** The account's IAM OIDC provider for Maple's issuer, shared by every connection to it. */
 	readonly oidcProvider: { readonly arn: string; readonly url: string; readonly audience: string }
@@ -240,6 +251,7 @@ export const awsSetupPlan = (input: AwsSetupPlanInput): AwsSetupPlan => {
 		stackName: names.stackName,
 		metricsStackName: names.metricsStackName,
 		metricStreamName: names.metricStreamName,
+		eventsStackName: names.eventsStackName,
 		roleArn,
 		oidcProvider: { arn: providerArn, url: input.issuer, audience: AWS_OIDC_AUDIENCE },
 		// Only a token Maple signed for this connection: the audience every Maple token carries,

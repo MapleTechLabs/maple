@@ -12,7 +12,14 @@ import { relativeTime } from "../../kit/relative-time"
 import { settingsSection, settingsSections } from "../../kit/settings-section"
 import { Message, type Model } from "./model"
 import { catalogSection } from "./view-catalog"
-import { agentAccessLabel, environmentBadge, type Inputs, kindBadge, statusLine } from "./view-parts"
+import {
+	agentAccessLabel,
+	environmentBadge,
+	gatedSourceControl,
+	type Inputs,
+	kindBadge,
+	statusLine,
+} from "./view-parts"
 
 type H = HtmlBuilder<Message>
 
@@ -67,33 +74,48 @@ const savedWithWarnings = (h: H, warnings: ReadonlyArray<string>): Html =>
 		),
 	])
 
-const actions = (h: H, model: Model, source: V2DataSource): Html =>
-	hstack(h, { gap: "2", wrap: true }, [
-		button(
-			h,
-			{
-				variant: "outline",
-				size: "sm",
-				isLoading: Arr.contains(model.testingIds, source.id),
-				attributes: [h.OnClick(Message.ClickedTest({ id: source.id }))],
-			},
-			["Test connection"],
+const actions = (h: H, model: Model, source: V2DataSource, canManage: boolean): Html => {
+	const gated = (control: (isLocked: boolean) => Html) => gatedSourceControl(h, canManage, control)
+	return hstack(h, { gap: "2", wrap: true }, [
+		gated((isLocked) =>
+			button(
+				h,
+				{
+					variant: "outline",
+					size: "sm",
+					isDisabled: isLocked,
+					isLoading: Arr.contains(model.testingIds, source.id),
+					attributes: isLocked ? [] : [h.OnClick(Message.ClickedTest({ id: source.id }))],
+				},
+				["Test connection"],
+			),
 		),
-		button(
-			h,
-			{
-				variant: "outline",
-				size: "sm",
-				attributes: [h.OnClick(Message.ClickedEdit({ id: source.id }))],
-			},
-			[icon(h, "PencilIcon"), "Edit"],
+		gated((isLocked) =>
+			button(
+				h,
+				{
+					variant: "outline",
+					size: "sm",
+					isDisabled: isLocked,
+					attributes: isLocked ? [] : [h.OnClick(Message.ClickedEdit({ id: source.id }))],
+				},
+				[icon(h, "PencilIcon"), "Edit"],
+			),
 		),
-		button(
-			h,
-			{ variant: "destructive-outline", size: "sm", attributes: [h.OnClick(Message.ClickedDelete())] },
-			[icon(h, "TrashIcon"), "Delete"],
+		gated((isLocked) =>
+			button(
+				h,
+				{
+					variant: isLocked ? "outline" : "destructive-outline",
+					size: "sm",
+					isDisabled: isLocked,
+					attributes: isLocked ? [] : [h.OnClick(Message.ClickedDelete())],
+				},
+				[icon(h, "TrashIcon"), "Delete"],
+			),
 		),
 	])
+}
 
 const overview = (h: H, model: Model, source: V2DataSource, inputs: Inputs): Html => {
 	const test = Arr.findFirst(model.tests, (outcome) => outcome.id === source.id)
@@ -134,7 +156,7 @@ const overview = (h: H, model: Model, source: V2DataSource, inputs: Inputs): Htm
 							}),
 				]),
 			]),
-			...(inputs.canManage ? [actions(h, model, source)] : []),
+			actions(h, model, source, inputs.canManage),
 		]),
 	])
 }

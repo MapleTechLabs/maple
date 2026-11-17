@@ -16,6 +16,7 @@ import {
 import {
 	UptimeMonitorLimitReachedError,
 	UptimeMonitorNotFoundError,
+	UNGROUPED_GROUP_KEY,
 	UptimeMonitorPersistenceError,
 	UptimeMonitorValidationError,
 } from "@maple/domain/http"
@@ -35,7 +36,11 @@ import {
 	effectiveAssertions,
 	firstFailedAssertion,
 	heartbeatDeadline,
+	headersProblem,
+	multiStepConfigProblem,
+	variablesIn,
 	uptimeHttpRequest,
+	UPTIME_CERTIFICATE_GROUP_KEY,
 	UPTIME_REDACTED_HEADER_VALUE,
 	UptimeCheckDetail,
 	UptimeMonitorConfig,
@@ -157,6 +162,8 @@ export interface UptimeProbeTargetRow {
 	readonly serviceName: string | null
 	readonly intervalSeconds: number
 	readonly config: UptimeProbeConfig
+	/** When the settings last changed; reports echo it (see `probedCurrentTarget`). */
+	readonly revision: number
 }
 
 export interface UptimeHttpTestResult {
@@ -259,18 +266,46 @@ const validateConfig = Effect.fnUntraced(function* (kind: UptimeMonitorKind, raw
 	if (config._tag !== kind)
 		return yield* invalid(`config.type '${config._tag}' does not match kind '${kind}'`)
 	switch (config._tag) {
-		case "http":
+		case "http": {
 			if (config.body !== undefined && config.method !== "POST") {
 				return yield* invalid("A request body needs the POST method")
 			}
+			const headerIssue = headersProblem(config.headers)
+			if (headerIssue !== null) return yield* invalid(headerIssue)
 			yield* validateUrl(config.url)
 			break
+		}
 		case "tcp":
 			yield* validateHost(config.host)
 			break
 		case "dns":
 			yield* validateHost(config.hostname)
 			break
+		case "multistep": {
+			const problem =
+				multiStepConfigProblem(config) ??
+				Option.getOrNull(
+					Arr.findFirst(
+						Arr.map(config.steps, (step, index) => {
+							// A {{name}} is checked once filled in; the literal around it must already be sendable.
+							const literal = Rec.map(step.headers, (value) =>
+								Str.replace(/\{\{[^}]*\}\}/gu, "")(value),
+							)
+							const issue = headersProblem(literal)
+							return issue === null ? null : `Step ${index + 1} (${step.name}): ${issue}`
+						}),
+						(issue): issue is string => issue !== null,
+					),
+				)
+			if (problem !== null) return yield* invalid(problem)
+			// A URL built from a variable is checked when it is sent; the scraper refuses private hosts then.
+			yield* Effect.forEach(
+				Arr.filter(config.steps, (step) => variablesIn(step.url).length === 0),
+				(step) => validateUrl(step.url),
+				{ discard: true },
+			)
+			break
+		}
 		case "heartbeat":
 			// The alert evaluator computes deadlines from this schedule, so it must have a next run.
 			if (config.schedule._tag === "cron") {
@@ -286,6 +321,17 @@ const validateConfig = Effect.fnUntraced(function* (kind: UptimeMonitorKind, raw
 	return config
 })
 
+/** The alert groups a monitor's rule reserves: a service of that name would share its incidents. */
+const RESERVED_SERVICE_NAMES: ReadonlySet<string> = new Set([
+	UNGROUPED_GROUP_KEY,
+	UPTIME_CERTIFICATE_GROUP_KEY,
+])
+
+const validateServiceName = (serviceName: string | null) =>
+	serviceName !== null && RESERVED_SERVICE_NAMES.has(serviceName)
+		? Effect.fail(invalid(`'${serviceName}' is reserved and cannot name a service`))
+		: Effect.succeed(serviceName)
+
 const validateName = (name: string) => {
 	const trimmed = Str.trim(name)
 	return trimmed.length === 0 ? Effect.fail(invalid("Name is required")) : Effect.succeed(trimmed)
@@ -298,8 +344,54 @@ const validateFailuresToDown = (value: number) =>
 
 const newHeartbeatToken = () => randomBytes(18).toString("base64url")
 
+/** One header map's `[redacted]` values taken back from `stored`; a name with none stored is refused. */
+const keepRedactedIn = (
+	stored: Readonly<Record<string, string>>,
+	next: Readonly<Record<string, string>>,
+): Effect.Effect<Record<string, string>, UptimeMonitorValidationError> => {
+	const entries = Rec.toEntries(next)
+	const orphan = Arr.findFirst(
+		entries,
+		([name, value]) => value === UPTIME_REDACTED_HEADER_VALUE && stored[name] === undefined,
+	)
+	if (Option.isSome(orphan)) {
+		return Effect.fail(
+			invalid(`Header ${orphan.value[0]} has no stored value to keep; send its real value`),
+		)
+	}
+	return Effect.succeed(
+		Rec.fromEntries(
+			Arr.map(entries, ([name, value]) => [
+				name,
+				value === UPTIME_REDACTED_HEADER_VALUE ? (stored[name] ?? value) : value,
+			]),
+		),
+	)
+}
+
 /** An update's `[redacted]` header values take the stored value back; one with none stored is refused. */
 const keepRedactedHeaders = (current: UptimeMonitorConfig, next: UptimeMonitorConfig) => {
+	if (next._tag === "multistep") {
+		const storedSteps = current._tag === "multistep" ? current.steps : []
+		// A stored value goes back only to the step it was entered for: the same name at the same
+		// literal origin, wherever the step now sits. A host built from a variable keeps nothing.
+		return Effect.map(
+			Effect.forEach(next.steps, (step) => {
+				const origin = originOf(step.url)
+				const stored = Str.includes("{{")(origin)
+					? undefined
+					: Arr.findFirst(
+							storedSteps,
+							(candidate) => candidate.name === step.name && originOf(candidate.url) === origin,
+						).pipe(Option.getOrUndefined)
+				return Effect.map(keepRedactedIn(stored?.headers ?? {}, step.headers), (headers) => ({
+					...step,
+					headers,
+				}))
+			}),
+			(steps) => ({ ...next, steps }),
+		)
+	}
 	if (next._tag !== "http") return Effect.succeed(next)
 	const stored = current._tag === "http" ? current.headers : {}
 	const entries = Rec.toEntries(next.headers)
@@ -326,11 +418,14 @@ const keepRedactedHeaders = (current: UptimeMonitorConfig, next: UptimeMonitorCo
 const originOf = (url: string): string => (URL.canParse(url) ? new URL(url).origin : url)
 
 /** A stored header value goes only to the origin it was entered for; a new origin needs them re-entered. */
+const keepsRedacted = (headers: Readonly<Record<string, string>>) =>
+	Arr.some(Rec.values(headers), (value) => value === UPTIME_REDACTED_HEADER_VALUE)
+
 const refuseRedactedHeadersForNewOrigin = (current: UptimeMonitorConfig, next: UptimeMonitorConfig) =>
 	current._tag === "http" &&
 	next._tag === "http" &&
 	originOf(next.url) !== originOf(current.url) &&
-	Arr.some(Rec.values(next.headers), (value) => value === UPTIME_REDACTED_HEADER_VALUE)
+	keepsRedacted(next.headers)
 		? Effect.fail(
 				invalid(
 					"The URL now points at a different origin; re-enter the header values instead of keeping the hidden ones",
@@ -422,6 +517,7 @@ const selectCheckStates = () =>
 			lastCheckJson: PG.undecoded($.s.lastCheckJson),
 			recentJson: PG.undecoded($.s.recentJson),
 			stateUpdatedAt: $.s.updatedAt,
+			configUpdatedAt: $.updatedAt,
 		}))
 
 const StoredCheckState = Schema.Struct({
@@ -445,6 +541,8 @@ interface CheckStateRow {
 	readonly lastCheckJson: UptimeCheckDetail | null
 	readonly recentJson: ReadonlyArray<UptimeRecentCheck>
 	readonly stateUpdatedAt: number
+	/** When the monitor's settings last changed: a check that started before probed the old target. */
+	readonly configUpdatedAt: number
 }
 
 interface FoldedChecks {
@@ -488,14 +586,65 @@ const foldReports = (row: CheckStateRow, reports: ReadonlyArray<UptimeCheckRepor
 		},
 	)
 
-const toCheckDetail = (report: UptimeCheckReport): UptimeCheckDetail => ({
-	at: report.checkedAt,
-	ok: report.ok,
-	durationMs: report.durationMs,
-	statusCode: report.statusCode,
-	error: report.error,
-	traceId: report.traceId,
-})
+/** The origin an HTTPS check's certificate comes from; null for anything else. */
+export const certificateOrigin = (config: UptimeMonitorConfig): string | null => {
+	const target =
+		config._tag === "http" ? config.url : config._tag === "multistep" ? config.steps[0]?.url : undefined
+	if (target === undefined) return null
+	const url = Option.liftThrowable(() => new URL(target))()
+	return Option.match(url, {
+		onNone: () => null,
+		onSome: (parsed) => (parsed.protocol === "https:" ? parsed.origin : null),
+	})
+}
+
+/**
+ * Whether a report's check ran against the monitor's current settings, by the revision it echoes.
+ * A start time cannot tell: a check that starts after an edit can still run a target the scraper
+ * cached before it. A report without a revision (a target from an API that predates it) is not
+ * trusted with a certificate.
+ */
+const probedCurrentTarget = (report: UptimeCheckReport, configUpdatedAt: number): boolean =>
+	report.targetRevision === configUpdatedAt
+
+/**
+ * `detail` with the certificate `previous` held: a check that started before the monitor's last
+ * edit probed the old target, so it neither sets nor clears the certificate.
+ */
+const keepCertificate = (
+	detail: UptimeCheckDetail,
+	previous: UptimeCheckDetail | null,
+): UptimeCheckDetail => {
+	const { certificate: _ignored, ...rest } = detail
+	return previous?.certificate === undefined ? rest : { ...rest, certificate: previous.certificate }
+}
+
+/** Drops the stored certificate from a monitor's last check, keeping the rest of it. */
+const forgetCertificate = (db: MapleDb, orgId: OrgId, monitorId: UptimeMonitorId) =>
+	db.execute(
+		Orm.sql`UPDATE uptime_monitor_states SET last_check_json = last_check_json - 'certificate'
+			WHERE org_id = ${orgId} AND monitor_id = ${monitorId} AND last_check_json -> 'certificate' IS NOT NULL`,
+	)
+
+/**
+ * The stored detail of a monitor's newest check. A failed check that read no certificate (an
+ * expired one fails the handshake) keeps the previous one, so its expiry stays in view.
+ */
+export const toCheckDetail = (
+	report: UptimeCheckReport,
+	previous: UptimeCheckDetail | null,
+): UptimeCheckDetail => {
+	const certificate = report.certificate ?? (report.ok ? undefined : previous?.certificate)
+	return {
+		at: report.checkedAt,
+		ok: report.ok,
+		durationMs: report.durationMs,
+		statusCode: report.statusCode,
+		error: report.error,
+		traceId: report.traceId,
+		...(certificate === undefined ? undefined : { certificate }),
+	}
+}
 
 type TestOutcome =
 	| {
@@ -732,7 +881,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				const stored = yield* sealHeaders(orgId, id, config)
 				const ruleId = AlertRuleId.make(randomUUID())
 				const enabled = input.enabled !== false
-				const serviceName = input.serviceName ?? null
+				const serviceName = yield* validateServiceName(input.serviceName ?? null)
 				const destinationIds = Arr.dedupe(input.destinationIds ?? [])
 				const payer = yield* dbExecute((db) =>
 					db.transaction(
@@ -820,6 +969,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 						`A ${current.kind} monitor cannot become ${input.config._tag}; create a new monitor instead`,
 					)
 				}
+				if (input.serviceName !== undefined) yield* validateServiceName(input.serviceName)
 				if (input.config !== undefined)
 					yield* refuseRedactedHeadersForNewOrigin(current.config, input.config)
 				const keptConfig =
@@ -935,6 +1085,14 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 									})
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(monitorId)]),
 							)
+							// A certificate belongs to the host that presented it: a new target forgets it,
+							// whether or not the same edit pauses or resumes the monitor.
+							if (
+								config !== undefined &&
+								certificateOrigin(config) !== certificateOrigin(locked.config)
+							) {
+								yield* forgetCertificate(db, orgId, monitorId)
+							}
 							// Pause parks the state; resume starts over from `pending`.
 							if (Option.isNone(enabledChange)) {
 								// New settings drop check batches computed from the old ones (they fence on it).
@@ -1020,8 +1178,12 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 								headersCiphertext: $.headersCiphertext,
 								headersIv: $.headersIv,
 								headersTag: $.headersTag,
+								updatedAt: $.updatedAt,
 							}))
-							.where(($) => [$.enabled.eq(true), $.kind.in_("http", "tcp", "dns")]),
+							.where(($) => [
+								$.enabled.eq(true),
+								$.kind.in_("http", "tcp", "dns", "multistep"),
+							]),
 					),
 				)
 				// A config that no longer decodes, or headers that no longer open, skip their monitor,
@@ -1040,6 +1202,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 											serviceName: row.serviceName,
 											intervalSeconds: row.intervalSeconds,
 											config,
+											revision: row.updatedAt,
 										},
 									],
 						),
@@ -1113,7 +1276,12 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 								consecutiveFailures: folded.snapshot.consecutiveFailures,
 								consecutiveSuccesses: folded.snapshot.consecutiveSuccesses,
 								statusChangedAt: folded.statusChangedAt,
-								lastCheckJson: toCheckDetail(last.value),
+								// Folded in order, so a renewal earlier in a retried batch is not lost to a later failure.
+								lastCheckJson: Arr.reduce(fresh, row.lastCheckJson, (previous, report) =>
+									probedCurrentTarget(report, row.configUpdatedAt)
+										? toCheckDetail(report, previous)
+										: keepCertificate(toCheckDetail(report, previous), previous),
+								),
 								recentJson: folded.recent,
 								readUpdatedAt: row.stateUpdatedAt,
 								updatedAt: now,

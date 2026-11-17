@@ -10,8 +10,8 @@ const GAP = { "2": "gap-2", "3": "gap-3", "4": "gap-4", "6": "gap-6" } as const 
 	GridGap,
 	string
 >
-const GAP_X = { "6": "gap-x-6" } as const
-const GAP_Y = { "4": "gap-y-4" } as const
+const GAP_X = { "4": "gap-x-4", "6": "gap-x-6" } as const
+const GAP_Y = { "4": "gap-y-4", "6": "gap-y-6" } as const
 
 export type GridOptions<M> = Readonly<{
 	/** Columns at every width (`grid-cols-1` keeps one column explicit below a breakpoint). */

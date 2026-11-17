@@ -130,6 +130,44 @@ describe("ApiClient", () => {
 		}).pipe(Effect.provide(TestLayer)),
 	)
 
+	it.effect("skips an uptime monitor this build cannot run and keeps the rest", () =>
+		Effect.gen(function* () {
+			const client = yield* ApiClient
+			const known = {
+				id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+				orgId: "org_1",
+				name: "API",
+				serviceName: null,
+				intervalSeconds: 60,
+				config: {
+					_tag: "http",
+					url: "https://api.example.com/health",
+					method: "GET",
+					headers: {},
+					assertions: [],
+					timeoutMs: 10_000,
+				},
+				ingestKey: "maple_pk_org_1_key",
+			}
+			// A kind a newer API added before this scraper deployed.
+			const newer = {
+				...known,
+				id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+				config: { _tag: "browser" },
+			}
+			const targets = yield* client.listUptimeTargets.pipe(
+				Effect.provideService(
+					FetchHttpClient.Fetch,
+					stubFetch([], () => Response.json([newer, known])),
+				),
+			)
+			assert.deepStrictEqual(
+				Arr.map(targets, (target) => target.id),
+				[known.id],
+			)
+		}).pipe(Effect.provide(TestLayer)),
+	)
+
 	it.effect("posts scrape results as JSON and skips empty batches", () =>
 		Effect.gen(function* () {
 			const recorded: Array<RecordedRequest> = []

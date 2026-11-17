@@ -24,6 +24,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr, Option } from "effect"
 import { hstack } from "@maple/views/ui/stack"
 import { canManageAlerts } from "../../kit/session-grants"
+import { gatedEntries } from "../../kit/gated-controls"
 
 type H = HtmlBuilder<Message>
 
@@ -131,7 +132,6 @@ const menuEntries = (
 						}),
 					},
 				]
-	if (!canManageAlerts(model)) return existing
 	const chat = Arr.flatMap(connectors, (connector): ReadonlyArray<MenuView.MenuItemEntry> => {
 		const mark = logo(h, model, "chat", connector.id, "flex shrink-0")
 		if (connector.workspaces.length > 0)
@@ -175,7 +175,12 @@ const menuEntries = (
 	return [
 		...existing,
 		...(available.length > 0 ? [SEPARATOR] : []),
-		{ _tag: "Group", label: "New destination", entries: [...chat, ...created] },
+		// New destinations need `alerts:manage`; a viewer without it sees them disabled with who can.
+		{
+			_tag: "Group",
+			label: "New destination",
+			entries: gatedEntries(model, "alerts:manage", [...chat, ...created]),
+		},
 	]
 }
 
@@ -284,7 +289,7 @@ export const destinationList = (
 					),
 				]
 			: []),
-		...(canAdd ? [addMenu(h, model, tier, available)] : []),
+		addMenu(h, model, tier, available),
 	])
 }
 

@@ -209,6 +209,16 @@ const routers = {
 		search(Search.SecurityDependenciesSearch),
 		Route.mapTo(AppRoute.SecurityDependencies),
 	),
+	SecurityCloudFinding: pipe(
+		path("security", "cloud", "finding"),
+		search(Search.SecurityCloudFindingSearch),
+		Route.mapTo(AppRoute.SecurityCloudFinding),
+	),
+	SecurityCloud: pipe(
+		path("security", "cloud"),
+		search(Search.SecurityCloudSearch),
+		Route.mapTo(AppRoute.SecurityCloud),
+	),
 	SecurityAuditLog: pipe(
 		path("security", "audit-log"),
 		search(Search.SecurityAuditLogSearch),

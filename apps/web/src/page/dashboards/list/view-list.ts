@@ -2,6 +2,7 @@ import { pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
+import { lockedControl } from "@maple/views/ui/locked-control"
 import { button, linkButton } from "@maple/views/ui/button"
 import { cardButton } from "@maple/views/ui/card-button"
 import {
@@ -51,25 +52,16 @@ const SCOPE_OPTIONS = [
 	{ value: "favorites", label: "Favorites" },
 ] as const
 
-/** A disabled control wrapped in a `contents` tooltip trigger. */
-const disabledReason = (h: H, child: Html): Html =>
-	h.div(
-		[
-			h.Class("contents"),
-			h.DataAttribute("base-ui-tooltip-trigger", ""),
-			h.DataAttribute("slot", "tooltip-trigger"),
-		],
-		[child],
-	)
-
 /** Disabled with its reason while no dashboard carries a tag. */
 const tagFilter = (h: H, model: Model, allTags: ReadonlyArray<string>): Html =>
 	allTags.length === 0
-		? disabledReason(
+		? lockedControl(
 				h,
+				"Add tags to a dashboard to filter by them.",
 				button(h, { variant: "outline", size: "sm", className: "shrink-0", isDisabled: true }, [
 					"Tags",
 				]),
+				{ className: "shrink-0" },
 			)
 		: h.submodel({
 				slotId: "dashboards-tag-filter",
