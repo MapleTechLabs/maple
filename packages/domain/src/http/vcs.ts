@@ -246,6 +246,8 @@ export const PullRequestReviewComment = Schema.Struct({
 export const PullRequestReviewThread = Schema.Struct({
 	id: Schema.String,
 	isResolved: Schema.Boolean,
+	/** Who resolved the thread, when the provider says; only its author or someone who can push may. */
+	resolvedBy: Schema.optionalKey(Schema.String),
 	comments: Schema.Array(
 		Schema.Struct({
 			commentId: Schema.NullOr(Schema.String),
@@ -316,7 +318,9 @@ export const PullRequestApprovalOutcome = Schema.Literals([
 	"not_open",
 	"draft",
 	"head_moved",
+	"base_not_default",
 	"untrusted_author",
+	"too_many_reviews",
 	"unsupported",
 ])
 export type PullRequestApprovalOutcome = Schema.Schema.Type<typeof PullRequestApprovalOutcome>

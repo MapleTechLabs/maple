@@ -146,6 +146,17 @@ const verdictOf = (body: string): ReplyVerdict | undefined => {
 	return Arr.some(statements, affirmsDismissal) ? "dismissed" : undefined
 }
 
+/** The last reply on a thread that states a verdict, and who wrote it; the poster's and bots' say nothing. */
+const latestVerdict = (
+	thread: PullRequestReviewThread,
+): { readonly verdict: ReplyVerdict; readonly author: string } | undefined => {
+	const poster = thread.comments[0]?.author
+	return Arr.flatMap(thread.comments.slice(1), (reply) => {
+		const verdict = reply.author === poster || reply.isBot === true ? undefined : verdictOf(reply.body)
+		return verdict === undefined ? [] : [{ verdict, author: reply.author }]
+	}).at(-1)
+}
+
 /**
  * What people did with open findings since the last review. A person's latest reply with a verdict
  * decides: a dismissal ("won't fix") dismisses, a fix ("Fixed in c88ba3a") resolves, a retraction
@@ -175,13 +186,7 @@ export const settledFindings = (
 		if (finding.commentId === null) continue
 		const thread = byComment.get(finding.commentId)
 		if (thread === undefined) continue
-		const poster = thread.comments[0]?.author
-		const verdicts = Arr.flatMap(thread.comments.slice(1), (reply) => {
-			const verdict =
-				reply.author === poster || reply.isBot === true ? undefined : verdictOf(reply.body)
-			return verdict === undefined ? [] : [verdict]
-		})
-		const latest = verdicts.at(-1)
+		const latest = latestVerdict(thread)?.verdict
 		if (latest === "open") continue
 		const verdict =
 			latest ??
@@ -193,6 +198,56 @@ export const settledFindings = (
 	}
 	return { dismissed, resolved }
 }
+
+/**
+ * Warnings and criticals settled by a person's word alone: resolved with no review of a later head
+ * confirming the fix. A note is never one, and neither is a finding a review resolved itself.
+ */
+export const wordSettledIssues = (tracked: ReadonlyArray<TrackedFinding>): ReadonlyArray<TrackedFinding> =>
+	Arr.filter(
+		tracked,
+		(finding) =>
+			finding.status === "resolved" && finding.resolvedSha == null && finding.severity !== "info",
+	)
+
+/**
+ * Who settled each of those findings: the author of the latest reply that states a verdict, else
+ * whoever resolved the thread. `undefined` when the thread is gone or names nobody.
+ */
+export const findingSettlers = (
+	settled: ReadonlyArray<TrackedFinding>,
+	threads: ReadonlyArray<PullRequestReviewThread>,
+): ReadonlyArray<{ readonly finding: TrackedFinding; readonly settler: string | undefined }> =>
+	Arr.map(settled, (finding) => {
+		const thread = threadForFinding(finding, threads)
+		if (thread === undefined) return { finding, settler: undefined }
+		const reply = latestVerdict(thread)
+		const settler =
+			reply !== undefined && reply.verdict !== "open"
+				? reply.author
+				: thread.isResolved
+					? thread.resolvedBy
+					: undefined
+		return { finding, settler }
+	})
+
+/**
+ * How many of those findings an approval may not lean on: settled by the pull request's author, by
+ * someone who cannot push, or by nobody the thread names. An unknown author vouches for no one.
+ */
+export const untrustedSettlements = (
+	settlers: ReadonlyArray<{ readonly settler: string | undefined }>,
+	authorLogin: string | null,
+	canPush: ReadonlySet<string>,
+): number =>
+	Arr.filter(
+		settlers,
+		({ settler }) =>
+			settler === undefined ||
+			authorLogin === null ||
+			Str.toLowerCase(settler) === Str.toLowerCase(authorLogin) ||
+			!canPush.has(settler),
+	).length
 
 /** A person's reply on a finding's thread, as the next review is shown it. */
 export interface FindingReply {

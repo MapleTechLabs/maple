@@ -22,6 +22,11 @@ import {
 	PrReviewTestSignal,
 	PrReviewVerdict,
 } from "./pr-review"
+import {
+	PR_REVIEW_AUTO_APPROVE_MAX_CHANGED_LINES,
+	PR_REVIEW_AUTO_APPROVE_MAX_FILES,
+	type PrReviewDiffSignals,
+} from "./pr-review-diff"
 import { openContractBreaks } from "./pr-review-telemetry"
 
 /**
@@ -316,8 +321,13 @@ export interface NormalizedPrReviewSubmission {
 	readonly report: PrReviewReport
 	/** Top-level keys the model supplied, for the span. */
 	readonly filled: ReadonlyArray<string>
-	/** Findings dropped for no anchor line, or an observability finding with no audit check id. */
+	/**
+	 * Findings dropped for no anchor line, or an observability finding with no audit check id. A
+	 * findings list that could not be read at all counts as one.
+	 */
 	readonly droppedFindings: number
+	/** The verdict as the model sent it; `undefined` when it sent none, or one that is not a verdict. */
+	readonly submittedVerdict: PrReviewVerdict | undefined
 	/** Handles of earlier findings the model says this head fixes, upper-cased and deduplicated. */
 	readonly resolved: ReadonlyArray<string>
 	/** Where the reviewer says each removed name is still emitted; the service verifies each one. */
@@ -357,6 +367,9 @@ export interface PrReviewTelemetryDismissal {
 export const normalizePrReviewSubmission = (submission: PrReviewSubmission): NormalizedPrReviewSubmission => {
 	const filled = Arr.filter(Struct.keys(submission), (key) => submission[key] !== undefined)
 	const rawFindings = listOf(submission.findings, decodeFindings)
+	// Text that is not a list of findings reads as none; what it held is lost, so it is counted.
+	const unreadableFindings =
+		typeof submission.findings === "string" && Option.isNone(decodeFindings(submission.findings))
 	const findings: Array<PrReviewFinding> = []
 	for (const raw of rawFindings) {
 		const finding = normalizePrReviewFinding(raw)
@@ -436,7 +449,8 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 			findings,
 		}),
 		filled,
-		droppedFindings: rawFindings.length - findings.length,
+		droppedFindings: rawFindings.length - findings.length + (unreadableFindings ? 1 : 0),
+		submittedVerdict,
 		resolved: handlesOf(submission.resolved).slice(0, MAX_FINDINGS),
 		// Bounded and deduplicated: each one costs a file read at the head before it is accepted.
 		telemetryDismissals: Arr.dedupeWith(
@@ -803,15 +817,24 @@ export type PrReviewAutoApprovalRefusal =
 	| "unread"
 	| "diff_unavailable"
 	| "patchless"
+	| "truncated_listing"
+	| "truncated_patch"
+	| "unreviewed_kinds"
+	| "sensitive_paths"
+	| "too_large"
 	| "ignored_files"
+	| "untrusted_settlement"
 	| "dismissed"
 	| "filtered"
 	| "unchecked_fixes"
+	| "submitted_verdict"
+	| "dropped_findings"
 	| "verdict"
 	| "findings"
 	| "risk"
 	| "tests"
 	| "merge_steps"
+	| "author_ticked_steps"
 	| "contract_break"
 	| "confidence"
 
@@ -825,6 +848,9 @@ export type PrReviewAutoApproval =
 			readonly reasons: ReadonlyArray<string>
 			readonly reason: string
 	  }
+
+/** Sensitive paths a refusal names before it counts the rest. */
+const SENSITIVE_PATHS_NAMED = 3
 
 const refuse = (
 	refusals: Arr.NonEmptyReadonlyArray<readonly [PrReviewAutoApprovalRefusal, string]>,
@@ -843,6 +869,11 @@ const refuse = (
  * never low), saw tests cover the change or not need to, left no step before merge open and no
  * telemetry contract broken, and scored {@link PR_REVIEW_AUTO_APPROVE_MIN_CONFIDENCE} or more.
  *
+ * The model's word is not enough on its own. Maple's own read of the diff ({@link PrReviewDiffSignals})
+ * refuses a file the review could not have read in full, a sensitive path whatever the risk was
+ * rated, and a diff past the size caps; and what the model sent has to have been a literal `clean`
+ * verdict with no finding dropped as unreadable.
+ *
  * A dismissal is a person's judgment that a warning does not hold, often the author's own, so a
  * pull request that had one waits for a person to approve it too.
  *
@@ -860,6 +891,17 @@ export const prReviewAutoApproval = (input: {
 	readonly patchlessFiles?: number
 	/** Files of the diff under the repository's ignored paths: the review never read them. */
 	readonly ignoredFiles?: number
+	/** Maple's own read of the diff: what the review could not have read, and what no review clears. */
+	readonly diff?: PrReviewDiffSignals
+	/** What the model itself sent, before it was normalized. Absent reads as not clean. */
+	readonly submitted?: {
+		readonly verdict?: PrReviewVerdict | undefined
+		readonly droppedFindings: number
+	}
+	/** Warnings and criticals settled by word alone, by the author or someone without push access. */
+	readonly untrustedSettlements?: number
+	/** The pull request's author: a step they ticked themselves still waits for someone else. */
+	readonly authorLogin?: string | null
 	/** Warnings and criticals on the pull request a person or the reviewer dismissed, ever. */
 	readonly dismissedIssues?: number
 	/**
@@ -873,7 +915,20 @@ export const prReviewAutoApproval = (input: {
 	const uncheckedFixes = input.uncheckedFixes ?? 0
 	// An early end says nothing reliable about the rest, so it stands alone.
 	if (input.partial === true) return refuse([["partial", "the review ended early"]])
-	const openSteps = Arr.filter(report.beforeMerge ?? [], (step) => step.done !== true).length
+	const steps = report.beforeMerge ?? []
+	const openSteps = Arr.filter(steps, (step) => step.done !== true).length
+	// A tick with no name on it, or with no author to compare it to, is not known to be someone else's.
+	const author = input.authorLogin == null ? undefined : Str.toLowerCase(input.authorLogin)
+	const authorTicked = Arr.filter(
+		steps,
+		(step) =>
+			step.done === true &&
+			(step.doneBy === undefined || author === undefined || Str.toLowerCase(step.doneBy) === author),
+	).length
+	const diff = input.diff
+	const sensitive = diff?.sensitivePaths ?? []
+	const tooManyLines = (diff?.changedLines ?? 0) > PR_REVIEW_AUTO_APPROVE_MAX_CHANGED_LINES
+	const tooManyFiles = (diff?.changedFiles ?? 0) > PR_REVIEW_AUTO_APPROVE_MAX_FILES
 	const confidence = confidencePrReview(report, carriedOpen, false, uncheckedFixes)
 	const checks: ReadonlyArray<readonly [boolean, PrReviewAutoApprovalRefusal, string]> = [
 		[report.wholeDiff !== true, "not_whole_diff", "the review read only the commits since the last one"],
@@ -884,7 +939,43 @@ export const prReviewAutoApproval = (input: {
 			"patchless",
 			"some files have no patch to read (binary, or too large)",
 		],
+		[
+			diff?.truncatedListing === true,
+			"truncated_listing",
+			"the diff has more files than the review was shown",
+		],
+		[
+			(diff?.truncatedPatchFiles ?? 0) > 0,
+			"truncated_patch",
+			"some files have a patch longer than the review was shown",
+		],
+		[
+			(diff?.unreviewedKindFiles ?? 0) > 0,
+			"unreviewed_kinds",
+			"some files are of a kind the review does not read (generated, tooling or lockfiles)",
+		],
+		[
+			sensitive.length > 0,
+			"sensitive_paths",
+			`the diff touches ${Arr.join(sensitive.slice(0, SENSITIVE_PATHS_NAMED), ", ")}${
+				sensitive.length > SENSITIVE_PATHS_NAMED
+					? ` and ${sensitive.length - SENSITIVE_PATHS_NAMED} more sensitive ${sensitive.length - SENSITIVE_PATHS_NAMED === 1 ? "path" : "paths"}`
+					: ""
+			}`,
+		],
+		[
+			tooManyLines || tooManyFiles,
+			"too_large",
+			tooManyLines
+				? `the diff changes ${diff?.changedLines} lines, over ${PR_REVIEW_AUTO_APPROVE_MAX_CHANGED_LINES}`
+				: `the diff changes ${diff?.changedFiles} files, over ${PR_REVIEW_AUTO_APPROVE_MAX_FILES}`,
+		],
 		[(input.ignoredFiles ?? 0) > 0, "ignored_files", "some files are under ignored paths"],
+		[
+			(input.untrustedSettlements ?? 0) > 0,
+			"untrusted_settlement",
+			"a warning or critical was settled by the author or by someone without push access",
+		],
 		[
 			(input.dismissedIssues ?? 0) > 0,
 			"dismissed",
@@ -896,6 +987,17 @@ export const prReviewAutoApproval = (input: {
 			"a warning or critical was held back by the repository's rules",
 		],
 		[uncheckedFixes > 0, "unchecked_fixes", "a fix has not been re-checked against the whole diff"],
+		// Only where the report reads clean: any other verdict is refused, and named, just below.
+		[
+			report.verdict === "clean" && input.submitted?.verdict !== "clean",
+			"submitted_verdict",
+			"the reviewer did not submit a clean verdict",
+		],
+		[
+			(input.submitted?.droppedFindings ?? 0) > 0,
+			"dropped_findings",
+			"a finding the reviewer sent could not be read",
+		],
 		[report.verdict !== "clean", "verdict", `the verdict is ${report.verdict}`],
 		[
 			Arr.some([...report.findings, ...carriedOpen], (finding) => finding.severity !== "info"),
@@ -912,6 +1014,11 @@ export const prReviewAutoApproval = (input: {
 			openSteps > 0,
 			"merge_steps",
 			openSteps === 1 ? "a step before merge is open" : `${openSteps} steps before merge are open`,
+		],
+		[
+			authorTicked > 0,
+			"author_ticked_steps",
+			"a step before merge was ticked by the pull request's author",
 		],
 		[
 			openContractBreaks(report.telemetry).length > 0,

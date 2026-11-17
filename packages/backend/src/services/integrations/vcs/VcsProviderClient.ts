@@ -221,13 +221,16 @@ export interface VcsProviderClient {
 		| VcsRateLimitedError
 	>
 
-	/** Every file of one pull request's diff, with the provider's unified patch where it gives one. */
+	/**
+	 * Every file of one pull request's diff, with the provider's unified patch where it gives one.
+	 * `truncated` says the provider stopped listing before the end, so `files` is not the whole diff.
+	 */
 	readonly fetchPullRequestFiles: (
 		installation: VcsInstallation,
 		repo: VcsRepositoryRef,
 		number: number,
 	) => Effect.Effect<
-		ReadonlyArray<PullRequestFile>,
+		{ readonly files: ReadonlyArray<PullRequestFile>; readonly truncated: boolean },
 		| VcsProviderError
 		| VcsInstallationGoneError
 		| VcsRepoUnavailableError

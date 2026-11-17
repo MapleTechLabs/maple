@@ -2,6 +2,7 @@ import { PrReviewFinding, type PullRequestReviewThread } from "@maple/domain/htt
 import { assert, describe, it } from "vitest"
 import {
 	capUnsourcedPrivacyCriticals,
+	findingSettlers,
 	followUpScope,
 	latestReplies,
 	ignoredPathsInKickoff,
@@ -14,7 +15,9 @@ import {
 	settledFindings,
 	type TrackedFinding,
 	uncheckedFixes,
+	untrustedSettlements,
 	withoutRepeats,
+	wordSettledIssues,
 } from "./findings"
 import { Array as Arr } from "effect"
 
@@ -202,6 +205,50 @@ describe("settledFindings", () => {
 			"open",
 		)
 		assert.strictEqual(settle([thread()], new Set()), "open")
+	})
+})
+
+describe("findings settled by word alone", () => {
+	const settledByWord = tracked({ status: "resolved", resolvedSha: null })
+
+	it("counts a warning a person called fixed, not one a review confirmed or a note", () => {
+		const confirmed = tracked({ id: "row-2", status: "resolved", resolvedSha: "abc" })
+		const note = tracked({ id: "row-3", status: "resolved", resolvedSha: null, severity: "info" })
+		const open = tracked({ id: "row-4" })
+		assert.deepEqual(wordSettledIssues([settledByWord, confirmed, note, open]), [settledByWord])
+	})
+
+	it("names whoever wrote the latest verdict, over whoever resolved the thread", () => {
+		const threads = [
+			thread({
+				isResolved: true,
+				resolvedBy: "carol",
+				comments: [BOT_COMMENT, reply("Fixed in c88ba3a.", "alice"), reply("Thanks!", "bob")],
+			}),
+		]
+		assert.deepEqual(
+			Arr.map(findingSettlers([settledByWord], threads), ({ settler }) => settler),
+			["alice"],
+		)
+	})
+
+	it("names whoever resolved a thread nobody answered, and nobody for a thread that is gone", () => {
+		const silent = [thread({ isResolved: true, resolvedBy: "carol" })]
+		assert.strictEqual(findingSettlers([settledByWord], silent)[0]?.settler, "carol")
+		assert.isUndefined(findingSettlers([settledByWord], [thread({ isResolved: true })])[0]?.settler)
+		assert.isUndefined(findingSettlers([settledByWord], [])[0]?.settler)
+	})
+
+	it("trusts only someone other than the author who can push", () => {
+		const by = (settler: string | undefined) => [{ settler }]
+		const pushers = new Set(["alice", "octocat"])
+		assert.strictEqual(untrustedSettlements(by("alice"), "octocat", pushers), 0)
+		// The author vouching for their own change, in any letter case.
+		assert.strictEqual(untrustedSettlements(by("OctoCat"), "octocat", pushers), 1)
+		assert.strictEqual(untrustedSettlements(by("drive-by"), "octocat", pushers), 1)
+		assert.strictEqual(untrustedSettlements(by(undefined), "octocat", pushers), 1)
+		// With no author on record nobody can be told apart from them.
+		assert.strictEqual(untrustedSettlements(by("alice"), null, pushers), 1)
 	})
 })
 

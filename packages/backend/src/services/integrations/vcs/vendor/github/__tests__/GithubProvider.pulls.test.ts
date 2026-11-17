@@ -546,7 +546,7 @@ describe("GithubProvider publishing a review", () => {
 				state: "open",
 				draft: false,
 				head: { sha: HEAD, ref: "chore/label", repo: { full_name: "octo/shop" } },
-				base: { sha: Str.repeat(40)("b"), ref: "main" },
+				base: { sha: Str.repeat(40)("b"), ref: "main", repo: { default_branch: "main" } },
 				...overrides,
 			})
 		const approve = (): PullRequestReviewPublication => ({
@@ -562,6 +562,7 @@ describe("GithubProvider publishing a review", () => {
 					...posted(),
 					pull(),
 					jsonResponse({ permission: "write" }),
+					jsonResponse([]),
 					jsonResponse({
 						id: 9,
 						html_url: "https://github.com/octo/shop/pull/612#pullrequestreview-9",
@@ -634,12 +635,71 @@ describe("GithubProvider publishing a review", () => {
 				),
 		)
 
+		it.effect(
+			"does not approve a pull request into another branch, or one whose default branch is unknown",
+			() =>
+				Effect.forEach(
+					[
+						{
+							base: {
+								sha: Str.repeat(40)("b"),
+								ref: "release",
+								repo: { default_branch: "main" },
+							},
+						},
+						{ base: { sha: Str.repeat(40)("b"), ref: "main" } },
+					],
+					(overrides) => {
+						const requests: Array<string> = []
+						return Effect.gen(function* () {
+							const provider = yield* GithubProvider
+							const published = yield* provider.publishPullRequestReview(
+								INSTALLATION,
+								REPO,
+								approve(),
+							)
+							assert.equal(published.approval, "base_not_default")
+							assert.isFalse(Arr.some(requests, Str.includes("/permission")))
+							assert.isFalse(Arr.some(requests, Str.endsWith("/reviews")))
+						}).pipe(
+							Effect.provide(
+								providerLayer([...posted(), pull(overrides)], requests, [], [], appEnv),
+							),
+						)
+					},
+					{ discard: true },
+				),
+		)
+
+		it.effect("does not approve where it could not list every review to withdraw later", () => {
+			const requests: Array<string> = []
+			const bodies: Array<string> = []
+			const fullPage = () =>
+				jsonResponse(
+					Arr.makeBy(100, (i) => ({ id: i, state: "COMMENTED", user: { login: "octocat" } })),
+				)
+			const layer = providerLayer(
+				[...posted(), pull(), jsonResponse({ permission: "write" }), ...Arr.makeBy(10, fullPage)],
+				requests,
+				bodies,
+				[],
+				appEnv,
+			)
+			return Effect.gen(function* () {
+				const provider = yield* GithubProvider
+				const published = yield* provider.publishPullRequestReview(INSTALLATION, REPO, approve())
+				assert.equal(published.approval, "too_many_reviews")
+				assert.isFalse(Arr.some(bodies, Str.includes("APPROVE")))
+			}).pipe(Effect.provide(layer))
+		})
+
 		it.effect("keeps the published review when GitHub refuses the approval", () => {
 			const layer = providerLayer(
 				[
 					...posted(),
 					pull(),
 					jsonResponse({ permission: "admin" }),
+					jsonResponse([]),
 					jsonResponse({ message: "Resource not accessible by integration" }, 403),
 				],
 				[],

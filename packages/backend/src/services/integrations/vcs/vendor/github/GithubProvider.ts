@@ -1410,8 +1410,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					.listPullRequestFiles(installation.externalInstallationId, repo.owner, repo.name, number)
 					.pipe(
 						Effect.mapBoth({
-							onSuccess: (files) =>
-								Arr.map(files, (file): PullRequestFile => ({
+							onSuccess: ({ files, truncated }) => ({
+								files: Arr.map(files, (file): PullRequestFile => ({
 									path: file.filename,
 									previousPath: file.previous_filename ?? null,
 									status: normalizeFileStatus(file.status),
@@ -1419,6 +1419,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 									deletions: file.deletions,
 									patch: file.patch ?? null,
 								})),
+								truncated,
+							}),
 							onFailure: toVcsError,
 						}),
 					)
@@ -1436,6 +1438,9 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 								Arr.map(threads, (thread): PullRequestReviewThread => ({
 									id: thread.id,
 									isResolved: thread.isResolved,
+									...(thread.resolvedBy == null
+										? undefined
+										: { resolvedBy: thread.resolvedBy.login }),
 									comments: Arr.map(thread.comments.nodes, (comment) => {
 										const count = (content: string) =>
 											Arr.findFirst(
@@ -1725,6 +1730,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 			 * safe; the pull request itself is read again here, because only it knows whether the head is
 			 * still the one reviewed and whether its author could push the change themselves. An
 			 * approval for an outside author would let a stranger's diff talk its way to a merge.
+			 * Only a pull request into the default branch is approved: the review read the rules and
+			 * the diff against that branch, and another base merges something else.
 			 */
 			const applyApproval = Effect.fn("GithubProvider.applyApproval")(function* (
 				installation: VcsInstallation,
@@ -1743,10 +1750,23 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				if (pull.state !== "open") return "not_open" as const
 				if (pull.draft === true) return "draft" as const
 				if (pull.head.sha !== publication.headSha) return "head_moved" as const
+				// An unknown default branch reads as a different one.
+				const defaultBranch = pull.base.repo?.default_branch
+				if (defaultBranch === undefined || pull.base.ref !== defaultBranch) {
+					return "base_not_default" as const
+				}
 				const author = pull.user?.login
 				if (author === undefined || author === appBotLogin) return "untrusted_author" as const
 				const permission = yield* client.getCollaboratorPermission(id, repo.owner, repo.name, author)
 				if (!pushPermissions.has(permission)) return "untrusted_author" as const
+				// Past the page cap a later withdrawal could not find this approval among the reviews.
+				const reviews = yield* client.listPullRequestReviews(
+					id,
+					repo.owner,
+					repo.name,
+					publication.number,
+				)
+				if (reviews.truncated) return "too_many_reviews" as const
 				yield* client.createPullRequestReview(id, repo.owner, repo.name, publication.number, {
 					commitId: publication.headSha,
 					body: approval.body,
@@ -1857,7 +1877,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						)
 						.pipe(
 							Effect.map(
-								(files): ReadonlyMap<string, string | undefined> =>
+								({ files }): ReadonlyMap<string, string | undefined> =>
 									new Map(Arr.map(files, (file) => [file.filename, file.patch])),
 							),
 							Effect.option,

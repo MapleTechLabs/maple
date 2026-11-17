@@ -391,7 +391,14 @@ const GithubApiPullRequestHead = Schema.Struct({
 		ref: Schema.String,
 		repo: Schema.NullOr(Schema.Struct({ full_name: Schema.String })),
 	}),
-	base: Schema.Struct({ sha: Schema.String, ref: Schema.String }),
+	base: Schema.Struct({
+		sha: Schema.String,
+		ref: Schema.String,
+		/** The repository the pull request merges into; its default branch is what an approval is held to. */
+		repo: Schema.optionalKey(
+			Schema.NullOr(Schema.Struct({ default_branch: Schema.optionalKey(Schema.String) })),
+		),
+	}),
 })
 export type GithubApiPullRequestHead = Schema.Schema.Type<typeof GithubApiPullRequestHead>
 const GithubApiCreatedComment = Schema.Struct({ id: Schema.Number, html_url: Schema.String })
@@ -473,6 +480,9 @@ const GithubReviewThreadsResponse = Schema.Struct({
 										Schema.Struct({
 											id: Schema.String,
 											isResolved: Schema.Boolean,
+											resolvedBy: Schema.optionalKey(
+												Schema.NullOr(Schema.Struct({ login: Schema.String })),
+											),
 											comments: Schema.Struct({
 												nodes: Schema.Array(
 													Schema.Struct({
@@ -663,7 +673,7 @@ const REVIEW_THREADS_QUERY = `query($owner: String!, $name: String!, $number: In
     pullRequest(number: $number) {
       reviewThreads(first: 100) {
         nodes {
-          id isResolved
+          id isResolved resolvedBy { login }
           comments(first: 20) {
             nodes { databaseId author { login __typename } body reactionGroups { content reactors { totalCount } } }
           }
@@ -1416,7 +1426,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				)
 
 			// Every page: a review needs the whole diff, and GitHub itself stops at
-			// 3,000 files, which is PER_PAGE * MAX_PR_FILE_PAGES.
+			// 3,000 files, which is PER_PAGE * MAX_PR_FILE_PAGES. `truncated` says the listing hit that.
 			const listPullRequestFiles = Effect.fn("GithubAppClient.listPullRequestFiles")(function* (
 				externalInstallationId: string,
 				owner: string,
@@ -1425,7 +1435,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 			) {
 				const config = yield* resolveConfig
 				const token = yield* mintInstallationToken(externalInstallationId)
-				const { items } = yield* collectPages(MAX_PR_FILE_PAGES, (page) =>
+				const { items: files, truncated } = yield* collectPages(MAX_PR_FILE_PAGES, (page) =>
 					Effect.gen(function* () {
 						const response = yield* authedGet(
 							config,
@@ -1446,7 +1456,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						)
 					}),
 				)
-				return items
+				return { files, truncated }
 			})
 
 			// One page of each: the reviewer wants the recent story, not the archive. Checks come
