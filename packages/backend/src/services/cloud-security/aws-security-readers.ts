@@ -627,8 +627,11 @@ export const normalizeInspector = (finding: Inspector.Finding): Option.Option<Fi
 	})
 }
 
-/** Inspector keeps an open finding indefinitely: the first read reaches back a year. */
-export const INSPECTOR_BACKFILL_MS = 365 * DAY_MS
+/**
+ * Inspector keeps an open finding until it is fixed, however old: the first read starts at
+ * Inspector's launch (November 2021), so no open finding falls before it.
+ */
+export const INSPECTOR_EPOCH_MS = Date.UTC(2021, 10, 1)
 /** Inspector's update index lags a little: a read stops this far short of now. Late listings meet the refresh by id. */
 const INSPECTOR_LATE_MS = 5 * MINUTE_MS
 
@@ -644,10 +647,14 @@ const readInspector = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =>
 		const endMs = target.nowMs - INSPECTOR_LATE_MS
 		const read = yield* readWindows(
 			{
-				startMs: target.cursorAt ?? endMs - INSPECTOR_BACKFILL_MS,
+				startMs: target.cursorAt ?? INSPECTOR_EPOCH_MS,
 				endMs,
-				spanMs: target.windowMs ?? (target.cursorAt === null ? 7 * DAY_MS : 60 * MINUTE_MS),
-				maxSpanMs: 90 * DAY_MS,
+				// The first read tries everything since the epoch at once; a full window splits itself.
+				spanMs:
+					target.cursorAt === null
+						? endMs - INSPECTOR_EPOCH_MS
+						: (target.windowMs ?? 60 * MINUTE_MS),
+				maxSpanMs: target.cursorAt === null ? endMs - INSPECTOR_EPOCH_MS : 90 * DAY_MS,
 				budgetPages: MAX_PAGES,
 				deadlineMs: target.deadlineMs,
 			},
@@ -878,6 +885,33 @@ const INSPECTOR_ID_BATCH = 10
  * The current version of stored findings, by id: a status changed in the console does not always
  * move the service's update time. `missing` are ids the service no longer has.
  */
+/**
+ * `fetch` over `ids` in batches, one after another, starting none past `deadlineMs`. `queried` are
+ * the ids a batch asked about: only those can be missing.
+ */
+export const batchesBefore = <A, E>(
+	ids: ReadonlyArray<string>,
+	size: number,
+	deadlineMs: number,
+	fetch: (chunk: ReadonlyArray<string>) => Effect.Effect<ReadonlyArray<A>, E>,
+): Effect.Effect<{ readonly found: ReadonlyArray<A>; readonly queried: ReadonlyArray<string> }, E> =>
+	Effect.map(
+		Effect.forEach(Arr.chunksOf(ids, size), (chunk) =>
+			Effect.flatMap(Clock.currentTimeMillis, (nowMs) =>
+				nowMs >= deadlineMs
+					? Effect.succeedNone
+					: Effect.map(fetch(chunk), (found) => Option.some({ found, chunk })),
+			),
+		),
+		(batches) => {
+			const done = Arr.getSomes(batches)
+			return {
+				found: Arr.flatMap(done, (batch) => batch.found),
+				queried: Arr.flatMap(done, (batch) => batch.chunk),
+			}
+		},
+	)
+
 export const refreshFindings = (
 	source: "guardduty" | "securityhub" | "inspector",
 	target: ReadTarget,
@@ -886,9 +920,16 @@ export const refreshFindings = (
 	readonly found: ReadonlyArray<FindingRead>
 	readonly missing: ReadonlyArray<string>
 }> => {
-	const fetch: Effect.Effect<ReadonlyArray<FindingRead>, AwsSecurityReadError> = source === "inspector"
-		? Effect.map(
-				Effect.forEach(Arr.chunksOf(ids, INSPECTOR_ID_BATCH), (chunk) =>
+	type Fetched = { readonly found: ReadonlyArray<FindingRead>; readonly queried: ReadonlyArray<string> }
+	const batches = (
+		size: number,
+		fetchChunk: (
+			chunk: ReadonlyArray<string>,
+		) => Effect.Effect<ReadonlyArray<FindingRead>, AwsSecurityReadError>,
+	) => batchesBefore(ids, size, target.deadlineMs, fetchChunk)
+	const fetch: Effect.Effect<Fetched, AwsSecurityReadError> =
+		source === "inspector"
+			? batches(INSPECTOR_ID_BATCH, (chunk) =>
 					Effect.map(
 						callAs(target)(
 							"Inspector.ListFindings",
@@ -903,22 +944,14 @@ export const refreshFindings = (
 						),
 						(page) => Arr.getSomes(Arr.map(page.findings ?? [], normalizeInspector)),
 					),
-				),
-				Arr.flatten,
-			)
-		: source === "guardduty"
-			? Effect.flatMap(guardDutyDetector(target), (detectorId) =>
-					Option.isNone(detectorId)
-						? Effect.succeed([])
-						: Effect.map(
-								Effect.forEach(Arr.chunksOf(ids, 50), (chunk) =>
-									guardDutyFindings(target, detectorId.value, chunk),
-								),
-								Arr.flatten,
-							),
 				)
-			: Effect.map(
-					Effect.forEach(Arr.chunksOf(ids, SECURITY_HUB_ID_BATCH), (chunk) =>
+			: source === "guardduty"
+				? Effect.flatMap(guardDutyDetector(target), (detectorId) =>
+						Option.isNone(detectorId)
+							? Effect.succeed<Fetched>({ found: [], queried: [] })
+							: batches(50, (chunk) => guardDutyFindings(target, detectorId.value, chunk)),
+					)
+				: batches(SECURITY_HUB_ID_BATCH, (chunk) =>
 						Effect.map(
 							callAs(target)(
 								"SecurityHub.GetFindings",
@@ -933,13 +966,11 @@ export const refreshFindings = (
 							),
 							(page) => Arr.getSomes(Arr.map(page.Findings, normalizeSecurityHub)),
 						),
-					),
-					Arr.flatten,
-				)
+					)
 	return fetch.pipe(
-		Effect.map((found) => {
+		Effect.map(({ found, queried }) => {
 			const present = new Set(Arr.map(found, (finding) => finding.findingId))
-			return { found, missing: Arr.filter(ids, (id) => !present.has(id)) }
+			return { found, missing: Arr.filter(queried, (id) => !present.has(id)) }
 		}),
 		// A refresh that fails changes nothing; the next one tries the same rows again. It still says why.
 		Effect.catchTag("@maple/backend/cloud-security/AwsSecurityReadError", (error) =>

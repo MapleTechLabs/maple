@@ -63,6 +63,25 @@ describe("cloudTrailAuditEvent", () => {
 		})
 	})
 
+	it("tells Identity Center users apart by their identity store user id", () => {
+		const event = mapped({
+			eventSource: "s3.amazonaws.com",
+			eventName: "DeleteBucket",
+			userIdentity: {
+				type: "IdentityCenterUser",
+				onBehalfOf: {
+					userId: "u-123",
+					identityStoreArn: "arn:aws:identitystore::111111111111:identitystore/d-1",
+				},
+			},
+		})
+		expect(event?.actor).toEqual({
+			type: "user",
+			id: "arn:aws:identitystore::111111111111:identitystore/d-1/u-123",
+			name: "u-123",
+		})
+	})
+
 	it("keeps an AWS service address out of the origin IP", () => {
 		const event = mapped({
 			eventSource: "kms.amazonaws.com",
