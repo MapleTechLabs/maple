@@ -822,6 +822,53 @@ describe("components under Settings > Monitors", () => {
 		).toMatchObject({ url: statusPageHref(statusPage().id, "incidents") })
 	})
 
+	test("a click on the header or footer opens the section that edits it, then reveals the field", () => {
+		const clicked = pageUpdate(
+			loaded(),
+			Message.ReceivedPreviewSelection({ kind: "field", id: "supportUrl" }),
+		)
+		expect(clicked.outMessage).toMatchObject({
+			url: statusPageHref(statusPage().id, "settings", "appearance"),
+		})
+		const landed = routeChanged(
+			clicked.model,
+			{ _tag: "StatusPage", pageId: PUBLIC_ID, search: { view: "settings", section: "appearance" } },
+			context,
+		)
+		expect(landed.commands).toContainEqual(
+			expect.objectContaining({
+				name: "RevealStatusPageEditorField",
+				args: { id: "status-page-support" },
+			}),
+		)
+		expect(landed.model.revealFieldId).toBeNull()
+		const inPlace = pageUpdate(
+			loaded({ tab: "settings", section: "appearance" }),
+			Message.ReceivedPreviewSelection({ kind: "field", id: "showPoweredBy" }),
+		)
+		expect(inPlace.outMessage).toBeUndefined()
+		expect(inPlace.commands).toMatchObject([
+			{ name: "RevealStatusPageEditorField", args: { id: "status-page-powered-by" } },
+		])
+		expect(
+			pageUpdate(loaded(), Message.ReceivedPreviewSelection({ kind: "field", id: "name" })).outMessage,
+		).toMatchObject({ url: statusPageHref(statusPage().id, "settings", "basic") })
+		expect(
+			pageUpdate(loaded(), Message.ReceivedPreviewSelection({ kind: "field", id: "slug" })).outMessage,
+		).toBeUndefined()
+	})
+
+	test("a click on a group name opens its first component under Monitors", () => {
+		const picked = pageUpdate(
+			loaded(),
+			Message.ReceivedPreviewSelection({ kind: "group", id: componentId(2) }),
+		)
+		expect(picked.model.panel).toEqual({ _tag: "Component", componentId: componentId(2) })
+		expect(picked.outMessage).toMatchObject({
+			url: statusPageHref(statusPage().id, "settings", "monitors"),
+		})
+	})
+
 	test("switching to a tab that does not show the open component closes it, keeping unsaved edits for Monitors", () => {
 		const away = { _tag: "StatusPage", pageId: PUBLIC_ID, search: {} } as const
 		expect(routeChanged(selected(1), away, context).model.panel).toBeNull()

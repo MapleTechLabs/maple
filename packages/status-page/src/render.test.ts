@@ -892,12 +892,54 @@ describe("editor preview render", () => {
 		expect(html).toContain(`data-component-id="${fixtureComponentId(0)}"`)
 		expect(html).toContain(`data-incident-id="inc-1"`)
 		const publicHtml = renderPage(snapshot, live, FIXTURE_NOW)
-		expect(publicHtml).not.toMatch(/data-(component|incident)-id=/u)
+		expect(publicHtml).not.toMatch(/data-(component|incident|group|field)-id=/u)
+	})
+
+	it("tags the header, footer and group names with the setting each one shows", () => {
+		const page = makeSnapshot({
+			page: {
+				...snapshot.page,
+				supportUrl: "https://acme.example/support",
+				privacyUrl: "https://acme.example/privacy",
+				termsUrl: "https://acme.example/terms",
+			},
+		})
+		const html = renderPage(page, live, FIXTURE_NOW, { preview: true })
+		expect(captured(html, /<a class="brand"[^>]*data-field-id="([^"]+)"/u, 1)).toBe("name")
+		expect(captured(html, /data-field-id="([^"]+)">Visit website/u, 1)).toBe("websiteUrl")
+		expect(captured(html, /data-field-id="([^"]+)">Contact support/u, 1)).toBe("supportUrl")
+		expect(captured(html, /data-field-id="([^"]+)">Privacy policy/u, 1)).toBe("privacyUrl")
+		expect(captured(html, /data-field-id="([^"]+)">Terms of service/u, 1)).toBe("termsUrl")
+		expect(captured(html, /<p class="powered" data-field-id="([^"]+)"/u, 1)).toBe("showPoweredBy")
+		expect(captured(html, /<div class="group-head" data-group-id="([^"]+)"/u, 1)).toBe(
+			fixtureComponentId(0),
+		)
+	})
+
+	it("names the logo the page draws: the dark one on a dark page with both", () => {
+		const withLogos = (appearance: "light" | "dark") =>
+			renderPage(
+				makeSnapshot({
+					page: {
+						...snapshot.page,
+						logoUrl: "https://acme.example/logo.png",
+						logoDarkUrl: "https://acme.example/logo-dark.png",
+						theme: { ...snapshot.page.theme, appearance },
+					},
+				}),
+				live,
+				FIXTURE_NOW,
+				{ preview: true },
+			)
+		const brandField = (html: string) =>
+			captured(html, /<a class="brand"[^>]*data-field-id="([^"]+)"/u, 1)
+		expect(brandField(withLogos("light"))).toBe("logoUrl")
+		expect(brandField(withLogos("dark"))).toBe("logoDarkUrl")
 	})
 
 	it("adds nothing else: without the ids the preview is the public page", () => {
 		const preview = renderPage(snapshot, live, FIXTURE_NOW, { preview: true })
-		expect(Str.replaceAll(/ data-(component|incident)-id="[^"]*"/gu, "")(preview)).toBe(
+		expect(Str.replaceAll(/ data-(component|incident|group|field)-id="[^"]*"/gu, "")(preview)).toBe(
 			renderPage(snapshot, live, FIXTURE_NOW),
 		)
 	})

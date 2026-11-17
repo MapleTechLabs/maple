@@ -33,6 +33,7 @@ import { jsonTab } from "./view-json"
 import { monitorsSaveBar, monitorsSection } from "./view-monitors"
 import { settingsPagePreview } from "./view-canvas"
 import { pageUrlOf } from "./update-domain"
+import { PREVIEW_FIELD_TARGETS } from "./command"
 import { Message } from "./message"
 import { canBreakGlass, canManage, type Model } from "./model"
 import { gatedControl } from "../../kit/session-grants"
@@ -86,7 +87,7 @@ const pageSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm)
 		[
 			vstack(h, { gap: "4" }, [
 				textField(h, {
-					id: "status-page-name",
+					id: PREVIEW_FIELD_TARGETS.name.id,
 					label: "Name",
 					value: form.name,
 					isDisabled: isReadOnly,
@@ -304,7 +305,11 @@ const sectionBody = (
 		case "monitors":
 			return [monitorsSection(h, model)]
 		case "appearance":
-			return [brandingSection(h, model, form), appearanceSection(h, model, form), linksSection(h, model, form)]
+			return [
+				brandingSection(h, model, form),
+				appearanceSection(h, model, form),
+				linksSection(h, model, form),
+			]
 		case "advanced":
 			return [
 				// Break-glass posts at the public address, which an internal page does not answer on.
