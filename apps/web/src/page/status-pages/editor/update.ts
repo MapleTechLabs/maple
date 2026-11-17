@@ -191,6 +191,7 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		urlCopy: CopyButton.init(),
 		settingsEdits: null,
 		brandingDrag: null,
+		brandingLinks: [],
 		isSavingSettings: false,
 		settingsFailure: null,
 		isPublishing: false,
@@ -502,6 +503,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedPickBrandingImage: () => ({ model }),
 		DraggedOverBrandingImage: ({ field }) => ({ model: { ...model, brandingDrag: field } }),
 		LeftBrandingImage: () => ({ model: { ...model, brandingDrag: null } }),
+		ToggledBrandingLink: ({ field }) => ({
+			model: {
+				...model,
+				brandingLinks: Arr.contains(model.brandingLinks, field)
+					? Arr.filter(model.brandingLinks, (open) => open !== field)
+					: [...model.brandingLinks, field],
+			},
+		}),
 		PickedBrandingImage: ({ field, files }) => takeBrandingImage(model, field, files),
 		CompletedReadBrandingImage: ({ field, dataUrl }) => readBrandingImage(model, field, dataUrl),
 		PickedThemePreset: ({ preset }) =>

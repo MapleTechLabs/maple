@@ -1,7 +1,6 @@
 import type { V2StatusPage } from "@maple/domain/http/v2"
 import {
 	DEFAULT_STATUS_PAGE_THEME,
-	isStatusPageImageDataUrl,
 	STATUS_PAGE_IMAGE_TYPES,
 	STATUS_PAGE_MAX_IMAGE_BYTES,
 	resolveStatusPageTheme,
@@ -16,6 +15,7 @@ import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { colorPicker } from "@maple/views/ui/color-picker"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { skeleton } from "@maple/views/ui/skeleton"
+import { grid } from "@maple/views/ui/grid"
 import { heading } from "@maple/views/ui/heading"
 import { settingsSection } from "../../kit/settings-section"
 import { switchRow } from "../../kit/switch-row"
@@ -31,9 +31,8 @@ import {
 	themeContrastOf,
 	themeOf,
 } from "../shared/form"
-import { icon } from "@maple/views/ui/icon"
-import { imageDropzone } from "../../kit/image-dropzone"
-import { brandingInputId } from "./command"
+import { imageSourceField } from "../../kit/image-source-field"
+import { brandingFieldId } from "./command"
 import { Message } from "./message"
 import { pageUrlOf } from "./update-domain"
 import { canManage, type Model } from "./model"
@@ -135,34 +134,40 @@ const colorField = (
 
 const BRANDING_IMAGES: ReadonlyArray<{
 	field: BrandingField
-	title: string
-	hint: string
-	placeholder: string
+	label: string
+	description: string
+	linkPlaceholder: string
 }> = [
 	{
 		field: "logoUrl",
-		title: "Logo",
-		hint: "In the page header. Also the image when the page is shared, if it is a link.",
-		placeholder: "https://acme.example/logo.svg",
+		label: "Logo",
+		description: "In the page header, on the page's light background.",
+		linkPlaceholder: "https://acme.example/logo.svg",
 	},
 	{
 		field: "logoDarkUrl",
-		title: "Dark mode logo",
-		hint: "Shown instead of the logo on a dark page.",
-		placeholder: "https://acme.example/logo-dark.svg",
+		label: "Dark mode logo",
+		description: "Optional. Replaces the logo on a dark page.",
+		linkPlaceholder: "https://acme.example/logo-dark.svg",
 	},
 	{
 		field: "faviconUrl",
-		title: "Favicon",
-		hint: "The icon in the browser tab and in your list of status pages.",
-		placeholder: "https://acme.example/favicon.png",
+		label: "Favicon",
+		description: "In the browser tab and your list of status pages.",
+		linkPlaceholder: "https://acme.example/favicon.png",
 	},
 ]
 
 const IMAGE_ACCEPT = Arr.join(STATUS_PAGE_IMAGE_TYPES, ",")
-const UPLOAD_HINT = `Drop or upload a PNG, JPEG, WebP, GIF, SVG or ICO up to ${STATUS_PAGE_MAX_IMAGE_BYTES / 1024} KB, or link one below.`
+const IMAGE_FORMATS = `PNG, JPG, WebP, GIF, SVG or ICO · max ${STATUS_PAGE_MAX_IMAGE_BYTES / 1024} KB`
 
-/** One logo or favicon: upload or drop a file, or link an https URL. */
+/** The page's own background behind each logo, so it previews as visitors see it. */
+const logoBackground = (theme: ThemeForm, field: BrandingField): string | null => {
+	const resolved = resolveStatusPageTheme({ ...DEFAULT_STATUS_PAGE_THEME, preset: theme.preset })
+	if (field === "logoDarkUrl") return resolved.dark.bg
+	return theme.appearance === "dark" ? resolved.dark.bg : resolved.light.bg
+}
+
 const brandingImageField = (
 	h: H,
 	model: Model,
@@ -170,67 +175,53 @@ const brandingImageField = (
 	entry: (typeof BRANDING_IMAGES)[number],
 	error: string | null,
 ): Html => {
-	const value = Str.trim(form[entry.field])
-	const isUpload = isStatusPageImageDataUrl(value)
-	const isReadOnly = !canManage(model)
-	// The favicon at tab-icon size, not stretched to the tile.
-	const imageClass =
-		entry.field === "faviconUrl" ? "size-8 object-contain" : "max-h-full max-w-full object-contain"
-	const preview =
-		value !== "" && error === null
-			? h.img([h.Src(value), h.Alt(""), h.Class(imageClass)])
-			: icon(h, "UploadIcon", { className: "size-5 text-muted-foreground" })
-	return vstack(h, { gap: "2" }, [
-		imageDropzone(h, {
-			inputId: brandingInputId(entry.field),
-			title: entry.title,
-			hint: `${entry.hint} ${UPLOAD_HINT}`,
-			accept: IMAGE_ACCEPT,
-			// One tile width for all three, so their titles line up.
-			isWide: true,
-			preview,
-			isUploading: false,
-			isDragging: model.brandingDrag === entry.field,
-			isReadOnly,
-			targetLabel: `Upload ${Str.toLowerCase(entry.title)}`,
-			changeLabel: "Upload",
-			onPick: Message.ClickedPickBrandingImage({ field: entry.field }),
-			onFiles: (files) => Message.PickedBrandingImage({ field: entry.field, files }),
-			onDragOver: Message.DraggedOverBrandingImage({ field: entry.field }),
-			onDragLeave: Message.LeftBrandingImage(),
-			...(value !== "" && { onRemove: Message.ChangedSetting({ field: entry.field, value: "" }) }),
-		}),
-		textField(h, {
-			id: `status-page-${entry.field}`,
-			label: `${entry.title} URL`,
-			// An upload is a long data: URL; the field offers a link in its place instead of showing it.
-			value: isUpload ? "" : form[entry.field],
-			placeholder: isUpload ? "Uploaded image. Paste an https URL to replace it." : entry.placeholder,
-			isDisabled: isReadOnly,
-			error,
-			onInput: (next) => Message.ChangedSetting({ field: entry.field, value: next }),
-		}),
-	])
+	const field = entry.field
+	const name = Str.trim(form.name) === "" ? "Status" : Str.trim(form.name)
+	return imageSourceField(h, {
+		id: brandingFieldId(field),
+		label: entry.label,
+		description: entry.description,
+		value: Str.trim(form[field]),
+		error,
+		preview:
+			field === "faviconUrl"
+				? { _tag: "Favicon", title: name }
+				: { _tag: "Logo", background: logoBackground(form.theme, field) },
+		accept: IMAGE_ACCEPT,
+		formats: IMAGE_FORMATS,
+		isDragging: model.brandingDrag === field,
+		isLinkOpen: Arr.contains(model.brandingLinks, field),
+		isReadOnly: !canManage(model),
+		linkPlaceholder: entry.linkPlaceholder,
+		onPick: Message.ClickedPickBrandingImage({ field }),
+		onFiles: (files) => Message.PickedBrandingImage({ field, files }),
+		onDragOver: Message.DraggedOverBrandingImage({ field }),
+		onDragLeave: Message.LeftBrandingImage(),
+		onRemove: Message.ChangedSetting({ field, value: "" }),
+		onToggleLink: Message.ToggledBrandingLink({ field }),
+		onLinkInput: (value) => Message.ChangedSetting({ field, value }),
+	})
 }
 
 /** The logos and tab icon: what carries the brand besides the colours. */
 export const brandingSection = (h: H, model: Model, form: SettingsForm): Html => {
 	const issues = settingsIssues(form)
+	const field = (index: number) => {
+		const entry = BRANDING_IMAGES[index]
+		return entry === undefined ? [] : [brandingImageField(h, model, form, entry, issues[entry.field])]
+	}
 	return settingsSection(
 		h,
 		{
 			id: "status-page-settings-branding",
 			title: "Branding",
-			description: ["Your logo in the page header, the icon in the browser tab and the footer credit."],
+			description: ["Upload an image or link one over https. Unsaved changes show in the preview."],
 		},
 		[
-			vstack(
-				h,
-				{ gap: "5" },
-				Arr.map(BRANDING_IMAGES, (entry) =>
-					brandingImageField(h, model, form, entry, issues[entry.field]),
-				),
-			),
+			vstack(h, { gap: "6" }, [
+				grid(h, { sm: 2, gap: "6" }, [...field(0), ...field(1)]),
+				grid(h, { sm: 2, gap: "6" }, field(2)),
+			]),
 			switchRow(h, {
 				id: "status-page-powered-by",
 				label: "Show powered by Maple",
@@ -238,7 +229,7 @@ export const brandingSection = (h: H, model: Model, form: SettingsForm): Html =>
 				isChecked: form.showPoweredBy,
 				isDisabled: !canManage(model),
 				onToggle: Message.ToggledPoweredBy(),
-				className: "mt-4 border-t pt-4",
+				className: "mt-6 border-t pt-4",
 			}),
 		],
 	)

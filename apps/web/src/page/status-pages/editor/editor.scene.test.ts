@@ -1817,9 +1817,20 @@ describe("settings and appearance views", () => {
 			{ update: pageUpdate, view },
 			given(loaded({ tab: "appearance" })),
 			pickersMounted(1),
-			type(role("textbox", { name: "Logo URL" }), "https://acme.example/logo.svg"),
-			type(role("textbox", { name: "Dark mode logo URL" }), "https://acme.example/logo-dark.svg"),
-			type(role("textbox", { name: "Favicon URL" }), "https://acme.example/favicon.png"),
+			// The link field opens on request; the box above stays the upload target.
+			expectView(role("textbox", { name: "Logo link" })).not.toExist(),
+			...Arr.flatMap(
+				[
+					["logoUrl", "Logo link", "https://acme.example/logo.svg"],
+					["logoDarkUrl", "Dark mode logo link", "https://acme.example/logo-dark.svg"],
+					["faviconUrl", "Favicon link", "https://acme.example/favicon.png"],
+				] as const,
+				([field, name, url]) => [
+					inside(selector(`#status-page-${field}`), click(role("button", { name: "Use a link" }))),
+					type(role("textbox", { name }), url),
+				],
+			),
+			expectView(text("Linked from acme.example")).not.toExist(),
 			tap(({ html }) => {
 				expect(srcdoc(html)).toContain(`<img src="https://acme.example/logo.svg"`)
 				expect(srcdoc(html)).toContain(`<link rel="icon" href="https://acme.example/favicon.png">`)

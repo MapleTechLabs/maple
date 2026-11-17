@@ -19,6 +19,7 @@ import {
 import { Duration, Effect, Schema } from "effect"
 import { Command, Dom, File, Mount } from "foldkit"
 import { clickFileInput } from "../../kit/image-dropzone"
+import { imageSourceInputId } from "../../kit/image-source-field"
 import { BrandingField } from "../shared/form"
 import { trackProduct } from "../../../data/analytics"
 import {
@@ -400,14 +401,14 @@ export const RemoveCustomDomain = Command.define("RemoveStatusPageCustomDomain",
 		),
 })
 
-/** The hidden file input behind a logo or favicon's upload button. */
-export const brandingInputId = (field: BrandingField): string => `status-page-${field}-file`
+/** The logo or favicon field's id; its hidden file input is `imageSourceInputId` of it. */
+export const brandingFieldId = (field: BrandingField): string => `status-page-${field}`
 
 export const PickBrandingImage = Command.define("PickStatusPageBrandingImage", {
 	args: { field: BrandingField },
 	messages: [Message.CompletedPickBrandingImage],
 	execute: ({ field }) =>
-		clickFileInput(brandingInputId(field)).pipe(Effect.as(Message.CompletedPickBrandingImage())),
+		clickFileInput(imageSourceInputId(brandingFieldId(field))).pipe(Effect.as(Message.CompletedPickBrandingImage())),
 })
 
 /** Reads a picked logo or favicon as the `data:` URL the page stores. */
