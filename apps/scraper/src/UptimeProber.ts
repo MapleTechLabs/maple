@@ -66,10 +66,12 @@ export class UptimeProber extends Context.Service<UptimeProber, UptimeProberApi>
 					),
 				)
 				const first: ProbeOutcome = yield* attempt
-				// One immediate retry, so a lost packet on a fresh connection is not a failed check. A
-				// multi-step check is not repeated: its steps may change state on the target.
+				// One immediate retry, so a lost packet on a fresh connection is not a failed check. A POST
+				// or multi-step check is not repeated: the target may already have changed state.
+				const mayChangeState =
+					kind === "multistep" || (target.config._tag === "http" && target.config.method === "POST")
 				const outcome: ProbeOutcome =
-					first.ok || kind === "multistep"
+					first.ok || mayChangeState
 						? first
 						: { ...(yield* attempt), retriedAfter: first.error ?? "Check failed" }
 				const endedAtMs = yield* Clock.currentTimeMillis

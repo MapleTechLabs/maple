@@ -4,7 +4,7 @@ import { FetchHttpClient } from "effect/http"
 import { HostResolver } from "@maple/safe-fetch/dns"
 import { endedSpansNamed, makeCapturingTracer } from "./testing/capturing-tracer"
 import { type RecordedRequest, stubFetch } from "./testing/stub-fetch"
-import { fixedResolver, mkUptimeTarget } from "./testing/uptime"
+import { fixedResolver, httpConfig, mkUptimeTarget } from "./testing/uptime"
 import { UptimeDnsProbe } from "./UptimeDnsProbe"
 import { UptimeHttpProbe } from "./UptimeHttpProbe"
 import { UptimeMultiStepProbe } from "./UptimeMultiStepProbe"
@@ -74,13 +74,13 @@ describe("UptimeProber", () => {
 		}),
 	)
 
-	const checkWith = (respond: () => Response) =>
+	const checkWith = (respond: () => Response, config?: Record<string, unknown>) =>
 		Effect.gen(function* () {
 			const exported: Array<UptimeCheckSpan> = []
 			const recorded: Array<RecordedRequest> = []
 			const report = yield* Effect.gen(function* () {
 				const prober = yield* UptimeProber
-				return yield* prober.check(mkUptimeTarget())
+				return yield* prober.check(mkUptimeTarget(config === undefined ? {} : { config }))
 			}).pipe(
 				Effect.provide(proberLayer(exported)),
 				Effect.provideService(FetchHttpClient.Fetch, stubFetch(recorded, respond)),
@@ -114,6 +114,34 @@ describe("UptimeProber", () => {
 			assert.strictEqual(requests, 1)
 			assert.isTrue(report.ok)
 			assert.isUndefined(attribute(span, "maple.uptime.retried_after"))
+		}),
+	)
+
+	it.effect("a failed check that may change state on the target is not sent twice", () =>
+		Effect.gen(function* () {
+			const post = yield* checkWith(
+				() => new Response("", { status: 503 }),
+				httpConfig({ method: "POST", body: "{}" }),
+			)
+			const multistep = yield* checkWith(() => new Response("", { status: 503 }), {
+				_tag: "multistep",
+				timeoutMs: 30_000,
+				steps: [
+					{
+						name: "Log in",
+						method: "POST",
+						url: "https://api.example.com/login",
+						headers: {},
+						assertions: [],
+						extract: [],
+					},
+				],
+			})
+			for (const { report, span, requests } of [post, multistep]) {
+				assert.strictEqual(requests, 1)
+				assert.isFalse(report.ok)
+				assert.isUndefined(attribute(span, "maple.uptime.retried_after"))
+			}
 		}),
 	)
 })
