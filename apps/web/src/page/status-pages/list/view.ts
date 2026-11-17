@@ -16,11 +16,16 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { relativeTime } from "../../kit/relative-time"
 import { emptyActions } from "@maple/views/ui/signal-empty-state"
-import { rowLink } from "@maple/views/ui/table"
+import { ROW_LINK_LIFT, rowLink } from "@maple/views/ui/table"
+import { confirmDialog } from "@maple/views/ui/confirm-dialog"
+import * as Menu from "@maple/views/ui/menu"
+import type { MenuEntry } from "@maple/views/ui/menu-view"
+import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
 import { newStatusPageHref, publicAddress, statusPageHref } from "../shared/commands"
 import { COMPONENT_STATUS_LABEL, COMPONENT_STATUS_TONE, type StatusPageSummary } from "../shared/derive"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
+import { openTargetOf, rowMenuId } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { borderedBox } from "@maple/views/ui/bordered-box"
@@ -33,7 +38,7 @@ type H = HtmlBuilder<Message>
 type ViewInputs = Readonly<{ canEdit: boolean; nowMs: number; timeZone: string }>
 
 const ROW_GRID =
-	"grid grid-cols-[minmax(220px,1.6fr)_minmax(130px,0.8fr)_96px_112px_128px] items-center gap-x-5"
+	"grid grid-cols-[minmax(220px,1.6fr)_minmax(130px,0.8fr)_96px_112px_128px_32px] items-center gap-x-5"
 
 /** No page yet: what a status page is, and the builder. */
 const emptyState = (h: H, canEdit: boolean): Html =>
@@ -89,7 +94,10 @@ const VISIBILITY_BADGE = {
 	public: { label: "Public", variant: "outline" },
 	password: { label: "Password", variant: "info" },
 	internal: { label: "Internal", variant: "secondary" },
-} as const satisfies Record<StatusPageVisibility, { label: string; variant: "outline" | "info" | "secondary" }>
+} as const satisfies Record<
+	StatusPageVisibility,
+	{ label: string; variant: "outline" | "info" | "secondary" }
+>
 
 const lastPublished = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Html => {
 	const page = summary.page
@@ -112,7 +120,47 @@ const lastPublished = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Ht
 			})
 }
 
-const pageRow = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Html => {
+/** Edit and Delete for those who may change the page; Open page for everyone, disabled with the reason while it has no address. */
+const rowEntries = (summary: StatusPageSummary, canEdit: boolean): ReadonlyArray<MenuEntry> => {
+	const target = openTargetOf(summary)
+	const open: MenuEntry =
+		target._tag === "Unavailable"
+			? {
+					_tag: "Item",
+					value: "open",
+					label: "Open page",
+					icon: "ExternalLinkIcon",
+					isDisabled: true,
+					tooltip: { content: [target.reason], side: "left" },
+				}
+			: {
+					_tag: "Item",
+					value: "open",
+					label: "Open page",
+					icon: target._tag === "InApp" ? "EyeIcon" : "ExternalLinkIcon",
+				}
+	if (!canEdit) return [open]
+	return [
+		{ _tag: "Item", value: "edit", label: "Edit", icon: "PencilIcon" },
+		open,
+		{ _tag: "Separator" },
+		{ _tag: "Item", value: "delete", label: "Delete", icon: "TrashIcon", variant: "destructive" },
+	]
+}
+
+const rowMenu = (h: H, model: Model, summary: StatusPageSummary, inputs: ViewInputs): Html => {
+	const menuId = rowMenuId(summary.page.id)
+	return rowActionsMenu(h, {
+		slotId: menuId,
+		model: model.rowMenus[menuId] ?? Menu.init(menuId),
+		entries: rowEntries(summary, inputs.canEdit),
+		label: `Actions for ${summary.page.name}`,
+		className: ROW_LINK_LIFT,
+		toParentMessage: (message) => Message.GotRowMenuMessage({ pageId: summary.page.id, message }),
+	})
+}
+
+const pageRow = (h: H, model: Model, summary: StatusPageSummary, inputs: ViewInputs): Html => {
 	const page = summary.page
 	return h.li(
 		[h.Key(page.id), h.Class("relative py-3 pr-4 pl-4 hover:bg-surface-sunken active:bg-surface-sunken")],
@@ -136,7 +184,9 @@ const pageRow = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Html => 
 									VISIBILITY_BADGE[page.visibility].label,
 								]),
 								typography(h, { size: "xs", tone: "muted", mono: true, truncate: true }, [
-									page.visibility === "internal" ? "Members only, in Maple" : publicAddress(page.slug),
+									page.visibility === "internal"
+										? "Members only, in Maple"
+										: publicAddress(page.slug),
 								]),
 							]),
 						],
@@ -174,13 +224,14 @@ const pageRow = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Html => 
 						[String(summary.openIncidents)],
 					),
 					lastPublished(h, summary, inputs),
+					rowMenu(h, model, summary, inputs),
 				],
 			),
 		],
 	)
 }
 
-const table = (h: H, pages: ReadonlyArray<StatusPageSummary>, inputs: ViewInputs): Html =>
+const table = (h: H, model: Model, pages: ReadonlyArray<StatusPageSummary>, inputs: ViewInputs): Html =>
 	borderedBox(h, { overflow: "x-auto" }, [
 		h.div(
 			[h.Class("min-w-[720px]")],
@@ -193,12 +244,13 @@ const table = (h: H, pages: ReadonlyArray<StatusPageSummary>, inputs: ViewInputs
 						eyebrow(h, { className: "text-right" }, ["Components"]),
 						eyebrow(h, { className: "text-right" }, ["Open incidents"]),
 						eyebrow(h, { className: "text-right" }, ["Last published"]),
+						h.span([], []),
 					],
 				),
 				dividedList(
 					h,
 					{ as: "ul", bordered: false },
-					Arr.map(pages, (summary) => pageRow(h, summary, inputs)),
+					Arr.map(pages, (summary) => pageRow(h, model, summary, inputs)),
 				),
 			],
 		),
@@ -223,8 +275,28 @@ const body = (h: H, model: Model, inputs: ViewInputs): Html => {
 						typography(h, { size: "xs", tone: "muted", as: "p" }, [
 							`${countLabel(pages.length, "page")}. Each one is served from edge storage, so it stays up when Maple does not.`,
 						]),
-						table(h, pages, inputs),
+						table(h, model, pages, inputs),
 					]),
+	})
+}
+
+const deleteDialog = (h: H, model: Model): Html => {
+	const summary = Option.flatMap(Option.fromNullishOr(model.deletingPageId), (id) =>
+		Arr.findFirst(
+			AsyncData.getOrElse(model.pages.data, () => []),
+			(row) => row.page.id === id,
+		),
+	)
+	const page = Option.map(summary, (row) => row.page)
+	return confirmDialog(h, {
+		slotId: "status-pages-delete",
+		model: model.deleteDialog,
+		toParentMessage: (message) => Message.GotDeleteDialogMessage({ message }),
+		title: `Delete ${Option.match(page, { onNone: () => "this status page", onSome: (p) => p.name })}?`,
+		description: `${Option.match(page, { onNone: () => "The page", onSome: (p) => publicAddress(p.slug) })} goes offline and its components and incidents are deleted. This cannot be undone.`,
+		confirmLabel: "Delete status page",
+		isPending: model.isDeleting,
+		onConfirm: Message.ClickedConfirmDelete(),
 	})
 }
 
@@ -253,6 +325,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				nowMs: model.nowMs ?? 0,
 				timeZone: inputs.context.timeZone,
 			}),
+			deleteDialog(h, model),
 		],
 	),
 )

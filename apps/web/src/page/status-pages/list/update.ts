@@ -1,16 +1,31 @@
-import { Option } from "effect"
+import type { StatusPageId } from "@maple/domain"
+import { AsyncData, Command as FoldkitCommand } from "foldkit"
+import { Option, Result, Array as Arr } from "effect"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Menu from "@maple/views/ui/menu"
 import type { AppRoute } from "../../../route"
-import type { PageContext, PageReturn } from "../../contract"
-import { FetchListSession, FetchStatusPages, ReadListClock } from "./command"
+import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
+import { STATUS_PAGE_BASE_URL, publicUrl, statusPageHref, statusPageViewHref } from "../shared/commands"
+import type { StatusPageSummary } from "../shared/derive"
+import {
+	DeleteListedPage,
+	FetchListSession,
+	FetchStatusPages,
+	OpenPageInNewTab,
+	ReadListClock,
+} from "./command"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { acceptGrants } from "../../kit/session-grants"
 
 export type Return = PageReturn<Model, Message>
 
 type ListRoute = Extract<AppRoute, { readonly _tag: "StatusPages" }>
+
+export const DELETE_DIALOG_ID = "status-pages-delete"
 
 const pagesKey = (context: PageContext) => requestKey(context.orgId, "statusPages.summaries", {})
 
@@ -21,11 +36,138 @@ const request = (model: Model, context: PageContext, mode: Keyed.ReadMode): Retu
 	})
 
 export const init = (_route: ListRoute, context: PageContext): Return => {
-	const read = request({ pages: Keyed.idle(), nowMs: null, grants: [] }, context, "Load")
+	const read = request(
+		{
+			pages: Keyed.idle(),
+			nowMs: null,
+			grants: [],
+			rowMenus: {},
+			deletingPageId: null,
+			deleteDialog: Dialog.init(DELETE_DIALOG_ID, "alert-dialog"),
+			isDeleting: false,
+		},
+		context,
+		"Load",
+	)
 	return {
 		model: read.model,
 		commands: [ReadListClock(), FetchListSession({ orgId: context.orgId }), ...(read.commands ?? [])],
 	}
+}
+
+export const rowMenuId = (pageId: StatusPageId): string => `status-pages-row-menu-${pageId}`
+
+/** Where "Open page" goes: Maple's own view for an internal page, the public address for a published one. */
+export type OpenTarget =
+	| Readonly<{ _tag: "InApp"; url: string }>
+	| Readonly<{ _tag: "External"; url: string }>
+	| Readonly<{ _tag: "Unavailable"; reason: string }>
+
+export const openTargetOf = (summary: StatusPageSummary): OpenTarget => {
+	const page = summary.page
+	if (page.visibility === "internal") return { _tag: "InApp", url: statusPageViewHref(page.id) }
+	const url = publicUrl(STATUS_PAGE_BASE_URL, page.slug)
+	if (url === null) return { _tag: "Unavailable", reason: "No status domain is configured yet" }
+	if (page.draft) return { _tag: "Unavailable", reason: "Publish the page to open it" }
+	return { _tag: "External", url }
+}
+
+const summaryOf = (model: Model, pageId: StatusPageId): Option.Option<StatusPageSummary> =>
+	Arr.findFirst(
+		AsyncData.getOrElse(model.pages.data, () => []),
+		(summary) => summary.page.id === pageId,
+	)
+
+const navigate = (model: Model, url: string): Return => ({
+	model,
+	outMessage: PageOutMessage.RequestedNavigation({ url, isReplace: false }),
+})
+
+/** A closed dialog forgets which page it asked about. */
+const liftDeleteDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
+	model: {
+		...model,
+		deleteDialog: step.model,
+		deletingPageId: step.outMessage?._tag === "Closed" ? null : model.deletingPageId,
+	},
+	commands: FoldkitCommand.mapMessages(step.commands ?? [], (message) =>
+		Message.GotDeleteDialogMessage({ message }),
+	),
+})
+
+const pickedRowAction = (model: Model, pageId: StatusPageId, value: string): Return =>
+	Option.match(summaryOf(model, pageId), {
+		onNone: () => ({ model }),
+		onSome: (summary): Return => {
+			switch (value) {
+				case "edit":
+					return navigate(model, statusPageHref(pageId))
+				case "open": {
+					const target = openTargetOf(summary)
+					if (target._tag === "InApp") return navigate(model, target.url)
+					if (target._tag === "External")
+						return { model, commands: [OpenPageInNewTab({ url: target.url })] }
+					return { model }
+				}
+				case "delete":
+					return canManage(model)
+						? liftDeleteDialog(
+								{ ...model, deletingPageId: pageId },
+								Dialog.open(model.deleteDialog),
+							)
+						: { model }
+				default:
+					return { model }
+			}
+		},
+	})
+
+const updateRowMenu = (model: Model, pageId: StatusPageId, message: Menu.Message): Return => {
+	const menuId = rowMenuId(pageId)
+	const step = Menu.update(model.rowMenus[menuId] ?? Menu.init(menuId), message)
+	const next = { ...model, rowMenus: { ...model.rowMenus, [menuId]: step.model } }
+	const commands = FoldkitCommand.mapMessages(step.commands ?? [], (inner) =>
+		Message.GotRowMenuMessage({ pageId, message: inner }),
+	)
+	if (step.outMessage?._tag !== "SelectedItem") return { model: next, commands }
+	const after = pickedRowAction(next, pageId, step.outMessage.value)
+	return { ...after, commands: [...commands, ...(after.commands ?? [])] }
+}
+
+const confirmDelete = (model: Model): Return =>
+	model.deletingPageId === null || model.isDeleting || !canManage(model)
+		? { model }
+		: {
+				model: { ...model, isDeleting: true },
+				commands: [DeleteListedPage({ pageId: model.deletingPageId })],
+			}
+
+/** A deleted page leaves the list: the dialog closes and the pages are read again. */
+const deleted = (model: Model, context: PageContext, result: Result.Result<void, LoadFailure>): Return => {
+	const settled = { ...model, isDeleting: false }
+	return Result.match(result, {
+		onSuccess: (): Return => {
+			const closed = liftDeleteDialog(settled, Dialog.close(settled.deleteDialog))
+			const reread = request(closed.model, context, "Supersede")
+			return {
+				model: reread.model,
+				commands: [...(closed.commands ?? []), ...(reread.commands ?? [])],
+				outMessage: PageOutMessage.RequestedToast({
+					type: "success",
+					title: "Status page deleted",
+					description: "",
+				}),
+			}
+		},
+		onFailure: (failure): Return => ({
+			model: settled,
+			outMessage: PageOutMessage.RequestedToast({
+				type: "error",
+				title: "Couldn't delete the status page",
+				description: failure.message,
+			}),
+		}),
+	})
 }
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
@@ -37,4 +179,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			commands: [ReadListClock()],
 		}),
 		ClickedRetry: () => request(model, context, "Supersede"),
+		GotRowMenuMessage: ({ pageId, message: child }) => updateRowMenu(model, pageId, child),
+		CompletedOpenPage: () => ({ model }),
+		ClickedConfirmDelete: () => confirmDelete(model),
+		CompletedDelete: ({ result }) => deleted(model, context, result),
+		GotDeleteDialogMessage: ({ message: child }) =>
+			model.isDeleting ? { model } : liftDeleteDialog(model, Dialog.update(model.deleteDialog, child)),
 	})

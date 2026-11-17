@@ -7,12 +7,13 @@ import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../../contract"
 import { NOW, ORG } from "../../kit/alert-test-rows"
-import { newStatusPageHref, statusPageHref } from "../shared/commands"
+import { newStatusPageHref, statusPageHref, statusPageViewHref } from "../shared/commands"
+import { PageOutMessage } from "../../contract"
 import type { StatusPageSummary } from "../shared/derive"
 import { pageId, statusPage } from "../shared/test-pages"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { init, update } from "./update"
+import { init, rowMenuId, update } from "./update"
 import { view as listView } from "./view"
 
 const ENGINEER = Policy.grantsOf(["org:engineer"])
@@ -100,7 +101,13 @@ describe("status pages list", () => {
 			openIncidents: 2,
 		}
 		const draft: StatusPageSummary = {
-			page: statusPage({ name: "Internal", slug: "acme-internal", draft: true, published_at: null }),
+			page: statusPage({
+				id: pageId(2),
+				name: "Internal",
+				slug: "acme-internal",
+				draft: true,
+				published_at: null,
+			}),
 			overall: "operational",
 			componentCount: 1,
 			openIncidents: 0,
@@ -177,5 +184,66 @@ describe("status pages list", () => {
 			expectView(role("button", { name: "Try again" })).not.toExist(),
 			expectView(role("link", { name: "Create a status page" })).not.toExist(),
 		)
+	})
+})
+
+describe("status pages row menu", () => {
+	const summary = (fields: Parameters<typeof statusPage>[0] = {}): StatusPageSummary => ({
+		page: statusPage(fields),
+		overall: "operational",
+		componentCount: 1,
+		openIncidents: 0,
+	})
+	const pick = (model: Model, id: ReturnType<typeof pageId>, value: string) =>
+		listUpdate(
+			model,
+			Message.GotRowMenuMessage({
+				pageId: id,
+				message: { _tag: "ClickedItem", index: 0, item: { kind: "Item", value } },
+			}),
+		)
+
+	test("each row has an actions menu", () => {
+		scene(
+			{ update: listUpdate, view },
+			given(withPages([summary()])),
+			expectView(role("button", { name: "Actions for Acme Status" })).toExist(),
+		)
+	})
+
+	test("Edit opens the editor; Open page opens an internal page in Maple", () => {
+		const model = withPages([summary({ visibility: "internal" })])
+		expect(pick(model, pageId(1), "edit").outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: statusPageHref(pageId(1)), isReplace: false }),
+		)
+		expect(pick(model, pageId(1), "open").outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: statusPageViewHref(pageId(1)), isReplace: false }),
+		)
+	})
+
+	test("Delete asks first, then deletes, toasts and reads the list again", () => {
+		const asked = pick(withPages([summary()]), pageId(1), "delete")
+		expect(names(asked.commands)).not.toContain("DeleteListedStatusPage")
+		expect(asked.model.deletingPageId).toBe(pageId(1))
+		const confirming = listUpdate(asked.model, Message.ClickedConfirmDelete())
+		expect(confirming.commands?.[0]).toMatchObject({
+			name: "DeleteListedStatusPage",
+			args: { pageId: pageId(1) },
+		})
+		const done = listUpdate(
+			confirming.model,
+			Message.CompletedDelete({ result: Result.succeed(undefined) }),
+		)
+		expect(done.outMessage).toEqual(
+			PageOutMessage.RequestedToast({ type: "success", title: "Status page deleted", description: "" }),
+		)
+		expect(names(done.commands)).toContain("FetchStatusPageSummaries")
+		expect(done.model.isDeleting).toBe(false)
+	})
+
+	test("members cannot delete from the menu", () => {
+		const asked = pick(withPages([summary()], false), pageId(1), "delete")
+		expect(asked.model.deletingPageId).toBeNull()
+		expect(asked.model.rowMenus[rowMenuId(pageId(1))]).toBeDefined()
 	})
 })
