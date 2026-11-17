@@ -16,6 +16,7 @@ import {
 	incidentComponentStatus,
 	isActiveIncident,
 	overallStatus,
+	STATUS_PAGE_WINDOW_DAYS,
 	StatusPageDayBar,
 	type StatusPagePublicSnapshot,
 	worstStatus,
@@ -26,8 +27,8 @@ import { Schema, Array as Arr, Option, Order } from "effect"
 
 // Pure reads of status pages shared by the hub's tab and the editor.
 
-/** Days of uptime bars the list shows per component, as the public page shows at first. */
-export const SUMMARY_UPTIME_DAYS = 90
+/** Days of uptime bars the list shows per component: the public page's window. */
+export const SUMMARY_UPTIME_DAYS = STATUS_PAGE_WINDOW_DAYS
 
 /** A component as visitors see it now, with its last {@link SUMMARY_UPTIME_DAYS} days of bars. */
 export const SummaryComponent = Schema.Struct({
