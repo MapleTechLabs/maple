@@ -15,7 +15,6 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { readAllPages as readAll } from "../../../platform/read-all-pages"
 import { AppRoute, hrefOf } from "../../../route"
-import { listMonitors } from "../../kit/uptime/commands"
 import { summarizePage } from "./derive"
 
 // The status page reads and writes, as Effects the pages' Commands wrap, and their links.
@@ -37,6 +36,12 @@ const listPageComponents = (id: StatusPageId) =>
 		)
 	})
 
+const viewSnapshot = (id: StatusPageId) =>
+	Effect.gen(function* () {
+		const client = yield* MapleApiV2Client
+		return yield* client.statusPages.view({ params: { id } })
+	})
+
 const listOpenIncidents = Effect.gen(function* () {
 	const client = yield* MapleApiV2Client
 	return yield* readAll((cursor) =>
@@ -44,25 +49,22 @@ const listOpenIncidents = Effect.gen(function* () {
 	)
 })
 
-/** The list's rows: each page with its components' worst status and its open incident count. */
+/**
+ * The list's cards: each page as visitors see it now (statuses and uptime bars, from its live
+ * view) with its open incidents and maintenance, drafts included.
+ */
 export const listPageSummaries = Effect.gen(function* () {
 	const pages = yield* listPages
 	if (pages.length === 0) return []
-	const [incidents, monitors, components] = yield* Effect.all(
-		[
-			listOpenIncidents,
-			// A failed monitor read fails the tab: without it every monitored component would read green.
-			listMonitors,
-			Effect.forEach(pages, (page) => listPageComponents(page.id), { concurrency: 4 }),
-		],
+	const [incidents, snapshots] = yield* Effect.all(
+		[listOpenIncidents, Effect.forEach(pages, (page) => viewSnapshot(page.id), { concurrency: 4 })],
 		{ concurrency: "unbounded" },
 	)
-	return Arr.map(pages, (page, index) =>
+	return Arr.zipWith(pages, snapshots, (page, snapshot) =>
 		summarizePage({
 			page,
-			components: components[index] ?? [],
+			snapshot,
 			incidents: Arr.filter(incidents, (incident) => incident.page_id === page.id),
-			monitors,
 		}),
 	)
 }).pipe(Effect.mapError(toLoadFailure))
@@ -137,11 +139,7 @@ export const removePagePassword = (id: StatusPageId) =>
 	}).pipe(Effect.mapError(toLoadFailure))
 
 /** The page as visitors would see it now, whatever its visibility: how members read an internal page. */
-export const viewPage = (id: StatusPageId) =>
-	Effect.gen(function* () {
-		const client = yield* MapleApiV2Client
-		return yield* client.statusPages.view({ params: { id } })
-	}).pipe(Effect.mapError(toLoadFailure))
+export const viewPage = (id: StatusPageId) => viewSnapshot(id).pipe(Effect.mapError(toLoadFailure))
 
 export const retrieveCustomDomain = (id: StatusPageId) =>
 	Effect.gen(function* () {
