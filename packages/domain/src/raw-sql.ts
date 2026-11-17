@@ -437,8 +437,9 @@ const disallowedServerFunction = (sql: string): string | null => {
 	return Option.getOrNull(Option.map(hit, (t) => t.v))
 }
 
-// Databases whose tables describe the whole server rather than this org's data.
-const SYSTEM_DATABASES = new Set(["system", "information_schema"])
+// Databases whose tables describe the whole server rather than this org's data. `tinybird` and
+// `organization` hold the managed warehouse's own service tables (query logs, usage).
+const SYSTEM_DATABASES = new Set(["system", "information_schema", "tinybird", "organization"])
 
 /**
  * The first system database used as a `db.` qualifier, or null. Runs on the token
