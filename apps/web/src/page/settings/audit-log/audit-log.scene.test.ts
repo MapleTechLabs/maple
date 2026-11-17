@@ -1,4 +1,4 @@
-import { Array as Arr, Option, Record as Rec, Result, Schema } from "effect"
+import { Array as Arr, Option, Result } from "effect"
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { AUDIT_ENTRIES, AUDIT_MEMBERS, AUDIT_NOW } from "../../../lab/audit-log-fixture"
@@ -9,7 +9,16 @@ import { Message } from "./model"
 import { init, revisit, searchChanged, update } from "./update"
 import { view } from "./view"
 import { entryHref } from "./view-detail"
-import { SettingsSearch } from "../../../route/search"
+import { fromString } from "foldkit/url"
+import { urlToAppRoute } from "../../../route"
+import type { SettingsSearch } from "../../../route/search"
+
+/** The settings search an entry's link opens, read the way the app reads a URL. */
+const linkedSearch = (href: string): typeof SettingsSearch.Type => {
+	const route = urlToAppRoute(Option.getOrThrow(fromString(`https://maple.test${href}`)))
+	if (route._tag !== "Settings") throw new Error(`not a settings link: ${href}`)
+	return route.search
+}
 
 const page = { data: [], has_more: true, next_cursor: "cursor_2" }
 
@@ -45,7 +54,7 @@ describe("audit log tab", () => {
 		)
 		expect(step.outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({
-				url: "/settings?tab=audit-log&actor_type=api_key",
+				url: "/settings/audit-log?actor_type=api_key",
 				isReplace: true,
 			}),
 		)
@@ -140,7 +149,7 @@ describe("audit log tab", () => {
 		const step = update(entered.model, Message.ClickedKind({ value: "access" }), { tab: "audit-log" })
 		expect(step.outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({
-				url: "/settings?tab=audit-log&kind=access",
+				url: "/settings/audit-log?kind=access",
 				isReplace: true,
 			}),
 		)
@@ -149,7 +158,7 @@ describe("audit log tab", () => {
 			kind: "access",
 		})
 		expect(back.outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({ url: "/settings?tab=audit-log", isReplace: true }),
+			PageOutMessage.RequestedNavigation({ url: "/settings/audit-log", isReplace: true }),
 		)
 	})
 
@@ -162,7 +171,7 @@ describe("audit log tab", () => {
 		)
 		expect(update(typed.model, Message.SubmittedLookup(), search).outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({
-				url: "/settings?tab=audit-log&actor=key_aXwpxqBkqtYwtBtmsGbR41",
+				url: "/settings/audit-log?actor=key_aXwpxqBkqtYwtBtmsGbR41",
 				isReplace: true,
 			}),
 		)
@@ -173,7 +182,7 @@ describe("audit log tab", () => {
 		)
 		expect(update(ray.model, Message.SubmittedLookup(), search).outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({
-				url: "/settings?tab=audit-log&request=8f2c1a9d4b7e3f60-FRA",
+				url: "/settings/audit-log?request=8f2c1a9d4b7e3f60-FRA",
 				isReplace: true,
 			}),
 		)
@@ -201,7 +210,7 @@ describe("audit log tab", () => {
 			update(init(search).model, Message.RemovedFilter({ key: "resourceType" }), search).outMessage,
 		).toEqual(
 			PageOutMessage.RequestedNavigation({
-				url: "/settings?tab=audit-log&outcome=denied",
+				url: "/settings/audit-log?outcome=denied",
 				isReplace: true,
 			}),
 		)
@@ -230,7 +239,7 @@ describe("audit log tab", () => {
 		)
 		expect(picked.outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({
-				url: "/settings?tab=audit-log&since=2026-11-02T00%3A00%3A00.000Z&until=2026-11-04T23%3A59%3A00.000Z",
+				url: "/settings/audit-log?since=2026-11-02T00%3A00%3A00.000Z&until=2026-11-04T23%3A59%3A00.000Z",
 				isReplace: true,
 			}),
 		)
@@ -297,7 +306,7 @@ describe("audit log tab", () => {
 			)
 			expect(step.outMessage).toEqual(
 				PageOutMessage.RequestedNavigation({
-					url: "/settings?tab=audit-log&actor=key_aXwpxqBkqtYwtBtmsGbR41",
+					url: "/settings/audit-log?actor=key_aXwpxqBkqtYwtBtmsGbR41",
 					isReplace: true,
 				}),
 			)
@@ -311,7 +320,7 @@ describe("audit log tab", () => {
 			)
 			expect(step.outMessage).toEqual(
 				PageOutMessage.RequestedNavigation({
-					url: "/settings?tab=audit-log&resource_type=dashboard&action=dashboard.updated",
+					url: "/settings/audit-log?resource_type=dashboard&action=dashboard.updated",
 					isReplace: true,
 				}),
 			)
@@ -320,9 +329,7 @@ describe("audit log tab", () => {
 		test("Filter from a shared entry link leaves that link's one-minute window", () => {
 			const target = AUDIT_ENTRIES[5]
 			if (target === undefined) throw new Error("fixture")
-			const linked = Schema.decodeSync(SettingsSearch)(
-				Rec.fromEntries([...new URL(entryHref(target), "https://maple.test").searchParams.entries()]),
-			)
+			const linked = linkedSearch(entryHref(target))
 			const step = update(
 				loadedWith(linked).model,
 				Message.ClickedPivot({ key: "actorId", value: "key_aXwpxqBkqtYwtBtmsGbR41" }),
@@ -330,7 +337,7 @@ describe("audit log tab", () => {
 			)
 			expect(step.outMessage).toEqual(
 				PageOutMessage.RequestedNavigation({
-					url: "/settings?tab=audit-log&actor=key_aXwpxqBkqtYwtBtmsGbR41&kind=all",
+					url: "/settings/audit-log?actor=key_aXwpxqBkqtYwtBtmsGbR41&kind=all",
 					isReplace: true,
 				}),
 			)
@@ -402,7 +409,7 @@ describe("audit log tab", () => {
 			const step = update(init(linked).model, Message.ClickedOutcome({ value: "denied" }), linked)
 			expect(step.outMessage).toEqual(
 				PageOutMessage.RequestedNavigation({
-					url: "/settings?tab=audit-log&outcome=denied",
+					url: "/settings/audit-log?outcome=denied",
 					isReplace: true,
 				}),
 			)
@@ -411,9 +418,7 @@ describe("audit log tab", () => {
 		test("an entry's link lists the minute that ends at the entry, and opens it", () => {
 			const target = AUDIT_ENTRIES[5]
 			if (target === undefined) throw new Error("fixture")
-			const linked = Schema.decodeSync(SettingsSearch)(
-				Rec.fromEntries([...new URL(entryHref(target), "https://maple.test").searchParams.entries()]),
-			)
+			const linked = linkedSearch(entryHref(target))
 			// The fixture's sixth entry happened 47 minutes before `AUDIT_NOW`.
 			expect(linked).toEqual({
 				tab: "audit-log",
