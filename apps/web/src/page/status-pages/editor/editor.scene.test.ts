@@ -2307,37 +2307,26 @@ describe("header", () => {
 		).toContain("FetchStatusPageConfig")
 	})
 
-	test("Open page opens the published page in a new tab", () => {
-		scene(
-			{ update: pageUpdate, view },
-			given({ ...loaded({ tab: "settings" }), publicBaseUrl: "https://status-pr-7.maple.dev" }),
-			expectView(role("link", { name: "Open page" })).toHaveAttr(
-				"href",
-				"https://status-pr-7.maple.dev/s/acme-status",
-			),
-			expectView(role("link", { name: "Open page" })).toHaveAttr("target", "_blank"),
-			expectView(role("link", { name: "Open page" })).toHaveAttr("rel", "noopener"),
-		)
-	})
-
-	test("Open page is disabled, with the reason, while the page has no public address", () => {
-		scene(
-			{ update: pageUpdate, view },
-			given({
+	test("Open page previews the page full screen in Maple, whatever its visibility, draft state or domain", () => {
+		const models = [
+			{ ...loaded({ tab: "settings" }), publicBaseUrl: "https://status-pr-7.maple.dev" },
+			{
 				...loaded({ page: statusPage({ draft: true, published_at: null }) }),
 				publicBaseUrl: "https://status-pr-7.maple.dev",
-			}),
-			expectView(role("link", { name: "Open page" })).not.toExist(),
-			expectView(role("button", { name: "Open page" })).toBeDisabled(),
-			expectView(selector('[data-tooltip="Publish the page to open it"]')).toExist(),
-		)
-		scene(
-			{ update: pageUpdate, view },
-			given({ ...loaded(), publicBaseUrl: "" }),
-			expectView(role("link", { name: "Open page" })).not.toExist(),
-			expectView(role("button", { name: "Open page" })).toBeDisabled(),
-			expectView(selector('[data-tooltip="No status domain is configured yet"]')).toExist(),
-		)
+			},
+			{ ...loaded(), publicBaseUrl: "" },
+			loaded({ page: statusPage({ visibility: "password", has_password: true }) }),
+			loaded({ page: statusPage({ visibility: "internal" }) }),
+		]
+		for (const model of models)
+			scene(
+				{ update: pageUpdate, view },
+				given(model),
+				expectView(role("link", { name: "Open page" })).toHaveAttr(
+					"href",
+					`/status-pages/${PUBLIC_ID}/view`,
+				),
+			)
 	})
 })
 
