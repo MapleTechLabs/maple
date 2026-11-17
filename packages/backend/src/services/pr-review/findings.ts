@@ -212,7 +212,8 @@ export const wordSettledIssues = (tracked: ReadonlyArray<TrackedFinding>): Reado
 
 /**
  * Who settled each of those findings: the author of the latest reply that states a verdict, else
- * whoever resolved the thread. `undefined` when the thread is gone or names nobody.
+ * whoever resolved the thread. `undefined` when the thread is gone, names nobody, or its latest
+ * verdict reopens the finding: a thread resolved before that says nothing about it now.
  */
 export const findingSettlers = (
 	settled: ReadonlyArray<TrackedFinding>,
@@ -220,14 +221,19 @@ export const findingSettlers = (
 ): ReadonlyArray<{ readonly finding: TrackedFinding; readonly settler: string | undefined }> =>
 	Arr.map(settled, (finding) => {
 		const thread = threadForFinding(finding, threads)
-		if (thread === undefined) return { finding, settler: undefined }
+		// A thread cut short may hide a later reply that reopens the finding: it names nobody.
+		if (thread === undefined || thread.commentsTruncated === true) {
+			return { finding, settler: undefined }
+		}
 		const reply = latestVerdict(thread)
 		const settler =
-			reply !== undefined && reply.verdict !== "open"
-				? reply.author
-				: thread.isResolved
+			reply === undefined
+				? thread.isResolved
 					? thread.resolvedBy
 					: undefined
+				: reply.verdict === "open"
+					? undefined
+					: reply.author
 		return { finding, settler }
 	})
 

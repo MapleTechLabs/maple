@@ -1934,7 +1934,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				orgId: OrgId,
 				repo: VcsRepo,
 				number: number,
-				headSha: GitCommitSha,
+				/** The head whose review stays; `null` ends every review in flight, whatever it read. */
+				headSha: GitCommitSha | null,
 				nowMs: number,
 			) {
 				const rows = yield* dbExecute((db) =>
@@ -1949,7 +1950,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					),
 				)
 				yield* Effect.forEach(
-					Arr.filter(rows, (row) => row.headSha !== headSha),
+					Arr.filter(rows, (row) => headSha === null || row.headSha !== headSha),
 					(row) =>
 						Effect.gen(function* () {
 							if (row.sessionId !== null && chatSessions !== undefined) {
@@ -2318,6 +2319,15 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							.getEffectivePrReviewConfig(orgId, edited.value.id)
 							.pipe(Effect.mapError(toPersistence))
 						if (editedConfig.autoApprove === true) {
+							// A review still running read the diff against the old base: it ends here, so
+							// what it found cannot approve the pull request as it now stands.
+							yield* supersede(
+								orgId,
+								edited.value,
+								job.number,
+								null,
+								yield* Clock.currentTimeMillis,
+							)
 							yield* withdrawApprovals(
 								orgId,
 								edited.value,
@@ -3334,6 +3344,10 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							publishError: Str.slice(0, 500)(published.failure.message),
 							updatedAt: nowMs,
 						})
+						// The refusal never reached the provider, so an earlier approval would still stand.
+						if (approval?.approve === false) {
+							yield* withdrawApprovals(orgId, repo, review.number, approval.reason)
+						}
 					} else {
 						yield* Effect.annotateCurrentSpan({ "maple.pr_review.published": true })
 						yield* update(orgId, reviewId, {

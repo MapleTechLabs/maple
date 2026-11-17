@@ -172,10 +172,16 @@ const SENSITIVE_WORDS: ReadonlySet<string> = new Set([
 	"permissions",
 ])
 
-/** A path's words, lower-cased: split on separators and on camelCase, so `AuthService.ts` has `auth`. */
+/**
+ * A path's words, lower-cased: split on separators, on camelCase and after an acronym, so
+ * `AuthService.ts` has `auth` and `SSOClient.ts` has `sso`.
+ */
 const pathWords = (path: string): ReadonlyArray<string> =>
 	Arr.map(
-		Arr.filter(Str.split(/[^A-Za-z0-9]+|(?<=[a-z0-9])(?=[A-Z])/)(path), Str.isNonEmpty),
+		Arr.filter(
+			Str.split(/[^A-Za-z0-9]+|(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])/)(path),
+			Str.isNonEmpty,
+		),
 		Str.toLowerCase,
 	)
 

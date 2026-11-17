@@ -2771,6 +2771,35 @@ describe("PrReviewService auto-approve", () => {
 		}).pipe(Effect.provide(layerFor(testDb, { withdrawals })))
 	})
 
+	it.effect("ends a review still running when the pull request moves to another base", () => {
+		const testDb = createTestDb(trackedDbs)
+		const withdrawals: Array<string> = []
+		const aborted: Array<string> = []
+		return Effect.gen(function* () {
+			const repositoryId = yield* seed(true)
+			const repo = yield* VcsRepository
+			yield* repo.setPrReviewConfig(
+				orgId,
+				repositoryId,
+				new PrReviewRepositoryConfig({ autoApprove: true }),
+			)
+			const reviews = yield* PrReviewService
+			const running = yield* reviews.onPullRequestEvent(orgId, job())
+			assert.equal(running.outcome, "started")
+			// A title edit leaves it running; a base change ends it, since it read another diff.
+			yield* reviews.onPullRequestEvent(orgId, job({ action: "edited", baseChanged: false }))
+			assert.deepEqual(aborted, [])
+			yield* reviews.onPullRequestEvent(
+				orgId,
+				job({ action: "edited", baseRef: "main", baseChanged: true }),
+			)
+			assert.deepEqual(aborted, [`${orgId}:pr-${running.reviewId} (superseded)`])
+			const ended = Option.getOrThrow(yield* reviews.getReview(orgId, running.reviewId!))
+			assert.equal(ended.status, "skipped")
+			assert.equal(ended.skipReason, "superseded")
+		}).pipe(Effect.provide(layerFor(testDb, { withdrawals, aborted })))
+	})
+
 	it.effect("tells the pull request when it could not withdraw its approval", () => {
 		const testDb = createTestDb(trackedDbs)
 		const withdrawals: Array<string> = []

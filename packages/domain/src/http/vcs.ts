@@ -248,6 +248,8 @@ export const PullRequestReviewThread = Schema.Struct({
 	isResolved: Schema.Boolean,
 	/** Who resolved the thread, when the provider says; only its author or someone who can push may. */
 	resolvedBy: Schema.optionalKey(Schema.String),
+	/** The thread has more comments than were read, so its latest reply is not known. */
+	commentsTruncated: Schema.optionalKey(Schema.Boolean),
 	comments: Schema.Array(
 		Schema.Struct({
 			commentId: Schema.NullOr(Schema.String),

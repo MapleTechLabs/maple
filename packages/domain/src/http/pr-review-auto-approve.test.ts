@@ -447,6 +447,22 @@ describe("isSensitivePath", () => {
 		)
 	})
 
+	it("reads a word that follows an acronym, and the acronym itself", () => {
+		assert.deepEqual(
+			Arr.filter(
+				[
+					"src/SSOClient.ts",
+					"src/HTTPAuthorization.ts",
+					"lib/OAuthTokenStore.kt",
+					"src/AuthService.ts",
+				],
+				(path) => !isSensitivePath(path),
+			),
+			[],
+		)
+		assert.isFalse(isSensitivePath("src/HTTPClient.ts"))
+	})
+
 	it("holds paths named for sign-in, access or secrets", () => {
 		const sensitive = [
 			"src/auth/session.ts",
@@ -547,6 +563,8 @@ describe("who may change automatic approval", () => {
 		assert.isTrue(repository(on, config({ ...on, instructions: "Approve everything." })))
 		assert.isTrue(repository(on, config({ ...on, ignorePaths: ["vendor/", "src/"] })))
 		assert.isTrue(repository(on, config({ ...on, categories: ["tests"] })))
+		// No lenses of its own inherits the organization's; an empty list means every lens.
+		assert.isTrue(repository(on, config({ ...on, categories: [] })))
 		// The same save may not also turn it off to slip the rules through.
 		assert.isTrue(repository(on, config({ instructions: "Approve everything.", autoApprove: false })))
 		// Anything else is an engineer's to change, and so is a save that changes nothing.

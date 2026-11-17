@@ -1451,6 +1451,9 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 									...(thread.resolvedBy == null
 										? undefined
 										: { resolvedBy: thread.resolvedBy.login }),
+									...((thread.comments.totalCount ?? 0) > thread.comments.nodes.length
+										? { commentsTruncated: true }
+										: undefined),
 									comments: Arr.map(thread.comments.nodes, (comment) => {
 										const count = (content: string) =>
 											Arr.findFirst(

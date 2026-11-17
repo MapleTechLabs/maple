@@ -484,6 +484,7 @@ const GithubReviewThreadsResponse = Schema.Struct({
 												Schema.NullOr(Schema.Struct({ login: Schema.String })),
 											),
 											comments: Schema.Struct({
+												totalCount: Schema.optionalKey(Schema.Number),
 												nodes: Schema.Array(
 													Schema.Struct({
 														databaseId: Schema.NullOr(Schema.Number),
@@ -675,6 +676,7 @@ const REVIEW_THREADS_QUERY = `query($owner: String!, $name: String!, $number: In
         nodes {
           id isResolved resolvedBy { login }
           comments(first: 20) {
+            totalCount
             nodes { databaseId author { login __typename } body reactionGroups { content reactors { totalCount } } }
           }
         }

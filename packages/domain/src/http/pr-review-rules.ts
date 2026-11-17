@@ -84,6 +84,8 @@ const reviewRulesDiffer = (
 	next: PrReviewRepositoryConfig | undefined,
 ): boolean =>
 	(trimmed(stored?.instructions) ?? "") !== (trimmed(next?.instructions) ?? "") ||
+	// Absent lenses inherit the organization's; an empty list overrides them with every lens.
+	(stored?.categories === undefined) !== (next?.categories === undefined) ||
 	!sameMembers(stored?.categories, next?.categories) ||
 	!sameMembers(stored?.ignorePaths, next?.ignorePaths)
 
