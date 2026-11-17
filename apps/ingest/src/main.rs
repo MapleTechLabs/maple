@@ -1349,6 +1349,8 @@ struct AwsConnectionRow {
     /// Whether the connection asked for its CloudTrail feed. A feed turned off
     /// in Maple may still be deployed in the account until the setup runs again.
     audit_trail_enabled: bool,
+    /// Whether the connection asks for a metric stream, the same way.
+    metric_stream_enabled: bool,
     /// The connection's `sources` row, joined through `source_id`.
     source: Option<PullSourceRow>,
 }
@@ -1462,6 +1464,7 @@ struct AwsConnectionIdentity {
     /// That source's pause window, judged per delivery so a timed pause ends on time.
     source_pause: PauseWindow,
     audit_trail_enabled: bool,
+    metric_stream_enabled: bool,
 }
 
 impl AwsConnectionIdentity {
@@ -1469,6 +1472,7 @@ impl AwsConnectionIdentity {
         ResolvedAwsConnection {
             source_pause: self.source_pause,
             audit_trail_enabled: self.audit_trail_enabled,
+            metric_stream_enabled: self.metric_stream_enabled,
             key: ResolvedIngestKey {
                 org_id: self.org_id,
                 key_type: IngestKeyType::Connector,
@@ -1774,8 +1778,10 @@ struct ResolvedGcpConnector {
 struct ResolvedAwsConnection {
     /// The integration source's pause window: a paused source's deliveries are acked and dropped.
     source_pause: PauseWindow,
-    /// Audit deliveries for a connection that did not ask for them are dropped.
+    /// Deliveries of a feature the connection did not ask for are dropped: the
+    /// stream and the CloudTrail feed share one secret.
     audit_trail_enabled: bool,
+    metric_stream_enabled: bool,
     key: ResolvedIngestKey,
 }
 
@@ -1788,6 +1794,8 @@ enum AwsStreamOutcome {
     Undecodable,
     /// The connection's integration source is paused.
     SourcePaused,
+    /// The connection's metric stream is off in Maple, though still deployed.
+    StreamOff,
 }
 
 /// What an accepted Cloudflare Logpush request did.
@@ -7914,6 +7922,11 @@ async fn handle_aws_firehose(
                     span_handle.record("maple.ingest.reject_reason", "source_paused");
                     metrics::request_completed(signal, "ok", "none", duration);
                 }
+                AwsStreamOutcome::StreamOff => {
+                    span_handle.record("otel.status_code", "Ok");
+                    span_handle.record("maple.ingest.reject_reason", "metric_stream_off");
+                    metrics::request_completed(signal, "ok", "none", duration);
+                }
             }
             firehose_response(StatusCode::OK, &request_id, None)
         }
@@ -7957,6 +7970,14 @@ async fn handle_aws_firehose_inner(
             connection_id, "AWS integration source paused; delivery acked and dropped"
         );
         return Ok(AwsStreamOutcome::SourcePaused);
+    }
+    // Turned off in Maple while the CloudTrail feed keeps the secret alive: nothing stored or billed.
+    if !resolved.metric_stream_enabled {
+        debug!(
+            org_id,
+            connection_id, "AWS metric stream is off for this connection; delivery acked and dropped"
+        );
+        return Ok(AwsStreamOutcome::StreamOff);
     }
 
     let _org_inflight_permit = state
@@ -11105,6 +11126,7 @@ impl AwsConnectionResolver {
             source,
             source_pause,
             audit_trail_enabled: row.audit_trail_enabled,
+            metric_stream_enabled: row.metric_stream_enabled,
         };
 
         self.cache.insert(cache_key, identity.clone()).await;
@@ -12282,7 +12304,7 @@ impl KeyStore for PostgresKeyStore {
         let revision = required_schema_revision();
         let client = self.client().await?;
         let sql = format!(
-            "SELECT c.org_id, c.audit_trail_enabled, \
+            "SELECT c.org_id, c.audit_trail_enabled, c.metric_stream IS NOT NULL AS metric_stream_enabled, \
              COALESCE(s.sync_status = 'connected', false) AS self_managed, \
              COALESCE(s.sync_status = 'connected' AND {SCHEMA_REVISION_COMPATIBLE_SQL}, false) AS clickhouse_ready, \
              {CONNECTOR_SOURCE_COLUMNS} \
@@ -12306,6 +12328,7 @@ impl KeyStore for PostgresKeyStore {
             self_managed: row.get("self_managed"),
             clickhouse_ready: row.get("clickhouse_ready"),
             audit_trail_enabled: row.get("audit_trail_enabled"),
+            metric_stream_enabled: row.get("metric_stream_enabled"),
             source: connector_source(row),
         }))
     }
@@ -18612,6 +18635,7 @@ mod tests {
                 self_managed: true,
                 clickhouse_ready: true,
                 audit_trail_enabled: true,
+                metric_stream_enabled: true,
                 source: None,
             },
         );
@@ -18902,6 +18926,41 @@ mod tests {
         drop(std::fs::remove_dir_all(queue_dir));
     }
 
+    // The stream and the CloudTrail feed share a secret: a stream turned off while
+    // the feed stays on must stop storing and billing metrics at once.
+    #[tokio::test]
+    async fn aws_firehose_drops_metrics_for_a_connection_whose_stream_is_off() {
+        let (ch_url, mut ch_rx) = spawn_fake_clickhouse().await;
+        let (state, store, queue_dir) =
+            aws_firehose_state("aws-firehose-stream-off", &ch_url, 8 * 1024 * 1024).await;
+        store.insert_aws_connection(
+            AWS_CONNECTION,
+            AWS_STREAM_SECRET,
+            AwsConnectionRow {
+                org_id: "org_aws".to_owned(),
+                self_managed: true,
+                clickhouse_ready: true,
+                audit_trail_enabled: true,
+                metric_stream_enabled: false,
+                source: None,
+            },
+        );
+
+        let body = gzip_bytes(&firehose_body(&[&cloudwatch_record()]));
+        let (status, _) =
+            aws_deliver(&state, AWS_CONNECTION, Some(AWS_STREAM_SECRET), body, true).await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), ch_rx.recv())
+                .await
+                .is_err(),
+            "a stream that is off must not store metrics"
+        );
+        assert!(store.aws_stream_health.lock().unwrap().is_empty());
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
     #[tokio::test]
     async fn aws_firehose_refuses_a_delivery_that_decodes_past_the_limit() {
         let (state, store, queue_dir) =
@@ -19133,6 +19192,7 @@ mod tests {
                 self_managed: true,
                 clickhouse_ready: true,
                 audit_trail_enabled: false,
+                metric_stream_enabled: true,
                 source: None,
             },
         );

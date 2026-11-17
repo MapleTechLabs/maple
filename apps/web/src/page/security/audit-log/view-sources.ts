@@ -79,6 +79,15 @@ const STATE = {
 
 const setupHref = (provider: string) => hrefOf(AppRoute.SourcesNew({ search: { integration: provider } }))
 
+/**
+ * Where a connected platform's feed is switched: AWS's switch is on each account's card, which the
+ * connect flow does not show; the others are switched in their setup.
+ */
+const manageHref = (provider: string) =>
+	provider === "aws"
+		? hrefOf(AppRoute.Integrations({ search: { integration: "aws" } }))
+		: setupHref(provider)
+
 const eventCount = (events: number) => `${events.toLocaleString("en-US")} event${events === 1 ? "" : "s"}`
 
 /** The line under the platform's name: what it sends, then how it is doing or what to do. */
@@ -124,7 +133,7 @@ const sourceAction = (h: H, source: AuditTrailSource, model: Model): Html | unde
 			`Connect ${name}`,
 		])
 	if (source.state === "off" || source.state === "failing")
-		return linkButton(h, { variant: "outline", size: "sm", href: setupHref(source.provider) }, [
+		return linkButton(h, { variant: "outline", size: "sm", href: manageHref(source.provider) }, [
 			source.state === "off" ? "Turn on" : "Open integration",
 		])
 	if (source.events === 0 || model.search.provider === source.provider) return undefined

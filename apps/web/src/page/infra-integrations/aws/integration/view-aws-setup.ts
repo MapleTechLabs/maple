@@ -57,7 +57,33 @@ export const methodSelect = (h: H, model: Model, part: SetupPart): Html =>
 const methodOf = (model: Model, part: SetupPart): AwsSetupMethod =>
 	part === "role" ? model.awsCard.method : model.awsCard.streamMethod
 
+/** The CloudTrail feed spans every region and checks for a trail first: only the script does both. */
+const auditNote = (h: H, connection: V2AwsConnection): ReadonlyArray<Html> =>
+	connection.audit_trail
+		? [
+				h.p(
+					[h.Class(SMALL)],
+					[
+						"The audit log feed is deployed only by the CloudShell script. Switch to CloudShell to deploy it, or to remove it once it is off.",
+					],
+				),
+			]
+		: []
+
 const roleBody = (
+	h: H,
+	model: Model,
+	connection: V2AwsConnection,
+	setup: V2AwsSetup,
+): ReadonlyArray<Html> => {
+	const method = methodOf(model, "role")
+	return [
+		...(method === "cloudshell" ? [] : auditNote(h, connection)),
+		...roleMethodBody(h, model, connection, setup),
+	]
+}
+
+const roleMethodBody = (
 	h: H,
 	model: Model,
 	connection: V2AwsConnection,

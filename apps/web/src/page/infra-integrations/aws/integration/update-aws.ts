@@ -565,7 +565,11 @@ export const completedAuditTrail = (
 				auditSave: { _tag: "Refused", id, error: error ?? "Couldn't change the audit log feed." },
 			}),
 		}
-	return chain(withCard(withConnection(model, connection), { auditSave: { _tag: "Idle" } }), [
+	// Only the CloudShell script deploys the feed, in every region: the setup opens on it.
+	const card = connection.audit_trail
+		? { auditSave: { _tag: "Idle" as const }, method: "cloudshell" as const }
+		: { auditSave: { _tag: "Idle" as const } }
+	return chain(withCard(withConnection(model, connection), card), [
 		(next) => openSetup(next, context, connection.id, "Supersede"),
 		(next) => requestStatus(next, context, "aws", "Supersede"),
 		(next) =>

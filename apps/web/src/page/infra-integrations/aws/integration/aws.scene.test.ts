@@ -891,7 +891,11 @@ describe("aws card", () => {
 		const auditSwitch = role("switch", { name: "Audit log" })
 
 		test("turning it on saves only the feed, then reopens the setup that deploys it", () => {
-			const model = withStatus(entered(), [verified({ metric_stream: stream })])
+			// Picked before: Terraform covers only the role, so the feed's setup moves to CloudShell.
+			const model = pageUpdate(
+				withStatus(entered(), [verified({ metric_stream: stream })]),
+				Message.ClickedAwsSetupMethod({ part: "role", method: "terraform" }),
+			).model
 			const sent = pageUpdate(model, Message.ToggledAwsAuditTrail({ id: connectionId }))
 			expect(Arr.map(sent.commands ?? [], ({ name, args }) => ({ name, args }))).toEqual([
 				{ name: UpdateAwsAuditTrail.name, args: { id: connectionId, auditTrail: true } },
@@ -909,6 +913,7 @@ describe("aws card", () => {
 				}),
 			)
 			expect(names(saved.commands)).toContain("LoadAwsSetup")
+			expect(saved.model.awsCard.method).toBe("cloudshell")
 			expect(saved.outMessage).toEqual(
 				PageOutMessage.RequestedToast({
 					type: "success",
