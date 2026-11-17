@@ -43,10 +43,6 @@ interface FakeClerk {
 	nextId: number
 	/** The next `createConnection` fails with this Clerk status and message. */
 	rejectCreate: { status: number; message: string } | null
-	/** Organization domains Maple asked Clerk to delete. */
-	deletedDomains: Array<string>
-	/** Clerk no longer has the organization domain: deleting it answers 404. */
-	domainGone: boolean
 	/** Clerk is down for deletes. */
 	failDeletes: boolean
 	/** How often the bypass list was read. */
@@ -80,8 +76,6 @@ const fakeClerk = (): FakeClerk => ({
 	]),
 	nextId: 1,
 	rejectCreate: null,
-	deletedDomains: [],
-	domainGone: false,
 	failDeletes: false,
 	bypassLookups: 0,
 	updates: [],
@@ -100,12 +94,7 @@ const gatewayLayer = (clerk: FakeClerk) =>
 		ensureOrgDomain: (orgId, domain) => Effect.succeed(`dmn_${orgId}_${domain}`),
 		verifyOrgDomainOwnership: (_orgId, domainId) =>
 			Effect.sync(() => void clerk.verifiedDomains.push(domainId)),
-		deleteOrgDomain: (_orgId, domainId) =>
-			Effect.suspend(() => {
-				if (clerk.domainGone) return Effect.fail(notFound("deleteOrgDomain"))
-				clerk.deletedDomains.push(domainId)
-				return Effect.void
-			}),
+		deleteOrgDomain: () => Effect.void,
 		getConnection: (id) => {
 			const c = clerk.connections.get(id)
 			return c === undefined ? Effect.fail(notFound("get")) : Effect.succeed(c)
@@ -234,12 +223,6 @@ const gatewayLayer = (clerk: FakeClerk) =>
 			),
 		replaceRoleMappings: (directoryId, mappings) =>
 			Effect.sync(() => void clerk.mappings.set(directoryId, [...mappings])),
-		orgConnectionDomains: (orgId) =>
-			Effect.sync(() =>
-				Arr.flatMap([...clerk.connections.values()], (c) =>
-					c.organizationId === orgId ? c.domains : [],
-				),
-			),
 		domainsClaimedElsewhere: (connectionId, domains) =>
 			Effect.sync(() =>
 				Arr.filter(domains, (d) =>
@@ -1141,46 +1124,6 @@ describe("EnterpriseSsoService", () => {
 						new SsoConnectionRequest({ ...samlRequest(["acme.com"]), name: "Acme SSO" }),
 					)
 					assert.strictEqual(renamed.connection?.name, "Acme SSO")
-				}),
-			)
-		},
-	)
-
-	it.effect(
-		"removes the Clerk organization domain with an SSO domain, unless a connection of the organization still uses it",
-		() => {
-			const testDb = createTestDb(trackedDbs)
-			const world = { clerk: fakeClerk(), dns: new Map<string, Array<string>>(), entitled: true }
-			return run(
-				testDb,
-				world,
-				Effect.gen(function* () {
-					const sso = yield* EnterpriseSsoService
-					yield* verifiedDomain(world.dns, "acme.com")
-					yield* verifiedDomain(world.dns, "acme.io")
-					yield* verifiedDomain(world.dns, "acme.dev")
-					// A connection Maple holds no row for still routes acme.io for this organization.
-					world.clerk.connections.set("ent_untracked", {
-						id: "ent_untracked",
-						name: "Old IdP",
-						provider: "saml_custom",
-						domains: ["acme.io"],
-						organizationId: ORG,
-						active: true,
-						createdAt: 1,
-						saml: null,
-						oidc: null,
-					})
-					yield* sso.removeDomain(ORG, "acme.io")
-					assert.deepStrictEqual(world.clerk.deletedDomains, [])
-
-					yield* sso.removeDomain(ORG, "acme.com")
-					assert.deepStrictEqual(world.clerk.deletedDomains, ["dmn_org_acme_acme.com"])
-
-					// Already gone in Clerk: the SSO domain is still removed.
-					world.clerk.domainGone = true
-					const left = yield* sso.removeDomain(ORG, "acme.dev")
-					assert.deepStrictEqual(left.domains, [])
 				}),
 			)
 		},

@@ -654,7 +654,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 			) {
 				const domain = normalizeDomain(raw)
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.sso.domain": domain })
-				const domainRow = yield* requireDomainRow(orgId, domain)
+				yield* requireDomainRow(orgId, domain)
 				const row = yield* loadConnectionRow(orgId)
 				if (Option.isSome(row)) {
 					const connection = yield* orMissing(
@@ -665,22 +665,6 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 						return yield* new EnterpriseSsoConflictError({
 							message: `${domain} is used by the identity provider connection. Remove it there first.`,
 						})
-					}
-				}
-				// Clerk first, so a failed removal can be retried from the row. The domain and its ownership
-				// override stay only while another connection of this organization still routes it.
-				if (domainRow.clerkDomainId !== null) {
-					const stillUsed = yield* clerk
-						.orgConnectionDomains(orgId)
-						.pipe(Effect.mapError(fromClerk))
-					if (!Arr.contains(stillUsed, domain)) {
-						yield* clerk.deleteOrgDomain(orgId, domainRow.clerkDomainId).pipe(
-							Effect.catchIf(
-								(e) => e.status === 404,
-								() => Effect.void,
-							),
-							Effect.mapError(fromClerk),
-						)
 					}
 				}
 				yield* dbExecute((db) =>

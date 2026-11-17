@@ -84,15 +84,12 @@ describe("scanClaimedDomains", () => {
 })
 
 describe("connection update body", () => {
-	it("closes other sign-in methods when SSO is required, and reopens them when it is turned off", () => {
+	it("closes other sign-in methods when SSO is required, and never reopens them", () => {
 		assert.deepStrictEqual(updateParams({ active: true }), {
 			active: true,
 			disableAdditionalIdentifications: true,
 		})
-		assert.deepStrictEqual(updateParams({ active: false }), {
-			active: false,
-			disableAdditionalIdentifications: false,
-		})
+		assert.deepStrictEqual(updateParams({ active: false }), { active: false })
 	})
 
 	it("leaves sign-in methods as they are on an edit that does not touch enforcement", () => {

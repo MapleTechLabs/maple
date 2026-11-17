@@ -204,8 +204,6 @@ export interface ClerkSsoGatewayApi {
 	) => Effect.Effect<ClerkSsoDirectory, ClerkRequestError>
 	readonly rotateDirectoryKey: (id: string) => Effect.Effect<ClerkSsoDirectory, ClerkRequestError>
 	readonly deleteDirectory: (id: string) => Effect.Effect<void, ClerkRequestError>
-	/** Every domain an enterprise connection of this organization serves, lower-cased. */
-	readonly orgConnectionDomains: (orgId: OrgId) => Effect.Effect<ReadonlyArray<string>, ClerkRequestError>
 	/** Which of `domains` another enterprise connection in the instance serves. */
 	readonly domainsClaimedElsewhere: (
 		connectionId: string,
@@ -384,12 +382,10 @@ export const updateParams = (
 	const params: UpdateEnterpriseConnectionParams = {}
 	if (input.name !== undefined) params.name = input.name
 	if (input.domains !== undefined) params.domains = [...input.domains]
-	if (input.active !== undefined) {
-		params.active = input.active
-		// While SSO is required the IdP is the only way in: members of the domains cannot add another
-		// email, password, passkey or social account. Clerk takes this on update only, not on create.
-		params.disableAdditionalIdentifications = input.active
-	}
+	if (input.active !== undefined) params.active = input.active
+	// Requiring SSO restates Clerk's default: members of the domains cannot add another email,
+	// password, passkey or social account. It is never loosened from here.
+	if (input.active === true) params.disableAdditionalIdentifications = true
 	if (input.saml !== undefined) params.saml = samlParams(input.saml)
 	if (input.oidc !== undefined) params.oidc = input.oidc
 	return params
@@ -625,28 +621,6 @@ const make = Effect.gen(function* () {
 		deleteDirectory: (id) =>
 			raw("Clerk.directories.delete", "DELETE", `/directories/${encodeURIComponent(id)}`).pipe(
 				Effect.asVoid,
-			),
-		orgConnectionDomains: (orgId) =>
-			sdk("Clerk.enterpriseConnections.list", { orgId }, (c) =>
-				c.enterpriseConnections.getEnterpriseConnectionList({
-					organizationId: orgId,
-					limit: CONNECTION_PAGE_SIZE,
-				}),
-			).pipe(
-				// More than one page for one organization is not expected: refuse rather than miss one.
-				Effect.filterOrFail(
-					(page) => page.data.length >= page.totalCount,
-					(page) =>
-						new ClerkRequestError({
-							operation: "Clerk.enterpriseConnections.list",
-							message: `Could not read all ${page.totalCount} enterprise connections of the organization`,
-							status: null,
-							cause: null,
-						}),
-				),
-				Effect.map((page) =>
-					Arr.flatMap(page.data, (conn) => Arr.map(conn.domains, Str.toLowerCase)),
-				),
 			),
 		domainsClaimedElsewhere: (connectionId, domains) =>
 			domains.length === 0
