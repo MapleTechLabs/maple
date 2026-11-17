@@ -27,6 +27,18 @@ describe("ScraperEnv", () => {
 		}),
 	)
 
+	// A zero share would build per-org semaphores that never grant a permit: no check would run.
+	it.effect("reads the per-org uptime share, and rejects a zero one at layer build", () =>
+		Effect.gen(function* () {
+			const env = yield* loadEnv({ UPTIME_ORG_CONCURRENCY: "7" })
+			assert.strictEqual(env.UPTIME_ORG_CONCURRENCY, 7)
+			const unset = yield* loadEnv({})
+			assert.isAtMost(unset.UPTIME_ORG_CONCURRENCY, unset.UPTIME_CONCURRENCY)
+			const error = yield* loadEnv({ UPTIME_ORG_CONCURRENCY: "0" }).pipe(Effect.flip)
+			assert.strictEqual(error._tag, "ConfigError")
+		}),
+	)
+
 	it.effect("rejects a fractional concurrency at layer build", () =>
 		Effect.gen(function* () {
 			const error = yield* loadEnv({ SCRAPER_CONCURRENCY: "0.5" }).pipe(Effect.flip)
