@@ -105,13 +105,16 @@ describe("URL fields", () => {
 		expect(issues.logoUrl).toBeNull()
 	})
 
-	it("marks a bad branding link on the Appearance tab and a bad support link on Settings", () => {
+	it("marks bad branding and page links in Appearance and a bad address in Basic settings", () => {
 		const badLogo = { ...saved, logoDarkUrl: "http://acme.example/dark.svg" }
 		expect(hasAppearanceIssues(badLogo)).toBe(true)
 		expect(hasPageFieldIssues(badLogo)).toBe(false)
 		const badSupport = { ...saved, supportUrl: "mailto:help@acme.example" }
-		expect(hasPageFieldIssues(badSupport)).toBe(true)
-		expect(hasAppearanceIssues(badSupport)).toBe(false)
+		expect(hasAppearanceIssues(badSupport)).toBe(true)
+		expect(hasPageFieldIssues(badSupport)).toBe(false)
+		const badSlug = { ...saved, slug: "Not A Slug" }
+		expect(hasPageFieldIssues(badSlug)).toBe(true)
+		expect(hasAppearanceIssues(badSlug)).toBe(false)
 	})
 
 	it("sends the branding links trimmed and blank ones as null", () => {
