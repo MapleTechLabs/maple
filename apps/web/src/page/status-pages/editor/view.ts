@@ -330,7 +330,6 @@ const loaded = (h: H, model: Model, page: V2StatusPage, inputs: PageViewInputs):
 				h,
 				{
 					titleContent: detailTitle(h, {
-						kind: ["Status page"],
 						title: [page.name],
 						adornment: page.draft
 							? badge(h, { variant: "meta" }, ["Draft, not public"])
