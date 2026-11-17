@@ -66,6 +66,8 @@ export function uptimePhaseTimingsQuery() {
 export interface UptimeChecksOpts {
 	/** Most checks returned, newest kept. */
 	readonly limit: number
+	/** Only the failed checks (span status `Error`). */
+	readonly failedOnly?: boolean
 }
 
 export const uptimeChecksRowSchema = Schema.Struct({
@@ -120,6 +122,7 @@ export function uptimeChecksQuery(opts: UptimeChecksOpts) {
 			$.ResourceAttributes.get(UPTIME_MONITOR_ID_ATTRIBUTE).eq(param.string("monitorId")),
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),
+			...(opts.failedOnly === true ? [$.StatusCode.eq("Error")] : []),
 		])
 		.orderBy(["at", "desc"])
 		.limit(opts.limit)

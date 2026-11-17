@@ -174,6 +174,8 @@ describe("uptime monitor page", () => {
 					samples: [],
 					samplesTruncated: false,
 					samplesFailed: false,
+					failedSamples: [],
+					failedSamplesFailed: false,
 					windowStartMs: NOW - 86_400_000,
 					windowEndMs: NOW,
 					checks: 96,
@@ -219,6 +221,8 @@ describe("uptime monitor page", () => {
 					samples: [sample(30, true, Str.repeat(32)("a")), sample(10, false, Str.repeat(32)("b"))],
 					samplesTruncated: false,
 					samplesFailed: false,
+					failedSamples: [],
+					failedSamplesFailed: false,
 					windowStartMs: NOW - 3_600_000,
 					windowEndMs: NOW,
 					checks: 2,
@@ -261,7 +265,12 @@ describe("uptime monitor page", () => {
 			traceId,
 			phases: null,
 		})
-		const stats = (samples: ReadonlyArray<ReturnType<typeof sample>>, samplesTruncated = false) =>
+		type Sample = ReturnType<typeof sample>
+		// Like the warehouse: the failed list is read apart from the capped check list, newest first.
+		const stats = (
+			samples: ReadonlyArray<Sample>,
+			failedSamples: ReadonlyArray<Sample> = Arr.filter(samples, (check) => !check.ok).reverse(),
+		) =>
 			pageUpdate(
 				model,
 				Message.CompletedFetchStats({
@@ -270,8 +279,10 @@ describe("uptime monitor page", () => {
 						window: "24h",
 						points: [],
 						samples,
-						samplesTruncated,
+						samplesTruncated: false,
 						samplesFailed: false,
+						failedSamples,
+						failedSamplesFailed: false,
 						windowStartMs: NOW - 86_400_000,
 						windowEndMs: NOW,
 						checks: samples.length,
@@ -308,13 +319,18 @@ describe("uptime monitor page", () => {
 			click(within(checks, role("button", { name: "Failed" }))),
 			expectView(within(checks, text("No failed checks in the last 24 hours"))).toExist(),
 		)
-		// A window past the list's limit lists only its newest checks, and says so.
+		// A failure older than the capped check list still lists: it is read on its own.
 		scene(
 			{ update: pageUpdate, view },
-			given(stats([sample(30, true, Str.repeat(32)("a"), null)], true)),
+			given(
+				stats(
+					[sample(30, true, Str.repeat(32)("a"), null)],
+					[sample(3_000, false, Str.repeat(32)("d"), "TLS handshake failed")],
+				),
+			),
 			themeResolved(),
 			click(within(checks, role("button", { name: "Failed" }))),
-			expectView(within(checks, text("No failed checks in the newest 1 checks"))).toExist(),
+			expectView(within(checks, text("TLS handshake failed"))).toExist(),
 		)
 	})
 
@@ -339,6 +355,8 @@ describe("uptime monitor page", () => {
 					samples: [timed],
 					samplesTruncated: false,
 					samplesFailed: false,
+					failedSamples: [],
+					failedSamplesFailed: false,
 					windowStartMs: NOW - 3_600_000,
 					windowEndMs: NOW,
 					checks: 1,
@@ -374,6 +392,8 @@ describe("uptime monitor page", () => {
 					samples: [],
 					samplesTruncated: false,
 					samplesFailed: true,
+					failedSamples: [],
+					failedSamplesFailed: false,
 					windowStartMs: NOW - 3_600_000,
 					windowEndMs: NOW,
 					checks: 1,
@@ -425,6 +445,8 @@ describe("uptime monitor page", () => {
 					samples: [...quick, timeout],
 					samplesTruncated: false,
 					samplesFailed: false,
+					failedSamples: [],
+					failedSamplesFailed: false,
 					windowStartMs: NOW - 86_400_000,
 					windowEndMs: NOW,
 					checks: 101,
@@ -460,6 +482,8 @@ describe("uptime monitor page", () => {
 					samples: [],
 					samplesTruncated: false,
 					samplesFailed: false,
+					failedSamples: [],
+					failedSamplesFailed: false,
 					windowStartMs: NOW - 86_400_000,
 					windowEndMs: NOW,
 					checks: 96,
@@ -500,6 +524,8 @@ describe("uptime monitor page", () => {
 						samples: [],
 						samplesTruncated: false,
 						samplesFailed: false,
+						failedSamples: [],
+						failedSamplesFailed: false,
 						windowStartMs: NOW - 86_400_000,
 						windowEndMs: NOW,
 						checks: 4,
@@ -535,6 +561,8 @@ describe("uptime monitor page", () => {
 					samples: [],
 					samplesTruncated: false,
 					samplesFailed: false,
+					failedSamples: [],
+					failedSamplesFailed: false,
 					windowStartMs: NOW - 86_400_000,
 					windowEndMs: NOW,
 					checks: 4,
@@ -571,6 +599,8 @@ describe("uptime monitor page", () => {
 					samples: [],
 					samplesTruncated: false,
 					samplesFailed: false,
+					failedSamples: [],
+					failedSamplesFailed: false,
 					windowStartMs: NOW - 86_400_000,
 					windowEndMs: NOW,
 					checks: 4,
@@ -612,6 +642,8 @@ describe("uptime monitor page", () => {
 					samples: [],
 					samplesTruncated: false,
 					samplesFailed: false,
+					failedSamples: [],
+					failedSamplesFailed: false,
 					windowStartMs: NOW - 86_400_000,
 					windowEndMs: NOW,
 					checks: 4,
@@ -647,6 +679,8 @@ describe("uptime monitor page", () => {
 					samples: [],
 					samplesTruncated: false,
 					samplesFailed: false,
+					failedSamples: [],
+					failedSamplesFailed: false,
 					windowStartMs: NOW - 86_400_000,
 					windowEndMs: NOW,
 					checks: 4,

@@ -66,6 +66,9 @@ export const CheckStats = Schema.Struct({
 	samples: Schema.Array(CheckSample),
 	samplesTruncated: Schema.Boolean,
 	samplesFailed: Schema.Boolean,
+	/** The window's failed checks, newest first, capped at `UPTIME_FAILED_CHECK_LIST_LIMIT`. */
+	failedSamples: Schema.Array(CheckSample),
+	failedSamplesFailed: Schema.Boolean,
 	windowStartMs: Schema.Number,
 	windowEndMs: Schema.Number,
 	checks: Schema.Number,

@@ -160,6 +160,8 @@ const fixtureStats = (window: LabWindow): CheckStats => {
 		samples,
 		samplesTruncated: false,
 		samplesFailed: false,
+		failedSamples: Arr.filter(samples, (sample) => !sample.ok).reverse(),
+		failedSamplesFailed: false,
 		windowStartMs: startMs,
 		windowEndMs: NOW_MS,
 		checks: samples.length,

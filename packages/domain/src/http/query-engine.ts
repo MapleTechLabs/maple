@@ -1702,6 +1702,8 @@ export class UptimeChecksRequest extends Schema.Class<UptimeChecksRequest>("Upti
 	endTime: TinybirdDateTime,
 	/** Most checks returned, newest kept. */
 	limit: Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(5000)),
+	/** Only the failed checks. */
+	failedOnly: Schema.optionalKey(Schema.Boolean),
 }) {}
 
 /** An HTTP check's phases in ms; a phase the check skipped is 0 (TLS on http://, no body read). */
