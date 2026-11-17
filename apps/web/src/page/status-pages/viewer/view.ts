@@ -14,13 +14,7 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { statusPageHref, statusPagesHref } from "../shared/commands"
 import { statusPageNotFound } from "../shared/not-found"
-import {
-	previewControls,
-	previewDocument,
-	previewExampleNote,
-	previewFrame,
-	simulateSnapshot,
-} from "../shared/preview"
+import { previewControls, previewDocument, previewFrame, simulateSnapshot } from "../shared/preview"
 import { Message } from "./message"
 import type { Model } from "./model"
 
@@ -32,18 +26,20 @@ const NOTE = {
 	internal: "Only members of this organization can read this page.",
 } as const
 
+const EXAMPLE_NOTE = "Showing an example state. Visitors still see the live page."
+
 /** The slim bar over the full-screen page: that it is a preview, its switches, the way back. */
 const previewBar = (h: H, model: Model, snapshot: StatusPagePublicSnapshot, editorHref: string): Html =>
 	hstack(
 		h,
 		{ gap: "3", align: "center", justify: "between", wrap: true, className: "border-b px-4 py-2" },
 		[
-			hstack(h, { gap: "2", align: "center", className: "min-w-0" }, [
+			// One note at a time, so the bar stays one line: an example state outranks who can read it.
+			hstack(h, { gap: "2", align: "center", className: "min-w-0 flex-1" }, [
 				badge(h, { variant: "muted" }, ["Preview"]),
 				typography(h, { size: "xs", tone: "muted", as: "p", className: "truncate" }, [
-					NOTE[snapshot.page.visibility],
+					model.previewState === "live" ? NOTE[snapshot.page.visibility] : EXAMPLE_NOTE,
 				]),
-				...previewExampleNote(h, model.previewState),
 			]),
 			hstack(h, { gap: "2", align: "center", wrap: true }, [
 				previewControls(h, {
