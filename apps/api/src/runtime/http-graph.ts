@@ -18,6 +18,7 @@ import { HttpGithubCostLive } from "@/routes/internal/github-cost.http"
 import { HttpOpenRouterCostLive } from "@/routes/internal/openrouter-cost.http"
 import { HttpCostBudgetsLive } from "@/routes/internal/cost-budgets.http"
 import { HttpOpenRouterKeyLive } from "@/routes/internal/openrouter-key.http"
+import { HttpEnterpriseSsoLive } from "@/routes/internal/enterprise-sso.http"
 import { HttpPlanetScaleCostLive } from "@/routes/internal/planetscale-cost.http"
 import { HttpServiceMapWorldLive } from "@/routes/internal/service-map-world.http"
 import { HttpVercelCostLive } from "@/routes/internal/vercel-cost.http"
@@ -187,6 +188,7 @@ const ApiInternalRoutes = HttpApiBuilder.layer(MapleInternalApi).pipe(
 			HttpOpenRouterCostLive,
 			HttpCostBudgetsLive,
 			HttpOpenRouterKeyLive,
+			HttpEnterpriseSsoLive,
 			HttpServiceMapWorldLive,
 			HttpVercelCostLive,
 		),

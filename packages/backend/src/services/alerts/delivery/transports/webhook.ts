@@ -31,8 +31,9 @@ export const webhookTransport: HttpTransport<Config> = {
 		body: input.payloadJson,
 		// Customer-supplied host: this is exactly what the SSRF guard is for.
 		guarded: true,
-		// The token, if any, rides in the signature header rather than the path.
-		sensitivePath: false,
+		// A tenant URL can carry the receiver's own token in its path (Slack-style
+		// `/services/T/B/token`, Zapier hooks), so the path stays off spans.
+		sensitivePath: true,
 	}),
 	ack: (input) => ({
 		providerMessage: "Delivered to webhook",

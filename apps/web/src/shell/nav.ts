@@ -236,7 +236,6 @@ export type NavFlags = Readonly<{
 	cloudCost: boolean
 	productAnalytics: boolean
 	securityAudit: boolean
-	statusPages: boolean
 }>
 
 const analystNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
@@ -247,9 +246,7 @@ const analystNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 		items: [
 			analystIncidentsItem,
 			{ title: "Errors", href: "/errors", icon: "CircleWarningIcon" },
-			...(flags.statusPages
-				? [{ title: "Status pages", href: "/status-pages", icon: "WindowChartLineIcon" } as const]
-				: []),
+			{ title: "Status pages", href: "/status-pages", icon: "WindowChartLineIcon" },
 		],
 	},
 	{
@@ -270,14 +267,7 @@ const operatorNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 	{
 		id: "monitor",
 		label: "Monitor",
-		items: [
-			{
-				...servicesItem,
-				alsoActive: flags.statusPages ? [] : ["/status-pages"],
-			},
-			infrastructureItem,
-			...(flags.cloudCost ? [costItem] : []),
-		],
+		items: [servicesItem, infrastructureItem, ...(flags.cloudCost ? [costItem] : [])],
 	},
 	{
 		id: "analyze",
@@ -304,15 +294,13 @@ const operatorNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 			...(flags.securityAudit
 				? [{ title: "Security", href: "/security", icon: "ShieldCheckIcon", badge: "Beta" } as const]
 				: []),
-			...(flags.statusPages
-				? [{ title: "Status pages", href: "/status-pages", icon: "WindowChartLineIcon" } as const]
-				: []),
+			{ title: "Status pages", href: "/status-pages", icon: "WindowChartLineIcon" },
 		],
 	},
 ]
 
 /**
- * `navGroups(flags, audience)`; `cloudCost`, `productAnalytics`, `releases`, `securityAudit` and `statusPages` gate a
+ * `navGroups(flags, audience)`; `cloudCost`, `productAnalytics`, `releases` and `securityAudit` gate a
  * row each, and an analyst gets {@link analystNavGroups}.
  */
 export const navGroups = (flags: NavFlags, audience: NavAudience = "operator"): ReadonlyArray<NavGroup> =>

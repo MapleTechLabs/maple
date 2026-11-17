@@ -57,6 +57,7 @@ Tools that take an alert rule, alert destination, dashboard or error issue ID ac
 | `list_services`              | read   | Active services with throughput, error rate and P95 latency                                           |
 | `diagnose_service`           | read   | One service's health, top errors, recent traces and logs, and the platform resources behind it        |
 | `get_service_top_operations` | read   | A service's top operations (endpoints or spans), ranked by a chosen metric                            |
+| `profile_hotspots`           | read   | Where a service spent CPU or allocated memory: its heaviest functions from continuous profiling       |
 | `service_map`                | read   | Service-to-service dependencies with call counts, error rates and latency per edge                    |
 | `compare_periods`            | read   | Error rate, throughput and P95 across two periods, overall and per service, with regressions flagged  |
 | `explore_attributes`         | read   | Attribute keys and their values for filtering; `source=services` lists environments and commit SHAs   |

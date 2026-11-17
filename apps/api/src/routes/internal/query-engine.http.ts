@@ -2577,6 +2577,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 									signature: row.signature,
 									service: row.service,
 									requests: row.requests,
+									inPath: row.inPath,
 									answered: row.answered,
 									sources: row.sources,
 									lastSeen: DateTime.formatIso(row.lastSeen),

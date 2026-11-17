@@ -2,6 +2,7 @@ import type { StatusPagePublicSnapshot } from "@maple/domain/status-page"
 import { escapeHtml } from "@maple/strings"
 import { Array as Arr } from "effect"
 import { pageHref, type RenderOptions, renderDocument, renderHeader } from "./document"
+import { pageTitle } from "./format"
 import { manageStyles } from "./styles"
 
 /** Where the password form posts, under the page's base path. */
@@ -35,7 +36,7 @@ export const renderAccessPage = (
 	return renderDocument({
 		snapshot,
 		options,
-		title: `${snapshot.page.name} status`,
+		title: pageTitle(snapshot.page.name),
 		styles: manageStyles,
 		body,
 		head: `<meta name="robots" content="noindex">`,

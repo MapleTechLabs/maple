@@ -1,39 +1,66 @@
 import type { V2StatusPage } from "@maple/domain/http/v2"
-import { Option } from "effect"
+import { Array as Arr, Option } from "effect"
+import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { button } from "@maple/views/ui/button"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { copyableField } from "@maple/views/ui/copyable-field"
+import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
+import { navRailRow } from "@maple/views/ui/nav-rail-row"
+import { searchResultMockup } from "@maple/views/ui/page-mockup"
+import { pageTitle } from "@maple/status-page"
+import { skeleton } from "@maple/views/ui/skeleton"
 import { failureMessage } from "@maple/views/data/load-failure"
 import { dangerRow, dangerZone } from "../../kit/danger-zone"
 import { saveBar } from "../../kit/save-bar"
 import { adminOnlyNote, settingsSection, settingsSections } from "../../kit/settings-section"
 import { switchRow } from "../../kit/switch-row"
-import { publicAddress } from "../shared/commands"
+import {
+	canonicalUrl,
+	publicAddress,
+	SETTINGS_SECTIONS,
+	type SettingsSection,
+	statusPageHref,
+} from "../shared/commands"
 import { selectField, textareaField, textField } from "../shared/fields"
 import {
+	hasAppearanceIssues,
 	hasPageFieldIssues,
 	hasSettingsIssues,
-	hasAppearanceIssues,
+	orNull,
 	type SettingsForm,
 	settingsFormOf,
 	settingsIssues,
 } from "../shared/form"
+import { onYourPage } from "../shared/preview"
 import { accessSection } from "./view-access"
-import { appearanceSection, brandingSection, previewPanel } from "./view-appearance"
+import { appearanceSection, brandingSection } from "./view-appearance"
 import { customDomainSection } from "./view-domain"
-import { pageUrlOf } from "./update-domain"
+import { jsonTab } from "./view-json"
+import { monitorsSection } from "./view-monitors"
+import { draftName, fragmentPreview, settingsPagePreview, tabPreview } from "./view-canvas"
+import { activeCustomDomain, pageUrlOf } from "./update-domain"
 import { Message } from "./message"
 import { canBreakGlass, canManage, type Model } from "./model"
 import { isSettingsDirty, settingsOf } from "./update-settings"
 import { typography, typographyClass } from "@maple/views/ui/typography"
+import { grid } from "@maple/views/ui/grid"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
-// The Settings tab: the page's fields, who can view it, the break-glass token and deleting the page.
+// The Settings tab: a menu of sections beside the open one. Basic settings and Appearance edit one
+// form with one save bar; each setting shows how it reads on the page.
 
 type H = HtmlBuilder<Message>
+
+const SECTION_LABEL = {
+	basic: "Basic settings",
+	monitors: "Monitors",
+	appearance: "Appearance",
+	access: "Access",
+	advanced: "Advanced",
+} as const satisfies Record<SettingsSection, string>
 
 const AUTO_INCIDENT_ENTRIES = [
 	{ value: "off", label: "Off" },
@@ -41,46 +68,59 @@ const AUTO_INCIDENT_ENTRIES = [
 	{ value: "publish", label: "Open and publish an incident" },
 ]
 
-const pageSection = (h: H, model: Model, form: SettingsForm): Html => {
+/** The address the form's slug gives the page, for the previews; the custom domain wins once active. */
+const draftAddress = (model: Model, form: SettingsForm): string =>
+	canonicalUrl(model.publicBaseUrl, form.slug, activeCustomDomain(model)) ?? publicAddress(form.slug)
+
+const pageSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm): Html => {
 	const issues = settingsIssues(form)
 	const isReadOnly = !canManage(model)
+	const address = draftAddress(model, form)
 	return settingsSection(
 		h,
 		{
 			id: "status-page-settings-page",
 			title: "Page",
-			description: ["What visitors see at the top of the page."],
+			description: ["How the page introduces itself to visitors."],
 		},
 		[
-			h.div(
-				[h.Class("grid gap-4 sm:grid-cols-2")],
-				[
-					textField(h, {
-						id: "status-page-name",
-						label: "Name",
-						value: form.name,
-						isDisabled: isReadOnly,
-						error: issues.name,
-						onInput: (value) => Message.ChangedSetting({ field: "name", value }),
+			vstack(h, { gap: "4" }, [
+				textField(h, {
+					id: "status-page-name",
+					label: "Name",
+					value: form.name,
+					isDisabled: isReadOnly,
+					error: issues.name,
+					onInput: (value) => Message.ChangedSetting({ field: "name", value }),
+				}),
+				textField(h, {
+					id: "status-page-slug",
+					label: "Address",
+					value: form.slug,
+					isMono: true,
+					isDisabled: isReadOnly,
+					error: issues.slug,
+					hint: `${publicAddress(form.slug)}. Changing it moves the page; the old address stops working.`,
+					onInput: (value) => Message.ChangedSetting({ field: "slug", value }),
+				}),
+				onYourPage(h, tabPreview(h, model, page, form, address)),
+				textareaField(h, {
+					id: "status-page-description",
+					label: "Description",
+					value: form.description,
+					isDisabled: isReadOnly,
+					onInput: (value) => Message.ChangedSetting({ field: "description", value }),
+				}),
+				onYourPage(
+					h,
+					searchResultMockup(h, {
+						address,
+						title: pageTitle(draftName(page, form)),
+						description: orNull(form.description),
 					}),
-					textField(h, {
-						id: "status-page-slug",
-						label: "Address",
-						value: form.slug,
-						isMono: true,
-						isDisabled: isReadOnly,
-						error: issues.slug,
-						hint: `${publicAddress(form.slug)}. Changing it moves the page; the old address stops working.`,
-						onInput: (value) => Message.ChangedSetting({ field: "slug", value }),
-					}),
-					textareaField(h, {
-						id: "status-page-description",
-						label: "Description",
-						value: form.description,
-						isDisabled: isReadOnly,
-						className: "sm:col-span-2",
-						onInput: (value) => Message.ChangedSetting({ field: "description", value }),
-					}),
+					"In search results and link previews",
+				),
+				grid(h, { sm: 2, gap: "4" }, [
 					textField(h, {
 						id: "status-page-website",
 						label: "Website URL",
@@ -88,7 +128,18 @@ const pageSection = (h: H, model: Model, form: SettingsForm): Html => {
 						placeholder: "https://acme.example",
 						isDisabled: isReadOnly,
 						error: issues.websiteUrl,
+						hint: "Linked in the page header as Visit website.",
 						onInput: (value) => Message.ChangedSetting({ field: "websiteUrl", value }),
+					}),
+					textField(h, {
+						id: "status-page-support",
+						label: "Support URL",
+						value: form.supportUrl,
+						placeholder: "https://acme.example/support",
+						isDisabled: isReadOnly,
+						error: issues.supportUrl,
+						hint: "Linked in the page header as Contact support.",
+						onInput: (value) => Message.ChangedSetting({ field: "supportUrl", value }),
 					}),
 					textField(h, {
 						id: "status-page-privacy",
@@ -110,52 +161,41 @@ const pageSection = (h: H, model: Model, form: SettingsForm): Html => {
 						hint: "Linked in the page footer.",
 						onInput: (value) => Message.ChangedSetting({ field: "termsUrl", value }),
 					}),
-					textField(h, {
-						id: "status-page-support",
-						label: "Support URL",
-						value: form.supportUrl,
-						placeholder: "https://acme.example/support",
-						isDisabled: isReadOnly,
-						error: issues.supportUrl,
-						hint: "Linked in the page header as Contact support.",
-						onInput: (value) => Message.ChangedSetting({ field: "supportUrl", value }),
-					}),
-				],
-			),
+				]),
+			]),
 		],
 	)
 }
 
-const behaviourSection = (h: H, model: Model, form: SettingsForm): Html =>
-	settingsSection(h, { id: "status-page-settings-behaviour", title: "Behaviour", padded: false }, [
-		h.div(
-			[h.Class("divide-y")],
-			[
-				switchRow(h, {
-					id: "status-page-powered-by",
-					label: "Show powered by Maple",
-					description: "A small credit in the page footer.",
-					isChecked: form.showPoweredBy,
-					isDisabled: !canManage(model),
-					onToggle: Message.ToggledPoweredBy(),
-					className: "p-4",
+const behaviourSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm): Html =>
+	settingsSection(h, { id: "status-page-settings-behaviour", title: "Behaviour" }, [
+		vstack(h, { gap: "4" }, [
+			selectField(h, {
+				id: "status-page-auto-incidents",
+				label: "When a linked monitor goes down",
+				value: form.autoIncidents,
+				entries: AUTO_INCIDENT_ENTRIES,
+				isDisabled: !canManage(model),
+				hint: "A draft waits for you under Incidents; a published one shows on the page at once.",
+				onInput: (value) => Message.ChangedSetting({ field: "autoIncidents", value }),
+			}),
+			switchRow(h, {
+				id: "status-page-powered-by",
+				label: "Show powered by Maple",
+				description: "A small credit in the page footer.",
+				isChecked: form.showPoweredBy,
+				isDisabled: !canManage(model),
+				onToggle: Message.ToggledPoweredBy(),
+			}),
+			onYourPage(
+				h,
+				fragmentPreview(h, model, page, form, {
+					title: "The page footer as visitors see it",
+					parts: ["footer"],
+					className: "h-32",
 				}),
-				h.div(
-					[h.Class("p-4")],
-					[
-						selectField(h, {
-							id: "status-page-auto-incidents",
-							label: "When a linked monitor goes down",
-							value: form.autoIncidents,
-							entries: AUTO_INCIDENT_ENTRIES,
-							isDisabled: !canManage(model),
-							hint: "A draft waits for you under Incidents in the editor's On this page list; a published one shows on the page at once.",
-							onInput: (value) => Message.ChangedSetting({ field: "autoIncidents", value }),
-						}),
-					],
-				),
-			],
-		),
+			),
+		]),
 	])
 
 export const revealedToken = (h: H, model: Model): ReadonlyArray<Html> =>
@@ -257,6 +297,23 @@ const breakGlassSection = (h: H, model: Model, page: V2StatusPage): Html => {
 	)
 }
 
+/** The page as one JSON document, with its read's loading and failure states. */
+const jsonSection = (h: H, model: Model): Html => {
+	const failure = AsyncData.getError(model.config.data)
+	return settingsSection(h, { id: "status-page-settings-json", title: "Page JSON", framed: false }, [
+		Option.isSome(failure)
+			? errorState(h, {
+					failure: failure.value,
+					title: "Couldn't load the config",
+					onRetry: Message.ClickedRetry(),
+					className: "py-12",
+				})
+			: AsyncData.hasData(model.config.data)
+				? jsonTab(h, model)
+				: skeleton(h, "h-48 w-full"),
+	])
+}
+
 const deleteSection = (h: H): Html =>
 	dangerZone(h, { id: "status-page-settings-danger" }, [
 		dangerRow(h, {
@@ -272,79 +329,121 @@ const deleteSection = (h: H): Html =>
 		}),
 	])
 
-/**
- * Settings and Appearance edit one form: each shows its sections beside the preview, one save bar.
- * A problem on the other tab still blocks the save, so the bar names that tab.
- */
-const formView = (
+/** Basic settings and Appearance share one form: a problem in the other still blocks the save. */
+const saveContext = (model: Model, form: SettingsForm, section: SettingsSection): string | undefined => {
+	if (hasSettingsIssues(form)) {
+		const isHere =
+			section === "appearance"
+				? hasAppearanceIssues(form)
+				: section === "basic" && hasPageFieldIssues(form)
+		return isHere
+			? "Fix the fields marked above."
+			: `Fix the fields marked in ${hasPageFieldIssues(form) ? "Basic settings" : "Appearance"}.`
+	}
+	return model.isApplyingJson ? "Saving waits for the JSON apply to finish." : undefined
+}
+
+const sectionBody = (
 	h: H,
 	model: Model,
 	page: V2StatusPage,
-	tab: "settings" | "appearance",
-	sections: (form: SettingsForm) => ReadonlyArray<Html>,
-): Html => {
+	form: SettingsForm,
+	section: SettingsSection,
+): ReadonlyArray<Html> => {
+	switch (section) {
+		case "basic":
+			return [
+				pageSection(h, model, page, form),
+				customDomainSection(h, model, page),
+				behaviourSection(h, model, page, form),
+			]
+		case "monitors":
+			return [monitorsSection(h, model, page)]
+		case "appearance":
+			return [brandingSection(h, model, page, form), appearanceSection(h, model, page, form)]
+		case "access":
+			return [accessSection(h, model, page, form)]
+		case "advanced":
+			return [
+				// Break-glass posts at the public address, which an internal page does not answer on.
+				...(page.visibility === "internal" ? [] : [breakGlassSection(h, model, page)]),
+				jsonSection(h, model),
+				...(canManage(model) ? [deleteSection(h)] : []),
+			]
+	}
+}
+
+const sectionMenu = (h: H, page: V2StatusPage, section: SettingsSection): Html =>
+	h.nav(
+		[h.AriaLabel("Settings sections"), h.Class("md:sticky md:top-6")],
+		[
+			vstack(
+				h,
+				{ gap: "0.5" },
+				Arr.map(SETTINGS_SECTIONS, (entry) =>
+					navRailRow(
+						h,
+						{
+							isActive: entry === section,
+							href: statusPageHref(page.id, "settings", entry),
+							attributes: [h.Key(entry)],
+						},
+						[SECTION_LABEL[entry]],
+					),
+				),
+			),
+		],
+	)
+
+export const settingsView = (h: H, model: Model, page: V2StatusPage, section: SettingsSection): Html => {
 	const form = Option.getOrElse(settingsOf(model), () => settingsFormOf(page))
-	const hasIssues = hasSettingsIssues(form)
-	const isHere = tab === "settings" ? hasPageFieldIssues(form) : hasAppearanceIssues(form)
-	return vstack(h, { className: "max-w-4xl xl:max-w-7xl" }, [
-		h.div(
-			[h.Class("grid gap-10 xl:grid-cols-[minmax(0,1fr)_minmax(0,30rem)] xl:items-start")],
-			[
+	return h.div(
+		[
+			h.Class(
+				"grid items-start gap-6 md:grid-cols-[12rem_minmax(0,1fr)] lg:gap-10 min-[1360px]:grid-cols-[11rem_minmax(26rem,1fr)_minmax(20rem,1fr)]",
+			),
+		],
+		[
+			sectionMenu(h, page, section),
+			vstack(h, { className: "min-w-0 max-w-3xl" }, [
 				settingsSections(h, [
-					...(canManage(model)
+					...(canManage(model) || section === "access"
 						? []
 						: [
 								adminOnlyNote(h, [
 									"Only org admins and engineers can change a status page. You can still post incident updates.",
 								]),
 							]),
-					...sections(form),
+					...sectionBody(h, model, page, form, section),
 				]),
-				previewPanel(h, model, page, form),
-			],
-		),
-		...(model.settingsFailure === null
-			? []
-			: [
-					alert(h, { variant: "crit", size: "sm", className: "mt-6" }, [
-						icon(h, "CircleXmarkIcon"),
-						alertTitle(h, ["Couldn't save the settings"]),
-						alertDescription(h, [failureMessage(model.settingsFailure)]),
-					]),
-				]),
-		...saveBar(h, {
-			isDirty: isSettingsDirty(model),
-			isPending: model.isSavingSettings,
-			context: hasIssues
-				? isHere
-					? "Fix the fields marked above."
-					: `Fix the fields marked on the ${tab === "settings" ? "Appearance" : "Settings"} tab.`
-				: model.isApplyingJson
-					? "Saving waits for the JSON apply to finish."
-					: undefined,
-			onDiscard: Message.ClickedDiscardSettings(),
-			onSave: Message.ClickedSaveSettings(),
-			isSaveDisabled: hasIssues || model.isApplyingJson,
-		}),
-	])
+				...(model.settingsFailure === null
+					? []
+					: [
+							alert(h, { variant: "crit", size: "sm", className: "mt-6" }, [
+								icon(h, "CircleXmarkIcon"),
+								alertTitle(h, ["Couldn't save the settings"]),
+								alertDescription(h, [failureMessage(model.settingsFailure)]),
+							]),
+						]),
+				...saveBar(h, {
+					isDirty: isSettingsDirty(model),
+					isPending: model.isSavingSettings,
+					context: saveContext(model, form, section),
+					onDiscard: Message.ClickedDiscardSettings(),
+					onSave: Message.ClickedSaveSettings(),
+					isSaveDisabled: hasSettingsIssues(form) || model.isApplyingJson,
+				}),
+			]),
+			h.aside(
+				[h.Class("hidden min-w-0 min-[1360px]:sticky min-[1360px]:top-6 min-[1360px]:block")],
+				[settingsPagePreview(h, model, page, form)],
+			),
+		],
+	)
 }
 
-export const settingsView = (h: H, model: Model, page: V2StatusPage): Html =>
-	formView(h, model, page, "settings", (form) => [
-		pageSection(h, model, form),
-		behaviourSection(h, model, form),
-		accessSection(h, model, page),
-		customDomainSection(h, model, page),
-		// Break-glass posts at the public address, which an internal page does not answer on.
-		...(page.visibility === "internal" ? [] : [breakGlassSection(h, model, page)]),
-		...(canManage(model) ? [deleteSection(h)] : []),
-	])
-
-export const appearanceView = (h: H, model: Model, page: V2StatusPage): Html =>
-	formView(h, model, page, "appearance", (form) => [
-		brandingSection(h, model, form),
-		appearanceSection(h, model, form),
-	])
+/** The section's name, for the breadcrumb. */
+export const sectionLabel = (section: SettingsSection): string => SECTION_LABEL[section]
 
 export const breakGlassDialog = (h: H, model: Model): Html =>
 	confirmDialog(h, {

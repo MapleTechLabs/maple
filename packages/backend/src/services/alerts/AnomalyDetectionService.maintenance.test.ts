@@ -45,12 +45,12 @@ const goldenRow = (hourMs: number, errorCount: number) => ({
 })
 
 /**
- * Matched hours over the last 7 days: the four most recent days ran a 30% error rate
- * under maintenance, the three before were at 1%. The current hour runs at 20%.
+ * The hours the baseline windows read over the last 7 days: the four most recent days ran
+ * a 30% error rate under maintenance, the three before were at 1%. The current window runs at 20%.
  */
 const makeLayer = (testDb: TestDb, currentHourStartMs: number) => {
 	const baseline = Arr.flatMap(Arr.range(1, 7), (day) =>
-		Arr.map([-1, 0, 1], (offset) =>
+		Arr.map([-2, -1, 0, 1], (offset) =>
 			goldenRow(currentHourStartMs - day * DAY_MS + offset * HOUR_MS, day <= 4 ? 300 : 10),
 		),
 	)

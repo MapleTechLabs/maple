@@ -106,6 +106,22 @@ const VERB_ICONS = {
 	pr_merged: "PullRequestIcon",
 	merge: "BranchForkIcon",
 	unmerge: "BranchForkIcon",
+	domain_added: "PlusIcon",
+	domain_verified: "ShieldCheckIcon",
+	domain_removed: "TrashIcon",
+	connection_created: "PlusIcon",
+	connection_updated: "PencilIcon",
+	connection_enforced: "LockIcon",
+	connection_relaxed: "PencilIcon",
+	connection_deleted: "TrashIcon",
+	directory_created: "PlusIcon",
+	directory_key_rotated: "ArrowRotateClockwiseIcon",
+	directory_paused: "MediaPauseIcon",
+	directory_resumed: "MediaPlayIcon",
+	directory_deleted: "TrashIcon",
+	role_mapping_updated: "ShieldIcon",
+	bypass_added: "PlusIcon",
+	bypass_removed: "TrashIcon",
 } as const satisfies { readonly [Verb in AuditVerb]: IconName }
 
 const hasVerbIcon = (verb: string): verb is keyof typeof VERB_ICONS =>
