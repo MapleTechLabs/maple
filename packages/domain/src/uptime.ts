@@ -50,6 +50,48 @@ export const UptimeDnsConfig = Schema.TaggedStruct("dns", {
 	expected: Schema.optionalKey(NonEmpty),
 	timeoutMs: TimeoutMs,
 })
+export const UptimeStepMethod = Schema.Literals(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"])
+export type UptimeStepMethod = Schema.Schema.Type<typeof UptimeStepMethod>
+
+/** A variable a step extracts for later steps: `[A-Za-z_][A-Za-z0-9_]*`, used as `{{name}}`. */
+export const UptimeVariableName = Schema.String.check(Schema.isPattern(/^[A-Za-z_][A-Za-z0-9_]{0,63}$/u))
+
+/** Where an extracted variable's value comes from in a step's response. */
+export const UptimeExtraction = Schema.Struct({
+	name: UptimeVariableName,
+	from: Schema.Union([
+		Schema.TaggedStruct("json_path", { path: NonEmpty }),
+		Schema.TaggedStruct("header", { name: NonEmpty }),
+	]),
+})
+export type UptimeExtraction = Schema.Schema.Type<typeof UptimeExtraction>
+
+export const UptimeStep = Schema.Struct({
+	name: NonEmpty,
+	method: UptimeStepMethod,
+	/** May use `{{name}}` for a variable an earlier step extracted, in the URL, headers and body. */
+	url: NonEmpty,
+	headers: Schema.Record(Schema.String, Schema.String),
+	body: Schema.optionalKey(Schema.String),
+	assertions: Schema.Array(UptimeAssertion),
+	extract: Schema.Array(UptimeExtraction),
+})
+export type UptimeStep = Schema.Schema.Type<typeof UptimeStep>
+
+/** Most steps one multi-step check runs. */
+export const UPTIME_MAX_STEPS = 10
+/** The whole run's budget: every step shares it. */
+const MultiStepTimeoutMs = Schema.Number.check(
+	Schema.isInt(),
+	Schema.isBetween({ minimum: 1000, maximum: 60000 }),
+)
+
+export const UptimeMultiStepConfig = Schema.TaggedStruct("multistep", {
+	steps: Schema.Array(UptimeStep).check(Schema.isMinLength(1), Schema.isMaxLength(UPTIME_MAX_STEPS)),
+	timeoutMs: MultiStepTimeoutMs,
+})
+export type UptimeMultiStepConfig = Schema.Schema.Type<typeof UptimeMultiStepConfig>
+
 export const UptimeHeartbeatSchedule = Schema.Union([
 	Schema.TaggedStruct("interval", {
 		seconds: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(60)),
@@ -73,6 +115,7 @@ export const UptimeMonitorConfig = Schema.Union([
 	UptimeHttpConfig,
 	UptimeTcpConfig,
 	UptimeDnsConfig,
+	UptimeMultiStepConfig,
 	UptimeHeartbeatConfig,
 ])
 export type UptimeMonitorConfig = Schema.Schema.Type<typeof UptimeMonitorConfig>
@@ -149,7 +192,7 @@ export class UptimeProbeTarget extends Schema.Class<UptimeProbeTarget>("UptimePr
 	name: Schema.String,
 	serviceName: Schema.NullOr(Schema.String),
 	intervalSeconds: UptimeIntervalSeconds,
-	config: Schema.Union([UptimeHttpConfig, UptimeTcpConfig, UptimeDnsConfig]),
+	config: Schema.Union([UptimeHttpConfig, UptimeTcpConfig, UptimeDnsConfig, UptimeMultiStepConfig]),
 	/** The org's public ingest key: check spans go into the org's own traces. */
 	ingestKey: Schema.String,
 	/**
@@ -316,7 +359,7 @@ export const effectiveAssertions = (
 
 /** The request an HTTP check sends, as plain data each HTTP client builds from. */
 export interface UptimeCheckRequest {
-	readonly method: UptimeHttpMethod
+	readonly method: UptimeStepMethod
 	readonly url: string
 	readonly headers: Readonly<Record<string, string>>
 	/** POST only; the content type is the configured `content-type`, else `text/plain`. */
@@ -424,3 +467,139 @@ export const probeStaleAfterMs = (intervalSeconds: number): number =>
 /** What a probe with no recent check reports, e.g. `No check result since 2026-10-26 14:03 UTC (12 min ago)`. */
 export const describeStaleProbe = (lastCheckAt: number | null, nowMs: number): string =>
 	lastCheckAt === null ? "No check result yet" : `No check result since ${sinceText(lastCheckAt, nowMs)}`
+
+const VARIABLE_REFERENCE = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/gu
+/** One reference with its name captured, for splitting a template into literal parts and names. */
+const VARIABLE_PART = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/u
+
+/** The variable names a template refers to, in order. */
+export const variablesIn = (template: string): ReadonlyArray<string> =>
+	Arr.map(Arr.fromIterable(Str.matchAll(VARIABLE_REFERENCE)(template)), (match) => match[1] ?? "")
+
+/**
+ * `template` with each `{{name}}` replaced by its value. A name with no value is an error naming it:
+ * the run stops there rather than send a literal `{{name}}`.
+ */
+export const interpolate = (
+	template: string,
+	variables: Readonly<Record<string, string>>,
+): Result.Result<string, string> => {
+	const missing = Arr.findFirst(variablesIn(template), (name) => !Rec.has(variables, name))
+	if (Option.isSome(missing)) return Result.fail(missing.value)
+	// One pass over the template: split on the capturing pattern puts each name at an odd index, so a
+	// value is inserted literally and never read as a template or a replacement pattern.
+	const parts = Str.split(template, VARIABLE_PART)
+	return Result.succeed(
+		Arr.join(
+			Arr.map(parts, (part, index) => (index % 2 === 1 ? (variables[part] ?? "") : part)),
+			"",
+		),
+	)
+}
+
+/** Every template a step sends: its URL, header values and body. */
+const stepTemplates = (step: UptimeStep): ReadonlyArray<string> => [
+	step.url,
+	...Rec.values(step.headers),
+	...(step.body === undefined ? [] : [step.body]),
+]
+
+/**
+ * The first reference to a variable no earlier step extracts, as a sentence, or null when every
+ * reference resolves. Also refuses a body on GET or HEAD, and a name extracted twice.
+ */
+export const multiStepConfigProblem = (config: UptimeMultiStepConfig): string | null => {
+	interface Scan {
+		readonly known: ReadonlySet<string>
+		readonly problem: string | null
+	}
+	const start: Scan = { known: new Set(), problem: null }
+	const problem = Arr.reduce(config.steps, start, (acc, step, index): Scan => {
+		if (acc.problem !== null) return acc
+		const label = `Step ${index + 1} (${step.name})`
+		// Names identify a step's hidden header values across edits, so two steps never share one.
+		if (Arr.some(config.steps.slice(0, index), (earlier) => earlier.name === step.name))
+			return { ...acc, problem: `${label}: another step already has this name` }
+		if (step.body !== undefined && (step.method === "GET" || step.method === "HEAD"))
+			return { ...acc, problem: `${label}: a request body needs POST, PUT, PATCH or DELETE` }
+		// The probe keeps its user-agent across redirects to other hosts, so it never carries a variable.
+		const agent = Arr.findFirst(
+			Rec.toEntries(step.headers),
+			([name, value]) => Str.toLowerCase(name) === "user-agent" && variablesIn(value).length > 0,
+		)
+		if (Option.isSome(agent))
+			return { ...acc, problem: `${label}: the User-Agent header can't use a variable` }
+		const unknown = Arr.findFirst(
+			Arr.flatMap(stepTemplates(step), variablesIn),
+			(name) => !acc.known.has(name),
+		)
+		if (Option.isSome(unknown))
+			return {
+				...acc,
+				problem: `${label} uses {{${unknown.value}}}, which no earlier step extracts`,
+			}
+		const duplicate = Arr.findFirst(step.extract, (extraction) => acc.known.has(extraction.name))
+		if (Option.isSome(duplicate))
+			return {
+				...acc,
+				problem: `${label} extracts ${duplicate.value.name}, which an earlier step already set`,
+			}
+		const repeated = Arr.findFirst(step.extract, (extraction, at) =>
+			Arr.some(step.extract.slice(0, at), (earlier) => earlier.name === extraction.name),
+		)
+		if (Option.isSome(repeated))
+			return { ...acc, problem: `${label} extracts ${repeated.value.name} twice` }
+		return { known: new Set([...acc.known, ...Arr.map(step.extract, (e) => e.name)]), problem: null }
+	})
+	return problem.problem
+}
+
+/** The values a step's extractions read from its response, or the first one that is missing. */
+export const extractVariables = (
+	extract: ReadonlyArray<UptimeExtraction>,
+	observed: UptimeHttpObservation,
+): Result.Result<Readonly<Record<string, string>>, string> => {
+	const none: Result.Result<Readonly<Record<string, string>>, string> = Result.succeed({})
+	return Arr.reduce(extract, none, (acc, extraction) =>
+		Result.flatMap(acc, (values) => {
+			const source = extraction.from
+			const value =
+				source._tag === "header"
+					? Option.fromNullishOr(observed.headers[Str.toLowerCase(source.name)])
+					: Option.map(
+							Option.flatMap(parseJson(observed.body), (json) =>
+								readJsonPath(json, source.path),
+							),
+							jsonText,
+						)
+			const missing =
+				source._tag === "header"
+					? `Header ${source.name} missing, so ${extraction.name} could not be set`
+					: `JSON path ${source.path} not found, so ${extraction.name} could not be set`
+			return Option.match(value, {
+				onNone: () => Result.fail(missing),
+				onSome: (found) => Result.succeed({ ...values, [extraction.name]: found }),
+			})
+		}),
+	)
+}
+
+const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/u
+// Tab, visible ASCII and Latin-1: what an HTTP/1.1 client sends; CR, LF and other controls are not.
+const HEADER_VALUE = /^[\t\u0020-\u007e\u0080-\u00ff]*$/u
+
+/** Why a header cannot be sent, or null: an invalid name, or a value with a control or non-Latin-1 character. */
+export const headerProblem = (name: string, value: string): string | null =>
+	!HEADER_NAME.test(name)
+		? `Header name '${name}' is not a valid HTTP header name`
+		: HEADER_VALUE.test(value)
+			? null
+			: `Header ${name} has a character an HTTP header cannot carry (a line break, a control or non-Latin-1 character)`
+
+/** The first header in `headers` that cannot be sent, as a sentence, or null. */
+export const headersProblem = (headers: Readonly<Record<string, string>>): string | null =>
+	Option.getOrNull(
+		Arr.findFirst(Rec.toEntries(headers), ([name, value]) => headerProblem(name, value) !== null).pipe(
+			Option.map(([name, value]) => headerProblem(name, value) ?? ""),
+		),
+	)

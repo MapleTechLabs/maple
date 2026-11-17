@@ -18,7 +18,13 @@ import { type RecordedRequest, stubFetch } from "./testing/stub-fetch"
 import { httpConfig, MONITOR_A, MONITOR_B, mkUptimeTarget } from "./testing/uptime"
 import { failed, succeeded } from "./UptimeProbe"
 import { SPAN_FLUSH_INTERVAL, UptimeSpanExporter } from "./UptimeSpanExporter"
-import { encodeTraceExport, type OtlpKeyValue, toOtlpSpan, type UptimeCheckSpan } from "./UptimeSpans"
+import {
+	encodeTraceExport,
+	type OtlpKeyValue,
+	toOtlpSpan,
+	toOtlpSpans,
+	type UptimeCheckSpan,
+} from "./UptimeSpans"
 
 const TRACE = { traceId: "4bf92f3577b34da6a3ce929d0e0e4736", spanId: "00f067aa0ba902b7" }
 
@@ -123,6 +129,46 @@ describe("toOtlpSpan", () => {
 			"tls.server.subject": { stringValue: "CN=api.example.com" },
 			"tls.server.issuer": { stringValue: "CN=R11" },
 		})
+	})
+
+	it("exports a multi-step check's steps as child spans of the check span", () => {
+		const multistep = check({
+			outcome: {
+				...failed(90, "assertion", "Step 2 (Orders): Status 500, expected 2xx", 500),
+				steps: [
+					{
+						name: "Log in",
+						method: "POST",
+						url: "https://api.example.com/login?token=secret",
+						spanId: "1111111111111111",
+						startedAtMs: 1_761_436_800_000,
+						endedAtMs: 1_761_436_800_040,
+						outcome: succeeded(40, 200),
+					},
+					{
+						name: "Orders",
+						method: "GET",
+						url: "https://api.example.com/orders/{{order_id}}",
+						spanId: "2222222222222222",
+						startedAtMs: 1_761_436_800_040,
+						endedAtMs: 1_761_436_800_090,
+						outcome: failed(50, "assertion", "Status 500, expected 2xx", 500),
+					},
+				],
+			},
+		})
+		const [root, login, orders] = toOtlpSpans(multistep)
+		assert.deepStrictEqual(
+			[root?.parentSpanId, login?.parentSpanId, orders?.parentSpanId],
+			[undefined, TRACE.spanId, TRACE.spanId],
+		)
+		// The configured URL, not the one filled in from a response.
+		assert.deepStrictEqual([login?.name, orders?.name], ["POST /login", "GET /orders/{{order_id}}"])
+		assert.deepStrictEqual(attrs(login?.attributes ?? [])["url.full"], {
+			stringValue: "https://api.example.com/login",
+		})
+		assert.deepStrictEqual(orders?.status, { code: 2, message: "Status 500, expected 2xx" })
+		assert.deepStrictEqual(attrs(orders?.attributes ?? [])["maple.uptime.step.index"], { intValue: "2" })
 	})
 
 	it("records url.full without the query or fragment, which may carry credentials", () => {

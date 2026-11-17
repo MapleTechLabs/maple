@@ -17,7 +17,9 @@ import {
 	firstFailedAssertion,
 	type UptimeAssertion,
 	type UptimeCertificate,
+	type UptimeCheckRequest,
 	type UptimeHttpConfig,
+	type UptimeHttpObservation,
 	uptimeHttpRequest,
 } from "@maple/domain/uptime"
 import { describeHttpClientError, guardPinned, readTextPrefix, type ResolveHost } from "@maple/safe-fetch"
@@ -63,6 +65,24 @@ export interface UptimeHttpProbeApi {
 	 * the assertions; transport failures become a one-sentence `error`.
 	 */
 	readonly probe: (config: HttpProbeConfig, trace: CheckTraceContext) => Effect.Effect<ProbeOutcome>
+	/**
+	 * One request through the same guard and timing, judged by `assertions`, with what came back
+	 * for a caller that reads more of it (a multi-step check's extractions). The body is read when
+	 * an assertion needs it or `readBody` asks; the observation is null when no response arrived.
+	 */
+	readonly request: (
+		outgoing: UptimeCheckRequest,
+		options: {
+			readonly assertions: ReadonlyArray<UptimeAssertion>
+			readonly readBody: boolean
+			readonly timeoutMs: number
+		},
+	) => Effect.Effect<RequestResult>
+}
+
+export interface RequestResult {
+	readonly outcome: ProbeOutcome
+	readonly observation: UptimeHttpObservation | null
 }
 
 /** An assertion a body prefix cannot settle: anything but a `contains` already found in it. */
@@ -91,9 +111,7 @@ export class UptimeHttpProbe extends Context.Service<UptimeHttpProbe, UptimeHttp
 				ownHeaders: ["traceparent", "user-agent"],
 			})
 
-			// The shared request shaping (the test endpoint sends the same), plus our traceparent.
-			const buildRequest = (config: HttpProbeConfig, trace: CheckTraceContext) => {
-				const outgoing = uptimeHttpRequest(config, { traceparent: traceparentOf(trace) })
+			const buildRequest = (outgoing: UptimeCheckRequest) => {
 				const request = HttpClientRequest.make(outgoing.method)(outgoing.url, {
 					headers: outgoing.headers,
 				})
@@ -102,20 +120,24 @@ export class UptimeHttpProbe extends Context.Service<UptimeHttpProbe, UptimeHttp
 					: HttpClientRequest.bodyText(request, outgoing.body.text, outgoing.body.contentType)
 			}
 
-			const check = (config: HttpProbeConfig, trace: CheckTraceContext) =>
+			const check = (
+				outgoing: UptimeCheckRequest,
+				assertions: ReadonlyArray<UptimeAssertion>,
+				readBody: boolean,
+				timeoutMs: number,
+			): Effect.Effect<RequestResult> =>
 				Effect.gen(function* () {
-					const url = parseUrl(config.url)
-					const endpoint = endpointOf(url, config.url)
-					const assertions = effectiveAssertions(config.assertions)
-					// The body is read only when an assertion looks at it, and never for HEAD.
+					const endpoint = endpointOf(parseUrl(outgoing.url), outgoing.url)
+					// The body is read only when an assertion (or the caller) looks at it, and never for HEAD.
 					const readsBody =
-						config.method !== "HEAD" &&
-						Arr.some(
-							assertions,
-							(assertion) => assertion._tag === "body" || assertion._tag === "json_path",
-						)
+						outgoing.method !== "HEAD" &&
+						(readBody ||
+							Arr.some(
+								assertions,
+								(assertion) => assertion._tag === "body" || assertion._tag === "json_path",
+							))
 					const startedAt = yield* Clock.currentTimeMillis
-					const result = yield* client.execute(buildRequest(config, trace)).pipe(
+					const result = yield* client.execute(buildRequest(outgoing)).pipe(
 						Effect.flatMap((response) =>
 							Effect.gen(function* () {
 								// Latency is time to the response headers, not the body read after them.
@@ -140,7 +162,7 @@ export class UptimeHttpProbe extends Context.Service<UptimeHttpProbe, UptimeHttp
 								}
 							}),
 						),
-						Effect.timeout(Duration.millis(config.timeoutMs)),
+						Effect.timeout(Duration.millis(timeoutMs)),
 						Effect.scoped,
 						Effect.result,
 					)
@@ -148,30 +170,40 @@ export class UptimeHttpProbe extends Context.Service<UptimeHttpProbe, UptimeHttp
 
 					if (Result.isFailure(result)) {
 						const error = result.failure
+						const transport = (outcome: ProbeOutcome): RequestResult => ({
+							outcome,
+							observation: null,
+						})
 						switch (error._tag) {
 							case "TimeoutError":
-								return failed(
-									elapsedMs,
-									"timeout",
-									`Connection timed out after ${formatSeconds(config.timeoutMs)}`,
+								return transport(
+									failed(
+										elapsedMs,
+										"timeout",
+										`Connection timed out after ${formatSeconds(timeoutMs)}`,
+									),
 								)
 							case "@maple/safe-fetch/HostResolutionError":
-								return failed(elapsedMs, "dns", `Couldn't resolve ${error.hostname}`)
+								return transport(
+									failed(elapsedMs, "dns", `Couldn't resolve ${error.hostname}`),
+								)
 							case "@maple/safe-fetch/UrlValidationError":
-								return Str.startsWith("Too many redirects")(error.message)
-									? failed(elapsedMs, "transport", error.message)
-									: failed(
-											elapsedMs,
-											"ssrf_refused",
-											`Refused to connect: ${error.message}`,
-										)
+								return transport(
+									Str.startsWith("Too many redirects")(error.message)
+										? failed(elapsedMs, "transport", error.message)
+										: failed(
+												elapsedMs,
+												"ssrf_refused",
+												`Refused to connect: ${error.message}`,
+											),
+								)
 							case "HttpClientError": {
 								const failure = describeTransportFailure(
 									endpoint,
 									errorCodeOf(error.reason.cause),
 									describeHttpClientError(error),
 								)
-								return failed(elapsedMs, failure.errorType, failure.error)
+								return transport(failed(elapsedMs, failure.errorType, failure.error))
 							}
 						}
 					}
@@ -182,38 +214,44 @@ export class UptimeHttpProbe extends Context.Service<UptimeHttpProbe, UptimeHttp
 					const unsettled = isTruncated
 						? Arr.filter(assertions, (assertion) => needsUnreadBody(assertion, body))
 						: []
+					const observation: UptimeHttpObservation = {
+						statusCode: response.status,
+						durationMs,
+						headers: { ...response.headers },
+						body,
+					}
 					const failure =
 						firstFailedAssertion(
 							Arr.filter(assertions, (assertion) => !unsettled.includes(assertion)),
-							{
-								statusCode: response.status,
-								durationMs,
-								headers: { ...response.headers },
-								body,
-							},
+							observation,
 						) ??
 						(unsettled.length > 0
 							? `Response body is over ${MAX_ASSERTION_BODY_BYTES / 1024} KB, more than body checks read`
 							: null)
-					return failure === null
-						? succeeded(durationMs, response.status)
-						: failed(durationMs, "assertion", failure, response.status)
+					return {
+						outcome:
+							failure === null
+								? succeeded(durationMs, response.status)
+								: failed(durationMs, "assertion", failure, response.status),
+						observation,
+					}
 				})
 
-			const probe = (config: HttpProbeConfig, trace: CheckTraceContext) =>
+			/** `run` with the phases and the first TLS hop's certificate of its requests folded onto its outcome. */
+			const measured = (url: string, run: Effect.Effect<RequestResult>): Effect.Effect<RequestResult> =>
 				Effect.gen(function* () {
 					const phases = yield* Ref.make(NO_PHASES)
 					// The first TLS hop's result, an unreadable (null) one included.
 					const certificate = yield* Ref.make<Option.Option<UptimeCertificate | null>>(
 						Option.none(),
 					)
-					const outcome = yield* check(config, trace).pipe(
+					const { outcome, observation } = yield* run.pipe(
 						Effect.provideService(PhaseRecorder, (hop) =>
 							Ref.update(phases, (total) => addPhases(total, hop)),
 						),
 						// The first hop's, so only for an https:// URL: a redirect's host does not stand in for it.
 						Effect.provideService(CertificateRecorder, (seen) =>
-							Str.startsWith("https:")(Str.toLowerCase(Str.trim(config.url)))
+							Str.startsWith("https:")(Str.toLowerCase(Str.trim(url)))
 								? Ref.update(certificate, (first) =>
 										Option.isSome(first) ? first : Option.some(seen),
 									)
@@ -225,13 +263,37 @@ export class UptimeHttpProbe extends Context.Service<UptimeHttpProbe, UptimeHttp
 					const firstHop = yield* Ref.get(certificate)
 					const presented = Option.getOrNull(Option.flatMapNullishOr(firstHop, (seen) => seen))
 					return {
-						...outcome,
-						...(hasPhases(timings) ? { timings } : undefined),
-						...(presented === null ? undefined : { certificate: presented }),
+						outcome: {
+							...outcome,
+							...(hasPhases(timings) ? { timings } : undefined),
+							...(presented === null ? undefined : { certificate: presented }),
+						},
+						observation,
 					}
 				})
 
-			return { probe } satisfies UptimeHttpProbeApi
+			const probe = (config: HttpProbeConfig, trace: CheckTraceContext) =>
+				Effect.map(
+					measured(
+						config.url,
+						check(
+							// The shared request shaping (the test endpoint sends the same), plus our traceparent.
+							uptimeHttpRequest(config, { traceparent: traceparentOf(trace) }),
+							effectiveAssertions(config.assertions),
+							false,
+							config.timeoutMs,
+						),
+					),
+					(result) => result.outcome,
+				)
+
+			const request: UptimeHttpProbeApi["request"] = (outgoing, options) =>
+				measured(
+					outgoing.url,
+					check(outgoing, options.assertions, options.readBody, options.timeoutMs),
+				)
+
+			return { probe, request } satisfies UptimeHttpProbeApi
 		}),
 	},
 ) {

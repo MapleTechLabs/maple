@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { certificateSummary, checkHealth, formatMs, formatShare } from "./derive"
+import { certificateSummary, checkHealth, formatMs, formatShare, requestLine, targetLine } from "./derive"
 import { httpMonitor } from "./test-monitors"
 import { Array as Arr } from "effect"
 
@@ -70,6 +70,26 @@ describe("certificateSummary", () => {
 			{ text: "Nov 16, 2026 (1 day left)", tone: "warn" },
 			{ text: "Expired Nov 12, 2026", tone: "crit" },
 			null,
+		])
+	})
+})
+
+describe("multi-step monitors", () => {
+	it("read as their step count and where they start", () => {
+		const monitor = httpMonitor({
+			kind: "multistep",
+			config: {
+				type: "multistep",
+				timeout_ms: 30_000,
+				steps: [
+					{ name: "Log in", method: "POST", url: "https://api.acme.dev/login" },
+					{ name: "Orders", url: "https://api.acme.dev/orders/{{id}}" },
+				],
+			},
+		})
+		expect([targetLine(monitor, 0), requestLine(monitor)]).toEqual([
+			"2 steps from api.acme.dev/login",
+			"2 steps from api.acme.dev/login",
 		])
 	})
 })

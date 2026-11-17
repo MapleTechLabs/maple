@@ -60,6 +60,7 @@ export const KIND_LABEL = {
 	http: "HTTP",
 	tcp: "TCP",
 	dns: "DNS",
+	multistep: "Multi-step",
 	heartbeat: "Heartbeat",
 } as const satisfies Record<UptimeMonitor["kind"], string>
 
@@ -73,6 +74,13 @@ export const heartbeatScheduleLabel = (
 		? `Every ${formatEvery(config.schedule.seconds)}`
 		: `Cron ${config.schedule.expression} (${config.schedule.timezone})`
 
+/** `3 steps from api.acme.dev/login`: a multi-step check's size and where it starts. */
+export const stepsLine = (config: Extract<UptimeMonitor["config"], { type: "multistep" }>): string => {
+	const count = `${config.steps.length} ${config.steps.length === 1 ? "step" : "steps"}`
+	const first = config.steps[0]
+	return first === undefined ? count : `${count} from ${bareUrl(first.url)}`
+}
+
 /** The second line of a monitor: what it checks. */
 export const targetLine = (monitor: UptimeMonitor, nowMs: number): string => {
 	const config = monitor.config
@@ -83,6 +91,8 @@ export const targetLine = (monitor: UptimeMonitor, nowMs: number): string => {
 			return `${config.host}:${config.port}`
 		case "dns":
 			return `${config.record_type} ${config.hostname}${config.expected === undefined ? "" : ` = ${config.expected}`}`
+		case "multistep":
+			return stepsLine(config)
 		case "heartbeat": {
 			const ping = monitor.state.last_ping_at
 			const pinged =
@@ -102,6 +112,8 @@ export const requestLine = (monitor: UptimeMonitor): string => {
 			return `${config.host}:${config.port}`
 		case "dns":
 			return `${config.record_type} ${config.hostname}`
+		case "multistep":
+			return stepsLine(config)
 		case "heartbeat":
 			return `${heartbeatScheduleLabel(config)}, ${formatEvery(config.grace_seconds)} grace`
 	}

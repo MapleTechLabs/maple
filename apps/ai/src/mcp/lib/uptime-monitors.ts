@@ -37,6 +37,13 @@ export const targetSummary = (config: UptimeMonitorConfig): string => {
 			return `${config.host}:${config.port}`
 		case "dns":
 			return `${config.recordType} ${config.hostname}${config.expected === undefined ? "" : ` = ${config.expected}`}`
+		case "multistep": {
+			const first = config.steps[0]
+			const count = `${config.steps.length} ${config.steps.length === 1 ? "step" : "steps"}`
+			return first === undefined
+				? count
+				: `${count}, from ${first.method} ${redactUrlSecrets(first.url)}`
+		}
 		case "heartbeat": {
 			const schedule =
 				config.schedule._tag === "interval"
@@ -284,6 +291,13 @@ export const buildUptimeConfig = Effect.fnUntraced(function* (
 	kind: UptimeMonitorKind,
 	fields: UptimeConfigFields,
 ) {
+	// Before the field checks, so a multi-step create always gets the REST guidance.
+	if (kind === "multistep") {
+		return yield* invalid(
+			"A multi-step check's steps are set through the REST API: POST /v2/uptime_monitors to create one, PATCH /v2/uptime_monitors/{id} to change them.",
+			"kind",
+		)
+	}
 	yield* rejectMisplaced(kind, fields)
 	switch (kind) {
 		case "http": {
@@ -353,9 +367,17 @@ export const updateUptimeConfig = Effect.fnUntraced(function* (
 	current: UptimeMonitorConfig,
 	fields: UptimeConfigFields,
 ) {
+	const changesConfig = Arr.some(FIELD_KINDS, ([field]) => fields[field] !== undefined)
+	// Before the field checks, so a multi-step edit always gets the REST guidance.
+	if (current._tag === "multistep" && changesConfig) {
+		return yield* invalid(
+			"A multi-step check's steps change through the REST API (PATCH /v2/uptime_monitors/{id}); only its name, interval, service and destinations change here.",
+			"url",
+		)
+	}
 	yield* rejectMisplaced(current._tag, fields)
 	yield* rejectClearConflicts(fields)
-	if (!Arr.some(FIELD_KINDS, ([field]) => fields[field] !== undefined)) return undefined
+	if (!changesConfig) return undefined
 	switch (current._tag) {
 		case "http":
 			// Stored header values (an Authorization, say) must not follow the check to another host.
@@ -388,6 +410,8 @@ export const updateUptimeConfig = Effect.fnUntraced(function* (
 				...(fields.record_type === undefined ? undefined : { recordType: fields.record_type }),
 				...(fields.expected === undefined ? undefined : { expected: fields.expected }),
 			}).pipe(Effect.map((config) => (fields.clear_expected === true ? omitExpected(config) : config)))
+		case "multistep":
+			return undefined
 		case "heartbeat": {
 			const currentZone =
 				current.schedule._tag === "cron" ? current.schedule.timezone : DEFAULT_HEARTBEAT_TIMEZONE

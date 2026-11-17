@@ -417,6 +417,8 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 			),
 		}),
 		aliases: ALIASES,
+		// A field this tool lacks (`steps`, say) is refused, never dropped while the rest applies.
+		rejectUnknownKeys: true,
 		hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
 		scopeFamily: "uptime_monitors",
 		phrases: ["Updating an uptime monitor"],

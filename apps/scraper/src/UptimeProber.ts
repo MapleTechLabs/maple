@@ -4,7 +4,8 @@ import { UptimeCheckReport, type UptimeProbeTarget } from "@maple/domain/uptime"
 import { uptimeChecksTotal } from "./Metrics"
 import { UptimeDnsProbe } from "./UptimeDnsProbe"
 import { UptimeHttpProbe } from "./UptimeHttpProbe"
-import type { CheckTraceContext, ProbeOutcome } from "./UptimeProbe"
+import { UptimeMultiStepProbe } from "./UptimeMultiStepProbe"
+import { type CheckTraceContext, failed, type ProbeOutcome } from "./UptimeProbe"
 import { UptimeSpanExporter } from "./UptimeSpanExporter"
 import { UptimeTcpProbe } from "./UptimeTcpProbe"
 
@@ -29,6 +30,7 @@ export class UptimeProber extends Context.Service<UptimeProber, UptimeProberApi>
 			const http = yield* UptimeHttpProbe
 			const tcp = yield* UptimeTcpProbe
 			const dns = yield* UptimeDnsProbe
+			const multistep = yield* UptimeMultiStepProbe
 			const exporter = yield* UptimeSpanExporter
 
 			const runProbe = (config: UptimeProbeTarget["config"], trace: CheckTraceContext) => {
@@ -39,6 +41,8 @@ export class UptimeProber extends Context.Service<UptimeProber, UptimeProberApi>
 						return tcp.probe(config)
 					case "dns":
 						return dns.probe(config)
+					case "multistep":
+						return multistep.probe(config, trace)
 				}
 			}
 
@@ -47,7 +51,20 @@ export class UptimeProber extends Context.Service<UptimeProber, UptimeProberApi>
 				const kind = target.config._tag
 				const trace = yield* newTraceContext
 				const startedAtMs = yield* Clock.currentTimeMillis
-				const outcome: ProbeOutcome = yield* runProbe(target.config, trace)
+				// A probe that dies (a bug, a runtime refusing a request) is a failed check, never a stopped loop.
+				const outcome: ProbeOutcome = yield* runProbe(target.config, trace).pipe(
+					Effect.catchDefect((defect) =>
+						Effect.as(
+							Effect.logWarning("Uptime check failed unexpectedly").pipe(
+								Effect.annotateLogs({
+									"maple.uptime.monitor_id": target.id,
+									error: String(defect),
+								}),
+							),
+							failed(0, "transport", "The check could not run"),
+						),
+					),
+				)
 				const endedAtMs = yield* Clock.currentTimeMillis
 
 				yield* Effect.annotateCurrentSpan({

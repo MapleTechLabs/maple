@@ -36,6 +36,9 @@ import {
 	effectiveAssertions,
 	firstFailedAssertion,
 	heartbeatDeadline,
+	headersProblem,
+	multiStepConfigProblem,
+	variablesIn,
 	uptimeHttpRequest,
 	UPTIME_CERTIFICATE_GROUP_KEY,
 	UPTIME_REDACTED_HEADER_VALUE,
@@ -263,18 +266,46 @@ const validateConfig = Effect.fnUntraced(function* (kind: UptimeMonitorKind, raw
 	if (config._tag !== kind)
 		return yield* invalid(`config.type '${config._tag}' does not match kind '${kind}'`)
 	switch (config._tag) {
-		case "http":
+		case "http": {
 			if (config.body !== undefined && config.method !== "POST") {
 				return yield* invalid("A request body needs the POST method")
 			}
+			const headerIssue = headersProblem(config.headers)
+			if (headerIssue !== null) return yield* invalid(headerIssue)
 			yield* validateUrl(config.url)
 			break
+		}
 		case "tcp":
 			yield* validateHost(config.host)
 			break
 		case "dns":
 			yield* validateHost(config.hostname)
 			break
+		case "multistep": {
+			const problem =
+				multiStepConfigProblem(config) ??
+				Option.getOrNull(
+					Arr.findFirst(
+						Arr.map(config.steps, (step, index) => {
+							// A {{name}} is checked once filled in; the literal around it must already be sendable.
+							const literal = Rec.map(step.headers, (value) =>
+								Str.replace(/\{\{[^}]*\}\}/gu, "")(value),
+							)
+							const issue = headersProblem(literal)
+							return issue === null ? null : `Step ${index + 1} (${step.name}): ${issue}`
+						}),
+						(issue): issue is string => issue !== null,
+					),
+				)
+			if (problem !== null) return yield* invalid(problem)
+			// A URL built from a variable is checked when it is sent; the scraper refuses private hosts then.
+			yield* Effect.forEach(
+				Arr.filter(config.steps, (step) => variablesIn(step.url).length === 0),
+				(step) => validateUrl(step.url),
+				{ discard: true },
+			)
+			break
+		}
 		case "heartbeat":
 			// The alert evaluator computes deadlines from this schedule, so it must have a next run.
 			if (config.schedule._tag === "cron") {
@@ -313,8 +344,54 @@ const validateFailuresToDown = (value: number) =>
 
 const newHeartbeatToken = () => randomBytes(18).toString("base64url")
 
+/** One header map's `[redacted]` values taken back from `stored`; a name with none stored is refused. */
+const keepRedactedIn = (
+	stored: Readonly<Record<string, string>>,
+	next: Readonly<Record<string, string>>,
+): Effect.Effect<Record<string, string>, UptimeMonitorValidationError> => {
+	const entries = Rec.toEntries(next)
+	const orphan = Arr.findFirst(
+		entries,
+		([name, value]) => value === UPTIME_REDACTED_HEADER_VALUE && stored[name] === undefined,
+	)
+	if (Option.isSome(orphan)) {
+		return Effect.fail(
+			invalid(`Header ${orphan.value[0]} has no stored value to keep; send its real value`),
+		)
+	}
+	return Effect.succeed(
+		Rec.fromEntries(
+			Arr.map(entries, ([name, value]) => [
+				name,
+				value === UPTIME_REDACTED_HEADER_VALUE ? (stored[name] ?? value) : value,
+			]),
+		),
+	)
+}
+
 /** An update's `[redacted]` header values take the stored value back; one with none stored is refused. */
 const keepRedactedHeaders = (current: UptimeMonitorConfig, next: UptimeMonitorConfig) => {
+	if (next._tag === "multistep") {
+		const storedSteps = current._tag === "multistep" ? current.steps : []
+		// A stored value goes back only to the step it was entered for: the same name at the same
+		// literal origin, wherever the step now sits. A host built from a variable keeps nothing.
+		return Effect.map(
+			Effect.forEach(next.steps, (step) => {
+				const origin = originOf(step.url)
+				const stored = Str.includes("{{")(origin)
+					? undefined
+					: Arr.findFirst(
+							storedSteps,
+							(candidate) => candidate.name === step.name && originOf(candidate.url) === origin,
+						).pipe(Option.getOrUndefined)
+				return Effect.map(keepRedactedIn(stored?.headers ?? {}, step.headers), (headers) => ({
+					...step,
+					headers,
+				}))
+			}),
+			(steps) => ({ ...next, steps }),
+		)
+	}
 	if (next._tag !== "http") return Effect.succeed(next)
 	const stored = current._tag === "http" ? current.headers : {}
 	const entries = Rec.toEntries(next.headers)
@@ -341,11 +418,14 @@ const keepRedactedHeaders = (current: UptimeMonitorConfig, next: UptimeMonitorCo
 const originOf = (url: string): string => (URL.canParse(url) ? new URL(url).origin : url)
 
 /** A stored header value goes only to the origin it was entered for; a new origin needs them re-entered. */
+const keepsRedacted = (headers: Readonly<Record<string, string>>) =>
+	Arr.some(Rec.values(headers), (value) => value === UPTIME_REDACTED_HEADER_VALUE)
+
 const refuseRedactedHeadersForNewOrigin = (current: UptimeMonitorConfig, next: UptimeMonitorConfig) =>
 	current._tag === "http" &&
 	next._tag === "http" &&
 	originOf(next.url) !== originOf(current.url) &&
-	Arr.some(Rec.values(next.headers), (value) => value === UPTIME_REDACTED_HEADER_VALUE)
+	keepsRedacted(next.headers)
 		? Effect.fail(
 				invalid(
 					"The URL now points at a different origin; re-enter the header values instead of keeping the hidden ones",
@@ -508,8 +588,10 @@ const foldReports = (row: CheckStateRow, reports: ReadonlyArray<UptimeCheckRepor
 
 /** The origin an HTTPS check's certificate comes from; null for anything else. */
 export const certificateOrigin = (config: UptimeMonitorConfig): string | null => {
-	if (config._tag !== "http") return null
-	const url = Option.liftThrowable(() => new URL(config.url))()
+	const target =
+		config._tag === "http" ? config.url : config._tag === "multistep" ? config.steps[0]?.url : undefined
+	if (target === undefined) return null
+	const url = Option.liftThrowable(() => new URL(target))()
 	return Option.match(url, {
 		onNone: () => null,
 		onSome: (parsed) => (parsed.protocol === "https:" ? parsed.origin : null),
@@ -1098,7 +1180,10 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 								headersTag: $.headersTag,
 								updatedAt: $.updatedAt,
 							}))
-							.where(($) => [$.enabled.eq(true), $.kind.in_("http", "tcp", "dns")]),
+							.where(($) => [
+								$.enabled.eq(true),
+								$.kind.in_("http", "tcp", "dns", "multistep"),
+							]),
 					),
 				)
 				// A config that no longer decodes, or headers that no longer open, skip their monitor,

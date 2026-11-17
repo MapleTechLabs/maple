@@ -28,7 +28,14 @@ import { ASSERTION_OPS, type AssertionDraft, type MonitorKind } from "../../kit/
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import { assertionsSection, type H, requestSection, scheduleSection } from "./view-fields"
-import { dnsSection, heartbeatSection, notifySection, serviceSection, tcpSection } from "./view-kinds"
+import {
+	dnsSection,
+	heartbeatSection,
+	multistepSection,
+	notifySection,
+	serviceSection,
+	tcpSection,
+} from "./view-kinds"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack, vstackClass } from "@maple/views/ui/stack"
 
@@ -50,6 +57,12 @@ const KINDS: ReadonlyArray<{ kind: MonitorKind; label: string; icon: IconName; d
 		label: "DNS record",
 		icon: "NetworkNodesIcon",
 		description: "Checks that a record resolves to the value you expect.",
+	},
+	{
+		kind: "multistep",
+		label: "Multi-step",
+		icon: "UnorderedListIcon",
+		description: "Runs HTTP requests in order, passing values from one response to the next.",
 	},
 	{
 		kind: "heartbeat",
@@ -75,7 +88,10 @@ const kindPicker = (h: H, model: Model): Html =>
 					value: option.kind,
 					label: option.label,
 					icon: icon(h, option.icon, { size: 14 }),
-					isDisabled: model.editingId !== null && option.kind !== model.form.kind,
+					// Multi-step steps are written through the API for now, so the form only edits one.
+					isDisabled:
+						(model.editingId !== null && option.kind !== model.form.kind) ||
+						(model.editingId === null && option.kind === "multistep"),
 				})),
 			}),
 			typography(h, { size: "xs", tone: "muted", as: "p" }, [
@@ -247,6 +263,8 @@ const kindSections = (h: H, model: Model): ReadonlyArray<Html> => {
 			return [...tcpSection(h, model), scheduleSection(h, model)]
 		case "dns":
 			return [...dnsSection(h, model), scheduleSection(h, model)]
+		case "multistep":
+			return [...multistepSection(h, model), scheduleSection(h, model)]
 		case "heartbeat":
 			return heartbeatSection(h, model)
 	}
