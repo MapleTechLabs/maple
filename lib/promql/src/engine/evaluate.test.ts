@@ -433,3 +433,61 @@ describe("prototype-named labels in matching and absent", () => {
 		)
 	})
 })
+
+describe("go-live engine fixes", () => {
+	const t0 = 1_700_000_040_000
+	const instant = (ms: number) => ({ startMs: ms, endMs: ms, stepMs: 0 })
+	const value = (query: string, params = instant(180_000), src = memorySource([])) =>
+		flatten(run(query, params, src))[0]?.[2]
+	// Values at the subquery steps 60s, 120s and 180s.
+	const steps = (a: string, b: string, c: string) =>
+		`(vector(${a}) * (time() == bool 60) + vector(${b}) * (time() == bool 120) + vector(${c}) * (time() == bool 180))[3m:1m]`
+
+	it("evaluates negative literals the way Prometheus does", () => {
+		expect(value("-2 ^ 2")).toBe(-4)
+		expect(value("2 ^ -1")).toBe(0.5)
+		expect(value("2 * -3 ^ 2")).toBe(-18)
+		expect(value("vector(3) * -1")).toBe(-3)
+		expect(value("1 - -1")).toBe(2)
+	})
+
+	it("applies an offset after a binary operator to the right operand only", () => {
+		const src = memorySource([
+			{
+				labels: { __name__: "x" },
+				samples: [
+					[t0, 2],
+					[t0 + 60_000, 8],
+				],
+			},
+		])
+		expect(value("x / x offset 1m", instant(t0 + 60_000), src)).toBe(4)
+	})
+
+	it("sums with Kahan compensation and averages without overflow, as Prometheus 3.5", () => {
+		expect(value(`sum_over_time(${steps("1", "-1e16", "1e16")})`)).toBe(1)
+		expect(value(`avg_over_time(${steps("1", "-1e16", "1e16")})`)).toBe(1 / 3)
+		expect(value("avg_over_time(vector(1e308)[3m:1m])")).toBe(1e308)
+		expect(value("sum_over_time(vector(1e308)[3m:1m])")).toBe(Number.POSITIVE_INFINITY)
+		expect(value(`avg_over_time(${steps("-1e308", "1e308", "1e308")})`)).toBe(3.333333333333333e307)
+		expect(value(`avg_over_time(${steps("1e308", "1e308", "-1e308")})`)).toBe(3.333333333333333e307)
+	})
+
+	it("compensates bucket sums so bucket and raw mode agree", () => {
+		const src = memorySource([
+			{
+				labels: { __name__: "g" },
+				samples: [
+					[t0 + 10_000, 1],
+					[t0 + 20_000, -1e16],
+					[t0 + 30_000, 1e16],
+				],
+			},
+		])
+		const rawSrc = (request: SelectorRequest) => src({ ...request, widthMs: 0, needsValues: true })
+		for (const source of [src, rawSrc]) {
+			expect(value("sum_over_time(g[1m])", instant(t0 + 40_000), source)).toBe(1)
+			expect(value("avg_over_time(g[1m])", instant(t0 + 40_000), source)).toBe(1 / 3)
+		}
+	})
+})

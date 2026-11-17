@@ -36,7 +36,7 @@ jobs:
             # A uv failure only fails the CLI install below, which skips just the Tinybird sweep.
             - name: Install uv
               continue-on-error: true
-              uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+              uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
             # Before secrets load, so the installer never sees them. `continue-on-error` so a
             # tinybird.co outage skips only the Tinybird sweep, not all of them.

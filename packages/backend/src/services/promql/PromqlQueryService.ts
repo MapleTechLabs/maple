@@ -19,6 +19,7 @@ import {
 	planRequests,
 	type PushdownCandidate,
 	type PushdownData,
+	type PushdownRequest,
 	type QueryParams,
 	resolutionError,
 	type QueryResult,
@@ -84,6 +85,16 @@ const MAX_METRICS_PER_SELECTOR = 100
 
 /** Catalog rows read to resolve names; one more comes back when the org has more. */
 const CATALOG_LIMIT = 50_000
+
+/**
+ * The most steps one bucket may feed in a pushdown, which copies each bucket once per step whose
+ * window holds it. Measured ~2.3s at 1000 (300 series x 1000 samples); past this the bucket read
+ * is cheaper, or fails fast on the response cap instead of scanning for minutes.
+ */
+const MAX_PUSHDOWN_FANOUT = 4096
+
+const pushdownFanout = (request: PushdownRequest): number =>
+	request.steps <= 1 ? 1 : Math.min(request.steps, Math.ceil(request.rangeMs / request.stepMs))
 
 const responseLimits = { maxRows: DEFAULT_LIMITS.maxSeries + 1, maxBytes: MAX_RESPONSE_BYTES }
 
@@ -329,6 +340,7 @@ const make = Effect.gen(function* () {
 		const catalog = entries.length === 0 ? [] : yield* readCatalog(tenant, window)
 		const options = { orgId: tenant.orgId, maxSeries: DEFAULT_LIMITS.maxSeries }
 		const pushdowns = Arr.flatMap([...planPushdowns(expr, input)], ([node, candidate]) => {
+			if (pushdownFanout(candidate.request) > MAX_PUSHDOWN_FANOUT) return []
 			const plan = buildPushdownQuery(candidate.request, catalog, options)
 			return plan === undefined ? [] : [{ node, candidate, plan }]
 		})

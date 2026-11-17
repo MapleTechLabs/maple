@@ -59,6 +59,8 @@ export const StatusPageIncidentRow = Schema.Struct({
 	resolvedAt: Schema.NullOr(Schema.String),
 	scheduledStart: Schema.NullOr(Schema.String),
 	scheduledEnd: Schema.NullOr(Schema.String),
+	/** Maintenance only: completes itself when its window ends. */
+	autoComplete: Schema.Boolean,
 	componentIds: Schema.Array(Schema.String),
 	latestUpdate: Schema.NullOr(StatusPageIncidentUpdateRow),
 	updateCount: Schema.Number,

@@ -49,7 +49,7 @@ const number = (value: number): string => {
 	if (Number.isNaN(value)) return "NaN"
 	if (value === Number.POSITIVE_INFINITY) return "Inf"
 	if (value === Number.NEGATIVE_INFINITY) return "-Inf"
-	return String(value)
+	return Object.is(value, -0) ? "-0" : String(value)
 }
 
 const modifiers = (offsetMs: number, at: AtModifier | undefined): string => {
@@ -143,8 +143,11 @@ export const print = (expr: Expr): string => {
 			return `${expr.func}(${expr.args.map(print).join(", ")})`
 		case "Paren":
 			return `(${print(expr.expr)})`
-		case "Unary":
-			return `${expr.op}${expr.expr.type === "Binary" ? `(${print(expr.expr)})` : print(expr.expr)}`
+		case "Unary": {
+			// A unary operator binds like `*`, so only a `^` operand prints bare.
+			const bare = expr.expr.type !== "Binary" || expr.expr.op === "^"
+			return `${expr.op}${bare ? print(expr.expr) : `(${print(expr.expr)})`}`
+		}
 		case "Aggregate": {
 			const args =
 				expr.param === undefined ? print(expr.expr) : `${print(expr.param)}, ${print(expr.expr)}`

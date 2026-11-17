@@ -4,7 +4,6 @@ import {
 	StatusPageComponentNotFoundError,
 	StatusPageNotFoundError,
 	StatusPagePersistenceError,
-	StatusPagesDisabledError,
 	type StatusPageComponentRecord,
 	type StatusPageIncidentRecord,
 	type StatusPageRecord,
@@ -41,10 +40,6 @@ import { auditDiff, diffAuditChanges } from "@/routes/v2/audit-changes"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { timestampMs } from "@maple/backend/platform/time"
 import * as Policy from "@maple/domain/policy"
-import {
-	OrganizationFeatureFlagsService,
-	type OrganizationFeatureFlagsServiceApi,
-} from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { StatusPagePublisher } from "@maple/backend/services/status-pages/StatusPagePublisher"
 import {
 	StatusPageSnapshotBuilder,
@@ -61,19 +56,6 @@ import { StatusPageStore } from "@maple/backend/services/status-pages/StatusPage
 // whole org. The break-glass token is a credential, so it stays admin-only, as do the page
 // password and visibility: they decide who can read the page. Incidents stay open to any writer,
 // so responders can post.
-
-/** The caller's tenant, once its org is in the `statusPages` rollout. */
-const tenantInRollout = (featureFlags: OrganizationFeatureFlagsServiceApi) =>
-	Effect.gen(function* () {
-		const tenant = yield* CurrentTenant.Context
-		const flags = yield* featureFlags.flags(tenant.orgId)
-		if (!flags.statusPages) {
-			return yield* new StatusPagesDisabledError({
-				message: "Status pages are not enabled for this organization.",
-			})
-		}
-		return tenant
-	})
 
 export const toV2StatusPage = (page: StatusPageRecord): V2StatusPage => ({
 	id: page.id,
@@ -129,6 +111,7 @@ export const toV2StatusPageIncident = (incident: StatusPageIncidentRecord): V2St
 	published: incident.published,
 	scheduled_start: isoTimestampOrNull(incident.scheduledStart),
 	scheduled_end: isoTimestampOrNull(incident.scheduledEnd),
+	auto_complete: incident.autoComplete,
 	started_at: isoTimestamp(incident.startedAt),
 	resolved_at: isoTimestampOrNull(incident.resolvedAt),
 	component_ids: incident.componentIds,
@@ -187,6 +170,7 @@ const incidentAuditDiff = auditDiff({
 		"published",
 		"scheduled_start",
 		"scheduled_end",
+		"auto_complete",
 		"started_at",
 		"resolved_at",
 		"component_ids",
@@ -226,8 +210,6 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 		const service = yield* StatusPagesService
 		const customDomains = yield* StatusPageCustomDomainsService
 		const snapshotBuilder = yield* StatusPageSnapshotBuilder
-		const featureFlags = yield* OrganizationFeatureFlagsService
-		const enabledTenant = tenantInRollout(featureFlags)
 
 		/** The component, only when it is on this page; anything else reads as not found. */
 		const requireComponentOnPage = (
@@ -251,7 +233,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 		return handlers
 			.handle("list", ({ query }) =>
 				Effect.gen(function* () {
-					const tenant = yield* enabledTenant
+					const tenant = yield* CurrentTenant.Context
 					const pages = yield* service.list(tenant.orgId)
 					const page = yield* paginateArray(Arr.map(pages, toV2StatusPage), query)
 					return { object: "list" as const, ...page }
@@ -259,7 +241,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("preview", ({ payload }) =>
 				Effect.gen(function* () {
-					const tenant = yield* enabledTenant
+					const tenant = yield* CurrentTenant.Context
 					const nowMs = yield* Clock.currentTimeMillis
 					return yield* snapshotBuilder
 						.buildDraft(tenant.orgId, toStatusPageDraft(payload), nowMs)
@@ -273,7 +255,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("view", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* enabledTenant
+					const tenant = yield* CurrentTenant.Context
 					// The page must be this org's: the builder reads by id alone.
 					yield* service.get(tenant.orgId, params.id)
 					const nowMs = yield* Clock.currentTimeMillis
@@ -296,14 +278,14 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("retrieve", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* enabledTenant
+					const tenant = yield* CurrentTenant.Context
 					const page = yield* service.get(tenant.orgId, params.id)
 					return toV2StatusPage(page)
 				}),
 			)
 			.handle("create", ({ payload }) =>
 				Effect.gen(function* () {
-					const tenant = yield* enabledTenant
+					const tenant = yield* CurrentTenant.Context
 					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
@@ -377,7 +359,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("update", ({ params, payload }) =>
 				Effect.gen(function* () {
-					const tenant = yield* enabledTenant
+					const tenant = yield* CurrentTenant.Context
 					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
@@ -428,7 +410,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("delete", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* enabledTenant
+					const tenant = yield* CurrentTenant.Context
 					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
@@ -478,7 +460,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("publish", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* enabledTenant
+					const tenant = yield* CurrentTenant.Context
 					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
@@ -516,7 +498,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("rotateBreakGlass", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* enabledTenant
+					const tenant = yield* CurrentTenant.Context
 					yield* Policy.check(tenant.roles, "status_pages:break_glass", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
@@ -532,7 +514,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("revokeBreakGlass", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* enabledTenant
+					const tenant = yield* CurrentTenant.Context
 					yield* Policy.check(tenant.roles, "status_pages:break_glass", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
@@ -544,7 +526,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("setPassword", ({ params, payload }) =>
 				Effect.gen(function* () {
-					const tenant = yield* enabledTenant
+					const tenant = yield* CurrentTenant.Context
 					yield* Policy.check(tenant.roles, "status_pages:access", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
@@ -555,7 +537,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("removePassword", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* enabledTenant
+					const tenant = yield* CurrentTenant.Context
 					yield* Policy.check(tenant.roles, "status_pages:access", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
@@ -566,14 +548,14 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("getCustomDomain", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* enabledTenant
+					const tenant = yield* CurrentTenant.Context
 					const view = yield* customDomains.get(tenant.orgId, params.id)
 					return toV2StatusPageCustomDomain(view)
 				}),
 			)
 			.handle("setCustomDomain", ({ params, payload }) =>
 				Effect.gen(function* () {
-					const tenant = yield* enabledTenant
+					const tenant = yield* CurrentTenant.Context
 					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
@@ -591,7 +573,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("removeCustomDomain", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* enabledTenant
+					const tenant = yield* CurrentTenant.Context
 					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
@@ -606,7 +588,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("checkCustomDomain", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* enabledTenant
+					const tenant = yield* CurrentTenant.Context
 					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
@@ -616,13 +598,13 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("getConfig", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* enabledTenant
+					const tenant = yield* CurrentTenant.Context
 					return yield* service.getConfig(tenant.orgId, params.id)
 				}),
 			)
 			.handle("applyConfig", ({ params, query, payload }) =>
 				Effect.gen(function* () {
-					const tenant = yield* enabledTenant
+					const tenant = yield* CurrentTenant.Context
 					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
@@ -654,7 +636,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("listComponents", ({ params, query }) =>
 				Effect.gen(function* () {
-					const tenant = yield* enabledTenant
+					const tenant = yield* CurrentTenant.Context
 					const components = yield* service.listComponents(tenant.orgId, params.id)
 					const page = yield* paginateArray(Arr.map(components, toV2StatusPageComponent), query)
 					return { object: "list" as const, ...page }
@@ -662,7 +644,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("createComponent", ({ params, payload }) =>
 				Effect.gen(function* () {
-					const tenant = yield* enabledTenant
+					const tenant = yield* CurrentTenant.Context
 					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
@@ -689,7 +671,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("reorderComponents", ({ params, payload }) =>
 				Effect.gen(function* () {
-					const tenant = yield* enabledTenant
+					const tenant = yield* CurrentTenant.Context
 					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
@@ -709,7 +691,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("updateComponent", ({ params, payload }) =>
 				Effect.gen(function* () {
-					const tenant = yield* enabledTenant
+					const tenant = yield* CurrentTenant.Context
 					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
@@ -746,7 +728,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("deleteComponent", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* enabledTenant
+					const tenant = yield* CurrentTenant.Context
 					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
@@ -772,13 +754,11 @@ export const HttpV2StatusPageIncidentsLive = HttpApiBuilder.group(
 	(handlers) =>
 		Effect.gen(function* () {
 			const service = yield* StatusPagesService
-			const featureFlags = yield* OrganizationFeatureFlagsService
-			const enabledTenant = tenantInRollout(featureFlags)
 
 			return handlers
 				.handle("list", ({ query }) =>
 					Effect.gen(function* () {
-						const tenant = yield* enabledTenant
+						const tenant = yield* CurrentTenant.Context
 						const state = query.state ?? "open"
 						const page = yield* paginateOffsetQuery(query, ({ limit, offset }) =>
 							service.listOrgIncidents(tenant.orgId, {
@@ -794,14 +774,14 @@ export const HttpV2StatusPageIncidentsLive = HttpApiBuilder.group(
 				)
 				.handle("retrieve", ({ params }) =>
 					Effect.gen(function* () {
-						const tenant = yield* enabledTenant
+						const tenant = yield* CurrentTenant.Context
 						const incident = yield* service.getIncident(tenant.orgId, params.id)
 						return toV2StatusPageIncident(incident)
 					}),
 				)
 				.handle("create", ({ payload }) =>
 					Effect.gen(function* () {
-						const tenant = yield* enabledTenant
+						const tenant = yield* CurrentTenant.Context
 						const kind = payload.kind ?? "incident"
 						const created = yield* service.createIncident(tenant.orgId, payload.page_id, {
 							kind,
@@ -819,6 +799,9 @@ export const HttpV2StatusPageIncidentsLive = HttpApiBuilder.group(
 							...(payload.scheduled_end === undefined
 								? undefined
 								: { scheduledEnd: timestampMs(payload.scheduled_end) }),
+							...(payload.auto_complete === undefined
+								? undefined
+								: { autoComplete: payload.auto_complete }),
 							...(payload.started_at === undefined
 								? undefined
 								: { startedAt: timestampMs(payload.started_at) }),
@@ -839,7 +822,7 @@ export const HttpV2StatusPageIncidentsLive = HttpApiBuilder.group(
 				)
 				.handle("update", ({ params, payload }) =>
 					Effect.gen(function* () {
-						const tenant = yield* enabledTenant
+						const tenant = yield* CurrentTenant.Context
 						const current = yield* service.getIncident(tenant.orgId, params.id)
 						const scheduledStart = parseTimestamp(payload.scheduled_start)
 						const scheduledEnd = parseTimestamp(payload.scheduled_end)
@@ -851,6 +834,9 @@ export const HttpV2StatusPageIncidentsLive = HttpApiBuilder.group(
 								: { published: payload.published }),
 							...(scheduledStart === undefined ? undefined : { scheduledStart }),
 							...(scheduledEnd === undefined ? undefined : { scheduledEnd }),
+							...(payload.auto_complete === undefined
+								? undefined
+								: { autoComplete: payload.auto_complete }),
 							...(payload.started_at === undefined
 								? undefined
 								: { startedAt: timestampMs(payload.started_at) }),
@@ -875,7 +861,7 @@ export const HttpV2StatusPageIncidentsLive = HttpApiBuilder.group(
 				)
 				.handle("delete", ({ params }) =>
 					Effect.gen(function* () {
-						const tenant = yield* enabledTenant
+						const tenant = yield* CurrentTenant.Context
 						const current = yield* service.getIncident(tenant.orgId, params.id)
 						const removed = yield* service.removeIncident(tenant.orgId, params.id)
 						yield* recordHttpAudit("status_page_incident.deleted", {
@@ -891,7 +877,7 @@ export const HttpV2StatusPageIncidentsLive = HttpApiBuilder.group(
 				)
 				.handle("postUpdate", ({ params, payload }) =>
 					Effect.gen(function* () {
-						const tenant = yield* enabledTenant
+						const tenant = yield* CurrentTenant.Context
 						const updated = yield* service.postUpdate(tenant.orgId, params.id, {
 							status: payload.status,
 							body: payload.body,

@@ -226,7 +226,9 @@ describe("parse errors", () => {
 		expect(errorOf("nope(x)")).toMatch(/syntax error|unknown/)
 		expect(errorOf("constructor(x)")).toMatch(/syntax error|unknown/)
 		expect(errorOf("x offset 1m offset 2m")).not.toBe("parsed")
-		expect(errorOf("sum(x) offset 5m")).toMatch(/selector or subquery/)
+		expect(errorOf("sum(x) offset 5m")).toMatch(
+			/preceded by an instant vector selector or range vector selector or a subquery/,
+		)
 	})
 })
 
@@ -343,5 +345,95 @@ describe("third-review parser regressions", () => {
 		}
 		expect(print(expr)).toBe("(-2) ^ 2")
 		expect(ok(print(expr))).toEqual(ok("(-2) ^ 2"))
+	})
+})
+
+describe("go-live parser fixes", () => {
+	const num = (value: number): Expr => ({ type: "NumberLiteral", value })
+	const sel = (name: string, offsetMs = 0) =>
+		expect.objectContaining({ type: "VectorSelector", name, offsetMs })
+
+	it("reads signed number literals where the grammar folds the sign into the token", () => {
+		expect(ok("-1")).toEqual(num(-1))
+		expect(ok("+1")).toEqual(num(1))
+		expect(ok("-0x10")).toEqual(num(-16))
+		expect(ok("-Inf")).toEqual(num(Number.NEGATIVE_INFINITY))
+		expect(ok("--1")).toEqual(num(1))
+		expect(ok("x > -5")).toMatchObject({ op: ">", rhs: num(-5) })
+		expect(ok("x * -1")).toMatchObject({ op: "*", rhs: num(-1) })
+		expect(ok("x * - 1")).toMatchObject({ op: "*", rhs: num(-1) })
+		expect(ok("x + -1")).toMatchObject({ op: "+", rhs: num(-1) })
+		expect(ok("2 ^ -1")).toMatchObject({ op: "^", lhs: num(2), rhs: num(-1) })
+	})
+
+	it("binds unary minus looser than ^ and as tight as *", () => {
+		expect(ok("-2 ^ 2")).toEqual({
+			type: "Unary",
+			op: "-",
+			expr: {
+				type: "Binary",
+				op: "^",
+				lhs: num(2),
+				rhs: num(2),
+				returnBool: false,
+				matching: undefined,
+			},
+		})
+		expect(ok("2 * -3 ^ 2")).toMatchObject({ op: "*", rhs: { type: "Unary", expr: { op: "^" } } })
+		expect(ok("-2 ^ 2 * 3")).toMatchObject({ op: "*", lhs: { type: "Unary" }, rhs: num(3) })
+	})
+
+	it("binds offset and @ after a binary operator to the right operand", () => {
+		expect(ok("a / b offset 1d")).toMatchObject({ lhs: sel("a"), rhs: sel("b", 86_400_000) })
+		expect(ok("x / x offset 1w")).toMatchObject({ lhs: sel("x"), rhs: sel("x", 604_800_000) })
+		expect(ok("a > bool b offset 1m")).toMatchObject({ returnBool: true, rhs: sel("b", 60_000) })
+		expect(ok("a / on(x) group_left b offset 1m")).toMatchObject({
+			matching: { card: "many-to-one", labels: ["x"] },
+			rhs: sel("b", 60_000),
+		})
+		expect(ok("sum(a) / b @ 100")).toMatchObject({
+			lhs: { type: "Aggregate" },
+			rhs: { name: "b", at: { kind: "time", timeMs: 100_000 } },
+		})
+		expect(ok("-up offset 1m")).toMatchObject({ type: "Unary", expr: sel("up", 60_000) })
+		expect(ok("a + b offset 1m * c")).toMatchObject({ op: "+", rhs: { op: "*", lhs: sel("b", 60_000) } })
+	})
+
+	it("keeps rejecting what Prometheus rejects, with its messages", () => {
+		const mixed = "binary expression must contain only scalar and instant vector types"
+		expect(errorOf("vector(1) + vector(2)[5m:1m]")).toBe(mixed)
+		expect(parse("vector(1) + vector(2)[5m:1m]")).toMatchObject({ failure: { position: 12 } })
+		expect(errorOf("a + b[5m]")).toBe(mixed)
+		expect(errorOf("-a[5m:]")).toBe(
+			'unary expression only allowed on expressions of type scalar or instant vector, got "range vector"',
+		)
+		expect(errorOf("vector(1) + 2[5m:]")).toBe(
+			"subquery is only allowed on instant vector, got scalar instead",
+		)
+		expect(errorOf("a offset 1m [5m]")).toBe("no offset modifiers allowed before range")
+		expect(errorOf("(a + b) offset 1m")).toBe(
+			"offset modifier must be preceded by an instant vector selector or range vector selector or a subquery",
+		)
+		expect(errorOf("sum(a) @ 100")).toMatch(/^@ modifier must be preceded/)
+		expect(errorOf("x offset 1m @ 10 offset 2m")).toMatch(/offset may not be set multiple times/)
+	})
+
+	it("prints negative literals and modifiers on the right operand so they parse back", () => {
+		for (const query of [
+			"x > -5",
+			"x * -1",
+			"1 - -1",
+			"2 ^ -1",
+			"-2 ^ 2",
+			"2 * -3 ^ 2",
+			"-0",
+			"a / b offset 1d",
+			"sum(a) / b @ 100",
+			"-up offset 1m",
+		]) {
+			expect(ok(print(ok(query))), query).toEqual(ok(query))
+		}
+		expect(print(ok("-2 ^ 2"))).toBe("-2 ^ 2")
+		expect(print(ok("x * -1"))).toBe("x * -1")
 	})
 })

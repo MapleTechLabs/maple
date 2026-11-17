@@ -24,6 +24,11 @@ export const AnomalyDetectorSettings = PG.table("anomaly_detector_settings", {
 			name: "muted_signals_json",
 			default: [],
 		}),
+		/** Non-production environment names the detector watches anyway (it skips staging, pr-123... by default). */
+		includedEnvironmentsJson: PG.column(PG.jsonb(Schema.Array(Schema.String)), {
+			name: "included_environments_json",
+			default: [],
+		}),
 		lastTickAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_tick_at" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),

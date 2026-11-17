@@ -10,6 +10,7 @@ import * as Billing from "./billing/model"
 import * as Members from "./members/model"
 import * as General from "./general/model"
 import * as Domains from "./domains/model"
+import * as Sso from "./sso/model"
 import * as DataPlatform from "./data-platform/model"
 import * as DataSources from "./data-sources/model"
 import * as AuditLog from "./audit-log/model"
@@ -48,6 +49,7 @@ export const TabModel = Schema.Union([
 	Schema.TaggedStruct("General", { model: General.Model }),
 	Schema.TaggedStruct("Members", { model: Members.Model }),
 	Schema.TaggedStruct("Domains", { model: Domains.Model }),
+	Schema.TaggedStruct("Sso", { model: Sso.Model }),
 	Schema.TaggedStruct("Billing", { model: Billing.Model }),
 ])
 export type TabModel = typeof TabModel.Type

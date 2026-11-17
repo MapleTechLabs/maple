@@ -8,6 +8,7 @@ import { StatusPageIncidentImpact, StatusPageIncidentStatus } from "@maple/domai
 import { worstStatus } from "@maple/domain/status-page"
 import type { V2StatusPageIncident } from "@maple/domain/http/v2"
 import { Option, Result, Schema, Array as Arr, String as Str } from "effect"
+import { AsyncData } from "foldkit"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../../contract"
 import { componentStatus, isOpenIncident, STATUSES_OF_KIND } from "../shared/derive"
@@ -30,6 +31,7 @@ import {
 	incidentEditPayload,
 	type IncidentTextField,
 	incidentIssues,
+	withMaintenanceStatus,
 	incidentPayload,
 	updateBodyLengthIssue,
 	type UpdateForm,
@@ -50,7 +52,6 @@ import {
 	type Return,
 	toast,
 } from "./reads"
-import { focusPanel } from "./update-components"
 
 // Incidents: the Post incident, Post update and Edit details dialogs, publishing a draft, deleting.
 
@@ -124,9 +125,12 @@ export const openComposer = (model: Model, kind: StatusPageIncidentKind): Return
 					componentIds: Arr.map(affected, (component) => component.id),
 					impact: IMPACT_OF_STATUS[worstStatus(Arr.map(affected, statusOf))],
 				}
-	return composeDialog(
-		{ ...model, incidentForm: form, composeStep: "write", incidentFailure: null },
-		Dialog.open(model.composeDialog),
+	// The editor may have sat open: the window's checks and derived status read a fresh clock.
+	return withClock(
+		composeDialog(
+			{ ...model, incidentForm: form, composeStep: "write", incidentFailure: null },
+			Dialog.open(model.composeDialog),
+		),
 	)
 }
 
@@ -156,7 +160,9 @@ export const changeIncident = (model: Model, field: IncidentTextField, value: st
 				onSome: (status) => ({ model: { ...model, incidentForm: { ...form, status } } }),
 			})
 		case "startedAt":
-			return withClock({ model: { ...model, incidentForm: { ...form, startedAt: value } } })
+		case "scheduledStart":
+		case "scheduledEnd":
+			return withClock({ model: { ...model, incidentForm: { ...form, [field]: value } } })
 		default:
 			return { model: { ...model, incidentForm: { ...form, [field]: value } } }
 	}
@@ -181,14 +187,21 @@ export const toggleIncidentComponent = (model: Model, componentId: StatusPageCom
 export const reviewIncident = (model: Model, context: PageContext): Return =>
 	hasIncidentIssues(incidentIssues(model.incidentForm, context.timeZone, nowOf(model)))
 		? { model }
-		: { model: { ...model, composeStep: "review", incidentFailure: null } }
+		: {
+				model: {
+					...model,
+					incidentForm: withMaintenanceStatus(model.incidentForm, context.timeZone, nowOf(model)),
+					composeStep: "review",
+					incidentFailure: null,
+				},
+			}
 
 export const backToIncidentWrite = (model: Model): Return =>
 	model.isCreatingIncident ? { model } : { model: { ...model, composeStep: "write" } }
 
 /** Sent from the review step only: Publish (or Schedule) or Save as draft. */
 export const submitIncident = (model: Model, context: PageContext, isPublished: boolean): Return => {
-	const form = { ...model.incidentForm, isPublished }
+	const form = withMaintenanceStatus({ ...model.incidentForm, isPublished }, context.timeZone, nowOf(model))
 	return model.pageId === null ||
 		model.isCreatingIncident ||
 		model.composeStep !== "review" ||
@@ -202,7 +215,7 @@ export const submitIncident = (model: Model, context: PageContext, isPublished: 
 			}
 }
 
-/** A created incident closes the dialog and opens in the panel; a refused one stays on review with why. */
+/** A created incident closes the dialog and opens in the sheet; a refused one stays on review with why. */
 export const createdIncident = (
 	model: Model,
 	result: Result.Result<V2StatusPageIncident, LoadFailure>,
@@ -214,7 +227,20 @@ export const createdIncident = (
 			const noun = incident.kind === "incident" ? "Incident" : "Maintenance"
 			return {
 				...chain(
-					{ ...settled, panel: { _tag: "Incident", incidentId: incident.id } },
+					{
+						...settled,
+						panel: { _tag: "Incident", incidentId: incident.id },
+						// Shown even while no incident list is loaded to put it in.
+						sheetIncident: incident,
+						// The sheet shows it at once; the re-read confirms it.
+						incidents: {
+							...settled.incidents,
+							data: AsyncData.map(settled.incidents.data, (rows) => [
+								incident,
+								...Arr.filter(rows, (row) => row.id !== incident.id),
+							]),
+						},
+					},
 					(next) => composeDialog(next, Dialog.close(next.composeDialog)),
 					(next) => reread(next, context),
 				),
@@ -229,10 +255,10 @@ export const createdIncident = (
 	})
 }
 
-/** Opens the incident in the panel. */
+/** Opens the incident in the sheet. */
 export const selectIncident = (model: Model, incidentId: StatusPageIncidentId): Return =>
 	Arr.some(incidentsOf(model), (incident) => incident.id === incidentId)
-		? focusPanel({ ...model, panel: { _tag: "Incident", incidentId } })
+		? { model: { ...model, panel: { _tag: "Incident", incidentId } } }
 		: { model }
 
 /** The Post update dialog on its write step: the next status along, or the closing one for Resolve. */
