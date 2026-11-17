@@ -259,6 +259,25 @@ describe("CloudSecurityStore", () => {
 		}).pipe(Effect.provide(world.layer))
 	})
 
+	it.effect("pages findings that differ only by source without repeating one", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const store = yield* CloudSecurityStore
+			const mine = yield* connect(orgId, "111111111111")
+			const sources = ["guardduty", "securityhub", "inspector", "access_analyzer"] as const
+			yield* store.upsertFindings(
+				Arr.map(sources, (source) => finding(mine, orgId, { source, findingId: "same" })),
+				1,
+			)
+			const seen = yield* Effect.forEach([0, 1, 2, 3], (offset) =>
+				store
+					.listFindings(orgId, { status: "active" }, { limit: 1, offset })
+					.pipe(Effect.map((page) => page.rows[0]?.source)),
+			)
+			assert.deepStrictEqual(Arr.sort(seen, Order.String), Arr.sort(sources, Order.String))
+		}).pipe(Effect.provide(world.layer))
+	})
+
 	it.effect(
 		"narrows the list by severity, source, region and a search over title, type and resource",
 		() => {
@@ -381,6 +400,8 @@ describe("CloudSecurityStore", () => {
 					region,
 					source: "guardduty",
 					state: "enabled",
+					cursorAt: null,
+					windowMs: null,
 					lastError: null,
 					checkedAt: 1,
 				})

@@ -64,6 +64,9 @@ describe("cloudResourceCandidates", () => {
 	it("reads a bare id only where its type says what it is", () => {
 		expect(valuesOn("i-0abc12345678", "Instance", "host.id")).toEqual(["i-0abc12345678"])
 		expect(valuesOn("cart-fn", "Lambda", "faas.name")).toEqual(["cart-fn"])
+		// An instance-shaped Lambda name is still a function name.
+		expect(valuesOn("i-0abc12345678", "Lambda", "faas.name")).toEqual(["i-0abc12345678"])
+		expect(valuesOn("i-0abc12345678", "Lambda", "host.id")).toEqual([])
 		expect(
 			cloudResourceCandidates({
 				resourceId: "my-bucket",

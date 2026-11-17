@@ -199,8 +199,9 @@ export const cloudResourceCandidates = (resource: {
 		return name === undefined ? whole : Arr.append(whole, scoped(name))
 	}
 	const type = Str.toLowerCase(resource.resourceType)
-	if (EC2_INSTANCE_ID.test(id)) return [scoped({ key: "host.id", value: id })]
+	// The type first: `i-0123456789abcdef0` is a valid Lambda function name too.
 	if (Str.includes("lambda")(type)) return [scoped({ key: "faas.name", value: id })]
 	if (Str.includes("eks")(type)) return [scoped({ key: "k8s.cluster.name", value: id })]
+	if (EC2_INSTANCE_ID.test(id)) return [scoped({ key: "host.id", value: id })]
 	return []
 }

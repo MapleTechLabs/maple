@@ -485,6 +485,7 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 								[$.findingId, "asc"],
 								[$.connectionId, "asc"],
 								[$.region, "asc"],
+								[$.source, "asc"],
 							])
 							.limit(page.limit + 1)
 							.offset(page.offset),

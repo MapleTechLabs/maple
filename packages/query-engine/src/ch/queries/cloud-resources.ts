@@ -64,7 +64,8 @@ const groupsOf = (candidates: ReadonlyArray<CloudResourceCandidate>): ReadonlyAr
 /**
  * Services that served requests from each candidate over the window, busiest first. A span counts
  * once for every candidate it carries (an ECS task and its cluster both get it), and a name only
- * when the span's account and region agree with the finding's or are unset.
+ * when the span's account and region agree with the finding's or are unset. It returns one row past
+ * the cap, so a caller can tell a capped answer from a complete one.
  */
 export function cloudResourceServicesQuery(opts: CloudResourceServicesOpts) {
 	const groups = groupsOf(opts.candidates)
@@ -118,6 +119,6 @@ export function cloudResourceServicesQuery(opts: CloudResourceServicesOpts) {
 		.groupBy("match", "service")
 		.having(() => [CH.dynamicColumn("match", T.string).neq("")])
 		.orderBy(["requests", "desc"])
-		.limit(CLOUD_RESOURCE_SERVICES_MAX_ROWS)
+		.limit(CLOUD_RESOURCE_SERVICES_MAX_ROWS + 1)
 		.format("JSON")
 }

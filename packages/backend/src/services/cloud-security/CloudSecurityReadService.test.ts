@@ -8,6 +8,7 @@ import {
 } from "@maple/domain/organization-feature-flags"
 import { RoleName, type TenantContext, WarehouseUpstreamError } from "@maple/domain/http"
 import { AwsAccountId, AwsRegion, OrgId, UserId } from "@maple/primitives"
+import { CH } from "@maple/query-engine"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { Env } from "@maple/backend/platform/Env"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
@@ -46,7 +47,7 @@ const tenant: TenantContext = {
 	authMode: "self_hosted",
 }
 
-type Warehouse = "answers" | "fails"
+type Warehouse = "answers" | "fails" | "capped"
 
 const makeWorld = (flags: OrganizationFeatureFlags, warehouse: Warehouse = "answers") => {
 	const testDb = createTestDb(trackedDbs)
@@ -62,25 +63,35 @@ const makeWorld = (flags: OrganizationFeatureFlags, warehouse: Warehouse = "answ
 							pipeName: "cloudResourceServices",
 						}),
 					)
-				: query
-						.decodeRows([
-							{
-								match: matchTag("host.id", "", "i-0abc1234def567890"),
-								service: "checkout-api",
-								requests: "1200",
-							},
-							{
-								match: matchTag("host.id", "", "i-0abc1234def567890"),
-								service: "cart",
-								requests: "40",
-							},
-							{
-								match: matchTag("faas.name", "111111111111/us-east-1", "checkout-fn"),
-								service: "payments",
-								requests: "9",
-							},
-						])
-						.pipe(Effect.orDie)
+				: warehouse === "capped"
+					? query
+							.decodeRows(
+								Arr.makeBy(CH.CLOUD_RESOURCE_SERVICES_MAX_ROWS + 1, (index) => ({
+									match: matchTag("host.id", "", "i-0abc1234def567890"),
+									service: `service-${index}`,
+									requests: "1",
+								})),
+							)
+							.pipe(Effect.orDie)
+					: query
+							.decodeRows([
+								{
+									match: matchTag("host.id", "", "i-0abc1234def567890"),
+									service: "checkout-api",
+									requests: "1200",
+								},
+								{
+									match: matchTag("host.id", "", "i-0abc1234def567890"),
+									service: "cart",
+									requests: "40",
+								},
+								{
+									match: matchTag("faas.name", "111111111111/us-east-1", "checkout-fn"),
+									service: "payments",
+									requests: "9",
+								},
+							])
+							.pipe(Effect.orDie)
 		},
 	})
 	const layer = Layer.effect(CloudSecurityReadService, CloudSecurityReadService.make).pipe(
@@ -280,6 +291,21 @@ describe("CloudSecurityReadService", () => {
 		}).pipe(Effect.provide(world.layer))
 	})
 
+	it.effect(
+		"flags a capped telemetry answer unmatched, since a resource may have lost its services",
+		() => {
+			const world = makeWorld(ENABLED_ORGANIZATION_FEATURE_FLAGS, "capped")
+			return Effect.gen(function* () {
+				const store = yield* CloudSecurityStore
+				const reads = yield* CloudSecurityReadService
+				const connection = yield* connect(["security"])
+				yield* store.upsertFindings([finding(connection)], 5)
+				const page = yield* reads.listFindings(tenant, {})
+				assert.isFalse(page.telemetryMatched)
+			}).pipe(Effect.provide(world.layer))
+		},
+	)
+
 	it.effect("reads no telemetry for an empty page", () => {
 		const world = makeWorld(ENABLED_ORGANIZATION_FEATURE_FLAGS)
 		return Effect.gen(function* () {
@@ -304,6 +330,8 @@ describe("CloudSecurityReadService", () => {
 					region,
 					source: "inspector",
 					state: "not_enabled",
+					cursorAt: null,
+					windowMs: null,
 					lastError: null,
 					checkedAt: 7,
 				})

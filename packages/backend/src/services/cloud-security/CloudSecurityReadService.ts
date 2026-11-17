@@ -185,9 +185,10 @@ export class CloudSecurityReadService extends Context.Service<
 			yield* Effect.annotateCurrentSpan("maple.cloud_security.telemetry_matched", Option.isSome(rows))
 			return Option.match(rows, {
 				onNone: () => ({ matches: NO_MATCHES, matched: false }),
+				// Past the cap some resource may have lost its services: show what came, flagged unmatched.
 				onSome: (matches): { matches: ReadonlyArray<ResourceServiceMatch>; matched: boolean } => ({
-					matches,
-					matched: true,
+					matches: Arr.take(matches, CH.CLOUD_RESOURCE_SERVICES_MAX_ROWS),
+					matched: matches.length <= CH.CLOUD_RESOURCE_SERVICES_MAX_ROWS,
 				}),
 			})
 		})

@@ -166,7 +166,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, detail: Keyed.accept(model.detail, key, result) },
 		}),
 		ClickedRetry: () =>
-			chain({ model, commands: [ReadCloudClock()] }, (next) => readScreen(next, context, "Refresh")),
+			chain({ model, commands: [ReadCloudClock()] }, (next) => readScreen(next, context, "Supersede")),
 		ClickedLoadMore: () => fetchNext(model),
 		// A filter applies what the URL holds; an unsubmitted draft goes back to the applied search.
 		ChangedFilter: ({ filter, value }) =>
