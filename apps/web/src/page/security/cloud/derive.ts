@@ -1,6 +1,5 @@
 import {
 	CLOUD_FINDING_SOURCE_SPECS,
-	CLOUD_SECURITY_PUSH_ALIVE_MS,
 	CloudFindingSeverity,
 	CloudFindingSource,
 	CloudFindingStatus,
@@ -148,18 +147,21 @@ export const serviceNoticesOf = (overview: Overview): ReadonlyArray<ServiceNotic
 }
 
 /**
- * How findings reach Maple: `live` once any service's events arrive (EventBridge, set up by the
- * setup script), `polled` otherwise. Null before any service is read.
+ * The services whose findings arrive as events (EventBridge, from the setup script), by name. Null
+ * before any service is read; empty while every service is only polled.
  */
-export const deliveryOf = (overview: Overview, nowMs: number): "live" | "polled" | null => {
+export const liveSourcesOf = (overview: Overview): ReadonlyArray<CloudFindingSource> | null => {
 	const enabled = Arr.filter(overview.services, (service) => service.state === "enabled")
 	if (enabled.length === 0) return null
-	return Arr.some(
-		enabled,
-		(service) => service.pushedAt !== null && nowMs - service.pushedAt <= CLOUD_SECURITY_PUSH_ALIVE_MS,
+	return Arr.sort(
+		Arr.dedupe(
+			Arr.map(
+				Arr.filter(enabled, (service) => service.pushedAt !== null),
+				(service) => service.source,
+			),
+		),
+		Order.String,
 	)
-		? "live"
-		: "polled"
 }
 
 /** The accounts and regions the filters offer: every connected account, every region polled. */

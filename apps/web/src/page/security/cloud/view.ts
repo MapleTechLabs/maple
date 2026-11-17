@@ -3,6 +3,7 @@ import {
 	CLOUD_FINDING_SOURCES,
 	type CloudFindingSeverity,
 	CloudFindingStatus,
+	type CloudFindingSource,
 } from "@maple/domain/cloud-security"
 import type { CloudFinding } from "@maple/domain/http"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
@@ -46,7 +47,7 @@ import {
 	setupOf,
 	sourceTitle,
 	STATUS_LABEL,
-	deliveryOf,
+	liveSourcesOf,
 } from "./derive"
 import { Message, type Model, type Overview, type SelectFilter } from "./model"
 import { cloudSeverityBadge } from "./parts"
@@ -379,20 +380,21 @@ const listScreen = (h: H, model: Model, overview: Overview, clock: Clock): Reado
 			toolbar(h, model, overview),
 			listBody(h, model, overview, clock),
 		]),
-		...deliveryNote(h, deliveryOf(overview, model.nowMs)),
+		...deliveryNote(h, liveSourcesOf(overview)),
 	]
 }
 
-const DELIVERY_NOTE = {
-	live: "Live: findings arrive as AWS reports them, and every service is also checked each half hour.",
-	polled: "Checked every five minutes. Run the AWS setup script again to receive findings as AWS reports them.",
-} as const
-
-/** How findings reach Maple, under the list. */
-const deliveryNote = (h: H, delivery: "live" | "polled" | null): ReadonlyArray<Html> =>
-	delivery === null
-		? []
-		: [typography(h, { size: "xs", tone: "muted", as: "p" }, [DELIVERY_NOTE[delivery]])]
+/** How findings reach Maple, under the list: live for the services whose events arrive, polled otherwise. */
+const deliveryNote = (h: H, live: ReadonlyArray<CloudFindingSource> | null): ReadonlyArray<Html> => {
+	if (live === null) return []
+	const text =
+		live.length === 0
+			? "Checked every five minutes, and live once AWS sends a finding event. A connection set up before live updates needs its AWS setup script run again."
+			: live.length === CLOUD_FINDING_SOURCES.length
+				? "Live: findings arrive as AWS reports them."
+				: `Live for ${Arr.join(Arr.map(live, sourceTitle), ", ")}: their findings arrive as AWS reports them. The other services are checked every five minutes.`
+	return [typography(h, { size: "xs", tone: "muted", as: "p" }, [text])]
+}
 
 const overviewFailure = (h: H, model: Model): Html | null =>
 	AsyncData.matchData(model.overview.data, {

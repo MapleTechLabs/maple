@@ -200,25 +200,30 @@ describe("security cloud findings", () => {
 		)
 	})
 
-	test("says findings are live once a service's events arrive, and polled before", () => {
+	test("says which services' findings arrive live, and that the rest are polled", () => {
 		const polled = allClearOverview(NOW)
 		scene(
 			{ update: pageUpdate, view },
 			given(listed(polled)),
-			expectView(text(/^Checked every five minutes/u)).toExist(),
-			expectView(text(/^Live:/u)).toBeAbsent(),
+			expectView(
+				text(/^Checked every five minutes, and live once AWS sends a finding event/u),
+			).toExist(),
 		)
-		const live = {
+		const pushed = (sources: ReadonlyArray<string>) => ({
 			...polled,
-			services: Arr.map(polled.services, (service, index) =>
-				index === 0 ? { ...service, pushedAt: NOW - 60_000 } : service,
+			services: Arr.map(polled.services, (service) =>
+				sources.includes(service.source) ? { ...service, pushedAt: NOW - 60_000 } : service,
 			),
-		}
+		})
 		scene(
 			{ update: pageUpdate, view },
-			given(listed(live)),
-			expectView(text(/^Live:/u)).toExist(),
-			expectView(text(/^Checked every five minutes/u)).toBeAbsent(),
+			given(listed(pushed(["guardduty"]))),
+			expectView(text(/^Live for GuardDuty: their findings arrive/u)).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(listed(pushed(["guardduty", "securityhub", "inspector", "access_analyzer"]))),
+			expectView(text("Live: findings arrive as AWS reports them.")).toExist(),
 		)
 	})
 
