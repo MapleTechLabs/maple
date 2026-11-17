@@ -255,6 +255,23 @@ describe("CloudSecurityStore", () => {
 		}).pipe(Effect.provide(world.layer))
 	})
 
+	it.effect("moves a resolved finding still gone to the back of the recheck queue", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const store = yield* CloudSecurityStore
+			const connection = yield* connect(orgId, "111111111111")
+			const feed = { orgId, connectionId: connection.id, region, source: "guardduty" as const }
+			yield* store.upsertFindings([finding(connection, orgId, { findingId: "gone" })], 1)
+			yield* store.upsertFindings([finding(connection, orgId, { findingId: "other" })], 2)
+			yield* store.resolve(feed, { only: ["gone"] }, 3)
+			assert.deepStrictEqual(yield* store.staleIds(feed, 10, 1), ["other"])
+			// Checked again and still gone: it waits behind the rows not checked since.
+			yield* store.resolve(feed, { only: ["other"] }, 4)
+			yield* store.resolve(feed, { only: ["gone"] }, 5)
+			assert.deepStrictEqual(yield* store.staleIds(feed, 10, 2), ["other", "gone"])
+		}).pipe(Effect.provide(world.layer))
+	})
+
 	it.effect("never lets an older version of a finding replace a newer one", () => {
 		const world = makeWorld()
 		return Effect.gen(function* () {

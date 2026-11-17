@@ -122,7 +122,6 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 			const database = yield* Database
 			const dbExecute = makeDbExecute(database, "CloudSecurityStore", toPersistenceError)
 
-			/** The closed rows among `rows` that are stored already: a finding first seen closed is not kept. */
 			/** One finding's identity across orgs and connections. */
 			const keyOf = (row: {
 				readonly orgId: string
@@ -333,7 +332,10 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 				if ("only" in ids && ids.only.length === 0) return 0
 				// An open finding closes now; an archived one keeps the time it closed. Not the provider
 				// time either: the service may still report this finding, at its own time.
-				const resolveWhere = (from: "active" | "archived", set: { readonly closedAt?: number }) =>
+				const resolveWhere = (
+					from: "active" | "archived" | "resolved",
+					set: { readonly closedAt?: number },
+				) =>
 					dbExecute((db) =>
 						db.run(
 							PG.update(CloudSecurityFindings)
@@ -355,6 +357,8 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 					)
 				const opened = yield* resolveWhere("active", { closedAt: at })
 				const archived = yield* resolveWhere("archived", {})
+				// Checked and still gone: a resolved row moves to the back of the recheck queue.
+				if ("only" in ids) yield* resolveWhere("resolved", {})
 				return opened.length + archived.length
 			})
 

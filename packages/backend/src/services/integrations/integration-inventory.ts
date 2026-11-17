@@ -869,18 +869,21 @@ const aws = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry 
 			inputs.awsCloudTrailProblems ?? [],
 			(problem) => problem.accountId === c.accountId,
 		)
+		// A role that cannot be assumed reads nothing, whatever the last CloudTrail read said.
+		const trailError = Option.isSome(trailProblem)
+			? (trailProblem.value.lastError ?? `CloudTrail could not be read (${trailProblem.value.state})`)
+			: role.status === "failing"
+				? role.lastError
+				: null
 		const auditLog: ReadonlyArray<IntegrationResource> = !granted
 			? []
 			: [
 					{
 						kind: "audit log",
 						name: c.accountId,
-						status: Option.isSome(trailProblem) ? "failing" : "healthy",
+						status: trailError === null ? "healthy" : "failing",
 						lastSuccessAt: null,
-						lastError: Option.isSome(trailProblem)
-							? (trailProblem.value.lastError ??
-								`CloudTrail could not be read (${trailProblem.value.state})`)
-							: null,
+						lastError: trailError,
 						note: null,
 					},
 				]

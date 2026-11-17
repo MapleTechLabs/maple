@@ -641,6 +641,23 @@ describe("aws", () => {
 		expect(aws?.problem).toContain("can no longer assume the role")
 	})
 
+	it("shows the audit log failing while the role cannot be assumed", () => {
+		const security = {
+			...connection,
+			modules: ["security"],
+			grantedModules: ["security"],
+			lastCheckError: "Maple can no longer assume the role",
+		}
+		const auditLog = Arr.findFirst(
+			providerOf({ awsConnections: [security], awsCloudTrailProblems: [] }, "aws")?.resources ?? [],
+			(resource) => resource.kind === "audit log",
+		)
+		expect(Option.getOrUndefined(auditLog)).toMatchObject({
+			status: "failing",
+			lastError: "Maple can no longer assume the role",
+		})
+	})
+
 	it("shows a security-module account's audit log failing while CloudTrail cannot be read", () => {
 		const security = { ...connection, modules: ["security"], grantedModules: ["security"] }
 		const auditLogOf = (

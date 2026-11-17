@@ -80,8 +80,17 @@ const actorOf = (identity: Json | undefined): AuditTrailEvent["actor"] => {
 		case "Root":
 			return user("user", "root")
 		case "IAMUser":
-		case "IdentityCenterUser":
 			return user("user", textAt(identity, "userName"))
+		case "IdentityCenterUser": {
+			// Often no ARN or user name: the identity store and its user id are what tell people apart.
+			const onBehalfOf = objectAt(identity, "onBehalfOf")
+			const userId = textAt(onBehalfOf, "userId")
+			const store = textAt(onBehalfOf, "identityStoreArn")
+			const id =
+				arn ??
+				(userId === undefined ? undefined : store === undefined ? userId : `${store}/${userId}`)
+			return { type: "user", id, name: textAt(identity, "userName") ?? userId }
+		}
 		case "FederatedUser":
 			return user("user", sessionName)
 		case "AssumedRole":
