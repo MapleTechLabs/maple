@@ -1061,11 +1061,14 @@ describe("EnterpriseSsoService", () => {
 				const refused = yield* sso
 					.createConnection(ORG, ADMIN, samlRequest(["acme.com"]))
 					.pipe(Effect.flip)
-				assert.strictEqual(refused._tag, "@maple/http/enterprise-sso/EnterpriseSsoDomainProofError")
-				// It names the domain and the record to publish.
-				assert.isTrue(Str.includes("acme.com")(refused.message))
-				assert.isTrue(Str.includes(RECORD)(refused.message))
-				assert.isTrue(Str.includes(challenge)(refused.message))
+				if (refused._tag !== "@maple/http/enterprise-sso/EnterpriseSsoDomainProofError") {
+					return assert.fail(`expected a domain proof refusal, got ${refused._tag}`)
+				}
+				// It names the domain and the record to publish, as fields and in its sentence.
+				assert.strictEqual(refused.domain, "acme.com")
+				assert.strictEqual(refused.recordName, RECORD)
+				assert.strictEqual(refused.recordValue, challenge)
+				assert.isTrue(Str.includes(refused.recordValue)(refused.message))
 				assert.strictEqual(world.clerk.connections.size, 0)
 
 				world.dns.set(RECORD, published)
