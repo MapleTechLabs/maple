@@ -127,6 +127,8 @@ export interface CloudSecurityStoreApi {
 	readonly recordServiceState: (
 		state: CloudServiceStateWrite,
 	) => Effect.Effect<void, IntegrationsPersistenceError>
+	/** Marks a feed as receiving events. A feed the poller has not read yet is left to it. */
+	readonly recordPush: (feed: CloudFeedRef, at: number) => Effect.Effect<void, IntegrationsPersistenceError>
 	readonly serviceStates: (
 		orgId: OrgId,
 		connectionId: AwsConnectionId,
@@ -339,6 +341,24 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 				)
 			})
 
+			const recordPush = Effect.fn("CloudSecurityStore.recordPush")(function* (
+				feed: CloudFeedRef,
+				at: number,
+			) {
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(CloudSecurityServiceStates)
+							.set({ pushedAt: at })
+							.where(($) => [
+								$.orgId.eq(feed.orgId),
+								$.connectionId.eq(feed.connectionId),
+								$.region.eq(feed.region),
+								$.source.eq(feed.source),
+							]),
+					),
+				)
+			})
+
 			const serviceStates = Effect.fn("CloudSecurityStore.serviceStates")(function* (
 				orgId: OrgId,
 				connectionId: AwsConnectionId,
@@ -402,6 +422,8 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 									$.region.eq(feed.region),
 									$.source.eq(feed.source),
 									$.status.eq(from),
+									// A finding an event stored after the read began is newer than what the read saw.
+									$.syncedAt.lt(at),
 									...("only" in ids
 										? [PG.inList($.findingId, ids.only)]
 										: ids.except.length === 0
@@ -556,6 +578,7 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 			return {
 				upsertFindings,
 				recordServiceState,
+				recordPush,
 				serviceStates,
 				listFindings,
 				getFinding,

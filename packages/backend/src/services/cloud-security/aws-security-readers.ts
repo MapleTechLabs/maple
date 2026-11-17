@@ -15,9 +15,7 @@ import * as Retry from "@distilled.cloud/aws/Retry"
 import * as SecurityHub from "@distilled.cloud/aws/securityhub"
 import type { AuditTrailEvent } from "@maple/domain/audit-trail"
 import {
-	type CloudFindingSeverity,
 	type CloudFindingSource,
-	type CloudFindingStatus,
 	type CloudServiceState,
 	cloudFindingSeverityOfLabel,
 	cloudFindingSeverityOfScore,
@@ -38,7 +36,19 @@ import {
 import { HttpClient } from "effect/http"
 import type { AwsRoleSession } from "../integrations/aws/api"
 import { cloudTrailAuditEvent } from "./cloudtrail-events"
-import type { CloudFindingWrite } from "./CloudSecurityStore"
+import {
+	AGGREGATED_PRODUCTS,
+	accessAnalyzerSeverity,
+	accessAnalyzerStatus,
+	accessAnalyzerTitle,
+	type FindingRead,
+	inspectorStatus,
+	msOf,
+	readFinding,
+	securityHubStatus,
+} from "./finding-read"
+
+export type { FindingRead } from "./finding-read"
 
 const REQUEST_TIMEOUT = Duration.seconds(20)
 const RETRY: Retry.Options = {
@@ -49,14 +59,11 @@ const RETRY: Retry.Options = {
 export const MAX_PAGES = 20
 /** Pages one time window may take before it is split in half. */
 export const WINDOW_PAGES = 5
-/** A finding's service record above this many bytes keeps only its columns. */
-const DETAIL_LIMIT_BYTES = 16 * 1024
 
 const MINUTE_MS = 60 * 1000
 const DAY_MS = 24 * 60 * MINUTE_MS
 
 const DENIED_CODES = new Set(["AccessDenied", "AccessDeniedException", "UnauthorizedOperation"])
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 const isRegion = Schema.is(AwsRegion)
 
 /** A read that stopped: `denied` is the role, anything else is AWS. */
@@ -69,12 +76,6 @@ export class AwsSecurityReadError extends Schema.TaggedError<AwsSecurityReadErro
 ) {}
 
 const isReadError = Schema.is(AwsSecurityReadError)
-
-/** A finding as a reader saw it, before the poller stamps the connection's columns. */
-export type FindingRead = Omit<
-	CloudFindingWrite,
-	"orgId" | "connectionId" | "accountId" | "region" | "source"
->
 
 /** Where a reader hands each page as it reads it, so a read never holds more than a page. */
 export type Sink<A, E> = (items: ReadonlyArray<A>) => Effect.Effect<void, E>
@@ -295,55 +296,8 @@ const windowsError = (read: WindowsRead, noun: string): string | null => {
 	return read.caughtUp ? null : "Catching up: the next poll continues."
 }
 
-const msOf = (value: string | Date | undefined): number | undefined =>
-	value === undefined
-		? undefined
-		: Option.getOrUndefined(Option.map(DateTime.make(value), DateTime.toEpochMillis))
-
 const isoOf = (ms: number) => DateTime.formatIso(DateTime.makeUnsafe(ms))
 const dateOf = (ms: number) => DateTime.toDate(DateTime.makeUnsafe(ms))
-
-/** The service's record, unless it is too large to keep. */
-const detailOf = (detail: Record<string, unknown>): Record<string, unknown> | null =>
-	new TextEncoder().encode(encodeJson(detail)).length > DETAIL_LIMIT_BYTES ? null : detail
-
-/** A finding in the stored shape. None when the service gave it no time at all. */
-const readFinding = (finding: {
-	readonly findingId: string
-	readonly type: string
-	readonly title: string | undefined
-	readonly description: string | undefined
-	readonly severity: CloudFindingSeverity
-	readonly status: CloudFindingStatus
-	readonly resourceType: string | undefined
-	readonly resourceId: string | undefined
-	readonly resourceName: string | undefined
-	readonly occurrences: number | undefined
-	readonly firstSeenAt: number | undefined
-	readonly lastSeenAt: number | undefined
-	readonly updatedAt: number | undefined
-	readonly detail: Record<string, unknown>
-}): Option.Option<FindingRead> => {
-	const updatedAt = finding.updatedAt ?? finding.lastSeenAt ?? finding.firstSeenAt
-	if (updatedAt === undefined) return Option.none()
-	return Option.some({
-		findingId: finding.findingId,
-		type: finding.type,
-		title: finding.title === undefined || finding.title === "" ? finding.type : finding.title,
-		description:
-			finding.description === undefined || finding.description === "" ? null : finding.description,
-		severity: finding.severity,
-		status: finding.status,
-		resourceType: finding.resourceType ?? "",
-		resourceId: finding.resourceId ?? "",
-		resourceName: finding.resourceName ?? null,
-		occurrences: finding.occurrences ?? 1,
-		firstSeenAt: finding.firstSeenAt ?? updatedAt,
-		lastSeenAt: finding.lastSeenAt ?? updatedAt,
-		providerUpdatedAt: updatedAt,
-		detail: detailOf(finding.detail),
-	})
-}
 
 /** A sink that also keeps the newest update time it passed on, for readers sorted by it. */
 const trackingNewest = <E>(sink: Sink<FindingRead, E>) =>
@@ -500,17 +454,6 @@ const readGuardDuty = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =>
 
 // Security Hub
 
-/** Security Hub also carries GuardDuty, Inspector and Access Analyzer findings, read from them directly. */
-const AGGREGATED_PRODUCTS = ["GuardDuty", "Inspector", "IAM Access Analyzer"]
-
-const securityHubStatus = (finding: SecurityHub.AwsSecurityFinding): CloudFindingStatus => {
-	if (finding.RecordState === "ARCHIVED") return "resolved"
-	if (finding.Compliance?.Status === "PASSED") return "resolved"
-	if (finding.Workflow?.Status === "RESOLVED") return "resolved"
-	if (finding.Workflow?.Status === "SUPPRESSED") return "archived"
-	return "active"
-}
-
 export const normalizeSecurityHub = (finding: SecurityHub.AwsSecurityFinding): Option.Option<FindingRead> => {
 	if (finding.Id === undefined) return Option.none()
 	const resource = Option.getOrUndefined(Arr.head(finding.Resources ?? []))
@@ -520,7 +463,11 @@ export const normalizeSecurityHub = (finding: SecurityHub.AwsSecurityFinding): O
 		title: finding.Title,
 		description: finding.Description,
 		severity: cloudFindingSeverityOfLabel(finding.Severity?.Label),
-		status: securityHubStatus(finding),
+		status: securityHubStatus({
+			recordState: finding.RecordState,
+			complianceStatus: finding.Compliance?.Status,
+			workflowStatus: finding.Workflow?.Status,
+		}),
 		resourceType: resource?.Type,
 		resourceId: resource?.Id,
 		resourceName: undefined,
@@ -596,9 +543,6 @@ const readSecurityHub = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =>
 	})
 
 // Inspector
-
-const inspectorStatus = (status: string): CloudFindingStatus =>
-	status === "CLOSED" ? "resolved" : status === "SUPPRESSED" ? "archived" : "active"
 
 export const normalizeInspector = (finding: Inspector.Finding): Option.Option<FindingRead> => {
 	const resource = Option.getOrUndefined(Arr.head(finding.resources))
@@ -697,31 +641,6 @@ const readInspector = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =>
 	})
 
 // IAM Access Analyzer
-
-const accessAnalyzerTitle = (findingType: string): string => {
-	switch (findingType) {
-		case "ExternalAccess":
-			return "Shared outside the account"
-		case "InternalAccess":
-			return "Shared within the organization"
-		case "UnusedIAMRole":
-			return "Unused IAM role"
-		case "UnusedIAMUserAccessKey":
-			return "Unused access key"
-		case "UnusedIAMUserPassword":
-			return "Unused console password"
-		case "UnusedPermission":
-			return "Unused permissions"
-		default:
-			return findingType
-	}
-}
-
-const accessAnalyzerSeverity = (findingType: string): CloudFindingSeverity =>
-	findingType === "ExternalAccess" ? "high" : findingType === "InternalAccess" ? "medium" : "low"
-
-const accessAnalyzerStatus = (status: string): CloudFindingStatus =>
-	status === "RESOLVED" ? "resolved" : status === "ARCHIVED" ? "archived" : "active"
 
 export const normalizeAccessAnalyzer = (
 	finding: AccessAnalyzer.FindingSummaryV2,

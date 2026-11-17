@@ -48,6 +48,7 @@ import {
 	HttpOrganizationsLive,
 } from "@/routes/internal/organizations.http"
 import { PlanetScaleWebhookRouter } from "@/routes/webhooks/planetscale.http"
+import { AwsEventsRouter } from "@/routes/webhooks/aws-events.http"
 import { HttpQueryEngineLive } from "@/routes/internal/query-engine.http"
 import { HttpSessionReplaysInternalLive } from "@/routes/internal/session-replays.http"
 import { ScraperInternalRouter } from "@/routes/scraper-internal.http"
@@ -273,6 +274,7 @@ const RawRoutes = rawRoutes<Layer.Success<ApiPortsLayer>>()(
 		ChatCallbackRouter,
 		OAuthDiscoveryRouter,
 		PlanetScaleWebhookRouter,
+		AwsEventsRouter,
 		ScraperInternalRouter,
 		UptimeInternalRouter,
 		UptimeHeartbeatRouter,

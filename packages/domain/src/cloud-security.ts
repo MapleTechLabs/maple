@@ -15,6 +15,9 @@ export type CloudFindingSeverity = typeof CloudFindingSeverity.Type
 export const CloudSecurityFeed = Schema.Literals([...CLOUD_FINDING_SOURCES, "cloudtrail"])
 export type CloudSecurityFeed = typeof CloudSecurityFeed.Type
 
+/** A feed whose last EventBridge event is this recent counts as delivering: the poller slows down for it. */
+export const CLOUD_SECURITY_PUSH_ALIVE_MS = 7 * 24 * 60 * 60 * 1000
+
 /** `archived`: suppressed in the service. `resolved`: the service closed it (fixed, or gone). */
 export const CloudFindingStatus = Schema.Literals(["active", "archived", "resolved"])
 export type CloudFindingStatus = typeof CloudFindingStatus.Type
