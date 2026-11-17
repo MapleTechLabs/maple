@@ -13701,6 +13701,160 @@ export const ICON_TREES = {
 			],
 		],
 	],
+	Palette2Icon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "none"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					["d", "M11 5H13V7H11V5Z"],
+					["fill", "currentColor"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M15 7H17V9H15V7Z"],
+					["fill", "currentColor"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M17 21H19V23H17V21Z"],
+					["fill", "currentColor"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M19 19H21V21H19V19Z"],
+					["fill", "currentColor"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M5 11H7V13H5V11Z"],
+					["fill", "currentColor"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M7 7H9V9H7V7Z"],
+					["fill", "currentColor"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M5 3H7V5H5V3Z"],
+					["fill", "currentColor"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M3 5H5V7H3V5Z"],
+					["fill", "currentColor"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M17 3H19V5H17V3Z"],
+					["fill", "currentColor"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M19 5H21V7H19V5Z"],
+					["fill", "currentColor"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M8 2L16 2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M2 16V8"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M22 18V8"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M10 16L14 16"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4 18H8"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M16 18V20"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+		],
+	],
 	PaperPlaneIcon,
 	PencilIcon: [
 		"svg",
