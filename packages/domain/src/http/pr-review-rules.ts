@@ -918,10 +918,11 @@ export const prReviewAutoApproval = (input: {
 			"contract_break",
 			"a telemetry contract break is open",
 		],
+		// No score means a not_applicable verdict, already refused above; naming it twice says nothing.
 		[
-			confidence === undefined || confidence.confidence < PR_REVIEW_AUTO_APPROVE_MIN_CONFIDENCE,
+			confidence !== undefined && confidence.confidence < PR_REVIEW_AUTO_APPROVE_MIN_CONFIDENCE,
 			"confidence",
-			`confidence is ${confidence?.confidence ?? "unscored"}, under ${PR_REVIEW_AUTO_APPROVE_MIN_CONFIDENCE}`,
+			`confidence is ${confidence?.confidence}, under ${PR_REVIEW_AUTO_APPROVE_MIN_CONFIDENCE}`,
 		],
 	]
 	const refusals = Arr.map(
@@ -929,8 +930,8 @@ export const prReviewAutoApproval = (input: {
 		([, refusal, reason]) => [refusal, reason] as const,
 	)
 	if (Arr.isReadonlyArrayNonEmpty(refusals)) return refuse(refusals)
-	// Unreachable (the confidence check refused it), but it narrows `confidence` for the reason.
-	if (confidence === undefined) return refuse([["confidence", "confidence is unscored"]])
+	// Unreachable (the verdict check refused it), but it narrows `confidence` for the reason.
+	if (confidence === undefined) return refuse([["confidence", "the review has no confidence score"]])
 	return {
 		approve: true,
 		reason: `Low blast radius, no open findings and confidence ${confidence.confidence}/${PR_REVIEW_CONFIDENCE_MAX}.`,

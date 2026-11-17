@@ -158,6 +158,12 @@ describe("prReviewAutoApproval", () => {
 		})
 	}
 
+	it("names an unscored review's verdict once, not again as a missing score", () => {
+		const decision = prReviewAutoApproval({ report: approvable({ verdict: "not_applicable" }) })
+		assert.isFalse(decision.approve)
+		if (!decision.approve) assert.deepEqual(decision.reasons, ["the verdict is not_applicable"])
+	})
+
 	it("names every unmet condition, not only the first", () => {
 		const step = (title: string) => new PrReviewMergeStep({ kind: "infra", title, source: "diff" })
 		const decision = prReviewAutoApproval({
