@@ -233,6 +233,7 @@ export class CloudSecurityReadService extends Context.Service<
 									state: state.state,
 									lastError: state.lastError,
 									checkedAt: state.checkedAt,
+									pushedAt: state.pushedAt,
 								},
 							]
 				}),

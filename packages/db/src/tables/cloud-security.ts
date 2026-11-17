@@ -79,6 +79,8 @@ export const CloudSecurityServiceStates = PG.table("cloud_security_service_state
 		windowMs: PG.column(PG.nullable(PG.int8), { name: "window_ms" }),
 		lastError: PG.column(PG.nullable(PG.text), { name: "last_error" }),
 		checkedAt: PG.column(PG.timestamptzMillis, { name: "checked_at" }),
+		/** The last finding event EventBridge delivered for this feed; null while only polled. */
+		pushedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "pushed_at" }),
 	},
 	primaryKey: ["orgId", "connectionId", "region", "source"],
 	indexes: [PG.index("cloud_security_service_states_org_idx", ["orgId"])],

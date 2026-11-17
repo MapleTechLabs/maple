@@ -153,6 +153,10 @@ export class CloudSecurityEventsService extends Context.Service<
 				})),
 				syncedAt,
 			)
+			yield* store.recordPush(
+				{ orgId: row.orgId, connectionId: connectionId.value, region, source },
+				syncedAt,
+			)
 			return {
 				outcome: "stored",
 				reason: null,
