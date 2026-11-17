@@ -205,6 +205,14 @@ describe("parse errors", () => {
 		expect(selectorOf("x @ 0.0005")?.at).toEqual({ kind: "time", timeMs: 1 })
 	})
 
+	it("refuses durations past Go's int64 nanoseconds, as Prometheus does", () => {
+		expect(parseDurationMs("1e300")).toBeUndefined()
+		expect(parseDurationMs("999999999y")).toBeUndefined()
+		expect(errorOf("count_over_time(x[1e300])")).not.toBe("parsed")
+		expect(errorOf("x offset 1e300")).not.toBe("parsed")
+		expect(parseDurationMs("292y")).toBe(292 * 365 * 86_400_000)
+	})
+
 	it("formats negative durations so they parse back", () => {
 		expect(formatDuration(-90_000)).toBe("-1m30s")
 		expect(parseDurationMs(formatDuration(5_400_000))).toBe(5_400_000)
