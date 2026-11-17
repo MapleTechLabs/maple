@@ -2369,8 +2369,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						? Option.none<GithubRecursiveTree>()
 						: Option.some(listing)
 				})
-				const read = (sha: string, recursive: boolean) =>
-					readOnce(sha, recursive).pipe(gate.withPermit)
+				const read = (sha: string, recursive: boolean) => gate.withPermit(readOnce(sha, recursive))
 				type Walked = { readonly tree: GithubRecursiveTree["tree"]; readonly truncated: boolean }
 				const under = (prefix: string, walked: Walked): Walked => ({
 					truncated: walked.truncated,
