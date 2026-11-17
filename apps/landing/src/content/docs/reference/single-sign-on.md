@@ -75,6 +75,8 @@ Add at least one admin to the bypass list before you require SSO. A member on th
 
 Turn on **Require SSO**. From then on, everyone who signs in with an email address on the connection's domains must go through the IdP. The only exception is the bypass list.
 
+While SSO is required, members on those domains can't add other sign-in methods to their account, such as a personal email address, a password, a passkey or a social account. Turning **Require SSO** off allows them again.
+
 If the connection's settings have an error, members on those domains can't sign in until it's fixed, so turn it on at a quiet time and try signing in yourself right after. A break-glass admin can turn it off again.
 
 Existing members don't need to do anything in advance. On their next sign-in they go through the IdP, and their Maple account is linked to their IdP identity because the email addresses match.

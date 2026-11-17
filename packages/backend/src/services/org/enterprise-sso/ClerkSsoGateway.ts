@@ -376,13 +376,18 @@ const createParams = (
 }
 
 /** Clerk's update body: only what the caller set, so an omitted secret keeps the stored one. */
-const updateParams = (
+export const updateParams = (
 	input: Partial<ClerkSsoConnectionInput> & { readonly active?: boolean },
 ): UpdateEnterpriseConnectionParams => {
 	const params: UpdateEnterpriseConnectionParams = {}
 	if (input.name !== undefined) params.name = input.name
 	if (input.domains !== undefined) params.domains = [...input.domains]
-	if (input.active !== undefined) params.active = input.active
+	if (input.active !== undefined) {
+		params.active = input.active
+		// While SSO is required the IdP is the only way in: members of the domains cannot add another
+		// email, password, passkey or social account. Clerk takes this on update only, not on create.
+		params.disableAdditionalIdentifications = input.active
+	}
 	if (input.saml !== undefined) params.saml = samlParams(input.saml)
 	if (input.oidc !== undefined) params.oidc = input.oidc
 	return params
