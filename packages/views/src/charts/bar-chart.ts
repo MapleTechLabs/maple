@@ -115,6 +115,7 @@ export const view = Submodel.defineView<Model, Message, BarChartInputs>((model, 
 					nowMs: inputs.nowMs,
 					stacked: inputs.stacked ?? false,
 					showTooltip: inputs.showTooltip ?? true,
+					...(model.hiddenKeys.length === 0 ? undefined : { hidden: model.hiddenKeys }),
 					...(inputs.axis === undefined ? undefined : { axis: inputs.axis }),
 				}),
 				legend: timeseriesLegend(h, model, {
