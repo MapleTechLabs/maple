@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "633dfcaec2d9da67578a0b6b77229d7b3d47443e70af34face1eee2e876e7a8d",
+	"id": "7e60170d4790d4476090fa7b8b69322e0dbe50fa239d1b5273ddc53682cd8db6",
 	"prevIds": [
-		"633dfcaec2d9da67578a0b6b77229d7b3d47443e70af34face1eee2e876e7a8d"
+		"7e60170d4790d4476090fa7b8b69322e0dbe50fa239d1b5273ddc53682cd8db6"
 	],
 	"entities": [
 		{
@@ -246,6 +246,33 @@
 				"name": "cli_device_authorizations_pkey",
 				"columns": [
 					"device_code_hash"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "cloud_security_findings",
+			"primaryKey": {
+				"name": "cloud_security_findings_pkey",
+				"columns": [
+					"org_id",
+					"connection_id",
+					"region",
+					"source",
+					"finding_id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "cloud_security_service_states",
+			"primaryKey": {
+				"name": "cloud_security_service_states_pkey",
+				"columns": [
+					"org_id",
+					"connection_id",
+					"region",
+					"source"
 				]
 			}
 		},
@@ -5231,6 +5258,306 @@
 			"table": "cli_device_authorizations",
 			"name": "expires_at",
 			"position": 14,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_findings",
+			"name": "org_id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_findings",
+			"name": "connection_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_findings",
+			"name": "account_id",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_findings",
+			"name": "region",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_findings",
+			"name": "source",
+			"position": 4,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_findings",
+			"name": "finding_id",
+			"position": 5,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_findings",
+			"name": "type",
+			"position": 6,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_findings",
+			"name": "title",
+			"position": 7,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_findings",
+			"name": "description",
+			"position": 8,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_findings",
+			"name": "severity",
+			"position": 9,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_findings",
+			"name": "status",
+			"position": 10,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_findings",
+			"name": "resource_type",
+			"position": 11,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_findings",
+			"name": "resource_id",
+			"position": 12,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_findings",
+			"name": "resource_name",
+			"position": 13,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_findings",
+			"name": "occurrences",
+			"position": 14,
+			"type": "integer",
+			"notNull": true,
+			"default": "1",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_findings",
+			"name": "first_seen_at",
+			"position": 15,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_findings",
+			"name": "last_seen_at",
+			"position": 16,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_findings",
+			"name": "provider_updated_at",
+			"position": 17,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_findings",
+			"name": "closed_at",
+			"position": 18,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_findings",
+			"name": "detail",
+			"position": 19,
+			"type": "jsonb",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_findings",
+			"name": "synced_at",
+			"position": 20,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_service_states",
+			"name": "org_id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_service_states",
+			"name": "connection_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_service_states",
+			"name": "region",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_service_states",
+			"name": "source",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_service_states",
+			"name": "state",
+			"position": 4,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_service_states",
+			"name": "cursor_at",
+			"position": 5,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_service_states",
+			"name": "window_ms",
+			"position": 6,
+			"type": "bigint",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_service_states",
+			"name": "last_error",
+			"position": 7,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_service_states",
+			"name": "checked_at",
+			"position": 8,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -20704,6 +21031,18 @@
 		{
 			"kind": "index",
 			"table": "aws_connections",
+			"name": "aws_connections_org_id_idx",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "aws_connections",
 			"name": "aws_connections_source_idx",
 			"unique": false,
 			"method": "btree",
@@ -20816,6 +21155,42 @@
 			"method": "btree",
 			"columns": [
 				"\"user_code_hash\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "cloud_security_findings",
+			"name": "cloud_security_findings_org_resource_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"resource_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "cloud_security_findings",
+			"name": "cloud_security_findings_org_status_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"status\"",
+				"\"last_seen_at\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "cloud_security_service_states",
+			"name": "cloud_security_service_states_org_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\""
 			],
 			"where": null
 		},
@@ -23107,6 +23482,38 @@
 			],
 			"foreignTable": "sources",
 			"foreignColumns": [
+				"id"
+			],
+			"onDelete": "CASCADE",
+			"onUpdate": "NO ACTION"
+		},
+		{
+			"kind": "foreign_key",
+			"table": "cloud_security_findings",
+			"name": "cloud_security_findings_ujhY2Pd3JWVy_fk",
+			"columns": [
+				"org_id",
+				"connection_id"
+			],
+			"foreignTable": "aws_connections",
+			"foreignColumns": [
+				"org_id",
+				"id"
+			],
+			"onDelete": "CASCADE",
+			"onUpdate": "NO ACTION"
+		},
+		{
+			"kind": "foreign_key",
+			"table": "cloud_security_service_states",
+			"name": "cloud_security_service_states_jHft8OtcW6A2_fk",
+			"columns": [
+				"org_id",
+				"connection_id"
+			],
+			"foreignTable": "aws_connections",
+			"foreignColumns": [
+				"org_id",
 				"id"
 			],
 			"onDelete": "CASCADE",
