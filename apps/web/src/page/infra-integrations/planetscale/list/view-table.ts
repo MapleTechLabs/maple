@@ -172,6 +172,7 @@ const databaseRow = (h: H, row: DatabaseRow, metricsPaused: boolean): Html => {
 		],
 		[
 			hstack(h, { gap: "2", align: "center", grow: true, className: "w-0 min-w-56 overflow-hidden" }, [
+				engineIcon(h, row.kind),
 				h.span(
 					[
 						h.Class(
@@ -181,7 +182,6 @@ const databaseRow = (h: H, row: DatabaseRow, metricsPaused: boolean): Html => {
 					],
 					[row.name],
 				),
-				engineIcon(h, row.kind),
 				...(state === null ? [] : [badge(h, { variant: "warn", className: "shrink-0" }, [state])]),
 				...(row.region ? [metaChip(h, row.region)] : []),
 				...(row.plan ? [metaChip(h, row.plan)] : []),
