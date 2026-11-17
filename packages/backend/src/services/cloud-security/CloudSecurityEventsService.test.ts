@@ -155,6 +155,38 @@ describe("CloudSecurityEventsService", () => {
 		}).pipe(Effect.provide(world.layer))
 	})
 
+	it.effect("marks the feed an event arrived for, so the poller can slow down for it", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const events = yield* CloudSecurityEventsService
+			const store = yield* CloudSecurityStore
+			const connection = yield* connect()
+			// The poller's first read made the feed's state; the event marks only that feed.
+			yield* Effect.forEach(["guardduty", "securityhub"] as const, (source) =>
+				store.recordServiceState({
+					orgId,
+					connectionId: connection.id,
+					region,
+					source,
+					state: "enabled",
+					cursorAt: null,
+					windowMs: null,
+					lastError: null,
+					checkedAt: 1,
+				}),
+			)
+			yield* events.receive(connection.id, yield* events.eventsKey(connection.id), guardDutyEvent())
+			const states = yield* store.serviceStates(orgId, connection.id)
+			const pushedAt = (source: string) =>
+				Arr.findFirst(states, (state) => state.source === source).pipe(
+					Option.map((state) => state.pushedAt),
+					Option.getOrNull,
+				)
+			assert.isNotNull(pushedAt("guardduty"))
+			assert.isNull(pushedAt("securityhub"))
+		}).pipe(Effect.provide(world.layer))
+	})
+
 	it.effect("refuses another connection's key and an unknown connection, storing nothing", () => {
 		const world = makeWorld()
 		return Effect.gen(function* () {
