@@ -11,7 +11,7 @@ import {
 	UPTIME_MAX_DAYS,
 } from "@maple/status-page"
 import { STATUS_PAGE_WINDOW_DAYS } from "@maple/domain/status-page"
-import { Effect, Option, Schema, String as Str } from "effect"
+import { Effect, Schema, String as Str } from "effect"
 import { accessPage, hasAccess, postAccess } from "./access"
 import { parseForm, postBreakGlassUpdate } from "./break-glass"
 import { clientRateLimitKey } from "./client-key"
@@ -73,8 +73,9 @@ const resolveTarget = (env: StatusEnv, url: URL): Effect.Effect<Lookup<Target>> 
 				value: { pageId: bySlug.value, basePath: `/s/${slug}`, path: match?.[2] ?? "/", slug },
 			}
 		}
-		// Either store being down means the 404 could be wrong, so it must not be cached.
-		return byHost._tag === "unavailable" ? byHost : bySlug
+		// Either store being down means the 404 could be wrong, so it must not be cached. A slug the
+		// publisher took down is a 404 for certain.
+		return byHost._tag === "unavailable" && bySlug._tag !== "gone" ? byHost : bySlug
 	})
 
 const managePage = (
@@ -236,10 +237,12 @@ export const handleRequest = (request: Request, env: StatusEnv): Effect.Effect<R
 			yield* Effect.logWarning("Status page route lookup failed in every store")
 			return plain(UNAVAILABLE, 503)
 		}
-		if (target._tag === "missing") return notFound()
+		if (target._tag !== "found") return notFound()
 		const view = yield* loadView(env, target.value.pageId)
 		yield* Effect.annotateCurrentSpan("maple.status_page.id", target.value.pageId)
-		if (Option.isNone(view)) {
+		// Taken off the edge: every path of the page answers as if it never existed.
+		if (view._tag === "gone") return notFound()
+		if (view._tag !== "found") {
 			yield* Effect.logWarning("Status page snapshot missing from every store")
 			return plain(UNAVAILABLE, 503)
 		}

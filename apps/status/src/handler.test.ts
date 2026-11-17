@@ -17,6 +17,7 @@ import {
 	publish,
 	putOverlayEntry,
 	send,
+	takeOffEdge,
 } from "./test-support"
 import { Option, Schema, Array as Arr, String as Str } from "effect"
 
@@ -550,6 +551,78 @@ describe("break-glass updates", () => {
 			]),
 		)
 		expect(overlayEntries(fake)[0]?.componentIds).toEqual([fixtureComponentId(0), fixtureComponentId(1)])
+	})
+})
+
+describe("a page taken off the edge", () => {
+	const SLUG_PAGE = "https://status.maple.workers.dev/s/acme/"
+	const ROUTES = [
+		"",
+		"feed.rss",
+		"feed.atom",
+		"api/v1/status.json",
+		"api/v1/uptime.json",
+		"badge.svg",
+		"_manage",
+	]
+	const URLS = Arr.flatMap([PAGE, SLUG_PAGE], (base) => Arr.map(ROUTES, (route) => `${base}${route}`))
+	// Past the window in which a colo answers from its cache without asking any store.
+	const LATER = FIXTURE_NOW + CACHE_FRESH_MS + 1
+
+	let fake: FakeStorage
+	beforeEach(async () => {
+		fake = makeFakeStorage()
+		publish(fake, makeSnapshot())
+		// Both addresses were read while the page was public, so the colo holds a copy of each.
+		expect((await send(fake, PAGE)).status).toBe(200)
+		expect((await send(fake, SLUG_PAGE)).status).toBe(200)
+		takeOffEdge(fake, makeSnapshot())
+	})
+
+	const statuses = (urls: ReadonlyArray<string>, nowMs = LATER) =>
+		Promise.all(Arr.map(urls, async (url) => (await send(fake, url, { nowMs })).status))
+
+	it("is not found on any route, with KV answering", async () => {
+		expect(new Set(await statuses(URLS))).toEqual(new Set([404]))
+	})
+
+	it("is not found on any route while KV fails, whatever the colo cached", async () => {
+		fake.failing.add("kv")
+		expect(new Set(await statuses(URLS))).toEqual(new Set([404]))
+		const body = await (await send(fake, PAGE, { nowMs: LATER })).text()
+		expect(body).not.toContain("Acme status")
+	})
+
+	it("is not found by its slug when only the snapshot's tombstone is left", async () => {
+		// The slug's own tombstone is gone, so the lookup falls back to the page id the colo cached.
+		fake.r2.delete(StatusPageKeys.slugObject("acme"))
+		fake.failing.add("kv")
+		expect(await statuses([SLUG_PAGE, `${SLUG_PAGE}feed.rss`])).toEqual([404, 404])
+	})
+
+	it("stays not found when R2 fails as well, once the colo has read the tombstone", async () => {
+		fake.failing.add("kv")
+		expect(await statuses([PAGE, SLUG_PAGE])).toEqual([404, 404])
+		fake.failing.add("r2")
+		expect(await statuses([PAGE, SLUG_PAGE], LATER + 60_000)).toEqual([404, 404])
+	})
+
+	it("refuses a break-glass post instead of saving it", async () => {
+		fake.failing.add("kv")
+		const post = postForm(`${PAGE}_manage`, [
+			["token", TOKEN],
+			["incidentId", "new"],
+			["title", "Payments down"],
+			["body", "We are on it"],
+		])
+		expect((await send(fake, post, { nowMs: LATER })).status).toBe(404)
+		expect(overlayEntries(fake)).toEqual([])
+	})
+
+	it("is served again once a publish replaces the tombstones", async () => {
+		publish(fake, makeSnapshot())
+		fake.failing.add("kv")
+		expect(await statuses([PAGE, SLUG_PAGE, `${PAGE}feed.rss`])).toEqual([200, 200, 200])
 	})
 })
 

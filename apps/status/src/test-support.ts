@@ -1,5 +1,6 @@
 import {
 	decodeStatusPageOverlayEntryJson,
+	STATUS_PAGE_TOMBSTONE,
 	StatusPageKeys,
 	type StatusPageOverlayEntry,
 	type StatusPagePublisherHeartbeat,
@@ -119,6 +120,14 @@ export const publish = (
 		}
 		fake.kv.set(StatusPageKeys.heartbeat, encodeJson(heartbeat))
 	}
+}
+
+/** Takes a page off the edge the way the publisher does: KV keys gone, a tombstone in R2 for each. */
+export const takeOffEdge = (fake: FakeStorage, snapshot: StatusPageSnapshot) => {
+	fake.r2.set(StatusPageKeys.slugObject(snapshot.page.slug), STATUS_PAGE_TOMBSTONE)
+	fake.kv.delete(StatusPageKeys.slug(snapshot.page.slug))
+	fake.r2.set(StatusPageKeys.snapshotObject(snapshot.pageId), STATUS_PAGE_TOMBSTONE)
+	fake.kv.delete(StatusPageKeys.snapshot(snapshot.pageId))
 }
 
 /** Writes one break-glass entry under its own key, as the Worker does. */
