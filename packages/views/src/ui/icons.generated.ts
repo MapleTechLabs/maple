@@ -13652,7 +13652,18 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M12 3L6 5L3 10L4 15L8 18L11 17L12 20L17 19L21 13L20 6L12 3Z"],
+					["d", "M12 3C7.03 3 3 7.03 3 12C3 16.97 7.03 21 12 21C13.1 21 14 20.1 14 19C14 18.48 13.8 18.01 13.48 17.66C13.18 17.32 13 16.87 13 16.38C13 15.27 13.9 14.38 15 14.38H17.25C19.32 14.38 21 12.7 21 10.63C21 6.42 16.97 3 12 3Z"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+					["stroke-linejoin", "round"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M7.5 11.5H7.51"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -13662,7 +13673,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M8 9L8 9.01"],
+					["d", "M9.5 7.5H9.51"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -13672,7 +13683,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M13 7L13 7.01"],
+					["d", "M14.5 7.5H14.51"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -13682,17 +13693,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M17 11L17 11.01"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M14 15L14 15.01"],
+					["d", "M17.5 10.5H17.51"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -13701,7 +13702,6 @@ export const ICON_TREES = {
 			],
 		],
 	],
-	PaperPlaneIcon,
 	PencilIcon: [
 		"svg",
 		[
