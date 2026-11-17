@@ -124,15 +124,13 @@ const edgeLabel = <M>(h: HtmlBuilder<M>, data: ServiceEdgeData | undefined, x: n
 				{
 					align: "center",
 					justify: "center",
-					attributes: [
-						...(hasSampling
-							? [
-									h.Title(
-										"Based on traced requests. Actual rate may be higher with sampling enabled",
-									),
-								]
-							: []),
-					],
+					attributes: hasSampling
+						? [
+								h.Title(
+									"Based on traced requests. Actual rate may be higher with sampling enabled",
+								),
+							]
+						: [],
 				},
 				[
 					h.span(

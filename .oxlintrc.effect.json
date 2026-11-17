@@ -257,6 +257,8 @@
 				// Tests sort ids and tuples to compare them as sets; the default order is fine there.
 				"typescript/require-array-sort-compare": "off",
 				"typescript/restrict-template-expressions": "off",
+				// Tests save a prototype method to patch it and put it back.
+				"typescript/unbound-method": "off",
 				"effecttsgo/yield-in-call-argument": "off",
 				// Tests read JSON response bodies and fixtures inline and assert on their fields.
 				"typescript/no-unsafe-argument": "off",

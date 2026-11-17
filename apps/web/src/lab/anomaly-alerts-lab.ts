@@ -443,14 +443,16 @@ const BANNER_CASES: ReadonlyArray<readonly [string, ReadonlyArray<Incident>]> = 
 ]
 
 const overviewBanners = (h: HtmlBuilder<Message>): Html =>
-	vstack(h, { gap: "6", className: "p-6" }, [
-		...Arr.map(BANNER_CASES, ([caption, incidents]) =>
+	vstack(
+		h,
+		{ gap: "6", className: "p-6" },
+		Arr.map(BANNER_CASES, ([caption, incidents]) =>
 			vstack(h, { gap: "2" }, [
 				typography(h, { size: "xs", tone: "muted" }, [caption]),
 				...alertFiringHero(h, heroCountsOf(incidents, BANNER_RULES)),
 			]),
 		),
-	])
+	)
 
 export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 	model.state === "overview-banner"
