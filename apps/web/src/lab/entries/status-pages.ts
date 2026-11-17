@@ -1,6 +1,7 @@
 import { OrgId } from "@maple/domain"
-import { StatusPagePublicId } from "@maple/domain/http/v2"
+import { StatusPagePublicId, V2StatusPageComponent } from "@maple/domain/http/v2"
 import { Effect, Option, Result, Schema, Array as Arr } from "effect"
+import { Command, Subscription, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import type { PageContext } from "../../page/contract"
@@ -10,19 +11,26 @@ import { Message as ListMessage } from "../../page/status-pages/list/message"
 import { Model as ListModel } from "../../page/status-pages/list/model"
 import { init as listInit, update as listUpdate } from "../../page/status-pages/list/update"
 import { view as listView } from "../../page/status-pages/list/view"
+import { FocusEditorElement, ReorderComponents } from "../../page/status-pages/editor/command"
 import { Message as EditorMessage } from "../../page/status-pages/editor/message"
 import { Model as EditorModel } from "../../page/status-pages/editor/model"
+import { componentsOf } from "../../page/status-pages/editor/reads"
+import { subscriptions as editorSubscriptions } from "../../page/status-pages/editor/subscription"
 import { init as editorInit, update as editorUpdate } from "../../page/status-pages/editor/update"
 import { view as editorView } from "../../page/status-pages/editor/view"
 import { component, incident, incidentId, statusPage } from "../../page/status-pages/shared/test-pages"
 import { downMonitor, httpMonitor } from "../../page/kit/uptime/test-monitors"
+import type { Resources } from "../../platform/resources"
+import { keepLocal } from "../local-commands"
 import { defineShellLab } from "../shell-lab"
 import { LAB_NOW_MS, LAB_ORG, LAB_PAGES } from "../status-pages-fixture"
 import { labGrants, LabRole, readLabRole } from "../viewer-role"
 
 // `/lab/status-pages`: the status pages list, the look picker and the form fields over fixture
-// pages, or a page's editor open on an incident (`?page=list|editor`), as the viewer `?role=` names:
-// an analyst reads the incident and gets no control that posts, edits or deletes one.
+// pages, a page's editor open on an incident, or on Settings > Monitors with grouped components
+// to drag (`?page=list|editor|monitors`), as the viewer `?role=` names: an analyst reads the
+// incident and gets no control that posts, edits or deletes one. The editor runs for real with no
+// API: a reorder saves at once, every other read and write is dropped.
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)(LAB_ORG),
@@ -30,7 +38,7 @@ const context: PageContext = {
 	timeZone: "UTC",
 }
 
-const PAGES = ["list", "editor"] as const
+const PAGES = ["list", "editor", "monitors"] as const
 const LabPage = Schema.Literals(PAGES)
 type LabPage = typeof LabPage.Type
 const decodePage = Schema.decodeUnknownOption(LabPage)
@@ -62,11 +70,29 @@ const listModel = (role: LabRole): ListModel => {
 	)
 }
 
-/** The editor over a live page with an open incident, a draft maintenance and one resolved, the first open. */
-const editorModel = (role: LabRole): EditorModel => {
+/** Settings > Monitors: three groups, the ungrouped last, one component driven by a down monitor. */
+const MONITOR_COMPONENTS = [
+	component(1, { name: "API", group: "Core", monitor_id: httpMonitor().id }),
+	component(2, { name: "Dashboard", group: "Core" }),
+	component(3, { name: "Webhooks", group: "Core", monitor_id: downMonitor().id }),
+	component(4, { name: "CDN", group: "Edge" }),
+	component(5, { name: "DNS", group: "Edge" }),
+	component(6, { name: "Docs" }),
+	component(7, { name: "Status API" }),
+]
+
+/**
+ * The editor over a live page with an open incident, a draft maintenance and one resolved: open on
+ * the first incident, or on Settings > Monitors over grouped components.
+ */
+const editorModel = (role: LabRole, page: "editor" | "monitors"): EditorModel => {
 	const step = (model: EditorModel, message: EditorMessage) => editorUpdate(model, message, context).model
 	const entered = editorInit(
-		{ _tag: "StatusPage", pageId: Schema.encodeSync(StatusPagePublicId)(statusPage().id), search: {} },
+		{
+			_tag: "StatusPage",
+			pageId: Schema.encodeSync(StatusPagePublicId)(statusPage().id),
+			search: page === "monitors" ? { view: "settings", section: "monitors" } : {},
+		},
 		context,
 	).model
 	return Arr.reduce(
@@ -79,11 +105,15 @@ const editorModel = (role: LabRole): EditorModel => {
 			}),
 			EditorMessage.CompletedFetchComponents({
 				key: entered.components.key ?? "",
-				result: Result.succeed([
-					component(1, { name: "API" }),
-					component(2, { name: "Dashboard" }),
-					component(3, { name: "Ingest" }),
-				]),
+				result: Result.succeed(
+					page === "monitors"
+						? MONITOR_COMPONENTS
+						: [
+								component(1, { name: "API" }),
+								component(2, { name: "Dashboard" }),
+								component(3, { name: "Ingest" }),
+							],
+				),
 			}),
 			EditorMessage.CompletedFetchIncidents({
 				key: entered.incidents.key ?? "",
@@ -97,7 +127,7 @@ const editorModel = (role: LabRole): EditorModel => {
 				key: entered.monitors.key ?? "",
 				result: Result.succeed([httpMonitor(), downMonitor()]),
 			}),
-			EditorMessage.ClickedIncident({ incidentId: incidentId(1) }),
+			...(page === "editor" ? [EditorMessage.ClickedIncident({ incidentId: incidentId(1) })] : []),
 		],
 		entered,
 		step,
@@ -110,8 +140,49 @@ const section = (h: HtmlBuilder<Message>, title: string, children: ReadonlyArray
 		[h.h2([h.Class("text-xs text-muted-foreground")], [title]), ...children],
 	)
 
+type Return = Update.Return<Model, Message, Resources>
+type EditorCommands = ReadonlyArray<Command.Command<EditorMessage, never, Resources>>
+
+/** The lab's API for a reorder: saved at once, as sent. */
+const AnswerReorder = Command.define("AnswerLabStatusPageReorder", {
+	args: { components: Schema.Array(V2StatusPageComponent) },
+	messages: [EditorMessage.CompletedReorder],
+	execute: ({ components }) =>
+		Effect.succeed(EditorMessage.CompletedReorder({ result: Result.succeed(components) })),
+})
+
+/** The kit's commands and the editor's focus moves run; a reorder is answered; the rest is dropped. */
+const kept = (model: EditorModel, commands: EditorCommands | undefined): EditorCommands => [
+	...keepLocal(commands),
+	...Arr.filter(commands ?? [], (command) => command.name === FocusEditorElement.name),
+	...(Arr.some(commands ?? [], (command) => command.name === ReorderComponents.name)
+		? [AnswerReorder({ components: componentsOf(model) })]
+		: []),
+]
+
+const update = (model: Model, message: Message): Return =>
+	Message.match<Return>(message, {
+		GotEditorMessage: ({ message: child }) => {
+			const next = editorUpdate(model.editor, child, context)
+			return {
+				model: { ...model, editor: next.model },
+				commands: Command.mapMessages(kept(next.model, next.commands), (inner) =>
+					Message.GotEditorMessage({ message: inner }),
+				),
+			}
+		},
+		GotListMessage: () => ({ model }),
+		Ignored: () => ({ model }),
+	})
+
+/** The editor's own: Escape closes what is open, a grip drags its row. */
+const subscriptions = Subscription.lift(editorSubscriptions)<Model, Message>({
+	read: (model) => (model.page === "list" ? Option.none() : Option.some({ model: model.editor, context })),
+	toParentMessage: (message) => Message.GotEditorMessage({ message }),
+})
+
 const view = (model: Model, h: HtmlBuilder<Message>): Html =>
-	model.page === "editor"
+	model.page !== "list"
 		? h.submodel({
 				slotId: "status-pages-lab-editor",
 				model: model.editor,
@@ -189,9 +260,14 @@ export const lab = defineShellLab("Status pages", {
 		role,
 	})),
 	init: (flags: Flags) => ({
-		model: { page: flags.page, list: listModel(flags.role), editor: editorModel(flags.role) },
+		model: {
+			page: flags.page,
+			list: listModel(flags.role),
+			editor: editorModel(flags.role, flags.page === "monitors" ? "monitors" : "editor"),
+		},
 	}),
-	update: (model) => ({ model }),
+	update,
+	subscriptions,
 	view,
 	currentPath: "/lab/status-pages",
 	breadcrumbs: [{ label: "Lab" }, { label: "Status pages" }],

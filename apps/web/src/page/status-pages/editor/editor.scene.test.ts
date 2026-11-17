@@ -4,13 +4,16 @@ import { OrgId } from "@maple/domain"
 import {
 	StatusPageComponentPublicId,
 	type StatusPageConfig,
+	StatusPagePreviewParams,
 	StatusPagePublicId,
 	type V2StatusPage,
 	type V2StatusPageCustomDomain,
 } from "@maple/domain/http/v2"
 import { DEFAULT_STATUS_PAGE_THEME } from "@maple/domain/status-page"
-import { Option, Result, Schema, Array as Arr, String as Str } from "effect"
+import { flow, Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import {
+	type AnyCommand,
+	type SceneSimulation,
 	all,
 	attr,
 	change,
@@ -19,8 +22,10 @@ import {
 	expect as expectView,
 	expectAll,
 	find,
+	findAll,
 	given,
 	inside,
+	keydown,
 	Mount,
 	role,
 	scene,
@@ -53,16 +58,22 @@ import {
 import { PickerMessage } from "../shared/picker"
 import {
 	CheckCustomDomain,
+	FetchComponents,
+	FetchEditorPreview,
+	FetchPage,
 	FocusEditorElement,
+	ReadEditorClock,
 	RemoveCustomDomain,
+	ReorderComponents,
 	RevealOpenComponent,
 	SaveVisibility,
 	SetCustomDomain,
+	WaitEditorPreview,
 } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
-import { groupedOrder, moved } from "./update-components"
+import { componentGripId, groupedOrder } from "./update-components"
 import { customDomainOf } from "./update-domain"
 import { canvasDocument } from "./view-canvas"
 import { maintenanceDurationMs } from "./view-incidents"
@@ -293,36 +304,182 @@ const selected = (componentNumber: number, fixture: Fixture = {}) =>
 
 const revealed = Mount.resolve(RevealOpenComponent, Message.CompletedFocus())
 
-describe("components under Settings > Monitors", () => {
-	test("moving a component down sends the whole new order once and shows it at once", () => {
-		const moving = pageUpdate(
-			loaded(),
-			Message.ClickedMoveComponent({ componentId: componentId(1), offset: 1 }),
+type ArgsSchema = Schema.Top & { readonly DecodingServices: never }
+
+/** The args of each pending `name` Command. */
+const argsOf = <S extends ArgsSchema>(
+	commands: ReadonlyArray<AnyCommand>,
+	name: string,
+	schema: S,
+): ReadonlyArray<S["Type"]> =>
+	Arr.map(
+		Arr.filter(commands, (command) => command.name === name),
+		(command) => Schema.decodeSync(schema)(command.args),
+	)
+
+const READ_ARGS = Schema.Struct({ key: Schema.String })
+
+type Step = <M, Msg, Out>(simulation: SceneSimulation<M, Msg, Out>) => SceneSimulation<M, Msg, Out>
+
+/** Each pending `name` Command, answered from its args. */
+const answerEach =
+	<S extends ArgsSchema>(name: string, schema: S, answer: (args: S["Type"]) => Step): Step =>
+	(simulation) =>
+		Arr.reduce(argsOf(simulation.commands, name, schema), simulation, (current, args) =>
+			answer(args)(current),
 		)
-		expect(moving.commands).toMatchObject([
+
+/**
+ * The reorder saves, and what it reads again comes back as saved: the components and the page,
+ * then the clock and the preview those reads refresh.
+ */
+const reorderLands = (rows: ReadonlyArray<ReturnType<typeof component>>): Step =>
+	flow(
+		Command.resolve(ReorderComponents, Message.CompletedReorder({ result: Result.succeed(rows) })),
+		answerEach("FetchStatusPageComponents", READ_ARGS, ({ key }) =>
+			Command.resolve(
+				FetchComponents,
+				Message.CompletedFetchComponents({ key, result: Result.succeed(rows) }),
+			),
+		),
+		answerEach("FetchStatusPage", READ_ARGS, ({ key }) =>
+			Command.resolve(
+				FetchPage,
+				Message.CompletedFetchPage({ key, result: Result.succeed(statusPage()) }),
+			),
+		),
+		Command.resolve(ReadEditorClock, Message.ReadClock({ nowMs: Date.UTC(2026, 9, 1, 12) })),
+		answerEach(
+			"WaitStatusPageEditorPreview",
+			Schema.Struct({ generation: Schema.Number }),
+			({ generation }) =>
+				Command.resolve(
+					WaitEditorPreview({ generation }),
+					Message.ElapsedPreviewDebounce({ generation }),
+				),
+		),
+		answerEach(
+			"FetchStatusPageEditorPreview",
+			Schema.Struct({ generation: Schema.Number, draft: StatusPagePreviewParams }),
+			({ generation, draft }) =>
+				Command.resolve(
+					FetchEditorPreview,
+					Message.CompletedFetchPreview({
+						generation,
+						draft,
+						result: Result.fail(toLoadFailure(new Error("preview unavailable"))),
+					}),
+				),
+		),
+	)
+
+/** The rows' grips, top to bottom. */
+const gripOrder = (html: Parameters<ReturnType<typeof find>>[0]): ReadonlyArray<string> =>
+	Arr.getSomes(Arr.map(findAll(html, 'button[aria-label^="Reorder "]'), attr("aria-label")))
+
+describe("components under Settings > Monitors", () => {
+	test("a drop sends the whole new order once and shows it at once", () => {
+		const dropped = pageUpdate(
+			loaded(MONITORS),
+			Message.DroppedComponent({ componentId: componentId(1), index: 2 }),
+		)
+		expect(dropped.commands).toMatchObject([
 			{
 				name: "ReorderStatusPageComponents",
-				args: { componentIds: [componentId(2), componentId(1), componentId(3)] },
+				args: { componentIds: [componentId(2), componentId(3), componentId(1)] },
 			},
 		])
+		scene(
+			{ update: pageUpdate, view },
+			given(dropped.model),
+			tap(({ html }) =>
+				expect(gripOrder(html)).toEqual([
+					"Reorder Component 2",
+					"Reorder Component 3",
+					"Reorder Component 1",
+				]),
+			),
+		)
+		// One save at a time: a drop while it is in flight sends nothing.
 		expect(
-			pageUpdate(moving.model, Message.ClickedMoveComponent({ componentId: componentId(2), offset: 1 }))
+			pageUpdate(dropped.model, Message.DroppedComponent({ componentId: componentId(2), index: 0 }))
 				.commands ?? [],
 		).toEqual([])
-		const done = pageUpdate(moving.model, Message.CompletedReorder({ result: Result.succeed([]) }))
+		const done = pageUpdate(dropped.model, Message.CompletedReorder({ result: Result.succeed([]) }))
 		expect(names(done.commands)).toContain("FetchStatusPageComponents")
 	})
 
-	test("the first component cannot move up and the last cannot move down", () => {
-		const rows = [component(1), component(2)]
-		expect(moved(rows, componentId(1), -1)).toBeNull()
-		expect(moved(rows, componentId(2), 1)).toBeNull()
+	test("a drop on the slot it came from, or past the end it is already at, sends nothing", () => {
+		const model = loaded(MONITORS)
+		expect(
+			pageUpdate(model, Message.DroppedComponent({ componentId: componentId(2), index: 1 })).commands ??
+				[],
+		).toEqual([])
+		expect(
+			pageUpdate(model, Message.DroppedComponent({ componentId: componentId(3), index: 9 })).commands ??
+				[],
+		).toEqual([])
+	})
+
+	test("each row's grip says what it reorders and how, for managers only", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ ...MONITORS, components: rows })),
-			expectView(role("button", { name: "Move Component 1 up" })).toBeDisabled(),
-			expectView(role("button", { name: "Move Component 2 down" })).toBeDisabled(),
-			expectView(role("button", { name: "Move Component 1 down" })).not.toBeDisabled(),
+			given(loaded(MONITORS)),
+			expectView(role("button", { name: "Reorder Component 1" })).toHaveAccessibleDescription(
+				"Drag, or press the up and down arrow keys, to move it within its group.",
+			),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ ...MONITORS, grants: MEMBER })),
+			expectView(text("Component 1")).toExist(),
+			expectAll(all.role("button", { name: /^Reorder/u })).toBeEmpty(),
+		)
+	})
+
+	test("ArrowDown on a grip moves its row one slot and keeps focus on that grip", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(MONITORS)),
+			keydown(role("button", { name: "Reorder Component 1" }), "ArrowDown"),
+			Command.expectExact(
+				ReorderComponents({
+					pageId: statusPage().id,
+					componentIds: [componentId(2), componentId(1), componentId(3)],
+				}),
+				FocusEditorElement({ id: componentGripId(componentId(1)) }),
+			),
+			tap(({ html }) =>
+				expect(gripOrder(html)).toEqual([
+					"Reorder Component 2",
+					"Reorder Component 1",
+					"Reorder Component 3",
+				]),
+			),
+			Command.resolve(FocusEditorElement, Message.CompletedFocus()),
+			reorderLands([component(2), component(1), component(3)]),
+			// The saved order reads back as shown.
+			tap(({ html }) =>
+				expect(gripOrder(html)).toEqual([
+					"Reorder Component 2",
+					"Reorder Component 1",
+					"Reorder Component 3",
+				]),
+			),
+		)
+	})
+
+	test("the first row's grip cannot go up and the last's cannot go down", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ ...MONITORS, components: [component(1), component(2)] })),
+			keydown(role("button", { name: "Reorder Component 1" }), "ArrowUp"),
+			Command.expectNone(),
+			keydown(role("button", { name: "Reorder Component 2" }), "ArrowDown"),
+			Command.expectNone(),
+			tap(({ html }) =>
+				expect(gripOrder(html)).toEqual(["Reorder Component 1", "Reorder Component 2"]),
+			),
 		)
 	})
 
@@ -368,14 +525,15 @@ describe("components under Settings > Monitors", () => {
 					Option.flatMap(find('[aria-label="Components"] ul')(html), attr("aria-label")),
 				).toEqual(Option.some("No group")),
 			),
-			expectView(role("button", { name: "Move Component 1 up" })).toBeDisabled(),
-			expectView(role("button", { name: "Move Component 3 down" })).toBeDisabled(),
-			expectView(role("button", { name: "Move Component 2 up" })).toBeDisabled(),
-			expectView(role("button", { name: "Move Component 4 down" })).toBeDisabled(),
+			// Each group's last row stops at its end rather than joining the next group.
+			keydown(role("button", { name: "Reorder Component 3" }), "ArrowDown"),
+			Command.expectNone(),
+			keydown(role("button", { name: "Reorder Component 2" }), "ArrowUp"),
+			Command.expectNone(),
 		)
 	})
 
-	test("a move swaps a component with its neighbour in its group and leaves every other where it was", () => {
+	test("a drop moves a component within its group and leaves every other where it was", () => {
 		const rows = [
 			component(1),
 			component(2, { group: "Core" }),
@@ -385,7 +543,7 @@ describe("components under Settings > Monitors", () => {
 		expect(
 			pageUpdate(
 				loaded({ components: rows }),
-				Message.ClickedMoveComponent({ componentId: componentId(3), offset: -1 }),
+				Message.DroppedComponent({ componentId: componentId(3), index: 0 }),
 			).commands,
 		).toMatchObject([
 			{
@@ -393,7 +551,6 @@ describe("components under Settings > Monitors", () => {
 				args: { componentIds: [componentId(3), componentId(2), componentId(1), componentId(4)] },
 			},
 		])
-		expect(moved(rows, componentId(4), 1)).toBeNull()
 	})
 
 	test("the page preview follows the open component as typed, with no preview of its own", () => {
@@ -732,7 +889,7 @@ describe("components under Settings > Monitors", () => {
 			given(selected(1, { grants: MEMBER })),
 			expectView(text("Component 1")).toExist(),
 			expectView(role("button", { name: "Add monitor" })).not.toExist(),
-			expectView(role("button", { name: "Move Component 1 down" })).not.toExist(),
+			expectView(role("button", { name: "Reorder Component 1" })).not.toExist(),
 			expectView(role("button", { name: "Remove from page" })).not.toExist(),
 			expectView(role("textbox", { name: "Shown as" })).toBeDisabled(),
 			expectView(text("Only org admins and engineers can change components.")).toExist(),

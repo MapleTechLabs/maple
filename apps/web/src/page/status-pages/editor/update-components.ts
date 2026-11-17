@@ -25,6 +25,7 @@ import {
 	AddComponents,
 	CreateEditorMonitor,
 	DeleteComponent,
+	FocusEditorElement,
 	ReorderComponents,
 	SaveComponent,
 	TrackMonitorCreated,
@@ -51,6 +52,10 @@ export const ADD_PICKER_ID = "status-page-add"
 /** A component's row in the Monitors list: the button that opens and closes it. */
 export const componentRowId = (componentId: StatusPageComponentId): string =>
 	`status-page-item-${componentId}`
+
+/** A component's drag grip in the Monitors list. */
+export const componentGripId = (componentId: StatusPageComponentId): string =>
+	`status-page-grip-${componentId}`
 
 export const deleteComponentDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => {
 	const lifted = liftDialog(
@@ -186,32 +191,44 @@ export const groupedOrder = <A extends Groupable>(components: ReadonlyArray<A>):
 		Arr.filter(components, (component) => component.group === group),
 	)
 
+/** A component's place among its group's members; `null` when it is not listed. */
+const groupIndexOf = <A extends Groupable>(
+	components: ReadonlyArray<A>,
+	componentId: StatusPageComponentId,
+): number | null =>
+	Option.getOrNull(
+		Option.map(
+			Arr.findFirst(components, (component) => component.id === componentId),
+			(item) => Arr.filter(components, (component) => component.group === item.group).indexOf(item),
+		),
+	)
+
 /**
- * The list with `componentId` swapped with its neighbour in its group (`offset` -1 or 1), every
- * other component where it was; `null` when it has no neighbour that way.
+ * The list with `componentId` at `index` among its group's members (clamped to the group), the
+ * members between shifting a slot; other groups keep their places. `null` when it is not listed
+ * or already there.
  */
 export const moved = <A extends Groupable>(
 	components: ReadonlyArray<A>,
 	componentId: StatusPageComponentId,
-	offset: number,
+	index: number,
 ): ReadonlyArray<A> | null => {
 	const item = Arr.findFirst(components, (component) => component.id === componentId)
 	if (Option.isNone(item)) return null
 	const group = Arr.filter(components, (component) => component.group === item.value.group)
-	const neighbour = Option.flatMap(
-		Arr.findFirstIndex(group, (component) => component.id === componentId),
-		(index) => Arr.get(group, index + offset),
-	)
-	if (Option.isNone(neighbour)) return null
-	const other = neighbour.value
-	return Arr.map(components, (component) =>
-		component.id === componentId ? other : component.id === other.id ? item.value : component,
-	)
+	const to = Math.min(Math.max(index, 0), group.length - 1)
+	if (to === group.indexOf(item.value)) return null
+	const rest = Arr.filter(group, (component) => component.id !== componentId)
+	const order = [...Arr.take(rest, to), item.value, ...Arr.drop(rest, to)]
+	// The group's slots in page order, filled with its new order.
+	return Arr.mapAccum(components, 0, (rank, component): [number, A] =>
+		component.group === item.value.group ? [rank + 1, order[rank] ?? component] : [rank, component],
+	)[1]
 }
 
-/** Moves the row at once; the server's order lands with the re-read. */
-export const moveComponent = (model: Model, componentId: StatusPageComponentId, offset: number): Return => {
-	const next = moved(componentsOf(model), componentId, offset)
+/** Moves the row to `index` in its group at once; the server's order lands with the re-read. */
+export const moveComponent = (model: Model, componentId: StatusPageComponentId, index: number): Return => {
+	const next = moved(componentsOf(model), componentId, index)
 	if (model.pageId === null || model.isReordering || next === null || !canManage(model)) return { model }
 	return {
 		model: {
@@ -226,6 +243,16 @@ export const moveComponent = (model: Model, componentId: StatusPageComponentId, 
 			}),
 		],
 	}
+}
+
+/** An arrow key on the grip: one slot up (-1) or down (1), focus kept on the moved row's grip. */
+export const nudgeComponent = (model: Model, componentId: StatusPageComponentId, offset: number): Return => {
+	const from = groupIndexOf(componentsOf(model), componentId)
+	if (from === null) return { model }
+	const next = moveComponent(model, componentId, from + offset)
+	return next.commands === undefined
+		? next
+		: { ...next, commands: [...next.commands, FocusEditorElement({ id: componentGripId(componentId) })] }
 }
 
 export const reordered = (

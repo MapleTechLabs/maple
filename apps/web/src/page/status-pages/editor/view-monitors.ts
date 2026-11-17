@@ -4,9 +4,9 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription } from "@maple/views/ui/alert"
 import { button } from "@maple/views/ui/button"
 import * as Checkbox from "@maple/views/ui/checkbox"
+import { dragGrip } from "@maple/views/ui/drag-grip"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
-import { iconButton } from "@maple/views/ui/icon-button"
 import { label } from "@maple/views/ui/label"
 import { pressable } from "@maple/views/ui/pressable"
 import { grid } from "@maple/views/ui/grid"
@@ -26,14 +26,15 @@ import {
 } from "../shared/derive"
 import { selectField, textField } from "../shared/fields"
 import { RevealOpenComponent } from "./command"
+import { GRIP_ATTRIBUTE, LIST_ATTRIBUTE, ROW_ATTRIBUTE, SLOT_ATTRIBUTE } from "./component-drag"
 import { Message } from "./message"
 import { canManage, type ComponentSave, type Model } from "./model"
 import { componentsOf, incidentsOf, monitorsOf } from "./reads"
-import { componentRowId, groupedOrder, moved } from "./update-components"
+import { componentGripId, componentRowId, groupedOrder } from "./update-components"
 import { failureAlert } from "./view-panel"
 
-// Settings > Monitors: the page's components by group, each opening in place with its fields; the
-// page preview beside Settings shows how it reads.
+// Settings > Monitors: the page's components by group, each opening in place with its fields and
+// reordered by its grip; the page preview beside Settings shows how it reads.
 
 type H = HtmlBuilder<Message>
 
@@ -240,24 +241,22 @@ const componentForm = (h: H, model: Model, component: V2StatusPageComponent): Ht
 	)
 }
 
-const moveButtons = (h: H, model: Model, component: V2StatusPageComponent): Html => {
-	const rows = componentsOf(model)
-	const move = (offset: number, glyph: "ChevronUpIcon" | "ChevronDownIcon", word: string) =>
-		iconButton(
-			h,
-			{
-				label: `Move ${component.name} ${word}`,
-				size: "icon-2xs",
-				isDisabled: model.isReordering || moved(rows, component.id, offset) === null,
-				attributes: [h.OnClick(Message.ClickedMoveComponent({ componentId: component.id, offset }))],
-			},
-			[icon(h, glyph)],
-		)
-	return vstack(h, { className: "shrink-0" }, [
-		move(-1, "ChevronUpIcon", "up"),
-		move(1, "ChevronDownIcon", "down"),
-	])
-}
+const REORDER_HINT_ID = "status-page-reorder-hint"
+
+/** The row's handle: dragged, or moved a slot with the arrow keys, within its group. */
+const grip = (h: H, model: Model, component: V2StatusPageComponent): Html =>
+	dragGrip(h, {
+		label: `Reorder ${component.name}`,
+		onMove: (offset) => Message.PressedMoveComponent({ componentId: component.id, offset }),
+		className: "self-stretch px-1",
+		attributes: [
+			h.Id(componentGripId(component.id)),
+			h.DataAttribute(GRIP_ATTRIBUTE, ""),
+			h.AriaDescribedBy(REORDER_HINT_ID),
+			// Still focusable mid-save, so the keyboard keeps its place.
+			h.AriaDisabled(model.isReordering),
+		],
+	})
 
 /** What drives the component: its monitor by name, or incidents alone. */
 const sourceLine = (model: Model, component: V2StatusPageComponent): string =>
@@ -272,10 +271,16 @@ const componentRow = (h: H, model: Model, component: V2StatusPageComponent): Htm
 	const status = componentStatus(component, monitorsOf(model), incidentsOf(model))
 	const isOpen = model.panel?._tag === "Component" && model.panel.componentId === component.id
 	return h.li(
-		[h.Key(component.id), h.Class("border-t first:border-t-0")],
+		[
+			h.Key(component.id),
+			h.DataAttribute(ROW_ATTRIBUTE, component.id),
+			h.Class(
+				"border-t first:border-t-0 data-dragging:relative data-dragging:z-10 data-dragging:rounded-md data-dragging:bg-card data-dragging:shadow-popup data-dragging:outline data-dragging:outline-primary-a4",
+			),
+		],
 		[
 			hstack(h, { gap: "1", className: "pl-2" }, [
-				...(canManage(model) ? [moveButtons(h, model, component)] : []),
+				...(canManage(model) ? [grip(h, model, component)] : []),
 				pressable(
 					h,
 					{
@@ -319,10 +324,16 @@ const componentList = (h: H, model: Model): Html => {
 	const rows = groupedOrder(componentsOf(model))
 	const groups = Arr.dedupe(Arr.map(rows, (row) => row.group))
 	const hasGroups = Arr.some(groups, (group) => group !== null)
-	return vstack(
-		h,
-		{ attributes: [h.AriaLabel("Components")] },
-		Arr.map(groups, (group) =>
+	return vstack(h, { attributes: [h.AriaLabel("Components")] }, [
+		...(canManage(model)
+			? [
+					h.span(
+						[h.Id(REORDER_HINT_ID), h.Class("sr-only")],
+						["Drag, or press the up and down arrow keys, to move it within its group."],
+					),
+				]
+			: []),
+		...Arr.map(groups, (group) =>
 			vstack(h, { attributes: [h.Key(group ?? "")] }, [
 				...(hasGroups
 					? [
@@ -332,16 +343,32 @@ const componentList = (h: H, model: Model): Html => {
 							),
 						]
 					: []),
-				h.ul(
-					[h.AriaLabel(group ?? "No group")],
-					Arr.map(
-						Arr.filter(rows, (row) => row.group === group),
-						(component) => componentRow(h, model, component),
-					),
+				// The slot outline sits under the rows; a drag moves it to where the held row lands.
+				h.div(
+					[h.DataAttribute(LIST_ATTRIBUTE, ""), h.Class("relative")],
+					[
+						h.div(
+							[
+								h.DataAttribute(SLOT_ATTRIBUTE, ""),
+								h.AriaHidden(true),
+								h.Class(
+									"pointer-events-none invisible absolute inset-x-1 top-0 rounded-md border border-dashed border-primary-a4 bg-primary-a1 data-dragging:visible",
+								),
+							],
+							[],
+						),
+						h.ul(
+							[h.AriaLabel(group ?? "No group")],
+							Arr.map(
+								Arr.filter(rows, (row) => row.group === group),
+								(component) => componentRow(h, model, component),
+							),
+						),
+					],
 				),
 			]),
 		),
-	)
+	])
 }
 
 export const monitorsSection = (h: H, model: Model): Html =>

@@ -3,12 +3,14 @@ import { Option, Schema, Stream } from "effect"
 import { Dom, Subscription } from "foldkit"
 import type { PageSubscriptionInput } from "../../contract"
 import { previewSelections } from "../shared/preview"
+import { componentDrags } from "./component-drag"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { resolveView } from "./update"
 
 // Escape closes the open component, from its inputs too; an open dialog (the sheet included), menu
-// or listbox keeps its own Escape. A click in the live page's frame opens what it landed on.
+// or listbox keeps its own Escape. A click in the live page's frame opens what it landed on. A
+// component's grip drags it under Settings > Monitors, never while the last reorder is saving.
 
 /** What Escape's owner is read from on the focused element. */
 export type Focused = Readonly<{
@@ -58,6 +60,22 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 							Stream.map((selection) => Message.ReceivedPreviewSelection(selection)),
 						)
 					: Stream.empty,
+		},
+	),
+	componentDrag: entry(
+		{ canDrag: Schema.Boolean },
+		{
+			modelToDependencies: ({ model }) => {
+				const view = resolveView(model.search)
+				return {
+					canDrag:
+						view.tab === "settings" &&
+						view.section === "monitors" &&
+						canManage(model) &&
+						!model.isReordering,
+				}
+			},
+			dependenciesToStream: ({ canDrag }) => (canDrag ? componentDrags : Stream.empty),
 		},
 	),
 }))
