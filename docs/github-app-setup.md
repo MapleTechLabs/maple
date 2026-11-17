@@ -104,13 +104,13 @@ On repositories where a Maple admin has switched on the pull request review, Map
 1. Find **Permissions → Repository permissions**.
 2. Set the following, leaving every other permission at **No access**:
 
-| Repository permission | Access level                                                                                                                            |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| **Contents**          | **Read-only**, or **Read and write** to allow `@maple fix` commits                                                                      |
-| **Pull requests**     | **Read and write** (reads the diff; posts the review as a comment, never an approval or block)                                          |
-| **Checks**            | **Read and write** (posts the `Maple / observability` check run on the head commit; without it the review is still posted as a comment) |
-| **Metadata**          | **Read-only** (GitHub pre-selects this and it is mandatory)                                                                             |
-| **Actions**           | **Read-only** (downloads each finished job's log for CI logs; without it CI traces still arrive but carry no logs)                      |
+| Repository permission | Access level                                                                                                                                                                                |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Contents**          | **Read-only**, or **Read and write** to allow `@maple fix` commits                                                                                                                          |
+| **Pull requests**     | **Read and write** (reads the diff and posts the review as a comment; approves a pull request only where an admin turned on **Approve low-risk pull requests**, and never requests changes) |
+| **Checks**            | **Read and write** (posts the `Maple / observability` check run on the head commit; without it the review is still posted as a comment)                                                     |
+| **Metadata**          | **Read-only** (GitHub pre-selects this and it is mandatory)                                                                                                                                 |
+| **Actions**           | **Read-only** (downloads each finished job's log for CI logs; without it CI traces still arrive but carry no logs)                                                                          |
 
 > **Upgrading an existing App?** Adding a permission to an App that is already installed makes GitHub ask every installation's admin to accept the new permissions. Until they do, Maple still records each review but cannot post it: the review's row keeps a publish error and nothing appears on the pull request. CI logs behave the same way: until the installation accepts **Actions: Read**, GitHub refuses every job log download with `403 Resource not accessible by integration` and those repositories get traces without logs. To fix it, accept the permission request on GitHub (Settings → Applications → the App → Review request).
 

@@ -41,18 +41,29 @@ When a reviewed pull request merges, Maple waits for the deploy that carries it,
 
 ### Approval
 
-Turn on **Approve low-risk pull requests** and the review approves a pull request on GitHub when it is safe to merge without a person reading it. Every one of these must hold:
+Turn on **Approve low-risk pull requests** and the review approves a pull request on GitHub when it is safe to merge without a person reading it. Only an organization admin can turn it on, and only an admin can change the instructions, lenses or ignored paths while it is on. Engineers can turn it off.
+
+The approval is a real GitHub review. It counts toward the approvals a branch requires, including on the author's own pull request, so with one required approval a low-risk change can merge with no person having read it. It never satisfies a `CODEOWNERS` review.
+
+Every one of these must hold:
 
 - The review read the whole diff, not only the commits since the last review, and finished. Maple could read the diff itself, every changed file has a patch to read (a binary file, or one too large for GitHub to show, needs a person), and no changed file is under an ignored path.
+- Maple checks the diff itself, whatever the review said it read. It does not approve when a changed file is of a kind the review does not read (generated files, tooling, lockfiles, or anything under `docs/` that is not `.md`, `.mdx`, `.rst`, `.txt` or `.adoc`), when a file's patch is longer than the review is shown (1,500 lines or 60,000 characters), or when the pull request changes more than the 500 files the review is listed.
+- The diff touches no sensitive path, however the review rated the risk: CI and deploy configuration (`.github/`, `Dockerfile`, compose files, Terraform, `wrangler` and similar), `CODEOWNERS`, lockfiles and dependency manifests such as `package.json`, database migrations and `.sql` files, paths named for sign-in, access or secrets (`auth`, `oauth`, `secrets`, `credentials`, `tokens`, `permissions`, `.env*`), and the files the reviewer takes instructions from (`CLAUDE.md`, `AGENTS.md`, `.maple/`). The comment names the paths.
+- The diff is small: at most 400 changed lines across the reviewed files, and at most 25 changed files.
 - No warning or critical finding is open, including ones from earlier pushes. Notes are fine.
+- The reviewer itself reported a clean verdict, and every finding it sent could be read.
 - No warning or critical on the pull request was ever dismissed, or held back by the repository's lenses or the team's feedback, and the review did not find again one a person had closed. A person set it aside, so a person approves.
+- No warning or critical was closed by a reply or a resolved thread from the pull request's author, or from someone who cannot push to the repository. A later review that confirms the fix closes it for good.
 - The review rated the risk low. Auth, tenancy, migrations, billing and concurrency are never low.
 - The review judged that tests cover the change, or that it needs none. A review that did not assess tests does not approve.
-- No step before merge is left unticked, and no telemetry contract is broken.
+- No step before merge is left unticked, none was ticked by the pull request's author, and no telemetry contract is broken.
 - The confidence is 9 or more.
-- The pull request is open and not a draft, its head is still the commit reviewed, and its author can push to the repository.
+- The pull request is open and not a draft, it targets the repository's default branch, its head is still the commit reviewed, and its author can push to the repository.
 
-Maple dismisses its approval when new commits are pushed, when a later review does not approve, and when a later review of the same commit ends early. Turning the rule off leaves existing approvals in place. GitHub may only let a repository admin, or someone listed as allowed to dismiss reviews, dismiss a review on a protected branch, so also turn on **Dismiss stale pull request approvals when new commits are pushed** in the branch's protection or ruleset. An approval from Maple counts toward required approvals but never satisfies a `CODEOWNERS` review.
+Maple dismisses its approval when new commits are pushed, when a later review does not approve, when a later review of the same commit ends early, and when the pull request is edited. An edit can change the base branch, and with it what merges, so any edit withdraws the approval, a changed title or description included. The next review approves again if everything still holds. If Maple cannot withdraw an approval, it says so in a comment on the pull request so a person can dismiss it.
+
+Turning the rule off leaves existing approvals in place. GitHub may only let a repository admin, or someone listed as allowed to dismiss reviews, dismiss a review on a protected branch, so also turn on **Dismiss stale pull request approvals when new commits are pushed** in the branch's protection or ruleset. Changes to these settings are recorded in the audit log.
 
 ## Talk to the reviewer
 

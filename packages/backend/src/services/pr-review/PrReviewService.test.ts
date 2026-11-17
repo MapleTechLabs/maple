@@ -8,6 +8,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import {
 	GitCommitSha,
+	isSensitivePath,
 	type PullRequestEventJob,
 	type PullRequestApprovalOutcome,
 	type PullRequestReviewPublication,
@@ -56,6 +57,7 @@ import {
 	clampSummary,
 	PR_REVIEW_CHECK_NAME,
 	PR_REVIEW_PUSH_DEBOUNCE_SECONDS,
+	PR_REVIEW_RULE_FILES,
 	PrReviewService,
 	renderCheckSummary,
 	renderSummaryComment,
@@ -2904,6 +2906,13 @@ describe("PrReviewService auto-approve", () => {
 			)
 			assert.strictEqual((yield* answeredBy("maintainer", "write"))?.action, "approve")
 		})
+	})
+
+	it("never approves a change to a file the review reads as its own instructions", () => {
+		assert.deepStrictEqual(
+			Arr.filter(PR_REVIEW_RULE_FILES, (path) => !isSensitivePath(path)),
+			[],
+		)
 	})
 
 	it.effect("asks nothing about approval when the repository has not turned it on", () => {

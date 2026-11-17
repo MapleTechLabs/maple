@@ -292,6 +292,20 @@ describe("review model select", () => {
 	})
 })
 
+describe("automatic approval", () => {
+	test("is locked for an engineer, who may still edit the other rules", () => {
+		const model = loaded().model
+		const approval = role("switch", { name: "Approve low-risk pull requests" })
+		scene(
+			{ update: pageUpdate, view },
+			given({ ...model, grants: Policy.grantsOf(["org:engineer"]) }),
+			expectView(approval).toBeDisabled(),
+			expectView(role("switch", { name: "Review drafts" })).toBeEnabled(),
+		)
+		scene({ update: pageUpdate, view }, given(model), expectView(approval).toBeEnabled())
+	})
+})
+
 describe("review rules form", () => {
 	const form = RulesForm.init(
 		"defaults",

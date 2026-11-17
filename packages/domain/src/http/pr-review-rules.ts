@@ -70,6 +70,56 @@ export const mergePrReviewConfig = (
 	)
 }
 
+const sameMembers = (a: ReadonlyArray<string> | undefined, b: ReadonlyArray<string> | undefined) => {
+	const clean = (items: ReadonlyArray<string> | undefined) =>
+		new Set(Arr.filter(Arr.map(items ?? [], Str.trim), Str.isNonEmpty))
+	const left = clean(a)
+	const right = clean(b)
+	return left.size === right.size && Arr.every([...left], (item) => right.has(item))
+}
+
+/** Whether two configs differ in what a review reads and files: its instructions, lenses or ignored paths. */
+const reviewRulesDiffer = (
+	stored: PrReviewRepositoryConfig | undefined,
+	next: PrReviewRepositoryConfig | undefined,
+): boolean =>
+	(trimmed(stored?.instructions) ?? "") !== (trimmed(next?.instructions) ?? "") ||
+	!sameMembers(stored?.categories, next?.categories) ||
+	!sameMembers(stored?.ignorePaths, next?.ignorePaths)
+
+/**
+ * Whether saving a repository's config needs `code_review:auto_approve` on top of
+ * `code_review:configure`: it turns automatic approval on where it was off, or it changes the
+ * instructions, lenses or ignored paths while approval is on before or after the save. Read through
+ * the organization's `defaults`, which a repository that says nothing inherits. Turning it off does not.
+ */
+export const prReviewConfigNeedsAutoApprove = (input: {
+	readonly defaults: PrReviewRepositoryConfig | undefined
+	readonly stored: PrReviewRepositoryConfig
+	readonly next: PrReviewRepositoryConfig
+}): boolean => {
+	const was = mergePrReviewConfig(input.defaults, input.stored).autoApprove === true
+	const willBe = mergePrReviewConfig(input.defaults, input.next).autoApprove === true
+	return (willBe && !was) || ((was || willBe) && reviewRulesDiffer(input.stored, input.next))
+}
+
+/**
+ * The same for the organization's defaults. Their instructions and ignored paths reach every
+ * repository, so a change to them also needs it while any reviewed repository approves on its own.
+ */
+export const prReviewDefaultsNeedAutoApprove = (input: {
+	readonly stored: PrReviewRepositoryConfig | undefined
+	readonly next: PrReviewRepositoryConfig | undefined
+	readonly repositoryApproves: boolean
+}): boolean => {
+	const was = input.stored?.autoApprove === true
+	const willBe = input.next?.autoApprove === true
+	return (
+		(willBe && !was) ||
+		((was || willBe || input.repositoryApproves) && reviewRulesDiffer(input.stored, input.next))
+	)
+}
+
 /**
  * A step's identity across pushes: the kind and what it is about, or its wording for a reviewer
  * step without a subject. A tick is stored against this key, so it survives a new review comment.

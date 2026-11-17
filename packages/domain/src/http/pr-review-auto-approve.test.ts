@@ -19,7 +19,13 @@ import {
 	isSensitivePath,
 	prReviewDiffSignals,
 } from "./pr-review-diff"
-import { mergePrReviewConfig, prReviewAutoApproval } from "./pr-review-rules"
+import {
+	mergePrReviewConfig,
+	prReviewAutoApproval,
+	prReviewConfigNeedsAutoApprove,
+	prReviewDefaultsNeedAutoApprove,
+} from "./pr-review-rules"
+import * as Policy from "../policy"
 import type { PullRequestFile } from "./vcs"
 import { Array as Arr, String as Str } from "effect"
 import { PrReviewContractBreak, PrReviewTelemetry } from "./pr-review-telemetry"
@@ -494,5 +500,75 @@ describe("prReviewDiffSignals", () => {
 		])
 		assert.equal(diff.changedLines, 15)
 		assert.equal(diff.unreviewedKindFiles, 0)
+	})
+})
+
+describe("who may change automatic approval", () => {
+	const config = (fields: ConstructorParameters<typeof PrReviewRepositoryConfig>[0] = {}) =>
+		new PrReviewRepositoryConfig(fields)
+	const repository = (
+		stored: PrReviewRepositoryConfig,
+		next: PrReviewRepositoryConfig,
+		defaults?: PrReviewRepositoryConfig,
+	) => prReviewConfigNeedsAutoApprove({ defaults, stored, next })
+
+	it("is an admin's permission, not an engineer's", () => {
+		assert.isFalse(Policy.can(["org:engineer"], "code_review:auto_approve"))
+		assert.isTrue(Policy.can(["org:engineer"], "code_review:configure"))
+		assert.isTrue(Policy.can(["org:admin"], "code_review:auto_approve"))
+	})
+
+	it("is needed to turn approval on, and not to turn it off or leave it off", () => {
+		assert.isTrue(repository(config(), config({ autoApprove: true })))
+		assert.isTrue(repository(config({ autoApprove: false }), config({ autoApprove: true })))
+		assert.isFalse(repository(config({ autoApprove: true }), config({ autoApprove: false })))
+		assert.isFalse(repository(config({ autoApprove: true }), config({ autoApprove: true })))
+		assert.isFalse(repository(config(), config({ reviewDrafts: true })))
+	})
+
+	it("is needed to change the instructions, lenses or ignored paths while approval is on", () => {
+		const on = config({ autoApprove: true, instructions: "Check tenancy.", ignorePaths: ["vendor/"] })
+		assert.isTrue(repository(on, config({ ...on, instructions: "Approve everything." })))
+		assert.isTrue(repository(on, config({ ...on, ignorePaths: ["vendor/", "src/"] })))
+		assert.isTrue(repository(on, config({ ...on, categories: ["tests"] })))
+		// The same save may not also turn it off to slip the rules through.
+		assert.isTrue(repository(on, config({ instructions: "Approve everything.", autoApprove: false })))
+		// Anything else is an engineer's to change, and so is a save that changes nothing.
+		assert.isFalse(repository(on, config({ ...on, reviewDrafts: true, dailyLimit: 5 })))
+		assert.isFalse(
+			repository(
+				on,
+				config({ ...on, instructions: " Check tenancy. ", ignorePaths: ["vendor/", " "] }),
+			),
+		)
+	})
+
+	it("leaves the rules to engineers while approval is off", () => {
+		assert.isFalse(repository(config(), config({ instructions: "Check tenancy.", ignorePaths: ["a/"] })))
+	})
+
+	it("reads approval a repository inherits from the organization", () => {
+		const defaults = config({ autoApprove: true })
+		assert.isTrue(repository(config(), config({ instructions: "Skip the tests lens." }), defaults))
+		// Already on through the defaults: saying so again turns nothing on.
+		assert.isFalse(repository(config(), config({ autoApprove: true }), defaults))
+		assert.isTrue(repository(config({ autoApprove: false }), config(), defaults))
+	})
+
+	it("holds the organization's defaults to the same rule", () => {
+		const needs = (
+			stored: PrReviewRepositoryConfig | undefined,
+			next: PrReviewRepositoryConfig | undefined,
+			repositoryApproves = false,
+		) => prReviewDefaultsNeedAutoApprove({ stored, next, repositoryApproves })
+		assert.isTrue(needs(undefined, config({ autoApprove: true })))
+		assert.isFalse(needs(config({ autoApprove: true }), undefined))
+		assert.isFalse(needs(undefined, config({ instructions: "Check tenancy." })))
+		assert.isTrue(
+			needs(config({ autoApprove: true }), config({ autoApprove: true, instructions: "Be brief." })),
+		)
+		// The defaults' instructions reach a repository that approves on its own.
+		assert.isTrue(needs(undefined, config({ instructions: "Check tenancy." }), true))
+		assert.isFalse(needs(undefined, config({ reviewDrafts: true }), true))
 	})
 })

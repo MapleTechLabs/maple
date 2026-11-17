@@ -30,7 +30,8 @@ import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
-export type ViewInputs = Readonly<{ canEdit: boolean }>
+/** `canAutoApprove`: the viewer holds `code_review:auto_approve`; without it that one control is locked. */
+export type ViewInputs = Readonly<{ canEdit: boolean; canAutoApprove: boolean }>
 
 const entries = (items: ReadonlyArray<readonly [string, string]>): ReadonlyArray<SelectEntry> =>
 	Arr.map(items, ([value, label]) => ({ _tag: "Item", item: { value, label } }))
@@ -45,6 +46,7 @@ const selectField = (
 		items: ReadonlyArray<readonly [string, string]>
 		className: string
 		description?: string
+		lockReason?: string
 	}>,
 ): Html => {
 	const ids = idsOf(model, options.slug)
@@ -55,20 +57,26 @@ const selectField = (
 		...(select === undefined
 			? []
 			: [
-					h.submodel({
-						slotId: select.id,
-						model: select,
-						view: selectView,
-						toParentMessage: (message: Select.Message) =>
-							Message.GotSelectMessage({ field: options.name, message }),
-						viewInputs: {
-							entries: entries(options.items),
-							className: options.className,
-							labelledBy: ids.label,
-							describedBy: options.description === undefined ? undefined : ids.description,
-							toView: (parts) => h.div([h.Class("contents")], parts),
-						},
-					}),
+					locked(
+						h,
+						options.lockReason,
+						h.submodel({
+							slotId: select.id,
+							model: select,
+							view: selectView,
+							toParentMessage: (message: Select.Message) =>
+								Message.GotSelectMessage({ field: options.name, message }),
+							viewInputs: {
+								entries: entries(options.items),
+								className: options.className,
+								labelledBy: ids.label,
+								describedBy: options.description === undefined ? undefined : ids.description,
+								isDisabled: options.lockReason !== undefined,
+								toView: (parts) => h.div([h.Class("contents")], parts),
+							},
+						}),
+						options.className,
+					),
 				]),
 		...(options.description === undefined
 			? []
@@ -76,10 +84,22 @@ const selectField = (
 	])
 }
 
+/** The control as it is, or drawn locked with who may use it when `reason` is set. */
+const locked = (h: H, reason: string | undefined, control: Html, className?: string): Html =>
+	reason === undefined
+		? control
+		: lockedControl(h, reason, control, className === undefined ? {} : { className })
+
 const switchRow = (
 	h: H,
 	model: Model,
-	options: Readonly<{ name: SwitchField; slug: string; label: string; description: string }>,
+	options: Readonly<{
+		name: SwitchField
+		slug: string
+		label: string
+		description: string
+		lockReason?: string
+	}>,
 ): Html => {
 	const ids = {
 		control: `${model.id}-${options.slug}`,
@@ -92,16 +112,20 @@ const switchRow = (
 		label: options.label,
 		description: options.description,
 		filled: isChecked,
-		control: Switch.switchControl(h, {
-			id: `${ids.control}-switch`,
-			inputId: ids.control,
-			isChecked,
-			isDisabled: model.isSaving,
-			labelledBy: ids.label,
-			describedBy: ids.description,
-			isFilled: isChecked,
-			onToggle: Message.ToggledSwitch({ field: options.name }),
-		}),
+		// The track takes the lock; the hidden input stays outside the hover target.
+		control: Arr.map(
+			Switch.switchControl(h, {
+				id: `${ids.control}-switch`,
+				inputId: ids.control,
+				isChecked,
+				isDisabled: model.isSaving || options.lockReason !== undefined,
+				labelledBy: ids.label,
+				describedBy: ids.description,
+				isFilled: isChecked,
+				onToggle: Message.ToggledSwitch({ field: options.name }),
+			}),
+			(part, index) => (index === 0 ? locked(h, options.lockReason, part) : part),
+		),
 	})
 }
 
@@ -117,6 +141,7 @@ const toggleSetting = (
 		label: string
 		description: string
 		inherited: boolean
+		lockReason?: string
 	}>,
 ): Html =>
 	model.mode === "organization"
@@ -127,6 +152,7 @@ const toggleSetting = (
 				label: options.label,
 				className: "w-full sm:w-1/2",
 				description: options.description,
+				...(options.lockReason === undefined ? undefined : { lockReason: options.lockReason }),
 				items: [
 					[INHERIT, `Organization default (${options.inherited ? "On" : "Off"})`],
 					["on", "On"],
@@ -308,6 +334,10 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 				label: RULES_COPY.autoApprove.label,
 				description: RULES_COPY.autoApprove.description,
 				inherited: parent.autoApprove ?? BUILT_IN.autoApprove,
+				// Shown locked only to someone who could otherwise edit: the footer already locks the rest.
+				...(inputs.canEdit && !inputs.canAutoApprove
+					? { lockReason: denialReason("code_review:auto_approve") }
+					: undefined),
 			}),
 			...footer(h, model, inputs.canEdit),
 		],
