@@ -9,7 +9,14 @@ import { click, Command, expect as expectView, given, role, scene, text, withVie
 import { describe, expect, test } from "vitest"
 import * as Field from "@maple/views/ui/field"
 import { PageOutMessage, type PageContext } from "../../../contract"
-import { isMetricsPanelOpen, isSavingMetricsOf, LoadAwsSetup, metricsErrorOf, UpdateAwsModules } from "./aws"
+import {
+	isMetricsPanelOpen,
+	isSavingMetricsOf,
+	LoadAwsSetup,
+	metricsErrorOf,
+	moduleErrorOf,
+	UpdateAwsModules,
+} from "./aws"
 import { Message } from "../../../integrations/message"
 import type { Model } from "../../../integrations/model"
 import { init, update } from "../../../integrations/update"
@@ -703,6 +710,25 @@ describe("aws card", () => {
 					}),
 				]),
 			)
+		})
+
+		test("a refused change shows its reason under its own switch only", () => {
+			const model = withSecurity([verified({ modules: ["cost"], granted_modules: ["cost"] })])
+			const saving = pageUpdate(
+				model,
+				Message.ToggledAwsModule({ id: connectionId, module: "security" }),
+			).model
+			const refused = pageUpdate(
+				saving,
+				Message.CompletedAwsModules({
+					id: connectionId,
+					connection: null,
+					error: "Not allowed here",
+				}),
+			).model
+			const save = refused.awsCard.moduleSave
+			expect(moduleErrorOf(save, connectionId, "security")).toBe("Not allowed here")
+			expect(moduleErrorOf(save, connectionId, "cost")).toBeNull()
 		})
 	})
 

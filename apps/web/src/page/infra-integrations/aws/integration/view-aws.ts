@@ -608,7 +608,7 @@ const moduleRow = (
 	info: AwsModuleInfo,
 ): Html => {
 	const save = model.awsCard.moduleSave
-	const error = moduleErrorOf(save, connection.id)
+	const error = moduleErrorOf(save, connection.id, row.module)
 	const state = moduleState(h, model, connection, row, info)
 	return switchRow(
 		h,
