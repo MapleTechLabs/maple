@@ -1129,6 +1129,14 @@ export const StatusPageKeys = {
 	slugObject: (slug: string) => `slugs/${slug}`,
 } as const
 
+/**
+ * What the publisher leaves in R2 where it took a snapshot or a slug route off the edge. The
+ * status Worker reads it as "not here" for certain, where a missing object could be an outage.
+ */
+export const STATUS_PAGE_TOMBSTONE = '{"gone":true}'
+
+export const isStatusPageTombstone = (raw: string): boolean => Str.trim(raw) === STATUS_PAGE_TOMBSTONE
+
 export const decodeStatusPageSnapshotJson = Schema.decodeUnknownOption(
 	Schema.fromJsonString(StatusPageSnapshot),
 )

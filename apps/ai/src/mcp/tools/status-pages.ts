@@ -713,6 +713,19 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 			)
 			const service = yield* StatusPagesService
 			const page = yield* resolvePage(tool, tenant.orgId, params.page)
+			// Who can read the page has its own permission, checked as the HTTP routes check it. The
+			// page password is not in the document, so visibility is the only such field here.
+			const visibility = params.config.visibility
+			if (visibility !== undefined && visibility !== page.visibility)
+				yield* Policy.check(
+					tenant.roles,
+					"status_pages:access",
+					(denial) =>
+						new McpUnavailableError({
+							message: `${tool} would change who can read the page. ${denial.message} Leave \`visibility\` as it is, or ask someone who can.`,
+							capability: "org_admin",
+						}),
+				)
 			const { config, changes } = yield* service
 				.applyConfig(tenant.orgId, page.id, params.config, tenant.userId, {
 					ifVersion: params.if_version ?? params.config.version,
