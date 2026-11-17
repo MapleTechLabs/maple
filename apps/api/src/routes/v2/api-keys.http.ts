@@ -10,10 +10,11 @@ import {
 	scopeAllows,
 } from "@maple/domain/http/v2"
 import type { V2ApiKey, V2ApiKeyMutationResponse, V2ApiKeyWithSecret } from "@maple/domain/http/v2"
-import { Effect, Option, Array as Arr, String as Str } from "effect"
+import { Clock, Effect, Option, Array as Arr, String as Str } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
+import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import * as Policy from "@maple/domain/policy"
 
 const beyondCallerScopes = () =>
@@ -132,6 +133,33 @@ export const HttpV2ApiKeysLive = HttpApiBuilder.group(MapleApiV2, "apiKeys", (ha
 						(isMcpKey || !withinCallerScopes(tenant.scopes, payload.scopes))
 					) {
 						return yield* beyondCallerScopes()
+					}
+					// A key that expires must not mint one that outlives it, or signing out of a
+					// device would leave its access behind. Admins manage lifetimes as they see fit.
+					const actor = yield* CurrentAuditActor
+					if (!canManageKeys && actor?.type === "api_key" && actor.apiKeyId !== undefined) {
+						// Gone since it authenticated this request: it was revoked, so it mints nothing.
+						const caller = yield* apiKeysService
+							.get(tenant.orgId, actor.apiKeyId)
+							.pipe(
+								Effect.catchTag("@maple/http/errors/ApiKeyNotFoundError", () =>
+									Effect.fail(
+										V2InsufficientPermissions.make(
+											"The calling API key is no longer valid.",
+										),
+									),
+								),
+							)
+						const now = yield* Clock.currentTimeMillis
+						if (
+							caller.expiresAt !== null &&
+							(payload.expires_in_seconds === undefined ||
+								now + payload.expires_in_seconds * 1000 > caller.expiresAt)
+						) {
+							return yield* V2InsufficientPermissions.make(
+								"A key created with an expiring API key cannot outlive it. Set expires_in_seconds within the calling key's remaining lifetime, or create the key from a signed-in session.",
+							)
+						}
 					}
 					const pinnedSource = isMcpKey ? "maple_mcp" : canManageKeys ? null : "maple_api_key"
 					const createdByEmail = yield* auth.getUserEmail(tenant.userId)
