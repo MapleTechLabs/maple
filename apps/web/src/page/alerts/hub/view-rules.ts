@@ -372,7 +372,7 @@ const ruleRow = (h: H, model: Model, row: RowInputs): Html => {
 				rowActionsMenu(h, {
 					slotId: menuId,
 					model: model.menus[menuId] ?? Menu.init(menuId),
-					entries: gatedEntries(model, "alerts:manage", entries),
+					entries: gatedEntries(model, "alerts:manage", entries, ["open"]),
 					label: `Actions for ${rule.name}`,
 					toParentMessage: (message) => Message.GotRowMenuMessage({ menuId, message }),
 				}),

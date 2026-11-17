@@ -7,6 +7,7 @@ import type * as Chart from "@maple/views/charts/chart"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { panel, panelHeader } from "@maple/views/ui/panel"
 import { textLink } from "@maple/views/ui/text-link"
+import { button } from "@maple/views/ui/button"
 import { lockedControl } from "@maple/views/ui/locked-control"
 import { denialReason } from "../../kit/session-grants"
 import { emptyValue } from "@maple/views/ui/values"
@@ -205,7 +206,9 @@ const summaryHeader = (
 							: lockedControl(
 									h,
 									link.lockedReason,
-									typography(h, { size: "xs", tone: "muted" }, [link.label]),
+									button(h, { variant: "link", size: "xs", isDisabled: true }, [
+										link.label,
+									]),
 								),
 				},
 	)

@@ -44,8 +44,10 @@ const detachButton = (h: H, pr: ErrorIssuePullRequestDocument, state: PanelState
 			{
 				size: "icon",
 				label: `Detach ${pr.repoFullName}#${pr.number}`,
-				className:
-					"size-7 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100",
+				// Locked, it stays shown: its wrapper takes the focus, so the reveal on focus never fires.
+				className: isLocked
+					? "size-7 shrink-0"
+					: "size-7 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100",
 				isDisabled: isLocked || state.isBusy,
 				attributes: [h.OnClick(Message.ClickedDetachPullRequest({ id: pr.id }))],
 			},

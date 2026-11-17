@@ -11,16 +11,22 @@ type Grants = Readonly<{ grants: ReadonlyArray<Policy.Permission> }>
 const hasGrant = (model: Grants, permission: Policy.Permission): boolean =>
 	Policy.has(model.grants, permission)
 
-/** A row menu's entries for a viewer without `permission`: every item disabled, the denial as its tooltip. */
+/**
+ * A row menu's entries for a viewer without `permission`: every item disabled, the denial as its
+ * tooltip, except the `readOnly` values (Open, View), which need no permission.
+ */
 export const gatedEntries = (
 	model: Grants,
 	permission: Policy.Permission,
 	entries: ReadonlyArray<MenuEntry>,
+	readOnly: ReadonlyArray<string> = [],
 ): ReadonlyArray<MenuEntry> => {
 	if (hasGrant(model, permission)) return entries
 	const reason = denialReason(permission)
 	return Arr.map(entries, (entry): MenuEntry =>
-		entry._tag === "Item" ? { ...entry, isDisabled: true, tooltip: { content: [reason] } } : entry,
+		entry._tag === "Item" && !readOnly.includes(entry.value)
+			? { ...entry, isDisabled: true, tooltip: { content: [reason] } }
+			: entry,
 	)
 }
 
