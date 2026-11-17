@@ -27,6 +27,7 @@ import { leaseHud } from "./view-lease"
 import type { Model } from "./model"
 import { sidebarBusy } from "./writes"
 import { canTriageIssues } from "../kit/grants"
+import { gatedBy } from "../../kit/gated-controls"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
@@ -202,45 +203,53 @@ const leaseGroup = (h: H, model: Model, issue: ErrorIssueDocument, canClaim: boo
 					model.leaseNowMs === 0 ? model.nowMs : model.leaseNowMs,
 				)
 			: undefined
-	if (hud !== undefined && !canTriage) return vstack(h, { gap: "2" }, hud === null ? [] : [hud])
 	if (hud !== undefined)
 		return vstack(h, { gap: "2" }, [
 			...(hud === null ? [] : [hud]),
 			hstack(h, { gap: "1", align: "stretch", justify: "end" }, [
-				button(
-					h,
-					{
-						size: "xs",
-						variant: "ghost",
-						isLoading: sidebarBusy(model) === "heartbeat",
-						attributes: [h.OnClick(Message.ClickedExtendLease())],
-					},
-					["Extend"],
+				gatedBy(h, canTriage, "error_issues:triage", (isDisabled) =>
+					button(
+						h,
+						{
+							size: "xs",
+							variant: "ghost",
+							isDisabled,
+							isLoading: sidebarBusy(model) === "heartbeat",
+							attributes: [h.OnClick(Message.ClickedExtendLease())],
+						},
+						["Extend"],
+					),
 				),
-				button(
-					h,
-					{
-						size: "xs",
-						variant: "ghost",
-						isLoading: sidebarBusy(model) === "release",
-						attributes: [h.OnClick(Message.ClickedReleaseLease())],
-					},
-					["Release"],
+				gatedBy(h, canTriage, "error_issues:triage", (isDisabled) =>
+					button(
+						h,
+						{
+							size: "xs",
+							variant: "ghost",
+							isDisabled,
+							isLoading: sidebarBusy(model) === "release",
+							attributes: [h.OnClick(Message.ClickedReleaseLease())],
+						},
+						["Release"],
+					),
 				),
 			]),
 		])
 	return detailRailRow(h, { label: canClaim ? "Unclaimed" : "Closed" }, [
-		canClaim && canTriage
-			? button(
-					h,
-					{
-						size: "xs",
-						variant: "outline",
-						className: "-mr-0.5",
-						isLoading: sidebarBusy(model) === "claim",
-						attributes: [h.OnClick(Message.ClickedClaim())],
-					},
-					["Claim"],
+		canClaim
+			? gatedBy(h, canTriage, "error_issues:triage", (isDisabled) =>
+					button(
+						h,
+						{
+							size: "xs",
+							variant: "outline",
+							className: "-mr-0.5",
+							isDisabled,
+							isLoading: sidebarBusy(model) === "claim",
+							attributes: [h.OnClick(Message.ClickedClaim())],
+						},
+						["Claim"],
+					),
 				)
 			: typography(h, { size: "xs", tone: "muted" }, [
 					canClaim ? "No one holds it" : "No lease needed",

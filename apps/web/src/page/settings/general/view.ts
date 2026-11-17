@@ -15,6 +15,7 @@ import { dangerRow, dangerZone } from "../../kit/danger-zone"
 import { saveBar } from "../../kit/save-bar"
 import { settingsSection, settingsSections } from "../../kit/settings-section"
 import { canManage, Message, type Model, type OrgInfo } from "./model"
+import { gatedControl } from "../../kit/session-grants"
 import { isNameDirty, LOGO_INPUT_ID, leaveEligibilityOf, nameDraftOf } from "./update"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr, String as Str } from "effect"
@@ -195,28 +196,27 @@ const dangerZoneSection = (h: H, model: Model, org: OrgInfo): Html => {
 				),
 			]),
 		}),
-		...(canManage(model)
-			? [
-					dangerRow(h, {
-						title: "Delete organization",
-						description: [
-							'Permanently deletes "',
-							org.name,
-							`" and removes every member's access. This cannot be undone.`,
-						],
-						details: deletionFacts(h),
-						action: button(
-							h,
-							{
-								variant: "destructive",
-								size: "sm",
-								attributes: [h.OnClick(Message.ClickedDelete())],
-							},
-							["Delete organization"],
-						),
-					}),
-				]
-			: []),
+		dangerRow(h, {
+			title: "Delete organization",
+			description: [
+				'Permanently deletes "',
+				org.name,
+				`" and removes every member's access. This cannot be undone.`,
+			],
+			details: deletionFacts(h),
+			action: gatedControl(h, model, "organization:manage", (isDisabled) =>
+				button(
+					h,
+					{
+						variant: isDisabled ? "outline" : "destructive",
+						size: "sm",
+						isDisabled,
+						attributes: isDisabled ? [] : [h.OnClick(Message.ClickedDelete())],
+					},
+					["Delete organization"],
+				),
+			),
+		}),
 	])
 }
 

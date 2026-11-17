@@ -142,7 +142,7 @@ describe("source detail", () => {
 		expect(names(routeChanged(onSetup, route(), context).commands)).toEqual(["FetchSourceUsage"])
 	})
 
-	test("a member sent to Settings reads the overview, without the source's actions", () => {
+	test("a member sent to Settings reads the overview, with the source's actions locked", () => {
 		const step = pageUpdate(loaded(source(), "settings"), Message.CompletedReadGrants({ grants: [] }))
 		expect(step.model.tab).toBe("overview")
 		expect(names(step.commands)).toEqual(["FetchSourceUsage"])
@@ -152,8 +152,9 @@ describe("source detail", () => {
 			resolveTheme,
 			expectView(role("tab", { name: "Overview" })).toExist(),
 			expectView(role("tab", { name: "Settings" })).not.toExist(),
-			expectView(role("button", { name: "Pause" })).not.toExist(),
-			expectView(role("button", { name: "Roll token" })).not.toExist(),
+			expectView(role("button", { name: "Pause" })).toBeDisabled(),
+			expectView(role("button", { name: "Roll token" })).toBeDisabled(),
+			expectView(role("link", { name: "Edit rules" })).not.toExist(),
 		)
 	})
 
@@ -573,21 +574,21 @@ describe("integration sources", () => {
 			given(withGrants([], [])),
 			resolveTheme,
 			expectView(role("link", { name: "Docs" })).not.toExist(),
-			expectView(role("button", { name: "Pause" })).not.toExist(),
+			expectView(role("button", { name: "Pause" })).toBeDisabled(),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given(withGrants([], ["integrations:manage"])),
 			resolveTheme,
 			expectView(role("link", { name: "Docs" })).toExist(),
-			expectView(role("button", { name: "Pause" })).not.toExist(),
+			expectView(role("button", { name: "Pause" })).toBeDisabled(),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given(withGrants(["sources:manage"], ["integrations:manage"])),
 			resolveTheme,
 			expectView(role("link", { name: "Docs" })).toExist(),
-			expectView(role("button", { name: "Pause" })).toExist(),
+			expectView(role("button", { name: "Pause" })).not.toBeDisabled(),
 			// Delete is in Settings' danger zone, never in the header.
 			expectView(role("button", { name: /^Delete/ })).not.toExist(),
 		)

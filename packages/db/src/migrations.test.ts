@@ -870,4 +870,44 @@ describe("bundled migrations", () => {
 		expect(columns.rows).toEqual([])
 		await pg.close()
 	}, 30_000)
+
+	it("gives uptime rules a warning tier with the critical tier's destinations, once", async () => {
+		const pg = new PGlite()
+		await pg.exec(readMigrationSqlBefore("uptime_certificate_warning_tier"))
+		const rule = (id: string, signalType: string, thresholds: unknown) =>
+			pg.query(
+				`INSERT INTO alert_rules (
+					id, org_id, name, severity, signal_type, comparator, threshold, window_minutes,
+					destination_ids_json, thresholds_json, query_spec_json, reducer, no_data_behavior,
+					created_at, updated_at, created_by, updated_by
+				) VALUES ($1, 'org_1', $1, 'critical', $2, 'gte', 1, 1, '["dest_a"]', $3, '{}', 'identity', 'skip',
+					now(), now(), 'user_1', 'user_1')`,
+				[id, signalType, thresholds === null ? null : JSON.stringify(thresholds)],
+			)
+		const critical = {
+			severity: "critical",
+			value: 1,
+			upper: null,
+			recoveryValue: null,
+			destinationIds: ["dest_a"],
+		}
+		await rule("uptime_tiered", "uptime", [critical])
+		await rule("uptime_legacy", "uptime", null)
+		await rule("error_rate", "error_rate", [critical])
+
+		const sql = readMigrationSql("uptime_certificate_warning_tier")
+		await pg.exec(sql)
+		await pg.exec(sql)
+
+		const rows = await pg.query<{ id: string; threshold: number; thresholds_json: unknown }>(
+			"SELECT id, threshold, thresholds_json FROM alert_rules ORDER BY id",
+		)
+		const warning = { ...critical, severity: "warning", value: 0.5 }
+		expect(rows.rows).toEqual([
+			{ id: "error_rate", threshold: 1, thresholds_json: [critical] },
+			{ id: "uptime_legacy", threshold: 0.5, thresholds_json: [warning, critical] },
+			{ id: "uptime_tiered", threshold: 0.5, thresholds_json: [warning, critical] },
+		])
+		await pg.close()
+	}, 30_000)
 })

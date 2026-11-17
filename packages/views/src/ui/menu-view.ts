@@ -222,6 +222,8 @@ const row = (model: Model, index: number, item: ItemRef) => ({
 	onSelect: Message.ClickedItem({ index, item }),
 })
 
+const reasonIdOf = (triggerId: string): string => `${triggerId}-reason`
+
 /** The item inside its tooltip trigger; the tooltip's portal rides along while it is this item's. */
 const withItemTooltip = (
 	h: H,
@@ -243,7 +245,12 @@ const withItemTooltip = (
 			toView: ({ trigger, portal }) =>
 				h.div(
 					[...trigger(id)],
-					[item, ...(portal !== null && model.itemTooltip.triggerId === id ? [portal] : [])],
+					[
+						item,
+						// The reason as the item's description, for keyboard and screen readers the hover misses.
+						h.span([h.Id(reasonIdOf(id)), h.Class("sr-only")], tooltip.content),
+						...(portal !== null && model.itemTooltip.triggerId === id ? [portal] : []),
+					],
 				),
 		},
 	})
@@ -259,7 +266,12 @@ const renderEntry = (h: H, model: Model, entry: MenuEntry, index: number): Html 
 					variant: entry.variant,
 					isDisabled: entry.isDisabled,
 					className: entry.className,
-					...(entry.isCurrent === true ? { attributes: [h.AriaCurrent("true")] } : undefined),
+					attributes: [
+						...(entry.isCurrent === true ? [h.AriaCurrent("true")] : []),
+						...(entry.tooltip === undefined
+							? []
+							: [h.AriaDescribedBy(reasonIdOf(itemTooltipTriggerId(model.id, index)))]),
+					],
 				},
 				itemContent(h, entry),
 			)

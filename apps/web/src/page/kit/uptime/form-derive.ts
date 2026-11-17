@@ -1,4 +1,4 @@
-import type { V2UptimeMonitorConfig } from "@maple/domain/http/v2"
+import { UPTIME_MULTISTEP_DEFAULT_TIMEOUT_MS, type V2UptimeMonitorConfig } from "@maple/domain/http/v2"
 import { parseHeartbeatCron } from "@maple/domain/uptime"
 import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import type { UptimeMonitor } from "./derive"
@@ -32,6 +32,7 @@ export const defaultName = (form: Form): string => {
 					: `${Str.trim(form.host)}:${Str.trim(form.port)}`
 		case "dns":
 			return Str.trim(form.hostname) === "" ? "" : `${form.recordType} ${Str.trim(form.hostname)}`
+		case "multistep":
 		case "heartbeat":
 			return form.name
 	}
@@ -131,6 +132,9 @@ const headerLineIssues = (text: string): ReadonlyArray<string> =>
 		(line) => `Header line '${line}' needs a name and a colon, like Authorization: Bearer token.`,
 	)
 
+/** A multi-step check's timeout covers its whole run, so it may be longer than one request's. */
+const maxTimeoutMs = (form: Form): number => (form.kind === "multistep" ? 60000 : 30000)
+
 export const formIssues = (form: Form): ReadonlyArray<string> => {
 	const add = (condition: boolean, issue: string): ReadonlyArray<string> => (condition ? [issue] : [])
 	const kindIssues: ReadonlyArray<string> = (() => {
@@ -169,6 +173,11 @@ export const formIssues = (form: Form): ReadonlyArray<string> => {
 					...add(Str.trim(form.hostname) === "", "Add the hostname to resolve."),
 					...hostIssue(form.hostname),
 				]
+			case "multistep":
+				return add(
+					(form.multistep?.steps.length ?? 0) === 0,
+					"A multi-step check needs at least one step.",
+				)
 			case "heartbeat":
 				return form.scheduleMode === "interval"
 					? add(!(everySeconds(form) >= 60), "Heartbeats expect a ping at most once a minute.")
@@ -198,8 +207,8 @@ export const formIssues = (form: Form): ReadonlyArray<string> => {
 					...add(
 						!isWhole(form.timeoutMs) ||
 							whole(form.timeoutMs) < 1000 ||
-							whole(form.timeoutMs) > 30000,
-						"The timeout must be 1000 to 30000 ms.",
+							whole(form.timeoutMs) > maxTimeoutMs(form),
+						`The timeout must be 1000 to ${maxTimeoutMs(form)} ms.`,
 					),
 				]
 	return [...add(Str.trim(form.name) === "", "Add a name."), ...kindIssues, ...checkIssues]
@@ -267,6 +276,8 @@ export const wireConfig = (form: Form): Readonly<Record<string, unknown>> => {
 				...(Str.trim(form.expected) === "" ? undefined : { expected: Str.trim(form.expected) }),
 				...timeout,
 			}
+		case "multistep":
+			return { ...(form.multistep ?? { type: "multistep", steps: [] }), ...timeout }
 		case "heartbeat":
 			return {
 				type: "heartbeat",
@@ -377,6 +388,12 @@ export const formFromMonitor = (monitor: UptimeMonitor): Form => {
 				recordType: config.record_type,
 				expected: config.expected ?? "",
 				timeoutMs: String(config.timeout_ms ?? 10000),
+			}
+		case "multistep":
+			return {
+				...base,
+				multistep: config,
+				timeoutMs: String(config.timeout_ms ?? UPTIME_MULTISTEP_DEFAULT_TIMEOUT_MS),
 			}
 		case "heartbeat":
 			return {

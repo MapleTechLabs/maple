@@ -28,7 +28,7 @@ import { linkIssueDialog } from "./view-link-dialog"
 import { anomalySidebar } from "./view-sidebar"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
-import { canRespondToIncidents, canRunInvestigations } from "../../kit/session-grants"
+import { canRespondToIncidents, gatedControl } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
@@ -70,32 +70,32 @@ const headerActions = (h: H, model: Model, incident: AnomalyIncidentDocument, ti
 								: "Resolved",
 						],
 		),
-		...(canRunInvestigations(model)
+		gatedControl(h, model, "investigations:run", (isLocked) =>
+			button(
+				h,
+				{
+					size: "sm",
+					variant: "outline",
+					isDisabled: isLocked || isBusy,
+					isLoading: model.busy === "investigate",
+					attributes: [h.OnClick(Message.ClickedInvestigate())],
+				},
+				[icon(h, "PulseIcon"), "Open investigation"],
+			),
+		),
+		...(isOpen
 			? [
-					button(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							isDisabled: isBusy,
-							isLoading: model.busy === "investigate",
-							attributes: [h.OnClick(Message.ClickedInvestigate())],
-						},
-						[icon(h, "PulseIcon"), "Open investigation"],
-					),
-				]
-			: []),
-		...(isOpen && canRespondToIncidents(model)
-			? [
-					button(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							isDisabled: isBusy,
-							attributes: [h.OnClick(Message.ClickedResolve())],
-						},
-						["Resolve"],
+					gatedControl(h, model, "incidents:respond", (isLocked) =>
+						button(
+							h,
+							{
+								size: "sm",
+								variant: "outline",
+								isDisabled: isLocked || isBusy,
+								attributes: [h.OnClick(Message.ClickedResolve())],
+							},
+							["Resolve"],
+						),
 					),
 				]
 			: []),

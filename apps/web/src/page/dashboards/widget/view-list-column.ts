@@ -1,8 +1,9 @@
 import { WIDGET_UNITS } from "@maple/domain/http"
-import { Option, Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
+import { dragGrip } from "@maple/views/ui/drag-grip"
 import { input } from "@maple/views/ui/input"
 import { pressable } from "@maple/views/ui/pressable"
 import type { ListColumn } from "./editor-state"
@@ -71,25 +72,11 @@ export const listColumnRow = (
 			attributes: [h.DataAttribute(ROW_ATTRIBUTE, "")],
 		},
 		[
-			pressable(
-				h,
-				{
-					label: `Reorder ${column.header || column.field || `column ${index + 1}`}`,
-					className:
-						"shrink-0 cursor-grab touch-none text-foreground-faint hover:text-muted-foreground active:text-muted-foreground active:cursor-grabbing",
-					attributes: [
-						h.DataAttribute(GRIP_ATTRIBUTE, ""),
-						h.OnKeyDownPreventDefault((key) =>
-							key === "ArrowUp"
-								? Option.some(product(ProductEdit.MovedListColumn({ index, delta: -1 })))
-								: key === "ArrowDown"
-									? Option.some(product(ProductEdit.MovedListColumn({ index, delta: 1 })))
-									: Option.none(),
-						),
-					],
-				},
-				[icon(h, "GripDotsIcon", { size: 14 })],
-			),
+			dragGrip(h, {
+				label: `Reorder ${column.header || column.field || `column ${index + 1}`}`,
+				onMove: (delta) => product(ProductEdit.MovedListColumn({ index, delta })),
+				attributes: [h.DataAttribute(GRIP_ATTRIBUTE, "")],
+			}),
 			h.div(
 				[h.Class("relative flex-1")],
 				[

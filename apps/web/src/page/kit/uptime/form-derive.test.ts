@@ -65,6 +65,25 @@ describe("formIssues", () => {
 })
 
 describe("formFromMonitor and wirePayload", () => {
+	it("keeps a multi-step check's steps and saves its edited timeout, up to the run's 60 s", () => {
+		const multistep = httpMonitor({
+			kind: "multistep",
+			config: {
+				type: "multistep",
+				timeout_ms: 45_000,
+				steps: [{ name: "Log in", method: "POST", url: "https://api.acme.dev/login" }],
+			},
+		})
+		const form = formFromMonitor(multistep)
+		expect(form.timeoutMs).toBe("45000")
+		expect(formIssues(form)).toEqual([])
+		const edited = { ...form, timeoutMs: "50000" }
+		expect(wirePayload(edited, true)).toMatchObject({
+			config: { type: "multistep", timeout_ms: 50_000, steps: [{ name: "Log in" }] },
+		})
+		expect(formIssues({ ...form, timeoutMs: "61000" })).toEqual(["The timeout must be 1000 to 60000 ms."])
+	})
+
 	it("an untouched edit saves back the monitor it opened", () => {
 		const decodeUpdate = Schema.decodeUnknownExit(V2UptimeMonitorUpdateParams)
 		const full = httpMonitor({

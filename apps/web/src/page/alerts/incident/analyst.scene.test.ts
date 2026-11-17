@@ -59,36 +59,44 @@ const ACKNOWLEDGED = {
 }
 
 describe("alert incident, analyst", () => {
-	test("an analyst is not offered Acknowledge or Investigate, and a member is", () => {
+	test("an analyst sees Acknowledge and Investigate locked with who can use them, and a member can use both", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ grants: ANALYST })),
 			themed(),
-			expectView(role("button", { name: "Acknowledge" })).toBeAbsent(),
-			expectView(role("button", { name: "Investigate" })).toBeAbsent(),
+			expectView(role("button", { name: "Acknowledge" })).toBeDisabled(),
+			expectView(
+				role("group", {
+					name: "Only org admins, engineers and members can acknowledge and resolve incidents.",
+				}),
+			).toExist(),
+			expectView(role("button", { name: "Investigate" })).toBeDisabled(),
+			expectView(
+				role("group", { name: "Only org admins, engineers and members can start investigations." }),
+			).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ grants: MEMBER })),
 			themed(),
-			expectView(role("button", { name: "Acknowledge" })).toExist(),
-			expectView(role("button", { name: "Investigate" })).toExist(),
+			expectView(role("button", { name: "Acknowledge" })).toBeEnabled(),
+			expectView(role("button", { name: "Investigate" })).toBeEnabled(),
 		)
 	})
 
-	test("an analyst reads who acknowledged it and is not offered Unacknowledge", () => {
+	test("an analyst reads who acknowledged it and sees Unacknowledge locked", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ grants: ANALYST, row: ACKNOWLEDGED })),
 			themed(),
 			expectView(text(/Acknowledged by Dana Kim at/)).toExist(),
-			expectView(role("button", { name: "Unacknowledge" })).toBeAbsent(),
+			expectView(role("button", { name: "Unacknowledge" })).toBeDisabled(),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ grants: MEMBER, row: ACKNOWLEDGED })),
 			themed(),
-			expectView(role("button", { name: "Unacknowledge" })).toExist(),
+			expectView(role("button", { name: "Unacknowledge" })).toBeEnabled(),
 		)
 	})
 

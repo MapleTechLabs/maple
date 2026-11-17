@@ -4,6 +4,13 @@ import { highestRole, holdersPhrase, isAtLeast, type Role } from "./roles"
 
 export { type Permission, permissions } from "./permissions"
 export {
+	type ApiKeyScopeFamily,
+	apiKeyScopeFamilies,
+	canGrantFamily,
+	canGrantScopes,
+	type ScopeAccess,
+} from "./api-key-scopes"
+export {
 	type AssignableRole,
 	assignableRoles,
 	type ClerkRoleKey,

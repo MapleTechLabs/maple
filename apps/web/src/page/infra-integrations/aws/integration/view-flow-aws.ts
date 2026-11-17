@@ -29,6 +29,8 @@ import {
 	normalizeAccountId,
 	offeredModule,
 	selectionOf,
+	AWS_OPT_IN_MODULES,
+	type AwsOptInModule,
 } from "./aws"
 import { catalogEntry } from "../../../integrations/catalog"
 import { awsStreamOf, isoMs } from "../../../integrations/derive"
@@ -62,14 +64,22 @@ const at = (h: H, model: Model, timeZone: string, iso: string | null, prefix: st
 	return value === null ? null : relativeTime(h, { value, nowMs: model.nowMs, timeZone, prefix })
 }
 
-const COST_POLICY: RailItem = {
-	icon: "CircleDollarIcon",
-	title: "Cost policy",
-	detail: "Read-only billing access (spend, savings recommendations, data exports), attached to the role",
-}
+/** The policy each opt-in module adds to the stack. */
+const MODULE_POLICIES = {
+	cost: {
+		icon: "CircleDollarIcon",
+		title: "Cost policy",
+		detail: "Read-only billing access (spend, savings recommendations, data exports), attached to the role",
+	},
+	security: {
+		icon: "ShieldCheckIcon",
+		title: "Security policy",
+		detail: "Read-only access to GuardDuty, Security Hub, Inspector, Access Analyzer findings and CloudTrail events, attached to the role",
+	},
+} as const satisfies Record<AwsOptInModule, RailItem>
 
-/** `hasCost`: the stack carries the Cost module's policy (asked for, or ticked on the form). */
-const stackRail = (h: H, connection: V2AwsConnection | null, hasCost: boolean): Html =>
+/** `modules`: the opt-in modules the stack carries a policy for (asked for, or ticked on the form). */
+const stackRail = (h: H, connection: V2AwsConnection | null, modules: ReadonlyArray<AwsOptInModule>): Html =>
 	flowRail(h, {
 		eyebrow: "What the stack creates",
 		items: [
@@ -83,7 +93,7 @@ const stackRail = (h: H, connection: V2AwsConnection | null, hasCost: boolean): 
 				title: "OIDC provider",
 				detail: `${connection?.oidc_issuer ?? "Maple's issuer"}, one per account, shared by every Maple connection to it`,
 			},
-			...(hasCost ? [COST_POLICY] : []),
+			...Arr.map(modules, (module) => MODULE_POLICIES[module]),
 			{
 				icon: "LayersIcon",
 				title: "One CloudFormation stack",
@@ -184,10 +194,13 @@ const accountForm = (h: H, model: Model): Html => {
 							card.createError,
 						),
 			]),
-			...Option.match(offeredModule(awsStatusOf(model), "cost"), {
-				onNone: () => [],
-				onSome: (info) => [moduleChoice(h, model, info)],
-			}),
+			// Every module this org is offered, in the order the connection card lists them.
+			...Arr.flatMap(AWS_OPT_IN_MODULES, (module) =>
+				Option.match(offeredModule(awsStatusOf(model), module), {
+					onNone: () => [],
+					onSome: (info) => [moduleChoice(h, model, info)],
+				}),
+			),
 		],
 	)
 }
@@ -362,11 +375,12 @@ const connectStep = (h: H, model: Model, timeZone: string): Html => {
 					: connection.verified_at === null
 						? waitingForRole(h, model, connection, timeZone)
 						: roleDeployed(h, model, connection, timeZone)
-	const hasCost =
+	const policies = Arr.filter(AWS_OPT_IN_MODULES, (module) =>
 		connection === null
-			? Option.isSome(offeredModule(status, "cost")) && model.awsCard.newModules.includes("cost")
-			: connection.modules.includes("cost")
-	return flowColumns(h, main, stackRail(h, connection, hasCost))
+			? Option.isSome(offeredModule(status, module)) && model.awsCard.newModules.includes(module)
+			: connection.modules.includes(module),
+	)
+	return flowColumns(h, main, stackRail(h, connection, policies))
 }
 
 const selectionRail = (h: H, model: Model, connection: V2AwsConnection): Html => {

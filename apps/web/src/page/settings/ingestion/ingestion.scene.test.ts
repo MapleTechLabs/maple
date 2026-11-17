@@ -95,11 +95,12 @@ describe("ingestion tab", () => {
 		)
 	})
 
-	test("an engineer cannot open the regenerate dialog; rolling a key is admin-only", () => {
-		const engineer = { ...loaded(), grants: Policy.grantsOf(["org:engineer"]) }
-		expect(
-			step(engineer, Message.ClickedRegenerateKey({ kind: "private" })).model.rollDialog.isOpen,
-		).toBe(false)
+	test("a member cannot open the regenerate dialog; an engineer can", () => {
+		const as = (role: string) => ({ ...loaded(), grants: Policy.grantsOf([role]) })
+		const opens = (role: string) =>
+			step(as(role), Message.ClickedRegenerateKey({ kind: "private" })).model.rollDialog.isOpen
+		expect(opens("org:member")).toBe(false)
+		expect(opens("org:engineer")).toBe(true)
 	})
 
 	test("a failed regenerate closes the dialog with an error toast and keeps the pair", () => {

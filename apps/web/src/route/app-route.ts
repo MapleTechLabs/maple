@@ -61,6 +61,8 @@ export const AppRoute = defineRouteUnion({
 	SecurityRuntimes: {},
 	SecurityDependencies: { search: Search.SecurityDependenciesSearch },
 	SecurityAuditLog: { search: Search.SecurityAuditLogSearch },
+	SecurityCloud: { search: Search.SecurityCloudSearch },
+	SecurityCloudFinding: { search: Search.SecurityCloudFindingSearch },
 	SecurityDetections: {},
 	SecurityDetectionNew: { search: Search.SecurityDetectionNewSearch },
 	SecurityRun: { runId: SecurityAuditRunId },

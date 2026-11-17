@@ -27,7 +27,7 @@ import {
 } from "../shared/silences"
 import { Message } from "./message"
 import { type Model } from "./model"
-import { canManageAlerts } from "../../kit/session-grants"
+import { gatedControl } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
@@ -116,19 +116,21 @@ const silenceRow = (
 							],
 						),
 					]
-				: status !== "ended" && canManageAlerts(model)
+				: status !== "ended"
 					? [
-							button(
-								h,
-								{
-									size: "sm",
-									variant: "outline",
-									isDisabled: isEnding,
-									attributes: [
-										h.OnClick(Message.ClickedEndSilence({ silenceId: silence.id })),
-									],
-								},
-								[status === "scheduled" ? "Cancel" : "End now"],
+							gatedControl(h, model, "alerts:manage", (isLocked) =>
+								button(
+									h,
+									{
+										size: "sm",
+										variant: "outline",
+										isDisabled: isLocked || isEnding,
+										attributes: [
+											h.OnClick(Message.ClickedEndSilence({ silenceId: silence.id })),
+										],
+									},
+									[status === "scheduled" ? "Cancel" : "End now"],
+								),
 							),
 						]
 					: status === "ended"

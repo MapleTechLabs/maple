@@ -49,6 +49,7 @@ import { toneText } from "../shared/slo-view"
 import { Message } from "./message"
 import { type Model } from "./model"
 import { canManageAlerts } from "../../kit/session-grants"
+import { gatedSwitch } from "../../kit/gated-controls"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
 type H = HtmlBuilder<Message>
@@ -388,14 +389,19 @@ export const alertingPanel = (h: H, model: Model, slo: Slo): Html =>
 			title: "Alerting",
 			action: hstack(h, { gap: "2" }, [
 				typography(h, { size: "xs", tone: "muted" }, [slo.alerting.enabled ? "On" : "Off"]),
-				...switchControl(h, {
-					id: "slo-alerting",
-					inputId: "slo-alerting-input",
-					isChecked: slo.alerting.enabled,
-					isDisabled: !canManageAlerts(model) || model.isTogglingAlerting,
-					ariaLabel: "Burn-rate alerting",
-					onToggle: Message.ClickedToggleAlerting(),
-				}),
+				...gatedSwitch(
+					h,
+					model,
+					"alerts:manage",
+					switchControl(h, {
+						id: "slo-alerting",
+						inputId: "slo-alerting-input",
+						isChecked: slo.alerting.enabled,
+						isDisabled: !canManageAlerts(model) || model.isTogglingAlerting,
+						ariaLabel: "Burn-rate alerting",
+						onToggle: Message.ClickedToggleAlerting(),
+					}),
+				),
 			]),
 		}),
 		...(slo.alerting.enabled

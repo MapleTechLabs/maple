@@ -6,7 +6,9 @@ import {
 	GetStatusPageOutput,
 	StatusPageIncidentMutationOutput,
 } from "@maple/domain/mcp-outputs"
+import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import { executeSql } from "@maple/backend/testing/test-pglite"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import type { McpToolResult } from "../types"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
 
@@ -448,20 +450,23 @@ describe("status page tools", () => {
 			expect(after.structuredContent.config.version).not.toBe(config.version)
 		})
 
-		it("refuses an engineer's change of who can read the page", async () => {
+		it("lets an engineer change who can read the page", async () => {
+			const engineer = withRole("org:engineer")
 			const read = await readConfig(rt, "config-page")
 			const { config } = read.structuredContent
 			expect(config.visibility).toBe("public")
-			const refused = await runToolDirect(withRole("org:engineer"), "apply_status_page_config", {
+			const applied = await runToolDirect(engineer, "apply_status_page_config", {
 				page: "config-page",
 				config: { ...config, visibility: "internal" },
 			})
-			expect(refused.isError).toBe(true)
-			expect(markdown(refused)).toContain(
-				"apply_status_page_config would change who can read the page, which only org admins may do. Leave `visibility` as it is, or ask an admin.",
-			)
+			expect(markdown(applied)).toContain("Fields changed: visibility")
 			const after = await readConfig(rt, "config-page")
-			expect(after.structuredContent.config).toEqual(config)
+			expect(after.structuredContent.config.visibility).toBe("internal")
+			const restored = await runToolDirect(engineer, "apply_status_page_config", {
+				page: "config-page",
+				config: { ...after.structuredContent.config, visibility: "public" },
+			})
+			expect(markdown(restored)).toContain("Fields changed: visibility")
 		})
 
 		it("refuses members and names a component id from another page", async () => {
@@ -489,5 +494,34 @@ describe("status page tools", () => {
 			const after = await readConfig(rt, "config-page")
 			expect(after.structuredContent.config).toEqual(read.structuredContent.config)
 		})
+	})
+})
+
+describe("status page tools outside the statusPages rollout", () => {
+	let off: EvalRuntime
+	beforeAll(() => {
+		off = makeEvalRuntime(OrganizationFeatureFlagsService.fixed(DISABLED_ORGANIZATION_FEATURE_FLAGS))
+	})
+	afterAll(async () => {
+		await off.dispose()
+	})
+
+	it("refuses every tool as unavailable, naming the missing capability", async () => {
+		// A real document, so the apply is refused by the gate and not by decoding.
+		const { config } = (await readConfig(rt, "acme-status")).structuredContent
+		const incident = "7f0b7d0e-0b6a-4f55-9a0e-2a4b9a0c1d09"
+		const calls: ReadonlyArray<readonly [string, Record<string, unknown>]> = [
+			["get_status_page", {}],
+			["get_status_page", { page: "acme-status", include_config: true }],
+			["post_status_page_update", { page: "acme-status", title: "x", message: "y" }],
+			["post_status_page_update", { incident, status: "identified", message: "y" }],
+			["apply_status_page_config", { page: "acme-status", config }],
+		]
+		for (const [name, params] of calls) {
+			const result: McpToolResult = await runToolDirect(off, name, params)
+			expect(result.isError).toBe(true)
+			expect(result.failureCategory).toBe("unavailable")
+			expect(markdown(result)).toContain("not enabled for this organization")
+		}
 	})
 })

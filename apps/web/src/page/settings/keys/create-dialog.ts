@@ -1,7 +1,8 @@
 import { CreatableApiKeyKind } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import { V2ApiKeyCreateParams, V2ApiKeyWithSecret, type V2Scope } from "@maple/domain/http/v2"
 import { type ApiKeyCreateOptions, buildApiKeyCreatePayload } from "../kit/api-key-create-payload"
-import { Effect, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Effect, Option, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { trackProduct } from "../../../data/analytics"
@@ -23,35 +24,7 @@ export const EXPIRATION_OPTIONS = [
 	{ value: "365", label: "1 year" },
 ] as const
 
-export const SCOPE_FAMILIES = [
-	{ id: "api_keys", label: "API keys" },
-	{ id: "dashboards", label: "Dashboards" },
-	{ id: "alerts", label: "Alerts" },
-	{ id: "ingest_keys", label: "Ingest keys" },
-	{ id: "attribute_mappings", label: "Attribute mappings" },
-	{ id: "scrape_targets", label: "Scrape targets" },
-	{ id: "slos", label: "SLOs" },
-	{ id: "uptime_monitors", label: "Uptime monitors" },
-	{ id: "ingest_rules", label: "Ingest rules" },
-	{ id: "data_sources", label: "Data sources" },
-	{ id: "status_pages", label: "Status pages" },
-	{ id: "status_page_incidents", label: "Status page incidents" },
-	{ id: "instrumentation", label: "Recommendations" },
-	{ id: "investigations", label: "Investigations" },
-	{ id: "error_issues", label: "Errors" },
-	{ id: "anomalies", label: "Anomalies" },
-	{ id: "session_replays", label: "Session replays" },
-	{ id: "traces", label: "Traces" },
-	{ id: "logs", label: "Logs" },
-	{ id: "metrics", label: "Metrics" },
-	{ id: "services", label: "Services" },
-	{ id: "service_map", label: "Service map" },
-	{ id: "sources", label: "Sources" },
-	{ id: "integrations", label: "Integrations" },
-	{ id: "query", label: "Query" },
-	{ id: "organization", label: "Organization" },
-	{ id: "audit_log", label: "Audit log" },
-] as const
+export const SCOPE_FAMILIES = Policy.apiKeyScopeFamilies
 
 export const ScopeLevel = Schema.Literals(["none", "read", "write"])
 export type ScopeLevel = typeof ScopeLevel.Type
@@ -65,6 +38,8 @@ export const Model = Schema.Struct({
 	description: Field.Model,
 	expiration: Select.Model,
 	accessMode: AccessMode,
+	/** The opener's grants: without `api_keys:manage` the key is restricted to scopes they can use. */
+	grants: Schema.Array(Policy.PermissionName),
 	/** Families with a level other than `none`. */
 	scopeLevels: Schema.Record(Schema.String, ScopeLevel),
 	scopeFilter: Schema.String,
@@ -82,6 +57,7 @@ export const init = (id: string): Model => ({
 	description: Field.init(),
 	expiration: Select.init(`${id}-expiration`, { value: "never", selectedIndex: 0 }),
 	accessMode: "full",
+	grants: [],
 	scopeLevels: {},
 	scopeFilter: "",
 	isCreating: false,
@@ -143,6 +119,26 @@ export const TrackKeyCreated = Command.define("TrackApiKeyCreated", {
 
 const levelOf = (model: Model, family: string): ScopeLevel => model.scopeLevels[family] ?? "none"
 
+/** Whether the opener may create a full-access key, not only a restricted one. */
+export const canGrantFullAccess = (model: Pick<Model, "grants">): boolean =>
+	Policy.has(model.grants, "api_keys:manage")
+
+/** Whether the opener may put `level` on `family`; `none` always. */
+export const canGrantLevel = (
+	model: Pick<Model, "grants">,
+	family: Policy.ApiKeyScopeFamily,
+	level: ScopeLevel,
+): boolean =>
+	level === "none" ||
+	canGrantFullAccess(model) ||
+	Policy.canGrantFamily((permission) => Policy.has(model.grants, permission), family, level)
+
+/** The most of `level` the opener may put on `family`: write falls back to read, then none. */
+const grantableLevel = (model: Model, family: Policy.ApiKeyScopeFamily, level: ScopeLevel): ScopeLevel =>
+	Arr.findFirst(level === "write" ? (["write", "read"] as const) : ([level] as const), (candidate) =>
+		canGrantLevel(model, family, candidate),
+	).pipe(Option.getOrElse((): ScopeLevel => "none"))
+
 export const selectedFamilyCount = (model: Model): number =>
 	Arr.filter(SCOPE_FAMILIES, (family) => levelOf(model, family.id) !== "none").length
 
@@ -186,11 +182,22 @@ const reset = (model: Model): Model => ({
 
 const close = (model: Model): Return => liftDialog(reset(model), Dialog.close(model.dialog))
 
-/** Opens empty for `kind`; a key created while it was closed is shown. */
-export const open = (model: Model, kind: CreatableApiKeyKind): Return => {
+/**
+ * Opens empty for `kind`; a key created while it was closed is shown. Someone who may only create
+ * restricted keys starts on Restricted.
+ */
+export const open = (
+	model: Model,
+	kind: CreatableApiKeyKind,
+	grants: ReadonlyArray<Policy.Permission>,
+): Return => {
 	const fresh = init(model.dialog.id)
 	const kept = { isCreating: model.isCreating, created: model.created }
-	return liftDialog({ ...fresh, ...kept, kind, dialog: model.dialog }, Dialog.open(model.dialog))
+	const accessMode: AccessMode = Policy.has(grants, "api_keys:manage") ? "full" : "restricted"
+	return liftDialog(
+		{ ...fresh, ...kept, kind, grants, accessMode, dialog: model.dialog },
+		Dialog.open(model.dialog),
+	)
 }
 
 const create = (model: Model): Return => {
@@ -227,17 +234,30 @@ export const update = (model: Model, message: Message): Return =>
 				),
 			}
 		},
-		ClickedAccessMode: ({ mode }) => ({ model: { ...model, accessMode: mode } }),
+		ClickedAccessMode: ({ mode }) =>
+			mode === "full" && !canGrantFullAccess(model)
+				? { model }
+				: { model: { ...model, accessMode: mode } },
 		ClickedAllScopes: ({ level }) => ({
 			model: {
 				...model,
-				scopeLevels: Rec.fromEntries(Arr.map(SCOPE_FAMILIES, (family) => [family.id, level])),
+				scopeLevels: Rec.fromEntries(
+					Arr.map(SCOPE_FAMILIES, (family) => [family.id, grantableLevel(model, family, level)]),
+				),
 			},
 		}),
 		ClickedClearScopes: () => ({ model: { ...model, scopeLevels: {} } }),
-		ClickedScopeLevel: ({ family, level }) => ({
-			model: { ...model, scopeLevels: { ...model.scopeLevels, [family]: level } },
-		}),
+		ClickedScopeLevel: ({ family, level }) =>
+			Option.match(
+				Arr.findFirst(SCOPE_FAMILIES, (entry) => entry.id === family),
+				{
+					onNone: () => ({ model }),
+					onSome: (entry) =>
+						canGrantLevel(model, entry, level)
+							? { model: { ...model, scopeLevels: { ...model.scopeLevels, [family]: level } } }
+							: { model },
+				},
+			),
 		ChangedScopeFilter: ({ value }) => ({ model: { ...model, scopeFilter: value } }),
 		ClickedClearScopeFilter: () => ({ model: { ...model, scopeFilter: "" } }),
 		ClickedCancel: () => close(model),

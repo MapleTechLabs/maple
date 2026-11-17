@@ -16,7 +16,12 @@ import { HttpClient, type HttpClientRequest, HttpClientResponse } from "effect/h
 import { TestClock } from "effect/testing"
 import { BillingCustomer, OrgId, UserId } from "@maple/domain/http"
 import { AlertDestinationId, UptimeIntervalSeconds, UptimeMonitorId } from "@maple/primitives"
-import { UPTIME_USER_AGENT, UptimeCheckReport, type UptimeMonitorConfig } from "@maple/domain/uptime"
+import {
+	type UptimeCertificate,
+	UPTIME_USER_AGENT,
+	UptimeCheckReport,
+	type UptimeMonitorConfig,
+} from "@maple/domain/uptime"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	cleanupTestDbs,
@@ -157,6 +162,26 @@ const report = (monitorId: UptimeMonitorId, checkedAt: number, ok: boolean) =>
 		traceId: null,
 	})
 
+/** A report read against the monitor's current settings, with `certificate` when given. */
+const current = (
+	monitorId: UptimeMonitorId,
+	checkedAt: number,
+	ok: boolean,
+	certificate?: UptimeCertificate,
+) =>
+	Effect.gen(function* () {
+		const service = yield* UptimeMonitorsService
+		const target = Arr.findFirst(yield* service.listProbeTargets, (row) => row.id === monitorId)
+		return new UptimeCheckReport({
+			...report(monitorId, checkedAt, ok),
+			...(certificate === undefined ? undefined : { certificate }),
+			...Option.match(target, {
+				onNone: () => undefined,
+				onSome: (row) => ({ targetRevision: row.revision }),
+			}),
+		})
+	})
+
 const createHttp = (name: string, extra: { readonly failuresToDown?: number; readonly orgId?: OrgId } = {}) =>
 	Effect.gen(function* () {
 		const service = yield* UptimeMonitorsService
@@ -242,6 +267,176 @@ describe("UptimeMonitorsService", () => {
 			})
 			assert.strictEqual(localDns._tag, "@maple/http/errors/UptimeMonitorValidationError")
 			assert.deepStrictEqual(yield* service.list(ORG), [])
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect(
+		"keeps the last certificate through a failed check that read none, and drops it on a success without one",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const monitor = yield* createHttp("API")
+				const certificate = { expiresAt: 9_000_000, subject: "api.example.com", issuer: "R11" }
+				const certificateNow = () =>
+					Effect.map(service.get(ORG, monitor.id), (read) => read.state.lastCheck?.certificate)
+
+				yield* service.recordChecks([yield* current(monitor.id, 1_000, true, certificate)])
+				assert.deepStrictEqual(yield* certificateNow(), certificate)
+				// An expired certificate fails the handshake before it can be read.
+				yield* service.recordChecks([yield* current(monitor.id, 2_000, false)])
+				assert.deepStrictEqual(yield* certificateNow(), certificate)
+				// The URL moved to http://: a passing check with no certificate has none.
+				yield* service.recordChecks([yield* current(monitor.id, 3_000, true)])
+				assert.isUndefined(yield* certificateNow())
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		},
+	)
+
+	it.effect("folds a retried batch in order: a renewal before a failure is kept", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* UptimeMonitorsService
+			const monitor = yield* createHttp("API")
+			const expiring = { expiresAt: 1_000_000, subject: "api.example.com", issuer: "R11" }
+			const renewed = { ...expiring, expiresAt: 9_000_000 }
+			yield* service.recordChecks([yield* current(monitor.id, 1_000, true, expiring)])
+			// The API was away: a renewal and then a refused connection arrive together.
+			yield* service.recordChecks([
+				yield* current(monitor.id, 2_000, true, renewed),
+				report(monitor.id, 3_000, false),
+			])
+			const read = yield* service.get(ORG, monitor.id)
+			assert.deepStrictEqual(read.state.lastCheck?.certificate, renewed)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("forgets the certificate when the monitored origin changes, and only then", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* UptimeMonitorsService
+			const monitor = yield* createHttp("API")
+			const certificate = { expiresAt: 9_000_000, subject: "status.example.com", issuer: "R11" }
+			const certificateNow = () =>
+				Effect.map(service.get(ORG, monitor.id), (read) => read.state.lastCheck?.certificate)
+			yield* service.recordChecks([yield* current(monitor.id, 1_000, true, certificate)])
+
+			// Same origin, another path: the certificate still stands.
+			yield* service.update(ORG, monitor.id, {
+				config: httpConfig("https://status.example.com/ready"),
+				updatedBy: USER,
+			})
+			assert.deepStrictEqual(yield* certificateNow(), certificate)
+			// Another host: its certificate is not this one.
+			yield* service.update(ORG, monitor.id, {
+				config: httpConfig("https://new.example.com/health"),
+				updatedBy: USER,
+			})
+			assert.isUndefined(yield* certificateNow())
+			const read = yield* service.get(ORG, monitor.id)
+			assert.strictEqual(read.state.lastCheck?.at, 1_000)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("ignores a certificate from a report that names no target revision", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* UptimeMonitorsService
+			const monitor = yield* createHttp("API")
+			const old = { expiresAt: 9_000_000, subject: "status.example.com", issuer: "R11" }
+			yield* service.recordChecks([yield* current(monitor.id, 1_000, true, old)])
+			yield* TestClock.setTime(10_000)
+			yield* service.update(ORG, monitor.id, {
+				config: httpConfig("https://new.example.com/health"),
+				updatedBy: USER,
+			})
+			// No revision (a target from an API that predates it): which host it probed is unknown.
+			yield* service.recordChecks([
+				new UptimeCheckReport({ ...report(monitor.id, 5_000, true), certificate: old }),
+			])
+			const read = yield* service.get(ORG, monitor.id)
+			assert.strictEqual(read.state.lastCheck?.at, 5_000)
+			assert.isUndefined(read.state.lastCheck?.certificate)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect(
+		"ignores the certificate of a check the scraper ran from a target cached before the edit",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const monitor = yield* createHttp("API")
+				const [before] = yield* service.listProbeTargets
+				const old = { expiresAt: 9_000_000, subject: "status.example.com", issuer: "R11" }
+				yield* TestClock.setTime(10_000)
+				yield* service.update(ORG, monitor.id, {
+					config: httpConfig("https://new.example.com/health"),
+					updatedBy: USER,
+				})
+				const [after] = yield* service.listProbeTargets
+				assert.isAbove(after?.revision ?? 0, before?.revision ?? 0)
+				// Started after the edit, but against the target the scraper had cached.
+				yield* service.recordChecks([
+					new UptimeCheckReport({
+						...report(monitor.id, 20_000, true),
+						certificate: old,
+						targetRevision: before?.revision ?? 0,
+					}),
+				])
+				const stale = yield* service.get(ORG, monitor.id)
+				assert.strictEqual(stale.state.lastCheck?.at, 20_000)
+				assert.isUndefined(stale.state.lastCheck?.certificate)
+				const renewed = { ...old, subject: "new.example.com" }
+				yield* service.recordChecks([
+					new UptimeCheckReport({
+						...report(monitor.id, 30_000, true),
+						certificate: renewed,
+						targetRevision: after?.revision ?? 0,
+					}),
+				])
+				const current = yield* service.get(ORG, monitor.id)
+				assert.deepStrictEqual(current.state.lastCheck?.certificate, renewed)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		},
+	)
+
+	it.effect("forgets the certificate when an origin change also resumes the monitor", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* UptimeMonitorsService
+			const monitor = yield* createHttp("API")
+			const certificate = { expiresAt: 9_000_000, subject: "status.example.com", issuer: "R11" }
+			yield* service.recordChecks([yield* current(monitor.id, 1_000, true, certificate)])
+			yield* service.update(ORG, monitor.id, { enabled: false, updatedBy: USER })
+			const resumed = yield* service.update(ORG, monitor.id, {
+				enabled: true,
+				config: httpConfig("https://new.example.com/health"),
+				updatedBy: USER,
+			})
+			assert.isUndefined(resumed.state.lastCheck?.certificate)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("refuses an alert group key as a service name", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* UptimeMonitorsService
+			const created = yield* Effect.flip(
+				service.create(ORG, {
+					name: "API",
+					kind: "http",
+					config: httpConfig(),
+					serviceName: "__tls_certificate__",
+					createdBy: USER,
+				}),
+			)
+			assert.strictEqual(created.message, "'__tls_certificate__' is reserved and cannot name a service")
+			const monitor = yield* createHttp("API")
+			const updated = yield* Effect.flip(
+				service.update(ORG, monitor.id, { serviceName: "__total__", updatedBy: USER }),
+			)
+			assert.strictEqual(updated.message, "'__total__' is reserved and cannot name a service")
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -581,8 +776,8 @@ describe("UptimeMonitorsService", () => {
 					)
 					const observed = yield* alerts.observe(ORG, ruleId, 1_000_000)
 					assert.deepStrictEqual(
-						Option.map(observed, (value) => [value.down, value.detail]),
-						Option.some([true, "The job reported a failure"]),
+						Arr.map(observed, (value) => [value.value, value.detail]),
+						[[1, "The job reported a failure"]],
 					)
 				})
 				yield* program.pipe(
@@ -651,7 +846,10 @@ describe("UptimeMonitorsService", () => {
 				const ruleId = monitor.alertRuleId
 				if (ruleId === null) return assert.fail("A heartbeat monitor owns an alert rule")
 				const observed = yield* alerts.observe(ORG, ruleId, 1_000_000)
-				assert.isTrue(Option.isSome(observed) && !observed.value.down)
+				assert.deepStrictEqual(
+					Arr.map(observed, (value) => value.value),
+					[0],
+				)
 				const after = yield* service.get(ORG, monitor.id)
 				assert.strictEqual(after.state.status, "up")
 				assert.strictEqual(after.state.lastPingAt, 960_000)
@@ -1089,7 +1287,7 @@ describe("UptimeMonitorsService backing alert rule", () => {
 					enabled: true,
 					severity: "critical",
 					comparator: "gte",
-					threshold: 1,
+					threshold: 0.5,
 					consecutive_breaches_required: 1,
 					consecutive_healthy_required: 1,
 					destination_ids_json: [DEST_A],
@@ -1181,6 +1379,202 @@ describe("UptimeMonitorsService backing alert rule", () => {
 			assert.strictEqual(error._tag, "@maple/http/errors/UptimeMonitorValidationError")
 			assert.include(error.message, "never runs")
 		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	describe("multi-step checks", () => {
+		const step = (name: string, url: string, overrides: Record<string, unknown> = {}) => ({
+			name,
+			method: "GET" as const,
+			url,
+			headers: {},
+			assertions: [],
+			extract: [],
+			...overrides,
+		})
+		const loginFlow = (overrides: Record<string, unknown> = {}): UptimeMonitorConfig => ({
+			_tag: "multistep",
+			timeoutMs: 30_000,
+			steps: [
+				step("Log in", "https://status.example.com/login", {
+					method: "POST",
+					body: "{}",
+					headers: { "X-Api-Key": "key-123" },
+					extract: [{ name: "token", from: { _tag: "json_path", path: "token" } }],
+				}),
+				step("Orders", "https://status.example.com/orders", {
+					headers: { Authorization: "Bearer {{token}}" },
+				}),
+			],
+			...overrides,
+		})
+		const createMultiStep = (config: UptimeMonitorConfig) =>
+			Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				return yield* service.create(ORG, {
+					name: "Login flow",
+					kind: "multistep",
+					config,
+					createdBy: USER,
+				})
+			})
+
+		it.effect("seals every step's headers, and the probe gets them back in order", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const monitor = yield* createMultiStep(loginFlow())
+				const stored = yield* Effect.promise(() =>
+					queryFirstRow<{ readonly steps: string; readonly sealed: string | null }>(
+						testDb,
+						`select (config_json -> 'steps')::text as steps, headers_ciphertext as sealed
+						 from uptime_monitors where id = $1`,
+						[monitor.id],
+					),
+				)
+				assert.notInclude(stored?.steps ?? "", "key-123")
+				assert.isTrue(Str.startsWith("v2.")(stored?.sealed ?? ""))
+				const [target] = yield* service.listProbeTargets
+				assert.deepStrictEqual(
+					target?.config._tag === "multistep"
+						? Arr.map(target.config.steps, (s) => s.headers)
+						: null,
+					[{ "X-Api-Key": "key-123" }, { Authorization: "Bearer {{token}}" }],
+				)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("refuses a variable no earlier step extracts, and a literal private URL", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const unknown = yield* Effect.flip(
+					createMultiStep(
+						loginFlow({
+							steps: [step("Orders", "https://status.example.com/orders/{{order}}")],
+						}),
+					),
+				)
+				assert.strictEqual(
+					unknown.message,
+					"Step 1 (Orders) uses {{order}}, which no earlier step extracts",
+				)
+				const internal = yield* Effect.flip(
+					createMultiStep(
+						loginFlow({ steps: [step("Metadata", "http://169.254.169.254/latest")] }),
+					),
+				)
+				assert.strictEqual(internal._tag, "@maple/http/errors/UptimeMonitorValidationError")
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("keeps hidden header values with their own step when steps are reordered", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const twoKeys: UptimeMonitorConfig = {
+					_tag: "multistep",
+					timeoutMs: 30_000,
+					steps: [
+						step("Admin", "https://status.example.com/admin", {
+							headers: { "X-Api-Key": "admin-key" },
+						}),
+						step("Public", "https://status.example.com/public", {
+							headers: { "X-Api-Key": "public-key" },
+						}),
+					],
+				}
+				const monitor = yield* createMultiStep(twoKeys)
+				yield* service.update(ORG, monitor.id, {
+					config: {
+						_tag: "multistep",
+						timeoutMs: 30_000,
+						steps: [
+							step("Public", "https://status.example.com/public", {
+								headers: { "X-Api-Key": "[redacted]" },
+							}),
+							step("Admin", "https://status.example.com/admin", {
+								headers: { "X-Api-Key": "[redacted]" },
+							}),
+						],
+					},
+					updatedBy: USER,
+				})
+				const [target] = yield* service.listProbeTargets
+				assert.deepStrictEqual(
+					target?.config._tag === "multistep"
+						? Arr.map(target.config.steps, (s) => [s.name, s.headers["X-Api-Key"]])
+						: null,
+					[
+						["Public", "public-key"],
+						["Admin", "admin-key"],
+					],
+				)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("refuses a header value no HTTP request can carry", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const error = yield* Effect.flip(
+					createMultiStep(
+						loginFlow({
+							steps: [
+								step("A", "https://status.example.com/a", {
+									headers: { "X-Note": "line\nbreak" },
+								}),
+							],
+						}),
+					),
+				)
+				assert.strictEqual(
+					error.message,
+					"Step 1 (A): Header X-Note has a character an HTTP header cannot carry (a line break, a control or non-Latin-1 character)",
+				)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("keeps a step's hidden header value on edit only for the same step and origin", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const monitor = yield* createMultiStep(loginFlow())
+				const redacted = loginFlow()
+				const withRedacted = (url: string): UptimeMonitorConfig =>
+					redacted._tag === "multistep"
+						? {
+								...redacted,
+								steps: [
+									{
+										...step("Log in", url, { method: "POST", body: "{}" }),
+										headers: { "X-Api-Key": "[redacted]" },
+										extract: [
+											{ name: "token", from: { _tag: "json_path", path: "token" } },
+										],
+									},
+									...redacted.steps.slice(1),
+								],
+							}
+						: redacted
+				yield* service.update(ORG, monitor.id, {
+					config: withRedacted("https://status.example.com/v2/login"),
+					updatedBy: USER,
+				})
+				const [target] = yield* service.listProbeTargets
+				assert.deepStrictEqual(
+					target?.config._tag === "multistep" ? target.config.steps[0]?.headers : null,
+					{ "X-Api-Key": "key-123" },
+				)
+				const moved = yield* Effect.flip(
+					service.update(ORG, monitor.id, {
+						config: withRedacted("https://elsewhere.example.com/login"),
+						updatedBy: USER,
+					}),
+				)
+				assert.strictEqual(
+					moved.message,
+					"Header X-Api-Key has no stored value to keep; send its real value",
+				)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
 	})
 
 	describe("request headers at rest", () => {

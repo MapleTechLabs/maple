@@ -534,7 +534,7 @@ export const toggledModule = (model: Model, id: AwsConnectionId, module: AwsModu
 	if (Option.isNone(found) || !canManage(model) || model.awsCard.moduleSave._tag === "Saving")
 		return { model }
 	return {
-		model: withCard(model, { moduleSave: { _tag: "Saving", id } }),
+		model: withCard(model, { moduleSave: { _tag: "Saving", id, module } }),
 		commands: [UpdateAwsModules({ id, modules: flip(found.value.modules, module) })],
 	}
 }
@@ -567,10 +567,19 @@ export const completedModules = (
 	connection: V2AwsConnection | null,
 	error: string | null,
 ): Return => {
+	const save = model.awsCard.moduleSave
 	if (connection === null)
 		return {
 			model: withCard(model, {
-				moduleSave: { _tag: "Refused", id, error: error ?? "Couldn't change what Maple reads." },
+				moduleSave:
+					save._tag === "Saving" && save.id === id
+						? {
+								_tag: "Refused",
+								id,
+								module: save.module,
+								error: error ?? "Couldn't change what Maple reads.",
+							}
+						: { _tag: "Idle" },
 			}),
 		}
 	const before = Arr.findFirst(connectionsOf(model), (entry) => entry.id === id)

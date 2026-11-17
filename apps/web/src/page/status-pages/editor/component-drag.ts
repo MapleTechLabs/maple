@@ -1,0 +1,199 @@
+import { StatusPageComponentId } from "@maple/domain"
+import { Array as Arr, Effect, Option, Queue, Schema, Stream } from "effect"
+import { Message } from "./message"
+
+// A pointer drag on a component's grip lifts its row and follows the pointer within its group; the
+// group's other rows slide aside to open the slot it would land in, which a dashed outline marks.
+// Letting go settles the row into that slot and sends one `DroppedComponent`, since each reorder is
+// a save. Escape or a cancelled pointer springs it back and sends nothing.
+
+/** On a group's wrapper, around its list and its slot outline. */
+export const LIST_ATTRIBUTE = "component-list"
+/** On a component's row, valued with its id. */
+export const ROW_ATTRIBUTE = "component-row"
+export const GRIP_ATTRIBUTE = "component-grip"
+/** On the outline drawn where the held row would land. */
+export const SLOT_ATTRIBUTE = "component-slot"
+/** Set on the held row and the slot outline while a drag runs; the view styles it. */
+const DRAGGING = "data-dragging"
+
+const MOVE_MS = 160
+const MOVE = `transform ${MOVE_MS}ms cubic-bezier(0.2, 0, 0, 1)`
+const LIFT = "scale(1.01)"
+/** The reorder's render normally lands within a frame; the rows drop their offsets by then regardless. */
+const RENDER_WAIT_MS = 500
+
+/** A row's measured place, in viewport pixels. */
+export type Span = Readonly<{ top: number; height: number }>
+
+/** How far row `index` moves while the row from `from`, `size` tall, is held over slot `to`. */
+export const shiftOf = (index: number, from: number, to: number, size: number): number =>
+	index > from && index <= to ? -size : index < from && index >= to ? size : 0
+
+/** How far the row from `from` moves to rest in slot `to`: rows may differ in height. */
+export const landingOffset = (spans: ReadonlyArray<Span>, from: number, to: number): number => {
+	const origin = spans[from]
+	const target = spans[to]
+	if (origin === undefined || target === undefined) return 0
+	return to > from ? target.top + target.height - (origin.top + origin.height) : target.top - origin.top
+}
+
+/**
+ * The slot the row from `from`, moved `offset` pixels, lands in: the one whose resting place is
+ * nearest. Held as far as its group allows, that is the end slot.
+ */
+export const dropIndex = (spans: ReadonlyArray<Span>, from: number, offset: number): number =>
+	Arr.reduce(spans, from, (best, _, index) =>
+		Math.abs(offset - landingOffset(spans, from, index)) <
+		Math.abs(offset - landingOffset(spans, from, best))
+			? index
+			: best,
+	)
+
+const decodeId = Schema.decodeUnknownOption(StatusPageComponentId)
+
+const translate = (offset: number): string => (offset === 0 ? "" : `translateY(${offset}px)`)
+
+const startDrag = (
+	event: PointerEvent,
+	emit: (message: Message) => void,
+	busy: { isDragging: boolean },
+): void => {
+	if (busy.isDragging || event.button !== 0 || !(event.target instanceof Element)) return
+	const grip = event.target.closest(`[data-${GRIP_ATTRIBUTE}]`)
+	const row = grip?.closest(`[data-${ROW_ATTRIBUTE}]`)
+	const list = row?.closest(`[data-${LIST_ATTRIBUTE}]`)
+	const slot = list?.querySelector(`[data-${SLOT_ATTRIBUTE}]`)
+	if (
+		!(grip instanceof HTMLElement) ||
+		!(row instanceof HTMLElement) ||
+		!(list instanceof HTMLElement) ||
+		!(slot instanceof HTMLElement)
+	)
+		return
+	const componentId = decodeId(row.getAttribute(`data-${ROW_ATTRIBUTE}`))
+	const rows = Arr.filter(
+		[...list.querySelectorAll(`[data-${ROW_ATTRIBUTE}]`)],
+		(other): other is HTMLElement => other instanceof HTMLElement,
+	)
+	const from = rows.indexOf(row)
+	const spans = Arr.map(rows, (other): Span => {
+		const bounds = other.getBoundingClientRect()
+		return { top: bounds.top, height: bounds.height }
+	})
+	const origin = spans[from]
+	const first = spans[0]
+	const last = spans[spans.length - 1]
+	if (Option.isNone(componentId) || origin === undefined || first === undefined || last === undefined)
+		return
+	event.preventDefault()
+	busy.isDragging = true
+	grip.setPointerCapture(event.pointerId)
+	const ease = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "" : MOVE
+	const listTop = list.getBoundingClientRect().top
+	// Held inside its group: no higher than its first row, no lower than its last.
+	const minOffset = first.top - origin.top
+	const maxOffset = last.top + last.height - (origin.top + origin.height)
+	const startY = event.clientY
+	const drag = { to: from }
+
+	const placeSlot = (to: number) => {
+		slot.style.transform = `translateY(${origin.top + landingOffset(spans, from, to) - listTop}px)`
+	}
+	slot.style.height = `${origin.height}px`
+	placeSlot(from)
+	slot.setAttribute(DRAGGING, "")
+	row.setAttribute(DRAGGING, "")
+	row.style.transform = LIFT
+	Arr.forEach(rows, (other) => {
+		if (other !== row) other.style.transition = ease
+	})
+	// Shown at its first slot, then eased from slot to slot.
+	slot.getBoundingClientRect()
+	slot.style.transition = ease
+
+	const onMove = (move: PointerEvent) => {
+		const offset = Math.min(Math.max(move.clientY - startY, minOffset), maxOffset)
+		row.style.transform = `translateY(${offset}px) ${LIFT}`
+		const to = dropIndex(spans, from, offset)
+		if (to === drag.to) return
+		drag.to = to
+		Arr.forEach(rows, (other, index) => {
+			if (index !== from) other.style.transform = translate(shiftOf(index, from, to, origin.height))
+		})
+		placeSlot(to)
+	}
+	const reset = () => {
+		Arr.forEach(rows, (other) => {
+			other.style.transform = ""
+			other.style.transition = ""
+			other.removeAttribute(DRAGGING)
+		})
+		slot.style.transition = ""
+		busy.isDragging = false
+	}
+	// The held row eases into `to`; a new slot is then sent, and the rendered order takes over from
+	// the offsets in the frame it lands.
+	const release = (to: number) => {
+		grip.removeEventListener("pointermove", onMove)
+		grip.removeEventListener("pointerup", onUp)
+		grip.removeEventListener("pointercancel", onAbort)
+		grip.removeEventListener("lostpointercapture", onAbort)
+		window.removeEventListener("keydown", onKey, true)
+		slot.removeAttribute(DRAGGING)
+		row.style.transition = ease
+		row.style.transform = translate(landingOffset(spans, from, to))
+		if (to === from)
+			Arr.forEach(rows, (other) => {
+				other.style.transform = ""
+			})
+		window.setTimeout(
+			() => {
+				if (to === from) {
+					reset()
+					return
+				}
+				const observer = new MutationObserver(() => {
+					observer.disconnect()
+					window.clearTimeout(fallback)
+					reset()
+				})
+				const fallback = window.setTimeout(() => {
+					observer.disconnect()
+					reset()
+				}, RENDER_WAIT_MS)
+				observer.observe(row.parentElement ?? row, { childList: true })
+				emit(Message.DroppedComponent({ componentId: componentId.value, index: to }))
+			},
+			ease === "" ? 0 : MOVE_MS,
+		)
+	}
+	const onUp = () => release(drag.to)
+	const onAbort = () => release(from)
+	const onKey = (key: KeyboardEvent) => {
+		if (key.key !== "Escape") return
+		// The editor's own Escape would close the open component as well.
+		key.preventDefault()
+		key.stopPropagation()
+		release(from)
+	}
+	grip.addEventListener("pointermove", onMove)
+	grip.addEventListener("pointerup", onUp)
+	grip.addEventListener("pointercancel", onAbort)
+	grip.addEventListener("lostpointercapture", onAbort)
+	window.addEventListener("keydown", onKey, true)
+}
+
+/** Grip drags in the Monitors list, each let go over a new slot as one `DroppedComponent`. */
+export const componentDrags: Stream.Stream<Message> = Stream.callback<Message>((queue) =>
+	Effect.acquireRelease(
+		Effect.sync(() => {
+			const busy = { isDragging: false }
+			const onDown = (event: PointerEvent) =>
+				startDrag(event, (message) => Queue.offerUnsafe(queue, message), busy)
+			document.addEventListener("pointerdown", onDown)
+			return () => document.removeEventListener("pointerdown", onDown)
+		}),
+		(remove) => Effect.sync(remove),
+	).pipe(Effect.flatMap(() => Effect.never)),
+)

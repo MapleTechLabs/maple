@@ -464,8 +464,10 @@ describe("escalation chain editor", () => {
 			expectView(text("Used by 2 rules")).toExist(),
 			expectView(role("textbox", { name: "Name" })).toBeDisabled(),
 			expectView(role("button", { name: "Save chain" })).not.toExist(),
-			expectView(role("button", { name: "Delete chain" })).not.toExist(),
-			expectView(role("button", { name: "Actions for step 1" })).not.toExist(),
+			expectView(role("button", { name: "Delete chain" })).toBeDisabled(),
+			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
+			// The step menu stays, its items disabled with who can use them.
+			expectView(role("button", { name: "Actions for step 1" })).toExist(),
 			expectView(role("button", { name: "Add a step after step 1" })).not.toExist(),
 			expectView(role("button", { name: "Stop notifying Slack #alerts-api on step 1" })).not.toExist(),
 			expectView(role("link", { name: "Back to routing" })).toExist(),

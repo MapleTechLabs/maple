@@ -58,6 +58,16 @@ const McpApiKeyMetadata = Schema.Struct({
 const decodeMcpApiKeyMetadata = Schema.decodeUnknownOption(McpApiKeyMetadata)
 
 /**
+ * Metadata written when someone without `api_keys:manage` (an engineer) creates a restricted API
+ * key: their roles are pinned so the key never resolves with the `root` default.
+ */
+const RestrictedApiKeyMetadata = Schema.Struct({
+	source: Schema.Literal("maple_api_key"),
+	roles: Schema.Array(RoleName),
+})
+const decodeRestrictedApiKeyMetadata = Schema.decodeUnknownOption(RestrictedApiKeyMetadata)
+
+/**
  * Metadata written when a signed-in app mints a credential for one of its own
  * devices. Two fields carry weight:
  *
@@ -88,7 +98,13 @@ const McpOAuthApiKeyMetadata = Schema.Struct({
 const decodeMcpOAuthApiKeyMetadata = Schema.decodeUnknownOption(McpOAuthApiKeyMetadata)
 
 /** Metadata `source` values that pin roles onto a key. */
-const ROLE_BEARING_SOURCES = ["maple_cli", "maple_mcp", "maple_mcp_oauth", WIDGET_DEVICE_KEY_SOURCE] as const
+const ROLE_BEARING_SOURCES = [
+	"maple_cli",
+	"maple_mcp",
+	"maple_api_key",
+	"maple_mcp_oauth",
+	WIDGET_DEVICE_KEY_SOURCE,
+] as const
 
 interface KeyRoleMetadata {
 	readonly roles: ReadonlyArray<RoleName> | null
@@ -114,6 +130,10 @@ const readKeyRoleMetadata = (metadata: unknown): Option.Option<KeyRoleMetadata> 
 	const mcp = decodeMcpApiKeyMetadata(metadata)
 	if (Option.isSome(mcp)) {
 		return Option.some({ roles: mcp.value.roles, cliManaged: false, mcpOAuthResource: null })
+	}
+	const restricted = decodeRestrictedApiKeyMetadata(metadata)
+	if (Option.isSome(restricted)) {
+		return Option.some({ roles: restricted.value.roles, cliManaged: false, mcpOAuthResource: null })
 	}
 	const device = decodeDeviceApiKeyMetadata(metadata)
 	if (Option.isSome(device)) {
@@ -242,6 +262,20 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.api_key.id": keyId })
 				const row = yield* requireById(orgId, keyId)
 				return rowToResponse(row)
+			})
+
+			/**
+			 * The roles pinned onto a key; none for an unpinned key (it resolves as `root`) or
+			 * metadata that does not decode.
+			 */
+			const pinnedRoles = Effect.fn("ApiKeysService.pinnedRoles")(function* (
+				orgId: OrgId,
+				keyId: ApiKeyId,
+			) {
+				const row = yield* requireById(orgId, keyId)
+				return Option.flatMap(readKeyRoleMetadata(row.metadataJson), (metadata) =>
+					Option.fromNullishOr(metadata.roles),
+				)
 			})
 
 			/**
@@ -761,6 +795,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 
 			return {
 				get,
+				pinnedRoles,
 				list,
 				hasUsedKeyOfKind,
 				create,

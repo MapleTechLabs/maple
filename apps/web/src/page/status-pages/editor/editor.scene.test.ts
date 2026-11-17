@@ -4,13 +4,16 @@ import { OrgId } from "@maple/domain"
 import {
 	StatusPageComponentPublicId,
 	type StatusPageConfig,
+	StatusPagePreviewParams,
 	StatusPagePublicId,
 	type V2StatusPage,
 	type V2StatusPageCustomDomain,
 } from "@maple/domain/http/v2"
 import { DEFAULT_STATUS_PAGE_THEME } from "@maple/domain/status-page"
-import { Option, Result, Schema, Array as Arr, String as Str } from "effect"
+import { flow, Option, Order, Result, Schema, Array as Arr, String as Str } from "effect"
 import {
+	type AnyCommand,
+	type SceneSimulation,
 	all,
 	attr,
 	change,
@@ -19,8 +22,10 @@ import {
 	expect as expectView,
 	expectAll,
 	find,
+	findAll,
 	given,
 	inside,
+	keydown,
 	Mount,
 	role,
 	scene,
@@ -30,6 +35,7 @@ import {
 	text,
 	type,
 	withViewInputs,
+	within,
 } from "foldkit/scene"
 import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
@@ -53,16 +59,23 @@ import {
 import { PickerMessage } from "../shared/picker"
 import {
 	CheckCustomDomain,
+	FetchComponents,
+	FetchEditorPreview,
+	FetchPage,
 	FocusEditorElement,
+	ReadEditorClock,
 	RemoveCustomDomain,
+	RemovePassword,
+	ReorderComponents,
 	RevealOpenComponent,
 	SaveVisibility,
 	SetCustomDomain,
+	WaitEditorPreview,
 } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
-import { groupedOrder, moved } from "./update-components"
+import { componentGripId, groupedOrder } from "./update-components"
 import { customDomainOf } from "./update-domain"
 import { canvasDocument } from "./view-canvas"
 import { maintenanceDurationMs } from "./view-incidents"
@@ -293,36 +306,317 @@ const selected = (componentNumber: number, fixture: Fixture = {}) =>
 
 const revealed = Mount.resolve(RevealOpenComponent, Message.CompletedFocus())
 
-describe("components under Settings > Monitors", () => {
-	test("moving a component down sends the whole new order once and shows it at once", () => {
-		const moving = pageUpdate(
-			loaded(),
-			Message.ClickedMoveComponent({ componentId: componentId(1), offset: 1 }),
+type ArgsSchema = Schema.Top & { readonly DecodingServices: never }
+
+/** The args of each pending `name` Command. */
+const argsOf = <S extends ArgsSchema>(
+	commands: ReadonlyArray<AnyCommand>,
+	name: string,
+	schema: S,
+): ReadonlyArray<S["Type"]> =>
+	Arr.map(
+		Arr.filter(commands, (command) => command.name === name),
+		(command) => Schema.decodeSync(schema)(command.args),
+	)
+
+const READ_ARGS = Schema.Struct({ key: Schema.String })
+
+type Step = <M, Msg, Out>(simulation: SceneSimulation<M, Msg, Out>) => SceneSimulation<M, Msg, Out>
+
+/** Each pending `name` Command, answered from its args. */
+const answerEach =
+	<S extends ArgsSchema>(name: string, schema: S, answer: (args: S["Type"]) => Step): Step =>
+	(simulation) =>
+		Arr.reduce(argsOf(simulation.commands, name, schema), simulation, (current, args) =>
+			answer(args)(current),
 		)
-		expect(moving.commands).toMatchObject([
+
+/**
+ * The reorder saves, and what it reads again comes back as saved: the components and the page,
+ * then the clock and the preview those reads refresh.
+ */
+const reorderLands = (rows: ReadonlyArray<ReturnType<typeof component>>): Step =>
+	flow(
+		Command.resolve(ReorderComponents, Message.CompletedReorder({ result: Result.succeed(rows) })),
+		answerEach("FetchStatusPageComponents", READ_ARGS, ({ key }) =>
+			Command.resolve(
+				FetchComponents,
+				Message.CompletedFetchComponents({ key, result: Result.succeed(rows) }),
+			),
+		),
+		answerEach("FetchStatusPage", READ_ARGS, ({ key }) =>
+			Command.resolve(
+				FetchPage,
+				Message.CompletedFetchPage({ key, result: Result.succeed(statusPage()) }),
+			),
+		),
+		Command.resolve(ReadEditorClock, Message.ReadClock({ nowMs: Date.UTC(2026, 9, 1, 12) })),
+		answerEach(
+			"WaitStatusPageEditorPreview",
+			Schema.Struct({ generation: Schema.Number }),
+			({ generation }) =>
+				Command.resolve(
+					WaitEditorPreview({ generation }),
+					Message.ElapsedPreviewDebounce({ generation }),
+				),
+		),
+		answerEach(
+			"FetchStatusPageEditorPreview",
+			Schema.Struct({ generation: Schema.Number, draft: StatusPagePreviewParams }),
+			({ generation, draft }) =>
+				Command.resolve(
+					FetchEditorPreview,
+					Message.CompletedFetchPreview({
+						generation,
+						draft,
+						result: Result.fail(toLoadFailure(new Error("preview unavailable"))),
+					}),
+				),
+		),
+	)
+
+/** The rows' grips, top to bottom. */
+const gripOrder = (html: Parameters<ReturnType<typeof find>>[0]): ReadonlyArray<string> =>
+	Arr.getSomes(Arr.map(findAll(html, 'button[aria-label^="Reorder "]'), attr("aria-label")))
+
+describe("components under Settings > Monitors", () => {
+	test("a drop moves the row at once and sends nothing until Save, which sends the whole order once", () => {
+		const dropped = pageUpdate(
+			loaded(MONITORS),
+			Message.DroppedComponent({ componentId: componentId(1), index: 2 }),
+		)
+		expect(dropped.commands ?? []).toEqual([])
+		scene(
+			{ update: pageUpdate, view },
+			given(dropped.model),
+			tap(({ html }) =>
+				expect(gripOrder(html)).toEqual([
+					"Reorder Component 2",
+					"Reorder Component 3",
+					"Reorder Component 1",
+				]),
+			),
+			expectView(text("Unsaved changes")).toExist(),
+			expectView(text("New order")).toExist(),
+		)
+		const saving = pageUpdate(dropped.model, Message.ClickedSaveMonitors())
+		expect(saving.commands).toMatchObject([
+			{
+				name: "ReorderStatusPageComponents",
+				args: { componentIds: [componentId(2), componentId(3), componentId(1)] },
+			},
+		])
+		// One order save at a time: a drop while it is in flight moves nothing.
+		expect(
+			pageUpdate(saving.model, Message.DroppedComponent({ componentId: componentId(2), index: 0 }))
+				.model.pendingOrder,
+		).toEqual(saving.model.pendingOrder)
+		const done = pageUpdate(saving.model, Message.CompletedReorder({ result: Result.succeed([]) }))
+		expect(names(done.commands)).toContain("FetchStatusPageComponents")
+		scene(
+			{ update: pageUpdate, view },
+			given(done.model),
+			// Kept as saved until the re-read brings the server's order.
+			tap(({ html }) =>
+				expect(gripOrder(html)).toEqual([
+					"Reorder Component 2",
+					"Reorder Component 3",
+					"Reorder Component 1",
+				]),
+			),
+			expectView(text("Unsaved changes")).not.toExist(),
+		)
+	})
+
+	test("a drop on the slot it came from, past the end it is already at, or back where it was saved leaves nothing to save", () => {
+		const model = loaded(MONITORS)
+		expect(
+			pageUpdate(model, Message.DroppedComponent({ componentId: componentId(2), index: 1 })).model,
+		).toEqual(model)
+		expect(
+			pageUpdate(model, Message.DroppedComponent({ componentId: componentId(3), index: 9 })).model,
+		).toEqual(model)
+		const back = steps(model, [
+			Message.DroppedComponent({ componentId: componentId(1), index: 2 }),
+			Message.DroppedComponent({ componentId: componentId(1), index: 0 }),
+		])
+		scene({ update: pageUpdate, view }, given(back), expectView(text("Unsaved changes")).not.toExist())
+		expect(pageUpdate(back, Message.ClickedSaveMonitors()).commands ?? []).toEqual([])
+	})
+
+	test("Discard puts the saved order back", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(MONITORS)),
+			keydown(role("button", { name: "Reorder Component 1" }), "ArrowDown"),
+			Command.resolve(FocusEditorElement, Message.CompletedFocus()),
+			click(role("button", { name: "Discard" })),
+			Command.expectNone(),
+			tap(({ html }) =>
+				expect(gripOrder(html)).toEqual([
+					"Reorder Component 1",
+					"Reorder Component 2",
+					"Reorder Component 3",
+				]),
+			),
+			expectView(text("Unsaved changes")).not.toExist(),
+		)
+	})
+
+	test("the page preview follows the unsaved order; the live page keeps the saved one", () => {
+		const dropped = pageUpdate(
+			loaded(MONITORS),
+			Message.DroppedComponent({ componentId: componentId(3), index: 0 }),
+		).model
+		const page = srcdocOf("Acme Status with these settings")
+		/** The components' names in the order a document first mentions them. */
+		const namesIn = (document: string) =>
+			Arr.sortBy(
+				Order.mapInput(Order.Number, (name: string) =>
+					Option.getOrElse(Str.indexOf(name)(document), () => -1),
+				),
+			)(["Component 1", "Component 2", "Component 3"])
+		scene(
+			{ update: pageUpdate, view },
+			given(dropped),
+			tap(({ html }) =>
+				expect(namesIn(page(html))).toEqual(["Component 3", "Component 1", "Component 2"]),
+			),
+		)
+		expect(namesIn(canvasDocument(dropped, statusPage()))).toEqual([
+			"Component 1",
+			"Component 2",
+			"Component 3",
+		])
+	})
+
+	test("an unsaved order saves with the open component's edits, each write on its own", () => {
+		const both = steps(selected(2), [
+			Message.DroppedComponent({ componentId: componentId(2), index: 0 }),
+			Message.ChangedComponentField({ field: "name", value: "Payments" }),
+		])
+		scene({ update: pageUpdate, view }, given(both), expectView(text("New order, Component 2")).toExist())
+		const saving = pageUpdate(both, Message.ClickedSaveMonitors())
+		expect(saving.commands).toMatchObject([
 			{
 				name: "ReorderStatusPageComponents",
 				args: { componentIds: [componentId(2), componentId(1), componentId(3)] },
 			},
+			{
+				name: "SaveStatusPageComponent",
+				args: { componentId: componentId(2), payload: { name: "Payments" } },
+			},
 		])
-		expect(
-			pageUpdate(moving.model, Message.ClickedMoveComponent({ componentId: componentId(2), offset: 1 }))
-				.commands ?? [],
-		).toEqual([])
-		const done = pageUpdate(moving.model, Message.CompletedReorder({ result: Result.succeed([]) }))
-		expect(names(done.commands)).toContain("FetchStatusPageComponents")
-	})
-
-	test("the first component cannot move up and the last cannot move down", () => {
-		const rows = [component(1), component(2)]
-		expect(moved(rows, componentId(1), -1)).toBeNull()
-		expect(moved(rows, componentId(2), 1)).toBeNull()
+		// The component lands; the order is refused and stays pending with why.
+		const settled = steps(saving.model, [
+			Message.CompletedSaveComponent({ result: Result.succeed(component(2, { name: "Payments" })) }),
+			Message.CompletedReorder({ result: Result.fail(toLoadFailure(new Error("refused"))) }),
+		])
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ ...MONITORS, components: rows })),
-			expectView(role("button", { name: "Move Component 1 up" })).toBeDisabled(),
-			expectView(role("button", { name: "Move Component 2 down" })).toBeDisabled(),
-			expectView(role("button", { name: "Move Component 1 down" })).not.toBeDisabled(),
+			given(settled),
+			expectView(text("Couldn't save the order")).toExist(),
+			expectView(text("New order")).toExist(),
+			tap(({ html }) =>
+				expect(gripOrder(html)).toEqual([
+					"Reorder Payments",
+					"Reorder Component 1",
+					"Reorder Component 3",
+				]),
+			),
+		)
+		// Save tries the order again, alone.
+		expect(names(pageUpdate(settled, Message.ClickedSaveMonitors()).commands)).toEqual([
+			"ReorderStatusPageComponents",
+		])
+	})
+
+	test("an unsaved order belongs to no row: opening another one or leaving Monitors keeps it without asking", () => {
+		const dropped = pageUpdate(
+			selected(1),
+			Message.DroppedComponent({ componentId: componentId(3), index: 0 }),
+		).model
+		const opened = pageUpdate(dropped, Message.ClickedComponent({ componentId: componentId(2) })).model
+		expect(opened.discardComponentDialog.isOpen).toBe(false)
+		expect(opened.panel).toEqual({ _tag: "Component", componentId: componentId(2) })
+		const away = routeChanged(opened, { _tag: "StatusPage", pageId: PUBLIC_ID, search: {} }, context)
+		const back = routeChanged(
+			away.model,
+			{ _tag: "StatusPage", pageId: PUBLIC_ID, search: { view: "settings", section: "monitors" } },
+			context,
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(back.model),
+			expectView(text("New order")).toExist(),
+			tap(({ html }) => expect(gripOrder(html)[0]).toBe("Reorder Component 3")),
+		)
+	})
+
+	test("each row's grip says what it reorders and how; a member sees it locked", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(MONITORS)),
+			expectView(role("button", { name: "Reorder Component 1" })).toHaveAccessibleDescription(
+				"Drag, or press the up and down arrow keys, to move it within its group.",
+			),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ ...MONITORS, grants: MEMBER })),
+			expectView(text("Component 1")).toExist(),
+			expectView(role("button", { name: "Reorder Component 1" })).toBeDisabled(),
+			expectView(role("button", { name: "Reorder Component 1" })).not.toHaveAccessibleDescription(
+				"Drag, or press the up and down arrow keys, to move it within its group.",
+			),
+		)
+	})
+
+	test("ArrowDown on a grip moves its row one slot and keeps focus on that grip; Save sends the order", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(MONITORS)),
+			keydown(role("button", { name: "Reorder Component 1" }), "ArrowDown"),
+			Command.expectExact(FocusEditorElement({ id: componentGripId(componentId(1)) })),
+			tap(({ html }) =>
+				expect(gripOrder(html)).toEqual([
+					"Reorder Component 2",
+					"Reorder Component 1",
+					"Reorder Component 3",
+				]),
+			),
+			Command.resolve(FocusEditorElement, Message.CompletedFocus()),
+			click(role("button", { name: "Save" })),
+			Command.expectExact(
+				ReorderComponents({
+					pageId: statusPage().id,
+					componentIds: [componentId(2), componentId(1), componentId(3)],
+				}),
+			),
+			reorderLands([component(2), component(1), component(3)]),
+			// The saved order reads back as shown.
+			tap(({ html }) =>
+				expect(gripOrder(html)).toEqual([
+					"Reorder Component 2",
+					"Reorder Component 1",
+					"Reorder Component 3",
+				]),
+			),
+			expectView(text("Unsaved changes")).not.toExist(),
+		)
+	})
+
+	test("the first row's grip cannot go up and the last's cannot go down", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ ...MONITORS, components: [component(1), component(2)] })),
+			keydown(role("button", { name: "Reorder Component 1" }), "ArrowUp"),
+			Command.expectNone(),
+			keydown(role("button", { name: "Reorder Component 2" }), "ArrowDown"),
+			Command.expectNone(),
+			tap(({ html }) =>
+				expect(gripOrder(html)).toEqual(["Reorder Component 1", "Reorder Component 2"]),
+			),
 		)
 	})
 
@@ -368,14 +662,15 @@ describe("components under Settings > Monitors", () => {
 					Option.flatMap(find('[aria-label="Components"] ul')(html), attr("aria-label")),
 				).toEqual(Option.some("No group")),
 			),
-			expectView(role("button", { name: "Move Component 1 up" })).toBeDisabled(),
-			expectView(role("button", { name: "Move Component 3 down" })).toBeDisabled(),
-			expectView(role("button", { name: "Move Component 2 up" })).toBeDisabled(),
-			expectView(role("button", { name: "Move Component 4 down" })).toBeDisabled(),
+			// Each group's last row stops at its end rather than joining the next group.
+			keydown(role("button", { name: "Reorder Component 3" }), "ArrowDown"),
+			Command.expectNone(),
+			keydown(role("button", { name: "Reorder Component 2" }), "ArrowUp"),
+			Command.expectNone(),
 		)
 	})
 
-	test("a move swaps a component with its neighbour in its group and leaves every other where it was", () => {
+	test("a drop moves a component within its group and leaves every other where it was", () => {
 		const rows = [
 			component(1),
 			component(2, { group: "Core" }),
@@ -384,8 +679,10 @@ describe("components under Settings > Monitors", () => {
 		]
 		expect(
 			pageUpdate(
-				loaded({ components: rows }),
-				Message.ClickedMoveComponent({ componentId: componentId(3), offset: -1 }),
+				steps(loaded({ components: rows }), [
+					Message.DroppedComponent({ componentId: componentId(3), index: 0 }),
+				]),
+				Message.ClickedSaveMonitors(),
 			).commands,
 		).toMatchObject([
 			{
@@ -393,29 +690,21 @@ describe("components under Settings > Monitors", () => {
 				args: { componentIds: [componentId(3), componentId(2), componentId(1), componentId(4)] },
 			},
 		])
-		expect(moved(rows, componentId(4), 1)).toBeNull()
 	})
 
-	test("the open component's row shows how it reads on the page, as typed", () => {
+	test("the page preview follows the open component as typed, with no preview of its own", () => {
 		const editing = pageUpdate(
 			selected(2, { components: [component(1, { group: "Core" }), component(2, { group: "Core" })] }),
 			Message.ChangedComponentField({ field: "name", value: "Payments" }),
 		).model
+		const page = srcdocOf("Acme Status with these settings")
 		scene(
 			{ update: pageUpdate, view },
 			given(editing),
-			expectView(selector('iframe[title="Component 2 as visitors see it"]')).toHaveAttr("sandbox", ""),
+			expectView(selector('iframe[title="Component 2 as visitors see it"]')).not.toExist(),
 			tap(({ html }) => {
-				const srcdoc = Option.getOrElse(
-					Option.flatMap(
-						find('iframe[title="Component 2 as visitors see it"]')(html),
-						attr("srcdoc"),
-					),
-					() => "",
-				)
-				expect(srcdoc).toContain("Payments")
-				expect(srcdoc).toContain("Core")
-				expect(srcdoc).not.toContain("Component 1")
+				expect(page(html)).toContain("Payments")
+				expect(page(html)).toContain("Core")
 			}),
 		)
 	})
@@ -464,17 +753,30 @@ describe("components under Settings > Monitors", () => {
 		).toBeNull()
 	})
 
-	test("switching to a tab that does not show the open component closes it", () => {
-		const left = routeChanged(selected(1), { _tag: "StatusPage", pageId: PUBLIC_ID, search: {} }, context)
-		expect(left.model.panel).toBeNull()
-		// A route change that skipped the field's blur still saves what was typed.
+	test("switching to a tab that does not show the open component closes it, keeping unsaved edits for Monitors", () => {
+		const away = { _tag: "StatusPage", pageId: PUBLIC_ID, search: {} } as const
+		expect(routeChanged(selected(1), away, context).model.panel).toBeNull()
 		const typed = pageUpdate(
 			selected(1),
 			Message.ChangedComponentField({ field: "name", value: "Payments" }),
 		).model
-		const leftTyped = routeChanged(typed, { _tag: "StatusPage", pageId: PUBLIC_ID, search: {} }, context)
-		expect(leftTyped.model.panel).toBeNull()
-		expect(names(leftTyped.commands)).toContain("SaveStatusPageComponent")
+		const left = routeChanged(typed, away, context)
+		expect(left.model.panel).toBeNull()
+		expect(names(left.commands)).not.toContain("SaveStatusPageComponent")
+		// The live page shows the component as saved while its edits wait.
+		expect(canvasDocument(left.model, statusPage())).not.toContain("Payments")
+		const back = routeChanged(
+			left.model,
+			{ _tag: "StatusPage", pageId: PUBLIC_ID, search: { view: "settings", section: "monitors" } },
+			context,
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(back.model),
+			expectView(role("button", { name: /^Component 1/u })).toHaveAttr("aria-expanded", "true"),
+			expectView(role("textbox", { name: "Shown as" })).toHaveValue("Payments"),
+			expectView(text("Unsaved changes")).toExist(),
+		)
 	})
 
 	test("a preview message that is not exactly a selection is ignored", () => {
@@ -512,12 +814,21 @@ describe("components under Settings > Monitors", () => {
 		)
 	})
 
-	test("a field saves on blur with one PATCH of the whole component, and only when it changed", () => {
+	test("typing raises the save bar and sends nothing; Save sends one PATCH of the whole component", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(selected(2)),
+			expectView(text("Unsaved changes")).not.toExist(),
+			type(role("textbox", { name: "Shown as" }), " Payments "),
+			Command.expectNone(),
+			expectView(text("Unsaved changes")).toExist(),
+			expectView(role("button", { name: "Save" })).toBeEnabled(),
+		)
 		const editing = pageUpdate(
 			selected(2),
 			Message.ChangedComponentField({ field: "name", value: " Payments " }),
-		)
-		const saving = pageUpdate(editing.model, Message.CommittedComponent())
+		).model
+		const saving = pageUpdate(editing, Message.ClickedSaveMonitors())
 		expect(saving.commands).toMatchObject([
 			{
 				name: "SaveStatusPageComponent",
@@ -533,21 +844,51 @@ describe("components under Settings > Monitors", () => {
 				},
 			},
 		])
-		expect(pageUpdate(selected(2), Message.CommittedComponent()).commands ?? []).toEqual([])
+		// One save at a time, and nothing to save while the form matches the component.
+		expect(pageUpdate(saving.model, Message.ClickedSaveMonitors()).commands ?? []).toEqual([])
+		expect(pageUpdate(selected(2), Message.ClickedSaveMonitors()).commands ?? []).toEqual([])
 		const saved = pageUpdate(
 			saving.model,
 			Message.CompletedSaveComponent({ result: Result.succeed(component(2, { name: "Payments" })) }),
 		)
-		scene({ update: pageUpdate, view }, given(saved.model), expectView(text("Saved")).toExist())
+		scene(
+			{ update: pageUpdate, view },
+			given(saved.model),
+			expectView(text("Saved")).toExist(),
+			expectView(text("Unsaved changes")).not.toExist(),
+		)
 	})
 
-	test("a description typed in the panel saves on blur and shows in the preview as typed", () => {
+	test("a component without a name cannot be saved", () => {
+		const unnamed = pageUpdate(selected(2), Message.ChangedComponentField({ field: "name", value: " " }))
+		scene(
+			{ update: pageUpdate, view },
+			given(unnamed.model),
+			expectView(text("Add a name.")).toExist(),
+			expectView(role("button", { name: "Save" })).toBeDisabled(),
+		)
+		expect(pageUpdate(unnamed.model, Message.ClickedSaveMonitors()).commands ?? []).toEqual([])
+	})
+
+	test("Discard puts the saved values back", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(selected(2)),
+			type(role("textbox", { name: "Shown as" }), "Payments"),
+			click(role("button", { name: "Discard" })),
+			Command.expectNone(),
+			expectView(role("textbox", { name: "Shown as" })).toHaveValue("Component 2"),
+			expectView(text("Unsaved changes")).not.toExist(),
+		)
+	})
+
+	test("a description typed in the panel shows in the preview as typed and goes out with Save", () => {
 		const editing = pageUpdate(
 			selected(2),
 			Message.ChangedComponentField({ field: "description", value: " Card payments and payouts " }),
 		)
 		expect(canvasDocument(editing.model, statusPage())).toContain("Card payments and payouts")
-		expect(pageUpdate(editing.model, Message.CommittedComponent()).commands).toMatchObject([
+		expect(pageUpdate(editing.model, Message.ClickedSaveMonitors()).commands).toMatchObject([
 			{
 				name: "SaveStatusPageComponent",
 				args: { componentId: componentId(2), payload: { description: "Card payments and payouts" } },
@@ -560,32 +901,33 @@ describe("components under Settings > Monitors", () => {
 		)
 	})
 
-	test("the page's other groups are offered under Group, and picking one saves it at once", () => {
-		const rows = [component(1, { group: "Core" }), component(2, { group: "Core" }), component(3)]
-		const open = selected(3, { components: rows })
+	test("Group is typed, a new one included, and waits for Save", () => {
+		const rows = [component(1, { group: "Core" }), component(2, { group: "Edge" }), component(3)]
 		scene(
 			{ update: pageUpdate, view },
-			given(open),
-			expectView(role("button", { name: "Core" })).toExist(),
+			given(selected(3, { components: rows })),
+			type(role("textbox", { name: "Group" }), "Payments"),
+			expectView(text("Unsaved changes")).toExist(),
 		)
-		const picked = pageUpdate(open, Message.PickedComponentField({ field: "group", value: "Core" }))
-		expect(picked.commands).toMatchObject([
-			{ name: "SaveStatusPageComponent", args: { payload: { group: "Core" } } },
+		const typed = steps(selected(3, { components: rows }), [
+			Message.ChangedComponentField({ field: "group", value: "Edge" }),
 		])
-		scene(
-			{ update: pageUpdate, view },
-			given(picked.model),
-			expectView(role("textbox", { name: "Group" })).toHaveValue("Core"),
-			expectView(role("group", { name: "Groups on this page" })).not.toExist(),
-		)
+		expect(pageUpdate(typed, Message.ClickedSaveMonitors()).commands).toMatchObject([
+			{
+				name: "SaveStatusPageComponent",
+				args: { componentId: componentId(3), payload: { group: "Edge" } },
+			},
+		])
 	})
 
-	test("picking a monitor saves at once and a failed save says so in the panel", () => {
+	test("a failed save keeps the edits and says so in the panel, and Save tries again", () => {
 		const monitor = downMonitor()
-		const saving = pageUpdate(
+		const picked = pageUpdate(
 			selected(1),
-			Message.PickedComponentField({ field: "monitorId", value: monitor.id }),
+			Message.ChangedComponentField({ field: "monitorId", value: monitor.id }),
 		)
+		expect(picked.commands ?? []).toEqual([])
+		const saving = pageUpdate(picked.model, Message.ClickedSaveMonitors())
 		expect(saving.commands).toMatchObject([
 			{ name: "SaveStatusPageComponent", args: { payload: { monitor_id: monitor.id } } },
 		])
@@ -593,20 +935,26 @@ describe("components under Settings > Monitors", () => {
 			saving.model,
 			Message.CompletedSaveComponent({ result: Result.fail(toLoadFailure(new Error("refused"))) }),
 		).model
+		expect(failed.componentForm.monitorId).toBe(monitor.id)
 		scene(
 			{ update: pageUpdate, view },
 			given(failed),
 			expectView(text("Not saved")).toExist(),
 			expectView(text("Couldn't save the component")).toExist(),
+			expectView(text("Unsaved changes")).toExist(),
+			expectView(role("button", { name: "Save" })).toBeEnabled(),
 		)
+		expect(pageUpdate(failed, Message.ClickedSaveMonitors()).commands).toMatchObject([
+			{ name: "SaveStatusPageComponent", args: { payload: { monitor_id: monitor.id } } },
+		])
 	})
 
 	test("a component without a monitor shows its stored uptime setting, disabled, and says why", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(selected(1)),
-			expectView(role("checkbox", { name: "Show uptime bars" })).toBeChecked(),
-			expectView(role("checkbox", { name: "Show uptime bars" })).toBeDisabled(),
+			expectView(role("switch", { name: "Show uptime bars" })).toBeChecked(),
+			expectView(role("switch", { name: "Show uptime bars" })).toBeDisabled(),
 			expectView(text("Uptime bars need a monitor.")).toExist(),
 		)
 	})
@@ -623,18 +971,91 @@ describe("components under Settings > Monitors", () => {
 		)
 	})
 
-	test("Escape closes the panel", () => {
+	test("Escape closes the panel, and with unsaved edits asks first", () => {
 		expect(pageUpdate(selected(1), Message.PressedEscape()).model.panel).toBeNull()
-	})
-
-	test("Escape saves a typed component edit before closing, since it skips the field's blur", () => {
 		const editing = pageUpdate(
 			selected(2),
 			Message.ChangedComponentField({ field: "name", value: "Payments" }),
+		).model
+		const asked = pageUpdate(editing, Message.PressedEscape())
+		expect(asked.model.panel).toEqual({ _tag: "Component", componentId: componentId(2) })
+		expect(asked.model.discardComponentDialog.isOpen).toBe(true)
+		expect(names(asked.commands)).not.toContain("SaveStatusPageComponent")
+		const discarded = pageUpdate(asked.model, Message.ClickedConfirmDiscardComponent())
+		expect(discarded.model.panel).toBeNull()
+		expect(names(discarded.commands)).not.toContain("SaveStatusPageComponent")
+	})
+
+	test("opening another component with unsaved edits asks first, and Keep editing stays on them", () => {
+		const typed = pageUpdate(
+			selected(1),
+			Message.ChangedComponentField({ field: "name", value: "Payments" }),
+		).model
+		const asked = pageUpdate(typed, Message.ClickedComponent({ componentId: componentId(2) }))
+		expect(names(asked.commands)).not.toContain("SaveStatusPageComponent")
+		scene(
+			{ update: pageUpdate, view },
+			given(asked.model),
+			mounted,
+			expectView(role("alertdialog", { name: "Discard changes to Component 1?" })).toExist(),
+			expectView(within(role("alertdialog"), role("button", { name: "Keep editing" }))).toExist(),
 		)
-		const closed = pageUpdate(editing.model, Message.PressedEscape())
-		expect(closed.model.panel).toBeNull()
-		expect(names(closed.commands)).toContain("SaveStatusPageComponent")
+		const kept = pageUpdate(
+			asked.model,
+			Message.GotDiscardComponentDialogMessage({ message: Dialog.Message.ClickedClose() }),
+		).model
+		expect(kept.discardComponentDialog.isOpen).toBe(false)
+		scene(
+			{ update: pageUpdate, view },
+			given(kept),
+			mounted,
+			expectView(role("button", { name: /^Component 1/u })).toHaveAttr("aria-expanded", "true"),
+			expectView(role("button", { name: /^Component 2/u })).toHaveAttr("aria-expanded", "false"),
+			expectView(role("textbox", { name: "Shown as" })).toHaveValue("Payments"),
+		)
+	})
+
+	test("Discard changes drops the edits and opens the other component", () => {
+		const asked = steps(selected(1), [
+			Message.ChangedComponentField({ field: "name", value: "Payments" }),
+			Message.ClickedComponent({ componentId: componentId(2) }),
+		])
+		const discarded = pageUpdate(asked, Message.ClickedConfirmDiscardComponent())
+		expect(names(discarded.commands)).not.toContain("SaveStatusPageComponent")
+		expect(discarded.model.panel).toEqual({ _tag: "Component", componentId: componentId(2) })
+		expect(discarded.model.componentForm.name).toBe("Component 2")
+		// Component 1 opens again as saved.
+		const reopened = pageUpdate(
+			discarded.model,
+			Message.ClickedComponent({ componentId: componentId(1) }),
+		).model
+		expect(reopened.componentForm.name).toBe("Component 1")
+	})
+
+	test("Add monitors with unsaved edits asks first, and opens once they are discarded", () => {
+		const asked = steps(selected(1), [
+			Message.ChangedComponentField({ field: "group", value: "Core" }),
+			Message.ClickedAddComponent(),
+		])
+		expect(asked.panel?._tag).toBe("Component")
+		expect(asked.discardComponentDialog.isOpen).toBe(true)
+		expect(pageUpdate(asked, Message.ClickedConfirmDiscardComponent()).model.panel?._tag).toBe("Add")
+	})
+
+	test("edits being saved are not offered for discarding", () => {
+		const saving = steps(selected(1), [
+			Message.ChangedComponentField({ field: "name", value: "Payments" }),
+			Message.ClickedSaveMonitors(),
+		])
+		const switched = pageUpdate(saving, Message.ClickedComponent({ componentId: componentId(2) })).model
+		expect(switched.discardComponentDialog.isOpen).toBe(false)
+		expect(switched.panel).toEqual({ _tag: "Component", componentId: componentId(2) })
+		// Typed after Save, they are.
+		const typedAfter = pageUpdate(
+			pageUpdate(saving, Message.ChangedComponentField({ field: "name", value: "Payments API" })).model,
+			Message.ClickedComponent({ componentId: componentId(2) }),
+		).model
+		expect(typedAfter.discardComponentDialog.isOpen).toBe(true)
 	})
 
 	test("removing a component asks first, then deletes it once", () => {
@@ -733,14 +1154,14 @@ describe("components under Settings > Monitors", () => {
 		expect(failed.outMessage).toMatchObject({ _tag: "RequestedToast", type: "error" })
 	})
 
-	test("members see the page and its components without any control to change them", () => {
+	test("members see the page and its components with every control to change them locked", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(selected(1, { grants: MEMBER })),
 			expectView(text("Component 1")).toExist(),
 			expectView(role("button", { name: "Add monitor" })).not.toExist(),
-			expectView(role("button", { name: "Move Component 1 down" })).not.toExist(),
-			expectView(role("button", { name: "Remove from page" })).not.toExist(),
+			expectView(role("button", { name: "Reorder Component 1" })).toBeDisabled(),
+			expectView(role("button", { name: "Remove from page" })).toBeDisabled(),
 			expectView(role("textbox", { name: "Shown as" })).toBeDisabled(),
 			expectView(text("Only org admins and engineers can change components.")).toExist(),
 		)
@@ -1838,7 +2259,7 @@ describe("header", () => {
 				expectView(role("button", { name: "Complete" })).toExist(),
 			),
 		)
-		// Without the post grant the overrun still shows, with nothing to press.
+		// Without the post grant the overrun still shows, with Complete locked.
 		const withoutPost = { ...model, grants: [] }
 		scene(
 			{ update: pageUpdate, view },
@@ -1846,7 +2267,7 @@ describe("header", () => {
 			inside(
 				role("table", { name: "In progress" }),
 				expectView(text("2h over")).toExist(),
-				expectView(role("button", { name: "Complete" })).not.toExist(),
+				expectView(role("button", { name: "Complete" })).toBeDisabled(),
 			),
 		)
 		const completing = pageUpdate(
@@ -2184,16 +2605,17 @@ describe("settings", () => {
 		)
 	})
 
-	test("the theme preview is the page's own renderer, sandboxed, following the unsaved theme", () => {
-		const theme = srcdocOf("The theme as visitors see it")
+	test("the page preview is the page's own renderer, sandboxed, following the unsaved theme", () => {
+		const theme = srcdocOf("Acme Status with these settings")
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(APPEARANCE)),
-			expectView(selector('iframe[title="The theme as visitors see it"]')).toHaveAttr("sandbox", ""),
+			expectView(selector('iframe[title="Acme Status with these settings"]')).toHaveAttr(
+				"sandbox",
+				"allow-scripts",
+			),
 			tap(({ html }) => {
-				expect(theme(html)).toContain("Acme Status")
 				expect(theme(html)).toContain("Component 1")
-				expect(theme(html)).not.toContain("Component 2")
 				expect(theme(html)).toContain("color-scheme:light;")
 			}),
 			inside(role("group", { name: "Mode" }), click(role("button", { name: "Dark" }))),
@@ -2204,7 +2626,7 @@ describe("settings", () => {
 	})
 
 	test("the branding links preview at once: the logo in the header, the favicon in the tab", () => {
-		const header = srcdocOf("The page header as visitors see it")
+		const header = srcdocOf("Acme Status with these settings")
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(APPEARANCE)),
@@ -2215,7 +2637,6 @@ describe("settings", () => {
 				expect(header(html)).toContain(`<img src="https://acme.example/logo.svg"`)
 				expect(header(html)).toContain(`<link rel="icon" href="https://acme.example/favicon.png">`)
 			}),
-			expectView(selector('img[src="https://acme.example/favicon.png"]')).toExist(),
 			inside(role("group", { name: "Mode" }), click(role("button", { name: "Dark" }))),
 			tap(({ html }) =>
 				expect(header(html)).toContain(`<img src="https://acme.example/logo-dark.svg"`),
@@ -2223,7 +2644,7 @@ describe("settings", () => {
 		)
 	})
 
-	test("every Settings section shows the whole page beside it, as the unsaved settings render it", () => {
+	test("the sections that shape the page show it beside them, as the unsaved settings render it", () => {
 		const page = srcdocOf("Globex with these settings")
 		scene(
 			{ update: pageUpdate, view },
@@ -2237,26 +2658,46 @@ describe("settings", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(ADVANCED)),
-			expectView(role("region", { name: "Page preview" })).toExist(),
+			expectView(role("region", { name: "Page preview" })).not.toExist(),
 		)
 	})
 
-	test("Basic settings preview the header, the tab title, the search result and the footer as typed", () => {
-		const footer = srcdocOf("The page footer as visitors see it")
+	test("Basic settings show the page as typed in the preview beside them", () => {
+		const page = srcdocOf("Globex with these settings")
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ tab: "settings" })),
 			type(role("textbox", { name: "Name" }), "Globex"),
 			type(role("textbox", { name: "Description" }), "Live status of Globex"),
-			expectAll(all.text("Globex status")).toHaveCount(2),
-			expectView(text("Live status of Globex")).toExist(),
-			tap(({ html }) => expect(footer(html)).toContain("Powered by")),
-			click(role("switch", { name: "Show powered by Maple" })),
-			tap(({ html }) => expect(footer(html)).not.toContain("Powered by")),
+			tap(({ html }) => {
+				expect(page(html)).toContain("<title>Globex status</title>")
+				expect(page(html)).toContain("Live status of Globex")
+			}),
 		)
 	})
 
-	test("a password-protected page previews the password form visitors meet", () => {
+	test("Advanced holds the page's behaviour: the powered-by credit leaves the page as toggled", () => {
+		const page = srcdocOf("Acme Status with these settings")
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(ADVANCED)),
+			click(role("switch", { name: "Show powered by Maple" })),
+			expectView(text("Unsaved changes")).toExist(),
+		)
+		const basic = { tab: "settings", section: "basic" } as const
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(basic)),
+			tap(({ html }) => expect(page(html)).toContain("Powered by")),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(loaded(basic), Message.ToggledPoweredBy()).model),
+			tap(({ html }) => expect(page(html)).not.toContain("Powered by")),
+		)
+	})
+
+	test("a password-protected page, saved or picked, previews the password form visitors meet", () => {
 		const gate = srcdocOf("The password form visitors see first")
 		scene(
 			{ update: pageUpdate, view },
@@ -2270,6 +2711,9 @@ describe("settings", () => {
 			{ update: pageUpdate, view },
 			given(loaded(ACCESS)),
 			expectView(selector('iframe[title="The password form visitors see first"]')).not.toExist(),
+			// Picking Password-protected previews the form before it is saved.
+			change(role("radio", { name: "Password-protected" }), "on"),
+			tap(({ html }) => expect(gate(html)).toContain("This status page is password-protected")),
 		)
 	})
 
@@ -2391,67 +2835,146 @@ describe("settings", () => {
 		)
 	})
 
-	test("a password is set before the page can be password-protected, and never rides a command's args", () => {
+	test("picking who can view sends nothing, and Password-protected waits for a valid password", () => {
+		expect(
+			pageUpdate(loaded(ACCESS), Message.PickedVisibility({ visibility: "password" })).commands ?? [],
+		).toEqual([])
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(ACCESS)),
-			expectView(role("radio", { name: "Password-protected" })).toBeDisabled(),
-			expectView(text("Set a password below first.")).toExist(),
-			click(role("button", { name: "Set password" })),
-			type(role("textbox", { name: "New password" }), "short"),
+			expectView(role("textbox", { name: "Password" })).not.toExist(),
+			change(role("radio", { name: "Password-protected" }), "on"),
+			expectView(role("radio", { name: "Password-protected" })).toBeChecked(),
+			expectView(text("Unsaved changes")).toExist(),
+			expectView(text("Type a password for visitors.")).toExist(),
+			expectView(role("button", { name: "Save" })).toBeDisabled(),
+			type(role("textbox", { name: "Password" }), "short"),
 			expectView(text("Use at least 8 characters")).toExist(),
-			expectView(role("button", { name: "Save password" })).toBeDisabled(),
+			expectView(role("button", { name: "Save" })).toBeDisabled(),
+			type(role("textbox", { name: "Password" }), "correct horse battery"),
+			expectView(text("Password-protected, New password")).toExist(),
+			expectView(role("button", { name: "Save" })).toBeEnabled(),
+			// Back to Public: the field and what was typed in it go, and nothing is left to save.
+			change(role("radio", { name: "Public" }), "on"),
+			expectView(role("textbox", { name: "Password" })).not.toExist(),
+			expectView(text("Unsaved changes")).not.toExist(),
 		)
-		const typed = pageUpdate(
-			pageUpdate(loaded(ACCESS), Message.ClickedChangePassword()).model,
-			Message.ChangedPassword({ value: "correct horse battery" }),
-		).model
-		const saving = pageUpdate(typed, Message.SubmittedPassword())
+	})
+
+	test("Save sends the password before the visibility, and the password never rides a command's args", () => {
+		const typed = Arr.reduce(
+			[
+				Message.PickedVisibility({ visibility: "password" }),
+				Message.ChangedPassword({ value: "correct horse battery" }),
+			],
+			loaded(ACCESS),
+			(model, message) => pageUpdate(model, message).model,
+		)
+		const saving = pageUpdate(typed, Message.ClickedSaveAccess())
 		expect(saving.commands).toMatchObject([{ name: "SetStatusPagePassword" }])
 		expect(saving.commands?.[0]).not.toHaveProperty("args")
-		const saved = pageUpdate(
+		const failed = pageUpdate(
+			saving.model,
+			Message.CompletedAccessChange({
+				action: "password",
+				result: Result.fail(toLoadFailure(new Error("access unavailable"))),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			expectView(text("Couldn't change who can view the page")).toExist(),
+			expectView(role("radio", { name: "Password-protected" })).toBeChecked(),
+			expectView(role("textbox", { name: "Password" })).toHaveValue("correct horse battery"),
+			expectView(role("button", { name: "Save" })).toBeEnabled(),
+		)
+		const passwordSaved = pageUpdate(
 			saving.model,
 			Message.CompletedAccessChange({
 				action: "password",
 				result: Result.succeed(statusPage({ has_password: true })),
 			}),
-		).model
-		expect(saved.passwordDraft).toBeNull()
+		)
+		expect(passwordSaved.commands).toMatchObject([
+			{ name: "SaveStatusPageVisibility", args: { visibility: "password" } },
+		])
+		const saved = pageUpdate(
+			passwordSaved.model,
+			Message.CompletedAccessChange({
+				action: "visibility",
+				result: Result.succeed(statusPage({ has_password: true, visibility: "password" })),
+			}),
+		)
+		expect(saved.commands ?? []).toEqual([])
 		scene(
 			{ update: pageUpdate, view },
-			given(saved),
-			expectView(role("radio", { name: "Password-protected" })).not.toBeDisabled(),
-			change(role("radio", { name: "Password-protected" }), "on"),
+			given(saved.model),
+			expectView(text("Unsaved changes")).not.toExist(),
+			expectView(role("radio", { name: "Password-protected" })).toBeChecked(),
+			expectView(role("textbox", { name: "Password" })).toHaveValue(""),
+			expectView(role("textbox", { name: "Password" })).toHaveAttr(
+				"placeholder",
+				"Leave empty to keep the current password",
+			),
+		)
+	})
+
+	test("opening a password page removes its password on Save, and Discard puts it back", () => {
+		const protectedPage = loaded({
+			...ACCESS,
+			page: statusPage({ visibility: "password", has_password: true }),
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(protectedPage),
+			// A page with a password saves Password-protected without a new one.
+			expectView(text("Unsaved changes")).not.toExist(),
+			change(role("radio", { name: "Public" }), "on"),
+			expectView(text("Public, removes the page password")).toExist(),
+			expectView(role("textbox", { name: "Password" })).not.toExist(),
+			click(role("button", { name: "Discard" })),
+			expectView(role("radio", { name: "Password-protected" })).toBeChecked(),
+			expectView(text("Unsaved changes")).not.toExist(),
+			change(role("radio", { name: "Public" }), "on"),
+			click(role("button", { name: "Save" })),
+			Command.expectExact(SaveVisibility({ pageId: statusPage().id, visibility: "public" })),
 			Command.resolve(
 				SaveVisibility,
 				Message.CompletedAccessChange({
 					action: "visibility",
-					result: Result.succeed(statusPage({ has_password: true, visibility: "password" })),
+					result: Result.succeed(statusPage({ visibility: "public", has_password: true })),
 				}),
 			),
-			// A password page keeps its password: it can be changed, not removed.
-			expectView(role("button", { name: "Change password" })).toExist(),
-			expectView(role("button", { name: "Remove password" })).not.toExist(),
+			Command.expectExact(RemovePassword({ pageId: statusPage().id })),
+			Command.resolve(
+				RemovePassword,
+				Message.CompletedAccessChange({
+					action: "removePassword",
+					result: Result.succeed(statusPage({ visibility: "public", has_password: false })),
+				}),
+			),
+			Command.expectNone(),
+			expectView(text("Unsaved changes")).not.toExist(),
+			expectView(role("radio", { name: "Public" })).toBeChecked(),
 		)
 	})
 
-	test("a page with a custom domain cannot go internal, and only admins change who can view", () => {
+	test("a page with a custom domain cannot go internal, and only engineers and admins change who can view", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ ...ACCESS, customDomain: pendingDomain })),
 			expectView(role("radio", { name: "Internal" })).toBeDisabled(),
 			expectView(text("Remove the custom domain first.")).toExist(),
 		)
-		const engineer = loaded({ ...ACCESS, grants: Policy.grantsOf(["org:engineer"]) })
+		const member = loaded({ ...ACCESS, grants: Policy.grantsOf(["org:member"]) })
 		scene(
 			{ update: pageUpdate, view },
-			given(engineer),
-			expectView(text("Only org admins can change who can view a status page.")).toExist(),
-			expectView(role("button", { name: "Set password" })).not.toExist(),
+			given(pageUpdate(member, Message.PickedVisibility({ visibility: "password" })).model),
+			expectView(text("Only org admins and engineers can change who can view status pages.")).toExist(),
+			expectView(role("radio", { name: "Password-protected" })).toBeDisabled(),
+			expectView(role("radio", { name: "Public" })).toBeChecked(),
+			expectView(text("Unsaved changes")).not.toExist(),
 		)
-		expect(
-			names(pageUpdate(engineer, Message.PickedVisibility({ visibility: "internal" })).commands),
-		).toEqual([])
 	})
 
 	test("replacing or revoking an issued token asks first", () => {
@@ -2488,7 +3011,7 @@ describe("custom domain", () => {
 	test("adding a domain sends the hostname as typed, normalized, then shows the DNS records to add", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ tab: "settings" })),
+			given(loaded(ADVANCED)),
 			expectView(role("button", { name: "Add domain" })).toBeDisabled(),
 			type(role("textbox", { name: "Hostname" }), " Status.Acme.com "),
 			submit(role("form", { name: "Custom domain" })),
@@ -2510,7 +3033,7 @@ describe("custom domain", () => {
 		for (const hostname of ["acme.com", "10.0.0.1", "status.maple.dev"])
 			scene(
 				{ update: pageUpdate, view },
-				given(loaded({ tab: "settings" })),
+				given(loaded(ADVANCED)),
 				type(role("textbox", { name: "Hostname" }), hostname),
 				expectView(role("button", { name: "Add domain" })).toBeDisabled(),
 				expectView(role("textbox", { name: "Hostname" })).toHaveAttr("aria-invalid", "true"),
@@ -2519,7 +3042,7 @@ describe("custom domain", () => {
 
 	test("Check now asks Cloudflare again and an active domain becomes the page's address", () => {
 		const checking = pageUpdate(
-			loaded({ tab: "settings", customDomain: pendingDomain }),
+			loaded({ ...ADVANCED, customDomain: pendingDomain }),
 			Message.ClickedCheckCustomDomain(),
 		)
 		expect(checking.commands).toMatchObject([
@@ -2550,7 +3073,7 @@ describe("custom domain", () => {
 			{ update: pageUpdate, view },
 			given(
 				loaded({
-					tab: "settings",
+					...ADVANCED,
 					customDomain: customDomain({
 						hostname: "status.acme.com",
 						status: "failed",
@@ -2565,7 +3088,7 @@ describe("custom domain", () => {
 
 	test("removing the domain asks first, then removes it once", () => {
 		const asking = pageUpdate(
-			loaded({ tab: "settings", customDomain: pendingDomain }),
+			loaded({ ...ADVANCED, customDomain: pendingDomain }),
 			Message.ClickedRemoveCustomDomain(),
 		)
 		expect(asking.model.removeCustomDomainDialog.isOpen).toBe(true)
@@ -2602,7 +3125,7 @@ describe("custom domain", () => {
 	test("an internal page takes no custom domain, and has no break-glass token to issue", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ tab: "settings", page: statusPage({ visibility: "internal" }) })),
+			given(loaded({ ...ADVANCED, page: statusPage({ visibility: "internal" }) })),
 			expectView(role("textbox", { name: "Hostname" })).toBeDisabled(),
 			expectView(role("button", { name: "Add domain" })).toBeDisabled(),
 			expectView(
@@ -2613,14 +3136,14 @@ describe("custom domain", () => {
 		)
 	})
 
-	test("members see the domain and its records but no control to change them", () => {
+	test("members see the domain and its records with its controls locked", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ tab: "settings", grants: MEMBER, customDomain: pendingDomain })),
+			given(loaded({ ...ADVANCED, grants: MEMBER, customDomain: pendingDomain })),
 			expectView(text("_cf-custom-hostname.status.acme.com")).toExist(),
 			expectView(role("textbox", { name: "Hostname" })).toBeDisabled(),
-			expectView(role("button", { name: "Check now" })).not.toExist(),
-			expectView(role("button", { name: "Remove" })).not.toExist(),
+			expectView(role("button", { name: "Check now" })).toBeDisabled(),
+			expectView(role("button", { name: "Remove" })).toBeDisabled(),
 		)
 	})
 
@@ -2629,7 +3152,7 @@ describe("custom domain", () => {
 			{ update: pageUpdate, view },
 			given(
 				loaded({
-					tab: "settings",
+					...ADVANCED,
 					customDomain: customDomain({ available: false, cname_target: null }),
 				}),
 			),
@@ -2673,7 +3196,7 @@ describe("the JSON editor under Advanced", () => {
 			{ update: pageUpdate, view },
 			given(loaded({ ...ADVANCED, grants: MEMBER })),
 			expectView(selector("pre")).toContainText('"name": "Acme Status"'),
-			expectView(role("button", { name: "Edit JSON" })).not.toExist(),
+			expectView(role("button", { name: "Edit JSON" })).toBeDisabled(),
 			expectView(role("textbox", { name: "Config JSON" })).not.toExist(),
 		)
 		const tried = pageUpdate(loaded({ ...ADVANCED, grants: MEMBER }), Message.ClickedEditJson())
@@ -3212,7 +3735,7 @@ describe("the sheet, the previews and the reads they wait on", () => {
 		)
 	})
 
-	test("the theme preview waits for the statuses' reads, and says so when they fail", () => {
+	test("the page preview waits for the statuses' reads, and says so when they fail", () => {
 		const entered = init(
 			{ _tag: "StatusPage", pageId: PUBLIC_ID, search: { view: "settings", section: "appearance" } },
 			context,
@@ -3224,99 +3747,18 @@ describe("the sheet, the previews and the reads they wait on", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(withPage),
-			expectView(selector('iframe[title="The theme as visitors see it"]')).not.toExist(),
-			expectView(selector('iframe[title="The page header as visitors see it"]')).toExist(),
+			expectView(selector('iframe[title="Acme Status with these settings"]')).not.toExist(),
+			expectView(role("region", { name: "Page preview" })).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ ...APPEARANCE, monitorsFail: true })),
-			expectView(selector('iframe[title="The theme as visitors see it"]')).not.toExist(),
+			expectView(selector('iframe[title="Acme Status with these settings"]')).not.toExist(),
 			expectView(text("No preview: the page's components didn't load.")).toExist(),
 		)
 	})
 
-	test("opening another component saves the typed edit first and keeps a save in flight", () => {
-		const typed = pageUpdate(
-			selected(1),
-			Message.ChangedComponentField({ field: "name", value: "Payments" }),
-		).model
-		const switched = pageUpdate(typed, Message.ClickedComponent({ componentId: componentId(2) }))
-		expect(switched.commands).toMatchObject([
-			{
-				name: "SaveStatusPageComponent",
-				args: { componentId: componentId(1), payload: { name: "Payments" } },
-			},
-		])
-		expect(switched.model.componentSave).toEqual({ _tag: "Saving", componentId: componentId(1) })
-		expect(switched.model.componentForm.name).toBe("Component 2")
-	})
-
-	/** Component 1's name blurred (its save in flight), then its description typed. */
-	const savingThenTyped = () =>
-		steps(selected(1), [
-			Message.ChangedComponentField({ field: "name", value: "Payments" }),
-			Message.CommittedComponent(),
-			Message.ChangedComponentField({ field: "description", value: "Card payments" }),
-		])
-
-	test("an edit typed while a save is in flight is queued when another component opens, and sent once the save lands", () => {
-		const switched = pageUpdate(
-			savingThenTyped(),
-			Message.ClickedComponent({ componentId: componentId(2) }),
-		)
-		expect(names(switched.commands)).not.toContain("SaveStatusPageComponent")
-		const landed = pageUpdate(
-			switched.model,
-			Message.CompletedSaveComponent({ result: Result.succeed(component(1, { name: "Payments" })) }),
-		)
-		expect(landed.commands).toContainEqual(
-			expect.objectContaining({
-				name: "SaveStatusPageComponent",
-				args: expect.objectContaining({
-					componentId: componentId(1),
-					payload: expect.objectContaining({ name: "Payments", description: "Card payments" }),
-				}),
-			}),
-		)
-		expect(landed.model.queuedComponentForms).toEqual([])
-	})
-
-	test("Escape queues an edit typed while a save is in flight, too", () => {
-		const escaped = pageUpdate(savingThenTyped(), Message.PressedEscape()).model
-		expect(Arr.map(escaped.queuedComponentForms, (form) => form.description)).toEqual(["Card payments"])
-	})
-
-	test("a refused save stays on its own component and its queued edit is never sent behind its back", () => {
-		const switched = pageUpdate(
-			savingThenTyped(),
-			Message.ClickedComponent({ componentId: componentId(2) }),
-		).model
-		const refused = pageUpdate(
-			switched,
-			Message.CompletedSaveComponent({ result: Result.fail(toLoadFailure(new Error("refused"))) }),
-		)
-		expect(names(refused.commands)).not.toContain("SaveStatusPageComponent")
-		expect(refused.model.queuedComponentForms).toEqual([])
-		expect(refused.model.componentSave).toMatchObject({ _tag: "Failed", componentId: componentId(1) })
-		scene(
-			{ update: pageUpdate, view },
-			given(refused.model),
-			expectView(text("Couldn't save the component")).not.toExist(),
-		)
-		// Closing the other component or opening a third sends nothing of the abandoned form.
-		expect(names(pageUpdate(refused.model, Message.PressedEscape()).commands)).not.toContain(
-			"SaveStatusPageComponent",
-		)
-		const third = pageUpdate(refused.model, Message.ClickedComponent({ componentId: componentId(3) }))
-		expect(names(third.commands)).not.toContain("SaveStatusPageComponent")
-		scene(
-			{ update: pageUpdate, view },
-			given(pageUpdate(refused.model, Message.ClickedComponent({ componentId: componentId(1) })).model),
-			expectView(text("Couldn't save the component")).toExist(),
-		)
-	})
-
-	test("opening a component after a JSON apply renamed an untouched one sends no stale PATCH", () => {
+	test("opening a component after a JSON apply renamed an untouched one opens it without asking", () => {
 		const opened = selected(1, { components: [component(1, { name: "API" }), component(2)] })
 		const advanced = routeChanged(
 			opened,
@@ -3336,9 +3778,9 @@ describe("the sheet, the previews and the reads they wait on", () => {
 			{ _tag: "StatusPage", pageId: PUBLIC_ID, search: { view: "settings", section: "monitors" } },
 			context,
 		).model
-		expect(
-			names(pageUpdate(back, Message.ClickedComponent({ componentId: componentId(2) })).commands),
-		).not.toContain("SaveStatusPageComponent")
+		const other = pageUpdate(back, Message.ClickedComponent({ componentId: componentId(2) })).model
+		expect(other.discardComponentDialog.isOpen).toBe(false)
+		expect(other.panel).toEqual({ _tag: "Component", componentId: componentId(2) })
 	})
 
 	test("Escape closes an expanded component row, but an open popup trigger or list keeps it", () => {
@@ -3395,7 +3837,7 @@ describe("the sheet, the previews and the reads they wait on", () => {
 
 	test("a failed custom domain read can be retried, and Access does not offer Internal until it is known", () => {
 		const failed = {
-			...loaded({ tab: "settings" }),
+			...loaded(ADVANCED),
 			customDomain: {
 				key: "custom-domain",
 				data: AsyncData.Failure({ error: toLoadFailure(new Error("unreachable")) }),
@@ -3411,7 +3853,7 @@ describe("the sheet, the previews and the reads they wait on", () => {
 			{ update: pageUpdate, view },
 			given({ ...failed, search: { view: "settings", section: "access" } }),
 			expectView(role("radio", { name: "Internal" })).toBeDisabled(),
-			expectView(text("Couldn't check for a custom domain. Try again under Basic settings.")).toExist(),
+			expectView(text("Couldn't check for a custom domain. Try again under Advanced.")).toExist(),
 		)
 	})
 })

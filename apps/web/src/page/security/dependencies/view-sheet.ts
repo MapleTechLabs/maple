@@ -12,6 +12,7 @@ import { relativeTime } from "../../kit/relative-time"
 import { sheetDetailHeader } from "../../kit/sheet-detail-header"
 import { RELATION_LABEL, reasonErrorOf, selectedFindingOf, shortSha, STATUS_FILTER_LABEL } from "./derive"
 import { canManage, Message, type Model } from "./model"
+import { gatedControl } from "../../kit/session-grants"
 import { advisorySeverityBadge } from "../kit/parts"
 import { advisoryLink } from "./view-findings"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -170,10 +171,8 @@ const reasonField = (h: H, model: Model): Html => {
 const note = (h: H, text: string): Html => typography(h, { size: "xs", tone: "muted", as: "p" }, [text])
 
 const triage = (h: H, model: Model, finding: DependencyFindingView, clock: Clock): Html => {
-	if (!canManage(model))
-		return detailRailGroup(h, "Triage", [
-			note(h, "Only org admins and engineers can change a finding's status."),
-		])
+	const gated = (control: (isLocked: boolean) => Html): Html =>
+		gatedControl(h, model, "security:manage", control)
 	if (finding.status === "fixed")
 		return detailRailGroup(h, "Triage", [
 			note(h, "A later scan no longer finds this package version. It reopens if it comes back."),
@@ -203,41 +202,49 @@ const triage = (h: H, model: Model, finding: DependencyFindingView, clock: Clock
 								finding.statusReason,
 							]),
 						]),
-				button(
-					h,
-					{
-						variant: "outline",
-						isLoading: model.savingStatus === "open",
-						className: "self-start",
-						attributes: [h.OnClick(Message.ClickedTriage({ status: "open" }))],
-					},
-					["Reopen"],
+				gated((isLocked) =>
+					button(
+						h,
+						{
+							variant: "outline",
+							isLoading: model.savingStatus === "open",
+							isDisabled: isLocked,
+							className: "self-start",
+							attributes: [h.OnClick(Message.ClickedTriage({ status: "open" }))],
+						},
+						["Reopen"],
+					),
 				),
 			]),
 		])
 	return detailRailGroup(h, "Triage", [
 		vstack(h, { gap: "3" }, [
-			reasonField(h, model),
+			// The reason only matters to someone who can submit it.
+			...(canManage(model) ? [reasonField(h, model)] : []),
 			hstack(h, { gap: "2", align: "stretch" }, [
-				button(
-					h,
-					{
-						variant: "outline",
-						isLoading: model.savingStatus === "dismissed",
-						isDisabled: model.savingStatus !== null,
-						attributes: [h.OnClick(Message.ClickedTriage({ status: "dismissed" }))],
-					},
-					["Dismiss"],
+				gated((isLocked) =>
+					button(
+						h,
+						{
+							variant: "outline",
+							isLoading: model.savingStatus === "dismissed",
+							isDisabled: isLocked || model.savingStatus !== null,
+							attributes: [h.OnClick(Message.ClickedTriage({ status: "dismissed" }))],
+						},
+						["Dismiss"],
+					),
 				),
-				button(
-					h,
-					{
-						variant: "outline",
-						isLoading: model.savingStatus === "accepted_risk",
-						isDisabled: model.savingStatus !== null,
-						attributes: [h.OnClick(Message.ClickedTriage({ status: "accepted_risk" }))],
-					},
-					["Accept risk"],
+				gated((isLocked) =>
+					button(
+						h,
+						{
+							variant: "outline",
+							isLoading: model.savingStatus === "accepted_risk",
+							isDisabled: isLocked || model.savingStatus !== null,
+							attributes: [h.OnClick(Message.ClickedTriage({ status: "accepted_risk" }))],
+						},
+						["Accept risk"],
+					),
 				),
 			]),
 		]),

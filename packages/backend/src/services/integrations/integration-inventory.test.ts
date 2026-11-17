@@ -640,6 +640,53 @@ describe("aws", () => {
 		expect(aws?.status).toBe("failing")
 		expect(aws?.problem).toContain("can no longer assume the role")
 	})
+
+	it("shows the audit log failing while the role cannot be assumed", () => {
+		const security = {
+			...connection,
+			modules: ["security"],
+			grantedModules: ["security"],
+			lastCheckError: "Maple can no longer assume the role",
+		}
+		const auditLog = Arr.findFirst(
+			providerOf({ awsConnections: [security], awsCloudTrailProblems: [] }, "aws")?.resources ?? [],
+			(resource) => resource.kind === "audit log",
+		)
+		expect(Option.getOrUndefined(auditLog)).toMatchObject({
+			status: "failing",
+			lastError: "Maple can no longer assume the role",
+		})
+	})
+
+	it("shows a security-module account's audit log failing while CloudTrail cannot be read", () => {
+		const security = { ...connection, modules: ["security"], grantedModules: ["security"] }
+		const auditLogOf = (
+			problems: ReadonlyArray<{ accountId: string; state: string; lastError: string | null }>,
+		) =>
+			Option.getOrUndefined(
+				Arr.findFirst(
+					providerOf({ awsConnections: [security], awsCloudTrailProblems: problems }, "aws")
+						?.resources ?? [],
+					(resource) => resource.kind === "audit log",
+				),
+			)
+		expect(auditLogOf([])?.status).toBe("healthy")
+		// Asked for but not granted yet: no feed, so the Sources panel reads off.
+		const ungranted = providerOf(
+			{ awsConnections: [{ ...security, grantedModules: [] }] },
+			"aws",
+		)?.resources
+		expect(Arr.some(ungranted ?? [], (resource) => resource.kind === "audit log")).toBe(false)
+		const failing = auditLogOf([
+			{
+				accountId: security.accountId,
+				state: "denied",
+				lastError: "CloudTrail.LookupEvents: AccessDenied",
+			},
+		])
+		expect(failing?.status).toBe("failing")
+		expect(failing?.lastError).toContain("AccessDenied")
+	})
 })
 
 describe("supabase", () => {

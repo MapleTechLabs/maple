@@ -23,6 +23,7 @@ import {
 import type { SignalDisplay } from "@maple/backend/services/alerts/alert-signal-display"
 import { LiveActivitiesService, type LiveActivity } from "./LiveActivitiesService"
 import { MobileDevicesService, type MobileDevice } from "./MobileDevicesService"
+import { UPTIME_CERTIFICATE_GROUP_KEY } from "@maple/domain/uptime"
 
 /**
  * Fans an alert event out to the phones registered in the organization.
@@ -290,6 +291,21 @@ export const renderIncidentPush = (
 
 	const rule = truncate(event.ruleName, 60)
 	const openFor = event.openForMs === null ? null : humanDuration(event.openForMs)
+
+	// A certificate nearing expiry: a heads-up, not a page.
+	if (event.signalType === "uptime" && event.groupKey === UPTIME_CERTIFICATE_GROUP_KEY) {
+		const body = uptimeSummaryLine(event)
+		return {
+			alert: {
+				title: `${event.eventType === "resolve" ? "Certificate renewed" : "Certificate expiring"} · ${rule}`,
+				subtitle: service ?? undefined,
+				body,
+			},
+			interruptionLevel: event.eventType === "resolve" ? "passive" : "active",
+			priority: 5,
+			...(event.eventType === "resolve" ? { sound: null } : undefined),
+		}
+	}
 
 	// A monitor has no value worth a sentence: the check's own error is the body.
 	if (event.signalType === "uptime") {
