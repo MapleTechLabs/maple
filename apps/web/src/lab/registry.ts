@@ -460,6 +460,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/code-review-rules",
+		title: "Code review rules",
+		description:
+			"The default review rules as an engineer (`?as=engineer`, automatic approval locked) and an admin (`?as=admin`) see them.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/code-review-team",
 		title: "Code review team",
 		description:
