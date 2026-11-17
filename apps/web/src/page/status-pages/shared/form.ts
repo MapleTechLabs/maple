@@ -553,7 +553,7 @@ const sameTheme = (a: ThemeForm, b: ThemeForm): boolean =>
 	a.radius === b.radius &&
 	a.font === b.font
 /** The service's rule: a URL `URL` can parse, over https. Checked here so Save never sends what it refuses. */
-const httpsIssue = (value: string): string | null => {
+export const httpsIssue = (value: string): string | null => {
 	const url = Str.trim(value)
 	if (url === "") return null
 	if (url.length > STATUS_PAGE_MAX_URL_LENGTH)

@@ -142,8 +142,10 @@ export const Model = Schema.Struct({
 	settingsEdits: Schema.NullOr(SettingsForm),
 	/** The logo or favicon drop target a file is dragged over. */
 	brandingDrag: Schema.NullOr(BrandingField),
-	/** The logo and favicon fields whose link input is open. */
-	brandingLinks: Schema.Array(BrandingField),
+	/** The upload-or-link dialog, the image it changes and its link as typed. */
+	brandingDialog: Dialog.Model,
+	brandingDialogField: BrandingField,
+	brandingLink: Schema.String,
 	isSavingSettings: Schema.Boolean,
 	settingsFailure: Schema.NullOr(LoadFailure),
 	isPublishing: Schema.Boolean,

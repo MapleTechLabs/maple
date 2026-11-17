@@ -9,7 +9,7 @@ import {
 	type StatusPageThemeTokens,
 } from "@maple/domain/status-page"
 import { previewSnapshot } from "@maple/status-page"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { colorPicker } from "@maple/views/ui/color-picker"
@@ -22,6 +22,7 @@ import { switchRow } from "../../kit/switch-row"
 import { selectField, textField } from "../shared/fields"
 import {
 	type BrandingField,
+	httpsIssue,
 	type SettingsForm,
 	THEME_OVERRIDE_FIELDS,
 	type ThemeColorField,
@@ -31,7 +32,7 @@ import {
 	themeContrastOf,
 	themeOf,
 } from "../shared/form"
-import { imageSourceField } from "../../kit/image-source-field"
+import { imageSourceDialog, imageSourceField } from "../../kit/image-source-field"
 import { brandingFieldId } from "./command"
 import { Message } from "./message"
 import { pageUrlOf } from "./update-domain"
@@ -141,7 +142,7 @@ const BRANDING_IMAGES: ReadonlyArray<{
 	{
 		field: "logoUrl",
 		label: "Logo",
-		description: "In the page header, on the page's light background.",
+		description: "In the page header.",
 		linkPlaceholder: "https://acme.example/logo.svg",
 	},
 	{
@@ -162,10 +163,9 @@ const IMAGE_ACCEPT = Arr.join(STATUS_PAGE_IMAGE_TYPES, ",")
 const IMAGE_FORMATS = `PNG, JPG, WebP, GIF, SVG or ICO · max ${STATUS_PAGE_MAX_IMAGE_BYTES / 1024} KB`
 
 /** The page's own background behind each logo, so it previews as visitors see it. */
-const logoBackground = (theme: ThemeForm, field: BrandingField): string | null => {
+const logoBackground = (theme: ThemeForm, field: BrandingField): string => {
 	const resolved = resolveStatusPageTheme({ ...DEFAULT_STATUS_PAGE_THEME, preset: theme.preset })
-	if (field === "logoDarkUrl") return resolved.dark.bg
-	return theme.appearance === "dark" ? resolved.dark.bg : resolved.light.bg
+	return field === "logoDarkUrl" || theme.appearance === "dark" ? resolved.dark.bg : resolved.light.bg
 }
 
 const brandingImageField = (
@@ -176,7 +176,6 @@ const brandingImageField = (
 	error: string | null,
 ): Html => {
 	const field = entry.field
-	const name = Str.trim(form.name) === "" ? "Status" : Str.trim(form.name)
 	return imageSourceField(h, {
 		id: brandingFieldId(field),
 		label: entry.label,
@@ -185,21 +184,37 @@ const brandingImageField = (
 		error,
 		preview:
 			field === "faviconUrl"
-				? { _tag: "Favicon", title: name }
+				? { _tag: "Favicon", title: Str.trim(form.name) === "" ? "Status" : Str.trim(form.name) }
 				: { _tag: "Logo", background: logoBackground(form.theme, field) },
 		accept: IMAGE_ACCEPT,
-		formats: IMAGE_FORMATS,
-		isDragging: model.brandingDrag === field,
-		isLinkOpen: Arr.contains(model.brandingLinks, field),
 		isReadOnly: !canManage(model),
-		linkPlaceholder: entry.linkPlaceholder,
-		onPick: Message.ClickedPickBrandingImage({ field }),
+		onEdit: Message.ClickedEditBrandingImage({ field }),
+		onRemove: Message.ChangedSetting({ field, value: "" }),
+		onFiles: (files) => Message.PickedBrandingImage({ field, files }),
+	})
+}
+
+/** Upload, drop or link the image the dialog was opened on. */
+export const brandingImageDialog = (h: H, model: Model): Html => {
+	const field = model.brandingDialogField
+	const entry = Arr.findFirst(BRANDING_IMAGES, (image) => image.field === field)
+	const link = Str.trim(model.brandingLink)
+	return imageSourceDialog(h, {
+		slotId: "status-page-branding-image",
+		model: model.brandingDialog,
+		toParentMessage: (message) => Message.GotBrandingDialogMessage({ message }),
+		title: Option.match(entry, { onNone: () => "Image", onSome: (image) => image.label }),
+		formats: IMAGE_FORMATS,
+		link: model.brandingLink,
+		linkError: link === "" ? null : httpsIssue(link),
+		linkPlaceholder: Option.match(entry, { onNone: () => "https://", onSome: (image) => image.linkPlaceholder }),
+		isDragging: model.brandingDrag === field,
+		onBrowse: Message.ClickedPickBrandingImage({ field }),
 		onFiles: (files) => Message.PickedBrandingImage({ field, files }),
 		onDragOver: Message.DraggedOverBrandingImage({ field }),
 		onDragLeave: Message.LeftBrandingImage(),
-		onRemove: Message.ChangedSetting({ field, value: "" }),
-		onToggleLink: Message.ToggledBrandingLink({ field }),
-		onLinkInput: (value) => Message.ChangedSetting({ field, value }),
+		onLinkInput: (value) => Message.ChangedBrandingLink({ value }),
+		onSubmitLink: Message.SubmittedBrandingLink(),
 	})
 }
 
@@ -215,7 +230,7 @@ export const brandingSection = (h: H, model: Model, form: SettingsForm): Html =>
 		{
 			id: "status-page-settings-branding",
 			title: "Branding",
-			description: ["Upload an image or link one over https. Unsaved changes show in the preview."],
+			description: ["Upload an image or link one. Unsaved changes show in the preview."],
 		},
 		[
 			vstack(h, { gap: "6" }, [

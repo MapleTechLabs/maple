@@ -96,6 +96,9 @@ import {
 	saveSettings,
 	togglePoweredBy,
 	pickBrandingImage,
+	editBrandingImage,
+	brandingDialog,
+	submitBrandingLink,
 	takeBrandingImage,
 	readBrandingImage,
 	changeTheme,
@@ -191,7 +194,9 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		urlCopy: CopyButton.init(),
 		settingsEdits: null,
 		brandingDrag: null,
-		brandingLinks: [],
+		brandingDialog: Dialog.init("status-page-branding-image", "dialog"),
+		brandingDialogField: "logoUrl",
+		brandingLink: "",
 		isSavingSettings: false,
 		settingsFailure: null,
 		isPublishing: false,
@@ -503,14 +508,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedPickBrandingImage: () => ({ model }),
 		DraggedOverBrandingImage: ({ field }) => ({ model: { ...model, brandingDrag: field } }),
 		LeftBrandingImage: () => ({ model: { ...model, brandingDrag: null } }),
-		ToggledBrandingLink: ({ field }) => ({
-			model: {
-				...model,
-				brandingLinks: Arr.contains(model.brandingLinks, field)
-					? Arr.filter(model.brandingLinks, (open) => open !== field)
-					: [...model.brandingLinks, field],
-			},
-		}),
+		ClickedEditBrandingImage: ({ field }) => editBrandingImage(model, field),
+		GotBrandingDialogMessage: ({ message: child }) =>
+			brandingDialog(model, Dialog.update(model.brandingDialog, child)),
+		ChangedBrandingLink: ({ value }) => ({ model: { ...model, brandingLink: value } }),
+		SubmittedBrandingLink: () => submitBrandingLink(model),
 		PickedBrandingImage: ({ field, files }) => takeBrandingImage(model, field, files),
 		CompletedReadBrandingImage: ({ field, dataUrl }) => readBrandingImage(model, field, dataUrl),
 		PickedThemePreset: ({ preset }) =>

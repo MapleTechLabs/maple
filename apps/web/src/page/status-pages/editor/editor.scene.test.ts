@@ -1809,28 +1809,47 @@ describe("settings and appearance views", () => {
 		)
 	})
 
-	test("the branding links preview at once: the dark logo in dark mode and the favicon", () => {
+	test("an image is added from its dialog: a link applies on Use link, a bad one waits", () => {
+		const opened = pageUpdate(
+			loaded({ tab: "appearance" }),
+			Message.ClickedEditBrandingImage({ field: "logoUrl" }),
+		).model
+		expect(opened.brandingDialog.isOpen).toBe(true)
+		scene(
+			{ update: pageUpdate, view },
+			given(opened),
+			mounted,
+			pickersMounted(1),
+			expectView(role("dialog", { name: "Logo" })).toExist(),
+			expectView(role("button", { name: "Upload an image" })).toExist(),
+			type(role("textbox", { name: "Link to an image" }), "http://acme.example/logo.svg"),
+			expectView(text("Use an https URL.")).toExist(),
+			expectView(role("button", { name: "Use link" })).toBeDisabled(),
+		)
+		const typed = pageUpdate(opened, Message.ChangedBrandingLink({ value: " https://acme.example/logo.svg " }))
+		const applied = pageUpdate(typed.model, Message.SubmittedBrandingLink()).model
+		expect(applied.settingsEdits?.logoUrl).toBe("https://acme.example/logo.svg")
+		expect(applied.brandingDialog.isOpen).toBe(false)
+		// Reopened on a linked image, the dialog starts from its link.
+		expect(
+			pageUpdate(applied, Message.ClickedEditBrandingImage({ field: "logoUrl" })).model.brandingLink,
+		).toBe("https://acme.example/logo.svg")
+	})
+
+	test("the branding images preview at once: the dark logo in dark mode and the favicon", () => {
 		const iframeOf = find("iframe")
 		const srcdoc = (html: Parameters<typeof iframeOf>[0]): string =>
 			Option.getOrElse(Option.flatMap(iframeOf(html), attr("srcdoc")), () => "")
+		const branded = steps(loaded({ tab: "appearance" }), [
+			Message.ChangedSetting({ field: "logoUrl", value: "https://acme.example/logo.svg" }),
+			Message.ChangedSetting({ field: "logoDarkUrl", value: "https://acme.example/logo-dark.svg" }),
+			Message.ChangedSetting({ field: "faviconUrl", value: "https://acme.example/favicon.png" }),
+		])
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ tab: "appearance" })),
+			given(branded),
 			pickersMounted(1),
-			// The link field opens on request; the box above stays the upload target.
-			expectView(role("textbox", { name: "Logo link" })).not.toExist(),
-			...Arr.flatMap(
-				[
-					["logoUrl", "Logo link", "https://acme.example/logo.svg"],
-					["logoDarkUrl", "Dark mode logo link", "https://acme.example/logo-dark.svg"],
-					["faviconUrl", "Favicon link", "https://acme.example/favicon.png"],
-				] as const,
-				([field, name, url]) => [
-					inside(selector(`#status-page-${field}`), click(role("button", { name: "Use a link" }))),
-					type(role("textbox", { name }), url),
-				],
-			),
-			expectView(text("Linked from acme.example")).not.toExist(),
+			expectView(role("button", { name: "Change logo" })).toExist(),
 			tap(({ html }) => {
 				expect(srcdoc(html)).toContain(`<img src="https://acme.example/logo.svg"`)
 				expect(srcdoc(html)).toContain(`<link rel="icon" href="https://acme.example/favicon.png">`)

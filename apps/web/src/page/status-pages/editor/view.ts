@@ -36,6 +36,7 @@ import { canvas } from "./view-canvas"
 import { jsonTab } from "./view-json"
 import { addressLine, liveView } from "./view-live"
 import { appearanceView, breakGlassDialog, deletePageDialog, settingsView } from "./view-settings"
+import { brandingImageDialog } from "./view-appearance"
 import { removeCustomDomainDialog } from "./view-domain"
 import { incidentDialogs } from "./view-incident-dialogs"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -357,6 +358,7 @@ const loaded = (h: H, model: Model, page: V2StatusPage, inputs: PageViewInputs):
 			...incidentDialogs(h, model, page, { nowMs: model.nowMs ?? 0, timeZone }),
 			deleteIncidentDialog(h, model, page),
 			breakGlassDialog(h, model),
+			brandingImageDialog(h, model),
 			deletePageDialog(h, model, page),
 			removeCustomDomainDialog(h, model),
 		],

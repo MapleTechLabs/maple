@@ -130,7 +130,10 @@ export const Message = defineMessageUnion({
 	CompletedPickBrandingImage: {},
 	DraggedOverBrandingImage: { field: BrandingField },
 	LeftBrandingImage: {},
-	ToggledBrandingLink: { field: BrandingField },
+	ClickedEditBrandingImage: { field: BrandingField },
+	GotBrandingDialogMessage: { message: Dialog.Message },
+	ChangedBrandingLink: { value: Schema.String },
+	SubmittedBrandingLink: {},
 	PickedBrandingImage: { field: BrandingField, files: Schema.Array(File) },
 	/** `dataUrl` is null when the browser could not read the file. */
 	CompletedReadBrandingImage: { field: BrandingField, dataUrl: Schema.NullOr(Schema.String) },
