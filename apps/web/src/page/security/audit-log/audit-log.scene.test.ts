@@ -526,6 +526,16 @@ describe("security audit log", () => {
 			)
 		})
 
+		test("until the sources answer, the platform filter offers every platform", () => {
+			scene(
+				{ update: pageUpdate, view },
+				given(openPlatforms(loaded())),
+				popupMounted,
+				expectView(role("option", { name: "Google Cloud" })).toExist(),
+				expectView(role("option", { name: "AWS" })).toExist(),
+			)
+		})
+
 		test("picking a platform filters the list, and All platforms drops it", () => {
 			const pick = (model: Model, value: string) =>
 				pageUpdate(
