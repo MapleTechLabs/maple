@@ -44,7 +44,7 @@ import { MountDialog } from "@maple/views/ui/dialog"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { statusPageHref, statusPagesHref } from "../shared/commands"
-import { selectionOf } from "../shared/preview"
+import { selectionOf, SyncPreviewFrame } from "../shared/preview"
 import { ORG } from "../../kit/alert-test-rows"
 import { downMonitor, httpMonitor } from "../../kit/uptime/test-monitors"
 import {
@@ -265,6 +265,7 @@ describe("status page editor", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
+			previewed,
 			expectView(role("heading", { name: /^Acme Status\s*Major outage$/u })).toExist(),
 		)
 	})
@@ -288,11 +289,14 @@ describe("read failures", () => {
 
 const MONITORS = { tab: "settings", section: "monitors" } as const
 
-/** The `srcdoc` of the frame titled `title`; "" without one. */
-const srcdocOf =
+/** The document the preview frame titled `title` shows; "" without one. */
+const documentOf =
 	(title: string) =>
 	(html: Parameters<ReturnType<typeof find>>[0]): string =>
-		Option.getOrElse(Option.flatMap(find(`iframe[title="${title}"]`)(html), attr("srcdoc")), () => "")
+		Option.getOrElse(
+			Option.flatMap(find(`iframe[title="${title}"]`)(html), attr("data-document")),
+			() => "",
+		)
 const APPEARANCE = { tab: "settings", section: "appearance" } as const
 const ACCESS = { tab: "settings", section: "access" } as const
 const ADVANCED = { tab: "settings", section: "advanced" } as const
@@ -305,6 +309,9 @@ const selected = (componentNumber: number, fixture: Fixture = {}) =>
 	).model
 
 const revealed = Mount.resolve(RevealOpenComponent, Message.CompletedFocus())
+
+/** The page preview's frame mounted. */
+const previewed = Mount.resolve({ name: SyncPreviewFrame.name }, Message.CompletedMountPreview())
 
 type ArgsSchema = Schema.Top & { readonly DecodingServices: never }
 
@@ -389,6 +396,7 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(dropped.model),
+			previewed,
 			tap(({ html }) =>
 				expect(gripOrder(html)).toEqual([
 					"Reorder Component 2",
@@ -416,6 +424,7 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(done.model),
+			previewed,
 			// Kept as saved until the re-read brings the server's order.
 			tap(({ html }) =>
 				expect(gripOrder(html)).toEqual([
@@ -440,7 +449,12 @@ describe("components under Settings > Monitors", () => {
 			Message.DroppedComponent({ componentId: componentId(1), index: 2 }),
 			Message.DroppedComponent({ componentId: componentId(1), index: 0 }),
 		])
-		scene({ update: pageUpdate, view }, given(back), expectView(text("Unsaved changes")).not.toExist())
+		scene(
+			{ update: pageUpdate, view },
+			given(back),
+			previewed,
+			expectView(text("Unsaved changes")).not.toExist(),
+		)
 		expect(pageUpdate(back, Message.ClickedSaveMonitors()).commands ?? []).toEqual([])
 	})
 
@@ -448,6 +462,7 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(MONITORS)),
+			previewed,
 			keydown(role("button", { name: "Reorder Component 1" }), "ArrowDown"),
 			Command.resolve(FocusEditorElement, Message.CompletedFocus()),
 			click(role("button", { name: "Discard" })),
@@ -468,7 +483,7 @@ describe("components under Settings > Monitors", () => {
 			loaded(MONITORS),
 			Message.DroppedComponent({ componentId: componentId(3), index: 0 }),
 		).model
-		const page = srcdocOf("Acme Status with these settings")
+		const page = documentOf("Acme Status with these settings")
 		/** The components' names in the order a document first mentions them. */
 		const namesIn = (document: string) =>
 			Arr.sortBy(
@@ -479,6 +494,7 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(dropped),
+			previewed,
 			tap(({ html }) =>
 				expect(namesIn(page(html))).toEqual(["Component 3", "Component 1", "Component 2"]),
 			),
@@ -495,7 +511,12 @@ describe("components under Settings > Monitors", () => {
 			Message.DroppedComponent({ componentId: componentId(2), index: 0 }),
 			Message.ChangedComponentField({ field: "name", value: "Payments" }),
 		])
-		scene({ update: pageUpdate, view }, given(both), expectView(text("New order, Component 2")).toExist())
+		scene(
+			{ update: pageUpdate, view },
+			given(both),
+			previewed,
+			expectView(text("New order, Component 2")).toExist(),
+		)
 		const saving = pageUpdate(both, Message.ClickedSaveMonitors())
 		expect(saving.commands).toMatchObject([
 			{
@@ -515,6 +536,7 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(settled),
+			previewed,
 			expectView(text("Couldn't save the order")).toExist(),
 			expectView(text("New order")).toExist(),
 			tap(({ html }) =>
@@ -548,6 +570,7 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(back.model),
+			previewed,
 			expectView(text("New order")).toExist(),
 			tap(({ html }) => expect(gripOrder(html)[0]).toBe("Reorder Component 3")),
 		)
@@ -557,6 +580,7 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(MONITORS)),
+			previewed,
 			expectView(role("button", { name: "Reorder Component 1" })).toHaveAccessibleDescription(
 				"Drag, or press the up and down arrow keys, to move it within its group.",
 			),
@@ -564,6 +588,7 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ ...MONITORS, grants: MEMBER })),
+			previewed,
 			expectView(text("Component 1")).toExist(),
 			expectAll(all.role("button", { name: /^Reorder/u })).toBeEmpty(),
 		)
@@ -573,6 +598,7 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(MONITORS)),
+			previewed,
 			keydown(role("button", { name: "Reorder Component 1" }), "ArrowDown"),
 			Command.expectExact(FocusEditorElement({ id: componentGripId(componentId(1)) })),
 			tap(({ html }) =>
@@ -607,6 +633,7 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ ...MONITORS, components: [component(1), component(2)] })),
+			previewed,
 			keydown(role("button", { name: "Reorder Component 1" }), "ArrowUp"),
 			Command.expectNone(),
 			keydown(role("button", { name: "Reorder Component 2" }), "ArrowDown"),
@@ -622,6 +649,7 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ ...MONITORS, components: [component(1), target] })),
+			previewed,
 			click(role("button", { name: /^API/u })),
 			// Expanded in place: nothing scrolls.
 			Mount.expectNone(),
@@ -653,6 +681,7 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ ...MONITORS, components: rows })),
+			previewed,
 			expectAll(all.role("list")).toHaveCount(2),
 			tap(({ html }) =>
 				expect(
@@ -694,10 +723,11 @@ describe("components under Settings > Monitors", () => {
 			selected(2, { components: [component(1, { group: "Core" }), component(2, { group: "Core" })] }),
 			Message.ChangedComponentField({ field: "name", value: "Payments" }),
 		).model
-		const page = srcdocOf("Acme Status with these settings")
+		const page = documentOf("Acme Status with these settings")
 		scene(
 			{ update: pageUpdate, view },
 			given(editing),
+			previewed,
 			expectView(selector('iframe[title="Component 2 as visitors see it"]')).not.toExist(),
 			tap(({ html }) => {
 				expect(page(html)).toContain("Payments")
@@ -730,6 +760,7 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(landed.model),
+			previewed,
 			revealed,
 			Mount.expectEnded(RevealOpenComponent),
 		)
@@ -770,6 +801,7 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(back.model),
+			previewed,
 			expectView(role("button", { name: /^Component 1/u })).toHaveAttr("aria-expanded", "true"),
 			expectView(role("textbox", { name: "Shown as" })).toHaveValue("Payments"),
 			expectView(text("Unsaved changes")).toExist(),
@@ -793,6 +825,7 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
+			previewed,
 			expectView(selector("iframe")).toHaveAttr("sandbox", "allow-scripts"),
 		)
 		const document = canvasDocument(model, statusPage())
@@ -815,6 +848,7 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(selected(2)),
+			previewed,
 			expectView(text("Unsaved changes")).not.toExist(),
 			type(role("textbox", { name: "Shown as" }), " Payments "),
 			Command.expectNone(),
@@ -851,6 +885,7 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(saved.model),
+			previewed,
 			expectView(text("Saved")).toExist(),
 			expectView(text("Unsaved changes")).not.toExist(),
 		)
@@ -861,6 +896,7 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(unnamed.model),
+			previewed,
 			expectView(text("Add a name.")).toExist(),
 			expectView(role("button", { name: "Save" })).toBeDisabled(),
 		)
@@ -871,6 +907,7 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(selected(2)),
+			previewed,
 			type(role("textbox", { name: "Shown as" }), "Payments"),
 			click(role("button", { name: "Discard" })),
 			Command.expectNone(),
@@ -894,6 +931,7 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(editing.model),
+			previewed,
 			expectView(role("textbox", { name: "Description" })).toHaveValue(" Card payments and payouts "),
 		)
 	})
@@ -903,6 +941,7 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(selected(3, { components: rows })),
+			previewed,
 			type(role("textbox", { name: "Group" }), "Payments"),
 			expectView(text("Unsaved changes")).toExist(),
 		)
@@ -936,6 +975,7 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(failed),
+			previewed,
 			expectView(text("Not saved")).toExist(),
 			expectView(text("Couldn't save the component")).toExist(),
 			expectView(text("Unsaved changes")).toExist(),
@@ -950,6 +990,7 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(selected(1)),
+			previewed,
 			expectView(role("switch", { name: "Show uptime bars" })).toBeChecked(),
 			expectView(role("switch", { name: "Show uptime bars" })).toBeDisabled(),
 			expectView(text("Uptime bars need a monitor.")).toExist(),
@@ -993,6 +1034,7 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(asked.model),
+			previewed,
 			mounted,
 			expectView(role("alertdialog", { name: "Discard changes to Component 1?" })).toExist(),
 			expectView(within(role("alertdialog"), role("button", { name: "Keep editing" }))).toExist(),
@@ -1005,6 +1047,7 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(kept),
+			previewed,
 			mounted,
 			expectView(role("button", { name: /^Component 1/u })).toHaveAttr("aria-expanded", "true"),
 			expectView(role("button", { name: /^Component 2/u })).toHaveAttr("aria-expanded", "false"),
@@ -1126,6 +1169,7 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given({ ...adding, addPicker: { ...adding.addPicker, isCreatingMonitor: true } }),
+			previewed,
 			mounted,
 			expectView(role("button", { name: "Add a component without a monitor" })).toBeDisabled(),
 			expectView(role("button", { name: "Add component" })).toBeDisabled(),
@@ -1155,6 +1199,7 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(selected(1, { grants: MEMBER })),
+			previewed,
 			expectView(text("Component 1")).toExist(),
 			expectView(role("button", { name: "Add monitor" })).not.toExist(),
 			expectView(role("button", { name: "Reorder Component 1" })).not.toExist(),
@@ -1207,6 +1252,7 @@ describe("posting an incident", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(opened),
+			previewed,
 			mounted,
 			expectView(role("dialog", { name: "Post incident" })).toExist(),
 			expectView(role("listitem", { name: "Write" })).toHaveAttr("aria-current", "step"),
@@ -1223,6 +1269,7 @@ describe("posting an incident", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(opened),
+			previewed,
 			mounted,
 			expectView(text("Add a title.")).toExist(),
 			expectView(role("button", { name: "Review" })).toBeDisabled(),
@@ -1250,6 +1297,7 @@ describe("posting an incident", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
+			previewed,
 			mounted,
 			expectView(role("dialog", { name: "Review before publishing" })).toExist(),
 			inside(
@@ -1327,6 +1375,7 @@ describe("posting an incident", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(back),
+			previewed,
 			mounted,
 			expectView(role("textbox", { name: "Title" })).toHaveValue("Slow checkout"),
 			expectView(role("textbox", { name: "Message" })).toHaveValue("**Checkout** is slow."),
@@ -1345,6 +1394,7 @@ describe("posting an incident", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(refused),
+			previewed,
 			mounted,
 			expectView(text("Couldn't open the incident")).toExist(),
 			expectView(role("button", { name: "Publish" })).toBeEnabled(),
@@ -1413,6 +1463,7 @@ describe("posting an incident", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
+			previewed,
 			mounted,
 			expectView(text("Nothing on the page changes")).toExist(),
 			expectView(role("button", { name: "Schedule" })).toExist(),
@@ -1431,6 +1482,7 @@ describe("posting an incident", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(written("2026-10-01T13:00", "2026-10-01T14:00")),
+			previewed,
 			mounted,
 			expectView(role("combobox", { name: "Status" })).not.toExist(),
 		)
@@ -1451,6 +1503,7 @@ describe("posting an incident", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(over),
+			previewed,
 			mounted,
 			expectView(text("The maintenance must end in the future.")).toExist(),
 		)
@@ -1467,6 +1520,7 @@ describe("posting an incident", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(writing),
+			previewed,
 			mounted,
 			expectView(role("radio", { name: "Complete automatically" })).toBeChecked(),
 			expectView(
@@ -1480,6 +1534,7 @@ describe("posting an incident", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(reviewed),
+			previewed,
 			mounted,
 			expectView(
 				text(
@@ -1507,6 +1562,7 @@ describe("posting an incident", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(future),
+			previewed,
 			mounted,
 			expectView(text("It can't start in the future.")).toExist(),
 			expectView(role("button", { name: "Review" })).toBeDisabled(),
@@ -1518,6 +1574,7 @@ describe("posting an incident", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(reviewed),
+			previewed,
 			mounted,
 			inside(
 				role("region", { name: "On the page" }),
@@ -1546,6 +1603,7 @@ describe("posting an incident", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(reviewed),
+			previewed,
 			mounted,
 			inside(
 				role("region", { name: "Schedule" }),
@@ -1568,6 +1626,7 @@ describe("posting an incident", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(long),
+			previewed,
 			mounted,
 			expectAll(all.text("Keep it under 20,000 characters (20,001 now).")).toHaveCount(2),
 			expectView(role("button", { name: "Review" })).toBeDisabled(),
@@ -1579,6 +1638,7 @@ describe("posting an incident", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(opened),
+			previewed,
 			mounted,
 			type(role("textbox", { name: "Title" }), "Database upgrade"),
 			type(role("textbox", { name: "Message" }), "Brief read-only periods."),
@@ -1602,6 +1662,7 @@ describe("posting an update", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
+			previewed,
 			mounted,
 			expectView(text("Draft, not public")).toExist(),
 			expectView(role("button", { name: "Publish" })).toExist(),
@@ -1623,6 +1684,7 @@ describe("posting an update", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(opened),
+			previewed,
 			mounted,
 			mounted,
 			expectView(role("dialog", { name: "Post update" })).toExist(),
@@ -1648,6 +1710,7 @@ describe("posting an update", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
+			previewed,
 			mounted,
 			mounted,
 			inside(role("region", { name: "On the page" }), expectView(text("Resolved")).toExist()),
@@ -1703,6 +1766,7 @@ describe("posting an update", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(late),
+			previewed,
 			mounted,
 			mounted,
 			expectView(text("It can't end in the future.")).toExist(),
@@ -1729,6 +1793,7 @@ describe("posting an update", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(early),
+			previewed,
 			mounted,
 			mounted,
 			expectView(text("It can't end before it started.")).toExist(),
@@ -1754,6 +1819,7 @@ describe("posting an update", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(opened),
+			previewed,
 			mounted,
 			mounted,
 			expectView(role("textbox", { name: "Ended" })).not.toExist(),
@@ -1775,6 +1841,7 @@ describe("posting an update", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(failed),
+			previewed,
 			mounted,
 			mounted,
 			expectView(text("Couldn't post the update")).toExist(),
@@ -1794,6 +1861,7 @@ describe("posting an update", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(typed),
+			previewed,
 			mounted,
 			mounted,
 			expectView(role("button", { name: "Change title, impact, times or components" })).toHaveHandler(
@@ -1803,6 +1871,7 @@ describe("posting an update", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(editing),
+			previewed,
 			mounted,
 			mounted,
 			mounted,
@@ -1823,6 +1892,7 @@ describe("editing an incident's details", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(opened),
+			previewed,
 			mounted,
 			mounted,
 			expectView(role("textbox", { name: "Title" })).toHaveValue("Elevated errors"),
@@ -1884,6 +1954,7 @@ describe("editing an incident's details", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(refused),
+			previewed,
 			mounted,
 			mounted,
 			expectView(text("Couldn't save the changes")).toExist(),
@@ -1907,6 +1978,7 @@ describe("editing an incident's details", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(opened),
+			previewed,
 			mounted,
 			mounted,
 			expectView(role("textbox", { name: "Title" })).toExist(),
@@ -1957,6 +2029,7 @@ describe("editing an incident's details", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(opened),
+			previewed,
 			mounted,
 			mounted,
 			expectView(role("textbox", { name: "Starts" })).not.toExist(),
@@ -1976,6 +2049,7 @@ describe("editing an incident's details", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(lateEnd),
+			previewed,
 			mounted,
 			mounted,
 			expectView(text("It can't end in the future.")).toExist(),
@@ -1990,6 +2064,7 @@ describe("editing an incident's details", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(lateStart),
+			previewed,
 			mounted,
 			mounted,
 			expectView(text("It can't start in the future.")).toExist(),
@@ -2008,6 +2083,7 @@ describe("editing an incident's details", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(inverted),
+			previewed,
 			mounted,
 			mounted,
 			expectView(text("It can't end before it started.")).toExist(),
@@ -2130,6 +2206,7 @@ describe("header", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded()),
+			previewed,
 			expectView(role("button", { name: "Declare incident" })).not.toExist(),
 			expectView(role("link", { name: "Live page" })).toHaveAttr("aria-current", "page"),
 		)
@@ -2293,6 +2370,7 @@ describe("header", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ tab: "appearance" })),
+			previewed,
 			expectView(role("link", { name: "Settings" })).toHaveAttr("aria-current", "page"),
 			expectView(role("link", { name: "Appearance" })).toHaveAttr("aria-current", "page"),
 		)
@@ -2307,6 +2385,7 @@ describe("header", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given({ ...loaded({ tab: "settings" }), publicBaseUrl: "https://status-pr-7.maple.dev" }),
+			previewed,
 			expectView(role("link", { name: "Open page" })).toHaveAttr(
 				"href",
 				"https://status-pr-7.maple.dev/s/acme-status",
@@ -2323,6 +2402,7 @@ describe("header", () => {
 				...loaded({ page: statusPage({ draft: true, published_at: null }) }),
 				publicBaseUrl: "https://status-pr-7.maple.dev",
 			}),
+			previewed,
 			expectView(role("link", { name: "Open page" })).not.toExist(),
 			expectView(role("button", { name: "Open page" })).toBeDisabled(),
 			expectView(selector('[data-tooltip="Publish the page to open it"]')).toExist(),
@@ -2330,6 +2410,7 @@ describe("header", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given({ ...loaded(), publicBaseUrl: "" }),
+			previewed,
 			expectView(role("link", { name: "Open page" })).not.toExist(),
 			expectView(role("button", { name: "Open page" })).toBeDisabled(),
 			expectView(selector('[data-tooltip="No status domain is configured yet"]')).toExist(),
@@ -2343,6 +2424,7 @@ describe("drafts", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
+			previewed,
 			expectView(text("Draft, not public")).toExist(),
 			expectView(text("Draft. Nothing is public until you publish.")).toExist(),
 			expectView(text("This page is a draft")).toExist(),
@@ -2429,6 +2511,7 @@ describe("live screen", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given({ ...loaded(), publicBaseUrl: "https://status-pr-7.maple.dev" }),
+			previewed,
 			expectView(role("link", { name: "https://status-pr-7.maple.dev/s/acme-status" })).toHaveAttr(
 				"href",
 				"https://status-pr-7.maple.dev/s/acme-status",
@@ -2437,6 +2520,7 @@ describe("live screen", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given({ ...loaded(), publicBaseUrl: "" }),
+			previewed,
 			expectView(text("Public address appears once a status domain is configured")).toExist(),
 		)
 	})
@@ -2486,6 +2570,7 @@ describe("settings", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(APPEARANCE)),
+			previewed,
 			expectView(text("Unsaved changes")).not.toExist(),
 			type(role("textbox", { name: "Accent" }), "teal"),
 			expectView(text("Unsaved changes")).toExist(),
@@ -2502,6 +2587,7 @@ describe("settings", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given({ ...edited, search: { view: "settings", section: "appearance" } }),
+			previewed,
 			expectView(text("Fix the fields marked in Basic settings.")).toExist(),
 			expectView(role("button", { name: "Save" })).toBeDisabled(),
 		)
@@ -2516,6 +2602,7 @@ describe("settings", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ tab: "settings" })),
+			previewed,
 			type(role("textbox", { name: "Terms of service URL" }), "http://acme.example/terms"),
 			expectView(text("Use an https URL.")).toExist(),
 			expectView(role("button", { name: "Save" })).toBeDisabled(),
@@ -2581,6 +2668,7 @@ describe("settings", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(APPEARANCE)),
+			previewed,
 			expectView(role("textbox", { name: "Background" })).toBeDisabled(),
 			expectView(role("textbox", { name: "Text" })).toBeDisabled(),
 			expectView(role("textbox", { name: "Accent" })).toBeEnabled(),
@@ -2593,6 +2681,7 @@ describe("settings", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(APPEARANCE)),
+			previewed,
 			inside(role("group", { name: "Mode" }), click(role("button", { name: "Light" }))),
 			type(role("textbox", { name: "Text" }), "#757575"),
 			expectView(
@@ -2603,10 +2692,11 @@ describe("settings", () => {
 	})
 
 	test("the page preview is the page's own renderer, sandboxed, following the unsaved theme", () => {
-		const theme = srcdocOf("Acme Status with these settings")
+		const theme = documentOf("Acme Status with these settings")
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(APPEARANCE)),
+			previewed,
 			expectView(selector('iframe[title="Acme Status with these settings"]')).toHaveAttr(
 				"sandbox",
 				"allow-scripts",
@@ -2623,10 +2713,11 @@ describe("settings", () => {
 	})
 
 	test("the branding links preview at once: the logo in the header, the favicon in the tab", () => {
-		const header = srcdocOf("Acme Status with these settings")
+		const header = documentOf("Acme Status with these settings")
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(APPEARANCE)),
+			previewed,
 			type(role("textbox", { name: "Logo URL" }), "https://acme.example/logo.svg"),
 			type(role("textbox", { name: "Dark mode logo URL" }), "https://acme.example/logo-dark.svg"),
 			type(role("textbox", { name: "Favicon URL" }), "https://acme.example/favicon.png"),
@@ -2642,10 +2733,11 @@ describe("settings", () => {
 	})
 
 	test("the sections that shape the page show it beside them, as the unsaved settings render it", () => {
-		const page = srcdocOf("Globex with these settings")
+		const page = documentOf("Globex with these settings")
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ tab: "settings" })),
+			previewed,
 			type(role("textbox", { name: "Name" }), "Globex"),
 			tap(({ html }) => {
 				expect(page(html)).toContain("Globex")
@@ -2660,10 +2752,11 @@ describe("settings", () => {
 	})
 
 	test("Basic settings show the page as typed in the preview beside them", () => {
-		const page = srcdocOf("Globex with these settings")
+		const page = documentOf("Globex with these settings")
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ tab: "settings" })),
+			previewed,
 			type(role("textbox", { name: "Name" }), "Globex"),
 			type(role("textbox", { name: "Description" }), "Live status of Globex"),
 			tap(({ html }) => {
@@ -2674,7 +2767,7 @@ describe("settings", () => {
 	})
 
 	test("Advanced holds the page's behaviour: the powered-by credit leaves the page as toggled", () => {
-		const page = srcdocOf("Acme Status with these settings")
+		const page = documentOf("Acme Status with these settings")
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(ADVANCED)),
@@ -2685,17 +2778,26 @@ describe("settings", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(basic)),
+			previewed,
 			tap(({ html }) => expect(page(html)).toContain("Powered by")),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given(pageUpdate(loaded(basic), Message.ToggledPoweredBy()).model),
+			previewed,
 			tap(({ html }) => expect(page(html)).not.toContain("Powered by")),
 		)
 	})
 
 	test("a password-protected page, saved or picked, previews the password form visitors meet", () => {
-		const gate = srcdocOf("The password form visitors see first")
+		const gate = (html: Parameters<ReturnType<typeof find>>[0]): string =>
+			Option.getOrElse(
+				Option.flatMap(
+					find('iframe[title="The password form visitors see first"]')(html),
+					attr("srcdoc"),
+				),
+				() => "",
+			)
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ ...ACCESS, page: statusPage({ visibility: "password", has_password: true }) })),
@@ -2718,6 +2820,7 @@ describe("settings", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(MONITORS)),
+			previewed,
 			inside(
 				role("navigation", { name: "Settings sections" }),
 				expectView(role("link", { name: "Monitors" })).toHaveAttr("aria-current", "page"),
@@ -2734,10 +2837,16 @@ describe("settings", () => {
 			loaded(APPEARANCE),
 			Message.ChangedSetting({ field: "faviconUrl", value: "http://acme.example/favicon.png" }),
 		).model
-		scene({ update: pageUpdate, view }, given(edited), expectView(text("Use an https URL.")).toExist())
+		scene(
+			{ update: pageUpdate, view },
+			given(edited),
+			previewed,
+			expectView(text("Use an https URL.")).toExist(),
+		)
 		scene(
 			{ update: pageUpdate, view },
 			given({ ...edited, search: { view: "settings" } }),
+			previewed,
 			expectView(text("Fix the fields marked in Appearance.")).toExist(),
 			expectView(role("button", { name: "Save" })).toBeDisabled(),
 		)
@@ -2745,28 +2854,29 @@ describe("settings", () => {
 
 	test("the live page can show a state the page is not in, and says it is an example", () => {
 		const iframeOf = find("iframe")
-		const srcdoc = (html: Parameters<typeof iframeOf>[0]): string =>
-			Option.getOrElse(Option.flatMap(iframeOf(html), attr("srcdoc")), () => "")
+		const shown = (html: Parameters<typeof iframeOf>[0]): string =>
+			Option.getOrElse(Option.flatMap(iframeOf(html), attr("data-document")), () => "")
 		const note = text("Showing an example state. Visitors still see the live page.")
 		const pick = (name: string) =>
 			inside(role("group", { name: "Preview state" }), click(role("button", { name })))
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded()),
+			previewed,
 			expectView(note).not.toExist(),
-			tap(({ html }) => expect(srcdoc(html)).not.toContain("Example incident")),
+			tap(({ html }) => expect(shown(html)).not.toContain("Example incident")),
 			pick("Outage"),
-			tap(({ html }) => expect(srcdoc(html)).toContain("Example incident")),
+			tap(({ html }) => expect(shown(html)).toContain("Example incident")),
 			expectView(note).toExist(),
 			// Looking only: the example is not a page edit and posts nothing.
 			expectView(text("Unsaved changes")).not.toExist(),
 			pick("Maintenance"),
 			tap(({ html }) => {
-				expect(srcdoc(html)).toContain("Example maintenance")
-				expect(srcdoc(html)).not.toContain("Example incident")
+				expect(shown(html)).toContain("Example maintenance")
+				expect(shown(html)).not.toContain("Example incident")
 			}),
 			pick("All clear"),
-			tap(({ html }) => expect(srcdoc(html)).not.toContain("Example maintenance")),
+			tap(({ html }) => expect(shown(html)).not.toContain("Example maintenance")),
 			expectView(note).toExist(),
 			pick("Live"),
 			expectView(note).not.toExist(),
@@ -2779,6 +2889,7 @@ describe("settings", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded()),
+			previewed,
 			expectView(selector("iframe")).toHaveAttr("data-width", "desktop"),
 			pick("Mobile"),
 			expectView(selector("iframe")).toHaveAttr("data-width", "mobile"),
@@ -2793,6 +2904,7 @@ describe("settings", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(APPEARANCE)),
+			previewed,
 			// Empty field: the preset's own colour, the one the placeholder names.
 			expectView(accent).toHaveValue("#000000"),
 			type(role("textbox", { name: "Accent" }), "#FF0066"),

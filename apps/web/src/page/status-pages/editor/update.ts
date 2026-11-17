@@ -518,6 +518,7 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 		// A reveal happens once: a later remount of the same row (back from another section) stays put.
 		CompletedFocus: () => ({ model: { ...model, revealComponentId: null } }),
 		// Preview and selection
+		CompletedMountPreview: () => ({ model }),
 		ElapsedPreviewDebounce: ({ generation }) =>
 			generation !== model.previewGeneration
 				? { model }

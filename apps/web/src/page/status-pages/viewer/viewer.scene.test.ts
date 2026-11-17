@@ -2,11 +2,21 @@ import { OrgId } from "@maple/domain"
 import { StatusPagePublicId } from "@maple/domain/http/v2"
 import { makeSnapshot } from "@maple/status-page/fixtures"
 import { Result, Schema, Array as Arr } from "effect"
-import { expect as expectView, given, role, scene, selector, text, withViewInputs } from "foldkit/scene"
+import {
+	expect as expectView,
+	given,
+	Mount,
+	role,
+	scene,
+	selector,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../../contract"
 import { ORG } from "../../kit/alert-test-rows"
+import { SyncPreviewFrame } from "../shared/preview"
 import { pageId } from "../shared/test-pages"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -17,6 +27,8 @@ const orgId = Schema.decodeSync(OrgId)(ORG)
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const viewerUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(viewerView, { context })()
+/** The page's frame mounted. */
+const previewed = Mount.resolve({ name: SyncPreviewFrame.name }, Message.CompletedMountPreview())
 
 const entered = () =>
 	init({ _tag: "StatusPageView", pageId: Schema.encodeSync(StatusPagePublicId)(pageId(1)) }, context)
@@ -37,6 +49,7 @@ describe("status page viewer", () => {
 		scene(
 			{ update: viewerUpdate, view },
 			given(loaded),
+			previewed,
 			expectView(text("Only members of this organization can read this page.")).toExist(),
 			expectView(selector('iframe[title="Acme status"]')).toHaveAttr(
 				"sandbox",

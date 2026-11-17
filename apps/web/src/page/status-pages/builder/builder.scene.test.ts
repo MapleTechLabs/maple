@@ -23,6 +23,7 @@ import { ORG } from "../../kit/alert-test-rows"
 import { downMonitor, heartbeatMonitor, httpMonitor, monitorId } from "../../kit/uptime/test-monitors"
 import { statusPageHref } from "../shared/commands"
 import { monitorKey, PickerMessage } from "../shared/picker"
+import { SyncPreviewFrame } from "../shared/preview"
 import { statusPage } from "../shared/test-pages"
 import { FocusNewRow } from "./command"
 import { Message } from "./message"
@@ -37,6 +38,8 @@ const orgId = Schema.decodeSync(OrgId)(ORG)
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const builderUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(builderView, { context })()
+/** The preview's frame mounted. */
+const previewed = Mount.resolve({ name: SyncPreviewFrame.name }, Message.CompletedMountPreview())
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	Arr.map(commands ?? [], ({ name }) => name)
 const picker = (message: PickerMessage) => Message.GotPickerMessage({ message })
@@ -80,6 +83,7 @@ describe("status page builder", () => {
 		scene(
 			{ update: builderUpdate, view },
 			given(model),
+			previewed,
 			expectView(text("api.acme.dev/checkout/health")).toExist(),
 			expectView(text("db.acme.dev:5432")).toExist(),
 			expectView(text("heartbeat")).toExist(),
@@ -110,6 +114,7 @@ describe("status page builder", () => {
 		scene(
 			{ update: builderUpdate, view },
 			given(typed),
+			previewed,
 			expectView(role("textbox", { name: "Name" })).toHaveValue("Acme"),
 			expectView(role("textbox", { name: "Address" })).toHaveValue("status"),
 		)
@@ -133,6 +138,7 @@ describe("status page builder", () => {
 		scene(
 			{ update: builderUpdate, view },
 			given(movedUp),
+			previewed,
 			expectView(role("button", { name: "Move Payments up" })).toBeDisabled(),
 			expectView(role("button", { name: "Move postgres down" })).toBeDisabled(),
 			expectView(role("textbox", { name: "Shown as, payments-api" })).toHaveValue("Payments"),
@@ -181,6 +187,7 @@ describe("status page builder", () => {
 		scene(
 			{ update: builderUpdate, view },
 			given(withMonitors([])),
+			previewed,
 			expectView(text("Paste a URL to monitor, or add a component you'll update by hand.")).toExist(),
 			expectView(role("textbox", { name: "URL to monitor" })).toExist(),
 			expectView(role("button", { name: "Add a component without a monitor" })).toExist(),
@@ -229,6 +236,7 @@ describe("status page builder", () => {
 		scene(
 			{ update: builderUpdate, view },
 			given(added.model),
+			previewed,
 			Mount.resolve(FocusNewRow, Message.CompletedFocus()),
 			expectView(text("Name this component")).toExist(),
 			expectView(role("button", { name: "Publish page" })).toBeDisabled(),
@@ -288,6 +296,7 @@ describe("status page builder", () => {
 		scene(
 			{ update: builderUpdate, view },
 			given(refused.model),
+			previewed,
 			expectView(text("That address is taken. Pick another.")).toExist(),
 			expectView(role("button", { name: "Publish page" })).toBeDisabled(),
 		)
@@ -295,6 +304,7 @@ describe("status page builder", () => {
 		scene(
 			{ update: builderUpdate, view },
 			given(changed),
+			previewed,
 			expectView(text("That address is taken. Pick another.")).not.toExist(),
 			expectView(role("button", { name: "Publish page" })).not.toBeDisabled(),
 		)
@@ -311,6 +321,7 @@ describe("status page builder", () => {
 		scene(
 			{ update: builderUpdate, view },
 			given(model),
+			previewed,
 			expectView(text("Use 3 to 48 lowercase letters, digits or inner hyphens.")).toExist(),
 			expectView(role("button", { name: "Publish page" })).toBeDisabled(),
 			expectView(role("button", { name: "Save as draft" })).toBeDisabled(),
@@ -382,7 +393,12 @@ describe("status page builder", () => {
 				args: { generation, draft: { name: "Ac", components: [{ monitor_id: httpMonitor().id }] } },
 			},
 		])
-		scene({ update: builderUpdate, view }, given(fetching.model), expectView(text("Updating")).toExist())
+		scene(
+			{ update: builderUpdate, view },
+			given(fetching.model),
+			previewed,
+			expectView(text("Updating")).toExist(),
+		)
 	})
 
 	test("members are told only admins create pages", () => {
@@ -401,14 +417,15 @@ describe("status page builder", () => {
 		scene(
 			{ update: builderUpdate, view },
 			given(dark.model),
+			previewed,
 			expectView(selector("iframe")).toHaveAttr("sandbox", "allow-scripts"),
 			tap(({ html }) => {
-				const srcdoc = Option.getOrElse(
-					Option.flatMap(find("iframe")(html), attr("srcdoc")),
+				const page = Option.getOrElse(
+					Option.flatMap(find("iframe")(html), attr("data-document")),
 					() => "",
 				)
-				expect(srcdoc).toContain("Acme Cloud")
-				expect(srcdoc).toContain("color-scheme:dark;")
+				expect(page).toContain("Acme Cloud")
+				expect(page).toContain("color-scheme:dark;")
 			}),
 		)
 	})

@@ -6,5 +6,6 @@ import { LoadOutcome } from "../../kit/load-schemas"
 export const Message = defineMessageUnion({
 	CompletedFetchView: { key: Schema.String, result: LoadOutcome(StatusPagePublicSnapshot) },
 	ClickedRetry: {},
+	CompletedMountPreview: {},
 })
 export type Message = typeof Message.Type

@@ -241,6 +241,7 @@ const previewPanel = (h: H, model: Model): Html =>
 			previewFrame(h, {
 				title: "Status page preview",
 				document: draftDocument(model),
+				mounted: Message.CompletedMountPreview(),
 				className: "h-[560px] min-[1000px]:h-[calc(100vh-20rem)] min-[1000px]:min-h-[520px]",
 			}),
 			model.previewFailure === null

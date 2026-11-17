@@ -44,4 +44,5 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, snapshot: Keyed.accept(model.snapshot, key, result) },
 		}),
 		ClickedRetry: () => request(model, context, "Supersede"),
+		CompletedMountPreview: () => ({ model }),
 	})

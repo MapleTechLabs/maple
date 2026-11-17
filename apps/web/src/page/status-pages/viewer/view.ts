@@ -49,6 +49,7 @@ const body = (h: H, model: Model): Html => {
 						opensLinks: true,
 					}),
 					opensLinks: true,
+					mounted: Message.CompletedMountPreview(),
 					className: "h-[640px] lg:h-[calc(100vh-12rem)] lg:min-h-[520px]",
 				}),
 			]),

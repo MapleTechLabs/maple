@@ -56,6 +56,7 @@ export const Message = defineMessageUnion({
 	GotPageMenuMessage: { message: Menu.Message },
 	CompletedFocus: {},
 	// Preview and selection
+	CompletedMountPreview: {},
 	ElapsedPreviewDebounce: { generation: Schema.Number },
 	CompletedFetchPreview: {
 		generation: Schema.Number,

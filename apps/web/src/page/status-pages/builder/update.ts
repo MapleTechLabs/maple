@@ -236,6 +236,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				}),
 			}),
 		CompletedFocus: () => ({ model }),
+		CompletedMountPreview: () => ({ model }),
 		PickedPreset: ({ preset }) => edited({ ...model, preset }),
 		PickedAppearance: ({ appearance }) => edited({ ...model, appearance }),
 		PickedPreviewScheme: ({ scheme }) => ({ model: { ...model, previewScheme: scheme } }),

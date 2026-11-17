@@ -14,8 +14,10 @@ import { eyebrow } from "@maple/views/ui/eyebrow"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
-import { Option, Schema, Stream, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Schema, Stream, Array as Arr, String as Str } from "effect"
+import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { defineMessageUnion } from "foldkit/message"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // The live preview: the public renderer's page in a sandboxed frame, with the monitors' real
@@ -222,10 +224,21 @@ const stayInFrameScript = (opensLinks: boolean): string =>
 	`(function(){var o=${opensLinks};document.addEventListener("click",function(e){if(e.defaultPrevented)return;var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(!a)return;var h=a.getAttribute("href");if(o&&h&&/^https?:/i.test(h)){a.target="_blank";a.rel="noopener noreferrer";return}e.preventDefault();if(h&&h.charAt(0)==="#"){var t=document.getElementById(decodeURIComponent(h.slice(1)));if(t)t.scrollIntoView({block:"start"})}});document.addEventListener("submit",function(e){e.preventDefault()})})();`
 
 /**
- * Each edit rebuilds the document, and a new `srcdoc` reloads the frame at the top. The frame's
- * `window.name` survives that reload, so the scroll is kept there and put back before paint.
+ * Puts each document the editor posts into the page in place, so an edit never reloads the frame:
+ * no image flashes and the scroll stays. The first document posted is the one the frame loaded;
+ * each later one is diffed against the one before it, and only what changed is written to the
+ * page, so what the page's script did to the rest (shown arrows, times in the visitor's zone, its
+ * tooltip) is kept. Scripts in new nodes don't run.
  */
-const KEEP_SCROLL_SCRIPT = `(function(){var k="maple-preview-scroll:";var y=window.name.indexOf(k)===0?Number(window.name.slice(k.length)):0;var to=function(){window.scrollTo({top:y,behavior:"instant"})};if(y>0){to();addEventListener("load",to)}addEventListener("scroll",function(){window.name=k+Math.round(window.scrollY)},{passive:true})})();`
+const MORPH_SCRIPT = `(function(){var P=new DOMParser(),prev=null;
+function same(a,b){return a.nodeType===b.nodeType&&a.nodeName===b.nodeName}
+function classes(l,a,b){a.classList.forEach(function(c){if(!b.classList.contains(c))l.classList.remove(c)});b.classList.forEach(function(c){if(!a.classList.contains(c))l.classList.add(c)})}
+function attrs(l,a,b){var i,x;for(i=0;i<a.attributes.length;i++){x=a.attributes[i].name;if(x!=="class"&&!b.hasAttribute(x))l.removeAttribute(x)}for(i=0;i<b.attributes.length;i++){x=b.attributes[i];if(x.name!=="class"&&a.getAttribute(x.name)!==x.value)l.setAttribute(x.name,x.value)}classes(l,a,b)}
+function patch(l,a,b){if(a.isEqualNode(b))return;if(l.nodeType!==1){l.nodeValue=b.nodeValue;return}attrs(l,a,b);kids(l,a,b)}
+function kids(p,a,b){var l=Array.prototype.slice.call(p.childNodes),o=a.childNodes,n=b.childNodes,end=l[o.length]||null,i;
+for(i=0;i<n.length;i++){if(i>=o.length||!l[i])p.insertBefore(document.importNode(n[i],true),end);else if(same(o[i],n[i])&&same(l[i],o[i]))patch(l[i],o[i],n[i]);else if(!o[i].isEqualNode(n[i]))p.replaceChild(document.importNode(n[i],true),l[i])}
+for(i=n.length;i<o.length;i++)if(l[i])p.removeChild(l[i])}
+addEventListener("message",function(e){var d=e.data;if(e.source!==parent||!d||d.type!=="document"||typeof d.html!=="string")return;var next=P.parseFromString(d.html,"text/html");if(prev)patch(document.documentElement,prev.documentElement,next.documentElement);prev=next})})();`
 
 /** The public page as the renderer draws it, plus, when selectable, the selection script. */
 export const previewDocument = (options: PreviewDocumentOptions): string => {
@@ -238,7 +251,7 @@ export const previewDocument = (options: PreviewDocumentOptions): string => {
 			? { preview, inDashboard: true }
 			: { preview, inDashboard: true, publicUrl: options.publicUrl },
 	)
-	const stay = `<script>${stayInFrameScript(options.opensLinks === true)}</script><script>${KEEP_SCROLL_SCRIPT}</script>`
+	const stay = `<script>${stayInFrameScript(options.opensLinks === true)}</script><script>${MORPH_SCRIPT}</script>`
 	if (!options.isSelectable) return Str.replace("</body>", `${stay}</body>`)(html)
 	const extra = `<style>${SELECTABLE_STYLES}</style><script>${SELECT_SCRIPT}</script>${stay}`
 	return Str.replace("</body>", `${extra}</body>`)(html)
@@ -334,12 +347,62 @@ export const previewExampleNote = <M>(h: HtmlBuilder<M>, state: PreviewState): R
 				]),
 			]
 
-/** The sandboxed frame: scripts run so the page pages its bars, but it can reach nothing of ours. */
+const PreviewFrameMessage = defineMessageUnion({ CompletedMountPreviewFrame: {} })
+
+/** The frame's current document, read by `SyncPreviewFrame` (and by tests). */
+const DOCUMENT_ATTRIBUTE = "data-document"
+
+/**
+ * Loads the frame's first document, then posts each new one into it as `data-document` changes,
+ * for its `MORPH_SCRIPT` to put in place. The frame is sandboxed without same-origin access, so a
+ * message is the only way in. Each load starts over from the document the frame loaded.
+ */
+const syncFrame = (frame: HTMLIFrameElement): (() => void) => {
+	const current = () => frame.getAttribute(DOCUMENT_ATTRIBUTE) ?? ""
+	const initial = current()
+	// The frame's origin is opaque, so no target origin other than "*" reaches it.
+	const post = (html: string) => frame.contentWindow?.postMessage({ type: "document", html }, "*")
+	let isLoaded = false
+	const onLoad = () => {
+		isLoaded = true
+		post(initial)
+		if (current() !== initial) post(current())
+	}
+	const observer = new MutationObserver(() => (isLoaded ? post(current()) : undefined))
+	frame.addEventListener("load", onLoad)
+	observer.observe(frame, { attributes: true, attributeFilter: [DOCUMENT_ATTRIBUTE] })
+	frame.srcdoc = initial
+	return () => {
+		observer.disconnect()
+		frame.removeEventListener("load", onLoad)
+	}
+}
+
+export const SyncPreviewFrame = Mount.define("SyncStatusPagePreviewFrame", {
+	messages: [PreviewFrameMessage.CompletedMountPreviewFrame],
+	execute: ({ element }) =>
+		Effect.gen(function* () {
+			if (element instanceof HTMLIFrameElement)
+				yield* Effect.acquireRelease(
+					Effect.sync(() => syncFrame(element)),
+					(stop) => Effect.sync(stop),
+				)
+			return PreviewFrameMessage.CompletedMountPreviewFrame()
+		}),
+})
+
+/**
+ * The sandboxed frame: scripts run so the page pages its bars, but it can reach nothing of ours.
+ * Its `srcdoc` is set once, as it mounts: a later document is posted in (`SyncPreviewFrame`), so
+ * an edit never reloads it. The current document is its `data-document`.
+ */
 export const previewFrame = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{
 		document: string
 		title: string
+		/** The Message the frame's Mount completes with; `update` has nothing to do for it. */
+		mounted: M
 		className?: string
 		isSelectable?: boolean
 		/** Lets the document's `opensLinks` open a new tab, outside the sandbox. */
@@ -358,7 +421,8 @@ export const previewFrame = <M>(
 			),
 			// The Slack command's Copy button; without it the button selects the command instead.
 			h.Allow("clipboard-write"),
-			h.Srcdoc(options.document),
+			h.DataAttribute("document", options.document),
+			h.OnMount(Mount.mapMessage(SyncPreviewFrame(), () => options.mounted)),
 			h.DataAttribute("width", options.width ?? "desktop"),
 			h.Class(
 				cn(

@@ -26,6 +26,7 @@ export const Message = defineMessageUnion({
 	PickedPreset: { preset: StatusPageThemePreset },
 	PickedAppearance: { appearance: StatusPageThemeAppearance },
 	PickedPreviewScheme: { scheme: PreviewScheme },
+	CompletedMountPreview: {},
 	ElapsedPreviewDebounce: { generation: Schema.Number },
 	CompletedFetchPreview: {
 		generation: Schema.Number,
