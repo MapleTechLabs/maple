@@ -26,27 +26,11 @@ import {
 	StackPerspectiveIcon,
 	RedisIcon,
 } from "./flow-icons"
+import type { IconNode } from "./icon-node"
 
-export const ICON_SIZE_MARK = "7777"
-export const ICON_CLASS_MARK = "__icon_class__"
-export const ICON_ID_MARK = "__icon_id__"
-
-export type IconTag =
-	| "svg"
-	| "path"
-	| "g"
-	| "line"
-	| "circle"
-	| "rect"
-	| "polyline"
-	| "polygon"
-	| "ellipse"
-	| "defs"
-	| "linearGradient"
-	| "stop"
-	| "radialGradient"
-
-export type IconNode = readonly [IconTag, ReadonlyArray<readonly [string, string]>, ReadonlyArray<IconNode>]
+// The marks and the tree type live with the registry-free renderer (./icon-node).
+export { ICON_CLASS_MARK, ICON_ID_MARK, ICON_SIZE_MARK } from "./icon-node"
+export type { IconNode, IconTag } from "./icon-node"
 
 export const ICON_TREES = {
 	AlertWarningIcon: [

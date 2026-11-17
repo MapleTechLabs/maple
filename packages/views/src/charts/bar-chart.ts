@@ -3,7 +3,7 @@ import { Option, Array as Arr, Record as Rec } from "effect"
 import { Submodel } from "foldkit"
 import type { Attribute, Html } from "foldkit/html"
 import type { Message, Model } from "./chart"
-import { MeasureChartContainer } from "./chart-mounts"
+import { type ChartHostName, MeasureChartContainer } from "./chart-mounts"
 import { type SeriesMark, timeseriesLegend } from "./timeseries-legend"
 import { bucketTimeseries, MAX_BAR_SERIES, OTHER_LABEL } from "./series/bucket-series"
 import { ChartSpec, ChartTooltip, rowsCache, specCache, type TimeseriesAxisSpec } from "./chart-spec"
@@ -41,6 +41,8 @@ export interface BarChartInputs {
 	readonly seriesStats?: boolean
 	/** A mark beside each series' name in the compact legend, by the series' label. */
 	readonly seriesMarks?: Readonly<Record<string, SeriesMark>> | undefined
+	/** A named chart host that draws only this chart (`"bar"`); the full host when absent. */
+	readonly host?: ChartHostName | undefined
 }
 
 type Row = Readonly<Record<string, string | number | boolean>>
@@ -104,6 +106,7 @@ export const view = Submodel.defineView<Model, Message, BarChartInputs>((model, 
 				chartId: inputs.chartId,
 				className: "h-full w-full",
 				ariaLabel: "Time series",
+				...(inputs.host === undefined ? undefined : { host: inputs.host }),
 				spec: barSpec(data, {
 					colors,
 					fallbackColor: SERIES_FALLBACK_COLOR,
