@@ -1,7 +1,7 @@
 import { OrgId } from "@maple/domain"
 import { StatusPagePublicId, V2StatusPage, V2StatusPageComponent } from "@maple/domain/http/v2"
 import { Effect, Option, Result, Schema, Array as Arr, String as Str } from "effect"
-import { Command, Subscription, type Update } from "foldkit"
+import { AsyncData, Command, Subscription, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import type { PageContext } from "../../page/contract"
@@ -417,7 +417,44 @@ const update = (model: Model, message: Message): Return =>
 		GotViewerMessage: ({ message: child }) => ({
 			model: { ...model, viewer: viewerUpdate(model.viewer, child, context).model },
 		}),
-		GotListMessage: () => ({ model }),
+		// The row menu and delete dialog run for real; a confirmed delete drops the page from the fixture.
+		GotListMessage: ({ message: child }) => {
+			const next = listUpdate(model.list, child, context)
+			const deleting = model.list.deletingPageId
+			const deleted =
+				deleting !== null &&
+				Arr.some(next.commands ?? [], (command) => command.name === "DeleteListedStatusPage")
+			if (!deleted)
+				return {
+					model: { ...model, list: next.model },
+					commands: Command.mapMessages(keepLocal(next.commands), (inner) =>
+						Message.GotListMessage({ message: inner }),
+					),
+				}
+			const done = listUpdate(
+				next.model,
+				ListMessage.CompletedDelete({ result: Result.succeed(undefined) }),
+				context,
+			)
+			const remaining = Arr.filter(
+				AsyncData.getOrElse(model.list.pages.data, () => LAB_PAGES),
+				(row) => row.page.id !== deleting,
+			)
+			const reread = listUpdate(
+				done.model,
+				ListMessage.CompletedFetchPages({
+					key: done.model.pages.key ?? "",
+					result: Result.succeed(remaining),
+				}),
+				context,
+			)
+			return {
+				model: { ...model, list: reread.model },
+				commands: Command.mapMessages(keepLocal(done.commands), (inner) =>
+					Message.GotListMessage({ message: inner }),
+				),
+			}
+		},
 		Ignored: () => ({ model }),
 	})
 

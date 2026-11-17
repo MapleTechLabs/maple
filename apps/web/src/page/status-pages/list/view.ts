@@ -21,7 +21,11 @@ import { errorState } from "@maple/views/ui/error-state"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { heading } from "@maple/views/ui/heading"
 import { icon } from "@maple/views/ui/icon"
+import { confirmDialog } from "@maple/views/ui/confirm-dialog"
+import * as Menu from "@maple/views/ui/menu"
+import type { MenuEntry } from "@maple/views/ui/menu-view"
 import { panel } from "@maple/views/ui/panel"
+import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { textLink } from "@maple/views/ui/text-link"
@@ -43,6 +47,7 @@ import {
 import { windowLine } from "../editor/view-panel"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
+import { openTargetOf, rowMenuId } from "./update"
 import { gatedControl } from "../../kit/session-grants"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -161,7 +166,52 @@ const lastPublished = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Ht
 	])
 }
 
-const cardHeader = (h: H, summary: StatusPageSummary, inputs: ViewInputs, isEditable: boolean): Html => {
+/** Edit and Delete for those who may change the page; Open page for everyone, disabled with the reason while it has no address. */
+const pageMenuEntries = (summary: StatusPageSummary, isEditable: boolean): ReadonlyArray<MenuEntry> => {
+	const target = openTargetOf(summary)
+	const open: MenuEntry =
+		target._tag === "Unavailable"
+			? {
+					_tag: "Item",
+					value: "open",
+					label: "Open page",
+					icon: "ExternalLinkIcon",
+					isDisabled: true,
+					tooltip: { content: [target.reason], side: "left" },
+				}
+			: {
+					_tag: "Item",
+					value: "open",
+					label: "Open page",
+					icon: target._tag === "InApp" ? "EyeIcon" : "ExternalLinkIcon",
+				}
+	if (!isEditable) return [open]
+	return [
+		{ _tag: "Item", value: "edit", label: "Edit", icon: "PencilIcon" },
+		open,
+		{ _tag: "Separator" },
+		{ _tag: "Item", value: "delete", label: "Delete", icon: "TrashIcon", variant: "destructive" },
+	]
+}
+
+const pageMenu = (h: H, model: Model, summary: StatusPageSummary, isEditable: boolean): Html => {
+	const menuId = rowMenuId(summary.page.id)
+	return rowActionsMenu(h, {
+		slotId: menuId,
+		model: model.rowMenus[menuId] ?? Menu.init(menuId),
+		entries: pageMenuEntries(summary, isEditable),
+		label: `Actions for ${summary.page.name}`,
+		toParentMessage: (message) => Message.GotRowMenuMessage({ pageId: summary.page.id, message }),
+	})
+}
+
+const cardHeader = (
+	h: H,
+	model: Model,
+	summary: StatusPageSummary,
+	inputs: ViewInputs,
+	isEditable: boolean,
+): Html => {
 	const page = summary.page
 	const visibility = VISIBILITY_BADGE[page.visibility]
 	return hstack(h, { gap: "4", align: "start", justify: "between", className: stripClass("header") }, [
@@ -178,9 +228,7 @@ const cardHeader = (h: H, summary: StatusPageSummary, inputs: ViewInputs, isEdit
 		]),
 		hstack(h, { gap: "3", align: "center", className: "shrink-0" }, [
 			lastPublished(h, summary, inputs),
-			...(isEditable
-				? [linkButton(h, { size: "sm", variant: "outline", href: statusPageHref(page.id) }, ["Edit"])]
-				: []),
+			pageMenu(h, model, summary, isEditable),
 		]),
 	])
 }
@@ -364,9 +412,15 @@ const noComponents = (h: H, summary: StatusPageSummary): Html =>
 		textLink(h, { href: statusPageHref(summary.page.id, "settings", "monitors") }, ["Add components"]),
 	])
 
-const pageCard = (h: H, summary: StatusPageSummary, inputs: ViewInputs, isEditable: boolean): Html =>
+const pageCard = (
+	h: H,
+	model: Model,
+	summary: StatusPageSummary,
+	inputs: ViewInputs,
+	isEditable: boolean,
+): Html =>
 	panel(h, { attributes: [h.Key(summary.page.id)] }, [
-		cardHeader(h, summary, inputs, isEditable),
+		cardHeader(h, model, summary, inputs, isEditable),
 		statusStrip(h, summary, inputs),
 		summary.components.length === 0 ? noComponents(h, summary) : componentsTable(h, summary),
 	])
@@ -389,8 +443,30 @@ const body = (h: H, model: Model, inputs: ViewInputs): Html => {
 				: vstack(
 						h,
 						{ gap: "4" },
-						Arr.map(pages, (summary) => pageCard(h, summary, inputs, canManage(model))),
+						Arr.map(pages, (summary) => pageCard(h, model, summary, inputs, canManage(model))),
 					),
+	})
+}
+
+const deleteDialog = (h: H, model: Model): Html => {
+	const page = Option.map(
+		Option.flatMap(Option.fromNullishOr(model.deletingPageId), (id) =>
+			Arr.findFirst(
+				AsyncData.getOrElse(model.pages.data, () => []),
+				(row) => row.page.id === id,
+			),
+		),
+		(row) => row.page,
+	)
+	return confirmDialog(h, {
+		slotId: "status-pages-delete",
+		model: model.deleteDialog,
+		toParentMessage: (message) => Message.GotDeleteDialogMessage({ message }),
+		title: `Delete ${Option.match(page, { onNone: () => "this status page", onSome: (p) => p.name })}?`,
+		description: `${Option.match(page, { onNone: () => "The page", onSome: (p) => publicAddress(p.slug) })} goes offline and its components and incidents are deleted. This cannot be undone.`,
+		confirmLabel: "Delete status page",
+		isPending: model.isDeleting,
+		onConfirm: Message.ClickedConfirmDelete(),
 	})
 }
 
@@ -412,6 +488,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				nowMs: model.nowMs ?? 0,
 				timeZone: inputs.context.timeZone,
 			}),
+			deleteDialog(h, model),
 		],
 	),
 )

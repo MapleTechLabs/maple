@@ -10,7 +10,8 @@ import { NOW, ORG } from "../../kit/alert-test-rows"
 import { makeComponent, makeSnapshot } from "@maple/status-page/fixtures"
 import type { V2StatusPage, V2StatusPageIncident } from "@maple/domain/http/v2"
 import { docsUrl } from "../../kit/docs"
-import { newStatusPageHref, statusPageHref } from "../shared/commands"
+import { newStatusPageHref, statusPageHref, statusPageViewHref } from "../shared/commands"
+import { PageOutMessage } from "../../contract"
 import { type StatusPageSummary, summarizePage } from "../shared/derive"
 import { incident, pageId, statusPage } from "../shared/test-pages"
 import { Message } from "./message"
@@ -122,7 +123,7 @@ describe("status pages list", () => {
 			expectView(text("Not published")).toExist(),
 			expectView(text("Draft")).toExist(),
 			expectView(role("link", { name: "New status page" })).toHaveAttr("href", newStatusPageHref()),
-			expectView(role("link", { name: "Edit" })).toExist(),
+			expectView(role("button", { name: "Actions for Acme Status" })).toExist(),
 		)
 	})
 
@@ -175,7 +176,6 @@ describe("status pages list", () => {
 			{ update: listUpdate, view },
 			given(withPages([summaryOf(statusPage())], false)),
 			expectView(role("link", { name: "New status page" })).not.toExist(),
-			expectView(role("link", { name: "Edit" })).not.toExist(),
 		)
 	})
 
@@ -222,5 +222,52 @@ describe("status pages list", () => {
 			expectView(role("button", { name: "Try again" })).not.toExist(),
 			expectView(role("link", { name: "Create a status page" })).not.toExist(),
 		)
+	})
+})
+
+describe("status page card menu", () => {
+	const pick = (model: Model, id: ReturnType<typeof pageId>, value: string) =>
+		listUpdate(
+			model,
+			Message.GotRowMenuMessage({
+				pageId: id,
+				message: { _tag: "ClickedItem", index: 0, item: { kind: "Item", value } },
+			}),
+		)
+
+	test("Edit opens the editor; Open page opens an internal page in Maple", () => {
+		const model = withPages([summaryOf(statusPage({ visibility: "internal" }))])
+		expect(pick(model, pageId(1), "edit").outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: statusPageHref(pageId(1)), isReplace: false }),
+		)
+		expect(pick(model, pageId(1), "open").outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: statusPageViewHref(pageId(1)), isReplace: false }),
+		)
+	})
+
+	test("Delete asks first, then deletes, toasts and reads the list again", () => {
+		const asked = pick(withPages([summaryOf(statusPage())]), pageId(1), "delete")
+		expect(names(asked.commands)).not.toContain("DeleteListedStatusPage")
+		expect(asked.model.deletingPageId).toBe(pageId(1))
+		const confirming = listUpdate(asked.model, Message.ClickedConfirmDelete())
+		expect(confirming.commands?.[0]).toMatchObject({
+			name: "DeleteListedStatusPage",
+			args: { pageId: pageId(1) },
+		})
+		const done = listUpdate(
+			confirming.model,
+			Message.CompletedDelete({ result: Result.succeed(undefined) }),
+		)
+		expect(done.outMessage).toEqual(
+			PageOutMessage.RequestedToast({ type: "success", title: "Status page deleted", description: "" }),
+		)
+		expect(names(done.commands)).toContain("FetchStatusPageSummaries")
+		expect(done.model.isDeleting).toBe(false)
+	})
+
+	test("members cannot delete from the menu", () => {
+		const asked = pick(withPages([summaryOf(statusPage())], false), pageId(1), "delete")
+		expect(asked.model.deletingPageId).toBeNull()
+		expect(names(asked.commands)).not.toContain("DeleteListedStatusPage")
 	})
 })
