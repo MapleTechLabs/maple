@@ -157,6 +157,33 @@ describe("prReviewAutoApproval", () => {
 			if (!decision.approve) assert.equal(decision.refusal, refusal)
 		})
 	}
+
+	it("names an unscored review's verdict once, not again as a missing score", () => {
+		const decision = prReviewAutoApproval({ report: approvable({ verdict: "not_applicable" }) })
+		assert.isFalse(decision.approve)
+		if (!decision.approve) assert.deepEqual(decision.reasons, ["the verdict is not_applicable"])
+	})
+
+	it("names every unmet condition, not only the first", () => {
+		const step = (title: string) => new PrReviewMergeStep({ kind: "infra", title, source: "diff" })
+		const decision = prReviewAutoApproval({
+			report: approvable({
+				wholeDiff: false,
+				risk: "high",
+				tests: "covered",
+				beforeMerge: [step("Check staging"), step("Check prod")],
+			}),
+		})
+		assert.isFalse(decision.approve)
+		if (!decision.approve) {
+			assert.equal(decision.refusal, "not_whole_diff")
+			assert.deepEqual(decision.reasons, [
+				"the review read only the commits since the last one",
+				"the risk is high",
+				"2 steps before merge are open",
+			])
+		}
+	})
 })
 
 describe("mergePrReviewConfig autoApprove", () => {

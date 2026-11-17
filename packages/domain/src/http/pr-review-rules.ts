@@ -817,13 +817,21 @@ export type PrReviewAutoApprovalRefusal =
 
 export type PrReviewAutoApproval =
 	| { readonly approve: true; readonly reason: string }
-	| { readonly approve: false; readonly refusal: PrReviewAutoApprovalRefusal; readonly reason: string }
+	| {
+			readonly approve: false
+			/** The first unmet condition, for the span. */
+			readonly refusal: PrReviewAutoApprovalRefusal
+			/** Every unmet condition, so the comment can say all of what stands in the way. */
+			readonly reasons: ReadonlyArray<string>
+			readonly reason: string
+	  }
 
-const refuse = (refusal: PrReviewAutoApprovalRefusal, reason: string): PrReviewAutoApproval => ({
-	approve: false,
-	refusal,
-	reason,
-})
+const refuse = (
+	refusals: Arr.NonEmptyReadonlyArray<readonly [PrReviewAutoApprovalRefusal, string]>,
+): PrReviewAutoApproval => {
+	const reasons = Arr.map(refusals, ([, reason]) => reason)
+	return { approve: false, refusal: refusals[0][0], reasons, reason: Arr.join(reasons, "; ") }
+}
 
 /**
  * Whether the review may approve the pull request without a person reading it: its blast radius is
@@ -863,45 +871,67 @@ export const prReviewAutoApproval = (input: {
 	const { report } = input
 	const carriedOpen = input.carriedOpen ?? []
 	const uncheckedFixes = input.uncheckedFixes ?? 0
-	if (input.partial === true) return refuse("partial", "the review ended early")
-	if (report.wholeDiff !== true) {
-		return refuse("not_whole_diff", "the review read only the commits since the last one")
-	}
-	if ((report.unreviewed?.length ?? 0) > 0) return refuse("unread", "some reviewed files were not read")
-	if (input.diffUnavailable === true) return refuse("diff_unavailable", "Maple could not read the diff")
-	if ((input.patchlessFiles ?? 0) > 0) {
-		return refuse("patchless", "some files have no patch to read (binary, or too large)")
-	}
-	if ((input.ignoredFiles ?? 0) > 0) return refuse("ignored_files", "some files are under ignored paths")
-	if ((input.dismissedIssues ?? 0) > 0) {
-		return refuse("dismissed", "a warning or critical on the pull request was dismissed")
-	}
-	if ((input.filteredIssues ?? 0) > 0) {
-		return refuse("filtered", "a warning or critical was held back by the repository's rules")
-	}
-	if (uncheckedFixes > 0)
-		return refuse("unchecked_fixes", "a fix has not been re-checked against the whole diff")
-	if (report.verdict !== "clean") return refuse("verdict", `the verdict is ${report.verdict}`)
-	if (Arr.some([...report.findings, ...carriedOpen], (finding) => finding.severity !== "info")) {
-		return refuse("findings", "a warning or critical finding is open")
-	}
-	if (report.risk !== "low") return refuse("risk", `the risk is ${report.risk ?? "not rated"}`)
-	if (report.tests !== "covered" && report.tests !== "not_needed") {
-		return refuse("tests", `tests are ${report.tests ?? "not assessed"}`)
-	}
-	if (Arr.some(report.beforeMerge ?? [], (step) => step.done !== true)) {
-		return refuse("merge_steps", "a step before merge is open")
-	}
-	if (openContractBreaks(report.telemetry).length > 0) {
-		return refuse("contract_break", "a telemetry contract break is open")
-	}
+	// An early end says nothing reliable about the rest, so it stands alone.
+	if (input.partial === true) return refuse([["partial", "the review ended early"]])
+	const openSteps = Arr.filter(report.beforeMerge ?? [], (step) => step.done !== true).length
 	const confidence = confidencePrReview(report, carriedOpen, false, uncheckedFixes)
-	if (confidence === undefined || confidence.confidence < PR_REVIEW_AUTO_APPROVE_MIN_CONFIDENCE) {
-		return refuse(
+	const checks: ReadonlyArray<readonly [boolean, PrReviewAutoApprovalRefusal, string]> = [
+		[report.wholeDiff !== true, "not_whole_diff", "the review read only the commits since the last one"],
+		[(report.unreviewed?.length ?? 0) > 0, "unread", "some reviewed files were not read"],
+		[input.diffUnavailable === true, "diff_unavailable", "Maple could not read the diff"],
+		[
+			(input.patchlessFiles ?? 0) > 0,
+			"patchless",
+			"some files have no patch to read (binary, or too large)",
+		],
+		[(input.ignoredFiles ?? 0) > 0, "ignored_files", "some files are under ignored paths"],
+		[
+			(input.dismissedIssues ?? 0) > 0,
+			"dismissed",
+			"a warning or critical on the pull request was dismissed",
+		],
+		[
+			(input.filteredIssues ?? 0) > 0,
+			"filtered",
+			"a warning or critical was held back by the repository's rules",
+		],
+		[uncheckedFixes > 0, "unchecked_fixes", "a fix has not been re-checked against the whole diff"],
+		[report.verdict !== "clean", "verdict", `the verdict is ${report.verdict}`],
+		[
+			Arr.some([...report.findings, ...carriedOpen], (finding) => finding.severity !== "info"),
+			"findings",
+			"a warning or critical finding is open",
+		],
+		[report.risk !== "low", "risk", `the risk is ${report.risk ?? "not rated"}`],
+		[
+			report.tests !== "covered" && report.tests !== "not_needed",
+			"tests",
+			`tests are ${report.tests ?? "not assessed"}`,
+		],
+		[
+			openSteps > 0,
+			"merge_steps",
+			openSteps === 1 ? "a step before merge is open" : `${openSteps} steps before merge are open`,
+		],
+		[
+			openContractBreaks(report.telemetry).length > 0,
+			"contract_break",
+			"a telemetry contract break is open",
+		],
+		// No score means a not_applicable verdict, already refused above; naming it twice says nothing.
+		[
+			confidence !== undefined && confidence.confidence < PR_REVIEW_AUTO_APPROVE_MIN_CONFIDENCE,
 			"confidence",
-			`confidence is ${confidence?.confidence ?? "unscored"}, under ${PR_REVIEW_AUTO_APPROVE_MIN_CONFIDENCE}`,
-		)
-	}
+			`confidence is ${confidence?.confidence}, under ${PR_REVIEW_AUTO_APPROVE_MIN_CONFIDENCE}`,
+		],
+	]
+	const refusals = Arr.map(
+		Arr.filter(checks, ([failed]) => failed),
+		([, refusal, reason]) => [refusal, reason] as const,
+	)
+	if (Arr.isReadonlyArrayNonEmpty(refusals)) return refuse(refusals)
+	// Unreachable (the verdict check refused it), but it narrows `confidence` for the reason.
+	if (confidence === undefined) return refuse([["confidence", "the review has no confidence score"]])
 	return {
 		approve: true,
 		reason: `Low blast radius, no open findings and confidence ${confidence.confidence}/${PR_REVIEW_CONFIDENCE_MAX}.`,
