@@ -33,15 +33,21 @@ describe("LiveCostExplorer island", () => {
 			unit: "currency:USD",
 		})
 
-		// A legend entry hides its series in the plot, and shows it again on the next click.
-		const legendEntry = element.querySelector<HTMLButtonElement>("button[title='AWS']")
-		assert(legendEntry !== null)
-		legendEntry.click()
+		// A legend entry hides its series in the plot. It is remembered by name: regrouped by
+		// service nothing is hidden, and back by provider AWS is hidden again.
+		const spec = () => Option.getOrThrow(chartSpec(element))
+		const press = (selector: string) => element.querySelector<HTMLButtonElement>(selector)?.click()
+		press("button[title='AWS']")
+		await vi.waitFor(() => expect(spec()).toMatchObject({ hidden: ["s1"] }))
+		press("[role=group] button[aria-label='Service']")
 		await vi.waitFor(() =>
-			expect(Option.getOrThrow(chartSpec(element))).toMatchObject({ hidden: ["s1"] }),
+			expect(element.querySelector("table")?.getAttribute("aria-label")).toBe("Cost by service"),
 		)
-		legendEntry.click()
-		await vi.waitFor(() => expect(Option.getOrThrow(chartSpec(element))).not.toHaveProperty("hidden"))
+		expect(spec()).not.toHaveProperty("hidden")
+		press("[role=group] button[aria-label='Provider']")
+		await vi.waitFor(() => expect(spec()).toMatchObject({ hidden: ["s1"] }))
+		press("button[title='AWS']")
+		await vi.waitFor(() => expect(spec()).not.toHaveProperty("hidden"))
 
 		const aws = element.querySelector<HTMLButtonElement>("tbody tr button")
 		assert(aws !== null)

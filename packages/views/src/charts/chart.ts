@@ -36,7 +36,7 @@ export const Model = Schema.Struct({
 	containerWidth: Schema.Number,
 	/** `useContainerSize(containerRef).height`: a side legend's height cap; 0 before measured. */
 	containerHeight: Schema.Number,
-	/** Series keys a time-series legend has hidden. */
+	/** Series a time-series legend has hidden, by name: a regroup renumbers the chart keys. */
 	hiddenKeys: Schema.Array(Schema.String),
 	/** A grouped DOM chart's hovered group (a funnel breakdown), beside the hovered row. */
 	activeGroup: Schema.Option(Schema.String),

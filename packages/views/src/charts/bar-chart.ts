@@ -4,7 +4,7 @@ import { Submodel } from "foldkit"
 import type { Attribute, Html } from "foldkit/html"
 import type { Message, Model } from "./chart"
 import { type ChartHostName, MeasureChartContainer } from "./chart-mounts"
-import { type SeriesMark, timeseriesLegend } from "./timeseries-legend"
+import { hiddenChartKeys, type SeriesMark, timeseriesLegend } from "./timeseries-legend"
 import { bucketTimeseries, MAX_BAR_SERIES, OTHER_LABEL } from "./series/bucket-series"
 import { ChartSpec, ChartTooltip, rowsCache, specCache, type TimeseriesAxisSpec } from "./chart-spec"
 import { bucketTooltipBody } from "./bucket-tooltip"
@@ -89,6 +89,7 @@ export const view = Submodel.defineView<Model, Message, BarChartInputs>((model, 
 		color: colors[definition.chartKey] ?? SERIES_FALLBACK_COLOR,
 		mark: inputs.seriesMarks?.[definition.rawKey],
 	}))
+	const hidden = hiddenChartKeys(model.hiddenKeys, definitions)
 	const tooltipBody = (portal: Attribute<Message>): Option.Option<Html> =>
 		Option.flatMap(model.tooltip, (tooltip) =>
 			ChartTooltip.match(tooltip, {
@@ -115,7 +116,7 @@ export const view = Submodel.defineView<Model, Message, BarChartInputs>((model, 
 					nowMs: inputs.nowMs,
 					stacked: inputs.stacked ?? false,
 					showTooltip: inputs.showTooltip ?? true,
-					...(model.hiddenKeys.length === 0 ? undefined : { hidden: model.hiddenKeys }),
+					...(hidden.length === 0 ? undefined : { hidden }),
 					...(inputs.axis === undefined ? undefined : { axis: inputs.axis }),
 				}),
 				legend: timeseriesLegend(h, model, {
