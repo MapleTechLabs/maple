@@ -652,6 +652,8 @@ export interface ReviewMarkdownInput {
 	readonly mention?: string
 	/** The repository fails the check on a broken telemetry contract. */
 	readonly blocking?: boolean
+	/** The repository's `autoApprove` decision; a refusal says why under the score. */
+	readonly approval?: PrReviewAutoApproval
 }
 
 const bySeverity = <F extends { readonly severity: PrReviewSeverity }>(findings: ReadonlyArray<F>) =>
@@ -799,7 +801,8 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 				: undefined
 		lines.push(
 			`${confidenceMark(confidence.confidence)} **Confidence ${confidence.confidence}/${PR_REVIEW_CONFIDENCE_MAX}** · ${PR_REVIEW_CONFIDENCE_LABEL[confidence.confidence]}${reason === undefined ? "" : `. ${reason}`}`,
-			`<sub>${Arr.join(confidence.factors, " · ")}</sub>`,
+			// A refusal joins the factors' line: a check summary does not break on a bare newline.
+			`<sub>${Arr.join(confidence.factors, " · ")}${input.approval === undefined || input.approval.approve ? "" : `<br>Not auto-approved: ${Arr.join(input.approval.reasons, " · ")}`}</sub>`,
 			"",
 		)
 	}
@@ -1079,6 +1082,7 @@ export const buildPublication = (input: {
 		repositoryUrl: input.repositoryUrl,
 		carried,
 		...(input.mention === undefined ? undefined : { mention: input.mention }),
+		...(input.approval === undefined ? undefined : { approval: input.approval }),
 	}
 	const hasIssues = Arr.some(
 		[...report.findings, ...carried.open],

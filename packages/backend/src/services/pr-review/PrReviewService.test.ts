@@ -2351,11 +2351,18 @@ describe("PrReviewService auto-approve", () => {
 			yield* reviews.submitReview(
 				orgId,
 				started.reviewId!,
-				new SubmitPrReviewRequest({ report: new PrReviewReport({ ...lowRisk(), wholeDiff: false }) }),
+				new SubmitPrReviewRequest({
+					report: new PrReviewReport({ ...lowRisk(), wholeDiff: false, risk: "high" }),
+				}),
 			)
 			const refused = published[0].approval
 			assert.strictEqual(refused?.action, "withdraw")
 			if (refused?.action === "withdraw") assert.include(refused.reason, "only the commits")
+			// The comment says why under its score, every reason at once.
+			assert.include(
+				published[0].summaryComment.body,
+				"<br>Not auto-approved: the review read only the commits since the last one · the risk is high · confidence is 8, under 9</sub>",
+			)
 		}).pipe(Effect.provide(layerFor(testDb, { published })))
 	})
 
@@ -2542,9 +2549,10 @@ describe("PrReviewService auto-approve", () => {
 			yield* reviews.submitReview(
 				orgId,
 				started.reviewId!,
-				new SubmitPrReviewRequest({ report: lowRisk() }),
+				new SubmitPrReviewRequest({ report: new PrReviewReport({ ...lowRisk(), risk: "high" }) }),
 			)
 			assert.isUndefined(published[0].approval)
+			assert.notInclude(published[0].summaryComment.body, "auto-approved")
 		}).pipe(Effect.provide(layerFor(testDb, { published })))
 	})
 })
