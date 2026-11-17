@@ -116,10 +116,13 @@ export const AuditResources = {
 		prefix: PublicIdPrefixes.gcpConnector,
 		verbs: ["created", "updated", "removal_confirmed", "deleted"],
 	},
-	/** One connected AWS account; the account and its modules are in `metadata`. */
+	/**
+	 * One connected AWS account; the account and its modules are in `metadata`. `events_key_read`
+	 * is a setup that carried the key its findings arrive with; the key itself is never recorded.
+	 */
 	aws_connection: {
 		prefix: PublicIdPrefixes.awsConnection,
-		verbs: ["created", "updated", "deleted"],
+		verbs: ["created", "updated", "deleted", "events_key_read", "events_key_rotated"],
 	},
 	/** Anything that sends data; a token source's secret is never in `changes`. */
 	source: {
@@ -407,6 +410,8 @@ export const AuditActionLabels = {
 	"aws_connection.created": "Connected AWS",
 	"aws_connection.updated": "Updated AWS connection",
 	"aws_connection.deleted": "Removed AWS connection",
+	"aws_connection.events_key_read": "Read AWS events key",
+	"aws_connection.events_key_rotated": "Rotated AWS events key",
 	"ingest_key.rolled": "Rolled ingest key",
 	"source.created": "Created source",
 	"source.updated": "Updated source",
