@@ -23,6 +23,7 @@ export const SelectField = Schema.Literals([
 	"reviewExternalContributors",
 	"blockOnContractBreaks",
 	"postMergeCheck",
+	"autoApprove",
 ])
 export type SelectField = typeof SelectField.Type
 export const SwitchField = Schema.Literals([
@@ -30,6 +31,7 @@ export const SwitchField = Schema.Literals([
 	"reviewExternalContributors",
 	"blockOnContractBreaks",
 	"postMergeCheck",
+	"autoApprove",
 ])
 export type SwitchField = typeof SwitchField.Type
 

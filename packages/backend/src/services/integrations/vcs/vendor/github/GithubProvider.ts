@@ -5,6 +5,7 @@ import {
 	type PullRequestContext,
 	type PullRequestFile,
 	type PullRequestHead,
+	type PullRequestReviewPublication,
 	type PullRequestReviewThread,
 	mentionsReviewer,
 	mergeStepTickChanges,
@@ -1670,6 +1671,116 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						}),
 					)
 
+			/** Repository permissions that let a person push, as GitHub's collaborator permission names them. */
+			const pushPermissions: ReadonlySet<string> = new Set(["admin", "maintain", "write"])
+
+			/** Dismiss every approval this App gave the pull request that still stands. */
+			const withdrawApprovals = Effect.fn("GithubProvider.withdrawApprovals")(function* (
+				externalInstallationId: string,
+				repo: VcsRepositoryRef,
+				number: number,
+				reason: string,
+				keepHead?: string,
+			) {
+				// Without the App's login its own reviews cannot be told apart, so none is dismissed.
+				if (appBotLogin === undefined) return "unsupported" as const
+				const { items: reviews, truncated } = yield* client.listPullRequestReviews(
+					externalInstallationId,
+					repo.owner,
+					repo.name,
+					number,
+				)
+				// The newest reviews are the ones missing: saying "withdrawn" could leave an approval up.
+				if (truncated) {
+					return yield* new GithubAppError({
+						message: "Too many reviews on the pull request to find every approval",
+					})
+				}
+				const standing = Arr.filter(
+					reviews,
+					(review) =>
+						review.state === "APPROVED" &&
+						review.user?.login === appBotLogin &&
+						(keepHead === undefined || review.commit_id !== keepHead),
+				)
+				yield* Effect.forEach(
+					standing,
+					(review) =>
+						client.dismissPullRequestReview(
+							externalInstallationId,
+							repo.owner,
+							repo.name,
+							number,
+							review.id,
+							`Maple no longer approves this pull request: ${reason}.`,
+						),
+					{ discard: true },
+				)
+				yield* Effect.annotateCurrentSpan("vcs.pull_request.approvals_dismissed", standing.length)
+				return "withdrawn" as const
+			})
+
+			/**
+			 * Approve the reviewed head, or withdraw an earlier approval. The report said the change is
+			 * safe; the pull request itself is read again here, because only it knows whether the head is
+			 * still the one reviewed and whether its author could push the change themselves. An
+			 * approval for an outside author would let a stranger's diff talk its way to a merge.
+			 */
+			const applyApproval = Effect.fn("GithubProvider.applyApproval")(function* (
+				installation: VcsInstallation,
+				repo: VcsRepositoryRef,
+				publication: PullRequestReviewPublication,
+			) {
+				const approval = publication.approval
+				if (approval === undefined) return undefined
+				const id = installation.externalInstallationId
+				if (approval.action === "withdraw") {
+					return yield* withdrawApprovals(id, repo, publication.number, approval.reason)
+				}
+				// An approval Maple could not later find and withdraw is one it must not give.
+				if (appBotLogin === undefined) return "unsupported" as const
+				const pull = yield* client.getPullRequestHead(id, repo.owner, repo.name, publication.number)
+				if (pull.state !== "open") return "not_open" as const
+				if (pull.draft === true) return "draft" as const
+				if (pull.head.sha !== publication.headSha) return "head_moved" as const
+				const author = pull.user?.login
+				if (author === undefined || author === appBotLogin) return "untrusted_author" as const
+				const permission = yield* client.getCollaboratorPermission(id, repo.owner, repo.name, author)
+				if (!pushPermissions.has(permission)) return "untrusted_author" as const
+				yield* client.createPullRequestReview(id, repo.owner, repo.name, publication.number, {
+					commitId: publication.headSha,
+					body: approval.body,
+					comments: [],
+					event: "APPROVE",
+				})
+				return "approved" as const
+			})
+
+			const withdrawPullRequestApprovals: VcsProviderClient["withdrawPullRequestApprovals"] = (
+				installation,
+				repo,
+				input,
+			) =>
+				Effect.gen(function* () {
+					const id = installation.externalInstallationId
+					// An event about a head the pull request has moved past arrived late: whatever Maple
+					// approved since describes a newer head, so it stands.
+					if (input.keepHead !== undefined && appBotLogin !== undefined) {
+						const pull = yield* client.getPullRequestHead(id, repo.owner, repo.name, input.number)
+						if (pull.head.sha !== input.keepHead) return "stale" as const
+					}
+					return yield* withdrawApprovals(id, repo, input.number, input.reason, input.keepHead)
+				}).pipe(
+					Effect.mapError(toVcsError),
+					Effect.withSpan("GithubProvider.withdrawPullRequestApprovals", {
+						attributes: {
+							"vcs.owner.name": repo.owner,
+							"vcs.repository.name": repo.name,
+							"vcs.pull_request.number": input.number,
+						},
+					}),
+				)
+
 			// The check run first: it is what the PR's checks tab shows and it never fails on a bad
 			// line. Then the summary comment, always, replacing the review's "reviewing" notice. Then the
 			// inline notes, which are dropped if GitHub refuses them: the comment already carries
@@ -1812,6 +1923,35 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					})
 					return { ...published, inlineComments, reviewUrl: review.value.html_url ?? null }
 				}).pipe(
+					// Last, and never the publish's failure: the review is already posted, and a refused
+					// approval leaves the pull request where it was, waiting for a person.
+					Effect.flatMap((published) =>
+						applyApproval(installation, repo, publication).pipe(
+							Effect.tap((outcome) =>
+								outcome === undefined
+									? Effect.void
+									: Effect.annotateCurrentSpan("vcs.pull_request.approval", outcome),
+							),
+							Effect.catchTag("@maple/backend/vcs/GithubAppError", (error) =>
+								Effect.annotateCurrentSpan("vcs.pull_request.approval", "error").pipe(
+									Effect.andThen(
+										Effect.logWarning(
+											"[GitHub] could not apply the review's approval",
+										).pipe(
+											Effect.annotateLogs({
+												status: error.status ?? "none",
+												error: error.message,
+											}),
+										),
+									),
+									Effect.as(undefined),
+								),
+							),
+							Effect.map((approval) =>
+								approval === undefined ? published : { ...published, approval },
+							),
+						),
+					),
 					Effect.mapError(toVcsError),
 					// One span over the three posts, so each step's outcome lands on the publish itself.
 					Effect.withSpan("GithubProvider.publishPullRequestReview", {
@@ -1974,6 +2114,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				fetchCommenterPermission,
 				commitFiles,
 				publishPullRequestReview,
+				withdrawPullRequestApprovals,
 				writePullRequestSummaryComment,
 				writePullRequestCheck,
 				searchCode,
