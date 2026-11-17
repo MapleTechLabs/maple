@@ -1,0 +1,26 @@
+---
+// Cost · the explorer, full width: a five-column table does not fit an artifact column.
+// On `bg-bg`, because the island is a `.live-frame`, which is itself `--bg-deep`.
+import * as m from "../../../paraglide/messages.js";
+import { LiveCostExplorer } from "../../live/LiveCostExplorer";
+---
+
+<section class="border-t border-border bg-bg">
+	<div class="shell py-16 md:py-24">
+		<div class="mb-10 max-w-2xl md:mb-14">
+			<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">
+				{m.cost_explorer_eyebrow()}
+			</p>
+			<h2
+				class="mt-4 font-display text-3xl font-medium leading-[1.05] tracking-[-0.02em] text-fg md:text-[40px]"
+			>
+				{m.cost_explorer_title()}
+			</h2>
+			<p class="mt-5 max-w-[62ch] text-sm leading-relaxed text-fg-muted md:text-[15px]">
+				{m.cost_explorer_lede()}
+			</p>
+		</div>
+
+		<LiveCostExplorer client:visible />
+	</div>
+</section>
