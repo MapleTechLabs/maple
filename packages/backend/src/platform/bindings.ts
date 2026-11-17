@@ -88,6 +88,10 @@ export class McpOAuthRateLimit extends Context.Service<McpOAuthRateLimit, RateLi
 export class McpToolsRateLimit extends Context.Service<McpToolsRateLimit, RateLimiter>()(
 	"@maple/backend/platform/McpToolsRateLimit",
 ) {}
+/** One AWS connection's finding event deliveries, keyed by connection id. */
+export class AwsEventsRateLimit extends Context.Service<AwsEventsRateLimit, RateLimiter>()(
+	"@maple/backend/platform/AwsEventsRateLimit",
+) {}
 /** Maple's share of a production Clerk instance's API limit, keyed by data source id. */
 export class DataSourceProductionCallLimit extends Context.Service<
 	DataSourceProductionCallLimit,

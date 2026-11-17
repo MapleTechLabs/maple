@@ -14,7 +14,7 @@ import {
 import { AutumnClient, type AutumnResult } from "@maple/backend/services/billing/autumn-http"
 import { ClerkRequestError } from "@maple/backend/services/auth/clerk-request"
 import { ClerkSsoGateway, type ClerkSsoConnection, type ClerkSsoDirectory } from "./ClerkSsoGateway"
-import { DnsLookupError, DnsTxtResolver } from "./DnsTxtResolver"
+import { DnsLookupError, DnsTxtResolver } from "@maple/backend/platform/DnsTxtResolver"
 import { EnterpriseSsoService } from "./EnterpriseSsoService"
 
 const trackedDbs: TestDb[] = []

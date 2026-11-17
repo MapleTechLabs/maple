@@ -6,6 +6,7 @@ import {
 	AuditResources,
 	auditResourceLabel,
 	auditToolCallerLabel,
+	isAuditAccessAction,
 } from "./audit-actions"
 import { internalAgentLabel } from "./system-agents"
 import { Record as Rec, String as Str } from "effect"
@@ -34,6 +35,14 @@ describe("audit action labels", () => {
 		expect(auditActionLabel("dashboard.exploded")).toBeNull()
 		expect(auditActionLabel("toString")).toBeNull()
 		expect(auditResourceLabel("spaceship")).toBeNull()
+	})
+})
+
+describe("access actions", () => {
+	it("counts reading a key as access and replacing it as a change", () => {
+		expect(isAuditAccessAction("aws_connection.events_key_read")).toBe(true)
+		expect(isAuditAccessAction("aws_connection.events_key_rotated")).toBe(false)
+		expect(isAuditAccessAction("aws_connection.updated")).toBe(false)
 	})
 })
 

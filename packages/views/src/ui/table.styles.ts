@@ -33,6 +33,9 @@ export const tableCellStyles =
 
 export const truncatedCellStyles = "w-full max-w-0"
 
+// A cell keeps its text on one line by default; this one lets a long value wrap.
+export const wrappingCellStyles = "whitespace-normal leading-normal"
+
 // A row's link stretched over the nearest positioned ancestor (the row); the ring shows on keyboard focus.
 export const tableRowLinkStyles =
 	"after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:after:ring-1 focus-visible:after:ring-ring focus-visible:after:ring-inset"

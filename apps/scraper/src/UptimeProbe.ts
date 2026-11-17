@@ -1,5 +1,5 @@
 import { Option, Schema, String as Str } from "effect"
-import type { UptimeCertificate } from "@maple/domain/uptime"
+import { capCheckError, type UptimeCertificate } from "@maple/domain/uptime"
 import type { PhaseTimings } from "./UptimePhases"
 
 /**
@@ -63,12 +63,13 @@ export const succeeded = (durationMs: number, statusCode: number | null = null):
 	errorType: null,
 })
 
+/** A failed check. Its sentence is capped here, so spans, the report and the stored state all get the same bounded text. */
 export const failed = (
 	durationMs: number,
 	errorType: UptimeFailureType,
 	error: string,
 	statusCode: number | null = null,
-): ProbeOutcome => ({ ok: false, durationMs, statusCode, error, errorType })
+): ProbeOutcome => ({ ok: false, durationMs, statusCode, error: capCheckError(error), errorType })
 
 /** `10 s`, `2.5 s`: timeouts are whole or half seconds in practice. */
 export const formatSeconds = (ms: number): string => `${Number((ms / 1000).toFixed(1))} s`

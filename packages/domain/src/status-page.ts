@@ -181,6 +181,14 @@ export const StatusPageCustomDomainDnsRecord = Schema.Struct({
 })
 export type StatusPageCustomDomainDnsRecord = Schema.Schema.Type<typeof StatusPageCustomDomainDnsRecord>
 
+/** The DNS label, under the hostname, of the TXT record that proves a claim on a custom domain. */
+export const CUSTOM_DOMAIN_CHALLENGE_LABEL = "_maple-challenge"
+
+/** True for the record that proves a claim: Maple sets a new domain up only once it is published. */
+export const isCustomDomainChallengeRecord = (
+	record: Pick<StatusPageCustomDomainDnsRecord, "type" | "name">,
+): boolean => record.type === "TXT" && Str.startsWith(`${CUSTOM_DOMAIN_CHALLENGE_LABEL}.`)(record.name)
+
 /** A custom domain as the API takes it: any case, trimmed, then checked by {@link customDomainIssue}. */
 export const StatusPageCustomDomainHostname = Schema.String.pipe(
 	Schema.decodeTo(
@@ -1120,6 +1128,14 @@ export const StatusPageKeys = {
 	hostObject: (hostname: string) => `hosts/${Str.toLowerCase(hostname)}`,
 	slugObject: (slug: string) => `slugs/${slug}`,
 } as const
+
+/**
+ * What the publisher leaves in R2 where it took a snapshot or a slug route off the edge. The
+ * status Worker reads it as "not here" for certain, where a missing object could be an outage.
+ */
+export const STATUS_PAGE_TOMBSTONE = '{"gone":true}'
+
+export const isStatusPageTombstone = (raw: string): boolean => Str.trim(raw) === STATUS_PAGE_TOMBSTONE
 
 export const decodeStatusPageSnapshotJson = Schema.decodeUnknownOption(
 	Schema.fromJsonString(StatusPageSnapshot),

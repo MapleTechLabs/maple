@@ -7,7 +7,7 @@ import {
 	UptimeMonitorStatus,
 	UserId,
 } from "@maple/primitives"
-import { UptimeCheckDetail, UptimeMonitorConfig, UptimeRecentCheck } from "@maple/domain/uptime"
+import { StoredUptimeMonitorConfig, UptimeCheckDetail, UptimeRecentCheck } from "@maple/domain/uptime"
 import { Schema } from "effect"
 
 /**
@@ -20,10 +20,12 @@ export const UptimeMonitors = PG.table("uptime_monitors", {
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
 		name: PG.text,
 		kind: PG.brand(PG.text, UptimeMonitorKind),
-		configJson: PG.column(PG.jsonb(UptimeMonitorConfig), { name: "config_json" }),
+		/** Typed without the size limits, so a monitor saved before them still reads. */
+		configJson: PG.column(PG.jsonb(StoredUptimeMonitorConfig), { name: "config_json" }),
 		/**
-		 * HTTP checks only: the request headers as sealed JSON (docs/secret-encryption.md), since
-		 * they carry credentials. `config_json.headers` is then `{}`; null means no headers.
+		 * HTTP and multi-step checks: the request headers and bodies as sealed JSON
+		 * (docs/secret-encryption.md), since they carry credentials. `config_json` then holds
+		 * neither; null means there are none.
 		 */
 		headersCiphertext: PG.column(PG.nullable(PG.text), { name: "headers_ciphertext" }),
 		headersIv: PG.column(PG.nullable(PG.text), { name: "headers_iv" }),
