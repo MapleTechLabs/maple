@@ -11,7 +11,8 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { spaced } from "@maple/views/ui/spaced"
 
-// The parent owns `isDragging` and checks the picked file with `checkImage`.
+// An image picker with a drop target and a preview. The parent owns `isDragging` and checks the
+// picked file (`checkImage` for avatars and org logos).
 
 const MAX_BYTES = 10 * 1024 * 1024
 const ACCEPT = "image/png,image/jpeg,image/webp,image/gif"
@@ -39,6 +40,8 @@ export type ImageDropzoneOptions<M> = Readonly<{
 	isReadOnly?: boolean
 	targetLabel: string
 	changeLabel: string
+	/** The file picker's `accept` filter; PNG, JPEG, WebP and GIF by default. */
+	accept?: string
 	/** `null` hides the hint; `undefined` shows the default one. */
 	hint?: string | null
 	/** Row layout: the title and hint beside the target, the actions on the right. */
@@ -148,7 +151,7 @@ export const imageDropzone = <M>(h: HtmlBuilder<M>, options: ImageDropzoneOption
 		fileInput(h, {
 			id: options.inputId,
 			label: options.targetLabel,
-			accept: ACCEPT,
+			accept: options.accept ?? ACCEPT,
 			onChange: options.onFiles,
 		}),
 	])

@@ -1,6 +1,9 @@
 import type { V2StatusPage } from "@maple/domain/http/v2"
 import {
 	DEFAULT_STATUS_PAGE_THEME,
+	isStatusPageImageDataUrl,
+	STATUS_PAGE_IMAGE_TYPES,
+	STATUS_PAGE_MAX_IMAGE_BYTES,
 	resolveStatusPageTheme,
 	StatusPageThemeFont,
 	StatusPageThemeRadius,
@@ -10,7 +13,7 @@ import { previewSnapshot } from "@maple/status-page"
 import { Schema, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
-import { colorInput } from "@maple/views/ui/color-input"
+import { colorPicker } from "@maple/views/ui/color-picker"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { heading } from "@maple/views/ui/heading"
@@ -18,6 +21,7 @@ import { settingsSection } from "../../kit/settings-section"
 import { switchRow } from "../../kit/switch-row"
 import { selectField, textField } from "../shared/fields"
 import {
+	type BrandingField,
 	type SettingsForm,
 	THEME_OVERRIDE_FIELDS,
 	type ThemeColorField,
@@ -27,6 +31,9 @@ import {
 	themeContrastOf,
 	themeOf,
 } from "../shared/form"
+import { icon } from "@maple/views/ui/icon"
+import { imageDropzone } from "../../kit/image-dropzone"
+import { brandingInputId } from "./command"
 import { Message } from "./message"
 import { pageUrlOf } from "./update-domain"
 import { canManage, type Model } from "./model"
@@ -99,7 +106,7 @@ const colorField = (
 	const value = theme[entry.field]
 	const preset = presetTokens(theme)[entry.token]
 	// The picker opens on the colour in effect: the typed one, or the preset's when the field is empty.
-	const picked = Str.trim(value) === "" ? preset : Str.toLowerCase(Str.trim(value))
+	const picked = Str.trim(value) === "" || error !== null ? preset : Str.toLowerCase(Str.trim(value))
 	return hstack(h, { gap: "2", align: "end" }, [
 		textField(h, {
 			id: `status-page-theme-${entry.field}`,
@@ -112,22 +119,98 @@ const colorField = (
 			className: "flex-1",
 			onInput: (next) => Message.ChangedThemeColor({ field: entry.field, value: next }),
 		}),
-		...(error === null && !isDisabled
+		...(!isDisabled
 			? [
-					colorInput(h, {
+					colorPicker(h, {
+						id: `status-page-theme-${entry.field}-picker`,
 						value: picked,
 						label: `${entry.label} color`,
 						onInput: (next) => Message.ChangedThemeColor({ field: entry.field, value: next }),
+						onMount: Message.CompletedMountColorPicker(),
 					}),
 				]
 			: []),
 	])
 }
 
+const BRANDING_IMAGES: ReadonlyArray<{
+	field: BrandingField
+	title: string
+	hint: string
+	placeholder: string
+}> = [
+	{
+		field: "logoUrl",
+		title: "Logo",
+		hint: "In the page header. Also the image when the page is shared, if it is a link.",
+		placeholder: "https://acme.example/logo.svg",
+	},
+	{
+		field: "logoDarkUrl",
+		title: "Dark mode logo",
+		hint: "Shown instead of the logo on a dark page.",
+		placeholder: "https://acme.example/logo-dark.svg",
+	},
+	{
+		field: "faviconUrl",
+		title: "Favicon",
+		hint: "The icon in the browser tab and in your list of status pages.",
+		placeholder: "https://acme.example/favicon.png",
+	},
+]
+
+const IMAGE_ACCEPT = Arr.join(STATUS_PAGE_IMAGE_TYPES, ",")
+const UPLOAD_HINT = `Drop or upload a PNG, JPEG, WebP, GIF, SVG or ICO up to ${STATUS_PAGE_MAX_IMAGE_BYTES / 1024} KB, or link one below.`
+
+/** One logo or favicon: upload or drop a file, or link an https URL. */
+const brandingImageField = (
+	h: H,
+	model: Model,
+	form: SettingsForm,
+	entry: (typeof BRANDING_IMAGES)[number],
+	error: string | null,
+): Html => {
+	const value = Str.trim(form[entry.field])
+	const isUpload = isStatusPageImageDataUrl(value)
+	const isReadOnly = !canManage(model)
+	const preview =
+		value !== "" && error === null
+			? h.img([h.Src(value), h.Alt(""), h.Class("max-h-full max-w-full object-contain")])
+			: icon(h, "UploadIcon", { className: "size-5 text-muted-foreground" })
+	return vstack(h, { gap: "2" }, [
+		imageDropzone(h, {
+			inputId: brandingInputId(entry.field),
+			title: entry.title,
+			hint: `${entry.hint} ${UPLOAD_HINT}`,
+			accept: IMAGE_ACCEPT,
+			preview,
+			isUploading: false,
+			isDragging: model.brandingDrag === entry.field,
+			isReadOnly,
+			targetLabel: `Upload ${Str.toLowerCase(entry.title)}`,
+			changeLabel: "Upload",
+			onPick: Message.ClickedPickBrandingImage({ field: entry.field }),
+			onFiles: (files) => Message.PickedBrandingImage({ field: entry.field, files }),
+			onDragOver: Message.DraggedOverBrandingImage({ field: entry.field }),
+			onDragLeave: Message.LeftBrandingImage(),
+			...(value !== "" && { onRemove: Message.ChangedSetting({ field: entry.field, value: "" }) }),
+		}),
+		textField(h, {
+			id: `status-page-${entry.field}`,
+			label: `${entry.title} URL`,
+			// An upload is a long data: URL; the field offers a link in its place instead of showing it.
+			value: isUpload ? "" : form[entry.field],
+			placeholder: isUpload ? "Uploaded image. Paste an https URL to replace it." : entry.placeholder,
+			isDisabled: isReadOnly,
+			error,
+			onInput: (next) => Message.ChangedSetting({ field: entry.field, value: next }),
+		}),
+	])
+}
+
 /** The logos and tab icon: what carries the brand besides the colours. */
 export const brandingSection = (h: H, model: Model, form: SettingsForm): Html => {
 	const issues = settingsIssues(form)
-	const isReadOnly = !canManage(model)
 	return settingsSection(
 		h,
 		{
@@ -136,46 +219,19 @@ export const brandingSection = (h: H, model: Model, form: SettingsForm): Html =>
 			description: ["Your logo in the page header, the icon in the browser tab and the footer credit."],
 		},
 		[
-			h.div(
-				[h.Class("grid gap-4 sm:grid-cols-2")],
-				[
-					textField(h, {
-						id: "status-page-logo",
-						label: "Logo URL",
-						value: form.logoUrl,
-						placeholder: "https://acme.example/logo.svg",
-						isDisabled: isReadOnly,
-						error: issues.logoUrl,
-						hint: "Also the image when the page is shared.",
-						onInput: (value) => Message.ChangedSetting({ field: "logoUrl", value }),
-					}),
-					textField(h, {
-						id: "status-page-logo-dark",
-						label: "Dark mode logo URL",
-						value: form.logoDarkUrl,
-						placeholder: "https://acme.example/logo-dark.svg",
-						isDisabled: isReadOnly,
-						error: issues.logoDarkUrl,
-						hint: "Shown instead of the logo on a dark page.",
-						onInput: (value) => Message.ChangedSetting({ field: "logoDarkUrl", value }),
-					}),
-					textField(h, {
-						id: "status-page-favicon",
-						label: "Favicon URL",
-						value: form.faviconUrl,
-						placeholder: "https://acme.example/favicon.png",
-						isDisabled: isReadOnly,
-						error: issues.faviconUrl,
-						onInput: (value) => Message.ChangedSetting({ field: "faviconUrl", value }),
-					}),
-				],
+			vstack(
+				h,
+				{ gap: "5" },
+				Arr.map(BRANDING_IMAGES, (entry) =>
+					brandingImageField(h, model, form, entry, issues[entry.field]),
+				),
 			),
 			switchRow(h, {
 				id: "status-page-powered-by",
 				label: "Show powered by Maple",
 				description: "A small credit in the page footer.",
 				isChecked: form.showPoweredBy,
-				isDisabled: isReadOnly,
+				isDisabled: !canManage(model),
 				onToggle: Message.ToggledPoweredBy(),
 				className: "mt-4 border-t pt-4",
 			}),
@@ -199,12 +255,15 @@ export const appearanceSection = (h: H, model: Model, form: SettingsForm): Html 
 		[
 			vstack(h, { gap: "5" }, [
 				vstack(h, { gap: "1.5" }, [
-					typography(h, { size: "xs", tone: "muted" }, ["Preset"]),
+					typography(h, { size: "xs", tone: "muted" }, ["Theme"]),
 					presetCards(h, {
 						selected: theme.preset,
 						isDisabled: isReadOnly,
 						onPick: (preset) => Message.PickedThemePreset({ preset }),
 					}),
+					typography(h, { size: "xs", tone: "muted", as: "p" }, [
+						"A starting point, not a lock-in. Everything below overrides it: colors, corners and font. Picking another theme resets corners and font and keeps your colors. Only the status colors (operational, degraded, outage, maintenance) always come from the theme.",
+					]),
 				]),
 				vstack(h, { gap: "1.5" }, [
 					typography(h, { size: "xs", tone: "muted" }, ["Mode"]),

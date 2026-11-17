@@ -32,6 +32,7 @@ import {
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import * as Dialog from "@maple/views/ui/dialog"
+import { ColorPickerMessage, MountColorPicker } from "@maple/views/ui/color-picker"
 import { MountDialog } from "@maple/views/ui/dialog"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
@@ -593,6 +594,12 @@ const steps = (model: Model, messages: ReadonlyArray<Message>, ctx: PageContext 
 	Arr.reduce(messages, model, (current, message) => update(current, message, ctx).model)
 
 const mounted = Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog())
+
+/** The Appearance tab's colour pickers, mounted: the accent alone in Auto, all five in Light or Dark. */
+const pickersMounted = (count: number) =>
+	Mount.resolveAll(
+		...Arr.makeBy(count, () => [MountColorPicker, ColorPickerMessage.CompletedMountColorPicker()] as const),
+	)
 
 /** The reviewed message as the public page's markup renders it. */
 const updateBodyOf = find('[role="dialog"] [data-slot="update-body"]')
@@ -1439,6 +1446,7 @@ describe("header", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ tab: "appearance" })),
+			pickersMounted(1),
 			expectView(role("button", { name: "Post incident" })).not.toExist(),
 			expectView(role("link", { name: "Appearance" })).toHaveAttr("aria-current", "page"),
 		)
@@ -1627,6 +1635,7 @@ describe("settings and appearance views", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ tab: "appearance" })),
+			pickersMounted(1),
 			expectView(text("Unsaved changes")).not.toExist(),
 			type(role("textbox", { name: "Accent" }), "teal"),
 			expectView(text("Unsaved changes")).toExist(),
@@ -1643,6 +1652,7 @@ describe("settings and appearance views", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given({ ...edited, search: { view: "appearance" } }),
+			pickersMounted(1),
 			expectView(text("Fix the fields marked on the Settings tab.")).toExist(),
 			expectView(role("button", { name: "Save" })).toBeDisabled(),
 		)
@@ -1717,10 +1727,12 @@ describe("settings and appearance views", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ tab: "appearance" })),
+			pickersMounted(1),
 			expectView(role("textbox", { name: "Background" })).toBeDisabled(),
 			expectView(role("textbox", { name: "Text" })).toBeDisabled(),
 			expectView(role("textbox", { name: "Accent" })).toBeEnabled(),
 			inside(role("group", { name: "Mode" }), click(role("button", { name: "Dark" }))),
+			pickersMounted(4),
 			expectView(role("textbox", { name: "Background" })).toBeEnabled(),
 		)
 	})
@@ -1729,7 +1741,9 @@ describe("settings and appearance views", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ tab: "appearance" })),
+			pickersMounted(1),
 			inside(role("group", { name: "Mode" }), click(role("button", { name: "Light" }))),
+			pickersMounted(4),
 			type(role("textbox", { name: "Text" }), "#757575"),
 			expectView(
 				text("Text on the background has a contrast of 4.49:1; it needs at least 4.5:1."),
@@ -1745,6 +1759,7 @@ describe("settings and appearance views", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ tab: "appearance" })),
+			pickersMounted(1),
 			// Scripts page the bars; without `allow-same-origin` the page still reaches nothing of ours.
 			expectView(selector("iframe")).toHaveAttr("sandbox", "allow-scripts"),
 			tap(({ html }) => {
@@ -1760,6 +1775,40 @@ describe("settings and appearance views", () => {
 		)
 	})
 
+	test("an uploaded favicon is read into the form; a file the API would refuse is not", () => {
+		const page = loaded({ tab: "appearance" })
+		const pdf = pageUpdate(
+			page,
+			Message.PickedBrandingImage({
+				field: "faviconUrl",
+				files: [new File(["%PDF"], "icon.pdf", { type: "application/pdf" })],
+			}),
+		)
+		expect(pdf.commands ?? []).toEqual([])
+		expect(pdf.outMessage).toMatchObject({ _tag: "RequestedToast", title: "Couldn't use that image" })
+
+		const png = pageUpdate(
+			page,
+			Message.PickedBrandingImage({
+				field: "faviconUrl",
+				files: [new File(["png"], "icon.png", { type: "image/png" })],
+			}),
+		)
+		expect(names(png.commands)).toEqual(["ReadStatusPageBrandingImage"])
+		const read = pageUpdate(
+			png.model,
+			Message.CompletedReadBrandingImage({ field: "faviconUrl", dataUrl: "data:image/png;base64,cG5n" }),
+		).model
+		expect(read.settingsEdits?.faviconUrl).toBe("data:image/png;base64,cG5n")
+		scene(
+			{ update: pageUpdate, view },
+			given(read),
+			pickersMounted(1),
+			expectView(text("Unsaved changes")).toExist(),
+			expectView(role("button", { name: "Save" })).toBeEnabled(),
+		)
+	})
+
 	test("the branding links preview at once: the dark logo in dark mode and the favicon", () => {
 		const iframeOf = find("iframe")
 		const srcdoc = (html: Parameters<typeof iframeOf>[0]): string =>
@@ -1767,6 +1816,7 @@ describe("settings and appearance views", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ tab: "appearance" })),
+			pickersMounted(1),
 			type(role("textbox", { name: "Logo URL" }), "https://acme.example/logo.svg"),
 			type(role("textbox", { name: "Dark mode logo URL" }), "https://acme.example/logo-dark.svg"),
 			type(role("textbox", { name: "Favicon URL" }), "https://acme.example/favicon.png"),
@@ -1786,7 +1836,12 @@ describe("settings and appearance views", () => {
 			loaded({ tab: "appearance" }),
 			Message.ChangedSetting({ field: "faviconUrl", value: "http://acme.example/favicon.png" }),
 		).model
-		scene({ update: pageUpdate, view }, given(edited), expectView(text("Use an https URL.")).toExist())
+		scene(
+			{ update: pageUpdate, view },
+			given(edited),
+			pickersMounted(1),
+			expectView(text("Use an https URL.")).toExist(),
+		)
 		scene(
 			{ update: pageUpdate, view },
 			given({ ...edited, search: { view: "settings" } }),
@@ -1805,6 +1860,7 @@ describe("settings and appearance views", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ tab: "appearance" })),
+			pickersMounted(1),
 			expectView(note).not.toExist(),
 			tap(({ html }) => expect(srcdoc(html)).not.toContain("Example incident")),
 			pick("Outage"),
@@ -1831,6 +1887,7 @@ describe("settings and appearance views", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ tab: "appearance" })),
+			pickersMounted(1),
 			expectView(selector("iframe")).toHaveAttr("data-width", "desktop"),
 			pick("Mobile"),
 			expectView(selector("iframe")).toHaveAttr("data-width", "mobile"),
@@ -1841,17 +1898,18 @@ describe("settings and appearance views", () => {
 	})
 
 	test("each color has a picker that opens on the color in effect", () => {
-		const accent = selector('[aria-label="Accent color"]')
+		const accent = selector('[data-slot="color-picker-popup"][aria-label="Accent color"]')
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ tab: "appearance" })),
+			pickersMounted(1),
 			// Empty field: the preset's own colour, the one the placeholder names.
-			expectView(accent).toHaveValue("#000000"),
+			expectView(accent).toHaveAttr("data-value", "#000000"),
 			type(role("textbox", { name: "Accent" }), "#FF0066"),
-			expectView(accent).toHaveValue("#ff0066"),
-			// A colour input cannot hold something that is not a hex colour.
+			expectView(accent).toHaveAttr("data-value", "#ff0066"),
+			// Not a hex colour yet: the picker stays on the preset's.
 			type(role("textbox", { name: "Accent" }), "teal"),
-			expectView(accent).not.toExist(),
+			expectView(accent).toHaveAttr("data-value", "#000000"),
 			// Auto takes the overrides from the preset, so they have nothing to pick.
 			expectView(selector('[aria-label="Background color"]')).not.toExist(),
 		)

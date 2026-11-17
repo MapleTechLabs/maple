@@ -5,15 +5,25 @@ import type {
 	V2StatusPagePublishResult,
 } from "@maple/domain/http/v2"
 import { Option, Result, Schema, String as Str } from "effect"
-import { AsyncData, Command as FoldkitCommand } from "foldkit"
+import { AsyncData, Command as FoldkitCommand, File } from "foldkit"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import { type PageContext, PageOutMessage } from "../../contract"
 import { statusPageHref, statusPagesHref } from "../shared/commands"
-import { DeletePage, PublishPage, RevokeToken, RotateToken, SaveSettings } from "./command"
 import {
+	DeletePage,
+	PickBrandingImage,
+	PublishPage,
+	ReadBrandingImage,
+	RevokeToken,
+	RotateToken,
+	SaveSettings,
+} from "./command"
+import {
+	type BrandingField,
 	hasSettingsIssues,
+	imageUploadIssue,
 	isSameSettings,
 	type SettingsForm,
 	type SettingsTextField,
@@ -65,6 +75,29 @@ export const changeTheme = (model: Model, change: Partial<ThemeForm>): Return =>
 
 export const togglePoweredBy = (model: Model): Return =>
 	withSettings(model, (form) => ({ ...form, showPoweredBy: !form.showPoweredBy }))
+
+export const pickBrandingImage = (model: Model, field: BrandingField): Return =>
+	canManage(model) ? { model, commands: [PickBrandingImage({ field })] } : { model }
+
+/** A dropped or picked logo or favicon: read into the form when the API would take it. */
+export const takeBrandingImage = (
+	model: Model,
+	field: BrandingField,
+	files: ReadonlyArray<File.File>,
+): Return => {
+	const settled = { ...model, brandingDrag: null }
+	const file = files[0]
+	if (file === undefined || !canManage(model)) return { model: settled }
+	const issue = imageUploadIssue({ type: File.mimeType(file), size: File.size(file) })
+	return issue === null
+		? { model: settled, commands: [ReadBrandingImage({ field, file })] }
+		: { model: settled, outMessage: toast("error", "Couldn't use that image", issue) }
+}
+
+export const readBrandingImage = (model: Model, field: BrandingField, dataUrl: string | null): Return =>
+	dataUrl === null
+		? { model, outMessage: toast("error", "Couldn't read that image") }
+		: changeSetting(model, field, dataUrl)
 
 export const saveSettings = (model: Model): Return => {
 	const edits = model.settingsEdits

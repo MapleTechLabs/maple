@@ -1,4 +1,5 @@
 import type { StatusPageVisibility } from "@maple/domain"
+import { isStatusPageImageSource } from "@maple/domain/status-page"
 import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr } from "effect"
@@ -160,6 +161,12 @@ const rowMenu = (h: H, model: Model, summary: StatusPageSummary, inputs: ViewInp
 	})
 }
 
+/** The page's favicon beside its name, when it has one the page would render. */
+const pageIcon = (h: H, favicon: string | null): ReadonlyArray<Html> =>
+	favicon !== null && isStatusPageImageSource(favicon)
+		? [h.img([h.Src(favicon), h.Alt(""), h.Class("size-4 shrink-0 rounded-2xs object-contain")])]
+		: []
+
 const pageRow = (h: H, model: Model, summary: StatusPageSummary, inputs: ViewInputs): Html => {
 	const page = summary.page
 	return h.li(
@@ -171,14 +178,17 @@ const pageRow = (h: H, model: Model, summary: StatusPageSummary, inputs: ViewInp
 					h.div(
 						[h.Class("min-w-0")],
 						[
-							rowLink(
-								h,
-								{
-									href: statusPageHref(page.id),
-									className: "block truncate text-sm font-medium",
-								},
-								[page.name],
-							),
+							hstack(h, { gap: "2", align: "center", className: "min-w-0" }, [
+								...pageIcon(h, page.favicon_url),
+								rowLink(
+									h,
+									{
+										href: statusPageHref(page.id),
+										className: "block truncate text-sm font-medium",
+									},
+									[page.name],
+								),
+							]),
 							hstack(h, { gap: "2", align: "center", className: "mt-0.5 min-w-0" }, [
 								badge(h, { variant: VISIBILITY_BADGE[page.visibility].variant, size: "sm" }, [
 									VISIBILITY_BADGE[page.visibility].label,

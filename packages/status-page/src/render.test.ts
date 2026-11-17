@@ -999,6 +999,14 @@ describe("branding", () => {
 		expect(html).not.toContain("Contact support")
 	})
 
+	it("renders an uploaded logo and favicon, but never a non-image data URL", () => {
+		const html = withPage({ logoUrl: "data:image/png;base64,iVBORw0KGgo=", faviconUrl: "data:image/png;base64,iVBORw0KGgo=" })
+		expect(headerOf(html)).toContain(`<img src="data:image/png;base64,iVBORw0KGgo=" alt="Acme">`)
+		expect(html).toContain(`<link rel="icon" href="data:image/png;base64,iVBORw0KGgo=">`)
+		const unsafe = withPage({ faviconUrl: "data:text/html;base64,PHNjcmlwdD4=" })
+		expect(unsafe).not.toContain(`rel="icon"`)
+	})
+
 	it("links the favicon and puts the support link in the header", () => {
 		const html = withPage({
 			faviconUrl: "https://acme.example/favicon.png",

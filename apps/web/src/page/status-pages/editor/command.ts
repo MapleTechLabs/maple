@@ -17,7 +17,9 @@ import {
 	V2StatusPageUpdateParams,
 } from "@maple/domain/http/v2"
 import { Duration, Effect, Schema } from "effect"
-import { Command, Dom, Mount } from "foldkit"
+import { Command, Dom, File, Mount } from "foldkit"
+import { clickFileInput } from "../../kit/image-dropzone"
+import { BrandingField } from "../shared/form"
 import { trackProduct } from "../../../data/analytics"
 import {
 	applyPageConfig,
@@ -395,5 +397,26 @@ export const RemoveCustomDomain = Command.define("RemoveStatusPageCustomDomain",
 		removeCustomDomain(pageId).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedRemoveCustomDomain({ result })),
+		),
+})
+
+/** The hidden file input behind a logo or favicon's upload button. */
+export const brandingInputId = (field: BrandingField): string => `status-page-${field}-file`
+
+export const PickBrandingImage = Command.define("PickStatusPageBrandingImage", {
+	args: { field: BrandingField },
+	messages: [Message.CompletedPickBrandingImage],
+	execute: ({ field }) =>
+		clickFileInput(brandingInputId(field)).pipe(Effect.as(Message.CompletedPickBrandingImage())),
+})
+
+/** Reads a picked logo or favicon as the `data:` URL the page stores. */
+export const ReadBrandingImage = Command.define("ReadStatusPageBrandingImage", {
+	args: { field: BrandingField, file: File.File },
+	messages: [Message.CompletedReadBrandingImage],
+	execute: ({ field, file }) =>
+		File.readAsDataUrl(file).pipe(
+			Effect.map((dataUrl) => Message.CompletedReadBrandingImage({ field, dataUrl })),
+			Effect.orElseSucceed(() => Message.CompletedReadBrandingImage({ field, dataUrl: null })),
 		),
 })

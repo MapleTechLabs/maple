@@ -28,6 +28,9 @@ import {
 	themeContrastIssue,
 	STATUS_PAGE_MAX_URL_LENGTH,
 	STATUS_PAGE_UPDATE_MAX_LENGTH,
+	STATUS_PAGE_IMAGE_TYPES,
+	STATUS_PAGE_MAX_IMAGE_BYTES,
+	isStatusPageImageDataUrl,
 } from "@maple/domain/status-page"
 import { DateTime, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { closingStatus, STATUSES_OF_KIND } from "./derive"
@@ -425,6 +428,9 @@ export type SettingsTextField = typeof SettingsTextField.Type
 
 /** The page fields the Appearance tab edits; the rest are on the Settings tab. */
 export const BRANDING_FIELDS = ["logoUrl", "logoDarkUrl", "faviconUrl"] as const
+/** A logo or favicon field: an https URL or an uploaded image. */
+export const BrandingField = Schema.Literals(BRANDING_FIELDS)
+export type BrandingField = typeof BrandingField.Type
 const isBrandingField = (field: SettingsTextField): boolean =>
 	Arr.some(BRANDING_FIELDS, (branding) => branding === field)
 
@@ -556,6 +562,18 @@ const httpsIssue = (value: string): string | null => {
 	return new URL(url).protocol === "https:" ? null : "Use an https URL."
 }
 
+/** An upload is checked on read (`imageUploadIssue`); a typed value must be an https URL. */
+const imageIssue = (value: string): string | null =>
+	isStatusPageImageDataUrl(Str.trim(value)) ? null : httpsIssue(value)
+
+/** Why a picked file cannot be a logo or favicon, or `null`: the API's type and size rule. */
+export const imageUploadIssue = (file: { readonly type: string; readonly size: number }): string | null =>
+	!Arr.some(STATUS_PAGE_IMAGE_TYPES, (type) => type === file.type)
+		? "Use a PNG, JPEG, WebP, GIF, SVG or ICO image."
+		: file.size > STATUS_PAGE_MAX_IMAGE_BYTES
+			? `Keep the image under ${STATUS_PAGE_MAX_IMAGE_BYTES / 1024} KB.`
+			: null
+
 /** Each field's problem, or `null`: the API refuses the same values. */
 export const settingsIssues = (form: SettingsForm): Readonly<Record<SettingsTextField, string | null>> => ({
 	name: Str.trim(form.name) === "" ? "Add a name." : null,
@@ -565,9 +583,9 @@ export const settingsIssues = (form: SettingsForm): Readonly<Record<SettingsText
 	privacyUrl: httpsIssue(form.privacyUrl),
 	termsUrl: httpsIssue(form.termsUrl),
 	supportUrl: httpsIssue(form.supportUrl),
-	logoUrl: httpsIssue(form.logoUrl),
-	logoDarkUrl: httpsIssue(form.logoDarkUrl),
-	faviconUrl: httpsIssue(form.faviconUrl),
+	logoUrl: imageIssue(form.logoUrl),
+	logoDarkUrl: imageIssue(form.logoDarkUrl),
+	faviconUrl: imageIssue(form.faviconUrl),
 	autoIncidents: null,
 })
 

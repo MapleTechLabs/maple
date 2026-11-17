@@ -23,11 +23,13 @@ import {
 	StatusPageThemeRadius,
 } from "@maple/domain/status-page"
 import { Schema } from "effect"
+import { File } from "foldkit/file"
 import { defineMessageUnion } from "foldkit/message"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import {
+	BrandingField,
 	ComponentTextField,
 	IncidentEditField,
 	IncidentTextField,
@@ -124,9 +126,17 @@ export const Message = defineMessageUnion({
 	// Settings
 	ChangedSetting: { field: SettingsTextField, value: Schema.String },
 	ToggledPoweredBy: {},
+	ClickedPickBrandingImage: { field: BrandingField },
+	CompletedPickBrandingImage: {},
+	DraggedOverBrandingImage: { field: BrandingField },
+	LeftBrandingImage: {},
+	PickedBrandingImage: { field: BrandingField, files: Schema.Array(File) },
+	/** `dataUrl` is null when the browser could not read the file. */
+	CompletedReadBrandingImage: { field: BrandingField, dataUrl: Schema.NullOr(Schema.String) },
 	PickedThemePreset: { preset: StatusPageThemePreset },
 	PickedThemeAppearance: { appearance: StatusPageThemeAppearance },
 	ChangedThemeColor: { field: ThemeColorField, value: Schema.String },
+	CompletedMountColorPicker: {},
 	PickedThemeRadius: { radius: StatusPageThemeRadius },
 	PickedThemeFont: { font: StatusPageThemeFont },
 	PickedPreviewScheme: { scheme: PreviewScheme },
