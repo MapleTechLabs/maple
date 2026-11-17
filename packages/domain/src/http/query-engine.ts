@@ -1719,6 +1719,8 @@ const UptimeCheck = Schema.Struct({
 	durationMs: Schema.Number,
 	ok: Schema.Boolean,
 	statusCode: Schema.NullOr(Schema.Number),
+	/** Why a failed check failed; null on a pass. */
+	error: Schema.NullOr(Schema.String),
 	/** Null when the check recorded none: TCP and DNS checks, older checks, no response. */
 	phases: Schema.NullOr(UptimeCheckPhases),
 })

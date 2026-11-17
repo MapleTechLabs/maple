@@ -1451,6 +1451,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 								durationMs: row.durationMs,
 								ok: row.status !== "Error",
 								statusCode: row.httpStatus > 0 ? row.httpStatus : null,
+								error: row.status === "Error" && row.error !== "" ? row.error : null,
 								phases:
 									row.timed === 1
 										? {

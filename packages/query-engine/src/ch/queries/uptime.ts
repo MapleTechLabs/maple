@@ -74,6 +74,8 @@ export const uptimeChecksRowSchema = Schema.Struct({
 	durationMs: CHNumber,
 	/** The span status: `Error` for a failed check. */
 	status: Schema.String,
+	/** The span status message: a failed check's reason, empty on a pass. */
+	error: Schema.String,
 	/** `http.response.status_code`, 0 when the check got no response. */
 	httpStatus: CHNumber,
 	/** 1 when the check carries its phases (an HTTP check that got a response). */
@@ -97,6 +99,7 @@ export function uptimeChecksQuery(opts: UptimeChecksOpts) {
 				traceId: $.TraceId,
 				durationMs: $.Duration.div(1000000),
 				status: $.StatusCode,
+				error: $.StatusMessage,
 				httpStatus: CH.toFloat64OrZero($.SpanAttributes.get("http.response.status_code")),
 				timed: CH.if_(
 					$.SpanAttributes.get(UPTIME_TIMING_ATTRIBUTES.ttfbMs).neq(""),

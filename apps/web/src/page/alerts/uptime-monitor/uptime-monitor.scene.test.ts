@@ -3,6 +3,7 @@ import { OrgId } from "@maple/domain"
 import { UptimeMonitorPublicId } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr, String as Str } from "effect"
 import {
+	click,
 	displayValue,
 	expect as expectView,
 	given,
@@ -204,6 +205,7 @@ describe("uptime monitor page", () => {
 			durationMs: ok ? 120 : 10_000,
 			ok,
 			statusCode: ok ? 200 : null,
+			error: ok ? null : "Connection refused",
 			traceId,
 			phases: null,
 		})
@@ -248,6 +250,66 @@ describe("uptime monitor page", () => {
 		)
 	})
 
+	test("the Checks table filters to the window's failed checks, newest first, with why each failed", () => {
+		const model = opened(httpMonitor())
+		const sample = (minutesAgo: number, ok: boolean, traceId: string, error: string | null) => ({
+			at: new Date(NOW - minutesAgo * 60_000).toISOString(),
+			durationMs: 120,
+			ok,
+			statusCode: ok ? 200 : 503,
+			error,
+			traceId,
+			phases: null,
+		})
+		const stats = (samples: ReadonlyArray<ReturnType<typeof sample>>) =>
+			pageUpdate(
+				model,
+				Message.CompletedFetchStats({
+					key: model.stats.key ?? "",
+					result: Result.succeed({
+						window: "24h",
+						points: [],
+						samples,
+						samplesTruncated: false,
+						samplesFailed: false,
+						windowStartMs: NOW - 86_400_000,
+						windowEndMs: NOW,
+						checks: samples.length,
+						failures: Arr.filter(samples, (check) => !check.ok).length,
+						p50Ms: 120,
+						p95Ms: 120,
+						p99Ms: 120,
+						phases: [],
+						phasesFailed: false,
+					}),
+				}),
+			).model
+		const checks = role("region", { name: "Checks" })
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				stats([
+					sample(50, false, Str.repeat(32)("c"), "Expected 2xx, got 503"),
+					sample(30, true, Str.repeat(32)("a"), null),
+					sample(10, false, Str.repeat(32)("b"), "Upstream timed out"),
+				]),
+			),
+			themeResolved(),
+			click(within(checks, role("button", { name: "Failed" }))),
+			expectView(within(checks, text("Upstream timed out"))).toExist(),
+			expectView(within(checks, text("Expected 2xx, got 503"))).toExist(),
+			expectView(within(checks, selector(`a[href="${traceHref(Str.repeat(32)("b"))}"]`))).toExist(),
+			expectView(within(checks, selector(`a[href="${traceHref(Str.repeat(32)("a"))}"]`))).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(stats([sample(30, true, Str.repeat(32)("a"), null)])),
+			themeResolved(),
+			click(within(checks, role("button", { name: "Failed" }))),
+			expectView(within(checks, text("No failed checks in the last 24 hours"))).toExist(),
+		)
+	})
+
 	test("hovering a timed check lists where its time went", () => {
 		const model = opened(httpMonitor())
 		const timed = {
@@ -255,6 +317,7 @@ describe("uptime monitor page", () => {
 			durationMs: 66,
 			ok: true,
 			statusCode: 200,
+			error: null,
 			traceId: Str.repeat(32)("c"),
 			phases: { dnsMs: 1.2, connectMs: 9, tlsMs: 16, ttfbMs: 40, transferMs: 0 },
 		}
@@ -331,6 +394,7 @@ describe("uptime monitor page", () => {
 			durationMs: 120,
 			ok: true,
 			statusCode: 200,
+			error: null,
 			traceId: Str.padStart(32, "a")(`${index}`),
 			phases: null,
 		}))
@@ -339,6 +403,7 @@ describe("uptime monitor page", () => {
 			durationMs: 10_000,
 			ok: false,
 			statusCode: null,
+			error: "Connection refused",
 			traceId: Str.repeat(32)("f"),
 			phases: null,
 		}

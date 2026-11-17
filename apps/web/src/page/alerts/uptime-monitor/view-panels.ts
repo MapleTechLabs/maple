@@ -1009,12 +1009,67 @@ const checkRows = (monitor: UptimeMonitor): ReadonlyArray<CheckRow> => {
 
 const CHECK_GRID = "grid grid-cols-[90px_64px_90px_minmax(0,1fr)_80px] items-center gap-3"
 
-export const checksPanel = (h: H, monitor: UptimeMonitor, timeZone: string): Html => {
-	const rows = checkRows(monitor)
-	return panel(h, {}, [
-		panelHeader(h, {
-			title: "Checks",
-			action: h.a(
+/** Most failed checks the table lists, newest first. */
+const FAILED_ROWS = 100
+
+/** The window's failed checks, newest first, from their spans. */
+const failedRows = (stats: CheckStats): ReadonlyArray<CheckRow> =>
+	Arr.map(
+		Arr.filter(stats.samples, (sample) => !sample.ok)
+			.reverse()
+			.slice(0, FAILED_ROWS),
+		(sample): CheckRow => ({
+			at: sample.at,
+			ok: false,
+			statusCode: sample.statusCode,
+			durationMs: sample.durationMs,
+			result: sample.error ?? "",
+			traceId: sample.traceId,
+		}),
+	)
+
+const CHECKS_FILTERS = [
+	{ value: "all", label: "All" },
+	{ value: "failed", label: "Failed" },
+] as const
+
+type ChecksBody = Readonly<{ rows: ReadonlyArray<CheckRow> }> | Readonly<{ message: string }>
+
+const checksBody = (model: Model, monitor: UptimeMonitor): ChecksBody => {
+	if (model.checksFilter === "all") {
+		const rows = checkRows(monitor)
+		return rows.length === 0 ? { message: "No checks yet" } : { rows }
+	}
+	const data = model.stats.data
+	if (AsyncData.isFailure(data)) return { message: "The failed checks couldn't load." }
+	return Option.match(statsOf(model), {
+		onNone: () => ({ message: "Loading failed checks…" }),
+		onSome: (stats): ChecksBody => {
+			if (stats.samplesFailed) return { message: "The failed checks couldn't load." }
+			const rows = failedRows(stats)
+			return rows.length === 0
+				? { message: `No failed checks in the ${WINDOW_LABEL[stats.window]}` }
+				: { rows }
+		},
+	})
+}
+
+export const checksPanel = (h: H, model: Model, monitor: UptimeMonitor, timeZone: string): Html => {
+	const body = checksBody(model, monitor)
+	// Heartbeats record no check spans, so only the recent pings list.
+	const filter =
+		monitor.kind === "heartbeat"
+			? []
+			: [
+					segmentedSelect(h, {
+						ariaLabel: "Show checks",
+						size: "xs",
+						value: model.checksFilter,
+						onChange: (filter) => Message.PickedChecksFilter({ filter }),
+						options: CHECKS_FILTERS,
+					}),
+				]
+	const tracesLink = h.a(
 				[
 					h.Href(uptimeTracesHref()),
 					h.Title(
@@ -1029,7 +1084,11 @@ export const checksPanel = (h: H, monitor: UptimeMonitor, timeZone: string): Htm
 					),
 				],
 				["View all checks in Traces"],
-			),
+			)
+	return panel(h, { attributes: [h.AriaLabel("Checks")] }, [
+		panelHeader(h, {
+			title: "Checks",
+			action: hstack(h, { gap: "3", align: "center" }, [tracesLink, ...filter]),
 		}),
 		h.div(
 			[h.Class(cn(CHECK_GRID, "border-y px-4 py-2"))],
@@ -1041,12 +1100,12 @@ export const checksPanel = (h: H, monitor: UptimeMonitor, timeZone: string): Htm
 				eyebrow(h, { className: "text-right" }, ["Trace"]),
 			],
 		),
-		rows.length === 0
-			? emptyMessage(h, {}, ["No checks yet"])
+		"message" in body
+			? emptyMessage(h, {}, [body.message])
 			: dividedList(
 					h,
 					{ as: "ul", bordered: false },
-					Arr.map(rows, (row, index) =>
+					Arr.map(body.rows, (row, index) =>
 						h.li(
 							[h.Key(`${row.at}-${index}`), h.Class(cn(CHECK_GRID, "px-4 py-2 text-sm"))],
 							[

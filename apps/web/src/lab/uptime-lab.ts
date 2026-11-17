@@ -76,6 +76,7 @@ const sampleAt = (atMs: number, index: number): CheckSample => {
 		durationMs: failed ? 2_400 : total + 1,
 		ok: !failed,
 		statusCode: failed ? null : 200,
+		error: failed ? "connect ECONNREFUSED" : null,
 		traceId: `lab-${index}`,
 		phases: failed ? null : phases,
 	}
@@ -193,6 +194,7 @@ export const init = (_flags: Flags): Return => ({
 		isChecking: false,
 		copies: {},
 		window: "24h",
+		checksFilter: "all",
 		stats: { key: null, data: AsyncData.Success({ data: fixtureStats("24h") }) },
 		hoveredCheck: null,
 		chart: Chart.init(),
