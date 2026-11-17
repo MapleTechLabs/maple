@@ -416,20 +416,28 @@ export interface PromqlPushdownOpts extends Omit<PromqlSelectorOpts, "needsValue
 	readonly limit: number
 }
 
-const linkedQuery = (opts: PromqlPushdownOpts) =>
+/**
+ * A series' label sources ride on its first bucket only (empty elsewhere), so the fan-out below
+ * copies them once per step of that bucket instead of once per (bucket, step).
+ */
+const linkedQuery = (opts: PromqlPushdownOpts, groups: PromqlPushdownGroups) =>
 	fromQuery(bucketQuery({ ...opts, needsValues: false, limit: opts.limit }), "buckets").select(($) => {
 		const prev = CH.windowSpec({
 			partitionBy: [$.sk],
 			orderBy: [[$.end, "asc"]],
 			frame: CH.rowsBetween(CH.preceding(1), CH.currentRow),
 		})
+		const later = sql.cond`${CH.over(CH.count(), prev)} = 2`
+		const emptied = (map: CH.Expr<Record<string, string>>) =>
+			sql(stringMap)`if(${later}, mapFilter((_k, _v) -> 0, ${map}), ${map})`
 		return {
 			sk: $.sk,
-			MetricName: $.MetricName,
-			ServiceName: $.ServiceName,
-			Attributes: $.Attributes,
-			ResourceAttributes: $.ResourceAttributes,
+			MetricName: sql(T.string)`if(${later}, '', ${$.MetricName})`,
+			ServiceName: sql(T.string)`if(${later}, '', ${$.ServiceName})`,
+			Attributes: emptied($.Attributes),
+			ResourceAttributes: emptied($.ResourceAttributes),
 			le: $.le,
+			groups: groups($),
 			k: sql(T.int64)`intDiv(${$.end} - ${param.int("originMs")}, ${opts.widthMs})`,
 			pk: sql(
 				T.int64,
@@ -455,8 +463,8 @@ const linkedQuery = (opts: PromqlPushdownOpts) =>
 	})
 
 /** Each bucket once per step whose window holds it, with whether its predecessor is in that window too. */
-const expandedQuery = (opts: PromqlPushdownOpts) =>
-	fromQuery(linkedQuery(opts), "linked").select(($) => {
+const expandedQuery = (opts: PromqlPushdownOpts, groups: PromqlPushdownGroups) =>
+	fromQuery(linkedQuery(opts, groups), "linked").select(($) => {
 		const s = opts.stepBuckets
 		const m = opts.rangeBuckets
 		const j = sql(
@@ -469,6 +477,7 @@ const expandedQuery = (opts: PromqlPushdownOpts) =>
 			Attributes: $.Attributes,
 			ResourceAttributes: $.ResourceAttributes,
 			le: $.le,
+			groups: $.groups,
 			k: $.k,
 			j,
 			// The pair (predecessor's last sample, this bucket's first) is in the window of step j.
@@ -493,8 +502,8 @@ const expandedQuery = (opts: PromqlPushdownOpts) =>
 	})
 
 /** The window of every (series, step), recombined from its buckets. */
-const windowQuery = (opts: PromqlPushdownOpts) =>
-	fromQuery(expandedQuery(opts), "expanded")
+const windowQuery = (opts: PromqlPushdownOpts, groups: PromqlPushdownGroups) =>
+	fromQuery(expandedQuery(opts, groups), "expanded")
 		.select(($) => {
 			const crossIncrease = sql(
 				T.float64,
@@ -502,11 +511,13 @@ const windowQuery = (opts: PromqlPushdownOpts) =>
 			return {
 				sk: $.sk,
 				j: $.j,
-				MetricName: CH.any_($.MetricName),
-				ServiceName: CH.any_($.ServiceName),
-				Attributes: CH.any_($.Attributes),
-				ResourceAttributes: CH.any_($.ResourceAttributes),
+				// The window's earliest bucket: the series' first (with the labels) when it holds it.
+				MetricName: CH.argMin($.MetricName, $.k),
+				ServiceName: CH.argMin($.ServiceName, $.k),
+				Attributes: CH.argMin($.Attributes, $.k),
+				ResourceAttributes: CH.argMin($.ResourceAttributes, $.k),
 				le: CH.any_($.le),
+				groups: CH.any_($.groups),
 				n: sql(T.float64)`sum(${$.count})`,
 				firstT: CH.argMin($.firstT, $.k),
 				firstV: CH.argMin($.firstV, $.k),
@@ -627,8 +638,8 @@ const windowValue = (opts: PromqlPushdownOpts, $: WindowRow) => {
 	}
 }
 
-const valuedQuery = (opts: PromqlPushdownOpts) =>
-	fromQuery(windowQuery(opts), "windows").select(($) => {
+const valuedQuery = (opts: PromqlPushdownOpts, groups: PromqlPushdownGroups) =>
+	fromQuery(windowQuery(opts, groups), "windows").select(($) => {
 		const { value, valid } = windowValue(opts, $)
 		return {
 			sk: $.sk,
@@ -638,27 +649,33 @@ const valuedQuery = (opts: PromqlPushdownOpts) =>
 			Attributes: $.Attributes,
 			ResourceAttributes: $.ResourceAttributes,
 			le: $.le,
+			groups: $.groups,
 			value: sql(T.float64)`toFloat64(${value})`,
 			valid: sql(T.uint8)`${valid}`,
 		}
 	})
 
-/** One row per series: its labels' sources and the steps that have a value. */
+/** Per-row group label values, in `by` order; empty for the per-series query. */
+type PromqlPushdownGroups = ($: PromqlLabelColumns) => CH.Expr<ReadonlyArray<string>>
+
+const noGroups: PromqlPushdownGroups = () => sql(T.array(T.string))`emptyArrayString()`
+
+/** One row per series: its labels' sources (from its earliest window) and the steps that have a value. */
 const pushdownSeriesQuery = (opts: PromqlPushdownOpts) =>
-	fromQuery(valuedQuery(opts), "valued")
+	fromQuery(valuedQuery(opts, noGroups), "valued")
 		.select(($) => ({
 			series: sql(T.string)`toString(${$.sk})`,
-			metricName: CH.any_($.MetricName),
-			serviceName: CH.any_($.ServiceName),
-			attributes: CH.any_($.Attributes),
-			resourceAttributes: CH.any_($.ResourceAttributes),
+			metricName: CH.argMin($.MetricName, $.j),
+			serviceName: CH.argMin($.ServiceName, $.j),
+			attributes: CH.argMin($.Attributes, $.j),
+			resourceAttributes: CH.argMin($.ResourceAttributes, $.j),
 			le: sql(T.string)`toString(any(${$.le}))`,
 			groups: sql(T.array(T.string))`emptyArrayString()`,
-			steps: sql(T.array(T.float64))`groupArray(toFloat64(${$.j}))`,
-			values: sql(T.array(T.float64))`groupArray(${$.value})`,
+			steps: sql(T.array(T.float64))`groupArrayIf(toFloat64(${$.j}), ${$.valid} = 1)`,
+			values: sql(T.array(T.float64))`groupArrayIf(${$.value}, ${$.valid} = 1)`,
 		}))
-		.where(($) => [$.valid.eq(1)])
 		.groupBy("series")
+		.having(($) => [sql.cond`countIf(${$.valid} = 1) > 0`])
 		.limit(opts.limit)
 		.format("JSON")
 
@@ -688,19 +705,19 @@ const aggregate = (op: PromqlPushdownAggregation["op"], value: CH.Expr<number>) 
 
 /** One row per group: the group's label values (in `by` order) and its value per step. */
 const pushdownGroupQuery = (opts: PromqlPushdownOpts, aggregation: PromqlPushdownAggregation) => {
-	const perStep = fromQuery(valuedQuery(opts), "valued")
-		.select(($) => {
-			const labels = aggregation.labels($)
-			return {
-				j: $.j,
-				groups:
-					labels.length === 0
-						? sql(T.array(T.string))`emptyArrayString()`
-						: sql(T.array(T.string))`[${sql.join(labels, ", ")}]`,
-				gle: aggregation.byLe ? $.le : sql(T.float64)`0`,
-				value: aggregate(aggregation.op, $.value),
-			}
-		})
+	const groups: PromqlPushdownGroups = ($) => {
+		const labels = aggregation.labels($)
+		return labels.length === 0
+			? sql(T.array(T.string))`emptyArrayString()`
+			: sql(T.array(T.string))`[${sql.join(labels, ", ")}]`
+	}
+	const perStep = fromQuery(valuedQuery(opts, groups), "valued")
+		.select(($) => ({
+			j: $.j,
+			groups: $.groups,
+			gle: aggregation.byLe ? $.le : sql(T.float64)`0`,
+			value: aggregate(aggregation.op, $.value),
+		}))
 		.where(($) => [$.valid.eq(1)])
 		.groupBy("j", "groups", "gle")
 	return fromQuery(perStep, "per_step")
