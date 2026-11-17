@@ -194,12 +194,12 @@ export const V2StatusPage = Schema.Struct({
 	slug: slugField,
 	description: Schema.NullOr(Schema.String).annotate({ description: "Text under the title, or `null`." }),
 	website_url: Schema.NullOr(Schema.String).annotate({ description: "Your site, linked from the page." }),
-	logo_url: Schema.NullOr(Schema.String).annotate({ description: "An https logo URL, or `null`." }),
+	logo_url: Schema.NullOr(Schema.String).annotate({ description: "An https logo URL or an uploaded image as a base64 `data:image/...` URL (at most 128 KB), or `null`." }),
 	logo_dark_url: Schema.NullOr(Schema.String).annotate({
-		description: "An https logo URL shown in dark mode instead of `logo_url`, or `null`.",
+		description: "A logo shown in dark mode instead of `logo_url`, as `logo_url` takes it, or `null`.",
 	}),
 	favicon_url: Schema.NullOr(Schema.String).annotate({
-		description: "An https URL of the page's browser tab icon, or `null`.",
+		description: "The page's browser tab icon, as `logo_url` takes it, or `null`.",
 	}),
 	support_url: Schema.NullOr(Schema.String).annotate({
 		description: "An https link to your support or contact page, shown in the page header, or `null`.",

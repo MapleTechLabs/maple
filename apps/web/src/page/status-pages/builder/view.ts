@@ -304,7 +304,9 @@ const lookSection = (h: H, model: Model): Html =>
 		{
 			id: "status-page-builder-look",
 			title: "Look",
-			description: ["Logo, colors, fonts and links later, in Settings."],
+			description: [
+				"Pick a theme to start from. Its colors, corners and font can all be changed later on the Appearance tab, along with your logo.",
+			],
 		},
 		[
 			vstack(h, { gap: "4" }, [

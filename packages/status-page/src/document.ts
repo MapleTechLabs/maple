@@ -1,6 +1,6 @@
 import type { StatusPagePublicSnapshot } from "@maple/domain/status-page"
 import { escapeHtml } from "@maple/strings"
-import { safeUrl } from "./escape"
+import { safeImageUrl, safeUrl } from "./escape"
 import { baseStyles, presetStyles } from "./styles"
 import { resolveSafeTheme, safeTheme } from "./theme"
 import { Option, Array as Arr, String as Str } from "effect"
@@ -55,8 +55,8 @@ const renderLogo = (
 	snapshot: StatusPagePublicSnapshot,
 	name: string,
 ): { readonly html: string; readonly field: PreviewField } | null => {
-	const light = safeUrl(snapshot.page.logoUrl, ["https:"])
-	const dark = safeUrl(snapshot.page.logoDarkUrl, ["https:"])
+	const light = safeImageUrl(snapshot.page.logoUrl)
+	const dark = safeImageUrl(snapshot.page.logoDarkUrl)
 	const appearance = safeTheme(snapshot.page.theme).appearance
 	const img = (src: string) => `<img src="${escapeHtml(src)}" alt="${name}">`
 	if (light === null) return dark === null ? null : { html: img(dark), field: "logoDarkUrl" }
@@ -115,7 +115,7 @@ export const renderDocument = (input: {
 	const nonce = nonceAttr(input.options)
 	const description = input.description ?? input.snapshot.page.description
 	const theme = safeTheme(input.snapshot.page.theme)
-	const favicon = safeUrl(input.snapshot.page.faviconUrl, ["https:"])
+	const favicon = safeImageUrl(input.snapshot.page.faviconUrl)
 	return Arr.join(
 		[
 			`<!doctype html><html lang="en"><head><meta charset="utf-8">`,

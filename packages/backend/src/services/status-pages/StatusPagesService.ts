@@ -63,7 +63,9 @@ import {
 	sha256Base64Url,
 	themeContrastIssue,
 	STATUS_PAGE_MAX_URL_LENGTH,
+	STATUS_PAGE_MAX_IMAGE_BYTES,
 	STATUS_PAGE_UPDATE_MAX_LENGTH,
+	isStatusPageImageDataUrl,
 } from "@maple/domain/status-page"
 import {
 	hashStatusPagePassword,
@@ -370,6 +372,20 @@ const validateHttpsUrl = (raw: string | null, what: string) => {
 		return Effect.fail(invalid(`${what} must be a valid URL`))
 	if (new URL(value).protocol !== "https:") return Effect.fail(invalid(`${what} must use https`))
 	return Effect.succeed(value)
+}
+
+/** An https URL, or an uploaded image (a base64 `data:` image URL within the size cap). */
+const validateImage = (raw: string | null, what: string) => {
+	const value = raw === null ? "" : Str.trim(raw)
+	if (Str.startsWith("data:")(value))
+		return isStatusPageImageDataUrl(value)
+			? Effect.succeed(value)
+			: Effect.fail(
+					invalid(
+						`${what} must be a PNG, JPEG, WebP, GIF, SVG or ICO image of at most ${STATUS_PAGE_MAX_IMAGE_BYTES / 1024} KB`,
+					),
+				)
+	return validateHttpsUrl(raw, what)
 }
 
 /** Blank is no colour; anything else must be `#rrggbb`, stored lower-cased. */
@@ -871,9 +887,9 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				const slug = yield* validateSlug(input.slug)
 				const description = yield* validateText(input.description ?? null, "Description")
 				const websiteUrl = yield* validateHttpsUrl(input.websiteUrl ?? null, "Website URL")
-				const logoUrl = yield* validateHttpsUrl(input.logoUrl ?? null, "Logo URL")
-				const logoDarkUrl = yield* validateHttpsUrl(input.logoDarkUrl ?? null, "Dark mode logo URL")
-				const faviconUrl = yield* validateHttpsUrl(input.faviconUrl ?? null, "Favicon URL")
+				const logoUrl = yield* validateImage(input.logoUrl ?? null, "Logo URL")
+				const logoDarkUrl = yield* validateImage(input.logoDarkUrl ?? null, "Dark mode logo URL")
+				const faviconUrl = yield* validateImage(input.faviconUrl ?? null, "Favicon URL")
 				const supportUrl = yield* validateHttpsUrl(input.supportUrl ?? null, "Support URL")
 				const privacyUrl = yield* validateHttpsUrl(input.privacyUrl ?? null, "Privacy policy URL")
 				const termsUrl = yield* validateHttpsUrl(input.termsUrl ?? null, "Terms of service URL")
@@ -966,15 +982,15 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				const logoUrl =
 					patch.logoUrl === undefined
 						? undefined
-						: yield* validateHttpsUrl(patch.logoUrl, "Logo URL")
+						: yield* validateImage(patch.logoUrl, "Logo URL")
 				const logoDarkUrl =
 					patch.logoDarkUrl === undefined
 						? undefined
-						: yield* validateHttpsUrl(patch.logoDarkUrl, "Dark mode logo URL")
+						: yield* validateImage(patch.logoDarkUrl, "Dark mode logo URL")
 				const faviconUrl =
 					patch.faviconUrl === undefined
 						? undefined
-						: yield* validateHttpsUrl(patch.faviconUrl, "Favicon URL")
+						: yield* validateImage(patch.faviconUrl, "Favicon URL")
 				const supportUrl =
 					patch.supportUrl === undefined
 						? undefined
@@ -1729,9 +1745,9 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				const slug = yield* validateSlug(input.slug)
 				const description = yield* validateText(input.description, "Description")
 				const websiteUrl = yield* validateHttpsUrl(input.website_url, "Website URL")
-				const logoUrl = yield* validateHttpsUrl(input.logo_url, "Logo URL")
-				const logoDarkUrl = yield* validateHttpsUrl(input.logo_dark_url, "Dark mode logo URL")
-				const faviconUrl = yield* validateHttpsUrl(input.favicon_url, "Favicon URL")
+				const logoUrl = yield* validateImage(input.logo_url, "Logo URL")
+				const logoDarkUrl = yield* validateImage(input.logo_dark_url, "Dark mode logo URL")
+				const faviconUrl = yield* validateImage(input.favicon_url, "Favicon URL")
 				const supportUrl = yield* validateHttpsUrl(input.support_url, "Support URL")
 				const privacyUrl = yield* validateHttpsUrl(input.privacy_url, "Privacy policy URL")
 				const termsUrl = yield* validateHttpsUrl(input.terms_url, "Terms of service URL")

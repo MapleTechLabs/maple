@@ -1,12 +1,14 @@
 import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { StatusPagePublicId, type V2StatusPageCustomDomain } from "@maple/domain/http/v2"
-import { Effect, Option, Result, Schema, Array as Arr } from "effect"
+import { DEFAULT_STATUS_PAGE_THEME } from "@maple/domain/status-page"
+import { Effect, Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import type { PageContext } from "../../page/contract"
 import { NOW, ORG } from "../../page/kit/alert-test-rows"
+import { PickBrandingImage, ReadBrandingImage } from "../../page/status-pages/editor/command"
 import { Message as EditorMessage } from "../../page/status-pages/editor/message"
 import { Model as EditorModel } from "../../page/status-pages/editor/model"
 import { init as editorInit, update as editorUpdate } from "../../page/status-pages/editor/update"
@@ -14,12 +16,25 @@ import { view as editorView } from "../../page/status-pages/editor/view"
 import { component, statusPage } from "../../page/status-pages/shared/test-pages"
 import type { Resources } from "../../platform/resources"
 import { keepLocal } from "../local-commands"
+import { LAB_FAVICON, LAB_LOGO, LAB_LOGO_DARK } from "../status-pages-fixture"
 import { defineShellLab } from "../shell-lab"
 
-// `/lab/status-page-settings`: the status page editor's Settings > Basic settings over a fixture page, with
-// Who can view under the custom domain. `?state=` picks one.
+// `/lab/status-page-settings`: the status page editor over a fixture page: Settings > Basic settings,
+// with Who can view under the custom domain, or the Appearance tab (`appearance*` states). `?state=` picks one.
 
-const LabState = Schema.Literals(["public", "password", "set-password", "internal", "member"])
+const LabState = Schema.Literals([
+	"public",
+	"password",
+	"set-password",
+	"internal",
+	"member",
+	/** Uploaded logo, dark logo and favicon; the theme in Auto, so only the accent has a picker. */
+	"appearance",
+	/** Forced dark with colour overrides: every colour has a picker. */
+	"appearance-dark",
+	/** No branding yet: empty upload targets. */
+	"appearance-empty",
+])
 type LabState = typeof LabState.Type
 
 const Flags = Schema.Struct({ state: LabState })
@@ -36,9 +51,28 @@ type Return = Update.Return<Model, Message, Resources>
 const CONTEXT: PageContext = { orgId: Schema.decodeSync(OrgId)(ORG), pinnedNamespace: null, timeZone: "UTC" }
 const M = EditorMessage
 
+const UPLOADED = { logo_url: LAB_LOGO, logo_dark_url: LAB_LOGO_DARK, favicon_url: LAB_FAVICON }
+
+const isAppearance = (state: LabState): boolean => Str.startsWith("appearance")(state)
+
 const pageFor = (state: LabState) =>
 	statusPage(
-		state === "password"
+		state === "appearance"
+			? UPLOADED
+			: state === "appearance-dark"
+				? {
+						...UPLOADED,
+						theme: {
+							...DEFAULT_STATUS_PAGE_THEME,
+							preset: "midnight",
+							appearance: "dark",
+							accent: "#a78bfa",
+							card: "#1e1b2e",
+						},
+					}
+				: state === "appearance-empty"
+					? {}
+					: state === "password"
 			? { visibility: "password", has_password: true }
 			: state === "internal"
 				? { name: "Ops board", slug: "acme-ops", visibility: "internal" }
@@ -65,7 +99,7 @@ const editorFor = (state: LabState): EditorModel => {
 		{
 			_tag: "StatusPage",
 			pageId: Schema.encodeSync(StatusPagePublicId)(page.id),
-			search: { view: "settings", section: "basic" },
+			search: { view: "settings", section: isAppearance(state) ? "appearance" : "basic" },
 		},
 		CONTEXT,
 	).model
@@ -96,13 +130,21 @@ const editorFor = (state: LabState): EditorModel => {
 
 const init = (flags: Flags): Return => ({ model: { state: flags.state, editor: editorFor(flags.state) } })
 
+const BRANDING_COMMANDS: ReadonlySet<string> = new Set([PickBrandingImage.name, ReadBrandingImage.name])
+
 const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		GotEditorMessage: ({ message: child }) => {
 			const next = editorUpdate(model.editor, child, CONTEXT)
 			return {
 				model: { ...model, editor: next.model },
-				commands: Command.mapMessages(keepLocal(next.commands), (inner) =>
+				commands: Command.mapMessages(
+					[
+						...keepLocal(next.commands),
+						// Picking and reading an upload stay in the browser: try a real file.
+						...Arr.filter(next.commands ?? [], (command) => BRANDING_COMMANDS.has(command.name)),
+					],
+					(inner) =>
 					Message.GotEditorMessage({ message: inner }),
 				),
 			}
