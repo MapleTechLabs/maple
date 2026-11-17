@@ -42,13 +42,20 @@ export const STATUS_PAGE_IMAGE_TYPES = [
 	"image/vnd.microsoft.icon",
 ] as const
 const IMAGE_DATA_URL_PATTERN =
-	/^data:image\/(?:png|jpeg|webp|gif|svg\+xml|x-icon|vnd\.microsoft\.icon);base64,[A-Za-z0-9+/]+={0,2}$/u
-/** Base64 of the largest upload, plus room for the `data:<type>;base64,` prefix. */
+	/^data:image\/(?:png|jpeg|webp|gif|svg\+xml|x-icon|vnd\.microsoft\.icon);base64,((?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?)$/u
+/** Base64 of the largest upload, plus room for the longest `data:<type>;base64,` prefix: a cheap first cut. */
 const MAX_IMAGE_DATA_URL_LENGTH = Math.ceil(STATUS_PAGE_MAX_IMAGE_BYTES / 3) * 4 + 64
 
-/** An uploaded image: a base64 `data:` URL of an allowed image type, within the size cap. */
-export const isStatusPageImageDataUrl = (value: string): boolean =>
-	value.length <= MAX_IMAGE_DATA_URL_LENGTH && IMAGE_DATA_URL_PATTERN.test(value)
+/** Bytes a base64 payload decodes to: three per four characters, less one per `=`. */
+const decodedBytes = (base64: string): number =>
+	(base64.length / 4) * 3 - (Str.endsWith("==")(base64) ? 2 : Str.endsWith("=")(base64) ? 1 : 0)
+
+/** An uploaded image: a base64 `data:` URL of an allowed image type, at most the size cap decoded. */
+export const isStatusPageImageDataUrl = (value: string): boolean => {
+	if (value.length > MAX_IMAGE_DATA_URL_LENGTH) return false
+	const payload = IMAGE_DATA_URL_PATTERN.exec(value)?.[1]
+	return payload !== undefined && payload.length > 0 && decodedBytes(payload) <= STATUS_PAGE_MAX_IMAGE_BYTES
+}
 
 /** A logo or favicon value the page may render: an https URL or an uploaded image. */
 export const isStatusPageImageSource = (value: string): boolean =>
