@@ -78,6 +78,27 @@ export const AuditResources = {
 	device_credential: { prefix: PublicIdPrefixes.deviceCredential, verbs: ["registered", "revoked"] },
 	/** Verbs mirror the issue event types: `recordEvent` audits every one it attributes. */
 	error_issue: { prefix: PublicIdPrefixes.errorIssue, verbs: ErrorIssueEventType.literals },
+	/** Org-singleton SSO and SCIM setup; secrets (OIDC client secret, SCIM token) are never in `changes`. */
+	enterprise_sso: {
+		verbs: [
+			"domain_added",
+			"domain_verified",
+			"domain_removed",
+			"connection_created",
+			"connection_updated",
+			"connection_enforced",
+			"connection_relaxed",
+			"connection_deleted",
+			"directory_created",
+			"directory_key_rotated",
+			"directory_paused",
+			"directory_resumed",
+			"directory_deleted",
+			"role_mapping_updated",
+			"bypass_added",
+			"bypass_removed",
+		],
+	},
 	escalation_chain: {
 		prefix: PublicIdPrefixes.escalationChain,
 		verbs: ["created", "updated", "deleted"],
@@ -232,6 +253,7 @@ export const AuditResourceLabels = {
 	ai_provider_key: "AI provider key",
 	alert_destination: "Alert destination",
 	alert_rule: "Alert rule",
+	enterprise_sso: "SSO and SCIM",
 	escalation_chain: "Escalation chain",
 	oncall_schedule: "On-call schedule",
 	oncall_override: "On-call override",
@@ -253,7 +275,7 @@ export const AuditResourceLabels = {
 	aws_connection: "AWS connection",
 	ingest_key: "Ingest key",
 	mcp_connection: "MCP connection",
-	mcp_tool: "MCP tool",
+	mcp_tool: "Tool",
 	investigation: "Investigation",
 	onboarding_reward: "Onboarding reward",
 	planetscale_integration: "PlanetScale integration",
@@ -293,6 +315,22 @@ export const AuditActionLabels = {
 	"alert_rule.created": "Created alert rule",
 	"alert_rule.updated": "Updated alert rule",
 	"alert_rule.deleted": "Deleted alert rule",
+	"enterprise_sso.domain_added": "Added SSO domain",
+	"enterprise_sso.domain_verified": "Verified SSO domain",
+	"enterprise_sso.domain_removed": "Removed SSO domain",
+	"enterprise_sso.connection_created": "Connected identity provider",
+	"enterprise_sso.connection_updated": "Updated identity provider",
+	"enterprise_sso.connection_enforced": "Enforced SSO",
+	"enterprise_sso.connection_relaxed": "Stopped enforcing SSO",
+	"enterprise_sso.connection_deleted": "Removed identity provider",
+	"enterprise_sso.directory_created": "Set up SCIM provisioning",
+	"enterprise_sso.directory_key_rotated": "Rotated SCIM token",
+	"enterprise_sso.directory_paused": "Paused SCIM provisioning",
+	"enterprise_sso.directory_resumed": "Resumed SCIM provisioning",
+	"enterprise_sso.directory_deleted": "Removed SCIM provisioning",
+	"enterprise_sso.role_mapping_updated": "Updated SCIM role mapping",
+	"enterprise_sso.bypass_added": "Added SSO bypass user",
+	"enterprise_sso.bypass_removed": "Removed SSO bypass user",
 	"escalation_chain.created": "Created escalation chain",
 	"escalation_chain.updated": "Updated escalation chain",
 	"escalation_chain.deleted": "Deleted escalation chain",
@@ -377,7 +415,7 @@ export const AuditActionLabels = {
 	"source.rolled": "Rolled source token",
 	"source.deleted": "Deleted source",
 	"mcp_connection.revoked": "Revoked MCP connection",
-	"mcp_tool.called": "Called MCP tool",
+	"mcp_tool.called": "Called tool",
 	"investigation.created": "Started investigation",
 	"investigation.restarted": "Restarted investigation",
 	"investigation.status_changed": "Changed investigation status",
@@ -474,3 +512,53 @@ export const auditActionLabel = (action: string): string | null =>
 /** Label for a `resource_type` read off a row; null for one this build does not know. */
 export const auditResourceLabel = (type: string): string | null =>
 	isAuditResourceType(type) ? AuditResourceLabels[type] : null
+
+/**
+ * Who called a tool, as the `mcp_tool` Resource column names it. A public MCP call is the
+ * customer's own client; every other surface is one of Maple's agents using the same tools.
+ */
+const MAPLE_AGENT_LABELS = new Map<string, string>([
+	["default", "Maple chat"],
+	["investigate", "Maple investigation"],
+	["pr-review", "Maple code review"],
+	["pr-reply", "Maple code review"],
+])
+
+/** "Maple code review" for a `ChatMode`; null for a value this build does not know. */
+export const mapleAgentLabel = (agent: string): string | null => MAPLE_AGENT_LABELS.get(agent) ?? null
+
+export const auditToolCallerLabel = (surface: string | null, agent: string | null): string => {
+	if (surface === null || surface === "mcp") return "MCP tool"
+	if (surface === "bot") return "Maple bot"
+	return (agent !== null ? mapleAgentLabel(agent) : null) ?? "Maple agent"
+}
+
+const SURFACE_LABELS = new Map<string, string>([
+	["mcp", "MCP client"],
+	["chat", "Maple agent"],
+	["bot", "Maple bot"],
+	["workflow", "Maple agent"],
+	["rpc", "Maple internal"],
+])
+
+const SQL_CONTEXT_LABELS = new Map<string, string>([
+	["mcp.run_sql", "run_sql tool"],
+	["rawSql", "Dashboard or SQL editor"],
+])
+
+/**
+ * A metadata value as the audit detail shows it: the internal codes Maple writes (`surface`,
+ * `agent`, a SQL `context`) in words, or null to show the value as recorded.
+ */
+export const auditMetadataValueLabel = (key: string, value: string): string | null => {
+	switch (key) {
+		case "surface":
+			return SURFACE_LABELS.get(value) ?? null
+		case "agent":
+			return mapleAgentLabel(value)
+		case "context":
+			return SQL_CONTEXT_LABELS.get(value) ?? null
+		default:
+			return null
+	}
+}

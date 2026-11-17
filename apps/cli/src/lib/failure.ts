@@ -173,6 +173,9 @@ const EXPECTED_TAGS = new Set([
 	"@maple/cli/CheckpointPreconditionError",
 ])
 
+/** Pipe names of the warehouse calls that run the user's own SQL (local and remote `maple query`). */
+const USER_SQL_PIPES: ReadonlySet<string> = new Set(["rawQuery", "rawSqlQuery"])
+
 const TIME_RANGE_HINT =
 	"use --since 30m, 6h or 7d, or --start/--end as 'YYYY-MM-DD HH:mm:ss' (UTC) or ISO-8601"
 
@@ -232,11 +235,15 @@ export const describeFailure = (error: unknown): FailureReport => {
 		const refusal =
 			tag === "@maple/http/errors/WarehouseClientError" &&
 			!(Predicate.hasProperty(error, "cause") && error.cause !== undefined)
+		// SQL the user typed into `maple query` that does not parse or resolve is their input to fix.
+		const userSql =
+			tag === "@maple/http/errors/WarehouseInvalidSqlError" &&
+			USER_SQL_PIPES.has(stringField(error, "pipeName") ?? "")
 		return {
 			tag,
 			message: cleanQueryMessage(messageOf(error)),
 			...(refusal ? undefined : { hint: DEBUG_HINT }),
-			expected: refusal,
+			expected: refusal || userSql,
 		}
 	}
 

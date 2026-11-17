@@ -117,6 +117,12 @@ export const statusReadsReady = (model: Model): boolean =>
 	AsyncData.hasData(model.monitors.data) &&
 	AsyncData.hasData(model.incidents.data)
 
+/** A statuses' read failed: a component's status cannot be told. */
+export const statusReadsFailed = (model: Model): boolean =>
+	AsyncData.hasError(model.components.data) ||
+	AsyncData.hasError(model.monitors.data) ||
+	AsyncData.hasError(model.incidents.data)
+
 export const toast = (type: "success" | "error", title: string, description = ""): PageOutMessage =>
 	PageOutMessage.RequestedToast({ type, title, description })
 

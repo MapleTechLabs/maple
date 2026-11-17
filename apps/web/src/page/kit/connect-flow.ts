@@ -273,16 +273,15 @@ export const flowRail = <M>(h: HtmlBuilder<M>, options: RailOptions): Html =>
 		],
 	)
 
-/** On Go live: the source exists, so leaving the page is safe. */
-export const savedBanner = <M>(h: HtmlBuilder<M>, text: string, meta?: string): Html =>
-	h.div(
-		[h.Class("flex items-center gap-3 rounded-md border border-border bg-card p-4 text-sm")],
-		[
-			icon(h, "ShieldCheckIcon", { size: 14, className: "shrink-0 text-severity-info" }),
-			h.span([h.Class("flex-1")], [text]),
-			...(meta === undefined ? [] : [h.span([h.Class("text-xs text-muted-foreground")], [meta])]),
-		],
-	)
+/** A switch card's header note: where its switches live once the flow is done. */
+export const CHANGE_LATER_NOTE = "Change later on the Connection tab"
+
+/** The rail's last item on every source: where its settings live once the flow is done. */
+export const connectionTabItem = (detail: string): RailItem => ({
+	icon: "GearIcon",
+	title: "Connection tab",
+	detail: `On the source page: ${detail}`,
+})
 
 export type CheckState = "done" | "working" | "waiting" | "failed"
 
@@ -313,11 +312,16 @@ const checklistSummary = (rows: ReadonlyArray<CheckRow>): string => {
 	return `${done} of ${rows.length} checks done${failed === 0 ? "" : `, ${failed} ${failed === 1 ? "needs" : "need"} attention`}.`
 }
 
-/** Go live's one checklist: access works, resources found, first data. */
-export const liveChecklist = <M>(
-	h: HtmlBuilder<M>,
-	options: Readonly<{ title?: string; meta?: Html | string; rows: ReadonlyArray<CheckRow> }>,
-): Html =>
+export type LiveChecklistOptions = Readonly<{
+	title?: string
+	meta?: Html | string
+	rows: ReadonlyArray<CheckRow>
+	/** The source exists, so leaving is safe: "Saved as a source. Safe to leave; sync keeps running." */
+	saved?: string
+}>
+
+/** Go live's one card: access works, resources found, first data, and that leaving is safe. */
+export const liveChecklist = <M>(h: HtmlBuilder<M>, options: LiveChecklistOptions): Html =>
 	h.section(
 		[
 			h.Class("flex flex-col rounded-md border border-border bg-card"),
@@ -388,6 +392,24 @@ export const liveChecklist = <M>(
 					),
 				),
 			),
+			...(options.saved === undefined
+				? []
+				: [
+						h.p(
+							[
+								h.Class(
+									"flex items-center gap-2 border-t border-border-subtle px-5 py-3 text-xs text-muted-foreground",
+								),
+							],
+							[
+								icon(h, "ShieldCheckIcon", {
+									size: 14,
+									className: "shrink-0 text-severity-info",
+								}),
+								options.saved,
+							],
+						),
+					]),
 		],
 	)
 

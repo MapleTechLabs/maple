@@ -86,6 +86,22 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/domains",
+		title: "Verified domains",
+		description:
+			"The settings domains tab as an admin: verified and unverified domains, none yet, and the add and verify dialogs (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/sso",
+		title: "SSO & SCIM",
+		description:
+			"The settings SSO & SCIM tab: no add-on, empty, a pending domain, connected over SAML or OIDC, SSO without the SCIM add-on, fully configured, the one-time token, the enforce confirm and a read-only member (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/members",
 		title: "Members",
 		description:
@@ -455,7 +471,15 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/service-runtimes",
 		title: "Service runtimes",
 		description:
-			"The service page for fleet-api, a Google Cloud Run service with no Kubernetes workloads, over one hour; ?tab=operations or ?tab=dependencies opens that tab.",
+			"The service page for fleet-api, a Google Cloud Run service with no Kubernetes workloads, over one hour, with a deploy that raised errors; ?tab=operations or ?tab=dependencies opens that tab, ?deploy=9b2f0d1e47c6a3b90f2d8e15c4a7b6d3e09f1c28 its deploy drawer.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/service-profiles",
+		title: "Service profiles",
+		description:
+			"The service page's Profiles tab over one hour of checkout-api: the flame chart and the top functions from 31 hand-written stacks; ?state=empty is a service that sent no profiles, ?state=failed a failed read.",
 		kind: "lab",
 		session: "none",
 	},
@@ -463,7 +487,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/service-map-runtimes",
 		title: "Service map runtimes",
 		description:
-			"The service map over a small fleet topology with fleet-api (Cloud Run) selected; ?tab=infrastructure opens the panel's Infrastructure tab.",
+			"The service map over a small fleet topology with fleet-api (Cloud Run) selected; ?tab=infrastructure opens the panel's Infrastructure tab, ?topology=namespaces shows two namespaces with their own and a shared database.",
 		kind: "lab",
 		session: "none",
 	},

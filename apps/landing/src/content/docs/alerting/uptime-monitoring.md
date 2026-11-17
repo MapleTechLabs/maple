@@ -1,21 +1,30 @@
 ---
 title: "Uptime monitoring"
-description: "Monitor availability in Maple: alert on traffic stopping and failing requests from your traces, run hosted HTTP, TCP and DNS checks, or add HTTP checks from your own OpenTelemetry Collector."
+description: "Monitor availability in Maple: hosted HTTP, TCP and DNS checks, heartbeats for cron jobs, alerts on traffic stopping or failing from your traces, and HTTP checks from your own OpenTelemetry Collector for private endpoints. Which one fits which failure, and how to set up the trace alerts and Collector checks."
 group: "Alerting"
 order: 5
 ---
 
-Maple monitors availability from three sources. Alert rules on your traces fire when a service stops receiving requests or starts failing them. Hosted uptime checks, under **Alerts → Uptime**, run HTTP, TCP and DNS checks from Maple every 30 seconds or more. [Heartbeat monitors](/docs/alerting/heartbeat-monitors), on the same page, watch cron jobs and scheduled workers that ping Maple when they finish. HTTP checks from an OpenTelemetry Collector you operate cover endpoints Maple cannot reach, such as ones inside a private network.
+Maple watches availability four ways. Each one catches failures the others miss, and most services use two of them.
 
-This page covers alerts on traces and Collector checks. For hosted checks, open **Alerts → Uptime** and click **New monitor** (**New uptime check** when there are none yet).
+| Monitor                                                               | What it does                                                                                   | Use it for                                                           |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| [Uptime checks](/docs/alerting/uptime-checks)                         | Maple sends an HTTP request, opens a TCP connection or resolves a DNS name every 30 s to 1 h   | Public sites, APIs, databases and DNS records, including idle ones   |
+| [Heartbeat monitors](/docs/alerting/heartbeat-monitors)               | Your job pings a URL when it finishes; Maple alerts when a ping is late or reports a failure   | Cron jobs, nightly exports, queue workers                            |
+| [Alerts on traces](#alert-on-real-traffic)                            | Alert rules on the requests your services already handle: traffic stops, errors rise, it slows | Services with steady traffic; failures only some users or routes hit |
+| [Collector HTTP checks](#check-private-endpoints-from-your-collector) | Your OpenTelemetry Collector requests URLs and sends the results as metrics                    | Endpoints inside a private network that Maple cannot reach           |
 
-> **Recommended reading first.** [Uptime monitoring with traces and HTTP checks](/guides/uptime-monitoring) is the background for this page: which failures a probe catches, which ones only traces see, and when a probe is worth adding. This page is the setup.
+A check tells you the endpoint answers from outside. Traces tell you what real users get, including a checkout that fails for one region or one route while the health endpoint stays green. A failed HTTP check from Maple opens as a trace too, so both end up in the same place.
+
+Hosted checks and heartbeats live under **Alerts → Uptime** and have their own pages. This page covers alerts on traces and Collector checks.
+
+> **Background.** [Uptime monitoring with checks and traces](/guides/uptime-monitoring) explains which failures a probe catches, which ones only traces see, and when to add one. This page is the setup.
 
 ## Prerequisites
 
 - Traces arriving from the services you want to watch.
 - At least one [notification destination](/docs/alerting/notification-destinations).
-- For HTTP checks: the [OpenTelemetry Collector Contrib](https://github.com/open-telemetry/opentelemetry-collector-releases/releases) distribution (`otelcol-contrib`) on a host outside the system it checks, and a private ingest key (`maple_sk_…`) from **Settings → Ingestion**.
+- For Collector checks: the [OpenTelemetry Collector Contrib](https://github.com/open-telemetry/opentelemetry-collector-releases/releases) distribution (`otelcol-contrib`) on a host outside the system it checks, and a private ingest key (`maple_sk_…`) from **Settings → Ingestion**.
 
 ## Alert on real traffic
 
@@ -37,11 +46,11 @@ This page covers alerts on traces and Collector checks. For hosted checks, open 
 
 Add the **High error rate** template for failing requests and **Low Apdex score** for slow ones. [Alert rules](/docs/alerting/alert-rules) describes every field.
 
-A throughput rule needs traffic to drop from. For a service that sits idle for hours, use an HTTP check.
+A throughput rule needs traffic to drop from. For a service that sits idle for hours, use an [uptime check](/docs/alerting/uptime-checks).
 
-## Add HTTP checks
+## Check private endpoints from your Collector
 
-The Collector's `http_check` receiver requests a list of URLs on an interval and reports each result as metrics. Save this as `config.yaml`:
+Maple's hosted checks only reach public addresses. For an endpoint inside a private network, run the checks from an OpenTelemetry Collector that can reach it. The Collector's `http_check` receiver requests a list of URLs on an interval and reports each result as metrics. Save this as `config.yaml`:
 
 ```yaml
 receivers:
@@ -92,7 +101,7 @@ Notes on the config:
 - **EU organizations** use `https://ingest.eu.maple.dev` as the endpoint.
 - **Run the Collector outside the system it checks.** On the same machine as the service, it goes down with it.
 
-## What the receiver reports
+### What the receiver reports
 
 | Metric                         | Value                                                                                                                                                  |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -103,7 +112,7 @@ Notes on the config:
 
 Every data point carries the checked address in `http.url`.
 
-## Alert when an endpoint stops answering
+### Alert when an endpoint stops answering
 
 1. Open **Metrics** and open `httpcheck.status`.
 2. Set **Aggregate** to `max`, **Where** to `attr.http.status_class = "2xx"`, and **Group by** to `attr.http.url`. Keep the `attr.` prefix on the filter, or it is dropped when the chart becomes a rule.
@@ -130,7 +139,7 @@ The rule reads: no check of this URL returned a 2xx in the last two minutes. It 
   <figcaption>The rule replayed over the last 30 minutes. It would have fired once, for the endpoint that returned 503.</figcaption>
 </figure>
 
-## Alert when the checks stop arriving
+### Alert when the checks stop arriving
 
 A grouped rule skips a window with no data, so a stopped Collector would go unnoticed. Create a second rule on `httpcheck.status` with no group-by:
 
@@ -138,7 +147,7 @@ A grouped rule skips a window with no data, so a stopped Collector would go unno
 - **Minimum samples** 1
 - **Alert when there is no data** switched on
 
-## Alert before a certificate expires
+### Alert before a certificate expires
 
 Create a rule on `httpcheck.tls.cert_remaining`:
 
@@ -146,15 +155,14 @@ Create a rule on `httpcheck.tls.cert_remaining`:
 - Condition **is below**, **Threshold** `1209600` (14 days in seconds)
 - **Minimum samples** 1
 
-## Verify
+### Verify the Collector checks
 
 Open **Metrics** and search for `httpcheck`. The metrics appear after the first check, emitted by the service `uptime-checks`. Open `httpcheck.status` and group by `attr.http.url` to see one series per target.
 
 ## Limits
 
-- One Collector probes from one place, through one DNS resolver. It cannot show that users in another region are cut off, and a network problem next to the Collector looks the same as an outage.
-
-For probes from several regions, or an availability report for customers, run a dedicated uptime product next to Maple.
+- One Collector probes from one place, through one DNS resolver. A network problem next to the Collector looks the same as an outage.
+- Collector checks are metrics, not monitors: they do not appear under **Alerts → Uptime** or on a [status page](/docs/alerting/status-pages). Use [uptime checks](/docs/alerting/uptime-checks) for public endpoints.
 
 ## Troubleshooting
 
@@ -168,4 +176,6 @@ For probes from several regions, or an availability report for customers, run a 
 - [Alert rules](/docs/alerting/alert-rules): every signal, field and template.
 - [Incidents](/docs/alerting/incidents): what happens after a rule fires.
 - [Metrics](/docs/explore/metrics): chart `httpcheck.duration` and the other check metrics.
-- [Uptime monitoring with traces and HTTP checks](/guides/uptime-monitoring): the reasoning behind this setup.
+- [Uptime checks](/docs/alerting/uptime-checks): hosted HTTP, TCP and DNS checks.
+- [Heartbeat monitors](/docs/alerting/heartbeat-monitors): cron jobs and workers.
+- [Uptime monitoring with checks and traces](/guides/uptime-monitoring): the reasoning behind this setup.

@@ -174,7 +174,9 @@ export const serviceUsageLogsMv = defineMaterializedView("service_usage_logs_mv"
           0 AS HistogramMetricCount,
           0 AS HistogramMetricSizeBytes,
           0 AS ExpHistogramMetricCount,
-          0 AS ExpHistogramMetricSizeBytes
+          0 AS ExpHistogramMetricSizeBytes,
+          0 AS ProfileRowCount,
+          0 AS ProfileSizeBytes
         FROM logs
         GROUP BY OrgId, ServiceName, Hour
       `,
@@ -204,7 +206,9 @@ export const serviceUsageTracesMv = defineMaterializedView("service_usage_traces
           0 AS HistogramMetricCount,
           0 AS HistogramMetricSizeBytes,
           0 AS ExpHistogramMetricCount,
-          0 AS ExpHistogramMetricSizeBytes
+          0 AS ExpHistogramMetricSizeBytes,
+          0 AS ProfileRowCount,
+          0 AS ProfileSizeBytes
         FROM traces
         GROUP BY OrgId, ServiceName, Hour
       `,
@@ -234,7 +238,9 @@ export const serviceUsageMetricsSumMv = defineMaterializedView("service_usage_me
           0 AS HistogramMetricCount,
           0 AS HistogramMetricSizeBytes,
           0 AS ExpHistogramMetricCount,
-          0 AS ExpHistogramMetricSizeBytes
+          0 AS ExpHistogramMetricSizeBytes,
+          0 AS ProfileRowCount,
+          0 AS ProfileSizeBytes
         FROM metrics_sum
         GROUP BY OrgId, ServiceName, Hour
       `,
@@ -264,7 +270,9 @@ export const serviceUsageMetricsGaugeMv = defineMaterializedView("service_usage_
           0 AS HistogramMetricCount,
           0 AS HistogramMetricSizeBytes,
           0 AS ExpHistogramMetricCount,
-          0 AS ExpHistogramMetricSizeBytes
+          0 AS ExpHistogramMetricSizeBytes,
+          0 AS ProfileRowCount,
+          0 AS ProfileSizeBytes
         FROM metrics_gauge
         GROUP BY OrgId, ServiceName, Hour
       `,
@@ -294,7 +302,9 @@ export const serviceUsageMetricsHistogramMv = defineMaterializedView("service_us
           count() AS HistogramMetricCount,
           count() * 250 AS HistogramMetricSizeBytes,
           0 AS ExpHistogramMetricCount,
-          0 AS ExpHistogramMetricSizeBytes
+          0 AS ExpHistogramMetricSizeBytes,
+          0 AS ProfileRowCount,
+          0 AS ProfileSizeBytes
         FROM metrics_histogram
         GROUP BY OrgId, ServiceName, Hour
       `,
@@ -327,7 +337,9 @@ export const serviceUsageMetricsExpHistogramMv = defineMaterializedView(
           0 AS HistogramMetricCount,
           0 AS HistogramMetricSizeBytes,
           count() AS ExpHistogramMetricCount,
-          count() * 300 AS ExpHistogramMetricSizeBytes
+          count() * 300 AS ExpHistogramMetricSizeBytes,
+          0 AS ProfileRowCount,
+          0 AS ProfileSizeBytes
         FROM metrics_exponential_histogram
         GROUP BY OrgId, ServiceName, Hour
       `,
@@ -335,6 +347,41 @@ export const serviceUsageMetricsExpHistogramMv = defineMaterializedView(
 		],
 	},
 )
+
+// One profiles row is one call stack. Like logs (body + 200), the estimate is the variable part,
+// 16 bytes per frame reference, plus 200 for the value, attributes and links. The billing chart
+// rescales it to the metered total, so only the daily shape matters.
+export const serviceUsageProfilesMv = defineMaterializedView("service_usage_profiles_mv", {
+	description: "Materialized view to aggregate continuous profiling usage statistics per service per hour",
+	datasource: serviceUsage,
+	nodes: [
+		node({
+			name: "service_usage_profiles_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          ServiceName,
+          toStartOfHour(toDateTime(Timestamp)) AS Hour,
+          0 AS LogCount,
+          0 AS LogSizeBytes,
+          0 AS TraceCount,
+          0 AS TraceSizeBytes,
+          0 AS SumMetricCount,
+          0 AS SumMetricSizeBytes,
+          0 AS GaugeMetricCount,
+          0 AS GaugeMetricSizeBytes,
+          0 AS HistogramMetricCount,
+          0 AS HistogramMetricSizeBytes,
+          0 AS ExpHistogramMetricCount,
+          0 AS ExpHistogramMetricSizeBytes,
+          count() AS ProfileRowCount,
+          sum(length(Frames) * 16 + 200) AS ProfileSizeBytes
+        FROM profiles
+        GROUP BY OrgId, ServiceName, Hour
+      `,
+		}),
+	],
+})
 
 /**
  * One `source_usage_hourly` row per (org, source, hour) from a signal table.

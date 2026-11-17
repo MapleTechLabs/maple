@@ -97,6 +97,8 @@ export interface CompleteScanInput {
 	readonly matches: ReadonlyArray<DependencyScanMatchInput>
 	/** Why the matches are not the whole answer; such a scan stores them but reconciles nothing. */
 	readonly incomplete?: string | undefined
+	/** The OSV answer the matches came from; kept only on a complete scan. */
+	readonly advisoryFingerprint?: string | undefined
 }
 
 export interface SetFindingStatusInput {
@@ -166,6 +168,8 @@ export interface DependencyScanStoreApi {
 		readonly commitSha?: GitCommitSha
 		/** Only scans of the tracked branch head (true) or only scans of other commits (false). */
 		readonly defaultBranchHead?: boolean
+		/** The newest scan whatever its status, not only a completed one. */
+		readonly anyStatus?: boolean
 	}) => Effect.Effect<Option.Option<DependencyScanRow>, DependencyScanPersistenceError>
 	/** Each repository's newest scan of its tracked branch head, any status. */
 	readonly latestBranchScans: (input: {
@@ -491,6 +495,7 @@ export class DependencyScanStore extends Context.Service<DependencyScanStore, De
 									packageCount: 0,
 									vulnerableCount: 0,
 									error: null,
+									advisoryFingerprint: null,
 									startedAt: now,
 									finishedAt: null,
 								})
@@ -623,6 +628,11 @@ export class DependencyScanStore extends Context.Service<DependencyScanStore, De
 										packageCount: input.packageCount,
 										vulnerableCount,
 										error: input.incomplete ?? null,
+										// An incomplete scan never reconciled, so a later scan must not skip on it.
+										advisoryFingerprint:
+											input.incomplete === undefined
+												? (input.advisoryFingerprint ?? null)
+												: null,
 										finishedAt: now,
 									})
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(scanId)])
@@ -791,7 +801,7 @@ export class DependencyScanStore extends Context.Service<DependencyScanStore, De
 							.where(($) => [
 								$.orgId.eq(input.orgId),
 								$.repositoryId.eq(input.repositoryId),
-								$.status.eq("completed"),
+								input.anyStatus === true ? undefined : $.status.eq("completed"),
 								input.commitSha === undefined ? undefined : $.commitSha.eq(input.commitSha),
 								input.defaultBranchHead === undefined
 									? undefined

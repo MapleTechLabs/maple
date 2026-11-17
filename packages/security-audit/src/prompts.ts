@@ -8,9 +8,12 @@ import type { CoverageUnit, EstimatedSeverity, Finding, Profile, Severity, Verdi
 import {
 	COMPANION_FILES,
 	COMPANION_REQUIRED_SECTIONS,
+	canonicalBlockRef,
+	companionBlockRefs,
 	companionWhenToUse,
 	fencedBlockAfter,
 	findBlock,
+	isCompanionRequiredSection,
 	ORDINARY_BLOCK_REFS,
 	sectionText,
 	textFrom,
@@ -172,6 +175,9 @@ export const focusedReconPrompt = (
 		"\n\n",
 	)
 
+const EXACT_REFS =
+	"Every block reference you write (ordinary_attack_class_block, each selected_companion_blocks entry, each excluded_blocks block) must be exactly one of the references listed here, copied character for character. Do not invent finer names: an unknown attack-class block refuses its unit, and any other unknown reference is dropped."
+
 const companionCatalog = (): string =>
 	Arr.join(
 		Arr.map(COMPANION_FILES, (file) => {
@@ -179,8 +185,20 @@ const companionCatalog = (): string =>
 				Arr.map([...COMPANION_REQUIRED_SECTIONS], (name) => `${file}#${name}`),
 				", ",
 			)
-			return `### ${file}\n\n${companionWhenToUse(file)}\n\nRequired sections when selected: ${blocks}`
+			return `### ${file}\n\n${companionWhenToUse(file)}\n\nRequired sections when selected: ${blocks}\n\nBlock references in this file:\n${Arr.join(companionBlockRefs(file), "\n")}`
 		}),
+		"\n\n",
+	)
+
+/** Every block reference the skill defines, grouped by file: the only strings a unit may name. */
+const validBlockRefsSection = (): string =>
+	Arr.join(
+		[
+			"## Valid block references",
+			EXACT_REFS,
+			`### Ordinary attack-class blocks\n${Arr.join(ORDINARY_BLOCK_REFS, "\n")}`,
+			...Arr.map(COMPANION_FILES, (file) => `### ${file}\n${Arr.join(companionBlockRefs(file), "\n")}`),
+		],
 		"\n\n",
 	)
 
@@ -216,7 +234,7 @@ export const synthesisPrompt = (
 			VERBATIM.architectureSummary,
 			VERBATIM.coverageLedger,
 			`## Ordinary attack-class blocks\n\n${Arr.join(ORDINARY_BLOCK_REFS, "\n")}`,
-			`## Companion files\n\n${companionCatalog()}`,
+			`## Companion files\n\n${EXACT_REFS}\n\n${companionCatalog()}`,
 			`## Prior runs\n\n${input.priorSummary}`,
 			...Arr.map(
 				input.reconResults,
@@ -228,7 +246,7 @@ export const synthesisPrompt = (
 					"Return exactly one JSON object, with no surrounding prose:",
 					'{"architecture_md": "<the architecture summary, about 1,000 words at most>", "units": [<seed unit>, ...]}',
 					"Each seed unit carries the semantic fields of a ledger unit and nothing else: canonical_refs (surface, boundary, subsystem, attack_class, and lifecycle only when material), surface, boundary, subsystem, attack_class, lifecycle (with canonical_refs.lifecycle), starting_paths, ordinary_attack_class_block, selected_companion_blocks, excluded_blocks. Add priority (an integer, 1 is hunted first) ranking unauthenticated or lowest-trust entry surfaces first, then boundaries protecting the most valuable resources (credentials, cross-tenant data, code execution, release authority). The parent derives coverage_id and every state field.",
-					`Block references must be exact: an ordinary block is one of the list above; a companion block is FILE.md# plus the heading text before any parenthetical qualifier. Seed only in-scope surfaces as assignable units.${input.profile === "deep" ? " This is a deep run: split units per subsystem and per material lifecycle mode." : ""}`,
+					`Block references must be exact: an ordinary block is one of the ordinary list above; a companion block is one of the references its file lists above. Seed only in-scope surfaces as assignable units.${input.profile === "deep" ? " This is a deep run: split units per subsystem and per material lifecycle mode." : ""}`,
 					`Your answer must fit one reply. Seed at most ${SYNTHESIS_SEED_LIMIT[attempt]} units, the highest-priority ones; the coverage critic adds the remaining surfaces after each hunting wave, so name every entry surface you found, seeded or not, in architecture_md. Keep each excluded_blocks reason to one short clause, and leave the companion "Core discipline", "Universal moves" and "Validation rules" sections out of selected_companion_blocks: the parent adds them.`,
 					...(attempt === "retry"
 						? [
@@ -246,6 +264,33 @@ export const synthesisPrompt = (
 /** The file part of a block reference; the whole reference when it names only a file. */
 export const companionFileOf = (ref: string): string =>
 	Option.match(Str.indexOf("#")(ref), { onNone: () => ref, onSome: (at) => Str.slice(0, at)(ref) })
+
+/** Why a refused attack-class reference cannot stand, and what the critic should name instead. */
+const refusalHint = (ref: string): string => {
+	const block = canonicalBlockRef(ref)
+	if (block === undefined) return "not a block of the skill"
+	return isCompanionRequiredSection(block)
+		? "a section the parent adds to every unit; name an ordinary_attack_class_block instead"
+		: "a companion block, not an ordinary attack-class block; list it in selected_companion_blocks instead"
+}
+
+/**
+ * The repair turn's note for a critic whose proposals named unknown blocks: the refused references
+ * and every valid one, so the fresh critic can map each to the skill's own spelling.
+ */
+export const refusedBlockRefsRepair = (refused: ReadonlyArray<string>): string =>
+	Arr.join(
+		[
+			"## Block references the parent refused",
+			`A previous answer to this assignment proposed missing units whose attack-class blocks the parent could not use, so it refused those units. The refused references, and why:\n${Arr.join(
+				Arr.map(refused, (ref) => `- ${ref}: ${refusalHint(ref)}`),
+				"\n",
+			)}`,
+			"Answer the whole assignment again. Give every missing unit an ordinary_attack_class_block, selected_companion_blocks and excluded_blocks taken only from the valid references below; where a refused name was a finer topic, use the block that contains it. Return exactly one JSON object that matches the contract above, with no surrounding prose.",
+			validBlockRefsSection(),
+		],
+		"\n\n",
+	)
 
 /** A selected block's text, plus the sections every selected companion must carry. */
 const selectedBlockTexts = (units: ReadonlyArray<CoverageUnit>): ReadonlyArray<string> => {
@@ -268,19 +313,6 @@ const selectedBlockTexts = (units: ReadonlyArray<CoverageUnit>): ReadonlyArray<s
 		return block === undefined ? `### ${ref}\n\n(unknown block reference)` : `### ${ref}\n\n${block.text}`
 	})
 }
-
-/** Every block reference a unit names that the vendored skill does not define. */
-export const unknownBlockRefs = (
-	unit: Pick<CoverageUnit, "ordinary_attack_class_block" | "selected_companion_blocks" | "excluded_blocks">,
-): ReadonlyArray<string> =>
-	Arr.filter(
-		[
-			...(unit.ordinary_attack_class_block === null ? [] : [unit.ordinary_attack_class_block]),
-			...unit.selected_companion_blocks,
-			...Arr.map(unit.excluded_blocks, (excluded) => excluded.block),
-		],
-		(ref) => findBlock(ref) === undefined,
-	)
 
 export interface CarriedExclusion {
 	readonly fingerprint: string
@@ -405,7 +437,7 @@ export const criticPrompt = (input: CriticInput, context: AgentContext): string 
 			`## Candidate fingerprints and states\n\n${input.candidateStates.length === 0 ? "None." : encodeData(input.candidateStates)}`,
 			`## Prior-ledger gaps\n\n${input.priorGapSummary}`,
 			`## Surfaces hunters reported as uncovered\n\n${input.hunterUncovered.length === 0 ? "None." : encodeData(input.hunterUncovered)}\nAccept each one that is a real, unmapped coverage gap as a missing unit; ignore the rest.`,
-			`## Ordinary attack-class blocks\n\n${Arr.join(ORDINARY_BLOCK_REFS, "\n")}\n\nCompanion blocks are FILE.md# plus the heading text before any parenthetical, from: ${Arr.join(COMPANION_FILES, ", ")}.`,
+			validBlockRefsSection(),
 			Arr.join(
 				[
 					"## Your result",

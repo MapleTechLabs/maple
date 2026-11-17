@@ -152,11 +152,15 @@ const isPrivateIPv6 = (host: string): boolean => {
 /**
  * A trailing dot makes a name fully qualified — `localhost.` and `localhost`
  * resolve identically — but it is kept verbatim by the URL parser, so a blocklist
- * keyed on the bare name never matched it. Strip it before every name comparison.
+ * keyed on the bare name never matched it. Strip every trailing dot before each name
+ * comparison: the parser itself removes only one, so `127.0.0.1..` stays a name.
  */
 const canonicalHostname = (hostname: string): string => {
 	const lower = Str.toLowerCase(hostname)
-	return Str.endsWith(".")(lower) ? Str.slice(0, -1)(lower) : lower
+	// A scan from the end, not /\.+$/: that regex retries from every internal dot (quadratic).
+	let end = lower.length
+	while (end > 0 && lower[end - 1] === ".") end -= 1
+	return Str.slice(0, end)(lower)
 }
 
 const isPrivateHost = (hostname: string): boolean => {

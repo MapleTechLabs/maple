@@ -65,7 +65,7 @@ export const Message = defineMessageUnion({
 	ReceivedPreviewSelection: { kind: PreviewSelection.fields.kind, id: Schema.String },
 	ClickedComponent: { componentId: StatusPageComponentId },
 	ClickedIncident: { incidentId: StatusPageIncidentId },
-	ClickedClosePanel: {},
+	GotPanelSheetMessage: { message: Dialog.Message },
 	PressedEscape: {},
 	// Components
 	ChangedComponentField: { field: ComponentTextField, value: Schema.String },
@@ -95,6 +95,7 @@ export const Message = defineMessageUnion({
 	ChangedIncidentKind: { kind: StatusPageIncidentKind },
 	ChangedIncidentField: { field: IncidentTextField, value: Schema.String },
 	ToggledIncidentComponent: { componentId: StatusPageComponentId },
+	ChangedIncidentAutoComplete: { autoComplete: Schema.Boolean },
 	SubmittedIncidentWrite: {},
 	ClickedIncidentBack: {},
 	/** `isPublished`: Publish (or Schedule) rather than Save as draft. */
@@ -113,6 +114,7 @@ export const Message = defineMessageUnion({
 	GotEditIncidentDialogMessage: { message: Dialog.Message },
 	ChangedIncidentEditField: { field: IncidentEditField, value: Schema.String },
 	ToggledIncidentEditComponent: { componentId: StatusPageComponentId },
+	ChangedIncidentEditAutoComplete: { autoComplete: Schema.Boolean },
 	SubmittedIncidentEdit: {},
 	CompletedSaveIncident: { result: LoadOutcome(V2StatusPageIncident) },
 	ClickedDeleteIncident: { incidentId: StatusPageIncidentId },
@@ -155,6 +157,7 @@ export const Message = defineMessageUnion({
 	CompletedAccessChange: { action: AccessAction, result: LoadOutcome(V2StatusPage) },
 	// Custom domain
 	CompletedFetchCustomDomain: { key: Schema.String, result: LoadOutcome(V2StatusPageCustomDomain) },
+	ClickedRetryCustomDomain: {},
 	ChangedCustomDomain: { value: Schema.String },
 	SubmittedCustomDomain: {},
 	CompletedSetCustomDomain: { result: LoadOutcome(V2StatusPageCustomDomain) },

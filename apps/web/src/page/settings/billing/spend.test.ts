@@ -52,6 +52,7 @@ const startupPlan = startupPlanWith([
 	item("logs", 100, 0.3),
 	item("traces", 100, 0.3),
 	item("metrics", 100, 0.3),
+	item("profiles", 10, 0.6),
 	item("browser_sessions", 5_000, 0.002),
 	// Billed per 1,000 events: `amount` is the price of one billing block.
 	item("product_events", 1_000_000, 0.005, 1_000),
@@ -104,6 +105,7 @@ const buildCustomer = (
 						logs: { granted: 100 },
 						traces: { granted: 100 },
 						metrics: { granted: 100 },
+						profiles: { granted: 10 },
 						browser_sessions: { granted: 5_000 },
 						product_events: { granted: 1_000_000 },
 					},
@@ -363,6 +365,7 @@ describe("buildSpendModel", () => {
 			logs: "No overage",
 			traces: "$0.30/GB",
 			metrics: "Rate unavailable",
+			profiles: "$0.60/GB",
 			browser_sessions: "$0.002/session",
 			product_events: "Included",
 			ai_credits: "$1/credit",
@@ -379,6 +382,7 @@ describe("buildSpendModel", () => {
 			logs: "$0.30/GB",
 			traces: "$0.30/GB",
 			metrics: "$0.30/GB",
+			profiles: "$0.60/GB",
 			browser_sessions: "$0.002/session",
 			product_events: "$5/1M events",
 			ai_credits: "$1/credit",
@@ -387,6 +391,7 @@ describe("buildSpendModel", () => {
 		expect(featureUnit("product_events")).toBe("events")
 		expect(featureUnit("browser_sessions")).toBe("sessions")
 		expect(featureUnit("logs")).toBe("GB")
+		expect(featureUnit("profiles")).toBe("GB")
 	})
 
 	it("falls back to the calendar month with no active subscription", () => {
@@ -579,6 +584,40 @@ describe("buildCumulativeSeries", () => {
 		expect(series[2]?.total).toBe(63)
 	})
 
+	it("prices profiles past their 10 GB allotment at the profiles rate", () => {
+		const spendModel = buildSpendModel({
+			customer: buildCustomer(),
+			plans: [startupPlan],
+			usage: usageOf({ profiles: 30 }),
+			nowMs: NOW,
+		})
+		if (spendModel === null) throw new Error("expected a model")
+
+		const series = buildCumulativeSeries({
+			daily: new DailySpendResponse({
+				days: Arr.map(
+					["2026-07-01", "2026-07-02", "2026-07-03"],
+					(date) =>
+						new DailyVolume({
+							date,
+							logsGB: 0,
+							tracesGB: 0,
+							metricsGB: 0,
+							profilesGB: 10,
+							browserSessions: 0,
+						}),
+				),
+				cycleStart: CYCLE_START,
+				cycleEnd: CYCLE_END,
+			}),
+			model: spendModel,
+		})
+
+		// Day 1 fills the allotment, then each 10 GB day adds $6 at $0.60/GB.
+		expect(Arr.map(series, (point) => point.profiles)).toEqual([0, 6, 12])
+		expect(Arr.map(series, (point) => point.logs)).toEqual([0, 0, 0])
+	})
+
 	it("is monotonic — a zero-ingest day holds the line flat instead of dipping", () => {
 		const spendModel = unscaledModel(200)
 
@@ -703,6 +742,7 @@ describe("AI credits", () => {
 		logs: { granted: 100 },
 		traces: { granted: 100 },
 		metrics: { granted: 100 },
+		profiles: { granted: 10 },
 		browser_sessions: { granted: 5_000 },
 		product_events: { granted: 1_000_000 },
 	}
@@ -736,7 +776,14 @@ describe("AI credits", () => {
 	})
 
 	it("leaves the maximum invoice unbounded until AI overage has a cap too", () => {
-		const dataCaps = { logs: 100, traces: 100, metrics: 100, browser_sessions: 1_000, product_events: 0 }
+		const dataCaps = {
+			logs: 100,
+			traces: 100,
+			metrics: 100,
+			profiles: 10,
+			browser_sessions: 1_000,
+			product_events: 0,
+		}
 		const uncapped = withAi(0, dataCaps)
 		expect(Arr.map(uncappedFeatures(uncapped, undefined), (feature) => feature.featureId)).toContain(
 			"ai_credits",
@@ -746,8 +793,8 @@ describe("AI credits", () => {
 			balances: { ...dataBalances, ai_credits: { granted: 10, overageAllowed: true } },
 			overageCaps: { ...dataCaps, ai_credits: 25 },
 		})
-		// $39 base, 300 GB at $0.30, 1,000 sessions at $0.002, and $25 of AI credits.
-		expect(maximumInvoiceCents(capped, customer)).toBe(3_900 + 9_000 + 200 + 2_500)
+		// $39 base, 300 GB at $0.30, 10 GB of profiles at $0.60, 1,000 sessions at $0.002, and $25 of AI credits.
+		expect(maximumInvoiceCents(capped, customer)).toBe(3_900 + 9_000 + 600 + 200 + 2_500)
 	})
 
 	it("draws the AI band from the daily AI spend, accruing only past the included credits", () => {

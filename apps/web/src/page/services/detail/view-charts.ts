@@ -7,6 +7,7 @@ import { type GridState, metricsGridOf } from "../../kit/service-metrics/grid"
 import type { MarkerCard } from "../../kit/service-metrics/marker-card"
 import { commitMarkers } from "../../kit/service-metrics/markers"
 import type { DetailPoint } from "../../kit/service-metrics/points"
+import { deployChecksOf, isFlagged } from "./derive-deploys"
 import { Message } from "./message"
 import type { Model } from "./model"
 
@@ -29,6 +30,18 @@ export const markerCardOf = (model: Model, timeZone: string): MarkerCard<Message
 	commits: model.commits,
 	clock: { nowMs: model.nowMs ?? 0, timeZone },
 })
+
+/** A flagged deploy's marker takes its verdict's tone; a commit flagged in two environments, the worse. */
+const markerToneOf = (model: Model) => {
+	const flagged = Arr.filter(deployChecksOf(model), (check) => isFlagged(check.verdict))
+	return (sha: string): "crit" | "warn" | undefined => {
+		const verdicts = Arr.map(
+			Arr.filter(flagged, (check) => check.sha === sha),
+			(check) => check.verdict,
+		)
+		return verdicts.includes("errors-up") ? "crit" : verdicts.length > 0 ? "warn" : undefined
+	}
+}
 
 export const metricsGrid = (
 	h: HtmlBuilder<Message>,
@@ -54,6 +67,7 @@ export const metricsGrid = (
 			rows: Arr.map(points, (point) => ({ ...point })),
 			markers,
 			markerCard: markerCardOf(model, timeZone),
+			markerTone: markerToneOf(model),
 			toChartMessage: (chartId, message) => Message.GotChartMessage({ chartId, message }),
 			linkedCursorMount: MountLinkedZoom({ timeZone }),
 		},

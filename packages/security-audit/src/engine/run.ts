@@ -11,8 +11,11 @@ import type { AuditReports, RunMetadata, RunStatus } from "./ports"
 import { runReconnaissance } from "./recon"
 import { runHunting } from "./hunt"
 import { buildReports } from "./report"
-import { type AuditRunInput, type EngineState, makeEngine } from "./state"
+import { type AuditRunInput, type Engine, type EngineState, makeEngine } from "./state"
 import { finalFindings, runCandidateValidation, runRecordVerification } from "./validate"
+
+/** The incomplete reason for a run that ends with no unit covered or carrying a candidate. */
+export const NO_UNITS_COVERED = "no_units_covered"
 
 export interface AuditRunResult {
 	readonly status: Exclude<RunStatus, "in_progress">
@@ -55,14 +58,45 @@ const assembleFindings = (s: EngineState): ReadonlyArray<Finding> => {
 	return [...decided, ...suppressed].sort((a, b) => (a.fingerprint < b.fingerprint ? -1 : 1))
 }
 
+const SETTLED: ReadonlySet<string> = new Set(["covered", "candidate"])
+
+/** Each unit's archived attempt count once planning ends: attempts past it are this run's. */
+const attemptBaseline = (ledger: ReadonlyArray<LedgerUnit>): ReadonlyMap<string, number> =>
+	new Map(Arr.map(ledger, (u) => [u.coverage_id, u.attempts.length] as const))
+
+/**
+ * A run that settled no unit audited nothing, however its critics or budget ended. A unit counts
+ * when it is settled now or this run settled it before a critic reopened it; attempts archived by
+ * earlier runs are history, not this run's coverage.
+ */
+const requireCoverage = Effect.fn("SecurityAudit.requireCoverage")(function* (
+	engine: Engine,
+	baseline: ReadonlyMap<string, number>,
+) {
+	const { ledger } = yield* Ref.get(engine.state)
+	const settled = Arr.filter(
+		ledger,
+		(u) =>
+			SETTLED.has(u.status) ||
+			Arr.some(u.attempts.slice(baseline.get(u.coverage_id) ?? 0), (a) => SETTLED.has(a.status)),
+	).length
+	yield* Effect.annotateCurrentSpan({
+		"maple.security_audit.ledger_units": ledger.length,
+		"maple.security_audit.settled_units": settled,
+	})
+	if (settled === 0) yield* engine.fail(NO_UNITS_COVERED)
+})
+
 export const runAudit = (input: AuditRunInput) =>
 	Effect.gen(function* () {
 		const engine = yield* makeEngine(input)
 		yield* engine.store.saveMetadata(metadata(input, "in_progress", []))
 
 		if (yield* runReconnaissance(engine)) {
+			const baseline = attemptBaseline((yield* Ref.get(engine.state)).ledger)
 			yield* runHunting(engine)
 			yield* runCandidateValidation(engine)
+			yield* requireCoverage(engine, baseline)
 			yield* runRecordVerification(engine)
 		}
 

@@ -71,6 +71,7 @@ const toV2Settings = (s: AnomalyDetectorSettingsDocument): V2AnomalySettings => 
 	enabled: s.enabled,
 	sensitivity: s.sensitivity,
 	muted_signals: s.mutedSignals,
+	included_environments: s.includedEnvironments,
 	updated_at: s.updatedAt,
 	updated_by: s.updatedBy,
 })
@@ -251,6 +252,9 @@ export const HttpV2AnomaliesLive = HttpApiBuilder.group(MapleApiV2, "anomalies",
 								? {
 										mutedSignals: payload.muted_signals,
 									}
+								: undefined),
+							...(payload.included_environments !== undefined
+								? { includedEnvironments: payload.included_environments }
 								: undefined),
 						}),
 					)

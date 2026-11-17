@@ -5,17 +5,13 @@
 // `CommitSha` and key on it, so every row here is a GROUP BY over the same
 // splice the services list already reads. Nothing scans the raw traces table.
 
-import { type DateTime, Schema } from "effect"
+import { Schema } from "effect"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "@maple-dev/effect-orm/expr"
-import { param, from, fromQuery, type CHQuery } from "@maple-dev/effect-orm/clickhouse"
-import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
-import * as Datasources from "@maple/domain/tinybird/datasources"
-import { orgIdParam, utcSecondsParam } from "../tables"
+import { param, fromQuery } from "@maple-dev/effect-orm/clickhouse"
 import { CHNumber } from "../schema"
 import { DateTimeUtcFromWarehouse } from "../../datetime"
-import { serviceOverviewWhereConditions } from "./query-helpers"
-import { serviceOverviewWindows, serviceWindowTiersForBucket } from "./services"
+import { serviceOverviewWindows } from "./services"
 
 /**
  * At most this many (service, environment, commit) rows per request. A fleet
@@ -65,9 +61,7 @@ export type ReleasesListOutput = typeof releasesListRowSchema.Type
  *
  * Every version of a service is a row, not just the latest — a release's
  * impact is "this version against every other version of the same service in
- * the same minutes", and the caller derives that split from these rows. The
- * same query scoped to one service is therefore also the detail page's
- * comparison table.
+ * the same minutes", and the caller derives that split from these rows.
  */
 export function releasesListQuery(opts: ReleasesListOpts = {}) {
 	return serviceOverviewWindows({
@@ -140,135 +134,6 @@ export function runningCommitsQuery() {
 		.groupBy("serviceName", "environment", "commitSha")
 		.orderBy(["spanCount", "desc"])
 		.limit(RUNNING_COMMITS_CAP)
-		.format("JSON")
-}
-
-// The org-wide sibling of `serviceReleasesTimelineQuery`: per bucket, per
-// service, per commit. Feeds the swimlanes and the per-service rollout share
-// (which version carried the last bucket's traffic).
-
-export interface ReleasesTimelineOpts {
-	readonly serviceName?: string
-	readonly serviceNames?: readonly string[]
-	readonly environments?: readonly string[]
-	readonly namespaces?: readonly string[]
-	readonly excludedEnvironments?: readonly string[]
-	readonly excludedNamespaces?: readonly string[]
-	/**
-	 * Needed at build time, not just as a compile parameter: it selects which
-	 * rollup tiers can answer, because a tier coarser than the bucket has no
-	 * position inside it.
-	 */
-	readonly bucketSeconds: number
-}
-
-export interface ReleasesTimelineOutput {
-	readonly bucket: DateTime.Utc
-	readonly serviceName: string
-	readonly commitSha: string
-	readonly count: number
-}
-
-const RELEASES_TIMELINE_CAP = 5000
-
-/** Sub-minute buckets: no rollup tier can place a row inside a minute. */
-function releasesTimelineRawQuery(opts: ReleasesTimelineOpts): CHQuery<ColumnDefs, ReleasesTimelineOutput> {
-	return from(Datasources.serviceOverviewSpans)
-		.select(($) => ({
-			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
-			serviceName: $.ServiceName,
-			commitSha: $.CommitSha,
-			count: CH.count(),
-		}))
-		.where(($) => [
-			...serviceOverviewWhereConditions($, {
-				serviceName: opts.serviceName,
-				serviceNames: opts.serviceNames,
-				environments: opts.environments,
-				namespaces: opts.namespaces,
-				excludedEnvironments: opts.excludedEnvironments,
-				excludedNamespaces: opts.excludedNamespaces,
-			}),
-			CH.notInList($.CommitSha, PLACEHOLDER_COMMIT_SHAS),
-		])
-		.groupBy("bucket", "serviceName", "commitSha")
-		.orderBy(["bucket", "asc"])
-		.limit(RELEASES_TIMELINE_CAP)
-		.format("JSON")
-}
-
-export function releasesTimelineQuery(
-	opts: ReleasesTimelineOpts,
-): CHQuery<ColumnDefs, ReleasesTimelineOutput> {
-	const tiers = serviceWindowTiersForBucket(opts.bucketSeconds)
-	if (tiers === "raw") return releasesTimelineRawQuery(opts)
-
-	return serviceOverviewWindows(
-		{
-			serviceName: opts.serviceName,
-			environments: opts.environments,
-			namespaces: opts.namespaces,
-			excludedEnvironments: opts.excludedEnvironments,
-			excludedNamespaces: opts.excludedNamespaces,
-		},
-		tiers,
-	)
-		.select(($) => ({
-			bucket: CH.toStartOfInterval($.bBucket, param.int("bucketSeconds")),
-			serviceName: $.bServiceName,
-			commitSha: $.bCommitSha,
-			count: CH.sum($.bSpanCount),
-		}))
-		.where(($) => [
-			CH.notInList($.bCommitSha, PLACEHOLDER_COMMIT_SHAS),
-			opts.serviceNames !== undefined && opts.serviceNames.length > 0
-				? CH.inList($.bServiceName, opts.serviceNames)
-				: undefined,
-		])
-		.groupBy("bucket", "serviceName", "commitSha")
-		.orderBy(["bucket", "asc"])
-		.limit(RELEASES_TIMELINE_CAP)
-		.format("JSON")
-}
-
-// The bridge from a release to the issues system. Traces key a release on
-// `vcs.ref.head.revision`; error events key on `service.version`, which Maple's
-// SDKs stamp with the same sha. Reads the per-occurrence projection because a
-// release starts at an arbitrary instant and a minute rollup would smear the
-// first occurrences across the deploy boundary.
-
-export interface ReleaseErrorFingerprintsOpts {
-	readonly serviceName: string
-	readonly environments?: readonly string[]
-	readonly limit?: number
-}
-
-export interface ReleaseErrorFingerprintsOutput {
-	readonly fingerprintHash: string
-	readonly count: number
-	readonly firstSeen: DateTime.Utc
-}
-
-export function releaseErrorFingerprintsQuery(opts: ReleaseErrorFingerprintsOpts) {
-	return from(Datasources.errorEventsByTime)
-		.select(($) => ({
-			fingerprintHash: CH.toString_($.FingerprintHash),
-			count: CH.count(),
-			firstSeen: CH.min_($.Timestamp),
-		}))
-		.where(($) => [
-			$.OrgId.eq(orgIdParam),
-			$.ServiceName.eq(opts.serviceName),
-			$.ServiceVersion.eq(param.string("serviceVersion")),
-			$.Timestamp.gte(utcSecondsParam("startTime")),
-			$.Timestamp.lte(utcSecondsParam("endTime")),
-			opts.environments !== undefined && opts.environments.length > 0
-				? CH.inList($.DeploymentEnv, opts.environments)
-				: undefined,
-		])
-		.groupBy("fingerprintHash")
-		.orderBy(["count", "desc"])
-		.limit(opts.limit ?? 50)
 		.format("JSON")
 }
 
@@ -360,6 +225,138 @@ export function serviceDeploymentsQuery(opts: ServiceDeploymentsOpts) {
 		.select(($) => deploymentColumns($))
 		.where(($) => [$.versionRank.lte(opts.perServiceLimit ?? DEPLOYMENTS_PER_SERVICE_CAP)])
 		.orderBy(["serviceName", "asc"], ["firstSeen", "desc"])
+		.limit(opts.limit ?? RELEASES_LIST_CAP)
+		.format("JSON")
+}
+
+// Deploy verification: each version's first minutes against the same number of
+// minutes just before it on the same (service, environment). A time-matched
+// window, so a deploy at 3am is not judged against the afternoon peak and a
+// version that lived ten minutes is not judged against one that lived a week.
+
+/** The window on each side of a deploy. */
+export const DEPLOY_VERIFY_WINDOW_SECONDS = 30 * 60
+
+export const releaseVerificationRowSchema = Schema.Struct({
+	serviceName: Schema.String,
+	environment: Schema.String,
+	commitSha: Schema.String,
+	firstSeen: DateTimeUtcFromWarehouse,
+	afterSpans: CHNumber,
+	afterErrors: CHNumber,
+	afterP95Ms: CHNumber,
+	beforeSpans: CHNumber,
+	beforeErrors: CHNumber,
+	beforeP95Ms: CHNumber,
+})
+
+export type ReleaseVerificationOutput = typeof releaseVerificationRowSchema.Type
+
+/** The services one commit reached in the window: what bounds a commit's verification read. */
+export function commitServicesQuery(commitSha: string) {
+	return serviceOverviewWindows({ commitShas: [commitSha] })
+		.select(($) => ({ serviceName: $.bServiceName }))
+		.groupBy("serviceName")
+		.limit(RELEASES_LIST_CAP)
+		.format("JSON")
+}
+
+export const commitServicesRowSchema = Schema.Struct({ serviceName: Schema.String })
+
+export interface ReleaseVerificationOpts {
+	readonly serviceName?: string
+	readonly environments?: readonly string[]
+	/** One commit across every service it reached. */
+	readonly commitSha?: string
+	/** Bounds the minutes read to these services (the ones a commit reached). */
+	readonly serviceNames?: readonly string[]
+	readonly limit?: number
+}
+
+/**
+ * Reads `[startTime, endTime]` but keeps only versions first seen at or after `deploysFrom`:
+ * the caller starts the read early, so a version already running is not taken for a deploy and a
+ * deploy near `deploysFrom` still has its minutes before.
+ */
+export function releaseVerificationQuery(opts: ReleaseVerificationOpts = {}) {
+	const filters = { serviceName: opts.serviceName, environments: opts.environments }
+	const windowMinutes = DEPLOY_VERIFY_WINDOW_SECONDS / 60
+	const inServices = <A extends { bServiceName: CH.Expr<string> }>($: A) =>
+		opts.serviceNames === undefined ? undefined : CH.inList($.bServiceName, opts.serviceNames)
+
+	const deploys = serviceOverviewWindows(filters)
+		.select(($) => ({
+			serviceName: $.bServiceName,
+			environment: $.bEnvironment,
+			commitSha: $.bCommitSha,
+			firstSeen: CH.min_($.bFirstSeen),
+		}))
+		.where(($) => [
+			CH.notInList($.bCommitSha, PLACEHOLDER_COMMIT_SHAS),
+			CH.when(opts.commitSha, (sha: string) => $.bCommitSha.eq(sha)),
+			inServices($),
+		])
+		.groupBy("serviceName", "environment", "commitSha")
+		.having(($) => [CH.min_($.bFirstSeen).gte(param.dateTime("deploysFrom"))])
+		.orderBy(["firstSeen", "desc"])
+		.limit(opts.limit ?? RELEASES_LIST_CAP)
+
+	// Each deploy fanned out to the minutes either side of it, so the join matches only those
+	// minutes rather than every minute of the window.
+	const deployMinutes = fromQuery(deploys, "deploys").select(($) => ({
+		dServiceName: $.serviceName,
+		dEnvironment: $.environment,
+		dCommitSha: $.commitSha,
+		dFirstSeen: $.firstSeen,
+		dOffset: CH.rawExpr(`arrayJoin(range(-${windowMinutes}, ${windowMinutes}))`, T.int64),
+		dBucket: CH.rawExpr("toStartOfMinute(firstSeen) + toIntervalMinute(dOffset)", T.dateTime),
+	}))
+
+	// Minute precision across the whole window: the hourly tier cannot place a deploy inside its hour.
+	const minutes = serviceOverviewWindows(filters, { grain: "minute", includeHourly: false })
+		.select(($) => ({
+			mBucket: $.bBucket,
+			mServiceName: $.bServiceName,
+			mEnvironment: $.bEnvironment,
+			mCommitSha: $.bCommitSha,
+			mSpans: $.bSpanCount,
+			mErrors: $.bErrorCount,
+			mQuantiles: $.bDurationQuantiles,
+		}))
+		// Placeholder shas stay: a version that reported none is still the traffic before a deploy.
+		// The after side only ever counts the deployed commit.
+		.where(($) => [inServices($)])
+
+	const after = "minutes.mCommitSha = deployMinutes.dCommitSha AND deployMinutes.dOffset >= 0"
+	const before = "minutes.mCommitSha != deployMinutes.dCommitSha AND deployMinutes.dOffset < 0"
+	const p95 = (cond: string) =>
+		CH.rawExpr(
+			`ifNotFinite(arrayElement(quantilesTDigestMergeIf(0.5, 0.95, 0.99)(minutes.mQuantiles, ${cond}), 2) / 1000000, 0)`,
+			T.float64,
+		)
+
+	// A left join: past the minute rollup's retention a deploy still lists, with nothing to judge.
+	return fromQuery(deployMinutes, "deployMinutes")
+		.leftJoinQuery(minutes, "minutes", (deploy, minute) =>
+			deploy.dServiceName
+				.eq(minute.mServiceName)
+				.and(deploy.dEnvironment.eq(minute.mEnvironment))
+				.and(deploy.dBucket.eq(minute.mBucket)),
+		)
+		.select(($) => ({
+			serviceName: $.dServiceName,
+			environment: $.dEnvironment,
+			commitSha: $.dCommitSha,
+			firstSeen: CH.min_($.dFirstSeen),
+			afterSpans: CH.rawExpr(`sumIf(minutes.mSpans, ${after})`, T.uint64),
+			afterErrors: CH.rawExpr(`sumIf(minutes.mErrors, ${after})`, T.uint64),
+			afterP95Ms: p95(after),
+			beforeSpans: CH.rawExpr(`sumIf(minutes.mSpans, ${before})`, T.uint64),
+			beforeErrors: CH.rawExpr(`sumIf(minutes.mErrors, ${before})`, T.uint64),
+			beforeP95Ms: p95(before),
+		}))
+		.groupBy("serviceName", "environment", "commitSha")
+		.orderBy(["firstSeen", "desc"])
 		.limit(opts.limit ?? RELEASES_LIST_CAP)
 		.format("JSON")
 }

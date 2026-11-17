@@ -197,7 +197,7 @@ SELECT
         LIMIT 2500
         FORMAT JSON
 
--- builder:anomaly:anomalyLogVolumeQuery:matchedHours  [16004c1b]
+-- builder:anomaly:anomalyLogVolumeQuery:baselineHours  [ed6267d2]
 SELECT
           logs_aggregates_hourly.ServiceName AS serviceName,
           logs_aggregates_hourly.DeploymentEnv AS deploymentEnv,
@@ -208,7 +208,7 @@ SELECT
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
           AND logs_aggregates_hourly.Hour >= '2026-01-01 10:30:00'
           AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
-          AND toHour(logs_aggregates_hourly.Hour) IN (9, 10, 11)
+          AND toHour(logs_aggregates_hourly.Hour) IN (8, 9, 10, 11)
         GROUP BY serviceName, deploymentEnv, hour
         LIMIT 25000
         FORMAT JSON
@@ -228,37 +228,50 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:anomaly:anomalyTraceSignalsQuery:matchedHours  [215fec55]
+-- builder:anomaly:anomalyTraceSignalsQuery:baselineHours  [5d5ecce5]
 SELECT
-          traces_aggregates_hourly.ServiceName AS serviceName,
-          traces_aggregates_hourly.DeploymentEnv AS deploymentEnv,
-          traces_aggregates_hourly.Hour AS hour,
-          sum(WeightedCount) AS requestCount,
-          sum(WeightedErrorCount) AS errorCount,
-          arrayElement(quantilesTDigestWeightedMerge(0.95)(DurationQuantiles), 1) / 1000000 AS p95Ms
-        FROM traces_aggregates_hourly
-        WHERE traces_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND traces_aggregates_hourly.IsEntryPoint = 1
-          AND traces_aggregates_hourly.Hour >= '2026-01-01 10:30:00'
-          AND traces_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
-          AND toHour(traces_aggregates_hourly.Hour) IN (9, 10, 11)
+          service_overview_hourly.ServiceName AS serviceName,
+          service_overview_hourly.DeploymentEnv AS deploymentEnv,
+          service_overview_hourly.Hour AS hour,
+          sum(service_overview_hourly.EstimatedSpanCount) AS requestCount,
+          sum(service_overview_hourly.EstimatedErrorCount) AS errorCount,
+          arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(DurationQuantiles), 2) / 1000000 AS p95Ms
+        FROM service_overview_hourly
+        WHERE service_overview_hourly.OrgId = 'org_sql_catalog'
+          AND service_overview_hourly.Hour >= '2026-01-01 10:30:00'
+          AND service_overview_hourly.Hour <= '2026-01-03 14:15:00'
+          AND toHour(service_overview_hourly.Hour) IN (8, 9, 10, 11)
         GROUP BY serviceName, deploymentEnv, hour
         LIMIT 25000
         FORMAT JSON
 
--- builder:anomaly:anomalyTraceSignalTimeseriesQuery:default  [a134b2f6]
+-- builder:anomaly:anomalyTraceSignalsWindowQuery:lastHour  [f1facc81]
 SELECT
-          traces_aggregates_hourly.Hour AS hour,
-          sum(WeightedCount) AS requestCount,
-          sum(WeightedErrorCount) AS errorCount,
-          arrayElement(quantilesTDigestWeightedMerge(0.95)(DurationQuantiles), 1) / 1000000 AS p95Ms
-        FROM traces_aggregates_hourly
-        WHERE traces_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND traces_aggregates_hourly.IsEntryPoint = 1
-          AND traces_aggregates_hourly.ServiceName = 'api'
-          AND traces_aggregates_hourly.DeploymentEnv = 'production'
-          AND traces_aggregates_hourly.Hour >= '2026-01-01 10:30:00'
-          AND traces_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
+          service_overview_minutely.ServiceName AS serviceName,
+          service_overview_minutely.DeploymentEnv AS deploymentEnv,
+          sum(service_overview_minutely.EstimatedSpanCount) AS requestCount,
+          sum(service_overview_minutely.EstimatedErrorCount) AS errorCount,
+          arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(DurationQuantiles), 2) / 1000000 AS p95Ms
+        FROM service_overview_minutely
+        WHERE service_overview_minutely.OrgId = 'org_sql_catalog'
+          AND service_overview_minutely.Minute >= '2026-01-01 10:30:00'
+          AND service_overview_minutely.Minute < '2026-01-03 14:15:00'
+        GROUP BY serviceName, deploymentEnv
+        LIMIT 25000
+        FORMAT JSON
+
+-- builder:anomaly:anomalyTraceSignalTimeseriesQuery:default  [e5db4c31]
+SELECT
+          service_overview_hourly.Hour AS hour,
+          sum(service_overview_hourly.EstimatedSpanCount) AS requestCount,
+          sum(service_overview_hourly.EstimatedErrorCount) AS errorCount,
+          arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(DurationQuantiles), 2) / 1000000 AS p95Ms
+        FROM service_overview_hourly
+        WHERE service_overview_hourly.OrgId = 'org_sql_catalog'
+          AND service_overview_hourly.ServiceName = 'api'
+          AND service_overview_hourly.DeploymentEnv = 'production'
+          AND service_overview_hourly.Hour >= '2026-01-01 10:30:00'
+          AND service_overview_hourly.Hour <= '2026-01-03 14:15:00'
         GROUP BY hour
         ORDER BY hour ASC
         LIMIT 200
@@ -452,6 +465,17 @@ SELECT
           AND (audit_trail_events.OccurredAt < '2026-01-03 14:15:00' OR (audit_trail_events.OccurredAt = '2026-01-03 14:15:00' AND audit_trail_events.Id < '0f6f2c1e7a554c0e9a3b0d2c7e5b9a11'))
         ORDER BY occurredAt DESC, id DESC, ingestedAt ASC
         LIMIT 51
+        FORMAT JSON
+
+-- builder:audit-trail:auditTrailSourcesQuery:default  [c248e070]
+SELECT
+          audit_trail_events.Provider AS provider,
+          uniqExact(audit_trail_events.Id) AS events,
+          toUnixTimestamp(max(audit_trail_events.OccurredAt)) AS lastOccurredAt
+        FROM audit_trail_events
+        WHERE audit_trail_events.OrgId = 'org_sql_catalog'
+          AND audit_trail_events.OccurredAt >= '2026-01-01 10:30:00'
+        GROUP BY provider
         FORMAT JSON
 
 -- builder:aws-ingest:awsIngestQuery:default  [c5891e34]
@@ -5360,21 +5384,57 @@ SELECT
         LIMIT 20
         FORMAT JSON
 
--- builder:releases:releaseErrorFingerprintsQuery:default  [01c17a5e]
+-- builder:releases:commitServicesQuery:default  [813aa516]
 SELECT
-          toString(error_events_by_time.FingerprintHash) AS fingerprintHash,
-          count() AS count,
-          min(error_events_by_time.Timestamp) AS firstSeen
-        FROM error_events_by_time
-        WHERE error_events_by_time.OrgId = 'org_sql_catalog'
-          AND error_events_by_time.ServiceName = 'api'
-          AND error_events_by_time.ServiceVersion = '0af7651916cd43dd8448eb211c80319c0af76519'
-          AND error_events_by_time.Timestamp >= '2026-01-01 10:30:00'
-          AND error_events_by_time.Timestamp <= '2026-01-03 14:15:00'
-          AND error_events_by_time.DeploymentEnv IN ('production')
-        GROUP BY fingerprintHash
-        ORDER BY count DESC
-        LIMIT 50
+          service_windows.bServiceName AS serviceName
+        FROM (
+SELECT
+          toStartOfHour(service_overview_spans.Timestamp) AS bBucket,
+          service_overview_spans.ServiceName AS bServiceName,
+          service_overview_spans.ServiceNamespace AS bServiceNamespace,
+          service_overview_spans.DeploymentEnv AS bEnvironment,
+          service_overview_spans.CommitSha AS bCommitSha,
+          count() AS bSpanCount,
+          sum(service_overview_spans.SampleRate) AS bEstimatedSpanCount,
+          countIf(service_overview_spans.StatusCode = 'Error') AS bErrorCount,
+          sumIf(service_overview_spans.SampleRate, service_overview_spans.StatusCode = 'Error') AS bEstimatedErrorCount,
+          sum(toFloat64(Duration)) AS bDurationSum,
+          quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS bDurationQuantiles,
+          min(service_overview_spans.Timestamp) AS bFirstSeen,
+          countIf((service_overview_spans.StatusCode != 'Error' AND service_overview_spans.Duration < 500000000)) AS bApdexSatisfiedCount,
+          countIf(((service_overview_spans.StatusCode != 'Error' AND service_overview_spans.Duration >= 500000000) AND service_overview_spans.Duration < 2000000000)) AS bApdexToleratingCount
+        FROM service_overview_spans
+        WHERE service_overview_spans.OrgId = 'org_sql_catalog'
+          AND service_overview_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND service_overview_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND service_overview_spans.CommitSha IN ('abc123')
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY bBucket, bServiceName, bServiceNamespace, bEnvironment, bCommitSha
+UNION ALL
+SELECT
+          service_overview_hourly.Hour AS bBucket,
+          service_overview_hourly.ServiceName AS bServiceName,
+          service_overview_hourly.ServiceNamespace AS bServiceNamespace,
+          service_overview_hourly.DeploymentEnv AS bEnvironment,
+          service_overview_hourly.CommitSha AS bCommitSha,
+          sum(service_overview_hourly.SpanCount) AS bSpanCount,
+          sum(service_overview_hourly.EstimatedSpanCount) AS bEstimatedSpanCount,
+          sum(service_overview_hourly.ErrorCount) AS bErrorCount,
+          sum(service_overview_hourly.EstimatedErrorCount) AS bEstimatedErrorCount,
+          sum(service_overview_hourly.DurationSum) AS bDurationSum,
+          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles,
+          min(service_overview_hourly.FirstSeen) AS bFirstSeen,
+          sum(service_overview_hourly.ApdexSatisfiedCount) AS bApdexSatisfiedCount,
+          sum(service_overview_hourly.ApdexToleratingCount) AS bApdexToleratingCount
+        FROM service_overview_hourly
+        WHERE service_overview_hourly.OrgId = 'org_sql_catalog'
+          AND service_overview_hourly.CommitSha IN ('abc123')
+          AND service_overview_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND service_overview_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY bBucket, bServiceName, bServiceNamespace, bEnvironment, bCommitSha
+) AS service_windows
+        GROUP BY serviceName
+        LIMIT 500
         FORMAT JSON
 
 -- builder:releases:releasesListQuery:default  [7a5933b6]
@@ -5510,12 +5570,30 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- builder:releases:releasesTimelineQuery:hourly  [a721977f]
+-- builder:releases:releaseVerificationQuery:default  [ade9545e]
 SELECT
-          toStartOfInterval(service_windows.bBucket, INTERVAL 3600 SECOND) AS bucket,
+          deployMinutes.dServiceName AS serviceName,
+          deployMinutes.dEnvironment AS environment,
+          deployMinutes.dCommitSha AS commitSha,
+          min(deployMinutes.dFirstSeen) AS firstSeen,
+          sumIf(minutes.mSpans, minutes.mCommitSha = deployMinutes.dCommitSha AND deployMinutes.dOffset >= 0) AS afterSpans,
+          sumIf(minutes.mErrors, minutes.mCommitSha = deployMinutes.dCommitSha AND deployMinutes.dOffset >= 0) AS afterErrors,
+          ifNotFinite(arrayElement(quantilesTDigestMergeIf(0.5, 0.95, 0.99)(minutes.mQuantiles, minutes.mCommitSha = deployMinutes.dCommitSha AND deployMinutes.dOffset >= 0), 2) / 1000000, 0) AS afterP95Ms,
+          sumIf(minutes.mSpans, minutes.mCommitSha != deployMinutes.dCommitSha AND deployMinutes.dOffset < 0) AS beforeSpans,
+          sumIf(minutes.mErrors, minutes.mCommitSha != deployMinutes.dCommitSha AND deployMinutes.dOffset < 0) AS beforeErrors,
+          ifNotFinite(arrayElement(quantilesTDigestMergeIf(0.5, 0.95, 0.99)(minutes.mQuantiles, minutes.mCommitSha != deployMinutes.dCommitSha AND deployMinutes.dOffset < 0), 2) / 1000000, 0) AS beforeP95Ms
+        FROM (SELECT
+          deploys.serviceName AS dServiceName,
+          deploys.environment AS dEnvironment,
+          deploys.commitSha AS dCommitSha,
+          deploys.firstSeen AS dFirstSeen,
+          arrayJoin(range(-30, 30)) AS dOffset,
+          toStartOfMinute(firstSeen) + toIntervalMinute(dOffset) AS dBucket
+        FROM (SELECT
           service_windows.bServiceName AS serviceName,
+          service_windows.bEnvironment AS environment,
           service_windows.bCommitSha AS commitSha,
-          sum(service_windows.bSpanCount) AS count
+          min(service_windows.bFirstSeen) AS firstSeen
         FROM (
 SELECT
           toStartOfHour(service_overview_spans.Timestamp) AS bBucket,
@@ -5563,17 +5641,18 @@ SELECT
         GROUP BY bBucket, bServiceName, bServiceNamespace, bEnvironment, bCommitSha
 ) AS service_windows
         WHERE service_windows.bCommitSha NOT IN ('', 'unknown', 'N/A')
-        GROUP BY bucket, serviceName, commitSha
-        ORDER BY bucket ASC
-        LIMIT 5000
-        FORMAT JSON
-
--- builder:releases:releasesTimelineQuery:minutely  [42db38d1]
-SELECT
-          toStartOfInterval(service_windows.bBucket, INTERVAL 300 SECOND) AS bucket,
-          service_windows.bServiceName AS serviceName,
-          service_windows.bCommitSha AS commitSha,
-          sum(service_windows.bSpanCount) AS count
+        GROUP BY serviceName, environment, commitSha
+        HAVING min(service_windows.bFirstSeen) >= '2026-01-01 10:30:00'
+        ORDER BY firstSeen DESC
+        LIMIT 500) AS deploys) AS deployMinutes
+        LEFT JOIN (SELECT
+          service_windows.bBucket AS mBucket,
+          service_windows.bServiceName AS mServiceName,
+          service_windows.bEnvironment AS mEnvironment,
+          service_windows.bCommitSha AS mCommitSha,
+          service_windows.bSpanCount AS mSpans,
+          service_windows.bErrorCount AS mErrors,
+          service_windows.bDurationQuantiles AS mQuantiles
         FROM (
 SELECT
           toStartOfMinute(service_overview_spans.Timestamp) AS bBucket,
@@ -5594,7 +5673,7 @@ SELECT
         WHERE service_overview_spans.OrgId = 'org_sql_catalog'
           AND service_overview_spans.Timestamp >= '2026-01-01 10:30:00'
           AND service_overview_spans.Timestamp <= '2026-01-03 14:15:00'
-          AND service_overview_spans.DeploymentEnv IN ('production')
+          AND service_overview_spans.ServiceName = 'api'
           AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE) OR Timestamp >= toStartOfMinute(toDateTime('2026-01-03 14:15:00')))
         GROUP BY bBucket, bServiceName, bServiceNamespace, bEnvironment, bCommitSha
 UNION ALL
@@ -5615,32 +5694,14 @@ SELECT
           sum(service_overview_minutely.ApdexToleratingCount) AS bApdexToleratingCount
         FROM service_overview_minutely
         WHERE service_overview_minutely.OrgId = 'org_sql_catalog'
-          AND service_overview_minutely.DeploymentEnv IN ('production')
+          AND service_overview_minutely.ServiceName = 'api'
           AND service_overview_minutely.Minute >= if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE)
           AND service_overview_minutely.Minute < toStartOfMinute(toDateTime('2026-01-03 14:15:00'))
         GROUP BY bBucket, bServiceName, bServiceNamespace, bEnvironment, bCommitSha
-) AS service_windows
-        WHERE service_windows.bCommitSha NOT IN ('', 'unknown', 'N/A')
-        GROUP BY bucket, serviceName, commitSha
-        ORDER BY bucket ASC
-        LIMIT 5000
-        FORMAT JSON
-
--- builder:releases:releasesTimelineQuery:raw  [b6bfcd22]
-SELECT
-          toStartOfInterval(service_overview_spans.Timestamp, INTERVAL 30 SECOND) AS bucket,
-          service_overview_spans.ServiceName AS serviceName,
-          service_overview_spans.CommitSha AS commitSha,
-          count() AS count
-        FROM service_overview_spans
-        WHERE service_overview_spans.OrgId = 'org_sql_catalog'
-          AND service_overview_spans.Timestamp >= '2026-01-01 10:30:00'
-          AND service_overview_spans.Timestamp <= '2026-01-03 14:15:00'
-          AND service_overview_spans.ServiceName = 'api'
-          AND service_overview_spans.CommitSha NOT IN ('', 'unknown', 'N/A')
-        GROUP BY bucket, serviceName, commitSha
-        ORDER BY bucket ASC
-        LIMIT 5000
+) AS service_windows) AS minutes ON ((deployMinutes.dServiceName = minutes.mServiceName AND deployMinutes.dEnvironment = minutes.mEnvironment) AND deployMinutes.dBucket = minutes.mBucket)
+        GROUP BY serviceName, environment, commitSha
+        ORDER BY firstSeen DESC
+        LIMIT 500
         FORMAT JSON
 
 -- builder:releases:runningCommitsQuery:default  [aa2f361b]
@@ -6134,12 +6195,12 @@ SELECT
         LIMIT 1000
         FORMAT JSON
 
--- builder:security-telemetry:scannerExposedQuery:default  [d1c58739]
+-- builder:security-telemetry:scannerExposedQuery:default  [77f755df]
 SELECT
           scanner_requests.ServiceName AS service,
           scanner_requests.Host AS host,
           scanner_requests.Path AS path,
-          scanner_requests.Signature AS signature,
+          if(if(multiSearchFirstIndexCaseInsensitive(concat(' ', scanner_requests.Path), ['/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', ' /actuator/env', ' /actuator/heapdump', ' /actuator/configprops', ' /actuator/gateway', ' /server-status', ' /server-info', 'phpinfo', '/info.php', ' /_profiler', ' /debug/pprof', ' /telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci']) > 0, arrayElement(['/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', '/actuator/env', '/actuator/heapdump', '/actuator/configprops', '/actuator/gateway', '/server-status', '/server-info', 'phpinfo', '/info.php', '/_profiler', '/debug/pprof', '/telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci'], multiSearchFirstIndexCaseInsensitive(concat(' ', scanner_requests.Path), ['/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', ' /actuator/env', ' /actuator/heapdump', ' /actuator/configprops', ' /actuator/gateway', ' /server-status', ' /server-info', 'phpinfo', '/info.php', ' /_profiler', ' /debug/pprof', ' /telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci'])), arrayElement(['/wp-admin', '/wp-login.php', '/xmlrpc.php', '/wp-includes/', '/wp-content/plugins/'], multiSearchFirstIndexCaseInsensitive(concat(' ', scanner_requests.Path), ['/wp-admin', '/wp-login.php', '/xmlrpc.php', '/wp-includes/', '/wp-content/plugins/']))) != '', if(multiSearchFirstIndexCaseInsensitive(concat(' ', scanner_requests.Path), ['/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', ' /actuator/env', ' /actuator/heapdump', ' /actuator/configprops', ' /actuator/gateway', ' /server-status', ' /server-info', 'phpinfo', '/info.php', ' /_profiler', ' /debug/pprof', ' /telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci']) > 0, arrayElement(['/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', '/actuator/env', '/actuator/heapdump', '/actuator/configprops', '/actuator/gateway', '/server-status', '/server-info', 'phpinfo', '/info.php', '/_profiler', '/debug/pprof', '/telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci'], multiSearchFirstIndexCaseInsensitive(concat(' ', scanner_requests.Path), ['/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', ' /actuator/env', ' /actuator/heapdump', ' /actuator/configprops', ' /actuator/gateway', ' /server-status', ' /server-info', 'phpinfo', '/info.php', ' /_profiler', ' /debug/pprof', ' /telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci'])), arrayElement(['/wp-admin', '/wp-login.php', '/xmlrpc.php', '/wp-includes/', '/wp-content/plugins/'], multiSearchFirstIndexCaseInsensitive(concat(' ', scanner_requests.Path), ['/wp-admin', '/wp-login.php', '/xmlrpc.php', '/wp-includes/', '/wp-content/plugins/']))), scanner_requests.Signature) AS signature,
           scanner_requests.HttpStatus AS httpStatus,
           uniq(scanner_requests.TraceId) AS requests,
           max(scanner_requests.Timestamp) AS lastSeen,
@@ -6148,19 +6209,20 @@ SELECT
         WHERE scanner_requests.OrgId = 'org_sql_catalog'
           AND scanner_requests.Timestamp >= '2026-01-01 10:30:00'
           AND scanner_requests.Timestamp <= '2026-01-03 14:15:00'
-          AND scanner_requests.Signature IN ('/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', '/actuator/env', '/actuator/heapdump', '/actuator/configprops', '/actuator/gateway', '/server-status', '/server-info', 'phpinfo', '/info.php', '/_profiler', '/debug/pprof', '/telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci')
-          AND (scanner_requests.HttpStatus >= 200 AND scanner_requests.HttpStatus < 300)
+          AND if(if(multiSearchFirstIndexCaseInsensitive(concat(' ', scanner_requests.Path), ['/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', ' /actuator/env', ' /actuator/heapdump', ' /actuator/configprops', ' /actuator/gateway', ' /server-status', ' /server-info', 'phpinfo', '/info.php', ' /_profiler', ' /debug/pprof', ' /telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci']) > 0, arrayElement(['/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', '/actuator/env', '/actuator/heapdump', '/actuator/configprops', '/actuator/gateway', '/server-status', '/server-info', 'phpinfo', '/info.php', '/_profiler', '/debug/pprof', '/telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci'], multiSearchFirstIndexCaseInsensitive(concat(' ', scanner_requests.Path), ['/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', ' /actuator/env', ' /actuator/heapdump', ' /actuator/configprops', ' /actuator/gateway', ' /server-status', ' /server-info', 'phpinfo', '/info.php', ' /_profiler', ' /debug/pprof', ' /telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci'])), arrayElement(['/wp-admin', '/wp-login.php', '/xmlrpc.php', '/wp-includes/', '/wp-content/plugins/'], multiSearchFirstIndexCaseInsensitive(concat(' ', scanner_requests.Path), ['/wp-admin', '/wp-login.php', '/xmlrpc.php', '/wp-includes/', '/wp-content/plugins/']))) != '', if(multiSearchFirstIndexCaseInsensitive(concat(' ', scanner_requests.Path), ['/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', ' /actuator/env', ' /actuator/heapdump', ' /actuator/configprops', ' /actuator/gateway', ' /server-status', ' /server-info', 'phpinfo', '/info.php', ' /_profiler', ' /debug/pprof', ' /telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci']) > 0, arrayElement(['/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', '/actuator/env', '/actuator/heapdump', '/actuator/configprops', '/actuator/gateway', '/server-status', '/server-info', 'phpinfo', '/info.php', '/_profiler', '/debug/pprof', '/telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci'], multiSearchFirstIndexCaseInsensitive(concat(' ', scanner_requests.Path), ['/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', ' /actuator/env', ' /actuator/heapdump', ' /actuator/configprops', ' /actuator/gateway', ' /server-status', ' /server-info', 'phpinfo', '/info.php', ' /_profiler', ' /debug/pprof', ' /telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci'])), arrayElement(['/wp-admin', '/wp-login.php', '/xmlrpc.php', '/wp-includes/', '/wp-content/plugins/'], multiSearchFirstIndexCaseInsensitive(concat(' ', scanner_requests.Path), ['/wp-admin', '/wp-login.php', '/xmlrpc.php', '/wp-includes/', '/wp-content/plugins/']))), scanner_requests.Signature) IN ('/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', '/actuator/env', '/actuator/heapdump', '/actuator/configprops', '/actuator/gateway', '/server-status', '/server-info', 'phpinfo', '/info.php', '/_profiler', '/debug/pprof', '/telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci')
+          AND ((scanner_requests.HttpStatus >= 200 AND scanner_requests.HttpStatus < 300) AND (scanner_requests.Signature = '' OR if(multiSearchFirstIndexCaseInsensitive(concat(' ', scanner_requests.Path), ['/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', ' /actuator/env', ' /actuator/heapdump', ' /actuator/configprops', ' /actuator/gateway', ' /server-status', ' /server-info', 'phpinfo', '/info.php', ' /_profiler', ' /debug/pprof', ' /telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci']) > 0, arrayElement(['/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', '/actuator/env', '/actuator/heapdump', '/actuator/configprops', '/actuator/gateway', '/server-status', '/server-info', 'phpinfo', '/info.php', '/_profiler', '/debug/pprof', '/telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci'], multiSearchFirstIndexCaseInsensitive(concat(' ', scanner_requests.Path), ['/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', ' /actuator/env', ' /actuator/heapdump', ' /actuator/configprops', ' /actuator/gateway', ' /server-status', ' /server-info', 'phpinfo', '/info.php', ' /_profiler', ' /debug/pprof', ' /telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci'])), arrayElement(['/wp-admin', '/wp-login.php', '/xmlrpc.php', '/wp-includes/', '/wp-content/plugins/'], multiSearchFirstIndexCaseInsensitive(concat(' ', scanner_requests.Path), ['/wp-admin', '/wp-login.php', '/xmlrpc.php', '/wp-includes/', '/wp-content/plugins/']))) != ''))
         GROUP BY service, host, path, signature, httpStatus
         ORDER BY lastSeen DESC
         LIMIT 50
         FORMAT JSON
 
--- builder:security-telemetry:scannerSignaturesQuery:default  [60ddb44e]
+-- builder:security-telemetry:scannerSignaturesQuery:default  [489ae6cc]
 SELECT
-          scanner_requests.Signature AS signature,
+          if(if(multiSearchFirstIndexCaseInsensitive(concat(' ', scanner_requests.Path), ['/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', ' /actuator/env', ' /actuator/heapdump', ' /actuator/configprops', ' /actuator/gateway', ' /server-status', ' /server-info', 'phpinfo', '/info.php', ' /_profiler', ' /debug/pprof', ' /telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci']) > 0, arrayElement(['/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', '/actuator/env', '/actuator/heapdump', '/actuator/configprops', '/actuator/gateway', '/server-status', '/server-info', 'phpinfo', '/info.php', '/_profiler', '/debug/pprof', '/telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci'], multiSearchFirstIndexCaseInsensitive(concat(' ', scanner_requests.Path), ['/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', ' /actuator/env', ' /actuator/heapdump', ' /actuator/configprops', ' /actuator/gateway', ' /server-status', ' /server-info', 'phpinfo', '/info.php', ' /_profiler', ' /debug/pprof', ' /telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci'])), arrayElement(['/wp-admin', '/wp-login.php', '/xmlrpc.php', '/wp-includes/', '/wp-content/plugins/'], multiSearchFirstIndexCaseInsensitive(concat(' ', scanner_requests.Path), ['/wp-admin', '/wp-login.php', '/xmlrpc.php', '/wp-includes/', '/wp-content/plugins/']))) != '', if(multiSearchFirstIndexCaseInsensitive(concat(' ', scanner_requests.Path), ['/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', ' /actuator/env', ' /actuator/heapdump', ' /actuator/configprops', ' /actuator/gateway', ' /server-status', ' /server-info', 'phpinfo', '/info.php', ' /_profiler', ' /debug/pprof', ' /telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci']) > 0, arrayElement(['/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', '/actuator/env', '/actuator/heapdump', '/actuator/configprops', '/actuator/gateway', '/server-status', '/server-info', 'phpinfo', '/info.php', '/_profiler', '/debug/pprof', '/telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci'], multiSearchFirstIndexCaseInsensitive(concat(' ', scanner_requests.Path), ['/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', ' /actuator/env', ' /actuator/heapdump', ' /actuator/configprops', ' /actuator/gateway', ' /server-status', ' /server-info', 'phpinfo', '/info.php', ' /_profiler', ' /debug/pprof', ' /telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci'])), arrayElement(['/wp-admin', '/wp-login.php', '/xmlrpc.php', '/wp-includes/', '/wp-content/plugins/'], multiSearchFirstIndexCaseInsensitive(concat(' ', scanner_requests.Path), ['/wp-admin', '/wp-login.php', '/xmlrpc.php', '/wp-includes/', '/wp-content/plugins/']))), scanner_requests.Signature) AS signature,
           scanner_requests.ServiceName AS service,
           uniq(scanner_requests.TraceId) AS requests,
-          uniqIf(scanner_requests.TraceId, (scanner_requests.HttpStatus >= 200 AND scanner_requests.HttpStatus < 300)) AS answered,
+          uniqIf(scanner_requests.TraceId, if(multiSearchFirstIndexCaseInsensitive(concat(' ', scanner_requests.Path), ['/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', ' /actuator/env', ' /actuator/heapdump', ' /actuator/configprops', ' /actuator/gateway', ' /server-status', ' /server-info', 'phpinfo', '/info.php', ' /_profiler', ' /debug/pprof', ' /telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci']) > 0, arrayElement(['/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', '/actuator/env', '/actuator/heapdump', '/actuator/configprops', '/actuator/gateway', '/server-status', '/server-info', 'phpinfo', '/info.php', '/_profiler', '/debug/pprof', '/telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci'], multiSearchFirstIndexCaseInsensitive(concat(' ', scanner_requests.Path), ['/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', ' /actuator/env', ' /actuator/heapdump', ' /actuator/configprops', ' /actuator/gateway', ' /server-status', ' /server-info', 'phpinfo', '/info.php', ' /_profiler', ' /debug/pprof', ' /telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci'])), arrayElement(['/wp-admin', '/wp-login.php', '/xmlrpc.php', '/wp-includes/', '/wp-content/plugins/'], multiSearchFirstIndexCaseInsensitive(concat(' ', scanner_requests.Path), ['/wp-admin', '/wp-login.php', '/xmlrpc.php', '/wp-includes/', '/wp-content/plugins/']))) != '') AS inPath,
+          uniqIf(scanner_requests.TraceId, ((scanner_requests.HttpStatus >= 200 AND scanner_requests.HttpStatus < 300) AND (scanner_requests.Signature = '' OR if(multiSearchFirstIndexCaseInsensitive(concat(' ', scanner_requests.Path), ['/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', ' /actuator/env', ' /actuator/heapdump', ' /actuator/configprops', ' /actuator/gateway', ' /server-status', ' /server-info', 'phpinfo', '/info.php', ' /_profiler', ' /debug/pprof', ' /telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci']) > 0, arrayElement(['/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', '/actuator/env', '/actuator/heapdump', '/actuator/configprops', '/actuator/gateway', '/server-status', '/server-info', 'phpinfo', '/info.php', '/_profiler', '/debug/pprof', '/telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci'], multiSearchFirstIndexCaseInsensitive(concat(' ', scanner_requests.Path), ['/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', ' /actuator/env', ' /actuator/heapdump', ' /actuator/configprops', ' /actuator/gateway', ' /server-status', ' /server-info', 'phpinfo', '/info.php', ' /_profiler', ' /debug/pprof', ' /telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci'])), arrayElement(['/wp-admin', '/wp-login.php', '/xmlrpc.php', '/wp-includes/', '/wp-content/plugins/'], multiSearchFirstIndexCaseInsensitive(concat(' ', scanner_requests.Path), ['/wp-admin', '/wp-login.php', '/xmlrpc.php', '/wp-includes/', '/wp-content/plugins/']))) != ''))) AS answered,
           uniqIf(scanner_requests.ClientAddress, scanner_requests.ClientAddress != '') AS sources,
           max(scanner_requests.Timestamp) AS lastSeen
         FROM scanner_requests
@@ -6194,11 +6256,11 @@ SELECT
         LIMIT 20
         FORMAT JSON
 
--- builder:security-telemetry:scannerTimelineQuery:default  [6cddc38a]
+-- builder:security-telemetry:scannerTimelineQuery:default  [a51228a6]
 SELECT
           toStartOfInterval(scanner_requests.Timestamp, INTERVAL 3600 SECOND) AS bucket,
           uniq(scanner_requests.TraceId) AS requests,
-          uniqIf(scanner_requests.TraceId, (scanner_requests.HttpStatus >= 200 AND scanner_requests.HttpStatus < 300)) AS answered
+          uniqIf(scanner_requests.TraceId, ((scanner_requests.HttpStatus >= 200 AND scanner_requests.HttpStatus < 300) AND (scanner_requests.Signature = '' OR if(multiSearchFirstIndexCaseInsensitive(concat(' ', scanner_requests.Path), ['/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', ' /actuator/env', ' /actuator/heapdump', ' /actuator/configprops', ' /actuator/gateway', ' /server-status', ' /server-info', 'phpinfo', '/info.php', ' /_profiler', ' /debug/pprof', ' /telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci']) > 0, arrayElement(['/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', '/actuator/env', '/actuator/heapdump', '/actuator/configprops', '/actuator/gateway', '/server-status', '/server-info', 'phpinfo', '/info.php', '/_profiler', '/debug/pprof', '/telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci'], multiSearchFirstIndexCaseInsensitive(concat(' ', scanner_requests.Path), ['/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', ' /actuator/env', ' /actuator/heapdump', ' /actuator/configprops', ' /actuator/gateway', ' /server-status', ' /server-info', 'phpinfo', '/info.php', ' /_profiler', ' /debug/pprof', ' /telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci'])), arrayElement(['/wp-admin', '/wp-login.php', '/xmlrpc.php', '/wp-includes/', '/wp-content/plugins/'], multiSearchFirstIndexCaseInsensitive(concat(' ', scanner_requests.Path), ['/wp-admin', '/wp-login.php', '/xmlrpc.php', '/wp-includes/', '/wp-content/plugins/']))) != ''))) AS answered
         FROM scanner_requests
         WHERE scanner_requests.OrgId = 'org_sql_catalog'
           AND scanner_requests.Timestamp >= '2026-01-01 10:30:00'
@@ -16875,6 +16937,104 @@ SELECT
         LIMIT 25
         FORMAT JSON
 
+-- pipe:list_traces:ok-only:baseline  [8c2aa4dd]
+SELECT
+          traces.TraceId AS traceId,
+          traces.Timestamp AS startTime,
+          traces.Timestamp AS endTime,
+          intDiv(traces.Duration, 1000) AS durationMicros,
+          toUInt64(1) AS spanCount,
+          [traces.ServiceName] AS services,
+          traces.SpanId AS rootSpanId,
+          traces.SpanName AS rootSpanName,
+          traces.SpanKind AS rootSpanKind,
+          traces.StatusCode AS rootSpanStatusCode,
+          traces.StatusMessage AS rootSpanStatusMessage,
+          if(traces.SpanAttributes['http.method'] != '', traces.SpanAttributes['http.method'], traces.SpanAttributes['http.request.method']) AS rootHttpMethod,
+          traces.SpanAttributes['http.route'] AS rootHttpRoute,
+          if(traces.SpanAttributes['http.status_code'] != '', traces.SpanAttributes['http.status_code'], traces.SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
+          toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
+          coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) AS rootDeploymentEnv,
+          traces.ResourceAttributes['service.version'] AS rootServiceVersion,
+          if(traces.StatusCode = 'Error', 1, 0) AS hasError
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (traces.SpanKind IN ('Server', 'Consumer') OR traces.ParentSpanId = '')
+          AND traces.StatusCode != 'Error'
+          AND traces.Timestamp >= (SELECT min(ts) FROM (SELECT
+          traces.Timestamp AS ts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (traces.SpanKind IN ('Server', 'Consumer') OR traces.ParentSpanId = '')
+          AND traces.StatusCode != 'Error'
+        ORDER BY ts DESC
+        LIMIT 100))
+        ORDER BY startTime DESC
+        LIMIT 100
+        FORMAT JSON
+
+-- pipe:list_traces:trace-id:baseline  [18275485]
+SELECT
+          traces.TraceId AS traceId,
+          traces.Timestamp AS startTime,
+          traces.Timestamp AS endTime,
+          intDiv(traces.Duration, 1000) AS durationMicros,
+          toUInt64(1) AS spanCount,
+          [traces.ServiceName] AS services,
+          traces.SpanId AS rootSpanId,
+          traces.SpanName AS rootSpanName,
+          traces.SpanKind AS rootSpanKind,
+          traces.StatusCode AS rootSpanStatusCode,
+          traces.StatusMessage AS rootSpanStatusMessage,
+          if(traces.SpanAttributes['http.method'] != '', traces.SpanAttributes['http.method'], traces.SpanAttributes['http.request.method']) AS rootHttpMethod,
+          traces.SpanAttributes['http.route'] AS rootHttpRoute,
+          if(traces.SpanAttributes['http.status_code'] != '', traces.SpanAttributes['http.status_code'], traces.SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
+          toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
+          coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) AS rootDeploymentEnv,
+          traces.ResourceAttributes['service.version'] AS rootServiceVersion,
+          if(traces.StatusCode = 'Error', 1, 0) AS hasError
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (traces.SpanKind IN ('Server', 'Consumer') OR traces.ParentSpanId = '')
+          AND traces.TraceId = '0af7651916cd43dd8448eb211c80319c'
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId = '0af7651916cd43dd8448eb211c80319c'
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-03 14:15:00', 9))
+          AND traces.Timestamp >= (SELECT min(ts) FROM (SELECT
+          traces.Timestamp AS ts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (traces.SpanKind IN ('Server', 'Consumer') OR traces.ParentSpanId = '')
+          AND traces.TraceId = '0af7651916cd43dd8448eb211c80319c'
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId = '0af7651916cd43dd8448eb211c80319c'
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-03 14:15:00', 9))
+        ORDER BY ts DESC
+        LIMIT 100))
+        ORDER BY startTime DESC
+        LIMIT 100
+        FORMAT JSON
+
 -- pipe:logs_count:default:baseline  [fa7ccb7f]
 SELECT
           sum(counts.total) AS total
@@ -18753,6 +18913,38 @@ SELECT
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
+        ORDER BY ts DESC
+        LIMIT 20))
+        ORDER BY timestamp DESC
+        LIMIT 20
+        FORMAT JSON
+
+-- pipe:span_search:ok-only:baseline  [2113e854]
+SELECT
+          traces.TraceId AS traceId,
+          traces.SpanId AS spanId,
+          traces.SpanName AS spanName,
+          traces.ServiceName AS serviceName,
+          traces.Duration / 1000000 AS durationMs,
+          traces.StatusCode AS statusCode,
+          traces.StatusMessage AS statusMessage,
+          traces.SpanAttributes AS spanAttributes,
+          traces.ResourceAttributes AS resourceAttributes,
+          traces.Timestamp AS timestamp
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (traces.SpanName IN ('GET /v1/x', 'GET', 'http.server GET') AND (traces.SpanName = 'GET /v1/x' OR if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) = 'GET /v1/x'))
+          AND traces.StatusCode != 'Error'
+          AND traces.Timestamp >= (SELECT min(ts) FROM (SELECT
+          traces.Timestamp AS ts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (traces.SpanName IN ('GET /v1/x', 'GET', 'http.server GET') AND (traces.SpanName = 'GET /v1/x' OR if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) = 'GET /v1/x'))
+          AND traces.StatusCode != 'Error'
         ORDER BY ts DESC
         LIMIT 20))
         ORDER BY timestamp DESC

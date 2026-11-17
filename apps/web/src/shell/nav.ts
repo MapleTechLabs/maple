@@ -132,7 +132,8 @@ const servicesItem: NavItem = {
 	],
 }
 
-const exploreItem: NavItem = {
+/** Explore's signals; Product analytics joins them for an org in the productAnalytics rollout. */
+const exploreItem = (productAnalytics: boolean): NavItem => ({
 	title: "Explore",
 	href: "/traces",
 	icon: "LayersIcon",
@@ -141,10 +142,19 @@ const exploreItem: NavItem = {
 		{ title: "Logs", href: "/logs", icon: "FileIcon" },
 		{ title: "Metrics", href: "/metrics", icon: "ChartLineIcon" },
 		{ title: "Replays", href: "/replays", icon: "PlayRotateClockwiseIcon" },
+		...(productAnalytics
+			? [
+					{
+						title: "Product analytics",
+						href: "/product-analytics",
+						icon: "ChartBarTrendUpIcon",
+					} as const,
+				]
+			: []),
 		{ title: "Agent sessions", href: "/agent-sessions", icon: "SquareSparkleIcon" },
 		{ title: "MCP servers", href: "/mcp-servers", icon: "PlugIcon" },
 	],
-}
+})
 
 const alertsItem: NavItem = {
 	title: "Alerts",
@@ -225,9 +235,7 @@ export type NavAudience = typeof NavAudience.Type
 export type NavFlags = Readonly<{
 	cloudCost: boolean
 	productAnalytics: boolean
-	releases: boolean
 	securityAudit: boolean
-	statusPages: boolean
 }>
 
 const analystNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
@@ -238,9 +246,7 @@ const analystNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 		items: [
 			analystIncidentsItem,
 			{ title: "Errors", href: "/errors", icon: "CircleWarningIcon" },
-			...(flags.statusPages
-				? [{ title: "Status pages", href: "/status-pages", icon: "WindowChartLineIcon" } as const]
-				: []),
+			{ title: "Status pages", href: "/status-pages", icon: "WindowChartLineIcon" },
 		],
 	},
 	{
@@ -251,9 +257,6 @@ const analystNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 			{ title: "Users", href: "/users", icon: "UsersIcon" },
 			{ title: "Replays", href: "/replays", icon: "PlayRotateClockwiseIcon" },
 			{ title: "Dashboards", href: "/dashboards", icon: "GridSquareCirclePlusIcon" },
-			...(flags.releases
-				? [{ title: "Releases", href: "/releases", icon: "RocketIcon" } as const]
-				: []),
 			...(flags.cloudCost ? [costItem] : []),
 		],
 	},
@@ -264,36 +267,14 @@ const operatorNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 	{
 		id: "monitor",
 		label: "Monitor",
-		items: [
-			{
-				...servicesItem,
-				alsoActive: [
-					...(flags.releases ? [] : ["/releases"]),
-					...(flags.statusPages ? [] : ["/status-pages"]),
-				],
-			},
-			...(flags.releases
-				? [{ title: "Releases", href: "/releases", icon: "RocketIcon" } as const]
-				: []),
-			infrastructureItem,
-			...(flags.cloudCost ? [costItem] : []),
-		],
+		items: [servicesItem, infrastructureItem, ...(flags.cloudCost ? [costItem] : [])],
 	},
 	{
 		id: "analyze",
 		label: "Analyze",
 		items: [
-			exploreItem,
+			exploreItem(flags.productAnalytics),
 			{ title: "Web analytics", href: "/analytics", icon: "ChartBarHorizontalIcon" },
-			...(flags.productAnalytics
-				? [
-						{
-							title: "Product analytics",
-							href: "/product-analytics",
-							icon: "ChartBarTrendUpIcon",
-						} as const,
-					]
-				: []),
 			{ title: "Users", href: "/users", icon: "UsersIcon" },
 			{ title: "Dashboards", href: "/dashboards", icon: "GridSquareCirclePlusIcon" },
 		],
@@ -313,15 +294,13 @@ const operatorNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 			...(flags.securityAudit
 				? [{ title: "Security", href: "/security", icon: "ShieldCheckIcon", badge: "Beta" } as const]
 				: []),
-			...(flags.statusPages
-				? [{ title: "Status pages", href: "/status-pages", icon: "WindowChartLineIcon" } as const]
-				: []),
+			{ title: "Status pages", href: "/status-pages", icon: "WindowChartLineIcon" },
 		],
 	},
 ]
 
 /**
- * `navGroups(flags, audience)`; `cloudCost`, `productAnalytics`, `releases`, `securityAudit` and `statusPages` gate a
+ * `navGroups(flags, audience)`; `cloudCost`, `productAnalytics`, `releases` and `securityAudit` gate a
  * row each, and an analyst gets {@link analystNavGroups}.
  */
 export const navGroups = (flags: NavFlags, audience: NavAudience = "operator"): ReadonlyArray<NavGroup> =>

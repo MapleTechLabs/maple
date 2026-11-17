@@ -8,6 +8,8 @@ import {
 	MapleInternalApi,
 	RawSqlExecuteResponse,
 	SpanHierarchyResponse,
+	ProfileSampleTypesResponse,
+	ProfileStacksResponse,
 	SpanDetailResponse,
 	TraceSpanEventsResponse,
 	ErrorsByTypeResponse,
@@ -64,9 +66,9 @@ import {
 	ServiceDbQuerySummaryResponse,
 	ServiceDetailOverviewResponse,
 	ReleasesListResponse,
+	ServiceDeploysResponse,
 	UptimeChecksResponse,
 	UptimePhaseTimingsResponse,
-	ReleaseDetailResponse,
 	type ReleaseRow,
 	ServiceDependenciesBundleResponse,
 	ServiceMapBundleResponse,
@@ -136,7 +138,6 @@ import {
 	CostTimeseriesResponse,
 	CostTotalsResponse,
 	CommitSha,
-	FingerprintHash,
 	SpanName,
 	StatusCode,
 	type TenantContext,
@@ -186,6 +187,7 @@ import {
 } from "@maple/backend/queries/dashboard-reads"
 import { makeSearchConsoleReads } from "@maple/backend/queries/search-console-reads"
 import { makeCostReads } from "@maple/backend/queries/cost-reads"
+import { makeProfileReads } from "@maple/backend/queries/profile-reads"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { runQueryEngineBatch } from "@/routes/query-engine-batch"
@@ -268,7 +270,6 @@ const toServiceApiBucket = (row: CH.ServiceApiTimeseriesOutput) => ({
 })
 
 const decodeSpanName = Schema.decodeUnknownSync(SpanName)
-const decodeFingerprintHash = Schema.decodeUnknownSync(FingerprintHash)
 const decodeCommitSha = Schema.decodeUnknownSync(CommitSha)
 
 // Warehouse stores span status in Title Case (Ok/Error/Unset). Coerce any
@@ -336,11 +337,17 @@ const toReleaseRow = (row: CH.ReleasesListOutput): ReleaseRow => {
 	}
 }
 
-const toReleaseTimelinePoint = (row: CH.ReleasesTimelineOutput) => ({
-	bucket: DateTime.formatIso(row.bucket),
+const toDeployVerificationRow = (row: CH.ReleaseVerificationOutput) => ({
 	serviceName: decodeServiceName(row.serviceName),
+	environment: row.environment,
 	commitSha: decodeCommitSha(row.commitSha),
-	count: row.count,
+	firstSeen: DateTime.formatIso(row.firstSeen),
+	afterSpans: row.afterSpans,
+	afterErrors: row.afterErrors,
+	afterP95Ms: row.afterP95Ms,
+	beforeSpans: row.beforeSpans,
+	beforeErrors: row.beforeErrors,
+	beforeP95Ms: row.beforeP95Ms,
 })
 
 const toServiceWorkloadRow = (row: CH.ServiceWorkloadsOutput) => ({
@@ -376,6 +383,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 		const database = yield* Database
 		const featureFlags = yield* OrganizationFeatureFlagsService
 		const cost = makeCostReads({ warehouse, queryEngine, database, featureFlags })
+		const profiles = makeProfileReads({ warehouse, queryEngine })
 
 		const dbEdgesWithinBudget = <A, P, E extends QueryEngineDirectError, R>(
 			rollup: (tenant: TenantContext, payload: P) => Effect.Effect<ReadonlyArray<A>, E, R>,
@@ -1388,22 +1396,36 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						})
 					}),
 				)
+				.handle("serviceDeploys", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						// A commit alone would read every service's minutes: bound it to the ones it reached.
+						const commitSha = payload.commitSha
+						const reached =
+							payload.serviceName !== undefined || commitSha === undefined
+								? undefined
+								: yield* runQuery(Queries.commitServices, tenant, { ...payload, commitSha })
+						const serviceNames =
+							reached === undefined ? undefined : Arr.map(reached, (row) => row.serviceName)
+						const rows =
+							serviceNames !== undefined && serviceNames.length === 0
+								? []
+								: yield* runQuery(Queries.serviceDeploys, tenant, {
+										...payload,
+										serviceNames,
+									})
+						return new ServiceDeploysResponse({
+							deploys: Arr.map(rows, toDeployVerificationRow),
+							verifyWindowSeconds: CH.DEPLOY_VERIFY_WINDOW_SECONDS,
+						})
+					}),
+				)
 				.handle("releasesList", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						// One Worker invocation for the page: the per-commit rows and the
-						// swimlane timeline share a config resolution and run concurrently.
-						yield* warehouse.warmRoute(tenant)
-						const [rows, timelineRows] = yield* Effect.all(
-							[
-								runQuery(Queries.releasesList, tenant, payload),
-								runQuery(Queries.releasesTimeline, tenant, payload),
-							],
-							{ concurrency: 2 },
-						)
+						const rows = yield* runQuery(Queries.releasesList, tenant, payload)
 						return new ReleasesListResponse({
 							releases: Arr.map(rows, toReleaseRow),
-							timeline: Arr.map(timelineRows, toReleaseTimelinePoint),
 							truncated: rows.length >= CH.RELEASES_LIST_CAP,
 						})
 					}),
@@ -1441,34 +1463,6 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 												transferMs: row.transferMs,
 											}
 										: null,
-							})),
-						})
-					}),
-				)
-				.handle("releaseDetail", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						yield* warehouse.warmRoute(tenant)
-						const [versionRows, timelineRows, timeseries, baselineTimeseries, fingerprintRows] =
-							yield* Effect.all(
-								[
-									runQuery(Queries.releaseVersions, tenant, payload),
-									runQuery(Queries.releaseTimeline, tenant, payload),
-									queryEngine.execute(tenant, payload.timeseries),
-									queryEngine.execute(tenant, payload.baselineTimeseries),
-									runQuery(Queries.releaseErrorFingerprints, tenant, payload),
-								],
-								{ concurrency: 5 },
-							)
-						return new ReleaseDetailResponse({
-							versions: Arr.map(versionRows, toReleaseRow),
-							timeline: Arr.map(timelineRows, toReleaseTimelinePoint),
-							timeseries,
-							baselineTimeseries,
-							errorFingerprints: Arr.map(fingerprintRows, (row) => ({
-								fingerprintHash: decodeFingerprintHash(row.fingerprintHash),
-								count: row.count,
-								firstSeen: DateTime.formatIso(row.firstSeen),
 							})),
 						})
 					}),
@@ -1651,6 +1645,14 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						return new ServiceRuntimesResponse({
 							data: toServiceRuntimeRows(rows, payload.services),
 						})
+					}),
+				)
+				.handle("profileSampleTypes", serveData(profiles.sampleTypes, ProfileSampleTypesResponse))
+				.handle("profileStacks", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const read = yield* profiles.stacks(tenant, payload)
+						return new ProfileStacksResponse(read)
 					}),
 				)
 				.handle("serviceUsage", serve.rows(Queries.serviceUsage, ServiceUsageResponse))
@@ -2575,6 +2577,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 									signature: row.signature,
 									service: row.service,
 									requests: row.requests,
+									inPath: row.inPath,
 									answered: row.answered,
 									sources: row.sources,
 									lastSeen: DateTime.formatIso(row.lastSeen),

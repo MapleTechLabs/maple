@@ -31,7 +31,6 @@ export const IdleTtl = {
 	infraTimeseries: 30_000,
 	servicesFacets: 300_000,
 	releases: 30_000,
-	releaseDetail: 30_000,
 	/** Commit details. */
 	commitDetail: 300_000,
 	/** `GET /v2/telemetry_signals`: shared by every page's empty state. */

@@ -15,7 +15,6 @@ import {
 	flowRail,
 	foundChips,
 	liveChecklist,
-	savedBanner,
 	statusRow,
 	stepCard,
 } from "../../../kit/connect-flow"
@@ -34,7 +33,7 @@ import {
 import { catalogEntry } from "../../../integrations/catalog"
 import { awsStreamOf, isoMs } from "../../../integrations/derive"
 import type { FlowStage } from "../../../integrations/flow"
-import { awsChosenLabel, awsFlowConnection, awsStatusOf } from "./flow-aws"
+import { awsFlowConnection, awsStatusOf } from "./flow-aws"
 import { Message } from "../../../integrations/message"
 import type { Model } from "../../../integrations/model"
 import { ingestPanel, roleName } from "./view-aws"
@@ -604,17 +603,14 @@ const liveStep = (h: H, model: Model, timeZone: string): Html => {
 	// A delivering stream still needs the script again when the pick changed since it was saved.
 	const needsDeploy =
 		!isDelivering || !isSelectionSaved(connection, selectionOf(connection, model.awsCard.metrics))
-	const chosen = awsChosenLabel(model, connection)
 	return flowColumns(
 		h,
 		[
-			savedBanner(
-				h,
-				`Saved as AWS ${connection.account_id}. Safe to leave; Maple keeps checking.`,
-				chosen ?? "",
-			),
 			...(needsDeploy ? [deployCard(h, model, connection)] : []),
-			liveChecklist(h, { rows: liveRows(h, model, connection, timeZone) }),
+			liveChecklist(h, {
+				saved: `Saved as AWS ${connection.account_id}. Safe to leave; Maple keeps checking.`,
+				rows: liveRows(h, model, connection, timeZone),
+			}),
 			...ingestPanel(h, model, connection, timeZone),
 		],
 		streamRail(h),

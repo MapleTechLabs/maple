@@ -1,6 +1,10 @@
 import { EdgeCacheService } from "@maple/cache"
 import type { DependencyScanRow } from "@maple/db/tables"
-import { DependencyRelation, type DependencyScanLockfile } from "@maple/domain/dependency-scan"
+import {
+	DependencyLockfileKind,
+	DependencyRelation,
+	type DependencyScanLockfile,
+} from "@maple/domain/dependency-scan"
 import {
 	type DependencyScanTrigger,
 	type GitCommitSha,
@@ -12,7 +16,18 @@ import {
 } from "@maple/domain/http"
 import { type PackageAdvisory, PackageEcosystem, packageKey } from "@maple/domain/package-advisories"
 import { parseLockfile, unsupportedReason } from "@maple/lockfiles"
-import { Cause, Clock, Context, Effect, Layer, Option, Schema, String as Str, Array as Arr } from "effect"
+import {
+	Cause,
+	Clock,
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Result,
+	Schema,
+	String as Str,
+	Array as Arr,
+} from "effect"
 import type {
 	VcsProviderClient,
 	VcsTreeFile,
@@ -21,6 +36,8 @@ import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/Vc
 import { DependencyScanSink } from "@maple/backend/services/integrations/vcs/PullRequestEventSink"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import {
+	type AdvisoryQuery,
+	fingerprintOf,
 	MAX_VULNERABILITIES,
 	PackageAdvisoryCatalog,
 } from "@maple/backend/services/security/PackageAdvisoryCatalog"
@@ -28,6 +45,7 @@ import { type DependencyScanMatchInput, DependencyScanStore } from "./Dependency
 import {
 	MAX_LOCKFILES,
 	MAX_MANIFEST_BYTES,
+	MAX_SKIPPED_LOCKFILES,
 	manifestsFor,
 	type SelectedLockfile,
 	sameLockfiles,
@@ -37,12 +55,16 @@ import { RESCAN_AFTER_MS } from "./production"
 
 // Reads a repository's lockfiles at one commit through the VCS provider, looks their packages up
 // in OSV and stores the scan. A lockfile's parse is cached by its blob sha (and its manifests'),
-// so a rescan for new advisories reads nothing from the provider but the tree.
+// and a commit's lockfile selection by its sha, so a rescan for new advisories reads nothing from
+// the provider. A scheduled rescan whose OSV answer is unchanged stores nothing.
 
 const PARSE_CACHE_BUCKET = "lockfile-packages"
 /** Part of the parse cache key: bump it when a parser fix should reach lockfiles already cached. */
-const PARSER_VERSION = 2
+const PARSER_VERSION = 3
 const PARSE_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
+const PLAN_CACHE_BUCKET = "dependency-scan-plan"
+/** Part of the plan cache key: bump it when lockfile or manifest selection changes. */
+const PLAN_VERSION = 3
 /** Larger lockfiles are recorded as too large rather than read into the Worker's memory. */
 export const MAX_LOCKFILE_BYTES = 8 * 1024 * 1024
 /** Two lockfiles at a time keeps a monorepo's largest pair well inside a Worker's memory. */
@@ -69,6 +91,38 @@ const CachedLockfile = Schema.Union([
 	}),
 ])
 type CachedLockfile = typeof CachedLockfile.Type
+
+const PlannedFile = Schema.Struct({ path: Schema.String, sha: Schema.String, size: Schema.Number })
+const PlannedLockfile = Schema.Struct({
+	file: PlannedFile,
+	kind: DependencyLockfileKind,
+	/** The package.json files a yarn lockfile reads, keyed relative to its directory. */
+	manifests: Schema.Array(Schema.Struct({ relativePath: Schema.String, file: PlannedFile })),
+})
+type PlannedLockfile = typeof PlannedLockfile.Type
+
+/** Which files of one commit's tree a scan reads; a commit never changes, so it is cached by sha. */
+const ScanPlan = Schema.Struct({
+	selected: Schema.Array(PlannedLockfile),
+	skipped: Schema.Array(PlannedLockfile),
+	omitted: Schema.Number,
+})
+type ScanPlan = typeof ScanPlan.Type
+
+const planOf = (files: ReadonlyArray<VcsTreeFile>): ScanPlan => {
+	const { selected, skipped, omitted } = selectLockfiles(files)
+	return {
+		omitted,
+		selected: Arr.map(selected, (lockfile) => ({
+			...lockfile,
+			manifests: manifestsFor(lockfile, files),
+		})),
+		skipped: Arr.map(skipped, (lockfile) => ({ ...lockfile, manifests: [] })),
+	}
+}
+
+/** A commit's plan, or null when its tree is too large to list: a commit's tree never changes. */
+const CachedPlan = Schema.NullOr(ScanPlan)
 
 export class DependencyScanError extends Schema.TaggedError<DependencyScanError>()(
 	"@maple/dependency-scan/DependencyScanError",
@@ -100,6 +154,15 @@ export type DependencyScanOutcome =
 	| { readonly _tag: "Unchanged" }
 	/** The tracked branch has no commit yet. */
 	| { readonly _tag: "EmptyRepository" }
+	/** The provider will not show the repository: blocked, gone, or the installation removed. */
+	| { readonly _tag: "RepositoryUnreachable"; readonly reason: UnreachableReason }
+	/** The tree is too large to list; the failed scan row says so. */
+	| { readonly _tag: "TreeTooLarge"; readonly scan: DependencyScanRow }
+
+type UnreachableReason = "blocked" | "unavailable" | "installation_gone"
+
+const unreachable = (reason: UnreachableReason) => () =>
+	Effect.succeed(Result.fail<UnreachableReason>(reason))
 
 export interface DependencyScannerApi {
 	readonly scan: (
@@ -132,6 +195,16 @@ interface ReadLockfile {
 	readonly packages: ReadonlyArray<LockedPackageRow>
 }
 
+/** What a scheduled precheck read, kept so a changed answer is scanned without reading it twice. */
+interface Prepared {
+	readonly plan: ScanPlan
+	readonly reads: ReadonlyArray<ReadLockfile>
+	readonly query: AdvisoryQuery
+	readonly unchanged: boolean
+}
+
+const EMPTY_PLAN: ScanPlan = { selected: [], skipped: [], omitted: 0 }
+
 export class DependencyScanner extends Context.Service<DependencyScanner, DependencyScannerApi>()(
 	"@maple/backend/services/dependency-scan/DependencyScanner",
 	{
@@ -160,8 +233,7 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 				provider: DependencySource,
 				installation: VcsInstallation,
 				repo: VcsRepositoryRef,
-				selected: SelectedLockfile,
-				tree: ReadonlyArray<VcsTreeFile>,
+				selected: PlannedLockfile,
 			) => {
 				const unsupported = unsupportedReason(selected.kind)
 				if (unsupported !== undefined)
@@ -179,7 +251,7 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 						),
 						packages: [],
 					})
-				const manifests = manifestsFor(selected, tree)
+				const manifests = selected.manifests
 				const read = Effect.gen(function* () {
 					const content = yield* provider.fetchBlobText(
 						installation,
@@ -271,6 +343,36 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 					)
 			}
 
+			/** The commit's plan, from the cache or the tree; none when the tree is too large to list. */
+			const loadPlan = (
+				provider: DependencySource,
+				installation: VcsInstallation,
+				repository: VcsRepo,
+				repo: VcsRepositoryRef,
+				commitSha: GitCommitSha,
+			) =>
+				edgeCache
+					.getOrCompute(
+						{
+							bucket: PLAN_CACHE_BUCKET,
+							key: Arr.join(
+								[
+									`v${PLAN_VERSION}`,
+									repository.provider,
+									repository.externalRepoId,
+									commitSha,
+								],
+								":",
+							),
+							ttlSeconds: PARSE_CACHE_TTL_SECONDS,
+							schema: CachedPlan,
+						},
+						provider
+							.fetchTreeFiles(installation, repo, commitSha)
+							.pipe(Effect.map((tree) => (tree.truncated ? null : planOf(tree.files)))),
+					)
+					.pipe(Effect.map(({ value }) => Option.fromNullOr(value)))
+
 			const matchesOf = (
 				reads: ReadonlyArray<ReadLockfile>,
 				advisories: ReadonlyMap<string, ReadonlyArray<PackageAdvisory>>,
@@ -341,12 +443,33 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 					const provider = yield* sources
 						.resolve(repository.provider)
 						.pipe(Effect.mapError(scanError("Could not use the repository's provider")))
-					const headOpt =
+					// A repository the provider refuses to show is an answer, not a failed scan.
+					const resolved =
 						request.commitSha === undefined
-							? yield* provider
-									.resolveRef(installation, repo, ref)
-									.pipe(Effect.mapError(scanError(`Could not resolve ${ref}`)))
-							: Option.some(request.commitSha)
+							? yield* provider.resolveRef(installation, repo, ref).pipe(
+									Effect.map((head) => Result.succeed(head)),
+									Effect.catchTags({
+										"@maple/http/errors/VcsRepositoryBlockedError":
+											unreachable("blocked"),
+										"@maple/http/errors/VcsRepoUnavailableError":
+											unreachable("unavailable"),
+										"@maple/http/errors/VcsInstallationGoneError":
+											unreachable("installation_gone"),
+									}),
+									Effect.mapError(scanError(`Could not resolve ${ref}`)),
+								)
+							: Result.succeed(Option.some(request.commitSha))
+					if (Result.isFailure(resolved)) {
+						yield* Effect.annotateCurrentSpan({
+							"maple.depscan.outcome": "repository_unreachable",
+							"maple.depscan.skip_reason": resolved.failure,
+						})
+						return {
+							_tag: "RepositoryUnreachable",
+							reason: resolved.failure,
+						} satisfies DependencyScanOutcome
+					}
+					const headOpt = resolved.success
 					if (Option.isNone(headOpt))
 						return { _tag: "EmptyRepository" } satisfies DependencyScanOutcome
 					const commitSha = headOpt.value
@@ -370,15 +493,91 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 						if (covered) return { _tag: "Unchanged" } satisfies DependencyScanOutcome
 					}
 
-					const tree = yield* provider
-						.fetchTreeFiles(installation, repo, commitSha)
-						.pipe(Effect.mapError(scanError("Could not list the repository tree")))
-					const { selected, skipped } = selectLockfiles(tree.files)
+					const readAll = (plan: ScanPlan) =>
+						Effect.forEach(
+							plan.selected,
+							(lockfile) =>
+								readLockfile(provider, installation, repo, lockfile).pipe(
+									Effect.mapError(scanError(`Could not read ${lockfile.file.path}`)),
+								),
+							{ concurrency: READ_CONCURRENCY },
+						)
+					const planFor = loadPlan(provider, installation, repository, repo, commitSha).pipe(
+						Effect.mapError(scanError("Could not list the repository tree")),
+					)
+
+					// A scheduled rescan of the commit its last complete scan read differs only by what OSV
+					// says now. OSV is still asked; an unchanged answer means unchanged matches and findings.
+					const precheck =
+						request.trigger === "schedule" && defaultBranchHead
+							? yield* Effect.gen(function* () {
+									const latest = yield* store
+										.latestScan({
+											orgId,
+											repositoryId: repository.id,
+											defaultBranchHead: true,
+											// A newer failed scan is what the repository shows; only a full scan clears it.
+											anyStatus: true,
+										})
+										.pipe(Effect.mapError(scanError("Could not read the last scan")))
+									if (
+										Option.isNone(latest) ||
+										latest.value.status !== "completed" ||
+										latest.value.commitSha !== commitSha ||
+										latest.value.error !== null ||
+										latest.value.advisoryFingerprint === null
+									)
+										return Option.none<Prepared>()
+									const fingerprint = latest.value.advisoryFingerprint
+									const plan = yield* planFor
+									if (Option.isNone(plan)) return Option.none<Prepared>()
+									const reads = yield* readAll(plan.value)
+									const query = yield* catalog
+										.query(Arr.flatMap(reads, (read) => read.packages))
+										.pipe(Effect.mapError(scanError("Could not read advisories")))
+									return Option.some<Prepared>({
+										plan: plan.value,
+										reads,
+										query,
+										unchanged: fingerprintOf(query, PARSER_VERSION) === fingerprint,
+									})
+								}).pipe(
+									// The full scan reads again and records the failure on its row.
+									Effect.catchTag("@maple/dependency-scan/DependencyScanError", (error) =>
+										Effect.logWarning(
+											"Scheduled scan precheck failed",
+											error.message,
+										).pipe(Effect.as(Option.none<Prepared>())),
+									),
+								)
+							: Option.none<Prepared>()
+					if (Option.isSome(precheck) && precheck.value.unchanged) {
+						const { plan } = precheck.value
+						yield* Effect.annotateCurrentSpan({
+							"vcs.commit.sha": commitSha,
+							"maple.depscan.lockfile_count": plan.selected.length,
+							"maple.depscan.lockfiles_skipped": plan.skipped.length,
+							"maple.depscan.package_count": precheck.value.query.packages.length,
+							"maple.depscan.outcome": "unchanged",
+							"maple.depscan.skip_reason":
+								plan.selected.length === 0 ? "no_lockfiles" : "advisories_unchanged",
+						})
+						return { _tag: "Unchanged" } satisfies DependencyScanOutcome
+					}
+
+					const planOpt = Option.isSome(precheck)
+						? Option.some(precheck.value.plan)
+						: yield* planFor
+					const truncated = Option.isNone(planOpt)
+					const { selected, skipped, omitted } = Option.getOrElse(
+						planOpt,
+						(): ScanPlan => EMPTY_PLAN,
+					)
 					yield* Effect.annotateCurrentSpan({
 						"vcs.commit.sha": commitSha,
 						"maple.depscan.lockfile_count": selected.length,
-						"maple.depscan.lockfiles_skipped": skipped.length,
-						"maple.depscan.tree_truncated": tree.truncated,
+						"maple.depscan.lockfiles_skipped": skipped.length + omitted,
+						"maple.depscan.tree_truncated": truncated,
 					})
 
 					// A yarn scan also reads package.json for direct and dev, which a lockfile sha does not cover.
@@ -394,7 +593,9 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 							Option.isSome(latest) &&
 							// An incomplete scan never reconciled, so its findings are not current.
 							latest.value.error === null &&
-							!tree.truncated &&
+							!truncated &&
+							// Lockfiles past the record cap are not on the last scan, so it cannot match.
+							omitted === 0 &&
 							// Skipped lockfiles are on the last scan too, so they count toward "unchanged".
 							sameLockfiles(latest.value.lockfiles, [...selected, ...skipped])
 						) {
@@ -406,7 +607,7 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 					// A tree too large to list fails the same way on every push; record it once. A production
 					// scan of a commit records its own failure, which is retried after a while.
 					// Pushes only: a manual or scheduled scan records its own result, so Scan now sees one.
-					if (tree.truncated && request.trigger === "push") {
+					if (truncated && request.trigger === "push") {
 						const scans = yield* store
 							.latestBranchScans({ orgId })
 							.pipe(Effect.mapError(scanError("Could not read the last scan")))
@@ -429,24 +630,29 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 						.pipe(Effect.mapError(scanError("Could not record the scan")))
 					yield* Effect.annotateCurrentSpan({ "maple.depscan.scan_id": started.id })
 
+					// A cut-short listing would read as deleted lockfiles and mark their findings fixed, so the
+					// scan is recorded as failed. A known limit, not a fault: the span stays Ok.
+					if (truncated) {
+						const failed = yield* store
+							.failScan({ orgId, scanId: started.id, error: TREE_TOO_LARGE })
+							.pipe(Effect.mapError(scanError("Could not record the scan")))
+						yield* Effect.annotateCurrentSpan({ "maple.depscan.outcome": "tree_too_large" })
+						return { _tag: "TreeTooLarge", scan: failed } satisfies DependencyScanOutcome
+					}
+
 					const run = Effect.gen(function* () {
-						// A cut-short listing would read as deleted lockfiles and mark their findings fixed.
-						if (tree.truncated)
-							return yield* new DependencyScanError({
-								message: TREE_TOO_LARGE,
-								repositoryId: repository.id,
-							})
-						const reads = yield* Effect.forEach(
-							selected,
-							(lockfile) =>
-								readLockfile(provider, installation, repo, lockfile, tree.files).pipe(
-									Effect.mapError(scanError(`Could not read ${lockfile.file.path}`)),
-								),
-							{ concurrency: READ_CONCURRENCY },
-						)
+						// A scheduled precheck already asked OSV; its answer is reused, not asked for again.
+						const reads = Option.isSome(precheck)
+							? precheck.value.reads
+							: yield* readAll({ selected, skipped, omitted })
 						const packages = Arr.flatMap(reads, (read) => read.packages)
+						const query = Option.isSome(precheck)
+							? precheck.value.query
+							: yield* catalog
+									.query(packages)
+									.pipe(Effect.mapError(scanError("Could not read advisories")))
 						const advisories = yield* catalog
-							.advisories(packages)
+							.resolve(query)
 							.pipe(Effect.mapError(scanError("Could not read advisories")))
 						const matches = matchesOf(reads, advisories.byPackage)
 						yield* Effect.annotateCurrentSpan({
@@ -487,9 +693,14 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 								],
 								packageCount: packages.length,
 								matches,
-								// Either reason keeps this scan from reconciling: the branch changed, or advisories were left unread.
+								advisoryFingerprint: fingerprintOf(query, PARSER_VERSION),
+								// Any reason keeps this scan from reconciling: the branch changed, lockfiles went
+								// unrecorded, or advisories were left unread.
 								incomplete:
 									headChange ??
+									(omitted === 0
+										? undefined
+										: `${omitted} lockfiles past the ${MAX_LOCKFILES + MAX_SKIPPED_LOCKFILES} a scan records were left out`) ??
 									(advisories.unread === 0
 										? undefined
 										: `${advisories.unread} known vulnerabilities past the ${MAX_VULNERABILITIES} a scan reads were left out`),

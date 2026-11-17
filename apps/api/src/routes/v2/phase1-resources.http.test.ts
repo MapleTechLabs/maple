@@ -252,6 +252,7 @@ const settingsFixture = new AnomalyDetectorSettingsDocument({
 	enabled: true,
 	sensitivity: "normal",
 	mutedSignals: [],
+	includedEnvironments: [],
 	updatedAt: decodeIso("2026-07-15T09:12:00.000Z"),
 	updatedBy: null,
 })
@@ -1243,6 +1244,7 @@ describe("v2 anomalies over HTTP", () => {
 		expect(settings.body.object).toBe("anomaly_settings")
 		expect(settings.body.enabled).toBe(true)
 		expect(settings.body.muted_signals).toEqual([])
+		expect(settings.body.included_environments).toEqual([])
 		await harness.dispose()
 	})
 

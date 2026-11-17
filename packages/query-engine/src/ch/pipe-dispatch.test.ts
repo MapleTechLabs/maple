@@ -141,9 +141,8 @@ describe("compilePipeQuery", () => {
 		})
 	}
 
-	// `has_error` feeds the same tri-state filter. An absent flag lowered to
-	// `false`, which added `StatusCode != 'Error'` and hid every errored trace
-	// from `maple traces`, `diagnose` and the `search_traces` MCP tool.
+	// `has_error` feeds the tri-state filter. An absent flag must stay absent: lowering
+	// it to `false` once hid every errored trace from `maple traces` and `search_traces`.
 	for (const pipe of ["list_traces", "span_search"]) {
 		describe(`${pipe} has_error`, () => {
 			const sqlFor = (hasError?: unknown) =>
@@ -169,13 +168,24 @@ describe("compilePipeQuery", () => {
 				}
 			})
 
-			it("treats a falsy has_error value as absent", () => {
-				for (const raw of [false, "0", "false", ""]) {
-					expect(sqlFor(raw)).toBe(sqlFor())
+			it("treats an empty has_error value as absent", () => {
+				expect(sqlFor("")).toBe(sqlFor())
+			})
+
+			it("keeps only non-errored spans when has_error is false", () => {
+				for (const raw of [false, "0", "false"]) {
+					expect(sqlFor(raw)).toContain("StatusCode != 'Error'")
 				}
 			})
 		})
 	}
+
+	it("list_traces narrows to one trace through trace_index when trace_id is set", () => {
+		const sql = compilePipeQuery("list_traces", { ...baseParams(), trace_id: "abc123" })!.sql
+		expect(sql).toContain("TraceId = 'abc123'")
+		expect(sql).toContain("trace_index")
+		expect(compilePipeQuery("list_traces", baseParams())!.sql).not.toContain("trace_index")
+	})
 
 	it("metric_attribute_values reads metric-scoped values for the given key", () => {
 		const result = compilePipeQuery("metric_attribute_values", {

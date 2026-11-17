@@ -5,10 +5,14 @@ import { ChatMessage } from "@maple/domain/chat-session"
 const CLOSE_OUT_TOOL_OUTPUT_CHARS = 20_000
 
 /**
- * All the evidence the close-out is shown, about 60k tokens. The newest message is replayed whole
+ * All the evidence the close-out is shown, about 50k tokens. The newest message is replayed whole
  * and compaction cannot split it, so an unbounded transcript fails the close-out before its first call.
+ *
+ * At 200k an investigation's close-out opened at 123k tokens (tool output runs about 2.4 characters
+ * a token, over a 39k system prompt), and the round after `submit_diagnosis` no longer fit the
+ * 128k limit (2026-11-16). This leaves that round room.
  */
-export const CLOSE_OUT_EVIDENCE_CHARS = 200_000
+export const CLOSE_OUT_EVIDENCE_CHARS = 120_000
 
 /**
  * The transcript as the close-out sees it: the same messages, with each assistant message's tool

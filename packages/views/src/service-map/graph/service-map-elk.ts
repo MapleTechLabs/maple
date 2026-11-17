@@ -108,7 +108,7 @@ function seedablePositions(
 /**
  * Build the ELK input graph. Each namespace becomes a compound container node
  * (so same-namespace services stay together and the dotted boxes never
- * overlap); databases and namespace-less services sit at the top level.
+ * overlap). A database only one namespace calls joins it; the rest sit at the top level.
  *
  * Exported for unit tests — pure, no worker involved.
  */

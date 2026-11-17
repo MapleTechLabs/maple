@@ -34,6 +34,8 @@ export const DependencyScans = PG.table("dependency_scans", {
 		packageCount: PG.column(PG.int4, { name: "package_count", default: 0 }),
 		vulnerableCount: PG.column(PG.int4, { name: "vulnerable_count", default: 0 }),
 		error: PG.nullable(PG.text),
+		/** The OSV answer a complete scan matched against; a scheduled rescan of the commit compares it. */
+		advisoryFingerprint: PG.column(PG.nullable(PG.text), { name: "advisory_fingerprint" }),
 		startedAt: PG.column(PG.timestamptzMillis, { name: "started_at" }),
 		finishedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "finished_at" }),
 	},

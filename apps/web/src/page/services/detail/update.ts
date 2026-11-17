@@ -14,6 +14,8 @@ import { Option, type Result, Array as Arr, Record as Rec, Order } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
+import * as ProfileFlamegraph from "@maple/views/profiles/profile-flamegraph"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
 import { commitDetailKey, isResolvableSha } from "../../kit/commit-card"
@@ -30,12 +32,14 @@ import {
 	FetchApiOverview,
 	FetchCommit,
 	FetchDependencies,
+	FetchDeploys,
 	FetchEndpointSeries,
 	FetchEndpoints,
 	FetchStatusBreakdown,
 	FetchIssues,
 	FetchOperations,
 	FetchOverview,
+	FetchProfile,
 	FetchRefinement,
 	FetchUptimeMonitors,
 	FetchUsage,
@@ -58,8 +62,10 @@ import {
 } from "./derive"
 import { stepEnvironmentSelect } from "../../kit/environment-switcher"
 import { initialSort, nextSort, operationTraceSearch, TRACE_DETAIL_LIMIT_SECONDS } from "./derive-tables"
-import { deriveDeploys } from "./derive-panels"
+import { type DeployCheck, dataEndOf, deployChecksOf, isOpenDeploy, railOrder } from "./derive-deploys"
 import { matchesFilter } from "./derive-api"
+import * as DeployPeek from "./deploy-peek/model"
+import * as DeployPeekUpdate from "./deploy-peek/update"
 import * as EndpointPeek from "./endpoint-peek/model"
 import * as EndpointPeekUpdate from "./endpoint-peek/update"
 import { Message, type RetryTarget } from "./message"
@@ -158,6 +164,27 @@ const dependenciesStep =
 		)
 	}
 
+/** The Profiles tab's flame chart and top functions: one environment at most. */
+const profileStep =
+	(context: PageContext, window: TimeWindow, mode: RequestMode) =>
+	(model: Model): Step => {
+		const deploymentEnv = singleDeploymentEnv(environmentsOf(model.search))
+		const input = {
+			serviceName: model.serviceName,
+			startTime: window.startTime,
+			endTime: window.endTime,
+			// The request's optional keys are left out, never `undefined`.
+			...(deploymentEnv !== undefined && { deploymentEnv }),
+		}
+		return keyed(
+			model.profile,
+			requestKey(context.orgId, "getProfile", { data: input }),
+			mode,
+			(profile) => ({ profile }),
+			(key) => FetchProfile({ key, input }),
+		)
+	}
+
 /** Sampling verdict from the loaded overview (`samplingActive`), part of the refinement key. */
 const samplingActive = (model: Model): boolean =>
 	Option.match(AsyncData.getData(model.overview.data), {
@@ -178,23 +205,25 @@ const issuesQuery = (model: Model, window: TimeWindow) => {
 	})
 }
 
-/** Every sha the Overview resolves: the marker labels and the resolvable deploy rows on screen. */
-const overviewShas = (model: Model): ReadonlyArray<string> =>
-	Option.match(AsyncData.getData(model.overview.data), {
+/** Every sha the Overview resolves: the marker labels and the deploy rows on screen. */
+const overviewShas = (model: Model): ReadonlyArray<string> => {
+	const markers = Option.match(AsyncData.getData(model.overview.data), {
 		onNone: () => [],
-		onSome: (overview) => {
-			const buckets = Arr.map(overview.points, (point) => point.bucket)
-			const markers = commitMarkers(overview.releases, buckets, model.commits)
-			const deploys = deriveDeploys(overview.releases)
-			const visible = deploys.slice(0, model.isDeploysExpanded ? DEPLOYS_EXPANDED : DEPLOYS_RAIL)
-			return [
-				...new Set([
-					...markerShas(markers),
-					...Arr.flatMap(visible, (deploy) => (isResolvableSha(deploy.sha) ? [deploy.sha] : [])),
-				]),
-			]
-		},
+		onSome: (overview) =>
+			markerShas(
+				commitMarkers(
+					overview.releases,
+					Arr.map(overview.points, (point) => point.bucket),
+					model.commits,
+				),
+			),
 	})
+	const rows = Arr.map(
+		railOrder(deployChecksOf(model)).slice(0, model.isDeploysExpanded ? DEPLOYS_EXPANDED : DEPLOYS_RAIL),
+		(check) => check.sha,
+	)
+	return [...new Set([...markers, ...Arr.filter(rows, isResolvableSha)])]
+}
 
 export const DEPLOYS_RAIL = 8
 export const DEPLOYS_EXPANDED = 50
@@ -219,7 +248,7 @@ const commitsStep =
 				}
 	}
 
-/** Where the service runs, which the header links on every tab. */
+/** Where the service runs: the Overview's footprint card. */
 const runsOnSteps = (context: PageContext, window: TimeWindow, mode: RequestMode): Steps => [
 	(model) => {
 		const input = { services: [model.serviceName], ...window }
@@ -245,6 +274,7 @@ const runsOnSteps = (context: PageContext, window: TimeWindow, mode: RequestMode
 
 const overviewTabSteps = (context: PageContext, window: TimeWindow, mode: RequestMode): Steps => [
 	operationsStep(context, window, mode),
+	...runsOnSteps(context, window, mode),
 	(model) => {
 		const query = issuesQuery(model, window)
 		// "Load": Reload re-requests it only when its key moved (an environment's window).
@@ -267,6 +297,16 @@ const overviewTabSteps = (context: PageContext, window: TimeWindow, mode: Reques
 		)
 	},
 	dependenciesStep(context, window, mode),
+	(model) => {
+		const input = detailInput(model, window)
+		return keyed(
+			model.deploys,
+			requestKey(context.orgId, "getServiceDeploys", { data: input }),
+			mode,
+			(deploys) => ({ deploys }),
+			(key) => FetchDeploys({ key, input }),
+		)
+	},
 	(model) => {
 		const input = { ...detailInput(model, window), samplingActive: samplingActive(model) }
 		// The function answers `[]` without a request unless sampling is on over every environment.
@@ -294,9 +334,11 @@ const overviewTabSteps = (context: PageContext, window: TimeWindow, mode: Reques
 ]
 
 const tabSteps = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Steps => {
-	switch (tabOf(model.search)) {
+	switch (tabOf(model.search, context)) {
 		case "overview":
 			return overviewTabSteps(context, window, mode)
+		case "profiles":
+			return [profileStep(context, window, mode)]
 		case "operations":
 			return [operationsStep(context, window, mode)]
 		case "dependencies":
@@ -500,6 +542,64 @@ const syncPeek = (result: Return, context: PageContext, mode: RequestMode): Retu
 		: { ...result, model: peeked.model, commands }
 }
 
+/** The open deploy: the newest check of `?deploy=`'s commit, on the Overview only. */
+export const deployPeekOf = (model: Model): DeployCheck | null =>
+	tabOf(model.search) !== "overview" || model.search.deploy === undefined
+		? null
+		: Option.getOrNull(Arr.findFirst(deployChecksOf(model), (check) => isOpenDeploy(model.search, check)))
+
+const deployScope = (model: Model, context: PageContext): DeployPeekUpdate.DeployScope => ({
+	context,
+	serviceName: model.serviceName,
+	window: model.window,
+	dataEndMs: dataEndOf(model),
+})
+
+const liftDeployPeek = (model: Model, result: DeployPeekUpdate.Return): Return => {
+	const commands = Command.mapMessages(result.commands ?? [], (message) =>
+		Message.GotDeployPeekMessage({ message }),
+	)
+	const next = { ...model, deployPeek: result.model }
+	return result.outMessage?._tag === "Closed"
+		? {
+				model: next,
+				commands,
+				outMessage: navigate(next, { ...model.search, deploy: undefined, deployEnv: undefined }, true)
+					.outMessage,
+			}
+		: { model: next, commands }
+}
+
+/**
+ * The drawer follows the URL once the deploys loaded; a sha the window no longer holds leaves the
+ * URL, so it cannot reopen on its own later.
+ */
+const syncDeployPeek = (result: Return, context: PageContext, mode: RequestMode): Return => {
+	const model = result.model
+	const check = deployPeekOf(model)
+	const isStale =
+		check === null &&
+		model.search.deploy !== undefined &&
+		tabOf(model.search) === "overview" &&
+		AsyncData.isSuccess(model.deploys.data)
+	const peeked = liftDeployPeek(
+		model,
+		DeployPeekUpdate.sync(model.deployPeek, deployScope(model, context), check, mode),
+	)
+	const commands = [...(result.commands ?? []), ...(peeked.commands ?? [])]
+	return isStale
+		? {
+				model: peeked.model,
+				commands,
+				outMessage: navigate(
+					peeked.model,
+					{ ...peeked.model.search, deploy: undefined, deployEnv: undefined },
+					true,
+				).outMessage,
+			}
+		: { ...result, model: peeked.model, commands, outMessage: result.outMessage ?? peeked.outMessage }
+}
+
 /**
  * Every query the current tab reads, keyed by its inputs. Idempotent under `Load`: a slot
  * already holding (or loading) its key sends nothing, so any Message may re-run it.
@@ -509,10 +609,9 @@ export const sync = (model: Model, context: PageContext, mode: RequestMode): Ret
 	const window = windowOf(model, context, model.nowMs)
 	const requested = runSteps({ ...model, window }, [
 		overviewStep(context, window, mode),
-		...runsOnSteps(context, window, mode),
 		...tabSteps(model, context, window, mode),
 	])
-	return syncPeek(requested, context, mode)
+	return syncDeployPeek(syncPeek(requested, context, mode), context, mode)
 }
 
 type Search = Model["search"]
@@ -529,6 +628,8 @@ const navigate = (model: Model, search: Search, isReplace: boolean): Return => (
 export const tabSearch = (search: Search, tab: ServiceTab): Search => ({
 	...search,
 	endpoint: undefined,
+	deploy: undefined,
+	deployEnv: undefined,
 	tab: tab === "overview" ? undefined : tab,
 })
 
@@ -554,13 +655,18 @@ export const init = (
 		endpointFilter: "all",
 		endpointQuery: "",
 		endpointPeek: EndpointPeek.init("service-endpoint-peek"),
+		deployPeek: DeployPeek.init("service-deploy-peek"),
 		issues: Keyed.idle(),
+		deploys: Keyed.idle(),
 		usage: Keyed.idle(),
 		uptimeMonitors: Keyed.idle(),
 		canCreateUptimeMonitors: false,
 		workloads: Keyed.idle(),
 		runtimes: Keyed.idle(),
 		dependencies: Keyed.idle(),
+		profile: Keyed.idle(),
+		flamegraph: ProfileFlamegraph.init("service-profile"),
+		profileSnippetCopy: CopyButton.init(),
 		commits: {},
 		markerCard: initMarkerCard("service-marker-card"),
 		isDeploysExpanded: false,
@@ -589,7 +695,10 @@ export const routeChanged = (
 	if (searchHref(model.serviceName, model.search) === searchHref(route.serviceName, route.search))
 		return { model }
 	const next = { ...model, search: route.search }
-	return isWindowChange(model.search, route.search) ? resolveClock(next) : sync(next, context, "Load")
+	return followProfile(
+		model,
+		isWindowChange(model.search, route.search) ? resolveClock(next) : sync(next, context, "Load"),
+	)
 }
 
 /** The window re-resolves against now on a window or zone change. */
@@ -710,10 +819,27 @@ const retrying = (model: Model, target: RetryTarget): Model => {
 			return { ...model, apiOverview: Keyed.idle() }
 		case "StatusBreakdown":
 			return { ...model, statusBreakdown: Keyed.idle() }
+		case "Profile":
+			return { ...model, profile: Keyed.idle() }
 	}
 }
 
+/**
+ * A profile read for another window, environment or release opens on its whole flame graph: the
+ * zoom, the selection and the search were the last profile's. A refresh of the same read keeps them.
+ */
+const followProfile = (before: Model, step: Return): Return => {
+	const was = before.profile.key
+	const now = step.model.profile.key
+	return was === null || now === null || Keyed.baseKey(was) === Keyed.baseKey(now)
+		? step
+		: { ...step, model: { ...step.model, flamegraph: ProfileFlamegraph.reset(step.model.flamegraph) } }
+}
+
 export const update = (model: Model, message: Message, context: PageContext): Return =>
+	followProfile(model, updateMessage(model, message, context))
+
+const updateMessage = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		CompletedResolveClock: ({ nowMs, mode }) => sync({ ...model, nowMs }, context, mode),
 		CompletedFetchOverview: ({ key, result }) =>
@@ -760,6 +886,29 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			syncPeek({ model: { ...model, endpointFilter: filter } }, context, "Load"),
 		ChangedEndpointQuery: ({ value }) =>
 			syncPeek({ model: { ...model, endpointQuery: value } }, context, "Load"),
+		ClickedDeploy: ({ sha, environment }) => {
+			const isOpen =
+				model.search.deploy === sha && (model.search.deployEnv ?? environment) === environment
+			return navigate(
+				model,
+				{
+					...model.search,
+					deploy: isOpen ? undefined : sha,
+					deployEnv: isOpen || environment === "" ? undefined : environment,
+				},
+				false,
+			)
+		},
+		GotDeployPeekMessage: ({ message: inner }) =>
+			liftDeployPeek(
+				model,
+				DeployPeekUpdate.update(
+					model.deployPeek,
+					inner,
+					deployScope(model, context),
+					deployPeekOf(model),
+				),
+			),
 		GotEndpointPeekMessage: ({ message: inner }) => {
 			const lifted = liftPeek(
 				model,
@@ -792,6 +941,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchIssues: ({ key, result }) => ({
 			model: { ...model, issues: Keyed.accept(model.issues, key, result) },
 		}),
+		CompletedFetchDeploys: ({ key, result }) =>
+			sync({ ...model, deploys: Keyed.accept(model.deploys, key, result) }, context, "Load"),
 		CompletedFetchUsage: ({ key, result }) => ({
 			model: { ...model, usage: Keyed.accept(model.usage, key, result) },
 		}),
@@ -811,6 +962,21 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchDependencies: ({ key, result }) => ({
 			model: { ...model, dependencies: Keyed.accept(model.dependencies, key, result) },
 		}),
+		CompletedFetchProfile: ({ key, result }) => ({
+			model: { ...model, profile: Keyed.accept(model.profile, key, result) },
+		}),
+		GotFlamegraphMessage: ({ message: inner }) => ({
+			model: { ...model, flamegraph: ProfileFlamegraph.update(model.flamegraph, inner).model },
+		}),
+		GotProfileSnippetCopyMessage: ({ message: inner }) => {
+			const next = CopyButton.update(model.profileSnippetCopy, inner)
+			return {
+				model: { ...model, profileSnippetCopy: next.model },
+				commands: Command.mapMessages(next.commands ?? [], (copy) =>
+					Message.GotProfileSnippetCopyMessage({ message: copy }),
+				),
+			}
+		},
 		CompletedFetchCommit: ({ sha, result }) => ({ model: settleCommit(model, sha, result) }),
 		CompletedMountLinkedCursor: () => ({ model }),
 		// A push, so Back returns to the window the drag started in.

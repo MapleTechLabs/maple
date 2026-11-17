@@ -56,9 +56,7 @@ export type SearchEntry = typeof SearchEntry.Type
 export const FLAGGED_HREFS: ReadonlySet<string> = new Set([
 	"/cost",
 	"/product-analytics",
-	"/releases",
 	"/security",
-	"/status-pages",
 	"/users",
 ])
 
@@ -68,9 +66,7 @@ const href = (url: string): Target => ({ _tag: "Href", href: url })
 const EVERY_FLAG = {
 	cloudCost: true,
 	productAnalytics: true,
-	releases: true,
 	securityAudit: true,
-	statusPages: true,
 }
 
 /** A page's palette row under each title the nav gives it: the section, its children, their views. */
@@ -148,8 +144,13 @@ const navigationEntries = (): ReadonlyArray<PaletteEntry> => {
 			glyph: icon(row.icon),
 			target: href(row.href),
 		}
-		// A child of a flagged section is behind the same flag as the section's own row.
-		return FLAGGED_HREFS.has(row.section) ? { ...entry, flaggedBy: row.section } : entry
+		// A flagged page, or a child of a flagged section, is behind that flag.
+		const flag = FLAGGED_HREFS.has(row.href)
+			? row.href
+			: FLAGGED_HREFS.has(row.section)
+				? row.section
+				: undefined
+		return flag === undefined ? entry : { ...entry, flaggedBy: flag }
 	})
 }
 

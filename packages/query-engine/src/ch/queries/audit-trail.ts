@@ -126,3 +126,27 @@ export function auditTrailCountQuery(opts: AuditTrailCountOpts = {}) {
 		.format("JSON")
 		.route("ingest")
 }
+
+export const auditTrailSourcesRowSchema = Schema.Struct({
+	provider: Schema.String,
+	events: CHNumber,
+	/** Unix seconds of the newest event. */
+	lastOccurredAt: CHNumber,
+})
+
+/**
+ * Per platform: how many of one org's events happened since `since`, and when the newest did.
+ * What the audit log's source list says each feed has sent. Params: orgId, since.
+ */
+export function auditTrailSourcesQuery() {
+	return from(Datasources.auditTrailEvents)
+		.select(($) => ({
+			provider: $.Provider,
+			events: CH.uniqExact($.Id),
+			lastOccurredAt: CH.toUnixTimestamp(CH.max_($.OccurredAt)),
+		}))
+		.where(($) => [$.OrgId.eq(orgIdParam), $.OccurredAt.gte(param.dateTime("since"))])
+		.groupBy("provider")
+		.format("JSON")
+		.route("ingest")
+}

@@ -24,7 +24,7 @@ import { presenceOf } from "@maple/views/data/signal-presence"
 import { isFiltered, type TraceFilterChip, traceFilterChips } from "./derive"
 import { Message, type SortKey } from "./message"
 import type { Model } from "./model"
-import { allRows, DEFAULT_PRESET, hasNextPage, hiddenCount, MAX_RETAINED_TRACES } from "./update"
+import { allRows, DEFAULT_PRESET, hasNextPage, hiddenCount, isCapped } from "./update"
 import { noiseNote, traceRow } from "./view-row"
 import { COUNT_ATTRIBUTE, VirtualizeTraces } from "./virtualize"
 import { Array as Arr } from "effect"
@@ -185,7 +185,7 @@ const loadedTable = (
 	const tally = {
 		shown: count,
 		noun: "traces",
-		isCapped: count >= MAX_RETAINED_TRACES,
+		isCapped: isCapped(model),
 		hasMore: hasNextPage(model),
 		align: "start",
 		className: "p-0",

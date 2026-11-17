@@ -142,6 +142,45 @@ export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
 					}),
 					true,
 				),
+			/** The Releases pages left for the service page, which judges each deploy where it ran. */
+			Releases: ({ search }) =>
+				redirect(
+					AppRoute.Services({
+						search: {
+							startTime: search.startTime,
+							endTime: search.endTime,
+							timePreset: search.timePreset,
+						},
+					}),
+					true,
+				),
+			/** A release named with its service opens that service's deploy drawer; without one, the services. */
+			Release: ({ commitSha, search }) =>
+				redirect(
+					search.service === undefined
+						? AppRoute.Services({
+								search: {
+									startTime: search.startTime,
+									endTime: search.endTime,
+									timePreset: search.timePreset,
+								},
+							})
+						: AppRoute.Service({
+								serviceName: search.service,
+								// The Releases pages read a week by default: a link with no window keeps that week,
+								// so the deploy is still in range when the drawer looks for it.
+								search: {
+									deploy: commitSha,
+									environments: search.environments,
+									startTime: search.startTime,
+									endTime: search.endTime,
+									timePreset:
+										search.timePreset ??
+										(search.startTime === undefined ? "7d" : undefined),
+								},
+							}),
+					true,
+				),
 			RecommendationsIndex: () => redirect(AppRoute.Settings({ search: { tab: "ingestion" } }), true),
 			InfraKubernetes: ({ search }) => redirect(AppRoute.InfraKubernetesPods({ search }), true),
 			ErrorIssues: (issues) => redirect(AppRoute.Errors({ search: errorsSearchOf(issues) }), true),
@@ -156,23 +195,19 @@ export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
 		() => Option.none(),
 	)
 
-const isStatusPageRoute = AppRoute.isAnyOf(["StatusPages", "StatusPageNew", "StatusPage", "StatusPageView"])
-
 const isCostRoute = AppRoute.isAnyOf(["Cost", "CostBudgets", "CostBudgetNew"])
 
 const isProductAnalyticsRoute = AppRoute.isAnyOf(["ProductAnalytics"])
 
 /**
- * A route an org outside its rollout cannot open goes home (`/status-pages` without `statusPages`,
- * `/cost` without `cloudCost`, `/product-analytics` without `productAnalytics`).
+ * A route an org outside its rollout cannot open goes home (`/cost` without `cloudCost`,
+ * `/product-analytics` without `productAnalytics`).
  */
 export const flaggedRouteRedirect = (
 	route: AppRoute,
-	flags: Pick<OrganizationFeatureFlags, "statusPages" | "cloudCost" | "productAnalytics">,
+	flags: Pick<OrganizationFeatureFlags, "cloudCost" | "productAnalytics">,
 ): Option.Option<Redirect> =>
-	(!flags.statusPages && isStatusPageRoute(route)) ||
-	(!flags.cloudCost && isCostRoute(route)) ||
-	(!flags.productAnalytics && isProductAnalyticsRoute(route))
+	(!flags.cloudCost && isCostRoute(route)) || (!flags.productAnalytics && isProductAnalyticsRoute(route))
 		? redirect(AppRoute.Home({ search: {} }), true)
 		: Option.none()
 

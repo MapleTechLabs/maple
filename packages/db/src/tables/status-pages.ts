@@ -154,6 +154,8 @@ export const StatusPageIncidents = PG.table("status_page_incidents", {
 		}),
 		scheduledStart: PG.column(PG.nullable(PG.timestamptzMillis), { name: "scheduled_start" }),
 		scheduledEnd: PG.column(PG.nullable(PG.timestamptzMillis), { name: "scheduled_end" }),
+		/** Maintenance only: the sweep completes it when its window ends; off, it stays in progress. */
+		autoComplete: PG.column(PG.bool, { name: "auto_complete", default: true }),
 		startedAt: PG.column(PG.timestamptzMillis, { name: "started_at" }),
 		resolvedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "resolved_at" }),
 		createdBy: PG.column(PG.nullable(PG.brand(PG.text, UserId)), { name: "created_by" }),

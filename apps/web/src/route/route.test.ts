@@ -141,6 +141,29 @@ describe("routes", () => {
 		expect(parse("/alerts/nope")._tag).toBe("NotFound")
 	})
 
+	test("the retired Releases pages send old links to the services and a release to its deploy drawer", () => {
+		const redirectOf = (url: string) => Option.map(routeRedirect(parse(url)), (to) => to.url)
+		expect(redirectOf("/releases?timePreset=7d&impact=regressed")).toEqual(
+			Option.some("/services?timePreset=7d"),
+		)
+		expect(
+			redirectOf(
+				"/releases/abc123?service=checkout&environments=%5B%22production%22%5D&timePreset=24h",
+			),
+		).toEqual(
+			Option.some(
+				"/services/checkout?deploy=abc123&environments=%5B%22production%22%5D&timePreset=24h",
+			),
+		)
+		// A release link with no window opens on the week the Releases page read by default.
+		expect(redirectOf("/releases/abc123?service=checkout")).toEqual(
+			Option.some("/services/checkout?deploy=abc123&timePreset=7d"),
+		)
+		// Without a service there is no page to open the deploy on: the services, in the same window.
+		expect(redirectOf("/releases/abc123?timePreset=24h")).toEqual(Option.some("/services?timePreset=24h"))
+		expect(routeRedirect(parse("/releases"))).toEqual(Option.some({ url: "/services", isReplace: true }))
+	})
+
 	test("an old `?tab=` link replaces itself with its section's path and keeps its other params", () => {
 		const redirectOf = (url: string) => Option.map(routeRedirect(parse(url)), (to) => to.url)
 		expect(redirectOf("/alerts?tab=rules&status=firing")).toEqual(
@@ -224,34 +247,16 @@ describe("routes", () => {
 		expect(routeRedirect(parse("/integrations?integration=chat-hazel"))).toEqual(Option.none())
 	})
 
-	test("an org outside the statusPages rollout is sent home from every status page route", () => {
+	test("every org opens the status page routes, whatever its rollouts", () => {
 		for (const path of ["/status-pages", "/status-pages/new", "/status-pages/stp_abc"]) {
-			expect(
-				flaggedRouteRedirect(parse(path), {
-					statusPages: false,
-					cloudCost: true,
-					productAnalytics: true,
-				}),
-			).toEqual(Option.some({ url: "/", isReplace: true }))
-			expect(
-				flaggedRouteRedirect(parse(path), {
-					statusPages: true,
-					cloudCost: false,
-					productAnalytics: true,
-				}),
-			).toEqual(Option.none())
+			expect(flaggedRouteRedirect(parse(path), { cloudCost: false, productAnalytics: false })).toEqual(
+				Option.none(),
+			)
 		}
-		expect(
-			flaggedRouteRedirect(parse("/services"), {
-				statusPages: false,
-				cloudCost: false,
-				productAnalytics: false,
-			}),
-		).toEqual(Option.none())
 	})
 
 	test("an org outside the productAnalytics rollout is sent home from /product-analytics", () => {
-		const flags = { statusPages: true, cloudCost: true }
+		const flags = { cloudCost: true }
 		for (const path of ["/product-analytics", "/product-analytics?tab=funnels&timePreset=7d"]) {
 			expect(flaggedRouteRedirect(parse(path), { ...flags, productAnalytics: false })).toEqual(
 				Option.some({ url: "/", isReplace: true }),
@@ -281,14 +286,12 @@ describe("routes", () => {
 		]) {
 			expect(
 				flaggedRouteRedirect(parse(path), {
-					statusPages: true,
 					cloudCost: false,
 					productAnalytics: true,
 				}),
 			).toEqual(Option.some({ url: "/", isReplace: true }))
 			expect(
 				flaggedRouteRedirect(parse(path), {
-					statusPages: false,
 					cloudCost: true,
 					productAnalytics: true,
 				}),

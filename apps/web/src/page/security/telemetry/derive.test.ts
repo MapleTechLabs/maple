@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Arbitrary, Schema, Array as Arr, Record as Rec, String as Str, Option } from "effect"
-import { criticalUpgrades, runtimeEntries, runtimeTotals } from "./derive"
-import type { Runtimes } from "./model"
+import { catchAllServices, criticalUpgrades, runtimeEntries, runtimeTotals } from "./derive"
+import type { Exposure, Runtimes } from "./model"
 
 // Fuzzes the Runtimes tab over random fleets: services that upgraded, rolled back, run mixed
 // versions or stopped reporting. Small value pools make collisions (same service, same hour) common.
@@ -224,5 +224,44 @@ describe("runtime verdicts", () => {
 			totals: { services: 1, urgent: 0, endOfLife: 0, behind: 0, noVersion: 0 },
 			upgrades: [],
 		})
+	})
+})
+
+describe("catch-all services", () => {
+	const exposureOf = (rows: ReadonlyArray<readonly [string, number, number]>): Exposure => ({
+		signatures: Arr.map(rows, ([signature, inPath, answered]) => ({
+			signature,
+			service: "web",
+			requests: 4,
+			inPath,
+			answered,
+			sources: 1,
+			lastSeen: "2026-11-10T12:00:00.000Z",
+		})),
+		exposed: [],
+		sources: [],
+		timeline: [],
+	})
+
+	it("ignores probes sent only in the query when measuring the share answered", () => {
+		const exposure = exposureOf([
+			["/.env", 4, 4],
+			["/.git/", 4, 4],
+			["/server-status", 4, 4],
+			["/etc/passwd", 0, 0],
+		])
+		expect(
+			Arr.map(catchAllServices(exposure), (entry) => [entry.service, entry.answered, entry.probed]),
+		).toEqual([["web", 3, 3]])
+	})
+
+	it("keeps a service that refuses a probed path out", () => {
+		const exposure = exposureOf([
+			["/.env", 4, 4],
+			["/.git/", 4, 4],
+			["/server-status", 4, 4],
+			["/actuator/env", 4, 0],
+		])
+		expect(catchAllServices(exposure)).toEqual([])
 	})
 })

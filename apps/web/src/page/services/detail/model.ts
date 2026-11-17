@@ -5,13 +5,17 @@ import { Schema } from "effect"
 import * as Chart from "@maple/views/charts/chart"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
+import * as ProfileFlamegraph from "@maple/views/profiles/profile-flamegraph"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import { TimeWindow } from "../../../data/time-range"
 import { ServiceSearch } from "../../../route/search"
+import { ServiceDeploys } from "./model-deploys"
 import * as Select from "@maple/views/ui/select"
 import { ServiceRuntime } from "../../kit/service-runtimes"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { SortState } from "../../kit/table-sort"
 import { ENDPOINT_FILTERS } from "./derive-api"
+import * as DeployPeek from "./deploy-peek/model"
 import * as EndpointPeek from "./endpoint-peek/model"
 import { ApiBucket, ApiOverview, DependencyBundle, Endpoint, Operation, StatusRow } from "./model-tabs"
 import { CommitData, DetailPoint, Release } from "../../kit/service-metrics/points"
@@ -32,6 +36,7 @@ export const Issue = Schema.Struct({
 	title: Schema.String,
 	severity: Schema.NullOr(Schema.String),
 	occurrenceCount: Schema.Number,
+	firstSeenAt: Schema.String,
 	lastSeenAt: Schema.String,
 })
 export type Issue = typeof Issue.Type
@@ -58,6 +63,29 @@ export const Workload = Schema.Struct({
 })
 export type Workload = typeof Workload.Type
 
+/** `getProfile`'s answer: the heaviest stacks of one sample type; null when the service sent no profiles. */
+export const ServiceProfile = Schema.NullOr(
+	Schema.Struct({
+		sampleType: Schema.String,
+		sampleUnit: Schema.String,
+		/** Every stack in the window, including those past the read's cap. */
+		totalValue: Schema.Number,
+		totalStacks: Schema.Number,
+		/** The summed length of the profiled windows: CPU time over it is average cores. */
+		durationNano: Schema.Number,
+		truncated: Schema.Boolean,
+		stacks: Schema.Array(
+			Schema.Struct({
+				frames: Schema.Array(Schema.String),
+				files: Schema.Array(Schema.String),
+				lines: Schema.Array(Schema.Number),
+				value: Schema.Number,
+			}),
+		),
+	}),
+)
+export type ServiceProfile = typeof ServiceProfile.Type
+
 export const Model = Schema.Struct({
 	serviceName: Schema.String,
 	search: ServiceSearch,
@@ -79,7 +107,11 @@ export const Model = Schema.Struct({
 	endpointFilter: Schema.Literals(ENDPOINT_FILTERS),
 	endpointQuery: Schema.String,
 	endpointPeek: EndpointPeek.Model,
+	/** The Overview's deploy drawer (`?deploy=`). */
+	deployPeek: DeployPeek.Model,
 	issues: KeyedSchema(Schema.Array(Issue), LoadFailure),
+	/** The window's deploys with their before and after: the deploy rows, callout and marker tones. */
+	deploys: KeyedSchema(ServiceDeploys, LoadFailure),
 	usage: KeyedSchema(Usage, LoadFailure),
 	/** `uptimeMonitors.list`: the org's monitors; the Uptime card keeps this service's. */
 	uptimeMonitors: KeyedSchema(Schema.Array(V2UptimeMonitor), LoadFailure),
@@ -88,6 +120,11 @@ export const Model = Schema.Struct({
 	workloads: KeyedSchema(Schema.Array(Workload), LoadFailure),
 	runtimes: KeyedSchema(Schema.Array(ServiceRuntime), LoadFailure),
 	dependencies: KeyedSchema(DependencyBundle, LoadFailure),
+	/** The Profiles tab's stacks for the window. */
+	profile: KeyedSchema(ServiceProfile, LoadFailure),
+	flamegraph: ProfileFlamegraph.Model,
+	/** The copy button of the Profiles tab's setup snippet. */
+	profileSnippetCopy: CopyButton.Model,
 	/** Commits by sha, shared by the deploy rows and the marker labels. */
 	commits: Schema.Record(Schema.String, CommitData.schema),
 	/** The hover card a commit marker opens, shared by every chart on the page. */

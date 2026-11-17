@@ -89,6 +89,46 @@ export const AuditTrailListResponse = Schema.Struct({
 })
 export type AuditTrailListResponse = typeof AuditTrailListResponse.Type
 
+/**
+ * Where a platform's audit events stand. `built_in`: Maple's own, always on. `receiving`: events
+ * arrived in the window. `waiting`: the feed is on but nothing arrived yet. `off`: the platform is
+ * connected with its audit feed switched off. `failing`: the feed reports an error.
+ * `not_connected`: the platform is not connected at all.
+ */
+export const AuditTrailSourceState = Schema.Literals([
+	"built_in",
+	"receiving",
+	"waiting",
+	"off",
+	"failing",
+	"not_connected",
+])
+export type AuditTrailSourceState = typeof AuditTrailSourceState.Type
+
+/** One platform that can feed the audit log, and what it has sent. */
+export const AuditTrailSource = Schema.Struct({
+	/** A plain string for the same reason as an entry's: a newer adapter must not fail the page. */
+	provider: Schema.String,
+	state: AuditTrailSourceState,
+	/** The connected account, team or project scope, when the platform is connected. */
+	account: Schema.NullOr(Schema.String),
+	/** Why a feed is failing, in the integration's words; null otherwise. */
+	problem: Schema.NullOr(Schema.String),
+	/** Distinct events that happened in the last `windowDays`. */
+	events: Schema.Finite,
+	/** Epoch ms of the newest event in the window, or null. */
+	lastEventAt: Schema.NullOr(Schema.Finite),
+})
+export type AuditTrailSource = typeof AuditTrailSource.Type
+
+/** Every platform that can feed the audit log, connected or not. */
+export const AuditTrailSourcesResponse = Schema.Struct({
+	sources: Schema.Array(AuditTrailSource),
+	/** How far back `events` and `lastEventAt` look. */
+	windowDays: Schema.Finite,
+})
+export type AuditTrailSourcesResponse = typeof AuditTrailSourcesResponse.Type
+
 // A detection is an alert rule that counts audit events as they arrive. Its incidents and
 // notifications carry the count, never an event.
 
@@ -217,6 +257,12 @@ export class AuditTrailApiGroup extends HttpApiGroup.make("auditTrail")
 		HttpApiEndpoint.get("list", "/events", {
 			query: AuditTrailListQuery,
 			success: AuditTrailListResponse,
+			error: [AuditTrailPersistenceError, AuditTrailForbiddenError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("sources", "/sources", {
+			success: AuditTrailSourcesResponse,
 			error: [AuditTrailPersistenceError, AuditTrailForbiddenError],
 		}),
 	)

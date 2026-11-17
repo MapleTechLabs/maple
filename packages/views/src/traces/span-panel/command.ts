@@ -3,7 +3,7 @@ import { Command } from "foldkit"
 import { writeClipboard } from "@maple/ui/lib/clipboard"
 import { afterCopyStatusHold } from "../../ui/copy-button"
 import { TraceSource } from "../trace-source"
-import { DetailFetch, LogsFetch, Message } from "./message"
+import { DetailFetch, LogsFetch, Message, ProfileFetch } from "./message"
 
 /** The Logs tab's page size; a full page reads "100+". */
 export const LOG_LIMIT = 100
@@ -57,6 +57,24 @@ export const FetchSpanLogs = Command.define("FetchSpanLogs", {
 				})
 			const result = yield* Effect.result(source.spanLogs(fetch.request))
 			return Message.CompletedFetchLogs({ key: fetch.key, result })
+		}),
+})
+
+/** The stacks sampled while the span and its descendants ran; null from a source without profiles. */
+export const FetchSpanProfile = Command.define("FetchSpanProfile", {
+	args: ProfileFetch.fields,
+	messages: [Message.CompletedFetchProfile],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
+	execute: (fetch) =>
+		Effect.gen(function* () {
+			const source = yield* TraceSource
+			if (source.spanProfile === undefined)
+				return Message.CompletedFetchProfile({ key: fetch.key, result: Result.succeed(null) })
+			const fetched = yield* Effect.result(source.spanProfile(fetch.request))
+			return Message.CompletedFetchProfile({
+				key: fetch.key,
+				result: Result.map(fetched, Option.getOrNull),
+			})
 		}),
 })
 

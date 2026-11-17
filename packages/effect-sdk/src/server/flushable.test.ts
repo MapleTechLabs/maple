@@ -1,5 +1,17 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Duration, Effect, Fiber, Option, Array as Arr, Record as Rec, String as Str } from "effect"
+import {
+	Duration,
+	Effect,
+	Exit,
+	Fiber,
+	Layer,
+	Scope,
+	Option,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
+import { FetchHttpClient } from "effect/http"
 import { TestClock } from "effect/testing"
 import { afterEach, expect, vi } from "vitest"
 import { make } from "./flushable.js"
@@ -426,5 +438,131 @@ describe("MapleFlush.make (server)", () => {
 		expect(record.spanId).toBe(span.spanId)
 		// …and Info maps to OTLP severity number 9.
 		expect(record.severityNumber).toBe(9)
+	})
+})
+
+/** Keeps the CPU on one span long enough for the profiler to take samples of it. */
+const busy = (ms: number) =>
+	Effect.sync(() => {
+		const until = performance.now() + ms
+		let spins = 0
+		while (performance.now() < until) spins += 1
+		return spins
+	}).pipe(Effect.withSpan("busy"))
+
+const PROFILES_URL = "https://collector.test/v1development/profiles"
+const profiling = { samplingIntervalMicros: 1000 }
+
+/**
+ * The profiler posts through Effect's fetch client, which keeps the first `globalThis.fetch` it
+ * reads; a fetch that looks the global up on each call lets every test's stub see its requests.
+ */
+const runProfiled = <A, E>(effect: Effect.Effect<A, E>) =>
+	Effect.runPromise(
+		effect.pipe(
+			Effect.provideService(FetchHttpClient.Fetch, (input, init) => globalThis.fetch(input, init)),
+		),
+	)
+
+describe("MapleFlush.make (server) with profiling", () => {
+	let restore: () => void
+
+	afterEach(() => restore?.())
+
+	it("profiles while the layer runs and sends the last window, with the flush key, when it closes", async () => {
+		const { calls, restore: r } = setupFetch()
+		restore = r
+		const telemetry = make({ ...baseConfig, profiling })
+
+		await runProfiled(busy(100).pipe(Effect.provide(telemetry.layer)))
+
+		const sent = Arr.filter(calls, (call) => call.url === PROFILES_URL)
+		expect(sent).toHaveLength(1)
+		expect(sent[0]?.headers["authorization"]).toBe("Bearer secret")
+	})
+
+	it("still exports spans through the tracer that records span switches", async () => {
+		const { calls, restore: r } = setupFetch()
+		restore = r
+		const telemetry = make({ ...baseConfig, profiling })
+
+		await runProfiled(busy(20).pipe(Effect.provide(telemetry.layer)))
+		await telemetry.flush()
+
+		const traces = Arr.filter(calls, (call) => call.url === "https://collector.test/v1/traces")
+		expect(JSON.stringify(Arr.map(traces, (call) => call.body))).toContain('"name":"busy"')
+	})
+
+	it("dispose stops a running profiler, sending its last window, and no later build starts one", async () => {
+		const { calls, restore: r } = setupFetch()
+		restore = r
+		const telemetry = make({ ...baseConfig, profiling })
+
+		await runProfiled(
+			Effect.scoped(
+				Effect.gen(function* () {
+					yield* Layer.build(telemetry.layer)
+					yield* busy(100)
+					yield* Effect.promise(telemetry.dispose)
+					const afterDispose = Arr.filter(calls, (call) => call.url === PROFILES_URL).length
+					expect(afterDispose).toBe(1)
+					yield* Layer.build(telemetry.layer)
+					yield* busy(100)
+				}),
+			),
+		)
+
+		expect(Arr.filter(calls, (call) => call.url === PROFILES_URL)).toHaveLength(1)
+	})
+
+	it("starts no second profiler when the layer is built again while one runs", async () => {
+		const { calls, restore: r } = setupFetch()
+		restore = r
+		const telemetry = make({ ...baseConfig, profiling })
+
+		await runProfiled(
+			Effect.scoped(
+				Effect.gen(function* () {
+					yield* Layer.build(telemetry.layer)
+					yield* Layer.build(telemetry.layer)
+					yield* busy(100)
+				}),
+			),
+		)
+
+		expect(Arr.filter(calls, (call) => call.url === PROFILES_URL)).toHaveLength(1)
+	})
+
+	it("keeps profiling until the last build that holds the profiler closes", async () => {
+		const { calls, restore: r } = setupFetch()
+		restore = r
+		const telemetry = make({ ...baseConfig, profiling })
+		const profilesSent = () => Arr.filter(calls, (call) => call.url === PROFILES_URL).length
+
+		await runProfiled(
+			Effect.gen(function* () {
+				const first = yield* Scope.make()
+				const second = yield* Scope.make()
+				yield* Layer.buildWithScope(telemetry.layer, first)
+				yield* Layer.buildWithScope(telemetry.layer, second)
+				yield* busy(100)
+				yield* Scope.close(first, Exit.void)
+				// The second build still holds it: nothing stopped, nothing sent yet.
+				expect(profilesSent()).toBe(0)
+				yield* busy(100)
+				yield* Scope.close(second, Exit.void)
+				expect(profilesSent()).toBe(1)
+			}),
+		)
+	})
+
+	it("does not profile where export is off: no key against Maple's hosted ingest", async () => {
+		const { calls, restore: r } = setupFetch()
+		restore = r
+		const telemetry = make({ serviceName: "unit-test", autoFlushInterval: false, profiling })
+
+		await runProfiled(busy(100).pipe(Effect.provide(telemetry.layer)))
+
+		expect(calls).toEqual([])
 	})
 })

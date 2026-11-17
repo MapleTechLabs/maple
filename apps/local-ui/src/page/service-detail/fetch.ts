@@ -1,9 +1,9 @@
 import { CH } from "@maple/query-engine"
 import { parseClickHouseDateTime, type TimeBounds } from "../../lib/time"
-import { DateTime, Effect, Array as Arr } from "effect"
-import { localParams, queryRows } from "../../data/local-query"
+import { DateTime, Effect, Option, Array as Arr } from "effect"
+import { localParams, queryRows, queryRowsIfTableExists } from "../../data/local-query"
 import { toCatalogEntry } from "../services/fetch"
-import type { GoldenSignalRow, OperationRow, Overview, SeriesPoint } from "./model"
+import type { GoldenSignalRow, OperationRow, Overview, SeriesPoint, ServiceProfile } from "./model"
 
 // The service detail page's queries.
 
@@ -100,3 +100,46 @@ export const fetchGoldenSignals = (
 				apdexScore: row.apdexScore,
 			})),
 	)
+
+/** The sample type the page opens on: CPU when the service sends it, else its heaviest type. */
+const PREFERRED_SAMPLE_TYPE = "cpu"
+
+/**
+ * The service's profile in the window: which sample types it sent, then the heaviest stacks of
+ * one of them. Null when it sent none, which is every service without a profiler.
+ */
+export const fetchProfile = (serviceName: string, bounds: TimeBounds, apiBase: string) =>
+	Effect.gen(function* () {
+		const params = { ...localParams(bounds), serviceName }
+		const types = yield* queryRowsIfTableExists(
+			CH.compile(CH.profileSampleTypesQuery({ service: true }), params),
+			apiBase,
+		)
+		const chosen = Arr.findFirst(types, (row) => row.sampleType === PREFERRED_SAMPLE_TYPE).pipe(
+			Option.orElse(() => Arr.head(types)),
+			Option.getOrNull,
+		)
+		if (chosen === null) return null
+		const stacks = yield* queryRows(
+			CH.compile(CH.profileStacksQuery({ service: true, unit: true }), {
+				...params,
+				sampleType: chosen.sampleType,
+				sampleUnit: chosen.sampleUnit,
+			}),
+			apiBase,
+		)
+		const profile: ServiceProfile = {
+			sampleType: chosen.sampleType,
+			sampleUnit: chosen.sampleUnit,
+			totalValue: Number(stacks[0]?.totalValue ?? 0),
+			totalStacks: Number(stacks[0]?.totalStacks ?? 0),
+			durationNano: Number(chosen.durationNano),
+			stacks: Arr.map(stacks, (row) => ({
+				frames: row.frames,
+				files: row.files,
+				lines: Arr.map(row.lines, Number),
+				value: Number(row.value),
+			})),
+		}
+		return profile
+	})

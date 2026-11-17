@@ -3452,7 +3452,8 @@ SELECT
           toStartOfInterval(service_usage.Hour, INTERVAL 86400 SECOND) AS day,
           sum(service_usage.LogSizeBytes) AS logBytes,
           sum(service_usage.TraceSizeBytes) AS traceBytes,
-          sum(service_usage.SumMetricSizeBytes) + sum(service_usage.GaugeMetricSizeBytes) + sum(service_usage.HistogramMetricSizeBytes) + sum(service_usage.ExpHistogramMetricSizeBytes) AS metricBytes
+          sum(service_usage.SumMetricSizeBytes) + sum(service_usage.GaugeMetricSizeBytes) + sum(service_usage.HistogramMetricSizeBytes) + sum(service_usage.ExpHistogramMetricSizeBytes) AS metricBytes,
+          sum(service_usage.ProfileSizeBytes) AS profileBytes
         FROM service_usage
         WHERE service_usage.OrgId = 'org_sql_catalog'
           AND service_usage.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))

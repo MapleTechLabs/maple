@@ -180,6 +180,11 @@ export class PrReviewFinding extends Schema.Class<PrReviewFinding>("PrReviewFind
 	body: Schema.String,
 	suggestion: Schema.optionalKey(Schema.String),
 	replacement: Schema.optionalKey(Schema.String),
+	/**
+	 * For a credential in telemetry: the code that assigns the value (`path:line` and the expression),
+	 * showing it is secret material. A reviewer's PII-01 critical without one is filed as a warning.
+	 */
+	source: Schema.optionalKey(Schema.String),
 	/** The pull request-wide handle (`F3`) it is tracked by across pushes; set when stored. */
 	handle: Schema.optionalKey(Schema.String),
 }) {}
@@ -371,6 +376,7 @@ export const PrReviewFindingSubmission = Schema.Struct({
 	body: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	suggestion: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	replacement: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	source: Schema.optionalKey(Schema.NullOr(Schema.String)),
 })
 export type PrReviewFindingSubmission = Schema.Schema.Type<typeof PrReviewFindingSubmission>
 
@@ -395,6 +401,12 @@ export const PrReviewChildDismissalSubmission = Schema.Struct({
 	reason: Schema.optionalKey(Schema.NullOr(Schema.String)),
 })
 
+/** An earlier open finding the reviewer agrees does not hold, by its handle, and why. */
+export const PrReviewFindingDismissalSubmission = Schema.Struct({
+	handle: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	reason: Schema.optionalKey(Schema.NullOr(Schema.String)),
+})
+
 /**
  * What `submit_review` accepts off the wire. Every field is optional: the engine decodes a tool call
  * before the handler runs, and a decode failure would throw away a nearly finished review.
@@ -402,6 +414,8 @@ export const PrReviewChildDismissalSubmission = Schema.Struct({
 export const PrReviewSubmission = Schema.Struct({
 	/** Handles of earlier open findings this head fixes, as the kickoff listed them. */
 	resolved: Schema.optionalKey(Schema.NullOr(LenientArray(Schema.String))),
+	/** Earlier open findings that do not hold, usually after a person's reply showed why. */
+	dismissed: Schema.optionalKey(Schema.NullOr(LenientArray(PrReviewFindingDismissalSubmission))),
 	verdict: Schema.optionalKey(Schema.NullOr(Schema.Union([PrReviewVerdict, Schema.String]))),
 	summary: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	keyChanges: Schema.optionalKey(Schema.NullOr(LenientArray(Schema.String))),
@@ -432,6 +446,10 @@ export class SubmitPrReviewRequest extends Schema.Class<SubmitPrReviewRequest>("
 	partialReason: Schema.optionalKey(PrReviewFailureReason),
 	/** Handles of earlier findings this head fixes. */
 	resolved: Schema.optionalKey(Schema.Array(Schema.String)),
+	/** Earlier findings the reviewer dismissed, by handle, with its reason. */
+	dismissed: Schema.optionalKey(
+		Schema.Array(Schema.Struct({ handle: Schema.String, reason: Schema.String })),
+	),
 	/** Where the reviewer says each removed telemetry name is still emitted; verified before use. */
 	telemetryDismissals: Schema.optionalKey(
 		Schema.Array(Schema.Struct({ name: Schema.String, path: Schema.String, line: Schema.Number })),

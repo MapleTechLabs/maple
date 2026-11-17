@@ -12,6 +12,7 @@ import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { accentCard } from "@maple/views/ui/accent-card"
 import { borderedBox } from "@maple/views/ui/bordered-box"
 import { button } from "@maple/views/ui/button"
+import { choiceCard, choiceCheckClass } from "@maple/views/ui/choice-card"
 import * as Checkbox from "@maple/views/ui/checkbox"
 import type * as Dialog from "@maple/views/ui/dialog"
 import * as DialogView from "@maple/views/ui/dialog-view"
@@ -138,6 +139,66 @@ const impactDot = (h: H, impact: V2StatusPageIncident["impact"]): Html =>
 	statusDot(h, { tone: IMPACT_TONE[impact], size: "lg" })
 
 /** The page's components as checkboxes, two columns, each with its group. */
+/** Maintenance: whether it completes on its own when the window ends or stays in progress. */
+const endChoice = (
+	h: H,
+	options: Readonly<{
+		name: string
+		autoComplete: boolean
+		onChange: (autoComplete: boolean) => Message
+	}>,
+): Html =>
+	h.fieldset(
+		[h.Class(vstackClass({ gap: "1.5" }))],
+		[
+			h.legend([h.Class("mb-1.5 text-xs text-muted-foreground")], ["When the window ends"]),
+			...Arr.map(
+				[
+					{
+						value: true,
+						title: "Complete automatically",
+						body: "Posts \u201cThe scheduled maintenance is complete.\u201d at the end, and its components go back to operational.",
+					},
+					{
+						value: false,
+						title: "Keep it in progress until someone completes it",
+						body: "For work that may run long. Past the end it stays in progress and is flagged as over time.",
+					},
+				],
+				(choice) =>
+					choiceCard(
+						h,
+						{
+							type: "radio",
+							name: options.name,
+							isChecked: options.autoComplete === choice.value,
+							label: choice.title,
+							onChange: options.onChange(choice.value),
+							className: "items-start gap-3 p-3",
+						},
+						[
+							h.span(
+								[
+									h.Class(
+										choiceCheckClass(
+											options.autoComplete === choice.value,
+											false,
+											"mt-0.5 rounded-full",
+										),
+									),
+								],
+								[],
+							),
+							vstack(h, { gap: "1" }, [
+								typography(h, { size: "sm", weight: "medium" }, [choice.title]),
+								typography(h, { size: "xs", tone: "muted", as: "p" }, [choice.body]),
+							]),
+						],
+					),
+			),
+		],
+	)
+
 const componentChecklist = (
 	h: H,
 	model: Model,
@@ -309,17 +370,18 @@ const composeWrite = (h: H, model: Model, page: V2StatusPage, time: TimeInputs, 
 						placeholder: isMaintenance ? "Database upgrade" : "Elevated API errors",
 						onInput: (value) => Message.ChangedIncidentField({ field: "title", value }),
 					}),
-					grid(h, { sm: 2, gap: "4" }, [
-						selectField(h, {
-							id: "status-page-incident-status",
-							label: "Status",
-							value: form.status,
-							entries: statusEntries(form.kind),
-							onInput: (value) => Message.ChangedIncidentField({ field: "status", value }),
-						}),
-						...(isMaintenance
-							? []
-							: [
+					...(isMaintenance
+						? []
+						: [
+								grid(h, { sm: 2, gap: "4" }, [
+									selectField(h, {
+										id: "status-page-incident-status",
+										label: "Status",
+										value: form.status,
+										entries: statusEntries(form.kind),
+										onInput: (value) =>
+											Message.ChangedIncidentField({ field: "status", value }),
+									}),
 									selectField(h, {
 										id: "status-page-incident-impact",
 										label: "Impact",
@@ -330,7 +392,7 @@ const composeWrite = (h: H, model: Model, page: V2StatusPage, time: TimeInputs, 
 											Message.ChangedIncidentField({ field: "impact", value }),
 									}),
 								]),
-					]),
+							]),
 					...(isMaintenance
 						? []
 						: [
@@ -355,6 +417,7 @@ const composeWrite = (h: H, model: Model, page: V2StatusPage, time: TimeInputs, 
 										label: "Starts",
 										type: "datetime-local",
 										value: form.scheduledStart,
+										hint: "Now or earlier puts it in progress as you publish.",
 										onInput: (value) =>
 											Message.ChangedIncidentField({ field: "scheduledStart", value }),
 									}),
@@ -368,6 +431,12 @@ const composeWrite = (h: H, model: Model, page: V2StatusPage, time: TimeInputs, 
 											Message.ChangedIncidentField({ field: "scheduledEnd", value }),
 									}),
 								]),
+								endChoice(h, {
+									name: "status-page-incident-auto-complete",
+									autoComplete: form.autoComplete,
+									onChange: (autoComplete) =>
+										Message.ChangedIncidentAutoComplete({ autoComplete }),
+								}),
 							]
 						: []),
 					componentChecklist(h, model, {
@@ -409,14 +478,21 @@ const scheduleNote = (
 	start: string,
 	end: string,
 	status: StatusPageIncidentStatus,
+	autoComplete: boolean,
 	timeZone: string,
 ): string | null =>
 	Option.match(Option.all([localToIso(start, timeZone), localToIso(end, timeZone)]), {
 		onNone: () => null,
-		onSome: ([from, to]) =>
-			status === "in_progress"
-				? `In progress now, ends ${rangeLabel(to, timeZone)} (${timeZone}). It moves to Completed on its own at the end; subscribers see that update.`
-				: `Starts ${rangeLabel(from, timeZone)} and ends ${rangeLabel(to, timeZone)} (${timeZone}). It moves to In progress at the start and to Completed at the end on its own; subscribers see both updates.`,
+		onSome: ([from, to]) => {
+			const window = `Starts ${rangeLabel(from, timeZone)} and ends ${rangeLabel(to, timeZone)} (${timeZone}).`
+			if (status === "in_progress")
+				return autoComplete
+					? `In progress now, ends ${rangeLabel(to, timeZone)} (${timeZone}). It moves to Completed on its own at the end; subscribers see that update.`
+					: `In progress now, ends ${rangeLabel(to, timeZone)} (${timeZone}). It stays In progress past the end until someone completes it.`
+			return autoComplete
+				? `${window} It moves to In progress at the start and to Completed at the end on its own; subscribers see both updates.`
+				: `${window} It moves to In progress at the start on its own and stays there past the end until someone completes it.`
+		},
 	})
 
 /** "Oct 28, 14:00 to 16:00", from the window as typed. */
@@ -448,7 +524,7 @@ const composeReview = (h: H, model: Model, time: TimeInputs) => {
 		],
 	})
 	const schedule = isMaintenance
-		? scheduleNote(form.scheduledStart, form.scheduledEnd, form.status, time.timeZone)
+		? scheduleNote(form.scheduledStart, form.scheduledEnd, form.status, form.autoComplete, time.timeZone)
 		: null
 	const started = isMaintenance ? Option.none() : localToIso(form.startedAt, time.timeZone)
 	const isScheduling =
@@ -804,7 +880,7 @@ const timeFields = (
 							...(index === fields.length - 1
 								? {
 										hint: isMaintenance
-											? `Times are in ${timeZone}. It moves to In progress and Completed on its own.`
+											? `Times are in ${timeZone}. It moves to In progress on its own at the start.`
 											: `Times are in ${timeZone}.`,
 										error,
 									}
@@ -859,6 +935,16 @@ const editDialogView = (h: H, model: Model, time: TimeInputs): Html => {
 								]
 							: []),
 						...timeFields(h, form, issues?.times ?? null, time.timeZone),
+						...(form.kind === "maintenance" && form.status !== "completed"
+							? [
+									endChoice(h, {
+										name: "status-page-incident-edit-auto-complete",
+										autoComplete: form.autoComplete,
+										onChange: (autoComplete) =>
+											Message.ChangedIncidentEditAutoComplete({ autoComplete }),
+									}),
+								]
+							: []),
 						componentChecklist(h, model, {
 							checkedIds: form.componentIds,
 							idPrefix: "status-page-incident-edit-component",

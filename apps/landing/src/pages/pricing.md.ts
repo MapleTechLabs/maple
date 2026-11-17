@@ -19,13 +19,14 @@ import {
 import * as m from "../paraglide/messages.js"
 import { pricingFaq } from "../lib/pricing-faq"
 import { complianceMarkdown } from "../lib/compliance"
+import { scaleProofMarkdown } from "../lib/scale-proof"
 import { Array as Arr } from "effect"
 
 /** "GB", "session", or "1,000 events": the block the rate is quoted per. */
 const unitLabel = (a: Allotment) =>
 	a.unit === "gb" ? "GB" : a.unit === "sessions" ? "session" : `${rateBlock(a)} events`
 
-export const GET: APIRoute = async () => {
+export const GET: APIRoute = async ({ site }) => {
 	const offer = await getOffer()
 
 	const meter = table(
@@ -109,6 +110,7 @@ export const GET: APIRoute = async () => {
 			`Included: ${Arr.join(platformFeatures(), " · ")}.`,
 			trial,
 			"Start at [app.maple.dev](https://app.maple.dev).",
+			scaleProofMarkdown(site),
 
 			`## ${m.compliance_title()}`,
 			complianceMarkdown(),

@@ -1,4 +1,5 @@
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
+import * as ProfileFlamegraph from "@maple/views/profiles/profile-flamegraph"
 import {
 	click,
 	expect as expectView,
@@ -16,7 +17,7 @@ import type { PageViewInputs } from "../kit/inputs"
 import { FetchGoldenSignals, FetchOperations, FetchOverview, FetchTimeseries } from "./command"
 import { Message } from "./message"
 import type { Model, OperationRow } from "./model"
-import { init, update } from "./update"
+import { init, locationChanged, update } from "./update"
 import { view as pageView } from "./view"
 import { Array as Arr } from "effect"
 
@@ -59,6 +60,31 @@ const anchored = () =>
 	pageUpdate(init(context, "checkout-api").model, Message.CompletedReadClock({ nowMs: NOW }))
 
 describe("local service detail", () => {
+	test("another range opens the profile whole; a refresh of the same window keeps the view", () => {
+		const searched = pageUpdate(
+			anchored().model,
+			Message.GotFlamegraphMessage({
+				message: ProfileFlamegraph.Message.ChangedSearch({ value: "parse" }),
+			}),
+		).model
+		expect(searched.profile.key).not.toBeNull()
+
+		// The refresh reads the clock, then reloads the same window.
+		const refreshing = pageUpdate(searched, Message.ClickedRefresh()).model
+		const refreshed = pageUpdate(refreshing, Message.CompletedReadRefreshClock({ nowMs: NOW })).model
+		expect(refreshed.profile.key).not.toBeNull()
+		expect(refreshed.flamegraph.search).toBe("parse")
+		expect(refreshed.flamegraph.resetToken).toBe(0)
+
+		const widened = locationChanged(searched, {
+			...context,
+			location: { path: "/services/checkout-api", search: "range=6h" },
+		}).model
+		expect(widened.profile.key).not.toBe(searched.profile.key)
+		expect(widened.flamegraph.search).toBe("")
+		expect(widened.flamegraph.resetToken).toBe(1)
+	})
+
 	test("entry asks the overview, operations and golden signals; the operations chart waits for operations", () => {
 		expect(names(anchored().commands)).toEqual(
 			expect.arrayContaining([FetchOverview.name, FetchOperations.name, FetchGoldenSignals.name]),
@@ -103,6 +129,45 @@ describe("local service detail", () => {
 			expectOutMessage(
 				PageOutMessage.RememberedRange({ range: "30d", hash: "#/services/checkout-api?range=30d" }),
 			),
+		)
+	})
+	test("a window with profile samples and no spans still shows the profile", () => {
+		const base = anchored().model
+		const quiet = pageUpdate(
+			base,
+			Message.SucceededFetchOverview({
+				key: base.overview.key ?? "",
+				overview: null,
+				fetchedAtMs: NOW,
+			}),
+		).model
+		const profiled = pageUpdate(
+			quiet,
+			Message.SucceededFetchProfile({
+				key: quiet.profile.key ?? "",
+				profile: {
+					sampleType: "cpu",
+					sampleUnit: "nanoseconds",
+					totalValue: 9_000_000,
+					totalStacks: 1,
+					durationNano: 60_000_000_000,
+					stacks: [{ frames: ["main"], files: ["/app/main.js"], lines: [1], value: 9_000_000 }],
+				},
+				fetchedAtMs: NOW,
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(profiled),
+			themeResolved(),
+			Mount.resolve(
+				ProfileFlamegraph.MountFlameChart({ chartId: profiled.flamegraph.id, maxRows: 22 }),
+				Message.GotFlamegraphMessage({
+					message: ProfileFlamegraph.Message.ChangedZoom({ isZoomed: false }),
+				}),
+			),
+			expectView(text("No spans from this service in this window")).toExist(),
+			expectView(role("table", { name: "Top functions" })).toExist(),
 		)
 	})
 })

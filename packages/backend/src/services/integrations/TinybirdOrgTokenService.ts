@@ -8,8 +8,8 @@ import { mintOrgReadJwt, type OrgReadJwtUse } from "@maple/backend/services/auth
 import { Env } from "@maple/backend/platform/Env"
 
 // Per-org Tinybird read JWTs scope a read to one org's rows (row-level security enforced by
-// Tinybird; see services/auth/tinybird-jwt.ts): always for raw SQL, and for Maple's own compiled
-// reads where `MAPLE_WAREHOUSE_ORG_SCOPED_READS` is on. A cache entry expires SKEW seconds
+// Tinybird; see services/auth/tinybird-jwt.ts): always for raw SQL, and for every one of Maple's own
+// compiled tenant reads where managed reads are Tinybird and the signing key is set. A cache entry expires SKEW seconds
 // early, so a cached Tinybird client (30s executor cache) never outlives its JWT.
 
 const JWT_TTL_SECONDS = 600

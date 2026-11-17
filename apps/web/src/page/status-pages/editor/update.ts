@@ -8,7 +8,14 @@ import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import { type PageContext, PageOutMessage } from "../../contract"
-import { type EditorView, pageIdFromUrl, STATUS_PAGE_BASE_URL, statusPageHref } from "../shared/commands"
+import type { StatusPageSearch } from "../../../route/search"
+import {
+	pageIdFromUrl,
+	SETTINGS_SECTIONS,
+	type SettingsSection,
+	STATUS_PAGE_BASE_URL,
+	statusPageHref,
+} from "../shared/commands"
 import { emptyComponentForm, emptyIncidentForm } from "../shared/form"
 import { emptyPicker } from "../shared/picker"
 import { historyFrom } from "../shared/preview"
@@ -24,6 +31,7 @@ import type { Model } from "./model"
 import {
 	chain,
 	componentsOf,
+	incidentsOf,
 	pageOf,
 	readComponents,
 	readConfig,
@@ -39,6 +47,7 @@ import {
 	askDeleteComponent,
 	changeComponent,
 	commitComponent,
+	componentRowId,
 	confirmDeleteComponent,
 	deleteComponentDialog,
 	deletedComponent,
@@ -132,9 +141,46 @@ import { acceptGrants } from "../../kit/session-grants"
 
 type EditorRoute = Extract<AppRoute, { readonly _tag: "StatusPage" }>
 
-/** The view the search names; anything else is the page itself, so an old or mistyped link lands. */
-export const resolveView = (view: string | undefined): EditorView | "page" =>
-	view === "appearance" || view === "settings" || view === "json" || view === "live" ? view : "page"
+/** The editor's tabs: the live page, incidents, maintenance, settings, and the just-published screen. */
+export type EditorTab = "page" | "incidents" | "maintenance" | "settings" | "live"
+
+export type EditorLocation = Readonly<{ tab: EditorTab; section: SettingsSection }>
+
+const isSection = (value: string | undefined): value is SettingsSection =>
+	Arr.some(SETTINGS_SECTIONS, (section) => section === value)
+
+/**
+ * Where the search points; anything unknown is the live page, so an old or mistyped link lands.
+ * The old Appearance and JSON tabs are Settings sections now.
+ */
+export const resolveView = (search: typeof StatusPageSearch.Type): EditorLocation => {
+	const section = isSection(search.section) ? search.section : "basic"
+	switch (search.view) {
+		case "incidents":
+		case "maintenance":
+		case "settings":
+		case "live":
+			return { tab: search.view, section }
+		case "appearance":
+			return { tab: "settings", section: "appearance" }
+		case "json":
+			return { tab: "settings", section: "advanced" }
+		default:
+			return { tab: "page", section }
+	}
+}
+
+/** Whether the tab shows what is open: a component under Monitors, an incident under its tab. */
+const showsPanel = (panel: Model["panel"], location: EditorLocation): boolean => {
+	if (panel === null) return false
+	switch (panel._tag) {
+		case "Component":
+		case "Add":
+			return location.tab === "settings" && location.section === "monitors"
+		case "Incident":
+			return location.tab === "incidents" || location.tab === "maintenance"
+	}
+}
 
 export const PAGE_MENU_ID = "status-page-menu"
 
@@ -144,6 +190,7 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		rawPageId: route.pageId,
 		pageId: Option.getOrNull(pageIdFromUrl(route.pageId)),
 		nowMs: null,
+		revealComponentId: null,
 		page: Keyed.idle(),
 		components: Keyed.idle(),
 		incidents: Keyed.idle(),
@@ -153,6 +200,9 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		isSessionLoaded: false,
 		pageMenu: Menu.init(PAGE_MENU_ID),
 		panel: null,
+		panelSheet: Dialog.init("status-page-panel", "sheet"),
+		sheetPanel: null,
+		sheetIncident: null,
 		previewScheme: "light",
 		previewWidth: "desktop",
 		previewState: "live",
@@ -160,8 +210,8 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		previewShown: 0,
 		previewHistory: [],
 		componentForm: emptyComponentForm,
-		componentSave: "idle",
-		componentFailure: null,
+		componentSave: null,
+		queuedComponentForms: [],
 		confirmDeleteComponentId: null,
 		deleteComponentDialog: Dialog.init("status-page-delete-component", "alert-dialog"),
 		isDeletingComponent: false,
@@ -231,24 +281,40 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 	}
 }
 
-/** The config read, only while the JSON view is open: the document must be current when edited. */
+/** The config read, only while Advanced (the JSON editor) is open: the document must be current when edited. */
 const whenJson =
 	(context: PageContext, mode: Keyed.ReadMode) =>
-	(model: Model): Return =>
-		resolveView(model.search.view) === "json" ? readConfig(context, mode)(model) : { model }
+	(model: Model): Return => {
+		const location = resolveView(model.search)
+		return location.tab === "settings" && location.section === "advanced"
+			? readConfig(context, mode)(model)
+			: { model }
+	}
 
 /** The custom domain moves on the server's schedule: opening Settings shows where it is now. */
 const whenSettings =
 	(context: PageContext, mode: Keyed.ReadMode) =>
 	(model: Model): Return =>
-		resolveView(model.search.view) === "settings" ? readCustomDomain(context, mode)(model) : { model }
+		resolveView(model.search).tab === "settings" ? readCustomDomain(context, mode)(model) : { model }
 
-/** A view switch is a search change; opening JSON re-reads the config, since other views write too. */
+/**
+ * A tab switch is a search change; what is open stays open only where the new tab shows it.
+ * Opening Advanced re-reads the config, since other sections write too.
+ */
 export const routeChanged = (model: Model, route: EditorRoute, context: PageContext): Return =>
-	chain(
-		{ ...model, search: route.search, panel: null },
-		whenJson(context, "Refresh"),
-		whenSettings(context, "Refresh"),
+	withSheet(
+		chain(
+			{ ...model, search: route.search },
+			// A route change can skip the field's blur (a keyboard Back): typed edits save first.
+			(next) =>
+				showsPanel(next.panel, resolveView(route.search))
+					? { model: next }
+					: chain(next, commitComponent, (committed) => ({
+							model: { ...committed, panel: null, componentForm: emptyComponentForm },
+						})),
+			whenJson(context, "Refresh"),
+			whenSettings(context, "Refresh"),
+		),
 	)
 
 /** The dialogs ignore dismissal while their write is in flight, as `ConfirmDialog` does. */
@@ -280,21 +346,96 @@ const schedulePreview = (model: Model): Return => {
 
 // PANEL
 
-/** Closing hands focus back to the row that opened the panel, or the list. */
+/** Closing a component hands focus back to its row; the sheet hands it back on its own. */
 const closePanel = (model: Model): Return => {
 	const panel = model.panel
-	const target =
-		panel?._tag === "Component"
-			? `status-page-item-${panel.componentId}`
-			: panel?._tag === "Incident"
-				? `status-page-item-${panel.incidentId}`
-				: "status-page-on-this-page"
-	return panel === null
-		? { model }
-		: {
-				model: { ...model, panel: null },
-				commands: [FocusEditorElement({ id: target })],
+	if (panel === null) return { model }
+	return panel._tag === "Component"
+		? {
+				model: { ...model, panel: null, componentForm: emptyComponentForm },
+				commands: [FocusEditorElement({ id: componentRowId(panel.componentId) })],
 			}
+		: { model: { ...model, panel: null } }
+}
+
+const sheetCommands = (step: ReturnType<typeof Dialog.update>) =>
+	FoldkitCommand.mapMessages(step.commands ?? [], (message) => Message.GotPanelSheetMessage({ message }))
+
+/** The open incident as listed, else the one the sheet last showed. */
+const shownIncident = (model: Model): Model["sheetIncident"] => {
+	const panel = model.panel
+	if (panel?._tag !== "Incident") return model.sheetIncident
+	return Option.getOrElse(
+		Arr.findFirst(incidentsOf(model), (row) => row.id === panel.incidentId),
+		() => model.sheetIncident,
+	)
+}
+
+/**
+ * Opens the sheet while an incident or Add is open and closes it otherwise, whatever opened them.
+ * The sheet keeps showing the last of them, the incident as last listed, while it animates out.
+ */
+const withSheet = (result: Return): Return => {
+	const isWanted = result.model.panel !== null && result.model.panel._tag !== "Component"
+	const model = {
+		...result.model,
+		sheetPanel: isWanted ? result.model.panel : result.model.sheetPanel,
+		sheetIncident: shownIncident(result.model),
+	}
+	if (isWanted === model.panelSheet.isOpen) return { ...result, model }
+	const step = isWanted ? Dialog.open(model.panelSheet) : Dialog.close(model.panelSheet)
+	return {
+		...result,
+		model: { ...model, panelSheet: step.model },
+		commands: [...(result.commands ?? []), ...sheetCommands(step)],
+	}
+}
+
+/** The sheet closed itself (Escape, backdrop, close button): what it showed closes with it. */
+const updatePanelSheet = (model: Model, message: Dialog.Message): Return => {
+	const step = Dialog.update(model.panelSheet, message)
+	return {
+		model: {
+			...model,
+			panelSheet: step.model,
+			panel: step.outMessage?._tag === "Closed" ? null : model.panel,
+		},
+		commands: sheetCommands(step),
+	}
+}
+
+/** A click in the live page opens what it landed on where it is edited. */
+const selectFromPreview = (model: Model, kind: "component" | "incident", id: string): Return => {
+	const navigate = (url: string) => PageOutMessage.RequestedNavigation({ url, isReplace: false })
+	if (model.pageId === null) return { model }
+	const pageId = model.pageId
+	if (kind === "component")
+		return Option.match(
+			Arr.findFirst(componentsOf(model), (row) => row.id === id),
+			{
+				onNone: () => ({ model }),
+				onSome: (component) => {
+					const selected = selectComponent(model, component.id)
+					return {
+						...selected,
+						model: { ...selected.model, revealComponentId: component.id },
+						outMessage: navigate(statusPageHref(pageId, "settings", "monitors")),
+					}
+				},
+			},
+		)
+	return Option.match(
+		Arr.findFirst(incidentsOf(model), (row) => row.id === id),
+		{
+			onNone: () => ({ model }),
+			onSome: (incident) => ({
+				...selectIncident(model, incident.id),
+				outMessage: navigate(
+					statusPageHref(pageId, incident.kind === "incident" ? "incidents" : "maintenance"),
+				),
+			}),
+		},
+	)
 }
 
 /** The "..." menu: links navigate, the rest are this page's own actions. */
@@ -312,7 +453,9 @@ const updatePageMenu = (model: Model, message: Menu.Message): Return => {
 	})
 	switch (result.outMessage.value) {
 		case "break-glass":
-			return navigate(`${statusPageHref(model.pageId, "settings")}#status-page-settings-break-glass`)
+			return navigate(
+				`${statusPageHref(model.pageId, "settings", "advanced")}#status-page-settings-break-glass`,
+			)
 		case "delete":
 			return deletePageDialog(next, Dialog.open(next.deletePageDialog))
 		default:
@@ -321,6 +464,9 @@ const updatePageMenu = (model: Model, message: Menu.Message): Return => {
 }
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
+	withSheet(step(model, message, context))
+
+const step = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
 		// Each fresh read re-reads the clock, so "published 2m ago" and update times never drift into the future.
@@ -372,7 +518,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				whenJson(context, "Supersede"),
 			),
 		GotPageMenuMessage: ({ message: child }) => updatePageMenu(model, child),
-		CompletedFocus: () => ({ model }),
+		// A reveal happens once: a later remount of the same row (back from another section) stays put.
+		CompletedFocus: () => ({ model: { ...model, revealComponentId: null } }),
 		// Preview and selection
 		ElapsedPreviewDebounce: ({ generation }) =>
 			generation !== model.previewGeneration
@@ -395,29 +542,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 							},
 						}),
 					}),
-		ReceivedPreviewSelection: ({ kind, id }) => {
-			return kind === "component"
-				? Option.match(
-						Arr.findFirst(componentsOf(model), (row) => row.id === id),
-						{
-							onNone: () => ({ model }),
-							onSome: (component) => selectComponent(model, component.id),
-						},
-					)
-				: Option.match(
-						Arr.findFirst(
-							AsyncData.getOrElse(model.incidents.data, () => []),
-							(row) => row.id === id,
-						),
-						{
-							onNone: () => ({ model }),
-							onSome: (incident) => selectIncident(model, incident.id),
-						},
-					)
-		},
-		ClickedComponent: ({ componentId }) => selectComponent(model, componentId),
+		ReceivedPreviewSelection: ({ kind, id }) => selectFromPreview(model, kind, id),
+		// A second click on the open component closes it; its fields saved on blur.
+		ClickedComponent: ({ componentId }) =>
+			model.panel?._tag === "Component" && model.panel.componentId === componentId
+				? closePanel(model)
+				: selectComponent(model, componentId),
 		ClickedIncident: ({ incidentId }) => selectIncident(model, incidentId),
-		ClickedClosePanel: () => closePanel(model),
+		GotPanelSheetMessage: ({ message: child }) => updatePanelSheet(model, child),
 		// Escape skips the field's blur, so a component panel saves its typed edits before it closes.
 		PressedEscape: () =>
 			model.panel?._tag === "Component" ? chain(model, commitComponent, closePanel) : closePanel(model),
@@ -456,6 +588,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ChangedIncidentKind: ({ kind }) => changeIncidentKind(model, kind),
 		ChangedIncidentField: ({ field, value }) => changeIncident(model, field, value),
 		ToggledIncidentComponent: ({ componentId }) => toggleIncidentComponent(model, componentId),
+		ChangedIncidentAutoComplete: ({ autoComplete }) => ({
+			model: { ...model, incidentForm: { ...model.incidentForm, autoComplete } },
+		}),
 		SubmittedIncidentWrite: () => reviewIncident(model, context),
 		ClickedIncidentBack: () => backToIncidentWrite(model),
 		SubmittedIncident: ({ isPublished }) => submitIncident(model, context, isPublished),
@@ -480,6 +615,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			),
 		ChangedIncidentEditField: ({ field, value }) => changeIncidentEdit(model, field, value),
 		ToggledIncidentEditComponent: ({ componentId }) => toggleIncidentEditComponent(model, componentId),
+		ChangedIncidentEditAutoComplete: ({ autoComplete }) =>
+			model.incidentEdit === null || model.isSavingIncident
+				? { model }
+				: { model: { ...model, incidentEdit: { ...model.incidentEdit, autoComplete } } },
 		SubmittedIncidentEdit: () => submitIncidentEdit(model, context),
 		CompletedSaveIncident: ({ result }) => savedIncident(model, result, context),
 		ClickedDeleteIncident: ({ incidentId }) => askDeleteIncident(model, incidentId),
@@ -539,6 +678,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchCustomDomain: ({ key, result }) => ({
 			model: { ...model, customDomain: Keyed.accept(model.customDomain, key, result) },
 		}),
+		ClickedRetryCustomDomain: () => readCustomDomain(context, "Refresh")(model),
 		ChangedCustomDomain: ({ value }) => changeCustomDomain(model, value),
 		SubmittedCustomDomain: () => submitCustomDomain(model),
 		CompletedSetCustomDomain: ({ result }) => savedCustomDomain(model, result),

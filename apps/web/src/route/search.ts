@@ -212,6 +212,8 @@ export const accountTabValues = [
 export const settingsTabValues = [
 	"general",
 	"members",
+	"domains",
+	"sso",
 	"billing",
 	"audit-log",
 	"keys",
@@ -399,9 +401,13 @@ export const AlertsStatusPageSearch = Schema.Struct({
 	tab: StringParam,
 })
 
-/** `/status-pages/$pageId`: `view` is `appearance`, `settings`, `json` or `live`; none is the page itself. */
+/**
+ * `/status-pages/$pageId`: `view` is `incidents`, `maintenance`, `settings` or `live` (just
+ * published); none is the live page. `section` picks the Settings section.
+ */
 export const StatusPageSearch = Schema.Struct({
 	view: StringParam,
+	section: StringParam,
 })
 
 export const CodeReviewCiSearch = Schema.Struct(CodeReviewCiSearchFields)
@@ -484,6 +490,10 @@ export const ServiceSearch = Schema.Struct({
 	tab: StringParam,
 	/** The API tab's open endpoint drawer, by normalized span name ("GET /users/{id}"). */
 	endpoint: StringParam,
+	/** The Overview's open deploy drawer, by commit sha. */
+	deploy: StringParam,
+	/** The open deploy's environment, when its commit shipped to several. */
+	deployEnv: StringParam,
 	environments: OptionalStringArrayParam,
 	...TimeRangeSearchFields,
 })
@@ -718,13 +728,8 @@ export const MetricsSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-export const ReleasesSearch = Schema.Struct({
-	environments: OptionalStringArrayParam,
-	excludedEnvironments: OptionalStringArrayParam,
-	services: OptionalStringArrayParam,
-	impact: Schema.optional(Schema.Literals(["regressed", "watch", "rolling", "healthy"])),
-	...TimeRangeSearchFields,
-})
+/** Retired: `routeRedirect` sends `/releases` to the services, keeping the window. */
+export const ReleasesSearch = Schema.Struct({ ...TimeRangeSearchFields })
 
 export const ReplaysSearch = Schema.Struct({
 	service: StringParam,

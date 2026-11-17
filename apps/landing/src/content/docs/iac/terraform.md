@@ -7,7 +7,7 @@ icon: "terraform"
 navLabel: "Terraform"
 ---
 
-The Maple provider for [Terraform](https://developer.hashicorp.com/terraform) manages Maple configuration as code: dashboards, alert rules and their destinations, uptime monitors, scrape targets and API keys. It talks to the public [v2 API](/docs/reference/api), so anything you can do there with a key you can review in a plan first.
+The Maple provider for [Terraform](https://developer.hashicorp.com/terraform) manages Maple configuration as code: dashboards, alert rules and their destinations, uptime monitors, scrape targets and API keys. It talks to the public [v2 API](/docs/reference/api), so anything you can do there with a key you can review in a plan first. The same provider is available for [Pulumi](/docs/iac/pulumi).
 
 |                    |                                                                                                     |
 | ------------------ | --------------------------------------------------------------------------------------------------- |
