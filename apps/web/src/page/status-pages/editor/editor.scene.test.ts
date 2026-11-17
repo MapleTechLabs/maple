@@ -65,6 +65,7 @@ import {
 	FocusEditorElement,
 	ReadEditorClock,
 	RemoveCustomDomain,
+	RemovePassword,
 	ReorderComponents,
 	RevealOpenComponent,
 	SaveVisibility,
@@ -2693,7 +2694,7 @@ describe("settings", () => {
 		)
 	})
 
-	test("a password-protected page previews the password form visitors meet", () => {
+	test("a password-protected page, saved or picked, previews the password form visitors meet", () => {
 		const gate = srcdocOf("The password form visitors see first")
 		scene(
 			{ update: pageUpdate, view },
@@ -2707,6 +2708,9 @@ describe("settings", () => {
 			{ update: pageUpdate, view },
 			given(loaded(ACCESS)),
 			expectView(selector('iframe[title="The password form visitors see first"]')).not.toExist(),
+			// Picking Password-protected previews the form before it is saved.
+			change(role("radio", { name: "Password-protected" }), "on"),
+			tap(({ html }) => expect(gate(html)).toContain("This status page is password-protected")),
 		)
 	})
 
@@ -2828,47 +2832,127 @@ describe("settings", () => {
 		)
 	})
 
-	test("a password is set before the page can be password-protected, and never rides a command's args", () => {
+	test("picking who can view sends nothing, and Password-protected waits for a valid password", () => {
+		expect(
+			pageUpdate(loaded(ACCESS), Message.PickedVisibility({ visibility: "password" })).commands ?? [],
+		).toEqual([])
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(ACCESS)),
-			expectView(role("radio", { name: "Password-protected" })).toBeDisabled(),
-			expectView(text("Set a password below first.")).toExist(),
-			click(role("button", { name: "Set password" })),
-			type(role("textbox", { name: "New password" }), "short"),
+			expectView(role("textbox", { name: "Password" })).not.toExist(),
+			change(role("radio", { name: "Password-protected" }), "on"),
+			expectView(role("radio", { name: "Password-protected" })).toBeChecked(),
+			expectView(text("Unsaved changes")).toExist(),
+			expectView(text("Type a password for visitors.")).toExist(),
+			expectView(role("button", { name: "Save" })).toBeDisabled(),
+			type(role("textbox", { name: "Password" }), "short"),
 			expectView(text("Use at least 8 characters")).toExist(),
-			expectView(role("button", { name: "Save password" })).toBeDisabled(),
+			expectView(role("button", { name: "Save" })).toBeDisabled(),
+			type(role("textbox", { name: "Password" }), "correct horse battery"),
+			expectView(text("Password-protected, New password")).toExist(),
+			expectView(role("button", { name: "Save" })).toBeEnabled(),
+			// Back to Public: the field and what was typed in it go, and nothing is left to save.
+			change(role("radio", { name: "Public" }), "on"),
+			expectView(role("textbox", { name: "Password" })).not.toExist(),
+			expectView(text("Unsaved changes")).not.toExist(),
 		)
-		const typed = pageUpdate(
-			pageUpdate(loaded(ACCESS), Message.ClickedChangePassword()).model,
-			Message.ChangedPassword({ value: "correct horse battery" }),
-		).model
-		const saving = pageUpdate(typed, Message.SubmittedPassword())
+	})
+
+	test("Save sends the password before the visibility, and the password never rides a command's args", () => {
+		const typed = Arr.reduce(
+			[
+				Message.PickedVisibility({ visibility: "password" }),
+				Message.ChangedPassword({ value: "correct horse battery" }),
+			],
+			loaded(ACCESS),
+			(model, message) => pageUpdate(model, message).model,
+		)
+		const saving = pageUpdate(typed, Message.ClickedSaveAccess())
 		expect(saving.commands).toMatchObject([{ name: "SetStatusPagePassword" }])
 		expect(saving.commands?.[0]).not.toHaveProperty("args")
-		const saved = pageUpdate(
+		const failed = pageUpdate(
+			saving.model,
+			Message.CompletedAccessChange({
+				action: "password",
+				result: Result.fail(toLoadFailure(new Error("access unavailable"))),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			expectView(text("Couldn't change who can view the page")).toExist(),
+			expectView(role("radio", { name: "Password-protected" })).toBeChecked(),
+			expectView(role("textbox", { name: "Password" })).toHaveValue("correct horse battery"),
+			expectView(role("button", { name: "Save" })).toBeEnabled(),
+		)
+		const passwordSaved = pageUpdate(
 			saving.model,
 			Message.CompletedAccessChange({
 				action: "password",
 				result: Result.succeed(statusPage({ has_password: true })),
 			}),
-		).model
-		expect(saved.passwordDraft).toBeNull()
+		)
+		expect(passwordSaved.commands).toMatchObject([
+			{ name: "SaveStatusPageVisibility", args: { visibility: "password" } },
+		])
+		const saved = pageUpdate(
+			passwordSaved.model,
+			Message.CompletedAccessChange({
+				action: "visibility",
+				result: Result.succeed(statusPage({ has_password: true, visibility: "password" })),
+			}),
+		)
+		expect(saved.commands ?? []).toEqual([])
 		scene(
 			{ update: pageUpdate, view },
-			given(saved),
-			expectView(role("radio", { name: "Password-protected" })).not.toBeDisabled(),
-			change(role("radio", { name: "Password-protected" }), "on"),
+			given(saved.model),
+			expectView(text("Unsaved changes")).not.toExist(),
+			expectView(role("radio", { name: "Password-protected" })).toBeChecked(),
+			expectView(role("textbox", { name: "Password" })).toHaveValue(""),
+			expectView(role("textbox", { name: "Password" })).toHaveAttr(
+				"placeholder",
+				"Leave empty to keep the current password",
+			),
+		)
+	})
+
+	test("opening a password page removes its password on Save, and Discard puts it back", () => {
+		const protectedPage = loaded({
+			...ACCESS,
+			page: statusPage({ visibility: "password", has_password: true }),
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(protectedPage),
+			// A page with a password saves Password-protected without a new one.
+			expectView(text("Unsaved changes")).not.toExist(),
+			change(role("radio", { name: "Public" }), "on"),
+			expectView(text("Public, removes the page password")).toExist(),
+			expectView(role("textbox", { name: "Password" })).not.toExist(),
+			click(role("button", { name: "Discard" })),
+			expectView(role("radio", { name: "Password-protected" })).toBeChecked(),
+			expectView(text("Unsaved changes")).not.toExist(),
+			change(role("radio", { name: "Public" }), "on"),
+			click(role("button", { name: "Save" })),
+			Command.expectExact(SaveVisibility({ pageId: statusPage().id, visibility: "public" })),
 			Command.resolve(
 				SaveVisibility,
 				Message.CompletedAccessChange({
 					action: "visibility",
-					result: Result.succeed(statusPage({ has_password: true, visibility: "password" })),
+					result: Result.succeed(statusPage({ visibility: "public", has_password: true })),
 				}),
 			),
-			// A password page keeps its password: it can be changed, not removed.
-			expectView(role("button", { name: "Change password" })).toExist(),
-			expectView(role("button", { name: "Remove password" })).not.toExist(),
+			Command.expectExact(RemovePassword({ pageId: statusPage().id })),
+			Command.resolve(
+				RemovePassword,
+				Message.CompletedAccessChange({
+					action: "removePassword",
+					result: Result.succeed(statusPage({ visibility: "public", has_password: false })),
+				}),
+			),
+			Command.expectNone(),
+			expectView(text("Unsaved changes")).not.toExist(),
+			expectView(role("radio", { name: "Public" })).toBeChecked(),
 		)
 	})
 
@@ -2882,13 +2966,12 @@ describe("settings", () => {
 		const engineer = loaded({ ...ACCESS, grants: Policy.grantsOf(["org:engineer"]) })
 		scene(
 			{ update: pageUpdate, view },
-			given(engineer),
+			given(pageUpdate(engineer, Message.PickedVisibility({ visibility: "password" })).model),
 			expectView(text("Only org admins can change who can view a status page.")).toExist(),
-			expectView(role("button", { name: "Set password" })).not.toExist(),
+			expectView(role("radio", { name: "Password-protected" })).toBeDisabled(),
+			expectView(role("radio", { name: "Public" })).toBeChecked(),
+			expectView(text("Unsaved changes")).not.toExist(),
 		)
-		expect(
-			names(pageUpdate(engineer, Message.PickedVisibility({ visibility: "internal" })).commands),
-		).toEqual([])
 	})
 
 	test("replacing or revoking an issued token asks first", () => {

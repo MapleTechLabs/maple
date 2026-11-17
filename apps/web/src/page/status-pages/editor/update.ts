@@ -105,15 +105,7 @@ import {
 	changeTheme,
 	updateTokenCopy,
 } from "./update-settings"
-import {
-	cancelPassword,
-	changedAccess,
-	changePassword,
-	openPassword,
-	pickVisibility,
-	removePassword,
-	submitPassword,
-} from "./update-access"
+import { changedAccess, changePassword, discardAccess, pickVisibility, saveAccess } from "./update-access"
 import {
 	appliedJson,
 	applyJson,
@@ -249,7 +241,8 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		deletePageDialog: Dialog.init("status-page-delete", "alert-dialog"),
 		isDeletingPage: false,
 		accessAction: null,
-		passwordDraft: null,
+		visibilityDraft: null,
+		passwordDraft: "",
 		accessFailure: null,
 		customDomain: Keyed.idle(),
 		customDomainDraft: null,
@@ -672,11 +665,9 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 		ClickedDismissToken: () => ({ model: { ...model, revealedToken: null } }),
 		// Access
 		PickedVisibility: ({ visibility }) => pickVisibility(model, visibility),
-		ClickedChangePassword: () => openPassword(model),
 		ChangedPassword: ({ value }) => changePassword(model, value),
-		ClickedCancelPassword: () => cancelPassword(model),
-		SubmittedPassword: () => submitPassword(model),
-		ClickedRemovePassword: () => removePassword(model),
+		ClickedDiscardAccess: () => discardAccess(model),
+		ClickedSaveAccess: () => saveAccess(model),
 		CompletedAccessChange: ({ action, result }) => changedAccess(model, action, result),
 		// Custom domain
 		CompletedFetchCustomDomain: ({ key, result }) => ({

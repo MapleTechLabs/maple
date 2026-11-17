@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { StatusPagePublicId, V2StatusPageComponent } from "@maple/domain/http/v2"
+import { StatusPagePublicId, V2StatusPage, V2StatusPageComponent } from "@maple/domain/http/v2"
 import { Effect, Option, Result, Schema, Array as Arr } from "effect"
 import { Command, Subscription, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -11,10 +11,16 @@ import { Message as ListMessage } from "../../page/status-pages/list/message"
 import { Model as ListModel } from "../../page/status-pages/list/model"
 import { init as listInit, update as listUpdate } from "../../page/status-pages/list/update"
 import { view as listView } from "../../page/status-pages/list/view"
-import { FocusEditorElement, ReorderComponents, SaveComponent } from "../../page/status-pages/editor/command"
+import {
+	FocusEditorElement,
+	RemovePassword,
+	ReorderComponents,
+	SaveComponent,
+	SaveVisibility,
+} from "../../page/status-pages/editor/command"
 import { Message as EditorMessage } from "../../page/status-pages/editor/message"
-import { Model as EditorModel } from "../../page/status-pages/editor/model"
-import { componentsOf, listedComponentsOf } from "../../page/status-pages/editor/reads"
+import { AccessAction, Model as EditorModel } from "../../page/status-pages/editor/model"
+import { componentsOf, listedComponentsOf, pageOf } from "../../page/status-pages/editor/reads"
 import { subscriptions as editorSubscriptions } from "../../page/status-pages/editor/subscription"
 import { init as editorInit, update as editorUpdate } from "../../page/status-pages/editor/update"
 import { view as editorView } from "../../page/status-pages/editor/view"
@@ -31,7 +37,8 @@ import { labGrants, LabRole, readLabRole } from "../viewer-role"
 // pages, a page's editor open on an incident, or on Settings > Monitors with grouped components
 // to drag (`?page=list|editor|monitors`), as the viewer `?role=` names: an analyst reads the
 // incident and gets no control that posts, edits or deletes one. The editor runs for real with no
-// API: a reorder and a component's Save land at once, every other read and write is dropped.
+// API: a reorder, a component's Save and an Access save land at once, every other read and write
+// is dropped.
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)(LAB_ORG),
@@ -175,10 +182,38 @@ const savedOf = (model: EditorModel): ReadonlyArray<V2StatusPageComponent> =>
 		Option.toArray,
 	)
 
+/** The lab's API for each part of an Access save: the page with that part saved. */
+const AnswerAccess = Command.define("AnswerLabStatusPageAccess", {
+	args: { action: AccessAction, page: V2StatusPage },
+	messages: [EditorMessage.CompletedAccessChange],
+	execute: ({ action, page }) =>
+		Effect.succeed(EditorMessage.CompletedAccessChange({ action, result: Result.succeed(page) })),
+})
+
+/** The commands of an Access save; the password's is built by hand, so it is named here. */
+const ACCESS_COMMANDS = ["SetStatusPagePassword", SaveVisibility.name, RemovePassword.name]
+
+/** The page once the Access part in flight is saved. */
+const accessAnswers = (model: EditorModel): EditorCommands => {
+	const action = model.accessAction
+	if (action === null) return []
+	return Arr.map(Option.toArray(pageOf(model)), (page) =>
+		AnswerAccess({
+			action,
+			page:
+				action === "password"
+					? { ...page, has_password: true }
+					: action === "visibility"
+						? { ...page, visibility: model.visibilityDraft ?? page.visibility }
+						: { ...page, has_password: false },
+		}),
+	)
+}
+
 const sends = (commands: EditorCommands | undefined, name: string): boolean =>
 	Arr.some(commands ?? [], (command) => command.name === name)
 
-/** The kit's commands and the editor's focus moves run; a reorder and a Save are answered; the rest is dropped. */
+/** The kit's commands and the editor's focus moves run; a reorder and the Saves are answered; the rest is dropped. */
 const kept = (model: EditorModel, commands: EditorCommands | undefined): EditorCommands => [
 	...keepLocal(commands),
 	...Arr.filter(commands ?? [], (command) => command.name === FocusEditorElement.name),
@@ -188,6 +223,7 @@ const kept = (model: EditorModel, commands: EditorCommands | undefined): EditorC
 	...(sends(commands, SaveComponent.name)
 		? Arr.map(savedOf(model), (saved) => AnswerSave({ component: saved }))
 		: []),
+	...(Arr.some(ACCESS_COMMANDS, (name) => sends(commands, name)) ? accessAnswers(model) : []),
 ]
 
 const update = (model: Model, message: Message): Return =>

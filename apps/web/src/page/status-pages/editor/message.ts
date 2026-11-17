@@ -155,11 +155,9 @@ export const Message = defineMessageUnion({
 	ClickedDismissToken: {},
 	// Access
 	PickedVisibility: { visibility: StatusPageVisibility },
-	ClickedChangePassword: {},
 	ChangedPassword: { value: Schema.String },
-	ClickedCancelPassword: {},
-	SubmittedPassword: {},
-	ClickedRemovePassword: {},
+	ClickedDiscardAccess: {},
+	ClickedSaveAccess: {},
 	CompletedAccessChange: { action: AccessAction, result: LoadOutcome(V2StatusPage) },
 	// Custom domain
 	CompletedFetchCustomDomain: { key: Schema.String, result: LoadOutcome(V2StatusPageCustomDomain) },

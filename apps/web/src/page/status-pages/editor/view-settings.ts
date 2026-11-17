@@ -27,7 +27,7 @@ import {
 	settingsFormOf,
 	settingsIssues,
 } from "../shared/form"
-import { accessSection } from "./view-access"
+import { accessSaveBar, accessSection } from "./view-access"
 import { appearanceSection, brandingSection } from "./view-appearance"
 import { customDomainSection } from "./view-domain"
 import { jsonTab } from "./view-json"
@@ -427,11 +427,25 @@ export const settingsLayout = (
 	)
 }
 
-/** One bar at a time: under Monitors a moved order or an open component's edits take it over the page's settings. */
-const saveBars = (h: H, model: Model, form: SettingsForm, section: SettingsSection): ReadonlyArray<Html> => {
-	const componentBar = section === "monitors" ? monitorsSaveBar(h, model) : []
-	return componentBar.length > 0
-		? componentBar
+/**
+ * One bar at a time: under Monitors a moved order or an open component's edits, and under Access
+ * who can view, take it over the page's settings.
+ */
+const saveBars = (
+	h: H,
+	model: Model,
+	page: V2StatusPage,
+	form: SettingsForm,
+	section: SettingsSection,
+): ReadonlyArray<Html> => {
+	const sectionBar =
+		section === "monitors"
+			? monitorsSaveBar(h, model)
+			: section === "access"
+				? accessSaveBar(h, model, page)
+				: []
+	return sectionBar.length > 0
+		? sectionBar
 		: saveBar(h, {
 				isDirty: isSettingsDirty(model),
 				isPending: model.isSavingSettings,
@@ -464,7 +478,7 @@ export const settingsView = (h: H, model: Model, page: V2StatusPage, section: Se
 						alertDescription(h, [failureMessage(model.settingsFailure)]),
 					]),
 				]),
-		...saveBars(h, model, form, section),
+		...saveBars(h, model, page, form, section),
 	])
 }
 

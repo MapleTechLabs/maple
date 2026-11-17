@@ -1,5 +1,10 @@
 import * as Policy from "@maple/domain/policy"
-import { StatusPageComponentId, StatusPageId, StatusPageIncidentId } from "@maple/domain"
+import {
+	StatusPageComponentId,
+	StatusPageId,
+	StatusPageIncidentId,
+	StatusPageVisibility,
+} from "@maple/domain"
 import {
 	StatusPageConfig,
 	V2StatusPage,
@@ -52,7 +57,7 @@ export type JsonEdit = typeof JsonEdit.Type
 export const BreakGlassAction = Schema.Literals(["rotate", "revoke"])
 export type BreakGlassAction = typeof BreakGlassAction.Type
 
-/** What the Access section is saving: a visibility, a new password, or the password's removal. */
+/** The part of the Access save in flight: the new password, the visibility, or a leftover password's removal. */
 export const AccessAction = Schema.Literals(["visibility", "password", "removePassword"])
 export type AccessAction = typeof AccessAction.Type
 
@@ -187,8 +192,10 @@ export const Model = Schema.Struct({
 	isDeletingPage: Schema.Boolean,
 	// Access
 	accessAction: Schema.NullOr(AccessAction),
-	/** The new page password as typed; `null` while its field is closed. */
-	passwordDraft: Schema.NullOr(Schema.String),
+	/** Who can view as picked; `null` while it is the page's. */
+	visibilityDraft: Schema.NullOr(StatusPageVisibility),
+	/** The new page password as typed; empty for none. */
+	passwordDraft: Schema.String,
 	accessFailure: Schema.NullOr(LoadFailure),
 	// Custom domain
 	/** The page's custom domain and whether this deployment offers them; read with the page. */

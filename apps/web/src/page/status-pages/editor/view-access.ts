@@ -2,15 +2,15 @@ import { cn } from "@maple/ui/lib/utils"
 import type { StatusPageVisibility } from "@maple/domain"
 import type { V2StatusPage } from "@maple/domain/http/v2"
 import { Option, Array as Arr } from "effect"
-import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
-import { button, linkButton } from "@maple/views/ui/button"
+import { linkButton } from "@maple/views/ui/button"
 import { choiceCard } from "@maple/views/ui/choice-card"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { failureMessage } from "@maple/views/data/load-failure"
+import { saveBar } from "../../kit/save-bar"
 import { adminOnlyNote, settingsSection } from "../../kit/settings-section"
 import { statusPageViewHref } from "../shared/commands"
 import { textField } from "../shared/fields"
@@ -20,10 +20,17 @@ import { draftSnapshot } from "./view-canvas"
 import { renderAccessPage } from "@maple/status-page"
 import { Message } from "./message"
 import { canChangeAccess, type Model } from "./model"
-import { passwordIssue } from "./update-access"
-import { customDomainOf } from "./update-domain"
+import {
+	accessIssue,
+	blockedReason,
+	draftVisibility,
+	isAccessDirty,
+	passwordIssue,
+	removesPassword,
+} from "./update-access"
 
-// Settings > Access: public, behind a password, or members only, and the password form visitors meet.
+// Settings > Access: public, behind a password, or members only, and the password form visitors
+// meet. A pick and a typed password wait for the save bar.
 
 type H = HtmlBuilder<Message>
 
@@ -55,30 +62,16 @@ const VISIBILITIES: ReadonlyArray<{
 	},
 ]
 
-/** Why an option cannot be picked now, or null when it can. */
-const blockedReason = (model: Model, page: V2StatusPage, value: StatusPageVisibility): string | null => {
-	if (value === page.visibility) return null
-	if (value === "password" && !page.has_password) return "Set a password below first."
-	if (value !== "internal") return null
-	// An internal page answers no custom domain, so one must be known to be absent first.
-	return Option.match(customDomainOf(model), {
-		onSome: (domain) => (domain.hostname === null ? null : "Remove the custom domain first."),
-		onNone: () =>
-			AsyncData.hasError(model.customDomain.data)
-				? "Couldn't check for a custom domain. Try again under Advanced."
-				: "Checking for a custom domain…",
-	})
-}
-
 const visibilityChoice = (h: H, model: Model, page: V2StatusPage, option: (typeof VISIBILITIES)[number]) => {
 	const blocked = blockedReason(model, page, option.value)
+	const isPicked = draftVisibility(model, page) === option.value
 	return choiceCard(
 		h,
 		{
 			type: "radio",
 			name: "status-page-visibility",
 			label: option.title,
-			isChecked: page.visibility === option.value,
+			isChecked: isPicked,
 			isDisabled: !canChangeAccess(model) || model.accessAction !== null || blocked !== null,
 			onChange: Message.PickedVisibility({ visibility: option.value }),
 			className: "flex-col gap-1 p-3",
@@ -86,10 +79,7 @@ const visibilityChoice = (h: H, model: Model, page: V2StatusPage, option: (typeo
 		[
 			icon(h, option.icon, {
 				size: 16,
-				className: cn(
-					"mb-1",
-					page.visibility === option.value ? "text-primary" : "text-muted-foreground",
-				),
+				className: cn("mb-1", isPicked ? "text-primary" : "text-muted-foreground"),
 			}),
 			typography(h, { size: "sm", weight: "medium" }, [option.title]),
 			typography(h, { size: "xs", tone: "muted", as: "p" }, [option.description]),
@@ -100,81 +90,43 @@ const visibilityChoice = (h: H, model: Model, page: V2StatusPage, option: (typeo
 	)
 }
 
-const passwordForm = (h: H, model: Model, draft: string): Html => {
-	const issue = draft === "" ? null : passwordIssue(draft)
-	return h.form(
-		[h.AriaLabel("Page password"), h.OnSubmit(Message.SubmittedPassword())],
+const passwordField = (h: H, model: Model, page: V2StatusPage): Html =>
+	textField(h, {
+		id: "status-page-password",
+		label: "Password",
+		type: "password",
+		value: model.passwordDraft,
+		placeholder: page.has_password ? "Leave empty to keep the current password" : undefined,
+		error: model.passwordDraft === "" ? null : passwordIssue(model.passwordDraft),
+		hint: "Visitors enter it once per browser, for 30 days. A new password signs everyone out.",
+		isDisabled: model.accessAction !== null,
+		onInput: (value) => Message.ChangedPassword({ value }),
+	})
+
+/** What Save changes, or why it cannot. */
+const saveContext = (model: Model, page: V2StatusPage): string => {
+	const issue = accessIssue(model, page)
+	if (issue !== null) return issue
+	const picked = Arr.findFirst(VISIBILITIES, (option) => option.value === model.visibilityDraft)
+	return Arr.join(
 		[
-			textField(h, {
-				id: "status-page-password",
-				label: "New password",
-				type: "password",
-				value: draft,
-				error: issue,
-				hint: "Visitors enter it once per browser, for 30 days. A new password signs everyone out.",
-				onInput: (value) => Message.ChangedPassword({ value }),
-				trailing: hstack(h, { gap: "2" }, [
-					button(
-						h,
-						{
-							type: "submit",
-							isLoading: model.accessAction === "password",
-							isDisabled: passwordIssue(draft) !== null || model.accessAction !== null,
-						},
-						["Save password"],
-					),
-					button(
-						h,
-						{ variant: "ghost", attributes: [h.OnClick(Message.ClickedCancelPassword())] },
-						["Cancel"],
-					),
-				]),
-			}),
+			...Option.match(picked, { onNone: () => [], onSome: (option) => [option.title] }),
+			...(model.passwordDraft === "" ? [] : ["New password"]),
+			...(removesPassword(model, page) ? ["removes the page password"] : []),
 		],
+		", ",
 	)
 }
 
-const passwordRow = (h: H, model: Model, page: V2StatusPage): Html => {
-	if (model.passwordDraft !== null && canChangeAccess(model))
-		return passwordForm(h, model, model.passwordDraft)
-	return hstack(h, { gap: "3", justify: "between", wrap: true }, [
-		typography(h, { size: "sm", as: "p" }, [
-			page.has_password ? "A page password is set" : "No page password",
-		]),
-		...(canChangeAccess(model)
-			? [
-					hstack(h, { gap: "2" }, [
-						// A password page needs its password: it is removed after the page is opened up.
-						...(page.has_password && page.visibility !== "password"
-							? [
-									button(
-										h,
-										{
-											size: "sm",
-											variant: "destructive-outline",
-											isLoading: model.accessAction === "removePassword",
-											isDisabled: model.accessAction !== null,
-											attributes: [h.OnClick(Message.ClickedRemovePassword())],
-										},
-										["Remove password"],
-									),
-								]
-							: []),
-						button(
-							h,
-							{
-								size: "sm",
-								variant: "outline",
-								isDisabled: model.accessAction !== null,
-								attributes: [h.OnClick(Message.ClickedChangePassword())],
-							},
-							[icon(h, "KeyIcon"), page.has_password ? "Change password" : "Set password"],
-						),
-					]),
-				]
-			: []),
-	])
-}
+export const accessSaveBar = (h: H, model: Model, page: V2StatusPage): ReadonlyArray<Html> =>
+	saveBar(h, {
+		isDirty: isAccessDirty(model),
+		isPending: model.accessAction !== null,
+		context: saveContext(model, page),
+		onDiscard: Message.ClickedDiscardAccess(),
+		onSave: Message.ClickedSaveAccess(),
+		isSaveDisabled: accessIssue(model, page) !== null || model.accessAction !== null,
+	})
 
 export const accessSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm): Html =>
 	settingsSection(
@@ -194,7 +146,9 @@ export const accessSection = (h: H, model: Model, page: V2StatusPage, form: Sett
 					[h.Class("grid gap-2 sm:grid-cols-3"), h.Role("radiogroup"), h.AriaLabel("Who can view")],
 					Arr.map(VISIBILITIES, (option) => visibilityChoice(h, model, page, option)),
 				),
-				passwordRow(h, model, page),
+				...(canChangeAccess(model) && draftVisibility(model, page) === "password"
+					? [passwordField(h, model, page)]
+					: []),
 				...(page.visibility === "internal"
 					? [
 							hstack(h, { gap: "3", justify: "between", wrap: true }, [
@@ -218,7 +172,7 @@ export const accessSection = (h: H, model: Model, page: V2StatusPage, form: Sett
 								alertDescription(h, [failureMessage(model.accessFailure)]),
 							]),
 						]),
-				...(page.visibility === "password"
+				...(draftVisibility(model, page) === "password"
 					? [
 							onYourPage(
 								h,
