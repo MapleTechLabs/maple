@@ -169,7 +169,7 @@ describe("routes", () => {
 		expect(route).toMatchObject({ _tag: "Settings", search: { tab: "audit-log", outcome: "denied" } })
 		expect(hrefOf(route)).toBe("/settings/audit-log?outcome=denied")
 		expect(hrefOf(AppRoute.Settings({ search: {} }))).toBe("/settings")
-		expect(parse("/settings")).toMatchObject({ _tag: "Settings", search: {} })
+		expect(parse("/settings")).toEqual(AppRoute.Settings({ search: {} }))
 		expect(parse("/settings/nope")._tag).toBe("NotFound")
 		expect(parse("/settings/billing/ai-credits")._tag).toBe("BillingAiCredits")
 		expect(parse("/settings/ingestion/rules/new")._tag).toBe("IngestRuleNew")
