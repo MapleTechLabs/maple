@@ -151,7 +151,7 @@ const resultMetric = (
 	const out = new Map(Object.entries(many))
 	if (returnBool || !isComparison(op)) out.delete(METRIC_NAME)
 	if (matching.card === "one-to-one") {
-		for (const name of [...out.keys()]) {
+		for (const name of out.keys()) {
 			if (names.has(name) !== matching.on) out.delete(name)
 		}
 	}
