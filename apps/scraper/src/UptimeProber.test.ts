@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Option } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { HostResolver } from "@maple/safe-fetch/dns"
 import { endedSpansNamed, makeCapturingTracer } from "./testing/capturing-tracer"
@@ -89,7 +89,12 @@ describe("UptimeProber", () => {
 		})
 
 	const attribute = (span: ReturnType<typeof toOtlpSpan>, key: string) =>
-		span.attributes.find((attribute) => attribute.key === key)?.value
+		Option.getOrUndefined(
+			Option.map(
+				Arr.findFirst(span.attributes, (attribute) => attribute.key === key),
+				(attribute) => attribute.value,
+			),
+		)
 
 	it.effect("a check that fails once and then answers is up, and its span says why it retried", () =>
 		Effect.gen(function* () {
