@@ -280,7 +280,7 @@ describe("sso tab", () => {
 		expect(names(update(signed, Message.SubmittedConnection()))).toEqual(["SaveSsoConnection"])
 	})
 
-	test("an org that left Enterprise can still relax SSO and pause or remove SCIM, but not set anything up", () => {
+	test("an org that left Enterprise can still relax SSO, pause or remove SCIM, and replace its credentials", () => {
 		const model = loaded(
 			doc({
 				ssoEntitled: false,
@@ -300,9 +300,25 @@ describe("sso tab", () => {
 			given(model),
 			expectView(role("switch", { name: "Require SSO" })).toBeEnabled(),
 			expectView(role("button", { name: "Pause" })).toExist(),
-			expectView(role("button", { name: "Edit" })).not.toExist(),
-			expectView(role("button", { name: "Rotate token" })).not.toExist(),
+			expectView(role("button", { name: "Edit" })).toBeEnabled(),
+			expectView(role("button", { name: "Rotate token" })).toBeEnabled(),
+			// Setting things up still needs the add-on.
+			expectView(role("button", { name: "Add domain" })).not.toExist(),
+			expectView(role("button", { name: "Add member" })).not.toExist(),
 		)
+		const editing = update(model, Message.ClickedEditConnection()).model
+		scene(
+			{ update, view },
+			given(editing),
+			dialogMounted,
+			expectView(
+				text(/you can replace the certificate, the IdP metadata or the client secret/),
+			).toExist(),
+		)
+		expect(update(model, Message.ClickedConfirmRotate()).commands?.[0]).toMatchObject({
+			name: "IssueScimToken",
+			args: { kind: "rotate" },
+		})
 	})
 
 	test("a failed member list loads again when the break-glass dialog reopens", () => {

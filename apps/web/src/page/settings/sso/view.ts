@@ -416,26 +416,19 @@ const connectionPanel = (
 						: badge(h, { variant: "muted" }, ["Off"]),
 				]),
 				hstack(h, { gap: "2" }, [
-					...(document.ssoEntitled
-						? [
-								ssoControl(h, model, (isLocked) =>
-									button(
-										h,
-										{
-											variant: "outline",
-											size: "sm",
-											isDisabled: isLocked || isBusy(model),
-											attributes: clickUnless(
-												h,
-												isLocked,
-												Message.ClickedEditConnection(),
-											),
-										},
-										["Edit"],
-									),
-								),
-							]
-						: []),
+					// Stays without the plan: a certificate or client secret can still be replaced.
+					ssoControl(h, model, (isLocked) =>
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "sm",
+								isDisabled: isLocked || isBusy(model),
+								attributes: clickUnless(h, isLocked, Message.ClickedEditConnection()),
+							},
+							["Edit"],
+						),
+					),
 					ssoControl(h, model, (isLocked) =>
 						button(
 							h,
@@ -617,7 +610,7 @@ const directoryPanel = (
 	directory: ScimDirectoryDocument,
 ): ReadonlyArray<Html> => {
 	const isEntitled = document.scimEntitled
-	// Pausing and removing stay open without the plan; resuming and rotating need it.
+	// Pausing, removing and rotating the token stay open without the plan; resuming needs it.
 	const showsPauseToggle = directory.paused ? isEntitled : true
 	return [
 		vstack(h, { gap: "4", align: "stretch" }, [
@@ -651,26 +644,18 @@ const directoryPanel = (
 								),
 							]
 						: []),
-					...(isEntitled
-						? [
-								ssoControl(h, model, (isLocked) =>
-									button(
-										h,
-										{
-											variant: "outline",
-											size: "sm",
-											isDisabled: isLocked || isBusy(model),
-											attributes: clickUnless(
-												h,
-												isLocked,
-												Message.ClickedRotateToken(),
-											),
-										},
-										["Rotate token"],
-									),
-								),
-							]
-						: []),
+					ssoControl(h, model, (isLocked) =>
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "sm",
+								isDisabled: isLocked || isBusy(model),
+								attributes: clickUnless(h, isLocked, Message.ClickedRotateToken()),
+							},
+							["Rotate token"],
+						),
+					),
 					ssoControl(h, model, (isLocked) =>
 						button(
 							h,
@@ -1119,7 +1104,9 @@ const connectionDialog = (h: H, model: Model, document: EnterpriseSsoDocument | 
 		toParentMessage: (message) => Message.GotConnectionDialogMessage({ message }),
 		title: isEdit ? "Edit identity provider" : "Connect identity provider",
 		description:
-			"Nobody signs in through it until you require SSO. Then everyone on the chosen domains must.",
+			isEdit && document !== null && !document.ssoEntitled
+				? "Without the single sign-on add-on you can replace the certificate, the IdP metadata or the client secret. Other changes need the add-on."
+				: "Nobody signs in through it until you require SSO. Then everyone on the chosen domains must.",
 		onSubmit: Message.SubmittedConnection(),
 		submitLabel: isEdit ? "Save" : "Connect",
 		isPending: model.pending === "createConnection" || model.pending === "updateConnection",

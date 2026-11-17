@@ -14,7 +14,7 @@ Both are self-serve add-ons on every plan, added by an organization admin under 
 | Single sign-on    | $100/month | One SAML or OIDC connection, domain verification, break-glass |
 | SCIM provisioning | $100/month | Provisioning, deprovisioning and group to role mapping        |
 
-SCIM provisioning needs single sign-on connected first. If an add-on ends, everything you set up keeps working as it is, and admins can still turn SSO off, pause or remove SCIM, and remove the connection.
+SCIM provisioning needs single sign-on connected first. If an add-on ends, everything you set up keeps working as it is. Admins can still turn SSO off, pause or remove SCIM, and remove the connection. They can also still rotate the SCIM token and replace the connection's SAML certificate, IdP metadata or OIDC client secret, so a leaked credential can always be replaced. Every other change needs the add-on.
 
 Only organization admins can configure SSO and SCIM. Every change is recorded in the organization's audit log, under **Security → Audit log**.
 

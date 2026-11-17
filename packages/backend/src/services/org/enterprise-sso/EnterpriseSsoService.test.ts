@@ -1182,4 +1182,132 @@ describe("EnterpriseSsoService", () => {
 			)
 		},
 	)
+
+	it.effect(
+		"keeps token rotation and certificate replacement open after the add-on ends, and nothing else",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const world = { clerk: fakeClerk(), dns: new Map<string, Array<string>>(), entitled: true }
+			const manual = (overrides: { name?: string; ssoUrl?: string; certificate?: string }) =>
+				new SsoConnectionRequest({
+					name: overrides.name ?? "Acme IdP",
+					provider: "saml_custom",
+					domains: ["acme.com"],
+					saml: new SsoSamlSettings({
+						ssoUrl: overrides.ssoUrl ?? "https://idp.acme.com/sso",
+						entityId: "https://idp.acme.com",
+						...(overrides.certificate === undefined
+							? undefined
+							: { certificate: overrides.certificate }),
+					}),
+				})
+			return Effect.gen(function* () {
+				const first = yield* run(
+					testDb,
+					world,
+					Effect.gen(function* () {
+						const sso = yield* EnterpriseSsoService
+						yield* verifiedDomain(world.dns, "acme.com")
+						yield* sso.createConnection(ORG, ADMIN, manual({ certificate: "old certificate" }))
+						return yield* sso.createDirectory(ORG)
+					}),
+				)
+				world.entitled = false
+				yield* run(
+					testDb,
+					world,
+					Effect.gen(function* () {
+						const sso = yield* EnterpriseSsoService
+						assert.isFalse((yield* sso.get(ORG)).ssoEntitled)
+
+						const rotated = yield* sso.rotateDirectoryToken(ORG)
+						assert.match(rotated.token, /^scim_/)
+						assert.notStrictEqual(rotated.token, first.token)
+
+						yield* sso.updateConnection(ORG, manual({ certificate: "new certificate" }))
+						assert.strictEqual(world.clerk.updates.at(-1)?.certificate, "new certificate")
+						// The same goes for pointing it at the IdP's metadata again.
+						yield* sso.updateConnection(
+							ORG,
+							new SsoConnectionRequest({
+								name: "Acme IdP",
+								provider: "saml_custom",
+								domains: ["acme.com"],
+								saml: { metadataUrl: "https://idp.acme.com/metadata" },
+							}),
+						)
+						assert.strictEqual(
+							world.clerk.updates.at(-1)?.metadataUrl,
+							"https://idp.acme.com/metadata",
+						)
+
+						const updates = world.clerk.updates.length
+						const refused = yield* Effect.all([
+							Effect.flip(
+								sso.updateConnection(ORG, manual({ name: "Renamed", certificate: "x" })),
+							),
+							Effect.flip(
+								sso.updateConnection(
+									ORG,
+									manual({ ssoUrl: "https://elsewhere.example/sso", certificate: "x" }),
+								),
+							),
+							Effect.flip(sso.addBypassUser(ORG, BREAK_GLASS)),
+							Effect.flip(sso.createDirectory(ORG)),
+						])
+						assert.deepStrictEqual(Arr.dedupe(Arr.map(refused, (error) => error._tag)), [
+							"@maple/http/enterprise-sso/EnterpriseSsoNotEntitledError",
+						])
+						assert.strictEqual(world.clerk.updates.length, updates)
+						assert.deepStrictEqual(world.clerk.bypass, [])
+					}),
+				)
+			})
+		},
+	)
+
+	it.effect("lets an OIDC client secret be replaced after the add-on ends, but not the client", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = { clerk: fakeClerk(), dns: new Map<string, Array<string>>(), entitled: true }
+		const oidc = (clientId: string, clientSecret: string) =>
+			new SsoConnectionRequest({
+				name: "Acme OIDC",
+				provider: "oidc_custom",
+				domains: ["acme.com"],
+				oidc: {
+					discoveryUrl: "https://id.acme.com/.well-known/openid-configuration",
+					clientId,
+					clientSecret,
+				},
+			})
+		return Effect.gen(function* () {
+			yield* run(
+				testDb,
+				world,
+				Effect.gen(function* () {
+					const sso = yield* EnterpriseSsoService
+					yield* verifiedDomain(world.dns, "acme.com")
+					yield* sso.createConnection(ORG, ADMIN, oidc("maple", "old secret"))
+				}),
+			)
+			world.entitled = false
+			yield* run(
+				testDb,
+				world,
+				Effect.gen(function* () {
+					const sso = yield* EnterpriseSsoService
+					yield* sso.updateConnection(ORG, oidc("maple", "new secret"))
+					assert.strictEqual(world.clerk.updates.at(-1)?.clientSecret, "new secret")
+					const refused = yield* sso
+						.updateConnection(ORG, oidc("another-client", "new secret"))
+						.pipe(Effect.flip)
+					assert.strictEqual(
+						refused._tag,
+						"@maple/http/enterprise-sso/EnterpriseSsoNotEntitledError",
+					)
+					assert.strictEqual(world.clerk.updates.length, 1)
+				}),
+			)
+		})
+	})
 })

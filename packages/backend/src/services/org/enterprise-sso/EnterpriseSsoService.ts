@@ -153,6 +153,27 @@ const unavailable = (error: ClerkRequestError) =>
 const directoryProviderFor = (provider: string): "okta" | "entra" | "custom" =>
 	provider === "saml_okta" ? "okta" : provider === "saml_microsoft" ? "entra" : "custom"
 
+/**
+ * True when an edit changes nothing but the SAML certificate or IdP metadata, or the OIDC client
+ * secret: the one edit an organization can still make after its add-on ended.
+ */
+const replacesCredentialsOnly = (current: ClerkSsoConnection, request: SsoConnectionRequest): boolean => {
+	const domains = Arr.dedupe(Arr.map(request.domains, normalizeDomain))
+	const sameDomains =
+		domains.length === current.domains.length &&
+		Arr.every(domains, (d) => Arr.contains(current.domains, d))
+	if (Str.trim(request.name) !== current.name || !sameDomains) return false
+	const { saml, oidc } = request
+	const samlKept =
+		saml === undefined ||
+		((saml.ssoUrl === undefined || saml.ssoUrl === current.saml?.idpSsoUrl) &&
+			(saml.entityId === undefined || saml.entityId === current.saml?.idpEntityId))
+	const oidcKept =
+		oidc === undefined ||
+		(oidc.discoveryUrl === current.oidc?.discoveryUrl && oidc.clientId === current.oidc?.clientId)
+	return samlKept && oidcKept
+}
+
 export interface DirectoryGroupEvent {
 	readonly directoryId: string
 	readonly groupId: string
@@ -269,18 +290,22 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				)
 			}
 
-			/** Every write starts here: Clerk mode, and the org holds the add-on the write needs. */
+			const requireClerk = clerk.available
+				? Effect.void
+				: Effect.fail(
+						new EnterpriseSsoInvalidError({
+							message:
+								"Single sign-on needs Maple's hosted sign-in; this deployment runs without it.",
+						}),
+					)
+
+			/** Every set-up write starts here: Clerk mode, and the org holds the add-on the write needs. */
 			const requireEntitled = Effect.fn("EnterpriseSsoService.requireEntitled")(function* (
 				orgId: OrgId,
 				addOn: AddOn,
 			) {
 				yield* Effect.annotateCurrentSpan({ "maple.sso.add_on": addOn })
-				if (!clerk.available) {
-					return yield* new EnterpriseSsoInvalidError({
-						message:
-							"Single sign-on needs Maple's hosted sign-in; this deployment runs without it.",
-					})
-				}
+				yield* requireClerk
 				const state = (yield* entitlements(orgId))[addOn]
 				if (state === "not_entitled") {
 					return yield* new EnterpriseSsoNotEntitledError({ message: ADD_ON_REFUSALS[addOn] })
@@ -765,11 +790,15 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				orgId: OrgId,
 				request: SsoConnectionRequest,
 			) {
-				yield* requireEntitled(orgId, "sso")
+				yield* requireClerk
 				const row = yield* requireConnectionRow(orgId)
 				const current = yield* clerk
 					.getConnection(row.clerkConnectionId)
 					.pipe(Effect.mapError(fromClerk))
+				// Replacing a compromised certificate or client secret stays open after the add-on ends.
+				const credentialsOnly = replacesCredentialsOnly(current, request)
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.sso.credentials_only": credentialsOnly })
+				if (!credentialsOnly) yield* requireEntitled(orgId, "sso")
 				const provider = isProvider(current.provider) ? current.provider : request.provider
 				const input = yield* connectionInput(orgId, request, provider, "update")
 				// A domain the connection did not route before starts to matter here.
@@ -1034,7 +1063,8 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 			const rotateDirectoryToken = Effect.fn("EnterpriseSsoService.rotateDirectoryToken")(function* (
 				orgId: OrgId,
 			) {
-				yield* requireEntitled(orgId, "scim")
+				// No add-on check: a leaked token must be replaceable after the plan ends.
+				yield* requireClerk
 				yield* Effect.annotateCurrentSpan({ orgId })
 				const directoryId = yield* requireConnectionRow(orgId).pipe(
 					Effect.flatMap(requireDirectoryId),
