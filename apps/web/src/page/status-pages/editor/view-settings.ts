@@ -416,10 +416,10 @@ export const settingsLayout = (
 		],
 		[
 			h.div(
-				[h.Class("min-h-0 overflow-y-auto border-b px-3 py-4 md:border-r md:border-b-0 md:py-6")],
+				[h.Class("min-h-0 overflow-y-auto border-b px-3 pb-4 md:border-r md:border-b-0")],
 				[settingsNav(h, page, section)],
 			),
-			h.div([h.Class("min-h-0 overflow-y-auto px-(--page-gutter) py-6")], [content]),
+			h.div([h.Class("min-h-0 overflow-y-auto px-(--page-gutter) pb-6")], [content]),
 			h.aside(
 				[h.Class("hidden min-h-0 border-l xl:flex xl:flex-col")],
 				[

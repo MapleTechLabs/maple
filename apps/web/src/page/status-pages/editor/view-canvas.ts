@@ -132,7 +132,7 @@ export const settingsPagePreview = (h: H, model: Model, page: V2StatusPage, form
 		{
 			gap: "2",
 			as: "section",
-			className: "h-full p-4",
+			className: "h-full px-4 pb-4",
 			attributes: [h.AriaLabel("Page preview")],
 		},
 		[
