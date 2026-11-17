@@ -14,7 +14,15 @@ import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import { hstack, vstack } from "@maple/views/ui/stack"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
+import {
+	table,
+	tableBody,
+	tableCell,
+	tableHead,
+	tableHeader,
+	tableRow,
+	wrappingTableCell,
+} from "@maple/views/ui/table"
 import { typography } from "@maple/views/ui/typography"
 import { failureMessage } from "@maple/views/data/load-failure"
 import { settingsSection } from "../../kit/settings-section"
@@ -64,10 +72,6 @@ const purposeLabel = (record: V2StatusPageCustomDomain["dns_records"][number]): 
 		? "Proves you own the domain (needed until it is active)"
 		: PURPOSE_LABEL[record.purpose]
 
-// An ownership record's name and value are long: they wrap inside the card, where a table cell
-// would otherwise keep them on one line and push the copy button out of view.
-const WRAPPING_CELL = "whitespace-normal leading-normal"
-
 const copyCell = (h: H, model: Model, key: string, value: string, label: string): Html =>
 	hstack(h, { gap: "1", align: "center" }, [
 		typography(h, { size: "xs", mono: true, className: "break-all" }, [value]),
@@ -96,32 +100,25 @@ const recordsTable = (h: H, model: Model, domain: V2StatusPageCustomDomain): Htm
 							typography(h, { size: "xs", tone: "muted" }, [purposeLabel(record)]),
 						]),
 					]),
-					tableCell(
-						h,
-						[
-							copyCell(
-								h,
-								model,
-								`name-${index}`,
-								record.name,
-								`${record.purpose} ${record.type} name`,
-							),
-						],
-						WRAPPING_CELL,
-					),
-					tableCell(
-						h,
-						[
-							copyCell(
-								h,
-								model,
-								`value-${index}`,
-								record.value,
-								`${record.purpose} ${record.type} value`,
-							),
-						],
-						WRAPPING_CELL,
-					),
+					// An ownership record's name and value are long: wrapped, their copy buttons stay in view.
+					wrappingTableCell(h, [
+						copyCell(
+							h,
+							model,
+							`name-${index}`,
+							record.name,
+							`${record.purpose} ${record.type} name`,
+						),
+					]),
+					wrappingTableCell(h, [
+						copyCell(
+							h,
+							model,
+							`value-${index}`,
+							record.value,
+							`${record.purpose} ${record.type} value`,
+						),
+					]),
 				]),
 			),
 		),
