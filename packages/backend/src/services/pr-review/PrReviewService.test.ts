@@ -2539,6 +2539,33 @@ describe("PrReviewService auto-approve", () => {
 		}).pipe(Effect.provide(layerFor(testDb, { published, withdrawals })))
 	})
 
+	it.effect("says why it did not approve a review with nothing to score", () => {
+		const testDb = createTestDb(trackedDbs)
+		const published: Array<PullRequestReviewPublication> = []
+		return Effect.gen(function* () {
+			const repositoryId = yield* seed(true)
+			const repo = yield* VcsRepository
+			yield* repo.setPrReviewConfig(
+				orgId,
+				repositoryId,
+				new PrReviewRepositoryConfig({ autoApprove: true }),
+			)
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({
+					report: new PrReviewReport({ ...lowRisk(), verdict: "not_applicable" }),
+				}),
+			)
+			assert.include(
+				published[0].summaryComment.body,
+				"**Nothing to review**\n<sub>Not auto-approved: the verdict is not_applicable",
+			)
+		}).pipe(Effect.provide(layerFor(testDb, { published })))
+	})
+
 	it.effect("asks nothing about approval when the repository has not turned it on", () => {
 		const testDb = createTestDb(trackedDbs)
 		const published: Array<PullRequestReviewPublication> = []

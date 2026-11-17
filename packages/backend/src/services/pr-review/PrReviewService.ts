@@ -789,10 +789,14 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 	const comment = input.heading
 
 	// Confidence leads, like the check title: one number, then what decides it and what went in.
+	const refused =
+		input.approval === undefined || input.approval.approve
+			? undefined
+			: `Not auto-approved: ${Arr.join(input.approval.reasons, " · ")}`
 	const lines: Array<string> = []
 	if (input.heading) lines.push("## Maple review", "")
 	if (confidence === undefined) {
-		lines.push("**Nothing to review**", "")
+		lines.push("**Nothing to review**", ...(refused === undefined ? [] : [`<sub>${refused}</sub>`]), "")
 	} else {
 		// An early end is already the warning below; the reason would only say it again.
 		const reason =
@@ -802,7 +806,7 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 		lines.push(
 			`${confidenceMark(confidence.confidence)} **Confidence ${confidence.confidence}/${PR_REVIEW_CONFIDENCE_MAX}** · ${PR_REVIEW_CONFIDENCE_LABEL[confidence.confidence]}${reason === undefined ? "" : `. ${reason}`}`,
 			// A refusal joins the factors' line: a check summary does not break on a bare newline.
-			`<sub>${Arr.join(confidence.factors, " · ")}${input.approval === undefined || input.approval.approve ? "" : `<br>Not auto-approved: ${Arr.join(input.approval.reasons, " · ")}`}</sub>`,
+			`<sub>${Arr.join(confidence.factors, " · ")}${refused === undefined ? "" : `<br>${refused}`}</sub>`,
 			"",
 		)
 	}
