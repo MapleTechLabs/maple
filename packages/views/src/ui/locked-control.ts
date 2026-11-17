@@ -3,7 +3,8 @@ import { tooltipTrigger } from "./tooltip-host"
 
 /**
  * `LockedControl`: a control the viewer may not use, drawn disabled with the reason as its tooltip.
- * A disabled button takes no pointer events, so the wrapper is the hover and focus target.
+ * Greyed, not only dimmed, so a brand-filled control reads as unavailable; a disabled button takes
+ * no pointer events, so the wrapper is the hover and focus target.
  */
 export const lockedControl = <Message>(
 	h: HtmlBuilder<Message>,
@@ -14,7 +15,7 @@ export const lockedControl = <Message>(
 	h.span(
 		[
 			h.Class(
-				`inline-flex max-w-full cursor-not-allowed *:pointer-events-none ${options.className ?? ""}`,
+				`inline-flex max-w-full cursor-not-allowed *:pointer-events-none *:grayscale ${options.className ?? ""}`,
 			),
 			h.Tabindex(0),
 			h.Role("group"),
