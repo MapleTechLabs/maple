@@ -1,5 +1,5 @@
 import type { V2StatusPage } from "@maple/domain/http/v2"
-import { Option } from "effect"
+import { Option, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { button } from "@maple/views/ui/button"
@@ -21,7 +21,7 @@ import {
 	settingsIssues,
 } from "../shared/form"
 import { accessGroup } from "./view-access"
-import { appearanceSection, brandingSection, previewPanel } from "./view-appearance"
+import { appearanceSection, brandingSection, linksSection, previewPanel } from "./view-appearance"
 import { customDomainSection } from "./view-domain"
 import { pageUrlOf } from "./update-domain"
 import { Message } from "./message"
@@ -47,9 +47,9 @@ const pageSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm)
 		h,
 		{
 			id: "status-page-settings-page",
-			title: "Basic settings",
+			title: "General",
 			description: [
-				"The page's name, address and links, who can view it, and what happens when a monitor goes down.",
+				"What the page is called, where it lives, who can view it, and what happens when a monitor goes down. Logos, colors and links are on the Appearance tab.",
 			],
 		},
 		[
@@ -62,6 +62,7 @@ const pageSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm)
 						value: form.name,
 						isDisabled: isReadOnly,
 						error: issues.name,
+						hint: `Visitors see it in the browser tab and link previews as "${nameShown(form, page)} status", and in the page header when there is no logo. It also names the page in Maple.`,
 						onInput: (value) => Message.ChangedSetting({ field: "name", value }),
 					}),
 					textField(h, {
@@ -71,55 +72,18 @@ const pageSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm)
 						isMono: true,
 						isDisabled: isReadOnly,
 						error: issues.slug,
-						hint: `${publicAddress(form.slug)}. Changing it moves the page; the old address stops working.`,
+						hint: `The last part of the page's Maple URL: ${publicAddress(form.slug)}. Changing it moves the page and the old URL stops working. A custom domain, below, serves the page at your own address instead.`,
 						onInput: (value) => Message.ChangedSetting({ field: "slug", value }),
 					}),
 					textareaField(h, {
 						id: "status-page-description",
 						label: "Description",
 						value: form.description,
+						placeholder: "Live status of Acme's API, dashboard and integrations.",
 						isDisabled: isReadOnly,
 						className: "sm:col-span-2",
+						hint: "Not shown on the page. Search engines and link previews in Slack, X and the like show it under the name. Left empty, they show the current status instead.",
 						onInput: (value) => Message.ChangedSetting({ field: "description", value }),
-					}),
-					textField(h, {
-						id: "status-page-website",
-						label: "Website URL",
-						value: form.websiteUrl,
-						placeholder: "https://acme.example",
-						isDisabled: isReadOnly,
-						error: issues.websiteUrl,
-						onInput: (value) => Message.ChangedSetting({ field: "websiteUrl", value }),
-					}),
-					textField(h, {
-						id: "status-page-privacy",
-						label: "Privacy policy URL",
-						value: form.privacyUrl,
-						placeholder: "https://acme.example/privacy",
-						isDisabled: isReadOnly,
-						error: issues.privacyUrl,
-						hint: "Linked in the page footer.",
-						onInput: (value) => Message.ChangedSetting({ field: "privacyUrl", value }),
-					}),
-					textField(h, {
-						id: "status-page-terms",
-						label: "Terms of service URL",
-						value: form.termsUrl,
-						placeholder: "https://acme.example/terms",
-						isDisabled: isReadOnly,
-						error: issues.termsUrl,
-						hint: "Linked in the page footer.",
-						onInput: (value) => Message.ChangedSetting({ field: "termsUrl", value }),
-					}),
-					textField(h, {
-						id: "status-page-support",
-						label: "Support URL",
-						value: form.supportUrl,
-						placeholder: "https://acme.example/support",
-						isDisabled: isReadOnly,
-						error: issues.supportUrl,
-						hint: "Linked in the page header as Contact support.",
-						onInput: (value) => Message.ChangedSetting({ field: "supportUrl", value }),
 					}),
 					selectField(h, {
 						id: "status-page-auto-incidents",
@@ -137,6 +101,10 @@ const pageSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm)
 		],
 	)
 }
+
+/** The name the public page shows: the typed one, or the saved one while the field is empty. */
+const nameShown = (form: SettingsForm, page: V2StatusPage): string =>
+	Str.trim(form.name) === "" ? page.name : Str.trim(form.name)
 
 export const revealedToken = (h: H, model: Model): ReadonlyArray<Html> =>
 	model.revealedToken === null
@@ -253,8 +221,9 @@ const deleteSection = (h: H): Html =>
 	])
 
 /**
- * Settings and Appearance edit one form: each shows its sections beside the preview, one save bar.
- * A problem on the other tab still blocks the save, so the bar names that tab.
+ * Settings and Appearance edit one form with one save bar. Only Appearance sits beside the preview:
+ * nothing on Settings changes how the page looks. A problem on the other tab still blocks the save,
+ * so the bar names that tab.
  */
 const formView = (
 	h: H,
@@ -266,23 +235,23 @@ const formView = (
 	const form = Option.getOrElse(settingsOf(model), () => settingsFormOf(page))
 	const hasIssues = hasSettingsIssues(form)
 	const isHere = tab === "settings" ? hasPageFieldIssues(form) : hasAppearanceIssues(form)
-	return vstack(h, { className: "max-w-4xl xl:max-w-7xl" }, [
-		h.div(
-			[h.Class("grid gap-10 xl:grid-cols-[minmax(0,1fr)_minmax(0,30rem)] xl:items-start")],
-			[
-				settingsSections(h, [
-					...(canManage(model)
-						? []
-						: [
-								adminOnlyNote(h, [
-									"Only org admins and engineers can change a status page. You can still post incident updates.",
-								]),
-							]),
-					...sections(form),
+	const fields = settingsSections(h, [
+		...(canManage(model)
+			? []
+			: [
+					adminOnlyNote(h, [
+						"Only org admins and engineers can change a status page. You can still post incident updates.",
+					]),
 				]),
-				previewPanel(h, model, page, form),
-			],
-		),
+		...sections(form),
+	])
+	return vstack(h, { className: tab === "appearance" ? "max-w-4xl xl:max-w-7xl" : "max-w-4xl" }, [
+		tab === "appearance"
+			? h.div(
+					[h.Class("grid gap-10 xl:grid-cols-[minmax(0,1fr)_minmax(0,30rem)] xl:items-start")],
+					[fields, previewPanel(h, model, page, form)],
+				)
+			: fields,
 		...(model.settingsFailure === null
 			? []
 			: [
@@ -322,6 +291,7 @@ export const appearanceView = (h: H, model: Model, page: V2StatusPage): Html =>
 	formView(h, model, page, "appearance", (form) => [
 		brandingSection(h, model, form),
 		appearanceSection(h, model, form),
+		linksSection(h, model, form),
 	])
 
 export const breakGlassDialog = (h: H, model: Model): Html =>

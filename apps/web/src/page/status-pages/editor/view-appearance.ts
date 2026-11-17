@@ -55,7 +55,7 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
-// The Appearance tab's Branding and Appearance sections and the live preview of the public page.
+// The Appearance tab's Branding, Appearance and Links sections and the live preview of the public page.
 
 type H = HtmlBuilder<Message>
 
@@ -338,6 +338,74 @@ export const appearanceSection = (h: H, model: Model, form: SettingsForm): Html 
 					],
 				),
 			]),
+		],
+	)
+}
+
+const LINK_FIELDS: ReadonlyArray<{
+	field: "websiteUrl" | "supportUrl" | "privacyUrl" | "termsUrl"
+	id: string
+	label: string
+	placeholder: string
+	hint: string
+}> = [
+	{
+		field: "websiteUrl",
+		id: "status-page-website",
+		label: "Website URL",
+		placeholder: "https://acme.example",
+		hint: "In the page header as Visit website.",
+	},
+	{
+		field: "supportUrl",
+		id: "status-page-support",
+		label: "Support URL",
+		placeholder: "https://acme.example/support",
+		hint: "In the page header as Contact support.",
+	},
+	{
+		field: "privacyUrl",
+		id: "status-page-privacy",
+		label: "Privacy policy URL",
+		placeholder: "https://acme.example/privacy",
+		hint: "In the page footer.",
+	},
+	{
+		field: "termsUrl",
+		id: "status-page-terms",
+		label: "Terms of service URL",
+		placeholder: "https://acme.example/terms",
+		hint: "In the page footer.",
+	},
+]
+
+/** The header and footer links back to the customer's own site. */
+export const linksSection = (h: H, model: Model, form: SettingsForm): Html => {
+	const issues = settingsIssues(form)
+	return settingsSection(
+		h,
+		{
+			id: "status-page-settings-links",
+			title: "Links",
+			description: ["Links on the page back to your own site. Leave one empty to hide it."],
+		},
+		[
+			grid(
+				h,
+				{ sm: 2, gap: "4" },
+				Arr.map(LINK_FIELDS, (entry) =>
+					textField(h, {
+						id: entry.id,
+						label: entry.label,
+						value: form[entry.field],
+						placeholder: entry.placeholder,
+						isDisabled: !canManage(model),
+						error: issues[entry.field],
+						hint: entry.hint,
+						onInput: (value) => Message.ChangedSetting({ field: entry.field, value }),
+					}),
+				),
+			),
 		],
 	)
 }

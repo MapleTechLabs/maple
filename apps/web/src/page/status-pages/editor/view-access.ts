@@ -18,7 +18,7 @@ import { canChangeAccess, type Model } from "./model"
 import { passwordIssue } from "./update-access"
 import { customDomainOf } from "./update-domain"
 
-// Basic settings' access group: public, behind a password, or members only.
+// General's access group: public, behind a password, or members only.
 
 type H = HtmlBuilder<Message>
 
@@ -154,7 +154,7 @@ const passwordRow = (h: H, model: Model, page: V2StatusPage): Html => {
 	])
 }
 
-/** Who can view the page, a group inside Basic settings. It applies at once, not with the save bar. */
+/** Who can view the page, a group inside General. It applies at once, not with the save bar. */
 export const accessGroup = (h: H, model: Model, page: V2StatusPage): Html =>
 	h.div(
 		[h.Role("group"), h.AriaLabelledBy("status-page-settings-access"), h.Class("mt-6 border-t pt-6")],

@@ -1647,7 +1647,7 @@ describe("settings and appearance views", () => {
 	test("a bad field on Settings blocks the save on Appearance too, and the bar names its tab", () => {
 		const edited = pageUpdate(
 			loaded({ tab: "settings" }),
-			Message.ChangedSetting({ field: "termsUrl", value: "http://acme.example/terms" }),
+			Message.ChangedSetting({ field: "name", value: " " }),
 		).model
 		scene(
 			{ update: pageUpdate, view },
@@ -1661,7 +1661,8 @@ describe("settings and appearance views", () => {
 	test("a footer link must use https before the settings save", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ tab: "settings" })),
+			given(loaded({ tab: "appearance" })),
+			pickersMounted(1),
 			type(role("textbox", { name: "Terms of service URL" }), "http://acme.example/terms"),
 			expectView(text("Use an https URL.")).toExist(),
 			expectView(role("button", { name: "Save" })).toBeDisabled(),

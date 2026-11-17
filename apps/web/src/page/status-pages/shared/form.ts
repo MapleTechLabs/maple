@@ -426,13 +426,21 @@ export const SettingsTextField = Schema.Literals([
 ])
 export type SettingsTextField = typeof SettingsTextField.Type
 
-/** The page fields the Appearance tab edits; the rest are on the Settings tab. */
 export const BRANDING_FIELDS = ["logoUrl", "logoDarkUrl", "faviconUrl"] as const
 /** A logo or favicon field: an https URL or an uploaded image. */
 export const BrandingField = Schema.Literals(BRANDING_FIELDS)
 export type BrandingField = typeof BrandingField.Type
-const isBrandingField = (field: SettingsTextField): boolean =>
-	Arr.some(BRANDING_FIELDS, (branding) => branding === field)
+
+/** The page fields the Appearance tab edits (what visitors see); the rest are on the Settings tab. */
+const APPEARANCE_FIELDS: ReadonlyArray<SettingsTextField> = [
+	...BRANDING_FIELDS,
+	"websiteUrl",
+	"privacyUrl",
+	"termsUrl",
+	"supportUrl",
+]
+const isAppearanceField = (field: SettingsTextField): boolean =>
+	Arr.some(APPEARANCE_FIELDS, (appearance) => appearance === field)
 
 /** The theme's colour inputs, as typed; blank means the preset's colour. */
 export const ThemeColorField = Schema.Literals(["accent", "background", "text", "card", "border"])
@@ -612,13 +620,13 @@ export const themeContrastOf = (theme: ThemeForm): string | null =>
 const hasFieldIssues = (form: SettingsForm, onAppearanceTab: boolean): boolean =>
 	Arr.some(
 		Rec.toEntries(settingsIssues(form)),
-		([field, issue]) => issue !== null && isBrandingField(field) === onAppearanceTab,
+		([field, issue]) => issue !== null && isAppearanceField(field) === onAppearanceTab,
 	)
 
 /** A problem in the page fields, which the Settings tab shows. */
 export const hasPageFieldIssues = (form: SettingsForm): boolean => hasFieldIssues(form, false)
 
-/** A problem in the branding or colours, which the Appearance tab shows. */
+/** A problem in the branding, links or colours, which the Appearance tab shows. */
 export const hasAppearanceIssues = (form: SettingsForm): boolean =>
 	hasFieldIssues(form, true) ||
 	Arr.some(Rec.values(themeColorIssues(form.theme)), (issue) => issue !== null) ||
