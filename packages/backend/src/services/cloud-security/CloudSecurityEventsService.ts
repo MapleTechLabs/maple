@@ -2,7 +2,7 @@ import { timingSafeEqual } from "node:crypto"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AwsConnections } from "@maple/db/tables"
 import { IntegrationsPersistenceError } from "@maple/domain/http"
-import { AwsConnectionId, type OrgId } from "@maple/primitives"
+import { type AwsAccountId, AwsConnectionId, type AwsModule, type OrgId } from "@maple/primitives"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { ingestKeyLookupHmacKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -27,6 +27,15 @@ export class CloudSecurityEventRejected extends Schema.TaggedError<CloudSecurity
 	},
 ) {}
 
+/** The connection a delivery's key was accepted for. */
+export interface CloudSecurityEventSender {
+	readonly connectionId: AwsConnectionId
+	readonly orgId: OrgId
+	readonly accountId: AwsAccountId
+	readonly modules: ReadonlyArray<AwsModule>
+	readonly verifiedAt: number | null
+}
+
 /** What a delivery did: `ignored` is acknowledged so AWS does not retry it. */
 export interface CloudSecurityEventReceipt {
 	readonly outcome: "stored" | "ignored"
@@ -39,9 +48,14 @@ export interface CloudSecurityEventReceipt {
 export interface CloudSecurityEventsServiceApi {
 	/** The key a connection's EventBridge connection sends; the setup hands it to the stack. */
 	readonly eventsKey: (connectionId: AwsConnectionId) => Effect.Effect<string, IntegrationsPersistenceError>
-	readonly receive: (
+	/** Whose delivery this is, from its path and key alone: nothing of the body is needed yet. */
+	readonly authenticate: (
 		rawConnectionId: string,
 		presentedKey: string | undefined,
+	) => Effect.Effect<CloudSecurityEventSender, CloudSecurityEventRejected | IntegrationsPersistenceError>
+	/** Stores what an authenticated delivery's body carries. */
+	readonly accept: (
+		sender: CloudSecurityEventSender,
 		body: string,
 	) => Effect.Effect<CloudSecurityEventReceipt, CloudSecurityEventRejected | IntegrationsPersistenceError>
 }
@@ -61,13 +75,21 @@ const sameKey = (presented: string, expected: string) => {
 	return a.length === b.length && timingSafeEqual(a, b)
 }
 
-const ignored = (reason: string, orgId: OrgId | null = null): CloudSecurityEventReceipt => ({
+const ignored = (reason: string, orgId: OrgId): CloudSecurityEventReceipt => ({
 	outcome: "ignored",
 	reason,
 	orgId,
 	findings: 0,
 	skipped: 0,
 })
+
+/** A connection's salt; null for one made before salts, and for one that is gone. */
+const saltOf = (row: Option.Option<{ readonly eventsKeySalt: string | null }>) =>
+	Option.getOrNull(Option.flatMapNullishOr(row, (found) => found.eventsKeySalt))
+
+const unknownConnection = () =>
+	new CloudSecurityEventRejected({ message: "Unknown events endpoint", reason: "unknown_connection" })
+const badKey = () => new CloudSecurityEventRejected({ message: "Invalid events key", reason: "bad_key" })
 
 export class CloudSecurityEventsService extends Context.Service<
 	CloudSecurityEventsService,
@@ -80,51 +102,69 @@ export class CloudSecurityEventsService extends Context.Service<
 		const dbExecute = makeDbExecute(database, "CloudSecurityEventsService", toPersistenceError)
 		const persistence = (message: string) => new IntegrationsPersistenceError({ message })
 
-		const eventsKey = (connectionId: AwsConnectionId) =>
-			Effect.map(ingestKeyLookupHmacKey(env, persistence), (hmacKey) =>
-				awsEventsKey(hmacKey, connectionId),
+		const connectionRow = (connectionId: AwsConnectionId) =>
+			Effect.map(
+				dbExecute((db) =>
+					db.run(
+						PG.from(AwsConnections)
+							.select(($) => ({
+								orgId: $.orgId,
+								accountId: $.accountId,
+								modules: $.modules,
+								verifiedAt: $.verifiedAt,
+								eventsKeySalt: $.eventsKeySalt,
+							}))
+							.where(($) => [$.id.eq(connectionId)])
+							.limit(1),
+					),
+				),
+				Arr.head,
 			)
 
-		const receive = Effect.fn("CloudSecurityEventsService.receive")(function* (
+		const keyOf = (connectionId: AwsConnectionId, salt: string | null) =>
+			Effect.map(ingestKeyLookupHmacKey(env, persistence), (hmacKey) =>
+				awsEventsKey(hmacKey, connectionId, salt),
+			)
+
+		const eventsKey = (connectionId: AwsConnectionId) =>
+			Effect.flatMap(connectionRow(connectionId), (row) => keyOf(connectionId, saltOf(row)))
+
+		const authenticate = Effect.fn("CloudSecurityEventsService.authenticate")(function* (
 			rawConnectionId: string,
 			presentedKey: string | undefined,
-			body: string,
 		) {
 			const connectionId = decodeConnectionId(rawConnectionId)
-			if (Option.isNone(connectionId)) {
-				return yield* new CloudSecurityEventRejected({
-					message: "Unknown events endpoint",
-					reason: "unknown_connection",
-				})
-			}
+			if (Option.isNone(connectionId)) return yield* unknownConnection()
 			yield* Effect.annotateCurrentSpan("maple.aws.connection_id", connectionId.value)
-			// The key is checked before anything is read, so a stranger costs no database round trip.
-			const expected = yield* eventsKey(connectionId.value)
-			if (presentedKey === undefined || !sameKey(presentedKey, expected)) {
-				return yield* new CloudSecurityEventRejected({
-					message: "Invalid events key",
-					reason: "bad_key",
-				})
-			}
-			const rows = yield* dbExecute((db) =>
-				db.run(
-					PG.from(AwsConnections)
-						.select(($) => ({ orgId: $.orgId, accountId: $.accountId, modules: $.modules }))
-						.where(($) => [$.id.eq(connectionId.value)])
-						.limit(1),
-				),
-			)
-			const row = rows[0]
-			if (row === undefined) {
-				return yield* new CloudSecurityEventRejected({
-					message: "Unknown events endpoint",
-					reason: "unknown_connection",
-				})
-			}
-			yield* Effect.annotateCurrentSpan("orgId", row.orgId)
+			// A delivery without a key costs no database read.
+			if (presentedKey === undefined) return yield* badKey()
+			const row = yield* connectionRow(connectionId.value)
+			// A connection that is gone is checked against the key its id alone gives, so a wrong
+			// key learns nothing about which connections exist.
+			const expected = yield* keyOf(connectionId.value, saltOf(row))
+			if (!sameKey(presentedKey, expected)) return yield* badKey()
+			if (Option.isNone(row)) return yield* unknownConnection()
+			yield* Effect.annotateCurrentSpan("orgId", row.value.orgId)
+			return {
+				connectionId: connectionId.value,
+				orgId: row.value.orgId,
+				accountId: row.value.accountId,
+				modules: row.value.modules,
+				verifiedAt: row.value.verifiedAt,
+			} satisfies CloudSecurityEventSender
+		})
+
+		const accept = Effect.fn("CloudSecurityEventsService.accept")(function* (
+			sender: CloudSecurityEventSender,
+			body: string,
+		) {
+			const { connectionId, orgId, accountId } = sender
+			yield* Effect.annotateCurrentSpan({ "maple.aws.connection_id": connectionId, orgId })
 			// A stack left deployed after the module was turned off: acknowledged, not kept. The rollout
 			// flag gates the page only; a failed flag read would drop events AWS does not retry.
-			if (!Arr.contains(row.modules, "security")) return ignored("module_off", row.orgId)
+			if (!Arr.contains(sender.modules, "security")) return ignored("module_off", orgId)
+			// Until a check has assumed the role, the account is not known to be the customer's.
+			if (sender.verifiedAt === null) return ignored("not_verified", orgId)
 			const json = decodeJson(body)
 			if (Option.isNone(json)) {
 				return yield* new CloudSecurityEventRejected({
@@ -132,41 +172,44 @@ export class CloudSecurityEventsService extends Context.Service<
 					reason: "malformed",
 				})
 			}
-			const event = findingEvent(row.accountId, json.value)
-			if (Option.isNone(event)) return ignored("not_a_finding_event", row.orgId)
-			const { source, region, findings, skipped } = event.value
+			const syncedAt = yield* Clock.currentTimeMillis
+			const event = findingEvent(accountId, json.value, syncedAt)
+			if (Option.isNone(event)) return ignored("not_a_finding_event", orgId)
+			const { source, region, findings, skipped, overCap } = event.value
 			yield* Effect.annotateCurrentSpan({
 				"maple.cloud_security.source": source,
 				"maple.aws.region": region,
 				"maple.cloud_security.findings": findings.length,
 				"maple.cloud_security.skipped": skipped,
+				"maple.cloud_security.over_cap": overCap,
 			})
-			const syncedAt = yield* Clock.currentTimeMillis
+			// Only the poller closes what a region no longer reports: a region it does not read
+			// would keep its findings open for good.
+			if (!(yield* store.knowsRegion(orgId, connectionId, region))) {
+				return ignored("unknown_region", orgId)
+			}
 			yield* store.upsertFindings(
 				Arr.map(findings, (finding) => ({
 					...finding,
-					orgId: row.orgId,
-					connectionId: connectionId.value,
-					accountId: row.accountId,
+					orgId,
+					connectionId,
+					accountId,
 					region,
 					source,
 				})),
 				syncedAt,
 			)
-			yield* store.recordPush(
-				{ orgId: row.orgId, connectionId: connectionId.value, region, source },
-				syncedAt,
-			)
+			yield* store.recordPush({ orgId, connectionId, region, source }, syncedAt)
 			return {
 				outcome: "stored",
 				reason: null,
-				orgId: row.orgId,
+				orgId,
 				findings: findings.length,
 				skipped,
 			} satisfies CloudSecurityEventReceipt
 		})
 
-		return { eventsKey, receive } satisfies CloudSecurityEventsServiceApi
+		return { eventsKey, authenticate, accept } satisfies CloudSecurityEventsServiceApi
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(CloudSecurityStore.layer))

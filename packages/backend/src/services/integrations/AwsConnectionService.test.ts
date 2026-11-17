@@ -37,10 +37,17 @@ const baseConfig = {
 
 const mapleAws = { MAPLE_AWS_OIDC_SIGNING_KEY: MAPLE_TEST_OIDC_KEY.privateKey }
 
-/** Every rollout flag is off: a module behind one is refused. */
-const makeLayer = (testDb: TestDb, aws: FakeAws, config: Record<string, string> = mapleAws) =>
+/** Every rollout flag is off unless `flags` says otherwise: a module behind one is refused. */
+const makeLayer = (
+	testDb: TestDb,
+	aws: FakeAws,
+	config: Record<string, string> = mapleAws,
+	flags: Layer.Layer<OrganizationFeatureFlagsService> = OrganizationFeatureFlagsService.fixed(
+		DISABLED_ORGANIZATION_FEATURE_FLAGS,
+	),
+) =>
 	Layer.effect(AwsConnectionService, AwsConnectionService.make).pipe(
-		Layer.provide(OrganizationFeatureFlagsService.fixed(DISABLED_ORGANIZATION_FEATURE_FLAGS)),
+		Layer.provide(flags),
 		Layer.provide(testDb.layer),
 		Layer.provide(Env.layer),
 		Layer.provide(Layer.succeed(HttpClient.HttpClient, aws.client)),
@@ -444,6 +451,54 @@ describe("AwsConnectionService", () => {
 			assert.isDefined(keyOf(first.setupScript))
 			assert.strictEqual(keyOf(again.setupScript), keyOf(first.setupScript))
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
+	})
+
+	it.effect("hands each security connection its own events key, the same on every setup", () => {
+		const testDb = createTestDb(trackedDbs)
+		const aws = makeFakeAws()
+		const eventsKeyOf = (script: string) => /"EventsKey=(maple_awsev_[\w-]+)"/u.exec(script)?.[1]
+		return Effect.gen(function* () {
+			const service = yield* AwsConnectionService
+			const mine = yield* service.create(orgId, userId, { accountId: account, modules: ["security"] })
+			const theirs = yield* service.create(otherOrgId, userId, {
+				accountId: account,
+				modules: ["security"],
+			})
+			const first = yield* service.setup(orgId, mine.id)
+			const again = yield* service.setup(orgId, mine.id)
+			const other = yield* service.setup(otherOrgId, theirs.id)
+			assert.isTrue(first.containsEventsKey)
+			assert.isDefined(eventsKeyOf(first.setupScript))
+			assert.strictEqual(eventsKeyOf(again.setupScript), eventsKeyOf(first.setupScript))
+			assert.notStrictEqual(eventsKeyOf(other.setupScript), eventsKeyOf(first.setupScript))
+			// Without the module the setup carries no events key at all.
+			yield* service.update(orgId, mine.id, { modules: ["cost"] })
+			const costOnly = yield* service.setup(orgId, mine.id)
+			assert.isFalse(costOnly.containsEventsKey)
+			assert.isUndefined(eventsKeyOf(costOnly.setupScript))
+		}).pipe(Effect.provide(makeLayer(testDb, aws, mapleAws, OrganizationFeatureFlagsService.allEnabled)))
+	})
+
+	it.effect("rotates a connection's events key only within its own org", () => {
+		const testDb = createTestDb(trackedDbs)
+		const aws = makeFakeAws()
+		const eventsKeyOf = (script: string) => /"EventsKey=(maple_awsev_[\w-]+)"/u.exec(script)?.[1]
+		return Effect.gen(function* () {
+			const service = yield* AwsConnectionService
+			const created = yield* service.create(orgId, userId, {
+				accountId: account,
+				modules: ["security"],
+			})
+			const before = eventsKeyOf((yield* service.setup(orgId, created.id)).setupScript)
+			const foreign = yield* Effect.flip(service.rotateEventsKey(otherOrgId, created.id))
+			assert.strictEqual(foreign._tag, "@maple/http/errors/IntegrationsNotFoundError")
+			assert.strictEqual(eventsKeyOf((yield* service.setup(orgId, created.id)).setupScript), before)
+			const rotated = yield* service.rotateEventsKey(orgId, created.id)
+			assert.strictEqual(rotated.id, created.id)
+			const after = eventsKeyOf((yield* service.setup(orgId, created.id)).setupScript)
+			assert.isDefined(after)
+			assert.notStrictEqual(after, before)
+		}).pipe(Effect.provide(makeLayer(testDb, aws, mapleAws, OrganizationFeatureFlagsService.allEnabled)))
 	})
 
 	it.effect("is unavailable without a usable OIDC signing key", () => {
