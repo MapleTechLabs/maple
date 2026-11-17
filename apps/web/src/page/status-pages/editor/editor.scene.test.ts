@@ -2622,7 +2622,7 @@ describe("settings", () => {
 	test("a bad field in Basic settings blocks the save on Appearance too, and the bar names its section", () => {
 		const edited = pageUpdate(
 			loaded({ tab: "settings" }),
-			Message.ChangedSetting({ field: "termsUrl", value: "http://acme.example/terms" }),
+			Message.ChangedSetting({ field: "name", value: " " }),
 		).model
 		scene(
 			{ update: pageUpdate, view },
@@ -2635,7 +2635,7 @@ describe("settings", () => {
 	test("a footer link must use https before the settings save", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ tab: "settings" })),
+			given(loaded({ tab: "settings", section: "appearance" })),
 			type(role("textbox", { name: "Terms of service URL" }), "http://acme.example/terms"),
 			expectView(text("Use an https URL.")).toExist(),
 			expectView(role("button", { name: "Save" })).toBeDisabled(),
@@ -2762,12 +2762,20 @@ describe("settings", () => {
 
 	test("the sections that shape the page show it beside them, as the unsaved settings render it", () => {
 		const page = srcdocOf("Globex with these settings")
+		const named = Arr.reduce(
+			[
+				Message.ChangedSetting({ field: "name", value: "Globex" }),
+				Message.ChangedSetting({ field: "description", value: "Live status of Globex" }),
+			],
+			loaded(BASIC),
+			(model, message) => pageUpdate(model, message).model,
+		)
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ tab: "settings" })),
-			type(role("textbox", { name: "Name" }), "Globex"),
+			given({ ...named, search: { view: "settings", section: "appearance" } }),
 			tap(({ html }) => {
-				expect(page(html)).toContain("Globex")
+				expect(page(html)).toContain("<title>Globex status</title>")
+				expect(page(html)).toContain("Live status of Globex")
 				expect(page(html)).toContain("Component 1")
 			}),
 		)
@@ -2778,17 +2786,13 @@ describe("settings", () => {
 		)
 	})
 
-	test("Basic settings show the page as typed in the preview beside them", () => {
-		const page = srcdocOf("Globex with these settings")
+	test("Basic settings show no preview, and say where visitors meet the name as typed", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ tab: "settings" })),
+			given(loaded(BASIC)),
+			expectView(role("region", { name: "Page preview" })).not.toExist(),
 			type(role("textbox", { name: "Name" }), "Globex"),
-			type(role("textbox", { name: "Description" }), "Live status of Globex"),
-			tap(({ html }) => {
-				expect(page(html)).toContain("<title>Globex status</title>")
-				expect(page(html)).toContain("Live status of Globex")
-			}),
+			expectView(text(/"Globex status"/u)).toExist(),
 		)
 	})
 
@@ -2802,12 +2806,12 @@ describe("settings", () => {
 		)
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded(BASIC)),
+			given(loaded(APPEARANCE)),
 			tap(({ html }) => expect(page(html)).toContain("Powered by")),
 		)
 		scene(
 			{ update: pageUpdate, view },
-			given(pageUpdate(loaded(BASIC), Message.ToggledPoweredBy()).model),
+			given(pageUpdate(loaded(APPEARANCE), Message.ToggledPoweredBy()).model),
 			tap(({ html }) => expect(page(html)).not.toContain("Powered by")),
 		)
 	})
