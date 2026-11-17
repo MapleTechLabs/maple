@@ -1761,13 +1761,16 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				repo,
 				input,
 			) =>
-				withdrawApprovals(
-					installation.externalInstallationId,
-					repo,
-					input.number,
-					input.reason,
-					input.keepHead,
-				).pipe(
+				Effect.gen(function* () {
+					const id = installation.externalInstallationId
+					// An event about a head the pull request has moved past arrived late: whatever Maple
+					// approved since describes a newer head, so it stands.
+					if (input.keepHead !== undefined && appBotLogin !== undefined) {
+						const pull = yield* client.getPullRequestHead(id, repo.owner, repo.name, input.number)
+						if (pull.head.sha !== input.keepHead) return "stale" as const
+					}
+					return yield* withdrawApprovals(id, repo, input.number, input.reason, input.keepHead)
+				}).pipe(
 					Effect.mapError(toVcsError),
 					Effect.withSpan("GithubProvider.withdrawPullRequestApprovals", {
 						attributes: {

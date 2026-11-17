@@ -432,10 +432,13 @@ export interface VcsProviderClient {
 	readonly withdrawPullRequestApprovals: (
 		installation: VcsInstallation,
 		repo: VcsRepositoryRef,
-		/** `keepHead`: spare an approval of this commit, which still describes the head. */
+		/**
+		 * `keepHead`: the head the event is about. An approval of it is spared, and nothing is
+		 * withdrawn (`stale`) when the pull request has moved past it.
+		 */
 		input: { readonly number: number; readonly reason: string; readonly keepHead?: string },
 	) => Effect.Effect<
-		"withdrawn" | "unsupported",
+		"withdrawn" | "unsupported" | "stale",
 		| VcsProviderError
 		| VcsInstallationGoneError
 		| VcsRepoUnavailableError

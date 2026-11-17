@@ -2388,8 +2388,6 @@ describe("PrReviewService auto-approve", () => {
 					new SubmitPrReviewRequest({ report: lowRisk([warning]) }),
 				)
 				assert.strictEqual(published[0].approval?.action, "withdraw")
-				const stored = Option.getOrThrow(yield* reviews.getReview(orgId, first.reviewId!))
-				assert.strictEqual(stored.report?.heldBack, 1)
 
 				const second = yield* reviews.onPullRequestEvent(
 					orgId,
@@ -2406,6 +2404,46 @@ describe("PrReviewService auto-approve", () => {
 			}).pipe(Effect.provide(layerFor(testDb, { published })))
 		},
 	)
+
+	it.effect("remembers a held-back warning when the same head is reviewed again", () => {
+		const testDb = createTestDb(trackedDbs)
+		const published: Array<PullRequestReviewPublication> = []
+		const warning = new PrReviewFinding({
+			path: "src/orders.ts",
+			line: 3,
+			category: "correctness",
+			severity: "warn",
+			title: "Unchecked null",
+			body: "b",
+		})
+		return Effect.gen(function* () {
+			const repositoryId = yield* seed(true)
+			const repo = yield* VcsRepository
+			yield* repo.setPrReviewConfig(
+				orgId,
+				repositoryId,
+				new PrReviewRepositoryConfig({ autoApprove: true, categories: ["security"] }),
+			)
+			const reviews = yield* PrReviewService
+			const first = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				first.reviewId!,
+				new SubmitPrReviewRequest({ report: lowRisk([warning]) }),
+			)
+			// Asked for again: the same row, its report cleared.
+			const repeat = yield* reviews.reviewNow(orgId, job())
+			assert.equal(repeat.reviewId, first.reviewId)
+			yield* reviews.submitReview(
+				orgId,
+				repeat.reviewId!,
+				new SubmitPrReviewRequest({ report: lowRisk() }),
+			)
+			const refused = published[1].approval
+			assert.strictEqual(refused?.action, "withdraw")
+			if (refused?.action === "withdraw") assert.include(refused.reason, "held back")
+		}).pipe(Effect.provide(layerFor(testDb, { published })))
+	})
 
 	it.effect("does not approve when Maple cannot read the diff itself", () => {
 		const testDb = createTestDb(trackedDbs)

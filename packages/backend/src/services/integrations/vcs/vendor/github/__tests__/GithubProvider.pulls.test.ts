@@ -693,6 +693,7 @@ describe("GithubProvider publishing a review", () => {
 			const layer = providerLayer(
 				[
 					tokenResponse(),
+					pull(),
 					jsonResponse([
 						{ id: 1, state: "APPROVED", user: { login: "maple-review[bot]" }, commit_id: "a" },
 						{ id: 5, state: "APPROVED", user: { login: "maple-review[bot]" }, commit_id: HEAD },
@@ -715,6 +716,36 @@ describe("GithubProvider publishing a review", () => {
 				assert.deepEqual(Arr.filter(requests, Str.includes("/dismissals")), [
 					"https://api.github.com/repos/octo/shop/pulls/612/reviews/1/dismissals",
 				])
+			}).pipe(Effect.provide(layer))
+		})
+
+		it.effect("leaves approvals alone for an event about a head the pull request moved past", () => {
+			const requests: Array<string> = []
+			const layer = providerLayer(
+				[
+					tokenResponse(),
+					pull({
+						head: {
+							sha: Str.repeat(40)("d"),
+							ref: "chore/label",
+							repo: { full_name: "octo/shop" },
+						},
+					}),
+				],
+				requests,
+				[],
+				[],
+				appEnv,
+			)
+			return Effect.gen(function* () {
+				const provider = yield* GithubProvider
+				const outcome = yield* provider.withdrawPullRequestApprovals(INSTALLATION, REPO, {
+					number: 612,
+					reason: "new commits were pushed since it approved",
+					keepHead: HEAD,
+				})
+				assert.equal(outcome, "stale")
+				assert.isFalse(Arr.some(requests, Str.includes("/reviews")))
 			}).pipe(Effect.provide(layer))
 		})
 

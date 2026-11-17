@@ -1212,10 +1212,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					),
 				).pipe(Effect.map((rows) => Arr.map(rows, toTracked)))
 
-			/**
-			 * The pull request's completed reviews, newest first: whether each read the whole diff, and
-			 * whether the repository's settings held back a warning or critical from it.
-			 */
+			/** The pull request's completed reviews, newest first, and whether each read the whole diff. */
 			const loadReviewHistory = (orgId: OrgId, repositoryId: VcsRepositoryId, number: number) =>
 				dbExecute((db) =>
 					db.run(
@@ -1226,9 +1223,6 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								wholeDiff: PG.sql(
 									PG.bool,
 								)`coalesce((${$.reportJson}->>'wholeDiff')::boolean, false)`,
-								heldBack: PG.sql(
-									PG.bool,
-								)`coalesce((${$.reportJson}->>'heldBack')::int, 0) > 0`,
 							}))
 							.where(($) => [
 								$.orgId.eq(orgId),
@@ -1237,6 +1231,21 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								$.status.eq("completed"),
 							])
 							.orderBy(($) => [[$.finishedAt, "desc"]]),
+					),
+				)
+
+			/** Reviews of the pull request that held a warning or critical back, of any status. */
+			const loadHeldBack = (orgId: OrgId, repositoryId: VcsRepositoryId, number: number) =>
+				dbExecute((db) =>
+					db.run(
+						PG.from(PrReviews)
+							.select(($) => ({ id: $.id, heldBack: $.heldBack }))
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.repositoryId.eq(repositoryId),
+								$.number.eq(number),
+								$.heldBack.gt(0),
+							]),
 					),
 				)
 
@@ -2830,12 +2839,14 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					Arr.filter(proposed, (finding) => isIssue(finding) && !allowed.includes(finding)).length +
 					Arr.filter(feedback.suppressed, isIssue).length +
 					Arr.filter(restatedResolved, isIssue).length
-				const heldBackBefore =
-					config.autoApprove === true
-						? yield* loadReviewHistory(orgId, review.repositoryId, review.number).pipe(
-								Effect.map((history) => Arr.filter(history, (row) => row.heldBack).length),
-							)
-						: 0
+				// Kept on the row, not the report, so a review of this head asked for again keeps it.
+				const heldBackRows = yield* loadHeldBack(orgId, review.repositoryId, review.number)
+				const heldBackBefore = Arr.reduce(heldBackRows, 0, (sum, row) => sum + row.heldBack)
+				const heldBackHere =
+					(Arr.findFirst(heldBackRows, (row) => row.id === reviewId).pipe(
+						Option.map((row) => row.heldBack),
+						Option.getOrUndefined,
+					) ?? 0) + heldBack
 				const unignored = (paths: ReadonlyArray<string>) =>
 					Arr.filter(paths, (path) => !pathIgnored(path, config.ignorePaths))
 				const approvalSignals = {
@@ -2865,7 +2876,6 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					...submitted,
 					...(telemetry === undefined ? undefined : { telemetry }),
 					...(beforeMerge.length > 0 ? { beforeMerge } : undefined),
-					...(heldBack > 0 ? { heldBack } : undefined),
 					findings,
 					verdict: hasIssues
 						? "issues"
@@ -2929,6 +2939,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				const stored = yield* updateWhere(orgId, reviewId, ACTIVE_STATUSES, {
 					status: "completed",
 					reportJson: report,
+					heldBack: heldBackHere,
 					score,
 					model: request.model ?? null,
 					inputTokens: request.inputTokens ?? null,
