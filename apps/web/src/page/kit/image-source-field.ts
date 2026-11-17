@@ -42,24 +42,36 @@ export type ImageSourceFieldOptions<M> = Readonly<{
 	onFiles: (files: ReadonlyArray<File.File>) => M
 }>
 
-const previewOf = <M>(h: HtmlBuilder<M>, value: string, preview: ImageSourcePreview): Html =>
-	preview._tag === "Favicon"
-		? hstack(
+/** A favicon in a browser window: its tab on the strip, joined to the page under it. */
+const faviconPreview = <M>(h: HtmlBuilder<M>, value: string, title: string): Html =>
+	vstack(h, { as: "span", className: "size-full" }, [
+		hstack(h, { as: "span", align: "end", className: "h-10 shrink-0 px-3" }, [
+			hstack(
 				h,
 				{
 					gap: "2",
 					align: "center",
 					as: "span",
-					className: "w-56 max-w-full rounded-t-md border border-b-0 bg-background px-3 py-2",
+					className: "h-8 w-52 max-w-full rounded-t-md bg-background px-3",
 				},
 				[
 					h.img([h.Src(value), h.Alt(""), h.Class("size-4 shrink-0 object-contain")]),
 					typography(h, { size: "xs", truncate: true, className: "flex-1 text-left font-prose" }, [
-						preview.title,
+						title,
 					]),
 					icon(h, "XmarkIcon", { className: "size-3 shrink-0 text-muted-foreground" }),
 				],
-			)
+			),
+		]),
+		hstack(h, { as: "span", align: "center", grow: true, className: "bg-background px-3" }, [
+			// The address bar, as a quiet placeholder.
+			h.span([h.Class("h-5 w-2/3 rounded-full bg-muted"), h.AriaHidden(true)], []),
+		]),
+	])
+
+const previewOf = <M>(h: HtmlBuilder<M>, value: string, preview: ImageSourcePreview): Html =>
+	preview._tag === "Favicon"
+		? faviconPreview(h, value, preview.title)
 		: // The public page's header height, so the preview is the logo at its real size.
 			h.img([h.Src(value), h.Alt(""), h.Class("h-9 w-auto max-w-3/4 object-contain")])
 
@@ -70,7 +82,8 @@ export const imageSourceField = <M>(h: HtmlBuilder<M>, options: ImageSourceField
 	const name = Str.toLowerCase(options.label)
 	const look = cn(
 		"relative flex w-full items-center justify-center overflow-hidden rounded-lg border",
-		isFavicon && hasImage ? "h-14 items-end bg-muted" : "h-24",
+		"h-24",
+		isFavicon && hasImage && "items-stretch bg-muted",
 		!hasImage && "border-dashed text-muted-foreground",
 	)
 	const background =
