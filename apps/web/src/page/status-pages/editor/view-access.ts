@@ -181,6 +181,7 @@ export const accessSection = (h: H, model: Model, page: V2StatusPage, form: Sett
 		h,
 		{
 			id: "status-page-settings-access",
+			framed: false,
 			title: "Who can view",
 			description: ["Public, behind a password, or only for members of this organization."],
 		},

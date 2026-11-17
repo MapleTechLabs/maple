@@ -115,6 +115,7 @@ export const brandingSection = (h: H, model: Model, page: V2StatusPage, form: Se
 		h,
 		{
 			id: "status-page-settings-branding",
+			framed: false,
 			title: "Branding",
 			description: [
 				"Your logo in the page header and the icon in the browser tab. Without a logo, the page shows its initial in your accent colour.",
@@ -169,6 +170,7 @@ export const appearanceSection = (h: H, model: Model, form: SettingsForm): Html 
 		h,
 		{
 			id: "status-page-settings-appearance",
+			framed: false,
 			title: "Theme",
 			description: ["Colors, corners and type of the public page."],
 		},

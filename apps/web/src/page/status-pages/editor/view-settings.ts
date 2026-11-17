@@ -89,6 +89,7 @@ const pageSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm)
 		h,
 		{
 			id: "status-page-settings-page",
+			framed: false,
 			title: "Page",
 			description: ["How the page introduces itself to visitors."],
 		},
@@ -177,7 +178,7 @@ const pageSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm)
 }
 
 const behaviourSection = (h: H, model: Model, form: SettingsForm): Html =>
-	settingsSection(h, { id: "status-page-settings-behaviour", title: "Behaviour" }, [
+	settingsSection(h, { id: "status-page-settings-behaviour", title: "Behaviour", framed: false }, [
 		vstack(h, { gap: "4" }, [
 			selectField(h, {
 				id: "status-page-auto-incidents",
@@ -234,6 +235,7 @@ const breakGlassSection = (h: H, model: Model, page: V2StatusPage): Html => {
 		h,
 		{
 			id: "status-page-settings-break-glass",
+			framed: false,
 			title: "Break-glass token",
 			description: [
 				"If Maple itself is down, post updates straight to the page with this token at ",

@@ -203,6 +203,7 @@ export const customDomainSection = (h: H, model: Model, page: V2StatusPage): Htm
 		h,
 		{
 			id: "status-page-settings-custom-domain",
+			framed: false,
 			anchorId: "custom-domain",
 			title: "Custom domain",
 			description: [
