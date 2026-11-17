@@ -184,6 +184,11 @@ export interface DirectoryGroupEvent {
 
 export interface EnterpriseSsoServiceApi {
 	readonly get: (orgId: OrgId) => Effect.Effect<EnterpriseSsoDocument, EnterpriseSsoUnavailableError>
+	/**
+	 * The state a reader without `sso:manage` may see: the domains, whether an IdP is connected and
+	 * required, and whether SCIM runs. No IdP or service provider values, endpoint, groups or people.
+	 */
+	readonly getSummary: (orgId: OrgId) => Effect.Effect<EnterpriseSsoDocument, EnterpriseSsoUnavailableError>
 	readonly addDomain: (
 		orgId: OrgId,
 		userId: UserId,
@@ -392,6 +397,22 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				})
 			}
 
+			/** The connection's state alone: its name, domains and whether it is required. */
+			const toConnectionSummary = (c: ClerkSsoConnection) =>
+				new SsoConnectionDocument({
+					...toConnectionDocument(c),
+					acsUrl: null,
+					spEntityId: null,
+					spMetadataUrl: null,
+					idpMetadataUrl: null,
+					idpSsoUrl: null,
+					idpEntityId: null,
+					idpCertificateExpiresAt: null,
+					oidcDiscoveryUrl: null,
+					oidcClientId: null,
+					oidcRedirectUri: null,
+				})
+
 			const toDirectoryDocument = (d: ClerkSsoDirectory) =>
 				new ScimDirectoryDocument({
 					endpointUrl: d.endpoint_url,
@@ -400,8 +421,20 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 					createdAt: iso(d.created_at),
 				})
 
-			const get = Effect.fn("EnterpriseSsoService.get")(function* (orgId: OrgId) {
-				yield* Effect.annotateCurrentSpan({ orgId })
+			const toDirectorySummary = (d: ClerkSsoDirectory) =>
+				new ScimDirectoryDocument({
+					enabled: d.enabled,
+					paused: d.paused,
+					createdAt: iso(d.created_at),
+				})
+
+			// A summary never asks Clerk or the database for mappings, groups or the bypass list.
+			const read = Effect.fn("EnterpriseSsoService.read")(function* (
+				orgId: OrgId,
+				scope: "full" | "summary",
+			) {
+				const full = scope === "full"
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.sso.read_scope": scope })
 				const [domains, row, entitled] = yield* Effect.all(
 					[loadDomains(orgId), loadConnectionRow(orgId), entitlements(orgId)],
 					{ concurrency: "unbounded" },
@@ -423,11 +456,13 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 									clerkDirectoryId === null
 										? Effect.succeed(Option.none<ClerkSsoDirectory>())
 										: orMissing(clerk.getDirectory(clerkDirectoryId)),
-									clerkDirectoryId === null
+									clerkDirectoryId === null || !full
 										? Effect.succeed([])
 										: clerk.listRoleMappings(clerkDirectoryId).pipe(orEmpty),
-									clerk.listBypassUsers(clerkConnectionId).pipe(orEmpty),
-									clerkDirectoryId === null
+									full
+										? clerk.listBypassUsers(clerkConnectionId).pipe(orEmpty)
+										: Effect.succeed([]),
+									clerkDirectoryId === null || !full
 										? Effect.succeed([])
 										: dbExecute((db) =>
 												db.run(
@@ -451,10 +486,12 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 							if (Option.isNone(connection)) return empty
 							const names = new Map(Arr.map(groups, (g) => [g.groupId, g.displayName] as const))
 							return {
-								connection: toConnectionDocument(connection.value),
+								connection: full
+									? toConnectionDocument(connection.value)
+									: toConnectionSummary(connection.value),
 								directory: Option.match(directory, {
 									onNone: () => null,
-									onSome: toDirectoryDocument,
+									onSome: full ? toDirectoryDocument : toDirectorySummary,
 								}),
 								roleMappings: Arr.flatMap(mappings, (m) =>
 									isMappedRole(m.roleKey)
@@ -497,6 +534,9 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 					...side,
 				})
 			})
+
+			const get = (orgId: OrgId) => read(orgId, "full")
+			const getSummary = (orgId: OrgId) => read(orgId, "summary")
 
 			const addDomain = Effect.fn("EnterpriseSsoService.addDomain")(function* (
 				orgId: OrgId,
@@ -1201,7 +1241,8 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 					.pipe(Effect.mapError(fromClerk))
 				if (elsewhere.length > 0) {
 					return yield* new EnterpriseSsoInvalidError({
-						message: `This person also has an email on ${Arr.join(elsewhere, ", ")}, which another organization's SSO covers, so they cannot bypass SSO from here.`,
+						message:
+							"This person is also covered by another organization's single sign-on, so they cannot bypass SSO from here.",
 					})
 				}
 				yield* clerk.addBypassUser(userId).pipe(Effect.mapError(fromClerk))
@@ -1233,7 +1274,8 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				).pipe(Effect.mapError(fromClerk))
 				if (elsewhere.length > 0) {
 					return yield* new EnterpriseSsoConflictError({
-						message: `This person also has an email on ${Arr.join(elsewhere, ", ")}, which another organization's SSO covers. Removing them here would remove that organization's break-glass access too; contact support.`,
+						message:
+							"This person is also covered by another organization's single sign-on. Removing them here would remove that organization's break-glass access too; contact support.",
 					})
 				}
 				yield* clerk.removeBypassUser(userId).pipe(Effect.mapError(fromClerk))
@@ -1306,6 +1348,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 			return {
 				confirmDeprovisioned,
 				get,
+				getSummary,
 				addDomain,
 				verifyDomain,
 				removeDomain,
@@ -1346,6 +1389,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 		)
 		return Layer.succeed(this, {
 			get: () => unserved,
+			getSummary: () => unserved,
 			addDomain: () => unserved,
 			verifyDomain: () => unserved,
 			removeDomain: () => unserved,

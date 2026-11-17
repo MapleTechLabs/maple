@@ -670,9 +670,14 @@ const directoryPanel = (
 					),
 				]),
 			]),
-			keyValueList(h, { layout: "stacked" }, [
-				copyValue(h, model, "scim-endpoint", "Endpoint URL", directory.endpointUrl),
-			]),
+			// Absent for a viewer who cannot manage SSO.
+			...(directory.endpointUrl === undefined
+				? []
+				: [
+						keyValueList(h, { layout: "stacked" }, [
+							copyValue(h, model, "scim-endpoint", "Endpoint URL", directory.endpointUrl),
+						]),
+					]),
 			typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" }, [
 				directory.paused
 					? "Your identity provider's pushes are refused while provisioning is paused."
@@ -1370,12 +1375,15 @@ const loaded = (
 			: [adminOnlyNote(h, ["Only admins can change SSO and SCIM settings."])]),
 		domainsSection(h, model, document),
 		connectionSection(h, model, document),
-		bypassSection(h, model, document),
+		// The API sends the bypass list and the IdP groups to managers only: no empty lists for others.
+		...(model.canManage ? [bypassSection(h, model, document)] : []),
 		...(document.connection === null
 			? []
 			: [
 					scimSection(h, model, document),
-					...(document.directory === null ? [] : [mappingsSection(h, model, document)]),
+					...(document.directory === null || !model.canManage
+						? []
+						: [mappingsSection(h, model, document)]),
 				]),
 	]
 }

@@ -16,7 +16,7 @@ Both are self-serve add-ons on every plan, added by an organization admin under 
 
 SCIM provisioning needs single sign-on connected first. If an add-on ends, everything you set up keeps working as it is. Admins can still turn SSO off, pause or remove SCIM, and remove the connection. They can also still rotate the SCIM token and replace the connection's SAML certificate, IdP metadata or OIDC client secret, so a leaked credential can always be replaced. Every other change needs the add-on.
 
-Only organization admins can configure SSO and SCIM. Every change is recorded in the organization's audit log, under **Security → Audit log**.
+Only organization admins can configure SSO and SCIM. Other members see whether SSO is connected and required, its domains, and whether SCIM is running. They don't see the identity provider settings, the SCIM endpoint, the IdP groups or the bypass list. Every change is recorded in the organization's audit log, under **Security → Audit log**.
 
 SSO and SCIM work the same for organizations in the US and EU [regions](/docs/reference/regions).
 

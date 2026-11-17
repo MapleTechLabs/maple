@@ -799,6 +799,8 @@ describe("EnterpriseSsoService", () => {
 					.addBypassUser(ORG, Schema.decodeSync(UserId)("user_dual"))
 					.pipe(Effect.flip)
 				assert.strictEqual(dual._tag, "@maple/http/enterprise-sso/EnterpriseSsoInvalidError")
+				// The refusal does not say which other domains the person holds.
+				assert.notMatch(dual.message, /partner\.io/)
 				assert.deepStrictEqual(world.clerk.bypass, [])
 			}),
 		)
@@ -928,6 +930,7 @@ describe("EnterpriseSsoService", () => {
 					.removeBypassUser(ORG, Schema.decodeSync(UserId)("user_dual"))
 					.pipe(Effect.flip)
 				assert.strictEqual(refused._tag, "@maple/http/enterprise-sso/EnterpriseSsoConflictError")
+				assert.notMatch(refused.message, /partner\.io/)
 				yield* sso.deleteConnection(ORG)
 				assert.deepStrictEqual(world.clerk.bypass, ["user_dual"])
 			}),
@@ -1310,4 +1313,59 @@ describe("EnterpriseSsoService", () => {
 			)
 		})
 	})
+
+	it.effect(
+		"summarises the state for a reader who cannot manage SSO, without settings, groups or people",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const world = { clerk: fakeClerk(), dns: new Map<string, Array<string>>(), entitled: true }
+			return run(
+				testDb,
+				world,
+				Effect.gen(function* () {
+					const sso = yield* EnterpriseSsoService
+					yield* verifiedDomain(world.dns, "acme.com")
+					yield* sso.createConnection(ORG, ADMIN, samlRequest(["acme.com"]))
+					yield* sso.setEnforcement(ORG, true)
+					yield* sso.addBypassUser(ORG, BREAK_GLASS)
+					yield* sso.createDirectory(ORG)
+					const directoryId = [...world.clerk.directories.keys()][0] ?? ""
+					yield* sso.applyDirectoryGroup({
+						directoryId,
+						groupId: "grp_admins",
+						displayName: "Maple Admins",
+						updatedAt: 1,
+						deleted: false,
+					})
+					yield* sso.setRoleMappings(ORG, [{ groupId: "grp_admins", role: "org:admin" }])
+
+					world.clerk.bypassLookups = 0
+					const summary = yield* sso.getSummary(ORG)
+					assert.deepStrictEqual(
+						Arr.map(summary.domains, (d) => [d.domain, d.status]),
+						[["acme.com", "verified"]],
+					)
+					assert.strictEqual(summary.connection?.enforced, true)
+					assert.deepStrictEqual(summary.connection?.domains, ["acme.com"])
+					assert.isFalse(summary.directory?.paused ?? true)
+					assert.deepStrictEqual(summary.roleMappings, [])
+					assert.deepStrictEqual(summary.groups, [])
+					assert.deepStrictEqual(summary.bypassUsers, [])
+					// Nothing that names the IdP's endpoints, the SCIM endpoint, a group or a person.
+					const sent = JSON.stringify(summary)
+					for (const secretish of ["clerk.test", "okta.com", "user_breakglass", "Maple Admins"]) {
+						assert.isFalse(Str.includes(secretish)(sent), secretish)
+					}
+					assert.strictEqual(world.clerk.bypassLookups, 0)
+
+					// The admin read is unchanged.
+					const full = yield* sso.get(ORG)
+					assert.match(full.directory?.endpointUrl ?? "", /^https:\/\/scim\.clerk\.test\//)
+					assert.match(full.connection?.acsUrl ?? "", /^https:\/\/clerk\.test\//)
+					assert.strictEqual(full.bypassUsers.length, 1)
+					assert.strictEqual(full.groups.length, 1)
+				}),
+			)
+		},
+	)
 })

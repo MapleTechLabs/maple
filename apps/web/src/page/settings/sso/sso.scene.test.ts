@@ -321,6 +321,36 @@ describe("sso tab", () => {
 		})
 	})
 
+	test("a member sees the state the API sends them: no endpoint, groups or break-glass list", () => {
+		const model = loaded(
+			doc({
+				domains: [verifiedDomain],
+				connection: {
+					...connection,
+					enforced: true,
+					acsUrl: null,
+					spEntityId: null,
+					spMetadataUrl: null,
+					idpMetadataUrl: null,
+				},
+				directory: { enabled: true, paused: false, createdAt: CREATED },
+			}),
+			false,
+		)
+		scene(
+			{ update, view },
+			given(model),
+			expectView(text("Required")).toExist(),
+			expectView(text("SCIM 2.0")).toExist(),
+			expectView(text("Active")).toExist(),
+			expectView(text("Endpoint URL")).not.toExist(),
+			expectView(text("ACS URL")).not.toExist(),
+			expectView(text("Break-glass access")).not.toExist(),
+			expectView(text("Role mapping")).not.toExist(),
+			expectView(role("button", { name: "Rotate token" })).toBeDisabled(),
+		)
+	})
+
 	test("a failed member list loads again when the break-glass dialog reopens", () => {
 		const failed = update(
 			loaded(doc({ domains: [verifiedDomain], connection })),

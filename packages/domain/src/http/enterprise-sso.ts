@@ -71,8 +71,8 @@ export class SsoConnectionDocument extends Schema.Class<SsoConnectionDocument>("
 }) {}
 
 export class ScimDirectoryDocument extends Schema.Class<ScimDirectoryDocument>("ScimDirectoryDocument")({
-	/** The SCIM 2.0 base URL the IdP pushes to. */
-	endpointUrl: Schema.String,
+	/** The SCIM 2.0 base URL the IdP pushes to. Absent for a reader without `sso:manage`. */
+	endpointUrl: Schema.optionalKey(Schema.String),
 	enabled: Schema.Boolean,
 	paused: Schema.Boolean,
 	createdAt: IsoDateTimeString,
@@ -96,7 +96,11 @@ export class SsoBypassUserDocument extends Schema.Class<SsoBypassUserDocument>("
 	identifier: Schema.NullOr(Schema.String),
 }) {}
 
-/** The whole Security tab in one read. */
+/**
+ * The whole Security tab in one read. A reader without `sso:manage` gets the state only: the
+ * domains, the connection without its IdP and service provider values, the directory without its
+ * endpoint, and no role mappings, groups or bypass users.
+ */
 export class EnterpriseSsoDocument extends Schema.Class<EnterpriseSsoDocument>("EnterpriseSsoDocument")({
 	/** The org holds the single sign-on add-on (`enterprise_sso`). Reads answer either way. */
 	ssoEntitled: Schema.Boolean,
