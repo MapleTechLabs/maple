@@ -164,6 +164,13 @@ export const resolveView = (search: typeof StatusPageSearch.Type): EditorLocatio
 	}
 }
 
+/** The Settings sections whose fields change how the page looks, so the page's preview sits beside them. */
+export const PREVIEWED_SECTIONS: ReadonlyArray<SettingsSection> = ["basic", "monitors", "appearance"]
+
+/** Whether the location draws the page in a frame whose components and incidents click. */
+export const hasClickablePreview = (location: EditorLocation): boolean =>
+	location.tab === "page" || (location.tab === "settings" && PREVIEWED_SECTIONS.includes(location.section))
+
 /** Whether the tab shows what is open: a component under Monitors, an incident under its tab. */
 const showsPanel = (panel: Model["panel"], location: EditorLocation): boolean => {
 	if (panel === null) return false
@@ -410,20 +417,30 @@ const updatePanelSheet = (model: Model, message: Dialog.Message): Return => {
 	}
 }
 
-/** A click in the live page opens what it landed on where it is edited. */
+/**
+ * A click in the live page or a Settings preview opens what it landed on where it is edited; a
+ * click under Monitors opens the component in place.
+ */
 const selectFromPreview = (model: Model, kind: "component" | "incident", id: string): Return => {
 	const navigate = (url: string) => PageOutMessage.RequestedNavigation({ url, isReplace: false })
 	if (model.pageId === null) return { model }
+	const here = resolveView(model.search)
+	const isOnMonitors = here.tab === "settings" && here.section === "monitors"
 	const pageId = model.pageId
 	if (kind === "component")
 		return Option.match(
 			Arr.findFirst(componentsOf(model), (row) => row.id === id),
 			{
 				onNone: () => ({ model }),
-				onSome: (component) => ({
-					...leaveComponent(model, { _tag: "Open", componentId: component.id, isRevealed: true }),
-					outMessage: navigate(statusPageHref(pageId, "settings", "monitors")),
-				}),
+				onSome: (component) => {
+					const opened = leaveComponent(model, {
+						_tag: "Open",
+						componentId: component.id,
+						isRevealed: true,
+					})
+					if (isOnMonitors) return opened
+					return { ...opened, outMessage: navigate(statusPageHref(pageId, "settings", "monitors")) }
+				},
 			},
 		)
 	return Option.match(

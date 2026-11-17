@@ -37,6 +37,7 @@ import { Message } from "./message"
 import { canBreakGlass, canManage, type Model } from "./model"
 import { gatedControl } from "../../kit/session-grants"
 import { isSettingsDirty, settingsOf } from "./update-settings"
+import { PREVIEWED_SECTIONS } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { grid } from "@maple/views/ui/grid"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -376,9 +377,6 @@ const settingsNav = (h: H, page: V2StatusPage, section: SettingsSection): Html =
 		"Settings sections",
 	)
 
-/** The sections whose fields change how the page looks, so the preview sits beside them. */
-const PREVIEWED: ReadonlyArray<SettingsSection> = ["basic", "monitors", "appearance"]
-
 /**
  * Settings below the page's header and tabs: the section menu, the section's form and, for the
  * sections that change how the page looks, the page itself, side by side, each scrolling on its
@@ -392,7 +390,7 @@ export const settingsLayout = (
 	section: SettingsSection,
 	content: Html,
 ): Html => {
-	const hasPreview = PREVIEWED.includes(section)
+	const hasPreview = PREVIEWED_SECTIONS.includes(section)
 	return h.div(
 		[
 			h.Class(

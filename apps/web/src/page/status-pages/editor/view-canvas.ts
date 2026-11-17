@@ -115,7 +115,7 @@ export const draftName = (page: V2StatusPage, form: SettingsForm): string => orN
 /**
  * The whole page as the unsaved `form` would publish it, filling the page's right panel at its
  * own width: the page lays itself out for it as it does on a narrow screen, and scrolls inside.
- * Waits for the statuses like any preview.
+ * Waits for the statuses like any preview. Components and incidents click, as on the live page.
  */
 export const settingsPagePreview = (h: H, model: Model, page: V2StatusPage, form: SettingsForm): Html =>
 	vstack(
@@ -127,7 +127,9 @@ export const settingsPagePreview = (h: H, model: Model, page: V2StatusPage, form
 			attributes: [h.AriaLabel("Page preview")],
 		},
 		[
-			typography(h, { size: "xs", tone: "muted", as: "p" }, ["Your page with these settings"]),
+			typography(h, { size: "xs", tone: "muted", as: "p" }, [
+				"Your page with these settings. Click a component or incident to edit it.",
+			]),
 			!statusReadsReady(model)
 				? statusReadsFailed(model)
 					? typography(h, { size: "xs", tone: "muted", as: "p" }, [
@@ -139,9 +141,10 @@ export const settingsPagePreview = (h: H, model: Model, page: V2StatusPage, form
 						document: previewDocument({
 							snapshot: draftSnapshot(model, page, form, "live"),
 							nowMs: nowOf(model, page),
-							isSelectable: false,
+							isSelectable: true,
 							publicUrl: pageUrlOf(model, page),
 						}),
+						isSelectable: true,
 						className: "min-h-0 flex-1",
 					}),
 		],
