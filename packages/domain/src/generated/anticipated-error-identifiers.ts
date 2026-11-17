@@ -26,6 +26,7 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/dependency-scan/DependencyScanForbiddenError",
 	"@maple/http/dependency-scan/DependencyScanRepositoryNotFoundError",
 	"@maple/http/enterprise-sso/EnterpriseSsoConflictError",
+	"@maple/http/enterprise-sso/EnterpriseSsoDomainProofError",
 	"@maple/http/enterprise-sso/EnterpriseSsoForbiddenError",
 	"@maple/http/enterprise-sso/EnterpriseSsoInvalidError",
 	"@maple/http/enterprise-sso/EnterpriseSsoNotEntitledError",

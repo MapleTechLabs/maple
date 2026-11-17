@@ -14,7 +14,7 @@ import {
 import { AutumnClient, type AutumnResult } from "@maple/backend/services/billing/autumn-http"
 import { ClerkRequestError } from "@maple/backend/services/auth/clerk-request"
 import { ClerkSsoGateway, type ClerkSsoConnection, type ClerkSsoDirectory } from "./ClerkSsoGateway"
-import { DnsTxtResolver } from "./DnsTxtResolver"
+import { DnsLookupError, DnsTxtResolver } from "./DnsTxtResolver"
 import { EnterpriseSsoService } from "./EnterpriseSsoService"
 
 const trackedDbs: TestDb[] = []
@@ -43,6 +43,16 @@ interface FakeClerk {
 	nextId: number
 	/** The next `createConnection` fails with this Clerk status and message. */
 	rejectCreate: { status: number; message: string } | null
+	/** Organization domains Maple asked Clerk to delete. */
+	deletedDomains: Array<string>
+	/** Clerk no longer has the organization domain: deleting it answers 404. */
+	domainGone: boolean
+	/** Clerk is down for deletes. */
+	failDeletes: boolean
+	/** How often the bypass list was read. */
+	bypassLookups: number
+	/** The IdP settings each connection update carried. */
+	updates: Array<{ certificate?: string; metadataUrl?: string; clientSecret?: string }>
 }
 
 const ROLES = [
@@ -70,10 +80,18 @@ const fakeClerk = (): FakeClerk => ({
 	]),
 	nextId: 1,
 	rejectCreate: null,
+	deletedDomains: [],
+	domainGone: false,
+	failDeletes: false,
+	bypassLookups: 0,
+	updates: [],
 })
 
 const notFound = (operation: string) =>
 	new ClerkRequestError({ operation, message: "not found", status: 404, cause: null })
+
+const down = (operation: string) =>
+	new ClerkRequestError({ operation, message: "down", status: 503, cause: null })
 
 const gatewayLayer = (clerk: FakeClerk) =>
 	Layer.succeed(ClerkSsoGateway, {
@@ -82,7 +100,12 @@ const gatewayLayer = (clerk: FakeClerk) =>
 		ensureOrgDomain: (orgId, domain) => Effect.succeed(`dmn_${orgId}_${domain}`),
 		verifyOrgDomainOwnership: (_orgId, domainId) =>
 			Effect.sync(() => void clerk.verifiedDomains.push(domainId)),
-		deleteOrgDomain: () => Effect.void,
+		deleteOrgDomain: (_orgId, domainId) =>
+			Effect.suspend(() => {
+				if (clerk.domainGone) return Effect.fail(notFound("deleteOrgDomain"))
+				clerk.deletedDomains.push(domainId)
+				return Effect.void
+			}),
 		getConnection: (id) => {
 			const c = clerk.connections.get(id)
 			return c === undefined ? Effect.fail(notFound("get")) : Effect.succeed(c)
@@ -131,6 +154,7 @@ const gatewayLayer = (clerk: FakeClerk) =>
 			Effect.suspend(() => {
 				const c = clerk.connections.get(id)
 				if (c === undefined) return Effect.fail(notFound("update"))
+				clerk.updates.push({ ...input.saml, ...input.oidc })
 				const next = {
 					...c,
 					name: input.name ?? c.name,
@@ -142,12 +166,14 @@ const gatewayLayer = (clerk: FakeClerk) =>
 			}),
 		// Like Clerk: deleting a connection drops the bypass entries no remaining connection serves.
 		deleteConnection: (id) =>
-			Effect.sync(() => {
+			Effect.suspend(() => {
+				if (clerk.failDeletes) return Effect.fail(down("deleteConnection"))
 				clerk.connections.delete(id)
 				const served = new Set(Arr.flatMap([...clerk.connections.values()], (c) => c.domains))
 				clerk.bypass = Arr.filter(clerk.bypass, (userId) =>
 					Arr.some(clerk.emailDomains.get(userId) ?? [], (d) => served.has(d)),
 				)
+				return Effect.void
 			}),
 		createDirectory: (connectionId, provider) =>
 			Effect.sync(() => {
@@ -186,7 +212,12 @@ const gatewayLayer = (clerk: FakeClerk) =>
 				const hook = clerk.onRotate
 				return hook === null ? Effect.succeed(next) : Effect.promise(hook).pipe(Effect.as(next))
 			}),
-		deleteDirectory: (id) => Effect.sync(() => void clerk.directories.delete(id)),
+		deleteDirectory: (id) =>
+			Effect.suspend(() => {
+				if (clerk.failDeletes) return Effect.fail(down("deleteDirectory"))
+				clerk.directories.delete(id)
+				return Effect.void
+			}),
 		listRoleMappings: (directoryId) =>
 			Effect.sync(() =>
 				Arr.map(clerk.mappings.get(directoryId) ?? [], (m) => ({
@@ -203,6 +234,12 @@ const gatewayLayer = (clerk: FakeClerk) =>
 			),
 		replaceRoleMappings: (directoryId, mappings) =>
 			Effect.sync(() => void clerk.mappings.set(directoryId, [...mappings])),
+		orgConnectionDomains: (orgId) =>
+			Effect.sync(() =>
+				Arr.flatMap([...clerk.connections.values()], (c) =>
+					c.organizationId === orgId ? c.domains : [],
+				),
+			),
 		domainsClaimedElsewhere: (connectionId, domains) =>
 			Effect.sync(() =>
 				Arr.filter(domains, (d) =>
@@ -229,9 +266,10 @@ const gatewayLayer = (clerk: FakeClerk) =>
 		isMember: (_orgId, userId) => Effect.sync(() => clerk.members.has(userId)),
 		verifiedEmailDomains: (userId) => Effect.sync(() => clerk.emailDomains.get(userId) ?? []),
 		listBypassUsers: () =>
-			Effect.sync(() =>
-				Arr.map(clerk.bypass, (userId) => ({ userId, identifier: `${userId}@acme.com` })),
-			),
+			Effect.sync(() => {
+				clerk.bypassLookups++
+				return Arr.map(clerk.bypass, (userId) => ({ userId, identifier: `${userId}@acme.com` }))
+			}),
 		addBypassUser: (userId) => Effect.sync(() => void clerk.bypass.push(userId)),
 		removeBypassUser: (userId) =>
 			Effect.sync(() => void (clerk.bypass = Arr.filter(clerk.bypass, (u) => u !== userId))),
@@ -243,11 +281,20 @@ interface MidRequestHook {
 	current: (() => Promise<void>) | null
 }
 
+/** The resolver cannot be reached while `current` is true. */
+interface DnsOutage {
+	current: boolean
+}
+
 /** Published TXT records by name; `onLookup` runs during the lookup, to change the world mid-request. */
-const dnsLayer = (records: Map<string, Array<string>>, onLookup: MidRequestHook) =>
+const dnsLayer = (records: Map<string, Array<string>>, onLookup: MidRequestHook, outage: DnsOutage) =>
 	Layer.succeed(DnsTxtResolver, {
 		lookupTxt: (name) => {
-			const found = Effect.sync(() => records.get(name) ?? [])
+			const found = Effect.suspend(() =>
+				outage.current
+					? Effect.fail(new DnsLookupError({ recordName: name, message: "SERVFAIL" }))
+					: Effect.succeed(records.get(name) ?? []),
+			)
 			const hook = onLookup.current
 			return hook === null ? found : Effect.promise(hook).pipe(Effect.andThen(found))
 		},
@@ -306,6 +353,7 @@ const run = <A, E>(
 		dns: Map<string, Array<string>>
 		entitled: boolean | "sso-only"
 		onLookup?: MidRequestHook
+		dnsOutage?: DnsOutage
 	},
 	effect: Effect.Effect<A, E, EnterpriseSsoService>,
 ) =>
@@ -318,7 +366,11 @@ const run = <A, E>(
 						EdgeCacheService.layer.pipe(Layer.provide(MemoryCacheBackendLive)),
 						BillingCustomerResolver.standalone,
 						gatewayLayer(world.clerk),
-						dnsLayer(world.dns, world.onLookup ?? { current: null }),
+						dnsLayer(
+							world.dns,
+							world.onLookup ?? { current: null },
+							world.dnsOutage ?? { current: false },
+						),
 					),
 				),
 				Layer.provide(testDb.layer),
@@ -997,4 +1049,137 @@ describe("EnterpriseSsoService", () => {
 			}),
 		)
 	})
+
+	it.effect("checks a domain's TXT record again before a connection is created or required", () => {
+		const testDb = createTestDb(trackedDbs)
+		const dnsOutage = { current: false }
+		const world = {
+			clerk: fakeClerk(),
+			dns: new Map<string, Array<string>>(),
+			entitled: true,
+			dnsOutage,
+		}
+		const RECORD = "_maple-challenge.acme.com"
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				const sso = yield* EnterpriseSsoService
+				yield* verifiedDomain(world.dns, "acme.com")
+				const published = world.dns.get(RECORD) ?? []
+				const challenge = published[1] ?? ""
+
+				// The record is taken down after verification: the domain still reads verified.
+				world.dns.delete(RECORD)
+				assert.strictEqual((yield* sso.verifyDomain(ORG, "acme.com")).domains[0]?.status, "verified")
+				const refused = yield* sso
+					.createConnection(ORG, ADMIN, samlRequest(["acme.com"]))
+					.pipe(Effect.flip)
+				assert.strictEqual(refused._tag, "@maple/http/enterprise-sso/EnterpriseSsoDomainProofError")
+				// It names the domain and the record to publish.
+				assert.isTrue(Str.includes("acme.com")(refused.message))
+				assert.isTrue(Str.includes(RECORD)(refused.message))
+				assert.isTrue(Str.includes(challenge)(refused.message))
+				assert.strictEqual(world.clerk.connections.size, 0)
+
+				world.dns.set(RECORD, published)
+				yield* sso.createConnection(ORG, ADMIN, samlRequest(["acme.com"]))
+
+				// Gone again by the time SSO is required.
+				world.dns.delete(RECORD)
+				const unproven = yield* sso.setEnforcement(ORG, true).pipe(Effect.flip)
+				assert.strictEqual(unproven._tag, "@maple/http/enterprise-sso/EnterpriseSsoDomainProofError")
+
+				// An unanswered lookup is not a proof either.
+				world.dns.set(RECORD, published)
+				dnsOutage.current = true
+				const unanswered = yield* sso.setEnforcement(ORG, true).pipe(Effect.flip)
+				assert.strictEqual(
+					unanswered._tag,
+					"@maple/http/enterprise-sso/EnterpriseSsoUnavailableError",
+				)
+				assert.match(unanswered.message, /Try again/)
+				dnsOutage.current = false
+				assert.strictEqual((yield* sso.get(ORG)).connection?.enforced, false)
+
+				assert.strictEqual((yield* sso.setEnforcement(ORG, true)).connection?.enforced, true)
+				// Turning it off never waits on DNS.
+				dnsOutage.current = true
+				assert.strictEqual((yield* sso.setEnforcement(ORG, false)).connection?.enforced, false)
+			}),
+		)
+	})
+
+	it.effect(
+		"checks the TXT record of a domain an edit adds to the connection, not of the ones it keeps",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const world = { clerk: fakeClerk(), dns: new Map<string, Array<string>>(), entitled: true }
+			return run(
+				testDb,
+				world,
+				Effect.gen(function* () {
+					const sso = yield* EnterpriseSsoService
+					yield* verifiedDomain(world.dns, "acme.com")
+					yield* verifiedDomain(world.dns, "acme.io")
+					yield* sso.createConnection(ORG, ADMIN, samlRequest(["acme.com"]))
+					world.dns.delete("_maple-challenge.acme.com")
+					world.dns.delete("_maple-challenge.acme.io")
+
+					const added = yield* sso
+						.updateConnection(ORG, samlRequest(["acme.com", "acme.io"]))
+						.pipe(Effect.flip)
+					assert.strictEqual(added._tag, "@maple/http/enterprise-sso/EnterpriseSsoDomainProofError")
+					assert.isTrue(Str.includes("_maple-challenge.acme.io")(added.message))
+					assert.deepStrictEqual((yield* sso.get(ORG)).connection?.domains, ["acme.com"])
+
+					const renamed = yield* sso.updateConnection(
+						ORG,
+						new SsoConnectionRequest({ ...samlRequest(["acme.com"]), name: "Acme SSO" }),
+					)
+					assert.strictEqual(renamed.connection?.name, "Acme SSO")
+				}),
+			)
+		},
+	)
+
+	it.effect(
+		"removes the Clerk organization domain with an SSO domain, unless a connection of the organization still uses it",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const world = { clerk: fakeClerk(), dns: new Map<string, Array<string>>(), entitled: true }
+			return run(
+				testDb,
+				world,
+				Effect.gen(function* () {
+					const sso = yield* EnterpriseSsoService
+					yield* verifiedDomain(world.dns, "acme.com")
+					yield* verifiedDomain(world.dns, "acme.io")
+					yield* verifiedDomain(world.dns, "acme.dev")
+					// A connection Maple holds no row for still routes acme.io for this organization.
+					world.clerk.connections.set("ent_untracked", {
+						id: "ent_untracked",
+						name: "Old IdP",
+						provider: "saml_custom",
+						domains: ["acme.io"],
+						organizationId: ORG,
+						active: true,
+						createdAt: 1,
+						saml: null,
+						oidc: null,
+					})
+					yield* sso.removeDomain(ORG, "acme.io")
+					assert.deepStrictEqual(world.clerk.deletedDomains, [])
+
+					yield* sso.removeDomain(ORG, "acme.com")
+					assert.deepStrictEqual(world.clerk.deletedDomains, ["dmn_org_acme_acme.com"])
+
+					// Already gone in Clerk: the SSO domain is still removed.
+					world.clerk.domainGone = true
+					const left = yield* sso.removeDomain(ORG, "acme.dev")
+					assert.deepStrictEqual(left.domains, [])
+				}),
+			)
+		},
+	)
 })

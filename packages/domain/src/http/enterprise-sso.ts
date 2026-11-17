@@ -241,6 +241,25 @@ export class EnterpriseSsoConflictError extends HttpTaggedError<EnterpriseSsoCon
 	},
 ) {}
 
+/** A connection domain whose ownership TXT record is no longer published. */
+export class EnterpriseSsoDomainProofError extends HttpTaggedError<EnterpriseSsoDomainProofError>()(
+	"@maple/http/enterprise-sso/EnterpriseSsoDomainProofError",
+	{
+		message: Schema.String,
+		domain: Schema.String,
+		recordName: Schema.String,
+		recordValue: Schema.String,
+	},
+	{
+		status: 409,
+		code: "enterprise_sso_domain_proof_missing",
+		title: "Domain proof missing",
+		retry: "never",
+		recovery: "fix_request",
+		exposure: "public_message",
+	},
+) {}
+
 export class EnterpriseSsoNotFoundError extends HttpTaggedError<EnterpriseSsoNotFoundError>()(
 	"@maple/http/enterprise-sso/EnterpriseSsoNotFoundError",
 	{ message: Schema.String },
@@ -261,6 +280,7 @@ const writeErrors = [
 	EnterpriseSsoNotEntitledError,
 	EnterpriseSsoInvalidError,
 	EnterpriseSsoConflictError,
+	EnterpriseSsoDomainProofError,
 	EnterpriseSsoNotFoundError,
 ] as const
 

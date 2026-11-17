@@ -301,7 +301,7 @@ const pendingRecord = (h: H, model: Model, domain: SsoDomainDocument, isEntitled
 					: []),
 			]),
 			typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" }, [
-				"Add this TXT record at your DNS provider. DNS changes can take a few minutes to show.",
+				"Add this TXT record at your DNS provider and keep it there: it is checked again when you connect an identity provider or require SSO. DNS changes can take a few minutes to show.",
 			]),
 			keyValueList(h, { layout: "stacked" }, [
 				copyValue(h, model, `record-name-${domain.domain}`, "Name", domain.recordName),

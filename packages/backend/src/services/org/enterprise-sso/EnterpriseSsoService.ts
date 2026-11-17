@@ -2,6 +2,7 @@ import { customerHasFlag, ENTERPRISE_SCIM_FEATURE_ID, ENTERPRISE_SSO_FEATURE_ID 
 import {
 	EnterpriseSsoConflictError,
 	EnterpriseSsoDocument,
+	EnterpriseSsoDomainProofError,
 	EnterpriseSsoInvalidError,
 	EnterpriseSsoNotEntitledError,
 	EnterpriseSsoNotFoundError,
@@ -80,6 +81,7 @@ export type SsoWriteError =
 	| EnterpriseSsoNotEntitledError
 	| EnterpriseSsoInvalidError
 	| EnterpriseSsoConflictError
+	| EnterpriseSsoDomainProofError
 	| EnterpriseSsoNotFoundError
 
 const decodeIso = Schema.decodeUnknownSync(IsoDateTimeString)
@@ -574,7 +576,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 			) {
 				const domain = normalizeDomain(raw)
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.sso.domain": domain })
-				yield* requireDomainRow(orgId, domain)
+				const domainRow = yield* requireDomainRow(orgId, domain)
 				const row = yield* loadConnectionRow(orgId)
 				if (Option.isSome(row)) {
 					const connection = yield* orMissing(
@@ -587,13 +589,79 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 						})
 					}
 				}
-				// The Clerk organization domain stays: the Domains tab owns it and may use it for invitations.
+				// Clerk first, so a failed removal can be retried from the row. The domain and its ownership
+				// override stay only while another connection of this organization still routes it.
+				if (domainRow.clerkDomainId !== null) {
+					const stillUsed = yield* clerk
+						.orgConnectionDomains(orgId)
+						.pipe(Effect.mapError(fromClerk))
+					if (!Arr.contains(stillUsed, domain)) {
+						yield* clerk.deleteOrgDomain(orgId, domainRow.clerkDomainId).pipe(
+							Effect.catchIf(
+								(e) => e.status === 404,
+								() => Effect.void,
+							),
+							Effect.mapError(fromClerk),
+						)
+					}
+				}
 				yield* dbExecute((db) =>
 					db.run(
 						PG.deleteFrom(OrgSsoDomains).where(($) => [$.orgId.eq(orgId), $.domain.eq(domain)]),
 					),
 				)
 				return yield* get(orgId)
+			})
+
+			/**
+			 * Reads each domain's ownership record again. A domain proven once can change hands, so the
+			 * proof is checked whenever a connection starts to route the domain's sign-ins.
+			 */
+			const requireDomainProof = Effect.fn("EnterpriseSsoService.requireDomainProof")(function* (
+				orgId: OrgId,
+				domains: ReadonlyArray<string>,
+			) {
+				yield* Effect.annotateCurrentSpan({ "maple.sso.domains_rechecked": domains.length })
+				if (domains.length === 0) return
+				const rows = yield* loadDomains(orgId)
+				yield* Effect.forEach(
+					Arr.dedupe(Arr.map(domains, normalizeDomain)),
+					(domain): Effect.Effect<void, SsoWriteError> => {
+						const row = Arr.findFirst(rows, (r) => r.domain === domain && r.status === "verified")
+						if (Option.isNone(row)) {
+							return Effect.fail(
+								new EnterpriseSsoInvalidError({
+									message: `Verify ${domain} before using it for SSO.`,
+								}),
+							)
+						}
+						const recordName = challengeRecordName(domain)
+						const recordValue = row.value.challenge
+						return dns.lookupTxt(recordName).pipe(
+							// Fails closed: an unanswered lookup is not a proof.
+							Effect.mapError(
+								(error) =>
+									new EnterpriseSsoUnavailableError({
+										message: `Could not check the DNS record for ${domain}. Try again in a few seconds.`,
+										cause: error.message,
+									}),
+							),
+							Effect.flatMap((values) =>
+								values.includes(recordValue)
+									? Effect.void
+									: Effect.fail(
+											new EnterpriseSsoDomainProofError({
+												message: `The DNS record that proves ${domain} is yours is no longer published. Add a TXT record named ${recordName} with the value ${recordValue}, then try again.`,
+												domain,
+												recordName,
+												recordValue,
+											}),
+										),
+							),
+						)
+					},
+					{ concurrency: 5, discard: true },
+				)
 			})
 
 			/** The request's domains, all verified by this org, and the IdP settings its protocol needs. */
@@ -665,6 +733,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 					})
 				}
 				const input = yield* connectionInput(orgId, request, request.provider, "create")
+				yield* requireDomainProof(orgId, input.domains)
 				// Uninterruptible so a dropped request cannot strand a Clerk connection Maple never saved:
 				// one Maple cannot find again would claim the domains forever.
 				yield* Effect.uninterruptible(
@@ -703,6 +772,11 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 					.pipe(Effect.mapError(fromClerk))
 				const provider = isProvider(current.provider) ? current.provider : request.provider
 				const input = yield* connectionInput(orgId, request, provider, "update")
+				// A domain the connection did not route before starts to matter here.
+				yield* requireDomainProof(
+					orgId,
+					Arr.filter(input.domains, (d) => !Arr.contains(current.domains, d)),
+				)
 				yield* clerk.updateConnection(row.clerkConnectionId, input).pipe(Effect.mapError(fromClerk))
 				yield* touch(orgId)
 				return yield* get(orgId)
@@ -729,6 +803,12 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				if (enforced) yield* requireEntitled(orgId, "sso")
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.sso.enforced": enforced })
 				const row = yield* requireConnectionRow(orgId)
+				if (enforced) {
+					const connection = yield* clerk
+						.getConnection(row.clerkConnectionId)
+						.pipe(Effect.mapError(fromClerk))
+					yield* requireDomainProof(orgId, connection.domains)
+				}
 				yield* clerk
 					.updateConnection(row.clerkConnectionId, { active: enforced })
 					.pipe(Effect.mapError(fromClerk))
