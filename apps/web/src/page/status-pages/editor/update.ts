@@ -165,7 +165,8 @@ export const resolveView = (search: typeof StatusPageSearch.Type): EditorLocatio
 }
 
 /** The Settings sections whose fields change how the page looks, so the page's preview sits beside them. */
-export const PREVIEWED_SECTIONS: ReadonlyArray<SettingsSection> = ["basic", "monitors", "appearance"]
+// Not Basic settings: nothing there changes how the page looks, so a preview beside it only misleads.
+export const PREVIEWED_SECTIONS: ReadonlyArray<SettingsSection> = ["monitors", "appearance"]
 
 /** Whether the location draws the page in a frame whose components and incidents click. */
 export const hasClickablePreview = (location: EditorLocation): boolean =>
