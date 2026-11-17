@@ -282,6 +282,12 @@ export class PrReviewRepositoryConfig extends Schema.Class<PrReviewRepositoryCon
 	blockOnContractBreaks: Schema.optionalKey(Schema.Boolean),
 	/** Look at production after the merged pull request ships and say how it went. On by default. */
 	postMergeCheck: Schema.optionalKey(Schema.Boolean),
+	/**
+	 * Approve the pull request on GitHub when the review finds its blast radius low enough that no
+	 * person needs to read it ({@link prReviewAutoApproval}), and withdraw that approval when a
+	 * later review does not. Off by default. An approval never satisfies a CODEOWNERS rule.
+	 */
+	autoApprove: Schema.optionalKey(Schema.Boolean),
 }) {}
 
 /** Organization-wide review settings; absent fields use the deployment's defaults. */

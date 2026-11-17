@@ -5,6 +5,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { type H, nameSection, section, selectField, textField } from "./view-fields"
 import { hstack } from "@maple/views/ui/stack"
+import { keyValue, keyValueList } from "@maple/views/ui/key-value"
 import { Array as Arr } from "effect"
 import { destinationPicker } from "../../kit/destination-picker"
 
@@ -40,6 +41,27 @@ export const tcpSection = (h: H, model: Model): ReadonlyArray<Html> => [
 		]),
 	]),
 	nameSection(h, model, "Defaults to host:port"),
+]
+
+/** A multi-step check's steps, read only here: the form edits the settings around them. */
+export const multistepSection = (h: H, model: Model): ReadonlyArray<Html> => [
+	section(
+		h,
+		"Steps",
+		"Steps are set through the REST API (PATCH /v2/uptime_monitors/{id}); this form keeps them as they are.",
+		[
+			keyValueList(
+				h,
+				{ layout: "stacked", divided: true },
+				Arr.map(model.form.multistep?.steps ?? [], (step, index) =>
+					keyValue(h, { label: `Step ${index + 1} · ${step.name}`, mono: true, wrap: true }, [
+						`${step.method ?? "GET"} ${step.url}`,
+					]),
+				),
+			),
+		],
+	),
+	nameSection(h, model, "Name this check"),
 ]
 
 export const dnsSection = (h: H, model: Model): ReadonlyArray<Html> => [

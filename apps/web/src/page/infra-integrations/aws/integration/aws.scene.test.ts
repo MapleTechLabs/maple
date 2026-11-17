@@ -9,7 +9,14 @@ import { click, Command, expect as expectView, given, role, scene, text, withVie
 import { describe, expect, test } from "vitest"
 import * as Field from "@maple/views/ui/field"
 import { PageOutMessage, type PageContext } from "../../../contract"
-import { isMetricsPanelOpen, isSavingMetricsOf, LoadAwsSetup, metricsErrorOf, UpdateAwsModules } from "./aws"
+import {
+	isMetricsPanelOpen,
+	isSavingMetricsOf,
+	LoadAwsSetup,
+	metricsErrorOf,
+	moduleErrorOf,
+	UpdateAwsModules,
+} from "./aws"
 import { Message } from "../../../integrations/message"
 import type { Model } from "../../../integrations/model"
 import { init, update } from "../../../integrations/update"
@@ -642,6 +649,89 @@ describe("aws card", () => {
 			"ReadAwsRemovedStacks",
 		)
 	})
+	describe("the Security scan module", () => {
+		const SECURITY_MODULE = {
+			module: "security",
+			title: "Security scan",
+			summary: "GuardDuty, Security Hub, Inspector and Access Analyzer findings, and CloudTrail.",
+			available: true,
+		} as const
+		const withSecurity = (connections: ReadonlyArray<V2AwsConnection>): Model =>
+			pageUpdate(
+				entered(),
+				Message.CompletedLoadAws({
+					key: statusKey(context, "aws"),
+					result: Result.succeed({
+						object: "aws_integration",
+						available: true,
+						modules: [COST_MODULE, SECURITY_MODULE],
+						connections,
+					} satisfies V2AwsIntegration),
+				}),
+			).model
+		const verified = (overrides: Partial<V2AwsConnection> = {}) =>
+			connection({
+				verified_at: "2026-10-23T08:00:00.000Z",
+				template_version: 2,
+				granted_modules: [],
+				...overrides,
+			})
+		const securitySwitch = role("switch", { name: "Security scan" })
+
+		test("granted, it reads and links to the cloud findings", () => {
+			scene(
+				{ update: pageUpdate, view },
+				given(withSecurity([verified({ modules: ["security"], granted_modules: ["security"] })])),
+				expectView(securitySwitch).toBeChecked(),
+				expectView(text("Reading")).toExist(),
+				expectView(role("link", { name: "Open cloud findings" })).toExist(),
+			)
+		})
+
+		test("asked for but not granted, it says the stack needs an update", () => {
+			scene(
+				{ update: pageUpdate, view },
+				given(withSecurity([verified({ modules: ["security"] })])),
+				expectView(securitySwitch).toBeChecked(),
+				expectView(text("Needs a stack update")).toExist(),
+			)
+		})
+
+		test("its switch asks for the module beside the others", () => {
+			const model = withSecurity([verified({ modules: ["cost"], granted_modules: ["cost"] })])
+			expect(
+				pageUpdate(model, Message.ToggledAwsModule({ id: connectionId, module: "security" }))
+					.commands,
+			).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						name: UpdateAwsModules.name,
+						args: { id: connectionId, modules: ["cost", "security"] },
+					}),
+				]),
+			)
+		})
+
+		test("a refused change shows its reason under its own switch only", () => {
+			const model = withSecurity([verified({ modules: ["cost"], granted_modules: ["cost"] })])
+			const saving = pageUpdate(
+				model,
+				Message.ToggledAwsModule({ id: connectionId, module: "security" }),
+			).model
+			const refused = pageUpdate(
+				saving,
+				Message.CompletedAwsModules({
+					id: connectionId,
+					connection: null,
+					error: "Not allowed here",
+				}),
+			).model
+			const save = refused.awsCard.moduleSave
+			expect(moduleErrorOf(save, connectionId, "security")).toBe("Not allowed here")
+			expect(moduleErrorOf(save, connectionId, "cost")).toBeNull()
+		})
+	})
+
 	describe("the Cost module", () => {
 		const verified_at = Schema.decodeSync(Timestamp)("2026-10-21T12:05:00.000Z")
 		const verified = (overrides: Partial<V2AwsConnection> = {}) =>
@@ -861,7 +951,7 @@ describe("aws card", () => {
 				given(member),
 				expectView(costSwitch).toBeDisabled(),
 				expectView(
-					text("Only org admins and engineers can change what Maple reads from AWS."),
+					role("group", { name: "Only org admins and engineers can manage integrations." }),
 				).toExist(),
 			)
 			expect(

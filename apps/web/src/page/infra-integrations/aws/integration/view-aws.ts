@@ -27,6 +27,8 @@ import {
 	moduleStateOf,
 	offeredModule,
 	selectionOf,
+	AWS_OPT_IN_MODULES,
+	type AwsOptInModule,
 } from "./aws"
 import {
 	AWS_CONDITION_LABEL,
@@ -36,6 +38,7 @@ import {
 } from "../../../integrations/derive"
 import { Message } from "../../../integrations/message"
 import { canManage, type Model } from "../../../integrations/model"
+import { denialReason } from "../../../kit/session-grants"
 import { dataPicker } from "./view-aws-choose"
 import { CLOUDSHELL_URL, fileBlock, methodSelect, SMALL, setupBody } from "./view-aws-setup"
 import { disconnectConfirm } from "../../../integrations/view-disconnect"
@@ -55,7 +58,40 @@ const COST_HREF = hrefOf(AppRoute.Cost({ search: {} }))
 
 const COST_BILLING_NOTE = "AWS bills USD 0.01 per Cost Explorer request."
 
-const MODULES_ADMIN_ONLY = "Only org admins and engineers can change what Maple reads from AWS."
+interface ModuleRow {
+	readonly module: AwsOptInModule
+	readonly icon: IconName
+	readonly waiting: string
+	readonly needsUpdate: string
+	readonly reading: string
+	readonly href: string
+	readonly open: string
+}
+
+/** How each opt-in module reads on a connection card; a module with no row here is a type error. */
+const MODULE_ROWS = {
+	cost: {
+		module: "cost",
+		icon: "CircleDollarIcon",
+		waiting: "Maple starts reading this account's cost once the stack is deployed.",
+		needsUpdate:
+			"The role does not allow cost reads yet. Update the stack to add read-only billing access.",
+		reading: `Maple reads this account's daily spend. ${COST_BILLING_NOTE}`,
+		href: COST_HREF,
+		open: "Open Cost",
+	},
+	security: {
+		module: "security",
+		icon: "ShieldCheckIcon",
+		waiting: "Maple starts reading this account's security findings once the stack is deployed.",
+		needsUpdate:
+			"The role does not allow security reads yet. Update the stack to add read-only security access.",
+		reading:
+			"Maple reads GuardDuty, Security Hub, Inspector and Access Analyzer findings, and CloudTrail changes, in every enabled region.",
+		href: hrefOf(AppRoute.SecurityCloud({ search: {} })),
+		open: "Open cloud findings",
+	},
+} as const satisfies Record<AwsOptInModule, ModuleRow>
 
 const CONDITION_VARIANT = {
 	setup: "muted",
@@ -529,9 +565,15 @@ type CostRowState = Readonly<{
 	action: Html | null
 }>
 
-/** What the Cost module is doing on this connection: off, waiting for the stack, or being read. */
-const costState = (h: H, model: Model, connection: V2AwsConnection, info: AwsModuleInfo): CostRowState => {
-	switch (moduleStateOf(connection, "cost")) {
+/** What a module is doing on this connection: off, waiting for the stack, or being read. */
+const moduleState = (
+	h: H,
+	model: Model,
+	connection: V2AwsConnection,
+	row: ModuleRow,
+	info: AwsModuleInfo,
+): CostRowState => {
+	switch (moduleStateOf(connection, row.module)) {
 		case "off":
 			return { badge: null, description: info.summary, action: null }
 		case "ungranted":
@@ -539,59 +581,60 @@ const costState = (h: H, model: Model, connection: V2AwsConnection, info: AwsMod
 			return connection.verified_at === null
 				? {
 						badge: { variant: "muted", label: "Waiting for the stack" },
-						description: "Maple starts reading this account's cost once the stack is deployed.",
+						description: row.waiting,
 						action: null,
 					}
 				: {
 						badge: { variant: "warn", label: "Needs a stack update" },
-						description:
-							"The role does not allow cost reads yet. Update the stack to add read-only billing access.",
+						description: row.needsUpdate,
 						action: setupToggle(h, model, connection, "Update the stack"),
 					}
 		case "granted":
 			return {
 				badge: { variant: "ok", label: "Reading" },
-				description: `Maple reads this account's daily spend. ${COST_BILLING_NOTE}`,
-				action: linkButton(h, { size: "sm", variant: "outline", href: COST_HREF }, ["Open Cost"]),
+				description: row.reading,
+				action: linkButton(h, { size: "sm", variant: "outline", href: row.href }, [row.open]),
 			}
 	}
 }
 
-/** The Cost module's switch and state; only for an org the status offers the module to. */
-const costRow = (h: H, model: Model, connection: V2AwsConnection, info: AwsModuleInfo): Html => {
+/** A module's switch and state; only for an org the status offers the module to. */
+const moduleRow = (
+	h: H,
+	model: Model,
+	connection: V2AwsConnection,
+	row: ModuleRow,
+	info: AwsModuleInfo,
+): Html => {
 	const save = model.awsCard.moduleSave
-	const error = moduleErrorOf(save, connection.id)
-	const state = costState(h, model, connection, info)
+	const error = moduleErrorOf(save, connection.id, row.module)
+	const state = moduleState(h, model, connection, row, info)
 	return switchRow(
 		h,
 		{
-			id: `aws-cost-${connection.id}`,
+			id: `aws-${row.module}-${connection.id}`,
 			framed: true,
-			icon: icon(h, "CircleDollarIcon", { size: 16, className: "mt-0.5 text-muted-foreground" }),
+			icon: icon(h, row.icon, { size: 16, className: "mt-0.5 text-muted-foreground" }),
 			label: info.title,
 			...(state.badge !== null && {
 				status: badge(h, { variant: state.badge.variant }, [state.badge.label]),
 			}),
 			description: state.description,
-			isChecked: moduleStateOf(connection, "cost") !== "off",
-			isDisabled: !canManage(model) || save._tag === "Saving",
-			onToggle: Message.ToggledAwsModule({ id: connection.id, module: "cost" }),
+			isChecked: moduleStateOf(connection, row.module) !== "off",
+			isDisabled: save._tag === "Saving",
+			...(!canManage(model) && { lockReason: denialReason("integrations:manage") }),
+			onToggle: Message.ToggledAwsModule({ id: connection.id, module: row.module }),
 			before: state.action === null ? [] : [state.action],
 		},
-		[
-			...(error === null
-				? []
-				: [
-						typography(
-							h,
-							{ size: "xs", tone: "destructive", as: "p", attributes: [h.Role("alert")] },
-							[error],
-						),
-					]),
-			...(canManage(model)
-				? []
-				: [typography(h, { size: "2xs", tone: "muted", as: "p" }, [MODULES_ADMIN_ONLY])]),
-		],
+		error === null
+			? []
+			: [
+					typography(
+						h,
+						{ size: "xs", tone: "destructive", as: "p", attributes: [h.Role("alert")] },
+						[error],
+					),
+				],
 	)
 }
 
@@ -625,10 +668,12 @@ const connectionRow = (
 				deliveryStep(h, model, connection, timeZone),
 			]),
 			...ingestPanel(h, model, connection, timeZone),
-			...Option.match(offeredModule(status, "cost"), {
-				onNone: () => [],
-				onSome: (info) => [costRow(h, model, connection, info)],
-			}),
+			...Arr.flatMap(AWS_OPT_IN_MODULES, (module) =>
+				Option.match(offeredModule(status, module), {
+					onNone: () => [],
+					onSome: (info) => [moduleRow(h, model, connection, MODULE_ROWS[module], info)],
+				}),
+			),
 		],
 		actions: hstack(h, { gap: "2", align: "stretch", wrap: true, className: "pt-1" }, [
 			// The stack's script: it finishes a setup, which is the one thing to do then, and

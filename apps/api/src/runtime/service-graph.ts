@@ -136,6 +136,8 @@ import { ProductEventsService } from "@maple/backend/services/product-events/Pro
 
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { AuditTrailService } from "@maple/backend/services/audit-trail/AuditTrailService"
+import { CloudSecurityReadService } from "@maple/backend/services/cloud-security/CloudSecurityReadService"
+import { CloudSecurityEventsService } from "@maple/backend/services/cloud-security/CloudSecurityEventsService"
 import { AuditDetectionsService } from "@maple/backend/services/audit-trail/AuditDetectionsService"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -211,7 +213,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	StatusPagesService.layer,
 	// Custom domains: Cloudflare for SaaS hostnames, unavailable where its zone is not configured.
 	StatusPageCustomDomainsService.layer,
-	// Rollout gates on the data sources and cloud cost routes.
+	// The `statusPages` rollout gate on the status page routes.
 	OrganizationFeatureFlagsService.layer,
 	// Read-only: previews of unsaved pages.
 	StatusPageSnapshotBuilder.layer,
@@ -253,6 +255,8 @@ export const HttpServicesLive = Layer.mergeAll(
 	ServiceMapWorldService.layer,
 	AuditLogService.layer,
 	AuditTrailService.layer,
+	CloudSecurityReadService.layer,
+	CloudSecurityEventsService.layer,
 	AuditDetectionsService.layer,
 	IntegrationInventoryService.layer,
 	WarehouseQueryService.layer,

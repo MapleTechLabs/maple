@@ -19,7 +19,8 @@ const granted = [
 ]
 
 // AWS names reads with these verbs; any other verb (Put, Create, Pass, Invoke...) can change the account.
-const READ_VERB = /^[a-z0-9-]+:(Get|List|Describe|Search|BatchGet)[A-Za-z0-9]*$/
+// `cloudtrail:LookupEvents` is CloudTrail's read of its own event history.
+const READ_VERB = /^([a-z0-9-]+:(Get|List|Describe|Search|BatchGet)[A-Za-z0-9]*|cloudtrail:LookupEvents)$/
 
 describe("the role Maple assumes in a customer account", () => {
 	it("grants only read actions, none of them wildcards, with every module on", () => {

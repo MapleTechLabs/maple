@@ -19,10 +19,12 @@ import { update as pageUpdate } from "../page/alerts/uptime-monitor/update"
 import {
 	CHART_TOKENS,
 	checksScatterPanel,
+	lastCheckPanel,
 	phaseBreakdownPanel,
 	responseTimePanel,
 } from "../page/alerts/uptime-monitor/view-panels"
 import type { Resources } from "../platform/resources"
+import { httpMonitor } from "../page/kit/uptime/test-monitors"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // `/lab/uptime`: the HTTP monitor page's three charts over a fixture shaped like production checks
@@ -216,6 +218,20 @@ export const update = (model: Model, message: Message): Return => {
 	return { model: next.model, commands: withoutReads(next.commands) }
 }
 
+/** The HTTP fixture monitor with a certificate `days` from now: healthy, inside the warning window, expired. */
+const withCertificate = (days: number) => {
+	const monitor = httpMonitor()
+	const last = monitor.state.last_check
+	if (last === null) return monitor
+	const certificate = {
+		expires_at: new Date(NOW_MS + days * 86_400_000).toISOString(),
+		subject: "checkout.example.com",
+		issuer: "R11",
+	}
+	return httpMonitor({ state: { ...monitor.state, last_check: { ...last, certificate } } })
+}
+const CERTIFICATE_FIXTURES = [withCertificate(62), withCertificate(9), withCertificate(-2)]
+
 export const view = (model: Model, h: HtmlBuilder<Message>): Html => {
 	const timeZone = "UTC"
 	const context =
@@ -237,6 +253,10 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Html => {
 								panel === null ? [] : [panel],
 							),
 						],
+					),
+					h.div(
+						[h.Class("flex min-w-0 flex-col gap-4")],
+						Arr.map(CERTIFICATE_FIXTURES, (monitor) => lastCheckPanel(h, monitor, NOW_MS)),
 					),
 				],
 			),

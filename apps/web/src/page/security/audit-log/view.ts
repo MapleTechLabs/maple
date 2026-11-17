@@ -75,6 +75,7 @@ import {
 } from "./derive"
 import { accessOf, Message, type Model, type SelectFilter } from "./model"
 import { sourcesPanel } from "./view-sources"
+import { panelToolbar } from "../../kit/panel-toolbar"
 
 type H = HtmlBuilder<Message>
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
@@ -137,7 +138,7 @@ const alertControl = (h: H, model: Model): Html | undefined => {
 }
 
 const toolbar = (h: H, model: Model): Html =>
-	hstack(h, { gap: "2", align: "center", wrap: true, className: "border-b px-4 py-2.5" }, [
+	panelToolbar(h, [
 		filterSelect(
 			h,
 			"provider",
@@ -506,12 +507,21 @@ const isRefused = (model: Model): boolean =>
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const clock = { nowMs: model.nowMs, timeZone: inputs.context.timeZone }
 	if (accessOf(model) === "unknown")
-		return securityLayout(h, { source: "auditLog" }, [placeholderRows(h, 6)])
-	if (isRefused(model)) return securityLayout(h, { source: "auditLog" }, [adminsOnly(h)])
+		return securityLayout(h, { hasCloud: inputs.context.hasCloudSecurity === true, source: "auditLog" }, [
+			placeholderRows(h, 6),
+		])
+	if (isRefused(model))
+		return securityLayout(h, { hasCloud: inputs.context.hasCloudSecurity === true, source: "auditLog" }, [
+			adminsOnly(h),
+		])
 	return securityLayout(
 		h,
 		// In the header, beside the title: the toolbar is full at laptop width and would wrap it.
-		{ source: "auditLog", actions: alertControl(h, model) },
+		{
+			hasCloud: inputs.context.hasCloudSecurity === true,
+			source: "auditLog",
+			actions: alertControl(h, model),
+		},
 		[
 			...Arr.filter([sourcesPanel(h, model, clock)], (part): part is Html => part !== null),
 			panel(h, { className: "overflow-hidden" }, [toolbar(h, model), listBody(h, model, clock)]),

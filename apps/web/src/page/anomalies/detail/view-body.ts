@@ -8,6 +8,7 @@ import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { button, linkButton } from "@maple/views/ui/button"
+import { gatedBy } from "../../kit/gated-controls"
 import { badge } from "@maple/views/ui/display"
 import { card, cardPanel } from "@maple/views/ui/card"
 import { detailTitle } from "../../kit/detail-header"
@@ -82,28 +83,28 @@ const cardActions = (
 			},
 			["Open issue", icon(h, "ArrowRightIcon")],
 		),
-		...(canRespond
-			? [
-					iconButton(
-						h,
-						{
-							label: "Link a different issue",
-							isDisabled: isBusy,
-							attributes: [h.OnClick(Message.ClickedLinkIssue())],
-						},
-						[icon(h, "LinkIcon")],
-					),
-					iconButton(
-						h,
-						{
-							label: "Unlink issue",
-							isDisabled: isBusy,
-							attributes: [h.OnClick(Message.ClickedUnlink())],
-						},
-						[icon(h, "XmarkIcon")],
-					),
-				]
-			: []),
+		gatedBy(h, canRespond, "incidents:respond", (isLocked) =>
+			iconButton(
+				h,
+				{
+					label: "Link a different issue",
+					isDisabled: isLocked || isBusy,
+					attributes: [h.OnClick(Message.ClickedLinkIssue())],
+				},
+				[icon(h, "LinkIcon")],
+			),
+		),
+		gatedBy(h, canRespond, "incidents:respond", (isLocked) =>
+			iconButton(
+				h,
+				{
+					label: "Unlink issue",
+					isDisabled: isLocked || isBusy,
+					attributes: [h.OnClick(Message.ClickedUnlink())],
+				},
+				[icon(h, "XmarkIcon")],
+			),
+		),
 	])
 
 export const linkedIssueCard = (
@@ -150,20 +151,18 @@ export const linkedIssueCard = (
 									]),
 						],
 					),
-					...(canRespond
-						? [
-								button(
-									h,
-									{
-										size: "sm",
-										variant: "outline",
-										isDisabled: isBusy,
-										attributes: [h.OnClick(Message.ClickedLinkIssue())],
-									},
-									[icon(h, "LinkIcon"), "Link issue"],
-								),
-							]
-						: []),
+					gatedBy(h, canRespond, "incidents:respond", (isLocked) =>
+						button(
+							h,
+							{
+								size: "sm",
+								variant: "outline",
+								isDisabled: isLocked || isBusy,
+								attributes: [h.OnClick(Message.ClickedLinkIssue())],
+							},
+							[icon(h, "LinkIcon"), "Link issue"],
+						),
+					),
 				]),
 			],
 		)

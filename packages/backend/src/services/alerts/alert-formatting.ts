@@ -8,6 +8,7 @@ import {
 import { Match, Option, String as Str } from "effect"
 import { resolveSignalDisplay, type SignalDisplay } from "./alert-signal-display"
 import type { NotificationTemplateConfig } from "./alert-templating/renderer"
+import { UPTIME_CERTIFICATE_GROUP_KEY } from "@maple/domain/uptime"
 
 export interface TemplateRenderContext {
 	readonly ruleId: string
@@ -261,7 +262,7 @@ export const formatObservedSummary = (context: ObservedContext): string =>
  */
 export const formatAlertHeadline = (
 	context: Pick<TemplateRenderContext, "signalType" | "ruleName" | "eventType" | "value"> &
-		Partial<Pick<TemplateRenderContext, "severity" | "detail">>,
+		Partial<Pick<TemplateRenderContext, "severity" | "detail" | "groupKey">>,
 ): string => {
 	// An anomaly names what moved, e.g. `Critical anomaly: error rate 4.2% vs baseline 0.3% in checkout`.
 	if (context.signalType === "anomaly" && context.detail != null) {
@@ -270,6 +271,12 @@ export const formatAlertHeadline = (
 			const severity = context.severity === undefined ? "" : `${formatSeverityLabel(context.severity)} `
 			return Str.capitalize(`${severity}anomaly: ${context.detail}`)
 		}
+	}
+	// A monitor's certificate group is a warning ahead of expiry, never an outage.
+	if (context.signalType === "uptime" && context.groupKey === UPTIME_CERTIFICATE_GROUP_KEY) {
+		if (context.eventType === "trigger") return `${context.ruleName}: certificate expires soon`
+		if (context.eventType === "renotify") return `${context.ruleName}: certificate still expiring`
+		if (context.eventType === "resolve") return `${context.ruleName}: certificate renewed`
 	}
 	if (context.signalType === "uptime") {
 		if (context.eventType === "trigger") return `${context.ruleName} is down`

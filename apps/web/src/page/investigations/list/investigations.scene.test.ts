@@ -1,7 +1,7 @@
 import { OrgId } from "@maple/domain"
 import * as Policy from "@maple/domain/policy"
 import { Result, Schema, Array as Arr } from "effect"
-import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
+import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MeasureTabIndicator, Message as TabsMessage } from "@maple/views/ui/tabs"
@@ -104,7 +104,7 @@ describe("investigations list", () => {
 		)
 	})
 
-	test("the budget notice offers Raise the limit to org admins only", () => {
+	test("the budget notice offers Raise the limit to org admins, and shows it locked to anyone else", () => {
 		const entered = init({ search: {} }, context).model
 		const budget: TriageBudget = {
 			enabled: true,
@@ -122,7 +122,10 @@ describe("investigations list", () => {
 			{ update: pageUpdate, view },
 			given(member),
 			measured(),
-			expectView(text("Raise the limit")).not.toExist(),
+			expectView(role("button", { name: "Raise the limit" })).toBeDisabled(),
+			expectView(
+				role("group", { name: "Only org admins can manage the organization's model provider keys." }),
+			).toExist(),
 		)
 		// The limit is on the AI settings tab, which an engineer cannot open.
 		const engineer = pageUpdate(
@@ -133,7 +136,10 @@ describe("investigations list", () => {
 			{ update: pageUpdate, view },
 			given(engineer),
 			measured(),
-			expectView(text("Raise the limit")).not.toExist(),
+			expectView(role("button", { name: "Raise the limit" })).toBeDisabled(),
+			expectView(
+				role("group", { name: "Only org admins can manage the organization's model provider keys." }),
+			).toExist(),
 		)
 		const admin = pageUpdate(
 			member,
@@ -143,7 +149,7 @@ describe("investigations list", () => {
 			{ update: pageUpdate, view },
 			given(admin),
 			measured(),
-			expectView(text("Raise the limit")).toExist(),
+			expectView(role("link", { name: "Raise the limit" })).toExist(),
 		)
 		const otherOrg = pageUpdate(
 			member,

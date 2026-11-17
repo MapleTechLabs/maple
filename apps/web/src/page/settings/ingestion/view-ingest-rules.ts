@@ -3,7 +3,8 @@ import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { linkButton } from "@maple/views/ui/button"
+import { button, linkButton } from "@maple/views/ui/button"
+import { lockedControl } from "@maple/views/ui/locked-control"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { badge } from "@maple/views/ui/display"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
@@ -23,6 +24,7 @@ import { newRuleHref } from "../ingest-rule/hrefs"
 import { SIGNAL_LABELS, summaryParts } from "../ingest-rule/summary"
 import { TEMPLATE_IDS, TEMPLATES } from "../ingest-rule/templates"
 import { settingsSection } from "../../kit/settings-section"
+import { denialReason } from "../../kit/session-grants"
 import { hourlyMatches, menuIdOf, Message as RulesMessage, type Model } from "./ingest-rules"
 import { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
@@ -38,8 +40,29 @@ const ACTION_BADGE = {
 	redact: { label: "Redact", variant: "info" },
 } as const
 
-const addRuleButton = (h: H) =>
-	linkButton(h, { size: "sm", href: newRuleHref() }, [
+const DENIAL = denialReason("ingest_rules:manage")
+
+/** `control` as is, or locked with the denial for a viewer who cannot manage rules. */
+const gate = (h: H, canManage: boolean, control: Html): Html =>
+	canManage ? control : lockedControl(h, DENIAL, control)
+
+/** A link to the rule editor, or the same label disabled with the denial for a viewer who cannot manage rules. */
+const ruleLink = (
+	h: H,
+	canManage: boolean,
+	options: Readonly<{ href: string; variant?: "outline" }>,
+	children: ReadonlyArray<Html | string>,
+): Html =>
+	canManage
+		? linkButton(h, { size: "sm", ...options }, children)
+		: lockedControl(
+				h,
+				DENIAL,
+				button(h, { size: "sm", variant: options.variant, isDisabled: true }, children),
+			)
+
+const addRuleButton = (h: H, canManage: boolean) =>
+	ruleLink(h, canManage, { href: newRuleHref() }, [
 		icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
 		"Add rule",
 	])
@@ -57,19 +80,34 @@ const summary = (h: H, rule: V2IngestRule): Html =>
 		),
 	)
 
-const rowEntries = (index: number, count: number): ReadonlyArray<MenuView.MenuEntry> => {
-	const up: MenuView.MenuEntry = { _tag: "Item", value: "up", label: "Move up", icon: "ArrowUpIcon" }
+const rowEntries = (canManage: boolean, index: number, count: number): ReadonlyArray<MenuView.MenuEntry> => {
+	const locked = canManage ? {} : { isDisabled: true, tooltip: { content: [DENIAL] } }
+	const up: MenuView.MenuEntry = {
+		_tag: "Item",
+		value: "up",
+		label: "Move up",
+		icon: "ArrowUpIcon",
+		...locked,
+	}
 	const down: MenuView.MenuEntry = {
 		_tag: "Item",
 		value: "down",
 		label: "Move down",
 		icon: "ArrowDownIcon",
+		...locked,
 	}
 	return [
-		{ _tag: "Item", value: "edit", label: "Edit rule", icon: "PencilIcon" },
+		{ _tag: "Item", value: "edit", label: "Edit rule", icon: "PencilIcon", ...locked },
 		...(index > 0 ? [up] : []),
 		...(index < count - 1 ? [down] : []),
-		{ _tag: "Item", value: "delete", label: "Delete rule", icon: "TrashIcon", variant: "destructive" },
+		{
+			_tag: "Item",
+			value: "delete",
+			label: "Delete rule",
+			icon: "TrashIcon",
+			variant: "destructive",
+			...locked,
+		},
 	]
 }
 
@@ -141,34 +179,33 @@ const ruleRow = (
 			),
 			hstack(h, { align: "stretch", shrink: true, grow: true }, [summary(h, rule)]),
 			hitsCell(h, model, rule),
-			hstack(
-				h,
-				{ align: "center", className: "w-10 shrink-0" },
-				canManage
-					? switchControl(h, {
+			hstack(h, { align: "center", className: "w-10 shrink-0" }, [
+				gate(
+					h,
+					canManage,
+					hstack(
+						h,
+						{ inline: true, as: "span" },
+						switchControl(h, {
 							id: `${menuId}-switch`,
 							inputId: `${menuId}-switch-input`,
 							isChecked: rule.enabled,
-							isDisabled: model.pending.includes(rule.id),
+							isDisabled: !canManage || model.pending.includes(rule.id),
 							ariaLabel: `${rule.enabled ? "Turn off" : "Turn on"} ${rule.name}`,
 							onToggle: lift(RulesMessage.Toggled({ id: rule.id })),
-						})
-					: [typography(h, { size: "xs" }, [rule.enabled ? "On" : "Off"])],
-			),
-			...(canManage
-				? [
-						hstack(h, { align: "stretch", justify: "end", className: "w-7 shrink-0" }, [
-							rowActionsMenu(h, {
-								slotId: menuId,
-								model: model.menus[menuId] ?? Menu.init(menuId),
-								entries: rowEntries(index, count),
-								label: `Actions for ${rule.name}`,
-								toParentMessage: (message) =>
-									lift(RulesMessage.GotRowMenuMessage({ menuId, message })),
-							}),
-						]),
-					]
-				: []),
+						}),
+					),
+				),
+			]),
+			hstack(h, { align: "stretch", justify: "end", className: "w-7 shrink-0" }, [
+				rowActionsMenu(h, {
+					slotId: menuId,
+					model: model.menus[menuId] ?? Menu.init(menuId),
+					entries: rowEntries(canManage, index, count),
+					label: `Actions for ${rule.name}`,
+					toParentMessage: (message) => lift(RulesMessage.GotRowMenuMessage({ menuId, message })),
+				}),
+			]),
 		],
 	)
 }
@@ -185,7 +222,7 @@ const rulesTable = (h: H, model: Model, canManage: boolean, rules: ReadonlyArray
 					"Last 24h",
 				]),
 				eyebrow(h, { variant: "mono", className: "w-10 shrink-0", as: "div" }, ["On"]),
-				...(canManage ? [h.div([h.Class("w-7 shrink-0")], [])] : []),
+				h.div([h.Class("w-7 shrink-0")], []),
 			]),
 			...Arr.map(rules, (rule, index) => ruleRow(h, model, canManage, rule, index, rules.length)),
 		],
@@ -202,18 +239,14 @@ const rulesEmpty = (h: H, canManage: boolean): Html =>
 					"Drop noisy records or redact sensitive values before Maple stores them. Dropped data is not billed.",
 				]),
 			]),
-			...(canManage
-				? [
-						emptyActions(
-							h,
-							Arr.map(TEMPLATE_IDS, (id) =>
-								linkButton(h, { variant: "outline", size: "sm", href: newRuleHref(id) }, [
-									TEMPLATES[id].label,
-								]),
-							),
-						),
-					]
-				: []),
+			emptyActions(
+				h,
+				Arr.map(TEMPLATE_IDS, (id) =>
+					ruleLink(h, canManage, { variant: "outline", href: newRuleHref(id) }, [
+						TEMPLATES[id].label,
+					]),
+				),
+			),
 		],
 		"py-10",
 	)
@@ -239,7 +272,7 @@ export const ingestRulesSection = (h: H, model: Model, canManage: boolean): Html
 				"Drop or redact telemetry before it is stored or billed. Applies to new data only.",
 			],
 			padded: false,
-			actions: canManage ? addRuleButton(h) : undefined,
+			actions: addRuleButton(h, canManage),
 		},
 		[
 			h.div(

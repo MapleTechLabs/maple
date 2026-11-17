@@ -7,6 +7,7 @@ import { type RecordedRequest, stubFetch } from "./testing/stub-fetch"
 import { fixedResolver, mkUptimeTarget } from "./testing/uptime"
 import { UptimeDnsProbe } from "./UptimeDnsProbe"
 import { UptimeHttpProbe } from "./UptimeHttpProbe"
+import { UptimeMultiStepProbe } from "./UptimeMultiStepProbe"
 import { UptimeProber } from "./UptimeProber"
 import { UptimeSpanExporter } from "./UptimeSpanExporter"
 import { toOtlpSpan, type UptimeCheckSpan } from "./UptimeSpans"
@@ -17,7 +18,7 @@ const proberLayer = (exported: Array<UptimeCheckSpan>) =>
 	UptimeProber.layer.pipe(
 		Layer.provide(
 			Layer.mergeAll(
-				UptimeHttpProbe.layer,
+				UptimeMultiStepProbe.layer.pipe(Layer.provideMerge(UptimeHttpProbe.layer)),
 				UptimeTcpProbe.layer,
 				UptimeDnsProbe.layer,
 				Layer.succeed(UptimeSpanExporter, {
@@ -41,7 +42,7 @@ describe("UptimeProber", () => {
 			const tracer = makeCapturingTracer()
 			const report = yield* Effect.gen(function* () {
 				const prober = yield* UptimeProber
-				return yield* prober.check(mkUptimeTarget())
+				return yield* prober.check(mkUptimeTarget({ revision: 1_700_000_000_000 }))
 			}).pipe(
 				Effect.provide(Layer.merge(proberLayer(exported), tracer.layer)),
 				Effect.provideService(
@@ -55,6 +56,8 @@ describe("UptimeProber", () => {
 			assert.match(span.spanId, /^[0-9a-f]{16}$/)
 			assert.strictEqual(recorded[0]?.headers.traceparent, `00-${span.traceId}-${span.spanId}-01`)
 			assert.strictEqual(report.traceId, span.traceId)
+			// The report names the settings it ran against, so the API can spot a stale target.
+			assert.strictEqual(report.targetRevision, 1_700_000_000_000)
 			assert.deepStrictEqual(
 				{ ok: report.ok, statusCode: report.statusCode, error: report.error },
 				{ ok: false, statusCode: 503, error: "Status 503, expected 2xx" },

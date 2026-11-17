@@ -502,7 +502,7 @@ export const ciRunsSkeleton = <M>(h: HtmlBuilder<M>, isNested = false): Html =>
 		{
 			as: "ul",
 			className: "-mx-2",
-			attributes: [...(isNested ? [] : [h.AriaBusy(true), h.AriaLabel("Loading CI runs")])],
+			attributes: isNested ? [] : [h.AriaBusy(true), h.AriaLabel("Loading CI runs")],
 		},
 		rows(3, (index) =>
 			hstack(h, { gap: "3", align: "center", as: "li", className: "h-8 px-2 py-1" }, [

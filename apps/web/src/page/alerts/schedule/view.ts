@@ -40,7 +40,7 @@ import {
 	scheduleOf,
 } from "./update"
 import { dividedList } from "@maple/views/ui/rule"
-import { canManageAlerts } from "../../kit/session-grants"
+import { canManageAlerts, gatedControl } from "../../kit/session-grants"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
 type H = HtmlBuilder<Message>
@@ -169,22 +169,20 @@ const overrideRow = (h: H, model: Model, schedule: V2OnCallSchedule, override: V
 						schedule.time_zone,
 					),
 				}),
-				...(canManageAlerts(model)
-					? [
-							iconButton(
-								h,
-								{
-									label: `Delete ${name}'s override, ${rangeText(toEpochMs(override.starts_at), toEpochMs(override.ends_at), schedule.time_zone)}`,
-									isDisabled: model.deletingOverrideId === override.id,
-									className: "text-muted-foreground",
-									attributes: [
-										h.OnClick(Message.ClickedDeleteOverride({ overrideId: override.id })),
-									],
-								},
-								[icon(h, "TrashIcon")],
-							),
-						]
-					: []),
+				gatedControl(h, model, "alerts:manage", (isLocked) =>
+					iconButton(
+						h,
+						{
+							label: `Delete ${name}'s override, ${rangeText(toEpochMs(override.starts_at), toEpochMs(override.ends_at), schedule.time_zone)}`,
+							isDisabled: isLocked || model.deletingOverrideId === override.id,
+							className: "text-muted-foreground",
+							attributes: [
+								h.OnClick(Message.ClickedDeleteOverride({ overrideId: override.id })),
+							],
+						},
+						[icon(h, "TrashIcon")],
+					),
+				),
 			]),
 		],
 	)
@@ -393,27 +391,33 @@ const page = (h: H, model: Model, viewerZone: string): Html => {
 									}),
 								],
 							}),
-							actions: canManageAlerts(model)
-								? detailActions(h, [
-										linkButton(
-											h,
-											{
-												size: "sm",
-												variant: "outline",
-												href: editScheduleHref(schedule.id),
-											},
-											[icon(h, "PencilIcon"), "Edit schedule"],
-										),
-										button(
-											h,
-											{
-												size: "sm",
-												attributes: [h.OnClick(Message.ClickedNewOverride())],
-											},
-											[icon(h, "PlusIcon"), "Add override"],
-										),
-									])
-								: undefined,
+							actions: detailActions(h, [
+								gatedControl(h, model, "alerts:manage", (isDisabled) => {
+									const children = [icon(h, "PencilIcon"), "Edit schedule"]
+									return isDisabled
+										? button(h, { size: "sm", variant: "outline", isDisabled }, children)
+										: linkButton(
+												h,
+												{
+													size: "sm",
+													variant: "outline",
+													href: editScheduleHref(schedule.id),
+												},
+												children,
+											)
+								}),
+								gatedControl(h, model, "alerts:manage", (isDisabled) =>
+									button(
+										h,
+										{
+											size: "sm",
+											isDisabled,
+											attributes: [h.OnClick(Message.ClickedNewOverride())],
+										},
+										[icon(h, "PlusIcon"), "Add override"],
+									),
+								),
+							]),
 							gap: "lg",
 						},
 						[

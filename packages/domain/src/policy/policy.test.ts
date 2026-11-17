@@ -145,3 +145,27 @@ describe("highestRole", () => {
 		expect(Policy.outranks(pinned, Policy.highestRole(["org:analyst"]))).toBe(true)
 	})
 })
+
+describe("Policy.canGrantScopes", () => {
+	const holds = (roles: ReadonlyArray<string>) => (permission: Policy.Permission) =>
+		Policy.can(roles, permission)
+
+	it("lets an engineer grant the families their role can use, and only those", () => {
+		const engineer = holds(["org:engineer"])
+		expect(Policy.canGrantScopes(engineer, ["alerts:write", "traces:read", "ingest_keys:read"])).toBe(
+			true,
+		)
+		expect(Policy.canGrantScopes(engineer, ["api_keys:read"])).toBe(true)
+		expect(Policy.canGrantScopes(engineer, ["api_keys:write"])).toBe(false)
+		expect(Policy.canGrantScopes(engineer, ["ingest_keys:write", "data_sources:write"])).toBe(true)
+		expect(Policy.canGrantScopes(engineer, ["audit_log:read"])).toBe(false)
+		expect(Policy.canGrantScopes(holds(["org:member"]), ["traces:read", "ingest_keys:read"])).toBe(false)
+	})
+
+	it("never treats full access, an unknown family or no scopes as restricted", () => {
+		const admin = holds(["org:admin"])
+		for (const scopes of [null, undefined, [], ["*"], ["nope:read"], ["traces"]]) {
+			expect(Policy.canGrantScopes(admin, scopes)).toBe(false)
+		}
+	})
+})

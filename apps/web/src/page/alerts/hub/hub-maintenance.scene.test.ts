@@ -172,7 +172,7 @@ describe("alerts hub, Maintenance tab", () => {
 		)
 	})
 
-	test("an org without windows explains them and offers the first one", () => {
+	test("an org without windows explains them and offers the first one, locked for a member", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(onMaintenance([])),
@@ -183,7 +183,8 @@ describe("alerts hub, Maintenance tab", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(onMaintenance([], MEMBER)),
-			expectView(role("button", { name: "Create window" })).not.toExist(),
+			expectView(role("button", { name: "Create window" })).toBeDisabled(),
+			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
 		)
 	})
 

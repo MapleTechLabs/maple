@@ -240,10 +240,10 @@ describe("AwsConnectionService", () => {
 		return Effect.gen(function* () {
 			const service = yield* AwsConnectionService
 			const error = yield* Effect.flip(
-				service.create(orgId, userId, { accountId: account, modules: ["security"] }),
+				service.create(orgId, userId, { accountId: account, modules: ["inventory"] }),
 			)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
-			assert.include(error.message, "does not read security")
+			assert.include(error.message, "does not read inventory")
 			// Cost is built: an org outside its rollout is told so, not to wait for it.
 			const gated = yield* Effect.flip(
 				service.create(orgId, userId, { accountId: account, modules: ["cost"] }),

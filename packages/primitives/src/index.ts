@@ -342,7 +342,7 @@ export type ScrapeTargetType = Schema.Schema.Type<typeof ScrapeTargetType>
 export const UptimeMonitorId = MapleUuidId("@maple/UptimeMonitorId", "Uptime Monitor ID")
 export type UptimeMonitorId = Schema.Schema.Type<typeof UptimeMonitorId>
 
-export const UptimeMonitorKind = Schema.Literals(["http", "tcp", "dns", "heartbeat"]).annotate({
+export const UptimeMonitorKind = Schema.Literals(["http", "tcp", "dns", "multistep", "heartbeat"]).annotate({
 	identifier: "@maple/UptimeMonitorKind",
 	title: "Uptime Monitor Kind",
 })

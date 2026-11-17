@@ -313,13 +313,27 @@ const isRefused = (model: Model): boolean =>
 const newDetectionButton = (h: H): Html =>
 	linkButton(h, { size: "sm", href: detectionFormHref() }, [icon(h, "PlusIcon"), "New detection"])
 
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) => {
+export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	if (accessOf(model) === "unknown")
-		return securityLayout(h, { source: "detections" }, [placeholderRows(h, 4)])
-	if (isRefused(model)) return securityLayout(h, { source: "detections" }, [adminsOnly(h)])
+		return securityLayout(
+			h,
+			{ hasCloud: inputs.context.hasCloudSecurity === true, source: "detections" },
+			[placeholderRows(h, 4)],
+		)
+	if (isRefused(model))
+		return securityLayout(
+			h,
+			{ hasCloud: inputs.context.hasCloudSecurity === true, source: "detections" },
+			[adminsOnly(h)],
+		)
 	return securityLayout(
 		h,
-		{ source: "detections", actions: newDetectionButton(h), overlay: [deleteDialog(h, model)] },
+		{
+			hasCloud: inputs.context.hasCloudSecurity === true,
+			source: "detections",
+			actions: newDetectionButton(h),
+			overlay: [deleteDialog(h, model)],
+		},
 		listBody(h, model),
 	)
 })

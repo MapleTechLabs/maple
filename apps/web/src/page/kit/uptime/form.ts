@@ -2,6 +2,7 @@ import { AlertDestinationId } from "@maple/domain/http"
 import { Schema } from "effect"
 import { UptimeMonitorKind } from "@maple/primitives"
 import { UptimeDnsRecordType, UptimeHttpMethod } from "@maple/domain/uptime"
+import { V2UptimeMultiStepConfig } from "@maple/domain/http/v2"
 
 // The uptime form's draft: every field as the inputs hold it, strings until the payload is built.
 
@@ -73,6 +74,8 @@ export const Form = Schema.Struct({
 	graceUnit: GraceUnit,
 	serviceName: Schema.String,
 	destinationIds: Schema.Array(AlertDestinationId),
+	/** A multi-step check's steps, kept as loaded: the form edits its other settings around them. */
+	multistep: Schema.NullOr(V2UptimeMultiStepConfig),
 })
 export type Form = typeof Form.Type
 
@@ -108,6 +111,7 @@ export const emptyForm = (fields: Partial<Form> = {}): Form => ({
 	graceValue: "30",
 	graceUnit: "minutes",
 	serviceName: "",
+	multistep: null,
 	destinationIds: [],
 	...fields,
 })

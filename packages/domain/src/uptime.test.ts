@@ -1,11 +1,17 @@
-import { Exit, Option, Schema, Array as Arr } from "effect"
+import { Exit, Option, Result, Schema, Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 import {
 	appendRecentCheck,
 	applyUptimeCheck,
+	describeCertificateExpiry,
+	extractVariables,
+	interpolate,
+	multiStepConfigProblem,
+	UptimeMultiStepConfig,
 	describeStaleProbe,
 	effectiveAssertions,
 	firstFailedAssertion,
+	isCertificateExpiring,
 	isMapleService,
 	readJsonPath,
 	UPTIME_RECENT_LIMIT,
@@ -226,5 +232,130 @@ describe("describeStaleProbe", () => {
 			"No check result since 2026-10-26 14:03 UTC (12 min ago)",
 		)
 		expect(describeStaleProbe(null, now)).toBe("No check result yet")
+	})
+})
+
+describe("describeCertificateExpiry", () => {
+	const now = Date.UTC(2026, 10, 15, 12)
+	const certificate = (days: number, subject = "api.example.com") => ({
+		expiresAt: now + days * 86_400_000,
+		subject,
+		issuer: "R11",
+	})
+
+	it("says how long is left, or how long ago it ran out", () => {
+		expect([
+			describeCertificateExpiry(certificate(9), now),
+			describeCertificateExpiry(certificate(1), now),
+			describeCertificateExpiry(certificate(0.5), now),
+			describeCertificateExpiry(certificate(-2), now),
+			describeCertificateExpiry(certificate(9, ""), now),
+		]).toEqual([
+			"Certificate for api.example.com expires in 9 days (2026-11-24)",
+			"Certificate for api.example.com expires in 1 day (2026-11-16)",
+			"Certificate for api.example.com expires today (2026-11-16)",
+			"Certificate for api.example.com expired 2 days ago (2026-11-13)",
+			"Certificate expires in 9 days (2026-11-24)",
+		])
+	})
+
+	it("is expiring inside the warning window and after expiry, not before", () => {
+		expect(Arr.map([15, 13.9, -1], (days) => isCertificateExpiring(certificate(days), now))).toEqual([
+			false,
+			true,
+			true,
+		])
+	})
+})
+
+describe("multi-step checks", () => {
+	const decode = Schema.decodeUnknownSync(UptimeMultiStepConfig)
+	const step = (name: string, url: string, overrides: Record<string, unknown> = {}) => ({
+		name,
+		method: "GET",
+		url,
+		headers: {},
+		assertions: [],
+		extract: [],
+		...overrides,
+	})
+
+	it("fills each {{name}} and names the first one without a value", () => {
+		expect(interpolate("https://a.dev/{{ id }}?r={{region}}", { id: "42", region: "eu" })).toEqual(
+			Result.succeed("https://a.dev/42?r=eu"),
+		)
+		expect(interpolate("Bearer {{token}}", {})).toEqual(Result.fail("token"))
+		// A `$` in a value is sent as is, never read as a replacement pattern.
+		expect(interpolate("{{a}}/{{a}}", { a: "p$&q$1" })).toEqual(Result.succeed("p$&q$1/p$&q$1"))
+		// A value that looks like a reference is sent as is, not filled in again.
+		expect(interpolate("{{a}}/{{b}}", { a: "{{b}}", b: "42" })).toEqual(Result.succeed("{{b}}/42"))
+	})
+
+	it("refuses a variable no earlier step sets, a body on GET, a variable or step name used twice", () => {
+		const problems = Arr.map(
+			[
+				[step("A", "https://a.dev/{{x}}")],
+				[step("A", "https://a.dev", { body: "{}" })],
+				[
+					step("A", "https://a.dev", {
+						extract: [{ name: "x", from: { _tag: "header", name: "X" } }],
+					}),
+					step("B", "https://a.dev", {
+						extract: [{ name: "x", from: { _tag: "header", name: "Y" } }],
+					}),
+				],
+				[
+					step("A", "https://a.dev", {
+						extract: [{ name: "x", from: { _tag: "header", name: "X" } }],
+					}),
+					step("B", "https://a.dev/{{x}}"),
+				],
+				[step("A", "https://a.dev/one"), step("A", "https://a.dev/two")],
+				[
+					step("A", "https://a.dev", {
+						extract: [
+							{ name: "x", from: { _tag: "header", name: "X-One" } },
+							{ name: "x", from: { _tag: "header", name: "X-Two" } },
+						],
+					}),
+				],
+				[
+					step("A", "https://a.dev", {
+						extract: [{ name: "x", from: { _tag: "header", name: "X" } }],
+					}),
+					step("B", "https://a.dev", { headers: { "User-Agent": "probe {{x}}" } }),
+				],
+			],
+			(steps) => multiStepConfigProblem(decode({ _tag: "multistep", timeoutMs: 30_000, steps })),
+		)
+		expect(problems).toEqual([
+			"Step 1 (A) uses {{x}}, which no earlier step extracts",
+			"Step 1 (A): a request body needs POST, PUT, PATCH or DELETE",
+			"Step 2 (B) extracts x, which an earlier step already set",
+			null,
+			"Step 2 (A): another step already has this name",
+			"Step 1 (A) extracts x twice",
+			"Step 2 (B): the User-Agent header can't use a variable",
+		])
+	})
+
+	it("reads extractions from JSON and headers, and says which one is missing", () => {
+		const response = observed({
+			headers: { "x-region": "eu" },
+			body: '{"session":{"token":"t-1","ttl":60}}',
+		})
+		expect(
+			extractVariables(
+				[
+					{ name: "token", from: { _tag: "json_path", path: "session.token" } },
+					{ name: "ttl", from: { _tag: "json_path", path: "session.ttl" } },
+					{ name: "region", from: { _tag: "header", name: "X-Region" } },
+				],
+				response,
+			),
+		).toEqual(Result.succeed({ token: "t-1", ttl: "60", region: "eu" }))
+		expect(
+			extractVariables([{ name: "user", from: { _tag: "json_path", path: "session.user" } }], response),
+		).toEqual(Result.fail("JSON path session.user not found, so user could not be set"))
 	})
 })

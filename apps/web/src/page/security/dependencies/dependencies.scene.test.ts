@@ -1052,13 +1052,15 @@ describe("security dependencies tab", () => {
 		)
 	})
 
-	test("a member sees the finding but not the triage actions", () => {
+	test("a member sees the finding with its triage actions locked", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(opened(loaded(repositoriesOf(NOW), findingsOf(NOW), false))),
 			mounted,
-			expectView(text("Only org admins and engineers can change a finding's status.")).toExist(),
-			expectView(role("button", { name: "Dismiss" })).toBeAbsent(),
+			expectView(role("button", { name: "Dismiss" })).toBeDisabled(),
+			expectView(role("button", { name: "Accept risk" })).toBeDisabled(),
+			expectView(role("group", { name: Policy.denialFor("security:manage").message })).toExist(),
+			expectView(role("textbox", { name: "Reason" })).toBeAbsent(),
 		)
 	})
 

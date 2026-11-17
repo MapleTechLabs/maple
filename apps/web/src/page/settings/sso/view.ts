@@ -39,8 +39,10 @@ import {
 import { formDialog } from "@maple/views/ui/form-dialog"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
+import { lockedControl } from "@maple/views/ui/locked-control"
 import { keyValue, keyValueList } from "@maple/views/ui/key-value"
 import * as Menu from "@maple/views/ui/menu"
+import type * as MenuView from "@maple/views/ui/menu-view"
 import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
 import { dividedList, strip } from "@maple/views/ui/rule"
 import { multiSegmentedSelect, segmentedSelect } from "@maple/views/ui/segmented-select"
@@ -52,6 +54,7 @@ import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@
 import { textarea } from "@maple/views/ui/textarea"
 import { typography } from "@maple/views/ui/typography"
 import { switchRow } from "../../kit/switch-row"
+import { denialReason } from "../../kit/session-grants"
 import { adminOnlyNote, sectionNote, settingsSection, settingsSections } from "../../kit/settings-section"
 import { type ConnectionDraft, type DraftField, type MappingDraft, Message, type Model } from "./model"
 import {
@@ -113,6 +116,18 @@ const ADD_ON_PRICE = "$100/month"
 const canExit = (model: Model): boolean => model.canManage
 
 const isBusy = (model: Model): boolean => model.pending !== null
+
+const DENIAL = denialReason("sso:manage")
+
+/** Enabled for an admin, locked with the denial for anyone else; plan gates stay with the caller. */
+const ssoControl = (h: H, model: Model, control: (isLocked: boolean) => Html): Html =>
+	model.canManage ? control(false) : lockedControl(h, DENIAL, control(true))
+
+const lockedItem = (model: Model): Pick<MenuView.MenuItemEntry, "isDisabled" | "tooltip"> =>
+	model.canManage ? {} : { isDisabled: true, tooltip: { content: [DENIAL] } }
+
+/** `onClick` only while the control is live, so a locked one sends nothing. */
+const clickUnless = (h: H, isLocked: boolean, message: Message) => (isLocked ? [] : [h.OnClick(message)])
 
 // Shared pieces
 
@@ -178,18 +193,18 @@ const selectControl = (h: H, model: Model, options: SelectOptions): Html => {
 
 /** An add-on button for admins, a pointer to them for everyone else. */
 const addOnAction = (h: H, model: Model, addOn: "sso" | "scim", label: string): Html =>
-	model.canManage
-		? button(
-				h,
-				{
-					size: "sm",
-					isLoading: model.isAttachingAddOn && model.addOn === addOn,
-					isDisabled: model.isAttachingAddOn,
-					attributes: [h.OnClick(Message.ClickedAddAddOn({ addOn }))],
-				},
-				[label],
-			)
-		: typography(h, { size: "sm", tone: "muted" }, ["Ask an admin to add it."])
+	ssoControl(h, model, (isLocked) =>
+		button(
+			h,
+			{
+				size: "sm",
+				isLoading: model.isAttachingAddOn && model.addOn === addOn,
+				isDisabled: isLocked || model.isAttachingAddOn,
+				attributes: clickUnless(h, isLocked, Message.ClickedAddAddOn({ addOn })),
+			},
+			[label],
+		),
+	)
 
 const notEntitled = (h: H, model: Model): Html =>
 	alert(h, { role: "status" }, [
@@ -210,7 +225,7 @@ const domainStatus = (h: H, domain: SsoDomainDocument): Html =>
 		? badge(h, { variant: "done" }, ["Verified"])
 		: badge(h, { variant: "muted" }, ["Pending"])
 
-const domainRow = (h: H, model: Model, domain: SsoDomainDocument, isEditable: boolean): Html => {
+const domainRow = (h: H, model: Model, domain: SsoDomainDocument, isEntitled: boolean): Html => {
 	const menuId = `sso-domain-${domain.domain}`
 	return tableRow(
 		h,
@@ -220,36 +235,36 @@ const domainRow = (h: H, model: Model, domain: SsoDomainDocument, isEditable: bo
 			tableCell(
 				h,
 				// Removing stays open after the plan lapses, as the API allows; verifying needs the plan.
-				canExit(model)
-					? [
-							rowActionsMenu(h, {
-								slotId: menuId,
-								model: model.domainMenus[menuId] ?? Menu.init(menuId),
-								label: `Actions for ${domain.domain}`,
-								entries: [
-									...(domain.status === "verified" || !isEditable
-										? []
-										: [
-												{
-													_tag: "Item" as const,
-													value: "verify",
-													label: "Verify",
-													icon: "CircleCheckIcon" as const,
-												},
-											]),
-									{
-										_tag: "Item",
-										value: "remove",
-										label: "Remove",
-										icon: "TrashIcon",
-										variant: "destructive",
-									},
-								],
-								toParentMessage: (message) =>
-									Message.GotDomainMenuMessage({ domain: domain.domain, message }),
-							}),
-						]
-					: [],
+				[
+					rowActionsMenu(h, {
+						slotId: menuId,
+						model: model.domainMenus[menuId] ?? Menu.init(menuId),
+						label: `Actions for ${domain.domain}`,
+						entries: [
+							...(domain.status === "verified" || !isEntitled
+								? []
+								: [
+										{
+											_tag: "Item" as const,
+											value: "verify",
+											label: "Verify",
+											icon: "CircleCheckIcon" as const,
+											...lockedItem(model),
+										},
+									]),
+							{
+								_tag: "Item",
+								value: "remove",
+								label: "Remove",
+								icon: "TrashIcon",
+								variant: "destructive",
+								...lockedItem(model),
+							},
+						],
+						toParentMessage: (message) =>
+							Message.GotDomainMenuMessage({ domain: domain.domain, message }),
+					}),
+				],
 				"w-12",
 			),
 		],
@@ -258,25 +273,29 @@ const domainRow = (h: H, model: Model, domain: SsoDomainDocument, isEditable: bo
 	)
 }
 
-const pendingRecord = (h: H, model: Model, domain: SsoDomainDocument, isEditable: boolean): Html =>
+const pendingRecord = (h: H, model: Model, domain: SsoDomainDocument, isEntitled: boolean): Html =>
 	strip(h, { kind: "block", attributes: [h.Key(`record-${domain.domain}`)] }, [
 		vstack(h, { gap: "3", align: "stretch" }, [
 			hstack(h, { gap: "2", justify: "between" }, [
 				typography(h, { size: "sm", weight: "medium" }, [`Verify ${domain.domain}`]),
-				...(isEditable
+				...(isEntitled
 					? [
-							button(
-								h,
-								{
-									variant: "outline",
-									size: "sm",
-									isLoading: model.pending === "verifyDomain",
-									isDisabled: isBusy(model),
-									attributes: [
-										h.OnClick(Message.ClickedVerifyDomain({ domain: domain.domain })),
-									],
-								},
-								["Verify"],
+							ssoControl(h, model, (isLocked) =>
+								button(
+									h,
+									{
+										variant: "outline",
+										size: "sm",
+										isLoading: model.pending === "verifyDomain",
+										isDisabled: isLocked || isBusy(model),
+										attributes: clickUnless(
+											h,
+											isLocked,
+											Message.ClickedVerifyDomain({ domain: domain.domain }),
+										),
+									},
+									["Verify"],
+								),
 							),
 						]
 					: []),
@@ -292,7 +311,7 @@ const pendingRecord = (h: H, model: Model, domain: SsoDomainDocument, isEditable
 	])
 
 const domainsSection = (h: H, model: Model, document: EnterpriseSsoDocument): Html => {
-	const isEditable = canEdit(model, document)
+	const isEntitled = document.ssoEntitled
 	const pending = Arr.filter(document.domains, (domain) => domain.status === "pending")
 	return settingsSection(
 		h,
@@ -303,18 +322,23 @@ const domainsSection = (h: H, model: Model, document: EnterpriseSsoDocument): Ht
 				"The email domains your identity provider signs in. Prove you own each one with a DNS record.",
 			],
 			padded: false,
-			actions: isEditable
-				? button(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							attributes: [h.OnClick(Message.ClickedAddDomain())],
-						},
-						[
-							icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
-							"Add domain",
-						],
+			actions: isEntitled
+				? ssoControl(h, model, (isLocked) =>
+						button(
+							h,
+							{
+								size: "sm",
+								variant: "outline",
+								isDisabled: isLocked,
+								attributes: clickUnless(h, isLocked, Message.ClickedAddDomain()),
+							},
+							[
+								icon(h, "PlusIcon", {
+									attributes: [h.DataAttribute("icon", "inline-start")],
+								}),
+								"Add domain",
+							],
+						),
 					)
 				: undefined,
 		},
@@ -331,10 +355,10 @@ const domainsSection = (h: H, model: Model, document: EnterpriseSsoDocument): Ht
 						]),
 						tableBody(
 							h,
-							Arr.map(document.domains, (domain) => domainRow(h, model, domain, isEditable)),
+							Arr.map(document.domains, (domain) => domainRow(h, model, domain, isEntitled)),
 						),
 					]),
-					...Arr.map(pending, (domain) => pendingRecord(h, model, domain, isEditable)),
+					...Arr.map(pending, (domain) => pendingRecord(h, model, domain, isEntitled)),
 				],
 	)
 }
@@ -391,36 +415,40 @@ const connectionPanel = (
 						? badge(h, { variant: "done" }, ["Required"])
 						: badge(h, { variant: "muted" }, ["Off"]),
 				]),
-				...(isExitable
-					? [
-							hstack(h, { gap: "2" }, [
-								...(isEditable
-									? [
-											button(
+				hstack(h, { gap: "2" }, [
+					...(document.ssoEntitled
+						? [
+								ssoControl(h, model, (isLocked) =>
+									button(
+										h,
+										{
+											variant: "outline",
+											size: "sm",
+											isDisabled: isLocked || isBusy(model),
+											attributes: clickUnless(
 												h,
-												{
-													variant: "outline",
-													size: "sm",
-													isDisabled: isBusy(model),
-													attributes: [h.OnClick(Message.ClickedEditConnection())],
-												},
-												["Edit"],
+												isLocked,
+												Message.ClickedEditConnection(),
 											),
-										]
-									: []),
-								button(
-									h,
-									{
-										variant: "destructive-outline",
-										size: "sm",
-										isDisabled: isBusy(model),
-										attributes: [h.OnClick(Message.ClickedRemoveConnection())],
-									},
-									["Remove"],
+										},
+										["Edit"],
+									),
 								),
-							]),
-						]
-					: []),
+							]
+						: []),
+					ssoControl(h, model, (isLocked) =>
+						button(
+							h,
+							{
+								variant: isLocked ? "outline" : "destructive-outline",
+								size: "sm",
+								isDisabled: isLocked || isBusy(model),
+								attributes: clickUnless(h, isLocked, Message.ClickedRemoveConnection()),
+							},
+							["Remove"],
+						),
+					),
+				]),
 			]),
 			...(sp.length === 0
 				? []
@@ -460,17 +488,19 @@ const noConnection = (h: H, model: Model, document: EnterpriseSsoDocument): Html
 					: "Verify a domain first, then connect your identity provider.",
 			]),
 		]),
-		...(canEdit(model, document)
+		...(document.ssoEntitled
 			? [
 					emptyContent(h, [
-						button(
-							h,
-							{
-								size: "sm",
-								isDisabled: !hasVerified || isBusy(model),
-								attributes: [h.OnClick(Message.ClickedConnect())],
-							},
-							["Connect identity provider"],
+						ssoControl(h, model, (isLocked) =>
+							button(
+								h,
+								{
+									size: "sm",
+									isDisabled: isLocked || !hasVerified || isBusy(model),
+									attributes: clickUnless(h, isLocked, Message.ClickedConnect()),
+								},
+								["Connect identity provider"],
+							),
 						),
 					]),
 				]
@@ -502,7 +532,6 @@ const memberLabel = (model: Model, userId: string, identifier: string | null): s
 	)
 
 const bypassSection = (h: H, model: Model, document: EnterpriseSsoDocument): Html => {
-	const isEditable = canEdit(model, document)
 	return settingsSection(
 		h,
 		{
@@ -514,16 +543,18 @@ const bypassSection = (h: H, model: Model, document: EnterpriseSsoDocument): Htm
 			padded: false,
 			// Nobody qualifies before a connection names the SSO domains.
 			actions:
-				isEditable && document.connection !== null
-					? button(
-							h,
-							{
-								size: "sm",
-								variant: "outline",
-								isDisabled: isBusy(model),
-								attributes: [h.OnClick(Message.ClickedAddBypass())],
-							},
-							["Add member"],
+				document.ssoEntitled && document.connection !== null
+					? ssoControl(h, model, (isLocked) =>
+							button(
+								h,
+								{
+									size: "sm",
+									variant: "outline",
+									isDisabled: isLocked || isBusy(model),
+									attributes: clickUnless(h, isLocked, Message.ClickedAddBypass()),
+								},
+								["Add member"],
+							),
 						)
 					: undefined,
 		},
@@ -552,25 +583,22 @@ const bypassSection = (h: H, model: Model, document: EnterpriseSsoDocument): Htm
 														),
 													]),
 										]),
-										...(canExit(model)
-											? [
-													iconButton(
+										ssoControl(h, model, (isLocked) =>
+											iconButton(
+												h,
+												{
+													label: `Remove break-glass access for ${memberLabel(model, user.userId, user.identifier)}`,
+													isDisabled: isLocked || isBusy(model),
+													hasTooltip: !isLocked,
+													attributes: clickUnless(
 														h,
-														{
-															label: `Remove break-glass access for ${memberLabel(model, user.userId, user.identifier)}`,
-															isDisabled: isBusy(model),
-															attributes: [
-																h.OnClick(
-																	Message.ClickedRemoveBypass({
-																		userId: user.userId,
-																	}),
-																),
-															],
-														},
-														[icon(h, "TrashIcon")],
+														isLocked,
+														Message.ClickedRemoveBypass({ userId: user.userId }),
 													),
-												]
-											: []),
+												},
+												[icon(h, "TrashIcon")],
+											),
+										),
 									]),
 								],
 							),
@@ -588,9 +616,9 @@ const directoryPanel = (
 	document: EnterpriseSsoDocument,
 	directory: ScimDirectoryDocument,
 ): ReadonlyArray<Html> => {
-	const isEditable = canEditScim(model, document)
+	const isEntitled = document.scimEntitled
 	// Pausing and removing stay open without the plan; resuming and rotating need it.
-	const canTogglePause = directory.paused ? isEditable : canExit(model)
+	const showsPauseToggle = directory.paused ? isEntitled : true
 	return [
 		vstack(h, { gap: "4", align: "stretch" }, [
 			hstack(h, { gap: "2", justify: "between", wrap: true }, [
@@ -600,53 +628,62 @@ const directoryPanel = (
 						? badge(h, { variant: "warn" }, ["Paused"])
 						: badge(h, { variant: "done" }, ["Active"]),
 				]),
-				...(canExit(model)
-					? [
-							hstack(h, { gap: "2", wrap: true }, [
-								...(canTogglePause
-									? [
-											button(
+				hstack(h, { gap: "2", wrap: true }, [
+					...(showsPauseToggle
+						? [
+								ssoControl(h, model, (isLocked) =>
+									button(
+										h,
+										{
+											variant: "outline",
+											size: "sm",
+											isLoading:
+												model.pending === "pause" || model.pending === "resume",
+											isDisabled: isLocked || isBusy(model),
+											attributes: clickUnless(
 												h,
-												{
-													variant: "outline",
-													size: "sm",
-													isLoading:
-														model.pending === "pause" ||
-														model.pending === "resume",
-													isDisabled: isBusy(model),
-													attributes: [h.OnClick(Message.ClickedTogglePaused())],
-												},
-												[directory.paused ? "Resume" : "Pause"],
+												isLocked,
+												Message.ClickedTogglePaused(),
 											),
-										]
-									: []),
-								...(isEditable
-									? [
-											button(
-												h,
-												{
-													variant: "outline",
-													size: "sm",
-													isDisabled: isBusy(model),
-													attributes: [h.OnClick(Message.ClickedRotateToken())],
-												},
-												["Rotate token"],
-											),
-										]
-									: []),
-								button(
-									h,
-									{
-										variant: "destructive-outline",
-										size: "sm",
-										isDisabled: isBusy(model),
-										attributes: [h.OnClick(Message.ClickedRemoveDirectory())],
-									},
-									["Remove"],
+										},
+										[directory.paused ? "Resume" : "Pause"],
+									),
 								),
-							]),
-						]
-					: []),
+							]
+						: []),
+					...(isEntitled
+						? [
+								ssoControl(h, model, (isLocked) =>
+									button(
+										h,
+										{
+											variant: "outline",
+											size: "sm",
+											isDisabled: isLocked || isBusy(model),
+											attributes: clickUnless(
+												h,
+												isLocked,
+												Message.ClickedRotateToken(),
+											),
+										},
+										["Rotate token"],
+									),
+								),
+							]
+						: []),
+					ssoControl(h, model, (isLocked) =>
+						button(
+							h,
+							{
+								variant: isLocked ? "outline" : "destructive-outline",
+								size: "sm",
+								isDisabled: isLocked || isBusy(model),
+								attributes: clickUnless(h, isLocked, Message.ClickedRemoveDirectory()),
+							},
+							["Remove"],
+						),
+					),
+				]),
 			]),
 			keyValueList(h, { layout: "stacked" }, [
 				copyValue(h, model, "scim-endpoint", "Endpoint URL", directory.endpointUrl),
@@ -671,24 +708,22 @@ const noDirectory = (h: H, model: Model, document: EnterpriseSsoDocument): Html 
 					: `Let your identity provider add and remove members, and set their role from its groups. SCIM provisioning is a ${ADD_ON_PRICE} add-on.`,
 			]),
 		]),
-		...(canEditScim(model, document)
-			? [
-					emptyContent(h, [
+		emptyContent(h, [
+			document.scimEntitled
+				? ssoControl(h, model, (isLocked) =>
 						button(
 							h,
 							{
 								size: "sm",
 								isLoading: model.pending === "createDirectory",
-								isDisabled: isBusy(model),
-								attributes: [h.OnClick(Message.ClickedSetUpScim())],
+								isDisabled: isLocked || isBusy(model),
+								attributes: clickUnless(h, isLocked, Message.ClickedSetUpScim()),
 							},
 							["Set up SCIM"],
 						),
-					]),
-				]
-			: document.scimEntitled
-				? []
-				: [emptyContent(h, [addOnAction(h, model, "scim", "Add SCIM provisioning")])]),
+					)
+				: addOnAction(h, model, "scim", "Add SCIM provisioning"),
+		]),
 	])
 
 const scimSection = (h: H, model: Model, document: EnterpriseSsoDocument): Html =>
@@ -778,40 +813,42 @@ const mappingRow = (
 						}),
 					],
 				),
-				...(isEditable
-					? [
-							iconButton(
-								h,
+				...(document.scimEntitled
+					? Arr.map(
+							[
 								{
 									label: `Move ${rowName} up`,
-									isDisabled: index === 0 || isBusy(model),
-									attributes: [
-										h.OnClick(Message.ClickedMoveMapping({ key: row.key, by: -1 })),
-									],
+									isOff: index === 0,
+									message: Message.ClickedMoveMapping({ key: row.key, by: -1 }),
+									glyph: "ArrowUpIcon" as const,
 								},
-								[icon(h, "ArrowUpIcon")],
-							),
-							iconButton(
-								h,
 								{
 									label: `Move ${rowName} down`,
-									isDisabled: index === count - 1 || isBusy(model),
-									attributes: [
-										h.OnClick(Message.ClickedMoveMapping({ key: row.key, by: 1 })),
-									],
+									isOff: index === count - 1,
+									message: Message.ClickedMoveMapping({ key: row.key, by: 1 }),
+									glyph: "ArrowDownIcon" as const,
 								},
-								[icon(h, "ArrowDownIcon")],
-							),
-							iconButton(
-								h,
 								{
 									label: `Remove mapping for ${rowName}`,
-									isDisabled: isBusy(model),
-									attributes: [h.OnClick(Message.ClickedRemoveMapping({ key: row.key }))],
+									isOff: false,
+									message: Message.ClickedRemoveMapping({ key: row.key }),
+									glyph: "TrashIcon" as const,
 								},
-								[icon(h, "TrashIcon")],
-							),
-						]
+							],
+							(action) =>
+								ssoControl(h, model, (isLocked) =>
+									iconButton(
+										h,
+										{
+											label: action.label,
+											isDisabled: isLocked || action.isOff || isBusy(model),
+											hasTooltip: !isLocked,
+											attributes: clickUnless(h, isLocked, action.message),
+										},
+										[icon(h, action.glyph)],
+									),
+								),
+						)
 					: []),
 			]),
 		],
@@ -851,24 +888,29 @@ const mappingsSection = (h: H, model: Model, document: EnterpriseSsoDocument): H
 							),
 						),
 					]),
-			...(isEditable && (hasGroups || isDirty)
+			...(document.scimEntitled && (hasGroups || isDirty)
 				? [
 						strip(h, { kind: "foot" }, [
 							hstack(h, { gap: "2", justify: "between" }, [
-								button(
-									h,
-									{
-										variant: "ghost",
-										size: "sm",
-										isDisabled: !hasUnmappedGroup(document, rows) || isBusy(model),
-										attributes: [h.OnClick(Message.ClickedAddMapping())],
-									},
-									[
-										icon(h, "PlusIcon", {
-											attributes: [h.DataAttribute("icon", "inline-start")],
-										}),
-										"Add mapping",
-									],
+								ssoControl(h, model, (isLocked) =>
+									button(
+										h,
+										{
+											variant: "ghost",
+											size: "sm",
+											isDisabled:
+												isLocked ||
+												!hasUnmappedGroup(document, rows) ||
+												isBusy(model),
+											attributes: clickUnless(h, isLocked, Message.ClickedAddMapping()),
+										},
+										[
+											icon(h, "PlusIcon", {
+												attributes: [h.DataAttribute("icon", "inline-start")],
+											}),
+											"Add mapping",
+										],
+									),
 								),
 								hstack(h, { gap: "2" }, [
 									// A greyed-out Save says why.
@@ -891,15 +933,25 @@ const mappingsSection = (h: H, model: Model, document: EnterpriseSsoDocument): H
 												),
 											]
 										: []),
-									button(
-										h,
-										{
-											size: "sm",
-											isLoading: model.pending === "saveMappings",
-											isDisabled: !isDirty || !isMappingsValid(rows) || isBusy(model),
-											attributes: [h.OnClick(Message.ClickedSaveMappings())],
-										},
-										["Save"],
+									ssoControl(h, model, (isLocked) =>
+										button(
+											h,
+											{
+												size: "sm",
+												isLoading: model.pending === "saveMappings",
+												isDisabled:
+													isLocked ||
+													!isDirty ||
+													!isMappingsValid(rows) ||
+													isBusy(model),
+												attributes: clickUnless(
+													h,
+													isLocked,
+													Message.ClickedSaveMappings(),
+												),
+											},
+											["Save"],
+										),
 									),
 								]),
 							]),
