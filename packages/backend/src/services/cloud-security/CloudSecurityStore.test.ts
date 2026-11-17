@@ -124,12 +124,15 @@ describe("CloudSecurityStore", () => {
 				...base,
 				state: "enabled",
 				cursorAt: 4_000,
+				windowMs: null,
 				lastError: null,
 				checkedAt: 1,
 			})
 			yield* store.recordServiceState({
 				...base,
 				state: "failing",
+				cursorAt: null,
+				windowMs: null,
 				lastError: "throttled",
 				checkedAt: 2,
 			})
@@ -147,26 +150,41 @@ describe("CloudSecurityStore", () => {
 			const store = yield* CloudSecurityStore
 			const mine = yield* connect(orgId, "111111111111")
 			const theirs = yield* connect(otherOrgId, "222222222222")
+			// A finding is stored while open; its closed version then replaces it.
+			const open = [
+				finding(mine, orgId, { findingId: "old-closed", providerUpdatedAt: 50 }),
+				finding(mine, orgId, { findingId: "new-closed", providerUpdatedAt: 50 }),
+				finding(theirs, otherOrgId, { findingId: "their-closed", providerUpdatedAt: 50 }),
+			]
+			yield* store.upsertFindings(
+				[...open, finding(mine, orgId, { findingId: "old-active", providerUpdatedAt: 50 })],
+				1,
+			)
+			// Closed at sync 100 (theirs too) and at sync 900: pruning counts from when Maple saw it close.
 			yield* store.upsertFindings(
 				[
 					finding(mine, orgId, {
 						findingId: "old-closed",
 						status: "resolved",
-						closedAt: 100,
+						providerUpdatedAt: 60,
 					}),
-					finding(mine, orgId, {
-						findingId: "new-closed",
-						status: "archived",
-						closedAt: 900,
-					}),
-					finding(mine, orgId, { findingId: "old-active", providerUpdatedAt: 100 }),
 					finding(theirs, otherOrgId, {
 						findingId: "their-closed",
 						status: "resolved",
-						closedAt: 100,
+						providerUpdatedAt: 60,
 					}),
 				],
-				1,
+				100,
+			)
+			yield* store.upsertFindings(
+				[
+					finding(mine, orgId, {
+						findingId: "new-closed",
+						status: "archived",
+						providerUpdatedAt: 60,
+					}),
+				],
+				900,
 			)
 			assert.strictEqual(yield* store.pruneClosed(orgId, 500), 1)
 			const left = yield* Effect.promise(() =>
@@ -195,6 +213,8 @@ describe("CloudSecurityStore", () => {
 				region,
 				source: "guardduty",
 				state: "enabled",
+				cursorAt: null,
+				windowMs: null,
 				lastError: null,
 				checkedAt: 1,
 			})
@@ -207,11 +227,57 @@ describe("CloudSecurityStore", () => {
 		}).pipe(Effect.provide(world.layer))
 	})
 
+	it.effect("keeps a finding first seen closed out, and resolves the ones a read no longer names", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const store = yield* CloudSecurityStore
+			const connection = yield* connect(orgId, "111111111111")
+			yield* store.upsertFindings(
+				[
+					finding(connection, orgId, { findingId: "passed", status: "resolved" }),
+					finding(connection, orgId, { findingId: "open-1" }),
+					finding(connection, orgId, { findingId: "open-2" }),
+				],
+				1,
+			)
+			const feed = { orgId, connectionId: connection.id, region, source: "guardduty" as const }
+			assert.strictEqual(yield* store.resolve(feed, { except: ["open-1"] }, 9), 1)
+			const rows = yield* Effect.promise(() =>
+				queryRows<{ finding_id: string; status: string }>(
+					world.testDb,
+					"SELECT finding_id, status FROM cloud_security_findings ORDER BY finding_id",
+				),
+			)
+			assert.deepStrictEqual(rows, [
+				{ finding_id: "open-1", status: "active" },
+				{ finding_id: "open-2", status: "resolved" },
+			])
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("moves a resolved finding still gone to the back of the recheck queue", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const store = yield* CloudSecurityStore
+			const connection = yield* connect(orgId, "111111111111")
+			const feed = { orgId, connectionId: connection.id, region, source: "guardduty" as const }
+			yield* store.upsertFindings([finding(connection, orgId, { findingId: "gone" })], 1)
+			yield* store.upsertFindings([finding(connection, orgId, { findingId: "other" })], 2)
+			yield* store.resolve(feed, { only: ["gone"] }, 3)
+			assert.deepStrictEqual(yield* store.staleIds(feed, 10, 1), ["other"])
+			// Checked again and still gone: it waits behind the rows not checked since.
+			yield* store.resolve(feed, { only: ["other"] }, 4)
+			yield* store.resolve(feed, { only: ["gone"] }, 5)
+			assert.deepStrictEqual(yield* store.staleIds(feed, 10, 2), ["other", "gone"])
+		}).pipe(Effect.provide(world.layer))
+	})
+
 	it.effect("never lets an older version of a finding replace a newer one", () => {
 		const world = makeWorld()
 		return Effect.gen(function* () {
 			const store = yield* CloudSecurityStore
 			const connection = yield* connect(orgId, "111111111111")
+			yield* store.upsertFindings([finding(connection, orgId, { providerUpdatedAt: 1_000 })], 1)
 			yield* store.upsertFindings(
 				[finding(connection, orgId, { status: "archived", providerUpdatedAt: 5_000 })],
 				1,
@@ -239,20 +305,22 @@ describe("CloudSecurityStore", () => {
 						"SELECT closed_at FROM cloud_security_findings",
 					),
 				)
+			// Stored open, seen closed at sync 100, read again closed at sync 900.
+			yield* store.upsertFindings([finding(connection, orgId, { providerUpdatedAt: 10 })], 1)
 			yield* store.upsertFindings(
-				[finding(connection, orgId, { status: "archived", closedAt: 100 })],
-				1,
+				[finding(connection, orgId, { status: "archived", providerUpdatedAt: 20 })],
+				100,
 			)
 			yield* store.upsertFindings(
-				[finding(connection, orgId, { status: "archived", closedAt: 900 })],
-				2,
+				[finding(connection, orgId, { status: "archived", providerUpdatedAt: 20 })],
+				900,
 			)
 			const [first] = yield* closedAt()
 			assert.strictEqual(
 				first?.closed_at === null ? null : new Date(first?.closed_at ?? 0).getTime(),
 				100,
 			)
-			yield* store.upsertFindings([finding(connection, orgId, { status: "active", closedAt: null })], 3)
+			yield* store.upsertFindings([finding(connection, orgId, { providerUpdatedAt: 30 })], 1000)
 			const [reopened] = yield* closedAt()
 			assert.strictEqual(reopened?.closed_at, null)
 		}).pipe(Effect.provide(world.layer))
@@ -303,7 +371,11 @@ describe("CloudSecurityStore", () => {
 		return Effect.gen(function* () {
 			const store = yield* CloudSecurityStore
 			const connection = yield* connect(orgId, "111111111111")
-			yield* store.upsertFindings([finding(connection, orgId, { status: "resolved" })], 5_000)
+			yield* store.upsertFindings([finding(connection, orgId, { providerUpdatedAt: 10 })], 1)
+			yield* store.upsertFindings(
+				[finding(connection, orgId, { status: "resolved", providerUpdatedAt: 20 })],
+				5_000,
+			)
 			assert.strictEqual(yield* store.pruneClosed(orgId, 4_000), 0)
 			assert.strictEqual(yield* store.pruneClosed(orgId, 6_000), 1)
 		}).pipe(Effect.provide(world.layer))
