@@ -164,6 +164,9 @@ export const Message = defineMessageUnion({
 	ChangedPassword: { value: Schema.String },
 	ClickedDiscardAccess: {},
 	ClickedSaveAccess: {},
+	/** Basic settings' one bar when its fields and Who can view both have edits. */
+	ClickedDiscardBasic: {},
+	ClickedSaveBasic: {},
 	CompletedAccessChange: { action: AccessAction, result: LoadOutcome(V2StatusPage) },
 	// Custom domain
 	CompletedFetchCustomDomain: { key: Schema.String, result: LoadOutcome(V2StatusPageCustomDomain) },

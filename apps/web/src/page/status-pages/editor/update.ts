@@ -243,6 +243,7 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		urlCopy: CopyButton.init(),
 		settingsEdits: null,
 		isSavingSettings: false,
+		savesAccessNext: false,
 		settingsFailure: null,
 		isPublishing: false,
 		breakGlassDialog: Dialog.init("status-page-break-glass", "alert-dialog"),
@@ -674,7 +675,13 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 		PickedPreviewState: ({ state }) => ({ model: { ...model, previewState: state } }),
 		ClickedDiscardSettings: () => ({ model: { ...model, settingsEdits: null, settingsFailure: null } }),
 		ClickedSaveSettings: () => saveSettings(model),
-		CompletedSaveSettings: ({ result }) => savedSettings(model, result),
+		// Basic settings' Save goes on to Who can view once the fields saved; a failure stops there.
+		CompletedSaveSettings: ({ result }) => {
+			const saved = savedSettings({ ...model, savesAccessNext: false }, result)
+			if (!model.savesAccessNext || Result.isFailure(result)) return saved
+			const access = saveAccess(saved.model)
+			return { ...access, outMessage: access.outMessage ?? saved.outMessage }
+		},
 		ClickedPublish: () => publish(model),
 		CompletedPublish: ({ result }) => published(model, result, context),
 		ClickedRotateToken: () => askBreakGlass(model, "rotate"),
@@ -693,6 +700,13 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 		ChangedPassword: ({ value }) => changePassword(model, value),
 		ClickedDiscardAccess: () => discardAccess(model),
 		ClickedSaveAccess: () => saveAccess(model),
+		ClickedDiscardBasic: () => discardAccess({ ...model, settingsEdits: null, settingsFailure: null }),
+		ClickedSaveBasic: () => {
+			const settings = saveSettings(model)
+			return settings.model.isSavingSettings
+				? { ...settings, model: { ...settings.model, savesAccessNext: true } }
+				: settings
+		},
 		CompletedAccessChange: ({ action, result }) => changedAccess(model, action, result),
 		// Custom domain
 		CompletedFetchCustomDomain: ({ key, result }) => ({
