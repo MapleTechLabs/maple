@@ -4,8 +4,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import { Effect, Schema, Array as Arr, String as Str, Option } from "effect"
-import { AwsAccountId } from "@maple/primitives"
-import { renderAwsCleanupScript, renderAwsSetupScript } from "./setup"
+import { AwsAccountId, AwsConnectionId } from "@maple/primitives"
+import { renderAwsCleanupScript, renderAwsEventsForwarderCloudFormation, renderAwsSetupScript } from "./setup"
 
 const accountId = Schema.decodeSync(AwsAccountId)("123456789012")
 const PROVIDER_ARN = "arn:aws:iam::123456789012:oidc-provider/api.maple.test/oidc/aws"
@@ -38,7 +38,9 @@ case "$1 $2" in
   "cloudformation describe-stacks")
     case "$*" in
       *maple-metrics-abc*) case " $AWS_STACKS_IN " in *" $region "*) echo CREATE_COMPLETE ;; *) exit 254 ;; esac ;;
-      *maple-events-abc*) case " $AWS_EVENTS_IN " in *" $region "*) echo CREATE_COMPLETE ;; *) exit 254 ;; esac ;;
+      *maple-events-abc*)
+        for entry in $AWS_EVENTS_STATUS; do [ "\${entry%%=*}" = "$region" ] && { echo "\${entry#*=}"; exit 0; }; done
+        case " $AWS_EVENTS_IN " in *" $region "*) echo CREATE_COMPLETE ;; *) exit 254 ;; esac ;;
       *EventsForwardRoleArn*) echo "arn:aws:iam::123456789012:role/forward" ;;
       *) echo CREATE_COMPLETE ;;
     esac ;;
@@ -64,6 +66,8 @@ const run = (
 		readonly stacksIn: ReadonlyArray<string>
 		readonly eventsIn?: ReadonlyArray<string>
 		readonly eventsDeployFails?: string
+		/** `region=STATUS` pairs for forwarder stacks in a given state. */
+		readonly eventsStatus?: ReadonlyArray<string>
 		readonly waitFails?: boolean
 		readonly deleteFails?: boolean
 		readonly providerExists?: boolean
@@ -86,6 +90,7 @@ const run = (
 			AWS_STACKS_IN: Arr.join(env.stacksIn, " "),
 			AWS_EVENTS_IN: Arr.join(env.eventsIn ?? [], " "),
 			AWS_EVENTS_DEPLOY_FAILS: env.eventsDeployFails ?? "",
+			AWS_EVENTS_STATUS: Arr.join(env.eventsStatus ?? [], " "),
 			AWS_WAIT_FAILS: env.waitFails === true ? "1" : "",
 			AWS_DELETE_FAILS: env.deleteFails === true ? "1" : "",
 			AWS_PROVIDER_EXISTS: env.providerExists === true ? "1" : "",
@@ -303,5 +308,58 @@ describe("AWS setup scripts", () => {
 		expect(refused.stderr).toContain(
 			`Could not remove the findings forwarder from eu-central-1; delete the ${target.eventsStackName} stack there`,
 		)
+	})
+
+	it("replaces a forwarder stack a failed deploy or delete left behind, then deploys it again", () => {
+		const setup = Effect.runSync(
+			renderAwsSetupScript(target, "{}\n", null, { key: "maple_awsev_k", forwarderTemplate: "{}\n" }),
+		)
+		const { status, calls } = run(setup, {
+			stacksIn: [],
+			eventsStatus: ["eu-central-1=ROLLBACK_COMPLETE", "us-west-2=UPDATE_ROLLBACK_FAILED"],
+		})
+		expect(status).toBe(0)
+		for (const region of ["eu-central-1", "us-west-2"]) {
+			const steps = Arr.filter(
+				calls,
+				(call) =>
+					Str.includes(`--region ${region}`)(call) &&
+					Str.includes(target.eventsStackName)(call) &&
+					/delete-stack|wait stack-delete|cloudformation deploy/u.test(call),
+			)
+			expect(Arr.map(steps, (call) => Str.split(" ")(call)[1])).toEqual([
+				"delete-stack",
+				"wait",
+				"deploy",
+			])
+		}
+	})
+
+	it("renders a forwarder that sends the region's finding events to the main region's default bus", () => {
+		const template = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))(
+			renderAwsEventsForwarderCloudFormation(
+				Schema.decodeSync(AwsConnectionId)("8a3c6f1e-6b8f-4e6b-9a1e-2f4c5d6e7f80"),
+			),
+		)
+		expect(template).toMatchObject({
+			Parameters: { ForwardRoleArn: { Type: "String" } },
+			Resources: {
+				FindingsRule: {
+					Type: "AWS::Events::Rule",
+					Properties: {
+						State: "ENABLED",
+						Targets: [
+							{
+								Arn: {
+									"Fn::Sub":
+										"arn:${AWS::Partition}:events:us-east-1:${AWS::AccountId}:event-bus/default",
+								},
+								RoleArn: { Ref: "ForwardRoleArn" },
+							},
+						],
+					},
+				},
+			},
+		})
 	})
 })
