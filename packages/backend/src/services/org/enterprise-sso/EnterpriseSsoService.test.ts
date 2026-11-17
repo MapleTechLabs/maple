@@ -1368,4 +1368,52 @@ describe("EnterpriseSsoService", () => {
 			)
 		},
 	)
+
+	it.effect(
+		"takes a former member off the bypass list, unless they rejoined or another organization needs the entry",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const world = { clerk: fakeClerk(), dns: new Map<string, Array<string>>(), entitled: true }
+			const DUAL = Schema.decodeSync(UserId)("user_dual")
+			return run(
+				testDb,
+				world,
+				Effect.gen(function* () {
+					const sso = yield* EnterpriseSsoService
+					// An organization without a connection has no list.
+					assert.strictEqual(yield* sso.removeFormerMemberBypass(ORG, BREAK_GLASS), "not_listed")
+
+					yield* verifiedDomain(world.dns, "acme.com")
+					yield* sso.createConnection(ORG, ADMIN, samlRequest(["acme.com"]))
+					yield* sso.addBypassUser(ORG, BREAK_GLASS)
+					assert.strictEqual(yield* sso.removeFormerMemberBypass(ORG, ADMIN), "not_listed")
+
+					// A late delivery for someone who has rejoined since.
+					assert.strictEqual(yield* sso.removeFormerMemberBypass(ORG, BREAK_GLASS), "kept")
+					assert.deepStrictEqual(world.clerk.bypass, [BREAK_GLASS])
+
+					world.clerk.members.delete(BREAK_GLASS)
+					assert.strictEqual(yield* sso.removeFormerMemberBypass(ORG, BREAK_GLASS), "removed")
+					assert.deepStrictEqual(world.clerk.bypass, [])
+
+					// Another organization's connection serves this person's second address.
+					world.clerk.bypass.push(DUAL)
+					world.clerk.members.delete(DUAL)
+					world.clerk.connections.set("ent_partner", {
+						id: "ent_partner",
+						name: "Partner IdP",
+						provider: "saml_custom",
+						domains: ["partner.io"],
+						organizationId: OTHER_ORG,
+						active: true,
+						createdAt: 1,
+						saml: null,
+						oidc: null,
+					})
+					assert.strictEqual(yield* sso.removeFormerMemberBypass(ORG, DUAL), "kept")
+					assert.deepStrictEqual(world.clerk.bypass, [DUAL])
+				}),
+			)
+		},
+	)
 })

@@ -236,6 +236,14 @@ export interface EnterpriseSsoServiceApi {
 		userId: UserId,
 	) => Effect.Effect<EnterpriseSsoDocument, SsoWriteError>
 	/**
+	 * Takes someone who left the organization off its bypass list. Not listed is success, and an
+	 * entry another organization's connection also serves stays, as in `removeBypassUser`.
+	 */
+	readonly removeFormerMemberBypass: (
+		orgId: OrgId,
+		userId: UserId,
+	) => Effect.Effect<"removed" | "not_listed" | "kept", EnterpriseSsoUnavailableError>
+	/**
 	 * Applies a `directoryGroup.*` webhook. `not_here` when no org in this region owns the directory:
 	 * each region receives every event and only the home region holds the row.
 	 */
@@ -1282,6 +1290,43 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				return yield* get(orgId)
 			})
 
+			const removeFormerMemberBypass = Effect.fn("EnterpriseSsoService.removeFormerMemberBypass")(
+				function* (orgId: OrgId, userId: UserId) {
+					yield* Effect.annotateCurrentSpan({ orgId, "maple.sso.bypass_user": userId })
+					const row = yield* loadConnectionRow(orgId)
+					// No row in this region, or no Clerk: there is no list here to take them off.
+					if (Option.isNone(row) || !clerk.available) return "not_listed" as const
+					const { clerkConnectionId } = row.value
+					const outcome = yield* Effect.gen(function* () {
+						const listed = yield* clerk.listBypassUsers(clerkConnectionId).pipe(orEmpty)
+						if (!Arr.some(listed, (u) => u.userId === userId)) return "not_listed" as const
+						// Deliveries are unordered: someone who rejoined since keeps the entry they hold now.
+						if (yield* clerk.isMember(orgId, userId)) return "kept" as const
+						const connection = yield* orMissing(clerk.getConnection(clerkConnectionId))
+						// Clerk drops a deleted connection's entries itself.
+						if (Option.isNone(connection)) return "not_listed" as const
+						const elsewhere = yield* coveredElsewhere(
+							userId,
+							clerkConnectionId,
+							connection.value.domains,
+						)
+						// The entry is per user across the instance: another organization still needs it.
+						if (elsewhere.length > 0) return "kept" as const
+						yield* clerk.removeBypassUser(userId)
+						return "removed" as const
+					}).pipe(
+						// The user or the entry went away meanwhile: nothing left to remove.
+						Effect.catchIf(
+							(e) => e.status === 404,
+							() => Effect.succeed("not_listed" as const),
+						),
+						Effect.mapError(unavailable),
+					)
+					yield* Effect.annotateCurrentSpan({ "maple.sso.bypass_outcome": outcome })
+					return outcome
+				},
+			)
+
 			const applyDirectoryGroup = Effect.fn("EnterpriseSsoService.applyDirectoryGroup")(function* (
 				event: DirectoryGroupEvent,
 			) {
@@ -1363,6 +1408,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				setRoleMappings,
 				addBypassUser,
 				removeBypassUser,
+				removeFormerMemberBypass,
 				applyDirectoryGroup,
 			} satisfies EnterpriseSsoServiceApi
 		}),
@@ -1379,10 +1425,12 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 		),
 	)
 
-	/** Serves only the webhook's directory-group path, for route tests; settings calls fail. */
+	/** Serves only the webhook's paths, for route tests; settings calls fail. */
 	static readonly webhookOnly = (
 		apply: EnterpriseSsoServiceApi["applyDirectoryGroup"],
 		confirmDeprovisioned: EnterpriseSsoServiceApi["confirmDeprovisioned"] = () => Effect.succeed(true),
+		removeFormerMemberBypass: EnterpriseSsoServiceApi["removeFormerMemberBypass"] = () =>
+			Effect.succeed("not_listed"),
 	) => {
 		const unserved = Effect.fail(
 			new EnterpriseSsoUnavailableError({ message: "webhookOnly serves webhooks only" }),
@@ -1404,6 +1452,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 			setRoleMappings: () => unserved,
 			addBypassUser: () => unserved,
 			removeBypassUser: () => unserved,
+			removeFormerMemberBypass,
 			applyDirectoryGroup: apply,
 			confirmDeprovisioned,
 		})

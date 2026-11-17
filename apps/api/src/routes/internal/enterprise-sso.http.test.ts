@@ -70,6 +70,7 @@ const recordingService = (calls: Array<string>) => {
 		setRoleMappings: ok("setRoleMappings"),
 		addBypassUser: ok("addBypassUser"),
 		removeBypassUser: ok("removeBypassUser"),
+		removeFormerMemberBypass: () => Effect.succeed("not_listed" as const),
 		applyDirectoryGroup: () => Effect.fail(new EnterpriseSsoUnavailableError({ message: "unused" })),
 		confirmDeprovisioned: () => Effect.succeed(true),
 	}

@@ -74,6 +74,7 @@ Add at least one admin to the bypass list before you require SSO. A member on th
 - A person whose email is also on a domain another organization's SSO covers can't be added or removed here.
 - Bypass sign-ins still require any multi-factor authentication your account has set up.
 - Keep the list short. Every entry is a way in that skips your IdP.
+- A member who is removed from the organization is taken off the list.
 
 ### 4. Require SSO
 
