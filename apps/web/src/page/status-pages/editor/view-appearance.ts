@@ -173,9 +173,12 @@ const brandingImageField = (
 	const value = Str.trim(form[entry.field])
 	const isUpload = isStatusPageImageDataUrl(value)
 	const isReadOnly = !canManage(model)
+	// The favicon at tab-icon size, not stretched to the tile.
+	const imageClass =
+		entry.field === "faviconUrl" ? "size-8 object-contain" : "max-h-full max-w-full object-contain"
 	const preview =
 		value !== "" && error === null
-			? h.img([h.Src(value), h.Alt(""), h.Class("max-h-full max-w-full object-contain")])
+			? h.img([h.Src(value), h.Alt(""), h.Class(imageClass)])
 			: icon(h, "UploadIcon", { className: "size-5 text-muted-foreground" })
 	return vstack(h, { gap: "2" }, [
 		imageDropzone(h, {
@@ -183,7 +186,8 @@ const brandingImageField = (
 			title: entry.title,
 			hint: `${entry.hint} ${UPLOAD_HINT}`,
 			accept: IMAGE_ACCEPT,
-			isWide: entry.field !== "faviconUrl",
+			// One tile width for all three, so their titles line up.
+			isWide: true,
 			preview,
 			isUploading: false,
 			isDragging: model.brandingDrag === entry.field,
