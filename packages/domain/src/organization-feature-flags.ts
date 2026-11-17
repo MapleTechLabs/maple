@@ -41,6 +41,8 @@ export const OrganizationFeatureFlags = Schema.Struct({
 	profiling: DisabledByDefaultFeatureFlag,
 	/** Gates the scheduled security audit API; internal-only while it is built out. */
 	securityAudit: DisabledByDefaultFeatureFlag,
+	/** Gates customer status pages: the nav row, the `/status-pages` routes, the API and MCP tools. */
+	statusPages: DisabledByDefaultFeatureFlag,
 }).pipe(
 	Schema.encodeKeys({
 		aiAutoTriage: "aiautotriage",
@@ -50,6 +52,7 @@ export const OrganizationFeatureFlags = Schema.Struct({
 		productAnalytics: "productanalytics",
 		profiling: "profiling",
 		securityAudit: "securityaudit",
+		statusPages: "statuspages",
 	}),
 )
 
@@ -66,6 +69,7 @@ export const DISABLED_ORGANIZATION_FEATURE_FLAGS: OrganizationFeatureFlags = {
 	productAnalytics: false,
 	profiling: false,
 	securityAudit: false,
+	statusPages: false,
 }
 
 /**
@@ -81,6 +85,7 @@ export const ENABLED_ORGANIZATION_FEATURE_FLAGS: OrganizationFeatureFlags = {
 	productAnalytics: true,
 	profiling: true,
 	securityAudit: true,
+	statusPages: true,
 }
 
 /** Decode Clerk metadata, falling back to every rollout disabled for non-object input. */
