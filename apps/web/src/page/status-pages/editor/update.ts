@@ -4,6 +4,7 @@ import { Option, Result, Array as Arr } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import type { AppRoute } from "../../../route"
+import * as Combobox from "@maple/views/ui/combobox"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
@@ -44,13 +45,15 @@ import {
 	confirmDiscardComponent,
 	deleteComponentDialog,
 	deletedComponent,
-	discardComponent,
 	discardComponentDialog,
+	discardMonitors,
+	GROUP_PICKER_ID,
+	groupPickerStep,
 	leaveComponent,
 	moveComponent,
 	nudgeComponent,
 	reordered,
-	saveComponent,
+	saveMonitors,
 	savedComponent,
 	submitAdd,
 	toggleComponentUptime,
@@ -209,12 +212,15 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		previewHistory: [],
 		componentForm: emptyComponentForm,
 		componentSave: null,
+		groupPicker: Combobox.init(GROUP_PICKER_ID, "single"),
 		pendingLeave: null,
 		discardComponentDialog: Dialog.init("status-page-discard-component", "alert-dialog"),
 		confirmDeleteComponentId: null,
 		deleteComponentDialog: Dialog.init("status-page-delete-component", "alert-dialog"),
 		isDeletingComponent: false,
-		isReordering: false,
+		pendingOrder: null,
+		isSavingOrder: false,
+		orderFailure: null,
 		addPicker: emptyPicker,
 		isAddingComponents: false,
 		addSession: 0,
@@ -559,8 +565,9 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 		// Components
 		ChangedComponentField: ({ field, value }) => changeComponent(model, field, value),
 		ToggledComponentUptime: () => toggleComponentUptime(model),
-		ClickedSaveComponent: () => saveComponent(model),
-		ClickedDiscardComponent: () => discardComponent(model),
+		GotGroupPickerMessage: ({ message: child }) => groupPickerStep(model, child),
+		ClickedSaveMonitors: () => saveMonitors(model),
+		ClickedDiscardMonitors: () => discardMonitors(model),
 		CompletedSaveComponent: ({ result }) => savedComponent(model, result, context),
 		ClickedConfirmDiscardComponent: () => confirmDiscardComponent(model),
 		GotDiscardComponentDialogMessage: ({ message: child }) =>

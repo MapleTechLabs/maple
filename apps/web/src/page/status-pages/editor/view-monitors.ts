@@ -1,9 +1,9 @@
 import type { V2StatusPageComponent } from "@maple/domain/http/v2"
 import { Array as Arr, Option, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { alert, alertDescription } from "@maple/views/ui/alert"
 import { button } from "@maple/views/ui/button"
-import * as Checkbox from "@maple/views/ui/checkbox"
+import * as Combobox from "@maple/views/ui/combobox"
+import { comboboxPicker, triggerIdOf } from "@maple/views/ui/combobox-picker"
 import { dragGrip } from "@maple/views/ui/drag-grip"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
@@ -12,6 +12,7 @@ import { pressable } from "@maple/views/ui/pressable"
 import { grid } from "@maple/views/ui/grid"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
+import { switchControl } from "@maple/views/ui/switch"
 import { type TypographyTone, typography } from "@maple/views/ui/typography"
 import type { Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -25,17 +26,24 @@ import {
 	componentStatus,
 	statusReason,
 } from "../shared/derive"
-import { selectField, textField } from "../shared/fields"
+import { controlField, selectField, textField } from "../shared/fields"
 import { RevealOpenComponent } from "./command"
 import { GRIP_ATTRIBUTE, LIST_ATTRIBUTE, ROW_ATTRIBUTE, SLOT_ATTRIBUTE } from "./component-drag"
 import { Message } from "./message"
 import { canManage, type ComponentSave, type Model } from "./model"
-import { componentsOf, incidentsOf, monitorsOf } from "./reads"
-import { componentGripId, componentRowId, groupedOrder, unsavedComponent } from "./update-components"
+import { componentsOf, incidentsOf, listedComponentsOf, monitorsOf } from "./reads"
+import {
+	componentGripId,
+	componentRowId,
+	GROUP_PICKER_ID,
+	groupedOrder,
+	unsavedComponent,
+	unsavedOrder,
+} from "./update-components"
 import { failureAlert } from "./view-panel"
 
 // Settings > Monitors: the page's components by group, each opening in place with its fields and
-// reordered by its grip; the page preview beside Settings shows how it reads.
+// reordered by its grip, both saved from one bar; the page preview beside Settings shows how it reads.
 
 type H = HtmlBuilder<Message>
 
@@ -67,41 +75,62 @@ const saveIndicator = (h: H, save: ComponentSave | null): Html =>
 		[save === null ? "" : SAVE_LABEL[save._tag]],
 	)
 
-/** The page's other groups as one-click picks, so a group is never retyped (or mistyped). */
-const groupSuggestions = (h: H, model: Model, isReadOnly: boolean): ReadonlyArray<Html> => {
-	const current = Str.trim(model.componentForm.group)
-	const groups = Arr.filter(
-		Arr.dedupe(Arr.flatMap(componentsOf(model), (row) => (row.group === null ? [] : [row.group]))),
-		(group) => group !== current,
+/**
+ * Group: the page's groups and "No group" in a list, the search naming a new one. A component
+ * that shares its group with others is listed under it.
+ */
+const groupPicker = (h: H, model: Model, isReadOnly: boolean): Html => {
+	const form = model.componentForm
+	const current = { ...model.groupPicker, selected: [form.group] }
+	const groups = Arr.dedupe([
+		...Arr.flatMap(componentsOf(model), (row) => (row.group === null ? [] : [row.group])),
+		...(Str.trim(form.group) === "" ? [] : [form.group]),
+	])
+	const typed = Str.trim(Combobox.queryOf(current))
+	const items =
+		typed === ""
+			? ["", ...groups]
+			: [...Combobox.filterItems(groups, typed), ...(groups.includes(typed) ? [] : [typed])]
+	const triggerId = triggerIdOf(GROUP_PICKER_ID)
+	return controlField(
+		h,
+		{ id: triggerId, label: "Group" },
+		h.submodel({
+			slotId: `${GROUP_PICKER_ID}-slot`,
+			model: current,
+			view: comboboxPicker,
+			toParentMessage: (message) => Message.GotGroupPickerMessage({ message }),
+			viewInputs: {
+				items,
+				// The label replaces the trigger's text for screen readers, so it carries the pick.
+				ariaLabel: form.group === "" ? "Group" : `Group: ${form.group}`,
+				searchPlaceholder: "Find or name a group",
+				emptyText: "No groups yet",
+				trigger: [form.group === "" ? "No group" : form.group],
+				isPlaceholder: form.group === "",
+				isDisabled: isReadOnly,
+				triggerClassName: "h-8 w-full sm:h-8",
+				renderItem: (_h, value) =>
+					value === "" ? ["No group"] : groups.includes(value) ? [value] : [`New group "${value}"`],
+				toView: (parts) => h.div([], parts),
+			},
+		}),
 	)
-	return isReadOnly || groups.length === 0
+}
+
+/** Why the component shows what it shows, when that is not its monitor's plain reading. */
+const reasonLine = (h: H, model: Model, component: V2StatusPageComponent): ReadonlyArray<Html> => {
+	const reason = statusReason(component, monitorsOf(model), incidentsOf(model))
+	const tone = COMPONENT_STATUS_TONE[componentStatus(component, monitorsOf(model), incidentsOf(model))]
+	return reason === null
 		? []
 		: [
-				hstack(
-					h,
-					{
-						gap: "1.5",
-						wrap: true,
-						className: "sm:col-span-2",
-						attributes: [h.Role("group"), h.AriaLabel("Groups on this page")],
-					},
-					Arr.map(groups, (group) =>
-						button(
-							h,
-							{
-								size: "xs",
-								variant: "outline",
-								attributes: [
-									h.Key(group),
-									h.OnClick(
-										Message.ChangedComponentField({ field: "group", value: group }),
-									),
-								],
-							},
-							[group],
-						),
-					),
-				),
+				hstack(h, { gap: "2", align: "start" }, [
+					typography(h, { tone: LABEL_TONE[tone], className: "mt-px shrink-0" }, [
+						icon(h, "AlertWarningIcon", { size: 14 }),
+					]),
+					typography(h, { size: "xs", tone: "muted", as: "p" }, [reason]),
+				]),
 			]
 }
 
@@ -111,20 +140,20 @@ const componentForm = (h: H, model: Model, component: V2StatusPageComponent): Ht
 	const isReadOnly = !canManage(model)
 	const hasMonitor = form.monitorId !== ""
 	const uptimeId = "status-page-panel-uptime"
-	const reason = statusReason(component, monitorsOf(model), incidentsOf(model))
 	const save = saveOf(model, component)
 	return vstack(
 		h,
 		{
 			gap: "4",
-			className: "px-4 pt-1 pb-4 sm:pl-12",
+			// Level with the row's status dot, past the grip.
+			className: cn("pt-1 pr-4 pb-4", isReadOnly ? "pl-4" : "pl-10.5"),
 			attributes: model.revealComponentId === component.id ? [h.OnMount(RevealOpenComponent())] : [],
 		},
 		[
 			...(isReadOnly
 				? [adminOnlyNote(h, ["Only org admins and engineers can change components."])]
 				: []),
-			grid(h, { sm: 2, gap: "4" }, [
+			grid(h, { sm: 2, gap: "4", className: "items-start" }, [
 				textField(h, {
 					id: "status-page-panel-name",
 					label: "Shown as",
@@ -133,26 +162,17 @@ const componentForm = (h: H, model: Model, component: V2StatusPageComponent): Ht
 					error: Str.trim(form.name) === "" ? "Add a name." : null,
 					onInput: (value) => Message.ChangedComponentField({ field: "name", value }),
 				}),
-				textField(h, {
-					id: "status-page-panel-group",
-					label: "Group",
-					value: form.group,
-					placeholder: "None",
-					hint: "Components with one group are listed under it.",
-					isDisabled: isReadOnly,
-					onInput: (value) => Message.ChangedComponentField({ field: "group", value }),
-				}),
-				...groupSuggestions(h, model, isReadOnly),
-				textField(h, {
-					id: "status-page-panel-description",
-					label: "Description",
-					value: form.description,
-					placeholder: "None",
-					hint: "A line under the name, for what this covers.",
-					isDisabled: isReadOnly,
-					className: "sm:col-span-2",
-					onInput: (value) => Message.ChangedComponentField({ field: "description", value }),
-				}),
+				groupPicker(h, model, isReadOnly),
+			]),
+			textField(h, {
+				id: "status-page-panel-description",
+				label: "Description",
+				value: form.description,
+				placeholder: "Optional",
+				isDisabled: isReadOnly,
+				onInput: (value) => Message.ChangedComponentField({ field: "description", value }),
+			}),
+			grid(h, { sm: 2, gap: "4", className: "items-start" }, [
 				selectField(h, {
 					id: "status-page-panel-monitor",
 					label: "Driven by",
@@ -172,9 +192,6 @@ const componentForm = (h: H, model: Model, component: V2StatusPageComponent): Ht
 					label: "Override status",
 					value: form.manualStatus,
 					isDisabled: isReadOnly,
-					hint: hasMonitor
-						? "Automatic follows the monitor and open incidents."
-						: "Automatic follows open incidents.",
 					entries: [
 						{ value: "", label: "Automatic" },
 						...Arr.map(COMPONENT_STATUS_OPTIONS, (value) => ({
@@ -185,31 +202,25 @@ const componentForm = (h: H, model: Model, component: V2StatusPageComponent): Ht
 					onInput: (value) => Message.ChangedComponentField({ field: "manualStatus", value }),
 				}),
 			]),
-			...(reason === null
-				? []
-				: [
-						alert(h, { variant: "warn", size: "sm" }, [
-							icon(h, "AlertWarningIcon"),
-							alertDescription(h, [reason]),
-						]),
-					]),
+			...reasonLine(h, model, component),
 			vstack(h, { gap: "1" }, [
 				label(
 					h,
 					{
-						className: "flex font-normal text-sm sm:text-sm",
-						attributes: [h.Id(Checkbox.labelId(uptimeId))],
+						className: "flex items-center gap-2 font-normal text-sm sm:text-sm",
+						attributes: [h.Id(`${uptimeId}-label`)],
 					},
 					[
-						...Checkbox.view(h, {
+						...switchControl(h, {
 							// The stored value, shown as is; it only takes effect once a monitor drives the component.
-							model: { isChecked: form.showUptime },
-							toParentMessage: () => Message.ToggledComponentUptime(),
-							id: `${uptimeId}-root`,
-							inputId: uptimeId,
+							id: uptimeId,
+							inputId: `${uptimeId}-input`,
+							isChecked: form.showUptime,
 							isDisabled: isReadOnly || !hasMonitor,
+							labelledBy: `${uptimeId}-label`,
+							onToggle: Message.ToggledComponentUptime(),
 						}),
-						h.span([], ["Show uptime bars"]),
+						"Show uptime bars",
 					],
 				),
 				...(hasMonitor
@@ -228,7 +239,9 @@ const componentForm = (h: H, model: Model, component: V2StatusPageComponent): Ht
 							h,
 							{
 								size: "sm",
-								variant: "destructive-outline",
+								variant: "destructive-ghost",
+								// Its text level with the fields above.
+								className: "-ml-2.5",
 								attributes: [
 									h.OnClick(Message.ClickedDeleteComponent({ componentId: component.id })),
 								],
@@ -253,8 +266,8 @@ const grip = (h: H, model: Model, component: V2StatusPageComponent): Html =>
 			h.Id(componentGripId(component.id)),
 			h.DataAttribute(GRIP_ATTRIBUTE, ""),
 			h.AriaDescribedBy(REORDER_HINT_ID),
-			// Still focusable mid-save, so the keyboard keeps its place.
-			h.AriaDisabled(model.isReordering),
+			// Still focusable while the order saves, so the keyboard keeps its place.
+			h.AriaDisabled(model.isSavingOrder),
 		],
 	})
 
@@ -321,7 +334,7 @@ const componentRow = (h: H, model: Model, component: V2StatusPageComponent): Htm
 
 /** The components under each group's head, in page order, ungrouped last. */
 const componentList = (h: H, model: Model): Html => {
-	const rows = groupedOrder(componentsOf(model))
+	const rows = groupedOrder(listedComponentsOf(model))
 	const groups = Arr.dedupe(Arr.map(rows, (row) => row.group))
 	const hasGroups = Arr.some(groups, (group) => group !== null)
 	return vstack(h, { attributes: [h.AriaLabel("Components")] }, [
@@ -333,6 +346,14 @@ const componentList = (h: H, model: Model): Html => {
 					),
 				]
 			: []),
+		...(model.orderFailure === null
+			? []
+			: [
+					h.div(
+						[h.Key("order-failure"), h.Class("p-4 pb-0")],
+						failureAlert(h, "Couldn't save the order", model.orderFailure),
+					),
+				]),
 		...Arr.map(groups, (group) =>
 			vstack(h, { attributes: [h.Key(group ?? "")] }, [
 				...(hasGroups
@@ -371,19 +392,30 @@ const componentList = (h: H, model: Model): Html => {
 	])
 }
 
-/** The open component's save bar, while its form differs from the saved component or saves. */
-export const componentSaveBar = (h: H, model: Model): ReadonlyArray<Html> => {
+/**
+ * The Monitors save bar, while the order was moved or the open component's form differs from it, or
+ * either saves. Save sends both.
+ */
+export const monitorsSaveBar = (h: H, model: Model): ReadonlyArray<Html> => {
 	const unsaved = Option.getOrNull(unsavedComponent(model))
-	const isNameMissing = Str.trim(model.componentForm.name) === ""
+	const isOrderUnsaved = Option.isSome(unsavedOrder(model))
+	const isNameMissing = unsaved !== null && Str.trim(model.componentForm.name) === ""
 	const save = model.componentSave
 	return saveBar(h, {
-		isDirty: unsaved !== null,
-		isPending: save?._tag === "Saving" && save.componentId === model.componentForm.editingId,
-		context: isNameMissing ? "Fix the fields marked above." : unsaved?.name,
-		onDiscard: Message.ClickedDiscardComponent(),
-		onSave: Message.ClickedSaveComponent(),
+		isDirty: unsaved !== null || isOrderUnsaved,
+		isPending:
+			model.isSavingOrder ||
+			(save?._tag === "Saving" && save.componentId === model.componentForm.editingId),
+		context: isNameMissing
+			? "Fix the fields marked above."
+			: Arr.join(
+					[...(isOrderUnsaved ? ["New order"] : []), ...(unsaved === null ? [] : [unsaved.name])],
+					", ",
+				),
+		onDiscard: Message.ClickedDiscardMonitors(),
+		onSave: Message.ClickedSaveMonitors(),
 		// One save at a time, even another component's.
-		isSaveDisabled: isNameMissing || save?._tag === "Saving",
+		isSaveDisabled: isNameMissing || save?._tag === "Saving" || model.isSavingOrder,
 	})
 }
 

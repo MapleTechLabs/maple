@@ -10,7 +10,7 @@ import { resolveView } from "./update"
 
 // Escape closes the open component, from its inputs too; an open dialog (the sheet included), menu
 // or listbox keeps its own Escape. A click in the live page's frame opens what it landed on. A
-// component's grip drags it under Settings > Monitors, never while the last reorder is saving.
+// component's grip drags it under Settings > Monitors, never while the order is saving.
 
 /** What Escape's owner is read from on the focused element. */
 export type Focused = Readonly<{
@@ -72,7 +72,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 						view.tab === "settings" &&
 						view.section === "monitors" &&
 						canManage(model) &&
-						!model.isReordering,
+						!model.isSavingOrder,
 				}
 			},
 			dependenciesToStream: ({ canDrag }) => (canDrag ? componentDrags : Stream.empty),

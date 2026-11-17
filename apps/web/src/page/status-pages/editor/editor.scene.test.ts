@@ -10,7 +10,7 @@ import {
 	type V2StatusPageCustomDomain,
 } from "@maple/domain/http/v2"
 import { DEFAULT_STATUS_PAGE_THEME } from "@maple/domain/status-page"
-import { flow, Option, Result, Schema, Array as Arr, String as Str } from "effect"
+import { flow, Option, Order, Result, Schema, Array as Arr, String as Str } from "effect"
 import {
 	type AnyCommand,
 	type SceneSimulation,
@@ -39,6 +39,7 @@ import {
 } from "foldkit/scene"
 import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
+import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
 import { MountDialog } from "@maple/views/ui/dialog"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -74,7 +75,7 @@ import {
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
-import { componentGripId, groupedOrder } from "./update-components"
+import { componentGripId, GROUP_PICKER_ID, groupedOrder } from "./update-components"
 import { customDomainOf } from "./update-domain"
 import { canvasDocument } from "./view-canvas"
 import { maintenanceDurationMs } from "./view-incidents"
@@ -305,6 +306,23 @@ const selected = (componentNumber: number, fixture: Fixture = {}) =>
 
 const revealed = Mount.resolve(RevealOpenComponent, Message.CompletedFocus())
 
+/** The Group list's open animation, `generation` counting its open and close transitions. */
+const pickerOpened = (generation: number) => [
+	Mount.resolve(Combobox.MountCombobox, Combobox.Message.CompletedMountCombobox()),
+	Command.resolve(Animation.WaitForPaint, Animation.Message.CompletedWaitForPaint({ generation })),
+	Command.resolve(Animation.WaitForAnimationSettled, Animation.Message.EndedAnimation({ generation })),
+]
+
+/** The Group list's close animation. */
+const pickerClosed = (generation: number) => [
+	Command.resolve(Animation.WaitForPaint, Animation.Message.CompletedWaitForPaint({ generation })),
+	Command.resolve(
+		Combobox.WaitForComboboxExit({ id: GROUP_PICKER_ID, generation }),
+		Animation.Message.EndedAnimation({ generation }),
+	),
+	Mount.expectEnded(Combobox.MountCombobox),
+]
+
 type ArgsSchema = Schema.Top & { readonly DecodingServices: never }
 
 /** The args of each pending `name` Command. */
@@ -379,17 +397,12 @@ const gripOrder = (html: Parameters<ReturnType<typeof find>>[0]): ReadonlyArray<
 	Arr.getSomes(Arr.map(findAll(html, 'button[aria-label^="Reorder "]'), attr("aria-label")))
 
 describe("components under Settings > Monitors", () => {
-	test("a drop sends the whole new order once and shows it at once", () => {
+	test("a drop moves the row at once and sends nothing until Save, which sends the whole order once", () => {
 		const dropped = pageUpdate(
 			loaded(MONITORS),
 			Message.DroppedComponent({ componentId: componentId(1), index: 2 }),
 		)
-		expect(dropped.commands).toMatchObject([
-			{
-				name: "ReorderStatusPageComponents",
-				args: { componentIds: [componentId(2), componentId(3), componentId(1)] },
-			},
-		])
+		expect(dropped.commands ?? []).toEqual([])
 		scene(
 			{ update: pageUpdate, view },
 			given(dropped.model),
@@ -400,26 +413,161 @@ describe("components under Settings > Monitors", () => {
 					"Reorder Component 1",
 				]),
 			),
+			expectView(text("Unsaved changes")).toExist(),
+			expectView(text("New order")).toExist(),
 		)
-		// One save at a time: a drop while it is in flight sends nothing.
+		const saving = pageUpdate(dropped.model, Message.ClickedSaveMonitors())
+		expect(saving.commands).toMatchObject([
+			{
+				name: "ReorderStatusPageComponents",
+				args: { componentIds: [componentId(2), componentId(3), componentId(1)] },
+			},
+		])
+		// One order save at a time: a drop while it is in flight moves nothing.
 		expect(
-			pageUpdate(dropped.model, Message.DroppedComponent({ componentId: componentId(2), index: 0 }))
-				.commands ?? [],
-		).toEqual([])
-		const done = pageUpdate(dropped.model, Message.CompletedReorder({ result: Result.succeed([]) }))
+			pageUpdate(saving.model, Message.DroppedComponent({ componentId: componentId(2), index: 0 }))
+				.model.pendingOrder,
+		).toEqual(saving.model.pendingOrder)
+		const done = pageUpdate(saving.model, Message.CompletedReorder({ result: Result.succeed([]) }))
 		expect(names(done.commands)).toContain("FetchStatusPageComponents")
+		scene(
+			{ update: pageUpdate, view },
+			given(done.model),
+			// Kept as saved until the re-read brings the server's order.
+			tap(({ html }) =>
+				expect(gripOrder(html)).toEqual([
+					"Reorder Component 2",
+					"Reorder Component 3",
+					"Reorder Component 1",
+				]),
+			),
+			expectView(text("Unsaved changes")).not.toExist(),
+		)
 	})
 
-	test("a drop on the slot it came from, or past the end it is already at, sends nothing", () => {
+	test("a drop on the slot it came from, past the end it is already at, or back where it was saved leaves nothing to save", () => {
 		const model = loaded(MONITORS)
 		expect(
-			pageUpdate(model, Message.DroppedComponent({ componentId: componentId(2), index: 1 })).commands ??
-				[],
-		).toEqual([])
+			pageUpdate(model, Message.DroppedComponent({ componentId: componentId(2), index: 1 })).model,
+		).toEqual(model)
 		expect(
-			pageUpdate(model, Message.DroppedComponent({ componentId: componentId(3), index: 9 })).commands ??
-				[],
-		).toEqual([])
+			pageUpdate(model, Message.DroppedComponent({ componentId: componentId(3), index: 9 })).model,
+		).toEqual(model)
+		const back = steps(model, [
+			Message.DroppedComponent({ componentId: componentId(1), index: 2 }),
+			Message.DroppedComponent({ componentId: componentId(1), index: 0 }),
+		])
+		scene({ update: pageUpdate, view }, given(back), expectView(text("Unsaved changes")).not.toExist())
+		expect(pageUpdate(back, Message.ClickedSaveMonitors()).commands ?? []).toEqual([])
+	})
+
+	test("Discard puts the saved order back", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(MONITORS)),
+			keydown(role("button", { name: "Reorder Component 1" }), "ArrowDown"),
+			Command.resolve(FocusEditorElement, Message.CompletedFocus()),
+			click(role("button", { name: "Discard" })),
+			Command.expectNone(),
+			tap(({ html }) =>
+				expect(gripOrder(html)).toEqual([
+					"Reorder Component 1",
+					"Reorder Component 2",
+					"Reorder Component 3",
+				]),
+			),
+			expectView(text("Unsaved changes")).not.toExist(),
+		)
+	})
+
+	test("the page preview follows the unsaved order; the live page keeps the saved one", () => {
+		const dropped = pageUpdate(
+			loaded(MONITORS),
+			Message.DroppedComponent({ componentId: componentId(3), index: 0 }),
+		).model
+		const page = srcdocOf("Acme Status with these settings")
+		/** The components' names in the order a document first mentions them. */
+		const namesIn = (document: string) =>
+			Arr.sortBy(
+				Order.mapInput(Order.Number, (name: string) =>
+					Option.getOrElse(Str.indexOf(name)(document), () => -1),
+				),
+			)(["Component 1", "Component 2", "Component 3"])
+		scene(
+			{ update: pageUpdate, view },
+			given(dropped),
+			tap(({ html }) =>
+				expect(namesIn(page(html))).toEqual(["Component 3", "Component 1", "Component 2"]),
+			),
+		)
+		expect(namesIn(canvasDocument(dropped, statusPage()))).toEqual([
+			"Component 1",
+			"Component 2",
+			"Component 3",
+		])
+	})
+
+	test("an unsaved order saves with the open component's edits, each write on its own", () => {
+		const both = steps(selected(2), [
+			Message.DroppedComponent({ componentId: componentId(2), index: 0 }),
+			Message.ChangedComponentField({ field: "name", value: "Payments" }),
+		])
+		scene({ update: pageUpdate, view }, given(both), expectView(text("New order, Component 2")).toExist())
+		const saving = pageUpdate(both, Message.ClickedSaveMonitors())
+		expect(saving.commands).toMatchObject([
+			{
+				name: "ReorderStatusPageComponents",
+				args: { componentIds: [componentId(2), componentId(1), componentId(3)] },
+			},
+			{
+				name: "SaveStatusPageComponent",
+				args: { componentId: componentId(2), payload: { name: "Payments" } },
+			},
+		])
+		// The component lands; the order is refused and stays pending with why.
+		const settled = steps(saving.model, [
+			Message.CompletedSaveComponent({ result: Result.succeed(component(2, { name: "Payments" })) }),
+			Message.CompletedReorder({ result: Result.fail(toLoadFailure(new Error("refused"))) }),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(settled),
+			expectView(text("Couldn't save the order")).toExist(),
+			expectView(text("New order")).toExist(),
+			tap(({ html }) =>
+				expect(gripOrder(html)).toEqual([
+					"Reorder Payments",
+					"Reorder Component 1",
+					"Reorder Component 3",
+				]),
+			),
+		)
+		// Save tries the order again, alone.
+		expect(names(pageUpdate(settled, Message.ClickedSaveMonitors()).commands)).toEqual([
+			"ReorderStatusPageComponents",
+		])
+	})
+
+	test("an unsaved order belongs to no row: opening another one or leaving Monitors keeps it without asking", () => {
+		const dropped = pageUpdate(
+			selected(1),
+			Message.DroppedComponent({ componentId: componentId(3), index: 0 }),
+		).model
+		const opened = pageUpdate(dropped, Message.ClickedComponent({ componentId: componentId(2) })).model
+		expect(opened.discardComponentDialog.isOpen).toBe(false)
+		expect(opened.panel).toEqual({ _tag: "Component", componentId: componentId(2) })
+		const away = routeChanged(opened, { _tag: "StatusPage", pageId: PUBLIC_ID, search: {} }, context)
+		const back = routeChanged(
+			away.model,
+			{ _tag: "StatusPage", pageId: PUBLIC_ID, search: { view: "settings", section: "monitors" } },
+			context,
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(back.model),
+			expectView(text("New order")).toExist(),
+			tap(({ html }) => expect(gripOrder(html)[0]).toBe("Reorder Component 3")),
+		)
 	})
 
 	test("each row's grip says what it reorders and how, for managers only", () => {
@@ -438,18 +586,12 @@ describe("components under Settings > Monitors", () => {
 		)
 	})
 
-	test("ArrowDown on a grip moves its row one slot and keeps focus on that grip", () => {
+	test("ArrowDown on a grip moves its row one slot and keeps focus on that grip; Save sends the order", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(MONITORS)),
 			keydown(role("button", { name: "Reorder Component 1" }), "ArrowDown"),
-			Command.expectExact(
-				ReorderComponents({
-					pageId: statusPage().id,
-					componentIds: [componentId(2), componentId(1), componentId(3)],
-				}),
-				FocusEditorElement({ id: componentGripId(componentId(1)) }),
-			),
+			Command.expectExact(FocusEditorElement({ id: componentGripId(componentId(1)) })),
 			tap(({ html }) =>
 				expect(gripOrder(html)).toEqual([
 					"Reorder Component 2",
@@ -458,6 +600,13 @@ describe("components under Settings > Monitors", () => {
 				]),
 			),
 			Command.resolve(FocusEditorElement, Message.CompletedFocus()),
+			click(role("button", { name: "Save" })),
+			Command.expectExact(
+				ReorderComponents({
+					pageId: statusPage().id,
+					componentIds: [componentId(2), componentId(1), componentId(3)],
+				}),
+			),
 			reorderLands([component(2), component(1), component(3)]),
 			// The saved order reads back as shown.
 			tap(({ html }) =>
@@ -467,6 +616,7 @@ describe("components under Settings > Monitors", () => {
 					"Reorder Component 3",
 				]),
 			),
+			expectView(text("Unsaved changes")).not.toExist(),
 		)
 	})
 
@@ -494,7 +644,7 @@ describe("components under Settings > Monitors", () => {
 			Mount.expectNone(),
 			expectView(role("button", { name: /^API/u })).toHaveAttr("aria-expanded", "true"),
 			expectView(role("textbox", { name: "Shown as" })).toHaveValue("API"),
-			expectView(role("textbox", { name: "Group" })).toHaveValue("Core"),
+			expectView(role("combobox", { name: "Group: Core" })).toHaveText("Core"),
 			expectView(text("Degraded, set under Override status.")).toExist(),
 			click(role("button", { name: /^API/u })),
 			Command.resolve(FocusEditorElement, Message.CompletedFocus()),
@@ -543,8 +693,10 @@ describe("components under Settings > Monitors", () => {
 		]
 		expect(
 			pageUpdate(
-				loaded({ components: rows }),
-				Message.DroppedComponent({ componentId: componentId(3), index: 0 }),
+				steps(loaded({ components: rows }), [
+					Message.DroppedComponent({ componentId: componentId(3), index: 0 }),
+				]),
+				Message.ClickedSaveMonitors(),
 			).commands,
 		).toMatchObject([
 			{
@@ -690,7 +842,7 @@ describe("components under Settings > Monitors", () => {
 			selected(2),
 			Message.ChangedComponentField({ field: "name", value: " Payments " }),
 		).model
-		const saving = pageUpdate(editing, Message.ClickedSaveComponent())
+		const saving = pageUpdate(editing, Message.ClickedSaveMonitors())
 		expect(saving.commands).toMatchObject([
 			{
 				name: "SaveStatusPageComponent",
@@ -707,8 +859,8 @@ describe("components under Settings > Monitors", () => {
 			},
 		])
 		// One save at a time, and nothing to save while the form matches the component.
-		expect(pageUpdate(saving.model, Message.ClickedSaveComponent()).commands ?? []).toEqual([])
-		expect(pageUpdate(selected(2), Message.ClickedSaveComponent()).commands ?? []).toEqual([])
+		expect(pageUpdate(saving.model, Message.ClickedSaveMonitors()).commands ?? []).toEqual([])
+		expect(pageUpdate(selected(2), Message.ClickedSaveMonitors()).commands ?? []).toEqual([])
 		const saved = pageUpdate(
 			saving.model,
 			Message.CompletedSaveComponent({ result: Result.succeed(component(2, { name: "Payments" })) }),
@@ -729,7 +881,7 @@ describe("components under Settings > Monitors", () => {
 			expectView(text("Add a name.")).toExist(),
 			expectView(role("button", { name: "Save" })).toBeDisabled(),
 		)
-		expect(pageUpdate(unnamed.model, Message.ClickedSaveComponent()).commands ?? []).toEqual([])
+		expect(pageUpdate(unnamed.model, Message.ClickedSaveMonitors()).commands ?? []).toEqual([])
 	})
 
 	test("Discard puts the saved values back", () => {
@@ -750,7 +902,7 @@ describe("components under Settings > Monitors", () => {
 			Message.ChangedComponentField({ field: "description", value: " Card payments and payouts " }),
 		)
 		expect(canvasDocument(editing.model, statusPage())).toContain("Card payments and payouts")
-		expect(pageUpdate(editing.model, Message.ClickedSaveComponent()).commands).toMatchObject([
+		expect(pageUpdate(editing.model, Message.ClickedSaveMonitors()).commands).toMatchObject([
 			{
 				name: "SaveStatusPageComponent",
 				args: { componentId: componentId(2), payload: { description: "Card payments and payouts" } },
@@ -763,17 +915,35 @@ describe("components under Settings > Monitors", () => {
 		)
 	})
 
-	test("the page's other groups are offered under Group, and picking one fills it in without saving", () => {
-		const rows = [component(1, { group: "Core" }), component(2, { group: "Core" }), component(3)]
+	test("Group lists the page's groups and No group, a search names a new one, and a pick fills it in without saving", () => {
+		const rows = [component(1, { group: "Core" }), component(2, { group: "Edge" }), component(3)]
 		scene(
 			{ update: pageUpdate, view },
 			given(selected(3, { components: rows })),
-			click(role("button", { name: "Core" })),
-			Command.expectNone(),
-			expectView(role("textbox", { name: "Group" })).toHaveValue("Core"),
-			expectView(role("group", { name: "Groups on this page" })).not.toExist(),
+			expectView(role("combobox", { name: "Group" })).toHaveText("No group"),
+			click(role("combobox", { name: "Group" })),
+			...pickerOpened(1),
+			inside(role("listbox"), expectAll(all.role("option")).toHaveCount(3)),
+			click(role("option", { name: "Core" })),
+			...pickerClosed(2),
+			expectView(role("combobox", { name: "Group: Core" })).toHaveText("Core"),
 			expectView(text("Unsaved changes")).toExist(),
+			click(role("combobox", { name: "Group: Core" })),
+			...pickerOpened(3),
+			type(role("combobox", { name: "Search Group: Core" }), "Payments"),
+			click(role("option", { name: 'New group "Payments"' })),
+			...pickerClosed(4),
+			expectView(role("combobox", { name: "Group: Payments" })).toHaveText("Payments"),
 		)
+		const picked = steps(selected(3, { components: rows }), [
+			Message.GotGroupPickerMessage({ message: Combobox.Message.ClickedItem({ value: "Edge" }) }),
+		])
+		expect(pageUpdate(picked, Message.ClickedSaveMonitors()).commands).toMatchObject([
+			{
+				name: "SaveStatusPageComponent",
+				args: { componentId: componentId(3), payload: { group: "Edge" } },
+			},
+		])
 	})
 
 	test("a failed save keeps the edits and says so in the panel, and Save tries again", () => {
@@ -783,7 +953,7 @@ describe("components under Settings > Monitors", () => {
 			Message.ChangedComponentField({ field: "monitorId", value: monitor.id }),
 		)
 		expect(picked.commands ?? []).toEqual([])
-		const saving = pageUpdate(picked.model, Message.ClickedSaveComponent())
+		const saving = pageUpdate(picked.model, Message.ClickedSaveMonitors())
 		expect(saving.commands).toMatchObject([
 			{ name: "SaveStatusPageComponent", args: { payload: { monitor_id: monitor.id } } },
 		])
@@ -800,7 +970,7 @@ describe("components under Settings > Monitors", () => {
 			expectView(text("Unsaved changes")).toExist(),
 			expectView(role("button", { name: "Save" })).toBeEnabled(),
 		)
-		expect(pageUpdate(failed, Message.ClickedSaveComponent()).commands).toMatchObject([
+		expect(pageUpdate(failed, Message.ClickedSaveMonitors()).commands).toMatchObject([
 			{ name: "SaveStatusPageComponent", args: { payload: { monitor_id: monitor.id } } },
 		])
 	})
@@ -809,8 +979,8 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(selected(1)),
-			expectView(role("checkbox", { name: "Show uptime bars" })).toBeChecked(),
-			expectView(role("checkbox", { name: "Show uptime bars" })).toBeDisabled(),
+			expectView(role("switch", { name: "Show uptime bars" })).toBeChecked(),
+			expectView(role("switch", { name: "Show uptime bars" })).toBeDisabled(),
 			expectView(text("Uptime bars need a monitor.")).toExist(),
 		)
 	})
@@ -901,7 +1071,7 @@ describe("components under Settings > Monitors", () => {
 	test("edits being saved are not offered for discarding", () => {
 		const saving = steps(selected(1), [
 			Message.ChangedComponentField({ field: "name", value: "Payments" }),
-			Message.ClickedSaveComponent(),
+			Message.ClickedSaveMonitors(),
 		])
 		const switched = pageUpdate(saving, Message.ClickedComponent({ componentId: componentId(2) })).model
 		expect(switched.discardComponentDialog.isOpen).toBe(false)

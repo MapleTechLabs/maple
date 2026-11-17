@@ -25,7 +25,7 @@ import {
 } from "../shared/preview"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { componentsOf, incidentsOf, monitorsOf, statusReadsFailed, statusReadsReady } from "./reads"
+import { incidentsOf, listedComponentsOf, monitorsOf, statusReadsFailed, statusReadsReady } from "./reads"
 import { pageUrlOf } from "./update-domain"
 
 // The Live page tab: the page as visitors get it, full width; a click on a component or incident
@@ -53,7 +53,10 @@ const asEdited = (model: Model, component: V2StatusPageComponent): V2StatusPageC
 
 const nowOf = (model: Model, page: V2StatusPage): number => model.nowMs ?? toEpochMs(page.updated_at)
 
-/** The page as the editor would publish it: `form`'s fields, the open component's edits, in `state`. */
+/**
+ * The page as the editor would publish it: `form`'s fields, the components in their unsaved order
+ * with the open one's edits, in `state`.
+ */
 export const draftSnapshot = (
 	model: Model,
 	page: V2StatusPage,
@@ -63,7 +66,7 @@ export const draftSnapshot = (
 	const nowMs = nowOf(model, page)
 	const monitors = monitorsOf(model)
 	const shown = simulatePreview(state, {
-		components: Arr.map(componentsOf(model), (saved) => {
+		components: Arr.map(listedComponentsOf(model), (saved) => {
 			const component = asEdited(model, saved)
 			return {
 				id: component.id,
@@ -159,7 +162,12 @@ export const settingsPagePreview = (h: H, model: Model, page: V2StatusPage, form
 /** The saved page as visitors get it, with the monitors' history; components and incidents click. */
 export const canvasDocument = (model: Model, page: V2StatusPage): string =>
 	previewDocument({
-		snapshot: draftSnapshot(model, page, settingsFormOf(page), model.previewState),
+		snapshot: draftSnapshot(
+			{ ...model, pendingOrder: null },
+			page,
+			settingsFormOf(page),
+			model.previewState,
+		),
 		nowMs: nowOf(model, page),
 		isSelectable: true,
 		publicUrl: pageUrlOf(model, page),

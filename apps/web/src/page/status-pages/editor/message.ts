@@ -24,6 +24,7 @@ import {
 } from "@maple/domain/status-page"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
+import * as Combobox from "@maple/views/ui/combobox"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
@@ -69,13 +70,15 @@ export const Message = defineMessageUnion({
 	PressedEscape: {},
 	// Components
 	ChangedComponentField: { field: ComponentTextField, value: Schema.String },
+	GotGroupPickerMessage: { message: Combobox.Message },
 	ToggledComponentUptime: {},
-	ClickedSaveComponent: {},
-	ClickedDiscardComponent: {},
+	/** The Monitors save bar: a moved order and the open component's edits, together. */
+	ClickedSaveMonitors: {},
+	ClickedDiscardMonitors: {},
 	CompletedSaveComponent: { result: LoadOutcome(V2StatusPageComponent) },
 	ClickedConfirmDiscardComponent: {},
 	GotDiscardComponentDialogMessage: { message: Dialog.Message },
-	/** A grip drag let go over `index`, the slot within the component's group. */
+	/** A grip drag let go over `index`, the slot within the component's group; the order waits on Save. */
 	DroppedComponent: { componentId: StatusPageComponentId, index: Schema.Number },
 	/** ArrowUp (-1) or ArrowDown (1) on a component's grip. */
 	PressedMoveComponent: { componentId: StatusPageComponentId, offset: Schema.Number },

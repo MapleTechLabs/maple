@@ -2,8 +2,9 @@ import { encodeJson } from "@maple/views/data/request-key"
 import type { StatusPageComponentId } from "@maple/domain"
 import type { V2StatusPageComponent, V2UptimeMonitor } from "@maple/domain/http/v2"
 import { Option, Result, Array as Arr, String as Str } from "effect"
-import { AsyncData } from "foldkit"
+import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import type { LoadFailure } from "@maple/views/data/load-failure"
+import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
 import type { PageContext } from "../../contract"
 import {
@@ -37,6 +38,7 @@ import {
 	chain,
 	componentsOf,
 	errorToast,
+	listedComponentsOf,
 	liftDialog,
 	monitorsOf,
 	readComponents,
@@ -46,8 +48,8 @@ import {
 } from "./reads"
 
 // Components under Settings > Monitors: opened in place and saved from the save bar (leaving
-// unsaved edits asks first), removed behind a confirm, moved within their group, and added from the
-// same checklist the builder uses.
+// unsaved edits asks first), removed behind a confirm, moved within their group (the order saves
+// from the same bar), and added from the same checklist the builder uses.
 
 export const ADD_PICKER_ID = "status-page-add"
 
@@ -187,8 +189,27 @@ const editComponent = (model: Model, componentForm: ComponentForm): Return => ({
 	},
 })
 
-/** Save: one PATCH of the whole component, while it differs, has a name and no save is in flight. */
-export const saveComponent = (model: Model): Return => {
+/** The Group list's id; `GotGroupPickerMessage` carries its steps. */
+export const GROUP_PICKER_ID = "status-page-panel-group"
+
+/** A pick from the Group list (a group, "" for "No group", or a typed new one) becomes the form's group. */
+export const groupPickerStep = (model: Model, message: Combobox.Message): Return => {
+	const step = Combobox.update({ ...model.groupPicker, selected: [model.componentForm.group] }, message)
+	const picked = { ...model, groupPicker: step.model }
+	const next =
+		step.outMessage?._tag === "ChangedValue"
+			? editComponent(picked, { ...picked.componentForm, group: step.outMessage.value })
+			: { model: picked }
+	return {
+		...next,
+		commands: FoldkitCommand.mapMessages(step.commands ?? [], (child) =>
+			Message.GotGroupPickerMessage({ message: child }),
+		),
+	}
+}
+
+/** One PATCH of the whole component, while it differs, has a name and no save is in flight. */
+const saveComponent = (model: Model): Return => {
 	const found = unsavedComponent(model)
 	if (
 		!canManage(model) ||
@@ -213,8 +234,8 @@ export const saveComponent = (model: Model): Return => {
 	}
 }
 
-/** Discard: the form goes back to the saved component, and a refused save's alert with it. */
-export const discardComponent = (model: Model): Return =>
+/** The form goes back to the saved component, and a refused save's alert with it. */
+const discardComponent = (model: Model): Return =>
 	Option.match(unsavedComponent(model), {
 		onNone: () => ({ model }),
 		onSome: (component) => ({
@@ -312,49 +333,82 @@ export const moved = <A extends Groupable>(
 	)[1]
 }
 
-/** Moves the row to `index` in its group at once; the server's order lands with the re-read. */
-export const moveComponent = (model: Model, componentId: StatusPageComponentId, index: number): Return => {
-	const next = moved(componentsOf(model), componentId, index)
-	if (model.pageId === null || model.isReordering || next === null || !canManage(model)) return { model }
-	return {
-		model: {
-			...model,
-			isReordering: true,
-			components: { ...model.components, data: AsyncData.map(model.components.data, () => next) },
-		},
-		commands: [
-			ReorderComponents({
-				pageId: model.pageId,
-				componentIds: Arr.map(next, (component) => component.id),
-			}),
-		],
-	}
+/** The listed order with the row at `index` in its group, waiting on Save; `null` when nothing moves. */
+const reorder = (model: Model, componentId: StatusPageComponentId, index: number): Model | null => {
+	const next = moved(listedComponentsOf(model), componentId, index)
+	return next === null || model.isSavingOrder || !canManage(model)
+		? null
+		: { ...model, pendingOrder: Arr.map(next, (component) => component.id) }
 }
+
+/** A drop: the row takes the slot it was let go over, and the order waits on Save. */
+export const moveComponent = (model: Model, componentId: StatusPageComponentId, index: number): Return => ({
+	model: reorder(model, componentId, index) ?? model,
+})
 
 /** An arrow key on the grip: one slot up (-1) or down (1), focus kept on the moved row's grip. */
 export const nudgeComponent = (model: Model, componentId: StatusPageComponentId, offset: number): Return => {
-	const from = groupIndexOf(componentsOf(model), componentId)
-	if (from === null) return { model }
-	const next = moveComponent(model, componentId, from + offset)
-	return next.commands === undefined
-		? next
-		: { ...next, commands: [...next.commands, FocusEditorElement({ id: componentGripId(componentId) })] }
+	const from = groupIndexOf(listedComponentsOf(model), componentId)
+	const next = from === null ? null : reorder(model, componentId, from + offset)
+	return next === null
+		? { model }
+		: { model: next, commands: [FocusEditorElement({ id: componentGripId(componentId) })] }
 }
 
+/** The ids Save sends as the new order, while the listed order differs from the saved one. */
+export const unsavedOrder = (model: Model): Option.Option<ReadonlyArray<StatusPageComponentId>> => {
+	const saved = componentsOf(model)
+	const listed = listedComponentsOf(model)
+	return Arr.every(listed, (component, index) => component.id === saved[index]?.id)
+		? Option.none()
+		: Option.some(Arr.map(listed, (component) => component.id))
+}
+
+/** The whole order as one reorder, while it differs from the saved one and no order save is in flight. */
+const saveOrder = (model: Model): Return => {
+	const order = unsavedOrder(model)
+	return !canManage(model) || model.pageId === null || Option.isNone(order) || model.isSavingOrder
+		? { model }
+		: {
+				model: { ...model, isSavingOrder: true, orderFailure: null },
+				commands: [ReorderComponents({ pageId: model.pageId, componentIds: order.value })],
+			}
+}
+
+/** Save under Monitors: a moved order and the open component's edits, each its own write. */
+export const saveMonitors = (model: Model): Return => chain(model, saveOrder, saveComponent)
+
+/** Discard under Monitors: the saved order and the saved component come back. */
+export const discardMonitors = (model: Model): Return =>
+	discardComponent({ ...model, pendingOrder: null, orderFailure: null })
+
+/**
+ * The order saved: the list keeps it as the saved order until the re-read brings the server's. A
+ * refused one stays pending with why.
+ */
 export const reordered = (
 	model: Model,
 	result: Result.Result<ReadonlyArray<V2StatusPageComponent>, LoadFailure>,
 	context: PageContext,
-): Return => {
-	const refreshed = reread({ ...model, isReordering: false }, context)
-	return Result.match(result, {
-		onSuccess: (): Return => refreshed,
+): Return =>
+	Result.match(result, {
+		onSuccess: (): Return =>
+			reread(
+				{
+					...model,
+					isSavingOrder: false,
+					pendingOrder: null,
+					components: {
+						...model.components,
+						data: AsyncData.map(model.components.data, () => listedComponentsOf(model)),
+					},
+				},
+				context,
+			),
 		onFailure: (failure): Return => ({
-			...refreshed,
-			outMessage: errorToast("Couldn't reorder the components", failure),
+			model: { ...model, isSavingOrder: false, orderFailure: failure },
 		}),
 	})
-}
 
 export const askDeleteComponent = (model: Model, componentId: StatusPageComponentId): Return =>
 	canManage(model)

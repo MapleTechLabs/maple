@@ -30,7 +30,7 @@ import { accessSection } from "./view-access"
 import { appearanceSection, brandingSection } from "./view-appearance"
 import { customDomainSection } from "./view-domain"
 import { jsonTab } from "./view-json"
-import { componentSaveBar, monitorsSection } from "./view-monitors"
+import { monitorsSaveBar, monitorsSection } from "./view-monitors"
 import { settingsPagePreview } from "./view-canvas"
 import { pageUrlOf } from "./update-domain"
 import { Message } from "./message"
@@ -108,7 +108,8 @@ const pageSection = (h: H, model: Model, form: SettingsForm): Html => {
 					hint: "Shown in search results and the link preview.",
 					onInput: (value) => Message.ChangedSetting({ field: "description", value }),
 				}),
-				grid(h, { sm: 2, gap: "4" }, [
+				// The links apart from the page's text above, and each row clear of the next.
+				grid(h, { sm: 2, gapX: "4", gapY: "6", className: "mt-2" }, [
 					textField(h, {
 						id: "status-page-website",
 						label: "Website URL",
@@ -412,9 +413,9 @@ export const settingsLayout = (
 		],
 	)
 
-/** One bar at a time: under Monitors an open component's edits take it over the page's settings. */
+/** One bar at a time: under Monitors a moved order or an open component's edits take it over the page's settings. */
 const saveBars = (h: H, model: Model, form: SettingsForm, section: SettingsSection): ReadonlyArray<Html> => {
-	const componentBar = section === "monitors" ? componentSaveBar(h, model) : []
+	const componentBar = section === "monitors" ? monitorsSaveBar(h, model) : []
 	return componentBar.length > 0
 		? componentBar
 		: saveBar(h, {

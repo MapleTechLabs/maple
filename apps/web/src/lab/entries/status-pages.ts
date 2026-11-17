@@ -14,7 +14,7 @@ import { view as listView } from "../../page/status-pages/list/view"
 import { FocusEditorElement, ReorderComponents, SaveComponent } from "../../page/status-pages/editor/command"
 import { Message as EditorMessage } from "../../page/status-pages/editor/message"
 import { Model as EditorModel } from "../../page/status-pages/editor/model"
-import { componentsOf } from "../../page/status-pages/editor/reads"
+import { componentsOf, listedComponentsOf } from "../../page/status-pages/editor/reads"
 import { subscriptions as editorSubscriptions } from "../../page/status-pages/editor/subscription"
 import { init as editorInit, update as editorUpdate } from "../../page/status-pages/editor/update"
 import { view as editorView } from "../../page/status-pages/editor/view"
@@ -182,7 +182,9 @@ const sends = (commands: EditorCommands | undefined, name: string): boolean =>
 const kept = (model: EditorModel, commands: EditorCommands | undefined): EditorCommands => [
 	...keepLocal(commands),
 	...Arr.filter(commands ?? [], (command) => command.name === FocusEditorElement.name),
-	...(sends(commands, ReorderComponents.name) ? [AnswerReorder({ components: componentsOf(model) })] : []),
+	...(sends(commands, ReorderComponents.name)
+		? [AnswerReorder({ components: listedComponentsOf(model) })]
+		: []),
 	...(sends(commands, SaveComponent.name)
 		? Arr.map(savedOf(model), (saved) => AnswerSave({ component: saved }))
 		: []),

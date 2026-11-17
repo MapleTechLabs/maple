@@ -22,6 +22,8 @@ export type ComboboxPickerInputs = Readonly<{
 	/** The trigger's label: the pick, or a prompt drawn muted with `isPlaceholder`. */
 	trigger: ReadonlyArray<Html | string>
 	isPlaceholder?: boolean
+	/** A trigger that shows the pick but does not open. */
+	isDisabled?: boolean
 	/** The trigger's tooltip, for a pick the trigger shows shortened. */
 	tooltip?: string
 	renderItem?: (h: HtmlBuilder<Message>, value: string) => ReadonlyArray<Html | string>
@@ -42,6 +44,7 @@ export const comboboxPicker = Submodel.defineView<Model, Message, ComboboxPicker
 			{
 				variant: "outline",
 				size: "sm",
+				isDisabled: inputs.isDisabled,
 				className: cn("min-w-0 max-w-full justify-between font-normal", inputs.triggerClassName),
 				slot: "combobox-trigger",
 				attributes: [
