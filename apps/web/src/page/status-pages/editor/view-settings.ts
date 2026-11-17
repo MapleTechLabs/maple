@@ -91,7 +91,9 @@ const pageSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm)
 			id: "status-page-settings-page",
 			framed: false,
 			title: "Page",
-			description: ["How the page introduces itself to visitors."],
+			// Basic settings is only this section: the menu already names it, so the title is for
+			// screen readers alone.
+			isLead: true,
 		},
 		[
 			vstack(h, { gap: "4" }, [
