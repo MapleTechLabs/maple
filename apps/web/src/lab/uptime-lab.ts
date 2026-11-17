@@ -63,8 +63,8 @@ const inOutage = (atMs: number): boolean => atMs >= NOW_MS - 4 * 3_600_000 && at
 
 const sampleAt = (atMs: number, index: number): CheckSample => {
 	const refused = atMs === FAILED_AT_MS
-	// A few 503s spread over the week, so the Checks table's Failed filter has rows in every window.
-	const unavailable = index % 389 === 0
+	// A few 503s, one about 23 minutes ago, so the Checks table's Failed filter has rows in every window.
+	const unavailable = index % 389 === 0 || index === 490
 	const failed = refused || unavailable
 	const spike = index % 97 === 0 ? 3 : 1
 	const phases = {

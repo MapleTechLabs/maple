@@ -20,6 +20,7 @@ import { stackedBreakdown } from "@maple/views/charts/stacked-breakdown-chart"
 import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { chartSkeleton } from "@maple/views/ui/chart-skeleton"
 import { emptyMessage } from "@maple/views/ui/empty"
+import { listFooter } from "@maple/views/ui/list-footer"
 import { errorState } from "@maple/views/ui/error-state"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { relativeTime } from "../../kit/relative-time"
@@ -1054,10 +1055,8 @@ const checksBody = (model: Model, monitor: UptimeMonitor, timeZone: string): Che
 				: {
 						rows,
 						timeOf: (iso) => timeLabel(stats.window, iso, timeZone),
-						note:
-							rows.length >= UPTIME_FAILED_CHECK_LIST_LIMIT
-								? `Showing the newest ${formatNumber(rows.length)} failed checks.`
-								: null,
+						// Names the window the rows are from: a switched window keeps them until its own land.
+						note: `${rows.length >= UPTIME_FAILED_CHECK_LIST_LIMIT ? "Newest " : ""}${countLabel(rows.length, "failed check")} in the ${WINDOW_LABEL[stats.window]}`,
 					}
 		},
 	})
@@ -1188,11 +1187,11 @@ export const checksPanel = (h: H, model: Model, monitor: UptimeMonitor, timeZone
 						...(body.note === null
 							? []
 							: [
-									typography(
-										h,
-										{ size: "xs", tone: "muted", className: "border-t px-4 py-2" },
-										[body.note],
-									),
+									listFooter(h, {
+										align: "start",
+										className: "border-t",
+										children: [h.span([], [body.note])],
+									}),
 								]),
 					],
 				),

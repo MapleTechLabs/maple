@@ -309,6 +309,7 @@ describe("uptime monitor page", () => {
 			click(within(checks, role("button", { name: "Failed" }))),
 			expectView(within(checks, text("Upstream timed out"))).toExist(),
 			expectView(within(checks, text("Expected 2xx, got 503"))).toExist(),
+			expectView(within(checks, text("2 failed checks in the last 24 hours"))).toExist(),
 			expectView(within(checks, selector(`a[href="${traceHref(Str.repeat(32)("b"))}"]`))).toExist(),
 			expectView(within(checks, selector(`a[href="${traceHref(Str.repeat(32)("a"))}"]`))).not.toExist(),
 		)
