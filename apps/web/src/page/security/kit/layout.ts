@@ -10,7 +10,14 @@ import { vstack } from "@maple/views/ui/stack"
 // The frame of each Security source's page: the rail of sources, the source's title block, content.
 // The code security audit is the one source with tabs of its own (Overview, Findings, Runs).
 
-export type SecuritySource = "code" | "dependencies" | "runtimes" | "exposure" | "auditLog" | "detections"
+export type SecuritySource =
+	| "code"
+	| "dependencies"
+	| "runtimes"
+	| "exposure"
+	| "cloud"
+	| "auditLog"
+	| "detections"
 export type CodeTab = "overview" | "findings" | "runs"
 
 const SOURCE_LABEL = {
@@ -18,11 +25,21 @@ const SOURCE_LABEL = {
 	dependencies: "Dependencies",
 	runtimes: "Runtimes",
 	exposure: "Exposure",
+	cloud: "Cloud",
 	auditLog: "Audit log",
 	detections: "Detections",
 } satisfies Record<SecuritySource, string>
 
-const SECTIONS: ReadonlyArray<NavShellSection<never>> = [
+/** Cloud findings, for an org in the `cloudSecurity` rollout. */
+const CLOUD_ITEM: NavShellSection<never>["items"][number] = {
+	kind: "link",
+	id: "cloud",
+	label: SOURCE_LABEL.cloud,
+	icon: "CloudNodesIcon",
+	href: hrefOf(AppRoute.SecurityCloud({ search: {} })),
+}
+
+const sectionsOf = (hasCloud: boolean): ReadonlyArray<NavShellSection<never>> => [
 	{
 		id: "sources",
 		title: "Sources",
@@ -55,6 +72,7 @@ const SECTIONS: ReadonlyArray<NavShellSection<never>> = [
 				icon: "GlobeIcon",
 				href: hrefOf(AppRoute.SecurityExposure()),
 			},
+			...(hasCloud ? [CLOUD_ITEM] : []),
 		],
 	},
 	{
@@ -80,15 +98,16 @@ const SECTIONS: ReadonlyArray<NavShellSection<never>> = [
 ]
 
 /** The rail's rows are all links, so no row sends a message. */
-const securityRail = <M>(h: HtmlBuilder<M>, active: SecuritySource): Html =>
-	navShell<M, never>(h, SECTIONS, active, (tab) => tab, "Security sources")
+const securityRail = <M>(h: HtmlBuilder<M>, active: SecuritySource, hasCloud: boolean): Html =>
+	navShell<M, never>(h, sectionsOf(hasCloud), active, (tab) => tab, "Security sources")
 
 /** The rail in `dashboardPage`'s side slot, which folds into a sheet below `lg`. */
 const securityRailOptions = <M>(
 	h: HtmlBuilder<M>,
 	active: SecuritySource,
+	hasCloud: boolean,
 ): Pick<DashboardPageOptions, "filters" | "filtersLabel" | "filtersWidth"> => ({
-	filters: securityRail(h, active),
+	filters: securityRail(h, active, hasCloud),
 	filtersLabel: "Security",
 	filtersWidth: "w-56",
 })
@@ -156,6 +175,7 @@ const codeTabs = <M>(h: HtmlBuilder<M>, active: CodeTab): Html =>
 const DESCRIPTION = {
 	code: "Deep code audits of your connected repositories. Findings are visible to org admins and engineers.",
 	exposure: "Scanners probing your HTTP services over the last 7 days, read from server spans.",
+	cloud: "GuardDuty, Security Hub, Inspector and Access Analyzer findings from your AWS accounts, matched to the services they affect.",
 	runtimes:
 		"The language runtime each service reports, checked for known vulnerabilities and end-of-life dates.",
 	dependencies:
@@ -172,6 +192,8 @@ export const stack = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html
 
 type SecurityLayoutOptions = Readonly<{
 	source: SecuritySource
+	/** The org is in the `cloudSecurity` rollout: the rail lists Cloud. */
+	hasCloud?: boolean
 	/** The code audit's tab; its tab strip shows only on `code`. */
 	codeTab?: CodeTab
 	actions?: Html
@@ -187,7 +209,11 @@ export const securityLayout = <M>(
 	dashboardPage(
 		h,
 		{
-			...securityRailOptions(h, options.source),
+			...securityRailOptions(
+				h,
+				options.source,
+				options.hasCloud === true || options.source === "cloud",
+			),
 			title: SOURCE_LABEL[options.source],
 			description: DESCRIPTION[options.source],
 			actions: options.actions,

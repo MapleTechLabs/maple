@@ -7,6 +7,7 @@ import {
 	SecurityAuditDisabledError,
 	AuditDetectionInvalidError,
 	AuditTrailPersistenceError,
+	CloudSecurityPersistenceError,
 	SecurityAuditForbiddenError,
 	SecurityAuditTargetExistsError,
 } from "@maple/domain/http"
@@ -30,6 +31,8 @@ import * as DetectionFormPage from "../../page/security/detection-form/model"
 import * as DetectionFormUpdate from "../../page/security/detection-form/update"
 import * as DetectionsPage from "../../page/security/detections/model"
 import * as DetectionsUpdate from "../../page/security/detections/update"
+import * as CloudPage from "../../page/security/cloud/model"
+import * as CloudUpdate from "../../page/security/cloud/update"
 import * as TelemetryPage from "../../page/security/telemetry/model"
 import * as TelemetryUpdate from "../../page/security/telemetry/update"
 import type { Resources } from "../../platform/resources"
@@ -68,6 +71,17 @@ import {
 	repositoriesOf,
 } from "../security-dependencies-fixture"
 import { emptyExposureOf, exposureOf, runtimesOf } from "../security-telemetry-fixture"
+import {
+	allClearOverview,
+	CLOUD_DETAIL_SEARCH,
+	cloudFindingDetailOf,
+	cloudFindingsOf,
+	failingOverview,
+	moduleOverview,
+	noCloudFindings,
+	noConnectionOverview,
+	populatedOverview,
+} from "../security-cloud-fixture"
 import { auditEventsOf, auditSourcesOf, noAuditEvents, noAuditSources } from "../security-audit-log-fixture"
 import {
 	detectionDestinationsOf,
@@ -134,6 +148,14 @@ export const SCENARIOS = [
 	"dependencies-no-github",
 	"dependencies-error",
 	"dependencies-loading",
+	"cloud",
+	"cloud-no-connection",
+	"cloud-not-requested",
+	"cloud-awaiting-grant",
+	"cloud-all-clear",
+	"cloud-failing",
+	"cloud-detail",
+	"cloud-error",
 ] as const
 export const Scenario = Schema.Literals(SCENARIOS)
 export type Scenario = typeof Scenario.Type
@@ -142,6 +164,7 @@ export const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_lab"),
 	pinnedNamespace: null,
 	timeZone: "UTC",
+	hasCloudSecurity: true,
 }
 
 type Step<M, Msg> = Readonly<{ model: M; commands: ReadonlyArray<Command.Command<Msg, never, Resources>> }>
@@ -519,6 +542,47 @@ const dependencies = (
 	)
 }
 
+type CloudStep = Step<CloudPage.Model, CloudPage.Message>
+const C = CloudPage.Message
+
+/** The Cloud tab entered on `route`, its clock read, then sent `answers`. */
+const cloud = (
+	route: Parameters<typeof CloudUpdate.init>[0],
+	nowMs: number,
+	answers: ReadonlyArray<(model: CloudPage.Model) => CloudPage.Message>,
+): CloudStep => {
+	const entered = CloudUpdate.init(route, context)
+	return fold<CloudPage.Model, CloudPage.Message>(
+		{ model: entered.model, commands: entered.commands ?? [] },
+		(model, message) => CloudUpdate.update(model, message, context),
+		[() => C.ReadClock({ nowMs }), ...answers],
+	)
+}
+
+const cloudOverview = (overview: CloudPage.Overview) => (model: CloudPage.Model) =>
+	C.CompletedFetchOverview({ key: model.overview.key ?? "", result: Result.succeed(overview) })
+
+const cloudPage = (page: CloudPage.FindingsPage) => (model: CloudPage.Model) =>
+	C.CompletedFetchFirstPage({ key: model.firstPage.key ?? "", result: Result.succeed(page) })
+
+const cloudList = (nowMs: number, overview: CloudPage.Overview, page: CloudPage.FindingsPage | "failed") =>
+	cloud(AppRoute.SecurityCloud({ search: {} }), nowMs, [
+		cloudOverview(overview),
+		page === "failed"
+			? (model) =>
+					C.CompletedFetchFirstPage({
+						key: model.firstPage.key ?? "",
+						result: Result.fail(
+							toLoadFailure(
+								new CloudSecurityPersistenceError({
+									message: "Cloud findings are unavailable",
+								}),
+							),
+						),
+					})
+			: cloudPage(page),
+	])
+
 export type Built =
 	| Readonly<{ _tag: "Tabs"; step: TabsStep }>
 	| Readonly<{ _tag: "Run"; step: RunStep }>
@@ -528,11 +592,38 @@ export type Built =
 	| Readonly<{ _tag: "Detections"; step: DetectionsStep }>
 	| Readonly<{ _tag: "DetectionForm"; step: DetectionFormStep }>
 	| Readonly<{ _tag: "Dependencies"; step: DependenciesStep }>
+	| Readonly<{ _tag: "Cloud"; step: CloudStep }>
 
 const overviewRoute = AppRoute.SecurityCode()
 
 export const build = (scenario: Scenario, nowMs: number): Built => {
 	switch (scenario) {
+		case "cloud":
+			return { _tag: "Cloud", step: cloudList(nowMs, populatedOverview(nowMs), cloudFindingsOf(nowMs)) }
+		case "cloud-no-connection":
+			return { _tag: "Cloud", step: cloudList(nowMs, noConnectionOverview, noCloudFindings) }
+		case "cloud-not-requested":
+			return { _tag: "Cloud", step: cloudList(nowMs, moduleOverview("not_requested"), noCloudFindings) }
+		case "cloud-awaiting-grant":
+			return { _tag: "Cloud", step: cloudList(nowMs, moduleOverview("requested"), noCloudFindings) }
+		case "cloud-all-clear":
+			return { _tag: "Cloud", step: cloudList(nowMs, allClearOverview(nowMs), noCloudFindings) }
+		case "cloud-failing":
+			return { _tag: "Cloud", step: cloudList(nowMs, failingOverview(nowMs), noCloudFindings) }
+		case "cloud-error":
+			return { _tag: "Cloud", step: cloudList(nowMs, populatedOverview(nowMs), "failed") }
+		case "cloud-detail":
+			return {
+				_tag: "Cloud",
+				step: cloud(AppRoute.SecurityCloudFinding({ search: CLOUD_DETAIL_SEARCH }), nowMs, [
+					cloudOverview(populatedOverview(nowMs)),
+					(model) =>
+						C.CompletedFetchFinding({
+							key: model.detail.key ?? "",
+							result: Result.succeed(cloudFindingDetailOf(nowMs)),
+						}),
+				]),
+			}
 		case "overview":
 			return { _tag: "Tabs", step: tabs(overviewRoute, nowMs) }
 		case "empty":

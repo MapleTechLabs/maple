@@ -1,4 +1,4 @@
-import { Schema, String as Str } from "effect"
+import { Array as Arr, Option, Schema, String as Str } from "effect"
 
 // Findings the AWS connection's `security` module pulls from the account's own security services,
 // stored per finding at its latest version. One vocabulary across the four services.
@@ -80,4 +80,128 @@ export const cloudFindingSeverityOfLabel = (label: string | undefined): CloudFin
 		default:
 			return "info"
 	}
+}
+
+/** The console's own filter syntax for "Id equals", encoded the way its URLs carry it. */
+const consoleEquals = (field: string, value: string) =>
+	`${field}%3D%255Coperator%255C%253AEQUALS%255C%253A${encodeURIComponent(encodeURIComponent(value))}`
+
+/** The finding in the AWS console: deep links where the console takes one, the findings list otherwise. */
+export const cloudFindingConsoleUrl = (finding: {
+	readonly source: CloudFindingSource
+	readonly region: string
+	readonly findingId: string
+}): string => {
+	const { region, findingId } = finding
+	const host = Str.includes("-gov-")(region)
+		? `https://console.amazonaws-us-gov.com`
+		: Str.startsWith("cn-")(region)
+			? `https://console.amazonaws.cn`
+			: `https://${region}.console.aws.amazon.com`
+	switch (finding.source) {
+		case "guardduty":
+			return `${host}/guardduty/home?region=${region}#/findings?macros=current&fId=${encodeURIComponent(findingId)}`
+		case "securityhub":
+			return `${host}/securityhub/home?region=${region}#/findings?search=${consoleEquals("Id", findingId)}`
+		case "inspector":
+			return `${host}/inspector/v2/home?region=${region}#/findings/all?search=${consoleEquals("findingArn", findingId)}`
+		case "access_analyzer":
+			return `${host}/access-analyzer/home?region=${region}#/findings`
+	}
+}
+
+/** Resource attributes that carry an AWS resource's identity in telemetry. */
+export const CLOUD_RESOURCE_ATTRIBUTE_KEYS = [
+	"host.id",
+	"cloud.resource_id",
+	"faas.name",
+	"faas.id",
+	"aws.ecs.task.arn",
+	"aws.ecs.cluster.arn",
+	"k8s.cluster.name",
+] as const
+export type CloudResourceAttributeKey = (typeof CLOUD_RESOURCE_ATTRIBUTE_KEYS)[number]
+
+/**
+ * One value telemetry may carry for a resource, on the one attribute that would carry it. A name
+ * (`faas.name`, `k8s.cluster.name`) is only unique within an account and region, so it carries the
+ * finding's: a span counts for it only when its `cloud.account.id` and `cloud.region` agree or are unset.
+ */
+export interface CloudResourceCandidate {
+	readonly key: CloudResourceAttributeKey
+	readonly value: string
+	readonly scope: { readonly accountId: string; readonly region: string } | null
+}
+
+/** One candidate as the telemetry query names the matches it finds: key, scope and value. */
+export const cloudResourceMatchTag = (candidate: CloudResourceCandidate): string =>
+	`${candidate.key}\u001f${candidate.scope === null ? "" : `${candidate.scope.accountId}/${candidate.scope.region}`}\u001f${candidate.value}`
+
+/** An ARN is matched whole on the attributes that hold ARNs. */
+const ARN_KEYS: ReadonlyArray<CloudResourceAttributeKey> = [
+	"cloud.resource_id",
+	"faas.id",
+	"aws.ecs.task.arn",
+	"aws.ecs.cluster.arn",
+]
+
+const EC2_INSTANCE_ID = /^i-[0-9a-f]{8,17}$/u
+
+/** The name part of an ARN's resource for the services whose name telemetry carries; undefined otherwise. */
+const arnName = (arn: string): Omit<CloudResourceCandidate, "scope"> | undefined => {
+	// arn:partition:service:region:account:resource, where resource may itself hold ':' and '/'.
+	const parts = Str.split(":")(arn)
+	const service = parts[2] ?? ""
+	const resource = Arr.join(Arr.drop(parts, 5), ":")
+	const after = (prefix: string) =>
+		Str.startsWith(prefix)(resource) ? Str.slice(prefix.length)(resource) : undefined
+	if (service === "ec2") {
+		const instance = after("instance/")
+		return instance !== undefined && EC2_INSTANCE_ID.test(instance)
+			? { key: "host.id", value: instance }
+			: undefined
+	}
+	if (service === "lambda") {
+		// `function:name` or `function:name:qualifier`: the qualifier is a version or alias, not a name.
+		const name = Arr.head(Str.split(":")(after("function:") ?? "")).pipe(Option.getOrElse(() => ""))
+		return name === "" ? undefined : { key: "faas.name", value: name }
+	}
+	if (service === "eks") {
+		const name = Arr.head(Str.split("/")(after("cluster/") ?? "")).pipe(Option.getOrElse(() => ""))
+		return name === "" ? undefined : { key: "k8s.cluster.name", value: name }
+	}
+	return undefined
+}
+
+/**
+ * The values telemetry may carry for a finding's resource, each on the attribute that would carry
+ * it: an ARN whole, plus its name for EC2 instances, Lambda functions and EKS clusters; a bare id
+ * only where its type says what it is. A short tail is never matched loosely, so `function:x:prod`
+ * cannot match a `prod` cluster.
+ */
+export const cloudResourceCandidates = (resource: {
+	readonly resourceId: string
+	readonly resourceType: string
+	readonly accountId: string
+	readonly region: string
+}): ReadonlyArray<CloudResourceCandidate> => {
+	const id = Str.trim(resource.resourceId)
+	if (id === "") return []
+	const scope = { accountId: resource.accountId, region: resource.region }
+	// Names are scoped to the finding's account and region; ids and ARNs are unique on their own.
+	const scoped = (candidate: Omit<CloudResourceCandidate, "scope">): CloudResourceCandidate => ({
+		...candidate,
+		scope: candidate.key === "faas.name" || candidate.key === "k8s.cluster.name" ? scope : null,
+	})
+	if (Str.startsWith("arn:")(id)) {
+		const name = arnName(id)
+		const whole = Arr.map(ARN_KEYS, (key): CloudResourceCandidate => ({ key, value: id, scope: null }))
+		return name === undefined ? whole : Arr.append(whole, scoped(name))
+	}
+	const type = Str.toLowerCase(resource.resourceType)
+	// The type first: `i-0123456789abcdef0` is a valid Lambda function name too.
+	if (Str.includes("lambda")(type)) return [scoped({ key: "faas.name", value: id })]
+	if (Str.includes("eks")(type)) return [scoped({ key: "k8s.cluster.name", value: id })]
+	if (EC2_INSTANCE_ID.test(id)) return [scoped({ key: "host.id", value: id })]
+	return []
 }

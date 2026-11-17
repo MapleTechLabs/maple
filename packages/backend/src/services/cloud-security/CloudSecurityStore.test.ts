@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Array as Arr, ConfigProvider, Effect, Layer, Result, Schema } from "effect"
+import { Array as Arr, ConfigProvider, Effect, Layer, Option, Order, Result, Schema } from "effect"
 import { HttpClient } from "effect/http"
 import { AwsAccountId, AwsRegion, OrgId, UserId } from "@maple/primitives"
 import { Env } from "@maple/backend/platform/Env"
@@ -224,6 +224,198 @@ describe("CloudSecurityStore", () => {
 				queryRows(world.testDb, "SELECT 1 FROM cloud_security_findings"),
 			)
 			assert.strictEqual(rows.length, 0)
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("lists the org's findings by severity, then the newest sighting", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const store = yield* CloudSecurityStore
+			const mine = yield* connect(orgId, "111111111111")
+			const theirs = yield* connect(otherOrgId, "222222222222")
+			yield* store.upsertFindings(
+				[
+					finding(mine, orgId, { findingId: "low-new", severity: "low", lastSeenAt: 9_000 }),
+					finding(mine, orgId, { findingId: "crit-old", severity: "critical", lastSeenAt: 1_000 }),
+					finding(mine, orgId, { findingId: "high-new", severity: "high", lastSeenAt: 8_000 }),
+					finding(mine, orgId, { findingId: "high-old", severity: "high", lastSeenAt: 2_000 }),
+					finding(mine, orgId, { findingId: "closed", severity: "critical", status: "resolved" }),
+					finding(theirs, otherOrgId, { findingId: "theirs", severity: "critical" }),
+				],
+				1,
+			)
+			const first = yield* store.listFindings(orgId, { status: "active" }, { limit: 3, offset: 0 })
+			assert.deepStrictEqual(
+				Arr.map(first.rows, (row) => row.findingId),
+				["crit-old", "high-new", "high-old"],
+			)
+			assert.isTrue(first.hasMore)
+			const second = yield* store.listFindings(orgId, { status: "active" }, { limit: 3, offset: 3 })
+			assert.deepStrictEqual(
+				Arr.map(second.rows, (row) => row.findingId),
+				["low-new"],
+			)
+			assert.isFalse(second.hasMore)
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("pages findings that differ only by source without repeating one", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const store = yield* CloudSecurityStore
+			const mine = yield* connect(orgId, "111111111111")
+			const sources = ["guardduty", "securityhub", "inspector", "access_analyzer"] as const
+			yield* store.upsertFindings(
+				Arr.map(sources, (source) => finding(mine, orgId, { source, findingId: "same" })),
+				1,
+			)
+			const seen = yield* Effect.forEach([0, 1, 2, 3], (offset) =>
+				store
+					.listFindings(orgId, { status: "active" }, { limit: 1, offset })
+					.pipe(Effect.map((page) => page.rows[0]?.source)),
+			)
+			assert.deepStrictEqual(Arr.sort(seen, Order.String), Arr.sort(sources, Order.String))
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect(
+		"narrows the list by severity, source, region and a search over title, type and resource",
+		() => {
+			const world = makeWorld()
+			return Effect.gen(function* () {
+				const store = yield* CloudSecurityStore
+				const connection = yield* connect(orgId, "111111111111")
+				const euWest = Schema.decodeSync(AwsRegion)("eu-west-1")
+				yield* store.upsertFindings(
+					[
+						finding(connection, orgId, { findingId: "ssh", severity: "high" }),
+						finding(connection, orgId, {
+							findingId: "bucket",
+							source: "securityhub",
+							type: "S3.8",
+							title: "S3 bucket allows public access",
+							resourceId: "arn:aws:s3:::assets_100%",
+							severity: "critical",
+						}),
+						finding(connection, orgId, { findingId: "eu", region: euWest, resourceId: "i-0eu" }),
+					],
+					1,
+				)
+				const ids = (rows: { readonly rows: ReadonlyArray<{ readonly findingId: string }> }) =>
+					Arr.map(rows.rows, (row) => row.findingId)
+				const page = { limit: 50, offset: 0 }
+				assert.deepStrictEqual(
+					ids(yield* store.listFindings(orgId, { status: "active", severities: ["high"] }, page)),
+					["ssh"],
+				)
+				assert.deepStrictEqual(
+					ids(
+						yield* store.listFindings(
+							orgId,
+							{ status: "active", sources: ["securityhub"] },
+							page,
+						),
+					),
+					["bucket"],
+				)
+				assert.deepStrictEqual(
+					ids(yield* store.listFindings(orgId, { status: "active", region: euWest }, page)),
+					["eu"],
+				)
+				assert.deepStrictEqual(
+					ids(yield* store.listFindings(orgId, { status: "active", search: "s3.8" }, page)),
+					["bucket"],
+				)
+				// `%` in the search is literal, not a wildcard.
+				assert.deepStrictEqual(
+					ids(yield* store.listFindings(orgId, { status: "active", search: "100%" }, page)),
+					["bucket"],
+				)
+				assert.deepStrictEqual(
+					ids(yield* store.listFindings(orgId, { status: "active", search: "i-0E" }, page)),
+					["eu"],
+				)
+			}).pipe(Effect.provide(world.layer))
+		},
+	)
+
+	it.effect("finds one finding by its key, only inside the org", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const store = yield* CloudSecurityStore
+			const connection = yield* connect(orgId, "111111111111")
+			yield* store.upsertFindings([finding(connection, orgId, { detail: { Service: "guardduty" } })], 1)
+			const key = {
+				connectionId: connection.id,
+				region,
+				source: "guardduty" as const,
+				findingId: "f-1",
+			}
+			const found = yield* store.getFinding(orgId, key)
+			assert.deepStrictEqual(
+				Option.map(found, (row) => row.detail),
+				Option.some({ Service: "guardduty" }),
+			)
+			assert.isTrue(Option.isNone(yield* store.getFinding(otherOrgId, key)))
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("counts active findings by severity and source", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const store = yield* CloudSecurityStore
+			const connection = yield* connect(orgId, "111111111111")
+			yield* store.upsertFindings(
+				[
+					finding(connection, orgId, { findingId: "a", severity: "critical" }),
+					finding(connection, orgId, { findingId: "b", severity: "critical", source: "inspector" }),
+					finding(connection, orgId, { findingId: "c", severity: "low" }),
+					finding(connection, orgId, { findingId: "d", severity: "high", status: "archived" }),
+				],
+				1,
+			)
+			const summary = yield* store.summary(orgId)
+			assert.strictEqual(summary.total, 3)
+			assert.deepStrictEqual(summary.bySeverity, { critical: 2, high: 0, medium: 0, low: 1, info: 0 })
+			assert.deepStrictEqual(summary.bySource, {
+				guardduty: 2,
+				securityhub: 0,
+				inspector: 1,
+				access_analyzer: 0,
+			})
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("reads service states across every connection of the org, and no other", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const store = yield* CloudSecurityStore
+			const first = yield* connect(orgId, "111111111111")
+			const second = yield* connect(orgId, "333333333333")
+			const theirs = yield* connect(otherOrgId, "222222222222")
+			const state = (org: OrgId, connectionId: CloudFindingWrite["connectionId"]) =>
+				store.recordServiceState({
+					orgId: org,
+					connectionId,
+					region,
+					source: "guardduty",
+					state: "enabled",
+					cursorAt: null,
+					windowMs: null,
+					lastError: null,
+					checkedAt: 1,
+				})
+			yield* state(orgId, first.id)
+			yield* state(orgId, second.id)
+			yield* state(otherOrgId, theirs.id)
+			const states = yield* store.orgServiceStates(orgId)
+			assert.deepStrictEqual(
+				Arr.sort(
+					Arr.map(states, (row) => row.connectionId),
+					Order.String,
+				),
+				Arr.sort([first.id, second.id], Order.String),
+			)
 		}).pipe(Effect.provide(world.layer))
 	})
 
