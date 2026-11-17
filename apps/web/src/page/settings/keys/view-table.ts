@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import type { V2ApiKey } from "@maple/domain/http/v2"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
@@ -88,7 +89,11 @@ const lockedUnless = (isAllowed: boolean): Pick<MenuView.MenuItemEntry, "isDisab
 const apiRow = (h: H, model: Model, row: KeyRow, inputs: Inputs, formatDate: (iso: string) => Html): Html => {
 	const key: V2ApiKey = row.key
 	const isDead = row.status === "revoked" || row.status === "expired"
-	const can = apiKeyRowPermissions(key, { canManageKeys: canManage(model), userId: model.userId })
+	const can = apiKeyRowPermissions(key, {
+		canManageKeys: canManage(model),
+		canCreateRestricted: Policy.has(model.grants, "api_keys:create_restricted"),
+		userId: model.userId,
+	})
 	// A live key always lists Roll and Revoke; the ones the viewer may not use are locked with the reason.
 	const entries: ReadonlyArray<MenuView.MenuEntry> = key.revoked
 		? []
@@ -237,7 +242,11 @@ const deviceRow = (
 	formatDate: (iso: string) => Html,
 ): Html => {
 	const key: V2ApiKey = row.key
-	const can = apiKeyRowPermissions(key, { canManageKeys: canManage(model), userId: model.userId })
+	const can = apiKeyRowPermissions(key, {
+		canManageKeys: canManage(model),
+		canCreateRestricted: Policy.has(model.grants, "api_keys:create_restricted"),
+		userId: model.userId,
+	})
 	const entries: ReadonlyArray<MenuView.MenuEntry> = key.revoked
 		? []
 		: [

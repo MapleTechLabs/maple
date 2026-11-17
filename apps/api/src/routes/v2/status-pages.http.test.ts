@@ -343,7 +343,7 @@ describe("v2 status pages", () => {
 			expect(revoked.body.break_glass_token_suffix).toBeNull()
 		}))
 
-	it("leaves the password and visibility to admins, never returns the password, and shows members the page", () =>
+	it("leaves the password and visibility to engineers and admins, never returns the password, and shows members the page", () =>
 		withHarness(async (harness) => {
 			const { secret: admin } = await harness.bootstrapKey()
 			const { secret: engineer } = await harness.bootstrapKey(ORG, {
@@ -358,32 +358,20 @@ describe("v2 status pages", () => {
 			const path = `/v2/status_pages/${page.body.id}`
 			const password = "correct horse battery"
 
-			expect((await harness.request("PUT", `${path}/password`, engineer, { password })).status).toBe(
+			expect((await harness.request("PUT", `${path}/password`, member, { password })).status).toBe(403)
+			expect((await harness.request("PATCH", path, member, { visibility: "internal" })).status).toBe(
 				403,
 			)
-			expect((await harness.request("PATCH", path, engineer, { visibility: "internal" })).status).toBe(
-				403,
-			)
-			const config = (await harness.request("GET", `${path}/config`, engineer)).body
-			const viaConfig = await harness.request("PUT", `${path}/config`, engineer, {
-				...config,
-				visibility: "internal",
-			})
-			expect(viaConfig.status).toBe(403)
-			expect((await harness.request("GET", path, engineer)).body.visibility).toBe("public")
-			// An engineer may still edit everything else.
-			expect((await harness.request("PATCH", path, engineer, { name: "Acme Inc" })).status).toBe(200)
+			expect((await harness.request("GET", path, member)).body.visibility).toBe("public")
 
-			const short = await harness.request("PUT", `${path}/password`, admin, { password: "short" })
+			const short = await harness.request("PUT", `${path}/password`, engineer, { password: "short" })
 			expect(short.status).toBe(400)
-			const set = await harness.request("PUT", `${path}/password`, admin, { password })
+			const set = await harness.request("PUT", `${path}/password`, engineer, { password })
 			expect(set.body.has_password).toBe(true)
 			expect(JSON.stringify(set.body)).not.toContain(password)
-			expect((await harness.request("DELETE", `${path}/password`, engineer)).status).toBe(403)
-			expect((await harness.request("GET", path, engineer)).body.has_password).toBe(true)
-			const locked = await harness.request("PATCH", path, admin, { visibility: "password" })
+			const locked = await harness.request("PATCH", path, engineer, { visibility: "password" })
 			expect(locked.body.visibility).toBe("password")
-			const removing = await harness.request("DELETE", `${path}/password`, admin)
+			const removing = await harness.request("DELETE", `${path}/password`, engineer)
 			expect(removing.status).toBe(400)
 
 			const view = await harness.request("GET", `${path}/view`, member)

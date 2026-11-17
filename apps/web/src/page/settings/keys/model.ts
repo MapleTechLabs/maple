@@ -42,3 +42,7 @@ export type Model = typeof Model.Type
 /** The viewer may manage every API key, not only their own (`api_keys:manage`). */
 export const canManage = (model: Pick<Model, "grants">): boolean =>
 	Policy.has(model.grants, "api_keys:manage")
+
+/** The viewer may create API keys: any access with `api_keys:manage`, restricted ones as an engineer. */
+export const canCreateApiKey = (model: Pick<Model, "grants">): boolean =>
+	canManage(model) || Policy.has(model.grants, "api_keys:create_restricted")

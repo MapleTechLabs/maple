@@ -16,7 +16,7 @@ import { makeClientErrorBody } from "@maple/web-data/lib/error-messages"
 import { sectionNote, settingsSection, settingsSections } from "../../kit/settings-section"
 import * as CreateDialogView from "./create-dialog-view"
 import { Message } from "./message"
-import { canManage, type Model } from "./model"
+import { canCreateApiKey, type Model } from "./model"
 import * as RollDialog from "./roll-dialog"
 import { STATUS_VALUES } from "./update"
 import { apiReference, oauthPointer } from "./view-reference"
@@ -36,7 +36,7 @@ const STATUS_LABELS = { active: "Active", expired: "Expired", revoked: "Revoked"
 const ROLE_UNKNOWN_REASON =
 	"Couldn't confirm your role, so creating keys is off. Reload the page to try again."
 
-/** Members may create MCP keys only; an unconfirmed role creates none. */
+/** Members may create MCP keys only, engineers restricted API keys too; an unconfirmed role creates none. */
 const createKeyButton = (h: H, model: Model, isRoleUnknown: boolean): Html => {
 	const plus = icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] })
 	if (isRoleUnknown)
@@ -45,7 +45,7 @@ const createKeyButton = (h: H, model: Model, isRoleUnknown: boolean): Html => {
 			{ align: "stretch", inline: true, as: "span", attributes: [h.Title(ROLE_UNKNOWN_REASON)] },
 			[button(h, { size: "sm", isDisabled: true }, [plus, "Create MCP key"])],
 		)
-	if (!canManage(model))
+	if (!canCreateApiKey(model))
 		return button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedCreateKey())] }, [
 			plus,
 			"Create MCP key",
