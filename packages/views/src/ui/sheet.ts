@@ -67,7 +67,8 @@ export const leftSheet = <Message>(
 			),
 			h.div(
 				[
-					h.Class(cn(sheetViewportStyles, sheetViewportLeftStyles)),
+					// The viewport covers the backdrop: let taps outside the popup fall through to it.
+					h.Class(cn(sheetViewportStyles, sheetViewportLeftStyles, "pointer-events-none")),
 					h.DataAttribute("open", ""),
 					h.DataAttribute("slot", "sheet-viewport"),
 					h.Role("presentation"),
@@ -77,7 +78,14 @@ export const leftSheet = <Message>(
 						[
 							h.AriaDescribedBy(`${options.id}-description`),
 							h.AriaLabelledBy(`${options.id}-title`),
-							h.Class(cn(sheetPopupStyles, sheetPopupLeftStyles, options.className)),
+							h.Class(
+								cn(
+									sheetPopupStyles,
+									sheetPopupLeftStyles,
+									"pointer-events-auto",
+									options.className,
+								),
+							),
 							h.DataAttribute("base-ui-focusable", ""),
 							h.DataAttribute("open", ""),
 							h.DataAttribute("slot", options.slot ?? "sheet-popup"),
