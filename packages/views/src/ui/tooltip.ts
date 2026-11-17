@@ -95,7 +95,10 @@ export const CheckFocusVisible = Command.define("CheckTooltipFocusVisible", {
 		Effect.sync(() =>
 			Message.CheckedFocusVisible({
 				triggerId: focusedId,
-				isFocusVisible: document.getElementById(focusedId)?.matches(":focus-visible") === true,
+				// The trigger or what it wraps (a menu item) holds keyboard focus.
+				isFocusVisible:
+					document.getElementById(focusedId)?.matches(":focus-visible, :has(:focus-visible)") ===
+					true,
 			}),
 		),
 })
@@ -278,8 +281,10 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			h.OnMouseEnter(Message.EnteredTrigger({ triggerId: id })),
 			h.OnMouseLeave(Message.LeftTrigger()),
 			h.OnPointerDown(() => Option.some(Message.PressedTrigger())),
-			h.OnFocus(Message.FocusedTrigger({ triggerId: id })),
-			h.OnBlur(Message.BlurredTrigger()),
+			// Focus entering the trigger or anything in it, as React's bubbling `onFocus` in Base UI: a
+			// `render={<div />}` trigger opens when keyboard focus reaches the item it wraps.
+			h.OnFocusEnter(Message.FocusedTrigger({ triggerId: id })),
+			h.OnFocusLeave(Message.BlurredTrigger()),
 		])
 	// Built here, not when `toView` asks: handlers bind to the boundary that builds them.
 	const triggers = new Map(

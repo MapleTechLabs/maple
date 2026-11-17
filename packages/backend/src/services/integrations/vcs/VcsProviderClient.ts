@@ -425,6 +425,28 @@ export interface VcsProviderClient {
 	>
 
 	/**
+	 * Dismiss every approval this App gave the pull request that still stands, saying why. For a
+	 * repository with `autoApprove` on: a new head leaves an earlier approval about other code.
+	 * Answers `unsupported` when the provider cannot tell its own reviews apart.
+	 */
+	readonly withdrawPullRequestApprovals: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		/**
+		 * `keepHead`: the head the event is about. An approval of it is spared, and nothing is
+		 * withdrawn (`stale`) when the pull request has moved past it.
+		 */
+		input: { readonly number: number; readonly reason: string; readonly keepHead?: string },
+	) => Effect.Effect<
+		"withdrawn" | "unsupported" | "stale",
+		| VcsProviderError
+		| VcsInstallationGoneError
+		| VcsRepoUnavailableError
+		| VcsRepositoryBlockedError
+		| VcsRateLimitedError
+	>
+
+	/**
 	 * Show the review as a check run on the head: running while its turn works, completed when it
 	 * ends without a result. `publishPullRequestReview` completes the same run with the result.
 	 */

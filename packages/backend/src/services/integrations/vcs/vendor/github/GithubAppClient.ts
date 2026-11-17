@@ -537,6 +537,17 @@ const GithubApiReviewSchema = Schema.Struct({
 	html_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
 })
 
+/** One review in a pull request's list: who left it and what it says now. */
+const GithubApiListedReview = Schema.Struct({
+	id: Schema.Number,
+	state: Schema.String,
+	user: Schema.NullOr(GithubApiUser),
+	/** The head the review was given on; absent when its commit is gone from the repository. */
+	commit_id: Schema.optionalKey(Schema.NullOr(Schema.String)),
+})
+export type GithubApiListedReview = Schema.Schema.Type<typeof GithubApiListedReview>
+const GithubApiListedReviewList = Schema.Array(GithubApiListedReview)
+
 /** GitHub accepts at most this many annotations per check-run request. */
 export const CHECK_RUN_ANNOTATION_LIMIT = 50
 
@@ -568,7 +579,15 @@ export interface GithubReviewInput {
 		readonly startLine?: number
 		readonly body: string
 	}>
+	/**
+	 * `COMMENT` (the default) never approves or blocks a merge. `APPROVE` is only for a repository
+	 * that turned on `autoApprove` and a pull request the review found safe to merge unread.
+	 */
+	readonly event?: "COMMENT" | "APPROVE"
 }
+
+/** Every pull request has few reviews; ten pages is far past what one gets. */
+const MAX_REVIEW_PAGES = 10
 
 const GithubCodeSearchResponseSchema = Schema.Struct({
 	items: Schema.Array(
@@ -688,6 +707,7 @@ const graphqlUrl = (apiBaseUrl: string) =>
 		? `${Str.slice(0, -"/v3".length)(apiBaseUrl)}/graphql`
 		: `${apiBaseUrl}/graphql`
 const decodeReview = Schema.decodeUnknownEffect(GithubApiReviewSchema)
+const decodeListedReviewList = Schema.decodeUnknownEffect(GithubApiListedReviewList)
 const decodeIssueComment = Schema.decodeUnknownEffect(GithubApiIssueCommentSchema)
 const decodeIssueCommentList = Schema.decodeUnknownEffect(GithubApiIssueCommentList)
 const decodeCodeSearch = Schema.decodeUnknownEffect(GithubCodeSearchResponseSchema)
@@ -701,7 +721,7 @@ const rejectsCredentials = (answer: GithubAnswer) =>
 			(answer.detail === "Bad credentials" || Str.includes("Bad credentials")(answer.body))))
 
 interface GithubCall {
-	readonly method?: "GET" | "POST" | "PATCH" | "DELETE"
+	readonly method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
 	readonly url: string
 	readonly auth: VendorHttp.VendorAuth
 	readonly accept?: string
@@ -1375,7 +1395,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 
 			/** A write is sent once (a DELETE may repeat); `retry` marks a POST that only reads, like a GraphQL query. */
 			const authedSend = (
-				method: "POST" | "PATCH" | "DELETE",
+				method: "POST" | "PUT" | "PATCH" | "DELETE",
 				token: string,
 				url: string,
 				body: unknown,
@@ -2064,9 +2084,9 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				)
 			})
 
-			// Needs `pull_requests: write`. `event: COMMENT` so the review never
-			// approves or blocks a merge; every comment is on the new side of the
-			// diff, which is the only side a line-anchored comment can name.
+			// Needs `pull_requests: write`. `event` is `COMMENT` unless the caller asks to approve
+			// (see GithubReviewInput); a review never requests changes. Every comment is on the new
+			// side of the diff, which is the only side a line-anchored comment can name.
 			const createPullRequestReview = Effect.fn("GithubAppClient.createPullRequestReview")(function* (
 				externalInstallationId: string,
 				owner: string,
@@ -2083,7 +2103,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					{
 						commit_id: input.commitId,
 						body: input.body,
-						event: "COMMENT",
+						event: input.event ?? "COMMENT",
 						comments: Arr.map(input.comments, (comment) => ({
 							path: comment.path,
 							line: comment.line,
@@ -2104,6 +2124,59 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						(cause) => new GithubAppError({ message: "Unexpected review payload", cause }),
 					),
 				)
+			})
+
+			/** Every review on the pull request, oldest first. Needs `pull_requests: read`. */
+			const listPullRequestReviews = Effect.fn("GithubAppClient.listPullRequestReviews")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				number: number,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				// GitHub lists oldest first, so a truncated list misses the newest reviews.
+				return yield* collectPages(MAX_REVIEW_PAGES, (page) =>
+					Effect.gen(function* () {
+						const response = yield* authedGet(
+							config,
+							token,
+							`${repoBase(config, owner, repo)}/pulls/${number}/reviews?per_page=${PER_PAGE}&page=${page}`,
+						)
+						if (!isOk(response)) return yield* failure(response, "List reviews", "repository")
+						const json = yield* parseJson(response, "List reviews")
+						return yield* decodeListedReviewList(json).pipe(
+							Effect.mapError(
+								(cause) =>
+									new GithubAppError({ message: "Unexpected reviews payload", cause }),
+							),
+						)
+					}),
+				)
+			})
+
+			/**
+			 * Dismiss a review, so an approval no longer counts toward a merge. Needs
+			 * `pull_requests: write`; an App can always dismiss its own review.
+			 */
+			const dismissPullRequestReview = Effect.fn("GithubAppClient.dismissPullRequestReview")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				number: number,
+				reviewId: number,
+				message: string,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const response = yield* authedSend(
+					"PUT",
+					token,
+					`${repoBase(config, owner, repo)}/pulls/${number}/reviews/${reviewId}/dismissals`,
+					{ message, event: "DISMISS" },
+					"Dismiss review",
+				)
+				if (!isOk(response)) return yield* failure(response, "Dismiss review", "repository")
 			})
 
 			/**
@@ -2756,6 +2829,8 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				commitFiles,
 				upsertCheckRun,
 				createPullRequestReview,
+				listPullRequestReviews,
+				dismissPullRequestReview,
 				upsertIssueComment,
 				searchCode,
 				getSourceFile,

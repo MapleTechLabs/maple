@@ -21,6 +21,7 @@ import { relativeTime } from "../../kit/relative-time"
 import { docsLink } from "../../kit/signal-empty-state"
 import { adminOnlyNote, settingsSection, settingsSections } from "../../kit/settings-section"
 import { canManage, Message, type Model, type PolicyDraft } from "./model"
+import { gatedControl } from "../../kit/session-grants"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Option } from "effect"
@@ -169,15 +170,17 @@ const policyForm = (h: H, model: Model, draft: PolicyDraft, isKnownMember: boole
 					h,
 					{ align: "stretch", justify: "end", className: "border-t border-border-subtle pt-3" },
 					[
-						button(
-							h,
-							{
-								size: "sm",
-								isLoading: model.isSaving,
-								isDisabled: !canManage(model),
-								attributes: [h.OnClick(Message.ClickedSavePolicy())],
-							},
-							["Save policy"],
+						gatedControl(h, model, "error_policy:manage", (isDisabled) =>
+							button(
+								h,
+								{
+									size: "sm",
+									isLoading: model.isSaving,
+									isDisabled,
+									attributes: isDisabled ? [] : [h.OnClick(Message.ClickedSavePolicy())],
+								},
+								["Save policy"],
+							),
 						),
 					],
 				),

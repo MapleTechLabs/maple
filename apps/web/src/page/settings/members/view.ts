@@ -12,6 +12,7 @@ import * as Field from "@maple/views/ui/field"
 import { formDialog } from "@maple/views/ui/form-dialog"
 import { icon } from "@maple/views/ui/icon"
 import * as Menu from "@maple/views/ui/menu"
+import type { MenuItemEntry } from "@maple/views/ui/menu-view"
 import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
 import * as SelectView from "@maple/views/ui/select-view"
 import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
@@ -30,6 +31,7 @@ import { adminOnlyNotice } from "../kit/members"
 import { settingsSection, settingsSections } from "../../kit/settings-section"
 import { canManage, type InvitationRow, type MemberRow, Message, type Model } from "./model"
 import { hasMore, roleSelectFor } from "./update"
+import { denialReason, gatedControl } from "../../kit/session-grants"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
@@ -114,10 +116,14 @@ const roleCell = (h: H, model: Model, member: MemberRow, canEdit: boolean): Html
 	])
 }
 
+/** A menu item's lock: disabled with the `members:manage` denial when the viewer may not use it. */
+const lockedUnless = (isAllowed: boolean): Pick<MenuItemEntry, "isDisabled" | "tooltip"> =>
+	isAllowed ? {} : { isDisabled: true, tooltip: { content: [denialReason("members:manage")] } }
+
 const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): ReadonlyArray<Html> => {
 	const canEdit = canManage(model) && !member.isCurrentUser
 	const pending = model.pendingRole?.memberId === member.id ? model.pendingRole : null
-	const columnCount = canManage(model) ? 4 : 3
+	const columnCount = 4
 	const menuId = `member-actions-${member.id}`
 	const row = tableRow(
 		h,
@@ -166,35 +172,32 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 						label: formatDateInTimezone(member.createdAtMs, { timeZone: inputs.timeZone }),
 					}),
 				],
-				cn(typographyClass({ size: "xs", tone: "muted" }), COLUMN.date, dateAlign(canManage(model))),
+				cn(typographyClass({ size: "xs", tone: "muted" }), COLUMN.date, dateAlign(true)),
 			),
-			...(canManage(model)
-				? [
-						tableCell(
-							h,
-							canEdit
-								? [
-										rowActionsMenu(h, {
-											slotId: menuId,
-											model: model.rowMenus[menuId] ?? Menu.init(menuId),
-											label: `Actions for ${member.name}`,
-											entries: [
-												{
-													_tag: "Item",
-													value: "remove",
-													label: "Remove",
-													icon: "TrashIcon",
-													variant: "destructive",
-												},
-											],
-											toParentMessage: (message) =>
-												Message.GotRowMenuMessage({ menuId, message }),
-										}),
-									]
-								: [],
-						),
-					]
-				: []),
+			// Shown to every viewer; Remove is locked with the reason for one who cannot manage members.
+			tableCell(
+				h,
+				member.isCurrentUser
+					? []
+					: [
+							rowActionsMenu(h, {
+								slotId: menuId,
+								model: model.rowMenus[menuId] ?? Menu.init(menuId),
+								label: `Actions for ${member.name}`,
+								entries: [
+									{
+										_tag: "Item",
+										value: "remove",
+										label: "Remove",
+										icon: "TrashIcon",
+										variant: "destructive",
+										...lockedUnless(canEdit),
+									},
+								],
+								toParentMessage: (message) => Message.GotRowMenuMessage({ menuId, message }),
+							}),
+						],
+			),
 		],
 		undefined,
 		[h.Key(member.id)],
@@ -264,12 +267,13 @@ export const description = "Admins manage billing, keys and members."
 
 /** The tab's primary action, drawn in the settings page header beside the `<h1>`. */
 export const headerActions = Submodel.defineView<Model, Message, Readonly<{}>>((model, _inputs, h) =>
-	canManage(model)
-		? button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedInvite())] }, [
-				icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
-				"Invite member",
-			])
-		: h.empty,
+	gatedControl(h, model, "members:manage", (isDisabled) =>
+		button(
+			h,
+			{ size: "sm", isDisabled, attributes: isDisabled ? [] : [h.OnClick(Message.ClickedInvite())] },
+			[icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }), "Invite member"],
+		),
+	),
 )
 
 const membersSection = (h: H, model: Model, inputs: Inputs): Html => {
@@ -291,14 +295,12 @@ const membersSection = (h: H, model: Model, inputs: Inputs): Html => {
 					tableRow(h, [
 						tableHead(h, ["Member"]),
 						roleHead(h, canManage(model)),
-						tableHead(h, ["Joined"], cn(COLUMN.date, dateAlign(canManage(model)))),
-						...(canManage(model) ? [tableHead(h, [], COLUMN.actions)] : []),
+						tableHead(h, ["Joined"], cn(COLUMN.date, dateAlign(true))),
+						tableHead(h, [], COLUMN.actions),
 					]),
 				]),
 				tableBody(h, [
-					...(isLoading
-						? Arr.map([0, 1, 2], (index) => skeletonRow(h, canManage(model), index))
-						: []),
+					...(isLoading ? Arr.map([0, 1, 2], (index) => skeletonRow(h, true, index)) : []),
 					...Arr.flatMap(rows, (member) => memberRows(h, model, member, inputs)),
 				]),
 			]),

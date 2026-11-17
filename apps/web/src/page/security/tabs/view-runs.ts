@@ -5,7 +5,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ROOMY_COLUMN, WIDE_COLUMN } from "../kit/layout"
 import { AppRoute, hrefOf } from "../../../route"
-import { button, linkButton } from "@maple/views/ui/button"
+import { button } from "@maple/views/ui/button"
 import { empty, emptyDescription, emptyFrameClass, emptyHeader, emptyTitle } from "@maple/views/ui/empty"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
@@ -41,7 +41,8 @@ import { stopSummaryOf } from "../kit/outcome"
 import { BUCKET_LABEL, type BucketCounts, SCORED_BUCKETS } from "../kit/findings"
 import { bucketDot } from "../kit/findings-view"
 import { meter } from "@maple/views/ui/meter"
-import { canRunAudits, Message, type Model } from "./model"
+import { Message, type Model } from "./model"
+import { gatedControl } from "../../kit/session-grants"
 import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
@@ -270,21 +271,23 @@ const toolbar = (
 export const startRunAction = (h: H, model: Model): Html | undefined => {
 	const targetId = model.runsSearch.target
 	const found = Arr.findFirst(targetsOf(model), (candidate) => candidate.id === targetId)
-	if (Option.isNone(found) || !canRunAudits(model)) return undefined
+	if (Option.isNone(found)) return undefined
 	const target = found.value
 	const isRunning = Arr.some(runsForTarget(model, target.id), isLive)
-	return button(
-		h,
-		{
-			size: "sm",
-			isLoading: model.startingTargetId === target.id,
-			isDisabled: isRunning || model.startingTargetId !== null,
-			attributes: [
-				h.OnClick(Message.ClickedStartRun({ targetId: target.id })),
-				...(isRunning ? [h.Title("One audit runs per target at a time")] : []),
-			],
-		},
-		[icon(h, "MediaPlayIcon"), "Start run"],
+	return gatedControl(h, model, "security_audit:run", (isLocked) =>
+		button(
+			h,
+			{
+				size: "sm",
+				isLoading: model.startingTargetId === target.id,
+				isDisabled: isLocked || isRunning || model.startingTargetId !== null,
+				attributes: [
+					h.OnClick(Message.ClickedStartRun({ targetId: target.id })),
+					...(isRunning ? [h.Title("One audit runs per target at a time")] : []),
+				],
+			},
+			[icon(h, "MediaPlayIcon"), "Start run"],
+		),
 	)
 }
 
@@ -295,20 +298,14 @@ const noTargets = (h: H, model: Model): Html =>
 		[
 			emptyHeader(h, [
 				emptyTitle(h, ["No runs yet"]),
-				emptyDescription(h, [
-					canRunAudits(model)
-						? "Add a target, then start its first run."
-						: "An org admin adds the first target on the Overview tab.",
-				]),
+				emptyDescription(h, ["Add a target, then start its first run."]),
 			]),
-			canRunAudits(model)
-				? button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedAddTarget())] }, [
-						icon(h, "PlusIcon"),
-						"Add target",
-					])
-				: linkButton(h, { size: "sm", variant: "outline", href: hrefOf(AppRoute.SecurityCode()) }, [
-						"Open the overview",
-					]),
+			gatedControl(h, model, "security_audit:run", (isDisabled) =>
+				button(h, { size: "sm", isDisabled, attributes: [h.OnClick(Message.ClickedAddTarget())] }, [
+					icon(h, "PlusIcon"),
+					"Add target",
+				]),
+			),
 		],
 		emptyFrameClass("dashed"),
 	)

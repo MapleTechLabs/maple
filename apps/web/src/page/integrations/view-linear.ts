@@ -12,7 +12,8 @@ import {
 	integrationEmptyMedia,
 } from "../kit/integration-empty"
 import { Message } from "./message"
-import { canManage, type Model } from "./model"
+import type { Model } from "./model"
+import { gatedControl } from "../kit/session-grants"
 import { connectedIntegrationCard, integrationStatusCard } from "./view-integration-card"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -22,8 +23,6 @@ import { linearFeaturePanel } from "./view-linear-features"
 type H = HtmlBuilder<Message>
 
 const BRAND = providerBrand("linear")
-
-const ADMIN_ONLY = "Only org admins and engineers can change the Linear connection."
 
 const notConnected = (h: H, model: Model): Html =>
 	integrationEmpty(h, [
@@ -51,18 +50,18 @@ const notConnected = (h: H, model: Model): Html =>
 			integrationEmptyHint(h, [
 				"Linear destinations will appear here after connecting your workspace.",
 			]),
-			button(
-				h,
-				{
-					isDisabled: !canManage(model) || model.connect.isStarting || model.disconnect.isPending,
-					isLoading: model.connect.isStarting,
-					attributes: [h.OnClick(Message.ClickedConnect())],
-				},
-				[icon(h, "LinearIcon"), "Connect Linear"],
+			gatedControl(h, model, "integrations:manage", (isLocked) =>
+				button(
+					h,
+					{
+						isDisabled: isLocked || model.connect.isStarting || model.disconnect.isPending,
+						isLoading: model.connect.isStarting,
+						attributes: [h.OnClick(Message.ClickedConnect())],
+					},
+					[icon(h, "LinearIcon"), "Connect Linear"],
+				),
 			),
-			integrationEmptyFooter(h, [
-				canManage(model) ? "You'll authorize Maple in your Linear workspace." : ADMIN_ONLY,
-			]),
+			integrationEmptyFooter(h, ["You'll authorize Maple in your Linear workspace."]),
 		]),
 	])
 
@@ -110,32 +109,34 @@ const connectedCard = (h: H, model: Model, status: LinearIntegrationStatus, busy
 						),
 					]
 				: [],
-		actions: canManage(model)
-			? hstack(h, { gap: "2", align: "stretch", wrap: true }, [
-					button(
-						h,
-						{
-							size: "sm",
-							variant: status.revoked ? "default" : "outline",
-							isDisabled: busy,
-							isLoading: model.connect.isStarting,
-							attributes: [h.OnClick(Message.ClickedConnect())],
-						},
-						["Reconnect"],
-					),
-					button(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							isDisabled: busy,
-							isLoading: model.disconnect.isPending,
-							attributes: [h.OnClick(Message.ClickedDisconnect())],
-						},
-						["Disconnect"],
-					),
-				])
-			: typography(h, { size: "2xs", tone: "muted", as: "p" }, [ADMIN_ONLY]),
+		actions: hstack(h, { gap: "2", align: "stretch", wrap: true }, [
+			gatedControl(h, model, "integrations:manage", (isLocked) =>
+				button(
+					h,
+					{
+						size: "sm",
+						variant: status.revoked ? "default" : "outline",
+						isDisabled: isLocked || busy,
+						isLoading: model.connect.isStarting,
+						attributes: [h.OnClick(Message.ClickedConnect())],
+					},
+					["Reconnect"],
+				),
+			),
+			gatedControl(h, model, "integrations:manage", (isLocked) =>
+				button(
+					h,
+					{
+						size: "sm",
+						variant: "outline",
+						isDisabled: isLocked || busy,
+						isLoading: model.disconnect.isPending,
+						attributes: [h.OnClick(Message.ClickedDisconnect())],
+					},
+					["Disconnect"],
+				),
+			),
+		]),
 	})
 
 const byState = (h: H, model: Model, data: LinearIntegrationStatus): Html =>

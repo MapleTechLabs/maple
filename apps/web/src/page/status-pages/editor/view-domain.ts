@@ -18,6 +18,7 @@ import { settingsSection } from "../../kit/settings-section"
 import { textField } from "../shared/fields"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
+import { gatedControl } from "../../kit/session-grants"
 import { customDomainDraftIssue, customDomainInput, customDomainOf } from "./update-domain"
 
 // The Settings tab's Custom domain section: the hostname, where it stands, the DNS records to add.
@@ -108,33 +109,33 @@ const domainState = (h: H, model: Model, domain: V2StatusPageCustomDomain): Read
 					inlineCode(h, {}, [domain.hostname]),
 					badge(h, { variant: look.variant }, [look.label]),
 				]),
-				...(canManage(model)
-					? [
-							hstack(h, { gap: "2" }, [
-								button(
-									h,
-									{
-										size: "sm",
-										variant: "destructive-outline",
-										isDisabled: model.customDomainAction !== null,
-										attributes: [h.OnClick(Message.ClickedRemoveCustomDomain())],
-									},
-									["Remove"],
-								),
-								button(
-									h,
-									{
-										size: "sm",
-										variant: "outline",
-										isLoading: model.customDomainAction === "check",
-										isDisabled: model.customDomainAction !== null,
-										attributes: [h.OnClick(Message.ClickedCheckCustomDomain())],
-									},
-									[icon(h, "ArrowRotateClockwiseIcon"), "Check now"],
-								),
-							]),
-						]
-					: []),
+				hstack(h, { gap: "2" }, [
+					gatedControl(h, model, "status_pages:edit", (isLocked) =>
+						button(
+							h,
+							{
+								size: "sm",
+								variant: "destructive-outline",
+								isDisabled: isLocked || model.customDomainAction !== null,
+								attributes: [h.OnClick(Message.ClickedRemoveCustomDomain())],
+							},
+							["Remove"],
+						),
+					),
+					gatedControl(h, model, "status_pages:edit", (isLocked) =>
+						button(
+							h,
+							{
+								size: "sm",
+								variant: "outline",
+								isLoading: model.customDomainAction === "check",
+								isDisabled: isLocked || model.customDomainAction !== null,
+								attributes: [h.OnClick(Message.ClickedCheckCustomDomain())],
+							},
+							[icon(h, "ArrowRotateClockwiseIcon"), "Check now"],
+						),
+					),
+				]),
 			]),
 			typography(h, { size: "sm", tone: "muted", as: "p" }, [STATUS_NOTE[status]]),
 			...(domain.last_error === null || status === "active"
@@ -177,22 +178,23 @@ const hostnameForm = (h: H, model: Model, page: V2StatusPage, domain: V2StatusPa
 						? undefined
 						: `A subdomain you control, CNAMEd to ${domain.cname_target}.`,
 				onInput: (value) => Message.ChangedCustomDomain({ value }),
-				trailing: !canManage(model)
-					? undefined
-					: button(
-							h,
-							{
-								size: "default",
-								type: "submit",
-								isLoading: model.customDomainAction === "set",
-								isDisabled:
-									isInternal ||
-									isUnchanged ||
-									issue !== null ||
-									model.customDomainAction !== null,
-							},
-							[domain.hostname === null ? "Add domain" : "Change domain"],
-						),
+				trailing: gatedControl(h, model, "status_pages:edit", (isLocked) =>
+					button(
+						h,
+						{
+							size: "default",
+							type: "submit",
+							isLoading: model.customDomainAction === "set",
+							isDisabled:
+								isLocked ||
+								isInternal ||
+								isUnchanged ||
+								issue !== null ||
+								model.customDomainAction !== null,
+						},
+						[domain.hostname === null ? "Add domain" : "Change domain"],
+					),
+				),
 			}),
 		],
 	)

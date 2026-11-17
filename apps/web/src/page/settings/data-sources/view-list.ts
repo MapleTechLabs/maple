@@ -24,6 +24,7 @@ import { Message } from "./model"
 import {
 	agentAccessShort,
 	environmentBadge,
+	gatedSourceControl,
 	type Inputs,
 	kindIcon,
 	kindLabel,
@@ -33,11 +34,18 @@ import {
 
 type H = HtmlBuilder<Message>
 
-export const connectButton = (h: H): Html =>
-	button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedConnect())] }, [
-		icon(h, "PlugIcon"),
-		"Connect a source",
-	])
+export const connectButton = (h: H, canManage: boolean): Html =>
+	gatedSourceControl(h, canManage, (isLocked) =>
+		button(
+			h,
+			{
+				size: "sm",
+				isDisabled: isLocked,
+				attributes: isLocked ? [] : [h.OnClick(Message.ClickedConnect())],
+			},
+			[icon(h, "PlugIcon"), "Connect a source"],
+		),
+	)
 
 const emptyState = (h: H, inputs: Inputs): Html =>
 	empty(h, [
@@ -50,9 +58,10 @@ const emptyState = (h: H, inputs: Inputs): Html =>
 			]),
 		]),
 		emptyContent(h, [
-			inputs.canManage
-				? connectButton(h)
-				: adminOnlyNote(h, ["Ask an organization admin to connect a data source."]),
+			connectButton(h, inputs.canManage),
+			...(inputs.canManage
+				? []
+				: [adminOnlyNote(h, ["Ask an organization admin to connect a data source."])]),
 		]),
 	])
 

@@ -28,6 +28,7 @@ import { truncatedText } from "@maple/views/ui/truncated-text"
 import { docsLink } from "../../kit/signal-empty-state"
 import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import { settingsSection } from "../../kit/settings-section"
+import { denialReason, gatedControl } from "../../kit/session-grants"
 import { Message } from "./message"
 import { canManageMappings, type Model, type RecommendationTab } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -98,19 +99,22 @@ const recommendationActions = (h: H, model: Model, issue: V2Recommendation): Rea
 	if (issue.status !== "open") return [badge(h, { variant: status.variant }, [status.label])]
 	const primary =
 		issue.kind === "rename"
-			? canManageMappings(model)
-				? [
+			? [
+					gatedControl(h, model, "attribute_mappings:manage", (isDisabled) =>
 						button(
 							h,
 							{
 								size: "sm",
 								isLoading: isPending,
-								attributes: [h.OnClick(Message.ClickedApplyRecommendation({ id: issue.id }))],
+								isDisabled,
+								attributes: isDisabled
+									? []
+									: [h.OnClick(Message.ClickedApplyRecommendation({ id: issue.id }))],
 							},
 							[icon(h, "CheckIcon"), "Apply fix"],
 						),
-					]
-				: []
+					),
+				]
 			: [linkButton(h, { variant: "outline", size: "sm", href }, [icon(h, "CodeIcon"), "How to fix"])]
 	return [
 		...primary,
@@ -241,14 +245,24 @@ const OPERATION_BADGE = { copy: "info", move: "warn" } as const
 const OPERATION_LABELS = { copy: "Copy", move: "Move" } as const
 const APPLIES_TO = { span: "Span attributes", resource: "Resource attributes" } as const
 
-const addMappingButton = (h: H) =>
-	button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedAddMapping())] }, [
-		icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
-		"Add mapping",
-	])
+const addMappingButton = (h: H, model: Model) =>
+	gatedControl(h, model, "attribute_mappings:manage", (isDisabled) =>
+		button(
+			h,
+			{
+				size: "sm",
+				isDisabled,
+				attributes: isDisabled ? [] : [h.OnClick(Message.ClickedAddMapping())],
+			},
+			[icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }), "Add mapping"],
+		),
+	)
 
 const mappingRow = (h: H, model: Model, mapping: V2AttributeMapping): Html => {
 	const menuId = `mapping-row-${mapping.id}`
+	const lockedItem = canManageMappings(model)
+		? {}
+		: { isDisabled: true, tooltip: { content: [denialReason("attribute_mappings:manage")] } }
 	return h.div(
 		[
 			h.Key(mapping.id),
@@ -283,47 +297,47 @@ const mappingRow = (h: H, model: Model, mapping: V2AttributeMapping): Html => {
 				[h.Class("text-muted-foreground hidden w-36 shrink-0 text-xs md:block")],
 				[APPLIES_TO[mapping.source_context]],
 			),
-			hstack(
-				h,
-				{ align: "center", className: "w-10 shrink-0" },
-				canManageMappings(model)
-					? switchControl(h, {
+			hstack(h, { align: "center", className: "w-10 shrink-0" }, [
+				gatedControl(h, model, "attribute_mappings:manage", (isLocked) =>
+					hstack(
+						h,
+						{ inline: true, as: "span" },
+						switchControl(h, {
 							id: `${menuId}-switch`,
 							inputId: `${menuId}-switch-input`,
 							isChecked: mapping.enabled,
-							isDisabled: model.pendingToggles.includes(mapping.id),
+							isDisabled: isLocked || model.pendingToggles.includes(mapping.id),
 							ariaLabel: `${mapping.enabled ? "Turn off" : "Turn on"} ${mapping.name}`,
 							onToggle: Message.ToggledMapping({ id: mapping.id }),
-						})
-					: [typography(h, { size: "xs" }, [mapping.enabled ? "On" : "Off"])],
-			),
-			...(canManageMappings(model)
-				? [
-						hstack(h, { align: "stretch", justify: "end", className: "w-7 shrink-0" }, [
-							rowActionsMenu(h, {
-								slotId: menuId,
-								model: model.rowMenus[menuId] ?? Menu.init(menuId),
-								entries: [
-									{
-										_tag: "Item",
-										value: "edit",
-										label: "Edit mapping",
-										icon: "PencilIcon",
-									},
-									{
-										_tag: "Item",
-										value: "delete",
-										label: "Delete mapping",
-										icon: "TrashIcon",
-										variant: "destructive",
-									},
-								],
-								label: `Actions for ${mapping.name}`,
-								toParentMessage: (message) => Message.GotRowMenuMessage({ menuId, message }),
-							}),
-						]),
-					]
-				: []),
+						}),
+					),
+				),
+			]),
+			hstack(h, { align: "stretch", justify: "end", className: "w-7 shrink-0" }, [
+				rowActionsMenu(h, {
+					slotId: menuId,
+					model: model.rowMenus[menuId] ?? Menu.init(menuId),
+					entries: [
+						{
+							_tag: "Item",
+							value: "edit",
+							label: "Edit mapping",
+							icon: "PencilIcon",
+							...lockedItem,
+						},
+						{
+							_tag: "Item",
+							value: "delete",
+							label: "Delete mapping",
+							icon: "TrashIcon",
+							variant: "destructive",
+							...lockedItem,
+						},
+					],
+					label: `Actions for ${mapping.name}`,
+					toParentMessage: (message) => Message.GotRowMenuMessage({ menuId, message }),
+				}),
+			]),
 		],
 	)
 }
@@ -339,7 +353,7 @@ const mappingsTable = (h: H, model: Model, mappings: ReadonlyArray<V2AttributeMa
 					"Applies to",
 				]),
 				eyebrow(h, { variant: "mono", className: "w-10 shrink-0", as: "div" }, ["On"]),
-				...(canManageMappings(model) ? [h.div([h.Class("w-7 shrink-0")], [])] : []),
+				h.div([h.Class("w-7 shrink-0")], []),
 			]),
 			...Arr.map(mappings, (mapping) => mappingRow(h, model, mapping)),
 		],
@@ -356,10 +370,7 @@ const mappingsEmpty = (h: H, model: Model): Html =>
 					"Mappings rename span attribute keys that do not follow OpenTelemetry names, so dashboards and alerts find them. Rules apply to new spans only.",
 				]),
 			]),
-			emptyActions(h, [
-				...(canManageMappings(model) ? [addMappingButton(h)] : []),
-				docsLink(h, "otelConventions"),
-			]),
+			emptyActions(h, [addMappingButton(h, model), docsLink(h, "otelConventions")]),
 		],
 		"py-10",
 	)
@@ -383,7 +394,7 @@ export const mappingsSection = (h: H, model: Model): Html =>
 			title: "Attribute mappings",
 			description: ["Copy or move attribute keys as data arrives. Applies to new data only."],
 			padded: false,
-			actions: canManageMappings(model) ? addMappingButton(h) : undefined,
+			actions: addMappingButton(h, model),
 		},
 		[
 			h.div(

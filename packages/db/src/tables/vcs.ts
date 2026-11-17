@@ -237,6 +237,12 @@ export const PrReviews = PG.table("pr_reviews", {
 		sessionId: PG.column(PG.nullable(PG.text), { name: "session_id" }),
 		/** Bumped when a finished review is asked for again, so the repeat posts a comment of its own. */
 		commentAttempt: PG.column(PG.int4, { name: "comment_attempt", default: 0 }),
+		/**
+		 * Warnings and criticals the repository's lenses or the team's feedback kept off this head's
+		 * reviews, summed over every review of it. Survives a review asked for again, which clears the
+		 * report: auto-approval refuses while any review of the pull request held one back.
+		 */
+		heldBack: PG.column(PG.int4, { name: "held_back", default: 0 }),
 		/** Structured review; null until `submit_review` lands. */
 		reportJson: PG.column(PG.nullable(PG.jsonb(PrReviewReport)), { name: "report_json" }),
 		score: PG.nullable(PG.int4),

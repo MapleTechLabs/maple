@@ -9,10 +9,10 @@ import { icon } from "@maple/views/ui/icon"
 import { label } from "@maple/views/ui/label"
 import { panel, panelBody, panelHeader } from "@maple/views/ui/panel"
 import { textarea } from "@maple/views/ui/textarea"
-import { adminOnlyNote } from "../../kit/settings-section"
 import { formatConfig, problemText } from "./config-json"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
+import { gatedControl } from "../../kit/session-grants"
 import { canApply, currentConfigOf, draftOf } from "./update-json"
 import { isSettingsDirty } from "./update-settings"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -86,19 +86,18 @@ const readView = (h: H, model: Model, text: string): Html =>
 					variant: "outline",
 					size: "sm",
 				}),
-				...(canManage(model)
-					? [
-							button(
-								h,
-								{
-									size: "sm",
-									variant: "outline",
-									attributes: [h.OnClick(Message.ClickedEditJson())],
-								},
-								[icon(h, "PencilIcon"), "Edit JSON"],
-							),
-						]
-					: []),
+				gatedControl(h, model, "status_pages:edit", (isDisabled) =>
+					button(
+						h,
+						{
+							size: "sm",
+							variant: "outline",
+							isDisabled,
+							attributes: [h.OnClick(Message.ClickedEditJson())],
+						},
+						[icon(h, "PencilIcon"), "Edit JSON"],
+					),
+				),
 			]),
 		}),
 		h.pre(
@@ -223,13 +222,6 @@ export const jsonTab = (h: H, model: Model): Html =>
 		onSome: (current) =>
 			vstack(h, { gap: "4", className: "max-w-4xl" }, [
 				intro(h),
-				...(canManage(model)
-					? []
-					: [
-							adminOnlyNote(h, [
-								"Only org admins and engineers can apply a config. You can copy it.",
-							]),
-						]),
 				canManage(model) && model.jsonEdit !== null
 					? editView(h, model, model.jsonEdit.draft)
 					: readView(h, model, formatConfig(current)),

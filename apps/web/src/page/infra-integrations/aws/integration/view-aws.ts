@@ -38,6 +38,7 @@ import {
 } from "../../../integrations/derive"
 import { Message } from "../../../integrations/message"
 import { canManage, type Model } from "../../../integrations/model"
+import { denialReason } from "../../../kit/session-grants"
 import { dataPicker } from "./view-aws-choose"
 import { CLOUDSHELL_URL, fileBlock, methodSelect, SMALL, setupBody } from "./view-aws-setup"
 import { disconnectConfirm } from "../../../integrations/view-disconnect"
@@ -91,8 +92,6 @@ const MODULE_ROWS = {
 		open: "Open cloud findings",
 	},
 } as const satisfies Record<AwsOptInModule, ModuleRow>
-
-const MODULES_ADMIN_ONLY = "Only org admins and engineers can change what Maple reads from AWS."
 
 const CONDITION_VARIANT = {
 	setup: "muted",
@@ -622,24 +621,20 @@ const moduleRow = (
 			}),
 			description: state.description,
 			isChecked: moduleStateOf(connection, row.module) !== "off",
-			isDisabled: !canManage(model) || save._tag === "Saving",
+			isDisabled: save._tag === "Saving",
+			...(!canManage(model) && { lockReason: denialReason("integrations:manage") }),
 			onToggle: Message.ToggledAwsModule({ id: connection.id, module: row.module }),
 			before: state.action === null ? [] : [state.action],
 		},
-		[
-			...(error === null
-				? []
-				: [
-						typography(
-							h,
-							{ size: "xs", tone: "destructive", as: "p", attributes: [h.Role("alert")] },
-							[error],
-						),
-					]),
-			...(canManage(model)
-				? []
-				: [typography(h, { size: "2xs", tone: "muted", as: "p" }, [MODULES_ADMIN_ONLY])]),
-		],
+		error === null
+			? []
+			: [
+					typography(
+						h,
+						{ size: "xs", tone: "destructive", as: "p", attributes: [h.Role("alert")] },
+						[error],
+					),
+				],
 	)
 }
 
