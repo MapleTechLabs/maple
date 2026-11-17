@@ -37,6 +37,7 @@ export const DOCS = {
 	mcp: "/docs/reference/mcp",
 	alertRules: "/docs/alerting/alert-rules",
 	incidents: "/docs/alerting/incidents",
+	statusPages: "/docs/alerting/status-pages",
 	destinations: "/docs/alerting/notification-destinations",
 	dashboards: "/docs/dashboards/build-dashboards",
 	embedCharts: "/docs/dashboards/embed-charts",
