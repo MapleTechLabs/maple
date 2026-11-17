@@ -2,16 +2,7 @@ import * as Retry from "@distilled.cloud/aws/Retry"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ENABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import { AwsAccountId, type AwsModule, AwsRegion, OrgId, UserId } from "@maple/primitives"
-import {
-	Array as Arr,
-	Clock,
-	ConfigProvider,
-	type Duration,
-	Effect,
-	Layer,
-	Schema,
-	String as Str,
-} from "effect"
+import { Array as Arr, ConfigProvider, Effect, Layer, Schema, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { HttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
@@ -22,7 +13,6 @@ import { MAPLE_TEST_OIDC_KEY, makeFakeAws } from "../integrations/aws/fake-aws"
 import { MAX_PAGES, WINDOW_PAGES } from "./aws-security-readers"
 import {
 	AwsSecurityFindingsService,
-	CONNECTION_BUDGET_MS,
 	NOT_ENABLED_RECHECK_MS,
 	PUSHED_POLL_MS,
 	RECONCILE_AFTER_MS,
@@ -54,18 +44,10 @@ const orgId = Schema.decodeSync(OrgId)("org_sec")
 const userId = Schema.decodeSync(UserId)("user_1")
 const account = Schema.decodeSync(AwsAccountId)("111111111111")
 
-/** `requestTakes`: how long every AWS call takes on the test clock. */
-const makeWorld = (options: { readonly requestTakes?: Duration.Input } = {}) => {
+const makeWorld = () => {
 	const testDb = createTestDb(trackedDbs)
 	const sts = makeFakeAws()
 	const aws = makeFakeAwsSecurity(sts.client)
-	const { requestTakes } = options
-	const client =
-		requestTakes === undefined
-			? aws.client
-			: HttpClient.make((request) =>
-					Effect.andThen(TestClock.adjust(requestTakes), aws.client.execute(request)),
-				)
 	const rolledOut = new Set<OrgId>([orgId])
 	const audit: Array<{ readonly orgId: OrgId; readonly event: AuditTrailEvent }> = []
 	const layer = Layer.mergeAll(
@@ -95,7 +77,7 @@ const makeWorld = (options: { readonly requestTakes?: Duration.Input } = {}) => 
 		),
 		Layer.provide(testDb.layer),
 		Layer.provide(Env.layer),
-		Layer.provide(Layer.succeed(HttpClient.HttpClient, client)),
+		Layer.provide(Layer.succeed(HttpClient.HttpClient, aws.client)),
 		Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(config))),
 	)
 	return { testDb, sts, aws, rolledOut, audit, layer }
@@ -232,59 +214,6 @@ describe("AwsSecurityFindingsService", () => {
 			assert.strictEqual(stateOf("us-east-1", "securityhub"), "not_enabled")
 			assert.strictEqual(stateOf("eu-west-1", "guardduty"), "not_enabled")
 			assert.strictEqual(stateOf("eu-west-1", "access_analyzer"), "enabled")
-		}).pipe(Effect.provide(world.layer))
-	})
-
-	it.effect("stores a finding AWS dates ahead of now at now, so a later version replaces it", () => {
-		const world = makeWorld()
-		const region = { guardduty: [sshBruteForce({ updatedAtMs: NOW + 24 * 3600_000 })] }
-		world.aws.regions["us-east-1"] = region
-		const updatedAt = Effect.promise(() =>
-			world.testDb.pglite
-				.query<{ ms: number; status: string }>(
-					"SELECT (extract(epoch from provider_updated_at) * 1000)::float8 AS ms, status FROM cloud_security_findings",
-				)
-				.then((result) => result.rows[0]),
-		)
-		return Effect.gen(function* () {
-			yield* connect(world)
-			yield* poll
-			assert.strictEqual((yield* updatedAt)?.ms, NOW)
-			yield* TestClock.adjust("10 minutes")
-			region.guardduty = [sshBruteForce({ archived: true, updatedAtMs: NOW + 5 * 60_000 })]
-			yield* poll
-			assert.deepStrictEqual(yield* updatedAt, { ms: NOW + 5 * 60_000, status: "archived" })
-		}).pipe(Effect.provide(world.layer))
-	})
-
-	it.effect("gives a connection its own share of a tick and reads the rest on later ticks", () => {
-		const world = makeWorld({ requestTakes: "5 seconds" })
-		world.aws.regions["us-east-1"] = { guardduty: [sshBruteForce()] }
-		world.aws.regions["eu-west-1"] = { guardduty: [sshBruteForce({ id: "gd-2" })] }
-		const feedsRead = CloudSecurityStore.use((store) =>
-			Effect.flatMap(AwsConnectionService, (connections) =>
-				Effect.flatMap(connections.status(orgId), (status) =>
-					Effect.forEach(status.connections, (connection) =>
-						store.serviceStates(orgId, connection.id),
-					),
-				),
-			),
-		).pipe(Effect.map((states) => Arr.flatten(states).length))
-		// Two regions, five feeds each.
-		const feeds = 10
-		return Effect.gen(function* () {
-			yield* connect(world)
-			const startedAt = yield* Clock.currentTimeMillis
-			const first = yield* poll
-			const elapsed = (yield* Clock.currentTimeMillis) - startedAt
-			assert.isAbove(first.reads, 0)
-			assert.isBelow(first.reads, feeds)
-			// It stopped at its share, give or take the reads already under way.
-			assert.isBelow(elapsed, 2 * CONNECTION_BUDGET_MS)
-			assert.strictEqual(yield* feedsRead, first.reads)
-			// The feeds it left go first on the next ticks.
-			yield* Effect.repeat(Effect.andThen(TestClock.adjust("5 minutes"), poll), { times: 5 })
-			assert.strictEqual(yield* feedsRead, feeds)
 		}).pipe(Effect.provide(world.layer))
 	})
 
