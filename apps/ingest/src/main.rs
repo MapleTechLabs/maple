@@ -19090,7 +19090,8 @@ mod tests {
 
         for secret in [None, Some("wrong-secret")] {
             let (status, response) = aws_audit_deliver(&state, secret, body(), false).await;
-            assert_eq!(status, StatusCode::UNAUTHORIZED, "{secret:?}");
+            let case = if secret.is_some() { "a wrong key" } else { "no key" };
+            assert_eq!(status, StatusCode::UNAUTHORIZED, "{case}");
             assert!(response["errorMessage"].is_string());
         }
 
