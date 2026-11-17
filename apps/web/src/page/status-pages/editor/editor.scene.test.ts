@@ -2160,13 +2160,43 @@ describe("header", () => {
 			{ update: pageUpdate, view },
 			given(loaded({ tab: "maintenance" })),
 			expectView(role("button", { name: "Schedule maintenance" })).toExist(),
-			expectView(text("No maintenance scheduled.")).toExist(),
+			expectView(text("No maintenance yet")).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded()),
 			expectView(role("button", { name: "Declare incident" })).not.toExist(),
 			expectView(role("link", { name: "Live page" })).toHaveAttr("aria-current", "page"),
+		)
+	})
+
+	test("an empty Incidents or Maintenance tab explains it, links the docs and offers one button to post", () => {
+		for (const [tab, title, action, kind] of [
+			["incidents", "No incidents yet", "Declare incident", "incident"],
+			["maintenance", "No maintenance yet", "Schedule maintenance", "maintenance"],
+		] as const) {
+			scene(
+				{ update: pageUpdate, view },
+				given(
+					loaded({
+						tab,
+						incidents: [incident(1, { kind: kind === "incident" ? "maintenance" : "incident" })],
+					}),
+				),
+				expectView(text(title)).toExist(),
+				expectView(role("link", { name: "Read the docs" })).toHaveAttr(
+					"href",
+					"https://maple.dev/docs/alerting/status-pages#incidents-and-maintenance-notices",
+				),
+				expectView(role("button", { name: action })).toExist(),
+				expectView(role("table")).not.toExist(),
+			)
+		}
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ tab: "incidents", incidents: [incident(1)] })),
+			expectView(text("No incidents yet")).not.toExist(),
+			expectView(role("button", { name: "Declare incident" })).toExist(),
 		)
 	})
 
