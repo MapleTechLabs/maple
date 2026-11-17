@@ -57,7 +57,7 @@ const SECTION_LABEL = {
 const SECTION_ICON = {
 	basic: "GearIcon",
 	monitors: "PulseIcon",
-	appearance: "PaletteIcon",
+	appearance: "Palette2Icon",
 	advanced: "CodeIcon",
 } as const satisfies Record<SettingsSection, IconName>
 
