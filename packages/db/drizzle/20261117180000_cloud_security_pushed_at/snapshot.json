@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "67d835e1f2b7a2930cc82196ec2f542d1c9b99900b5d0068bc39ad8017fd1359",
+	"id": "ed86573650d888d0ee65fa1c851b76bab7ad798e4ea1c904631c5b6ed50e2253",
 	"prevIds": [
-		"7e60170d4790d4476090fa7b8b69322e0dbe50fa239d1b5273ddc53682cd8db6"
+		"527460d2368423e96b0c8a39a9e3c1eddb15c915ee840274e04d5b48fdfa66e5"
 	],
 	"entities": [
 		{
@@ -14886,8 +14886,18 @@
 		{
 			"kind": "column",
 			"table": "pr_reviews",
-			"name": "report_json",
+			"name": "held_back",
 			"position": 13,
+			"type": "integer",
+			"notNull": true,
+			"default": "0",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "pr_reviews",
+			"name": "report_json",
+			"position": 14,
 			"type": "jsonb",
 			"notNull": false,
 			"default": null,
@@ -14897,7 +14907,7 @@
 			"kind": "column",
 			"table": "pr_reviews",
 			"name": "score",
-			"position": 14,
+			"position": 15,
 			"type": "integer",
 			"notNull": false,
 			"default": null,
@@ -14907,16 +14917,6 @@
 			"kind": "column",
 			"table": "pr_reviews",
 			"name": "check_run_url",
-			"position": 15,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "pr_reviews",
-			"name": "comment_url",
 			"position": 16,
 			"type": "text",
 			"notNull": false,
@@ -14926,7 +14926,7 @@
 		{
 			"kind": "column",
 			"table": "pr_reviews",
-			"name": "review_url",
+			"name": "comment_url",
 			"position": 17,
 			"type": "text",
 			"notNull": false,
@@ -14936,7 +14936,7 @@
 		{
 			"kind": "column",
 			"table": "pr_reviews",
-			"name": "publish_error",
+			"name": "review_url",
 			"position": 18,
 			"type": "text",
 			"notNull": false,
@@ -14946,7 +14946,7 @@
 		{
 			"kind": "column",
 			"table": "pr_reviews",
-			"name": "error",
+			"name": "publish_error",
 			"position": 19,
 			"type": "text",
 			"notNull": false,
@@ -14956,7 +14956,7 @@
 		{
 			"kind": "column",
 			"table": "pr_reviews",
-			"name": "model",
+			"name": "error",
 			"position": 20,
 			"type": "text",
 			"notNull": false,
@@ -14966,9 +14966,9 @@
 		{
 			"kind": "column",
 			"table": "pr_reviews",
-			"name": "input_tokens",
+			"name": "model",
 			"position": 21,
-			"type": "integer",
+			"type": "text",
 			"notNull": false,
 			"default": null,
 			"identity": null
@@ -14976,7 +14976,7 @@
 		{
 			"kind": "column",
 			"table": "pr_reviews",
-			"name": "output_tokens",
+			"name": "input_tokens",
 			"position": 22,
 			"type": "integer",
 			"notNull": false,
@@ -14986,7 +14986,7 @@
 		{
 			"kind": "column",
 			"table": "pr_reviews",
-			"name": "cost_microusd",
+			"name": "output_tokens",
 			"position": 23,
 			"type": "integer",
 			"notNull": false,
@@ -14996,9 +14996,9 @@
 		{
 			"kind": "column",
 			"table": "pr_reviews",
-			"name": "started_at",
+			"name": "cost_microusd",
 			"position": 24,
-			"type": "timestamp with time zone",
+			"type": "integer",
 			"notNull": false,
 			"default": null,
 			"identity": null
@@ -15006,7 +15006,7 @@
 		{
 			"kind": "column",
 			"table": "pr_reviews",
-			"name": "finished_at",
+			"name": "started_at",
 			"position": 25,
 			"type": "timestamp with time zone",
 			"notNull": false,
@@ -15016,7 +15016,7 @@
 		{
 			"kind": "column",
 			"table": "pr_reviews",
-			"name": "merged_at",
+			"name": "finished_at",
 			"position": 26,
 			"type": "timestamp with time zone",
 			"notNull": false,
@@ -15026,8 +15026,18 @@
 		{
 			"kind": "column",
 			"table": "pr_reviews",
-			"name": "telemetry_json",
+			"name": "merged_at",
 			"position": 27,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "pr_reviews",
+			"name": "telemetry_json",
+			"position": 28,
 			"type": "jsonb",
 			"notNull": false,
 			"default": null,
@@ -15037,16 +15047,6 @@
 			"kind": "column",
 			"table": "pr_reviews",
 			"name": "merge_commit_sha",
-			"position": 28,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "pr_reviews",
-			"name": "post_merge_status",
 			"position": 29,
 			"type": "text",
 			"notNull": false,
@@ -15056,8 +15056,18 @@
 		{
 			"kind": "column",
 			"table": "pr_reviews",
-			"name": "post_merge_after",
+			"name": "post_merge_status",
 			"position": 30,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "pr_reviews",
+			"name": "post_merge_after",
+			"position": 31,
 			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
@@ -15067,7 +15077,7 @@
 			"kind": "column",
 			"table": "pr_reviews",
 			"name": "post_merge_json",
-			"position": 31,
+			"position": 32,
 			"type": "jsonb",
 			"notNull": false,
 			"default": null,
@@ -15077,7 +15087,7 @@
 			"kind": "column",
 			"table": "pr_reviews",
 			"name": "created_at",
-			"position": 32,
+			"position": 33,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -15087,7 +15097,7 @@
 			"kind": "column",
 			"table": "pr_reviews",
 			"name": "updated_at",
-			"position": 33,
+			"position": 34,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
