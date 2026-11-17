@@ -11,7 +11,8 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { spaced } from "@maple/views/ui/spaced"
 
-// The parent owns `isDragging` and checks the picked file with `checkImage`.
+// An image picker with a drop target and a preview. The parent owns `isDragging` and checks the
+// picked file (`checkImage` for avatars and org logos).
 
 const MAX_BYTES = 10 * 1024 * 1024
 const ACCEPT = "image/png,image/jpeg,image/webp,image/gif"

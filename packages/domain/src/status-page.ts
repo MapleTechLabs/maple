@@ -26,6 +26,37 @@ export const STATUS_PAGE_INCIDENT_HISTORY_DAYS = 14
 export const STATUS_PAGE_STALE_AFTER_MS = 5 * 60_000
 /** Longest page link (website, logo, privacy, terms) the service stores; the editor checks it too. */
 export const STATUS_PAGE_MAX_URL_LENGTH = 2048
+/**
+ * Largest uploaded logo or favicon, in bytes. An upload is stored as a base64 `data:` URL in the
+ * page's URL column, so the edge serves it from the snapshot with no extra storage.
+ */
+export const STATUS_PAGE_MAX_IMAGE_BYTES = 128 * 1024
+/** The image types an upload may be; the editor's file picker accepts the same. */
+export const STATUS_PAGE_IMAGE_TYPES = [
+	"image/png",
+	"image/jpeg",
+	"image/webp",
+	"image/gif",
+	"image/svg+xml",
+	"image/x-icon",
+	"image/vnd.microsoft.icon",
+] as const
+const IMAGE_DATA_URL_PATTERN =
+	/^data:image\/(?:png|jpeg|webp|gif|svg\+xml|x-icon|vnd\.microsoft\.icon);base64,[A-Za-z0-9+/]+={0,2}$/u
+/** Base64 of the largest upload, plus room for the `data:<type>;base64,` prefix. */
+const MAX_IMAGE_DATA_URL_LENGTH = Math.ceil(STATUS_PAGE_MAX_IMAGE_BYTES / 3) * 4 + 64
+
+/** An uploaded image: a base64 `data:` URL of an allowed image type, within the size cap. */
+export const isStatusPageImageDataUrl = (value: string): boolean =>
+	value.length <= MAX_IMAGE_DATA_URL_LENGTH && IMAGE_DATA_URL_PATTERN.test(value)
+
+/** A logo or favicon value the page may render: an https URL or an uploaded image. */
+export const isStatusPageImageSource = (value: string): boolean =>
+	isStatusPageImageDataUrl(value) ||
+	(value.length <= STATUS_PAGE_MAX_URL_LENGTH &&
+		URL.canParse(value) &&
+		new URL(value).protocol === "https:")
+
 /** Longest incident update message, in characters; the API, the service and the editor all check it. */
 export const STATUS_PAGE_UPDATE_MAX_LENGTH = 20_000
 

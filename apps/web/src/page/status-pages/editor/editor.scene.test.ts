@@ -40,6 +40,7 @@ import {
 import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
 import * as Dialog from "@maple/views/ui/dialog"
+import { ColorPickerMessage, MountColorPicker } from "@maple/views/ui/color-picker"
 import { MountDialog } from "@maple/views/ui/dialog"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
@@ -1279,6 +1280,12 @@ const steps = (model: Model, messages: ReadonlyArray<Message>, ctx: PageContext 
 const mounted = Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog())
 const comboMounted = Mount.resolve(Combobox.MountCombobox, Combobox.Message.CompletedMountCombobox())
 
+/** The Appearance section's colour pickers, mounted: the accent alone in Auto, all five in Light or Dark. */
+const pickersMounted = (count: number) =>
+	Mount.resolveAll(
+		...Arr.makeBy(count, () => [MountColorPicker, ColorPickerMessage.CompletedMountColorPicker()] as const),
+	)
+
 /** The reviewed message as the public page's markup renders it; the incident's sheet is a dialog too. */
 const updateBodyOf = find('[role="dialog"]:not(#status-page-panel-popup) [data-slot="update-body"]')
 const messageHtml = (html: Parameters<typeof updateBodyOf>[0]): string =>
@@ -2429,6 +2436,7 @@ describe("header", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ tab: "appearance" })),
+			pickersMounted(1),
 			expectView(role("link", { name: "Settings" })).toHaveAttr("aria-current", "page"),
 			expectView(role("link", { name: "Appearance" })).toHaveAttr("aria-current", "page"),
 		)
@@ -2611,6 +2619,7 @@ describe("settings", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(APPEARANCE)),
+			pickersMounted(1),
 			expectView(text("Unsaved changes")).not.toExist(),
 			type(role("textbox", { name: "Accent" }), "teal"),
 			expectView(text("Unsaved changes")).toExist(),
@@ -2627,6 +2636,7 @@ describe("settings", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given({ ...edited, search: { view: "settings", section: "appearance" } }),
+			pickersMounted(1),
 			expectView(text("Fix the fields marked in Basic settings.")).toExist(),
 			expectView(role("button", { name: "Save" })).toBeDisabled(),
 		)
@@ -2701,10 +2711,12 @@ describe("settings", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(APPEARANCE)),
+			pickersMounted(1),
 			expectView(role("textbox", { name: "Background" })).toBeDisabled(),
 			expectView(role("textbox", { name: "Text" })).toBeDisabled(),
 			expectView(role("textbox", { name: "Accent" })).toBeEnabled(),
 			inside(role("group", { name: "Mode" }), click(role("button", { name: "Dark" }))),
+			pickersMounted(4),
 			expectView(role("textbox", { name: "Background" })).toBeEnabled(),
 		)
 	})
@@ -2713,7 +2725,9 @@ describe("settings", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(APPEARANCE)),
+			pickersMounted(1),
 			inside(role("group", { name: "Mode" }), click(role("button", { name: "Light" }))),
+			pickersMounted(4),
 			type(role("textbox", { name: "Text" }), "#757575"),
 			expectView(
 				text("Text on the background has a contrast of 4.49:1; it needs at least 4.5:1."),
@@ -2727,6 +2741,7 @@ describe("settings", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(APPEARANCE)),
+			pickersMounted(1),
 			expectView(
 				selector('maple-preview-frame[frame-title="Acme Status with these settings"]'),
 			).toHaveAttr("sandbox", "allow-scripts"),
@@ -2735,25 +2750,89 @@ describe("settings", () => {
 				expect(theme(html)).toContain("color-scheme:light;")
 			}),
 			inside(role("group", { name: "Mode" }), click(role("button", { name: "Dark" }))),
+			pickersMounted(4),
 			tap(({ html }) => expect(theme(html)).toContain("color-scheme:dark;")),
 			type(role("textbox", { name: "Accent" }), "#ff0066"),
 			tap(({ html }) => expect(theme(html)).toContain("--link:#ff0066")),
 		)
 	})
 
-	test("the branding links preview at once: the logo in the header, the favicon in the tab", () => {
-		const header = srcdocOf("Acme Status with these settings")
+	test("an uploaded favicon is read into the form; a file the API would refuse is not", () => {
+		const page = loaded(APPEARANCE)
+		const pdf = pageUpdate(
+			page,
+			Message.PickedBrandingImage({
+				field: "faviconUrl",
+				files: [new File(["%PDF"], "icon.pdf", { type: "application/pdf" })],
+			}),
+		)
+		expect(pdf.commands ?? []).toEqual([])
+		expect(pdf.outMessage).toMatchObject({ _tag: "RequestedToast", title: "Couldn't use that image" })
+
+		const png = pageUpdate(
+			page,
+			Message.PickedBrandingImage({
+				field: "faviconUrl",
+				files: [new File(["png"], "icon.png", { type: "image/png" })],
+			}),
+		)
+		expect(names(png.commands)).toEqual(["ReadStatusPageBrandingImage"])
+		const read = pageUpdate(
+			png.model,
+			Message.CompletedReadBrandingImage({ field: "faviconUrl", dataUrl: "data:image/png;base64,cG5n" }),
+		).model
+		expect(read.settingsEdits?.faviconUrl).toBe("data:image/png;base64,cG5n")
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded(APPEARANCE)),
-			type(role("textbox", { name: "Logo URL" }), "https://acme.example/logo.svg"),
-			type(role("textbox", { name: "Dark mode logo URL" }), "https://acme.example/logo-dark.svg"),
-			type(role("textbox", { name: "Favicon URL" }), "https://acme.example/favicon.png"),
+			given(read),
+			pickersMounted(1),
+			expectView(role("button", { name: "Change favicon" })).toExist(),
+			expectView(role("button", { name: "Save" })).toBeEnabled(),
+		)
+	})
+
+	test("an image is added from its dialog: a link applies on Use link, a bad one waits", () => {
+		const opened = pageUpdate(loaded(APPEARANCE), Message.ClickedEditBrandingImage({ field: "logoUrl" })).model
+		expect(opened.brandingDialog.isOpen).toBe(true)
+		scene(
+			{ update: pageUpdate, view },
+			given(opened),
+			mounted,
+			pickersMounted(1),
+			expectView(role("dialog", { name: "Logo" })).toExist(),
+			expectView(role("button", { name: "Upload an image" })).toExist(),
+			type(role("textbox", { name: "Link to an image" }), "http://acme.example/logo.svg"),
+			expectView(text("Use an https URL.")).toExist(),
+			expectView(role("button", { name: "Use link" })).toBeDisabled(),
+		)
+		const typed = pageUpdate(opened, Message.ChangedBrandingLink({ value: " https://acme.example/logo.svg " }))
+		const applied = pageUpdate(typed.model, Message.SubmittedBrandingLink()).model
+		expect(applied.settingsEdits?.logoUrl).toBe("https://acme.example/logo.svg")
+		expect(applied.brandingDialog.isOpen).toBe(false)
+		// Reopened on a linked image, the dialog starts from its link.
+		expect(
+			pageUpdate(applied, Message.ClickedEditBrandingImage({ field: "logoUrl" })).model.brandingLink,
+		).toBe("https://acme.example/logo.svg")
+	})
+
+	test("the branding images preview at once: the logo in the header, the favicon in the tab", () => {
+		const header = srcdocOf("Acme Status with these settings")
+		const branded = steps(loaded(APPEARANCE), [
+			Message.ChangedSetting({ field: "logoUrl", value: "https://acme.example/logo.svg" }),
+			Message.ChangedSetting({ field: "logoDarkUrl", value: "https://acme.example/logo-dark.svg" }),
+			Message.ChangedSetting({ field: "faviconUrl", value: "https://acme.example/favicon.png" }),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(branded),
+			pickersMounted(1),
+			expectView(role("button", { name: "Change logo" })).toExist(),
 			tap(({ html }) => {
 				expect(header(html)).toContain(`<img src="https://acme.example/logo.svg"`)
 				expect(header(html)).toContain(`<link rel="icon" href="https://acme.example/favicon.png">`)
 			}),
 			inside(role("group", { name: "Mode" }), click(role("button", { name: "Dark" }))),
+			pickersMounted(4),
 			tap(({ html }) =>
 				expect(header(html)).toContain(`<img src="https://acme.example/logo-dark.svg"`),
 			),
@@ -2797,6 +2876,7 @@ describe("settings", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(APPEARANCE)),
+			pickersMounted(1),
 			click(role("switch", { name: "Show powered by Maple" })),
 			expectView(text("Unsaved changes")).toExist(),
 		)
@@ -2859,7 +2939,12 @@ describe("settings", () => {
 			loaded(APPEARANCE),
 			Message.ChangedSetting({ field: "faviconUrl", value: "http://acme.example/favicon.png" }),
 		).model
-		scene({ update: pageUpdate, view }, given(edited), expectView(text("Use an https URL.")).toExist())
+		scene(
+			{ update: pageUpdate, view },
+			given(edited),
+			pickersMounted(1),
+			expectView(text("Use an https URL.")).toExist(),
+		)
 		scene(
 			{ update: pageUpdate, view },
 			given({ ...edited, search: { view: "settings" } }),
@@ -2914,17 +2999,18 @@ describe("settings", () => {
 	})
 
 	test("each color has a picker that opens on the color in effect", () => {
-		const accent = selector('[aria-label="Accent color"]')
+		const accent = selector('[data-slot="color-picker-popup"][aria-label="Accent color"]')
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(APPEARANCE)),
+			pickersMounted(1),
 			// Empty field: the preset's own colour, the one the placeholder names.
-			expectView(accent).toHaveValue("#000000"),
+			expectView(accent).toHaveAttr("data-value", "#000000"),
 			type(role("textbox", { name: "Accent" }), "#FF0066"),
-			expectView(accent).toHaveValue("#ff0066"),
-			// A colour input cannot hold something that is not a hex colour.
+			expectView(accent).toHaveAttr("data-value", "#ff0066"),
+			// Not a hex colour yet: the picker stays on the preset's.
 			type(role("textbox", { name: "Accent" }), "teal"),
-			expectView(accent).not.toExist(),
+			expectView(accent).toHaveAttr("data-value", "#000000"),
 			// Auto takes the overrides from the preset, so they have nothing to pick.
 			expectView(selector('[aria-label="Background color"]')).not.toExist(),
 		)
@@ -3908,6 +3994,7 @@ describe("the sheet, the previews and the reads they wait on", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ ...APPEARANCE, monitorsFail: true })),
+			pickersMounted(1),
 			expectView(
 				selector('maple-preview-frame[frame-title="Acme Status with these settings"]'),
 			).not.toExist(),

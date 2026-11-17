@@ -5,6 +5,7 @@ import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
 import * as Checkbox from "@maple/views/ui/checkbox"
 import * as Combobox from "@maple/views/ui/combobox"
+import { colorPicker } from "@maple/views/ui/color-picker"
 import * as Field from "@maple/views/ui/field"
 import { icon } from "@maple/views/ui/icon"
 import { input } from "@maple/views/ui/input"
@@ -77,6 +78,7 @@ const Model = Schema.Struct({
 	comboboxChips: Combobox.Model,
 	autocomplete: Combobox.Model,
 	otpField: OtpField.Model,
+	pickedColor: Schema.String,
 })
 type Model = typeof Model.Type
 
@@ -93,6 +95,7 @@ const init = (): Update.Return<Model, Message> => ({
 		comboboxChips: initKitComboboxChips("kit-forms-combobox-chips"),
 		autocomplete: initKitAutocomplete("kit-forms-autocomplete"),
 		otpField: OtpField.init({ id: "base-ui-_r_22_", length: 6, value: "482" }),
+		pickedColor: "#3b82f6",
 	},
 })
 
@@ -107,6 +110,8 @@ const Message = defineMessageUnion({
 	GotAutocompleteMessage: { message: Combobox.Message },
 	GotOtpFieldMessage: { message: OtpField.Message },
 	ClickedClearSearch: {},
+	PickedColor: { color: Schema.String },
+	CompletedMountColorPicker: {},
 })
 type Message = typeof Message.Type
 
@@ -187,6 +192,8 @@ const update = (model: Model, message: Message): Update.Return<Model, Message> =
 		GotOtpFieldMessage: ({ message }) => foldOtpField(model, message),
 		// The clear button has no handler.
 		ClickedClearSearch: () => ({ model }),
+		PickedColor: ({ color }) => ({ model: { ...model, pickedColor: color } }),
+		CompletedMountColorPicker: () => ({ model }),
 	})
 
 const inputs = (h: HtmlBuilder<Message>): ReadonlyArray<Html> => [
@@ -449,6 +456,27 @@ const otpField = (model: Model, h: HtmlBuilder<Message>): Html => {
 	])
 }
 
+const COLOR_PRESETS = ["#ef4444", "#f59e0b", "#22c55e", "#3b82f6", "#a855f7", "#64748b"]
+
+const colorPickers = (model: Model, h: HtmlBuilder<Message>): Html =>
+	kitRow(h, undefined, [
+		colorPicker(h, {
+			id: "kit-forms-color",
+			value: model.pickedColor,
+			label: "Series color",
+			onInput: (color) => Message.PickedColor({ color }),
+			onMount: Message.CompletedMountColorPicker(),
+		}),
+		colorPicker(h, {
+			id: "kit-forms-color-presets",
+			value: model.pickedColor,
+			label: "Series color with presets",
+			presets: COLOR_PRESETS,
+			onInput: (color) => Message.PickedColor({ color }),
+			onMount: Message.CompletedMountColorPicker(),
+		}),
+	])
+
 const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 	kitPage(
 		h,
@@ -469,6 +497,7 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 			kitSection(h, "Native select", [nativeSelects(h)]),
 			kitSection(h, "Select, combobox, autocomplete (closed)", pickers(model, h)),
 			kitSection(h, "OTP field and label", [otpField(model, h)]),
+			kitSection(h, "Color picker", [colorPickers(model, h)]),
 		],
 	)
 

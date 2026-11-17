@@ -21,7 +21,14 @@ import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
-import { ComponentForm, IncidentEditForm, IncidentForm, SettingsForm, UpdateForm } from "../shared/form"
+import {
+	BrandingField,
+	ComponentForm,
+	IncidentEditForm,
+	IncidentForm,
+	SettingsForm,
+	UpdateForm,
+} from "../shared/form"
 import { Picker } from "../shared/picker"
 import { PreviewHistory, PreviewScheme, PreviewState, PreviewWidth } from "../shared/preview"
 
@@ -182,6 +189,12 @@ export const Model = Schema.Struct({
 	// Settings
 	/** Edits over the saved page; `null` while the form shows the page as saved. */
 	settingsEdits: Schema.NullOr(SettingsForm),
+	/** The logo or favicon drop target a file is dragged over. */
+	brandingDrag: Schema.NullOr(BrandingField),
+	/** The upload-or-link dialog, the image it changes and its link as typed. */
+	brandingDialog: Dialog.Model,
+	brandingDialogField: BrandingField,
+	brandingLink: Schema.String,
 	isSavingSettings: Schema.Boolean,
 	/** Basic settings' Save: Who can view saves once the fields have, so neither reply overwrites the other's page. */
 	savesAccessNext: Schema.Boolean,

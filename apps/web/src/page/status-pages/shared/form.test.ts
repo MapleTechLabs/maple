@@ -11,6 +11,7 @@ import {
 	isSameSettings,
 	type SettingsForm,
 	settingsIssues,
+	imageUploadIssue,
 	settingsPayload,
 	themeFormOf,
 	updateFormFor,
@@ -71,6 +72,16 @@ describe("footer links", () => {
 		expect(issues.privacyUrl).toBe("Use an https URL.")
 		expect(issues.termsUrl).toBe("Use an https URL.")
 		expect(hasSettingsIssues({ ...saved, termsUrl: "https://acme.example/terms" })).toBe(false)
+	})
+
+	it("takes an uploaded logo, and checks a picked file's type and size", () => {
+		expect(settingsIssues({ ...saved, logoUrl: "data:image/png;base64,iVBORw0KGgo=" }).logoUrl).toBeNull()
+		expect(settingsIssues({ ...saved, logoUrl: "data:text/html;base64,PHNjcmlwdD4=" }).logoUrl).toBe(
+			"Use an https URL.",
+		)
+		expect(imageUploadIssue({ type: "image/svg+xml", size: 2048 })).toBeNull()
+		expect(imageUploadIssue({ type: "application/pdf", size: 2048 })).not.toBeNull()
+		expect(imageUploadIssue({ type: "image/png", size: 10 * 1024 * 1024 })).not.toBeNull()
 	})
 
 	it("sees a changed link as unsaved", () => {

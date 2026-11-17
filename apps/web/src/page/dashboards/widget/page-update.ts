@@ -348,6 +348,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						: threshold,
 				),
 			})),
+		CompletedMountColorPicker: () => ({ model }),
 		ChangedThresholdColor: ({ index, color }) =>
 			editState(model, context, (state) => ({
 				...state,
