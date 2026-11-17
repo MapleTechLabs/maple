@@ -80,7 +80,8 @@ export const componentFormOf = (component: V2StatusPageComponent): ComponentForm
 	showUptime: component.show_uptime,
 })
 
-const orNull = (value: string): string | null => (Str.trim(value) === "" ? null : Str.trim(value))
+/** A typed value trimmed, or `null` when nothing is left. */
+export const orNull = (value: string): string | null => (Str.trim(value) === "" ? null : Str.trim(value))
 const decodeMonitorId = Schema.decodeUnknownOption(UptimeMonitorId)
 const decodeComponentStatus = Schema.decodeUnknownOption(StatusPageComponentStatus)
 
@@ -119,6 +120,8 @@ export const IncidentForm = Schema.Struct({
 	/** Maintenance only: the window as `datetime-local` values, in the viewer's time zone. */
 	scheduledStart: Schema.String,
 	scheduledEnd: Schema.String,
+	/** Maintenance only: completes on its own when the window ends. */
+	autoComplete: Schema.Boolean,
 	/** Incident only: when it began, as a `datetime-local` value; blank is when it is posted. */
 	startedAt: Schema.String,
 })
@@ -134,6 +137,7 @@ export const emptyIncidentForm = (kind: StatusPageIncidentKind): IncidentForm =>
 	isPublished: true,
 	scheduledStart: "",
 	scheduledEnd: "",
+	autoComplete: true,
 	startedAt: "",
 })
 
@@ -172,6 +176,22 @@ export const updateBodyLengthIssue = (body: string): string | null => {
 /** A typed instant after `nowMs`, which the API refuses for when something started or ended. */
 const isFuture = (iso: string, nowMs: number): boolean => iso > new Date(nowMs).toISOString()
 
+/**
+ * Maintenance takes its status from its window: scheduled until it starts, in progress once its
+ * start has come, so what visitors see never contradicts the times.
+ */
+export const withMaintenanceStatus = (form: IncidentForm, timeZone: string, nowMs: number): IncidentForm =>
+	form.kind !== "maintenance"
+		? form
+		: {
+				...form,
+				status: Option.exists(localToIso(form.scheduledStart, timeZone), (start) =>
+					isFuture(start, nowMs),
+				)
+					? "scheduled"
+					: "in_progress",
+			}
+
 /** What stops the incident from being sent, by field; `null` where nothing does. */
 export type IncidentIssues = Readonly<{
 	title: string | null
@@ -193,7 +213,9 @@ export const incidentIssues = (form: IncidentForm, timeZone: string, nowMs: numb
 					? "Set when the maintenance starts and ends."
 					: start.value >= end.value
 						? "The maintenance must end after it starts."
-						: null,
+						: isFuture(end.value, nowMs)
+							? null
+							: "The maintenance must end in the future.",
 		started:
 			form.kind === "incident" &&
 			Option.exists(localToIso(form.startedAt, timeZone), (started) => isFuture(started, nowMs))
@@ -229,7 +251,12 @@ export const incidentPayload = (
 		Option.all([localToIso(form.scheduledStart, timeZone), localToIso(form.scheduledEnd, timeZone)]),
 		{
 			onNone: () => base,
-			onSome: ([start, end]) => ({ ...base, scheduled_start: start, scheduled_end: end }),
+			onSome: ([start, end]) => ({
+				...base,
+				scheduled_start: start,
+				scheduled_end: end,
+				auto_complete: form.autoComplete,
+			}),
 		},
 	)
 }
@@ -253,6 +280,8 @@ export const IncidentEditForm = Schema.Struct({
 	 */
 	start: Schema.String,
 	end: Schema.String,
+	/** Maintenance only. */
+	autoComplete: Schema.Boolean,
 })
 export type IncidentEditForm = typeof IncidentEditForm.Type
 
@@ -273,6 +302,7 @@ export const incidentEditFormOf = (incident: V2StatusPageIncident, timeZone: str
 		componentIds: incident.component_ids,
 		start: isoToLocal(times.start, timeZone),
 		end: isoToLocal(times.end, timeZone),
+		autoComplete: incident.auto_complete,
 	}
 }
 
@@ -330,6 +360,9 @@ export const incidentEditPayload = (
 				...base,
 				...(start === undefined ? undefined : { scheduled_start: start }),
 				...(end === undefined ? undefined : { scheduled_end: end }),
+				...(form.autoComplete === incident.auto_complete
+					? undefined
+					: { auto_complete: form.autoComplete }),
 			}
 		: {
 				...base,

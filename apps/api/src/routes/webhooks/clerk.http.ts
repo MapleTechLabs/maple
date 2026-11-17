@@ -10,7 +10,10 @@ import {
 	decodeClerkEnvelope,
 	decodeClerkOrganizationMembership,
 	decodeClerkUserCreated,
+	decodeClerkDirectoryGroup,
 	decodeClerkUserDeleted,
+	decodeClerkUserUpdated,
+	isClerkDirectoryGroupEvent,
 	isClerkMembershipEvent,
 	membershipProductEvent,
 	signupCompletedEvent,
@@ -18,6 +21,7 @@ import {
 } from "@maple/backend/services/product-events/clerk-events"
 import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import { EnterpriseSsoService } from "@maple/backend/services/org/enterprise-sso/EnterpriseSsoService"
 import { receiveSvixWebhook, webhookText } from "./svix-receiver"
 
 /**
@@ -34,6 +38,11 @@ import { receiveSvixWebhook, webhookText } from "./svix-receiver"
  *   in Maple that runs when somebody stops being a member of an organization;
  *   without it the membership cache and every user-bound credential keep
  *   answering yes indefinitely.
+ *
+ * - SCIM: `directoryGroup.*` keeps the org's IdP groups for the role mapping picker (home region
+ *   only), and `user.updated` with `deprovisioned` runs the user sweep in every region. A member
+ *   whose membership predates directory sync keeps it after deactivation, so this is what ends
+ *   their keys.
  *
  * Public route; authenticity is the Svix signature (`CLERK_WEBHOOK_SECRET`).
  * Any other event type is acknowledged with 200 so Clerk does not retry it.
@@ -56,6 +65,7 @@ const handler = Effect.gen(function* () {
 	const revocation = yield* MembershipRevocationService
 	const audit = yield* AuditLogService
 	const regions = yield* OrganizationRegionService
+	const sso = yield* EnterpriseSsoService
 
 	/**
 	 * A revocation that only half-ran is the state this whole handler exists to
@@ -195,6 +205,63 @@ const handler = Effect.gen(function* () {
 
 		if (isClerkMembershipEvent(envelope.value.type)) {
 			return yield* handleMembership(envelope.value.data, envelope.value.type, envelope.value.timestamp)
+		}
+		if (isClerkDirectoryGroupEvent(envelope.value.type)) {
+			const group = yield* decodeClerkDirectoryGroup(envelope.value.data).pipe(Effect.option)
+			if (Option.isNone(group)) {
+				yield* Effect.annotateCurrentSpan({
+					"http.response.status_code": 400,
+					"maple.webhook.outcome": "parse_rejected",
+				})
+				return webhookText("Unrecognized directory group payload", 400)
+			}
+			const outcome = yield* sso
+				.applyDirectoryGroup({
+					directoryId: group.value.directory_id,
+					groupId: group.value.id,
+					displayName: group.value.display_name,
+					updatedAt: group.value.updated_at,
+					deleted: envelope.value.type === "directoryGroup.deleted",
+				})
+				.pipe(Effect.option)
+			if (Option.isNone(outcome)) {
+				yield* Effect.annotateCurrentSpan({
+					"http.response.status_code": 500,
+					"maple.webhook.outcome": "directory_group_failed",
+				})
+				return webhookText("Directory group could not be saved", 500)
+			}
+			yield* Effect.annotateCurrentSpan({
+				"http.response.status_code": 200,
+				"maple.webhook.outcome": outcome.value === "applied" ? "handled" : "not_home_region",
+			})
+			return webhookText("ok", 200)
+		}
+		if (envelope.value.type === "user.updated") {
+			const user = yield* decodeClerkUserUpdated(envelope.value.data).pipe(Effect.option)
+			const userId = Option.flatMap(user, (u) =>
+				u.deprovisioned === true ? decodeUserId(u.id) : Option.none(),
+			)
+			if (Option.isSome(userId)) {
+				// Clerk sets this only once every directory managing the user has deprovisioned them,
+				// and then the user cannot sign in anywhere, so every org's credentials go too.
+				yield* Effect.annotateCurrentSpan({ "maple.webhook.deprovisioned": true })
+				// Deliveries are unordered: an old one after a reactivation must not take new keys away.
+				const stillDeprovisioned = yield* sso.confirmDeprovisioned(userId.value)
+				if (!stillDeprovisioned) {
+					yield* Effect.annotateCurrentSpan({
+						"http.response.status_code": 200,
+						"maple.webhook.outcome": "stale_deprovision",
+					})
+					return webhookText("ok", 200)
+				}
+				return yield* revoke(revocation.revokeUser(userId.value))
+			}
+			yield* Effect.annotateCurrentSpan({
+				"http.response.status_code": 200,
+				"maple.webhook.outcome": "ignored",
+			})
+			return webhookText("ok", 200)
 		}
 		if (envelope.value.type === "user.deleted") {
 			const payload = yield* decodeClerkUserDeleted(envelope.value.data).pipe(Effect.option)

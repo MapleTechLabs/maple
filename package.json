@@ -106,6 +106,7 @@
 		"basic-ftp": "6.2.5",
 		"decode-uri-component": "0.5.1",
 		"fast-uri": "3.1.9",
+		"fast-xml-parser": "5.12.1",
 		"follow-redirects": "1.16.2",
 		"launch-editor": "2.14.2",
 		"markdown-it": "14.3.3",
