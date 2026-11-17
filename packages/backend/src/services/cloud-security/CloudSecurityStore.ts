@@ -127,6 +127,8 @@ export interface CloudSecurityStoreApi {
 	readonly recordServiceState: (
 		state: CloudServiceStateWrite,
 	) => Effect.Effect<void, IntegrationsPersistenceError>
+	/** Marks a feed as receiving events. A feed the poller has not read yet is left to it. */
+	readonly recordPush: (feed: CloudFeedRef, at: number) => Effect.Effect<void, IntegrationsPersistenceError>
 	readonly serviceStates: (
 		orgId: OrgId,
 		connectionId: AwsConnectionId,
@@ -335,6 +337,24 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 								target: ["orgId", "connectionId", "region", "source"],
 								set: values,
 							}),
+					),
+				)
+			})
+
+			const recordPush = Effect.fn("CloudSecurityStore.recordPush")(function* (
+				feed: CloudFeedRef,
+				at: number,
+			) {
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(CloudSecurityServiceStates)
+							.set({ pushedAt: at })
+							.where(($) => [
+								$.orgId.eq(feed.orgId),
+								$.connectionId.eq(feed.connectionId),
+								$.region.eq(feed.region),
+								$.source.eq(feed.source),
+							]),
 					),
 				)
 			})
@@ -558,6 +578,7 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 			return {
 				upsertFindings,
 				recordServiceState,
+				recordPush,
 				serviceStates,
 				listFindings,
 				getFinding,

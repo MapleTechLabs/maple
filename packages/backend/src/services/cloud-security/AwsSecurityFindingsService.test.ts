@@ -14,6 +14,7 @@ import { MAX_PAGES, WINDOW_PAGES } from "./aws-security-readers"
 import {
 	AwsSecurityFindingsService,
 	NOT_ENABLED_RECHECK_MS,
+	PUSHED_POLL_MS,
 	RECONCILE_AFTER_MS,
 } from "./AwsSecurityFindingsService"
 import { CloudSecurityStore } from "./CloudSecurityStore"
@@ -338,6 +339,54 @@ describe("AwsSecurityFindingsService", () => {
 			yield* TestClock.adjust(NOT_ENABLED_RECHECK_MS)
 			yield* poll
 			assert.strictEqual(hubCalls(), 2)
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("reads a feed whose events arrive only every 30 minutes, and the others every tick", () => {
+		const world = makeWorld()
+		world.aws.regions["us-east-1"] = { guardduty: [sshBruteForce()], securityhub: [] }
+		return Effect.gen(function* () {
+			const connection = yield* connect(world)
+			const store = yield* CloudSecurityStore
+			yield* TestClock.setTime(Date.parse("2026-11-10T00:00:00Z"))
+			yield* poll
+			const calls = (service: string) =>
+				Arr.filter(world.aws.requests, (request) => request.service === service).length
+			const [guardDuty, hub] = [calls("guardduty"), calls("securityhub")]
+			yield* store.recordPush(
+				{
+					orgId,
+					connectionId: connection.id,
+					region: Schema.decodeSync(AwsRegion)("us-east-1"),
+					source: "guardduty",
+				},
+				Date.parse("2026-11-10T00:01:00Z"),
+			)
+			yield* TestClock.adjust("10 minutes")
+			yield* poll
+			// GuardDuty's events carry its changes; Security Hub, with none, is read as before.
+			assert.strictEqual(calls("guardduty"), guardDuty)
+			assert.isAbove(calls("securityhub"), hub)
+			yield* TestClock.adjust(PUSHED_POLL_MS)
+			yield* poll
+			assert.isAbove(calls("guardduty"), guardDuty)
+			// A read that ended short (capped or failing) keeps going every tick, events or not.
+			const usEast = Schema.decodeSync(AwsRegion)("us-east-1")
+			yield* store.recordServiceState({
+				orgId,
+				connectionId: connection.id,
+				region: usEast,
+				source: "guardduty",
+				state: "enabled",
+				cursorAt: null,
+				windowMs: null,
+				lastError: "More findings changed than one poll reads; the next one continues.",
+				checkedAt: Date.parse("2026-11-10T00:41:00Z"),
+			})
+			const afterCapped = calls("guardduty")
+			yield* TestClock.adjust("10 minutes")
+			yield* poll
+			assert.isAbove(calls("guardduty"), afterCapped)
 		}).pipe(Effect.provide(world.layer))
 	})
 

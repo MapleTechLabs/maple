@@ -152,6 +152,8 @@ export const awsConnectionResourceNames = (connectionId: AwsConnectionId) => {
 		/** The stack of one region's metric stream; the same name in every region it runs in. */
 		metricsStackName: `maple-metrics-${hex}`,
 		metricStreamName: `maple-${hex}`,
+		/** The stack that forwards one region's finding events to the main stack's region. */
+		eventsStackName: `maple-events-${hex}`,
 	}
 }
 
@@ -222,6 +224,7 @@ export interface AwsSetupPlan {
 	readonly stackName: string
 	readonly metricsStackName: string
 	readonly metricStreamName: string
+	readonly eventsStackName: string
 	readonly roleArn: string
 	/** The account's IAM OIDC provider for Maple's issuer, shared by every connection to it. */
 	readonly oidcProvider: { readonly arn: string; readonly url: string; readonly audience: string }
@@ -248,6 +251,7 @@ export const awsSetupPlan = (input: AwsSetupPlanInput): AwsSetupPlan => {
 		stackName: names.stackName,
 		metricsStackName: names.metricsStackName,
 		metricStreamName: names.metricStreamName,
+		eventsStackName: names.eventsStackName,
 		roleArn,
 		oidcProvider: { arn: providerArn, url: input.issuer, audience: AWS_OIDC_AUDIENCE },
 		// Only a token Maple signed for this connection: the audience every Maple token carries,

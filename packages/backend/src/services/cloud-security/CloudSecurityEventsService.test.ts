@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Array as Arr, ConfigProvider, Effect, Layer, Schema } from "effect"
+import { Array as Arr, ConfigProvider, Effect, Layer, Option, Schema } from "effect"
 import { HttpClient } from "effect/http"
 import { AwsAccountId, AwsRegion, OrgId, UserId } from "@maple/primitives"
 import { Env } from "@maple/backend/platform/Env"
@@ -32,6 +32,16 @@ const userId = Schema.decodeSync(UserId)("user_1")
 const region = Schema.decodeSync(AwsRegion)("us-east-1")
 const ACCOUNT = "111111111111"
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const decodeTemplate = Schema.decodeUnknownSync(
+	Schema.fromJsonString(
+		Schema.Struct({
+			Resources: Schema.Record(
+				Schema.String,
+				Schema.Struct({ Properties: Schema.Record(Schema.String, Schema.Unknown) }),
+			),
+		}),
+	),
+)
 
 const makeWorld = (
 	flags: Layer.Layer<OrganizationFeatureFlagsService> = OrganizationFeatureFlagsService.allEnabled,
@@ -145,6 +155,38 @@ describe("CloudSecurityEventsService", () => {
 		}).pipe(Effect.provide(world.layer))
 	})
 
+	it.effect("marks the feed an event arrived for, so the poller can slow down for it", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const events = yield* CloudSecurityEventsService
+			const store = yield* CloudSecurityStore
+			const connection = yield* connect()
+			// The poller's first read made the feed's state; the event marks only that feed.
+			yield* Effect.forEach(["guardduty", "securityhub"] as const, (source) =>
+				store.recordServiceState({
+					orgId,
+					connectionId: connection.id,
+					region,
+					source,
+					state: "enabled",
+					cursorAt: null,
+					windowMs: null,
+					lastError: null,
+					checkedAt: 1,
+				}),
+			)
+			yield* events.receive(connection.id, yield* events.eventsKey(connection.id), guardDutyEvent())
+			const states = yield* store.serviceStates(orgId, connection.id)
+			const pushedAt = (source: string) =>
+				Arr.findFirst(states, (state) => state.source === source).pipe(
+					Option.map((state) => state.pushedAt),
+					Option.getOrNull,
+				)
+			assert.isNotNull(pushedAt("guardduty"))
+			assert.isNull(pushedAt("securityhub"))
+		}).pipe(Effect.provide(world.layer))
+	})
+
 	it.effect("refuses another connection's key and an unknown connection, storing nothing", () => {
 		const world = makeWorld()
 		return Effect.gen(function* () {
@@ -202,4 +244,29 @@ describe("CloudSecurityEventsService", () => {
 			}).pipe(Effect.provide(world.layer))
 		},
 	)
+
+	it.effect("accepts the key and endpoint the setup hands a security connection's stack", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const events = yield* CloudSecurityEventsService
+			const connections = yield* AwsConnectionService
+			const connection = yield* connect()
+			const setup = yield* connections.setup(orgId, connection.id)
+			const key = Option.getOrThrow(
+				Option.fromNullishOr(/"EventsKey=([^"]+)"/u.exec(setup.setupScript)?.[1]),
+			)
+			const template = decodeTemplate(setup.cloudformationTemplate)
+			assert.strictEqual(
+				template.Resources.EventsDestination?.Properties.InvocationEndpoint,
+				`https://api.maple.test/api/integrations/aws/events/${connection.id}`,
+			)
+			const receipt = yield* events.receive(connection.id, key, guardDutyEvent())
+			assert.strictEqual(receipt.outcome, "stored")
+			// A connection without the module gets no events stack at all.
+			const costOnly = yield* connect(["cost"], "444444444444")
+			const costSetup = yield* connections.setup(orgId, costOnly.id)
+			assert.notInclude(costSetup.setupScript, "EventsKey=")
+			assert.isUndefined(decodeTemplate(costSetup.cloudformationTemplate).Resources.EventsDestination)
+		}).pipe(Effect.provide(world.layer))
+	})
 })
