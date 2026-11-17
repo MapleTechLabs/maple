@@ -219,6 +219,9 @@ export const toOtlpSpan = (check: UptimeCheckSpan): OtlpSpan => {
 				: { "http.response.status_code": outcome.statusCode }),
 			...(outcome.errorType === null ? undefined : { "error.type": outcome.errorType }),
 			...(outcome.error === null ? undefined : { "maple.uptime.failure": outcome.error }),
+			...(outcome.retriedAfter === undefined
+				? undefined
+				: { "maple.uptime.retried_after": outcome.retriedAfter }),
 			...timingAttributes(outcome.timings),
 			...certificateAttributes(outcome.certificate),
 		}),

@@ -56,6 +56,9 @@ describe("UptimeProber", () => {
 			assert.match(span.spanId, /^[0-9a-f]{16}$/)
 			assert.strictEqual(recorded[0]?.headers.traceparent, `00-${span.traceId}-${span.spanId}-01`)
 			assert.strictEqual(report.traceId, span.traceId)
+			// A failed check is retried once under the same ids, and the retry's result is reported.
+			assert.strictEqual(recorded.length, 2)
+			assert.strictEqual(recorded[1]?.headers.traceparent, recorded[0]?.headers.traceparent)
 			// The report names the settings it ran against, so the API can spot a stale target.
 			assert.strictEqual(report.targetRevision, 1_700_000_000_000)
 			assert.deepStrictEqual(
@@ -68,6 +71,49 @@ describe("UptimeProber", () => {
 			assert.strictEqual(self?.attributes.get("maple.uptime.ok"), false)
 			assert.strictEqual(self?.attributes.get("maple.uptime.kind"), "http")
 			assert.strictEqual(self?.exit._tag, "Success")
+		}),
+	)
+
+	const checkWith = (respond: () => Response) =>
+		Effect.gen(function* () {
+			const exported: Array<UptimeCheckSpan> = []
+			const recorded: Array<RecordedRequest> = []
+			const report = yield* Effect.gen(function* () {
+				const prober = yield* UptimeProber
+				return yield* prober.check(mkUptimeTarget())
+			}).pipe(
+				Effect.provide(proberLayer(exported)),
+				Effect.provideService(FetchHttpClient.Fetch, stubFetch(recorded, respond)),
+			)
+			return { report, span: toOtlpSpan(Arr.getUnsafe(exported, 0)), requests: recorded.length }
+		})
+
+	const attribute = (span: ReturnType<typeof toOtlpSpan>, key: string) =>
+		span.attributes.find((attribute) => attribute.key === key)?.value
+
+	it.effect("a check that fails once and then answers is up, and its span says why it retried", () =>
+		Effect.gen(function* () {
+			let calls = 0
+			const { report, span, requests } = yield* checkWith(() =>
+				calls++ === 0 ? new Response("", { status: 503 }) : new Response("ok", { status: 200 }),
+			)
+			assert.strictEqual(requests, 2)
+			assert.deepStrictEqual(
+				{ ok: report.ok, statusCode: report.statusCode },
+				{ ok: true, statusCode: 200 },
+			)
+			assert.deepStrictEqual(attribute(span, "maple.uptime.retried_after"), {
+				stringValue: "Status 503, expected 2xx",
+			})
+		}),
+	)
+
+	it.effect("a check that answers the first time is not retried", () =>
+		Effect.gen(function* () {
+			const { report, span, requests } = yield* checkWith(() => new Response("ok", { status: 200 }))
+			assert.strictEqual(requests, 1)
+			assert.isTrue(report.ok)
+			assert.isUndefined(attribute(span, "maple.uptime.retried_after"))
 		}),
 	)
 })

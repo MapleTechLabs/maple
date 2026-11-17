@@ -52,7 +52,7 @@ export class UptimeProber extends Context.Service<UptimeProber, UptimeProberApi>
 				const trace = yield* newTraceContext
 				const startedAtMs = yield* Clock.currentTimeMillis
 				// A probe that dies (a bug, a runtime refusing a request) is a failed check, never a stopped loop.
-				const outcome: ProbeOutcome = yield* runProbe(target.config, trace).pipe(
+				const attempt = runProbe(target.config, trace).pipe(
 					Effect.catchDefect((defect) =>
 						Effect.as(
 							Effect.logWarning("Uptime check failed unexpectedly").pipe(
@@ -65,6 +65,13 @@ export class UptimeProber extends Context.Service<UptimeProber, UptimeProberApi>
 						),
 					),
 				)
+				const first: ProbeOutcome = yield* attempt
+				// One immediate retry, so a lost packet on a fresh connection is not a failed check. A
+				// multi-step check is not repeated: its steps may change state on the target.
+				const outcome: ProbeOutcome =
+					first.ok || kind === "multistep"
+						? first
+						: { ...(yield* attempt), retriedAfter: first.error ?? "Check failed" }
 				const endedAtMs = yield* Clock.currentTimeMillis
 
 				yield* Effect.annotateCurrentSpan({

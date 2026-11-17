@@ -29,6 +29,8 @@ export interface ProbeOutcome {
 	readonly certificate?: UptimeCertificate
 	/** Multi-step only: each step that ran, in order, for its child span. */
 	readonly steps?: ReadonlyArray<UptimeStepRun>
+	/** Why the first attempt failed, when this outcome is the retry's. */
+	readonly retriedAfter?: string
 }
 
 /** One step of a multi-step check as it ran: a child span of the check's span. */
