@@ -9,8 +9,6 @@ import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { copyableField } from "@maple/views/ui/copyable-field"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon, type IconName } from "@maple/views/ui/icon"
-import { searchResultMockup } from "@maple/views/ui/page-mockup"
-import { pageTitle } from "@maple/status-page"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { failureMessage } from "@maple/views/data/load-failure"
 import { dangerRow, dangerZone } from "../../kit/danger-zone"
@@ -18,31 +16,23 @@ import { navShell } from "../../kit/nav-shell"
 import { saveBar } from "../../kit/save-bar"
 import { adminOnlyNote, settingsSection, settingsSections } from "../../kit/settings-section"
 import { switchRow } from "../../kit/switch-row"
-import {
-	canonicalUrl,
-	publicAddress,
-	SETTINGS_SECTIONS,
-	type SettingsSection,
-	statusPageHref,
-} from "../shared/commands"
+import { publicAddress, SETTINGS_SECTIONS, type SettingsSection, statusPageHref } from "../shared/commands"
 import { selectField, textareaField, textField } from "../shared/fields"
 import {
 	hasAppearanceIssues,
 	hasPageFieldIssues,
 	hasSettingsIssues,
-	orNull,
 	type SettingsForm,
 	settingsFormOf,
 	settingsIssues,
 } from "../shared/form"
-import { onYourPage } from "../shared/preview"
 import { accessSection } from "./view-access"
 import { appearanceSection, brandingSection } from "./view-appearance"
 import { customDomainSection } from "./view-domain"
 import { jsonTab } from "./view-json"
 import { componentSaveBar, monitorsSection } from "./view-monitors"
-import { draftName, settingsPagePreview, tabPreview } from "./view-canvas"
-import { activeCustomDomain, pageUrlOf } from "./update-domain"
+import { settingsPagePreview } from "./view-canvas"
+import { pageUrlOf } from "./update-domain"
 import { Message } from "./message"
 import { canBreakGlass, canManage, type Model } from "./model"
 import { isSettingsDirty, settingsOf } from "./update-settings"
@@ -77,14 +67,9 @@ const AUTO_INCIDENT_ENTRIES = [
 	{ value: "publish", label: "Open and publish an incident" },
 ]
 
-/** The address the form's slug gives the page, for the previews; the custom domain wins once active. */
-const draftAddress = (model: Model, form: SettingsForm): string =>
-	canonicalUrl(model.publicBaseUrl, form.slug, activeCustomDomain(model)) ?? publicAddress(form.slug)
-
-const pageSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm): Html => {
+const pageSection = (h: H, model: Model, form: SettingsForm): Html => {
 	const issues = settingsIssues(form)
 	const isReadOnly = !canManage(model)
-	const address = draftAddress(model, form)
 	return settingsSection(
 		h,
 		{
@@ -115,23 +100,14 @@ const pageSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm)
 					hint: `${publicAddress(form.slug)}. Changing it moves the page; the old address stops working.`,
 					onInput: (value) => Message.ChangedSetting({ field: "slug", value }),
 				}),
-				onYourPage(h, tabPreview(h, page, form, address)),
 				textareaField(h, {
 					id: "status-page-description",
 					label: "Description",
 					value: form.description,
 					isDisabled: isReadOnly,
+					hint: "Shown in search results and the link preview.",
 					onInput: (value) => Message.ChangedSetting({ field: "description", value }),
 				}),
-				onYourPage(
-					h,
-					searchResultMockup(h, {
-						address,
-						title: pageTitle(draftName(page, form)),
-						description: orNull(form.description),
-					}),
-					"In search results and link previews",
-				),
 				grid(h, { sm: 2, gap: "4" }, [
 					textField(h, {
 						id: "status-page-website",
@@ -357,7 +333,7 @@ const sectionBody = (
 ): ReadonlyArray<Html> => {
 	switch (section) {
 		case "basic":
-			return [pageSection(h, model, page, form)]
+			return [pageSection(h, model, form)]
 		case "monitors":
 			return [monitorsSection(h, model)]
 		case "appearance":

@@ -2519,14 +2519,17 @@ describe("settings", () => {
 		)
 	})
 
-	test("Basic settings preview the tab title, the search result and the page as typed", () => {
+	test("Basic settings show the page as typed in the preview beside them", () => {
+		const page = srcdocOf("Globex with these settings")
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ tab: "settings" })),
 			type(role("textbox", { name: "Name" }), "Globex"),
 			type(role("textbox", { name: "Description" }), "Live status of Globex"),
-			expectAll(all.text("Globex status")).toHaveCount(2),
-			expectView(text("Live status of Globex")).toExist(),
+			tap(({ html }) => {
+				expect(page(html)).toContain("<title>Globex status</title>")
+				expect(page(html)).toContain("Live status of Globex")
+			}),
 		)
 	})
 
