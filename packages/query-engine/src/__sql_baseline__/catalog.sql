@@ -906,7 +906,7 @@ SELECT
         GROUP BY match, service
         HAVING match != ''
         ORDER BY requests DESC
-        LIMIT 1000
+        LIMIT 1001
         FORMAT JSON
 
 -- builder:containers:containerCountersSummaryQuery:default  [1b4fe1f9]
