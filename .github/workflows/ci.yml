@@ -536,8 +536,9 @@ jobs:
             # The only job with a libchdb, so the chDB suites the bounded lane skips run here.
             # MAPLE_REQUIRE_LIBCHDB turns a missing library into a failure, not a skip. One
             # process per file: chDB is process-global.
+            # The PromQL reference suite runs ~80 queries on chDB (about 3.5 minutes of the total).
             - name: Run chDB-backed CLI tests
-              timeout-minutes: 4
+              timeout-minutes: 8
               working-directory: apps/cli
               env:
                   MAPLE_LIBCHDB: ${{ github.workspace }}/dist/libchdb.so
