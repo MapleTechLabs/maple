@@ -117,6 +117,8 @@ export const Model = Schema.Struct({
 	 * expanded in the list stays where it was clicked.
 	 */
 	revealComponentId: Schema.NullOr(StatusPageComponentId),
+	/** The field a header or footer click in the preview asked for, revealed once its section opens. */
+	revealFieldId: Schema.NullOr(Schema.String),
 	/** The side sheet an incident or Add monitors opens in; open while `panel` is one of those. */
 	panelSheet: Dialog.Model,
 	/** What the sheet shows: the last incident or Add `panel` held, kept while the sheet closes. */

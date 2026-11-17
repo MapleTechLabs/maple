@@ -22,6 +22,7 @@ import {
 	themeColorIssues,
 	themeContrastOf,
 } from "../shared/form"
+import { PREVIEW_FIELD_TARGETS } from "./command"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import { APPEARANCES, presetCards } from "../shared/look"
@@ -120,7 +121,7 @@ export const brandingSection = (h: H, model: Model, form: SettingsForm): Html =>
 			vstack(h, { gap: "4" }, [
 				grid(h, { sm: 2, gap: "4" }, [
 					textField(h, {
-						id: "status-page-logo",
+						id: PREVIEW_FIELD_TARGETS.logoUrl.id,
 						label: "Logo URL",
 						value: form.logoUrl,
 						placeholder: "https://acme.example/logo.svg",
@@ -130,7 +131,7 @@ export const brandingSection = (h: H, model: Model, form: SettingsForm): Html =>
 						onInput: (value) => Message.ChangedSetting({ field: "logoUrl", value }),
 					}),
 					textField(h, {
-						id: "status-page-logo-dark",
+						id: PREVIEW_FIELD_TARGETS.logoDarkUrl.id,
 						label: "Dark mode logo URL",
 						value: form.logoDarkUrl,
 						placeholder: "https://acme.example/logo-dark.svg",
@@ -150,7 +151,7 @@ export const brandingSection = (h: H, model: Model, form: SettingsForm): Html =>
 					}),
 				]),
 				switchRow(h, {
-					id: "status-page-powered-by",
+					id: PREVIEW_FIELD_TARGETS.showPoweredBy.id,
 					label: "Show powered by Maple",
 					description: "A small credit in the page footer.",
 					isChecked: form.showPoweredBy,
@@ -259,28 +260,28 @@ const LINK_FIELDS: ReadonlyArray<{
 }> = [
 	{
 		field: "websiteUrl",
-		id: "status-page-website",
+		id: PREVIEW_FIELD_TARGETS.websiteUrl.id,
 		label: "Website URL",
 		placeholder: "https://acme.example",
 		hint: "In the page header as Visit website.",
 	},
 	{
 		field: "supportUrl",
-		id: "status-page-support",
+		id: PREVIEW_FIELD_TARGETS.supportUrl.id,
 		label: "Support URL",
 		placeholder: "https://acme.example/support",
 		hint: "In the page header as Contact support.",
 	},
 	{
 		field: "privacyUrl",
-		id: "status-page-privacy",
+		id: PREVIEW_FIELD_TARGETS.privacyUrl.id,
 		label: "Privacy policy URL",
 		placeholder: "https://acme.example/privacy",
 		hint: "In the page footer.",
 	},
 	{
 		field: "termsUrl",
-		id: "status-page-terms",
+		id: PREVIEW_FIELD_TARGETS.termsUrl.id,
 		label: "Terms of service URL",
 		placeholder: "https://acme.example/terms",
 		hint: "In the page footer.",

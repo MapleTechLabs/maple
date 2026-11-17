@@ -128,7 +128,7 @@ export const settingsPagePreview = (h: H, model: Model, page: V2StatusPage, form
 		},
 		[
 			typography(h, { size: "xs", tone: "muted", as: "p" }, [
-				"Your page with these settings. Click a component or incident to edit it.",
+				"Your page with these settings. Click anything on it to edit it.",
 			]),
 			!statusReadsReady(model)
 				? statusReadsFailed(model)
@@ -177,7 +177,7 @@ export const livePage = (h: H, model: Model, page: V2StatusPage): Html =>
 		[
 			hstack(h, { gap: "3", justify: "between", wrap: true, className: "min-h-7" }, [
 				typography(h, { size: "xs", tone: "muted", as: "p" }, [
-					"Click a component or incident to edit it.",
+					"Click anything on the page to edit it.",
 				]),
 				previewControls(h, {
 					state: model.previewState,

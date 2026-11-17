@@ -1,6 +1,7 @@
 import type { StatusPagePreviewParams } from "@maple/domain/http/v2"
 import { STATUS_PAGE_PRESET_DEFAULTS } from "@maple/domain/status-page"
-import { Option, Result, Array as Arr } from "effect"
+import { PREVIEW_FIELDS } from "@maple/status-page"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import type { AppRoute } from "../../../route"
@@ -19,8 +20,15 @@ import {
 import { emptyComponentForm, emptyIncidentForm } from "../shared/form"
 import { initGroupPicker } from "../shared/group-picker"
 import { emptyPicker } from "../shared/picker"
-import { historyFrom } from "../shared/preview"
-import { FetchEditorPreview, FetchEditorSession, ReadEditorClock, WaitEditorPreview } from "./command"
+import { historyFrom, type PreviewSelection } from "../shared/preview"
+import {
+	FetchEditorPreview,
+	FetchEditorSession,
+	PREVIEW_FIELD_TARGETS,
+	ReadEditorClock,
+	RevealEditorField,
+	WaitEditorPreview,
+} from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import {
@@ -193,6 +201,7 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		pageId: Option.getOrNull(pageIdFromUrl(route.pageId)),
 		nowMs: null,
 		revealComponentId: null,
+		revealFieldId: null,
 		page: Keyed.idle(),
 		components: Keyed.idle(),
 		incidents: Keyed.idle(),
@@ -330,9 +339,13 @@ const settlePanel = (model: Model, location: EditorLocation): Model =>
 export const routeChanged = (model: Model, route: EditorRoute, context: PageContext): Return =>
 	withSheet(
 		chain(
-			settlePanel({ ...model, search: route.search }, resolveView(route.search)),
+			settlePanel({ ...model, search: route.search, revealFieldId: null }, resolveView(route.search)),
 			whenJson(context, "Refresh"),
 			whenSettings(context, "Refresh"),
+			(next) =>
+				model.revealFieldId === null
+					? { model: next }
+					: { model: next, commands: [RevealEditorField({ id: model.revealFieldId })] },
 		),
 	)
 
@@ -340,6 +353,8 @@ export const routeChanged = (model: Model, route: EditorRoute, context: PageCont
 const whenIdle = (isBusy: boolean, model: Model, run: () => Return): Return => (isBusy ? { model } : run())
 
 // PREVIEW
+
+const isPreviewField = Schema.is(Schema.Literals(PREVIEW_FIELDS))
 
 /** The saved page as the preview endpoint takes it: only the monitors' history comes back used. */
 export const previewDraftOf = (model: Model): Option.Option<StatusPagePreviewParams> =>
@@ -421,15 +436,28 @@ const updatePanelSheet = (model: Model, message: Dialog.Message): Return => {
 
 /**
  * A click in the live page or a Settings preview opens what it landed on where it is edited; a
- * click under Monitors opens the component in place.
+ * click under Monitors opens the component in place, and one on the header or footer reveals its
+ * field.
  */
-const selectFromPreview = (model: Model, kind: "component" | "incident", id: string): Return => {
+const selectFromPreview = (model: Model, kind: PreviewSelection["kind"], id: string): Return => {
 	const navigate = (url: string) => PageOutMessage.RequestedNavigation({ url, isReplace: false })
 	if (model.pageId === null) return { model }
 	const here = resolveView(model.search)
 	const isOnMonitors = here.tab === "settings" && here.section === "monitors"
 	const pageId = model.pageId
-	if (kind === "component")
+	if (kind === "field") {
+		if (!isPreviewField(id)) return { model }
+		// The header and footer are page settings: open their section, at the field.
+		const target = PREVIEW_FIELD_TARGETS[id]
+		if (here.tab === "settings" && here.section === target.section)
+			return { model, commands: [RevealEditorField({ id: target.id })] }
+		return {
+			model: { ...model, revealFieldId: target.id },
+			outMessage: navigate(statusPageHref(pageId, "settings", target.section)),
+		}
+	}
+	// A group's name is edited on its components: a click on it opens its first one.
+	if (kind === "component" || kind === "group")
 		return Option.match(
 			Arr.findFirst(componentsOf(model), (row) => row.id === id),
 			{

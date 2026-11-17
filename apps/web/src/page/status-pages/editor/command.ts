@@ -18,6 +18,8 @@ import {
 } from "@maple/domain/http/v2"
 import { Duration, Effect, Schema } from "effect"
 import { Command, Dom, Mount } from "foldkit"
+import type { PreviewField } from "@maple/status-page"
+import type { SettingsSection } from "../shared/commands"
 import { trackProduct } from "../../../data/analytics"
 import {
 	applyPageConfig,
@@ -347,6 +349,42 @@ export const FocusEditorElement = Command.define("FocusStatusPageEditorElement",
 	messages: [Message.CompletedFocus],
 	execute: ({ id }) =>
 		Dom.focus(`#${CSS.escape(id)}`).pipe(Effect.ignore, Effect.as(Message.CompletedFocus())),
+})
+
+/** Where each setting a preview click names is edited: its Settings section and the field's element id. */
+export const PREVIEW_FIELD_TARGETS = {
+	name: { section: "basic", id: "status-page-name" },
+	logoUrl: { section: "appearance", id: "status-page-logo" },
+	logoDarkUrl: { section: "appearance", id: "status-page-logo-dark" },
+	websiteUrl: { section: "appearance", id: "status-page-website" },
+	supportUrl: { section: "appearance", id: "status-page-support" },
+	privacyUrl: { section: "appearance", id: "status-page-privacy" },
+	termsUrl: { section: "appearance", id: "status-page-terms" },
+	showPoweredBy: { section: "appearance", id: "status-page-powered-by" },
+} as const satisfies Record<PreviewField, { section: SettingsSection; id: string }>
+
+const FOCUSABLE =
+	"input:not([disabled]),textarea:not([disabled]),select:not([disabled]),button:not([disabled])"
+
+/**
+ * Scrolls a field into view once its section is on screen, then focuses it, or its first control
+ * when the id is on a wrapper. A read-only (disabled) field is only scrolled to.
+ */
+export const RevealEditorField = Command.define("RevealStatusPageEditorField", {
+	args: { id: Schema.String },
+	messages: [Message.CompletedFocus],
+	execute: ({ id }) =>
+		Dom.scrollIntoViewAfterPaint(`#${CSS.escape(id)}`, { block: "center" }).pipe(
+			Effect.andThen(
+				Effect.sync(() => {
+					const element = document.getElementById(id)
+					const control = element?.matches(FOCUSABLE) ? element : element?.querySelector(FOCUSABLE)
+					if (control instanceof HTMLElement) control.focus({ preventScroll: true })
+				}),
+			),
+			Effect.ignore,
+			Effect.as(Message.CompletedFocus()),
+		),
 })
 
 /** Scrolls a component opened from the page preview into view as its row mounts. */
