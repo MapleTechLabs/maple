@@ -657,8 +657,11 @@ describe("v2 api_keys over HTTP", () => {
 			metadataJson: pinned,
 			expiresInSeconds: 30 * day,
 		})
+		const { encodePublicId } = await import("@maple/domain/http/v2")
 		const roll = (id: string) =>
-			harness.request("POST", `/v2/api_keys/${id}/roll`, { token: engineer.secret })
+			harness.request("POST", `/v2/api_keys/${encodePublicId("key", id)}/roll`, {
+				token: engineer.secret,
+			})
 
 		for (const key of [forever, longer]) {
 			const refused = await roll(key.id)
