@@ -38,7 +38,13 @@ import { livePage } from "./view-canvas"
 import { incidentsTab, maintenanceTab, openIncidentCount } from "./view-incidents"
 import { addressLine, liveView } from "./view-live"
 import { addSheetBody, addSheetFooter, incidentSheetBody, type TimeInputs } from "./view-panel"
-import { breakGlassDialog, deletePageDialog, sectionLabel, settingsView } from "./view-settings"
+import {
+	breakGlassDialog,
+	deletePageDialog,
+	sectionLabel,
+	settingsLayout,
+	settingsView,
+} from "./view-settings"
 import { removeCustomDomainDialog } from "./view-domain"
 import { incidentDialogs } from "./view-incident-dialogs"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -381,6 +387,7 @@ const loaded = (h: H, model: Model, page: V2StatusPage, inputs: PageViewInputs):
 	const time = { nowMs: model.nowMs ?? 0, timeZone }
 	const overall = overallOf(model)
 	const hasStatus = canvasRead(model).isReady && componentsOf(model).length > 0
+	const location = resolveView(model.search)
 	return h.div(
 		[h.Class("contents")],
 		[
@@ -408,8 +415,14 @@ const loaded = (h: H, model: Model, page: V2StatusPage, inputs: PageViewInputs):
 					actions: headerActions(h, model, page),
 					tabs: tabs(h, model, page),
 					gap: "md",
+					// Settings owns its scrolling: the menu, the form and the preview each scroll alone.
+					fill: location.tab === "settings",
 				},
-				[body(h, model, page, time)],
+				[
+					location.tab === "settings"
+						? settingsLayout(h, model, page, location.section, body(h, model, page, time))
+						: body(h, model, page, time),
+				],
 			),
 			panelSheet(h, model, time),
 			deleteComponentDialog(h, model, page),

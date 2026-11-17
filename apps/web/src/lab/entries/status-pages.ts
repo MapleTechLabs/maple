@@ -92,7 +92,15 @@ const editorModel = (role: LabRole, page: "editor" | "monitors"): EditorModel =>
 		{
 			_tag: "StatusPage",
 			pageId: Schema.encodeSync(StatusPagePublicId)(statusPage().id),
-			search: page === "monitors" ? { view: "settings", section: "monitors" } : {},
+			// `&section=basic|appearance|…` opens another Settings section beside Monitors' fixtures.
+			search:
+				page === "monitors"
+					? {
+							view: "settings",
+							section:
+								new URLSearchParams(globalThis.location.search).get("section") ?? "monitors",
+						}
+					: {},
 		},
 		context,
 	).model

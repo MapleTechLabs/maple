@@ -1,5 +1,6 @@
 import type { V2StatusPage } from "@maple/domain/http/v2"
 import { Array as Arr, Option } from "effect"
+import { absurd } from "effect/Function"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
@@ -8,12 +9,12 @@ import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { copyableField } from "@maple/views/ui/copyable-field"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon, type IconName } from "@maple/views/ui/icon"
-import { navRailRow } from "@maple/views/ui/nav-rail-row"
 import { searchResultMockup } from "@maple/views/ui/page-mockup"
 import { pageTitle } from "@maple/status-page"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { failureMessage } from "@maple/views/data/load-failure"
 import { dangerRow, dangerZone } from "../../kit/danger-zone"
+import { navShell } from "../../kit/nav-shell"
 import { saveBar } from "../../kit/save-bar"
 import { adminOnlyNote, settingsSection, settingsSections } from "../../kit/settings-section"
 import { switchRow } from "../../kit/switch-row"
@@ -373,24 +374,62 @@ const sectionBody = (
 	}
 }
 
-const sectionMenu = (h: H, page: V2StatusPage, section: SettingsSection): Html =>
-	h.nav(
-		[h.AriaLabel("Settings sections"), h.Class("md:sticky md:top-6")],
+/** The sections as the page's left rail, the same rail the app's Settings uses. */
+const settingsNav = (h: H, page: V2StatusPage, section: SettingsSection): Html =>
+	navShell(
+		h,
 		[
-			vstack(
-				h,
-				{ gap: "0.5" },
-				Arr.map(SETTINGS_SECTIONS, (entry) =>
-					navRailRow(
+			{
+				id: "settings",
+				title: "Settings",
+				items: Arr.map(SETTINGS_SECTIONS, (entry) => ({
+					kind: "link" as const,
+					id: entry,
+					href: statusPageHref(page.id, "settings", entry),
+					label: SECTION_LABEL[entry],
+					icon: SECTION_ICON[entry],
+				})),
+			},
+		],
+		section,
+		(tab: never) => absurd(tab),
+		"Settings sections",
+	)
+
+/**
+ * Settings below the page's header and tabs: the section menu, the section's form and the page
+ * it shapes, side by side, each scrolling on its own so the menu and preview stay in place. The
+ * preview needs the room of `xl`; below `md` the menu sits above the form.
+ */
+export const settingsLayout = (
+	h: H,
+	model: Model,
+	page: V2StatusPage,
+	section: SettingsSection,
+	content: Html,
+): Html =>
+	h.div(
+		[
+			h.Class(
+				"grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] md:grid-cols-[13rem_minmax(0,1fr)] md:grid-rows-1 xl:grid-cols-[13rem_minmax(0,1fr)_minmax(20rem,0.8fr)]",
+			),
+		],
+		[
+			h.div(
+				[h.Class("min-h-0 overflow-y-auto border-b px-3 py-4 md:border-r md:border-b-0 md:py-6")],
+				[settingsNav(h, page, section)],
+			),
+			h.div([h.Class("min-h-0 overflow-y-auto px-(--page-gutter) py-6")], [content]),
+			h.aside(
+				[h.Class("hidden min-h-0 border-l xl:flex xl:flex-col")],
+				[
+					settingsPagePreview(
 						h,
-						{
-							isActive: entry === section,
-							href: statusPageHref(page.id, "settings", entry),
-							attributes: [h.Key(entry)],
-						},
-						[icon(h, SECTION_ICON[entry], { size: 16 }), SECTION_LABEL[entry]],
+						model,
+						page,
+						Option.getOrElse(settingsOf(model), () => settingsFormOf(page)),
 					),
-				),
+				],
 			),
 		],
 	)
@@ -412,48 +451,28 @@ const saveBars = (h: H, model: Model, form: SettingsForm, section: SettingsSecti
 
 export const settingsView = (h: H, model: Model, page: V2StatusPage, section: SettingsSection): Html => {
 	const form = Option.getOrElse(settingsOf(model), () => settingsFormOf(page))
-	return h.div(
-		[
-			// The wide breakpoint is in rem like `md`: Tailwind orders a px `min-[…]` before the rem
-			// breakpoints, so `md`'s two columns would win and the preview would wrap under the menu.
-			h.Class(
-				"grid items-start gap-6 md:grid-cols-[12rem_minmax(0,1fr)] lg:gap-10 min-[85rem]:grid-cols-[11rem_minmax(26rem,1fr)_minmax(20rem,1fr)]",
-			),
-		],
-		[
-			sectionMenu(h, page, section),
-			vstack(h, { className: "min-w-0 max-w-3xl" }, [
-				settingsSections(h, [
-					...(canManage(model) || section === "access"
-						? []
-						: [
-								adminOnlyNote(h, [
-									"Only org admins and engineers can change a status page. You can still post incident updates.",
-								]),
-							]),
-					...sectionBody(h, model, page, form, section),
-				]),
-				...(model.settingsFailure === null
-					? []
-					: [
-							alert(h, { variant: "crit", size: "sm", className: "mt-6" }, [
-								icon(h, "CircleXmarkIcon"),
-								alertTitle(h, ["Couldn't save the settings"]),
-								alertDescription(h, [failureMessage(model.settingsFailure)]),
-							]),
+	return vstack(h, { className: "min-w-0 max-w-3xl" }, [
+		settingsSections(h, [
+			...(canManage(model) || section === "access"
+				? []
+				: [
+						adminOnlyNote(h, [
+							"Only org admins and engineers can change a status page. You can still post incident updates.",
 						]),
-				...saveBars(h, model, form, section),
-			]),
-			h.aside(
-				[
-					h.Class(
-						"min-w-0 md:col-start-2 min-[85rem]:sticky min-[85rem]:top-6 min-[85rem]:col-start-auto",
-					),
-				],
-				[settingsPagePreview(h, model, page, form)],
-			),
-		],
-	)
+					]),
+			...sectionBody(h, model, page, form, section),
+		]),
+		...(model.settingsFailure === null
+			? []
+			: [
+					alert(h, { variant: "crit", size: "sm", className: "mt-6" }, [
+						icon(h, "CircleXmarkIcon"),
+						alertTitle(h, ["Couldn't save the settings"]),
+						alertDescription(h, [failureMessage(model.settingsFailure)]),
+					]),
+				]),
+		...saveBars(h, model, form, section),
+	])
 }
 
 /** The section's name, for the breadcrumb. */

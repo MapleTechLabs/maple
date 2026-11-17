@@ -122,30 +122,39 @@ export const tabPreview = (h: H, page: V2StatusPage, form: SettingsForm, address
 	)
 
 /**
- * The whole page as the unsaved `form` would publish it, beside Settings, at the column's own
- * width: the page lays itself out for it as it does on a visitor's narrow screen, and scrolls.
+ * The whole page as the unsaved `form` would publish it, filling the page's right panel at its
+ * own width: the page lays itself out for it as it does on a narrow screen, and scrolls inside.
  * Waits for the statuses like any preview.
  */
 export const settingsPagePreview = (h: H, model: Model, page: V2StatusPage, form: SettingsForm): Html =>
-	vstack(h, { gap: "1.5", as: "section", attributes: [h.AriaLabel("Page preview")] }, [
-		typography(h, { size: "xs", tone: "muted", as: "p" }, ["Your page with these settings"]),
-		!statusReadsReady(model)
-			? statusReadsFailed(model)
-				? typography(h, { size: "xs", tone: "muted", as: "p" }, [
-						"No preview: the page's components didn't load.",
-					])
-				: skeleton(h, "h-[calc(100vh-14rem)] w-full rounded-lg")
-			: previewFrame(h, {
-					title: `${draftName(page, form)} with these settings`,
-					document: previewDocument({
-						snapshot: draftSnapshot(model, page, form, "live"),
-						nowMs: nowOf(model, page),
-						isSelectable: false,
-						publicUrl: pageUrlOf(model, page),
+	vstack(
+		h,
+		{
+			gap: "2",
+			as: "section",
+			className: "h-full p-4",
+			attributes: [h.AriaLabel("Page preview")],
+		},
+		[
+			typography(h, { size: "xs", tone: "muted", as: "p" }, ["Your page with these settings"]),
+			!statusReadsReady(model)
+				? statusReadsFailed(model)
+					? typography(h, { size: "xs", tone: "muted", as: "p" }, [
+							"No preview: the page's components didn't load.",
+						])
+					: skeleton(h, "min-h-0 w-full flex-1 rounded-lg")
+				: previewFrame(h, {
+						title: `${draftName(page, form)} with these settings`,
+						document: previewDocument({
+							snapshot: draftSnapshot(model, page, form, "live"),
+							nowMs: nowOf(model, page),
+							isSelectable: false,
+							publicUrl: pageUrlOf(model, page),
+						}),
+						className: "min-h-0 flex-1",
 					}),
-					className: "h-[calc(100vh-14rem)] min-h-96",
-				}),
-	])
+		],
+	)
 
 /** The saved page as visitors get it, with the monitors' history; components and incidents click. */
 export const canvasDocument = (model: Model, page: V2StatusPage): string =>
