@@ -455,7 +455,9 @@ export const PickBrandingImage = Command.define("PickStatusPageBrandingImage", {
 	args: { field: BrandingField },
 	messages: [Message.CompletedPickBrandingImage],
 	execute: ({ field }) =>
-		clickFileInput(imageSourceInputId(brandingFieldId(field))).pipe(Effect.as(Message.CompletedPickBrandingImage())),
+		clickFileInput(imageSourceInputId(brandingFieldId(field))).pipe(
+			Effect.as(Message.CompletedPickBrandingImage()),
+		),
 })
 
 /** Reads a picked logo or favicon as the `data:` URL the page stores. */

@@ -187,7 +187,10 @@ export const brandingImageDialog = (h: H, model: Model): Html => {
 		formats: IMAGE_FORMATS,
 		link: model.brandingLink,
 		linkError: link === "" ? null : httpsIssue(link),
-		linkPlaceholder: Option.match(entry, { onNone: () => "https://", onSome: (image) => image.linkPlaceholder }),
+		linkPlaceholder: Option.match(entry, {
+			onNone: () => "https://",
+			onSome: (image) => image.linkPlaceholder,
+		}),
 		isDragging: model.brandingDrag === field,
 		onBrowse: Message.ClickedPickBrandingImage({ field }),
 		onFiles: (files) => Message.PickedBrandingImage({ field, files }),
