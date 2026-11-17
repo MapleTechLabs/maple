@@ -2,6 +2,7 @@ import type {
 	CloudFindingSeverity,
 	CloudFindingSource,
 	CloudFindingStatus,
+	CloudSecurityFeed,
 	CloudServiceState,
 } from "@maple/domain/cloud-security"
 import { IntegrationsPersistenceError } from "@maple/domain/http"
@@ -12,7 +13,7 @@ import {
 } from "@maple/db/tables"
 import type { AwsAccountId, AwsConnectionId, AwsRegion, OrgId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { Array as Arr, Context, Effect, Layer } from "effect"
+import { Array as Arr, Context, Effect, Layer, Record as Rec } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 
@@ -44,16 +45,24 @@ export interface CloudFindingWrite {
 	readonly detail: Record<string, unknown> | null
 }
 
-export interface CloudServiceStateWrite {
+/** One service in one region of one connection. */
+export interface CloudFeedRef {
 	readonly orgId: OrgId
 	readonly connectionId: AwsConnectionId
 	readonly region: AwsRegion
 	readonly source: CloudFindingSource
+}
+
+export interface CloudServiceStateWrite {
+	readonly orgId: OrgId
+	readonly connectionId: AwsConnectionId
+	readonly region: AwsRegion
+	readonly source: CloudSecurityFeed
 	readonly state: CloudServiceState
-	/** Moves the cursor; absent keeps the stored one (a failed or empty poll). */
-	readonly cursorAt?: number
-	/** The window size to start the next windowed read with; absent keeps the stored one. */
-	readonly windowMs?: number
+	/** Moves the cursor; null keeps the stored one (a failed or empty poll). */
+	readonly cursorAt: number | null
+	/** The window size to start the next windowed read with; null keeps the stored one. */
+	readonly windowMs: number | null
 	readonly lastError: string | null
 	readonly checkedAt: number
 }
@@ -61,7 +70,10 @@ export interface CloudServiceStateWrite {
 /** Rows per INSERT: a finding carries a jsonb detail, and Postgres caps one statement's parameters. */
 const UPSERT_CHUNK = 100
 
-/** A closed finding is kept this long after the service last touched it. */
+/** How long after it closed a resolved finding is still refreshed by id, for a console reopen. */
+const REOPEN_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+
+/** A closed finding is kept this long after Maple saw it close. */
 export const CLOSED_FINDING_RETENTION_MS = 90 * 24 * 60 * 60 * 1000
 
 const toPersistenceError = makePersistenceErrorMapper(
@@ -81,6 +93,21 @@ export interface CloudSecurityStoreApi {
 		orgId: OrgId,
 		connectionId: AwsConnectionId,
 	) => Effect.Effect<ReadonlyArray<CloudSecurityServiceStateRow>, IntegrationsPersistenceError>
+	/**
+	 * Findings of one feed synced before `syncedBefore`, oldest sync first, resolved ones included:
+	 * a finding reopened in the console may not move its update time either.
+	 */
+	readonly staleIds: (
+		feed: CloudFeedRef,
+		syncedBefore: number,
+		limit: number,
+	) => Effect.Effect<ReadonlyArray<string>, IntegrationsPersistenceError>
+	/** Marks the feed's open findings resolved: `only` those ids, or every one not in `except`. */
+	readonly resolve: (
+		feed: CloudFeedRef,
+		ids: { readonly only: ReadonlyArray<string> } | { readonly except: ReadonlyArray<string> },
+		at: number,
+	) => Effect.Effect<number, IntegrationsPersistenceError>
 	/** Deletes the org's findings closed (as Maple first saw them closed) before `beforeMs`. */
 	readonly pruneClosed: (
 		orgId: OrgId,
@@ -95,6 +122,66 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 			const database = yield* Database
 			const dbExecute = makeDbExecute(database, "CloudSecurityStore", toPersistenceError)
 
+			/** One finding's identity across orgs and connections. */
+			const keyOf = (row: {
+				readonly orgId: string
+				readonly connectionId: string
+				readonly region: string
+				readonly source: string
+				readonly findingId: string
+			}) => `${row.orgId}\n${row.connectionId}\n${row.region}\n${row.source}\n${row.findingId}`
+
+			/**
+			 * The closed rows among `rows` that are stored already, with when each closed: a finding first
+			 * seen closed is not kept, and one that closes now is stamped with this sync.
+			 */
+			const storedClosed = (rows: ReadonlyArray<CloudFindingWrite>, syncedAt: number) => {
+				const closed = Arr.filter(rows, (row) => row.status !== "active")
+				// Each lookup is pinned to one org and connection, whatever mix of rows a caller passes.
+				const groups = Arr.flatMap(
+					Rec.values(Arr.groupBy(closed, (row) => `${row.orgId}\n${row.connectionId}`)),
+					(group) => (group === undefined ? [] : Arr.chunksOf(group, UPSERT_CHUNK)),
+				)
+				return Effect.map(
+					Effect.forEach(groups, (chunk) =>
+						dbExecute((db) =>
+							db.run(
+								PG.from(CloudSecurityFindings)
+									.select(($) => ({
+										orgId: $.orgId,
+										connectionId: $.connectionId,
+										region: $.region,
+										source: $.source,
+										findingId: $.findingId,
+										status: $.status,
+										closedAt: $.closedAt,
+									}))
+									.where(($) => [
+										$.orgId.eq(chunk[0].orgId),
+										$.connectionId.eq(chunk[0].connectionId),
+										PG.inList(
+											$.findingId,
+											Arr.map(chunk, (row) => row.findingId),
+										),
+									]),
+							),
+						),
+					),
+					(found) => {
+						const stored = new Map(
+							Arr.map(Arr.flatten(found), (row) => [keyOf(row), row] as const),
+						)
+						return Arr.flatMap(closed, (row) => {
+							const existing = stored.get(keyOf(row))
+							if (existing === undefined) return []
+							const closedAt =
+								existing.status === "active" ? syncedAt : (existing.closedAt ?? syncedAt)
+							return [{ ...row, closedAt }]
+						})
+					},
+				)
+			}
+
 			const upsertFindings = Effect.fn("CloudSecurityStore.upsertFindings")(function* (
 				rows: ReadonlyArray<CloudFindingWrite>,
 				syncedAt: number,
@@ -108,9 +195,20 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 						newest.set(key, row)
 				})
 				const unique = Arr.fromIterable(newest.values())
-				yield* Effect.annotateCurrentSpan({ "maple.cloud_security.findings": unique.length })
+				const closed = yield* storedClosed(unique, syncedAt)
+				const kept = Arr.appendAll(
+					Arr.map(
+						Arr.filter(unique, (row) => row.status === "active"),
+						(row) => ({ ...row, closedAt: null }),
+					),
+					closed,
+				)
+				yield* Effect.annotateCurrentSpan({
+					"maple.cloud_security.findings": rows.length,
+					"maple.cloud_security.findings_kept": kept.length,
+				})
 				yield* Effect.forEach(
-					Arr.chunksOf(unique, UPSERT_CHUNK),
+					Arr.chunksOf(kept, UPSERT_CHUNK),
 					(chunk) =>
 						dbExecute((db) =>
 							db.run(
@@ -164,9 +262,9 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 				state: CloudServiceStateWrite,
 			) {
 				const base = { state: state.state, lastError: state.lastError, checkedAt: state.checkedAt }
-				const withCursor = state.cursorAt === undefined ? base : { ...base, cursorAt: state.cursorAt }
+				const withCursor = state.cursorAt === null ? base : { ...base, cursorAt: state.cursorAt }
 				const values =
-					state.windowMs === undefined ? withCursor : { ...withCursor, windowMs: state.windowMs }
+					state.windowMs === null ? withCursor : { ...withCursor, windowMs: state.windowMs }
 				yield* dbExecute((db) =>
 					db.run(
 						PG.insertInto(CloudSecurityServiceStates)
@@ -198,6 +296,72 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 				)
 			})
 
+			const staleIds = Effect.fn("CloudSecurityStore.staleIds")(function* (
+				feed: CloudFeedRef,
+				syncedBefore: number,
+				limit: number,
+			) {
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(CloudSecurityFindings)
+							.select(($) => ({ findingId: $.findingId }))
+							.where(($) => [
+								$.orgId.eq(feed.orgId),
+								$.connectionId.eq(feed.connectionId),
+								$.region.eq(feed.region),
+								$.source.eq(feed.source),
+								$.syncedAt.lt(syncedBefore),
+								// A resolved finding is rechecked for a week after it closed, for a console reopen.
+								PG.or(
+									$.status.neq("resolved"),
+									$.closedAt.gte(syncedBefore - REOPEN_WINDOW_MS),
+								),
+							])
+							.orderBy(($) => [[$.syncedAt, "asc"]])
+							.limit(limit),
+					),
+				)
+				return Arr.map(rows, (row) => row.findingId)
+			})
+
+			const resolve = Effect.fn("CloudSecurityStore.resolve")(function* (
+				feed: CloudFeedRef,
+				ids: { readonly only: ReadonlyArray<string> } | { readonly except: ReadonlyArray<string> },
+				at: number,
+			) {
+				if ("only" in ids && ids.only.length === 0) return 0
+				// An open finding closes now; an archived one keeps the time it closed. Not the provider
+				// time either: the service may still report this finding, at its own time.
+				const resolveWhere = (
+					from: "active" | "archived" | "resolved",
+					set: { readonly closedAt?: number },
+				) =>
+					dbExecute((db) =>
+						db.run(
+							PG.update(CloudSecurityFindings)
+								.set({ status: "resolved", syncedAt: at, ...set })
+								.where(($) => [
+									$.orgId.eq(feed.orgId),
+									$.connectionId.eq(feed.connectionId),
+									$.region.eq(feed.region),
+									$.source.eq(feed.source),
+									$.status.eq(from),
+									...("only" in ids
+										? [PG.inList($.findingId, ids.only)]
+										: ids.except.length === 0
+											? []
+											: [PG.notInList($.findingId, ids.except)]),
+								])
+								.returning(($) => ({ findingId: $.findingId })),
+						),
+					)
+				const opened = yield* resolveWhere("active", { closedAt: at })
+				const archived = yield* resolveWhere("archived", {})
+				// Checked and still gone: a resolved row moves to the back of the recheck queue.
+				if ("only" in ids) yield* resolveWhere("resolved", {})
+				return opened.length + archived.length
+			})
+
 			const pruneClosed = Effect.fn("CloudSecurityStore.pruneClosed")(function* (
 				orgId: OrgId,
 				beforeMs: number,
@@ -220,6 +384,8 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 				upsertFindings,
 				recordServiceState,
 				serviceStates,
+				staleIds,
+				resolve,
 				pruneClosed,
 			} satisfies CloudSecurityStoreApi
 		}),

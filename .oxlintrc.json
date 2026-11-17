@@ -11,6 +11,9 @@
 		"reportUnusedDisableDirectives": "deny",
 		"respectEslintDisableDirectives": false
 	},
+	// oxlint's defaults ship the correctness category at warn, which a lint that only fails on
+	// errors never enforces (`debugger`, duplicate keys, unreachable code).
+	"categories": { "correctness": "error" },
 	"rules": {
 		"anti-slop/no-chained-type-assertions": "error",
 		"anti-slop/no-conditional-empty-object-spread": "error",
@@ -67,7 +70,7 @@
 		"unicorn/no-thenable": "error",
 		"unicorn/no-useless-fallback-in-spread": "error",
 		"unicorn/prefer-string-starts-ends-with": "error",
-		"oxc/approx-constant": "warn",
+		"oxc/approx-constant": "error",
 		"no-plusplus": "off",
 		"require-yield": "off"
 	},
@@ -169,50 +172,43 @@
 			"files": ["apps/web/src/lab/**"],
 			"rules": { "maple/couldnt-copy": "off", "maple/ui-copy": "off", "maple/empty-copy": "off" }
 		},
-		// Existing API burndown entries, relocated with their implementation.
+		// Non-null assertion burndown, every file that still holds one: drop each as it is converted.
 		{
 			"files": [
-				"packages/backend/src/platform/Apns.ts",
-				"packages/backend/src/platform/CacheBackendLive.ts",
-				"packages/backend/src/platform/describe-cause.ts",
-				"packages/backend/src/services/alerts/AlertDeliveryDispatch.ts",
-				"packages/backend/src/services/alerts/AlertsService.ts",
-				"packages/backend/src/services/billing/autumn-tracker.ts",
-				"packages/backend/src/services/integrations/PlanetScaleDiscoveryService.ts",
-				"packages/backend/src/services/integrations/vcs/vendor/github/GithubProvider.ts",
-				"packages/backend/src/services/org/OrgClickHouseSettingsService.ts",
-				"packages/backend/src/services/product-events/svix.ts"
-			],
-			"rules": { "maple/no-try-catch": "off" }
-		},
-		// Existing API burndown entries, relocated with their implementation.
-		{
-			"files": [
-				"packages/backend/src/http/schema-error-detail.ts",
-				"packages/backend/src/services/alerts/AlertDestinationsService.ts",
-				"packages/backend/src/services/alerts/AlertsService.ts",
-				"packages/backend/src/services/alerts/AnomalyDetectionService.ts",
-				"packages/backend/src/services/alerts/anomaly/detection.ts",
-				"packages/backend/src/services/alerts/delivery/transports/email.ts",
-				"packages/backend/src/services/auth/CliDeviceAuthService.ts",
-				"packages/backend/src/services/auth/McpOAuthService.ts",
-				"packages/backend/src/services/auth/PlanetScaleOAuthService.ts",
-				"packages/backend/src/services/dashboards/ServiceMapRollupService.ts",
-				"packages/backend/src/services/dashboards/dashboard-changes.ts",
-				"packages/backend/src/services/digest/DigestService.ts",
-				"packages/backend/src/services/errors/ErrorIssueReadModelsService.ts",
-				"packages/backend/src/services/errors/ErrorIssueWorkflowService.ts",
-				"packages/backend/src/services/errors/ErrorsService.ts",
-				"packages/backend/src/services/errors/InvestigationService.ts",
-				"packages/backend/src/services/integrations/PlanetScaleConnectionService.ts",
-				"packages/backend/src/services/integrations/PlanetScaleService.ts",
+				"apps/ai/src/mcp/lib/panel-type.ts",
+				"apps/ai/src/mcp/lib/span-tree.ts",
+				"apps/api/src/routes/oauth-discovery.http.ts",
+				"apps/landing/src/components/live/LiveAnomaly.astro",
+				"apps/landing/src/components/live/live-trace-inspector.client.ts",
+				"apps/landing/src/components/live/live-waterfall.client.ts",
+				"apps/landing/src/pages/alternatives/[[]slug].astro",
+				"apps/web/src/lab/agent-tools-fixture.ts",
 				"packages/backend/src/services/integrations/ScrapeTargetsService.ts",
-				"packages/backend/src/services/integrations/vcs/vendor/github/GithubProvider.ts",
-				"packages/backend/src/services/org/demo/fixtures.ts",
-				"packages/backend/src/services/push/LiveActivitiesService.ts",
-				"packages/backend/src/services/push/MobileDevicesService.ts"
+				"packages/web-data/src/alerts/form-utils.ts",
+				"packages/web-data/src/lib/time-range.ts"
 			],
 			"rules": { "typescript/no-non-null-assertion": "off" }
+		},
+		// `try`/`catch` burndown outside the packages listed further down: drop each as it is converted.
+		{
+			"files": [
+				"apps/cli/bench/ingest-chdb.ts",
+				"apps/cli/src/bin.ts",
+				"apps/landing/src/components/live/live-trace-inspector.client.ts",
+				"apps/landing/src/lib/docs-tabs.ts",
+				"apps/landing/src/lib/github-stars.ts",
+				"apps/landing/src/lib/pricing-offer.ts",
+				"apps/web/src/og/chart-image.ts",
+				"apps/web/src/og/share-preview.ts",
+				"apps/web/src/page/alerts/shared/sql-format.ts",
+				"apps/web/src/page/analytics/labels.ts",
+				"apps/web/src/page/settings/billing/countries.ts",
+				"apps/web/src/platform/auth-headers.ts",
+				"apps/web/src/platform/clerk-cookie-guard.ts",
+				"apps/web/src/platform/retry-policy.ts",
+				"packages/web-data/src/lib/peer-reachability.ts"
+			],
+			"rules": { "maple/no-try-catch": "off" }
 		},
 		// The executor is the seam that decides a compile failure is a defect — the
 		// one place `Effect.orDie` around a compile is the intended behaviour rather
@@ -260,7 +256,6 @@
 				"apps/web/src/page/infra-integrations/gcp/connector-state.ts",
 				"apps/web/src/page/infra-integrations/gcp/usage.ts",
 				"apps/web/src/page/infra-integrations/planetscale/setup-steps.ts",
-				"apps/web/src/page/releases/release-model.ts",
 				"apps/web/src/page/replays/kit/replay-timeline.ts",
 				"apps/web/src/page/settings/kit/audit-log-filters.ts",
 				"apps/web/src/page/settings/kit/keys-table.ts",
@@ -270,14 +265,24 @@
 				"apps/web/src/lab/gcp-workload-fixture.ts",
 				"apps/web/src/page/settings/billing/spend.ts",
 				"apps/web/src/page/errors/kit/error-signal.ts",
+				"apps/cli/src/core/remote-ops.ts",
+				"apps/cli/src/core/update.ts",
+				"apps/cli/src/lib/output.ts",
+				"packages/alchemy-maple/src/MapleApi.ts",
+				"packages/alchemy-maple/src/errors.ts",
+				"packages/chat-platform/src/connectors/discord/outbound.ts",
+				"packages/chat-platform/src/connectors/hazel/outbound.ts",
+				"packages/domain/src/chat-chart-spec.ts",
+				"packages/domain/src/http/ai-sessions.ts",
+				"packages/domain/src/http/alert-maintenance-windows.ts",
+				"packages/domain/src/http/error-policy.ts",
+				"packages/domain/src/http/v2/oncall-schedules.ts",
+				"packages/domain/src/http/v2/timestamp.ts",
+				"packages/primitives/src/index.ts",
+				"packages/query-engine-integrations/src/ai/ai-sessions.ts",
+				"packages/query-engine-integrations/src/aws/aws-infra.ts",
+				"packages/ui/src/lib/replay-format.ts",
 				"packages/web-data/**",
-				"apps/cli/**",
-				"packages/ui/**",
-				"packages/domain/**",
-				"packages/primitives/**",
-				"packages/query-engine-integrations/**",
-				"packages/chat-platform/**",
-				"packages/alchemy-maple/**",
 				"packages/db/scripts/**",
 				"packages/query-engine/src/datetime.ts",
 				"scripts/**",
@@ -300,19 +305,9 @@
 				"maple/no-try-catch": "off"
 			}
 		},
-		// Burndown list, not a policy. `packages/*` and `lib/*` source is clean and
-		// gated for both rules; the apps and the one-shot ops scripts still hold
-		// ~460 `try`/`catch` blocks and ~500 non-null assertions between them.
-		// Drop entries from this list as each is converted rather than widening it.
+		// One-shot ops scripts and the examples are not held to either rule.
 		{
-			"files": [
-				"apps/**",
-				"packages/web-data/**",
-				"scripts/**",
-				"**/scripts/**",
-				"examples/**",
-				"alchemy.run.ts"
-			],
+			"files": ["scripts/**", "**/scripts/**", "examples/**"],
 			"rules": {
 				"maple/no-try-catch": "off",
 				"typescript/no-non-null-assertion": "off"
@@ -339,26 +334,15 @@
 				"packages/local-server/src/otlp/encode.ts",
 				"packages/local-server/src/schema-physical.ts",
 				"packages/local-server/src/serve.ts",
-				"packages/local-server/src/store-claim.ts",
 				"packages/local-server/src/store-version.ts"
 			],
 			"rules": { "maple/no-try-catch": "off" }
 		},
 		{
 			"files": [
-				"packages/local-server/src/archives/export.ts",
-				"packages/local-server/src/archives/gc.ts",
-				"packages/local-server/src/archives/journal.ts",
 				"packages/local-server/src/archives/paths.ts",
-				"packages/local-server/src/archives/retention.ts",
-				"packages/local-server/src/checkpoints.ts",
-				"packages/local-server/src/insert-batcher.ts",
-				"packages/local-server/src/local-store-migration-journal.ts",
 				"packages/local-server/src/local-store-migrations.ts",
-				"packages/local-server/src/otlp/encode.ts",
-				"packages/local-server/src/schema-manifest.ts",
-				"packages/local-server/src/schema-physical.ts",
-				"packages/local-server/src/scoped-delete.ts"
+				"packages/local-server/src/otlp/encode.ts"
 			],
 			"rules": { "typescript/no-non-null-assertion": "off" }
 		},
@@ -437,13 +421,6 @@
 				"vitest/valid-title": "off"
 			}
 		},
-		// The raw-SQL preparer is a text rewriter: its output SQL text is the behavior under test.
-		{
-			"files": ["packages/query-engine/src/runtime/raw-sql*.test.ts"],
-			"rules": {
-				"test-slop/no-sql-text-pin": "off"
-			}
-		},
 		// "shape" is Electric's own protocol noun — `/v1/shape` is the endpoint this
 		// app proxies and `maple.electric.shape` is the span attribute naming which
 		// one. The rule is about `shape` as a stand-in for a domain role it could not
@@ -460,10 +437,8 @@
 				"apps/ai/src/security-audit/workflow.run.test.ts",
 				"apps/api/scripts/bench-startup-cpu.ts",
 				"apps/api/src/workflows/ClickHouseSchemaApplyWorkflow.run.test.ts",
-				"packages/auth/src/index.ts",
 				"packages/backend/src/platform/durable-step.test.ts",
-				"packages/effect-sdk/src/client/flushable.test.ts",
-				"packages/web-data/src/warehouse/custom-charts.ts"
+				"packages/effect-sdk/src/client/flushable.test.ts"
 			],
 			"rules": { "typescript/no-explicit-any": "off" }
 		},

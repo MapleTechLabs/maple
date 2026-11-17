@@ -463,6 +463,7 @@ describe("dispatchDelivery", () => {
 			let receiver: typeof globalThis | undefined
 			const fetchFn: typeof fetch = function (this: typeof globalThis | undefined) {
 				called = true
+				// oxlint-disable-next-line typescript/no-this-alias -- the receiver is what this test observes
 				receiver = this
 				return Promise.resolve(new Response("{}", { status: 202 }))
 			}

@@ -53,6 +53,7 @@ export const shellNavGroups = (clerk: ShellClerk | null = null): ReadonlyArray<N
 			cloudCost: flag("cloudCost"),
 			productAnalytics: flag("productAnalytics"),
 			securityAudit: flag("securityAudit") && canReadSecurity,
+			statusPages: flag("statusPages"),
 		},
 		audience,
 	)

@@ -427,7 +427,7 @@ const literalBytes = (atom: string): number => {
 
 /** True when a class holds a character past ASCII, written out or escaped. */
 const hasNonAscii = (atom: string): boolean =>
-	/[^\x00-\x7f]/u.test(atom) || Arr.some(escapedCodePoints(atom), (code) => code >= 0x80)
+	/\P{ASCII}/u.test(atom) || Arr.some(escapedCodePoints(atom), (code) => code >= 0x80)
 
 /** `(?i)` turns a literal into a class of its case forms; classes already hold them. */
 const atomWeight = (atom: string, ignoreCase: boolean): number => {

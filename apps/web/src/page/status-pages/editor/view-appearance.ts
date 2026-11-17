@@ -26,8 +26,7 @@ import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import { APPEARANCES, presetCards } from "../shared/look"
 import { onYourPage } from "../shared/preview"
-import { componentsOf } from "./reads"
-import { fragmentPreview, tabPreview } from "./view-canvas"
+import { tabPreview } from "./view-canvas"
 import { typography } from "@maple/views/ui/typography"
 import { grid } from "@maple/views/ui/grid"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -154,30 +153,13 @@ export const brandingSection = (h: H, model: Model, page: V2StatusPage, form: Se
 						onInput: (value) => Message.ChangedSetting({ field: "faviconUrl", value }),
 					}),
 				]),
-				onYourPage(h, tabPreview(h, model, page, form, null)),
+				onYourPage(h, tabPreview(h, page, form, null)),
 			]),
 		],
 	)
 }
 
-/** The theme on the banner, one component and a link: the first component stands for the rest. */
-const themePreview = (h: H, model: Model, page: V2StatusPage, form: SettingsForm): Html => {
-	const first = componentsOf(model)[0]
-	const title = "The theme as visitors see it"
-	return onYourPage(
-		h,
-		first === undefined
-			? fragmentPreview(h, model, page, form, { title, parts: ["header", "hero"], className: "h-48" })
-			: fragmentPreview(h, model, page, form, {
-					title,
-					parts: ["header", "hero", "components"],
-					componentId: first.id,
-					className: "h-96",
-				}),
-	)
-}
-
-export const appearanceSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm): Html => {
+export const appearanceSection = (h: H, model: Model, form: SettingsForm): Html => {
 	const theme = form.theme
 	const isReadOnly = !canManage(model)
 	const isAuto = theme.appearance === "auto"
@@ -259,7 +241,6 @@ export const appearanceSection = (h: H, model: Model, page: V2StatusPage, form: 
 							Message.PickedThemeFont({ font: isFont(value) ? value : theme.font }),
 					}),
 				]),
-				themePreview(h, model, page, form),
 			]),
 		],
 	)
