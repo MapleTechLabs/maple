@@ -1,5 +1,6 @@
 import type { StatusPageComponentStatus, StatusPageVisibility } from "@maple/domain"
 import type { V2StatusPageIncident } from "@maple/domain/http/v2"
+import { isStatusPageImageSource } from "@maple/domain/status-page"
 import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr } from "effect"
@@ -205,6 +206,12 @@ const pageMenu = (h: H, model: Model, summary: StatusPageSummary, isEditable: bo
 	})
 }
 
+/** The page's favicon beside its name, when it has one the page would render. */
+const pageIcon = (h: H, favicon: string | null): ReadonlyArray<Html> =>
+	favicon !== null && isStatusPageImageSource(favicon)
+		? [h.img([h.Src(favicon), h.Alt(""), h.Class("size-4 shrink-0 rounded-2xs object-contain")])]
+		: []
+
 const cardHeader = (
 	h: H,
 	model: Model,
@@ -216,8 +223,11 @@ const cardHeader = (
 	const visibility = VISIBILITY_BADGE[page.visibility]
 	return hstack(h, { gap: "4", align: "start", justify: "between", className: stripClass("header") }, [
 		vstack(h, { gap: "1", className: "min-w-0" }, [
-			heading(h, { level: 2, variant: "section", className: "truncate" }, [
-				textLink(h, { href: statusPageHref(page.id), tone: "inherit" }, [page.name]),
+			hstack(h, { gap: "2", align: "center", className: "min-w-0" }, [
+				...pageIcon(h, page.favicon_url),
+				heading(h, { level: 2, variant: "section", className: "truncate" }, [
+					textLink(h, { href: statusPageHref(page.id), tone: "inherit" }, [page.name]),
+				]),
 			]),
 			hstack(h, { gap: "2", align: "center", className: "min-w-0" }, [
 				badge(h, { variant: visibility.variant, size: "sm" }, [visibility.label]),

@@ -3,6 +3,8 @@ import { assert, describe, expect, it } from "vitest"
 import { StatusPageComponentId, StatusPageId } from "@maple/primitives"
 import {
 	applyOverlay,
+	isStatusPageImageDataUrl,
+	STATUS_PAGE_MAX_IMAGE_BYTES,
 	contrastRatio,
 	customDomainIssue,
 	normalizeCustomDomain,
@@ -70,6 +72,31 @@ const snapshot = (overrides: Partial<StatusPageSnapshot> = {}): StatusPageSnapsh
 	incidents: [],
 	incidentHistory: [],
 	...overrides,
+})
+
+describe("isStatusPageImageDataUrl", () => {
+	/** Base64 that decodes to exactly `bytes` bytes. */
+	const payloadOf = (bytes: number): string => {
+		const rest = bytes % 3
+		const whole = Str.repeat(Math.floor(bytes / 3))("AAAA")
+		return rest === 0 ? whole : rest === 1 ? `${whole}AA==` : `${whole}AAA=`
+	}
+
+	it("takes an image up to the cap and refuses one byte over, whatever its type", () => {
+		for (const type of ["image/png", "image/svg+xml", "image/vnd.microsoft.icon"]) {
+			expect(isStatusPageImageDataUrl(`data:${type};base64,${payloadOf(STATUS_PAGE_MAX_IMAGE_BYTES)}`)).toBe(true)
+			expect(isStatusPageImageDataUrl(`data:${type};base64,${payloadOf(STATUS_PAGE_MAX_IMAGE_BYTES + 1)}`)).toBe(
+				false,
+			)
+		}
+	})
+
+	it("refuses other types and broken base64", () => {
+		expect(isStatusPageImageDataUrl("data:text/html;base64,PHNjcmlwdD4=")).toBe(false)
+		expect(isStatusPageImageDataUrl("data:image/png;base64,abc")).toBe(false)
+		expect(isStatusPageImageDataUrl("data:image/png;base64,")).toBe(false)
+		expect(isStatusPageImageDataUrl("data:image/png;base64,iVBORw0KGgo=")).toBe(true)
+	})
 })
 
 describe("deriveComponentStatus", () => {

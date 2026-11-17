@@ -575,7 +575,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/status-pages",
 		title: "Status pages",
 		description:
-			"The status pages list, the look picker and the form fields (hint and error) over fixture pages, or a page's editor open on an incident (`?page=list|editor`). As an admin, a member or an analyst, who gets no control that posts, edits or deletes an incident (`?role=member|analyst`).",
+			"The status pages list, the look picker and the form fields (hint and error) over fixture pages, or a page's editor open on an incident (`?page=list|editor`). As an admin, a member or an analyst, who gets no control that posts, edits or deletes an incident (`?role=member|analyst`). The live and internal pages have uploaded favicons.",
 		kind: "lab",
 		session: "none",
 	},
@@ -583,7 +583,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/status-page-settings",
 		title: "Status page settings",
 		description:
-			"The status page editor's Basic settings with Who can view under the custom domain (`?state=public|password|set-password|internal|member`).",
+			"The status page editor's Basic settings with Who can view under the custom domain, and its Appearance tab with logo and favicon uploads and colour pickers (`?state=public|password|set-password|internal|member|appearance|appearance-dark|appearance-empty`).",
 		kind: "lab",
 		session: "none",
 	},
