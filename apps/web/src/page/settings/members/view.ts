@@ -72,7 +72,7 @@ const dateAlign = (hasActions: boolean): string | undefined => (hasActions ? und
 
 /** The date line under a name on a phone, where the date column collapses. */
 const phoneDate = (h: H, label: string, valueMs: number, timeZone: string): Html =>
-	typography(h, { size: "xs", tone: "muted", truncate: true, className: "sm:hidden" }, [
+	typography(h, { as: "div", size: "xs", tone: "muted", truncate: true, className: "sm:hidden" }, [
 		`${label} ${formatDateInTimezone(valueMs, { timeZone })}`,
 	])
 
