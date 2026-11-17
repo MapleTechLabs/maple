@@ -55,7 +55,7 @@ const COPY = {
 	aws: {
 		brand: providerBrand("aws"),
 		sends: "CloudTrail changes and console sign-ins, from every region",
-		turnOn: "Turn on the audit log feed on the AWS connection, then run its setup script again.",
+		turnOn: "Open the AWS account under Sources, turn on Audit log on its Connection tab, then run its setup script again.",
 		connect: "Connect an AWS account and turn on its audit log feed.",
 	},
 } satisfies Record<AuditTrailProvider, SourceCopy>
@@ -80,13 +80,11 @@ const STATE = {
 const setupHref = (provider: string) => hrefOf(AppRoute.SourcesNew({ search: { integration: provider } }))
 
 /**
- * Where a connected platform's feed is switched: AWS's switch is on each account's card, which the
- * connect flow does not show; the others are switched in their setup.
+ * Where a connected platform's feed is switched: AWS's switch is on each account's Connection tab,
+ * reached from Sources (the connect flow has none); the others are switched in their setup.
  */
 const manageHref = (provider: string) =>
-	provider === "aws"
-		? hrefOf(AppRoute.Integrations({ search: { integration: "aws" } }))
-		: setupHref(provider)
+	provider === "aws" ? hrefOf(AppRoute.Sources()) : setupHref(provider)
 
 const eventCount = (events: number) => `${events.toLocaleString("en-US")} event${events === 1 ? "" : "s"}`
 

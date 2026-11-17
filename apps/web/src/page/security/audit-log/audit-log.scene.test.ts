@@ -499,6 +499,30 @@ describe("security audit log", () => {
 			)
 		})
 
+		// AWS's switch is on each account's Connection tab; the connect flow has none.
+		test("an AWS account with its audit feed off links to Sources, where its switch is", () => {
+			const off: Sources = {
+				...SOURCES_ANSWER,
+				sources: [
+					...SOURCES_ANSWER.sources,
+					{
+						provider: "aws",
+						state: "off",
+						account: "123456789012",
+						problem: null,
+						events: 0,
+						lastEventAt: null,
+					},
+				],
+			}
+			scene(
+				{ update: pageUpdate, view },
+				given(withSources(loaded(), off)),
+				expectView(text("turn on Audit log on its Connection tab", { exact: false })).toExist(),
+				expectView(role("link", { name: "Turn on" })).toHaveAttr("href", hrefOf(AppRoute.Sources())),
+			)
+		})
+
 		test("View events narrows the list to that platform", () => {
 			const model = withSources(loaded())
 			const clicked = pageUpdate(model, Message.ChangedFilter({ filter: "provider", value: "vercel" }))
