@@ -2959,18 +2959,18 @@ describe("settings", () => {
 		)
 	})
 
-	test("a page with a custom domain cannot go internal, and only admins change who can view", () => {
+	test("a page with a custom domain cannot go internal, and only engineers and admins change who can view", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ ...ACCESS, customDomain: pendingDomain })),
 			expectView(role("radio", { name: "Internal" })).toBeDisabled(),
 			expectView(text("Remove the custom domain first.")).toExist(),
 		)
-		const engineer = loaded({ ...ACCESS, grants: Policy.grantsOf(["org:engineer"]) })
+		const member = loaded({ ...ACCESS, grants: Policy.grantsOf(["org:member"]) })
 		scene(
 			{ update: pageUpdate, view },
-			given(pageUpdate(engineer, Message.PickedVisibility({ visibility: "password" })).model),
-			expectView(text("Only org admins can change who can view a status page.")).toExist(),
+			given(pageUpdate(member, Message.PickedVisibility({ visibility: "password" })).model),
+			expectView(text("Only org admins and engineers can change who can view status pages.")).toExist(),
 			expectView(role("radio", { name: "Password-protected" })).toBeDisabled(),
 			expectView(role("radio", { name: "Public" })).toBeChecked(),
 			expectView(text("Unsaved changes")).not.toExist(),

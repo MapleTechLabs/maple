@@ -23,6 +23,8 @@ import {
 	type AccessMode,
 	blockedReason,
 	canCreate,
+	canGrantFullAccess,
+	canGrantLevel,
 	EXPIRATION_OPTIONS,
 	Message,
 	type Model,
@@ -131,7 +133,10 @@ const scopeRows = (h: H, model: Model): ReadonlyArray<Html> => {
 					value: model.scopeLevels[family.id] ?? "none",
 					onChange: (level) => Message.ClickedScopeLevel({ family: family.id, level }),
 					size: "sm",
-					options: LEVEL_OPTIONS,
+					options: Arr.map(LEVEL_OPTIONS, (option) => ({
+						...option,
+						isDisabled: !canGrantLevel(model, family, option.value),
+					})),
 				}),
 			]),
 		),
@@ -150,10 +155,19 @@ const accessField = (h: H, model: Model): Html => {
 			onChange: (mode) => Message.ClickedAccessMode({ mode }),
 			size: "sm",
 			options: [
-				{ value: "full", label: "Full access" },
+				{ value: "full", label: "Full access", isDisabled: !canGrantFullAccess(model) },
 				{ value: "restricted", label: "Restricted" },
 			],
 		}),
+		...(canGrantFullAccess(model)
+			? []
+			: [
+					fieldDescription(
+						h,
+						{ ids: fieldIds, state: IDLE },
+						"Your key can reach what your role can. Full access and admin-only families need an org admin.",
+					),
+				]),
 		isRestricted
 			? h.div(
 					[h.Class("space-y-2 pt-1")],
