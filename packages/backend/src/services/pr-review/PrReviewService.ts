@@ -2321,13 +2321,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						if (editedConfig.autoApprove === true) {
 							// A review still running read the diff against the old base: it ends here, so
 							// what it found cannot approve the pull request as it now stands.
-							yield* supersede(
-								orgId,
-								edited.value,
-								job.number,
-								null,
-								yield* Clock.currentTimeMillis,
-							)
+							const editedAt = yield* Clock.currentTimeMillis
+							yield* supersede(orgId, edited.value, job.number, null, editedAt)
 							yield* withdrawApprovals(
 								orgId,
 								edited.value,
