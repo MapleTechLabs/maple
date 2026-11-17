@@ -42,6 +42,10 @@ describe("status page viewer", () => {
 				"sandbox",
 				"allow-scripts allow-popups allow-popups-to-escape-sandbox",
 			),
+			expectView(role("link", { name: "Close preview" })).toHaveAttr(
+				"href",
+				`/status-pages/${Schema.encodeSync(StatusPagePublicId)(pageId(1))}`,
+			),
 		)
 	})
 
