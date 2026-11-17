@@ -51,7 +51,6 @@ const SECTION_LABEL = {
 	basic: "Basic settings",
 	monitors: "Monitors",
 	appearance: "Appearance",
-	access: "Access",
 	advanced: "Advanced",
 } as const satisfies Record<SettingsSection, string>
 
@@ -59,7 +58,6 @@ const SECTION_ICON = {
 	basic: "GearIcon",
 	monitors: "PulseIcon",
 	appearance: "PaletteIcon",
-	access: "LockIcon",
 	advanced: "CodeIcon",
 } as const satisfies Record<SettingsSection, IconName>
 
@@ -337,14 +335,13 @@ const sectionBody = (
 			return [
 				pageSection(h, model, form),
 				customDomainSection(h, model, page),
+				accessSection(h, model, page, form),
 				behaviourSection(h, model, form),
 			]
 		case "monitors":
 			return [monitorsSection(h, model)]
 		case "appearance":
 			return [brandingSection(h, model, form), appearanceSection(h, model, form)]
-		case "access":
-			return [accessSection(h, model, page, form)]
 		case "advanced":
 			return [
 				// Break-glass posts at the public address, which an internal page does not answer on.
@@ -426,8 +423,8 @@ export const settingsLayout = (
 }
 
 /**
- * One bar at a time: under Monitors a moved order or an open component's edits, and under Access
- * who can view, take it over the page's settings.
+ * One bar at a time: under Monitors a moved order or an open component's edits, and under Basic
+ * settings a changed Who can view, take it over the page's settings.
  */
 const saveBars = (
 	h: H,
@@ -439,7 +436,7 @@ const saveBars = (
 	const sectionBar =
 		section === "monitors"
 			? monitorsSaveBar(h, model)
-			: section === "access"
+			: section === "basic"
 				? accessSaveBar(h, model, page)
 				: []
 	return sectionBar.length > 0
@@ -458,7 +455,7 @@ export const settingsView = (h: H, model: Model, page: V2StatusPage, section: Se
 	const form = Option.getOrElse(settingsOf(model), () => settingsFormOf(page))
 	return vstack(h, { className: "min-w-0 max-w-3xl" }, [
 		settingsSections(h, [
-			...(canManage(model) || section === "access"
+			...(canManage(model)
 				? []
 				: [
 						adminOnlyNote(h, [

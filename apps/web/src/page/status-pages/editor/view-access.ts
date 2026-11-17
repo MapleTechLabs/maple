@@ -30,7 +30,7 @@ import {
 	removesPassword,
 } from "./update-access"
 
-// Settings > Access: public, behind a password, or members only, and the password form visitors
+// Basic settings > Who can view: public, behind a password, or members only, and the password form visitors
 // meet. A pick and a typed password wait for the save bar.
 
 type H = HtmlBuilder<Message>

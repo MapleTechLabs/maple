@@ -300,7 +300,7 @@ const srcdocOf =
 			() => "",
 		)
 const APPEARANCE = { tab: "settings", section: "appearance" } as const
-const ACCESS = { tab: "settings", section: "access" } as const
+const ACCESS = { tab: "settings", section: "basic" } as const
 const ADVANCED = { tab: "settings", section: "advanced" } as const
 const BASIC = { tab: "settings", section: "basic" } as const
 
@@ -2630,11 +2630,6 @@ describe("settings", () => {
 			expectView(text("Fix the fields marked in Basic settings.")).toExist(),
 			expectView(role("button", { name: "Save" })).toBeDisabled(),
 		)
-		scene(
-			{ update: pageUpdate, view },
-			given({ ...edited, search: { view: "settings", section: "access" } }),
-			expectView(text("Fix the fields marked in Basic settings.")).toExist(),
-		)
 	})
 
 	test("a footer link must use https before the settings save", () => {
@@ -3970,7 +3965,7 @@ describe("the sheet, the previews and the reads they wait on", () => {
 		expect(maintenanceDurationMs({ ...done, updates: [] })).toBe(60 * 60_000)
 	})
 
-	test("a failed custom domain read can be retried, and Access does not offer Internal until it is known", () => {
+	test("a failed custom domain read can be retried, and Who can view does not offer Internal until it is known", () => {
 		const failed = {
 			...loaded(BASIC),
 			customDomain: {
@@ -3986,9 +3981,9 @@ describe("the sheet, the previews and the reads they wait on", () => {
 		)
 		scene(
 			{ update: pageUpdate, view },
-			given({ ...failed, search: { view: "settings", section: "access" } }),
+			given({ ...failed, search: { view: "settings", section: "basic" } }),
 			expectView(role("radio", { name: "Internal" })).toBeDisabled(),
-			expectView(text("Couldn't check for a custom domain. Try again under Basic settings.")).toExist(),
+			expectView(text("Couldn't check for a custom domain. Try again above.")).toExist(),
 		)
 	})
 })

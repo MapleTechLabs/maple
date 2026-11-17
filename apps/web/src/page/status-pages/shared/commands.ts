@@ -261,7 +261,7 @@ export const pageIdFromUrl = (raw: string): Option.Option<StatusPageId> =>
 export type EditorView = "incidents" | "maintenance" | "settings" | "live"
 
 /** The Settings tab's sections, in menu order. */
-export const SETTINGS_SECTIONS = ["basic", "monitors", "appearance", "access", "advanced"] as const
+export const SETTINGS_SECTIONS = ["basic", "monitors", "appearance", "advanced"] as const
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]
 
 export const statusPageHref = (id: StatusPageId, view?: EditorView, section?: SettingsSection): string =>
