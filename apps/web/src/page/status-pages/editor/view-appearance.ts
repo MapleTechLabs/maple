@@ -1,4 +1,3 @@
-import type { V2StatusPage } from "@maple/domain/http/v2"
 import {
 	DEFAULT_STATUS_PAGE_THEME,
 	resolveStatusPageTheme,
@@ -25,8 +24,6 @@ import {
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import { APPEARANCES, presetCards } from "../shared/look"
-import { onYourPage } from "../shared/preview"
-import { tabPreview } from "./view-canvas"
 import { typography } from "@maple/views/ui/typography"
 import { grid } from "@maple/views/ui/grid"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -108,17 +105,15 @@ const colorField = (
 }
 
 /** The logos and tab icon: what carries the brand besides the colours. */
-export const brandingSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm): Html => {
+export const brandingSection = (h: H, model: Model, form: SettingsForm): Html => {
 	const issues = settingsIssues(form)
 	const isReadOnly = !canManage(model)
 	return settingsSection(
 		h,
 		{
 			id: "status-page-settings-branding",
+			framed: false,
 			title: "Branding",
-			description: [
-				"Your logo in the page header and the icon in the browser tab. Without a logo, the page shows its initial in your accent colour.",
-			],
 		},
 		[
 			vstack(h, { gap: "4" }, [
@@ -153,7 +148,6 @@ export const brandingSection = (h: H, model: Model, page: V2StatusPage, form: Se
 						onInput: (value) => Message.ChangedSetting({ field: "faviconUrl", value }),
 					}),
 				]),
-				onYourPage(h, tabPreview(h, page, form, null)),
 			]),
 		],
 	)
@@ -169,6 +163,7 @@ export const appearanceSection = (h: H, model: Model, form: SettingsForm): Html 
 		h,
 		{
 			id: "status-page-settings-appearance",
+			framed: false,
 			title: "Theme",
 			description: ["Colors, corners and type of the public page."],
 		},

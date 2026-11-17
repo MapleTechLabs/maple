@@ -38,7 +38,13 @@ import { livePage } from "./view-canvas"
 import { incidentsTab, maintenanceTab, openIncidentCount } from "./view-incidents"
 import { addressLine, liveView } from "./view-live"
 import { addSheetBody, addSheetFooter, incidentSheetBody, type TimeInputs } from "./view-panel"
-import { breakGlassDialog, deletePageDialog, sectionLabel, settingsView } from "./view-settings"
+import {
+	breakGlassDialog,
+	deletePageDialog,
+	sectionLabel,
+	settingsLayout,
+	settingsView,
+} from "./view-settings"
 import { removeCustomDomainDialog } from "./view-domain"
 import { incidentDialogs } from "./view-incident-dialogs"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -259,7 +265,10 @@ const body = (h: H, model: Model, page: V2StatusPage, time: TimeInputs): Html =>
 			return maintenanceTab(h, model, time)
 		case "page":
 			return canManage(model) && page.draft
-				? vstack(h, { gap: "4" }, [draftCallout(h), livePage(h, model, page)])
+				? vstack(h, { gap: "4", className: "min-h-0 flex-1" }, [
+						draftCallout(h),
+						livePage(h, model, page),
+					])
 				: livePage(h, model, page)
 	}
 }
@@ -339,6 +348,23 @@ const deleteComponentDialog = (h: H, model: Model, page: V2StatusPage): Html => 
 	})
 }
 
+/** Leaving a component with unsaved edits: discard them and go on, or stay on them. */
+const discardComponentDialog = (h: H, model: Model): Html => {
+	const component = Option.getOrUndefined(
+		Arr.findFirst(componentsOf(model), (row) => row.id === model.pendingLeave?.componentId),
+	)
+	return confirmDialog(h, {
+		slotId: "status-page-discard-component",
+		model: model.discardComponentDialog,
+		toParentMessage: (message) => Message.GotDiscardComponentDialogMessage({ message }),
+		title: `Discard changes to ${component?.name ?? "this component"}?`,
+		description: "Your edits to it are not saved.",
+		confirmLabel: "Discard changes",
+		cancelLabel: "Keep editing",
+		onConfirm: Message.ClickedConfirmDiscardComponent(),
+	})
+}
+
 const deleteIncidentDialog = (h: H, model: Model, page: V2StatusPage): Html => {
 	const incident = Option.getOrUndefined(
 		Arr.findFirst(incidentsOf(model), (row) => row.id === model.confirmDeleteIncidentId),
@@ -364,6 +390,7 @@ const loaded = (h: H, model: Model, page: V2StatusPage, inputs: PageViewInputs):
 	const time = { nowMs: model.nowMs ?? 0, timeZone }
 	const overall = overallOf(model)
 	const hasStatus = canvasRead(model).isReady && componentsOf(model).length > 0
+	const location = resolveView(model.search)
 	return h.div(
 		[h.Class("contents")],
 		[
@@ -391,11 +418,25 @@ const loaded = (h: H, model: Model, page: V2StatusPage, inputs: PageViewInputs):
 					actions: headerActions(h, model, page),
 					tabs: tabs(h, model, page),
 					gap: "md",
+					// Settings and the Live page own their scrolling: Settings' panes each scroll alone,
+					// and the Live page's frame takes exactly the height left, so the page never scrolls.
+					fill: location.tab === "settings" || location.tab === "page",
 				},
-				[body(h, model, page, time)],
+				[
+					location.tab === "settings"
+						? settingsLayout(h, model, page, location.section, body(h, model, page, time))
+						: location.tab === "page"
+							? vstack(
+									h,
+									{ className: "min-h-0 flex-1 px-(--page-gutter) pb-(--page-gutter)" },
+									[body(h, model, page, time)],
+								)
+							: body(h, model, page, time),
+				],
 			),
 			panelSheet(h, model, time),
 			deleteComponentDialog(h, model, page),
+			discardComponentDialog(h, model),
 			...incidentDialogs(h, model, page, time),
 			deleteIncidentDialog(h, model, page),
 			breakGlassDialog(h, model),

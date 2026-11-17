@@ -55,6 +55,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/display.ts` `kbd`, `kbdGroup`, `badgeClass`, `badge`, `separator`, `avatarFallback`: Small display pieces: keyboard keys, badges, separators and avatars.
 - `packages/views/src/ui/dither-field.ts` `fieldAt`, `ditherLevel`, `startDitherField`: The onboarding backdrop: square pixels lit in the primary colour through an 8x8 ordered dither, spreading from the bottom-left corner.
 - `packages/views/src/ui/docs-link.ts` `docsLink`: A docs link under an empty state: muted text and an external-link glyph, opening in a new tab.
+- `packages/views/src/ui/drag-grip.ts` `dragGrip`: `DragGrip`: the handle at the start of a reorderable row.
 - `packages/views/src/ui/dropdown-menu.ts` `menuTriggerAttributes`, `positionerStyle`, `menuPopup`, `menuGroup`, `menuLabel`, `menuItem`, `menuSeparator`, `menuShortcut`, `menuCheckableItem`, `menuRadioGroup`, `menuSubTrigger`: The dropdown menu's popup, groups, items and triggers over Base UI's Menu DOM.
 - `packages/views/src/ui/empty.ts` `empty`, `emptyHeader`, `emptyTitle`, `emptyDescription`, `emptyContent`, `emptyMedia`, `emptyMessage`, `emptyFrameClass`: The Empty state: a centred media, title, description and content stack.
 - `packages/views/src/ui/error-count-pill.ts` `errorCountPill`: `ErrorCountPill`: a failure count as a toned pill, led by a dot or its kind's glyph.
@@ -128,7 +129,6 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/overlay/select-align.ts` `alignItemWithTrigger`: Base UI Select's `alignItemWithTrigger` (select/popup/SelectPopup.mjs, @base-ui/react 1.8): the popup opens over the trigger so the selected item's text sits on the trigger's va...
 - `packages/views/src/ui/overlay/transition.ts` `isLeaving`, `isMounted`, `stateAttributes`, `focusGuard`: Base UI's transition status on a Foldkit Animation: `data-starting-style` on the first frame of an open, `data-ending-style` while it closes, and `data-open` / `data-closed` thr...
 - `packages/views/src/ui/page-layout.ts` `pageLayoutRoot`, `pageTitle`, `pageDescription`, `pageHeader`, `pageHeaderActions`: A page's root and header: title, description and header actions.
-- `packages/views/src/ui/page-mockup.ts` `browserTabMockup`, `searchResultMockup`: Drawings of where a page shows up outside itself: a browser tab and a search result.
 - `packages/views/src/ui/page-rails.ts` `splitPageRails`: The filter and right sidebars below `lg`: each renders as a sheet, not an inline rail, and puts a trigger in the top bar while one is mounted.
 - `packages/views/src/ui/panel.ts` `panel`, `panelTitle`, `panelHeader`, `panelBody`, `panelChartBody`: The flat bordered section frame.
 - `packages/views/src/ui/person-avatar.ts` `personAvatar`, `personLabel`: `PersonAvatar` and `PersonLabel`: a member of the org as a warm initials tile (or their own image), alone or beside their name.

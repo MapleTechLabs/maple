@@ -1,5 +1,10 @@
 import * as Policy from "@maple/domain/policy"
-import { StatusPageComponentId, StatusPageId, StatusPageIncidentId } from "@maple/domain"
+import {
+	StatusPageComponentId,
+	StatusPageId,
+	StatusPageIncidentId,
+	StatusPageVisibility,
+} from "@maple/domain"
 import {
 	StatusPageConfig,
 	V2StatusPage,
@@ -52,7 +57,7 @@ export type JsonEdit = typeof JsonEdit.Type
 export const BreakGlassAction = Schema.Literals(["rotate", "revoke"])
 export type BreakGlassAction = typeof BreakGlassAction.Type
 
-/** What the Access section is saving: a visibility, a new password, or the password's removal. */
+/** The part of the Access save in flight: the new password, the visibility, or a leftover password's removal. */
 export const AccessAction = Schema.Literals(["visibility", "password", "removePassword"])
 export type AccessAction = typeof AccessAction.Type
 
@@ -69,15 +74,26 @@ export const Panel = Schema.Union([
 export type Panel = typeof Panel.Type
 
 /**
- * The last component save, for the component it belongs to: in flight, landed, or refused with why.
- * Its row shows it; another component's row shows nothing of it.
+ * The last component save, for the component it belongs to: in flight (with the form it sends),
+ * landed, or refused with why. Its row shows it; another component's row shows nothing of it.
  */
 export const ComponentSave = Schema.Union([
-	Schema.TaggedStruct("Saving", { componentId: StatusPageComponentId }),
+	Schema.TaggedStruct("Saving", { componentId: StatusPageComponentId, form: ComponentForm }),
 	Schema.TaggedStruct("Saved", { componentId: StatusPageComponentId }),
 	Schema.TaggedStruct("Failed", { componentId: StatusPageComponentId, failure: LoadFailure }),
 ])
 export type ComponentSave = typeof ComponentSave.Type
+
+/** What leaving a component with unsaved edits does once they are discarded. */
+export const ComponentLeave = Schema.Union([
+	Schema.TaggedStruct("Open", { componentId: StatusPageComponentId, isRevealed: Schema.Boolean }),
+	Schema.TaggedStruct("Close", {}),
+	Schema.TaggedStruct("Add", {}),
+])
+export type ComponentLeave = typeof ComponentLeave.Type
+
+/** A leave waiting on the discard confirm, and the component whose edits it drops. */
+export const PendingLeave = Schema.Struct({ componentId: StatusPageComponentId, action: ComponentLeave })
 
 export const Model = Schema.Struct({
 	search: StatusPageSearch,
@@ -115,15 +131,27 @@ export const Model = Schema.Struct({
 	previewShown: Schema.Number,
 	previewHistory: PreviewHistory,
 	// Components
-	/** The selected component as its inputs hold it; each commit saves what differs. */
+	/**
+	 * The open component as its inputs hold it; Save sends it. Unsaved edits outlive a tab switch,
+	 * and Monitors opens on them again.
+	 */
 	componentForm: ComponentForm,
 	componentSave: Schema.NullOr(ComponentSave),
-	/** Forms committed while a save was in flight, one per component, sent in turn as saves land. */
-	queuedComponentForms: Schema.Array(ComponentForm),
+	/** The open component's Group list: the page's groups, "No group" and a typed new one. */
+	/** The leave waiting on the discard confirm; kept while the dialog fades out, so its title holds. */
+	pendingLeave: Schema.NullOr(PendingLeave),
+	discardComponentDialog: Dialog.Model,
 	confirmDeleteComponentId: Schema.NullOr(StatusPageComponentId),
 	deleteComponentDialog: Dialog.Model,
 	isDeletingComponent: Schema.Boolean,
-	isReordering: Schema.Boolean,
+	/**
+	 * Every component's id in the order a drag or arrow key left them, waiting on Save with the open
+	 * component's edits; `null` while the list shows the saved order. Leaving Monitors keeps it.
+	 */
+	pendingOrder: Schema.NullOr(Schema.Array(StatusPageComponentId)),
+	isSavingOrder: Schema.Boolean,
+	/** Why the last order save was refused; the order stays pending. */
+	orderFailure: Schema.NullOr(LoadFailure),
 	addPicker: Picker,
 	isAddingComponents: Schema.Boolean,
 	/** The last Add session opened; each opening takes the next number. */
@@ -164,8 +192,10 @@ export const Model = Schema.Struct({
 	isDeletingPage: Schema.Boolean,
 	// Access
 	accessAction: Schema.NullOr(AccessAction),
-	/** The new page password as typed; `null` while its field is closed. */
-	passwordDraft: Schema.NullOr(Schema.String),
+	/** Who can view as picked; `null` while it is the page's. */
+	visibilityDraft: Schema.NullOr(StatusPageVisibility),
+	/** The new page password as typed; empty for none. */
+	passwordDraft: Schema.String,
 	accessFailure: Schema.NullOr(LoadFailure),
 	// Custom domain
 	/** The page's custom domain and whether this deployment offers them; read with the page. */

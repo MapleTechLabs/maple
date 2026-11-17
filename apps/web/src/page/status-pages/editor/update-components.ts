@@ -11,6 +11,7 @@ import {
 	componentFormOf,
 	componentPayload,
 	type ComponentForm,
+	emptyComponentForm,
 } from "../shared/form"
 import {
 	draftComponents,
@@ -25,16 +26,18 @@ import {
 	AddComponents,
 	CreateEditorMonitor,
 	DeleteComponent,
+	FocusEditorElement,
 	ReorderComponents,
 	SaveComponent,
 	TrackMonitorCreated,
 } from "./command"
 import { Message } from "./message"
-import { canManage, type Model } from "./model"
+import { canManage, type ComponentLeave, type Model } from "./model"
 import {
 	chain,
 	componentsOf,
 	errorToast,
+	listedComponentsOf,
 	liftDialog,
 	monitorsOf,
 	readComponents,
@@ -43,14 +46,19 @@ import {
 	toast,
 } from "./reads"
 
-// Components under Settings > Monitors: opened in place, saved as you go, removed behind a
-// confirm, moved within their group, and added from the same checklist the builder uses.
+// Components under Settings > Monitors: opened in place and saved from the save bar (leaving
+// unsaved edits asks first), removed behind a confirm, moved within their group (the order saves
+// from the same bar), and added from the same checklist the builder uses.
 
 export const ADD_PICKER_ID = "status-page-add"
 
 /** A component's row in the Monitors list: the button that opens and closes it. */
 export const componentRowId = (componentId: StatusPageComponentId): string =>
 	`status-page-item-${componentId}`
+
+/** A component's drag grip in the Monitors list. */
+export const componentGripId = (componentId: StatusPageComponentId): string =>
+	`status-page-grip-${componentId}`
 
 export const deleteComponentDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => {
 	const lifted = liftDialog(
@@ -64,75 +72,162 @@ export const deleteComponentDialog = (model: Model, step: ReturnType<typeof Dial
 		: lifted
 }
 
+const isSame = (form: ComponentForm, other: ComponentForm): boolean =>
+	encodeJson(componentPayload(form)) === encodeJson(componentPayload(other))
+
+/** The listed component the open form edits, while the form differs from it. */
+export const unsavedComponent = (model: Model): Option.Option<V2StatusPageComponent> =>
+	Arr.findFirst(
+		componentsOf(model),
+		(row) =>
+			row.id === model.componentForm.editingId && !isSame(model.componentForm, componentFormOf(row)),
+	)
+
+/** Unsaved edits that leaving would lose: not the form a save in flight is sending. */
+const editsAtRisk = (model: Model): Option.Option<V2StatusPageComponent> =>
+	Option.filter(
+		unsavedComponent(model),
+		() =>
+			model.componentSave?._tag !== "Saving" || !isSame(model.componentSave.form, model.componentForm),
+	)
+
 /**
- * Opens the component in its row, which scrolls itself into view as it mounts. The one open before
- * saves what was typed first, or queues it behind a save in flight.
+ * Opens the component in its row; a reveal scrolls the row into view as it mounts. Its unsaved
+ * edits, left there by a tab switch, open with it.
  */
-export const selectComponent = (model: Model, componentId: StatusPageComponentId): Return => {
-	const found = Arr.findFirst(componentsOf(model), (row) => row.id === componentId)
-	if (Option.isNone(found)) return { model }
-	return chain(model, commitComponent, (next) => ({
-		model: {
-			...next,
-			panel: { _tag: "Component", componentId },
-			componentForm: componentFormOf(found.value),
-			revealComponentId: null,
+const openComponent = (model: Model, componentId: StatusPageComponentId, isRevealed: boolean): Return =>
+	Option.match(
+		Arr.findFirst(componentsOf(model), (row) => row.id === componentId),
+		{
+			onNone: () => ({ model }),
+			onSome: (component) => ({
+				model: {
+					...model,
+					panel: { _tag: "Component", componentId },
+					componentForm:
+						model.componentForm.editingId === componentId
+							? model.componentForm
+							: componentFormOf(component),
+					revealComponentId: isRevealed ? componentId : null,
+				},
+			}),
 		},
-	}))
+	)
+
+/** Closing a component hands focus back to its row. */
+const closeComponent = (model: Model): Return =>
+	model.panel?._tag === "Component"
+		? {
+				model: { ...model, panel: null, componentForm: emptyComponentForm },
+				commands: [FocusEditorElement({ id: componentRowId(model.panel.componentId) })],
+			}
+		: { model }
+
+const leave = (model: Model, action: ComponentLeave): Return => {
+	switch (action._tag) {
+		case "Open":
+			return openComponent(model, action.componentId, action.isRevealed)
+		case "Close":
+			return closeComponent(model)
+		case "Add":
+			return openAdd(model)
+	}
 }
 
-export const changeComponent = (model: Model, field: ComponentTextField, value: string): Return => ({
-	model: { ...model, componentForm: { ...model.componentForm, [field]: value } },
-})
-
-const isSame = (form: ComponentForm, component: V2StatusPageComponent): boolean =>
-	encodeJson(componentPayload(form)) === encodeJson(componentPayload(componentFormOf(component)))
-
-const withoutQueued = (model: Model, componentId: string | null): Model => ({
-	...model,
-	queuedComponentForms: Arr.filter(model.queuedComponentForms, (form) => form.editingId !== componentId),
-})
+export const discardComponentDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return =>
+	liftDialog(
+		model,
+		step,
+		(next, discardComponentDialog) => ({ ...next, discardComponentDialog }),
+		(message) => Message.GotDiscardComponentDialogMessage({ message }),
+	)
 
 /**
- * Saves `form` when it differs from its component. With a save in flight it waits in the queue,
- * replacing any older form of the same component.
+ * Opens another component, closes this one or opens Add: at once while nothing typed would be
+ * lost, else once the edits are discarded behind a confirm. Nothing saves on the way out.
  */
-const commitForm = (model: Model, form: ComponentForm): Return => {
-	const found = Arr.findFirst(componentsOf(model), (row) => row.id === form.editingId)
+export const leaveComponent = (model: Model, action: ComponentLeave): Return =>
+	Option.match(
+		Option.filter(
+			editsAtRisk(model),
+			(component) => action._tag !== "Open" || action.componentId !== component.id,
+		),
+		{
+			onNone: () => leave(model, action),
+			onSome: (component) =>
+				discardComponentDialog(
+					{ ...model, pendingLeave: { componentId: component.id, action } },
+					Dialog.open(model.discardComponentDialog),
+				),
+		},
+	)
+
+/** Discard changes: the edits go and the leave they held up goes ahead. */
+export const confirmDiscardComponent = (model: Model): Return => {
+	const pending = model.pendingLeave
+	if (pending === null || !model.discardComponentDialog.isOpen) return { model }
+	return chain(
+		model,
+		(next) => discardComponentDialog(next, Dialog.close(next.discardComponentDialog)),
+		(next) => leave({ ...next, componentForm: emptyComponentForm }, pending.action),
+	)
+}
+
+export const changeComponent = (model: Model, field: ComponentTextField, value: string): Return =>
+	editComponent(model, { ...model.componentForm, [field]: value })
+
+export const toggleComponentUptime = (model: Model): Return =>
+	editComponent(model, { ...model.componentForm, showUptime: !model.componentForm.showUptime })
+
+/** An edit only changes the form; a "Saved" from before it no longer holds. */
+const editComponent = (model: Model, componentForm: ComponentForm): Return => ({
+	model: {
+		...model,
+		componentForm,
+		componentSave: model.componentSave?._tag === "Saved" ? null : model.componentSave,
+	},
+})
+
+/** One PATCH of the whole component, while it differs, has a name and no save is in flight. */
+const saveComponent = (model: Model): Return => {
+	const found = unsavedComponent(model)
 	if (
 		!canManage(model) ||
 		model.pageId === null ||
 		Option.isNone(found) ||
-		Str.trim(form.name) === "" ||
-		isSame(form, found.value)
+		Str.trim(model.componentForm.name) === "" ||
+		model.componentSave?._tag === "Saving"
 	)
-		return { model: withoutQueued(model, form.editingId) }
-	const rest = withoutQueued(model, form.editingId)
-	if (model.componentSave?._tag === "Saving")
-		return { model: { ...rest, queuedComponentForms: [...rest.queuedComponentForms, form] } }
+		return { model }
 	return {
-		model: { ...rest, componentSave: { _tag: "Saving", componentId: found.value.id } },
+		model: {
+			...model,
+			componentSave: { _tag: "Saving", componentId: found.value.id, form: model.componentForm },
+		},
 		commands: [
 			SaveComponent({
 				pageId: model.pageId,
 				componentId: found.value.id,
-				payload: componentPayload(form),
+				payload: componentPayload(model.componentForm),
 			}),
 		],
 	}
 }
 
-/** Saves the open component's form; nothing while no component is open. */
-export const commitComponent = (model: Model): Return =>
-	model.panel?._tag === "Component" && model.panel.componentId === model.componentForm.editingId
-		? commitForm(model, model.componentForm)
-		: { model }
-
-/** The next queued form, once the save before it landed. */
-const commitQueued = (model: Model): Return =>
-	Option.match(Arr.head(model.queuedComponentForms), {
+/** The form goes back to the saved component, and a refused save's alert with it. */
+const discardComponent = (model: Model): Return =>
+	Option.match(unsavedComponent(model), {
 		onNone: () => ({ model }),
-		onSome: (form) => commitForm(model, form),
+		onSome: (component) => ({
+			model: {
+				...model,
+				componentForm: componentFormOf(component),
+				componentSave:
+					model.componentSave?._tag === "Failed" && model.componentSave.componentId === component.id
+						? null
+						: model.componentSave,
+			},
+		}),
 	})
 
 /** Components and the page revision change together: both are read again. */
@@ -140,8 +235,9 @@ const reread = (model: Model, context: PageContext): Return =>
 	chain(model, readComponents(context, "Supersede"), readPage(context, "Supersede"))
 
 /**
- * A save landed for the component it was sent for. A refused one is shown on that component's row,
- * and its queued edits are dropped rather than sent behind its back; other components' queue on.
+ * A save landed for the component it was sent for. The saved row replaces the listed one at once,
+ * so the save bar goes unless more was typed meanwhile. A refused one is shown on that component's
+ * row, its edits kept.
  */
 export const savedComponent = (
 	model: Model,
@@ -151,27 +247,23 @@ export const savedComponent = (
 	const save = model.componentSave
 	if (save?._tag !== "Saving") return { model }
 	return Result.match(result, {
-		onSuccess: (component): Return => {
-			// The saved row replaces the listed one at once, so the next commit diffs against it.
-			const next: Model = {
-				...model,
-				componentSave: { _tag: "Saved", componentId: save.componentId },
-				components: {
-					...model.components,
-					data: AsyncData.map(model.components.data, (rows) =>
-						Arr.map(rows, (row) => (row.id === component.id ? component : row)),
-					),
+		onSuccess: (component): Return =>
+			reread(
+				{
+					...model,
+					componentSave: { _tag: "Saved", componentId: save.componentId },
+					components: {
+						...model.components,
+						data: AsyncData.map(model.components.data, (rows) =>
+							Arr.map(rows, (row) => (row.id === component.id ? component : row)),
+						),
+					},
 				},
-			}
-			return chain(next, (settled) => reread(settled, context), commitQueued)
-		},
-		onFailure: (failure): Return =>
-			commitQueued(
-				withoutQueued(
-					{ ...model, componentSave: { _tag: "Failed", componentId: save.componentId, failure } },
-					save.componentId,
-				),
+				context,
 			),
+		onFailure: (failure): Return => ({
+			model: { ...model, componentSave: { _tag: "Failed", componentId: save.componentId, failure } },
+		}),
 	})
 }
 
@@ -186,62 +278,117 @@ export const groupedOrder = <A extends Groupable>(components: ReadonlyArray<A>):
 		Arr.filter(components, (component) => component.group === group),
 	)
 
+/** A component's place among its group's members; `null` when it is not listed. */
+const groupIndexOf = <A extends Groupable>(
+	components: ReadonlyArray<A>,
+	componentId: StatusPageComponentId,
+): number | null =>
+	Option.getOrNull(
+		Option.map(
+			Arr.findFirst(components, (component) => component.id === componentId),
+			(item) => Arr.filter(components, (component) => component.group === item.group).indexOf(item),
+		),
+	)
+
 /**
- * The list with `componentId` swapped with its neighbour in its group (`offset` -1 or 1), every
- * other component where it was; `null` when it has no neighbour that way.
+ * The list with `componentId` at `index` among its group's members (clamped to the group), the
+ * members between shifting a slot; other groups keep their places. `null` when it is not listed
+ * or already there.
  */
 export const moved = <A extends Groupable>(
 	components: ReadonlyArray<A>,
 	componentId: StatusPageComponentId,
-	offset: number,
+	index: number,
 ): ReadonlyArray<A> | null => {
 	const item = Arr.findFirst(components, (component) => component.id === componentId)
 	if (Option.isNone(item)) return null
 	const group = Arr.filter(components, (component) => component.group === item.value.group)
-	const neighbour = Option.flatMap(
-		Arr.findFirstIndex(group, (component) => component.id === componentId),
-		(index) => Arr.get(group, index + offset),
-	)
-	if (Option.isNone(neighbour)) return null
-	const other = neighbour.value
-	return Arr.map(components, (component) =>
-		component.id === componentId ? other : component.id === other.id ? item.value : component,
-	)
+	const to = Math.min(Math.max(index, 0), group.length - 1)
+	if (to === group.indexOf(item.value)) return null
+	const rest = Arr.filter(group, (component) => component.id !== componentId)
+	const order = [...Arr.take(rest, to), item.value, ...Arr.drop(rest, to)]
+	// The group's slots in page order, filled with its new order.
+	return Arr.mapAccum(components, 0, (rank, component): [number, A] =>
+		component.group === item.value.group ? [rank + 1, order[rank] ?? component] : [rank, component],
+	)[1]
 }
 
-/** Moves the row at once; the server's order lands with the re-read. */
-export const moveComponent = (model: Model, componentId: StatusPageComponentId, offset: number): Return => {
-	const next = moved(componentsOf(model), componentId, offset)
-	if (model.pageId === null || model.isReordering || next === null || !canManage(model)) return { model }
-	return {
-		model: {
-			...model,
-			isReordering: true,
-			components: { ...model.components, data: AsyncData.map(model.components.data, () => next) },
-		},
-		commands: [
-			ReorderComponents({
-				pageId: model.pageId,
-				componentIds: Arr.map(next, (component) => component.id),
-			}),
-		],
-	}
+/** The listed order with the row at `index` in its group, waiting on Save; `null` when nothing moves. */
+const reorder = (model: Model, componentId: StatusPageComponentId, index: number): Model | null => {
+	const next = moved(listedComponentsOf(model), componentId, index)
+	return next === null || model.isSavingOrder || !canManage(model)
+		? null
+		: { ...model, pendingOrder: Arr.map(next, (component) => component.id) }
 }
 
+/** A drop: the row takes the slot it was let go over, and the order waits on Save. */
+export const moveComponent = (model: Model, componentId: StatusPageComponentId, index: number): Return => ({
+	model: reorder(model, componentId, index) ?? model,
+})
+
+/** An arrow key on the grip: one slot up (-1) or down (1), focus kept on the moved row's grip. */
+export const nudgeComponent = (model: Model, componentId: StatusPageComponentId, offset: number): Return => {
+	const from = groupIndexOf(listedComponentsOf(model), componentId)
+	const next = from === null ? null : reorder(model, componentId, from + offset)
+	return next === null
+		? { model }
+		: { model: next, commands: [FocusEditorElement({ id: componentGripId(componentId) })] }
+}
+
+/** The ids Save sends as the new order, while the listed order differs from the saved one. */
+export const unsavedOrder = (model: Model): Option.Option<ReadonlyArray<StatusPageComponentId>> => {
+	const saved = componentsOf(model)
+	const listed = listedComponentsOf(model)
+	return Arr.every(listed, (component, index) => component.id === saved[index]?.id)
+		? Option.none()
+		: Option.some(Arr.map(listed, (component) => component.id))
+}
+
+/** The whole order as one reorder, while it differs from the saved one and no order save is in flight. */
+const saveOrder = (model: Model): Return => {
+	const order = unsavedOrder(model)
+	return !canManage(model) || model.pageId === null || Option.isNone(order) || model.isSavingOrder
+		? { model }
+		: {
+				model: { ...model, isSavingOrder: true, orderFailure: null },
+				commands: [ReorderComponents({ pageId: model.pageId, componentIds: order.value })],
+			}
+}
+
+/** Save under Monitors: a moved order and the open component's edits, each its own write. */
+export const saveMonitors = (model: Model): Return => chain(model, saveOrder, saveComponent)
+
+/** Discard under Monitors: the saved order and the saved component come back. */
+export const discardMonitors = (model: Model): Return =>
+	discardComponent({ ...model, pendingOrder: null, orderFailure: null })
+
+/**
+ * The order saved: the list keeps it as the saved order until the re-read brings the server's. A
+ * refused one stays pending with why.
+ */
 export const reordered = (
 	model: Model,
 	result: Result.Result<ReadonlyArray<V2StatusPageComponent>, LoadFailure>,
 	context: PageContext,
-): Return => {
-	const refreshed = reread({ ...model, isReordering: false }, context)
-	return Result.match(result, {
-		onSuccess: (): Return => refreshed,
+): Return =>
+	Result.match(result, {
+		onSuccess: (): Return =>
+			reread(
+				{
+					...model,
+					isSavingOrder: false,
+					pendingOrder: null,
+					components: {
+						...model.components,
+						data: AsyncData.map(model.components.data, () => listedComponentsOf(model)),
+					},
+				},
+				context,
+			),
 		onFailure: (failure): Return => ({
-			...refreshed,
-			outMessage: errorToast("Couldn't reorder the components", failure),
+			model: { ...model, isSavingOrder: false, orderFailure: failure },
 		}),
 	})
-}
 
 export const askDeleteComponent = (model: Model, componentId: StatusPageComponentId): Return =>
 	canManage(model)
@@ -271,11 +418,12 @@ export const deletedComponent = (
 		onSuccess: (): Return => {
 			const closed = deleteComponentDialog(settled, Dialog.close(settled.deleteComponentDialog))
 			const removedId = model.confirmDeleteComponentId
-			const panel =
+			const isOpen =
 				closed.model.panel?._tag === "Component" && closed.model.panel.componentId === removedId
-					? null
-					: closed.model.panel
-			const refreshed = reread(withoutQueued({ ...closed.model, panel }, removedId), context)
+			const refreshed = reread(
+				isOpen ? { ...closed.model, panel: null, componentForm: emptyComponentForm } : closed.model,
+				context,
+			)
 			return {
 				model: refreshed.model,
 				commands: [...(closed.commands ?? []), ...(refreshed.commands ?? [])],
@@ -302,7 +450,15 @@ export const openAdd = (model: Model): Return => {
 		false,
 	)
 	const session = model.addSession + 1
-	return { model: { ...model, panel: { _tag: "Add", session }, addSession: session, addPicker: picker } }
+	return {
+		model: {
+			...model,
+			panel: { _tag: "Add", session },
+			addSession: session,
+			addPicker: picker,
+			componentForm: emptyComponentForm,
+		},
+	}
 }
 
 /** Whether the Add panel open now is the one `session` started in. */
