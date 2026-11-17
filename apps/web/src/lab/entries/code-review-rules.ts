@@ -56,9 +56,17 @@ export const lab = defineLabWithFlags("Code review rules", {
 	}),
 	update: (model, message) =>
 		Message.match(message, {
-			GotFormMessage: ({ message: inner }) => ({
-				model: { ...model, form: RulesForm.update(model.form, inner).model },
-			}),
+			GotFormMessage: ({ message: inner }) => {
+				const next = RulesForm.update(model.form, inner).model
+				// Nothing is written here, so a save settles at once, as the page settles it on success.
+				return {
+					model: {
+						...model,
+						form:
+							inner._tag === "ClickedSave" ? RulesForm.completeSave(next, Option.none()) : next,
+					},
+				}
+			},
 		}),
 	view,
 })
