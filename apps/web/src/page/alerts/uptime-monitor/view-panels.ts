@@ -1007,7 +1007,7 @@ const checkRows = (monitor: UptimeMonitor): ReadonlyArray<CheckRow> => {
 	)
 }
 
-const CHECK_GRID = "grid grid-cols-[90px_64px_90px_minmax(0,1fr)_80px] items-center gap-3"
+const CHECK_GRID = "grid grid-cols-[130px_64px_90px_minmax(0,1fr)_80px] items-center gap-3"
 
 /** Most failed checks the table lists, newest first. */
 const FAILED_ROWS = 100
@@ -1033,12 +1033,16 @@ const CHECKS_FILTERS = [
 	{ value: "failed", label: "Failed" },
 ] as const
 
-type ChecksBody = Readonly<{ rows: ReadonlyArray<CheckRow> }> | Readonly<{ message: string }>
+type ChecksBody =
+	| Readonly<{ rows: ReadonlyArray<CheckRow>; timeOf: (iso: string) => string }>
+	| Readonly<{ message: string }>
 
-const checksBody = (model: Model, monitor: UptimeMonitor): ChecksBody => {
+const checksBody = (model: Model, monitor: UptimeMonitor, timeZone: string): ChecksBody => {
 	if (model.checksFilter === "all") {
 		const rows = checkRows(monitor)
-		return rows.length === 0 ? { message: "No checks yet" } : { rows }
+		return rows.length === 0
+			? { message: "No checks yet" }
+			: { rows, timeOf: (iso) => formatAlertTime(iso, timeZone) }
 	}
 	const data = model.stats.data
 	if (AsyncData.isFailure(data)) return { message: "The failed checks couldn't load." }
@@ -1047,15 +1051,19 @@ const checksBody = (model: Model, monitor: UptimeMonitor): ChecksBody => {
 		onSome: (stats): ChecksBody => {
 			if (stats.samplesFailed) return { message: "The failed checks couldn't load." }
 			const rows = failedRows(stats)
+			// Past `UPTIME_CHECK_LIST_LIMIT` only the newest checks are listed, so say which.
+			const scope = stats.samplesTruncated
+				? `the newest ${formatNumber(stats.samples.length)} checks`
+				: `the ${WINDOW_LABEL[stats.window]}`
 			return rows.length === 0
-				? { message: `No failed checks in the ${WINDOW_LABEL[stats.window]}` }
-				: { rows }
+				? { message: `No failed checks in ${scope}` }
+				: { rows, timeOf: (iso) => timeLabel(stats.window, iso, timeZone) }
 		},
 	})
 }
 
 export const checksPanel = (h: H, model: Model, monitor: UptimeMonitor, timeZone: string): Html => {
-	const body = checksBody(model, monitor)
+	const body = checksBody(model, monitor, timeZone)
 	// Heartbeats record no check spans, so only the recent pings list.
 	const filter =
 		monitor.kind === "heartbeat"
@@ -1110,7 +1118,7 @@ export const checksPanel = (h: H, model: Model, monitor: UptimeMonitor, timeZone
 							[h.Key(`${row.at}-${index}`), h.Class(cn(CHECK_GRID, "px-4 py-2 text-sm"))],
 							[
 								typography(h, { size: "xs", tone: "muted", mono: true }, [
-									formatAlertTime(row.at, timeZone),
+									body.timeOf(row.at),
 								]),
 								h.span(
 									[

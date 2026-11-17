@@ -261,7 +261,7 @@ describe("uptime monitor page", () => {
 			traceId,
 			phases: null,
 		})
-		const stats = (samples: ReadonlyArray<ReturnType<typeof sample>>) =>
+		const stats = (samples: ReadonlyArray<ReturnType<typeof sample>>, samplesTruncated = false) =>
 			pageUpdate(
 				model,
 				Message.CompletedFetchStats({
@@ -270,7 +270,7 @@ describe("uptime monitor page", () => {
 						window: "24h",
 						points: [],
 						samples,
-						samplesTruncated: false,
+						samplesTruncated,
 						samplesFailed: false,
 						windowStartMs: NOW - 86_400_000,
 						windowEndMs: NOW,
@@ -307,6 +307,14 @@ describe("uptime monitor page", () => {
 			themeResolved(),
 			click(within(checks, role("button", { name: "Failed" }))),
 			expectView(within(checks, text("No failed checks in the last 24 hours"))).toExist(),
+		)
+		// A window past the list's limit lists only its newest checks, and says so.
+		scene(
+			{ update: pageUpdate, view },
+			given(stats([sample(30, true, Str.repeat(32)("a"), null)], true)),
+			themeResolved(),
+			click(within(checks, role("button", { name: "Failed" }))),
+			expectView(within(checks, text("No failed checks in the newest 1 checks"))).toExist(),
 		)
 	})
 
