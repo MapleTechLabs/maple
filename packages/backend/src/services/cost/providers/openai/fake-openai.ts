@@ -1,11 +1,9 @@
 // A fake OpenAI for tests: the organization costs endpoint answered from a mutable world, with every
 // call recorded. Like the real API it answers a bucket for every day of the range, empty or not,
 // sums costs by the `group_by` fields, and pages buckets with an opaque cursor.
-import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
-import { DateTime, Effect, Layer, Array as Arr, Record as Rec, String as Str } from "effect"
+import { DateTime, Layer, Array as Arr, Record as Rec, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import type { TestDb } from "@maple/backend/testing/test-pglite"
 import { CostConnectionStore } from "../../CostConnectionStore"
 import { fakeCostEnvConfig } from "../fake-cost-env"
@@ -38,8 +36,6 @@ export interface FakeOpenAi {
 	repeatCursor: boolean
 	/** The `openai-organization` header every answer carries, which names the key's owner; none when undefined. */
 	organizationHeader: string | undefined
-	/** Whether the org is in the `cloudCost` rollout. */
-	cloudCost: boolean
 	readonly urls: Array<string>
 	readonly authorizations: Array<string | null>
 }
@@ -52,7 +48,6 @@ export const makeFakeOpenAi = (overrides: Partial<FakeOpenAi> = {}): FakeOpenAi 
 	dropCursor: false,
 	repeatCursor: false,
 	organizationHeader: undefined,
-	cloudCost: true,
 	urls: [],
 	authorizations: [],
 	...overrides,
@@ -148,20 +143,7 @@ const fetchStub =
 /** Everything the OpenAI cost services need, over the fake and a test database. */
 export const fakeOpenAiDeps = (testDb: TestDb, world: FakeOpenAi) =>
 	Layer.effect(CostConnectionStore, CostConnectionStore.make).pipe(
-		Layer.provideMerge(
-			Layer.mergeAll(
-				FetchHttpClient.layer,
-				Layer.succeed(OrganizationFeatureFlagsService, {
-					flags: () =>
-						Effect.sync(() => ({
-							...DISABLED_ORGANIZATION_FEATURE_FLAGS,
-							cloudCost: world.cloudCost,
-						})),
-				}),
-				testDb.layer,
-				Env.layer,
-			),
-		),
+		Layer.provideMerge(Layer.mergeAll(FetchHttpClient.layer, testDb.layer, Env.layer)),
 		Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchStub(world))),
 		Layer.provide(fakeCostEnvConfig()),
 	)

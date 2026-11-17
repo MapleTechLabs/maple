@@ -73,8 +73,6 @@ const makeHarness = (
 	options: {
 		readonly awsAvailable: boolean
 		readonly warehouseRows?: ReadonlyArray<unknown>
-		/** The org is in the `cloudCost` rollout, so `cost` is offered. */
-		readonly cloudCost?: boolean
 	} = {
 		awsAvailable: true,
 	},
@@ -96,14 +94,11 @@ const makeHarness = (
 			HttpV2AwsIntegrationsLive.pipe(
 				Layer.provide(
 					Layer.mergeAll(
-						// Outside the `cloudCost` rollout unless a test asks for it: `cost` is then planned.
+						// Outside every rollout: `security` is then planned.
 						Layer.effect(AwsConnectionService, AwsConnectionService.make).pipe(
 							Layer.provide([
 								FetchHttpClient.layer,
-								OrganizationFeatureFlagsService.fixed({
-									...DISABLED_ORGANIZATION_FEATURE_FLAGS,
-									cloudCost: options.cloudCost === true,
-								}),
+								OrganizationFeatureFlagsService.fixed(DISABLED_ORGANIZATION_FEATURE_FLAGS),
 							]),
 						),
 						Layer.effect(AwsIngestService, AwsIngestService.make),
@@ -256,8 +251,8 @@ describe("v2 aws integration over HTTP", () => {
 		await harness.dispose()
 	})
 
-	it("offers and accepts the cost module for an org in the cloudCost rollout", async () => {
-		const harness = makeHarness({ awsAvailable: true, cloudCost: true })
+	it("offers and accepts the cost module for every org", async () => {
+		const harness = makeHarness()
 		const admin = await harness.adminKey()
 		const availability = (body: { modules: ReadonlyArray<{ module: string; available: boolean }> }) =>
 			Arr.map(
@@ -296,7 +291,7 @@ describe("v2 aws integration over HTTP", () => {
 		).toBe(400)
 		const planned = await harness.request("POST", CONNECTIONS, admin.secret, {
 			account_id: "123456789012",
-			modules: ["cost"],
+			modules: ["inventory"],
 		})
 		expect(planned.status).toBe(400)
 		const elsewhere = await harness.request("POST", CONNECTIONS, admin.secret, {
@@ -325,7 +320,9 @@ describe("v2 aws integration over HTTP", () => {
 		const unchanged = await harness.request("PATCH", path, admin.secret, {})
 		expect(unchanged.status).toBe(200)
 		expect(unchanged.body.modules).toEqual([])
-		expect((await harness.request("PATCH", path, admin.secret, { modules: ["cost"] })).status).toBe(400)
+		expect((await harness.request("PATCH", path, admin.secret, { modules: ["inventory"] })).status).toBe(
+			400,
+		)
 		await harness.request("DELETE", path, admin.secret)
 		const missing = await harness.request("PATCH", path, admin.secret, { modules: [] })
 		expect(missing.status).toBe(404)

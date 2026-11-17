@@ -1,6 +1,6 @@
 # Cloud cost: plan
 
-Status: **phase 1 built, 2026-11-11, behind the `cloudCost` org flag.** AWS spend is synced daily
+Status: **phase 1 built 2026-11-11; open to every org, free during the beta, since 2026-11-17 (the `cloudCost` flag is gone).** AWS spend is synced daily
 into `cost_daily` and shown on `/cost`. OpenRouter, GitHub, Vercel and Cloudflare followed on
 2026-11-12, PlanetScale, Anthropic and OpenAI on 2026-11-13.
 Phase 0 checked the provider APIs against docs, public schemas and one real AWS account.
@@ -33,7 +33,7 @@ Non-goals for v1:
 | Provider-polled daily table   | `search_console_daily` and `SearchConsoleImportService`                  | model for `cost_daily`           |
 | Finding lifecycle             | `security_audit_findings` (fingerprint, open, fixed, dismissed, reopen)  | model for `cost_recommendations` |
 | Notifications                 | `NotificationDispatcher`, managed alert signal types                     | budgets and anomalies            |
-| Org rollout flags             | `packages/domain/src/organization-feature-flags.ts`                      | a `cloudCost` flag               |
+| Org rollout flags             | `packages/domain/src/organization-feature-flags.ts`                      | none: cost is on for every org   |
 | Utilization metrics           | `aws.*`, `gcp.*`, `railway.*`, `planetscale_*`, Supabase `pg_*`/`node_*` | evidence for Maple's own rules   |
 
 An earlier standalone prototype (the `maple-cost` repo) has a FOCUS-based cost line model, decimal
@@ -144,8 +144,7 @@ What bounds the provider's bill for requests:
   20), and detail for the 12 largest regions at most.
 - Per source and month: past 500 requests history waits for the next month, past 1,500 the source
   stops until then.
-- A pull too large to read or to store is held a day. A source whose org left the rollout is not
-  pulled, and is asked about again within the hour.
+- A pull too large to read or to store is held a day.
 - A source resuming after a gap starts at the month before its watermark's, so days pulled while
   their month was still open get their final amounts.
 
@@ -179,8 +178,7 @@ the alerting ones and nothing is built twice. The generic rule APIs refuse it.
   replaced as soon as a sync writes.
 - A new period starts at zero, which resolves an open incident.
 - A budget that is spent opens no error issue and starts no investigation.
-- Writes need `alerts:manage`; everyone in the org can read. At most 50 budgets per org. An org
-  that leaves the rollout can still delete its budgets, which go on being checked.
+- Writes need `alerts:manage`; everyone in the org can read. At most 50 budgets per org.
 - A budget's checks are served by the public rule API, like an SLO's: they say no more than
   its incidents.
 
@@ -189,7 +187,7 @@ that only shows then is not alerted on, because a check reads the current period
 
 ### Surfaces
 
-- Web: `/cost` behind the `cloudCost` flag. One page: the window against the period before, a
+- Web: `/cost` (sidebar row "Cloud cost", Beta). One page: the window against the period before, a
   daily chart, a breakdown by service, provider, category, region, resource or account, a filter
   rail with a section per dimension, and each source's sync state. A row click narrows to the
   row and regroups by the next dimension (a service under a region goes on to its resources).
@@ -656,7 +654,7 @@ Each phase is one PR stack.
 
 1. **Core and AWS spend.** Domain model, `cost_daily`, `cost_sources`, the sync lane, the Cost
    Explorer adapter, the AWS module turned on, `/v2/cost`, and the Overview, Explorer and Sources
-   pages behind `cloudCost`.
+   pages (behind a `cloudCost` flag until 2026-11-17).
 2. **Recommendations.** Table, lifecycle, API, list and detail pages, MCP tools. Hub and Savings
    Plan imports. First Maple rules, each backed by a metric already ingested: load balancers with
    no requests, databases with idle connections and low CPU, container services reserving far more
