@@ -9,6 +9,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import {
 	GitCommitSha,
 	type PullRequestEventJob,
+	type PullRequestApprovalOutcome,
 	type PullRequestReviewPublication,
 	type PullRequestReviewThread,
 	type VcsSyncJob,
@@ -106,6 +107,8 @@ const layerFor = (
 		readonly aborted?: Array<string>
 		readonly published?: Array<PullRequestReviewPublication>
 		readonly withdrawals?: Array<string>
+		/** What the provider answers a publication that asks for an approval. */
+		readonly approvalOutcome?: PullRequestApprovalOutcome
 		readonly publishFails?: boolean
 		readonly busy?: boolean
 		readonly withWorkerEnv?: boolean
@@ -272,6 +275,9 @@ const layerFor = (
 						inlineComments: Arr.flatMap(publication.comments, (comment, i) =>
 							comment.key === undefined ? [] : [{ key: comment.key, commentId: `c-${i}` }],
 						),
+						...(publication.approval === undefined || options.approvalOutcome === undefined
+							? undefined
+							: { approval: options.approvalOutcome }),
 					})
 		},
 	}
@@ -2537,6 +2543,31 @@ describe("PrReviewService auto-approve", () => {
 			)
 			assert.deepStrictEqual(withdrawals, ["612:its latest review ended early"])
 		}).pipe(Effect.provide(layerFor(testDb, { published, withdrawals })))
+	})
+
+	it.effect("says why the provider would not give the approval the review asked for", () => {
+		const testDb = createTestDb(trackedDbs)
+		const published: Array<PullRequestReviewPublication> = []
+		const comments: Array<string> = []
+		return Effect.gen(function* () {
+			const repositoryId = yield* seed(true)
+			const repo = yield* VcsRepository
+			yield* repo.setPrReviewConfig(
+				orgId,
+				repositoryId,
+				new PrReviewRepositoryConfig({ autoApprove: true }),
+			)
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({ report: lowRisk() }),
+			)
+			assert.strictEqual(published[0].approval?.action, "approve")
+			assert.notInclude(published[0].summaryComment.body, "Not auto-approved")
+			assert.include(comments.at(-1) ?? "", "<br>Not auto-approved: the pull request is a draft</sub>")
+		}).pipe(Effect.provide(layerFor(testDb, { published, comments, approvalOutcome: "draft" })))
 	})
 
 	it.effect("says why it did not approve a review with nothing to score", () => {
