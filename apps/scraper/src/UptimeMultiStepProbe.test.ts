@@ -6,7 +6,7 @@ import { HostResolver } from "@maple/safe-fetch/dns"
 import { type RecordedRequest, stubFetch } from "./testing/stub-fetch"
 import { fixedResolver } from "./testing/uptime"
 import { UptimeHttpProbe } from "./UptimeHttpProbe"
-import { UptimeMultiStepProbe } from "./UptimeMultiStepProbe"
+import { hideFilledHost, UptimeMultiStepProbe } from "./UptimeMultiStepProbe"
 
 const ProbeLive = UptimeMultiStepProbe.layer.pipe(
 	Layer.provide(UptimeHttpProbe.layer),
@@ -204,4 +204,29 @@ describe("UptimeMultiStepProbe", () => {
 			assert.strictEqual(recorded.length, 1)
 		}).pipe(Effect.provide(ProbeLive)),
 	)
+})
+
+describe("hideFilledHost", () => {
+	const dnsFailure = (host: string) => ({
+		ok: false,
+		durationMs: 3,
+		statusCode: null,
+		error: `Couldn't resolve ${host}`,
+		errorType: "dns" as const,
+	})
+
+	it("keeps a host a variable filled out of the error, and a configured one in it", () => {
+		assert.strictEqual(
+			hideFilledHost(
+				dnsFailure("tenant-7.a.dev"),
+				"https://{{tenant}}.a.dev/x",
+				"https://tenant-7.a.dev/x",
+			).error,
+			"Couldn't resolve the step's host",
+		)
+		assert.strictEqual(
+			hideFilledHost(dnsFailure("a.dev"), "https://a.dev/{{id}}", "https://a.dev/42").error,
+			"Couldn't resolve a.dev",
+		)
+	})
 })

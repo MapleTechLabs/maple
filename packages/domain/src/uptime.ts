@@ -469,6 +469,8 @@ export const describeStaleProbe = (lastCheckAt: number | null, nowMs: number): s
 	lastCheckAt === null ? "No check result yet" : `No check result since ${sinceText(lastCheckAt, nowMs)}`
 
 const VARIABLE_REFERENCE = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/gu
+/** One reference with its name captured, for splitting a template into literal parts and names. */
+const VARIABLE_PART = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/u
 
 /** The variable names a template refers to, in order. */
 export const variablesIn = (template: string): ReadonlyArray<string> =>
@@ -484,13 +486,13 @@ export const interpolate = (
 ): Result.Result<string, string> => {
 	const missing = Arr.findFirst(variablesIn(template), (name) => !Rec.has(variables, name))
 	if (Option.isSome(missing)) return Result.fail(missing.value)
-	// Names are `[A-Za-z0-9_]`, safe in a pattern; `$` in a value is escaped so it is never a backreference.
+	// One pass over the template: split on the capturing pattern puts each name at an odd index, so a
+	// value is inserted literally and never read as a template or a replacement pattern.
+	const parts = Str.split(template, VARIABLE_PART)
 	return Result.succeed(
-		Arr.reduce(Arr.dedupe(variablesIn(template)), template, (filled, name) =>
-			Str.replace(
-				new RegExp(`\\{\\{\\s*${name}\\s*\\}\\}`, "gu"),
-				Str.replaceAll("$", "$$$$")(variables[name] ?? ""),
-			)(filled),
+		Arr.join(
+			Arr.map(parts, (part, index) => (index % 2 === 1 ? (variables[part] ?? "") : part)),
+			"",
 		),
 	)
 }
@@ -520,6 +522,13 @@ export const multiStepConfigProblem = (config: UptimeMultiStepConfig): string | 
 			return { ...acc, problem: `${label}: another step already has this name` }
 		if (step.body !== undefined && (step.method === "GET" || step.method === "HEAD"))
 			return { ...acc, problem: `${label}: a request body needs POST, PUT, PATCH or DELETE` }
+		// The probe keeps its user-agent across redirects to other hosts, so it never carries a variable.
+		const agent = Arr.findFirst(
+			Rec.toEntries(step.headers),
+			([name, value]) => Str.toLowerCase(name) === "user-agent" && variablesIn(value).length > 0,
+		)
+		if (Option.isSome(agent))
+			return { ...acc, problem: `${label}: the User-Agent header can't use a variable` }
 		const unknown = Arr.findFirst(
 			Arr.flatMap(stepTemplates(step), variablesIn),
 			(name) => !acc.known.has(name),
@@ -535,6 +544,11 @@ export const multiStepConfigProblem = (config: UptimeMultiStepConfig): string | 
 				...acc,
 				problem: `${label} extracts ${duplicate.value.name}, which an earlier step already set`,
 			}
+		const repeated = Arr.findFirst(step.extract, (extraction, at) =>
+			Arr.some(step.extract.slice(0, at), (earlier) => earlier.name === extraction.name),
+		)
+		if (Option.isSome(repeated))
+			return { ...acc, problem: `${label} extracts ${repeated.value.name} twice` }
 		return { known: new Set([...acc.known, ...Arr.map(step.extract, (e) => e.name)]), problem: null }
 	})
 	return problem.problem

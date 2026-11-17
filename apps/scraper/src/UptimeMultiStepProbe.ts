@@ -57,6 +57,16 @@ const contentTypeOf = (headers: Readonly<Record<string, string>>): string | unde
 		),
 	)
 
+/**
+ * `outcome` with the sent host replaced by "the step's host" in its error, when a variable filled
+ * that host: a response may have supplied it, and the error reaches the monitor page and spans.
+ */
+export const hideFilledHost = (outcome: ProbeOutcome, template: string, sent: string): ProbeOutcome => {
+	const host = URL.parse(sent)?.hostname ?? ""
+	if (outcome.error === null || host === "" || Str.includes(host)(template)) return outcome
+	return { ...outcome, error: Str.replaceAll(host, "the step's host")(outcome.error) }
+}
+
 interface Progress {
 	readonly variables: Readonly<Record<string, string>>
 	readonly runs: ReadonlyArray<UptimeStepRun>
@@ -133,7 +143,8 @@ export class UptimeMultiStepProbe extends Context.Service<UptimeMultiStepProbe, 
 							...outcome,
 							error: `The run took longer than ${formatSeconds(runTimeoutMs)}`,
 						})
-					if (!outcome.ok || observation === null) return yield* finish(outcome)
+					if (!outcome.ok || observation === null)
+						return yield* finish(hideFilledHost(outcome, step.url, url))
 					const extracted = extractVariables(step.extract, observation)
 					return Result.isFailure(extracted)
 						? yield* finish(

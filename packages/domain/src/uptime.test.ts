@@ -287,6 +287,8 @@ describe("multi-step checks", () => {
 		expect(interpolate("Bearer {{token}}", {})).toEqual(Result.fail("token"))
 		// A `$` in a value is sent as is, never read as a replacement pattern.
 		expect(interpolate("{{a}}/{{a}}", { a: "p$&q$1" })).toEqual(Result.succeed("p$&q$1/p$&q$1"))
+		// A value that looks like a reference is sent as is, not filled in again.
+		expect(interpolate("{{a}}/{{b}}", { a: "{{b}}", b: "42" })).toEqual(Result.succeed("{{b}}/42"))
 	})
 
 	it("refuses a variable no earlier step sets, a body on GET, a variable or step name used twice", () => {
@@ -309,6 +311,20 @@ describe("multi-step checks", () => {
 					step("B", "https://a.dev/{{x}}"),
 				],
 				[step("A", "https://a.dev/one"), step("A", "https://a.dev/two")],
+				[
+					step("A", "https://a.dev", {
+						extract: [
+							{ name: "x", from: { _tag: "header", name: "X-One" } },
+							{ name: "x", from: { _tag: "header", name: "X-Two" } },
+						],
+					}),
+				],
+				[
+					step("A", "https://a.dev", {
+						extract: [{ name: "x", from: { _tag: "header", name: "X" } }],
+					}),
+					step("B", "https://a.dev", { headers: { "User-Agent": "probe {{x}}" } }),
+				],
 			],
 			(steps) => multiStepConfigProblem(decode({ _tag: "multistep", timeoutMs: 30_000, steps })),
 		)
@@ -318,6 +334,8 @@ describe("multi-step checks", () => {
 			"Step 2 (B) extracts x, which an earlier step already set",
 			null,
 			"Step 2 (A): another step already has this name",
+			"Step 1 (A) extracts x twice",
+			"Step 2 (B): the User-Agent header can't use a variable",
 		])
 	})
 
