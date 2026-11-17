@@ -183,6 +183,8 @@ export const Model = Schema.Struct({
 	/** Edits over the saved page; `null` while the form shows the page as saved. */
 	settingsEdits: Schema.NullOr(SettingsForm),
 	isSavingSettings: Schema.Boolean,
+	/** Basic settings' Save: Who can view saves once the fields have, so neither reply overwrites the other's page. */
+	savesAccessNext: Schema.Boolean,
 	settingsFailure: Schema.NullOr(LoadFailure),
 	isPublishing: Schema.Boolean,
 	breakGlassDialog: Dialog.Model,

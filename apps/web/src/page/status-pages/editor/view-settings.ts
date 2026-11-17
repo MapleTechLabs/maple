@@ -26,7 +26,7 @@ import {
 	settingsFormOf,
 	settingsIssues,
 } from "../shared/form"
-import { accessSaveBar, accessSection } from "./view-access"
+import { accessSaveBar, accessSaveContext, accessSection } from "./view-access"
 import { appearanceSection, brandingSection } from "./view-appearance"
 import { customDomainSection } from "./view-domain"
 import { jsonTab } from "./view-json"
@@ -36,6 +36,7 @@ import { pageUrlOf } from "./update-domain"
 import { Message } from "./message"
 import { canBreakGlass, canManage, type Model } from "./model"
 import { gatedControl } from "../../kit/session-grants"
+import { accessIssue, isAccessDirty } from "./update-access"
 import { isSettingsDirty, settingsOf } from "./update-settings"
 import { PREVIEWED_SECTIONS } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -423,8 +424,23 @@ export const settingsLayout = (
 }
 
 /**
+ * Basic settings' fields and Who can view as one bar: Save and Discard act on both, so neither's
+ * edits are left without a way to save them.
+ */
+const basicSaveBar = (h: H, model: Model, page: V2StatusPage, form: SettingsForm): ReadonlyArray<Html> =>
+	saveBar(h, {
+		isDirty: true,
+		isPending: model.isSavingSettings || model.accessAction !== null,
+		context: saveContext(model, form, "basic") ?? accessSaveContext(model, page),
+		onDiscard: Message.ClickedDiscardBasic(),
+		onSave: Message.ClickedSaveBasic(),
+		isSaveDisabled: hasSettingsIssues(form) || model.isApplyingJson || accessIssue(model, page) !== null,
+	})
+
+/**
  * One bar at a time: under Monitors a moved order or an open component's edits, and under Basic
- * settings a changed Who can view, take it over the page's settings.
+ * settings a changed Who can view, take it over the page's settings; Basic settings with both
+ * edited saves both.
  */
 const saveBars = (
 	h: H,
@@ -433,6 +449,8 @@ const saveBars = (
 	form: SettingsForm,
 	section: SettingsSection,
 ): ReadonlyArray<Html> => {
+	if (section === "basic" && isAccessDirty(model) && isSettingsDirty(model))
+		return basicSaveBar(h, model, page, form)
 	const sectionBar =
 		section === "monitors"
 			? monitorsSaveBar(h, model)

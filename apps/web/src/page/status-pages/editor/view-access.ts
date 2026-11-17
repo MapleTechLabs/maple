@@ -105,7 +105,7 @@ const passwordField = (h: H, model: Model, page: V2StatusPage): Html =>
 	})
 
 /** What Save changes, or why it cannot. */
-const saveContext = (model: Model, page: V2StatusPage): string => {
+export const accessSaveContext = (model: Model, page: V2StatusPage): string => {
 	const issue = accessIssue(model, page)
 	if (issue !== null) return issue
 	const picked = Arr.findFirst(VISIBILITIES, (option) => option.value === model.visibilityDraft)
@@ -123,7 +123,7 @@ export const accessSaveBar = (h: H, model: Model, page: V2StatusPage): ReadonlyA
 	saveBar(h, {
 		isDirty: isAccessDirty(model),
 		isPending: model.accessAction !== null,
-		context: saveContext(model, page),
+		context: accessSaveContext(model, page),
 		onDiscard: Message.ClickedDiscardAccess(),
 		onSave: Message.ClickedSaveAccess(),
 		isSaveDisabled: accessIssue(model, page) !== null || model.accessAction !== null,

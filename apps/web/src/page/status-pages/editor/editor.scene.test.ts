@@ -2983,6 +2983,33 @@ describe("settings", () => {
 		)
 	})
 
+	test("with the fields and Who can view both edited, one bar saves the fields, then who can view", () => {
+		const edited = Arr.reduce(
+			[
+				Message.ChangedSetting({ field: "name", value: "Acme Cloud" }),
+				Message.PickedVisibility({ visibility: "internal" }),
+			],
+			loaded(ACCESS),
+			(model, message) => pageUpdate(model, message).model,
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(edited),
+			expectAll(all.role("button", { name: "Save" })).toHaveCount(1),
+		)
+		const saving = pageUpdate(edited, Message.ClickedSaveBasic())
+		expect(names(saving.commands)).toEqual(["SaveStatusPageSettings"])
+		const saved = pageUpdate(
+			saving.model,
+			Message.CompletedSaveSettings({ result: Result.succeed(statusPage({ name: "Acme Cloud" })) }),
+		)
+		expect(names(saved.commands)).toEqual(["SaveStatusPageVisibility"])
+		expect(saved.model.visibilityDraft).toBe("internal")
+		const discarded = pageUpdate(edited, Message.ClickedDiscardBasic()).model
+		expect(discarded.settingsEdits).toBeNull()
+		expect(discarded.visibilityDraft).toBeNull()
+	})
+
 	test("Save sends the password before the visibility, and the password never rides a command's args", () => {
 		const typed = Arr.reduce(
 			[
