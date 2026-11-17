@@ -2561,7 +2561,7 @@ describe("PrReviewService auto-approve", () => {
 			)
 			assert.include(
 				published[0].summaryComment.body,
-				"**Nothing to review**\n<sub>Not auto-approved: the verdict is not_applicable",
+				"**Nothing to review**<br><sub>Not auto-approved: the verdict is not_applicable",
 			)
 		}).pipe(Effect.provide(layerFor(testDb, { published })))
 	})

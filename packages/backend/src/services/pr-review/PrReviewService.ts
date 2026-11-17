@@ -796,7 +796,7 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 	const lines: Array<string> = []
 	if (input.heading) lines.push("## Maple review", "")
 	if (confidence === undefined) {
-		lines.push("**Nothing to review**", ...(refused === undefined ? [] : [`<sub>${refused}</sub>`]), "")
+		lines.push(`**Nothing to review**${refused === undefined ? "" : `<br><sub>${refused}</sub>`}`, "")
 	} else {
 		// An early end is already the warning below; the reason would only say it again.
 		const reason =
