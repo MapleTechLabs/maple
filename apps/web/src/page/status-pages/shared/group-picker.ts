@@ -60,8 +60,11 @@ export type GroupPickerStep = Readonly<{
 
 export const updateGroupPicker = (picker: Combobox.Model, message: Combobox.Message): GroupPickerStep => {
 	const step = Combobox.update(picker, message)
+	// The field shows the component's group, not the item picked: a pick or a close leaves no search
+	// typed (a single combobox would keep the item's value, `create:Test`, as its input).
+	const isSettled = step.outMessage?._tag === "ChangedValue" || !step.model.isOpen
 	return {
-		picker: step.model,
+		picker: isSettled ? { ...step.model, inputValue: "", selected: [] } : step.model,
 		commands: step.commands ?? [],
 		picked:
 			step.outMessage?._tag === "ChangedValue"
@@ -115,13 +118,15 @@ export const groupPickerField = <M>(h: HtmlBuilder<M>, options: GroupPickerViewO
 			view: comboboxPicker,
 			toParentMessage: options.toMessage,
 			viewInputs: {
-				items: groupPickerItems(picker, options.groups),
+				// A group just created, not saved yet, is listed (and ticked) too.
+				items: groupPickerItems(picker, groupsOf([...options.groups, current])),
 				ariaLabel: current === "" ? "Group" : `Group: ${current}`,
 				searchPlaceholder: "Find or create a group…",
 				emptyText: "Type a name to create a group",
 				trigger: [current === "" ? "No group" : current],
 				isPlaceholder: current === "",
 				triggerClassName: "w-full",
+				popupWidth: "trigger",
 				renderItem,
 				toView: (parts) => h.div([h.Class("min-w-0")], parts),
 			},

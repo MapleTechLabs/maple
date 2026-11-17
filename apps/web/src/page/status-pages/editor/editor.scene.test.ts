@@ -945,6 +945,14 @@ describe("components under Settings > Monitors", () => {
 			picker(Combobox.Message.ChangedInput({ value: " Payments " })),
 			picker(Combobox.Message.ClickedItem({ value: groupPickerValue.create("Payments") })),
 		])
+		// The pick leaves the field on the group, with nothing typed in its search.
+		expect(created.groupPicker.inputValue).toBe("")
+		scene(
+			{ update: pageUpdate, view },
+			given(steps(created, [picker(Combobox.Message.ClickedTriggerOf({ items: [] }))])),
+			comboMounted,
+			expectView(role("option", { name: "Payments" })).toExist(),
+		)
 		scene(
 			{ update: pageUpdate, view },
 			given(created),
