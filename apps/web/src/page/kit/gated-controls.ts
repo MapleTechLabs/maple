@@ -6,6 +6,9 @@ import type { MenuEntry } from "@maple/views/ui/menu-view"
 import { button, linkButton } from "@maple/views/ui/button"
 import { denialReason, gatedControl } from "./session-grants"
 
+// Controls behind a permission, drawn disabled with who can use them for a viewer without it: menu
+// items, switches, link buttons, and any control when the view only has the verdict.
+
 type Grants = Readonly<{ grants: ReadonlyArray<Policy.Permission> }>
 
 const hasGrant = (model: Grants, permission: Policy.Permission): boolean =>
