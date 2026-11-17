@@ -558,19 +558,30 @@ done
 rm -rf "$events_template" "$events_logs"
 `
 
-/** Deletes the findings forwarder from every enabled region it is in, six regions at a time. */
-const removeEventsForwarders = (stackName: string) => `started=0
+/**
+ * Deletes the findings forwarder from every enabled region it is in, six regions at a time. A region
+ * whose delete was refused is named with what to delete there by hand; the rest still go.
+ */
+const removeEventsForwarders = (stackName: string) => `events_removed="$(mktemp -d)"
+started=0
 for region in $(aws ec2 describe-regions --region ${AWS_STACK_REGION} --query 'Regions[].RegionName' --output text); do
   (
     if aws cloudformation describe-stacks --region "$region" --stack-name ${stackName} >/dev/null 2>&1; then
       echo "Removing the findings forwarder from $region..."
-      aws cloudformation delete-stack --region "$region" --stack-name ${stackName} || true
+      aws cloudformation delete-stack --region "$region" --stack-name ${stackName} 2>"$events_removed/$region" ||
+        mv "$events_removed/$region" "$events_removed/$region.failed"
     fi
   ) &
   started=$((started + 1))
   if [ $((started % 6)) -eq 0 ]; then wait; fi
 done
 wait
+for failed in "$events_removed"/*.failed; do
+  [ -e "$failed" ] || continue
+  echo "Could not remove the findings forwarder from $(basename "$failed" .failed); delete the ${stackName} stack there:" >&2
+  tail -n 3 "$failed" >&2
+done
+rm -rf "$events_removed"
 `
 
 /** Deploys the metric stream stack to each of the stream's regions. */
