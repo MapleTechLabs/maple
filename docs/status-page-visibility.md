@@ -1,7 +1,7 @@
 # Status page visibility
 
 A status page is `public`, `password` or `internal` (`status_pages.visibility`). Changing it,
-and setting or removing the page password, needs `status_pages:access` (org admins) and is
+and setting or removing the page password, needs `status_pages:access` (engineers and admins) and is
 audited (`status_page.updated` / `config_applied` with the field, `status_page.password_set`,
 `status_page.password_removed`).
 
