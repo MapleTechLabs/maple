@@ -1,4 +1,5 @@
-import type { StatusPageVisibility } from "@maple/domain"
+import type { StatusPageComponentStatus, StatusPageVisibility } from "@maple/domain"
+import type { V2StatusPageIncident } from "@maple/domain/http/v2"
 import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr } from "effect"
@@ -6,31 +7,51 @@ import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
+import {
+	empty,
+	emptyContent,
+	emptyDescription,
+	emptyFrameClass,
+	emptyHeader,
+	emptyMedia,
+	emptyTitle,
+} from "@maple/views/ui/empty"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { errorState } from "@maple/views/ui/error-state"
 import { eyebrow } from "@maple/views/ui/eyebrow"
+import { heading } from "@maple/views/ui/heading"
 import { icon } from "@maple/views/ui/icon"
+import { panel } from "@maple/views/ui/panel"
 import { skeleton } from "@maple/views/ui/skeleton"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { textLink } from "@maple/views/ui/text-link"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { relativeTime } from "../../kit/relative-time"
+import { docsLink } from "../../kit/signal-empty-state"
+import { formatDaysUptime } from "../../kit/uptime/derive"
+import { uptimeDaysStrip } from "../../kit/uptime/view"
 import { emptyActions } from "@maple/views/ui/signal-empty-state"
-import { rowNameLink } from "@maple/views/ui/table"
 import { newStatusPageHref, publicAddress, statusPageHref } from "../shared/commands"
-import { COMPONENT_STATUS_LABEL, COMPONENT_STATUS_TONE, type StatusPageSummary } from "../shared/derive"
+import {
+	COMPONENT_STATUS_LABEL,
+	COMPONENT_STATUS_TONE,
+	SUMMARY_UPTIME_DAYS,
+	type StatusPageSummary,
+	type SummaryComponent,
+} from "../shared/derive"
+import { windowLine } from "../editor/view-panel"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { gatedControl } from "../../kit/session-grants"
-import { typography, typographyClass } from "@maple/views/ui/typography"
+import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
-import { borderedBox } from "@maple/views/ui/bordered-box"
-import { dividedList } from "@maple/views/ui/rule"
+import { stripClass } from "@maple/views/ui/rule"
 
-// `/status-pages`: the page table, and the builder's on-ramp when there is none.
+// `/status-pages`: one card per page with its components as visitors see them, their daily
+// uptime, open incidents and the next maintenance; the builder's on-ramp when there is none.
 
 type H = HtmlBuilder<Message>
-
 type ViewInputs = Readonly<{ nowMs: number; timeZone: string }>
 
 /** The builder link; a disabled button for a viewer who may not edit status pages. */
@@ -42,24 +63,55 @@ const newPageButton = (h: H, model: Model, label: string): Html =>
 			: linkButton(h, { size: "sm", href: newStatusPageHref() }, children)
 	})
 
-const ROW_GRID =
-	"grid grid-cols-[minmax(220px,1.6fr)_minmax(130px,0.8fr)_96px_112px_128px] items-center gap-x-5"
+// EMPTY
 
-/** No page yet: what a status page is, and the builder. */
+const EXAMPLE_POINTS = [
+	"Components follow your uptime monitors, with daily uptime bars.",
+	"You post incidents and planned maintenance; visitors can subscribe.",
+	"Served apart from Maple, so it stays up when Maple does not.",
+] as const
+
+/** No page yet: what a status page is, the docs and the builder. */
 const emptyState = (h: H, model: Model): Html =>
 	empty(
 		h,
 		[
-			emptyHeader(h, [
-				emptyMedia(h, { variant: "icon" }, [icon(h, "WindowChartLineIcon", { size: 18 })]),
-				emptyTitle(h, ["No status pages yet"]),
-				emptyDescription(h, [
-					"A public page that tells your customers what is up. Components follow your uptime monitors, incidents are written by you, and the page stays online when Maple is not.",
-				]),
-			]),
-			emptyActions(h, [newPageButton(h, model, "Create a status page")]),
+			emptyHeader(
+				h,
+				[
+					emptyMedia(h, { variant: "icon" }, [icon(h, "WindowChartLineIcon", { size: 18 })]),
+					emptyTitle(h, ["No status pages yet"]),
+					emptyDescription(h, [
+						"A status page tells your customers whether your product works: a hosted page with your components' current status and uptime, open incidents and planned maintenance.",
+					]),
+				],
+				"max-w-lg",
+			),
+			emptyContent(
+				h,
+				[
+					vstack(
+						h,
+						{ gap: "2", as: "ul", className: "text-left" },
+						Arr.map(EXAMPLE_POINTS, (point) =>
+							hstack(h, { gap: "2", align: "start", as: "li" }, [
+								icon(h, "CheckIcon", {
+									size: 14,
+									className: "mt-0.5 shrink-0 text-severity-info",
+								}),
+								typography(h, { size: "sm", tone: "muted" }, [point]),
+							]),
+						),
+					),
+					emptyActions(h, [
+						newPageButton(h, model, "Create a status page"),
+						docsLink(h, "statusPages", "How status pages work"),
+					]),
+				],
+				"max-w-lg gap-6",
+			),
 		],
-		"py-12",
+		emptyFrameClass("dashed"),
 	)
 
 /** The API's answer for an org outside the rollout: a state of the org, not a failed load. */
@@ -81,6 +133,8 @@ const notEnabledState = (h: H): Html =>
 		"py-12",
 	)
 
+// CARD HEADER
+
 /** Who can read each page, at a glance. */
 const VISIBILITY_BADGE = {
 	public: { label: "Public", variant: "outline" },
@@ -93,110 +147,228 @@ const VISIBILITY_BADGE = {
 
 const lastPublished = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Html => {
 	const page = summary.page
-	if (page.draft)
-		return hstack(h, { align: "stretch", justify: "end", as: "span" }, [
-			badge(h, { variant: "meta" }, ["Draft"]),
-		])
+	if (page.draft) return badge(h, { variant: "meta" }, ["Draft"])
 	if (page.last_publish_error !== null)
-		return h.span(
-			[h.Class("text-right text-xs text-destructive-foreground"), h.Title(page.last_publish_error)],
+		return typography(
+			h,
+			{ size: "xs", tone: "destructive", attributes: [h.Title(page.last_publish_error)] },
 			["Publish failed"],
 		)
-	return page.published_at === null
-		? typography(h, { size: "xs", tone: "muted", className: "text-right" }, ["Not published"])
-		: relativeTime(h, {
-				value: page.published_at,
-				nowMs: inputs.nowMs,
-				timeZone: inputs.timeZone,
-				className: typographyClass({ size: "xs", tone: "muted", className: "text-right" }),
-			})
+	if (page.published_at === null) return typography(h, { size: "xs", tone: "muted" }, ["Not published"])
+	return typography(h, { size: "xs", tone: "muted", as: "span" }, [
+		"Published ",
+		relativeTime(h, { value: page.published_at, nowMs: inputs.nowMs, timeZone: inputs.timeZone }),
+	])
 }
 
-const pageRow = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Html => {
+const cardHeader = (h: H, summary: StatusPageSummary, inputs: ViewInputs, isEditable: boolean): Html => {
 	const page = summary.page
-	return h.li(
-		[h.Key(page.id), h.Class("relative py-3 pr-4 pl-4 hover:bg-surface-sunken active:bg-surface-sunken")],
+	const visibility = VISIBILITY_BADGE[page.visibility]
+	return hstack(h, { gap: "4", align: "start", justify: "between", className: stripClass("header") }, [
+		vstack(h, { gap: "1", className: "min-w-0" }, [
+			heading(h, { level: 2, variant: "section", className: "truncate" }, [
+				textLink(h, { href: statusPageHref(page.id), tone: "inherit" }, [page.name]),
+			]),
+			hstack(h, { gap: "2", align: "center", className: "min-w-0" }, [
+				badge(h, { variant: visibility.variant, size: "sm" }, [visibility.label]),
+				typography(h, { size: "xs", tone: "muted", mono: true, truncate: true }, [
+					page.visibility === "internal" ? "Members only, in Maple" : publicAddress(page.slug),
+				]),
+			]),
+		]),
+		hstack(h, { gap: "3", align: "center", className: "shrink-0" }, [
+			lastPublished(h, summary, inputs),
+			...(isEditable
+				? [linkButton(h, { size: "sm", variant: "outline", href: statusPageHref(page.id) }, ["Edit"])]
+				: []),
+		]),
+	])
+}
+
+// STATUS STRIP
+
+/** The banner a visitor reads first, worded for the whole page. */
+const OVERALL_LABEL = {
+	operational: "All systems operational",
+	degraded: "Degraded performance",
+	partial_outage: "Partial outage",
+	major_outage: "Major outage",
+	maintenance: "Under maintenance",
+} as const satisfies Record<StatusPageComponentStatus, string>
+
+const draftMark = (h: H, incident: V2StatusPageIncident): ReadonlyArray<Html> =>
+	incident.published ? [] : [badge(h, { variant: "meta", size: "xs" }, ["Draft"])]
+
+const incidentsLine = (h: H, summary: StatusPageSummary): Html | null => {
+	const [first, ...rest] = summary.openIncidents
+	if (first === undefined) return null
+	return hstack(h, { gap: "2", align: "center", className: "min-w-0" }, [
+		icon(h, "CircleWarningIcon", { size: 14, className: "shrink-0 text-severity-warn" }),
+		textLink(
+			h,
+			{ href: statusPageHref(summary.page.id, "incidents"), tone: "inherit", className: "min-w-0" },
+			[typography(h, { size: "sm", truncate: true }, [first.title])],
+		),
+		...draftMark(h, first),
+		...(rest.length === 0
+			? []
+			: [
+					typography(h, { size: "xs", tone: "muted" }, [
+						`+${countLabel(rest.length, "more incident")}`,
+					]),
+				]),
+	])
+}
+
+const maintenanceLine = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Html | null => {
+	const maintenance = summary.maintenance
+	if (maintenance === null) return null
+	const window = windowLine(h, maintenance, inputs.timeZone)
+	return hstack(h, { gap: "2", align: "center", className: "min-w-0" }, [
+		icon(h, "CalendarIcon", { size: 14, className: "shrink-0 text-severity-info" }),
+		typography(h, { size: "xs", tone: "muted", className: "shrink-0" }, [
+			maintenance.status === "in_progress" ? "Maintenance now" : "Next maintenance",
+		]),
+		textLink(
+			h,
+			{ href: statusPageHref(summary.page.id, "maintenance"), tone: "inherit", className: "min-w-0" },
+			[typography(h, { size: "sm", truncate: true }, [maintenance.title])],
+		),
+		...(window === null ? [] : [typography(h, { size: "xs", tone: "muted", as: "span" }, window)]),
+		...draftMark(h, maintenance),
+	])
+}
+
+const statusStrip = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Html => {
+	const tone = summary.components.length === 0 ? "neutral" : COMPONENT_STATUS_TONE[summary.overall]
+	const lines = Arr.filter(
+		[incidentsLine(h, summary), maintenanceLine(h, summary, inputs)],
+		(line): line is Html => line !== null,
+	)
+	return hstack(
+		h,
+		{ gap: "6", align: "center", wrap: true, className: stripClass("bar", "gap-y-2 px-4") },
 		[
-			h.div(
-				[h.Class(ROW_GRID)],
-				[
-					h.div(
-						[h.Class("min-w-0")],
-						[
-							rowNameLink(h, { href: statusPageHref(page.id), name: page.name }),
-							hstack(h, { gap: "2", align: "center", className: "mt-0.5 min-w-0" }, [
-								badge(h, { variant: VISIBILITY_BADGE[page.visibility].variant, size: "sm" }, [
-									VISIBILITY_BADGE[page.visibility].label,
-								]),
-								typography(h, { size: "xs", tone: "muted", mono: true, truncate: true }, [
-									page.visibility === "internal"
-										? "Members only, in Maple"
-										: publicAddress(page.slug),
-								]),
-							]),
-						],
+			hstack(h, { gap: "2", align: "center", className: "shrink-0" }, [
+				statusDot(h, { tone, size: "lg" }),
+				typography(h, { size: "sm", weight: "medium" }, [
+					summary.components.length === 0 ? "No components yet" : OVERALL_LABEL[summary.overall],
+				]),
+			]),
+			...lines,
+		],
+	)
+}
+
+// COMPONENTS
+
+const COMPONENT_GRID =
+	"grid grid-cols-[minmax(140px,1fr)_minmax(180px,2.4fr)_72px_120px] items-center gap-x-5"
+
+/** Components under their group headings, in page order; a group shows where it first appears. */
+const groupsOf = (
+	components: ReadonlyArray<SummaryComponent>,
+): ReadonlyArray<Readonly<{ group: string | null; components: ReadonlyArray<SummaryComponent> }>> =>
+	Arr.reduce(
+		components,
+		[] as ReadonlyArray<Readonly<{ group: string | null; components: ReadonlyArray<SummaryComponent> }>>,
+		(groups, component) =>
+			Arr.some(groups, (entry) => entry.group === component.group)
+				? Arr.map(groups, (entry) =>
+						entry.group === component.group
+							? { ...entry, components: [...entry.components, component] }
+							: entry,
+					)
+				: [...groups, { group: component.group, components: [component] }],
+	)
+
+const componentRow = (h: H, component: SummaryComponent): Html => {
+	const uptime = formatDaysUptime(component.days)
+	return h.div(
+		[h.Key(component.id), h.Class(cn(COMPONENT_GRID, "px-4 py-2"))],
+		[
+			hstack(h, { gap: "2", align: "center", className: "min-w-0" }, [
+				statusDot(h, { tone: COMPONENT_STATUS_TONE[component.status] }),
+				typography(h, { size: "sm", truncate: true }, [component.name]),
+			]),
+			component.days.length === 0
+				? typography(h, { size: "xs", tone: "muted" }, [
+						component.monitored ? "Uptime hidden on the page" : "No monitor: set by hand",
+					])
+				: uptimeDaysStrip(h, {
+						days: component.days,
+						label: `${component.name}: ${uptime ?? "no checks"} over the last ${SUMMARY_UPTIME_DAYS} days`,
+					}),
+			typography(h, { size: "xs", mono: true, numeric: true, tone: "muted", className: "text-right" }, [
+				uptime ?? "–",
+			]),
+			typography(
+				h,
+				{
+					size: "xs",
+					className: cn(
+						"text-right",
+						component.status === "operational" ? "text-muted-foreground" : undefined,
 					),
-					h.span(
-						[],
-						[
-							summary.componentCount === 0
-								? typography(h, { size: "xs", tone: "muted" }, ["No components"])
-								: badge(h, { variant: COMPONENT_STATUS_TONE[summary.overall] }, [
-										COMPONENT_STATUS_LABEL[summary.overall],
-									]),
-						],
-					),
-					h.span(
-						[h.Class("text-right font-mono text-xs tabular-nums text-muted-foreground")],
-						[String(summary.componentCount)],
-					),
-					h.span(
-						[
-							h.Class(
-								cn(
-									typographyClass({
-										size: "xs",
-										mono: true,
-										numeric: true,
-										className: "text-right",
-									}),
-									summary.openIncidents > 0
-										? "text-severity-warn"
-										: "text-muted-foreground",
-								),
-							),
-						],
-						[String(summary.openIncidents)],
-					),
-					lastPublished(h, summary, inputs),
-				],
+				},
+				[COMPONENT_STATUS_LABEL[component.status]],
 			),
 		],
 	)
 }
 
-const table = (h: H, pages: ReadonlyArray<StatusPageSummary>, inputs: ViewInputs): Html =>
-	borderedBox(h, { overflow: "x-auto" }, [
-		h.div(
-			[h.Class("min-w-[720px]")],
-			[
-				h.div(
-					[h.Class(cn(ROW_GRID, "border-b py-2 pr-4 pl-4"))],
-					[
-						eyebrow(h, {}, ["Page"]),
-						eyebrow(h, {}, ["Status"]),
-						eyebrow(h, { className: "text-right" }, ["Components"]),
-						eyebrow(h, { className: "text-right" }, ["Open incidents"]),
-						eyebrow(h, { className: "text-right" }, ["Last published"]),
-					],
-				),
-				dividedList(
-					h,
-					{ as: "ul", bordered: false },
-					Arr.map(pages, (summary) => pageRow(h, summary, inputs)),
-				),
-			],
-		),
+const componentsTable = (h: H, summary: StatusPageSummary): Html =>
+	h.div(
+		[h.Class("overflow-x-auto")],
+		[
+			h.div(
+				[h.Class("min-w-[640px] pb-1")],
+				[
+					h.div(
+						[h.Class(cn(COMPONENT_GRID, "px-4 pt-3 pb-1"))],
+						[
+							eyebrow(h, {}, ["Component"]),
+							hstack(h, { justify: "between" }, [
+								eyebrow(h, {}, [`${SUMMARY_UPTIME_DAYS} days ago`]),
+								eyebrow(h, {}, ["Today"]),
+							]),
+							eyebrow(h, { className: "text-right" }, ["Uptime"]),
+							eyebrow(h, { className: "text-right" }, ["Status"]),
+						],
+					),
+					...Arr.flatMap(groupsOf(summary.components), ({ group, components }) => [
+						...(group === null
+							? []
+							: [
+									typography(
+										h,
+										{
+											size: "xs",
+											weight: "medium",
+											tone: "muted",
+											className: "px-4 pt-3 pb-1",
+										},
+										[group],
+									),
+								]),
+						...Arr.map(components, (component) => componentRow(h, component)),
+					]),
+				],
+			),
+		],
+	)
+
+const noComponents = (h: H, summary: StatusPageSummary): Html =>
+	typography(h, { size: "sm", tone: "muted", as: "p", className: "px-4 py-4" }, [
+		"Nothing on this page yet. ",
+		textLink(h, { href: statusPageHref(summary.page.id, "settings", "monitors") }, ["Add components"]),
+	])
+
+const pageCard = (h: H, summary: StatusPageSummary, inputs: ViewInputs, isEditable: boolean): Html =>
+	panel(h, { attributes: [h.Key(summary.page.id)] }, [
+		cardHeader(h, summary, inputs, isEditable),
+		statusStrip(h, summary, inputs),
+		summary.components.length === 0 ? noComponents(h, summary) : componentsTable(h, summary),
 	])
 
 const body = (h: H, model: Model, inputs: ViewInputs): Html => {
@@ -210,16 +382,15 @@ const body = (h: H, model: Model, inputs: ViewInputs): Html => {
 			className: "py-12",
 		})
 	return Option.match(AsyncData.getData(data), {
-		onNone: () => vstack(h, { gap: "4" }, [skeleton(h, "h-9 w-1/3"), skeleton(h, "h-48 w-full")]),
+		onNone: () => vstack(h, { gap: "4" }, [skeleton(h, "h-9 w-1/3"), skeleton(h, "h-64 w-full")]),
 		onSome: (pages) =>
 			pages.length === 0
 				? emptyState(h, model)
-				: vstack(h, { gap: "3" }, [
-						typography(h, { size: "xs", tone: "muted", as: "p" }, [
-							`${countLabel(pages.length, "page")}. Each one is served from edge storage, so it stays up when Maple does not.`,
-						]),
-						table(h, pages, inputs),
-					]),
+				: vstack(
+						h,
+						{ gap: "4" },
+						Arr.map(pages, (summary) => pageCard(h, summary, inputs, canManage(model))),
+					),
 	})
 }
 

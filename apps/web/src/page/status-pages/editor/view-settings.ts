@@ -16,7 +16,6 @@ import { dangerRow, dangerZone } from "../../kit/danger-zone"
 import { navShell } from "../../kit/nav-shell"
 import { saveBar } from "../../kit/save-bar"
 import { adminOnlyNote, settingsSection, settingsSections } from "../../kit/settings-section"
-import { switchRow } from "../../kit/switch-row"
 import { publicAddress, SETTINGS_SECTIONS, type SettingsSection, statusPageHref } from "../shared/commands"
 import { selectField, textareaField, textField } from "../shared/fields"
 import {
@@ -78,8 +77,7 @@ const pageSection = (h: H, model: Model, form: SettingsForm): Html => {
 			id: "status-page-settings-page",
 			framed: false,
 			title: "Page",
-			// Basic settings is only this section: the menu already names it, so the title is for
-			// screen readers alone.
+			// It opens Basic settings: the menu already names it, so the title is for screen readers alone.
 			isLead: true,
 		},
 		[
@@ -169,14 +167,6 @@ const behaviourSection = (h: H, model: Model, form: SettingsForm): Html =>
 				isDisabled: !canManage(model),
 				hint: "A draft waits for you under Incidents; a published one shows on the page at once.",
 				onInput: (value) => Message.ChangedSetting({ field: "autoIncidents", value }),
-			}),
-			switchRow(h, {
-				id: "status-page-powered-by",
-				label: "Show powered by Maple",
-				description: "A small credit in the page footer.",
-				isChecked: form.showPoweredBy,
-				isDisabled: !canManage(model),
-				onToggle: Message.ToggledPoweredBy(),
 			}),
 		]),
 	])
@@ -343,7 +333,11 @@ const sectionBody = (
 ): ReadonlyArray<Html> => {
 	switch (section) {
 		case "basic":
-			return [pageSection(h, model, form)]
+			return [
+				pageSection(h, model, form),
+				customDomainSection(h, model, page),
+				behaviourSection(h, model, form),
+			]
 		case "monitors":
 			return [monitorsSection(h, model)]
 		case "appearance":
@@ -352,8 +346,6 @@ const sectionBody = (
 			return [accessSection(h, model, page, form)]
 		case "advanced":
 			return [
-				customDomainSection(h, model, page),
-				behaviourSection(h, model, form),
 				// Break-glass posts at the public address, which an internal page does not answer on.
 				...(page.visibility === "internal" ? [] : [breakGlassSection(h, model, page)]),
 				jsonSection(h, model),

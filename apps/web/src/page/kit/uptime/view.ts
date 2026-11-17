@@ -7,6 +7,7 @@ import {
 	type CheckHealth,
 	checkHealth,
 	displayStatus,
+	formatDaysUptime,
 	type RecentCheck,
 	STATUS_TONE,
 	statusLabel,
@@ -14,8 +15,9 @@ import {
 } from "./derive"
 import { Array as Arr } from "effect"
 import { medianOf } from "@maple/ui/lib/number"
+import { dayState, type StatusPageDayBar, type StatusPageDayState } from "@maple/domain/status-page"
 
-// The uptime marks: the status chip, the status square and the recent-checks strip.
+// The uptime marks: the status chip, the status square, the recent-checks strip and the daily strip.
 
 /** The status badge, sentence case ("Down 6m", "Paused"), in the same tinted chip as other status badges. */
 export const uptimeStatusChip = <M>(h: HtmlBuilder<M>, monitor: UptimeMonitor, nowMs: number): Html => {
@@ -106,3 +108,39 @@ export const recentChecksStrip = <M>(
 /** `panelBody` with the inset the uptime panels' rows use. */
 export const uptimePanelBody = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
 	panelBody(h, children, "px-4 py-3")
+
+/** Fill per day: green, amber with failed checks, red with downtime, muted without checks. */
+const DAY_FILL = {
+	ok: TONE_FILL.ok,
+	degraded: TONE_FILL.warn,
+	down: TONE_FILL.crit,
+	none: "bg-muted",
+} satisfies Record<StatusPageDayState, string>
+
+const dayTitle = (day: StatusPageDayBar): string => {
+	const uptime = formatDaysUptime([day])
+	return uptime === null ? `${day.day}: no checks` : `${day.day}: ${uptime} uptime`
+}
+
+/** One bar per UTC day, oldest first, coloured by `dayState`: a status page component's daily uptime. */
+export const uptimeDaysStrip = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{ days: ReadonlyArray<StatusPageDayBar>; label: string; className?: string }>,
+): Html =>
+	h.div(
+		[
+			h.Role("img"),
+			h.AriaLabel(options.label),
+			h.Class(cn("flex h-5 items-stretch gap-px", options.className)),
+		],
+		Arr.map(options.days, (day) =>
+			h.span(
+				[
+					h.Key(day.day),
+					h.Title(dayTitle(day)),
+					h.Class(cn("min-w-0 flex-1 rounded-2xs", DAY_FILL[dayState(day)])),
+				],
+				[],
+			),
+		),
+	)

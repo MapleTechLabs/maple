@@ -2,9 +2,12 @@ import { StatusPageId } from "@maple/domain"
 import type { V2StatusPage } from "@maple/domain/http/v2"
 import { DEFAULT_STATUS_PAGE_THEME } from "@maple/domain/status-page"
 import { Schema } from "effect"
-import type { StatusPageSummary } from "../page/status-pages/shared/derive"
+import { makeComponent, makeDays, makeSnapshot } from "@maple/status-page/fixtures"
+import { type StatusPageSummary, summarizePage } from "../page/status-pages/shared/derive"
+import { incident } from "../page/status-pages/shared/test-pages"
 
-// `/lab/status-pages` fixture: one live page and one whose last publish failed.
+// `/lab/status-pages` fixture: a live page with upcoming maintenance, an internal one whose last
+// publish failed, with a draft incident, and a draft page with no components yet.
 
 export const LAB_ORG = "org_lab_status_pages"
 export const LAB_NOW_MS = Date.UTC(2026, 9, 1, 12, 0)
@@ -41,16 +44,60 @@ const page = (n: number, fields: Partial<V2StatusPage>): V2StatusPage => ({
 	...fields,
 })
 
+const hoursFromNow = (hours: number) => new Date(LAB_NOW_MS + hours * 60 * MINUTE).toISOString()
+
 export const LAB_PAGES: ReadonlyArray<StatusPageSummary> = [
-	{ page: page(1, {}), overall: "operational", componentCount: 4, openIncidents: 0 },
-	{
+	summarizePage({
+		page: page(1, {}),
+		snapshot: makeSnapshot({
+			components: [
+				makeComponent(0, {
+					name: "API",
+					group: "Platform",
+					days: makeDays(LAB_NOW_MS, { 61: "degraded" }),
+				}),
+				makeComponent(1, { name: "Dashboard", group: "Platform", days: makeDays(LAB_NOW_MS) }),
+				makeComponent(2, {
+					name: "Ingest",
+					group: "Data",
+					days: makeDays(LAB_NOW_MS, { 84: "down" }),
+				}),
+				makeComponent(3, { name: "Docs", monitored: false, days: [] }),
+			],
+		}),
+		incidents: [
+			incident(1, {
+				kind: "maintenance",
+				status: "scheduled",
+				title: "Database upgrade",
+				impact: "none",
+				scheduled_start: hoursFromNow(26),
+				scheduled_end: hoursFromNow(28),
+			}),
+		],
+	}),
+	summarizePage({
 		page: page(2, {
 			name: "Internal tools",
 			slug: "acme-internal",
+			visibility: "internal",
 			last_publish_error: "The custom domain did not verify",
 		}),
-		overall: "partial_outage",
-		componentCount: 2,
-		openIncidents: 1,
-	},
+		snapshot: makeSnapshot({
+			components: [
+				makeComponent(0, {
+					name: "CI runners",
+					status: "partial_outage",
+					days: makeDays(LAB_NOW_MS, { 88: "degraded", 89: "down" }),
+				}),
+				makeComponent(1, { name: "Admin panel", showUptime: false, days: [] }),
+			],
+		}),
+		incidents: [incident(2, { title: "CI jobs queue for minutes", published: false })],
+	}),
+	summarizePage({
+		page: page(3, { name: "Partner API", slug: "partner-api", draft: true, published_at: null }),
+		snapshot: makeSnapshot({ components: [] }),
+		incidents: [],
+	}),
 ]
