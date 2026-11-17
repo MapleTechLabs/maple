@@ -88,15 +88,14 @@ type Message = typeof Message.Type
 
 const BREAKDOWN_ID = "landing-cost-breakdown"
 
-/** A row's click replaces every row: focus moves to the first of the new ones, not to the page. */
-const FocusFirstRow = Command.define("FocusFirstRow", {
-	args: { tableId: Schema.String },
+const GROUP_BY_ID = "landing-cost-group-by"
+
+/** A row's click replaces the row that held focus: it moves on to a control that is still there. */
+const FocusAfterDrill = Command.define("FocusAfterDrill", {
+	args: { selector: Schema.String },
 	messages: [Message.CompletedFocusRow],
-	execute: ({ tableId }) =>
-		Dom.focus(`#${CSS.escape(tableId)} tbody button`).pipe(
-			Effect.ignore,
-			Effect.as(Message.CompletedFocusRow()),
-		),
+	execute: ({ selector }) =>
+		Dom.focus(selector).pipe(Effect.ignore, Effect.as(Message.CompletedFocusRow())),
 })
 
 type H = HtmlBuilder<Message>
@@ -121,10 +120,14 @@ const update = (model: Model, message: Message): Update.Return<Model, Message> =
 		ClickedRow: ({ filter }) => {
 			if (hasFilter(model, filter)) return { model }
 			const filters = [...model.filters, filter]
-			return {
-				model: { ...model, filters, groupBy: drillTarget(filter.dimension, filters) },
-				commands: [FocusFirstRow({ tableId: BREAKDOWN_ID })],
-			}
+			const groupBy = drillTarget(filter.dimension, filters)
+			// Regrouped, every new row can be clicked. On the last level the one row left is plain
+			// text, so focus goes to the grouping in effect.
+			const selector =
+				groupBy === filter.dimension
+					? `#${GROUP_BY_ID} [aria-pressed="true"]`
+					: `#${BREAKDOWN_ID} tbody button`
+			return { model: { ...model, filters, groupBy }, commands: [FocusAfterDrill({ selector })] }
 		},
 		ClickedRemoveFilter: ({ filter }) => ({
 			model: {
@@ -198,7 +201,7 @@ const toolbar = (h: H, model: Model): Html => {
 		className: "mb-0",
 	})
 	return hstack(h, { gap: "4", wrap: true, className: "gap-y-2" }, [
-		hstack(h, { gap: "2", className: "min-w-0 max-w-full" }, [
+		hstack(h, { gap: "2", className: "min-w-0 max-w-full", attributes: [h.Id(GROUP_BY_ID)] }, [
 			typography(h, { size: "xs", tone: "muted", className: "shrink-0" }, ["Group by"]),
 			segmentedSelect(h, {
 				ariaLabel: "Group by",

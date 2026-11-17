@@ -46,6 +46,19 @@ describe("LiveCostExplorer island", () => {
 		// The clicked row is gone: focus lands on the first of the new rows, not on the page.
 		await vi.waitFor(() => expect(document.activeElement).toBe(element.querySelector("tbody tr button")))
 
+		// Two more clicks reach the last level: one row, plain text. Focus goes to the grouping.
+		const service = element.querySelector<HTMLButtonElement>("tbody tr button")
+		assert(service !== null)
+		service.click()
+		await vi.waitFor(() =>
+			expect(element.querySelector("table")?.getAttribute("aria-label")).toBe("Cost by region"),
+		)
+		const region = element.querySelector<HTMLButtonElement>("tbody tr button")
+		assert(region !== null)
+		region.click()
+		await vi.waitFor(() => expect(element.querySelector("tbody tr button")).toBeNull())
+		await vi.waitFor(() => expect(document.activeElement?.getAttribute("aria-label")).toBe("Region"))
+
 		element.dispatchEvent(new Event("astro:unmount"))
 		await vi.waitFor(() => expect(element.textContent).toBe(""))
 	})
