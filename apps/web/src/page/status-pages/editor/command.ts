@@ -20,6 +20,8 @@ import { Duration, Effect, Schema } from "effect"
 import { Command, Dom, File, Mount } from "foldkit"
 import { clickFileInput } from "../../kit/image-dropzone"
 import { imageSourceInputId } from "../../kit/image-source-field"
+import type { PreviewField } from "@maple/status-page"
+import type { EditorView } from "../shared/commands"
 import { BrandingField } from "../shared/form"
 import { trackProduct } from "../../../data/analytics"
 import {
@@ -404,11 +406,49 @@ export const RemoveCustomDomain = Command.define("RemoveStatusPageCustomDomain",
 /** The logo or favicon field's id; its hidden file input is `imageSourceInputId` of it. */
 export const brandingFieldId = (field: BrandingField): string => `status-page-${field}`
 
+/** Where each setting a preview click names is edited: its view and the field's element id. */
+export const PREVIEW_FIELD_TARGETS = {
+	name: { view: "settings", id: "status-page-name" },
+	logoUrl: { view: "appearance", id: brandingFieldId("logoUrl") },
+	logoDarkUrl: { view: "appearance", id: brandingFieldId("logoDarkUrl") },
+	websiteUrl: { view: "appearance", id: "status-page-website" },
+	supportUrl: { view: "appearance", id: "status-page-support" },
+	privacyUrl: { view: "appearance", id: "status-page-privacy" },
+	termsUrl: { view: "appearance", id: "status-page-terms" },
+	showPoweredBy: { view: "appearance", id: "status-page-powered-by" },
+} as const satisfies Record<PreviewField, { view: EditorView; id: string }>
+
+const FOCUSABLE =
+	"input:not([disabled]),textarea:not([disabled]),select:not([disabled]),button:not([disabled])"
+
+/**
+ * Scrolls a field just brought on screen by a view switch into view, then focuses it, or its first
+ * control when the id is on a wrapper. A read-only (disabled) field is only scrolled to.
+ */
+export const RevealEditorField = Command.define("RevealStatusPageEditorField", {
+	args: { id: Schema.String },
+	messages: [Message.CompletedFocus],
+	execute: ({ id }) =>
+		Dom.scrollIntoViewAfterPaint(`#${CSS.escape(id)}`, { block: "center" }).pipe(
+			Effect.andThen(
+				Effect.sync(() => {
+					const element = document.getElementById(id)
+					const control = element?.matches(FOCUSABLE) ? element : element?.querySelector(FOCUSABLE)
+					if (control instanceof HTMLElement) control.focus({ preventScroll: true })
+				}),
+			),
+			Effect.ignore,
+			Effect.as(Message.CompletedFocus()),
+		),
+})
+
 export const PickBrandingImage = Command.define("PickStatusPageBrandingImage", {
 	args: { field: BrandingField },
 	messages: [Message.CompletedPickBrandingImage],
 	execute: ({ field }) =>
-		clickFileInput(imageSourceInputId(brandingFieldId(field))).pipe(Effect.as(Message.CompletedPickBrandingImage())),
+		clickFileInput(imageSourceInputId(brandingFieldId(field))).pipe(
+			Effect.as(Message.CompletedPickBrandingImage()),
+		),
 })
 
 /** Reads a picked logo or favicon as the `data:` URL the page stores. */

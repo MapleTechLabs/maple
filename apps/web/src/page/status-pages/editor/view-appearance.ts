@@ -33,7 +33,7 @@ import {
 	themeOf,
 } from "../shared/form"
 import { imageSourceDialog, imageSourceField } from "../../kit/image-source-field"
-import { brandingFieldId } from "./command"
+import { brandingFieldId, PREVIEW_FIELD_TARGETS } from "./command"
 import { Message } from "./message"
 import { pageUrlOf } from "./update-domain"
 import { canManage, type Model } from "./model"
@@ -238,7 +238,7 @@ export const brandingSection = (h: H, model: Model, form: SettingsForm): Html =>
 				grid(h, { sm: 2, gap: "6" }, field(2)),
 			]),
 			switchRow(h, {
-				id: "status-page-powered-by",
+				id: PREVIEW_FIELD_TARGETS.showPoweredBy.id,
 				label: "Show powered by Maple",
 				description: "A small credit in the page footer.",
 				isChecked: form.showPoweredBy,
@@ -351,28 +351,28 @@ const LINK_FIELDS: ReadonlyArray<{
 }> = [
 	{
 		field: "websiteUrl",
-		id: "status-page-website",
+		id: PREVIEW_FIELD_TARGETS.websiteUrl.id,
 		label: "Website URL",
 		placeholder: "https://acme.example",
 		hint: "In the page header as Visit website.",
 	},
 	{
 		field: "supportUrl",
-		id: "status-page-support",
+		id: PREVIEW_FIELD_TARGETS.supportUrl.id,
 		label: "Support URL",
 		placeholder: "https://acme.example/support",
 		hint: "In the page header as Contact support.",
 	},
 	{
 		field: "privacyUrl",
-		id: "status-page-privacy",
+		id: PREVIEW_FIELD_TARGETS.privacyUrl.id,
 		label: "Privacy policy URL",
 		placeholder: "https://acme.example/privacy",
 		hint: "In the page footer.",
 	},
 	{
 		field: "termsUrl",
-		id: "status-page-terms",
+		id: PREVIEW_FIELD_TARGETS.termsUrl.id,
 		label: "Terms of service URL",
 		placeholder: "https://acme.example/terms",
 		hint: "In the page footer.",

@@ -95,6 +95,8 @@ export const Model = Schema.Struct({
 	isSessionLoaded: Schema.Boolean,
 	pageMenu: Menu.Model,
 	panel: Schema.NullOr(Panel),
+	/** The field a preview click asked for, revealed once the view it lives on has opened. */
+	revealFieldId: Schema.NullOr(Schema.String),
 	// Preview
 	previewScheme: PreviewScheme,
 	/** Looking only, like the scheme: neither is saved with the page. */

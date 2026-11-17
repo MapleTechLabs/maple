@@ -318,6 +318,41 @@ describe("the page as the editor", () => {
 		).toBeNull()
 	})
 
+	test("a click on a group name opens its first component at the Group field", () => {
+		const picked = pageUpdate(
+			loaded(),
+			Message.ReceivedPreviewSelection({ kind: "group", id: componentId(2) }),
+		)
+		expect(picked.model.panel).toEqual({ _tag: "Component", componentId: componentId(2) })
+		expect(picked.commands).toMatchObject([
+			{ name: "FocusStatusPageEditorElement", args: { id: "status-page-panel-group" } },
+		])
+	})
+
+	test("a click on the header or footer opens the tab that edits it, then reveals the field there", () => {
+		const clicked = pageUpdate(
+			loaded(),
+			Message.ReceivedPreviewSelection({ kind: "field", id: "supportUrl" }),
+		)
+		expect(clicked.outMessage).toMatchObject({
+			_tag: "RequestedNavigation",
+			url: expect.stringContaining("view=appearance"),
+		})
+		const opened = routeChanged(
+			clicked.model,
+			{ _tag: "StatusPage", pageId: PUBLIC_ID, search: { view: "appearance" } },
+			context,
+		)
+		expect(opened.commands).toMatchObject([
+			{ name: "RevealStatusPageEditorField", args: { id: "status-page-support" } },
+		])
+		expect(opened.model.revealFieldId).toBeNull()
+		const name = pageUpdate(loaded(), Message.ReceivedPreviewSelection({ kind: "field", id: "name" }))
+		expect(name.outMessage).toMatchObject({ url: expect.stringContaining("view=settings") })
+		const unknown = pageUpdate(loaded(), Message.ReceivedPreviewSelection({ kind: "field", id: "slug" }))
+		expect(unknown.outMessage).toBeUndefined()
+	})
+
 	test("a preview message that is not exactly a selection is ignored", () => {
 		expect(selectionOf({ type: "select", kind: "component", id: componentId(1) })).toEqual(
 			Option.some({ kind: "component", id: componentId(1) }),
@@ -598,7 +633,10 @@ const mounted = Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()
 /** The Appearance tab's colour pickers, mounted: the accent alone in Auto, all five in Light or Dark. */
 const pickersMounted = (count: number) =>
 	Mount.resolveAll(
-		...Arr.makeBy(count, () => [MountColorPicker, ColorPickerMessage.CompletedMountColorPicker()] as const),
+		...Arr.makeBy(
+			count,
+			() => [MountColorPicker, ColorPickerMessage.CompletedMountColorPicker()] as const,
+		),
 	)
 
 /** The reviewed message as the public page's markup renders it. */
@@ -1798,7 +1836,10 @@ describe("settings and appearance views", () => {
 		expect(names(png.commands)).toEqual(["ReadStatusPageBrandingImage"])
 		const read = pageUpdate(
 			png.model,
-			Message.CompletedReadBrandingImage({ field: "faviconUrl", dataUrl: "data:image/png;base64,cG5n" }),
+			Message.CompletedReadBrandingImage({
+				field: "faviconUrl",
+				dataUrl: "data:image/png;base64,cG5n",
+			}),
 		).model
 		expect(read.settingsEdits?.faviconUrl).toBe("data:image/png;base64,cG5n")
 		scene(
@@ -1827,7 +1868,10 @@ describe("settings and appearance views", () => {
 			expectView(text("Use an https URL.")).toExist(),
 			expectView(role("button", { name: "Use link" })).toBeDisabled(),
 		)
-		const typed = pageUpdate(opened, Message.ChangedBrandingLink({ value: " https://acme.example/logo.svg " }))
+		const typed = pageUpdate(
+			opened,
+			Message.ChangedBrandingLink({ value: " https://acme.example/logo.svg " }),
+		)
 		const applied = pageUpdate(typed.model, Message.SubmittedBrandingLink()).model
 		expect(applied.settingsEdits?.logoUrl).toBe("https://acme.example/logo.svg")
 		expect(applied.brandingDialog.isOpen).toBe(false)

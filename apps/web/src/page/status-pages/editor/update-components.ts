@@ -48,6 +48,7 @@ import {
 // and added from the same checklist the builder uses.
 
 export const PANEL_TITLE_ID = "status-page-panel-title"
+export const PANEL_GROUP_ID = "status-page-panel-group"
 export const ADD_PICKER_ID = "status-page-add"
 
 export const deleteComponentDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => {
@@ -63,12 +64,17 @@ export const deleteComponentDialog = (model: Model, step: ReturnType<typeof Dial
 }
 
 /** Opens the panel and moves focus to its title, so a screen reader lands in it. */
-export const focusPanel = (model: Model): Return => ({
+export const focusPanel = (model: Model, focusId = PANEL_TITLE_ID): Return => ({
 	model,
-	commands: [FocusEditorElement({ id: PANEL_TITLE_ID })],
+	commands: [FocusEditorElement({ id: focusId })],
 })
 
-export const selectComponent = (model: Model, componentId: StatusPageComponentId): Return => {
+/** Opens the component's panel, focused on its title, or on `focusId` (its group, from a group name). */
+export const selectComponent = (
+	model: Model,
+	componentId: StatusPageComponentId,
+	focusId = PANEL_TITLE_ID,
+): Return => {
 	const found = Arr.findFirst(componentsOf(model), (row) => row.id === componentId)
 	if (Option.isNone(found)) return { model }
 	const component = found.value
@@ -78,7 +84,9 @@ export const selectComponent = (model: Model, componentId: StatusPageComponentId
 		componentForm: componentFormOf(component),
 		componentSave: "idle",
 		componentFailure: null,
-	})
+		},
+		focusId,
+	)
 }
 
 export const changeComponent = (model: Model, field: ComponentTextField, value: string): Return => ({

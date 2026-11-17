@@ -172,9 +172,12 @@ export const toSnapshotIncident = (incident: V2StatusPageIncident): StatusPageSn
 	})).sort((a, b) => b.at - a.at),
 })
 
-/** What a click in the preview selects. */
+/**
+ * What a click in the preview selects: a component or incident, a group (by its first component),
+ * or a page setting (a `PreviewField`).
+ */
 export const PreviewSelection = Schema.Struct({
-	kind: Schema.Literals(["component", "incident"]),
+	kind: Schema.Literals(["component", "incident", "group", "field"]),
 	id: Schema.String,
 })
 export type PreviewSelection = typeof PreviewSelection.Type
@@ -193,7 +196,9 @@ export const selectionOf = (data: unknown): Option.Option<PreviewSelection> =>
 const isSafeId = (id: string) => /^[A-Za-z0-9_-]{1,64}$/u.test(id)
 
 /** Inert in the frame: it only posts what was clicked; the frame has no same-origin access. */
-const SELECT_SCRIPT = `(function(){var q="[data-component-id],[data-incident-id]";document.addEventListener("click",function(e){var t=e.target&&e.target.closest?e.target.closest(q):null;if(!t)return;e.preventDefault();var c=t.getAttribute("data-component-id");parent.postMessage(c?{type:"select",kind:"component",id:c}:{type:"select",kind:"incident",id:t.getAttribute("data-incident-id")},"*")});var s=document.querySelector("[data-sp-first]");if(s)window.scrollTo(0,Math.max(0,s.getBoundingClientRect().top+window.scrollY-window.innerHeight/3))})();`
+const SELECT_SCRIPT = `(function(){var k=["component","incident","group","field"],q=k.map(function(n){return"[data-"+n+"-id]"}).join(",");document.addEventListener("click",function(e){var t=e.target&&e.target.closest?e.target.closest(q):null;if(!t)return;e.preventDefault();for(var i=0;i<k.length;i++){var v=t.getAttribute("data-"+k[i]+"-id");if(v){parent.postMessage({type:"select",kind:k[i],id:v},"*");return}}});var s=document.querySelector("[data-sp-first]");if(s)window.scrollTo(0,Math.max(0,s.getBoundingClientRect().top+window.scrollY-window.innerHeight/3))})();`
+
+const SELECTABLE = "[data-component-id],[data-incident-id],[data-group-id],[data-field-id]"
 
 const selectionStyles = (selectedIds: ReadonlyArray<string>): string => {
 	const ids = Arr.filter(selectedIds, isSafeId)
@@ -203,8 +208,11 @@ const selectionStyles = (selectedIds: ReadonlyArray<string>): string => {
 	)
 	return Arr.join(
 		[
-			`[data-component-id],[data-incident-id]{cursor:pointer;border-radius:6px;transition:outline-color .12s}`,
-			`[data-component-id]:hover,[data-incident-id]:hover{outline:1px dashed color-mix(in srgb,currentColor 35%,transparent);outline-offset:3px}`,
+			`${SELECTABLE}{cursor:pointer;border-radius:6px;transition:outline-color .12s}`,
+			`${Arr.join(
+				Arr.map(Str.split(",")(SELECTABLE), (selector) => `${selector}:hover`),
+				",",
+			)}{outline:1px dashed color-mix(in srgb,currentColor 35%,transparent);outline-offset:3px}`,
 			selected === "" ? "" : `${selected}{outline:2px solid #3b82f6;outline-offset:3px}`,
 		],
 		"",
@@ -225,7 +233,7 @@ const markFirst = (html: string, selectedIds: ReadonlyArray<string>): string => 
 export type PreviewDocumentOptions = Readonly<{
 	snapshot: StatusPagePublicSnapshot
 	nowMs: number
-	/** The editor's preview: components and incidents can be clicked, and the selection drawn. */
+	/** The editor's preview: what it edits can be clicked, and the selected component or incident drawn. */
 	isSelectable: boolean
 	selectedIds: ReadonlyArray<string>
 	/** Where visitors read the page, for its Slack command; `null` while no status domain is configured. */

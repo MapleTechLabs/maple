@@ -1,6 +1,7 @@
 import type { StatusPagePreviewParams } from "@maple/domain/http/v2"
 import { STATUS_PAGE_PRESET_DEFAULTS } from "@maple/domain/status-page"
-import { Option, Result, Array as Arr } from "effect"
+import { PREVIEW_FIELDS, type PreviewField } from "@maple/status-page"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import type { AppRoute } from "../../../route"
@@ -16,7 +17,9 @@ import {
 	FetchEditorPreview,
 	FetchEditorSession,
 	FocusEditorElement,
+	PREVIEW_FIELD_TARGETS,
 	ReadEditorClock,
+	RevealEditorField,
 	WaitEditorPreview,
 } from "./command"
 import { Message } from "./message"
@@ -44,6 +47,8 @@ import {
 	deletedComponent,
 	moveComponent,
 	openAdd,
+	PANEL_GROUP_ID,
+	PANEL_TITLE_ID,
 	reordered,
 	savedComponent,
 	selectComponent,
@@ -159,6 +164,7 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		isSessionLoaded: false,
 		pageMenu: Menu.init(PAGE_MENU_ID),
 		panel: null,
+		revealFieldId: null,
 		previewScheme: "light",
 		previewWidth: "desktop",
 		previewState: "live",
@@ -256,10 +262,30 @@ const whenSettings =
 /** A view switch is a search change; opening JSON re-reads the config, since other views write too. */
 export const routeChanged = (model: Model, route: EditorRoute, context: PageContext): Return =>
 	chain(
-		{ ...model, search: route.search, panel: null },
+		{ ...model, search: route.search, panel: null, revealFieldId: null },
 		whenJson(context, "Refresh"),
 		whenSettings(context, "Refresh"),
+		(next) =>
+			model.revealFieldId === null
+				? { model: next }
+				: { model: next, commands: [RevealEditorField({ id: model.revealFieldId })] },
 	)
+
+/** A header or footer click in the preview: opens the view that edits it, at its field. */
+const revealField = (model: Model, field: PreviewField): Return => {
+	const target = PREVIEW_FIELD_TARGETS[field]
+	return model.pageId === null
+		? { model }
+		: {
+				model: { ...model, revealFieldId: target.id },
+				outMessage: PageOutMessage.RequestedNavigation({
+					url: statusPageHref(model.pageId, target.view),
+					isReplace: false,
+				}),
+			}
+}
+
+const isPreviewField = Schema.is(Schema.Literals(PREVIEW_FIELDS))
 
 /** The dialogs ignore dismissal while their write is in flight, as `ConfirmDialog` does. */
 const whenIdle = (isBusy: boolean, model: Model, run: () => Return): Return => (isBusy ? { model } : run())
@@ -398,12 +424,18 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						}),
 					}),
 		ReceivedPreviewSelection: ({ kind, id }) => {
-			return kind === "component"
+			if (kind === "field") return isPreviewField(id) ? revealField(model, id) : { model }
+			return kind === "component" || kind === "group"
 				? Option.match(
 						Arr.findFirst(componentsOf(model), (row) => row.id === id),
 						{
 							onNone: () => ({ model }),
-							onSome: (component) => selectComponent(model, component.id),
+							onSome: (component) =>
+								selectComponent(
+									model,
+									component.id,
+									kind === "group" ? PANEL_GROUP_ID : PANEL_TITLE_ID,
+								),
 						},
 					)
 				: Option.match(

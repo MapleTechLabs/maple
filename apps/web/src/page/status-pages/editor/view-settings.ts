@@ -20,6 +20,7 @@ import {
 	settingsFormOf,
 	settingsIssues,
 } from "../shared/form"
+import { PREVIEW_FIELD_TARGETS } from "./command"
 import { accessGroup } from "./view-access"
 import { appearanceSection, brandingSection, linksSection, previewPanel } from "./view-appearance"
 import { customDomainSection } from "./view-domain"
@@ -57,7 +58,7 @@ const pageSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm)
 				[h.Class("grid gap-4 sm:grid-cols-2")],
 				[
 					textField(h, {
-						id: "status-page-name",
+						id: PREVIEW_FIELD_TARGETS.name.id,
 						label: "Name",
 						value: form.name,
 						isDisabled: isReadOnly,

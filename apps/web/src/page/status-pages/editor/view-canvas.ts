@@ -354,7 +354,7 @@ const previewColumn = (h: H, model: Model, page: V2StatusPage): Html =>
 	vstack(h, { gap: "2", shrink: true, as: "section", attributes: [h.AriaLabel("Page preview")] }, [
 		hstack(h, { gap: "3", justify: "between", wrap: true, className: "min-h-7" }, [
 			typography(h, { size: "xs", tone: "muted", as: "p" }, [
-				"Click a component or incident to edit it.",
+				"Click anything on the page to edit it.",
 			]),
 			previewControls(h, {
 				state: model.previewState,
