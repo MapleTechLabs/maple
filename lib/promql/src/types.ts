@@ -26,6 +26,10 @@ export const valueTypeOf = (expr: Expr): ValueType => {
 	}
 }
 
+/** Prometheus' DocumentedType: the names its error messages use. */
+const documented = (type: ValueType): string =>
+	type === "matrix" ? "range vector" : type === "vector" ? "instant vector" : type
+
 /** A type error and the expression it is about, so the parser can point at it. */
 export interface PromqlTypeError {
 	readonly message: string
@@ -52,10 +56,24 @@ export const checkTypes = (expr: Expr): PromqlTypeError | undefined => {
 			return undefined
 		case "Paren":
 			return checkTypes(expr.expr)
-		case "Unary":
-			return expect(expr.expr, ["scalar", "vector"], "unary expression")
-		case "Subquery":
-			return expect(expr.expr, ["vector"], "subquery")
+		case "Unary": {
+			const inner = checkTypes(expr.expr)
+			if (inner !== undefined) return inner
+			const got = valueTypeOf(expr.expr)
+			return got === "scalar" || got === "vector"
+				? undefined
+				: error(
+						`unary expression only allowed on expressions of type scalar or instant vector, got ${JSON.stringify(documented(got))}`,
+					)
+		}
+		case "Subquery": {
+			const inner = checkTypes(expr.expr)
+			if (inner !== undefined) return inner
+			const got = valueTypeOf(expr.expr)
+			return got === "vector"
+				? undefined
+				: { message: `subquery is only allowed on instant vector, got ${got} instead`, at: expr.expr }
+		}
 		case "Aggregate": {
 			const inner = expect(expr.expr, ["vector"], `aggregation "${expr.op}"`)
 			if (inner !== undefined || expr.param === undefined) return inner
@@ -84,12 +102,13 @@ export const checkTypes = (expr: Expr): PromqlTypeError | undefined => {
 			return undefined
 		}
 		case "Binary": {
-			const lhsError = expect(expr.lhs, ["scalar", "vector"], "binary expression")
-			if (lhsError !== undefined) return lhsError
-			const rhsError = expect(expr.rhs, ["scalar", "vector"], "binary expression")
-			if (rhsError !== undefined) return rhsError
+			const operandError = checkTypes(expr.lhs) ?? checkTypes(expr.rhs)
+			if (operandError !== undefined) return operandError
 			const lhs = valueTypeOf(expr.lhs)
 			const rhs = valueTypeOf(expr.rhs)
+			const mixed = "binary expression must contain only scalar and instant vector types"
+			if (lhs !== "scalar" && lhs !== "vector") return { message: mixed, at: expr.lhs }
+			if (rhs !== "scalar" && rhs !== "vector") return { message: mixed, at: expr.rhs }
 			const isComparison = COMPARISON_OPS.has(expr.op)
 			if (expr.returnBool && !isComparison)
 				return error("bool modifier can only be used on comparison operators")

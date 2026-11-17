@@ -41,19 +41,76 @@ const SIMPLE = {
 } satisfies Record<string, (v: number) => number>
 
 /** Go's time functions on `time.Unix(floor(v), 0).UTC()`. */
+interface CivilTime {
+	readonly year: number
+	readonly month: number
+	readonly day: number
+	readonly dayOfYear: number
+	readonly weekday: number
+	readonly hour: number
+	readonly minute: number
+}
+
+const INT64_MAX = 2n ** 63n - 1n
+const INT64_MIN = -(2n ** 63n)
+
+/** Go's int64(f): truncates toward zero, saturating (NaN is 0) as on the arm64 reference build. */
+const goInt64 = (value: number): bigint => {
+	if (Number.isNaN(value)) return 0n
+	if (value >= 2 ** 63) return INT64_MAX
+	if (value < -(2 ** 63)) return INT64_MIN
+	return BigInt(Math.trunc(value))
+}
+
+const isLeap = (year: number): boolean => (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0
+
+/** Proleptic Gregorian UTC fields of whole unix seconds (Hinnant's civil_from_days), past JS Date's range. */
+const civilTime = (unixSeconds: bigint): CivilTime => {
+	const floorDays = unixSeconds / 86_400n - (unixSeconds % 86_400n < 0n ? 1n : 0n)
+	const secondOfDay = Number(unixSeconds - floorDays * 86_400n)
+	const days = Number(floorDays)
+	const z = days + 719_468
+	const era = Math.floor(z / 146_097)
+	const dayOfEra = z - era * 146_097
+	const yearOfEra = Math.floor(
+		(dayOfEra -
+			Math.floor(dayOfEra / 1460) +
+			Math.floor(dayOfEra / 36_524) -
+			Math.floor(dayOfEra / 146_096)) /
+			365,
+	)
+	const dayOfMarchYear =
+		dayOfEra - (365 * yearOfEra + Math.floor(yearOfEra / 4) - Math.floor(yearOfEra / 100))
+	const monthFromMarch = Math.floor((5 * dayOfMarchYear + 2) / 153)
+	const day = dayOfMarchYear - Math.floor((153 * monthFromMarch + 2) / 5) + 1
+	const month = monthFromMarch < 10 ? monthFromMarch + 3 : monthFromMarch - 9
+	const year = yearOfEra + era * 400 + (month <= 2 ? 1 : 0)
+	// Days from 1 Jan to 1 Mar, then the March-based day count.
+	const marchFirst = 59 + (isLeap(year) ? 1 : 0)
+	const dayOfYear = month <= 2 ? dayOfMarchYear - 305 : marchFirst + dayOfMarchYear + 1
+	return {
+		year,
+		month,
+		day,
+		dayOfYear,
+		weekday: (((days + 4) % 7) + 7) % 7,
+		hour: Math.floor(secondOfDay / 3600),
+		minute: Math.floor((secondOfDay % 3600) / 60),
+	}
+}
+
+const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
 const DATE = {
-	day_of_month: (d) => d.getUTCDate(),
-	day_of_week: (d) => d.getUTCDay(),
-	day_of_year: (d) =>
-		(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - Date.UTC(d.getUTCFullYear(), 0, 1)) /
-			86_400_000 +
-		1,
-	days_in_month: (d) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate(),
-	hour: (d) => d.getUTCHours(),
-	minute: (d) => d.getUTCMinutes(),
-	month: (d) => d.getUTCMonth() + 1,
-	year: (d: Date) => d.getUTCFullYear(),
-} satisfies Record<string, (d: Date) => number>
+	day_of_month: (d) => d.day,
+	day_of_week: (d) => d.weekday,
+	day_of_year: (d) => d.dayOfYear,
+	days_in_month: (d) => (d.month === 2 && isLeap(d.year) ? 29 : (DAYS_IN_MONTH[d.month - 1] ?? 31)),
+	hour: (d) => d.hour,
+	minute: (d) => d.minute,
+	month: (d) => d.month,
+	year: (d: CivilTime) => d.year,
+} satisfies Record<string, (d: CivilTime) => number>
 
 /** Applies `f` to every value and drops __name__, like Prometheus' simpleFloatFunc. */
 const mapValues = (vector: InstantVector, evalTimeMs: number, f: (v: number) => number): R =>
@@ -220,7 +277,7 @@ export const instantFunction = (
 	const simple = lookup(SIMPLE, func)
 	if (simple !== undefined) return mapValues(vector, evalTimeMs, simple)
 	const date = lookup(DATE, func)
-	if (date !== undefined) return mapValues(vector, evalTimeMs, (v) => date(new Date(Math.floor(v) * 1000)))
+	if (date !== undefined) return mapValues(vector, evalTimeMs, (v) => date(civilTime(goInt64(v))))
 	switch (func) {
 		case "clamp":
 			return Result.flatMap(
