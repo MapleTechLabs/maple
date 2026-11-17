@@ -7,11 +7,12 @@ import { StatusPageComponentId } from "@maple/domain"
 import { componentDrags } from "../shared/component-drag"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
-import { resolveView } from "./update"
+import { hasClickablePreview, resolveView } from "./update"
 
 // Escape closes the open component, from its inputs too; an open dialog (the sheet included), menu
-// or listbox keeps its own Escape. A click in the live page's frame opens what it landed on. A
-// component's grip drags it under Settings > Monitors, never while the order is saving.
+// or listbox keeps its own Escape. A click in the live page's frame, or in a Settings section's
+// preview, opens what it landed on. A component's grip drags it under Settings > Monitors, never
+// while the order is saving.
 
 /** What Escape's owner is read from on the focused element. */
 export type Focused = Readonly<{
@@ -54,11 +55,13 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 		},
 	),
 	previewSelection: entry(
-		{ isCanvas: Schema.Boolean },
+		{ hasPreview: Schema.Boolean },
 		{
-			modelToDependencies: ({ model }) => ({ isCanvas: resolveView(model.search).tab === "page" }),
-			dependenciesToStream: ({ isCanvas }) =>
-				isCanvas
+			modelToDependencies: ({ model }) => ({
+				hasPreview: hasClickablePreview(resolveView(model.search)),
+			}),
+			dependenciesToStream: ({ hasPreview }) =>
+				hasPreview
 					? previewSelections.pipe(
 							Stream.map((selection) => Message.ReceivedPreviewSelection(selection)),
 						)

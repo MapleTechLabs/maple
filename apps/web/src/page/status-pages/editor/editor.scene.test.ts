@@ -795,6 +795,32 @@ describe("components under Settings > Monitors", () => {
 		).toBeNull()
 	})
 
+	test("a click in a Settings preview opens the component under Monitors, in place when already there, and the incident under its tab", () => {
+		const onAppearance = loaded({ tab: "settings", section: "appearance" })
+		const picked = pageUpdate(
+			onAppearance,
+			Message.ReceivedPreviewSelection({ kind: "component", id: componentId(2) }),
+		)
+		expect(picked.model.panel).toEqual({ _tag: "Component", componentId: componentId(2) })
+		expect(picked.outMessage).toMatchObject({
+			_tag: "RequestedNavigation",
+			url: statusPageHref(statusPage().id, "settings", "monitors"),
+		})
+		const onMonitors = loaded({ tab: "settings", section: "monitors" })
+		const inPlace = pageUpdate(
+			onMonitors,
+			Message.ReceivedPreviewSelection({ kind: "component", id: componentId(2) }),
+		)
+		expect(inPlace.model.panel).toEqual({ _tag: "Component", componentId: componentId(2) })
+		expect(inPlace.outMessage).toBeUndefined()
+		expect(
+			pageUpdate(
+				loaded({ tab: "settings", section: "monitors", incidents: [incident(1)] }),
+				Message.ReceivedPreviewSelection({ kind: "incident", id: incidentId(1) }),
+			).outMessage,
+		).toMatchObject({ url: statusPageHref(statusPage().id, "incidents") })
+	})
+
 	test("switching to a tab that does not show the open component closes it, keeping unsaved edits for Monitors", () => {
 		const away = { _tag: "StatusPage", pageId: PUBLIC_ID, search: {} } as const
 		expect(routeChanged(selected(1), away, context).model.panel).toBeNull()
