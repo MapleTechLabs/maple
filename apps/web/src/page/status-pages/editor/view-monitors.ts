@@ -16,6 +16,7 @@ import { type TypographyTone, typography } from "@maple/views/ui/typography"
 import type { Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { expandChevron } from "../../kit/expand-chevron"
+import { saveBar } from "../../kit/save-bar"
 import { adminOnlyNote, settingsSection } from "../../kit/settings-section"
 import {
 	COMPONENT_STATUS_LABEL,
@@ -30,7 +31,7 @@ import { GRIP_ATTRIBUTE, LIST_ATTRIBUTE, ROW_ATTRIBUTE, SLOT_ATTRIBUTE } from ".
 import { Message } from "./message"
 import { canManage, type ComponentSave, type Model } from "./model"
 import { componentsOf, incidentsOf, monitorsOf } from "./reads"
-import { componentGripId, componentRowId, groupedOrder } from "./update-components"
+import { componentGripId, componentRowId, groupedOrder, unsavedComponent } from "./update-components"
 import { failureAlert } from "./view-panel"
 
 // Settings > Monitors: the page's components by group, each opening in place with its fields and
@@ -92,7 +93,9 @@ const groupSuggestions = (h: H, model: Model, isReadOnly: boolean): ReadonlyArra
 								variant: "outline",
 								attributes: [
 									h.Key(group),
-									h.OnClick(Message.PickedComponentField({ field: "group", value: group })),
+									h.OnClick(
+										Message.ChangedComponentField({ field: "group", value: group }),
+									),
 								],
 							},
 							[group],
@@ -129,7 +132,6 @@ const componentForm = (h: H, model: Model, component: V2StatusPageComponent): Ht
 					isDisabled: isReadOnly,
 					error: Str.trim(form.name) === "" ? "Add a name." : null,
 					onInput: (value) => Message.ChangedComponentField({ field: "name", value }),
-					onBlur: Message.CommittedComponent(),
 				}),
 				textField(h, {
 					id: "status-page-panel-group",
@@ -139,7 +141,6 @@ const componentForm = (h: H, model: Model, component: V2StatusPageComponent): Ht
 					hint: "Components with one group are listed under it.",
 					isDisabled: isReadOnly,
 					onInput: (value) => Message.ChangedComponentField({ field: "group", value }),
-					onBlur: Message.CommittedComponent(),
 				}),
 				...groupSuggestions(h, model, isReadOnly),
 				textField(h, {
@@ -151,7 +152,6 @@ const componentForm = (h: H, model: Model, component: V2StatusPageComponent): Ht
 					isDisabled: isReadOnly,
 					className: "sm:col-span-2",
 					onInput: (value) => Message.ChangedComponentField({ field: "description", value }),
-					onBlur: Message.CommittedComponent(),
 				}),
 				selectField(h, {
 					id: "status-page-panel-monitor",
@@ -165,7 +165,7 @@ const componentForm = (h: H, model: Model, component: V2StatusPageComponent): Ht
 							label: monitor.name,
 						})),
 					],
-					onInput: (value) => Message.PickedComponentField({ field: "monitorId", value }),
+					onInput: (value) => Message.ChangedComponentField({ field: "monitorId", value }),
 				}),
 				selectField(h, {
 					id: "status-page-panel-status",
@@ -182,7 +182,7 @@ const componentForm = (h: H, model: Model, component: V2StatusPageComponent): Ht
 							label: COMPONENT_STATUS_LABEL[value],
 						})),
 					],
-					onInput: (value) => Message.PickedComponentField({ field: "manualStatus", value }),
+					onInput: (value) => Message.ChangedComponentField({ field: "manualStatus", value }),
 				}),
 			]),
 			...(reason === null
@@ -369,6 +369,22 @@ const componentList = (h: H, model: Model): Html => {
 			]),
 		),
 	])
+}
+
+/** The open component's save bar, while its form differs from the saved component or saves. */
+export const componentSaveBar = (h: H, model: Model): ReadonlyArray<Html> => {
+	const unsaved = Option.getOrNull(unsavedComponent(model))
+	const isNameMissing = Str.trim(model.componentForm.name) === ""
+	const save = model.componentSave
+	return saveBar(h, {
+		isDirty: unsaved !== null,
+		isPending: save?._tag === "Saving" && save.componentId === model.componentForm.editingId,
+		context: isNameMissing ? "Fix the fields marked above." : unsaved?.name,
+		onDiscard: Message.ClickedDiscardComponent(),
+		onSave: Message.ClickedSaveComponent(),
+		// One save at a time, even another component's.
+		isSaveDisabled: isNameMissing || save?._tag === "Saving",
+	})
 }
 
 export const monitorsSection = (h: H, model: Model): Html =>

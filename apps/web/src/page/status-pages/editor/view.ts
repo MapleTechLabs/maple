@@ -339,6 +339,23 @@ const deleteComponentDialog = (h: H, model: Model, page: V2StatusPage): Html => 
 	})
 }
 
+/** Leaving a component with unsaved edits: discard them and go on, or stay on them. */
+const discardComponentDialog = (h: H, model: Model): Html => {
+	const component = Option.getOrUndefined(
+		Arr.findFirst(componentsOf(model), (row) => row.id === model.pendingLeave?.componentId),
+	)
+	return confirmDialog(h, {
+		slotId: "status-page-discard-component",
+		model: model.discardComponentDialog,
+		toParentMessage: (message) => Message.GotDiscardComponentDialogMessage({ message }),
+		title: `Discard changes to ${component?.name ?? "this component"}?`,
+		description: "Your edits to it are not saved.",
+		confirmLabel: "Discard changes",
+		cancelLabel: "Keep editing",
+		onConfirm: Message.ClickedConfirmDiscardComponent(),
+	})
+}
+
 const deleteIncidentDialog = (h: H, model: Model, page: V2StatusPage): Html => {
 	const incident = Option.getOrUndefined(
 		Arr.findFirst(incidentsOf(model), (row) => row.id === model.confirmDeleteIncidentId),
@@ -396,6 +413,7 @@ const loaded = (h: H, model: Model, page: V2StatusPage, inputs: PageViewInputs):
 			),
 			panelSheet(h, model, time),
 			deleteComponentDialog(h, model, page),
+			discardComponentDialog(h, model),
 			...incidentDialogs(h, model, page, time),
 			deleteIncidentDialog(h, model, page),
 			breakGlassDialog(h, model),

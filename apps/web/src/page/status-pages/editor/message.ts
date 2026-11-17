@@ -69,10 +69,12 @@ export const Message = defineMessageUnion({
 	PressedEscape: {},
 	// Components
 	ChangedComponentField: { field: ComponentTextField, value: Schema.String },
-	CommittedComponent: {},
-	PickedComponentField: { field: ComponentTextField, value: Schema.String },
 	ToggledComponentUptime: {},
+	ClickedSaveComponent: {},
+	ClickedDiscardComponent: {},
 	CompletedSaveComponent: { result: LoadOutcome(V2StatusPageComponent) },
+	ClickedConfirmDiscardComponent: {},
+	GotDiscardComponentDialogMessage: { message: Dialog.Message },
 	/** A grip drag let go over `index`, the slot within the component's group. */
 	DroppedComponent: { componentId: StatusPageComponentId, index: Schema.Number },
 	/** ArrowUp (-1) or ArrowDown (1) on a component's grip. */

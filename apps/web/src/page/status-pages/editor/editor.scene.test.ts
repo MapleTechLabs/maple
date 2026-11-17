@@ -35,6 +35,7 @@ import {
 	text,
 	type,
 	withViewInputs,
+	within,
 } from "foldkit/scene"
 import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
@@ -614,17 +615,30 @@ describe("components under Settings > Monitors", () => {
 		).toBeNull()
 	})
 
-	test("switching to a tab that does not show the open component closes it", () => {
-		const left = routeChanged(selected(1), { _tag: "StatusPage", pageId: PUBLIC_ID, search: {} }, context)
-		expect(left.model.panel).toBeNull()
-		// A route change that skipped the field's blur still saves what was typed.
+	test("switching to a tab that does not show the open component closes it, keeping unsaved edits for Monitors", () => {
+		const away = { _tag: "StatusPage", pageId: PUBLIC_ID, search: {} } as const
+		expect(routeChanged(selected(1), away, context).model.panel).toBeNull()
 		const typed = pageUpdate(
 			selected(1),
 			Message.ChangedComponentField({ field: "name", value: "Payments" }),
 		).model
-		const leftTyped = routeChanged(typed, { _tag: "StatusPage", pageId: PUBLIC_ID, search: {} }, context)
-		expect(leftTyped.model.panel).toBeNull()
-		expect(names(leftTyped.commands)).toContain("SaveStatusPageComponent")
+		const left = routeChanged(typed, away, context)
+		expect(left.model.panel).toBeNull()
+		expect(names(left.commands)).not.toContain("SaveStatusPageComponent")
+		// The live page shows the component as saved while its edits wait.
+		expect(canvasDocument(left.model, statusPage())).not.toContain("Payments")
+		const back = routeChanged(
+			left.model,
+			{ _tag: "StatusPage", pageId: PUBLIC_ID, search: { view: "settings", section: "monitors" } },
+			context,
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(back.model),
+			expectView(role("button", { name: /^Component 1/u })).toHaveAttr("aria-expanded", "true"),
+			expectView(role("textbox", { name: "Shown as" })).toHaveValue("Payments"),
+			expectView(text("Unsaved changes")).toExist(),
+		)
 	})
 
 	test("a preview message that is not exactly a selection is ignored", () => {
@@ -662,12 +676,21 @@ describe("components under Settings > Monitors", () => {
 		)
 	})
 
-	test("a field saves on blur with one PATCH of the whole component, and only when it changed", () => {
+	test("typing raises the save bar and sends nothing; Save sends one PATCH of the whole component", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(selected(2)),
+			expectView(text("Unsaved changes")).not.toExist(),
+			type(role("textbox", { name: "Shown as" }), " Payments "),
+			Command.expectNone(),
+			expectView(text("Unsaved changes")).toExist(),
+			expectView(role("button", { name: "Save" })).toBeEnabled(),
+		)
 		const editing = pageUpdate(
 			selected(2),
 			Message.ChangedComponentField({ field: "name", value: " Payments " }),
-		)
-		const saving = pageUpdate(editing.model, Message.CommittedComponent())
+		).model
+		const saving = pageUpdate(editing, Message.ClickedSaveComponent())
 		expect(saving.commands).toMatchObject([
 			{
 				name: "SaveStatusPageComponent",
@@ -683,21 +706,51 @@ describe("components under Settings > Monitors", () => {
 				},
 			},
 		])
-		expect(pageUpdate(selected(2), Message.CommittedComponent()).commands ?? []).toEqual([])
+		// One save at a time, and nothing to save while the form matches the component.
+		expect(pageUpdate(saving.model, Message.ClickedSaveComponent()).commands ?? []).toEqual([])
+		expect(pageUpdate(selected(2), Message.ClickedSaveComponent()).commands ?? []).toEqual([])
 		const saved = pageUpdate(
 			saving.model,
 			Message.CompletedSaveComponent({ result: Result.succeed(component(2, { name: "Payments" })) }),
 		)
-		scene({ update: pageUpdate, view }, given(saved.model), expectView(text("Saved")).toExist())
+		scene(
+			{ update: pageUpdate, view },
+			given(saved.model),
+			expectView(text("Saved")).toExist(),
+			expectView(text("Unsaved changes")).not.toExist(),
+		)
 	})
 
-	test("a description typed in the panel saves on blur and shows in the preview as typed", () => {
+	test("a component without a name cannot be saved", () => {
+		const unnamed = pageUpdate(selected(2), Message.ChangedComponentField({ field: "name", value: " " }))
+		scene(
+			{ update: pageUpdate, view },
+			given(unnamed.model),
+			expectView(text("Add a name.")).toExist(),
+			expectView(role("button", { name: "Save" })).toBeDisabled(),
+		)
+		expect(pageUpdate(unnamed.model, Message.ClickedSaveComponent()).commands ?? []).toEqual([])
+	})
+
+	test("Discard puts the saved values back", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(selected(2)),
+			type(role("textbox", { name: "Shown as" }), "Payments"),
+			click(role("button", { name: "Discard" })),
+			Command.expectNone(),
+			expectView(role("textbox", { name: "Shown as" })).toHaveValue("Component 2"),
+			expectView(text("Unsaved changes")).not.toExist(),
+		)
+	})
+
+	test("a description typed in the panel shows in the preview as typed and goes out with Save", () => {
 		const editing = pageUpdate(
 			selected(2),
 			Message.ChangedComponentField({ field: "description", value: " Card payments and payouts " }),
 		)
 		expect(canvasDocument(editing.model, statusPage())).toContain("Card payments and payouts")
-		expect(pageUpdate(editing.model, Message.CommittedComponent()).commands).toMatchObject([
+		expect(pageUpdate(editing.model, Message.ClickedSaveComponent()).commands).toMatchObject([
 			{
 				name: "SaveStatusPageComponent",
 				args: { componentId: componentId(2), payload: { description: "Card payments and payouts" } },
@@ -710,32 +763,27 @@ describe("components under Settings > Monitors", () => {
 		)
 	})
 
-	test("the page's other groups are offered under Group, and picking one saves it at once", () => {
+	test("the page's other groups are offered under Group, and picking one fills it in without saving", () => {
 		const rows = [component(1, { group: "Core" }), component(2, { group: "Core" }), component(3)]
-		const open = selected(3, { components: rows })
 		scene(
 			{ update: pageUpdate, view },
-			given(open),
-			expectView(role("button", { name: "Core" })).toExist(),
-		)
-		const picked = pageUpdate(open, Message.PickedComponentField({ field: "group", value: "Core" }))
-		expect(picked.commands).toMatchObject([
-			{ name: "SaveStatusPageComponent", args: { payload: { group: "Core" } } },
-		])
-		scene(
-			{ update: pageUpdate, view },
-			given(picked.model),
+			given(selected(3, { components: rows })),
+			click(role("button", { name: "Core" })),
+			Command.expectNone(),
 			expectView(role("textbox", { name: "Group" })).toHaveValue("Core"),
 			expectView(role("group", { name: "Groups on this page" })).not.toExist(),
+			expectView(text("Unsaved changes")).toExist(),
 		)
 	})
 
-	test("picking a monitor saves at once and a failed save says so in the panel", () => {
+	test("a failed save keeps the edits and says so in the panel, and Save tries again", () => {
 		const monitor = downMonitor()
-		const saving = pageUpdate(
+		const picked = pageUpdate(
 			selected(1),
-			Message.PickedComponentField({ field: "monitorId", value: monitor.id }),
+			Message.ChangedComponentField({ field: "monitorId", value: monitor.id }),
 		)
+		expect(picked.commands ?? []).toEqual([])
+		const saving = pageUpdate(picked.model, Message.ClickedSaveComponent())
 		expect(saving.commands).toMatchObject([
 			{ name: "SaveStatusPageComponent", args: { payload: { monitor_id: monitor.id } } },
 		])
@@ -743,12 +791,18 @@ describe("components under Settings > Monitors", () => {
 			saving.model,
 			Message.CompletedSaveComponent({ result: Result.fail(toLoadFailure(new Error("refused"))) }),
 		).model
+		expect(failed.componentForm.monitorId).toBe(monitor.id)
 		scene(
 			{ update: pageUpdate, view },
 			given(failed),
 			expectView(text("Not saved")).toExist(),
 			expectView(text("Couldn't save the component")).toExist(),
+			expectView(text("Unsaved changes")).toExist(),
+			expectView(role("button", { name: "Save" })).toBeEnabled(),
 		)
+		expect(pageUpdate(failed, Message.ClickedSaveComponent()).commands).toMatchObject([
+			{ name: "SaveStatusPageComponent", args: { payload: { monitor_id: monitor.id } } },
+		])
 	})
 
 	test("a component without a monitor shows its stored uptime setting, disabled, and says why", () => {
@@ -773,18 +827,91 @@ describe("components under Settings > Monitors", () => {
 		)
 	})
 
-	test("Escape closes the panel", () => {
+	test("Escape closes the panel, and with unsaved edits asks first", () => {
 		expect(pageUpdate(selected(1), Message.PressedEscape()).model.panel).toBeNull()
-	})
-
-	test("Escape saves a typed component edit before closing, since it skips the field's blur", () => {
 		const editing = pageUpdate(
 			selected(2),
 			Message.ChangedComponentField({ field: "name", value: "Payments" }),
+		).model
+		const asked = pageUpdate(editing, Message.PressedEscape())
+		expect(asked.model.panel).toEqual({ _tag: "Component", componentId: componentId(2) })
+		expect(asked.model.discardComponentDialog.isOpen).toBe(true)
+		expect(names(asked.commands)).not.toContain("SaveStatusPageComponent")
+		const discarded = pageUpdate(asked.model, Message.ClickedConfirmDiscardComponent())
+		expect(discarded.model.panel).toBeNull()
+		expect(names(discarded.commands)).not.toContain("SaveStatusPageComponent")
+	})
+
+	test("opening another component with unsaved edits asks first, and Keep editing stays on them", () => {
+		const typed = pageUpdate(
+			selected(1),
+			Message.ChangedComponentField({ field: "name", value: "Payments" }),
+		).model
+		const asked = pageUpdate(typed, Message.ClickedComponent({ componentId: componentId(2) }))
+		expect(names(asked.commands)).not.toContain("SaveStatusPageComponent")
+		scene(
+			{ update: pageUpdate, view },
+			given(asked.model),
+			mounted,
+			expectView(role("alertdialog", { name: "Discard changes to Component 1?" })).toExist(),
+			expectView(within(role("alertdialog"), role("button", { name: "Keep editing" }))).toExist(),
 		)
-		const closed = pageUpdate(editing.model, Message.PressedEscape())
-		expect(closed.model.panel).toBeNull()
-		expect(names(closed.commands)).toContain("SaveStatusPageComponent")
+		const kept = pageUpdate(
+			asked.model,
+			Message.GotDiscardComponentDialogMessage({ message: Dialog.Message.ClickedClose() }),
+		).model
+		expect(kept.discardComponentDialog.isOpen).toBe(false)
+		scene(
+			{ update: pageUpdate, view },
+			given(kept),
+			mounted,
+			expectView(role("button", { name: /^Component 1/u })).toHaveAttr("aria-expanded", "true"),
+			expectView(role("button", { name: /^Component 2/u })).toHaveAttr("aria-expanded", "false"),
+			expectView(role("textbox", { name: "Shown as" })).toHaveValue("Payments"),
+		)
+	})
+
+	test("Discard changes drops the edits and opens the other component", () => {
+		const asked = steps(selected(1), [
+			Message.ChangedComponentField({ field: "name", value: "Payments" }),
+			Message.ClickedComponent({ componentId: componentId(2) }),
+		])
+		const discarded = pageUpdate(asked, Message.ClickedConfirmDiscardComponent())
+		expect(names(discarded.commands)).not.toContain("SaveStatusPageComponent")
+		expect(discarded.model.panel).toEqual({ _tag: "Component", componentId: componentId(2) })
+		expect(discarded.model.componentForm.name).toBe("Component 2")
+		// Component 1 opens again as saved.
+		const reopened = pageUpdate(
+			discarded.model,
+			Message.ClickedComponent({ componentId: componentId(1) }),
+		).model
+		expect(reopened.componentForm.name).toBe("Component 1")
+	})
+
+	test("Add monitors with unsaved edits asks first, and opens once they are discarded", () => {
+		const asked = steps(selected(1), [
+			Message.ChangedComponentField({ field: "group", value: "Core" }),
+			Message.ClickedAddComponent(),
+		])
+		expect(asked.panel?._tag).toBe("Component")
+		expect(asked.discardComponentDialog.isOpen).toBe(true)
+		expect(pageUpdate(asked, Message.ClickedConfirmDiscardComponent()).model.panel?._tag).toBe("Add")
+	})
+
+	test("edits being saved are not offered for discarding", () => {
+		const saving = steps(selected(1), [
+			Message.ChangedComponentField({ field: "name", value: "Payments" }),
+			Message.ClickedSaveComponent(),
+		])
+		const switched = pageUpdate(saving, Message.ClickedComponent({ componentId: componentId(2) })).model
+		expect(switched.discardComponentDialog.isOpen).toBe(false)
+		expect(switched.panel).toEqual({ _tag: "Component", componentId: componentId(2) })
+		// Typed after Save, they are.
+		const typedAfter = pageUpdate(
+			pageUpdate(saving, Message.ChangedComponentField({ field: "name", value: "Payments API" })).model,
+			Message.ClickedComponent({ componentId: componentId(2) }),
+		).model
+		expect(typedAfter.discardComponentDialog.isOpen).toBe(true)
 	})
 
 	test("removing a component asks first, then deletes it once", () => {
@@ -3386,88 +3513,7 @@ describe("the sheet, the previews and the reads they wait on", () => {
 		)
 	})
 
-	test("opening another component saves the typed edit first and keeps a save in flight", () => {
-		const typed = pageUpdate(
-			selected(1),
-			Message.ChangedComponentField({ field: "name", value: "Payments" }),
-		).model
-		const switched = pageUpdate(typed, Message.ClickedComponent({ componentId: componentId(2) }))
-		expect(switched.commands).toMatchObject([
-			{
-				name: "SaveStatusPageComponent",
-				args: { componentId: componentId(1), payload: { name: "Payments" } },
-			},
-		])
-		expect(switched.model.componentSave).toEqual({ _tag: "Saving", componentId: componentId(1) })
-		expect(switched.model.componentForm.name).toBe("Component 2")
-	})
-
-	/** Component 1's name blurred (its save in flight), then its description typed. */
-	const savingThenTyped = () =>
-		steps(selected(1), [
-			Message.ChangedComponentField({ field: "name", value: "Payments" }),
-			Message.CommittedComponent(),
-			Message.ChangedComponentField({ field: "description", value: "Card payments" }),
-		])
-
-	test("an edit typed while a save is in flight is queued when another component opens, and sent once the save lands", () => {
-		const switched = pageUpdate(
-			savingThenTyped(),
-			Message.ClickedComponent({ componentId: componentId(2) }),
-		)
-		expect(names(switched.commands)).not.toContain("SaveStatusPageComponent")
-		const landed = pageUpdate(
-			switched.model,
-			Message.CompletedSaveComponent({ result: Result.succeed(component(1, { name: "Payments" })) }),
-		)
-		expect(landed.commands).toContainEqual(
-			expect.objectContaining({
-				name: "SaveStatusPageComponent",
-				args: expect.objectContaining({
-					componentId: componentId(1),
-					payload: expect.objectContaining({ name: "Payments", description: "Card payments" }),
-				}),
-			}),
-		)
-		expect(landed.model.queuedComponentForms).toEqual([])
-	})
-
-	test("Escape queues an edit typed while a save is in flight, too", () => {
-		const escaped = pageUpdate(savingThenTyped(), Message.PressedEscape()).model
-		expect(Arr.map(escaped.queuedComponentForms, (form) => form.description)).toEqual(["Card payments"])
-	})
-
-	test("a refused save stays on its own component and its queued edit is never sent behind its back", () => {
-		const switched = pageUpdate(
-			savingThenTyped(),
-			Message.ClickedComponent({ componentId: componentId(2) }),
-		).model
-		const refused = pageUpdate(
-			switched,
-			Message.CompletedSaveComponent({ result: Result.fail(toLoadFailure(new Error("refused"))) }),
-		)
-		expect(names(refused.commands)).not.toContain("SaveStatusPageComponent")
-		expect(refused.model.queuedComponentForms).toEqual([])
-		expect(refused.model.componentSave).toMatchObject({ _tag: "Failed", componentId: componentId(1) })
-		scene(
-			{ update: pageUpdate, view },
-			given(refused.model),
-			expectView(text("Couldn't save the component")).not.toExist(),
-		)
-		// Closing the other component or opening a third sends nothing of the abandoned form.
-		expect(names(pageUpdate(refused.model, Message.PressedEscape()).commands)).not.toContain(
-			"SaveStatusPageComponent",
-		)
-		const third = pageUpdate(refused.model, Message.ClickedComponent({ componentId: componentId(3) }))
-		expect(names(third.commands)).not.toContain("SaveStatusPageComponent")
-		scene(
-			{ update: pageUpdate, view },
-			given(pageUpdate(refused.model, Message.ClickedComponent({ componentId: componentId(1) })).model),
-			expectView(text("Couldn't save the component")).toExist(),
-		)
-	})
-
-	test("opening a component after a JSON apply renamed an untouched one sends no stale PATCH", () => {
+	test("opening a component after a JSON apply renamed an untouched one opens it without asking", () => {
 		const opened = selected(1, { components: [component(1, { name: "API" }), component(2)] })
 		const advanced = routeChanged(
 			opened,
@@ -3487,9 +3533,9 @@ describe("the sheet, the previews and the reads they wait on", () => {
 			{ _tag: "StatusPage", pageId: PUBLIC_ID, search: { view: "settings", section: "monitors" } },
 			context,
 		).model
-		expect(
-			names(pageUpdate(back, Message.ClickedComponent({ componentId: componentId(2) })).commands),
-		).not.toContain("SaveStatusPageComponent")
+		const other = pageUpdate(back, Message.ClickedComponent({ componentId: componentId(2) })).model
+		expect(other.discardComponentDialog.isOpen).toBe(false)
+		expect(other.panel).toEqual({ _tag: "Component", componentId: componentId(2) })
 	})
 
 	test("Escape closes an expanded component row, but an open popup trigger or list keeps it", () => {

@@ -39,7 +39,7 @@ import { accessSection } from "./view-access"
 import { appearanceSection, brandingSection } from "./view-appearance"
 import { customDomainSection } from "./view-domain"
 import { jsonTab } from "./view-json"
-import { monitorsSection } from "./view-monitors"
+import { componentSaveBar, monitorsSection } from "./view-monitors"
 import { draftName, settingsPagePreview, tabPreview } from "./view-canvas"
 import { activeCustomDomain, pageUrlOf } from "./update-domain"
 import { Message } from "./message"
@@ -395,6 +395,21 @@ const sectionMenu = (h: H, page: V2StatusPage, section: SettingsSection): Html =
 		],
 	)
 
+/** One bar at a time: under Monitors an open component's edits take it over the page's settings. */
+const saveBars = (h: H, model: Model, form: SettingsForm, section: SettingsSection): ReadonlyArray<Html> => {
+	const componentBar = section === "monitors" ? componentSaveBar(h, model) : []
+	return componentBar.length > 0
+		? componentBar
+		: saveBar(h, {
+				isDirty: isSettingsDirty(model),
+				isPending: model.isSavingSettings,
+				context: saveContext(model, form, section),
+				onDiscard: Message.ClickedDiscardSettings(),
+				onSave: Message.ClickedSaveSettings(),
+				isSaveDisabled: hasSettingsIssues(form) || model.isApplyingJson,
+			})
+}
+
 export const settingsView = (h: H, model: Model, page: V2StatusPage, section: SettingsSection): Html => {
 	const form = Option.getOrElse(settingsOf(model), () => settingsFormOf(page))
 	return h.div(
@@ -427,14 +442,7 @@ export const settingsView = (h: H, model: Model, page: V2StatusPage, section: Se
 								alertDescription(h, [failureMessage(model.settingsFailure)]),
 							]),
 						]),
-				...saveBar(h, {
-					isDirty: isSettingsDirty(model),
-					isPending: model.isSavingSettings,
-					context: saveContext(model, form, section),
-					onDiscard: Message.ClickedDiscardSettings(),
-					onSave: Message.ClickedSaveSettings(),
-					isSaveDisabled: hasSettingsIssues(form) || model.isApplyingJson,
-				}),
+				...saveBars(h, model, form, section),
 			]),
 			h.aside(
 				[

@@ -11,13 +11,14 @@ import { Message as ListMessage } from "../../page/status-pages/list/message"
 import { Model as ListModel } from "../../page/status-pages/list/model"
 import { init as listInit, update as listUpdate } from "../../page/status-pages/list/update"
 import { view as listView } from "../../page/status-pages/list/view"
-import { FocusEditorElement, ReorderComponents } from "../../page/status-pages/editor/command"
+import { FocusEditorElement, ReorderComponents, SaveComponent } from "../../page/status-pages/editor/command"
 import { Message as EditorMessage } from "../../page/status-pages/editor/message"
 import { Model as EditorModel } from "../../page/status-pages/editor/model"
 import { componentsOf } from "../../page/status-pages/editor/reads"
 import { subscriptions as editorSubscriptions } from "../../page/status-pages/editor/subscription"
 import { init as editorInit, update as editorUpdate } from "../../page/status-pages/editor/update"
 import { view as editorView } from "../../page/status-pages/editor/view"
+import { componentPayload } from "../../page/status-pages/shared/form"
 import { component, incident, incidentId, statusPage } from "../../page/status-pages/shared/test-pages"
 import { downMonitor, httpMonitor } from "../../page/kit/uptime/test-monitors"
 import type { Resources } from "../../platform/resources"
@@ -30,7 +31,7 @@ import { labGrants, LabRole, readLabRole } from "../viewer-role"
 // pages, a page's editor open on an incident, or on Settings > Monitors with grouped components
 // to drag (`?page=list|editor|monitors`), as the viewer `?role=` names: an analyst reads the
 // incident and gets no control that posts, edits or deletes one. The editor runs for real with no
-// API: a reorder saves at once, every other read and write is dropped.
+// API: a reorder and a component's Save land at once, every other read and write is dropped.
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)(LAB_ORG),
@@ -151,12 +152,31 @@ const AnswerReorder = Command.define("AnswerLabStatusPageReorder", {
 		Effect.succeed(EditorMessage.CompletedReorder({ result: Result.succeed(components) })),
 })
 
-/** The kit's commands and the editor's focus moves run; a reorder is answered; the rest is dropped. */
+/** The lab's API for a component's Save: the component as sent. */
+const AnswerSave = Command.define("AnswerLabStatusPageComponentSave", {
+	args: { component: V2StatusPageComponent },
+	messages: [EditorMessage.CompletedSaveComponent],
+	execute: ({ component }) =>
+		Effect.succeed(EditorMessage.CompletedSaveComponent({ result: Result.succeed(component) })),
+})
+
+/** The component the save in flight sends: its listed row with the form over it. */
+const savedOf = (model: EditorModel): ReadonlyArray<V2StatusPageComponent> =>
+	Arr.findFirst(componentsOf(model), (row) => row.id === model.componentForm.editingId).pipe(
+		Option.map((row) => ({ ...row, ...componentPayload(model.componentForm) })),
+		Option.toArray,
+	)
+
+const sends = (commands: EditorCommands | undefined, name: string): boolean =>
+	Arr.some(commands ?? [], (command) => command.name === name)
+
+/** The kit's commands and the editor's focus moves run; a reorder and a Save are answered; the rest is dropped. */
 const kept = (model: EditorModel, commands: EditorCommands | undefined): EditorCommands => [
 	...keepLocal(commands),
 	...Arr.filter(commands ?? [], (command) => command.name === FocusEditorElement.name),
-	...(Arr.some(commands ?? [], (command) => command.name === ReorderComponents.name)
-		? [AnswerReorder({ components: componentsOf(model) })]
+	...(sends(commands, ReorderComponents.name) ? [AnswerReorder({ components: componentsOf(model) })] : []),
+	...(sends(commands, SaveComponent.name)
+		? Arr.map(savedOf(model), (saved) => AnswerSave({ component: saved }))
 		: []),
 ]
 

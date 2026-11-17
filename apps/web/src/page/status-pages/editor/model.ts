@@ -69,15 +69,26 @@ export const Panel = Schema.Union([
 export type Panel = typeof Panel.Type
 
 /**
- * The last component save, for the component it belongs to: in flight, landed, or refused with why.
- * Its row shows it; another component's row shows nothing of it.
+ * The last component save, for the component it belongs to: in flight (with the form it sends),
+ * landed, or refused with why. Its row shows it; another component's row shows nothing of it.
  */
 export const ComponentSave = Schema.Union([
-	Schema.TaggedStruct("Saving", { componentId: StatusPageComponentId }),
+	Schema.TaggedStruct("Saving", { componentId: StatusPageComponentId, form: ComponentForm }),
 	Schema.TaggedStruct("Saved", { componentId: StatusPageComponentId }),
 	Schema.TaggedStruct("Failed", { componentId: StatusPageComponentId, failure: LoadFailure }),
 ])
 export type ComponentSave = typeof ComponentSave.Type
+
+/** What leaving a component with unsaved edits does once they are discarded. */
+export const ComponentLeave = Schema.Union([
+	Schema.TaggedStruct("Open", { componentId: StatusPageComponentId, isRevealed: Schema.Boolean }),
+	Schema.TaggedStruct("Close", {}),
+	Schema.TaggedStruct("Add", {}),
+])
+export type ComponentLeave = typeof ComponentLeave.Type
+
+/** A leave waiting on the discard confirm, and the component whose edits it drops. */
+export const PendingLeave = Schema.Struct({ componentId: StatusPageComponentId, action: ComponentLeave })
 
 export const Model = Schema.Struct({
 	search: StatusPageSearch,
@@ -115,11 +126,15 @@ export const Model = Schema.Struct({
 	previewShown: Schema.Number,
 	previewHistory: PreviewHistory,
 	// Components
-	/** The selected component as its inputs hold it; each commit saves what differs. */
+	/**
+	 * The open component as its inputs hold it; Save sends it. Unsaved edits outlive a tab switch,
+	 * and Monitors opens on them again.
+	 */
 	componentForm: ComponentForm,
 	componentSave: Schema.NullOr(ComponentSave),
-	/** Forms committed while a save was in flight, one per component, sent in turn as saves land. */
-	queuedComponentForms: Schema.Array(ComponentForm),
+	/** The leave waiting on the discard confirm; kept while the dialog fades out, so its title holds. */
+	pendingLeave: Schema.NullOr(PendingLeave),
+	discardComponentDialog: Dialog.Model,
 	confirmDeleteComponentId: Schema.NullOr(StatusPageComponentId),
 	deleteComponentDialog: Dialog.Model,
 	isDeletingComponent: Schema.Boolean,
