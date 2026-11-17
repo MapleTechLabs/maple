@@ -122,6 +122,8 @@ const VERB_ICONS = {
 	role_mapping_updated: "ShieldIcon",
 	bypass_added: "PlusIcon",
 	bypass_removed: "TrashIcon",
+	events_key_read: "EyeIcon",
+	events_key_rotated: "ArrowRotateClockwiseIcon",
 } as const satisfies { readonly [Verb in AuditVerb]: IconName }
 
 const hasVerbIcon = (verb: string): verb is keyof typeof VERB_ICONS =>
