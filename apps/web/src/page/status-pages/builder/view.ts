@@ -101,7 +101,7 @@ const pageSection = (h: H, model: Model): Html =>
 
 const DOMAIN_STEPS: ReadonlyArray<string> = [
 	"Pick a subdomain you own, like status.acme.com. A bare domain (acme.com) can't point at Maple.",
-	"Once the page is created, Maple shows the DNS record to add at your DNS provider: a CNAME from that subdomain to Maple.",
+	"Once the page is created, Maple shows the DNS records to add at your DNS provider: a CNAME from that subdomain to Maple, and a TXT record that proves you own it.",
 	"Maple checks the record and issues the HTTPS certificate, usually within minutes. Until then visitors use the page's Maple address.",
 ]
 

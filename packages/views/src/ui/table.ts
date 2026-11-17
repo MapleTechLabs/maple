@@ -18,6 +18,7 @@ import {
 	tableSortIdleIconStyles,
 	tableStyles,
 	truncatedCellStyles,
+	wrappingCellStyles,
 } from "./table.styles"
 import { rowSelectedClass } from "./list-row.styles"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
@@ -174,6 +175,14 @@ export const truncatedTableCell = <M>(
 	className?: string,
 	attributes: ReadonlyArray<Attribute<M>> = [],
 ): Html => tableCell(h, children, cn(truncatedCellStyles, className), attributes)
+
+/** A cell whose long value wraps inside its column: a hostname, a key, a record. */
+export const wrappingTableCell = <M>(
+	h: HtmlBuilder<M>,
+	children: Children,
+	className?: string,
+	attributes: ReadonlyArray<Attribute<M>> = [],
+): Html => tableCell(h, children, cn(wrappingCellStyles, className), attributes)
 
 /** A figure column's cell: right-aligned, tabular figures so the digits line up down the column. */
 export const numericTableCell = <M>(

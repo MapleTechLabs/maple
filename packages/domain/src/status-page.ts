@@ -181,6 +181,14 @@ export const StatusPageCustomDomainDnsRecord = Schema.Struct({
 })
 export type StatusPageCustomDomainDnsRecord = Schema.Schema.Type<typeof StatusPageCustomDomainDnsRecord>
 
+/** The DNS label, under the hostname, of the TXT record that proves a claim on a custom domain. */
+export const CUSTOM_DOMAIN_CHALLENGE_LABEL = "_maple-challenge"
+
+/** True for the record that proves a claim: Maple sets a new domain up only once it is published. */
+export const isCustomDomainChallengeRecord = (
+	record: Pick<StatusPageCustomDomainDnsRecord, "type" | "name">,
+): boolean => record.type === "TXT" && Str.startsWith(`${CUSTOM_DOMAIN_CHALLENGE_LABEL}.`)(record.name)
+
 /** A custom domain as the API takes it: any case, trimmed, then checked by {@link customDomainIssue}. */
 export const StatusPageCustomDomainHostname = Schema.String.pipe(
 	Schema.decodeTo(

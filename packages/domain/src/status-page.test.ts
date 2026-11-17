@@ -7,6 +7,7 @@ import {
 	STATUS_PAGE_MAX_IMAGE_BYTES,
 	contrastRatio,
 	customDomainIssue,
+	isCustomDomainChallengeRecord,
 	normalizeCustomDomain,
 	StatusPageCustomDomainHostname,
 	DEFAULT_STATUS_PAGE_THEME,
@@ -84,10 +85,12 @@ describe("isStatusPageImageDataUrl", () => {
 
 	it("takes an image up to the cap and refuses one byte over, whatever its type", () => {
 		for (const type of ["image/png", "image/svg+xml", "image/vnd.microsoft.icon"]) {
-			expect(isStatusPageImageDataUrl(`data:${type};base64,${payloadOf(STATUS_PAGE_MAX_IMAGE_BYTES)}`)).toBe(true)
-			expect(isStatusPageImageDataUrl(`data:${type};base64,${payloadOf(STATUS_PAGE_MAX_IMAGE_BYTES + 1)}`)).toBe(
-				false,
-			)
+			expect(
+				isStatusPageImageDataUrl(`data:${type};base64,${payloadOf(STATUS_PAGE_MAX_IMAGE_BYTES)}`),
+			).toBe(true)
+			expect(
+				isStatusPageImageDataUrl(`data:${type};base64,${payloadOf(STATUS_PAGE_MAX_IMAGE_BYTES + 1)}`),
+			).toBe(false)
 		}
 	})
 
@@ -667,5 +670,18 @@ describe("custom domain hostnames", () => {
 		])
 			assert.isNotNull(customDomainIssue(normalizeCustomDomain(hostname)), hostname)
 		assert.isTrue(Result.isFailure(decode("status.maple.dev")))
+	})
+
+	it("tells the record that proves a claim from the other records a domain lists", () => {
+		assert.isTrue(
+			isCustomDomainChallengeRecord({ type: "TXT", name: "_maple-challenge.status.acme.com" }),
+		)
+		for (const record of [
+			{ type: "TXT", name: "_cf-custom-hostname.status.acme.com" },
+			{ type: "TXT", name: "_acme-challenge.status.acme.com" },
+			{ type: "CNAME", name: "_maple-challenge.status.acme.com" },
+			{ type: "CNAME", name: "status.acme.com" },
+		] as const)
+			assert.isFalse(isCustomDomainChallengeRecord(record), record.name)
 	})
 })
