@@ -2,7 +2,7 @@ import { OrgId } from "@maple/domain"
 import { AuditTrailForbiddenError, AuditTrailPersistenceError } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { Option, Result, Schema, Array as Arr, String as Str } from "effect"
-import { expect as expectView, given, role, scene, text, within, withViewInputs } from "foldkit/scene"
+import { expect as expectView, given, Mount, role, scene, text, within, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { auditEventsOf, noAuditEvents } from "../../../lab/security-audit-log-fixture"
@@ -10,7 +10,8 @@ import { AppRoute, hrefOf } from "../../../route"
 import type { PageContext } from "../../contract"
 import { auditEntryHref } from "../../kit/audit-entry-link"
 import { eventsOf, nextCursorOf } from "./derive"
-import { type EventsPage, Message, type Model, type Search, type Sources } from "./model"
+import { MountSelect, Message as SelectMessage } from "@maple/views/ui/select"
+import { ALL_PROVIDERS, type EventsPage, Message, type Model, type Search, type Sources } from "./model"
 import { enter, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
@@ -497,6 +498,59 @@ describe("security audit log", () => {
 					hrefOf(AppRoute.SourcesNew({ search: { integration: "vercel" } })),
 				),
 			)
+		})
+
+		const openPlatforms = (model: Model): Model =>
+			pageUpdate(
+				model,
+				Message.GotProviderSelectMessage({
+					message: SelectMessage.ClickedTrigger({ selectedIndex: 0 }),
+				}),
+			).model
+
+		const popupMounted = Mount.resolve(MountSelect, SelectMessage.CompletedMountSelect())
+
+		test("the platform filter offers only platforms that are connected or sent events", () => {
+			scene(
+				{ update: pageUpdate, view },
+				given(openPlatforms(withSources(loaded()))),
+				popupMounted,
+				expectView(role("option", { name: "Vercel" })).toExist(),
+				expectView(role("option", { name: "Google Cloud" })).toBeAbsent(),
+			)
+			scene(
+				{ update: pageUpdate, view },
+				given(openPlatforms(withSources(loaded(PAGE, { provider: "gcp" })))),
+				popupMounted,
+				expectView(role("option", { name: "Google Cloud" })).toExist(),
+			)
+		})
+
+		test("until the sources answer, the platform filter offers every platform", () => {
+			scene(
+				{ update: pageUpdate, view },
+				given(openPlatforms(loaded())),
+				popupMounted,
+				expectView(role("option", { name: "Google Cloud" })).toExist(),
+				expectView(role("option", { name: "AWS" })).toExist(),
+			)
+		})
+
+		test("picking a platform filters the list, and All platforms drops it", () => {
+			const pick = (model: Model, value: string) =>
+				pageUpdate(
+					model,
+					Message.GotProviderSelectMessage({
+						message: SelectMessage.SelectedItem({ index: 1, value }),
+					}),
+				)
+			expect(pick(openPlatforms(withSources(loaded())), "vercel").outMessage).toMatchObject({
+				url: hrefOf(routeOf({ provider: "vercel" })),
+			})
+			expect(
+				pick(openPlatforms(withSources(loaded(PAGE, { provider: "vercel" }))), ALL_PROVIDERS)
+					.outMessage,
+			).toMatchObject({ url: hrefOf(routeOf({})) })
 		})
 
 		test("View events narrows the list to that platform", () => {
