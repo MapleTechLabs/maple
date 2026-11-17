@@ -1,6 +1,7 @@
 import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { Effect, Result, Schema, Array as Arr } from "effect"
+import { AsyncData, Command } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import type { PageContext } from "../../page/contract"
@@ -10,6 +11,7 @@ import { Message as ListMessage } from "../../page/status-pages/list/message"
 import { Model as ListModel } from "../../page/status-pages/list/model"
 import { init as listInit, update as listUpdate } from "../../page/status-pages/list/update"
 import { view as listView } from "../../page/status-pages/list/view"
+import type { Resources } from "../../platform/resources"
 import { defineShellLab } from "../shell-lab"
 import { LAB_NOW_MS, LAB_ORG, LAB_PAGES } from "../status-pages-fixture"
 
@@ -42,6 +44,57 @@ const listModel = (): ListModel => {
 		ListMessage.CompletedFetchPages({ key: entered.pages.key ?? "", result: Result.succeed(LAB_PAGES) }),
 	)
 }
+
+type ListCommand = Command.Command<ListMessage, never, Resources>
+
+/** A delete is answered from the fixture: the page leaves the list as it would after the API's answer. */
+const answerLocally = (
+	model: ListModel,
+	commands: ReadonlyArray<ListCommand>,
+): { model: ListModel; commands: ReadonlyArray<ListCommand> } => {
+	const deleting = model.deletingPageId
+	if (deleting === null || !Arr.some(commands, (command) => command.name === "DeleteListedStatusPage"))
+		return { model, commands: Arr.filter(commands, (command) => !/^(Fetch|Read)/.test(command.name)) }
+	const done = listUpdate(
+		model,
+		ListMessage.CompletedDelete({ result: Result.succeed(undefined) }),
+		context,
+	)
+	const remaining = Arr.filter(
+		AsyncData.getOrElse(model.pages.data, () => LAB_PAGES),
+		(row) => row.page.id !== deleting,
+	)
+	const reread = listUpdate(
+		done.model,
+		ListMessage.CompletedFetchPages({
+			key: done.model.pages.key ?? "",
+			result: Result.succeed(remaining),
+		}),
+		context,
+	)
+	return {
+		model: reread.model,
+		commands: Arr.filter(done.commands ?? [], (command) => !/^(Fetch|Read)/.test(command.name)),
+	}
+}
+
+const update = (
+	model: Model,
+	message: Message,
+): { model: Model; commands?: ReadonlyArray<Command.Command<Message, never, Resources>> } =>
+	Message.match(message, {
+		GotListMessage: ({ message: child }) => {
+			const step = listUpdate(model.list, child, context)
+			const local = answerLocally(step.model, step.commands ?? [])
+			return {
+				model: { ...model, list: local.model },
+				commands: Command.mapMessages(local.commands, (inner) =>
+					Message.GotListMessage({ message: inner }),
+				),
+			}
+		},
+		Ignored: () => ({ model }),
+	})
 
 const section = (h: HtmlBuilder<Message>, title: string, children: ReadonlyArray<Html>): Html =>
 	h.section(
@@ -111,7 +164,7 @@ export const lab = defineShellLab("Status pages", {
 	Flags,
 	flags: Effect.succeed({}),
 	init: () => ({ model: { list: listModel() } }),
-	update: (model) => ({ model }),
+	update,
 	view,
 	currentPath: "/lab/status-pages",
 	breadcrumbs: [{ label: "Lab" }, { label: "Status pages" }],

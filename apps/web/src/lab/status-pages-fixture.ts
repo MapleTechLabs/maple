@@ -4,7 +4,7 @@ import { DEFAULT_STATUS_PAGE_THEME } from "@maple/domain/status-page"
 import { Schema } from "effect"
 import type { StatusPageSummary } from "../page/status-pages/shared/derive"
 
-// `/lab/status-pages` fixture: one live page and one whose last publish failed.
+// `/lab/status-pages` fixture: a live page, one whose last publish failed, a draft and an internal page.
 
 export const LAB_ORG = "org_lab_status_pages"
 export const LAB_NOW_MS = Date.UTC(2026, 9, 1, 12, 0)
@@ -52,5 +52,17 @@ export const LAB_PAGES: ReadonlyArray<StatusPageSummary> = [
 		overall: "partial_outage",
 		componentCount: 2,
 		openIncidents: 1,
+	},
+	{
+		page: page(3, { name: "Partner API", slug: "acme-partners", draft: true, published_at: null }),
+		overall: "operational",
+		componentCount: 1,
+		openIncidents: 0,
+	},
+	{
+		page: page(4, { name: "Ops board", slug: "acme-ops", visibility: "internal" }),
+		overall: "degraded",
+		componentCount: 3,
+		openIncidents: 0,
 	},
 ]
