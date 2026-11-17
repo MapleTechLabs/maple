@@ -37,13 +37,14 @@ export const assignableRoles = [
 		role: "engineer",
 		clerkKey: "org:engineer",
 		label: "Engineer",
-		summary: "Also manages integrations, code review, alerts, monitors, status pages and ingest setup.",
+		summary:
+			"Also manages integrations, data sources, code review, alerts, monitors, status pages, ingest setup and restricted API keys.",
 	},
 	{
 		role: "admin",
 		clerkKey: "org:admin",
 		label: "Admin",
-		summary: "Also manages billing, members, API keys and the organization itself.",
+		summary: "Also manages billing, members, full-access API keys and the organization itself.",
 	},
 ] as const satisfies ReadonlyArray<{ role: Role; clerkKey: string; label: string; summary: string }>
 

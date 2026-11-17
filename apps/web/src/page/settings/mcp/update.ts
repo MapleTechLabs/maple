@@ -114,7 +114,7 @@ export const update = (model: Model, message: Message): Return =>
 				),
 			}
 		},
-		ClickedCreateMcpKey: () => liftCreateKey(model, CreateKey.open(model.createKey, "mcp")),
+		ClickedCreateMcpKey: () => liftCreateKey(model, CreateKey.open(model.createKey, "mcp", [])),
 		GotCreateKeyMessage: ({ message: child }) =>
 			liftCreateKey(model, CreateKey.update(model.createKey, child)),
 		ClickedRevoke: ({ connectionId }) =>

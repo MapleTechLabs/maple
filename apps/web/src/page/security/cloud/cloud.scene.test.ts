@@ -200,6 +200,60 @@ describe("security cloud findings", () => {
 		)
 	})
 
+	test("says which services' findings arrive live, and that the rest are polled", () => {
+		const polled = allClearOverview(NOW)
+		scene(
+			{ update: pageUpdate, view },
+			given(listed(polled)),
+			expectView(
+				text(/^Checked every five minutes, and live once AWS sends a finding event/u),
+			).toExist(),
+		)
+		const pushed = (sources: ReadonlyArray<string>) => ({
+			...polled,
+			services: Arr.map(polled.services, (service) =>
+				sources.includes(service.source) ? { ...service, pushedAt: NOW - 60_000 } : service,
+			),
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(listed(pushed(["guardduty"]))),
+			expectView(text(/^Live for GuardDuty: their findings arrive/u)).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(listed(pushed(["guardduty", "securityhub", "inspector", "access_analyzer"]))),
+			expectView(text("Live: findings arrive as AWS reports them.")).toExist(),
+		)
+		// Only GuardDuty and Inspector are on, and both deliver: every enabled service is live.
+		const twoOn = {
+			...polled,
+			services: Arr.filter(pushed(["guardduty", "inspector"]).services, (service) =>
+				["guardduty", "inspector"].includes(service.source),
+			),
+		}
+		scene(
+			{ update: pageUpdate, view },
+			given(listed(twoOn)),
+			expectView(text("Live: findings arrive as AWS reports them.")).toExist(),
+		)
+		// Events that stopped over a week ago no longer count, as the poller no longer counts them.
+		const stale = {
+			...polled,
+			services: Arr.map(polled.services, (service) => ({
+				...service,
+				pushedAt: NOW - 8 * 24 * 60 * 60_000,
+			})),
+		}
+		scene(
+			{ update: pageUpdate, view },
+			given(listed(stale)),
+			expectView(
+				text(/^Checked every five minutes, and live once AWS sends a finding event/u),
+			).toExist(),
+		)
+	})
+
 	test("a severity tile and the filters move the URL; the request drops values it has no name for", () => {
 		const model = listed(populatedOverview(NOW), cloudFindingsOf(NOW))
 		const tile = pageUpdate(model, Message.ChangedFilter({ filter: "severity", value: "critical" }))

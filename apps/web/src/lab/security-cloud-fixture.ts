@@ -40,6 +40,7 @@ const service = (
 	state,
 	lastError,
 	checkedAt: nowMs - 4 * MINUTE,
+	pushedAt: null,
 })
 
 const enabledEverywhere = (nowMs: number) =>
@@ -71,9 +72,16 @@ export const populatedOverview = (nowMs: number): CloudSecurityOverviewResponse 
 			bySource: { guardduty: 2, securityhub: 2, inspector: 1, access_analyzer: 0 },
 		},
 		services: [
-			...Arr.filter(
-				enabledEverywhere(nowMs),
-				(row) => !(row.source === "inspector" && row.region === "eu-west-1"),
+			// GuardDuty and Security Hub deliver events; the others are only polled.
+			...Arr.map(
+				Arr.filter(
+					enabledEverywhere(nowMs),
+					(row) => !(row.source === "inspector" && row.region === "eu-west-1"),
+				),
+				(row) =>
+					row.source === "guardduty" || row.source === "securityhub"
+						? { ...row, pushedAt: nowMs - 2 * MINUTE }
+						: row,
 			),
 			service(nowMs, "inspector", "eu-west-1", "not_enabled"),
 		],
