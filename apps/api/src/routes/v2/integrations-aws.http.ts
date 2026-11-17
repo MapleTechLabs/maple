@@ -114,6 +114,10 @@ export const HttpV2AwsIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "awsIn
 						)
 					}
 					const setup = yield* aws.setup(tenant.orgId, params.id)
+					// The key itself stays out of the entry: it records that the key was handed out.
+					if (setup.containsEventsKey) {
+						yield* recordHttpAudit("aws_connection.events_key_read", { resourceId: params.id })
+					}
 					return {
 						object: "aws_connection.setup" as const,
 						stack_name: setup.stackName,
@@ -125,6 +129,25 @@ export const HttpV2AwsIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "awsIn
 						metrics_stack_name: setup.metricsStackName,
 						metrics_cloudformation_template: setup.metricsCloudformationTemplate,
 					}
+				}),
+			)
+			.handle("rotateEventsKey", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
+					// The same bar as `setup`, which hands the new key out.
+					if (!scopeAllows(tenant.scopes, { family: "integrations", access: "write" })) {
+						return yield* V2InsufficientScope.make(
+							'Rotating a connection\'s events key needs "integrations:write".',
+						)
+					}
+					const connection = yield* aws.rotateEventsKey(tenant.orgId, params.id)
+					yield* recordHttpAudit("aws_connection.events_key_rotated", {
+						resourceId: connection.id,
+					})
+					return toV2Connection(connection)
 				}),
 			)
 			.handle("checkConnection", ({ params }) =>

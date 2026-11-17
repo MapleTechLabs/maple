@@ -133,6 +133,12 @@ export interface CloudSecurityStoreApi {
 		orgId: OrgId,
 		connectionId: AwsConnectionId,
 	) => Effect.Effect<ReadonlyArray<CloudSecurityServiceStateRow>, IntegrationsPersistenceError>
+	/** Whether the poller has read this region of the connection, so it reconciles what is stored there. */
+	readonly knowsRegion: (
+		orgId: OrgId,
+		connectionId: AwsConnectionId,
+		region: AwsRegion,
+	) => Effect.Effect<boolean, IntegrationsPersistenceError>
 	/** Severity first, then the newest sighting. Reads one row past the page to tell if more follow. */
 	readonly listFindings: (
 		orgId: OrgId,
@@ -372,6 +378,26 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 				)
 			})
 
+			const knowsRegion = Effect.fn("CloudSecurityStore.knowsRegion")(function* (
+				orgId: OrgId,
+				connectionId: AwsConnectionId,
+				region: AwsRegion,
+			) {
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(CloudSecurityServiceStates)
+							.select(($) => ({ source: $.source }))
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.connectionId.eq(connectionId),
+								$.region.eq(region),
+							])
+							.limit(1),
+					),
+				)
+				return rows.length > 0
+			})
+
 			const staleIds = Effect.fn("CloudSecurityStore.staleIds")(function* (
 				feed: CloudFeedRef,
 				syncedBefore: number,
@@ -580,6 +606,7 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 				recordServiceState,
 				recordPush,
 				serviceStates,
+				knowsRegion,
 				listFindings,
 				getFinding,
 				summary,
