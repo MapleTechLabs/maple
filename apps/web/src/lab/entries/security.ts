@@ -24,6 +24,9 @@ import { breadcrumbsOf as runCrumbs, view as runView } from "../../page/security
 import * as TabsPage from "../../page/security/tabs/model"
 import * as TabsUpdate from "../../page/security/tabs/update"
 import { view as tabsView } from "../../page/security/tabs/view"
+import * as CloudPage from "../../page/security/cloud/model"
+import * as CloudUpdate from "../../page/security/cloud/update"
+import { breadcrumbsOf as cloudCrumbs, view as cloudView } from "../../page/security/cloud/view"
 import * as TelemetryPage from "../../page/security/telemetry/model"
 import * as TelemetryUpdate from "../../page/security/telemetry/update"
 import { view as telemetryView } from "../../page/security/telemetry/view"
@@ -43,6 +46,7 @@ const Model = Schema.Struct({
 	detections: Schema.NullOr(DetectionsPage.Model),
 	detectionForm: Schema.NullOr(DetectionFormPage.Model),
 	dependencies: Schema.NullOr(DependenciesPage.Model),
+	cloud: Schema.NullOr(CloudPage.Model),
 })
 type Model = typeof Model.Type
 
@@ -55,6 +59,7 @@ const Message = defineMessageUnion({
 	GotDetectionsMessage: { message: DetectionsPage.Message },
 	GotDetectionFormMessage: { message: DetectionFormPage.Message },
 	GotDependenciesMessage: { message: DependenciesPage.Message },
+	GotCloudMessage: { message: CloudPage.Message },
 })
 type Message = typeof Message.Type
 
@@ -84,6 +89,7 @@ const init = (input: typeof Flags.Type) => {
 		detections: null,
 		detectionForm: null,
 		dependencies: null,
+		cloud: null,
 	}
 	switch (built._tag) {
 		case "Tabs":
@@ -140,6 +146,13 @@ const init = (input: typeof Flags.Type) => {
 				model: { ...empty, dependencies: built.step.model },
 				commands: Command.mapMessages(built.step.commands, (message) =>
 					Message.GotDependenciesMessage({ message }),
+				),
+			}
+		case "Cloud":
+			return {
+				model: { ...empty, cloud: built.step.model },
+				commands: Command.mapMessages(built.step.commands, (message) =>
+					Message.GotCloudMessage({ message }),
 				),
 			}
 	}
@@ -217,6 +230,16 @@ const update = (model: Model, message: Message) =>
 				),
 			}
 		},
+		GotCloudMessage: ({ message: inner }) => {
+			if (model.cloud === null) return { model }
+			const next = CloudUpdate.update(model.cloud, inner, context)
+			return {
+				model: { ...model, cloud: next.model },
+				commands: Command.mapMessages(Arr.filter(next.commands ?? [], isLocalCommand), (child) =>
+					Message.GotCloudMessage({ message: child }),
+				),
+			}
+		},
 		GotDependenciesMessage: ({ message: inner }) => {
 			if (model.dependencies === null) return { model }
 			const next = DependenciesUpdate.update(model.dependencies, inner, context)
@@ -230,73 +253,82 @@ const update = (model: Model, message: Message) =>
 	})
 
 const view = (model: Model, h: HtmlBuilder<Message>): Html =>
-	model.tabs !== null
+	model.cloud !== null
 		? h.submodel({
-				slotId: "security-lab-tabs",
-				model: model.tabs,
-				view: tabsView,
+				slotId: "security-lab-cloud",
+				model: model.cloud,
+				view: cloudView,
 				viewInputs: { context },
-				toParentMessage: (message) => Message.GotTabsMessage({ message }),
+				toParentMessage: (message) => Message.GotCloudMessage({ message }),
 			})
-		: model.run !== null
+		: model.tabs !== null
 			? h.submodel({
-					slotId: "security-lab-run",
-					model: model.run,
-					view: runView,
+					slotId: "security-lab-tabs",
+					model: model.tabs,
+					view: tabsView,
 					viewInputs: { context },
-					toParentMessage: (message) => Message.GotRunMessage({ message }),
+					toParentMessage: (message) => Message.GotTabsMessage({ message }),
 				})
-			: model.finding !== null
+			: model.run !== null
 				? h.submodel({
-						slotId: "security-lab-finding",
-						model: model.finding,
-						view: findingView,
+						slotId: "security-lab-run",
+						model: model.run,
+						view: runView,
 						viewInputs: { context },
-						toParentMessage: (message) => Message.GotFindingMessage({ message }),
+						toParentMessage: (message) => Message.GotRunMessage({ message }),
 					})
-				: model.telemetry !== null
+				: model.finding !== null
 					? h.submodel({
-							slotId: "security-lab-telemetry",
-							model: model.telemetry,
-							view: telemetryView,
+							slotId: "security-lab-finding",
+							model: model.finding,
+							view: findingView,
 							viewInputs: { context },
-							toParentMessage: (message) => Message.GotTelemetryMessage({ message }),
+							toParentMessage: (message) => Message.GotFindingMessage({ message }),
 						})
-					: model.dependencies !== null
+					: model.telemetry !== null
 						? h.submodel({
-								slotId: "security-lab-dependencies",
-								model: model.dependencies,
-								view: dependenciesView,
+								slotId: "security-lab-telemetry",
+								model: model.telemetry,
+								view: telemetryView,
 								viewInputs: { context },
-								toParentMessage: (message) => Message.GotDependenciesMessage({ message }),
+								toParentMessage: (message) => Message.GotTelemetryMessage({ message }),
 							})
-						: model.detections !== null
+						: model.dependencies !== null
 							? h.submodel({
-									slotId: "security-lab-detections",
-									model: model.detections,
-									view: detectionsView,
+									slotId: "security-lab-dependencies",
+									model: model.dependencies,
+									view: dependenciesView,
 									viewInputs: { context },
-									toParentMessage: (message) => Message.GotDetectionsMessage({ message }),
+									toParentMessage: (message) => Message.GotDependenciesMessage({ message }),
 								})
-							: model.detectionForm !== null
+							: model.detections !== null
 								? h.submodel({
-										slotId: "security-lab-detection-form",
-										model: model.detectionForm,
-										view: detectionFormView,
+										slotId: "security-lab-detections",
+										model: model.detections,
+										view: detectionsView,
 										viewInputs: { context },
 										toParentMessage: (message) =>
-											Message.GotDetectionFormMessage({ message }),
+											Message.GotDetectionsMessage({ message }),
 									})
-								: model.auditLog !== null
+								: model.detectionForm !== null
 									? h.submodel({
-											slotId: "security-lab-audit-log",
-											model: model.auditLog,
-											view: auditLogView,
+											slotId: "security-lab-detection-form",
+											model: model.detectionForm,
+											view: detectionFormView,
 											viewInputs: { context },
 											toParentMessage: (message) =>
-												Message.GotAuditLogMessage({ message }),
+												Message.GotDetectionFormMessage({ message }),
 										})
-									: h.empty
+									: model.auditLog !== null
+										? h.submodel({
+												slotId: "security-lab-audit-log",
+												model: model.auditLog,
+												view: auditLogView,
+												viewInputs: { context },
+												toParentMessage: (message) =>
+													Message.GotAuditLogMessage({ message }),
+											})
+										: h.empty
 
 export const lab = defineShellLab("Security Center", {
 	Model,
@@ -308,21 +340,23 @@ export const lab = defineShellLab("Security Center", {
 	view,
 	currentPath: "/security/code",
 	breadcrumbs: (model: Model) =>
-		model.tabs !== null
-			? tabsCrumbs("code", model.tabs.tab)
-			: model.run !== null
-				? runCrumbs(model.run)
-				: model.finding !== null
-					? findingCrumbs(model.finding)
-					: model.telemetry !== null
-						? tabsCrumbs(model.telemetry.tab)
-						: model.dependencies !== null
-							? tabsCrumbs("dependencies")
-							: model.auditLog !== null
-								? tabsCrumbs("auditLog")
-								: model.detections !== null
-									? tabsCrumbs("detections")
-									: model.detectionForm !== null
-										? detectionFormCrumbs()
-										: [],
+		model.cloud !== null
+			? cloudCrumbs(model.cloud)
+			: model.tabs !== null
+				? tabsCrumbs("code", model.tabs.tab)
+				: model.run !== null
+					? runCrumbs(model.run)
+					: model.finding !== null
+						? findingCrumbs(model.finding)
+						: model.telemetry !== null
+							? tabsCrumbs(model.telemetry.tab)
+							: model.dependencies !== null
+								? tabsCrumbs("dependencies")
+								: model.auditLog !== null
+									? tabsCrumbs("auditLog")
+									: model.detections !== null
+										? tabsCrumbs("detections")
+										: model.detectionForm !== null
+											? detectionFormCrumbs()
+											: [],
 })

@@ -182,6 +182,8 @@ export const llmSettingsConfig = Config.all({
 	MAPLE_TRIAGE_MODEL_WORKERS_AI: optionalTrimmed("MAPLE_TRIAGE_MODEL_WORKERS_AI"),
 	/** OpenRouter model id for pull request reviews and replies, overriding {@link DEFAULT_REVIEW_MODEL}. */
 	MAPLE_REVIEW_MODEL_OPENROUTER: optionalTrimmed("MAPLE_REVIEW_MODEL_OPENROUTER"),
+	/** Comma-separated OpenRouter provider slugs every call tries first, e.g. `morph` for a BYOK key. */
+	MAPLE_OPENROUTER_PROVIDER_ORDER: optionalTrimmed("MAPLE_OPENROUTER_PROVIDER_ORDER"),
 	/** OpenRouter model for security-audit discovery (reconnaissance, hunters, critics). */
 	MAPLE_AUDIT_DISCOVERY_MODEL_OPENROUTER: optionalTrimmed("MAPLE_AUDIT_DISCOVERY_MODEL_OPENROUTER"),
 	/** OpenRouter model for security-audit validation; a different model from discovery by design. */
@@ -412,7 +414,23 @@ const OPENROUTER_ATTEMPTS: ModelCallAttempts = {
 	retryReasoningLevel: "low",
 }
 
+/**
+ * The providers OpenRouter tries first, from `MAPLE_OPENROUTER_PROVIDER_ORDER`. A BYOK key is used
+ * only when routing lands on its provider, and `:nitro` picks the fastest of every provider. Naming
+ * the provider here sends calls to it first. Fallbacks stay on, so a model the provider does not
+ * serve, or an outage, still reaches another provider.
+ */
+const openRouterProviderOrder = (settings: LlmSettings): ReadonlyArray<string> | undefined => {
+	const order = Arr.filter(
+		Arr.map(Str.split(readLowerString(settings, "MAPLE_OPENROUTER_PROVIDER_ORDER") ?? "", ","), Str.trim),
+		Str.isNonEmpty,
+	)
+	return Arr.isArrayNonEmpty(order) ? order : undefined
+}
+
 interface OpenRouterModelOptions {
+	/** Providers to try first; without any, OpenRouter routes on the model id alone. */
+	readonly providerOrder?: ReadonlyArray<string> | undefined
 	/** How hard the model reasons; without one the request carries no `reasoning` field. */
 	readonly effort?: ReasoningEffort
 	/** Nobody watches the run stream, so its deltas are joined and long calls retried. */
@@ -424,7 +442,7 @@ const openRouterModel = (
 	tags: LlmCallTags | undefined,
 	options: OpenRouterModelOptions,
 ): ResolvedModel => {
-	const { effort, unattended } = options
+	const { effort, unattended, providerOrder } = options
 	const limits = limitsFor(name)
 	const maxTokens = Math.min(limits.output, MODEL_CALL_OUTPUT_TOKENS)
 	return {
@@ -434,7 +452,13 @@ const openRouterModel = (
 			name,
 			OpenRouterLanguageModel.make({
 				model: name,
-				config: { ...openRouterConfig(effort, tags), max_tokens: maxTokens },
+				config: {
+					...openRouterConfig(effort, tags),
+					max_tokens: maxTokens,
+					...(providerOrder === undefined
+						? undefined
+						: { provider: { order: providerOrder, allow_fallbacks: true } }),
+				},
 			}),
 			{
 				providerName: genAiProviderName("openrouter"),
@@ -486,7 +510,7 @@ export const resolveTriageModel = (
 				tags,
 				// No effort. This resolver serves chat, AI triage *and* the validator, so a number
 				// picked here would retune three stages with different shapes at once.
-				{ unattended },
+				{ unattended, providerOrder: openRouterProviderOrder(settings) },
 			)
 
 /** The organization's pick, when this region serves it: the EU endpoint 404s a model it lacks. */
@@ -522,7 +546,7 @@ export const resolveReviewModel = (
 							: DEFAULT_REVIEW_MODEL),
 				),
 				tags,
-				{ unattended: true },
+				{ unattended: true, providerOrder: openRouterProviderOrder(settings) },
 			)
 
 /**
@@ -610,7 +634,11 @@ export const resolveSecurityAuditDiscoveryFallback = (
 	}).discovery
 	return fallback === hunting
 		? undefined
-		: openRouterModel(fallback, tags, { effort: "high", unattended: true })
+		: openRouterModel(fallback, tags, {
+				effort: "high",
+				unattended: true,
+				providerOrder: openRouterProviderOrder(settings),
+			})
 }
 
 /**
@@ -628,6 +656,7 @@ export const resolveSecurityAuditModel = (
 		: openRouterModel(securityAuditModelId(settings, stage, chosen), tags, {
 				effort: "high",
 				unattended: true,
+				providerOrder: openRouterProviderOrder(settings),
 			})
 
 /**

@@ -4,6 +4,8 @@ import { button } from "@maple/views/ui/button"
 import { type ConfirmDialogOptions, confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { icon } from "@maple/views/ui/icon"
 import * as MenuView from "@maple/views/ui/menu-view"
+import { lockedControl } from "@maple/views/ui/locked-control"
+import { denialReason } from "../../kit/session-grants"
 import { deleteConsequences } from "../kit/integration"
 import { integrationPlatformOf } from "../kit/shared"
 import { Message } from "./message"
@@ -166,6 +168,24 @@ export const sourceActions = (h: H, model: Model, source: V2Source): ReadonlyArr
 	}),
 	tokenDeleteDialog(h, model, source),
 ]
+
+/** Pause or Resume (and Roll token on a token source) drawn locked: no menu, no dialogs mount. */
+export const lockedSourceActions = (h: H, source: V2Source, hasRollToken: boolean): ReadonlyArray<Html> => {
+	const locked = (children: ReadonlyArray<Html | string>) =>
+		lockedControl(
+			h,
+			denialReason("sources:manage"),
+			button(h, { variant: "outline", size: "sm", isDisabled: true }, children),
+		)
+	return [
+		locked(
+			source.status === "paused"
+				? [inlineIcon(h, "MediaPlayIcon"), "Resume"]
+				: [inlineIcon(h, "MediaPauseIcon"), "Pause"],
+		),
+		...(hasRollToken ? [locked([inlineIcon(h, "ArrowPathIcon"), "Roll token"])] : []),
+	]
+}
 
 /** Pause or Resume and the integration's own actions (`connection`). Delete is in Settings; its dialog lives here. */
 export const integrationActions = (

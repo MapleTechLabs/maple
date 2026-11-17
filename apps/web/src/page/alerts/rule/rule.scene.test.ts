@@ -383,7 +383,7 @@ describe("alert rule page, silences", () => {
 		result: Parameters<typeof Message.CompletedFetchSilences>[0]["result"],
 	) => pageUpdate(model, Message.CompletedFetchSilences({ key: model.silences.key ?? "", result })).model
 
-	test("offers Silence only to a role that can manage alerts", () => {
+	test("locks Silence, with who can, for a role that cannot manage alerts", () => {
 		expect(names(init(route(), context).commands)).toEqual(
 			expect.arrayContaining(["FetchAlertRuleSilences", "FetchAlertRuleSession"]),
 		)
@@ -391,13 +391,14 @@ describe("alert rule page, silences", () => {
 			{ update: pageUpdate, view },
 			given(withGrants(loaded(), ["org:member"])),
 			themeResolved(),
-			expectView(role("button", { name: "Silence" })).not.toExist(),
+			expectView(role("button", { name: "Silence" })).toBeDisabled(),
+			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given(withGrants(loaded(), ["org:engineer"])),
 			themeResolved(),
-			expectView(role("button", { name: "Silence" })).toExist(),
+			expectView(role("button", { name: "Silence" })).toBeEnabled(),
 		)
 	})
 

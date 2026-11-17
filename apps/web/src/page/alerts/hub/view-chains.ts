@@ -6,7 +6,6 @@ import { Array as Arr, Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { borderedBox } from "@maple/views/ui/bordered-box"
-import { linkButton } from "@maple/views/ui/button"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
 import { errorState } from "@maple/views/ui/error-state"
@@ -30,6 +29,7 @@ import { type Model } from "./model"
 import { chainMenuId, chainRuleNames } from "./update"
 import { dividedList } from "@maple/views/ui/rule"
 import { canManageAlerts } from "../../kit/session-grants"
+import { gatedEntries, gatedLinkButton } from "../../kit/gated-controls"
 
 type H = HtmlBuilder<Message>
 
@@ -125,18 +125,13 @@ export const chainRow = (
 						},
 						[usage],
 					),
-					...(canManageAlerts(model)
-						? [
-								rowActionsMenu(h, {
-									slotId: menuId,
-									model: model.menus[menuId] ?? Menu.init(menuId),
-									entries,
-									label: `Actions for ${chain.name}`,
-									toParentMessage: (message) =>
-										Message.GotRowMenuMessage({ menuId, message }),
-								}),
-							]
-						: []),
+					rowActionsMenu(h, {
+						slotId: menuId,
+						model: model.menus[menuId] ?? Menu.init(menuId),
+						entries: gatedEntries(model, "alerts:manage", entries),
+						label: `Actions for ${chain.name}`,
+						toParentMessage: (message) => Message.GotRowMenuMessage({ menuId, message }),
+					}),
 				]),
 			]),
 		],
@@ -155,16 +150,12 @@ const chainsEmpty = (h: H, model: Model): Html =>
 					...(canManageAlerts(model) ? [] : [" Ask an org admin to create one."]),
 				]),
 			]),
-			...(canManageAlerts(model)
-				? [
-						emptyActions(h, [
-							linkButton(h, { size: "sm", href: newChainHref() }, [
-								icon(h, "PlusIcon"),
-								"Create chain",
-							]),
-						]),
-					]
-				: []),
+			emptyActions(h, [
+				gatedLinkButton(h, model, "alerts:manage", { size: "sm", href: newChainHref() }, [
+					icon(h, "PlusIcon"),
+					"Create chain",
+				]),
+			]),
 		],
 		"py-12",
 	)
@@ -217,13 +208,15 @@ export const chainsSection = (h: H, model: Model): Html =>
 				[
 					sectionHeading(h, {
 						title: "Escalation chains",
-						actions:
-							canManageAlerts(model) && hasChains(model)
-								? linkButton(h, { size: "sm", variant: "outline", href: newChainHref() }, [
-										icon(h, "PlusIcon"),
-										"New chain",
-									])
-								: undefined,
+						actions: hasChains(model)
+							? gatedLinkButton(
+									h,
+									model,
+									"alerts:manage",
+									{ size: "sm", variant: "outline", href: newChainHref() },
+									[icon(h, "PlusIcon"), "New chain"],
+								)
+							: undefined,
 					}),
 					typography(h, { size: "sm", tone: "muted", as: "p" }, [
 						"Page step by step until someone acknowledges. Acknowledging pauses a chain and resolving ends it.",

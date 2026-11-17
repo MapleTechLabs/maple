@@ -55,6 +55,7 @@ import { reconcileAwsCostSources } from "../cost/aws-cost-sources"
 import { AwsApiError, checkRole } from "./aws/api"
 import { type AwsOidcSigner, makeAwsOidcSigner } from "./aws/oidc"
 import { renderAwsCleanupScript, renderAwsSetup } from "./aws/setup"
+import { awsEventsKey, awsEventsPath } from "../cloud-security/events-key"
 
 export interface AwsConnection {
 	readonly id: AwsConnectionId
@@ -601,7 +602,14 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 								endpoint: `${ingestBase}/v1/firehose/aws/${row.id}`,
 								accessKey: yield* streamAccessKey(row),
 							}
-				return yield* renderAwsSetup(row.id, row.accountId, plan, stream)
+				// The security module's findings also arrive as events, through the stack's API destination.
+				const events = Arr.contains(row.modules, "security")
+					? {
+							endpoint: new URL(awsEventsPath(row.id), env.MAPLE_API_BASE_URL).toString(),
+							key: awsEventsKey(lookupHmacKey, row.id),
+						}
+					: null
+				return yield* renderAwsSetup(row.id, row.accountId, plan, stream, events)
 			})
 
 			/** Assumes the row's role and writes what it found, on the row and on its source. */
@@ -794,6 +802,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 					accountId: current.accountId,
 					stackName: names.stackName,
 					metricsStackName: names.metricsStackName,
+					eventsStackName: names.eventsStackName,
 					oidcProvider: awsSetupPlan({
 						connectionId: current.id,
 						accountId: current.accountId,

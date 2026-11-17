@@ -6,6 +6,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { button } from "@maple/views/ui/button"
+import { gatedBy } from "../../kit/gated-controls"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
@@ -36,18 +37,22 @@ const SOURCE_HINT = {
 	auto: "found in the pull request description",
 } satisfies Record<ErrorIssuePullRequestDocument["linkSource"], string | null>
 
-const detachButton = (h: H, pr: ErrorIssuePullRequestDocument, isBusy: boolean): Html =>
-	iconButton(
-		h,
-		{
-			size: "icon",
-			label: `Detach ${pr.repoFullName}#${pr.number}`,
-			className:
-				"size-7 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100",
-			isDisabled: isBusy,
-			attributes: [h.OnClick(Message.ClickedDetachPullRequest({ id: pr.id }))],
-		},
-		[icon(h, "TrashIcon")],
+const detachButton = (h: H, pr: ErrorIssuePullRequestDocument, state: PanelState): Html =>
+	gatedBy(h, state.canTriage, "error_issues:triage", (isLocked) =>
+		iconButton(
+			h,
+			{
+				size: "icon",
+				label: `Detach ${pr.repoFullName}#${pr.number}`,
+				// Locked, it stays shown: its wrapper takes the focus, so the reveal on focus never fires.
+				className: isLocked
+					? "size-7 shrink-0"
+					: "size-7 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100",
+				isDisabled: isLocked || state.isBusy,
+				attributes: [h.OnClick(Message.ClickedDetachPullRequest({ id: pr.id }))],
+			},
+			[icon(h, "TrashIcon")],
+		),
 	)
 
 /** Attaching and detaching are triage: a viewer without it reads the linked pull requests. */
@@ -83,7 +88,7 @@ const pullRequestRow = (h: H, pr: ErrorIssuePullRequestDocument, state: PanelSta
 			...(pr.title ? [itemDescription(h, [pr.title], "line-clamp-1")] : []),
 			...(hint ? [itemDescription(h, [hint], "text-foreground-subtle")] : []),
 		]),
-		...(state.canTriage ? [detachButton(h, pr, state.isBusy)] : []),
+		detachButton(h, pr, state),
 	])
 }
 
@@ -95,19 +100,19 @@ export const pullRequestsPanel = (
 	panel(h, {}, [
 		panelHeader(h, {
 			title: "Pull requests",
-			action: state.canTriage
-				? button(
-						h,
-						{
-							size: "sm",
-							variant: "ghost",
-							className: "gap-1 px-2 text-xs",
-							isDisabled: state.isBusy,
-							attributes: [h.OnClick(Message.ClickedAttach())],
-						},
-						[icon(h, "PlusIcon"), "Attach"],
-					)
-				: undefined,
+			action: gatedBy(h, state.canTriage, "error_issues:triage", (isLocked) =>
+				button(
+					h,
+					{
+						size: "sm",
+						variant: "ghost",
+						className: "gap-1 px-2 text-xs",
+						isDisabled: isLocked || state.isBusy,
+						attributes: [h.OnClick(Message.ClickedAttach())],
+					},
+					[icon(h, "PlusIcon"), "Attach"],
+				),
+			),
 		}),
 		pullRequests.length === 0
 			? h.div(

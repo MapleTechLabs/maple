@@ -32,6 +32,7 @@ export const BUILT_IN = {
 	feedbackScope: "organization",
 	blockOnContractBreaks: false,
 	postMergeCheck: true,
+	autoApprove: false,
 } as const
 
 export const Mode = Schema.Literals(["organization", "repository"])
@@ -51,6 +52,7 @@ export const FormState = Schema.Struct({
 	feedbackScope: Schema.String,
 	blockOnContractBreaks: Schema.String,
 	postMergeCheck: Schema.String,
+	autoApprove: Schema.String,
 })
 export type FormState = typeof FormState.Type
 
@@ -90,6 +92,7 @@ export const stateFromConfig = (mode: Mode, config: PrReviewRepositoryConfig): F
 			BUILT_IN.blockOnContractBreaks,
 		),
 		postMergeCheck: toggleFromConfig(config.postMergeCheck, inherits, BUILT_IN.postMergeCheck),
+		autoApprove: toggleFromConfig(config.autoApprove, inherits, BUILT_IN.autoApprove),
 	}
 }
 
@@ -109,6 +112,7 @@ export const sameState = (a: FormState, b: FormState) =>
 	a.feedbackScope === b.feedbackScope &&
 	a.blockOnContractBreaks === b.blockOnContractBreaks &&
 	a.postMergeCheck === b.postMergeCheck &&
+	a.autoApprove === b.autoApprove &&
 	sameCategories(a.categories, b.categories)
 
 const parseIgnorePaths = (text: string) =>
@@ -173,6 +177,7 @@ export const configFromState = (mode: Mode, state: FormState): PrReviewRepositor
 	)
 	const block = toggleToConfig(state.blockOnContractBreaks, org, BUILT_IN.blockOnContractBreaks)
 	const postMerge = toggleToConfig(state.postMergeCheck, org, BUILT_IN.postMergeCheck)
+	const autoApprove = toggleToConfig(state.autoApprove, org, BUILT_IN.autoApprove)
 	return new PrReviewRepositoryConfig({
 		...(instructions === "" ? undefined : { instructions }),
 		...(ignorePaths.length === 0 ? undefined : { ignorePaths }),
@@ -185,5 +190,6 @@ export const configFromState = (mode: Mode, state: FormState): PrReviewRepositor
 		...(feedback === undefined ? undefined : { feedbackScope: feedback }),
 		...(block === undefined ? undefined : { blockOnContractBreaks: block }),
 		...(postMerge === undefined ? undefined : { postMergeCheck: postMerge }),
+		...(autoApprove === undefined ? undefined : { autoApprove }),
 	})
 }

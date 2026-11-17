@@ -221,6 +221,12 @@ export type PreviewDocumentOptions = Readonly<{
 const stayInFrameScript = (opensLinks: boolean): string =>
 	`(function(){var o=${opensLinks};document.addEventListener("click",function(e){if(e.defaultPrevented)return;var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(!a)return;var h=a.getAttribute("href");if(o&&h&&/^https?:/i.test(h)){a.target="_blank";a.rel="noopener noreferrer";return}e.preventDefault();if(h&&h.charAt(0)==="#"){var t=document.getElementById(decodeURIComponent(h.slice(1)));if(t)t.scrollIntoView({block:"start"})}});document.addEventListener("submit",function(e){e.preventDefault()})})();`
 
+/**
+ * Each edit rebuilds the document, and a new `srcdoc` reloads the frame at the top. The frame's
+ * `window.name` survives that reload, so the scroll is kept there and put back before paint.
+ */
+const KEEP_SCROLL_SCRIPT = `(function(){var k="maple-preview-scroll:";var y=window.name.indexOf(k)===0?Number(window.name.slice(k.length)):0;var to=function(){window.scrollTo({top:y,behavior:"instant"})};if(y>0){to();addEventListener("load",to)}addEventListener("scroll",function(){window.name=k+Math.round(window.scrollY)},{passive:true})})();`
+
 /** The public page as the renderer draws it, plus, when selectable, the selection script. */
 export const previewDocument = (options: PreviewDocumentOptions): string => {
 	const preview = options.isSelectable
@@ -232,7 +238,7 @@ export const previewDocument = (options: PreviewDocumentOptions): string => {
 			? { preview, inDashboard: true }
 			: { preview, inDashboard: true, publicUrl: options.publicUrl },
 	)
-	const stay = `<script>${stayInFrameScript(options.opensLinks === true)}</script>`
+	const stay = `<script>${stayInFrameScript(options.opensLinks === true)}</script><script>${KEEP_SCROLL_SCRIPT}</script>`
 	if (!options.isSelectable) return Str.replace("</body>", `${stay}</body>`)(html)
 	const extra = `<style>${SELECTABLE_STYLES}</style><script>${SELECT_SCRIPT}</script>${stay}`
 	return Str.replace("</body>", `${extra}</body>`)(html)
@@ -366,7 +372,7 @@ export const previewFrame = <M>(
 	)
 
 /**
- * A small frame of one part of the page (`renderFragment`): fully sandboxed, no scripts, and it
+ * A small inert frame (the access gate as visitors meet it): fully sandboxed, no scripts, and it
  * takes no clicks, so nothing in it navigates the frame.
  */
 export const fragmentFrame = <M>(

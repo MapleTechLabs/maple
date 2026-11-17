@@ -22,6 +22,7 @@ import {
 	PrReviewTestSignal,
 	PrReviewVerdict,
 } from "./pr-review"
+import { openContractBreaks } from "./pr-review-telemetry"
 
 /**
  * The config a review of one repository runs with: the repository's fields over the
@@ -58,6 +59,7 @@ export const mergePrReviewConfig = (
 			...pick("feedbackScope"),
 			...pick("blockOnContractBreaks"),
 			...pick("postMergeCheck"),
+			...pick("autoApprove"),
 		},
 		{ disableChecks: true },
 	)
@@ -789,4 +791,149 @@ export const parseReplyCommand = (
 	const command: PrReviewReplyCommand =
 		lowerWord === "review" ? "review" : lowerWord === "fix" ? "fix" : "ask"
 	return { command, text: Str.trim(body) }
+}
+
+/** The lowest confidence a review may approve at: a clean, low-risk change scores 9 or 10. */
+export const PR_REVIEW_AUTO_APPROVE_MIN_CONFIDENCE = 9
+
+/** Why a review did not approve, low-cardinality so it can sit on a span. */
+export type PrReviewAutoApprovalRefusal =
+	| "partial"
+	| "not_whole_diff"
+	| "unread"
+	| "diff_unavailable"
+	| "patchless"
+	| "ignored_files"
+	| "dismissed"
+	| "filtered"
+	| "unchecked_fixes"
+	| "verdict"
+	| "findings"
+	| "risk"
+	| "tests"
+	| "merge_steps"
+	| "contract_break"
+	| "confidence"
+
+export type PrReviewAutoApproval =
+	| { readonly approve: true; readonly reason: string }
+	| {
+			readonly approve: false
+			/** The first unmet condition, for the span. */
+			readonly refusal: PrReviewAutoApprovalRefusal
+			/** Every unmet condition, so the comment can say all of what stands in the way. */
+			readonly reasons: ReadonlyArray<string>
+			readonly reason: string
+	  }
+
+const refuse = (
+	refusals: Arr.NonEmptyReadonlyArray<readonly [PrReviewAutoApprovalRefusal, string]>,
+): PrReviewAutoApproval => {
+	const reasons = Arr.map(refusals, ([, reason]) => reason)
+	return { approve: false, refusal: refusals[0][0], reasons, reason: Arr.join(reasons, "; ") }
+}
+
+/**
+ * Whether the review may approve the pull request without a person reading it: its blast radius is
+ * low and nothing is left for anyone to do. Every condition must hold, and an unknown reads as no:
+ * the pass read the whole diff (not only the commits since the last review) and finished, no file of
+ * the diff sits under an ignored path, found no warning or critical (open ones from earlier pushes
+ * included), none was ever dismissed on the pull request or held back by the repository's lenses or
+ * the team's feedback, rated the risk `low` (auth, tenancy, migrations, billing and concurrency are
+ * never low), saw tests cover the change or not need to, left no step before merge open and no
+ * telemetry contract broken, and scored {@link PR_REVIEW_AUTO_APPROVE_MIN_CONFIDENCE} or more.
+ *
+ * A dismissal is a person's judgment that a warning does not hold, often the author's own, so a
+ * pull request that had one waits for a person to approve it too.
+ *
+ * Who wrote the pull request, and whether its head is still the one reviewed, are the provider's
+ * to check when it approves: they are facts about the pull request now, not about the report.
+ */
+export const prReviewAutoApproval = (input: {
+	readonly report: PrReviewReport
+	readonly carriedOpen?: ReadonlyArray<{ readonly severity: PrReviewSeverity; readonly category?: string }>
+	readonly partial?: boolean
+	readonly uncheckedFixes?: number
+	/** Maple could not read the diff itself, so nothing below about its files was checked. */
+	readonly diffUnavailable?: boolean
+	/** Files of the diff whose patch GitHub withholds (binary, or too large): no review read them. */
+	readonly patchlessFiles?: number
+	/** Files of the diff under the repository's ignored paths: the review never read them. */
+	readonly ignoredFiles?: number
+	/** Warnings and criticals on the pull request a person or the reviewer dismissed, ever. */
+	readonly dismissedIssues?: number
+	/**
+	 * Warnings and criticals the repository's lenses or feedback held back, in this review or any
+	 * earlier one of the pull request.
+	 */
+	readonly filteredIssues?: number
+}): PrReviewAutoApproval => {
+	const { report } = input
+	const carriedOpen = input.carriedOpen ?? []
+	const uncheckedFixes = input.uncheckedFixes ?? 0
+	// An early end says nothing reliable about the rest, so it stands alone.
+	if (input.partial === true) return refuse([["partial", "the review ended early"]])
+	const openSteps = Arr.filter(report.beforeMerge ?? [], (step) => step.done !== true).length
+	const confidence = confidencePrReview(report, carriedOpen, false, uncheckedFixes)
+	const checks: ReadonlyArray<readonly [boolean, PrReviewAutoApprovalRefusal, string]> = [
+		[report.wholeDiff !== true, "not_whole_diff", "the review read only the commits since the last one"],
+		[(report.unreviewed?.length ?? 0) > 0, "unread", "some reviewed files were not read"],
+		[input.diffUnavailable === true, "diff_unavailable", "Maple could not read the diff"],
+		[
+			(input.patchlessFiles ?? 0) > 0,
+			"patchless",
+			"some files have no patch to read (binary, or too large)",
+		],
+		[(input.ignoredFiles ?? 0) > 0, "ignored_files", "some files are under ignored paths"],
+		[
+			(input.dismissedIssues ?? 0) > 0,
+			"dismissed",
+			"a warning or critical on the pull request was dismissed",
+		],
+		[
+			(input.filteredIssues ?? 0) > 0,
+			"filtered",
+			"a warning or critical was held back by the repository's rules",
+		],
+		[uncheckedFixes > 0, "unchecked_fixes", "a fix has not been re-checked against the whole diff"],
+		[report.verdict !== "clean", "verdict", `the verdict is ${report.verdict}`],
+		[
+			Arr.some([...report.findings, ...carriedOpen], (finding) => finding.severity !== "info"),
+			"findings",
+			"a warning or critical finding is open",
+		],
+		[report.risk !== "low", "risk", `the risk is ${report.risk ?? "not rated"}`],
+		[
+			report.tests !== "covered" && report.tests !== "not_needed",
+			"tests",
+			`tests are ${report.tests ?? "not assessed"}`,
+		],
+		[
+			openSteps > 0,
+			"merge_steps",
+			openSteps === 1 ? "a step before merge is open" : `${openSteps} steps before merge are open`,
+		],
+		[
+			openContractBreaks(report.telemetry).length > 0,
+			"contract_break",
+			"a telemetry contract break is open",
+		],
+		// No score means a not_applicable verdict, already refused above; naming it twice says nothing.
+		[
+			confidence !== undefined && confidence.confidence < PR_REVIEW_AUTO_APPROVE_MIN_CONFIDENCE,
+			"confidence",
+			`confidence is ${confidence?.confidence}, under ${PR_REVIEW_AUTO_APPROVE_MIN_CONFIDENCE}`,
+		],
+	]
+	const refusals = Arr.map(
+		Arr.filter(checks, ([failed]) => failed),
+		([, refusal, reason]) => [refusal, reason] as const,
+	)
+	if (Arr.isReadonlyArrayNonEmpty(refusals)) return refuse(refusals)
+	// Unreachable (the verdict check refused it), but it narrows `confidence` for the reason.
+	if (confidence === undefined) return refuse([["confidence", "the review has no confidence score"]])
+	return {
+		approve: true,
+		reason: `Low blast radius, no open findings and confidence ${confidence.confidence}/${PR_REVIEW_CONFIDENCE_MAX}.`,
+	}
 }

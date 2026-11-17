@@ -9,6 +9,8 @@ import { errorState } from "@maple/views/ui/error-state"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
+import { lockedControl } from "@maple/views/ui/locked-control"
+import { denialReason } from "../../kit/session-grants"
 import { pressable } from "@maple/views/ui/pressable"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { Message } from "./message"
@@ -30,8 +32,9 @@ export type CredentialRowOptions = Readonly<{
 	onToggleVisibility?: Message
 	copy: CopyButton.Model
 	onCopy: (text: string) => Message
-	/** Absent for a viewer who cannot roll the key. */
 	onRegenerate?: Message | undefined
+	/** Draws the regenerate button disabled with this reason, for a viewer who cannot roll the key. */
+	regenerateDenial?: string | undefined
 	isDisabled?: boolean
 }>
 
@@ -137,20 +140,37 @@ export const credentialRow = (h: H, options: CredentialRowOptions): Html => {
 								},
 								[CopyButton.copyIndicator(h, { status, iconSize: 13 })],
 							),
-							...(options.onRegenerate === undefined
-								? []
-								: [
-										iconButton(
+							...(options.regenerateDenial !== undefined
+								? [
+										lockedControl(
 											h,
-											{
-												variant: "outline",
-												label: `Regenerate ${Str.toLowerCase(label)}`,
-												isDisabled: disabled,
-												attributes: [h.OnClick(options.onRegenerate)],
-											},
-											[icon(h, "ArrowPathIcon", { className: "text-destructive" })],
+											options.regenerateDenial,
+											iconButton(
+												h,
+												{
+													variant: "outline",
+													label: `Regenerate ${Str.toLowerCase(label)}`,
+													isDisabled: true,
+													hasTooltip: false,
+												},
+												[icon(h, "ArrowPathIcon", { className: "text-destructive" })],
+											),
 										),
-									]),
+									]
+								: options.onRegenerate === undefined
+									? []
+									: [
+											iconButton(
+												h,
+												{
+													variant: "outline",
+													label: `Regenerate ${Str.toLowerCase(label)}`,
+													isDisabled: disabled,
+													attributes: [h.OnClick(options.onRegenerate)],
+												},
+												[icon(h, "ArrowPathIcon", { className: "text-destructive" })],
+											),
+										]),
 						],
 			),
 		],
@@ -185,6 +205,7 @@ export const ingestKeyRows = (h: H, model: Model): ReadonlyArray<Html> => {
 			onCopy: (text) =>
 				Message.GotKeyCopyMessage({ kind, message: CopyButton.Message.ClickedCopy({ text }) }),
 			onRegenerate: canRollKeys(model) ? Message.ClickedRegenerateKey({ kind }) : undefined,
+			regenerateDenial: canRollKeys(model) ? undefined : denialReason("ingest_keys:roll"),
 			isDisabled: isBusy,
 		})
 	const failure = keys === null && isFailed ? AsyncData.getError(model.ingest) : Option.none()

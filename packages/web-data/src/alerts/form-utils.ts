@@ -197,9 +197,9 @@ export function formatSignalValue(signalType: AlertSignalType, value: number | n
 		case "builder_query":
 		case "raw_query":
 			return formatNumber(value)
-		// An uptime rule observes 1 while its monitor is down, else 0.
+		// An uptime rule observes 1 while its monitor is down, 0.5 for a certificate near expiry, else 0.
 		case "uptime":
-			return value >= 1 ? "Down" : "Up"
+			return value >= 1 ? "Down" : value > 0 ? "Expiring" : "Up"
 		// An SLO rule observes how many times faster than sustainable the budget burns.
 		case "slo_burn_rate":
 			return `${value.toFixed(1)}x`

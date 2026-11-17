@@ -52,6 +52,13 @@ const COPY = {
 		turnOn: "Turn on log forwarding: admin activity arrives through the log sink.",
 		connect: "Connect a project or organization with log forwarding on.",
 	},
+	aws: {
+		brand: providerBrand("aws"),
+		sends: "CloudTrail management changes: IAM, keys, sign-ins, resources",
+		// Holds whether the module is off or on but not granted yet: either way the stack needs it.
+		turnOn: "Run the AWS connection's setup script again with the Security scan module on, so the role grants it.",
+		connect: "Connect an AWS account with the Security scan module on.",
+	},
 } satisfies Record<AuditTrailProvider, SourceCopy>
 
 /** A platform a newer writer added: its events still show, with nothing to set up. */
