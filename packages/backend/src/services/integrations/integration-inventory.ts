@@ -207,6 +207,12 @@ export interface IntegrationInventoryInputs {
 		readonly streamLastError: string | null
 		readonly createdAt: number
 	}>
+	/** CloudTrail regions the security poller could not read, by account. Absent: none known. */
+	readonly awsCloudTrailProblems?: ReadonlyArray<{
+		readonly accountId: string
+		readonly state: string
+		readonly lastError: string | null
+	}>
 	/** Its grant is the `oauthConnections` row with provider "supabase". */
 	readonly supabaseConnection: {
 		readonly organizationName: string
@@ -853,7 +859,35 @@ const aws = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry 
 					return stream(state._tag === "silent" ? "stale" : "healthy", null, regions)
 			}
 		})()
-		return [role, ...streams]
+		// CloudTrail feeds the audit log once the role grants the security module. Before that there is
+		// no feed: the Sources panel reads off and points at the setup script.
+		const granted =
+			Arr.contains(c.modules, "security") &&
+			c.grantedModules !== null &&
+			Arr.contains(c.grantedModules, "security")
+		const trailProblem = Arr.findFirst(
+			inputs.awsCloudTrailProblems ?? [],
+			(problem) => problem.accountId === c.accountId,
+		)
+		// A role that cannot be assumed reads nothing, whatever the last CloudTrail read said.
+		const trailError = Option.isSome(trailProblem)
+			? (trailProblem.value.lastError ?? `CloudTrail could not be read (${trailProblem.value.state})`)
+			: role.status === "failing"
+				? role.lastError
+				: null
+		const auditLog: ReadonlyArray<IntegrationResource> = !granted
+			? []
+			: [
+					{
+						kind: "audit log",
+						name: c.accountId,
+						status: trailError === null ? "healthy" : "failing",
+						lastSuccessAt: null,
+						lastError: trailError,
+						note: null,
+					},
+				]
+		return [role, ...streams, ...auditLog]
 	})
 	return entry("aws", now, {
 		account: Arr.join(
