@@ -1,3 +1,4 @@
+import { cn } from "@maple/ui/lib/utils"
 import type { StatusPageVisibility } from "@maple/domain"
 import type { V2StatusPage } from "@maple/domain/http/v2"
 import { Option, Array as Arr } from "effect"
@@ -6,7 +7,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { button, linkButton } from "@maple/views/ui/button"
 import { choiceCard } from "@maple/views/ui/choice-card"
-import { icon } from "@maple/views/ui/icon"
+import { icon, type IconName } from "@maple/views/ui/icon"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { failureMessage } from "@maple/views/data/load-failure"
@@ -29,22 +30,26 @@ type H = HtmlBuilder<Message>
 const VISIBILITIES: ReadonlyArray<{
 	readonly value: StatusPageVisibility
 	readonly title: string
+	readonly icon: IconName
 	readonly description: string
 }> = [
 	{
 		value: "public",
 		title: "Public",
+		icon: "GlobeIcon",
 		description: "Anyone with the address sees the page, its feeds and its badge.",
 	},
 	{
 		value: "password",
 		title: "Password-protected",
+		icon: "KeyIcon",
 		description:
 			"Visitors enter the page password first. No feeds or subscribe options, and search engines leave it out.",
 	},
 	{
 		value: "internal",
 		title: "Internal",
+		icon: "ShieldIcon",
 		description:
 			"Only members of this organization, signed in to Maple. Its address and custom domain answer not found.",
 	},
@@ -79,6 +84,13 @@ const visibilityChoice = (h: H, model: Model, page: V2StatusPage, option: (typeo
 			className: "flex-col gap-1 p-3",
 		},
 		[
+			icon(h, option.icon, {
+				size: 16,
+				className: cn(
+					"mb-1",
+					page.visibility === option.value ? "text-primary" : "text-muted-foreground",
+				),
+			}),
 			typography(h, { size: "sm", weight: "medium" }, [option.title]),
 			typography(h, { size: "xs", tone: "muted", as: "p" }, [option.description]),
 			...(blocked === null || !canChangeAccess(model)

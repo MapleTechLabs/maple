@@ -1,7 +1,7 @@
 import { StatusPageComponentStatus, UptimeMonitorId } from "@maple/domain"
 import type { V2StatusPage, V2StatusPageComponent } from "@maple/domain/http/v2"
 import type { StatusPageSnapshot } from "@maple/domain/status-page"
-import { type FragmentPart, pageTitle, previewSnapshot, renderFragment } from "@maple/status-page"
+import { pageTitle, previewSnapshot } from "@maple/status-page"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { Option, Schema, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -13,7 +13,6 @@ import { monitorStatusOf } from "../shared/derive"
 import { orNull, type SettingsForm, settingsFormOf, themeOf } from "../shared/form"
 import {
 	daysOf,
-	fragmentFrame,
 	isListedIncident,
 	previewControls,
 	previewDocument,
@@ -112,58 +111,14 @@ export const draftSnapshot = (
 export const draftName = (page: V2StatusPage, form: SettingsForm): string => orNull(form.name) ?? page.name
 
 /**
- * One part of the page as the unsaved `form` would render it, in a small inert frame: a setting's
- * own preview. A banner or component waits for the statuses' reads, and says so when they failed,
- * rather than read all clear.
+ * The page's browser tab (title, favicon, address) as the unsaved `form` has them: what the page
+ * preview beside Settings cannot show.
  */
-export const fragmentPreview = (
-	h: H,
-	model: Model,
-	page: V2StatusPage,
-	form: SettingsForm,
-	options: Readonly<{
-		title: string
-		parts: ReadonlyArray<FragmentPart>
-		componentId?: string
-		className: string
-	}>,
-): Html => {
-	const needsStatuses = Arr.some(options.parts, (part) => part === "hero" || part === "components")
-	if (needsStatuses && !statusReadsReady(model))
-		return statusReadsFailed(model)
-			? typography(h, { size: "xs", tone: "muted", as: "p" }, [
-					"No preview: the page's components didn't load.",
-				])
-			: skeleton(h, `w-full rounded-lg ${options.className}`)
-	return fragmentFrame(h, {
-		title: options.title,
-		document: renderFragment(
-			draftSnapshot(model, page, form, "live"),
-			{ parts: options.parts, componentId: options.componentId, nowMs: nowOf(model, page) },
-			{ inDashboard: true },
-		),
-		className: options.className,
-	})
-}
-
-/** The page's browser tab (title, favicon, address) over its header, as the unsaved `form` has them. */
-export const tabPreview = (
-	h: H,
-	model: Model,
-	page: V2StatusPage,
-	form: SettingsForm,
-	address: string | null,
-): Html =>
+export const tabPreview = (h: H, page: V2StatusPage, form: SettingsForm, address: string | null): Html =>
 	browserTabMockup(
 		h,
 		{ title: pageTitle(draftName(page, form)), iconUrl: orNull(form.faviconUrl), address },
-		[
-			fragmentPreview(h, model, page, form, {
-				title: "The page header as visitors see it",
-				parts: ["header"],
-				className: "h-20 rounded-none border-0",
-			}),
-		],
+		[],
 	)
 
 /**

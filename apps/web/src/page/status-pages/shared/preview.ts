@@ -366,7 +366,7 @@ export const previewFrame = <M>(
 	)
 
 /**
- * A small frame of one part of the page (`renderFragment`): fully sandboxed, no scripts, and it
+ * A small inert frame (the access gate as visitors meet it): fully sandboxed, no scripts, and it
  * takes no clicks, so nothing in it navigates the frame.
  */
 export const fragmentFrame = <M>(
