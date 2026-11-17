@@ -19,6 +19,7 @@ import { update as pageUpdate } from "../page/alerts/uptime-monitor/update"
 import {
 	CHART_TOKENS,
 	checksScatterPanel,
+	checksPanel,
 	lastCheckPanel,
 	phaseBreakdownPanel,
 	responseTimePanel,
@@ -61,7 +62,10 @@ const jitter = (seed: number): number => {
 const inOutage = (atMs: number): boolean => atMs >= NOW_MS - 4 * 3_600_000 && atMs < NOW_MS - 2.5 * 3_600_000
 
 const sampleAt = (atMs: number, index: number): CheckSample => {
-	const failed = atMs === FAILED_AT_MS
+	const refused = atMs === FAILED_AT_MS
+	// A few 503s spread over the week, so the Checks table's Failed filter has rows in every window.
+	const unavailable = index % 389 === 0
+	const failed = refused || unavailable
 	const spike = index % 97 === 0 ? 3 : 1
 	const phases = {
 		dnsMs: 4 + jitter(index) * 11,
@@ -75,8 +79,8 @@ const sampleAt = (atMs: number, index: number): CheckSample => {
 		at: new Date(atMs).toISOString(),
 		durationMs: failed ? 2_400 : total + 1,
 		ok: !failed,
-		statusCode: failed ? null : 200,
-		error: failed ? "connect ECONNREFUSED" : null,
+		statusCode: refused ? null : unavailable ? 503 : 200,
+		error: refused ? "connect ECONNREFUSED" : unavailable ? "Expected status 2xx, got 503" : null,
 		traceId: `lab-${index}`,
 		phases: failed ? null : phases,
 	}
@@ -254,6 +258,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Html => {
 							...Arr.flatMap([checksScatterPanel(h, model, timeZone)], (panel) =>
 								panel === null ? [] : [panel],
 							),
+							checksPanel(h, model, httpMonitor(), timeZone),
 						],
 					),
 					h.div(
