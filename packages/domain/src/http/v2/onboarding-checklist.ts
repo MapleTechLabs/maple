@@ -101,7 +101,7 @@ export const V2OnboardingChecklist = Schema.Struct({
 					id: "send_telemetry",
 					title: "Send your first telemetry",
 					completed: true,
-					href: "/settings?tab=ingestion",
+					href: "/settings/ingestion",
 					optional: false,
 				},
 				{
@@ -125,7 +125,7 @@ export const V2OnboardingChecklist = Schema.Struct({
 					id: "connect_mcp_agent",
 					title: "Connect an MCP agent",
 					completed: false,
-					href: "/settings?tab=mcp",
+					href: "/settings/mcp",
 					optional: false,
 				},
 				{
@@ -133,7 +133,7 @@ export const V2OnboardingChecklist = Schema.Struct({
 					id: "invite_teammate",
 					title: "Invite a teammate",
 					completed: false,
-					href: "/settings?tab=members",
+					href: "/settings/members",
 					optional: true,
 				},
 			],
