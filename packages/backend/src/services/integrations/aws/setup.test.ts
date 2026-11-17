@@ -293,5 +293,15 @@ describe("AWS setup scripts", () => {
 		})
 		expect(cleanup.status).toBe(0)
 		expect(removed(cleanup.calls)).toHaveLength(2)
+		// A refused delete is named, with what to delete by hand, and the rest of the cleanup still runs.
+		const refused = run(Effect.runSync(renderAwsCleanupScript(target)), {
+			stacksIn: [],
+			eventsIn: ["eu-central-1"],
+			deleteFails: true,
+		})
+		expect(refused.status).toBe(0)
+		expect(refused.stderr).toContain(
+			`Could not remove the findings forwarder from eu-central-1; delete the ${target.eventsStackName} stack there`,
+		)
 	})
 })
