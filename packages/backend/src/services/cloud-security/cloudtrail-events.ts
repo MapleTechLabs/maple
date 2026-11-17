@@ -49,6 +49,10 @@ const CONFIGURATION_SERVICES = new Set([
 	"account",
 ])
 
+/** Who may reach what over the network, and what of it is recorded: how the account is set up. */
+const EC2_NETWORK_CONFIGURATION =
+	/SecurityGroup|NetworkAcl|FlowLogs|VpcEndpoint|VpcPeering|TransitGateway|InternetGateway|Route(Table)?$/u
+
 /** `iam:CreateAccessKey` from `iam.amazonaws.com` and `CreateAccessKey`. */
 const actionOf = (eventSource: string, eventName: string) =>
 	`${Str.replace(".amazonaws.com", "")(eventSource)}:${eventName}`
@@ -65,7 +69,8 @@ const categoryOf = (service: string, eventName: string): AuditTrailCategory => {
 	if (service === "billing" || service === "ce" || service === "budgets" || service === "payments")
 		return "billing"
 	if (CONFIGURATION_SERVICES.has(service)) return "configuration"
-	if (/Policy$|Permission/u.test(eventName)) return "permission"
+	if (service === "ec2" && EC2_NETWORK_CONFIGURATION.test(eventName)) return "configuration"
+	if (/Policy$|Permission|Acl$/u.test(eventName)) return "permission"
 	return "resource"
 }
 
@@ -94,8 +99,10 @@ const actorOf = (identity: Json | undefined): AuditTrailEvent["actor"] => {
 		case "FederatedUser":
 			return user("user", sessionName)
 		case "AssumedRole":
-			// Identity Center sign-ins are roles named AWSReservedSSO_*, with the person as the session.
-			return Str.startsWith("AWSReservedSSO_")(textAt(issuer, "userName") ?? "")
+			// Identity Center sign-ins are roles named AWSReservedSSO_*, with the person as the session;
+			// other federated sign-ins (SAML, OIDC) name the session after the person's email.
+			return Str.startsWith("AWSReservedSSO_")(textAt(issuer, "userName") ?? "") ||
+				Str.includes("@")(sessionName ?? "")
 				? user("user", sessionName)
 				: user("service", sessionName)
 		case "AWSAccount":
@@ -110,7 +117,9 @@ const outcomeOf = (
 ): { readonly outcome: AuditTrailOutcome; readonly reason: string | undefined } => {
 	const code = textAt(record, "errorCode")
 	const reason = textAt(record, "errorMessage") ?? code
-	if (textAt(objectAt(record, "responseElements"), "ConsoleLogin") === "Failure") {
+	// A sign-in step reports itself under its own name, with no error code: `{"CheckMfa": "Failure"}`.
+	const eventName = textAt(record, "eventName")
+	if (eventName !== undefined && textAt(objectAt(record, "responseElements"), eventName) === "Failure") {
 		return { outcome: "failure", reason: reason ?? "Failed authentication" }
 	}
 	if (code === undefined) return { outcome: "success", reason: undefined }
