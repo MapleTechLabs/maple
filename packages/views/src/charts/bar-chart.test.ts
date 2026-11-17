@@ -53,6 +53,10 @@ describe("hiddenChartKeys", () => {
 	test("a name the data no longer has hides nothing", () => {
 		expect(hiddenChartKeys(["worker"], definitions)).toEqual([])
 	})
+
+	test("names that would hide every series of the data hide none", () => {
+		expect(hiddenChartKeys(["api", "web", "worker"], definitions)).toEqual([])
+	})
 })
 
 describe("seriesDefinitionsOf", () => {

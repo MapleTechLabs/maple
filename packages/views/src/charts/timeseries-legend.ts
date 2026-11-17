@@ -208,16 +208,33 @@ const statsTable = (
 }
 
 /**
+ * The remembered names that hide a series of this data. When they would hide every series (the
+ * data changed to only hidden ones), none is hidden: a plot is never left empty by an old choice.
+ */
+export const hiddenNamesIn = (
+	hiddenNames: ReadonlyArray<string>,
+	names: ReadonlyArray<string>,
+): ReadonlyArray<string> => {
+	const present = Arr.filter(names, (name) => hiddenNames.includes(name))
+	return present.length === names.length ? [] : present
+}
+
+/**
  * The chart keys of the series the legend has hidden. The legend remembers names, so a series
  * stays hidden across a refresh that reorders the keys, and a regroup hides nothing by accident.
  */
 export const hiddenChartKeys = (
 	hiddenNames: ReadonlyArray<string>,
 	definitions: ReadonlyArray<SeriesDefinition>,
-): ReadonlyArray<string> =>
-	Arr.flatMap(definitions, (definition) =>
-		hiddenNames.includes(definition.rawKey) ? [definition.chartKey] : [],
+): ReadonlyArray<string> => {
+	const hidden = hiddenNamesIn(
+		hiddenNames,
+		Arr.map(definitions, (definition) => definition.rawKey),
 	)
+	return Arr.flatMap(definitions, (definition) =>
+		hidden.includes(definition.rawKey) ? [definition.chartKey] : [],
+	)
+}
 
 export type TimeseriesLegendInputs = Readonly<{
 	series: ReadonlyArray<LegendSeries>
@@ -248,7 +265,12 @@ export const timeseriesLegend = (
 		isRight: inputs.legend === "right",
 		maxHeight: inputs.legend === "right" && model.containerHeight > 0 ? model.containerHeight : null,
 	}
+	// The names the plot hides too, so an entry is dimmed exactly when its series is not drawn.
+	const hidden = hiddenNamesIn(
+		model.hiddenKeys,
+		Arr.map(series, (entry) => entry.label),
+	)
 	return inputs.seriesStats
-		? statsTable(h, sorted, stats, model.hiddenKeys, inputs.unit, layout)
-		: compactLegend(h, sorted, model.hiddenKeys, layout)
+		? statsTable(h, sorted, stats, hidden, inputs.unit, layout)
+		: compactLegend(h, sorted, hidden, layout)
 }
