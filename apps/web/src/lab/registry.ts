@@ -199,7 +199,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 	},
 	{
 		path: "/lab/cost",
-		title: "Cost",
+		title: "Cloud cost",
 		description:
 			"The cost page over synthetic cost: populated, filtered, every source status, the on-ramp, the first-sync wait, an empty window, failing and loading (`?state=`).",
 		kind: "lab",
@@ -207,7 +207,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 	},
 	{
 		path: "/lab/cost-budgets",
-		title: "Cost budgets",
+		title: "Cloud cost budgets",
 		description:
 			"The Budgets list and the budget editor over fixture budgets: on track, over, off, empty, failing, a viewer's read-only list, the delete dialog and each state of the form (`?state=`).",
 		kind: "lab",

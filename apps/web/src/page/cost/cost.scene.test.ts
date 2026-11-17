@@ -2878,8 +2878,8 @@ describe("cost page", () => {
 				watermarkDate: null,
 				backfillDate: null,
 				lastSyncedAt: null,
-				lastError: "Cloud cost is not enabled for this organization.",
-				lastErrorReason: "rollout",
+				lastError: "This month's provider request budget is spent; pulls resume next month.",
+				lastErrorReason: "budget",
 			}),
 		])
 		scene(
@@ -2888,7 +2888,7 @@ describe("cost page", () => {
 			resolveTheme,
 			expectView(text("No cost read yet")).toExist(),
 			expectView(text("The sync is on hold. The source below says why.")).toExist(),
-			expectView(text("Cloud cost is not enabled for this organization.")).toExist(),
+			expectView(text(/provider request budget is spent/)).toExist(),
 			expectView(text(/Each source below is paused/)).not.toExist(),
 		)
 	})

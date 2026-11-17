@@ -759,7 +759,7 @@ export const update = (model: Model, message: Message): Return =>
 		},
 	})
 
-export const breadcrumbs = [{ label: "Lab", href: "/lab" }, { label: "Cost" }] as const
+export const breadcrumbs = [{ label: "Lab", href: "/lab" }, { label: "Cloud cost" }] as const
 
 export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 	h.submodel({

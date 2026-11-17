@@ -13,7 +13,6 @@ import {
 } from "effect"
 import { TestClock } from "effect/testing"
 import { WarehouseUpstreamError } from "@maple/domain/http"
-import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import {
 	cleanupTestDbs,
 	createTestDb,
@@ -23,7 +22,6 @@ import {
 	type TestDb,
 } from "@maple/backend/testing/test-pglite"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { type CostProviderAdapter, CostProviderError, type CostPullRow } from "./CostProvider"
 import { CostSyncService } from "./CostSyncService"
@@ -52,8 +50,6 @@ afterEach(() => cleanupTestDbs(trackedDbs))
 
 const NOW = DateTime.toEpochMillis(DateTime.makeUnsafe("2026-11-11T12:00:00Z"))
 const HOUR_MS = 60 * 60_000
-/** How long a source of an org outside the rollout sits out: under the lane's hourly tick. */
-const ROLLOUT_HOLD_MS = 50 * 60_000
 const CONNECTION_A = "0190f2b3-0000-7000-8000-0000000000a1"
 const CONNECTION_B = "0190f2b3-0000-7000-8000-0000000000b1"
 const CONNECTION_C = "0190f2b3-0000-7000-8000-0000000000c1"
@@ -265,20 +261,6 @@ const harness = (options: FakeProviderOptions = {}) => {
 				}),
 		}),
 	)
-	// Every org is in the `cloudCost` rollout until a test takes it out.
-	const outsideRollout = new Set<string>()
-	const setCloudCost = (orgId: string, enabled: boolean) =>
-		Effect.sync(() => {
-			if (enabled) outsideRollout.delete(orgId)
-			else outsideRollout.add(orgId)
-		})
-	const featureFlags = Layer.succeed(OrganizationFeatureFlagsService, {
-		flags: (orgId) =>
-			Effect.sync(() => ({
-				...DISABLED_ORGANIZATION_FEATURE_FLAGS,
-				cloudCost: !outsideRollout.has(orgId),
-			})),
-	})
 	const layer = Layer.effect(CostSyncService, CostSyncService.make).pipe(
 		Layer.provide(
 			Layer.mergeAll(
@@ -291,7 +273,6 @@ const harness = (options: FakeProviderOptions = {}) => {
 				Layer.succeed(VercelCostProvider, vercelAdapter),
 				Layer.succeed(PlanetScaleCostProvider, planetScaleAdapter),
 				warehouse,
-				featureFlags,
 			),
 		),
 		Layer.provide(testDb.layer),
@@ -458,7 +439,6 @@ const harness = (options: FakeProviderOptions = {}) => {
 		sourceState,
 		sourceStateOf,
 		sourceIdentity,
-		setCloudCost,
 		holdDuringPulls,
 	}
 }
@@ -1538,137 +1518,6 @@ describe("CostSyncService failures", () => {
 			yield* poll
 			const december = yield* h.sourceState
 			assert.deepStrictEqual([december?.month, december?.requests], ["2026-12", 3 * REQUESTS_PER_PULL])
-		}).pipe(Effect.provide(h.layer))
-	})
-})
-
-describe("CostSyncService rollout", () => {
-	const ROLLOUT_ERROR = "Cloud cost is not enabled for this organization."
-
-	it.effect("pulls nothing for an org that lost the cloudCost rollout, and holds its source", () => {
-		const h = harness()
-		return Effect.gen(function* () {
-			yield* connectA(h)
-			yield* poll
-			// History is left to walk, so the source is due on the next tick.
-			yield* h.sql("UPDATE cost_sources SET consecutive_failures = 2")
-			yield* h.setCloudCost("org_a", false)
-			yield* TestClock.adjust("1 hour")
-			const before = yield* h.sourceState
-			const [pulls, writes] = [h.pulls.length, h.writes.length]
-			const held = yield* poll
-			assert.deepStrictEqual(held, {
-				due: 1,
-				synced: 0,
-				skipped: 1,
-				failures: 0,
-				rowsWritten: 0,
-				requests: 0,
-			})
-			assert.deepStrictEqual([h.pulls.length, h.writes.length], [pulls, writes])
-			// The frontiers and the request count as they were, and the claim's failure not counted.
-			assert.deepStrictEqual(yield* h.sourceState, {
-				...before,
-				next: String(NOW + HOUR_MS + ROLLOUT_HOLD_MS),
-				error: ROLLOUT_ERROR,
-				reason: "rollout",
-			})
-			assert.deepStrictEqual(
-				[before?.failures, before?.lease, before?.watermark],
-				[2, null, "2026-11-11"],
-			)
-
-			// Still held half an hour on; asked again on the next hourly tick, and held again without a pull.
-			yield* TestClock.adjust("30 minutes")
-			assert.strictEqual((yield* poll).due, 0)
-			yield* TestClock.adjust("30 minutes")
-			const again = yield* poll
-			assert.deepStrictEqual([again.due, again.skipped, again.failures], [1, 1, 0])
-			assert.deepStrictEqual([h.pulls.length, h.writes.length], [pulls, writes])
-			assert.deepStrictEqual(yield* h.sourceState, {
-				...before,
-				next: String(NOW + 2 * HOUR_MS + ROLLOUT_HOLD_MS),
-				error: ROLLOUT_ERROR,
-				reason: "rollout",
-			})
-		}).pipe(Effect.provide(h.layer))
-	})
-
-	it.effect("syncs again once the org is back in the rollout, and clears the hold", () => {
-		const h = harness()
-		return Effect.gen(function* () {
-			yield* connectA(h)
-			yield* h.setCloudCost("org_a", false)
-			// The first claim the source ever gets: nothing is pulled, no frontier is set.
-			yield* poll
-			const held = yield* h.sourceState
-			assert.deepStrictEqual(
-				[h.pulls.length, held?.watermark, held?.backfill, held?.reason, held?.failures],
-				[0, null, null, "rollout", 0],
-			)
-			yield* h.setCloudCost("org_a", true)
-			// The hold stands until it runs out, then the claim proceeds as any other.
-			yield* TestClock.adjust("30 minutes")
-			assert.deepStrictEqual([(yield* poll).due, h.pulls.length], [0, 0])
-			yield* TestClock.adjust("30 minutes")
-			const summary = yield* poll
-			assert.deepStrictEqual([summary.synced, summary.failures], [1, 0])
-			assert.deepStrictEqual(h.windows(), [
-				["2026-10-01", "2026-11-11"],
-				["2026-09-01", "2026-09-30"],
-				["2026-08-01", "2026-08-31"],
-			])
-			const state = yield* h.sourceState
-			assert.deepStrictEqual(
-				[state?.watermark, state?.error, state?.reason, state?.next, state?.failures],
-				["2026-11-11", null, null, null, 0],
-			)
-		}).pipe(Effect.provide(h.layer))
-	})
-
-	it.effect("holds only the sources of the org that lost the rollout", () => {
-		const h = harness()
-		return Effect.gen(function* () {
-			yield* connectA(h)
-			yield* h.connect({ id: CONNECTION_B, orgId: "org_b", account: "210987654321" })
-			yield* h.setCloudCost("org_b", false)
-			const summary = yield* poll
-			assert.deepStrictEqual([summary.due, summary.synced, summary.skipped], [2, 1, 1])
-			assert.deepStrictEqual(Arr.dedupe(Arr.map(h.pulls, (pull) => pull.orgId)), ["org_a"])
-			assert.deepStrictEqual(Arr.dedupe(h.tenants), ["org_a"])
-			const [a, b] = [yield* h.sourceState, yield* h.sourceStateOf("org_b", CONNECTION_B)]
-			assert.deepStrictEqual([a?.watermark, a?.error, a?.reason], ["2026-11-11", null, null])
-			assert.deepStrictEqual(
-				[b?.watermark, b?.error, b?.reason, b?.next],
-				[null, ROLLOUT_ERROR, "rollout", String(NOW + ROLLOUT_HOLD_MS)],
-			)
-		}).pipe(Effect.provide(h.layer))
-	})
-
-	it.effect("a flag that read off for one tick costs that tick alone: the next hourly one pulls", () => {
-		const h = harness()
-		return Effect.gen(function* () {
-			yield* connectA(h)
-			yield* poll
-			yield* seedSynced(h, NOW - 25 * HOUR_MS)
-			yield* h.sql("UPDATE cost_sources SET watermark_date = '2026-11-10'")
-			// What a failed lookup looks like to the sync: the flag reads off, once.
-			yield* h.setCloudCost("org_a", false)
-			const before = h.pulls.length
-			const missed = yield* poll
-			assert.deepStrictEqual([missed.skipped, missed.failures, h.pulls.length], [1, 0, before])
-			assert.strictEqual((yield* h.sourceState)?.reason, "rollout")
-			yield* h.setCloudCost("org_a", true)
-			yield* TestClock.adjust("1 hour")
-			const next = yield* poll
-			assert.deepStrictEqual([next.due, next.synced, next.failures], [1, 1, 0])
-			// The head that was due an hour ago, pulled now.
-			assert.deepStrictEqual(h.windows()[before], ["2026-11-08", "2026-11-11"])
-			const state = yield* h.sourceState
-			assert.deepStrictEqual(
-				[state?.watermark, state?.error, state?.reason, state?.failures],
-				["2026-11-11", null, null, 0],
-			)
 		}).pipe(Effect.provide(h.layer))
 	})
 })

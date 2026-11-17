@@ -252,7 +252,6 @@ describe("routes", () => {
 			expect(
 				flaggedRouteRedirect(parse(path), {
 					statusPages: false,
-					cloudCost: true,
 					productAnalytics: true,
 					cloudSecurity: true,
 				}),
@@ -260,7 +259,6 @@ describe("routes", () => {
 			expect(
 				flaggedRouteRedirect(parse(path), {
 					statusPages: true,
-					cloudCost: false,
 					productAnalytics: true,
 					cloudSecurity: true,
 				}),
@@ -269,7 +267,6 @@ describe("routes", () => {
 		expect(
 			flaggedRouteRedirect(parse("/services"), {
 				statusPages: false,
-				cloudCost: false,
 				productAnalytics: false,
 				cloudSecurity: false,
 			}),
@@ -277,7 +274,7 @@ describe("routes", () => {
 	})
 
 	test("an org outside the productAnalytics rollout is sent home from /product-analytics", () => {
-		const flags = { statusPages: true, cloudCost: true, cloudSecurity: true }
+		const flags = { statusPages: true, cloudSecurity: true }
 		for (const path of ["/product-analytics", "/product-analytics?tab=funnels&timePreset=7d"]) {
 			expect(flaggedRouteRedirect(parse(path), { ...flags, productAnalytics: false })).toEqual(
 				Option.some({ url: "/", isReplace: true }),
@@ -298,34 +295,15 @@ describe("routes", () => {
 		})
 	})
 
-	test("an org outside the cloudCost rollout is sent home from /cost, filters and all", () => {
-		for (const path of [
-			"/cost",
-			"/cost?groupBy=region&region=%5B%22eu-west-1%22%5D",
-			"/cost/budgets",
-			"/cost/budgets/new",
-		]) {
-			expect(
-				flaggedRouteRedirect(parse(path), {
-					statusPages: true,
-					cloudCost: false,
-					productAnalytics: true,
-					cloudSecurity: true,
-				}),
-			).toEqual(Option.some({ url: "/", isReplace: true }))
-			expect(
-				flaggedRouteRedirect(parse(path), {
-					statusPages: false,
-					cloudCost: true,
-					productAnalytics: true,
-					cloudSecurity: true,
-				}),
-			).toEqual(Option.none())
+	test("every org opens the cost pages, with no rollout flag on", () => {
+		const off = { statusPages: false, productAnalytics: false, cloudSecurity: false }
+		for (const path of ["/cost", "/cost?groupBy=region", "/cost/budgets", "/cost/budgets/new"]) {
+			expect(flaggedRouteRedirect(parse(path), off)).toEqual(Option.none())
 		}
 	})
 
 	test("an org outside the cloudSecurity rollout is sent home from the Cloud findings and their detail", () => {
-		const flags = { statusPages: true, cloudCost: true, productAnalytics: true }
+		const flags = { statusPages: true, productAnalytics: true }
 		for (const path of ["/security/cloud?severity=critical", "/security/cloud/finding?id=f-1"]) {
 			expect(flaggedRouteRedirect(parse(path), { ...flags, cloudSecurity: false })).toEqual(
 				Option.some({ url: "/", isReplace: true }),

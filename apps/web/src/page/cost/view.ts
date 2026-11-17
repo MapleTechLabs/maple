@@ -48,6 +48,7 @@ import { filtersRail } from "./view-filters"
 import { figuresRow } from "./view-figures"
 import { sourcesSection } from "./view-sources"
 import { breakdownTable } from "./view-table"
+import { betaNotice } from "./kit/beta-notice"
 
 const DAY_SECONDS = 24 * 60 * 60
 
@@ -375,7 +376,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
-					title: "Cost",
+					title: "Cloud cost",
 					// The rail filters the window's reads: it shows once there is cost to read.
 					filters: showsData(model) ? filtersRail(h, model) : undefined,
 					actions: headerActions(h, model),
@@ -383,11 +384,10 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				// A grid, not the scroll column's own flex: there a panel (it clips) is squeezed by a
 				// growing sibling such as the error state.
 				[
-					grid(
-						h,
-						{ cols: 1, gap: "6", className: "shrink-0" },
-						body(h, model, inputs.context.timeZone),
-					),
+					grid(h, { cols: 1, gap: "6", className: "shrink-0" }, [
+						betaNotice(h),
+						...body(h, model, inputs.context.timeZone),
+					]),
 					addSourceDialog(h, model, sourcesOf(model)),
 					removeSourceDialog(h, model),
 				],
