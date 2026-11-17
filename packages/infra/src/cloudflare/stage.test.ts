@@ -103,12 +103,16 @@ describe("parsePreviewResourceName", () => {
 })
 
 describe("resolveMapleDomains", () => {
-	it("gives a preview's status Worker its own hostname, and prd and dev none", () => {
+	it("gives prd and preview status Workers their own hostname, and dev none", () => {
 		expect(resolveMapleDomains({ stage: stage("pr-42"), region: "us" }).status).toBe(
 			"status-pr-42.maple.dev",
 		)
-		expect(resolveMapleDomains({ stage: stage("prd"), region: "us" }).status).toBeUndefined()
-		expect(resolveMapleDomains({ stage: stage("prd"), region: "eu" }).status).toBeUndefined()
+		expect(resolveMapleDomains({ stage: stage("prd"), region: "us" }).status).toBe(
+			"status-pages.maple.dev",
+		)
+		expect(resolveMapleDomains({ stage: stage("prd"), region: "eu" }).status).toBe(
+			"status-pages.eu.maple.dev",
+		)
 		expect(resolveMapleDomains({ stage: stage("dev_makisuo"), region: "us" }).status).toBeUndefined()
 	})
 
@@ -121,6 +125,7 @@ describe("resolveMapleDomains", () => {
 			sync: "sync.eu.maple.dev",
 			electric: "electric.eu.maple.dev",
 			chat: "chat.eu.maple.dev",
+			status: "status-pages.eu.maple.dev",
 		})
 		expect(eu.landing).toBeUndefined()
 		expect(eu.local).toBeUndefined()
@@ -137,6 +142,7 @@ describe("resolveMapleDomains", () => {
 			landing: "maple.dev",
 			local: "local.maple.dev",
 			chat: "chat.maple.dev",
+			status: "status-pages.maple.dev",
 		})
 	})
 

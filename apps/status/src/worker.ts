@@ -35,7 +35,7 @@ const props = Effect.gen(function* () {
 			...env,
 			...(stack.domains.status === undefined ? undefined : { MAPLE_STATUS_HOST: stack.domains.status }),
 		},
-		// Pages are served at `/s/<slug>`; previews get a domain, prd stays on workers.dev until it has one.
+		// Pages are served at `/s/<slug>`; prd and previews on their status domain, dev stages on workers.dev.
 		domain: stack.domains.status,
 		workersDev: true,
 	}

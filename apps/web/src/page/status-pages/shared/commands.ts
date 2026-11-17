@@ -280,7 +280,7 @@ export const statusPagesHref = (): string => hrefOf(AppRoute.StatusPages())
 
 export const newStatusPageHref = (): string => hrefOf(AppRoute.StatusPageNew())
 
-/** The status Worker's origin; empty where it has no domain yet (prd today). */
+/** The status Worker's origin; empty where the stage has no status domain. */
 export const STATUS_PAGE_BASE_URL: string = Str.replace(
 	/\/+$/u,
 	"",

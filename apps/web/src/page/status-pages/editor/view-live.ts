@@ -20,7 +20,7 @@ import { textLink } from "@maple/views/ui/text-link"
 
 type H = HtmlBuilder<Message>
 
-/** In place of a link that would not resolve: prd has no status domain yet. */
+/** In place of a link that would not resolve: the stage has no status domain. */
 export const NO_DOMAIN_NOTE = "Public address appears once a status domain is configured"
 
 /** The header's address: a link to the public page, or the note while there is no status domain. */
