@@ -45,14 +45,14 @@ Turn on **Approve low-risk pull requests** and the review approves a pull reques
 
 - The review read the whole diff, not only the commits since the last review, and finished. Maple could read the diff itself, every changed file has a patch to read (a binary file, or one too large for GitHub to show, needs a person), and no changed file is under an ignored path.
 - No warning or critical finding is open, including ones from earlier pushes. Notes are fine.
-- No warning or critical on the pull request was ever dismissed, or held back by the repository's lenses or the team's feedback. A person set it aside, so a person approves.
+- No warning or critical on the pull request was ever dismissed, or held back by the repository's lenses or the team's feedback, and the review did not find again one a person had closed. A person set it aside, so a person approves.
 - The review rated the risk low. Auth, tenancy, migrations, billing and concurrency are never low.
 - The review judged that tests cover the change, or that it needs none. A review that did not assess tests does not approve.
 - No step before merge is left unticked, and no telemetry contract is broken.
 - The confidence is 9 or more.
 - The pull request is open and not a draft, its head is still the commit reviewed, and its author can push to the repository.
 
-Maple dismisses its approval when new commits are pushed and when a later review does not approve. Turning the rule off leaves existing approvals in place. GitHub may only let a repository admin, or someone listed as allowed to dismiss reviews, dismiss a review on a protected branch, so also turn on **Dismiss stale pull request approvals when new commits are pushed** in the branch's protection or ruleset. An approval from Maple counts toward required approvals but never satisfies a `CODEOWNERS` review.
+Maple dismisses its approval when new commits are pushed, when a later review does not approve, and when a later review of the same commit ends early. Turning the rule off leaves existing approvals in place. GitHub may only let a repository admin, or someone listed as allowed to dismiss reviews, dismiss a review on a protected branch, so also turn on **Dismiss stale pull request approvals when new commits are pushed** in the branch's protection or ruleset. An approval from Maple counts toward required approvals but never satisfies a `CODEOWNERS` review.
 
 ## Talk to the reviewer
 

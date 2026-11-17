@@ -1680,18 +1680,28 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				repo: VcsRepositoryRef,
 				number: number,
 				reason: string,
+				keepHead?: string,
 			) {
 				// Without the App's login its own reviews cannot be told apart, so none is dismissed.
 				if (appBotLogin === undefined) return "unsupported" as const
-				const reviews = yield* client.listPullRequestReviews(
+				const { items: reviews, truncated } = yield* client.listPullRequestReviews(
 					externalInstallationId,
 					repo.owner,
 					repo.name,
 					number,
 				)
+				// The newest reviews are the ones missing: saying "withdrawn" could leave an approval up.
+				if (truncated) {
+					return yield* new GithubAppError({
+						message: "Too many reviews on the pull request to find every approval",
+					})
+				}
 				const standing = Arr.filter(
 					reviews,
-					(review) => review.state === "APPROVED" && review.user?.login === appBotLogin,
+					(review) =>
+						review.state === "APPROVED" &&
+						review.user?.login === appBotLogin &&
+						(keepHead === undefined || review.commit_id !== keepHead),
 				)
 				yield* Effect.forEach(
 					standing,
@@ -1751,7 +1761,13 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				repo,
 				input,
 			) =>
-				withdrawApprovals(installation.externalInstallationId, repo, input.number, input.reason).pipe(
+				withdrawApprovals(
+					installation.externalInstallationId,
+					repo,
+					input.number,
+					input.reason,
+					input.keepHead,
+				).pipe(
 					Effect.mapError(toVcsError),
 					Effect.withSpan("GithubProvider.withdrawPullRequestApprovals", {
 						attributes: {

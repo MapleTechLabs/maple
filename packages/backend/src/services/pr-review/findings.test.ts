@@ -252,9 +252,15 @@ describe("withoutRepeats", () => {
 		assert.lengthOf(withoutRepeats([finding(10)], [fixed]).fresh, 1)
 	})
 
-	it("keeps a finding a person closed quiet", () => {
+	it("keeps a finding a person closed quiet, but reports it for auto-approval", () => {
 		const closed = tracked({ status: "resolved", resolvedSha: null })
-		assert.lengthOf(withoutRepeats([finding(10)], [closed]).fresh, 0)
+		const { fresh, restatedResolved } = withoutRepeats([finding(10)], [closed])
+		assert.lengthOf(fresh, 0)
+		assert.lengthOf(restatedResolved, 1)
+	})
+
+	it("does not report a restatement of an open finding as resolved", () => {
+		assert.lengthOf(withoutRepeats([finding(12, "Off-by-one")], [tracked()]).restatedResolved, 0)
 	})
 
 	it("never re-posts a privacy scan finding, even after a fix", () => {

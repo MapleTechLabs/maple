@@ -432,7 +432,8 @@ export interface VcsProviderClient {
 	readonly withdrawPullRequestApprovals: (
 		installation: VcsInstallation,
 		repo: VcsRepositoryRef,
-		input: { readonly number: number; readonly reason: string },
+		/** `keepHead`: spare an approval of this commit, which still describes the head. */
+		input: { readonly number: number; readonly reason: string; readonly keepHead?: string },
 	) => Effect.Effect<
 		"withdrawn" | "unsupported",
 		| VcsProviderError

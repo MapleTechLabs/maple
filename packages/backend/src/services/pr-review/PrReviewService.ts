@@ -1588,7 +1588,14 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				)
 
 			/** Dismiss the approvals Maple gave a pull request. Best effort: a review never fails on it. */
-			const withdrawApprovals = (orgId: OrgId, repo: VcsRepo, number: number, reason: string) =>
+			/** `keepHead`: an approval of this commit still stands, so a repeated push event spares it. */
+			const withdrawApprovals = (
+				orgId: OrgId,
+				repo: VcsRepo,
+				number: number,
+				reason: string,
+				keepHead?: GitCommitSha,
+			) =>
 				Effect.gen(function* () {
 					const target = yield* upstreamFor(orgId, repo)
 					if (Option.isNone(target)) return
@@ -1596,6 +1603,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					const outcome = yield* provider.withdrawPullRequestApprovals(installation, ref, {
 						number,
 						reason,
+						...(keepHead === undefined ? undefined : { keepHead }),
 					})
 					yield* Effect.annotateCurrentSpan("vcs.pull_request.approval", outcome)
 				}).pipe(
@@ -2164,7 +2172,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					.pipe(Effect.mapError(toPersistence))
 				// A new head leaves any approval Maple gave about other code, whatever becomes of this push's
 				// review: it may be skipped, end early or never publish. The delayed copy of the push is
-				// the same head, so it asks nothing again.
+				// the same head, so it asks nothing again, and an approval of this very head (a repeated
+				// event, after its review approved) stands.
 				if (
 					config.autoApprove === true &&
 					job.action === "synchronize" &&
@@ -2175,6 +2184,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						repo,
 						job.number,
 						"new commits were pushed since it approved",
+						job.headSha,
 					)
 				}
 				if (job.draft === true && config.reviewDrafts !== true && !requested) {
@@ -2778,7 +2788,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							config.categories.length === 0 ||
 							config.categories.includes(finding.category)),
 				)
-				const { fresh, repeated, reraisedDismissed } = withoutRepeats(
+				const { fresh, repeated, reraisedDismissed, restatedResolved } = withoutRepeats(
 					allowed,
 					Arr.map(
 						Arr.filter(tracked, (finding) => !resolved.includes(finding)),
@@ -2818,7 +2828,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					finding.severity !== "info"
 				const heldBack =
 					Arr.filter(proposed, (finding) => isIssue(finding) && !allowed.includes(finding)).length +
-					Arr.filter(feedback.suppressed, isIssue).length
+					Arr.filter(feedback.suppressed, isIssue).length +
+					Arr.filter(restatedResolved, isIssue).length
 				const heldBackBefore =
 					config.autoApprove === true
 						? yield* loadReviewHistory(orgId, review.repositoryId, review.number).pipe(
@@ -3069,6 +3080,11 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						headSha: review.headSha,
 						reason: request.partialReason ?? "ended_early",
 					})
+					// A review of the same head asked for again may end early after an approval; what it
+					// saw is unknown, so the approval goes.
+					if (config.autoApprove === true) {
+						yield* withdrawApprovals(orgId, repo, review.number, "its latest review ended early")
+					}
 				} else {
 					const approval =
 						config.autoApprove === true

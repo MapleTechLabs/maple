@@ -688,6 +688,51 @@ describe("GithubProvider publishing a review", () => {
 			}).pipe(Effect.provide(layer))
 		})
 
+		it.effect("spares its approval of the head a repeated push event names", () => {
+			const requests: Array<string> = []
+			const layer = providerLayer(
+				[
+					tokenResponse(),
+					jsonResponse([
+						{ id: 1, state: "APPROVED", user: { login: "maple-review[bot]" }, commit_id: "a" },
+						{ id: 5, state: "APPROVED", user: { login: "maple-review[bot]" }, commit_id: HEAD },
+					]),
+					jsonResponse({ id: 1, state: "DISMISSED" }),
+				],
+				requests,
+				[],
+				[],
+				appEnv,
+			)
+			return Effect.gen(function* () {
+				const provider = yield* GithubProvider
+				const outcome = yield* provider.withdrawPullRequestApprovals(INSTALLATION, REPO, {
+					number: 612,
+					reason: "new commits were pushed since it approved",
+					keepHead: HEAD,
+				})
+				assert.equal(outcome, "withdrawn")
+				assert.deepEqual(Arr.filter(requests, Str.includes("/dismissals")), [
+					"https://api.github.com/repos/octo/shop/pulls/612/reviews/1/dismissals",
+				])
+			}).pipe(Effect.provide(layer))
+		})
+
+		it.effect("fails rather than claim a withdrawal when the review list is cut short", () => {
+			const fullPage = () =>
+				jsonResponse(
+					Arr.makeBy(100, (i) => ({ id: i, state: "COMMENTED", user: { login: "octocat" } })),
+				)
+			const layer = providerLayer([tokenResponse(), ...Arr.makeBy(10, fullPage)], [], [], [], appEnv)
+			return Effect.gen(function* () {
+				const provider = yield* GithubProvider
+				const result = yield* provider
+					.withdrawPullRequestApprovals(INSTALLATION, REPO, { number: 612, reason: "r" })
+					.pipe(Effect.exit)
+				assert.isTrue(Exit.isFailure(result))
+			}).pipe(Effect.provide(layer))
+		})
+
 		it.effect("never approves when it could not find its own approval again to withdraw it", () => {
 			const requests: Array<string> = []
 			// No GITHUB_APP_SLUG: the App's reviews cannot be told from anyone else's.

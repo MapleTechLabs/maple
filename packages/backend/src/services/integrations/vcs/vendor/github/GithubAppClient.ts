@@ -542,6 +542,8 @@ const GithubApiListedReview = Schema.Struct({
 	id: Schema.Number,
 	state: Schema.String,
 	user: Schema.NullOr(GithubApiUser),
+	/** The head the review was given on; absent when its commit is gone from the repository. */
+	commit_id: Schema.optionalKey(Schema.NullOr(Schema.String)),
 })
 export type GithubApiListedReview = Schema.Schema.Type<typeof GithubApiListedReview>
 const GithubApiListedReviewList = Schema.Array(GithubApiListedReview)
@@ -2133,7 +2135,8 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 			) {
 				const config = yield* resolveConfig
 				const token = yield* mintInstallationToken(externalInstallationId)
-				const { items } = yield* collectPages(MAX_REVIEW_PAGES, (page) =>
+				// GitHub lists oldest first, so a truncated list misses the newest reviews.
+				return yield* collectPages(MAX_REVIEW_PAGES, (page) =>
 					Effect.gen(function* () {
 						const response = yield* authedGet(
 							config,
@@ -2150,7 +2153,6 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						)
 					}),
 				)
-				return items
 			})
 
 			/**

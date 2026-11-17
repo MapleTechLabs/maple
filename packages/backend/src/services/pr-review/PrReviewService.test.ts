@@ -245,7 +245,9 @@ const layerFor = (
 			}),
 		withdrawPullRequestApprovals: (_installation, _repo, input) =>
 			Effect.sync(() => {
-				options.withdrawals?.push(`${input.number}:${input.reason}`)
+				options.withdrawals?.push(
+					`${input.number}:${input.reason}${input.keepHead === undefined ? "" : ` (keeps ${input.keepHead})`}`,
+				)
 				return "withdrawn" as const
 			}),
 		publishPullRequestReview: (_installation, _repo, publication) => {
@@ -2279,8 +2281,10 @@ describe("PrReviewService auto-approve", () => {
 			)
 			const withdrawn = published[1].approval
 			assert.strictEqual(withdrawn?.action, "withdraw")
-			// The push itself withdrew first, before its review ran.
-			assert.deepStrictEqual(withdrawals, ["612:new commits were pushed since it approved"])
+			// The push itself withdrew first, before its review ran, sparing an approval of its own head.
+			assert.deepStrictEqual(withdrawals, [
+				`612:new commits were pushed since it approved (keeps ${HEAD_2})`,
+			])
 		}).pipe(Effect.provide(layerFor(testDb, { published, withdrawals })))
 	})
 
@@ -2465,6 +2469,29 @@ describe("PrReviewService auto-approve", () => {
 				}),
 			),
 		)
+	})
+
+	it.effect("withdraws an approval when a later review of the same head ends early", () => {
+		const testDb = createTestDb(trackedDbs)
+		const published: Array<PullRequestReviewPublication> = []
+		const withdrawals: Array<string> = []
+		return Effect.gen(function* () {
+			const repositoryId = yield* seed(true)
+			const repo = yield* VcsRepository
+			yield* repo.setPrReviewConfig(
+				orgId,
+				repositoryId,
+				new PrReviewRepositoryConfig({ autoApprove: true }),
+			)
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({ report: lowRisk(), partial: true }),
+			)
+			assert.deepStrictEqual(withdrawals, ["612:its latest review ended early"])
+		}).pipe(Effect.provide(layerFor(testDb, { published, withdrawals })))
 	})
 
 	it.effect("asks nothing about approval when the repository has not turned it on", () => {
