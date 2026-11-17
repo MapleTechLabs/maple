@@ -1,11 +1,16 @@
-import type { CloudFindingSource, CloudServiceState } from "@maple/domain/cloud-security"
+import type {
+	CloudFindingSeverity,
+	CloudFindingSource,
+	CloudFindingStatus,
+	CloudServiceState,
+} from "@maple/domain/cloud-security"
 import { IntegrationsPersistenceError } from "@maple/domain/http"
 import {
 	CloudSecurityFindings,
 	type CloudSecurityServiceStateRow,
 	CloudSecurityServiceStates,
 } from "@maple/db/tables"
-import type { AwsConnectionId, AwsRegion, OrgId } from "@maple/primitives"
+import type { AwsAccountId, AwsConnectionId, AwsRegion, OrgId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Array as Arr, Context, Effect, Layer } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -15,7 +20,29 @@ import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platfo
 // the poller keeps its cursors in. Every read and write is pinned to one org.
 
 /** A finding as a poll read it, before it is stamped with the sync time. */
-export type CloudFindingWrite = Omit<PG.InsertRowOf<typeof CloudSecurityFindings>, "syncedAt">
+export interface CloudFindingWrite {
+	readonly orgId: OrgId
+	readonly connectionId: AwsConnectionId
+	readonly accountId: AwsAccountId
+	readonly region: AwsRegion
+	readonly source: CloudFindingSource
+	readonly findingId: string
+	readonly type: string
+	readonly title: string
+	readonly description: string | null
+	readonly severity: CloudFindingSeverity
+	readonly status: CloudFindingStatus
+	readonly resourceType: string
+	readonly resourceId: string
+	readonly resourceName: string | null
+	readonly occurrences: number
+	readonly firstSeenAt: number
+	readonly lastSeenAt: number
+	readonly providerUpdatedAt: number
+	/** When Maple first saw it closed; absent on a closed finding means now. */
+	readonly closedAt?: number | null
+	readonly detail: Record<string, unknown> | null
+}
 
 export interface CloudServiceStateWrite {
 	readonly orgId: OrgId
@@ -72,14 +99,31 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 				rows: ReadonlyArray<CloudFindingWrite>,
 				syncedAt: number,
 			) {
-				yield* Effect.annotateCurrentSpan({ "maple.cloud_security.findings": rows.length })
+				// One row per finding, its newest version: Postgres refuses an upsert that names a key twice.
+				const newest = new Map<string, CloudFindingWrite>()
+				Arr.forEach(rows, (row) => {
+					const key = `${row.orgId}\n${row.connectionId}\n${row.region}\n${row.source}\n${row.findingId}`
+					const seen = newest.get(key)
+					if (seen === undefined || seen.providerUpdatedAt <= row.providerUpdatedAt)
+						newest.set(key, row)
+				})
+				const unique = Arr.fromIterable(newest.values())
+				yield* Effect.annotateCurrentSpan({ "maple.cloud_security.findings": unique.length })
 				yield* Effect.forEach(
-					Arr.chunksOf(rows, UPSERT_CHUNK),
+					Arr.chunksOf(unique, UPSERT_CHUNK),
 					(chunk) =>
 						dbExecute((db) =>
 							db.run(
 								PG.insertInto(CloudSecurityFindings)
-									.values(Arr.map(chunk, (row) => ({ ...row, syncedAt })))
+									.values(
+										// A closed finding without a close time closed now, as far as Maple knows.
+										Arr.map(chunk, (row) => ({
+											...row,
+											closedAt:
+												row.closedAt ?? (row.status === "active" ? null : syncedAt),
+											syncedAt,
+										})),
+									)
 									.onConflictDoUpdate({
 										target: ["orgId", "connectionId", "region", "source", "findingId"],
 										// Every column from the new version but closed_at: the first time Maple saw the

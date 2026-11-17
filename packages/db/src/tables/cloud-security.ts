@@ -51,10 +51,11 @@ export const CloudSecurityFindings = PG.table("cloud_security_findings", {
 		PG.index("cloud_security_findings_org_resource_idx", ["orgId", "resourceId"]),
 	],
 	foreignKeys: [
+		// On the org as well as the id: a row can only name a connection of its own org.
 		PG.foreignKey({
-			columns: ["connectionId"],
+			columns: ["orgId", "connectionId"],
 			references: AwsConnections,
-			foreignColumns: ["id"],
+			foreignColumns: ["orgId", "id"],
 			onDelete: "cascade",
 		}),
 	],
@@ -81,10 +82,11 @@ export const CloudSecurityServiceStates = PG.table("cloud_security_service_state
 	primaryKey: ["orgId", "connectionId", "region", "source"],
 	indexes: [PG.index("cloud_security_service_states_org_idx", ["orgId"])],
 	foreignKeys: [
+		// On the org as well as the id: a row can only name a connection of its own org.
 		PG.foreignKey({
-			columns: ["connectionId"],
+			columns: ["orgId", "connectionId"],
 			references: AwsConnections,
-			foreignColumns: ["id"],
+			foreignColumns: ["orgId", "id"],
 			onDelete: "cascade",
 		}),
 	],
