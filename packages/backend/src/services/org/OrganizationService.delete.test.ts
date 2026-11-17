@@ -4,24 +4,38 @@ import { ConfigProvider, Effect, Exit, Layer, Option, Schema, Array as Arr, Reco
 import { FetchHttpClient } from "effect/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIssueVerifications } from "@maple/db/tables"
-import { OrganizationForbiddenError, OrgId, RoleName } from "@maple/domain/http"
+import {
+	EnterpriseSsoUnavailableError,
+	OrganizationForbiddenError,
+	OrganizationProviderError,
+	OrgId,
+	RoleName,
+} from "@maple/domain/http"
 import { ErrorIssueId, ErrorIssuePullRequestId, ErrorIssueVerificationId } from "@maple/primitives"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { countOrgRows, ORG_A, ORG_B, seedOrgRow } from "@maple/backend/testing/test-two-orgs"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
+import { EnterpriseSsoService, type EnterpriseSsoServiceApi } from "./enterprise-sso/EnterpriseSsoService"
 import { OrganizationRegionService } from "./OrganizationRegionService"
 import { ORG_DELETE_REGISTRY, OrganizationService } from "./OrganizationService"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
+type RemoveSso = EnterpriseSsoServiceApi["removeForDeletedOrganization"]
+
 // The region service is irrelevant to delete; `servesAll` spares it the edge cache.
-const makeLayer = (testDb: TestDb) =>
+const makeLayer = (testDb: TestDb, removeSso: RemoveSso = () => Effect.void) =>
 	Layer.effect(OrganizationService, OrganizationService.make).pipe(
 		Layer.provide(
-			Layer.mergeAll(AutumnClient.layer, OrganizationRegionService.servesAll, FetchHttpClient.layer),
+			Layer.mergeAll(
+				AutumnClient.layer,
+				OrganizationRegionService.servesAll,
+				Layer.mock(EnterpriseSsoService)({ removeForDeletedOrganization: removeSso }),
+				FetchHttpClient.layer,
+			),
 		),
 		Layer.provide(testDb.layer),
 		Layer.provide(Env.layer),
@@ -128,6 +142,42 @@ describe("OrganizationService.delete", () => {
 			yield* organizations.delete(ORG_B, [role("org:admin")])
 			assert.strictEqual(yield* countOrgRows(testDb, "org_billing_links", "billing_org_id", ORG_A), 0)
 		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("removes the org's single sign-on before its rows, and keeps the rows when that fails", () => {
+		const testDb = createTestDb(trackedDbs)
+		const clerk = { down: true }
+		// What the SSO removal still finds of the org's connection row when it runs.
+		const rowsSeen: Array<number> = []
+		const removeSso: RemoveSso = (orgId) =>
+			countOrgRows(testDb, "org_sso_connections", "org_id", orgId).pipe(
+				Effect.orDie,
+				Effect.flatMap((count) => {
+					rowsSeen.push(count)
+					return clerk.down
+						? Effect.fail(new EnterpriseSsoUnavailableError({ message: "Clerk is down" }))
+						: Effect.void
+				}),
+			)
+		return Effect.gen(function* () {
+			yield* seedBothOrgs(testDb)
+			const organizations = yield* OrganizationService
+
+			const exit = yield* Effect.exit(organizations.delete(ORG_A, [role("org:admin")]))
+			assert.instanceOf(Option.getOrUndefined(Exit.findErrorOption(exit)), OrganizationProviderError)
+			// Only the billing link is gone: delete drops it under its lock before anything else.
+			assert.deepStrictEqual(yield* countsFor(testDb, ORG_A), {
+				...everyTableAt(1),
+				org_billing_links: 0,
+			})
+
+			// The retry finds the connection row it needs, and then the purge runs.
+			clerk.down = false
+			yield* organizations.delete(ORG_A, [role("org:admin")])
+			assert.deepStrictEqual(rowsSeen, [1, 1])
+			assert.deepStrictEqual(yield* countsFor(testDb, ORG_A), everyTableAt(0))
+			assert.deepStrictEqual(yield* countsFor(testDb, ORG_B), everyTableAt(1))
+		}).pipe(Effect.provide(makeLayer(testDb, removeSso)))
 	})
 
 	it.effect("leaves the verification tick nothing due for the deleted org", () => {

@@ -1416,4 +1416,36 @@ describe("EnterpriseSsoService", () => {
 			)
 		},
 	)
+
+	it.effect("removes the Clerk connection and directory of an organization that is being deleted", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = { clerk: fakeClerk(), dns: new Map<string, Array<string>>(), entitled: true }
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				const sso = yield* EnterpriseSsoService
+				// Nothing configured is not a failure.
+				yield* sso.removeForDeletedOrganization(OTHER_ORG)
+
+				yield* verifiedDomain(world.dns, "acme.com")
+				yield* sso.createConnection(ORG, ADMIN, samlRequest(["acme.com"]))
+				yield* sso.createDirectory(ORG)
+
+				// Clerk is down: the failure is raised and the row stays, so a retry finds it.
+				world.clerk.failDeletes = true
+				const failed = yield* sso.removeForDeletedOrganization(ORG).pipe(Effect.flip)
+				assert.strictEqual(failed._tag, "@maple/http/enterprise-sso/EnterpriseSsoUnavailableError")
+				assert.isNotNull((yield* sso.get(ORG)).connection)
+
+				world.clerk.failDeletes = false
+				yield* sso.removeForDeletedOrganization(ORG)
+				assert.strictEqual(world.clerk.connections.size, 0)
+				assert.strictEqual(world.clerk.directories.size, 0)
+				assert.isNull((yield* sso.get(ORG)).connection)
+				// A second attempt finds nothing left and succeeds.
+				yield* sso.removeForDeletedOrganization(ORG)
+			}),
+		)
+	})
 })

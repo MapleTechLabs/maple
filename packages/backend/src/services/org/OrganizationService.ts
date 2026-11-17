@@ -35,6 +35,7 @@ import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
 import { responseHasPlanHistory } from "@maple/backend/services/billing/autumn-client"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
+import { EnterpriseSsoService } from "@maple/backend/services/org/enterprise-sso/EnterpriseSsoService"
 import { clerkModeClient } from "@maple/auth"
 
 const toPersistenceError = (error: unknown) =>
@@ -175,7 +176,8 @@ const PURGE_ORDER: ReadonlyArray<TableName> = [
 	"SupabaseConnections",
 	// The org's own OpenRouter key: a recreated org with the same id must not inherit it.
 	"OrgOpenRouterKeys",
-	// Enterprise SSO domains, connection ids and SCIM groups; the Clerk side goes with the Clerk org.
+	// Enterprise SSO domains, connection ids and SCIM groups. The Clerk connection and directory
+	// are deleted before the purge; the organization domains go with the Clerk org.
 	"OrgSsoDomains",
 	"OrgSsoConnections",
 	"OrgDirectoryGroups",
@@ -347,6 +349,7 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 
 			const autumn = yield* AutumnClient
 			const regions = yield* OrganizationRegionService
+			const sso = yield* EnterpriseSsoService
 			const httpClient = yield* HttpClient.HttpClient
 
 			const requireAdmin = Effect.fn("OrganizationService.requireAdmin")(function* (
@@ -590,6 +593,16 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 						idempotencyKey: `org_delete:${orgId}:uptime_monitors`,
 					}).pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
 				}
+				// Before the purge, which drops the ids: a connection left in Clerk would keep claiming the
+				// org's domains. A failure stops here, with the rows intact for a retry.
+				yield* sso.removeForDeletedOrganization(orgId).pipe(
+					Effect.mapError(
+						(error) =>
+							new OrganizationProviderError({
+								message: `Could not remove the organization's single sign-on: ${error.message}`,
+							}),
+					),
+				)
 				yield* purgeOrgScopedRows(orgId)
 				yield* deleteClerkOrganization(orgId)
 				// A cached "served here" would outlive the organization by up to an hour.
@@ -608,7 +621,12 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(
-			Layer.mergeAll(AutumnClient.layer, OrganizationRegionService.layer, FetchHttpClient.layer),
+			Layer.mergeAll(
+				AutumnClient.layer,
+				OrganizationRegionService.layer,
+				EnterpriseSsoService.layer,
+				FetchHttpClient.layer,
+			),
 		),
 	)
 }

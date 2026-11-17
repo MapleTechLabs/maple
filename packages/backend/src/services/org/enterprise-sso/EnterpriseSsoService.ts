@@ -216,6 +216,11 @@ export interface EnterpriseSsoServiceApi {
 		enforced: boolean,
 	) => Effect.Effect<EnterpriseSsoDocument, SsoWriteError>
 	readonly deleteConnection: (orgId: OrgId) => Effect.Effect<EnterpriseSsoDocument, SsoWriteError>
+	/**
+	 * Deletes the Clerk connection and SCIM directory of an organization that is being deleted, so
+	 * nothing keeps claiming its domains. Nothing configured is success; a Clerk failure is raised.
+	 */
+	readonly removeForDeletedOrganization: (orgId: OrgId) => Effect.Effect<void, SsoWriteError>
 	readonly createDirectory: (orgId: OrgId) => Effect.Effect<ScimTokenIssued, SsoWriteError>
 	readonly rotateDirectoryToken: (orgId: OrgId) => Effect.Effect<ScimTokenIssued, SsoWriteError>
 	readonly setDirectoryState: (
@@ -976,11 +981,11 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 					),
 				)
 
-			const deleteConnection = Effect.fn("EnterpriseSsoService.deleteConnection")(function* (
+			/** The directory, then the connection, then the row; each step tolerates one already gone. */
+			const dropConnection = Effect.fn("EnterpriseSsoService.dropConnection")(function* (
 				orgId: OrgId,
+				row: OrgSsoConnectionRow,
 			) {
-				yield* Effect.annotateCurrentSpan({ orgId })
-				const row = yield* requireConnectionRow(orgId)
 				// Clerk removes the connection's bypass entries itself when the connection is deleted.
 				if (row.clerkDirectoryId !== null) yield* dropDirectory(orgId, row.clerkDirectoryId)
 				yield* clerk.deleteConnection(row.clerkConnectionId).pipe(
@@ -998,7 +1003,26 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 						]),
 					),
 				)
+			})
+
+			const deleteConnection = Effect.fn("EnterpriseSsoService.deleteConnection")(function* (
+				orgId: OrgId,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId })
+				const row = yield* requireConnectionRow(orgId)
+				yield* dropConnection(orgId, row)
 				return yield* get(orgId)
+			})
+
+			const removeForDeletedOrganization = Effect.fn(
+				"EnterpriseSsoService.removeForDeletedOrganization",
+			)(function* (orgId: OrgId) {
+				yield* Effect.annotateCurrentSpan({ orgId })
+				const row = yield* loadConnectionRow(orgId)
+				yield* Effect.annotateCurrentSpan({ "maple.sso.configured": Option.isSome(row) })
+				// Without Clerk there is nothing on its side to delete; the rows go with the purge.
+				if (Option.isNone(row) || !clerk.available) return
+				yield* dropConnection(orgId, row.value)
 			})
 
 			const issued = (orgId: OrgId, directory: ClerkSsoDirectory) =>
@@ -1401,6 +1425,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				updateConnection,
 				setEnforcement,
 				deleteConnection,
+				removeForDeletedOrganization,
 				createDirectory,
 				rotateDirectoryToken,
 				setDirectoryState,
@@ -1445,6 +1470,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 			updateConnection: () => unserved,
 			setEnforcement: () => unserved,
 			deleteConnection: () => unserved,
+			removeForDeletedOrganization: () => unserved,
 			createDirectory: () => unserved,
 			rotateDirectoryToken: () => unserved,
 			setDirectoryState: () => unserved,

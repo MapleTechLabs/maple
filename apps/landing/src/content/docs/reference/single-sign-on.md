@@ -137,6 +137,8 @@ The IdP sends the change on its own schedule, which can take a few minutes. A us
 
 Removing the connection doesn't delete any user. Members on its domains go back to signing in with their email and their other sign-in methods, and the connection's bypass list is cleared.
 
+Deleting the organization removes its connection and SCIM provisioning as well, so its domains are free to use again.
+
 ## Troubleshooting
 
 | Problem                                                                 | What to do                                                                                                                                                      |

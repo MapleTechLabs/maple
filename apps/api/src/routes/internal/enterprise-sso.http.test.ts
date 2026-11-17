@@ -63,6 +63,7 @@ const recordingService = (calls: Array<string>) => {
 		updateConnection: ok("updateConnection"),
 		setEnforcement: ok("setEnforcement"),
 		deleteConnection: ok("deleteConnection"),
+		removeForDeletedOrganization: () => Effect.void,
 		createDirectory: issued("createDirectory"),
 		rotateDirectoryToken: issued("rotateDirectoryToken"),
 		setDirectoryState: ok("setDirectoryState"),
