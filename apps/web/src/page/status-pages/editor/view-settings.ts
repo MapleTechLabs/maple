@@ -7,7 +7,7 @@ import { button } from "@maple/views/ui/button"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { copyableField } from "@maple/views/ui/copyable-field"
 import { errorState } from "@maple/views/ui/error-state"
-import { icon } from "@maple/views/ui/icon"
+import { icon, type IconName } from "@maple/views/ui/icon"
 import { navRailRow } from "@maple/views/ui/nav-rail-row"
 import { searchResultMockup } from "@maple/views/ui/page-mockup"
 import { pageTitle } from "@maple/status-page"
@@ -61,6 +61,14 @@ const SECTION_LABEL = {
 	access: "Access",
 	advanced: "Advanced",
 } as const satisfies Record<SettingsSection, string>
+
+const SECTION_ICON = {
+	basic: "GearIcon",
+	monitors: "PulseIcon",
+	appearance: "PaletteIcon",
+	access: "LockIcon",
+	advanced: "CodeIcon",
+} as const satisfies Record<SettingsSection, IconName>
 
 const AUTO_INCIDENT_ENTRIES = [
 	{ value: "off", label: "Off" },
@@ -380,7 +388,7 @@ const sectionMenu = (h: H, page: V2StatusPage, section: SettingsSection): Html =
 							href: statusPageHref(page.id, "settings", entry),
 							attributes: [h.Key(entry)],
 						},
-						[SECTION_LABEL[entry]],
+						[icon(h, SECTION_ICON[entry], { size: 16 }), SECTION_LABEL[entry]],
 					),
 				),
 			),
