@@ -109,6 +109,8 @@ const picks = (popup: HTMLElement, triggerId: string): Stream.Stream<ColorPicker
 					popup.style.setProperty("--color-picker-x", `${state.hsv.saturation * 100}%`)
 					popup.style.setProperty("--color-picker-y", `${(1 - state.hsv.value) * 100}%`)
 					popup.style.setProperty("--color-picker-hue-x", `${(state.hsv.hue / 360) * 100}%`)
+					// The number is the horizontal axis (saturation); the text names both axes.
+					area.setAttribute("aria-valuenow", String(Math.round(state.hsv.saturation * 100)))
 					area.setAttribute(
 						"aria-valuetext",
 						`Saturation ${Math.round(state.hsv.saturation * 100)}%, brightness ${Math.round(state.hsv.value * 100)}%`,
@@ -359,6 +361,8 @@ export const colorPicker = <M>(h: HtmlBuilder<M>, options: ColorPickerOptions<M>
 									h.Style({ background: AREA }),
 									h.Role("slider"),
 									h.AriaLabel("Saturation and brightness"),
+									h.AriaValuemin(0),
+									h.AriaValuemax(100),
 									h.Tabindex(0),
 									h.DataAttribute("slot", "color-picker-area"),
 								],

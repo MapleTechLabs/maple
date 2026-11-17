@@ -422,11 +422,11 @@ export const PickBrandingImage = Command.define("PickStatusPageBrandingImage", {
 
 /** Reads a picked logo or favicon as the `data:` URL the page stores. */
 export const ReadBrandingImage = Command.define("ReadStatusPageBrandingImage", {
-	args: { field: BrandingField, file: File.File },
+	args: { field: BrandingField, read: Schema.Number, file: File.File },
 	messages: [Message.CompletedReadBrandingImage],
-	execute: ({ field, file }) =>
+	execute: ({ field, read, file }) =>
 		File.readAsDataUrl(file).pipe(
-			Effect.map((dataUrl) => Message.CompletedReadBrandingImage({ field, dataUrl })),
-			Effect.orElseSucceed(() => Message.CompletedReadBrandingImage({ field, dataUrl: null })),
+			Effect.map((dataUrl) => Message.CompletedReadBrandingImage({ field, read, dataUrl })),
+			Effect.orElseSucceed(() => Message.CompletedReadBrandingImage({ field, read, dataUrl: null })),
 		),
 })

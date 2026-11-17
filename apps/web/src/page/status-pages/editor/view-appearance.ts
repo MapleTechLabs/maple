@@ -1,5 +1,6 @@
 import {
 	DEFAULT_STATUS_PAGE_THEME,
+	STATUS_PAGE_HEX_COLOR_PATTERN,
 	STATUS_PAGE_IMAGE_TYPES,
 	STATUS_PAGE_MAX_IMAGE_BYTES,
 	resolveStatusPageTheme,
@@ -145,7 +146,12 @@ const IMAGE_FORMATS = `PNG, JPG, WebP, GIF, SVG or ICO · max ${STATUS_PAGE_MAX_
 /** The page's own background behind each logo, so it previews as visitors see it. */
 const logoBackground = (theme: ThemeForm, field: BrandingField): string => {
 	const resolved = resolveStatusPageTheme({ ...DEFAULT_STATUS_PAGE_THEME, preset: theme.preset })
-	return field === "logoDarkUrl" || theme.appearance === "dark" ? resolved.dark.bg : resolved.light.bg
+	const mode = field === "logoDarkUrl" || theme.appearance === "dark" ? "dark" : "light"
+	// A forced appearance takes the custom background, as the page does; Auto keeps the preset's.
+	const custom = Str.trim(theme.background)
+	return theme.appearance === mode && STATUS_PAGE_HEX_COLOR_PATTERN.test(custom)
+		? Str.toLowerCase(custom)
+		: resolved[mode].bg
 }
 
 const brandingImageField = (
@@ -169,7 +175,7 @@ const brandingImageField = (
 		accept: IMAGE_ACCEPT,
 		isReadOnly: !canManage(model),
 		onEdit: Message.ClickedEditBrandingImage({ field }),
-		onRemove: Message.ChangedSetting({ field, value: "" }),
+		onRemove: Message.ClickedRemoveBrandingImage({ field }),
 		onFiles: (files) => Message.PickedBrandingImage({ field, files }),
 	})
 }

@@ -195,6 +195,8 @@ export const Model = Schema.Struct({
 	brandingDialog: Dialog.Model,
 	brandingDialogField: BrandingField,
 	brandingLink: Schema.String,
+	/** Bumped by each upload, link, removal and discard: a file read that finishes later is dropped. */
+	brandingRead: Schema.Number,
 	isSavingSettings: Schema.Boolean,
 	/** Basic settings' Save: Who can view saves once the fields have, so neither reply overwrites the other's page. */
 	savesAccessNext: Schema.Boolean,

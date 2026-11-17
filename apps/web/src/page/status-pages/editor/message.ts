@@ -153,7 +153,13 @@ export const Message = defineMessageUnion({
 	SubmittedBrandingLink: {},
 	PickedBrandingImage: { field: BrandingField, files: Schema.Array(PickedFile) },
 	/** `dataUrl` is null when the browser could not read the file. */
-	CompletedReadBrandingImage: { field: BrandingField, dataUrl: Schema.NullOr(Schema.String) },
+	CompletedReadBrandingImage: {
+		field: BrandingField,
+		/** The `brandingRead` it started at; a later change supersedes it. */
+		read: Schema.Number,
+		dataUrl: Schema.NullOr(Schema.String),
+	},
+	ClickedRemoveBrandingImage: { field: BrandingField },
 	PickedThemePreset: { preset: StatusPageThemePreset },
 	PickedThemeAppearance: { appearance: StatusPageThemeAppearance },
 	ChangedThemeColor: { field: ThemeColorField, value: Schema.String },
