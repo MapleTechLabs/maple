@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Exit, Layer, Option, Schema, Array as Arr } from "effect"
+import { Clock, ConfigProvider, Effect, Exit, Layer, Option, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { ApiKeyId, ApiKeyNotFoundError, OrgId, UserId } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
@@ -157,6 +157,33 @@ describe("ApiKeysService.roll", () => {
 			assert.strictEqual(rolled.expiresAt, created.expiresAt)
 			const stored = yield* svc.get(orgId, rolled.id)
 			assert.strictEqual(stored.expiresAt, created.expiresAt)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("stores no expiry past the ceiling a caller sets, whatever lifetime was asked for", () => {
+		const testDb = createTestDb(trackedDbs)
+
+		return Effect.gen(function* () {
+			const svc = yield* ApiKeysService
+			const now = yield* Clock.currentTimeMillis
+			const ceiling = now + 60_000
+			const longer = yield* svc.create(asOrgId("org_a"), asUserId("user_a"), {
+				name: "longer",
+				expiresInSeconds: 3600,
+				expiresAtCeiling: ceiling,
+			})
+			const unset = yield* svc.create(asOrgId("org_a"), asUserId("user_a"), {
+				name: "unset",
+				expiresAtCeiling: ceiling,
+			})
+			const shorter = yield* svc.create(asOrgId("org_a"), asUserId("user_a"), {
+				name: "shorter",
+				expiresInSeconds: 30,
+				expiresAtCeiling: ceiling,
+			})
+			assert.strictEqual(longer.expiresAt, ceiling)
+			assert.strictEqual(unset.expiresAt, ceiling)
+			assert.strictEqual(shorter.expiresAt, now + 30_000)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 

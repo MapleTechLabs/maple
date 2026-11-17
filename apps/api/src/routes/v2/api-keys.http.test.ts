@@ -640,6 +640,37 @@ describe("v2 api_keys over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("refuses an engineer's expiring key a roll of their key that outlives it", async () => {
+		const harness = makeHarness()
+		const day = 86_400
+		const pinned = { source: "maple_api_key", roles: ["org:engineer"] }
+		const engineer = await harness.bootstrapKey(undefined, "standard", {
+			metadataJson: { source: "maple_cli", roles: ["org:engineer"], deviceName: "laptop" },
+			expiresInSeconds: 90 * day,
+		})
+		const forever = await harness.bootstrapKey(["traces:read"], "standard", { metadataJson: pinned })
+		const longer = await harness.bootstrapKey(["logs:read"], "standard", {
+			metadataJson: pinned,
+			expiresInSeconds: 120 * day,
+		})
+		const shorter = await harness.bootstrapKey(["metrics:read"], "standard", {
+			metadataJson: pinned,
+			expiresInSeconds: 30 * day,
+		})
+		const roll = (id: string) =>
+			harness.request("POST", `/v2/api_keys/${id}/roll`, { token: engineer.secret })
+
+		for (const key of [forever, longer]) {
+			const refused = await roll(key.id)
+			expect(refused.status).toBe(403)
+			expect(refused.body.error.code).toBe("insufficient_permissions")
+			// Refused before anything was written: the key still authenticates.
+			expect(Option.isSome(await harness.resolveKey(key.secret))).toBe(true)
+		}
+		expect((await roll(shorter.id)).status).toBe(200)
+		await harness.dispose()
+	})
+
 	it("lets an admin's expiring key create a key that never expires", async () => {
 		const harness = makeHarness()
 		const admin = await harness.bootstrapKey(undefined, "standard", { expiresInSeconds: 86_400 })
