@@ -1,5 +1,6 @@
 import {
 	CLOUD_FINDING_SOURCE_SPECS,
+	CLOUD_SECURITY_PUSH_ALIVE_MS,
 	CloudFindingSeverity,
 	CloudFindingSource,
 	CloudFindingStatus,
@@ -150,13 +151,20 @@ export const serviceNoticesOf = (overview: Overview): ReadonlyArray<ServiceNotic
  * The services whose findings arrive as events (EventBridge, from the setup script), by name. Null
  * before any service is read; empty while every service is only polled.
  */
-export const liveSourcesOf = (overview: Overview): ReadonlyArray<CloudFindingSource> | null => {
+export const liveSourcesOf = (
+	overview: Overview,
+	nowMs: number,
+): ReadonlyArray<CloudFindingSource> | null => {
 	const enabled = Arr.filter(overview.services, (service) => service.state === "enabled")
 	if (enabled.length === 0) return null
 	return Arr.sort(
 		Arr.dedupe(
 			Arr.map(
-				Arr.filter(enabled, (service) => service.pushedAt !== null),
+				Arr.filter(
+					enabled, // The poller's own window: a feed whose events stopped is polled every five minutes again.
+					(service) =>
+						service.pushedAt !== null && nowMs - service.pushedAt <= CLOUD_SECURITY_PUSH_ALIVE_MS,
+				),
 				(service) => service.source,
 			),
 		),

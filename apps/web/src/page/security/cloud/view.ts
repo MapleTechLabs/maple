@@ -380,7 +380,7 @@ const listScreen = (h: H, model: Model, overview: Overview, clock: Clock): Reado
 			toolbar(h, model, overview),
 			listBody(h, model, overview, clock),
 		]),
-		...deliveryNote(h, liveSourcesOf(overview)),
+		...deliveryNote(h, liveSourcesOf(overview, model.nowMs)),
 	]
 }
 

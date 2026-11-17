@@ -370,6 +370,23 @@ describe("AwsSecurityFindingsService", () => {
 			yield* TestClock.adjust(PUSHED_POLL_MS)
 			yield* poll
 			assert.isAbove(calls("guardduty"), guardDuty)
+			// A read that ended short (capped or failing) keeps going every tick, events or not.
+			const usEast = Schema.decodeSync(AwsRegion)("us-east-1")
+			yield* store.recordServiceState({
+				orgId,
+				connectionId: connection.id,
+				region: usEast,
+				source: "guardduty",
+				state: "enabled",
+				cursorAt: null,
+				windowMs: null,
+				lastError: "More findings changed than one poll reads; the next one continues.",
+				checkedAt: Date.parse("2026-11-10T00:41:00Z"),
+			})
+			const afterCapped = calls("guardduty")
+			yield* TestClock.adjust("10 minutes")
+			yield* poll
+			assert.isAbove(calls("guardduty"), afterCapped)
 		}).pipe(Effect.provide(world.layer))
 	})
 

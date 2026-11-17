@@ -165,8 +165,11 @@ export class AwsSecurityFindingsService extends Context.Service<
 							onSome: (state) => {
 								if (state.state === "not_enabled" || state.state === "denied")
 									return now - state.checkedAt >= NOT_ENABLED_RECHECK_MS
-								// Events carry this feed's changes: the poll only reconciles what one missed.
+								// Events carry this feed's changes: the poll only reconciles what one missed. A read
+								// that is catching up or failing keeps going every tick, events or not.
 								const pushed =
+									state.state === "enabled" &&
+									state.lastError === null &&
 									state.pushedAt !== null &&
 									now - state.pushedAt <= CLOUD_SECURITY_PUSH_ALIVE_MS
 								return !pushed || now - state.checkedAt >= PUSHED_POLL_MS

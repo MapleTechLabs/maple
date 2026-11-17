@@ -225,6 +225,21 @@ describe("security cloud findings", () => {
 			given(listed(pushed(["guardduty", "securityhub", "inspector", "access_analyzer"]))),
 			expectView(text("Live: findings arrive as AWS reports them.")).toExist(),
 		)
+		// Events that stopped over a week ago no longer count, as the poller no longer counts them.
+		const stale = {
+			...polled,
+			services: Arr.map(polled.services, (service) => ({
+				...service,
+				pushedAt: NOW - 8 * 24 * 60 * 60_000,
+			})),
+		}
+		scene(
+			{ update: pageUpdate, view },
+			given(listed(stale)),
+			expectView(
+				text(/^Checked every five minutes, and live once AWS sends a finding event/u),
+			).toExist(),
+		)
 	})
 
 	test("a severity tile and the filters move the URL; the request drops values it has no name for", () => {
