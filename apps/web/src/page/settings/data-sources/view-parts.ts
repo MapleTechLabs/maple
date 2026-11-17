@@ -7,6 +7,7 @@ import { hstack } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { typography } from "@maple/views/ui/typography"
 import { DATA_SOURCE_KIND_ENTRY } from "../../kit/providers"
+import { gatedBy } from "../../kit/gated-controls"
 
 // Small pieces the list, the form and the detail share.
 
@@ -76,3 +77,10 @@ export const agentAccessLabel = (source: V2DataSource): string =>
 		: source.agent_pii
 			? "Agents can query, including personal data"
 			: "Agents can query, personal data redacted"
+
+/** `control(false)` for a viewer who may manage data sources, else `control(true)` locked with the reason. */
+export const gatedSourceControl = <M>(
+	h: HtmlBuilder<M>,
+	canManage: boolean,
+	control: (isLocked: boolean) => Html,
+): Html => gatedBy(h, canManage, "data_sources:manage", control)

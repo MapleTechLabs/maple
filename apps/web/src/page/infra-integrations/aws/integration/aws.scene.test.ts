@@ -951,7 +951,7 @@ describe("aws card", () => {
 				given(member),
 				expectView(costSwitch).toBeDisabled(),
 				expectView(
-					text("Only org admins and engineers can change what Maple reads from AWS."),
+					role("group", { name: "Only org admins and engineers can manage integrations." }),
 				).toExist(),
 			)
 			expect(

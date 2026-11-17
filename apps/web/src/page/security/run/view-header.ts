@@ -29,6 +29,7 @@ import { iconTile, metaItem, placeholder, runStatusBadge } from "../kit/parts"
 import { meter } from "@maple/views/ui/meter"
 import { countOf, gapCount, type Phase, type PhaseState, type Verdicts } from "./derive"
 import { canRunAudits, Message, type Model } from "./model"
+import { gatedControl } from "../../kit/session-grants"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -123,33 +124,29 @@ export const runActions = (h: H, model: Model, run: SecurityAuditRunDetail): Htm
 						[icon(h, "FileIcon"), "Report"],
 					),
 				]),
-		...(!canRunAudits(model)
-			? []
-			: isLive(run)
-				? [
-						button(
-							h,
-							{
-								size: "sm",
-								variant: "destructive-outline",
-								isDisabled: model.busy !== null,
-								attributes: [h.OnClick(Message.ClickedCancel())],
-							},
-							["Cancel run"],
-						),
-					]
-				: [
-						button(
-							h,
-							{
-								size: "sm",
-								isLoading: model.busy === "start",
-								isDisabled: model.busy !== null,
-								attributes: [h.OnClick(Message.ClickedStartRun())],
-							},
-							[icon(h, "MediaPlayIcon"), "Start run"],
-						),
-					]),
+		gatedControl(h, model, "security_audit:run", (isLocked) =>
+			isLive(run)
+				? button(
+						h,
+						{
+							size: "sm",
+							variant: "destructive-outline",
+							isDisabled: isLocked || model.busy !== null,
+							attributes: [h.OnClick(Message.ClickedCancel())],
+						},
+						["Cancel run"],
+					)
+				: button(
+						h,
+						{
+							size: "sm",
+							isLoading: model.busy === "start",
+							isDisabled: isLocked || model.busy !== null,
+							attributes: [h.OnClick(Message.ClickedStartRun())],
+						},
+						[icon(h, "MediaPlayIcon"), "Start run"],
+					),
+		),
 	])
 
 const startRunButton = (h: H, model: Model): Html =>

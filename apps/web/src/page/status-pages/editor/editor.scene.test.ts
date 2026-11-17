@@ -553,7 +553,7 @@ describe("components under Settings > Monitors", () => {
 		)
 	})
 
-	test("each row's grip says what it reorders and how, for managers only", () => {
+	test("each row's grip says what it reorders and how; a member sees it locked", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(MONITORS)),
@@ -565,7 +565,10 @@ describe("components under Settings > Monitors", () => {
 			{ update: pageUpdate, view },
 			given(loaded({ ...MONITORS, grants: MEMBER })),
 			expectView(text("Component 1")).toExist(),
-			expectAll(all.role("button", { name: /^Reorder/u })).toBeEmpty(),
+			expectView(role("button", { name: "Reorder Component 1" })).toBeDisabled(),
+			expectView(role("button", { name: "Reorder Component 1" })).not.toHaveAccessibleDescription(
+				"Drag, or press the up and down arrow keys, to move it within its group.",
+			),
 		)
 	})
 
@@ -1151,14 +1154,14 @@ describe("components under Settings > Monitors", () => {
 		expect(failed.outMessage).toMatchObject({ _tag: "RequestedToast", type: "error" })
 	})
 
-	test("members see the page and its components without any control to change them", () => {
+	test("members see the page and its components with every control to change them locked", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(selected(1, { grants: MEMBER })),
 			expectView(text("Component 1")).toExist(),
 			expectView(role("button", { name: "Add monitor" })).not.toExist(),
-			expectView(role("button", { name: "Reorder Component 1" })).not.toExist(),
-			expectView(role("button", { name: "Remove from page" })).not.toExist(),
+			expectView(role("button", { name: "Reorder Component 1" })).toBeDisabled(),
+			expectView(role("button", { name: "Remove from page" })).toBeDisabled(),
 			expectView(role("textbox", { name: "Shown as" })).toBeDisabled(),
 			expectView(text("Only org admins and engineers can change components.")).toExist(),
 		)
@@ -2256,7 +2259,7 @@ describe("header", () => {
 				expectView(role("button", { name: "Complete" })).toExist(),
 			),
 		)
-		// Without the post grant the overrun still shows, with nothing to press.
+		// Without the post grant the overrun still shows, with Complete locked.
 		const withoutPost = { ...model, grants: [] }
 		scene(
 			{ update: pageUpdate, view },
@@ -2264,7 +2267,7 @@ describe("header", () => {
 			inside(
 				role("table", { name: "In progress" }),
 				expectView(text("2h over")).toExist(),
-				expectView(role("button", { name: "Complete" })).not.toExist(),
+				expectView(role("button", { name: "Complete" })).toBeDisabled(),
 			),
 		)
 		const completing = pageUpdate(
@@ -3133,14 +3136,14 @@ describe("custom domain", () => {
 		)
 	})
 
-	test("members see the domain and its records but no control to change them", () => {
+	test("members see the domain and its records with its controls locked", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ ...ADVANCED, grants: MEMBER, customDomain: pendingDomain })),
 			expectView(text("_cf-custom-hostname.status.acme.com")).toExist(),
 			expectView(role("textbox", { name: "Hostname" })).toBeDisabled(),
-			expectView(role("button", { name: "Check now" })).not.toExist(),
-			expectView(role("button", { name: "Remove" })).not.toExist(),
+			expectView(role("button", { name: "Check now" })).toBeDisabled(),
+			expectView(role("button", { name: "Remove" })).toBeDisabled(),
 		)
 	})
 
@@ -3193,7 +3196,7 @@ describe("the JSON editor under Advanced", () => {
 			{ update: pageUpdate, view },
 			given(loaded({ ...ADVANCED, grants: MEMBER })),
 			expectView(selector("pre")).toContainText('"name": "Acme Status"'),
-			expectView(role("button", { name: "Edit JSON" })).not.toExist(),
+			expectView(role("button", { name: "Edit JSON" })).toBeDisabled(),
 			expectView(role("textbox", { name: "Config JSON" })).not.toExist(),
 		)
 		const tried = pageUpdate(loaded({ ...ADVANCED, grants: MEMBER }), Message.ClickedEditJson())

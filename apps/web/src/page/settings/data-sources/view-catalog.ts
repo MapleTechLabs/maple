@@ -18,32 +18,31 @@ import { typography } from "@maple/views/ui/typography"
 import { sectionNote, settingsSection } from "../../kit/settings-section"
 import { isSavingEntry, Message, type Model } from "./model"
 import { entryEditor } from "./view-catalog-entry"
-import type { Inputs } from "./view-parts"
+import { gatedSourceControl, type Inputs } from "./view-parts"
 
 type H = HtmlBuilder<Message>
 
-const exposedControl = (h: H, model: Model, entry: V2CatalogEntry, inputs: Inputs): ReadonlyArray<Html> =>
-	inputs.canManage
-		? [
-				hstack(h, { gap: "2" }, [
-					...switchControl(h, {
-						id: `catalog-${entry.name}-exposed`,
-						inputId: `catalog-${entry.name}-exposed-input`,
-						isChecked: entry.exposed,
-						isDisabled: isSavingEntry(model, entry.name),
-						ariaLabel: `Show ${entry.name} to agents`,
-						onToggle: Message.ToggledEntryExposed({ name: entry.name }),
-					}),
-					typography(h, { size: "xs", tone: "muted", className: "whitespace-nowrap" }, [
-						entry.exposed ? "Shown to agents" : "Hidden from agents",
-					]),
-				]),
-			]
-		: [
-				badge(h, { variant: entry.exposed ? "muted" : "meta", size: "sm" }, [
-					entry.exposed ? "Shown to agents" : "Hidden from agents",
-				]),
-			]
+const exposedControl = (h: H, model: Model, entry: V2CatalogEntry, inputs: Inputs): ReadonlyArray<Html> => [
+	hstack(h, { gap: "2" }, [
+		gatedSourceControl(h, inputs.canManage, (isLocked) =>
+			hstack(
+				h,
+				{ inline: true, as: "span" },
+				switchControl(h, {
+					id: `catalog-${entry.name}-exposed`,
+					inputId: `catalog-${entry.name}-exposed-input`,
+					isChecked: entry.exposed,
+					isDisabled: isLocked || isSavingEntry(model, entry.name),
+					ariaLabel: `Show ${entry.name} to agents`,
+					onToggle: Message.ToggledEntryExposed({ name: entry.name }),
+				}),
+			),
+		),
+		typography(h, { size: "xs", tone: "muted", className: "whitespace-nowrap" }, [
+			entry.exposed ? "Shown to agents" : "Hidden from agents",
+		]),
+	]),
+]
 
 const entryRow = (h: H, model: Model, entry: V2CatalogEntry, inputs: Inputs): Html => {
 	const isOpen = model.entryDraft?.name === entry.name
@@ -126,15 +125,16 @@ export const catalogSection = (h: H, model: Model, source: V2DataSource, inputs:
 				"The tables and resources Maple found on this source. Notes and time fields help assistants write correct queries; hidden entries are not shown to agents.",
 			],
 			framed: false,
-			actions: inputs.canManage
-				? refreshButton(h, {
-						onRefresh: Message.ClickedRefreshCatalog(),
-						isPending: model.refreshingId === source.id,
-						label: "Refresh catalog",
-						size: "sm",
-						variant: "outline",
-					})
-				: undefined,
+			actions: gatedSourceControl(h, inputs.canManage, (isLocked) =>
+				refreshButton(h, {
+					onRefresh: Message.ClickedRefreshCatalog(),
+					isPending: model.refreshingId === source.id,
+					isDisabled: isLocked,
+					label: "Refresh catalog",
+					size: "sm",
+					variant: "outline",
+				}),
+			),
 		},
 		[
 			...(source.catalog_error === null

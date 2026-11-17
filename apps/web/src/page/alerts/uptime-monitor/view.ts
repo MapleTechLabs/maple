@@ -25,7 +25,8 @@ import {
 } from "../../kit/uptime/derive"
 import { uptimeStatusChip } from "../../kit/uptime/view"
 import { Message } from "./message"
-import { canManage, type Model } from "./model"
+import { type Model } from "./model"
+import { gatedControl } from "../../kit/session-grants"
 import { monitorOf } from "./update"
 import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
@@ -73,37 +74,45 @@ const eyebrowLine = (monitor: UptimeMonitor): string =>
 
 const headerActions = (h: H, model: Model, monitor: UptimeMonitor): Html =>
 	detailActions(h, [
-		...(canManage(model)
-			? [
-					button(
+		gatedControl(h, model, "uptime_monitors:manage", (isDisabled) =>
+			button(
+				h,
+				{
+					size: "sm",
+					variant: "outline",
+					isLoading: model.isToggling,
+					isDisabled,
+					attributes: [h.OnClick(Message.ClickedToggle())],
+				},
+				[
+					icon(h, monitor.enabled ? "MediaPauseIcon" : "MediaPlayIcon"),
+					monitor.enabled ? "Pause" : "Resume",
+				],
+			),
+		),
+		gatedControl(h, model, "uptime_monitors:manage", (isDisabled) => {
+			const children = [icon(h, "PencilIcon"), "Edit"]
+			return isDisabled
+				? button(h, { size: "sm", variant: "outline", isDisabled }, children)
+				: linkButton(
 						h,
-						{
-							size: "sm",
-							variant: "outline",
-							isLoading: model.isToggling,
-							attributes: [h.OnClick(Message.ClickedToggle())],
-						},
-						[
-							icon(h, monitor.enabled ? "MediaPauseIcon" : "MediaPlayIcon"),
-							monitor.enabled ? "Pause" : "Resume",
-						],
-					),
-					linkButton(h, { size: "sm", variant: "outline", href: editMonitorHref(monitor.id) }, [
-						icon(h, "PencilIcon"),
-						"Edit",
-					]),
-				]
-			: []),
-		...(monitor.config.type === "http" && canManage(model)
+						{ size: "sm", variant: "outline", href: editMonitorHref(monitor.id) },
+						children,
+					)
+		}),
+		...(monitor.config.type === "http"
 			? [
-					button(
-						h,
-						{
-							size: "sm",
-							isLoading: model.isChecking,
-							attributes: [h.OnClick(Message.ClickedCheckNow())],
-						},
-						[icon(h, "ArrowRotateClockwiseIcon"), "Check now"],
+					gatedControl(h, model, "uptime_monitors:manage", (isDisabled) =>
+						button(
+							h,
+							{
+								size: "sm",
+								isLoading: model.isChecking,
+								isDisabled,
+								attributes: [h.OnClick(Message.ClickedCheckNow())],
+							},
+							[icon(h, "ArrowRotateClockwiseIcon"), "Check now"],
+						),
 					),
 				]
 			: []),

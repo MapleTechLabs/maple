@@ -30,7 +30,8 @@ import {
 	zoneStatus,
 } from "./cloudflare-derive"
 import { Message } from "../../../integrations/message"
-import { canManage, type Model } from "../../../integrations/model"
+import type { Model } from "../../../integrations/model"
+import { gatedControl } from "../../../kit/session-grants"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
@@ -248,20 +249,17 @@ export const zoneBoard = (
 					onClear: toHub(CloudflareMessage.ChangedZoneSearch({ value: "" })),
 					attributes: [h.AriaLabel("Filter zones by name")],
 				}),
-				button(
-					h,
-					{
-						variant: "outline",
-						size: "xs",
-						isDisabled: !canManage(model),
-						attributes: [
-							h.OnClick(toHub(CloudflareMessage.ClickedManageZones())),
-							...(canManage(model)
-								? []
-								: [h.Title("Only org admins and engineers can change zones")]),
-						],
-					},
-					["Manage zones"],
+				gatedControl(h, model, "integrations:manage", (isDisabled) =>
+					button(
+						h,
+						{
+							variant: "outline",
+							size: "xs",
+							isDisabled,
+							attributes: [h.OnClick(toHub(CloudflareMessage.ClickedManageZones()))],
+						},
+						["Manage zones"],
+					),
 				),
 			],
 		}),

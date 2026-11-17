@@ -52,7 +52,7 @@ describe("status pages list", () => {
 		expect(sent).toContain("FetchStatusPagesSession")
 	})
 
-	test("an org without pages gets the builder as its on-ramp; members are told who can", () => {
+	test("an org without pages gets the builder as its on-ramp; members see it locked, with who can", () => {
 		scene(
 			{ update: listUpdate, view },
 			given(withPages([])),
@@ -66,7 +66,10 @@ describe("status pages list", () => {
 			{ update: listUpdate, view },
 			given(withPages([], false)),
 			expectView(role("link", { name: "Create a status page" })).not.toExist(),
-			expectView(text("Ask an org admin to create one.")).toExist(),
+			expectView(role("button", { name: "Create a status page" })).toBeDisabled(),
+			expectView(
+				role("group", { name: "Only org admins and engineers can edit status pages." }),
+			).toExist(),
 		)
 	})
 

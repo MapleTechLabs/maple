@@ -25,7 +25,8 @@ import { swatch } from "@maple/views/ui/swatch"
 import { panel } from "@maple/views/ui/panel"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
-import { canManage, CAP_INPUT_ID, Message, type Model, SpendFeatureId } from "./model"
+import { CAP_INPUT_ID, Message, type Model, SpendFeatureId } from "./model"
+import { gatedControl } from "../../kit/session-grants"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
@@ -265,20 +266,28 @@ const featureRow = (
 					? capEditor(h, model, feature)
 					: hstack(h, { gap: "2", justify: "between" }, [
 							capSummary(h, feature, cap),
-							...(canManage(model) && capApplies(feature) && featureId !== null
+							...(capApplies(feature) && featureId !== null
 								? [
-										button(
-											h,
-											{
-												size: "sm",
-												variant: "ghost",
-												isDisabled: model.isSavingCap,
-												attributes: [
-													h.AriaLabel(`Edit ${feature.label} cap`),
-													h.OnClick(Message.ClickedEditCap({ featureId })),
-												],
-											},
-											["Edit"],
+										gatedControl(h, model, "billing:manage", (isLocked) =>
+											button(
+												h,
+												{
+													size: "sm",
+													variant: "ghost",
+													isDisabled: isLocked || model.isSavingCap,
+													attributes: [
+														h.AriaLabel(`Edit ${feature.label} cap`),
+														...(isLocked
+															? []
+															: [
+																	h.OnClick(
+																		Message.ClickedEditCap({ featureId }),
+																	),
+																]),
+													],
+												},
+												["Edit"],
+											),
 										),
 									]
 								: []),

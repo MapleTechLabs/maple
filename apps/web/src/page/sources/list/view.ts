@@ -33,21 +33,27 @@ import { groupSources, matchesSearch, sourceKindLine } from "./groups"
 import { cn } from "@maple/ui/lib/utils"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
+import { gatedControl } from "../../kit/session-grants"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
 
-/** `outline` keeps one filled CTA on the page when the empty state shows its own. */
-const connectButton = (h: H, variant?: "outline"): Html =>
-	linkButton(h, { size: "sm", href: "/sources/new", variant }, [
-		icon(h, "PlusIcon", {
-			attributes: [h.DataAttribute("icon", "inline-start")],
-			className: variant === "outline" ? "text-primary" : undefined,
-		}),
-		"Connect source",
-	])
+/** `outline` keeps one filled CTA on the page when the empty state shows its own; locked for a viewer who may not connect. */
+const connectButton = (h: H, model: Model, variant?: "outline"): Html =>
+	gatedControl(h, model, "sources:manage", (isDisabled) => {
+		const children = [
+			icon(h, "PlusIcon", {
+				attributes: [h.DataAttribute("icon", "inline-start")],
+				className: variant === "outline" ? "text-primary" : undefined,
+			}),
+			"Connect source",
+		]
+		return isDisabled
+			? button(h, { size: "sm", variant, isDisabled }, children)
+			: linkButton(h, { size: "sm", href: "/sources/new", variant }, children)
+	})
 
 const hasNoAddedSources = (rows: ReadonlyArray<V2Source>): boolean =>
 	Arr.every(rows, (source) => source.is_default)
@@ -227,7 +233,7 @@ const emptyState = (h: H, model: Model): Html =>
 						: "Org admins and engineers can connect sources.",
 				]),
 			]),
-			...(canManage(model) ? [connectButton(h)] : []),
+			connectButton(h, model),
 		],
 		"py-8",
 	)
@@ -348,9 +354,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		h,
 		{
 			title: "Sources",
-			actions: canManage(model)
-				? connectButton(h, showsEmptyState(model) ? "outline" : undefined)
-				: undefined,
+			actions: connectButton(h, model, showsEmptyState(model) ? "outline" : undefined),
 		},
 		[body(h, model, inputs.context.timeZone)],
 	),

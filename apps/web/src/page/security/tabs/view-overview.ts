@@ -68,7 +68,8 @@ import {
 	settingsOf,
 	spendThisMonth,
 } from "./derive"
-import { canRunAudits, Message, type Model } from "./model"
+import { Message, type Model } from "./model"
+import { gatedControl } from "../../kit/session-grants"
 import { bucketOf, countByBucket, isUnverified } from "../kit/findings"
 import { estimatedSeverityBadge, unverifiedChip } from "../kit/findings-view"
 import { auditSteps, emptyOnRamp } from "./view-empty"
@@ -159,13 +160,18 @@ const spendTile = (h: H, model: Model): Html => {
 		hint: `of ${formatUsd(limit)}`,
 		tone: isReached ? "warn" : undefined,
 		compact: true,
-		action: canRunAudits(model)
-			? textLink(
-					h,
-					{ tone: "muted", className: "text-2xs", onClick: Message.ClickedSpendAndModels() },
-					["Edit limit"],
-				)
-			: undefined,
+		action: gatedControl(h, model, "security_audit:run", (isDisabled) =>
+			textLink(
+				h,
+				{
+					tone: "muted",
+					className: "text-2xs",
+					onClick: Message.ClickedSpendAndModels(),
+					isDisabled,
+				},
+				["Edit limit"],
+			),
+		),
 		subline: vstack(h, { gap: "1.5", as: "span" }, [
 			meter(h, {
 				value: Math.min(settings.spentUsd, limit),
@@ -721,25 +727,31 @@ export const overviewBody = (h: H, model: Model): ReadonlyArray<Html> =>
 					],
 	})
 
-/** Admins add targets; a member gets no control they would be refused. */
-export const addTargetButton = (h: H, model: Model): Html | undefined =>
-	canRunAudits(model)
-		? button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedAddTarget())] }, [
-				icon(h, "PlusIcon"),
-				"Add target",
-			])
-		: undefined
+/** Admins add targets; anyone else sees it locked, with who can. */
+export const addTargetButton = (h: H, model: Model): Html =>
+	gatedControl(h, model, "security_audit:run", (isDisabled) =>
+		button(h, { size: "sm", isDisabled, attributes: [h.OnClick(Message.ClickedAddTarget())] }, [
+			icon(h, "PlusIcon"),
+			"Add target",
+		]),
+	)
 
 /** The Overview's actions: Spend & models once the settings are in, then Add target. */
-export const overviewActions = (h: H, model: Model): Html | undefined => {
+export const overviewActions = (h: H, model: Model): Html => {
 	const add = addTargetButton(h, model)
-	if (add === undefined) return undefined
 	if (settingsOf(model) === null) return add
 	return hstack(h, { gap: "2" }, [
-		button(
-			h,
-			{ size: "sm", variant: "outline", attributes: [h.OnClick(Message.ClickedSpendAndModels())] },
-			[icon(h, "GearIcon"), "Spend & models"],
+		gatedControl(h, model, "security_audit:run", (isDisabled) =>
+			button(
+				h,
+				{
+					size: "sm",
+					variant: "outline",
+					isDisabled,
+					attributes: [h.OnClick(Message.ClickedSpendAndModels())],
+				},
+				[icon(h, "GearIcon"), "Spend & models"],
+			),
 		),
 		add,
 	])

@@ -29,6 +29,7 @@ import { RevealOpenComponent } from "./command"
 import { GRIP_ATTRIBUTE, LIST_ATTRIBUTE, ROW_ATTRIBUTE, SLOT_ATTRIBUTE } from "./component-drag"
 import { Message } from "./message"
 import { canManage, type ComponentSave, type Model } from "./model"
+import { gatedControl } from "../../kit/session-grants"
 import { componentsOf, incidentsOf, listedComponentsOf, monitorsOf } from "./reads"
 import {
 	componentGripId,
@@ -100,7 +101,7 @@ const componentForm = (h: H, model: Model, component: V2StatusPageComponent): Ht
 		{
 			gap: "4",
 			// Level with the row's status dot, past the grip.
-			className: cn("pt-1 pr-4 pb-4", isReadOnly ? "pl-4" : "pl-10.5"),
+			className: "pt-1 pr-4 pb-4 pl-10.5",
 			attributes: model.revealComponentId === component.id ? [h.OnMount(RevealOpenComponent())] : [],
 		},
 		[
@@ -194,21 +195,22 @@ const componentForm = (h: H, model: Model, component: V2StatusPageComponent): Ht
 			]),
 			...failureAlert(h, "Couldn't save the component", save?._tag === "Failed" ? save.failure : null),
 			hstack(h, { gap: "3", justify: "between", wrap: true }, [
-				isReadOnly
-					? h.span([], [])
-					: button(
-							h,
-							{
-								size: "sm",
-								variant: "destructive-ghost",
-								// Its text level with the fields above.
-								className: "-ml-2.5",
-								attributes: [
-									h.OnClick(Message.ClickedDeleteComponent({ componentId: component.id })),
-								],
-							},
-							["Remove from page"],
-						),
+				gatedControl(h, model, "status_pages:edit", (isDisabled) =>
+					button(
+						h,
+						{
+							size: "sm",
+							variant: "destructive-ghost",
+							isDisabled,
+							// Its text level with the fields above.
+							className: "-ml-2.5",
+							attributes: [
+								h.OnClick(Message.ClickedDeleteComponent({ componentId: component.id })),
+							],
+						},
+						["Remove from page"],
+					),
+				),
 				saveIndicator(h, save),
 			]),
 		],
@@ -217,20 +219,32 @@ const componentForm = (h: H, model: Model, component: V2StatusPageComponent): Ht
 
 const REORDER_HINT_ID = "status-page-reorder-hint"
 
-/** The row's handle: dragged, or moved a slot with the arrow keys, within its group. */
+/**
+ * The row's handle: dragged, or moved a slot with the arrow keys, within its group. Locked, it
+ * drops its drag marker, so the drag subscription never picks it up.
+ */
 const grip = (h: H, model: Model, component: V2StatusPageComponent): Html =>
-	dragGrip(h, {
-		label: `Reorder ${component.name}`,
-		onMove: (offset) => Message.PressedMoveComponent({ componentId: component.id, offset }),
-		className: "self-stretch px-1",
-		attributes: [
-			h.Id(componentGripId(component.id)),
-			h.DataAttribute(GRIP_ATTRIBUTE, ""),
-			h.AriaDescribedBy(REORDER_HINT_ID),
-			// Still focusable while the order saves, so the keyboard keeps its place.
-			h.AriaDisabled(model.isSavingOrder),
-		],
-	})
+	gatedControl(
+		h,
+		model,
+		"status_pages:edit",
+		(isDisabled) =>
+			dragGrip(h, {
+				label: `Reorder ${component.name}`,
+				onMove: (offset) => Message.PressedMoveComponent({ componentId: component.id, offset }),
+				className: "self-stretch px-1",
+				attributes: isDisabled
+					? [h.Disabled(true)]
+					: [
+							h.Id(componentGripId(component.id)),
+							h.DataAttribute(GRIP_ATTRIBUTE, ""),
+							h.AriaDescribedBy(REORDER_HINT_ID),
+							// Still focusable while the order saves, so the keyboard keeps its place.
+							h.AriaDisabled(model.isSavingOrder),
+						],
+			}),
+		{ className: "self-stretch" },
+	)
 
 /** What drives the component: its monitor by name, or incidents alone. */
 const sourceLine = (model: Model, component: V2StatusPageComponent): string =>
@@ -254,7 +268,7 @@ const componentRow = (h: H, model: Model, component: V2StatusPageComponent): Htm
 		],
 		[
 			hstack(h, { gap: "1", className: "pl-2" }, [
-				...(canManage(model) ? [grip(h, model, component)] : []),
+				grip(h, model, component),
 				pressable(
 					h,
 					{
@@ -388,18 +402,19 @@ export const monitorsSection = (h: H, model: Model): Html =>
 			title: "Monitors",
 			description: ["Each one is a row under System status, in this order."],
 			padded: false,
-			actions: canManage(model)
-				? button(
-						h,
-						{
-							size: "sm",
-							// Reopened mid-save, Add would list the monitors being added again.
-							isLoading: model.isAddingComponents,
-							attributes: [h.OnClick(Message.ClickedAddComponent())],
-						},
-						[icon(h, "PlusIcon"), "Add monitors"],
-					)
-				: undefined,
+			actions: gatedControl(h, model, "status_pages:edit", (isDisabled) =>
+				button(
+					h,
+					{
+						size: "sm",
+						// Reopened mid-save, Add would list the monitors being added again.
+						isLoading: model.isAddingComponents,
+						isDisabled,
+						attributes: [h.OnClick(Message.ClickedAddComponent())],
+					},
+					[icon(h, "PlusIcon"), "Add monitors"],
+				),
+			),
 		},
 		[
 			componentsOf(model).length === 0

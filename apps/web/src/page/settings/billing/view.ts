@@ -11,6 +11,7 @@ import { spinner } from "@maple/views/ui/spinner"
 import { adminOnlyNotice } from "../kit/members"
 import { settingsSection, settingsSections } from "../../kit/settings-section"
 import { canManage, Message, type Model } from "./model"
+import { gatedControl } from "../../kit/session-grants"
 import { accountOf, spendModelOf, USAGE_HEADING_ID } from "./update"
 import { accountDialogs, billedOrgsSection, linkSection, memberSection } from "./view-account"
 import { cyclePanel, cyclePanelSkeleton } from "./view-cycle"
@@ -85,17 +86,18 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 				title: "This cycle",
 				description: ["Estimated spend for the current billing period."],
 				framed: false,
-				...(canManage(model) && {
-					actions: button(
+				actions: gatedControl(h, model, "billing:manage", (isDisabled) =>
+					button(
 						h,
 						{
 							variant: "outline",
 							size: "sm",
-							attributes: [h.OnClick(Message.ClickedManageBilling())],
+							isDisabled,
+							attributes: isDisabled ? [] : [h.OnClick(Message.ClickedManageBilling())],
 						},
 						["Manage billing"],
 					),
-				}),
+				),
 			},
 			[
 				isLoading || spend === null

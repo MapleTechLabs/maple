@@ -18,6 +18,8 @@ import { rulesFormSkeleton } from "../rules-form/skeleton"
 import type * as RulesForm from "../rules-form/form"
 import * as RulesFormView from "../rules-form/view"
 import { canManage, Message, type Model } from "./model"
+import { lockedControl } from "@maple/views/ui/locked-control"
+import { denialReason } from "../../kit/session-grants"
 import { manageAccessLink, repositoryList } from "./repositories"
 import {
 	activeRepositories,
@@ -71,15 +73,13 @@ const modelSetting = (h: H, model: Model): Html =>
 				className: "w-56",
 				isDisabled: !canManage(model) || model.isSavingModel,
 				toView: (parts) =>
-					h.div(
-						[
-							h.Class("contents"),
-							...(canManage(model)
-								? []
-								: [h.Title("Only admins and engineers can change the review model")]),
-						],
-						parts,
-					),
+					canManage(model)
+						? h.div([h.Class("contents")], parts)
+						: lockedControl(
+								h,
+								denialReason("code_review:configure"),
+								h.div([h.Class("contents")], parts),
+							),
 			},
 		}),
 	)

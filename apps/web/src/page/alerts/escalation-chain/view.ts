@@ -51,7 +51,8 @@ import {
 } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { canManageAlerts } from "../../kit/session-grants"
+import { canManageAlerts, gatedControl } from "../../kit/session-grants"
+import { gatedEntries } from "../../kit/gated-controls"
 import {
 	backHref,
 	DELETE_DIALOG_ID,
@@ -339,18 +340,13 @@ const stepCard = (h: H, model: Model, step: StepDraft, index: number): Html => {
 					emptyText: "nobody",
 				}),
 			]),
-			...(canManageAlerts(model)
-				? [
-						rowActionsMenu(h, {
-							slotId: actionsMenuId,
-							model: model.menus[actionsMenuId] ?? Menu.init(actionsMenuId),
-							entries: stepActions(model, index),
-							label: `Actions for step ${index + 1}`,
-							toParentMessage: (message) =>
-								Message.GotMenuMessage({ kind: "actions", key, message }),
-						}),
-					]
-				: []),
+			rowActionsMenu(h, {
+				slotId: actionsMenuId,
+				model: model.menus[actionsMenuId] ?? Menu.init(actionsMenuId),
+				entries: gatedEntries(model, "alerts:manage", stepActions(model, index)),
+				label: `Actions for step ${index + 1}`,
+				toParentMessage: (message) => Message.GotMenuMessage({ kind: "actions", key, message }),
+			}),
 		]),
 		...errorText(h, shown(model, targetsError(step.targets))),
 		hstack(h, { gap: "2", wrap: true }, [
@@ -593,21 +589,28 @@ const usedBy = (h: H, model: Model): ReadonlyArray<Html> =>
 const meta = (h: H, model: Model): ReadonlyArray<Html> => {
 	const rows = [
 		...usedBy(h, model),
-		...(model.editingId !== null && canManageAlerts(model)
-			? [
-					button(
+		...(model.editingId === null
+			? []
+			: [
+					gatedControl(
 						h,
-						{
-							variant: "destructive-ghost",
-							size: "sm",
-							className: "-ml-2 self-start",
-							isDisabled: model.isSaving || model.isDeleting,
-							attributes: [h.OnClick(Message.ClickedDelete())],
-						},
-						[icon(h, "TrashIcon"), "Delete chain"],
+						model,
+						"alerts:manage",
+						(isLocked) =>
+							button(
+								h,
+								{
+									variant: "destructive-ghost",
+									size: "sm",
+									className: "-ml-2 self-start",
+									isDisabled: isLocked || model.isSaving || model.isDeleting,
+									attributes: [h.OnClick(Message.ClickedDelete())],
+								},
+								[icon(h, "TrashIcon"), "Delete chain"],
+							),
+						{ className: "self-start" },
 					),
-				]
-			: []),
+				]),
 	]
 	return rows.length === 0 ? [] : [vstack(h, { gap: "3", className: "px-1" }, rows)]
 }
