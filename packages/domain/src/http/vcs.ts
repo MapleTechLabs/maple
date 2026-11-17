@@ -303,7 +303,12 @@ export const PullRequestReviewPublication = Schema.Struct({
 	 */
 	approval: Schema.optionalKey(
 		Schema.Union([
-			Schema.Struct({ action: Schema.Literal("approve"), body: Schema.String }),
+			Schema.Struct({
+				action: Schema.Literal("approve"),
+				body: Schema.String,
+				/** The base commit the review read the diff against. Absent, the base is not known. */
+				baseSha: Schema.optionalKey(GitCommitSha),
+			}),
 			Schema.Struct({ action: Schema.Literal("withdraw"), reason: Schema.String }),
 		]),
 	),
@@ -320,6 +325,7 @@ export const PullRequestApprovalOutcome = Schema.Literals([
 	"not_open",
 	"draft",
 	"head_moved",
+	"base_moved",
 	"base_not_default",
 	"untrusted_author",
 	"too_many_reviews",

@@ -1763,6 +1763,11 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				if (pull.state !== "open") return "not_open" as const
 				if (pull.draft === true) return "draft" as const
 				if (pull.head.sha !== publication.headSha) return "head_moved" as const
+				// The review read the diff against one base: retargeted since, the pull request merges
+				// something else. A review that recorded no base vouches for none.
+				if (approval.baseSha === undefined || pull.base.sha !== approval.baseSha) {
+					return "base_moved" as const
+				}
 				// An unknown default branch reads as a different one.
 				const defaultBranch = pull.base.repo?.default_branch
 				if (defaultBranch === undefined || pull.base.ref !== defaultBranch) {

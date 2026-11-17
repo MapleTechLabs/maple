@@ -259,6 +259,17 @@ describe("findings settled by word alone", () => {
 		assert.isUndefined(findingSettlers([settledByWord], cut)[0]?.settler)
 	})
 
+	it("names nobody when the latest verdict sets the finding aside instead of fixing it", () => {
+		const setAside = [
+			thread({
+				isResolved: true,
+				resolvedBy: "carol",
+				comments: [BOT_COMMENT, reply("Fixed.", "alice"), reply("Won't fix.", "alice")],
+			}),
+		]
+		assert.isUndefined(findingSettlers([settledByWord], setAside)[0]?.settler)
+	})
+
 	it("trusts only someone other than the author who can push", () => {
 		const by = (settler: string | undefined) => [{ settler }]
 		const pushers = new Set(["alice", "octocat"])

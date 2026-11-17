@@ -549,10 +549,46 @@ describe("GithubProvider publishing a review", () => {
 				base: { sha: Str.repeat(40)("b"), ref: "main", repo: { default_branch: "main" } },
 				...overrides,
 			})
-		const approve = (): PullRequestReviewPublication => ({
+		// The base the fixture pull request reports, which is the one the review read.
+		const BASE = Schema.decodeSync(GitCommitSha)(Str.repeat(40)("b"))
+		const approve = (baseSha: GitCommitSha | undefined = BASE): PullRequestReviewPublication => ({
 			...publication(),
-			approval: { action: "approve", body: "Approved by Maple's review." },
+			approval: {
+				action: "approve",
+				body: "Approved by Maple's review.",
+				...(baseSha === undefined ? undefined : { baseSha }),
+			},
 		})
+
+		it.effect(
+			"does not approve once the base is another commit than the review read, or was never recorded",
+			() =>
+				Effect.forEach(
+					[Schema.decodeSync(GitCommitSha)(Str.repeat(40)("d")), null],
+					(readBase) => {
+						const requests: Array<string> = []
+						const bodies: Array<string> = []
+						return Effect.gen(function* () {
+							const provider = yield* GithubProvider
+							const published = yield* provider.publishPullRequestReview(INSTALLATION, REPO, {
+								...publication(),
+								approval: {
+									action: "approve",
+									body: "Approved by Maple's review.",
+									...(readBase === null ? undefined : { baseSha: readBase }),
+								},
+							})
+							assert.equal(published.approval, "base_moved")
+							assert.isFalse(Arr.some(bodies, Str.includes("APPROVE")))
+						}).pipe(
+							Effect.provide(
+								providerLayer([...posted(), pull()], requests, bodies, [], appEnv),
+							),
+						)
+					},
+					{ discard: true },
+				),
+		)
 
 		it.effect("approves the reviewed head for an author who can push", () => {
 			const requests: Array<string> = []

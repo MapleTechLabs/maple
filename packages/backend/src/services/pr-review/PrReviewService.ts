@@ -1063,6 +1063,8 @@ export const buildPublication = (input: {
 	readonly reviewId: PrReviewId
 	readonly number: number
 	readonly headSha: GitCommitSha
+	/** The base commit the review read against: an approval is asked for that base only. */
+	readonly baseSha?: GitCommitSha | null
 	readonly report: PrReviewReport
 	readonly partial: boolean
 	readonly repositoryUrl: string
@@ -1153,7 +1155,11 @@ export const buildPublication = (input: {
 			? undefined
 			: {
 					approval: input.approval.approve
-						? { action: "approve" as const, body: approvalBody(input.approval.reason) }
+						? {
+								action: "approve" as const,
+								body: approvalBody(input.approval.reason),
+								...(input.baseSha == null ? undefined : { baseSha: input.baseSha }),
+							}
 						: { action: "withdraw" as const, reason: input.approval.reason },
 				}),
 	}
@@ -1174,6 +1180,8 @@ export const providerApprovalRefusal = (outcome: PullRequestApprovalOutcome): st
 			return "the pull request is a draft"
 		case "head_moved":
 			return "commits were pushed after this review"
+		case "base_moved":
+			return "the pull request's base changed after this review read it"
 		case "base_not_default":
 			return "the pull request does not target the default branch"
 		case "too_many_reviews":
@@ -3311,6 +3319,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						repositoryUrl: repo.htmlUrl,
 						number: review.number,
 						headSha: review.headSha,
+						baseSha: review.baseSha,
 						report,
 						partial: false,
 						carried,

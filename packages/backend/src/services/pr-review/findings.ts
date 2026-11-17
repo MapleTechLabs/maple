@@ -231,9 +231,10 @@ export const findingSettlers = (
 				? thread.isResolved
 					? thread.resolvedBy
 					: undefined
-				: reply.verdict === "open"
-					? undefined
-					: reply.author
+				: // Only a stated fix settles it: reopened, or set aside, it names nobody an approval can lean on.
+					reply.verdict === "resolved"
+					? reply.author
+					: undefined
 		return { finding, settler }
 	})
 
