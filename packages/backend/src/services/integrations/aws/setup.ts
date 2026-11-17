@@ -7,6 +7,8 @@ import {
 import type { AwsAccountId, AwsConnectionId } from "@maple/primitives"
 import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { forPaste } from "../paste-script"
+import { FINDING_EVENT_PATTERN } from "../../cloud-security/eventbridge-findings"
+import { AWS_EVENTS_KEY_HEADER } from "../../cloud-security/events-key"
 
 const DOCS_URL = "https://maple.dev/docs/integrations/aws"
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
@@ -30,12 +32,153 @@ const trustingPrincipal = (plan: AwsSetupPlan, principal: unknown) => ({
 	})),
 })
 
+/** Where a connection with the security module sends finding events, and the key it sends. */
+export interface AwsEventsTarget {
+	readonly endpoint: string
+	readonly key: string
+}
+
+/** The finding events the rules forward: one rule pattern for all four services. */
+const findingEventPattern = {
+	source: Rec.keys(FINDING_EVENT_PATTERN),
+	"detail-type": Arr.flatten(Rec.values(FINDING_EVENT_PATTERN)),
+}
+
+/** A role EventBridge assumes to deliver one rule's events, allowed `action` on `resource` only. */
+const eventsRole = (description: string, action: string, resource: unknown) => ({
+	Type: "AWS::IAM::Role",
+	Condition: "DeliverEvents",
+	Properties: {
+		Description: description,
+		AssumeRolePolicyDocument: {
+			Version: "2012-10-17",
+			Statement: [
+				{
+					Effect: "Allow",
+					Principal: { Service: "events.amazonaws.com" },
+					Action: "sts:AssumeRole",
+					Condition: { StringEquals: { "aws:SourceAccount": { Ref: "AWS::AccountId" } } },
+				},
+			],
+		},
+		Policies: [
+			{
+				PolicyName: "deliver",
+				PolicyDocument: {
+					Version: "2012-10-17",
+					Statement: [{ Effect: "Allow", Action: action, Resource: resource }],
+				},
+			},
+		],
+	},
+})
+
+/**
+ * The main stack's part of finding events, when its `EventsKey` is set (the setup script sets it;
+ * a stack made from the template alone has none and is only polled). Its region's events go to
+ * Maple's API destination; every other region's forwarder stack sends its events here first, so
+ * the account keeps one connection, and one secret, however many regions it uses.
+ */
+const eventsResources = (connectionId: AwsConnectionId, events: Pick<AwsEventsTarget, "endpoint">) => ({
+	EventsConnection: {
+		Type: "AWS::Events::Connection",
+		Condition: "DeliverEvents",
+		Properties: {
+			Description: `Maple integration ${connectionId}: the key Maple checks on each finding event`,
+			AuthorizationType: "API_KEY",
+			AuthParameters: {
+				ApiKeyAuthParameters: {
+					ApiKeyName: AWS_EVENTS_KEY_HEADER,
+					ApiKeyValue: { Ref: "EventsKey" },
+				},
+			},
+		},
+	},
+	EventsDestination: {
+		Type: "AWS::Events::ApiDestination",
+		Condition: "DeliverEvents",
+		Properties: {
+			Description: `Maple integration ${connectionId}: security findings to Maple`,
+			ConnectionArn: { "Fn::GetAtt": ["EventsConnection", "Arn"] },
+			InvocationEndpoint: events.endpoint,
+			HttpMethod: "POST",
+			InvocationRateLimitPerSecond: 20,
+		},
+	},
+	EventsDeliveryRole: eventsRole(
+		"Lets EventBridge send security findings to Maple",
+		"events:InvokeApiDestination",
+		{ "Fn::GetAtt": ["EventsDestination", "Arn"] },
+	),
+	EventsForwardRole: eventsRole(
+		"Lets other regions' EventBridge forward security findings to this region",
+		"events:PutEvents",
+		{ "Fn::Sub": "arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:event-bus/default" },
+	),
+	FindingsRule: {
+		Type: "AWS::Events::Rule",
+		Condition: "DeliverEvents",
+		Properties: {
+			Description: `Maple integration ${connectionId}: security findings to Maple`,
+			EventPattern: findingEventPattern,
+			State: "ENABLED",
+			Targets: [
+				{
+					Id: "maple",
+					Arn: { "Fn::GetAtt": ["EventsDestination", "Arn"] },
+					RoleArn: { "Fn::GetAtt": ["EventsDeliveryRole", "Arn"] },
+					RetryPolicy: { MaximumEventAgeInSeconds: 86400, MaximumRetryAttempts: 185 },
+				},
+			],
+		},
+	},
+})
+
+/**
+ * One region's forwarder: its finding events go to the main stack's region, whose rule sends them
+ * on to Maple. An event keeps the region it came from.
+ */
+export const renderAwsEventsForwarderCloudFormation = (connectionId: AwsConnectionId) =>
+	`${encodePrettyJson({
+		AWSTemplateFormatVersion: "2010-09-09",
+		Description: `Maple integration ${connectionId}: forwards this region's security findings to ${AWS_STACK_REGION}, where they go to Maple. ${DOCS_URL}`,
+		Parameters: {
+			ForwardRoleArn: {
+				Type: "String",
+				Description: "The main stack's role that may put events on the default bus there",
+			},
+		},
+		Resources: {
+			FindingsRule: {
+				Type: "AWS::Events::Rule",
+				Properties: {
+					Description: `Maple integration ${connectionId}: security findings to ${AWS_STACK_REGION}`,
+					EventPattern: findingEventPattern,
+					State: "ENABLED",
+					Targets: [
+						{
+							Id: "maple-home",
+							Arn: {
+								"Fn::Sub": `arn:\${AWS::Partition}:events:${AWS_STACK_REGION}:\${AWS::AccountId}:event-bus/default`,
+							},
+							RoleArn: { Ref: "ForwardRoleArn" },
+						},
+					],
+				},
+			},
+		},
+	})}\n`
+
 /**
  * The stack as a CloudFormation template (JSON, which CloudFormation reads as it reads YAML). An
  * account has one OIDC provider per issuer, shared by every connection to it: the stack creates it
  * only when told to (the console default), and keeps it when deleted, since another role may trust it.
  */
-export const renderAwsCloudFormation = (connectionId: AwsConnectionId, plan: AwsSetupPlan) => {
+export const renderAwsCloudFormation = (
+	connectionId: AwsConnectionId,
+	plan: AwsSetupPlan,
+	events: Pick<AwsEventsTarget, "endpoint"> | null = null,
+) => {
 	const policies = Rec.fromEntries(
 		Arr.map(plan.modules, (module) => [
 			policyLogicalId(module.module),
@@ -59,8 +202,22 @@ export const renderAwsCloudFormation = (connectionId: AwsConnectionId, plan: Aws
 				Default: "true",
 				Description: `Whether to register Maple's identity provider (${plan.oidcProvider.url}). Choose false if this account already has it.`,
 			},
+			...(events !== null && {
+				EventsKey: {
+					Type: "String",
+					NoEcho: true,
+					Default: "",
+					Description:
+						"Sent with each security finding event so Maple knows the connection. Empty: Maple only polls.",
+				},
+			}),
 		},
-		Conditions: { CreateOidcProvider: { "Fn::Equals": [{ Ref: "CreateOidcProvider" }, "true"] } },
+		Conditions: {
+			CreateOidcProvider: { "Fn::Equals": [{ Ref: "CreateOidcProvider" }, "true"] },
+			...(events !== null && {
+				DeliverEvents: { "Fn::Not": [{ "Fn::Equals": [{ Ref: "EventsKey" }, ""] }] },
+			}),
+		},
 		Resources: {
 			MapleOidcProvider: {
 				Type: "AWS::IAM::OIDCProvider",
@@ -88,9 +245,17 @@ export const renderAwsCloudFormation = (connectionId: AwsConnectionId, plan: Aws
 					Tags: plan.tags,
 				},
 			},
+			...(events !== null && eventsResources(connectionId, events)),
 		},
 		Outputs: {
 			RoleArn: { Description: "The role Maple assumes", Value: { "Fn::GetAtt": ["MapleRole", "Arn"] } },
+			...(events !== null && {
+				EventsForwardRoleArn: {
+					Condition: "DeliverEvents",
+					Description: "The role other regions' forwarder stacks put events with",
+					Value: { "Fn::GetAtt": ["EventsForwardRole", "Arn"] },
+				},
+			}),
 		},
 	}
 	return `${encodePrettyJson(template)}\n`
@@ -266,6 +431,7 @@ export interface AwsScriptTarget {
 	readonly accountId: AwsAccountId
 	readonly stackName: string
 	readonly metricsStackName: string
+	readonly eventsStackName: string
 	readonly oidcProvider: AwsSetupPlan["oidcProvider"]
 }
 
@@ -343,6 +509,51 @@ for region in $(aws ec2 describe-regions --region ${AWS_STACK_REGION} --query 'R
 done
 `
 
+/**
+ * Deploys the findings forwarder to every enabled region but the main stack's, all at once: a
+ * region that fails is named and left to the poller, which reads it either way.
+ */
+const deployEventsForwarders = (target: AwsScriptTarget, template: string) => `events_template="$(mktemp)"
+cat > "$events_template" <<'MAPLE_EVENTS_TEMPLATE'
+${template}MAPLE_EVENTS_TEMPLATE
+forward_role="$(aws cloudformation describe-stacks --region ${AWS_STACK_REGION} --stack-name ${target.stackName} --query "Stacks[0].Outputs[?OutputKey=='EventsForwardRoleArn'].OutputValue" --output text)"
+events_failed="$(mktemp)"
+echo "Forwarding security findings from every region to ${AWS_STACK_REGION}..."
+for region in $(aws ec2 describe-regions --region ${AWS_STACK_REGION} --query 'Regions[].RegionName' --output text); do
+  [ "$region" = "${AWS_STACK_REGION}" ] && continue
+  (
+    status="$(aws cloudformation describe-stacks --region "$region" --stack-name ${target.eventsStackName} --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)"
+    if [ "$status" = "ROLLBACK_COMPLETE" ]; then
+      aws cloudformation delete-stack --region "$region" --stack-name ${target.eventsStackName}
+      aws cloudformation wait stack-delete-complete --region "$region" --stack-name ${target.eventsStackName}
+    fi
+    aws cloudformation deploy \\
+      --region "$region" \\
+      --stack-name ${target.eventsStackName} \\
+      --template-file "$events_template" \\
+      --parameter-overrides "ForwardRoleArn=$forward_role" \\
+      --no-fail-on-empty-changeset >/dev/null 2>&1
+  ) || echo "$region" >>"$events_failed" &
+done
+wait
+if [ -s "$events_failed" ]; then
+  echo "Could not forward findings from: $(tr '\\n' ' ' <"$events_failed")" >&2
+  echo "Maple keeps reading those regions on its own." >&2
+fi
+rm -f "$events_template" "$events_failed"
+`
+
+/** Deletes the findings forwarder from every enabled region it is in. */
+const removeEventsForwarders = (
+	stackName: string,
+) => `for region in $(aws ec2 describe-regions --region ${AWS_STACK_REGION} --query 'Regions[].RegionName' --output text); do
+  if aws cloudformation describe-stacks --region "$region" --stack-name ${stackName} >/dev/null 2>&1; then
+    echo "Removing the findings forwarder from $region..."
+    aws cloudformation delete-stack --region "$region" --stack-name ${stackName} || true
+  fi
+done
+`
+
 /** Deploys the metric stream stack to each of the stream's regions. */
 const deployMetricsStacks = (
 	stackName: string,
@@ -377,6 +588,7 @@ export const renderAwsSetupScript = (
 	target: AwsScriptTarget,
 	template: string,
 	metrics: { readonly stream: AwsStreamTarget; readonly template: string } | null,
+	events: { readonly key: string; readonly forwarderTemplate: string } | null,
 ) =>
 	forPaste(
 		"AWS",
@@ -398,10 +610,10 @@ aws cloudformation deploy \\
   --stack-name ${target.stackName} \\
   --template-file "$template" \\
   --capabilities CAPABILITY_NAMED_IAM \\
-  --parameter-overrides CreateOidcProvider=false \\
+  --parameter-overrides CreateOidcProvider=false${events === null ? "" : ` "EventsKey=${events.key}"`} \\
   --no-fail-on-empty-changeset
 rm -f "$template"
-${deleteMetricsStackFunction(target.metricsStackName)}${metrics === null ? "" : deployMetricsStacks(target.metricsStackName, metrics.stream, metrics.template)}${removeMetricsStacks(target.metricsStackName, metrics?.stream.regions ?? [])}echo "Done. Go back to Maple and select Check connection. Details: ${DOCS_URL}"
+${events === null ? removeEventsForwarders(target.eventsStackName) : deployEventsForwarders(target, events.forwarderTemplate)}${deleteMetricsStackFunction(target.metricsStackName)}${metrics === null ? "" : deployMetricsStacks(target.metricsStackName, metrics.stream, metrics.template)}${removeMetricsStacks(target.metricsStackName, metrics?.stream.regions ?? [])}echo "Done. Go back to Maple and select Check connection. Details: ${DOCS_URL}"
 `,
 	)
 
@@ -410,7 +622,7 @@ export const renderAwsCleanupScript = (target: AwsScriptTarget) =>
 		"AWS",
 		"MAPLE_CLEANUP_SCRIPT",
 		`set -euo pipefail
-${accountGuard(target.accountId)}${deleteMetricsStackFunction(target.metricsStackName)}${removeMetricsStacks(target.metricsStackName, [])}echo "Deleting ${target.stackName} from account ${target.accountId}..."
+${accountGuard(target.accountId)}${deleteMetricsStackFunction(target.metricsStackName)}${removeMetricsStacks(target.metricsStackName, [])}${removeEventsForwarders(target.eventsStackName)}echo "Deleting ${target.stackName} from account ${target.accountId}..."
 aws cloudformation delete-stack --region ${AWS_STACK_REGION} --stack-name ${target.stackName}
 aws cloudformation wait stack-delete-complete --region ${AWS_STACK_REGION} --stack-name ${target.stackName}
 ${removeOidcProviderIfUnused(target.oidcProvider)}echo "Done. The role Maple used is gone."
@@ -491,14 +703,16 @@ export const renderAwsSetup = Effect.fn("renderAwsSetup")(function* (
 	accountId: AwsAccountId,
 	plan: AwsSetupPlan,
 	stream: AwsStreamTarget | null,
+	events: AwsEventsTarget | null,
 ) {
 	const target = {
 		accountId,
 		stackName: plan.stackName,
 		metricsStackName: plan.metricsStackName,
+		eventsStackName: plan.eventsStackName,
 		oidcProvider: plan.oidcProvider,
 	}
-	const template = renderAwsCloudFormation(connectionId, plan)
+	const template = renderAwsCloudFormation(connectionId, plan, events)
 	const metrics =
 		stream === null
 			? null
@@ -509,7 +723,17 @@ export const renderAwsSetup = Effect.fn("renderAwsSetup")(function* (
 	return {
 		stackName: plan.stackName,
 		stackRegion: AWS_STACK_REGION,
-		setupScript: yield* renderAwsSetupScript(target, template, metrics),
+		setupScript: yield* renderAwsSetupScript(
+			target,
+			template,
+			metrics,
+			events === null
+				? null
+				: {
+						key: events.key,
+						forwarderTemplate: renderAwsEventsForwarderCloudFormation(connectionId),
+					},
+		),
 		cleanupScript: yield* renderAwsCleanupScript(target),
 		cloudformationTemplate: template,
 		terraform: renderAwsTerraform(connectionId, plan),

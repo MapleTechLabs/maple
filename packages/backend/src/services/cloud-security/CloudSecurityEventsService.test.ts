@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Array as Arr, ConfigProvider, Effect, Layer, Schema } from "effect"
+import { Array as Arr, ConfigProvider, Effect, Layer, Option, Schema } from "effect"
 import { HttpClient } from "effect/http"
 import { AwsAccountId, AwsRegion, OrgId, UserId } from "@maple/primitives"
 import { Env } from "@maple/backend/platform/Env"
@@ -32,6 +32,16 @@ const userId = Schema.decodeSync(UserId)("user_1")
 const region = Schema.decodeSync(AwsRegion)("us-east-1")
 const ACCOUNT = "111111111111"
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const decodeTemplate = Schema.decodeUnknownSync(
+	Schema.fromJsonString(
+		Schema.Struct({
+			Resources: Schema.Record(
+				Schema.String,
+				Schema.Struct({ Properties: Schema.Record(Schema.String, Schema.Unknown) }),
+			),
+		}),
+	),
+)
 
 const makeWorld = (
 	flags: Layer.Layer<OrganizationFeatureFlagsService> = OrganizationFeatureFlagsService.allEnabled,
@@ -164,4 +174,29 @@ describe("CloudSecurityEventsService", () => {
 			}).pipe(Effect.provide(world.layer))
 		},
 	)
+
+	it.effect("accepts the key and endpoint the setup hands a security connection's stack", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const events = yield* CloudSecurityEventsService
+			const connections = yield* AwsConnectionService
+			const connection = yield* connect()
+			const setup = yield* connections.setup(orgId, connection.id)
+			const key = Option.getOrThrow(
+				Option.fromNullishOr(/"EventsKey=([^"]+)"/u.exec(setup.setupScript)?.[1]),
+			)
+			const template = decodeTemplate(setup.cloudformationTemplate)
+			assert.strictEqual(
+				template.Resources.EventsDestination?.Properties.InvocationEndpoint,
+				`https://api.maple.test/api/integrations/aws/events/${connection.id}`,
+			)
+			const receipt = yield* events.receive(connection.id, key, guardDutyEvent())
+			assert.strictEqual(receipt.outcome, "stored")
+			// A connection without the module gets no events stack at all.
+			const costOnly = yield* connect(["cost"], "444444444444")
+			const costSetup = yield* connections.setup(orgId, costOnly.id)
+			assert.notInclude(costSetup.setupScript, "EventsKey=")
+			assert.isUndefined(decodeTemplate(costSetup.cloudformationTemplate).Resources.EventsDestination)
+		}).pipe(Effect.provide(world.layer))
+	})
 })

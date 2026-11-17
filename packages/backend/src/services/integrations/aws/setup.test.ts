@@ -13,6 +13,7 @@ const target = {
 	accountId,
 	stackName: "maple-integration-abc",
 	metricsStackName: "maple-metrics-abc",
+	eventsStackName: "maple-events-abc",
 	oidcProvider: {
 		arn: PROVIDER_ARN,
 		url: "https://api.maple.test/oidc/aws",
@@ -20,7 +21,8 @@ const target = {
 	},
 }
 
-// A fake `aws` that logs every call. Metric stream stacks exist in $AWS_STACKS_IN. The account has
+// A fake `aws` that logs every call. Metric stream stacks exist in $AWS_STACKS_IN, findings forwarders in
+// $AWS_EVENTS_IN, and a forwarder deploy fails in $AWS_EVENTS_DEPLOY_FAILS. The account has
 // Maple's OIDC provider when $AWS_PROVIDER_EXISTS is set, and the roles in $AWS_ROLES_LEFT. The first wait
 // fails with $AWS_WAIT_FAILS (Firehose wrote meanwhile); the first delete call with $AWS_DELETE_FAILS.
 const FAKE_AWS = `#!/usr/bin/env bash
@@ -36,9 +38,13 @@ case "$1 $2" in
   "cloudformation describe-stacks")
     case "$*" in
       *maple-metrics-abc*) case " $AWS_STACKS_IN " in *" $region "*) echo CREATE_COMPLETE ;; *) exit 254 ;; esac ;;
+      *maple-events-abc*) case " $AWS_EVENTS_IN " in *" $region "*) echo CREATE_COMPLETE ;; *) exit 254 ;; esac ;;
+      *EventsForwardRoleArn*) echo "arn:aws:iam::123456789012:role/forward" ;;
       *) echo CREATE_COMPLETE ;;
     esac ;;
   "cloudformation describe-stack-resource") echo "failed-deliveries-$region" ;;
+  "cloudformation deploy")
+    case "$*" in *maple-events-abc*) [ "$region" = "$AWS_EVENTS_DEPLOY_FAILS" ] && exit 255 ;; esac ;;
   "cloudformation delete-stack")
     if [ -n "$AWS_DELETE_FAILS" ] && [ ! -e "$AWS_LOG.deleted" ]; then touch "$AWS_LOG.deleted"; exit 254; fi ;;
   "cloudformation wait")
@@ -56,6 +62,8 @@ const run = (
 	script: string,
 	env: {
 		readonly stacksIn: ReadonlyArray<string>
+		readonly eventsIn?: ReadonlyArray<string>
+		readonly eventsDeployFails?: string
 		readonly waitFails?: boolean
 		readonly deleteFails?: boolean
 		readonly providerExists?: boolean
@@ -76,6 +84,8 @@ const run = (
 			PATH: `${dir}:${process.env.PATH}`,
 			AWS_LOG: log,
 			AWS_STACKS_IN: Arr.join(env.stacksIn, " "),
+			AWS_EVENTS_IN: Arr.join(env.eventsIn ?? [], " "),
+			AWS_EVENTS_DEPLOY_FAILS: env.eventsDeployFails ?? "",
 			AWS_WAIT_FAILS: env.waitFails === true ? "1" : "",
 			AWS_DELETE_FAILS: env.deleteFails === true ? "1" : "",
 			AWS_PROVIDER_EXISTS: env.providerExists === true ? "1" : "",
@@ -98,7 +108,7 @@ const metricsCalls = (calls: ReadonlyArray<string>, region: string) =>
 					Str.includes(`--region ${region}`)(call) &&
 					/s3 rm|delete-stack|wait stack-delete/u.test(call),
 			),
-			(call) => !Str.includes(target.stackName)(call),
+			(call) => !Str.includes(target.stackName)(call) && !Str.includes(target.eventsStackName)(call),
 		),
 		(call) =>
 			Str.startsWith("s3 rm")(call)
@@ -181,7 +191,7 @@ describe("AWS setup scripts", () => {
 	})
 
 	it("a setup without a stream removes the stream from every region that still has it", () => {
-		const setup = Effect.runSync(renderAwsSetupScript(target, "{}\n", null))
+		const setup = Effect.runSync(renderAwsSetupScript(target, "{}\n", null, null))
 		const { status, calls } = run(setup, { stacksIn: ["us-east-1", "eu-central-1"] })
 		expect(status).toBe(0)
 		expect(metricsCalls(calls, "us-east-1")).toEqual(["empty bucket", "delete", "wait"])
@@ -190,7 +200,7 @@ describe("AWS setup scripts", () => {
 	})
 
 	it("registers Maple's identity provider only when the account lacks it, before the stack needs it", () => {
-		const setup = Effect.runSync(renderAwsSetupScript(target, "{}\n", null))
+		const setup = Effect.runSync(renderAwsSetupScript(target, "{}\n", null, null))
 		const fresh = run(setup, { stacksIn: [] })
 		expect(fresh.status).toBe(0)
 		const created = Option.getOrElse(
@@ -234,5 +244,49 @@ describe("AWS setup scripts", () => {
 		expect(last.calls.at(-1)).toBe(
 			`iam delete-open-id-connect-provider --open-id-connect-provider-arn ${PROVIDER_ARN}`,
 		)
+	})
+
+	it("with the security module, passes the events key and forwards every other region's findings", () => {
+		const setup = Effect.runSync(
+			renderAwsSetupScript(target, "{}\n", null, { key: "maple_awsev_k", forwarderTemplate: "{}\n" }),
+		)
+		const { status, calls } = run(setup, { stacksIn: [], eventsDeployFails: "us-west-2" })
+		// A region whose forwarder fails is named and left to the poller; the setup still finishes.
+		expect(status).toBe(0)
+		const main = Arr.findFirst(calls, (call) =>
+			Str.includes(`deploy --region us-east-1 --stack-name ${target.stackName}`)(call),
+		)
+		expect(Option.getOrUndefined(main)).toContain("CreateOidcProvider=false EventsKey=maple_awsev_k")
+		const forwarders = Arr.filter(
+			calls,
+			(call) => Str.includes(`deploy --region`)(call) && Str.includes(target.eventsStackName)(call),
+		)
+		expect(Arr.map(forwarders, (call) => Str.split(" ")(call)[3])).toEqual(
+			expect.arrayContaining(["eu-central-1", "us-west-2"]),
+		)
+		expect(forwarders).toHaveLength(2)
+		expect(forwarders[0]).toContain("ForwardRoleArn=arn:aws:iam::123456789012:role/forward")
+	})
+
+	it("without the security module, and on cleanup, removes the forwarders where they are", () => {
+		const setup = Effect.runSync(renderAwsSetupScript(target, "{}\n", null, null))
+		const removed = (calls: ReadonlyArray<string>) =>
+			Arr.filter(
+				calls,
+				(call) =>
+					Str.startsWith("cloudformation delete-stack")(call) &&
+					Str.includes(target.eventsStackName)(call),
+			)
+		const turnedOff = run(setup, { stacksIn: [], eventsIn: ["eu-central-1"] })
+		expect(turnedOff.status).toBe(0)
+		expect(removed(turnedOff.calls)).toEqual([
+			`cloudformation delete-stack --region eu-central-1 --stack-name ${target.eventsStackName}`,
+		])
+		const cleanup = run(Effect.runSync(renderAwsCleanupScript(target)), {
+			stacksIn: [],
+			eventsIn: ["eu-central-1", "us-west-2"],
+		})
+		expect(cleanup.status).toBe(0)
+		expect(removed(cleanup.calls)).toHaveLength(2)
 	})
 })

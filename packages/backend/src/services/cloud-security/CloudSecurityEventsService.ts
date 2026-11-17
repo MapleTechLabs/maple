@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto"
+import { timingSafeEqual } from "node:crypto"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AwsConnections } from "@maple/db/tables"
 import { IntegrationsPersistenceError } from "@maple/domain/http"
@@ -11,15 +11,13 @@ import { Env } from "@maple/backend/platform/Env"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { CloudSecurityStore } from "./CloudSecurityStore"
 import { findingEvent } from "./eventbridge-findings"
+import { awsEventsKey } from "./events-key"
 
 // Finding events EventBridge delivers from a connection's account, through the API destination
 // the setup deploys in each region. The delivery carries the connection's events key; its findings
 // are stored as the poller stores them, and the poller still reconciles anything an event missed.
 
-/** The header the setup's EventBridge connection sends the key in. */
-export const AWS_EVENTS_KEY_HEADER = "x-maple-events-key"
-
-const EVENTS_KEY_PREFIX = "maple_awsev_"
+export { AWS_EVENTS_KEY_HEADER } from "./events-key"
 
 /** Why a delivery was refused. `bad_key` and `unknown_connection` are never retried by AWS. */
 export class CloudSecurityEventRejected extends Schema.TaggedError<CloudSecurityEventRejected>()(
@@ -84,15 +82,9 @@ export class CloudSecurityEventsService extends Context.Service<
 		const dbExecute = makeDbExecute(database, "CloudSecurityEventsService", toPersistenceError)
 		const persistence = (message: string) => new IntegrationsPersistenceError({ message })
 
-		/**
-		 * Derived from the connection id with the lookup HMAC key, so nothing is stored: deleting the
-		 * connection is what revokes it.
-		 */
 		const eventsKey = (connectionId: AwsConnectionId) =>
-			Effect.map(
-				ingestKeyLookupHmacKey(env, persistence),
-				(hmacKey) =>
-					`${EVENTS_KEY_PREFIX}${createHmac("sha256", hmacKey).update(`aws-security-events/v1:${connectionId}`, "utf8").digest("base64url")}`,
+			Effect.map(ingestKeyLookupHmacKey(env, persistence), (hmacKey) =>
+				awsEventsKey(hmacKey, connectionId),
 			)
 
 		const receive = Effect.fn("CloudSecurityEventsService.receive")(function* (
