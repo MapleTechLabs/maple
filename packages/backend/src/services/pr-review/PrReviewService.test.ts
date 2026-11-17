@@ -63,6 +63,7 @@ import {
 	renderSummaryComment,
 	prReviewCommentMarker,
 	reviewCheckFor,
+	WITHDRAWAL_FAILURE_MARKER,
 	withReviewStatus,
 } from "./PrReviewService"
 import { FindingEmbedder, type FindingEmbedderApi, PrReviewEmbeddingError } from "./FindingEmbedder"
@@ -2773,7 +2774,7 @@ describe("PrReviewService auto-approve", () => {
 	it.effect("tells the pull request when it could not withdraw its approval", () => {
 		const testDb = createTestDb(trackedDbs)
 		const withdrawals: Array<string> = []
-		const replies: Array<string> = []
+		const comments: Array<string> = []
 		return Effect.gen(function* () {
 			const repositoryId = yield* seed(true)
 			const repo = yield* VcsRepository
@@ -2790,10 +2791,12 @@ describe("PrReviewService auto-approve", () => {
 			// The review still starts; the failure is tried twice and then said where people will see it.
 			assert.strictEqual(outcome.outcome, "started")
 			assert.strictEqual(withdrawals.length, 2)
-			assert.strictEqual(replies.length, 1)
-			assert.include(replies[0], "could not withdraw its approval")
-			assert.include(replies[0], "should dismiss it")
-		}).pipe(Effect.provide(layerFor(testDb, { withdrawals, replies, withdrawFails: true })))
+			const notices = Arr.filter(comments, Str.includes("could not withdraw its approval"))
+			assert.strictEqual(notices.length, 1)
+			assert.include(notices[0], "should dismiss it")
+			// Written under its own marker, so a later failure rewrites this comment and adds none.
+			assert.isTrue(Str.startsWith(WITHDRAWAL_FAILURE_MARKER)(notices[0] ?? ""))
+		}).pipe(Effect.provide(layerFor(testDb, { withdrawals, comments, withdrawFails: true })))
 	})
 
 	it.effect("does not approve on a step before merge that the author ticked themselves", () => {

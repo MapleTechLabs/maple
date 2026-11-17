@@ -765,8 +765,12 @@ export const renderBeforeMerge = (
  * behind it, and only a person can take it down now.
  */
 export const renderWithdrawalFailure = (reason: string): string =>
+	`${WITHDRAWAL_FAILURE_MARKER}\n` +
 	`**Maple could not withdraw its approval of this pull request** (${reason}). ` +
 	"If an approval from Maple still shows on it, someone with write access should dismiss it before merging."
+
+/** Hidden first line of that notice: one comment per pull request, rewritten on a later failure. */
+export const WITHDRAWAL_FAILURE_MARKER = "<!-- maple-pr-approval-not-withdrawn -->"
 
 /** Hidden first line of the merge reminder. */
 export const MERGE_REMINDER_MARKER = "<!-- maple-pr-merge-steps -->"
@@ -1691,9 +1695,10 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						Effect.annotateLogs({ orgId, number, cause: summarizeCause(withdrawn.cause) }),
 					)
 					yield* provider
-						.postPullRequestReply(installation, ref, {
+						.writePullRequestSummaryComment(installation, ref, {
 							number,
-							body: renderWithdrawalFailure(reason),
+							marker: WITHDRAWAL_FAILURE_MARKER,
+							body: () => renderWithdrawalFailure(reason),
 						})
 						.pipe(
 							Effect.catchCause((cause) =>

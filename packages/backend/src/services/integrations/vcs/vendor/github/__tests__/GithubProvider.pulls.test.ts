@@ -693,6 +693,35 @@ describe("GithubProvider publishing a review", () => {
 			}).pipe(Effect.provide(layer))
 		})
 
+		it.effect("does not approve close to the most reviews it can list, so its own stays findable", () => {
+			const requests: Array<string> = []
+			const bodies: Array<string> = []
+			const reviews = (count: number) =>
+				jsonResponse(
+					Arr.makeBy(count, (i) => ({ id: i, state: "COMMENTED", user: { login: "octocat" } })),
+				)
+			// 999 reviews: every one is listed, and an approval would be the one that fills the list.
+			const layer = providerLayer(
+				[
+					...posted(),
+					pull(),
+					jsonResponse({ permission: "write" }),
+					...Arr.makeBy(9, () => reviews(100)),
+					reviews(99),
+				],
+				requests,
+				bodies,
+				[],
+				appEnv,
+			)
+			return Effect.gen(function* () {
+				const provider = yield* GithubProvider
+				const published = yield* provider.publishPullRequestReview(INSTALLATION, REPO, approve())
+				assert.equal(published.approval, "too_many_reviews")
+				assert.isFalse(Arr.some(bodies, Str.includes("APPROVE")))
+			}).pipe(Effect.provide(layer))
+		})
+
 		it.effect("keeps the published review when GitHub refuses the approval", () => {
 			const layer = providerLayer(
 				[

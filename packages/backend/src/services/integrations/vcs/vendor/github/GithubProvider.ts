@@ -281,6 +281,11 @@ const WorkflowJobPayload = Schema.Struct({
 // A job's steps ride in one queue message, so their count and names are bounded to stay under
 // QUEUE_MESSAGE_LIMIT_BYTES whatever the workflow looks like.
 const MAX_WORKFLOW_STEPS = 300
+/**
+ * Reviews a pull request may already have for Maple to approve it. The review list reads 1,000,
+ * so an approval is given only well short of that: it and the reviews after it stay findable.
+ */
+const MAX_REVIEWS_BEFORE_APPROVAL = 900
 const MAX_WORKFLOW_NAME_LENGTH = 200
 const boundName = (name: string) =>
 	name.length > MAX_WORKFLOW_NAME_LENGTH ? `${Str.slice(0, MAX_WORKFLOW_NAME_LENGTH)(name)}...` : name
@@ -1771,7 +1776,9 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					repo.name,
 					publication.number,
 				)
-				if (reviews.truncated) return "too_many_reviews" as const
+				if (reviews.truncated || reviews.items.length >= MAX_REVIEWS_BEFORE_APPROVAL) {
+					return "too_many_reviews" as const
+				}
 				yield* client.createPullRequestReview(id, repo.owner, repo.name, publication.number, {
 					commitId: publication.headSha,
 					body: approval.body,
