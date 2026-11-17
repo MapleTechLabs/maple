@@ -34,7 +34,7 @@ import { APPEARANCES, presetCards } from "../shared/look"
 import { monitorStatusOf } from "../shared/derive"
 import { orNull } from "../shared/form"
 import { componentFields, componentList, removeButton, sourceLine } from "../shared/component-list"
-import { GroupDialogMessage, groupDialogView, groupsOf } from "../shared/group-dialog"
+import { groupPickerField, groupsOf } from "../shared/group-picker"
 import { checkedRows, hasRowIssues } from "../shared/picker"
 import { pickerView } from "../shared/picker-view"
 import { daysOf, previewDocument, previewFrame, previewTheme } from "../shared/preview"
@@ -170,7 +170,13 @@ const rowBody = (h: H, model: Model, row: DraftRow): ReadonlyArray<Html> => [
 		isReadOnly: model.submitting !== null,
 		onField: (field, value) => Message.ChangedRowField({ field, value }),
 		onToggleUptime: Message.ToggledRowUptime(),
-		onOpenGroup: Message.GotGroupDialogMessage({ message: GroupDialogMessage.ClickedOpen() }),
+		group: groupPickerField(h, {
+			picker: model.groupPicker,
+			groups: groupsOf(Arr.map(model.rows, (entry) => orNull(entry.form.group))),
+			current: row.form.group,
+			isDisabled: model.submitting !== null,
+			toMessage: (message) => Message.GotGroupPickerMessage({ message }),
+		}),
 	}),
 	hstack(h, {}, [
 		removeButton(h, {
@@ -233,26 +239,6 @@ const componentsBody = (h: H, model: Model): Html => {
 	return componentRows(h, model)
 }
 
-/** The open row's Group dialog, its choices the groups the page has so far. */
-const groupDialog = (h: H, model: Model): ReadonlyArray<Html> => {
-	const open = Arr.findFirst(model.rows, (row) => row.key === model.openKey)
-	if (Option.isNone(open)) return []
-	const groups = Arr.map(model.rows, (row) => orNull(row.form.group))
-	const name = Str.trim(open.value.form.name)
-	return [
-		groupDialogView(h, {
-			state: model.groupDialog,
-			groups: Arr.map(groupsOf(groups), (group) => ({
-				name: group,
-				count: Arr.filter(groups, (entry) => entry === group).length,
-			})),
-			current: open.value.form.group,
-			componentName: name === "" ? "this component" : name,
-			toMessage: (message) => Message.GotGroupDialogMessage({ message }),
-		}),
-	]
-}
-
 const componentsSection = (h: H, model: Model): Html =>
 	settingsSection(
 		h,
@@ -273,7 +259,7 @@ const componentsSection = (h: H, model: Model): Html =>
 				[icon(h, "PlusIcon"), "Add components"],
 			),
 		},
-		[componentsBody(h, model), ...groupDialog(h, model)],
+		[componentsBody(h, model)],
 	)
 
 const addSheet = (h: H, model: Model): Html => {

@@ -25,6 +25,7 @@ import {
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import {
@@ -35,7 +36,6 @@ import {
 	ThemeColorField,
 } from "../shared/form"
 import { AccessAction } from "./model"
-import { GroupDialogMessage } from "../shared/group-dialog"
 import { PickerMessage } from "../shared/picker"
 import { PreviewScheme, PreviewSelection, PreviewState, PreviewWidth } from "../shared/preview"
 import { LoadOutcome } from "../../kit/load-schemas"
@@ -71,7 +71,7 @@ export const Message = defineMessageUnion({
 	// Components
 	ChangedComponentField: { field: ComponentTextField, value: Schema.String },
 	ToggledComponentUptime: {},
-	GotGroupDialogMessage: { message: GroupDialogMessage },
+	GotGroupPickerMessage: { message: Combobox.Message },
 	/** The Monitors save bar: a moved order and the open component's edits, together. */
 	ClickedSaveMonitors: {},
 	ClickedDiscardMonitors: {},

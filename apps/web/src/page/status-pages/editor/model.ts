@@ -18,10 +18,10 @@ import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { StatusPageSearch } from "../../../route/search"
 import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import { ComponentForm, IncidentEditForm, IncidentForm, SettingsForm, UpdateForm } from "../shared/form"
-import { GroupDialog } from "../shared/group-dialog"
 import { Picker } from "../shared/picker"
 import { PreviewHistory, PreviewScheme, PreviewState, PreviewWidth } from "../shared/preview"
 
@@ -138,8 +138,8 @@ export const Model = Schema.Struct({
 	 */
 	componentForm: ComponentForm,
 	componentSave: Schema.NullOr(ComponentSave),
-	/** The open component's Group dialog: the page's groups, "No group" and a typed new one. */
-	groupDialog: GroupDialog,
+	/** The open component's Group dropdown: the page's groups, "No group" and a typed new one. */
+	groupPicker: Combobox.Model,
 	/** The leave waiting on the discard confirm; kept while the dialog fades out, so its title holds. */
 	pendingLeave: Schema.NullOr(PendingLeave),
 	discardComponentDialog: Dialog.Model,

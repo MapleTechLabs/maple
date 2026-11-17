@@ -11,9 +11,9 @@ import {
 } from "@maple/domain/status-page"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
+import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
 import { ComponentTextField } from "../shared/form"
-import { GroupDialogMessage } from "../shared/group-dialog"
 import { PickerMessage } from "../shared/picker"
 import { PreviewScheme } from "../shared/preview"
 import { SubmitMode } from "./model"
@@ -33,7 +33,7 @@ export const Message = defineMessageUnion({
 	ClickedRow: { key: Schema.String },
 	ChangedRowField: { field: ComponentTextField, value: Schema.String },
 	ToggledRowUptime: {},
-	GotGroupDialogMessage: { message: GroupDialogMessage },
+	GotGroupPickerMessage: { message: Combobox.Message },
 	ClickedRemoveRow: { key: Schema.String },
 	/** A grip drag let go over `index`, the slot within the row's group. */
 	DroppedRow: { key: Schema.String, index: Schema.Number },

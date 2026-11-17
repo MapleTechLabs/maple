@@ -19,7 +19,7 @@ import { gatedControl, type Grants } from "../../kit/session-grants"
 import { GRIP_ATTRIBUTE, LIST_ATTRIBUTE, ROW_ATTRIBUTE, SLOT_ATTRIBUTE } from "./component-drag"
 import { COMPONENT_STATUS_LABEL, COMPONENT_STATUS_OPTIONS, COMPONENT_STATUS_TONE } from "./derive"
 import type { ComponentForm, ComponentTextField } from "./form"
-import { buttonField, selectField, textField } from "./fields"
+import { selectField, textField } from "./fields"
 
 // A page's components as one list, the same in the builder and under Settings > Monitors: rows by
 // group, each opening in place with its fields, reordered by its grip within its group.
@@ -198,8 +198,8 @@ export type ComponentFieldsOptions<M> = Readonly<{
 	isReadOnly: boolean
 	onField: (field: ComponentTextField, value: string) => M
 	onToggleUptime: M
-	/** Opens the Group dialog. */
-	onOpenGroup: M
+	/** The Group dropdown, built by the page that owns its state. */
+	group: Html
 }>
 
 /** The component's fields: name, group, description, what drives it, its override and its bars. */
@@ -220,14 +220,7 @@ export const componentFields = <M>(
 				error: Str.trim(form.name) === "" ? "Add a name." : null,
 				onInput: (value) => options.onField("name", value),
 			}),
-			buttonField(h, {
-				id: `${idPrefix}-group`,
-				label: "Group",
-				value: Str.trim(form.group),
-				placeholder: "No group",
-				isDisabled: isReadOnly,
-				onClick: options.onOpenGroup,
-			}),
+			options.group,
 		]),
 		textField(h, {
 			id: `${idPrefix}-description`,

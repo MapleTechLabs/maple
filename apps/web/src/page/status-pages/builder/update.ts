@@ -21,7 +21,8 @@ import { UPTIME_LIST_LIMIT } from "../../kit/uptime/commands"
 import { statusPageHref } from "../shared/commands"
 import { groupedOrder, groupIndexOf, moved } from "../shared/component-order"
 import { componentPayload, type ComponentForm, emptyComponentForm, orNull } from "../shared/form"
-import { type GroupDialogMessage, initGroupDialog, updateGroupDialog } from "../shared/group-dialog"
+import type * as Combobox from "@maple/views/ui/combobox"
+import { initGroupPicker, updateGroupPicker } from "../shared/group-picker"
 import {
 	draftComponents,
 	emptyPicker,
@@ -176,7 +177,7 @@ export const init = (_route: BuilderRoute, context: PageContext): Return => {
 		rows: [],
 		nextKey: 1,
 		openKey: null,
-		groupDialog: initGroupDialog("status-page-builder-group"),
+		groupPicker: initGroupPicker("status-page-builder-group"),
 		addSheet: Dialog.init("status-page-builder-add", "sheet"),
 		addPicker: emptyPicker,
 		preset: "default",
@@ -245,9 +246,9 @@ const editOpen = (model: Model, change: (form: ComponentForm) => ComponentForm):
 				),
 			})
 
-const groupDialogStep = (model: Model, message: GroupDialogMessage): Return => {
-	const step = updateGroupDialog(model.groupDialog, message)
-	const withState = { ...model, groupDialog: step.state }
+const groupPickerStep = (model: Model, message: Combobox.Message): Return => {
+	const step = updateGroupPicker(model.groupPicker, message)
+	const withState = { ...model, groupPicker: step.picker }
 	const next = Option.match(step.picked, {
 		onNone: (): Return => ({ model: withState }),
 		onSome: (group) => editOpen(withState, (form) => ({ ...form, group })),
@@ -257,7 +258,7 @@ const groupDialogStep = (model: Model, message: GroupDialogMessage): Return => {
 		commands: [
 			...(next.commands ?? []),
 			...FoldkitCommand.mapMessages(step.commands, (child) =>
-				Message.GotGroupDialogMessage({ message: child }),
+				Message.GotGroupPickerMessage({ message: child }),
 			),
 		],
 	}
@@ -380,7 +381,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRow: ({ key }) => ({ model: { ...model, openKey: model.openKey === key ? null : key } }),
 		ChangedRowField: ({ field, value }) => editOpen(model, (form) => ({ ...form, [field]: value })),
 		ToggledRowUptime: () => editOpen(model, (form) => ({ ...form, showUptime: !form.showUptime })),
-		GotGroupDialogMessage: ({ message: child }) => groupDialogStep(model, child),
+		GotGroupPickerMessage: ({ message: child }) => groupPickerStep(model, child),
 		ClickedRemoveRow: ({ key }) => removeRow(model, key),
 		DroppedRow: ({ key, index }) => {
 			const next = moveRow(model, key, index)

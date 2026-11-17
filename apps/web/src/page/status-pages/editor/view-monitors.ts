@@ -16,7 +16,7 @@ import {
 } from "../shared/component-list"
 import { groupedOrder } from "../shared/component-order"
 import { COMPONENT_STATUS_TONE, componentStatus, statusReason } from "../shared/derive"
-import { GroupDialogMessage, groupDialogView, groupsOf } from "../shared/group-dialog"
+import { groupPickerField, groupsOf } from "../shared/group-picker"
 import { RevealOpenComponent } from "./command"
 import { Message } from "./message"
 import { canManage, type ComponentSave, type Model } from "./model"
@@ -80,7 +80,13 @@ const componentBody = (h: H, model: Model, component: V2StatusPageComponent): Re
 			isReadOnly,
 			onField: (field, value) => Message.ChangedComponentField({ field, value }),
 			onToggleUptime: Message.ToggledComponentUptime(),
-			onOpenGroup: Message.GotGroupDialogMessage({ message: GroupDialogMessage.ClickedOpen() }),
+			group: groupPickerField(h, {
+				picker: model.groupPicker,
+				groups: groupsOf(Arr.map(listedComponentsOf(model), (row) => row.group)),
+				current: model.componentForm.group,
+				isDisabled: isReadOnly,
+				toMessage: (message) => Message.GotGroupPickerMessage({ message }),
+			}),
 		}),
 		...reasonLine(h, model, component),
 		...failureAlert(h, "Couldn't save the component", save?._tag === "Failed" ? save.failure : null),
@@ -145,28 +151,6 @@ const componentListView = (h: H, model: Model): Html =>
 		}),
 	})
 
-/** The open component's Group dialog, its choices the page's groups as listed. */
-const groupDialog = (h: H, model: Model): ReadonlyArray<Html> => {
-	const panel = model.panel
-	if (panel?._tag !== "Component") return []
-	const listed = listedComponentsOf(model)
-	return [
-		groupDialogView(h, {
-			state: model.groupDialog,
-			groups: Arr.map(groupsOf(Arr.map(listed, (row) => row.group)), (name) => ({
-				name,
-				count: Arr.filter(listed, (row) => row.group === name).length,
-			})),
-			current: model.componentForm.group,
-			componentName:
-				Str.trim(model.componentForm.name) === ""
-					? "this component"
-					: Str.trim(model.componentForm.name),
-			toMessage: (message) => Message.GotGroupDialogMessage({ message }),
-		}),
-	]
-}
-
 /**
  * The Monitors save bar, while the order was moved or the open component's form differs from it, or
  * either saves. Save sends both.
@@ -224,6 +208,5 @@ export const monitorsSection = (h: H, model: Model): Html =>
 							: "No monitors on this page yet.",
 					])
 				: componentListView(h, model),
-			...groupDialog(h, model),
 		],
 	)

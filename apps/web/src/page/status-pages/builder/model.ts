@@ -4,9 +4,9 @@ import { StatusPageThemeAppearance, StatusPageThemePreset } from "@maple/domain/
 import { Schema } from "effect"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
+import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
 import { ComponentForm } from "../shared/form"
-import { GroupDialog } from "../shared/group-dialog"
 import { Picker } from "../shared/picker"
 import { PreviewHistory, PreviewScheme } from "../shared/preview"
 
@@ -40,7 +40,7 @@ export const Model = Schema.Struct({
 	nextKey: Schema.Number,
 	/** The row opened in place, its fields under it. */
 	openKey: Schema.NullOr(Schema.String),
-	groupDialog: GroupDialog,
+	groupPicker: Combobox.Model,
 	/** Add components: the monitors not on the page yet, a URL to monitor, a component by hand. */
 	addSheet: Dialog.Model,
 	addPicker: Picker,

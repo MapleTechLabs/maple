@@ -25,7 +25,8 @@ import { downMonitor, heartbeatMonitor, httpMonitor, monitorId } from "../../kit
 import { statusPageHref } from "../shared/commands"
 import * as Dialog from "@maple/views/ui/dialog"
 import { MountDialog } from "@maple/views/ui/dialog"
-import { GroupDialogMessage } from "../shared/group-dialog"
+import * as Combobox from "@maple/views/ui/combobox"
+import { groupPickerValue } from "../shared/group-picker"
 import { monitorKey, PickerMessage } from "../shared/picker"
 import { statusPage } from "../shared/test-pages"
 import { Message } from "./message"
@@ -43,7 +44,7 @@ const view = withViewInputs(builderView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	Arr.map(commands ?? [], ({ name }) => name)
 const addPicker = (message: PickerMessage) => Message.GotAddPickerMessage({ message })
-const group = (message: GroupDialogMessage) => Message.GotGroupDialogMessage({ message })
+const group = (message: Combobox.Message) => Message.GotGroupPickerMessage({ message })
 
 const tcpMonitor = () =>
 	httpMonitor({
@@ -179,16 +180,16 @@ describe("status page builder", () => {
 		])
 	})
 
-	test("Group is created in its dialog or picked from the page's groups, and the page lists each group together", () => {
+	test("Group is created from the dropdown or picked from the page's groups, and the page lists each group together", () => {
 		const model = named(withMonitors([httpMonitor(), downMonitor(), tcpMonitor()]))
 		const grouped = Arr.reduce(
 			[
 				Message.ClickedRow({ key: monitorKey(httpMonitor().id) }),
-				group(GroupDialogMessage.ClickedOpen()),
-				group(GroupDialogMessage.ChangedDraft({ value: " Core " })),
-				group(GroupDialogMessage.SubmittedDraft()),
+				group(Combobox.Message.ClickedTriggerOf({ items: [] })),
+				group(Combobox.Message.ChangedInput({ value: " Core " })),
+				group(Combobox.Message.ClickedItem({ value: groupPickerValue.create("Core") })),
 				Message.ClickedRow({ key: monitorKey(tcpMonitor().id) }),
-				group(GroupDialogMessage.ClickedOpen()),
+				group(Combobox.Message.ClickedTriggerOf({ items: [] })),
 			],
 			model,
 			(current, message) => builderUpdate(current, message).model,
@@ -196,12 +197,15 @@ describe("status page builder", () => {
 		scene(
 			{ update: builderUpdate, view },
 			given(grouped),
-			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
-			expectView(role("dialog", { name: "Group for postgres" })).toExist(),
-			expectView(role("button", { name: /^Core/u })).toExist(),
+			Mount.resolve(Combobox.MountCombobox, Combobox.Message.CompletedMountCombobox()),
+			expectView(role("option", { name: "Core" })).toExist(),
+			expectView(role("option", { name: "No group" })).toExist(),
 		)
-		const picked = builderUpdate(grouped, group(GroupDialogMessage.PickedGroup({ group: "Core" }))).model
-		expect(picked.groupDialog.dialog.isOpen).toBe(false)
+		const picked = builderUpdate(
+			grouped,
+			group(Combobox.Message.ClickedItem({ value: groupPickerValue.group("Core") })),
+		).model
+		expect(picked.groupPicker.isOpen).toBe(false)
 		expect(builderUpdate(picked, Message.ClickedSubmit({ mode: "publish" })).commands).toMatchObject([
 			{
 				name: "CreateStatusPage",

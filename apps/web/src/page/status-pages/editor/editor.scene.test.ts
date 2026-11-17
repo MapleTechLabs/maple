@@ -56,7 +56,8 @@ import {
 	statusPage,
 	statusPageConfig,
 } from "../shared/test-pages"
-import { GroupDialogMessage } from "../shared/group-dialog"
+import * as Combobox from "@maple/views/ui/combobox"
+import { groupPickerValue } from "../shared/group-picker"
 import { PickerMessage } from "../shared/picker"
 import {
 	CheckCustomDomain,
@@ -636,7 +637,7 @@ describe("components under Settings > Monitors", () => {
 			Mount.expectNone(),
 			expectView(role("button", { name: /^API/u })).toHaveAttr("aria-expanded", "true"),
 			expectView(role("textbox", { name: "Shown as" })).toHaveValue("API"),
-			expectView(role("button", { name: "Group Core" })).toExist(),
+			expectView(role("combobox", { name: "Group: Core" })).toExist(),
 			expectView(text("Degraded, set under Override status.")).toExist(),
 			click(role("button", { name: /^API/u })),
 			Command.resolve(FocusEditorElement, Message.CompletedFocus()),
@@ -909,28 +910,31 @@ describe("components under Settings > Monitors", () => {
 		)
 	})
 
-	test("Group is picked from the page's groups or created in its dialog, and waits for Save", () => {
+	test("Group is a dropdown: pick one of the page's groups, or type a name and create it; it waits for Save", () => {
 		const rows = [component(1, { group: "Core" }), component(2, { group: "Edge" }), component(3)]
-		const opened = pageUpdate(
-			selected(3, { components: rows }),
-			Message.GotGroupDialogMessage({ message: GroupDialogMessage.ClickedOpen() }),
-		).model
+		const picker = (message: Combobox.Message) => Message.GotGroupPickerMessage({ message })
+		const opened = steps(selected(3, { components: rows }), [
+			picker(Combobox.Message.ClickedTriggerOf({ items: [] })),
+		])
 		scene(
 			{ update: pageUpdate, view },
 			given(opened),
-			mounted,
-			expectView(role("dialog", { name: "Group for Component 3" })).toExist(),
-			expectView(
-				within(role("list", { name: "Groups on this page" }), role("button", { name: /^Core/u })),
-			).toExist(),
-			expectView(
-				within(role("list", { name: "Groups on this page" }), role("button", { name: /^Edge/u })),
-			).toExist(),
+			comboMounted,
+			expectView(role("option", { name: "No group" })).toExist(),
+			expectView(role("option", { name: "Core" })).toExist(),
+			expectView(role("option", { name: "Edge" })).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(steps(opened, [picker(Combobox.Message.ChangedInput({ value: "Pay" }))])),
+			comboMounted,
+			expectView(role("option", { name: 'Create "Pay"' })).toExist(),
+			expectView(role("option", { name: "Core" })).not.toExist(),
 		)
 		const picked = steps(opened, [
-			Message.GotGroupDialogMessage({ message: GroupDialogMessage.PickedGroup({ group: "Edge" }) }),
+			picker(Combobox.Message.ClickedItem({ value: groupPickerValue.group("Edge") })),
 		])
-		expect(picked.groupDialog.dialog.isOpen).toBe(false)
+		expect(picked.groupPicker.isOpen).toBe(false)
 		expect(pageUpdate(picked, Message.ClickedSaveMonitors()).commands).toMatchObject([
 			{
 				name: "SaveStatusPageComponent",
@@ -938,16 +942,15 @@ describe("components under Settings > Monitors", () => {
 			},
 		])
 		const created = steps(opened, [
-			Message.GotGroupDialogMessage({
-				message: GroupDialogMessage.ChangedDraft({ value: " Payments " }),
-			}),
-			Message.GotGroupDialogMessage({ message: GroupDialogMessage.SubmittedDraft() }),
+			picker(Combobox.Message.ChangedInput({ value: " Payments " })),
+			picker(Combobox.Message.ClickedItem({ value: groupPickerValue.create("Payments") })),
 		])
 		scene(
 			{ update: pageUpdate, view },
 			given(created),
-			mounted,
-			expectView(role("button", { name: "Group Payments" })).toExist(),
+			// Still mounted while it fades out.
+			comboMounted,
+			expectView(role("combobox", { name: "Group: Payments" })).toExist(),
 			expectView(text("Unsaved changes")).toExist(),
 		)
 	})
@@ -1207,6 +1210,7 @@ const steps = (model: Model, messages: ReadonlyArray<Message>, ctx: PageContext 
 	Arr.reduce(messages, model, (current, message) => update(current, message, ctx).model)
 
 const mounted = Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog())
+const comboMounted = Mount.resolve(Combobox.MountCombobox, Combobox.Message.CompletedMountCombobox())
 
 /** The reviewed message as the public page's markup renders it; the incident's sheet is a dialog too. */
 const updateBodyOf = find('[role="dialog"]:not(#status-page-panel-popup) [data-slot="update-body"]')

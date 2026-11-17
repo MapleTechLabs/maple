@@ -33,6 +33,10 @@ type Frame = Readonly<{
 
 type Common<M> = Frame & Readonly<{ onInput: (value: string) => M }>
 
+/** A label over a control drawn elsewhere (a dropdown), with the hint or error under it. */
+export const labelledField = <M>(h: HtmlBuilder<M>, options: Frame, control: Html): Html =>
+	frame(h, options, control)
+
 const frame = <M>(h: HtmlBuilder<M>, options: Frame, control: Html): Html => {
 	const error = options.error ?? null
 	const state: FieldState = {

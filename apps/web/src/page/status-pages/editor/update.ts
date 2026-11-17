@@ -17,7 +17,7 @@ import {
 	statusPageHref,
 } from "../shared/commands"
 import { emptyComponentForm, emptyIncidentForm } from "../shared/form"
-import { initGroupDialog } from "../shared/group-dialog"
+import { initGroupPicker } from "../shared/group-picker"
 import { emptyPicker } from "../shared/picker"
 import { historyFrom } from "../shared/preview"
 import { FetchEditorPreview, FetchEditorSession, ReadEditorClock, WaitEditorPreview } from "./command"
@@ -47,7 +47,7 @@ import {
 	deletedComponent,
 	discardComponentDialog,
 	discardMonitors,
-	groupDialogStep,
+	groupPickerStep,
 	leaveComponent,
 	moveComponent,
 	nudgeComponent,
@@ -203,7 +203,7 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		previewHistory: [],
 		componentForm: emptyComponentForm,
 		componentSave: null,
-		groupDialog: initGroupDialog("status-page-component-group"),
+		groupPicker: initGroupPicker("status-page-component-group"),
 		pendingLeave: null,
 		discardComponentDialog: Dialog.init("status-page-discard-component", "alert-dialog"),
 		confirmDeleteComponentId: null,
@@ -557,7 +557,7 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 		// Components
 		ChangedComponentField: ({ field, value }) => changeComponent(model, field, value),
 		ToggledComponentUptime: () => toggleComponentUptime(model),
-		GotGroupDialogMessage: ({ message: child }) => groupDialogStep(model, child),
+		GotGroupPickerMessage: ({ message: child }) => groupPickerStep(model, child),
 		ClickedSaveMonitors: () => saveMonitors(model),
 		ClickedDiscardMonitors: () => discardMonitors(model),
 		CompletedSaveComponent: ({ result }) => savedComponent(model, result, context),

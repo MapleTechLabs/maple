@@ -14,7 +14,8 @@ import {
 	emptyComponentForm,
 } from "../shared/form"
 import { groupIndexOf, moved } from "../shared/component-order"
-import { type GroupDialogMessage, updateGroupDialog } from "../shared/group-dialog"
+import type * as Combobox from "@maple/views/ui/combobox"
+import { updateGroupPicker } from "../shared/group-picker"
 import {
 	draftComponents,
 	hasRowIssues,
@@ -178,17 +179,17 @@ export const confirmDiscardComponent = (model: Model): Return => {
 export const changeComponent = (model: Model, field: ComponentTextField, value: string): Return =>
 	editComponent(model, { ...model.componentForm, [field]: value })
 
-/** The Group dialog: picking or creating a group sets the open component's, waiting on Save. */
-export const groupDialogStep = (model: Model, message: GroupDialogMessage): Return => {
-	const step = updateGroupDialog(model.groupDialog, message)
+/** The Group dropdown: picking or creating a group sets the open component's, waiting on Save. */
+export const groupPickerStep = (model: Model, message: Combobox.Message): Return => {
+	const step = updateGroupPicker(model.groupPicker, message)
 	const next = Option.match(step.picked, {
-		onNone: () => ({ model: { ...model, groupDialog: step.state } }),
-		onSome: (group) => changeComponent({ ...model, groupDialog: step.state }, "group", group),
+		onNone: () => ({ model: { ...model, groupPicker: step.picker } }),
+		onSome: (group) => changeComponent({ ...model, groupPicker: step.picker }, "group", group),
 	})
 	return {
 		...next,
 		commands: FoldkitCommand.mapMessages(step.commands, (child) =>
-			Message.GotGroupDialogMessage({ message: child }),
+			Message.GotGroupPickerMessage({ message: child }),
 		),
 	}
 }

@@ -37,7 +37,8 @@ import { view as viewerView } from "../../page/status-pages/viewer/view"
 import { StatusPageVisibility } from "@maple/domain"
 import { makeSnapshot } from "@maple/status-page/fixtures"
 import { componentPayload } from "../../page/status-pages/shared/form"
-import { GroupDialogMessage } from "../../page/status-pages/shared/group-dialog"
+import * as Combobox from "@maple/views/ui/combobox"
+import { groupPickerValue } from "../../page/status-pages/shared/group-picker"
 import { monitorKey } from "../../page/status-pages/shared/picker"
 import {
 	component,
@@ -56,7 +57,7 @@ import { labGrants, LabRole, readLabRole } from "../viewer-role"
 
 // `/lab/status-pages`: the status pages list, the look picker and the form fields over fixture
 // pages, the list with no page yet, a page's editor open on an incident, on Settings > Monitors
-// with grouped components to drag (`monitors-group` with a Group dialog open), on the Incidents
+// with grouped components to drag (`monitors-group` with the Group dropdown open), on the Incidents
 // or Maintenance tab with nothing posted (`incidents-empty`, `maintenance-empty`), the full-screen
 // preview "Open page" opens, as a public, password or internal page (`preview&visibility=public|
 // password|internal`), or the new page builder (`new`, `new-empty`, `new-add`, `new-group`,
@@ -255,7 +256,7 @@ const LAB_MONITORS = [
 	httpMonitor({ id: monitorId(5), name: "docs" }),
 ]
 
-const groupOf = (message: GroupDialogMessage) => BuilderMessage.GotGroupDialogMessage({ message })
+const groupOf = (message: Combobox.Message) => BuilderMessage.GotGroupPickerMessage({ message })
 
 /** The steps after the monitors read that put the builder in `page`'s state. */
 const builderSteps = (page: LabPage): ReadonlyArray<BuilderMessage> => {
@@ -269,11 +270,10 @@ const builderSteps = (page: LabPage): ReadonlyArray<BuilderMessage> => {
 		case "new-group":
 			return [
 				BuilderMessage.ClickedRow({ key: monitorKey(httpMonitor().id) }),
-				groupOf(GroupDialogMessage.ClickedOpen()),
-				groupOf(GroupDialogMessage.ChangedDraft({ value: "Core" })),
-				groupOf(GroupDialogMessage.SubmittedDraft()),
+				groupOf(Combobox.Message.ClickedItem({ value: groupPickerValue.create("Core") })),
 				BuilderMessage.ClickedRow({ key: monitorKey(downMonitor().id) }),
-				groupOf(GroupDialogMessage.ClickedOpen()),
+				groupOf(Combobox.Message.ClickedTriggerOf({ items: [] })),
+				groupOf(Combobox.Message.ChangedInput({ value: "Pay" })),
 			]
 		case "new-domain":
 			return [BuilderMessage.ChangedCustomDomain({ value: "status.acme.com" })]
@@ -284,7 +284,7 @@ const builderSteps = (page: LabPage): ReadonlyArray<BuilderMessage> => {
 
 /**
  * The builder over five monitors, all on the page from the start (none with `new-empty`); `new-add`
- * opens Add components, `new-group` a Group dialog, `new-domain` fills the custom domain.
+ * opens Add components, `new-group` the Group dropdown with "Pay" typed, `new-domain` fills the custom domain.
  */
 const builderModel = (
 	role: LabRole,
@@ -542,14 +542,14 @@ export const lab = defineShellLab("Status pages", {
 	init: (flags: Flags) => {
 		const builder = builderModel(flags.role, flags.page)
 		const editor = editorModel(flags.role, editorPageOf(flags.page))
-		// `monitors-group`: API open, its Group dialog over it.
+		// `monitors-group`: API open, its Group dropdown open.
 		const grouped =
 			flags.page === "monitors-group"
 				? Arr.reduce(
 						[
 							EditorMessage.ClickedComponent({ componentId: componentId(1) }),
-							EditorMessage.GotGroupDialogMessage({
-								message: GroupDialogMessage.ClickedOpen(),
+							EditorMessage.GotGroupPickerMessage({
+								message: Combobox.Message.ClickedTriggerOf({ items: [] }),
 							}),
 						],
 						{ model: editor, commands: [] } as Update.Return<
