@@ -426,12 +426,9 @@ const loaded = (h: H, model: Model, page: V2StatusPage, inputs: PageViewInputs):
 					location.tab === "settings"
 						? settingsLayout(h, model, page, location.section, body(h, model, page, time))
 						: location.tab === "page"
-							? h.div(
-									[
-										h.Class(
-											"flex min-h-0 flex-1 flex-col px-(--page-gutter) pb-(--page-gutter)",
-										),
-									],
+							? vstack(
+									h,
+									{ className: "min-h-0 flex-1 px-(--page-gutter) pb-(--page-gutter)" },
 									[body(h, model, page, time)],
 								)
 							: body(h, model, page, time),
