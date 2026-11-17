@@ -54,6 +54,8 @@ export const ApiObservabilityLive = Layer.mergeAll(
 		"set-cookie",
 		"x-api-key",
 		"x-hub-signature",
+		// The AWS connection's EventBridge key (`CloudSecurityEventsService`).
+		"x-maple-events-key",
 		"x-hub-signature-256",
 		// Svix (Clerk / Autumn webhooks): replayable alongside its body within the tolerance window.
 		"svix-signature",

@@ -44,7 +44,7 @@ case "$1 $2" in
     esac ;;
   "cloudformation describe-stack-resource") echo "failed-deliveries-$region" ;;
   "cloudformation deploy")
-    case "$*" in *maple-events-abc*) [ "$region" = "$AWS_EVENTS_DEPLOY_FAILS" ] && exit 255 ;; esac ;;
+    case "$*" in *maple-events-abc*) [ "$region" = "$AWS_EVENTS_DEPLOY_FAILS" ] && { echo "Rule limit exceeded in $region" >&2; exit 255; } ;; esac ;;
   "cloudformation delete-stack")
     if [ -n "$AWS_DELETE_FAILS" ] && [ ! -e "$AWS_LOG.deleted" ]; then touch "$AWS_LOG.deleted"; exit 254; fi ;;
   "cloudformation wait")
@@ -94,6 +94,7 @@ const run = (
 	})
 	return {
 		status: result.status,
+		stderr: result.stderr,
 		calls: existsSync(log) ? Str.split("\n")(Str.trim(readFileSync(log, "utf8"))) : [],
 	}
 }
@@ -250,9 +251,13 @@ describe("AWS setup scripts", () => {
 		const setup = Effect.runSync(
 			renderAwsSetupScript(target, "{}\n", null, { key: "maple_awsev_k", forwarderTemplate: "{}\n" }),
 		)
-		const { status, calls } = run(setup, { stacksIn: [], eventsDeployFails: "us-west-2" })
+		const { status, calls, stderr } = run(setup, { stacksIn: [], eventsDeployFails: "us-west-2" })
 		// A region whose forwarder fails is named and left to the poller; the setup still finishes.
 		expect(status).toBe(0)
+		expect(stderr).toContain("Could not forward findings from us-west-2")
+		// With why, from the region's own output.
+		expect(stderr).toContain("Rule limit exceeded in us-west-2")
+		expect(stderr).not.toContain("eu-central-1")
 		const main = Arr.findFirst(calls, (call) =>
 			Str.includes(`deploy --region us-east-1 --stack-name ${target.stackName}`)(call),
 		)

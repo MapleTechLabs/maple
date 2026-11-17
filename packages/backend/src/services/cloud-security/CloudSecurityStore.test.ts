@@ -464,6 +464,29 @@ describe("CloudSecurityStore", () => {
 		}).pipe(Effect.provide(world.layer))
 	})
 
+	it.effect("leaves a finding an event stored during a whole read out of what the read resolves", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const store = yield* CloudSecurityStore
+			const connection = yield* connect(orgId, "111111111111")
+			const feed = { orgId, connectionId: connection.id, region, source: "guardduty" as const }
+			yield* store.upsertFindings([finding(connection, orgId, { findingId: "old" })], 1)
+			// The read started at 10; an event stored "pushed" at 12, after the listing passed it.
+			yield* store.upsertFindings([finding(connection, orgId, { findingId: "pushed" })], 12)
+			assert.strictEqual(yield* store.resolve(feed, { except: [] }, 10), 1)
+			const rows = yield* Effect.promise(() =>
+				queryRows<{ finding_id: string; status: string }>(
+					world.testDb,
+					"SELECT finding_id, status FROM cloud_security_findings ORDER BY finding_id",
+				),
+			)
+			assert.deepStrictEqual(rows, [
+				{ finding_id: "old", status: "resolved" },
+				{ finding_id: "pushed", status: "active" },
+			])
+		}).pipe(Effect.provide(world.layer))
+	})
+
 	it.effect("never lets an older version of a finding replace a newer one", () => {
 		const world = makeWorld()
 		return Effect.gen(function* () {

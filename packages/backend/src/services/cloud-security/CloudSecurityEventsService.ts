@@ -8,7 +8,6 @@ import { ingestKeyLookupHmacKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { CloudSecurityStore } from "./CloudSecurityStore"
 import { findingEvent } from "./eventbridge-findings"
 import { awsEventsKey } from "./events-key"
@@ -78,7 +77,6 @@ export class CloudSecurityEventsService extends Context.Service<
 		const env = yield* Env
 		const database = yield* Database
 		const store = yield* CloudSecurityStore
-		const featureFlags = yield* OrganizationFeatureFlagsService
 		const dbExecute = makeDbExecute(database, "CloudSecurityEventsService", toPersistenceError)
 		const persistence = (message: string) => new IntegrationsPersistenceError({ message })
 
@@ -124,10 +122,9 @@ export class CloudSecurityEventsService extends Context.Service<
 				})
 			}
 			yield* Effect.annotateCurrentSpan("orgId", row.orgId)
-			// A stack left deployed after the module or the rollout was turned off: acknowledged, not kept.
+			// A stack left deployed after the module was turned off: acknowledged, not kept. The rollout
+			// flag gates the page only; a failed flag read would drop events AWS does not retry.
 			if (!Arr.contains(row.modules, "security")) return ignored("module_off", row.orgId)
-			if (!(yield* featureFlags.flags(row.orgId)).cloudSecurity)
-				return ignored("rollout_off", row.orgId)
 			const json = decodeJson(body)
 			if (Option.isNone(json)) {
 				return yield* new CloudSecurityEventRejected({
@@ -172,7 +169,5 @@ export class CloudSecurityEventsService extends Context.Service<
 		return { eventsKey, receive } satisfies CloudSecurityEventsServiceApi
 	}),
 }) {
-	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide([CloudSecurityStore.layer, OrganizationFeatureFlagsService.layer]),
-	)
+	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(CloudSecurityStore.layer))
 }

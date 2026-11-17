@@ -424,9 +424,13 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 									$.status.eq(from),
 									...("only" in ids
 										? [PG.inList($.findingId, ids.only)]
-										: ids.except.length === 0
-											? []
-											: [PG.notInList($.findingId, ids.except)]),
+										: [
+												// A finding an event stored while the listing ran is newer than the listing.
+												$.syncedAt.lt(at),
+												...(ids.except.length === 0
+													? []
+													: [PG.notInList($.findingId, ids.except)]),
+											]),
 								])
 								.returning(($) => ({ findingId: $.findingId })),
 						),

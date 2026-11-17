@@ -8,6 +8,7 @@ import type { AwsAccountId, AwsConnectionId } from "@maple/primitives"
 import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { forPaste } from "../paste-script"
 import { FINDING_EVENT_PATTERN } from "../../cloud-security/eventbridge-findings"
+import { AGGREGATED_PRODUCTS } from "../../cloud-security/finding-read"
 import { AWS_EVENTS_KEY_HEADER } from "../../cloud-security/events-key"
 
 const DOCS_URL = "https://maple.dev/docs/integrations/aws"
@@ -40,8 +41,14 @@ export interface AwsEventsTarget {
 
 /** The finding events the rules forward: one rule pattern for all four services. */
 const findingEventPattern = {
-	source: Rec.keys(FINDING_EVENT_PATTERN),
-	"detail-type": Arr.flatten(Rec.values(FINDING_EVENT_PATTERN)),
+	$or: Arr.map(Rec.toEntries(FINDING_EVENT_PATTERN), ([source, detailTypes]) => ({
+		source: [source],
+		"detail-type": detailTypes,
+		// Security Hub also carries the other services' findings, which arrive from them directly.
+		...(source === "aws.securityhub" && {
+			detail: { findings: { ProductName: [{ "anything-but": AGGREGATED_PRODUCTS }] } },
+		}),
+	})),
 }
 
 /** A role EventBridge assumes to deliver one rule's events, allowed `action` on `resource` only. */
@@ -517,41 +524,53 @@ const deployEventsForwarders = (target: AwsScriptTarget, template: string) => `e
 cat > "$events_template" <<'MAPLE_EVENTS_TEMPLATE'
 ${template}MAPLE_EVENTS_TEMPLATE
 forward_role="$(aws cloudformation describe-stacks --region ${AWS_STACK_REGION} --stack-name ${target.stackName} --query "Stacks[0].Outputs[?OutputKey=='EventsForwardRoleArn'].OutputValue" --output text)"
-events_failed="$(mktemp)"
+events_logs="$(mktemp -d)"
 echo "Forwarding security findings from every region to ${AWS_STACK_REGION}..."
+started=0
 for region in $(aws ec2 describe-regions --region ${AWS_STACK_REGION} --query 'Regions[].RegionName' --output text); do
-  [ "$region" = "${AWS_STACK_REGION}" ] && continue
+  if [ "$region" = "${AWS_STACK_REGION}" ]; then continue; fi
   (
     status="$(aws cloudformation describe-stacks --region "$region" --stack-name ${target.eventsStackName} --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)"
-    if [ "$status" = "ROLLBACK_COMPLETE" ]; then
-      aws cloudformation delete-stack --region "$region" --stack-name ${target.eventsStackName}
-      aws cloudformation wait stack-delete-complete --region "$region" --stack-name ${target.eventsStackName}
-    fi
+    # A stack a failed deploy or delete left behind can only be deleted; it holds nothing to keep.
+    case "$status" in
+      ROLLBACK_COMPLETE | *_FAILED)
+        aws cloudformation delete-stack --region "$region" --stack-name ${target.eventsStackName}
+        aws cloudformation wait stack-delete-complete --region "$region" --stack-name ${target.eventsStackName}
+        ;;
+    esac
     aws cloudformation deploy \\
       --region "$region" \\
       --stack-name ${target.eventsStackName} \\
       --template-file "$events_template" \\
       --parameter-overrides "ForwardRoleArn=$forward_role" \\
-      --no-fail-on-empty-changeset >/dev/null 2>&1
-  ) || echo "$region" >>"$events_failed" &
+      --no-fail-on-empty-changeset
+  ) >"$events_logs/$region" 2>&1 || mv "$events_logs/$region" "$events_logs/$region.failed" &
+  # Six at a time: CloudShell is small.
+  started=$((started + 1))
+  if [ $((started % 6)) -eq 0 ]; then wait; fi
 done
 wait
-if [ -s "$events_failed" ]; then
-  echo "Could not forward findings from: $(tr '\\n' ' ' <"$events_failed")" >&2
-  echo "Maple keeps reading those regions on its own." >&2
-fi
-rm -f "$events_template" "$events_failed"
+for failed in "$events_logs"/*.failed; do
+  [ -e "$failed" ] || continue
+  echo "Could not forward findings from $(basename "$failed" .failed); Maple keeps reading it on its own:" >&2
+  tail -n 3 "$failed" >&2
+done
+rm -rf "$events_template" "$events_logs"
 `
 
-/** Deletes the findings forwarder from every enabled region it is in. */
-const removeEventsForwarders = (
-	stackName: string,
-) => `for region in $(aws ec2 describe-regions --region ${AWS_STACK_REGION} --query 'Regions[].RegionName' --output text); do
-  if aws cloudformation describe-stacks --region "$region" --stack-name ${stackName} >/dev/null 2>&1; then
-    echo "Removing the findings forwarder from $region..."
-    aws cloudformation delete-stack --region "$region" --stack-name ${stackName} || true
-  fi
+/** Deletes the findings forwarder from every enabled region it is in, six regions at a time. */
+const removeEventsForwarders = (stackName: string) => `started=0
+for region in $(aws ec2 describe-regions --region ${AWS_STACK_REGION} --query 'Regions[].RegionName' --output text); do
+  (
+    if aws cloudformation describe-stacks --region "$region" --stack-name ${stackName} >/dev/null 2>&1; then
+      echo "Removing the findings forwarder from $region..."
+      aws cloudformation delete-stack --region "$region" --stack-name ${stackName} || true
+    fi
+  ) &
+  started=$((started + 1))
+  if [ $((started % 6)) -eq 0 ]; then wait; fi
 done
+wait
 `
 
 /** Deploys the metric stream stack to each of the stream's regions. */
