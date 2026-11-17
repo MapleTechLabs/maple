@@ -2,7 +2,7 @@
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { AlertValidationError } from "@maple/domain/http"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Clock, Duration, Effect, Schema, Array as Arr } from "effect"
+import { Clock, Duration, Effect, Order, Schema, Array as Arr } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { TestClock } from "effect/testing"
 import { type AlertDestinationId, AlertRuleUpsertRequest, OrgId } from "@maple/domain/http"
@@ -21,7 +21,11 @@ import {
 	UptimeMonitorId as UptimeMonitorIdSchema,
 	type UptimeMonitorStatus,
 } from "@maple/primitives"
-import type { UptimeMonitorConfig } from "@maple/domain/uptime"
+import {
+	type UptimeCertificate,
+	type UptimeMonitorConfig,
+	UPTIME_CERTIFICATE_GROUP_KEY,
+} from "@maple/domain/uptime"
 import { uptimeRuleFields } from "./AlertRuleModel"
 import {
 	makeWarehouseStub,
@@ -62,6 +66,7 @@ const seedUptimeMonitor = (
 		readonly config: UptimeMonitorConfig
 		readonly status: UptimeMonitorStatus
 		readonly error?: string
+		readonly certificate?: UptimeCertificate
 		readonly lastPingAt?: number
 		readonly enabled?: boolean
 	},
@@ -115,15 +120,18 @@ const seedUptimeMonitor = (
 							consecutiveSuccesses: 0,
 							statusChangedAt: null,
 							lastCheckJson:
-								input.error === undefined
+								input.error === undefined && input.certificate === undefined
 									? null
 									: {
 											at: now,
-											ok: false,
+											ok: input.error === undefined,
 											durationMs: 80,
-											statusCode: 503,
-											error: input.error,
+											statusCode: input.error === undefined ? 200 : 503,
+											error: input.error ?? null,
 											traceId: null,
+											...(input.certificate === undefined
+												? undefined
+												: { certificate: input.certificate }),
 										},
 							recentJson: [],
 							lastPingAt: input.lastPingAt ?? null,
@@ -144,6 +152,23 @@ const httpMonitorConfig: UptimeMonitorConfig = {
 	assertions: [{ _tag: "status", op: "is", value: "2xx" }],
 	timeoutMs: 5000,
 }
+
+const DAY_MS = 86_400_000
+
+const certificateIn = (days: number): UptimeCertificate => ({
+	expiresAt: DEFAULT_CLOCK_EPOCH_MS + days * DAY_MS,
+	subject: "checkout.example.com",
+	issuer: "R11",
+})
+
+const setCertificate = (testDb: TestDb, monitorId: string, certificate: UptimeCertificate) =>
+	Effect.promise(() =>
+		executeSql(
+			testDb,
+			"update uptime_monitor_states set last_check_json = jsonb_set(last_check_json, '{certificate}', $2::jsonb) where monitor_id = $1",
+			[monitorId, JSON.stringify(certificate)],
+		),
+	)
 
 const setMonitorStatus = (testDb: TestDb, monitorId: string, status: UptimeMonitorStatus) =>
 	Effect.promise(() =>
@@ -296,6 +321,192 @@ describe("AlertsService uptime rules", () => {
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}))))
 	})
+
+	it.effect(
+		"an expiring certificate opens a warning beside the monitor, off status pages, and renewal resolves it",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const bodies: Array<string> = []
+			const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+				bodies.push(requestBodyText(init?.body))
+				return new Response("ok", { status: 200 })
+			}) as typeof fetch
+
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+				const alerts = yield* alertServices
+				const orgId = asOrgId("org_uptime_certificate")
+				const destination = yield* createWebhookDestination(
+					alerts,
+					orgId,
+					asUserId("user_uptime_cert"),
+				)
+				const { monitorId } = yield* seedUptimeMonitor(testDb, {
+					orgId,
+					name: "Checkout health",
+					serviceName: "checkout-api",
+					destinationIds: [destination.id],
+					config: httpMonitorConfig,
+					status: "up",
+					certificate: certificateIn(5),
+				})
+				const pageId = SecureRandom.uuidV4Unsafe()
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						`INSERT INTO status_pages (id, org_id, name, slug, auto_incidents, created_by, created_at, updated_at)
+					 VALUES ($1, $2, 'Acme', 'acme', 'publish', 'user_uptime', now(), now())`,
+						[pageId, orgId],
+					).then(() =>
+						executeSql(
+							testDb,
+							`INSERT INTO status_page_components (id, org_id, page_id, name, monitor_id, created_at, updated_at)
+						 VALUES ($1, $2, $3, 'Checkout', $4, now(), now())`,
+							[crypto.randomUUID(), orgId, pageId, monitorId],
+						),
+					),
+				)
+
+				yield* alerts.runSchedulerTick()
+				const opened = (yield* alerts.listIncidents(orgId)).incidents
+				assert.deepStrictEqual(
+					Arr.map(opened, (incident) => [
+						incident.groupKey,
+						incident.groupLabel,
+						incident.severity,
+						incident.status,
+					]),
+					[
+						[
+							UPTIME_CERTIFICATE_GROUP_KEY,
+							"TLS certificate (checkout.example.com)",
+							"warning",
+							"open",
+						],
+					],
+				)
+				const trigger = Schema.decodeSync(
+					Schema.fromJsonString(
+						Schema.Struct({ observed: Schema.Struct({ detail: Schema.String }) }),
+					),
+				)(bodies[0] ?? "")
+				assert.strictEqual(
+					trigger.observed.detail,
+					"Certificate for checkout.example.com expires in 5 days (2023-11-19)",
+				)
+				const pageIncidents = yield* Effect.promise(() =>
+					queryFirstRow<{ count: number }>(
+						testDb,
+						"SELECT count(*)::int AS count FROM status_page_incidents",
+					),
+				)
+				assert.strictEqual(pageIncidents?.count, 0)
+				// Nothing to investigate: no issue, so no triage run either.
+				const issues = yield* Effect.promise(() =>
+					queryFirstRow<{ count: number }>(
+						testDb,
+						"SELECT count(*)::int AS count FROM error_issues",
+					),
+				)
+				assert.strictEqual(issues?.count, 0)
+				const state = yield* Effect.promise(() =>
+					queryFirstRow<{ status: string }>(
+						testDb,
+						"SELECT status FROM uptime_monitor_states WHERE monitor_id = $1",
+						[monitorId],
+					),
+				)
+				assert.strictEqual(state?.status, "up")
+
+				yield* setCertificate(testDb, monitorId, certificateIn(90))
+				yield* TestClock.adjust(Duration.minutes(1))
+				yield* alerts.runSchedulerTick()
+				assert.deepStrictEqual(
+					Arr.map((yield* alerts.listIncidents(orgId)).incidents, (incident) => incident.status),
+					["resolved"],
+				)
+			}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}), { fetch: fetchImpl })))
+		},
+	)
+
+	it.effect(
+		"an unlinked monitor that is down with an expiring certificate keeps both incidents open",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+				const alerts = yield* alertServices
+				const orgId = asOrgId("org_uptime_cert_down")
+				yield* seedUptimeMonitor(testDb, {
+					orgId,
+					name: "Checkout health",
+					serviceName: null,
+					destinationIds: [],
+					config: httpMonitorConfig,
+					status: "down",
+					error: "TLS handshake with checkout.example.com:443 failed (CERT_HAS_EXPIRED)",
+					certificate: certificateIn(-1),
+				})
+				const incidents = () =>
+					Effect.map(alerts.listIncidents(orgId), ({ incidents }) =>
+						Arr.sort(
+							Arr.map(
+								incidents,
+								(incident) => `${incident.groupKey}:${incident.severity}:${incident.status}`,
+							),
+							Order.String,
+						),
+					)
+
+				yield* alerts.runSchedulerTick()
+				const expected = ["__tls_certificate__:warning:open", "__total__:critical:open"]
+				assert.deepStrictEqual(yield* incidents(), expected)
+				// A second tick changes nothing: neither group's state is swept as the wrong shape.
+				yield* TestClock.adjust(Duration.minutes(1))
+				yield* alerts.runSchedulerTick()
+				assert.deepStrictEqual(yield* incidents(), expected)
+			}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}))))
+		},
+	)
+
+	it.effect(
+		"a monitor stored with the certificate group's key as its service keeps the two incidents apart",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+				const alerts = yield* alertServices
+				const orgId = asOrgId("org_uptime_cert_collision")
+				// Saved before the name was reserved.
+				yield* seedUptimeMonitor(testDb, {
+					orgId,
+					name: "Checkout health",
+					serviceName: UPTIME_CERTIFICATE_GROUP_KEY,
+					destinationIds: [],
+					config: httpMonitorConfig,
+					status: "down",
+					error: "Status 503, expected 2xx",
+					certificate: certificateIn(5),
+				})
+				const incidents = () =>
+					Effect.map(alerts.listIncidents(orgId), ({ incidents }) =>
+						Arr.sort(
+							Arr.map(
+								incidents,
+								(incident) => `${incident.groupKey}:${incident.severity}:${incident.status}`,
+							),
+							Order.String,
+						),
+					)
+				const expected = ["__tls_certificate__:warning:open", "__total__:critical:open"]
+				yield* alerts.runSchedulerTick()
+				assert.deepStrictEqual(yield* incidents(), expected)
+				yield* TestClock.adjust(Duration.minutes(1))
+				yield* alerts.runSchedulerTick()
+				assert.deepStrictEqual(yield* incidents(), expected)
+			}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}))))
+		},
+	)
 
 	it.effect("a monitor created before backing rules gets one, once, and then fires", () => {
 		const testDb = createTestDb(trackedDbs)

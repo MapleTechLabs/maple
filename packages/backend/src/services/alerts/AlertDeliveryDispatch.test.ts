@@ -227,6 +227,44 @@ describe("buildSummaryLine", () => {
 	})
 })
 
+describe("uptime certificate notifications", () => {
+	const certificateContext: TemplateRenderContext = {
+		...baseContext,
+		ruleName: "Checkout health",
+		signalType: "uptime",
+		comparator: "gte",
+		threshold: 0.5,
+		value: 0.5,
+		sampleCount: 1,
+		severity: "warning",
+		groupKey: "__tls_certificate__",
+		detail: "Certificate for checkout.example.com expires in 9 days (2026-11-24)",
+	}
+
+	it("headlines the certificate, never that the monitor is down", () => {
+		assert.deepStrictEqual(
+			Arr.map(["trigger", "renotify"] as const, (eventType) =>
+				formatAlertHeadline({ ...certificateContext, eventType }),
+			),
+			["Checkout health: certificate expires soon", "Checkout health: certificate still expiring"],
+		)
+		assert.strictEqual(
+			formatAlertHeadline({ ...certificateContext, eventType: "resolve", value: 0 }),
+			"Checkout health: certificate renewed",
+		)
+		// The monitor's own group still reads as an outage.
+		assert.strictEqual(
+			formatAlertHeadline({
+				...certificateContext,
+				groupKey: "__total__",
+				value: 1,
+				eventType: "trigger",
+			}),
+			"Checkout health is down",
+		)
+	})
+})
+
 describe("anomaly notifications", () => {
 	const anomalyContext: TemplateRenderContext = {
 		...baseContext,

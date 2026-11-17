@@ -1,4 +1,5 @@
 import { Option, Schema, String as Str } from "effect"
+import type { UptimeCertificate } from "@maple/domain/uptime"
 import type { PhaseTimings } from "./UptimePhases"
 
 /**
@@ -24,6 +25,8 @@ export interface ProbeOutcome {
 	readonly errorType: UptimeFailureType | null
 	/** HTTP only: where the check spent its time, absent when no phase was measured. */
 	readonly timings?: PhaseTimings
+	/** HTTPS only: the certificate the configured host presented, when the handshake completed. */
+	readonly certificate?: UptimeCertificate
 }
 
 /** The W3C ids a check runs under; HTTP sends them so the target's server span joins the trace. */

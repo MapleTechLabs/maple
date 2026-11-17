@@ -41,7 +41,7 @@ describe("UptimeProber", () => {
 			const tracer = makeCapturingTracer()
 			const report = yield* Effect.gen(function* () {
 				const prober = yield* UptimeProber
-				return yield* prober.check(mkUptimeTarget())
+				return yield* prober.check(mkUptimeTarget({ revision: 1_700_000_000_000 }))
 			}).pipe(
 				Effect.provide(Layer.merge(proberLayer(exported), tracer.layer)),
 				Effect.provideService(
@@ -55,6 +55,8 @@ describe("UptimeProber", () => {
 			assert.match(span.spanId, /^[0-9a-f]{16}$/)
 			assert.strictEqual(recorded[0]?.headers.traceparent, `00-${span.traceId}-${span.spanId}-01`)
 			assert.strictEqual(report.traceId, span.traceId)
+			// The report names the settings it ran against, so the API can spot a stale target.
+			assert.strictEqual(report.targetRevision, 1_700_000_000_000)
 			assert.deepStrictEqual(
 				{ ok: report.ok, statusCode: report.statusCode, error: report.error },
 				{ ok: false, statusCode: 503, error: "Status 503, expected 2xx" },

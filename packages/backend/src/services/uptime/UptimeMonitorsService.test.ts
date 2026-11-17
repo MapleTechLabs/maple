@@ -16,7 +16,12 @@ import { HttpClient, type HttpClientRequest, HttpClientResponse } from "effect/h
 import { TestClock } from "effect/testing"
 import { BillingCustomer, OrgId, UserId } from "@maple/domain/http"
 import { AlertDestinationId, UptimeIntervalSeconds, UptimeMonitorId } from "@maple/primitives"
-import { UPTIME_USER_AGENT, UptimeCheckReport, type UptimeMonitorConfig } from "@maple/domain/uptime"
+import {
+	type UptimeCertificate,
+	UPTIME_USER_AGENT,
+	UptimeCheckReport,
+	type UptimeMonitorConfig,
+} from "@maple/domain/uptime"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	cleanupTestDbs,
@@ -157,6 +162,26 @@ const report = (monitorId: UptimeMonitorId, checkedAt: number, ok: boolean) =>
 		traceId: null,
 	})
 
+/** A report read against the monitor's current settings, with `certificate` when given. */
+const current = (
+	monitorId: UptimeMonitorId,
+	checkedAt: number,
+	ok: boolean,
+	certificate?: UptimeCertificate,
+) =>
+	Effect.gen(function* () {
+		const service = yield* UptimeMonitorsService
+		const target = Arr.findFirst(yield* service.listProbeTargets, (row) => row.id === monitorId)
+		return new UptimeCheckReport({
+			...report(monitorId, checkedAt, ok),
+			...(certificate === undefined ? undefined : { certificate }),
+			...Option.match(target, {
+				onNone: () => undefined,
+				onSome: (row) => ({ targetRevision: row.revision }),
+			}),
+		})
+	})
+
 const createHttp = (name: string, extra: { readonly failuresToDown?: number; readonly orgId?: OrgId } = {}) =>
 	Effect.gen(function* () {
 		const service = yield* UptimeMonitorsService
@@ -242,6 +267,176 @@ describe("UptimeMonitorsService", () => {
 			})
 			assert.strictEqual(localDns._tag, "@maple/http/errors/UptimeMonitorValidationError")
 			assert.deepStrictEqual(yield* service.list(ORG), [])
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect(
+		"keeps the last certificate through a failed check that read none, and drops it on a success without one",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const monitor = yield* createHttp("API")
+				const certificate = { expiresAt: 9_000_000, subject: "api.example.com", issuer: "R11" }
+				const certificateNow = () =>
+					Effect.map(service.get(ORG, monitor.id), (read) => read.state.lastCheck?.certificate)
+
+				yield* service.recordChecks([yield* current(monitor.id, 1_000, true, certificate)])
+				assert.deepStrictEqual(yield* certificateNow(), certificate)
+				// An expired certificate fails the handshake before it can be read.
+				yield* service.recordChecks([yield* current(monitor.id, 2_000, false)])
+				assert.deepStrictEqual(yield* certificateNow(), certificate)
+				// The URL moved to http://: a passing check with no certificate has none.
+				yield* service.recordChecks([yield* current(monitor.id, 3_000, true)])
+				assert.isUndefined(yield* certificateNow())
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		},
+	)
+
+	it.effect("folds a retried batch in order: a renewal before a failure is kept", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* UptimeMonitorsService
+			const monitor = yield* createHttp("API")
+			const expiring = { expiresAt: 1_000_000, subject: "api.example.com", issuer: "R11" }
+			const renewed = { ...expiring, expiresAt: 9_000_000 }
+			yield* service.recordChecks([yield* current(monitor.id, 1_000, true, expiring)])
+			// The API was away: a renewal and then a refused connection arrive together.
+			yield* service.recordChecks([
+				yield* current(monitor.id, 2_000, true, renewed),
+				report(monitor.id, 3_000, false),
+			])
+			const read = yield* service.get(ORG, monitor.id)
+			assert.deepStrictEqual(read.state.lastCheck?.certificate, renewed)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("forgets the certificate when the monitored origin changes, and only then", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* UptimeMonitorsService
+			const monitor = yield* createHttp("API")
+			const certificate = { expiresAt: 9_000_000, subject: "status.example.com", issuer: "R11" }
+			const certificateNow = () =>
+				Effect.map(service.get(ORG, monitor.id), (read) => read.state.lastCheck?.certificate)
+			yield* service.recordChecks([yield* current(monitor.id, 1_000, true, certificate)])
+
+			// Same origin, another path: the certificate still stands.
+			yield* service.update(ORG, monitor.id, {
+				config: httpConfig("https://status.example.com/ready"),
+				updatedBy: USER,
+			})
+			assert.deepStrictEqual(yield* certificateNow(), certificate)
+			// Another host: its certificate is not this one.
+			yield* service.update(ORG, monitor.id, {
+				config: httpConfig("https://new.example.com/health"),
+				updatedBy: USER,
+			})
+			assert.isUndefined(yield* certificateNow())
+			const read = yield* service.get(ORG, monitor.id)
+			assert.strictEqual(read.state.lastCheck?.at, 1_000)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("ignores a certificate from a report that names no target revision", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* UptimeMonitorsService
+			const monitor = yield* createHttp("API")
+			const old = { expiresAt: 9_000_000, subject: "status.example.com", issuer: "R11" }
+			yield* service.recordChecks([yield* current(monitor.id, 1_000, true, old)])
+			yield* TestClock.setTime(10_000)
+			yield* service.update(ORG, monitor.id, {
+				config: httpConfig("https://new.example.com/health"),
+				updatedBy: USER,
+			})
+			// No revision (a target from an API that predates it): which host it probed is unknown.
+			yield* service.recordChecks([
+				new UptimeCheckReport({ ...report(monitor.id, 5_000, true), certificate: old }),
+			])
+			const read = yield* service.get(ORG, monitor.id)
+			assert.strictEqual(read.state.lastCheck?.at, 5_000)
+			assert.isUndefined(read.state.lastCheck?.certificate)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect(
+		"ignores the certificate of a check the scraper ran from a target cached before the edit",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const monitor = yield* createHttp("API")
+				const [before] = yield* service.listProbeTargets
+				const old = { expiresAt: 9_000_000, subject: "status.example.com", issuer: "R11" }
+				yield* TestClock.setTime(10_000)
+				yield* service.update(ORG, monitor.id, {
+					config: httpConfig("https://new.example.com/health"),
+					updatedBy: USER,
+				})
+				const [after] = yield* service.listProbeTargets
+				assert.isAbove(after?.revision ?? 0, before?.revision ?? 0)
+				// Started after the edit, but against the target the scraper had cached.
+				yield* service.recordChecks([
+					new UptimeCheckReport({
+						...report(monitor.id, 20_000, true),
+						certificate: old,
+						targetRevision: before?.revision ?? 0,
+					}),
+				])
+				const stale = yield* service.get(ORG, monitor.id)
+				assert.strictEqual(stale.state.lastCheck?.at, 20_000)
+				assert.isUndefined(stale.state.lastCheck?.certificate)
+				const renewed = { ...old, subject: "new.example.com" }
+				yield* service.recordChecks([
+					new UptimeCheckReport({
+						...report(monitor.id, 30_000, true),
+						certificate: renewed,
+						targetRevision: after?.revision ?? 0,
+					}),
+				])
+				const current = yield* service.get(ORG, monitor.id)
+				assert.deepStrictEqual(current.state.lastCheck?.certificate, renewed)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		},
+	)
+
+	it.effect("forgets the certificate when an origin change also resumes the monitor", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* UptimeMonitorsService
+			const monitor = yield* createHttp("API")
+			const certificate = { expiresAt: 9_000_000, subject: "status.example.com", issuer: "R11" }
+			yield* service.recordChecks([yield* current(monitor.id, 1_000, true, certificate)])
+			yield* service.update(ORG, monitor.id, { enabled: false, updatedBy: USER })
+			const resumed = yield* service.update(ORG, monitor.id, {
+				enabled: true,
+				config: httpConfig("https://new.example.com/health"),
+				updatedBy: USER,
+			})
+			assert.isUndefined(resumed.state.lastCheck?.certificate)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("refuses an alert group key as a service name", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* UptimeMonitorsService
+			const created = yield* Effect.flip(
+				service.create(ORG, {
+					name: "API",
+					kind: "http",
+					config: httpConfig(),
+					serviceName: "__tls_certificate__",
+					createdBy: USER,
+				}),
+			)
+			assert.strictEqual(created.message, "'__tls_certificate__' is reserved and cannot name a service")
+			const monitor = yield* createHttp("API")
+			const updated = yield* Effect.flip(
+				service.update(ORG, monitor.id, { serviceName: "__total__", updatedBy: USER }),
+			)
+			assert.strictEqual(updated.message, "'__total__' is reserved and cannot name a service")
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -581,8 +776,8 @@ describe("UptimeMonitorsService", () => {
 					)
 					const observed = yield* alerts.observe(ORG, ruleId, 1_000_000)
 					assert.deepStrictEqual(
-						Option.map(observed, (value) => [value.down, value.detail]),
-						Option.some([true, "The job reported a failure"]),
+						Arr.map(observed, (value) => [value.value, value.detail]),
+						[[1, "The job reported a failure"]],
 					)
 				})
 				yield* program.pipe(
@@ -651,7 +846,10 @@ describe("UptimeMonitorsService", () => {
 				const ruleId = monitor.alertRuleId
 				if (ruleId === null) return assert.fail("A heartbeat monitor owns an alert rule")
 				const observed = yield* alerts.observe(ORG, ruleId, 1_000_000)
-				assert.isTrue(Option.isSome(observed) && !observed.value.down)
+				assert.deepStrictEqual(
+					Arr.map(observed, (value) => value.value),
+					[0],
+				)
 				const after = yield* service.get(ORG, monitor.id)
 				assert.strictEqual(after.state.status, "up")
 				assert.strictEqual(after.state.lastPingAt, 960_000)
@@ -1089,7 +1287,7 @@ describe("UptimeMonitorsService backing alert rule", () => {
 					enabled: true,
 					severity: "critical",
 					comparator: "gte",
-					threshold: 1,
+					threshold: 0.5,
 					consecutive_breaches_required: 1,
 					consecutive_healthy_required: 1,
 					destination_ids_json: [DEST_A],
