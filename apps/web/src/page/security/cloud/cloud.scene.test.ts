@@ -225,6 +225,18 @@ describe("security cloud findings", () => {
 			given(listed(pushed(["guardduty", "securityhub", "inspector", "access_analyzer"]))),
 			expectView(text("Live: findings arrive as AWS reports them.")).toExist(),
 		)
+		// Only GuardDuty and Inspector are on, and both deliver: every enabled service is live.
+		const twoOn = {
+			...polled,
+			services: Arr.filter(pushed(["guardduty", "inspector"]).services, (service) =>
+				["guardduty", "inspector"].includes(service.source),
+			),
+		}
+		scene(
+			{ update: pageUpdate, view },
+			given(listed(twoOn)),
+			expectView(text("Live: findings arrive as AWS reports them.")).toExist(),
+		)
 		// Events that stopped over a week ago no longer count, as the poller no longer counts them.
 		const stale = {
 			...polled,

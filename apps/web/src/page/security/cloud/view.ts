@@ -3,7 +3,6 @@ import {
 	CLOUD_FINDING_SOURCES,
 	type CloudFindingSeverity,
 	CloudFindingStatus,
-	type CloudFindingSource,
 } from "@maple/domain/cloud-security"
 import type { CloudFinding } from "@maple/domain/http"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
@@ -47,7 +46,7 @@ import {
 	setupOf,
 	sourceTitle,
 	STATUS_LABEL,
-	liveSourcesOf,
+	deliveryOf,
 } from "./derive"
 import { Message, type Model, type Overview, type SelectFilter } from "./model"
 import { cloudSeverityBadge } from "./parts"
@@ -380,19 +379,19 @@ const listScreen = (h: H, model: Model, overview: Overview, clock: Clock): Reado
 			toolbar(h, model, overview),
 			listBody(h, model, overview, clock),
 		]),
-		...deliveryNote(h, liveSourcesOf(overview, model.nowMs)),
+		...deliveryNote(h, deliveryOf(overview, model.nowMs)),
 	]
 }
 
 /** How findings reach Maple, under the list: live for the services whose events arrive, polled otherwise. */
-const deliveryNote = (h: H, live: ReadonlyArray<CloudFindingSource> | null): ReadonlyArray<Html> => {
-	if (live === null) return []
+const deliveryNote = (h: H, delivery: ReturnType<typeof deliveryOf>): ReadonlyArray<Html> => {
+	if (delivery === null) return []
 	const text =
-		live.length === 0
+		delivery.live.length === 0
 			? "Checked every five minutes, and live once AWS sends a finding event. A connection set up before live updates needs its AWS setup script run again."
-			: live.length === CLOUD_FINDING_SOURCES.length
+			: delivery.allLive
 				? "Live: findings arrive as AWS reports them."
-				: `Live for ${Arr.join(Arr.map(live, sourceTitle), ", ")}: their findings arrive as AWS reports them. The other enabled services are checked every five minutes.`
+				: `Live for ${Arr.join(Arr.map(delivery.live, sourceTitle), ", ")}: their findings arrive as AWS reports them. The other enabled services are checked every five minutes.`
 	return [typography(h, { size: "xs", tone: "muted", as: "p" }, [text])]
 }
 

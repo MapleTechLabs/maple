@@ -148,28 +148,26 @@ export const serviceNoticesOf = (overview: Overview): ReadonlyArray<ServiceNotic
 }
 
 /**
- * The services whose findings arrive as events (EventBridge, from the setup script), by name. Null
- * before any service is read; empty while every service is only polled.
+ * Which enabled services' findings arrive as events (EventBridge, from the setup script), within the
+ * poller's window. Null before any service is read.
  */
-export const liveSourcesOf = (
+export const deliveryOf = (
 	overview: Overview,
 	nowMs: number,
-): ReadonlyArray<CloudFindingSource> | null => {
+): { readonly live: ReadonlyArray<CloudFindingSource>; readonly allLive: boolean } | null => {
 	const enabled = Arr.filter(overview.services, (service) => service.state === "enabled")
 	if (enabled.length === 0) return null
-	return Arr.sort(
-		Arr.dedupe(
-			Arr.map(
-				Arr.filter(
-					enabled, // The poller's own window: a feed whose events stopped is polled every five minutes again.
-					(service) =>
-						service.pushedAt !== null && nowMs - service.pushedAt <= CLOUD_SECURITY_PUSH_ALIVE_MS,
-				),
-				(service) => service.source,
-			),
+	const sourcesOf = (services: typeof enabled) =>
+		Arr.sort(Arr.dedupe(Arr.map(services, (service) => service.source)), Order.String)
+	// The poller's own window: a feed whose events stopped is polled every five minutes again.
+	const live = sourcesOf(
+		Arr.filter(
+			enabled,
+			(service) =>
+				service.pushedAt !== null && nowMs - service.pushedAt <= CLOUD_SECURITY_PUSH_ALIVE_MS,
 		),
-		Order.String,
 	)
+	return { live, allLive: live.length === sourcesOf(enabled).length }
 }
 
 /** The accounts and regions the filters offer: every connected account, every region polled. */
