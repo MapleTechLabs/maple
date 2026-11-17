@@ -46,6 +46,7 @@ import {
 	setupOf,
 	sourceTitle,
 	STATUS_LABEL,
+	deliveryOf,
 } from "./derive"
 import { Message, type Model, type Overview, type SelectFilter } from "./model"
 import { cloudSeverityBadge } from "./parts"
@@ -378,8 +379,20 @@ const listScreen = (h: H, model: Model, overview: Overview, clock: Clock): Reado
 			toolbar(h, model, overview),
 			listBody(h, model, overview, clock),
 		]),
+		...deliveryNote(h, deliveryOf(overview, model.nowMs)),
 	]
 }
+
+const DELIVERY_NOTE = {
+	live: "Live: findings arrive as AWS reports them, and every service is also checked each half hour.",
+	polled: "Checked every five minutes. Run the AWS setup script again to receive findings as AWS reports them.",
+} as const
+
+/** How findings reach Maple, under the list. */
+const deliveryNote = (h: H, delivery: "live" | "polled" | null): ReadonlyArray<Html> =>
+	delivery === null
+		? []
+		: [typography(h, { size: "xs", tone: "muted", as: "p" }, [DELIVERY_NOTE[delivery]])]
 
 const overviewFailure = (h: H, model: Model): Html | null =>
 	AsyncData.matchData(model.overview.data, {

@@ -40,6 +40,7 @@ const service = (
 	state,
 	lastError,
 	checkedAt: nowMs - 4 * MINUTE,
+	pushedAt: null,
 })
 
 const enabledEverywhere = (nowMs: number) =>

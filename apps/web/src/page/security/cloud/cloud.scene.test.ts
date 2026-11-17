@@ -200,6 +200,28 @@ describe("security cloud findings", () => {
 		)
 	})
 
+	test("says findings are live once a service's events arrive, and polled before", () => {
+		const polled = allClearOverview(NOW)
+		scene(
+			{ update: pageUpdate, view },
+			given(listed(polled)),
+			expectView(text(/^Checked every five minutes/u)).toExist(),
+			expectView(text(/^Live:/u)).toBeAbsent(),
+		)
+		const live = {
+			...polled,
+			services: Arr.map(polled.services, (service, index) =>
+				index === 0 ? { ...service, pushedAt: NOW - 60_000 } : service,
+			),
+		}
+		scene(
+			{ update: pageUpdate, view },
+			given(listed(live)),
+			expectView(text(/^Live:/u)).toExist(),
+			expectView(text(/^Checked every five minutes/u)).toBeAbsent(),
+		)
+	})
+
 	test("a severity tile and the filters move the URL; the request drops values it has no name for", () => {
 		const model = listed(populatedOverview(NOW), cloudFindingsOf(NOW))
 		const tile = pageUpdate(model, Message.ChangedFilter({ filter: "severity", value: "critical" }))

@@ -6,7 +6,11 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { type AwsConnectionRow, AwsConnections } from "@maple/db/tables"
 import { awsConnectionResourceNames, awsOidcIssuer, awsOidcSubject, awsRoleArn } from "@maple/domain/aws"
-import { CloudSecurityFeed, type CloudServiceState } from "@maple/domain/cloud-security"
+import {
+	CloudSecurityFeed,
+	type CloudServiceState,
+	CLOUD_SECURITY_PUSH_ALIVE_MS,
+} from "@maple/domain/cloud-security"
 import type { IntegrationsPersistenceError } from "@maple/domain/http"
 import { IntegrationsPersistenceError as PersistenceError } from "@maple/domain/http"
 import { AwsRegion } from "@maple/primitives"
@@ -28,6 +32,8 @@ const readers = Effect.promise(() => import("./aws-security-readers"))
 
 /** A service found off, or refused, in a region is asked again after this long, not every tick. */
 export const NOT_ENABLED_RECHECK_MS = 60 * 60 * 1000
+/** A findings feed whose events arrive is still read this often, for what an event missed. */
+export const PUSHED_POLL_MS = 30 * 60 * 1000
 /** An open finding not synced for this long is refreshed by id: a console change may not touch its update time. */
 export const RECONCILE_AFTER_MS = 60 * 60 * 1000
 /** Findings one feed refreshes by id per poll. */
@@ -156,9 +162,15 @@ export class AwsSecurityFindingsService extends Context.Service<
 					({ region, source }) =>
 						Option.match(stateOf(region, source), {
 							onNone: () => true,
-							onSome: (state) =>
-								(state.state !== "not_enabled" && state.state !== "denied") ||
-								now - state.checkedAt >= NOT_ENABLED_RECHECK_MS,
+							onSome: (state) => {
+								if (state.state === "not_enabled" || state.state === "denied")
+									return now - state.checkedAt >= NOT_ENABLED_RECHECK_MS
+								// Events carry this feed's changes: the poll only reconciles what one missed.
+								const pushed =
+									state.pushedAt !== null &&
+									now - state.pushedAt <= CLOUD_SECURITY_PUSH_ALIVE_MS
+								return !pushed || now - state.checkedAt >= PUSHED_POLL_MS
+							},
 						}),
 				),
 				Order.mapInput(Order.Number, (feed: { region: AwsRegion; source: CloudSecurityFeed }) =>
