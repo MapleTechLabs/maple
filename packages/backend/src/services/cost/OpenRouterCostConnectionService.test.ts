@@ -161,29 +161,19 @@ describe("OpenRouterCostConnectionService", () => {
 		)
 	})
 
-	it.effect(
-		"never sends text that is not an OpenRouter key, nor any key of an org outside the rollout",
-		() => {
-			const testDb = createTestDb(trackedDbs)
-			const world = makeFakeOpenRouter()
-			return run(
-				testDb,
-				world,
-				Effect.gen(function* () {
-					const malformed = yield* Effect.flip(set("AKIAIOSFODNN7EXAMPLE-not-openrouter"))
-					assert.strictEqual(
-						malformed._tag,
-						"@maple/http/openrouter-key/OpenRouterKeyValidationError",
-					)
-
-					world.cloudCost = false
-					const outside = yield* Effect.flip(set(KEY))
-					assert.strictEqual(outside._tag, "@maple/http/errors/CloudCostDisabledError")
-					assert.deepStrictEqual(world.urls, [])
-				}),
-			)
-		},
-	)
+	it.effect("never sends text that is not an OpenRouter key", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeFakeOpenRouter()
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				const malformed = yield* Effect.flip(set("AKIAIOSFODNN7EXAMPLE-not-openrouter"))
+				assert.strictEqual(malformed._tag, "@maple/http/openrouter-key/OpenRouterKeyValidationError")
+				assert.deepStrictEqual(world.urls, [])
+			}),
+		)
+	})
 
 	it.effect("keeps the connection and its source when the account's key is replaced", () => {
 		const testDb = createTestDb(trackedDbs)
@@ -282,7 +272,7 @@ describe("OpenRouterCostConnectionService", () => {
 		)
 	})
 
-	it.effect("removes the key and its source together, without needing the rollout", () => {
+	it.effect("removes the key and its source together", () => {
 		const testDb = createTestDb(trackedDbs)
 		const world = makeFakeOpenRouter()
 		return run(
@@ -290,7 +280,6 @@ describe("OpenRouterCostConnectionService", () => {
 			world,
 			Effect.gen(function* () {
 				yield* set(KEY)
-				world.cloudCost = false
 				yield* remove
 				assert.isUndefined(yield* storedKey(testDb))
 				assert.isUndefined(yield* source(testDb))

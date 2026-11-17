@@ -1,9 +1,7 @@
 // A fake GitHub for tests: the installation token mint and the billing usage report answered from
 // a mutable world, with every call recorded. Installations are rows in the test database.
-import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import { Array as Arr, Effect, Layer, Schema, String as Str } from "effect"
 import { fakeGithubHttp, registryOverHttp } from "@maple/backend/services/integrations/vcs/__tests__/harness"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { insertTestSource, type TestDb } from "@maple/backend/testing/test-pglite"
 import type { UsageItem } from "./normalize"
 
@@ -22,8 +20,6 @@ export interface FakeGithub {
 	retryAfter: number | null
 	/** The usage lines, whatever month is asked for, or raw text for a malformed answer. */
 	usage: ReadonlyArray<typeof UsageItem.Encoded> | string
-	/** Whether the org is in the `cloudCost` rollout. */
-	cloudCost: boolean
 	/** Path and query of every request, in order. */
 	readonly paths: Array<string>
 	/** The `authorization` header of every billing request. */
@@ -38,7 +34,6 @@ export const makeFakeGithub = (overrides: Partial<FakeGithub> = {}): FakeGithub 
 	rejected: [],
 	retryAfter: null,
 	usage: [],
-	cloudCost: true,
 	paths: [],
 	authorizations: [],
 	...overrides,
@@ -85,14 +80,7 @@ const http = (world: FakeGithub) =>
 
 /** Everything the GitHub cost services need, over the fake and a test database. */
 export const fakeGithubDeps = (testDb: TestDb, world: FakeGithub) =>
-	Layer.mergeAll(
-		registryOverHttp(http(world)),
-		Layer.succeed(OrganizationFeatureFlagsService, {
-			flags: () =>
-				Effect.sync(() => ({ ...DISABLED_ORGANIZATION_FEATURE_FLAGS, cloudCost: world.cloudCost })),
-		}),
-		testDb.layer,
-	)
+	Layer.mergeAll(registryOverHttp(http(world)), testDb.layer)
 
 interface FakeInstallation {
 	readonly id: string

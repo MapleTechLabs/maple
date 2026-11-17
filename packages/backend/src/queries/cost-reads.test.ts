@@ -7,10 +7,6 @@ import {
 	CostTotalsRequest,
 	type TenantContext,
 } from "@maple/domain/http"
-import {
-	DISABLED_ORGANIZATION_FEATURE_FLAGS,
-	type OrganizationFeatureFlags,
-} from "@maple/domain/organization-feature-flags"
 import { OrgId, UserId } from "@maple/primitives"
 import { compiledQueryOf, type CompiledQueryInput } from "@maple/query-engine/execution"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -167,21 +163,13 @@ const insertSources = (testDb: TestDb, sources: ReadonlyArray<SourceFixture>) =>
 		),
 	)
 
-const withFlags = (flags: Partial<OrganizationFeatureFlags>) => ({
-	flags: () => Effect.succeed({ ...DISABLED_ORGANIZATION_FEATURE_FLAGS, ...flags }),
-})
-
-/** The reads over `testDb` and a fake warehouse, for an org in the `cloudCost` rollout unless told otherwise. */
-const makeHarness = (
-	testDb: TestDb,
-	rows: Partial<Record<QueryKind, Rows>> = {},
-	flags: Partial<OrganizationFeatureFlags> = { cloudCost: true },
-) =>
+/** The reads over `testDb` and a fake warehouse. */
+const makeHarness = (testDb: TestDb, rows: Partial<Record<QueryKind, Rows>> = {}) =>
 	Effect.gen(function* () {
 		yield* TestClock.setTime(Date.parse(NOW))
 		const { warehouse, statements } = makeWarehouse(rows)
 		const database = yield* Database
-		const reads = makeCostReads({ warehouse, queryEngine, database, featureFlags: withFlags(flags) })
+		const reads = makeCostReads({ warehouse, queryEngine, database })
 		return { reads, statements }
 	})
 
@@ -846,7 +834,6 @@ describe("makeCostReads", () => {
 					warehouse,
 					queryEngine: engine,
 					database: yield* Database,
-					featureFlags: withFlags({ cloudCost: true }),
 				})
 				yield* reads.totals(tenant, new CostTotalsRequest(WINDOW))
 				expect(computed).toEqual(["costCurrencies", "costTotals"])
@@ -866,24 +853,4 @@ describe("makeCostReads", () => {
 			}).pipe(Effect.provide(testDb.layer))
 		},
 	)
-
-	it.effect("refuses every read for an org outside the cloudCost rollout", () => {
-		const testDb = createTestDb(trackedDbs)
-		return Effect.gen(function* () {
-			yield* insertSources(testDb, [{ id: SOURCE_A }])
-			const { reads, statements } = yield* makeHarness(testDb, {}, { statusPages: true })
-			const refusals = yield* Effect.all([
-				Effect.flip(reads.totals(tenant, new CostTotalsRequest(WINDOW))),
-				Effect.flip(reads.timeseries(tenant, new CostTimeseriesRequest(WINDOW))),
-				Effect.flip(
-					reads.breakdown(tenant, new CostBreakdownRequest({ ...WINDOW, groupBy: "region" })),
-				),
-				Effect.flip(reads.sources(tenant)),
-			])
-			expect(Arr.map(refusals, (error) => error._tag)).toEqual(
-				Arr.replicate("@maple/http/errors/CloudCostDisabledError", 4),
-			)
-			expect(statements).toEqual([])
-		}).pipe(Effect.provide(testDb.layer))
-	})
 })

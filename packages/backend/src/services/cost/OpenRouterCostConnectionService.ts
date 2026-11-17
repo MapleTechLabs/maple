@@ -4,7 +4,6 @@
  * the source and its history, removing it removes the source.
  */
 import {
-	CloudCostDisabledError,
 	OpenRouterKeyPersistenceError,
 	OpenRouterKeyValidationError,
 	type OrgId,
@@ -20,7 +19,6 @@ import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platfo
 import { Env } from "@maple/backend/platform/Env"
 import { sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { openRouterCostKeySlot } from "@maple/backend/platform/secret-slots"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import * as OpenRouterApi from "@maple/backend/services/org/openrouter-api"
 import { reconcileOpenRouterCostSources } from "./openrouter-cost-sources"
 
@@ -65,7 +63,7 @@ export interface OpenRouterCostConnectionServiceApi {
 		apiKey: string,
 	) => Effect.Effect<
 		{ readonly keyLabel: string },
-		OpenRouterKeyPersistenceError | OpenRouterKeyValidationError | CloudCostDisabledError
+		OpenRouterKeyPersistenceError | OpenRouterKeyValidationError
 	>
 	readonly remove: (orgId: OrgId) => Effect.Effect<void, OpenRouterKeyPersistenceError>
 }
@@ -77,7 +75,6 @@ export class OpenRouterCostConnectionService extends Context.Service<
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const env = yield* Env
-		const featureFlags = yield* OrganizationFeatureFlagsService
 		const httpClient = yield* HttpClient.HttpClient
 		const keyring = yield* secretKeyringFromEnv(
 			env,
@@ -140,12 +137,6 @@ export class OpenRouterCostConnectionService extends Context.Service<
 			rawKey: string,
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId })
-			const flags = yield* featureFlags.flags(orgId)
-			if (!flags.cloudCost) {
-				return yield* new CloudCostDisabledError({
-					message: "Cloud cost is not enabled for this organization.",
-				})
-			}
 			const apiKey = Str.trim(rawKey)
 			if (!OpenRouterApi.isOpenRouterKey(apiKey)) {
 				return yield* new OpenRouterKeyValidationError({
@@ -238,7 +229,5 @@ export class OpenRouterCostConnectionService extends Context.Service<
 		return { set, remove } satisfies OpenRouterCostConnectionServiceApi
 	}),
 }) {
-	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(FetchHttpClient.layer, OrganizationFeatureFlagsService.layer)),
-	)
+	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(FetchHttpClient.layer))
 }

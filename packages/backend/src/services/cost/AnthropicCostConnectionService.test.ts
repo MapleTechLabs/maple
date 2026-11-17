@@ -105,46 +105,36 @@ describe("AnthropicCostConnectionService", () => {
 		)
 	})
 
-	it.effect(
-		"never sends text that is not an Admin API key, nor any key of an org outside the rollout",
-		() => {
-			const testDb = createTestDb(trackedDbs)
-			const world = makeFakeAnthropic()
-			return run(
-				testDb,
-				world,
-				Effect.gen(function* () {
-					const refusals = yield* Effect.forEach(
-						[
-							"",
-							// A regular API key, which cannot read costs.
-							"sk-ant-api03-0123456789abcdefghij",
-							"sk-ant-admin",
-							"sk-ant-admin01 two words",
-							`sk-ant-admin01-${Str.repeat(600)("a")}`,
-						],
-						(text) => Effect.map(Effect.flip(set(text)), (error) => [error._tag, error.message]),
-					)
-					assert.deepStrictEqual(
-						refusals,
-						Arr.replicate(
-							[
-								VALIDATION,
-								"That is not an Anthropic Admin API key. They start with sk-ant-admin.",
-							],
-							5,
-						),
-					)
-
-					world.cloudCost = false
-					const outside = yield* Effect.flip(set(KEY))
-					assert.strictEqual(outside._tag, "@maple/http/errors/CloudCostDisabledError")
-					assert.deepStrictEqual(world.urls, [])
-					assert.isUndefined(yield* storedKey(testDb))
-				}),
-			)
-		},
-	)
+	it.effect("never sends text that is not an Admin API key", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeFakeAnthropic()
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				const refusals = yield* Effect.forEach(
+					[
+						"",
+						// A regular API key, which cannot read costs.
+						"sk-ant-api03-0123456789abcdefghij",
+						"sk-ant-admin",
+						"sk-ant-admin01 two words",
+						`sk-ant-admin01-${Str.repeat(600)("a")}`,
+					],
+					(text) => Effect.map(Effect.flip(set(text)), (error) => [error._tag, error.message]),
+				)
+				assert.deepStrictEqual(
+					refusals,
+					Arr.replicate(
+						[VALIDATION, "That is not an Anthropic Admin API key. They start with sk-ant-admin."],
+						5,
+					),
+				)
+				assert.deepStrictEqual(world.urls, [])
+				assert.isUndefined(yield* storedKey(testDb))
+			}),
+		)
+	})
 
 	it.effect("refuses a key Anthropic rejects, and one that cannot read the cost report", () => {
 		const testDb = createTestDb(trackedDbs)
@@ -258,7 +248,7 @@ describe("AnthropicCostConnectionService", () => {
 		)
 	})
 
-	it.effect("removes the key and its source together, without needing the rollout", () => {
+	it.effect("removes the key and its source together", () => {
 		const testDb = createTestDb(trackedDbs)
 		const world = makeFakeAnthropic()
 		return run(
@@ -266,7 +256,6 @@ describe("AnthropicCostConnectionService", () => {
 			world,
 			Effect.gen(function* () {
 				yield* set(KEY)
-				world.cloudCost = false
 				yield* remove
 				assert.isUndefined(yield* storedKey(testDb))
 				assert.isUndefined(yield* source(testDb))

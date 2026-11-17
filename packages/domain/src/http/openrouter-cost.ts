@@ -7,7 +7,6 @@ import {
 	OpenRouterKeyUpdateRequest,
 	OpenRouterKeyValidationError,
 } from "./openrouter-key"
-import { CloudCostDisabledError } from "./query-engine"
 
 /** The saved management key never comes back: `keyLabel` is how OpenRouter masks it. */
 export class OpenRouterCostKeySaved extends Schema.Class<OpenRouterCostKeySaved>("OpenRouterCostKeySaved")({
@@ -26,12 +25,7 @@ export class OpenRouterCostApiGroup extends HttpApiGroup.make("openRouterCost")
 		HttpApiEndpoint.put("set", "/", {
 			payload: OpenRouterKeyUpdateRequest,
 			success: OpenRouterCostKeySaved,
-			error: [
-				OpenRouterKeyPersistenceError,
-				OpenRouterKeyForbiddenError,
-				OpenRouterKeyValidationError,
-				CloudCostDisabledError,
-			],
+			error: [OpenRouterKeyPersistenceError, OpenRouterKeyForbiddenError, OpenRouterKeyValidationError],
 		}),
 	)
 	.add(

@@ -13,7 +13,6 @@ import { icon } from "@maple/views/ui/icon"
 import type { MenuEntry, MenuItemEntry } from "@maple/views/ui/menu-view"
 import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
 import { skeleton } from "@maple/views/ui/skeleton"
-import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { detailActions, detailTitle, detailTitleSkeleton } from "../../kit/detail-header"
@@ -23,7 +22,6 @@ import type * as Dialog from "@maple/views/ui/dialog"
 import { sidePanelSheet } from "@maple/views/ui/sheet"
 import { statusPageHref, statusPagesHref, statusPageViewHref } from "../shared/commands"
 import { statusPageNotFound } from "../shared/not-found"
-import { pageUrlOf } from "./update-domain"
 import {
 	COMPONENT_STATUS_LABEL,
 	COMPONENT_STATUS_TONE,
@@ -121,35 +119,12 @@ const publishButton = (h: H, model: Model): Html =>
 		),
 	)
 
-/** The public page in a new tab; disabled, with the reason on hover, while it has no address. */
-const openPageButton = (h: H, model: Model, page: V2StatusPage): Html => {
-	const url = pageUrlOf(model, page)
-	const label = [icon(h, "ExternalLinkIcon"), "Open page"]
-	if (page.visibility === "internal")
-		return linkButton(h, { size: "sm", variant: "outline", href: statusPageViewHref(page.id) }, [
-			icon(h, "EyeIcon"),
-			"Open page",
-		])
-	if (url !== null && !page.draft)
-		return linkButton(
-			h,
-			{
-				size: "sm",
-				variant: "outline",
-				href: url,
-				attributes: [h.Target("_blank"), h.Rel("noopener")],
-			},
-			label,
-		)
-	// A disabled button fires no hover, so its wrapper carries the reason as a tooltip.
-	return h.span(
-		tooltipTrigger(
-			h,
-			url === null ? "No status domain is configured yet" : "Publish the page to open it",
-		),
-		[button(h, { size: "sm", variant: "outline", isDisabled: true }, label)],
-	)
-}
+/** The page full screen inside Maple, whatever its visibility, domain or draft state. */
+const openPageButton = (h: H, page: V2StatusPage): Html =>
+	linkButton(h, { size: "sm", variant: "outline", href: statusPageViewHref(page.id) }, [
+		icon(h, "EyeIcon"),
+		"Open page",
+	])
 
 /** Incidents and Maintenance lead with posting one; the other tabs with the page itself. */
 const headerActions = (h: H, model: Model, page: V2StatusPage): Html => {
@@ -181,7 +156,7 @@ const headerActions = (h: H, model: Model, page: V2StatusPage): Html => {
 	const entries = menuEntries(model, page)
 	return detailActions(h, [
 		...(page.draft ? [publishButton(h, model)] : []),
-		openPageButton(h, model, page),
+		openPageButton(h, page),
 		...(entries.length === 0
 			? []
 			: [

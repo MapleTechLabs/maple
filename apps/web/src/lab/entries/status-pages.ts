@@ -30,6 +30,12 @@ import { componentsOf, listedComponentsOf, pageOf } from "../../page/status-page
 import { subscriptions as editorSubscriptions } from "../../page/status-pages/editor/subscription"
 import { init as editorInit, update as editorUpdate } from "../../page/status-pages/editor/update"
 import { view as editorView } from "../../page/status-pages/editor/view"
+import { Message as ViewerMessage } from "../../page/status-pages/viewer/message"
+import { Model as ViewerModel } from "../../page/status-pages/viewer/model"
+import { init as viewerInit, update as viewerUpdate } from "../../page/status-pages/viewer/update"
+import { view as viewerView } from "../../page/status-pages/viewer/view"
+import { StatusPageVisibility } from "@maple/domain"
+import { makeSnapshot } from "@maple/status-page/fixtures"
 import { componentPayload } from "../../page/status-pages/shared/form"
 import { GroupDialogMessage } from "../../page/status-pages/shared/group-dialog"
 import { monitorKey } from "../../page/status-pages/shared/picker"
@@ -50,11 +56,12 @@ import { labGrants, LabRole, readLabRole } from "../viewer-role"
 
 // `/lab/status-pages`: the status pages list, the look picker and the form fields over fixture
 // pages, the list with no page yet, a page's editor open on an incident, on Settings > Monitors
-// with grouped components to drag (`monitors-group` with a Group dialog open), or the new page
-// builder (`new`, `new-empty`, `new-add`, `new-group`, `new-domain`),
-// as the viewer `?role=` names: an analyst reads the incident and gets no control that posts, edits
-// or deletes one. The editor runs for real with no API: a reorder, a component's Save and an Access
-// save land at once, every other read and write is dropped.
+// with grouped components to drag (`monitors-group` with a Group dialog open), the full-screen
+// preview "Open page" opens, as a public, password or internal page (`preview&visibility=public|
+// password|internal`), or the new page builder (`new`, `new-empty`, `new-add`, `new-group`,
+// `new-domain`), as the viewer `?role=` names: an analyst reads the incident and gets no control
+// that posts, edits or deletes one. The editor runs for real with no API: a reorder, a component's
+// Save and an Access save land at once, every other read and write is dropped.
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)(LAB_ORG),
@@ -68,6 +75,7 @@ const PAGES = [
 	"editor",
 	"monitors",
 	"monitors-group",
+	"preview",
 	"new",
 	"new-empty",
 	"new-add",
@@ -82,16 +90,24 @@ const isListPage = (page: LabPage): boolean => page === "list" || page === "empt
 const isBuilderPage = (page: LabPage): boolean => Str.startsWith("new")(page)
 const decodePage = Schema.decodeUnknownOption(LabPage)
 
-const Model = Schema.Struct({ page: LabPage, list: ListModel, editor: EditorModel, builder: BuilderModel })
+const Model = Schema.Struct({
+	page: LabPage,
+	list: ListModel,
+	editor: EditorModel,
+	viewer: ViewerModel,
+	builder: BuilderModel,
+})
 type Model = typeof Model.Type
 const Message = defineMessageUnion({
 	GotListMessage: { message: ListMessage },
 	GotEditorMessage: { message: EditorMessage },
 	GotBuilderMessage: { message: BuilderMessage },
+	GotViewerMessage: { message: ViewerMessage },
 	Ignored: {},
 })
 type Message = typeof Message.Type
-const Flags = Schema.Struct({ page: LabPage, role: LabRole })
+const Flags = Schema.Struct({ page: LabPage, role: LabRole, visibility: StatusPageVisibility })
+const decodeVisibility = Schema.decodeUnknownOption(StatusPageVisibility)
 type Flags = typeof Flags.Type
 
 const listModel = (role: LabRole, pages: ReadonlyArray<StatusPageSummary>): ListModel => {
@@ -108,6 +124,23 @@ const listModel = (role: LabRole, pages: ReadonlyArray<StatusPageSummary>): List
 		entered,
 		ListMessage.CompletedFetchPages({ key: entered.pages.key ?? "", result: Result.succeed(pages) }),
 	)
+}
+
+/** The full-screen preview over the fixture snapshot, read back as the page's `visibility`. */
+const viewerModel = (visibility: StatusPageVisibility): ViewerModel => {
+	const entered = viewerInit(
+		{ _tag: "StatusPageView", pageId: Schema.encodeSync(StatusPagePublicId)(statusPage().id) },
+		context,
+	).model
+	const snapshot = makeSnapshot()
+	return viewerUpdate(
+		entered,
+		ViewerMessage.CompletedFetchView({
+			key: entered.snapshot.key ?? "",
+			result: Result.succeed({ ...snapshot, page: { ...snapshot.page, visibility } }),
+		}),
+		context,
+	).model
 }
 
 /** Settings > Monitors: three groups, the ungrouped last, one component driven by a down monitor. */
@@ -349,6 +382,10 @@ const update = (model: Model, message: Message): Return =>
 				),
 			}
 		},
+		// The preview's switches only redraw it; its one read (Try again) is dropped.
+		GotViewerMessage: ({ message: child }) => ({
+			model: { ...model, viewer: viewerUpdate(model.viewer, child, context).model },
+		}),
 		GotListMessage: () => ({ model }),
 		Ignored: () => ({ model }),
 	})
@@ -378,15 +415,23 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 				viewInputs: { context },
 				toParentMessage: (message) => Message.GotBuilderMessage({ message }),
 			})
-		: !isListPage(model.page)
+		: model.page === "preview"
 			? h.submodel({
-					slotId: "status-pages-lab-editor",
-					model: model.editor,
-					view: editorView,
+					slotId: "status-pages-lab-viewer",
+					model: model.viewer,
+					view: viewerView,
 					viewInputs: { context },
-					toParentMessage: (message) => Message.GotEditorMessage({ message }),
+					toParentMessage: (message) => Message.GotViewerMessage({ message }),
 				})
-			: listPage(model, h)
+			: !isListPage(model.page)
+				? h.submodel({
+						slotId: "status-pages-lab-editor",
+						model: model.editor,
+						view: editorView,
+						viewInputs: { context },
+						toParentMessage: (message) => Message.GotEditorMessage({ message }),
+					})
+				: listPage(model, h)
 
 const listPage = (model: Model, h: HtmlBuilder<Message>): Html =>
 	h.div(
@@ -454,6 +499,10 @@ export const lab = defineShellLab("Status pages", {
 			(): LabPage => "list",
 		),
 		role,
+		visibility: Option.getOrElse(
+			decodeVisibility(new URLSearchParams(globalThis.location.search).get("visibility")),
+			(): StatusPageVisibility => "public",
+		),
 	})),
 	init: (flags: Flags) => {
 		const builder = builderModel(flags.role, flags.page)
@@ -487,6 +536,7 @@ export const lab = defineShellLab("Status pages", {
 				page: flags.page,
 				list: listModel(flags.role, flags.page === "empty" ? [] : LAB_PAGES),
 				editor: grouped.model,
+				viewer: viewerModel(flags.visibility),
 				builder: builder.model,
 			},
 			commands: [
