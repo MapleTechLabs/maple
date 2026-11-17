@@ -91,8 +91,14 @@ const activeSubHrefOf = (subItems: ReadonlyArray<NavSubItem>, currentPath: strin
 			: best
 	})?.href
 
-const collapsedSectionRow = (h: HtmlBuilder<Message>, model: Model, item: NavItem, isActive: boolean): Html =>
-	sidebarMenuItem(h, undefined, [
+const collapsedSectionRow = (
+	h: HtmlBuilder<Message>,
+	model: Model,
+	item: NavItem,
+	isActive: boolean,
+	className: string | undefined,
+): Html =>
+	sidebarMenuItem(h, className, [
 		sidebarMenuButton(
 			h,
 			{
@@ -178,8 +184,11 @@ const navRow = (
 	item: NavItem,
 	currentPath: string,
 	tip: RailTip,
-	isGroupFolded = false,
+	isGroupFolded: boolean,
+	startsGroup: boolean,
 ): Html => {
+	// An 8px gap, not a rule, sets a row apart from the ones above it.
+	const className = startsGroup ? "mt-2" : undefined
 	const isActive = isNavItemActive(currentPath, item)
 	const isCollapsed = !model.isSidebarOpen && !model.isMobile
 	const allSubItems =
@@ -187,7 +196,7 @@ const navRow = (
 			? undefined
 			: partitionSubItems(item.subItems, surfacesOf(model), currentPath).shown
 	if (isCollapsed && allSubItems !== undefined && allSubItems.length > 0)
-		return collapsedSectionRow(h, model, item, isActive)
+		return collapsedSectionRow(h, model, item, isActive, className)
 	// A folded group keeps where you are: the section row and, under it, the current sub-item alone.
 	const subItems =
 		isGroupFolded && allSubItems !== undefined
@@ -197,7 +206,7 @@ const navRow = (
 	// The tint belongs to the sub-item that is the current page, when one is.
 	const hasActiveChild = isOpen && activeSubHrefOf(subItems, currentPath) !== undefined
 	const preview = isOpen || allSubItems === undefined ? undefined : navPreview(item, allSubItems)
-	return sidebarMenuItem(h, undefined, [
+	return sidebarMenuItem(h, className, [
 		sidebarMenuButton(
 			h,
 			{
@@ -374,8 +383,16 @@ export const navGroupSections = (
 							sidebarMenu(
 								h,
 								undefined,
-								Arr.map(rows, (item) =>
-									navRow(h, model, item, currentPath, tip, fold === "collapsed"),
+								Arr.map(rows, (item, index) =>
+									navRow(
+										h,
+										model,
+										item,
+										currentPath,
+										tip,
+										fold === "collapsed",
+										item.startsGroup === true && index > 0,
+									),
 								),
 							),
 						],
