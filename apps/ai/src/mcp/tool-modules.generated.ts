@@ -75,6 +75,7 @@ export const MCP_TOOL_MODULES: ReadonlyArray<McpToolModule> = [
 	{ name: "explore_attributes", tool: "explore_attributes", title: "Explore Attributes", audience: "public", load: () => import("./tools/explore-attributes").then((module) => module.registerExploreAttributesTool) },
 	{ name: "list_services", tool: "list_services", title: "List Services", audience: "public", load: () => import("./tools/list-services").then((module) => module.registerListServicesTool) },
 	{ name: "get_service_top_operations", tool: "get_service_top_operations", title: "Service Top Operations", audience: "public", load: () => import("./tools/get-service-top-operations").then((module) => module.registerGetServiceTopOperationsTool) },
+	{ name: "profile_hotspots", tool: "profile_hotspots", title: "Profile Hotspots", audience: "public", load: () => import("./tools/profile-hotspots").then((module) => module.registerProfileHotspotsTool) },
 	{ name: "service_deployments", tool: "service_deployments", title: "Service Deployments", audience: "public", load: () => import("./tools/service-deployments").then((module) => module.registerServiceDeploymentsTool) },
 	{ name: "route_usage", tool: "route_usage", title: "Route Usage", audience: "public", load: () => import("./tools/route-usage").then((module) => module.registerRouteUsageTool) },
 	{ name: "ingest_freshness", tool: "ingest_freshness", title: "Ingest Freshness", audience: "public", load: () => import("./tools/ingest-freshness").then((module) => module.registerIngestFreshnessTool) },

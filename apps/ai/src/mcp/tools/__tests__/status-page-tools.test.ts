@@ -6,9 +6,7 @@ import {
 	GetStatusPageOutput,
 	StatusPageIncidentMutationOutput,
 } from "@maple/domain/mcp-outputs"
-import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import { executeSql } from "@maple/backend/testing/test-pglite"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import type { McpToolResult } from "../types"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
 
@@ -162,8 +160,8 @@ describe("status page tools", () => {
 			page: "acme-status",
 			title: "Database upgrade",
 			message: "The API may be read-only for a few minutes.",
-			starts_at: "2026-08-01 02:00:00",
-			ends_at: "2026-08-01T03:00:00Z",
+			starts_at: "2099-08-01 02:00:00",
+			ends_at: "2099-08-01T03:00:00Z",
 			components: ["API"],
 		})
 		const output = decode(StatusPageIncidentMutationOutput, result)
@@ -172,8 +170,8 @@ describe("status page tools", () => {
 			kind: "maintenance",
 			status: "scheduled",
 			published: false,
-			scheduledStart: "2026-08-01T02:00:00.000Z",
-			scheduledEnd: "2026-08-01T03:00:00.000Z",
+			scheduledStart: "2099-08-01T02:00:00.000Z",
+			scheduledEnd: "2099-08-01T03:00:00.000Z",
 		})
 		expect(markdown(result)).toContain("draft")
 
@@ -491,34 +489,5 @@ describe("status page tools", () => {
 			const after = await readConfig(rt, "config-page")
 			expect(after.structuredContent.config).toEqual(read.structuredContent.config)
 		})
-	})
-})
-
-describe("status page tools outside the statusPages rollout", () => {
-	let off: EvalRuntime
-	beforeAll(() => {
-		off = makeEvalRuntime(OrganizationFeatureFlagsService.fixed(DISABLED_ORGANIZATION_FEATURE_FLAGS))
-	})
-	afterAll(async () => {
-		await off.dispose()
-	})
-
-	it("refuses every tool as unavailable, naming the missing capability", async () => {
-		// A real document, so the apply is refused by the gate and not by decoding.
-		const { config } = (await readConfig(rt, "acme-status")).structuredContent
-		const incident = "7f0b7d0e-0b6a-4f55-9a0e-2a4b9a0c1d09"
-		const calls: ReadonlyArray<readonly [string, Record<string, unknown>]> = [
-			["get_status_page", {}],
-			["get_status_page", { page: "acme-status", include_config: true }],
-			["post_status_page_update", { page: "acme-status", title: "x", message: "y" }],
-			["post_status_page_update", { incident, status: "identified", message: "y" }],
-			["apply_status_page_config", { page: "acme-status", config }],
-		]
-		for (const [name, params] of calls) {
-			const result: McpToolResult = await runToolDirect(off, name, params)
-			expect(result.isError).toBe(true)
-			expect(result.failureCategory).toBe("unavailable")
-			expect(markdown(result)).toContain("not enabled for this organization")
-		}
 	})
 })

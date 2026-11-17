@@ -151,6 +151,7 @@ import {
 	RouteUsageOutput,
 	ServiceDeploymentsOutput,
 } from "./service-activity"
+import { ProfileHotspotsOutput } from "./profiles"
 import {
 	FindSlowTracesOutput,
 	InspectSpanOutput,
@@ -211,6 +212,7 @@ export const McpToolOutputs = {
 	get_investigation: GetInvestigationOutput,
 	get_instrumentation_recommendations: GetInstrumentationRecommendationsOutput,
 	get_service_top_operations: GetServiceTopOperationsOutput,
+	profile_hotspots: ProfileHotspotsOutput,
 	get_session_traces: GetSessionTracesOutput,
 	get_session_transcript: GetSessionTranscriptOutput,
 	ingest_freshness: IngestFreshnessOutput,

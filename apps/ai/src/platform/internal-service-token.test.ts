@@ -15,6 +15,10 @@ describe("checkInternalServiceToken", () => {
 		expect(checkInternalServiceToken("", configured)).toBe("rejected")
 	})
 
+	it("rejects a token of the same character length but more UTF-8 bytes", () => {
+		expect(checkInternalServiceToken("maple_svc_éééééé", configured)).toBe("rejected")
+	})
+
 	it("treats a blank configured token as none, so a bare prefix never matches it", () => {
 		expect(checkInternalServiceToken("maple_svc_", Option.some(Redacted.make("")))).toBe("unconfigured")
 		expect(checkInternalServiceToken("maple_svc_s3cret", Option.none())).toBe("unconfigured")

@@ -126,6 +126,36 @@ const matchesEmpty = (m: LabelMatcher, regex: LabelRegex | undefined): boolean =
 const isModifiable = (expr: Expr): boolean =>
 	expr.type === "VectorSelector" || expr.type === "MatrixSelector" || expr.type === "Subquery"
 
+type Token =
+	| { readonly kind: "operand"; readonly node: SyntaxNode }
+	| { readonly kind: "number"; readonly node: SyntaxNode; readonly text: string }
+	| { readonly kind: "unary"; readonly op: "-" | "+"; readonly position: number }
+	| { readonly kind: "binary"; readonly node: SyntaxNode }
+	| { readonly kind: "postfix"; readonly node: SyntaxNode }
+
+/** Prometheus' binary precedence, loosest first; `^` alone is right-associative. */
+const PRECEDENCE = {
+	or: 1,
+	and: 2,
+	unless: 2,
+	"==": 3,
+	"!=": 3,
+	">": 3,
+	"<": 3,
+	">=": 3,
+	"<=": 3,
+	"+": 4,
+	"-": 4,
+	"*": 5,
+	"/": 5,
+	"%": 5,
+	atan2: 5,
+	"^": 6,
+} satisfies Record<BinaryOp, number>
+
+/** A unary operator takes `*`'s precedence, so its operand only extends over `^`. */
+const UNARY_OPERAND_PRECEDENCE = 6
+
 class Converter {
 	/** Selectors and subqueries that already carry an `offset`; `offset 0s` leaves the value at 0. */
 	private readonly offsetSet = new WeakSet()
@@ -313,6 +343,7 @@ class Converter {
 					return yield* this.expr(inner[0])
 				}
 				case "NumberDurationLiteral": {
+					if (/^[+-]/.test(this.text(node))) return yield* this.operators(node)
 					const value = yield* required(
 						parseNumber(this.text(node)),
 						node,
@@ -325,74 +356,29 @@ class Converter {
 				case "VectorSelector":
 					return yield* this.vectorSelector(node)
 				case "MatrixSelector": {
+					if (node.getChild("VectorSelector") === null) return yield* this.operators(node)
 					const vectorNode = yield* required(
 						node.getChild("VectorSelector"),
 						node,
 						"ranges only allowed for vector selectors",
 					)
-					const rangeNode = yield* required(node.getChild("DurationExpr"), node, "missing range")
-					const rangeMs = yield* this.duration(rangeNode)
-					if (rangeMs <= 0) return yield* fail(rangeNode, "range must be positive")
+					const rangeMs = yield* this.range(node)
 					return { type: "MatrixSelector", vector: yield* this.vectorSelector(vectorNode), rangeMs }
-				}
-				case "SubqueryExpr": {
-					const inner = yield* required(exprChildren(node)[0], node, "missing subquery expression")
-					const durations = children(node).filter((c) => c.name === "DurationExpr")
-					const rangeNode = yield* required(durations[0], node, "missing subquery range")
-					const rangeMs = yield* this.duration(rangeNode)
-					const stepMs = durations[1] === undefined ? undefined : yield* this.duration(durations[1])
-					if (rangeMs <= 0) return yield* fail(rangeNode, "zero or negative subquery range")
-					if (stepMs !== undefined && stepMs <= 0)
-						return yield* fail(node, "zero or negative subquery step")
-					return {
-						type: "Subquery",
-						expr: yield* this.expr(inner),
-						rangeMs,
-						stepMs,
-						offsetMs: 0,
-						at: undefined,
-					}
-				}
-				case "OffsetExpr": {
-					const inner = yield* required(
-						exprChildren(node)[0],
-						node,
-						"missing expression before offset",
-					)
-					const offsetNode = yield* required(
-						node.getChild("OffsetDurationExpr"),
-						node,
-						"missing offset",
-					)
-					const offsetMs = yield* this.offset(offsetNode)
-					return yield* this.withModifier(yield* this.expr(inner), node, { offsetMs })
-				}
-				case "StepInvariantExpr": {
-					const inner = yield* required(exprChildren(node)[0], node, "missing expression before @")
-					const at = yield* this.at(node)
-					return yield* this.withModifier(yield* this.expr(inner), node, { at })
 				}
 				case "ParenExpr": {
 					const inner = yield* required(exprChildren(node)[0], node, "empty parentheses")
 					return { type: "Paren", expr: yield* this.expr(inner) }
 				}
-				case "UnaryExpr": {
-					const opNode = yield* required(node.getChild("UnaryOp"), node, "missing unary operator")
-					const inner = yield* required(exprChildren(node)[0], node, "missing operand")
-					const op = this.text(opNode) === "-" ? "-" : "+"
-					const expr = yield* this.expr(inner)
-					// `-1` is a literal, as in Prometheus' own parser.
-					if (expr.type === "NumberLiteral") {
-						return { type: "NumberLiteral", value: op === "-" ? -expr.value : expr.value }
-					}
-					return { type: "Unary", op, expr }
-				}
+				case "SubqueryExpr":
+				case "OffsetExpr":
+				case "StepInvariantExpr":
+				case "UnaryExpr":
+				case "BinaryExpr":
+					return yield* this.operators(node)
 				case "FunctionCall":
 					return yield* this.call(node)
 				case "AggregateExpr":
 					return yield* this.aggregate(node)
-				case "BinaryExpr":
-					return yield* this.binary(node)
 				default:
 					return yield* fail(node, `unsupported syntax: ${node.name}`)
 			}
@@ -400,12 +386,10 @@ class Converter {
 	}
 
 	withModifier(expr: Expr, node: SyntaxNode, mod: { offsetMs?: number; at?: AtModifier }): R<Expr> {
-		if (!isModifiable(expr))
-			return fail(node, "offset and @ modifiers must follow a selector or subquery")
+		const misplaced = `${mod.at === undefined ? "offset" : "@"} modifier must be preceded by an instant vector selector or range vector selector or a subquery`
+		if (!isModifiable(expr)) return fail(node, misplaced)
 		const target = expr.type === "MatrixSelector" ? expr.vector : expr
-		if (target.type !== "VectorSelector" && target.type !== "Subquery") {
-			return fail(node, "offset and @ modifiers must follow a selector or subquery")
-		}
+		if (target.type !== "VectorSelector" && target.type !== "Subquery") return fail(node, misplaced)
 		const hasOffset = this.offsetSet.has(target)
 		if (mod.offsetMs !== undefined && hasOffset) return fail(node, "offset may not be set multiple times")
 		if (mod.at !== undefined && target.at !== undefined)
@@ -420,7 +404,7 @@ class Converter {
 			return Result.succeed({ ...expr, vector: marked({ ...expr.vector, offsetMs, at }) })
 		if (expr.type === "VectorSelector") return Result.succeed(marked({ ...expr, offsetMs, at }))
 		if (expr.type === "Subquery") return Result.succeed(marked({ ...expr, offsetMs, at }))
-		return fail(node, "offset and @ modifiers must follow a selector or subquery")
+		return fail(node, misplaced)
 	}
 
 	call(node: SyntaxNode): R<Expr> {
@@ -478,18 +462,198 @@ class Converter {
 		})
 	}
 
-	binary(node: SyntaxNode): R<Expr> {
+	range(node: SyntaxNode): R<number> {
 		return Result.gen(this, function* () {
-			const parts = children(node)
-			const operands = parts.filter((c) => EXPR_NODES.has(c.name))
-			const lhsNode = yield* required(operands[0], node, "missing left operand")
-			const rhsNode = yield* required(operands[1], node, "missing right operand")
-			const opNode = yield* required(
-				parts.find((c) => lookup(BINARY_OPS, c.name) !== undefined),
-				node,
-				"missing operator",
-			)
-			const op = yield* required(lookup(BINARY_OPS, opNode.name), opNode, "unknown operator")
+			const rangeNode = yield* required(node.getChild("DurationExpr"), node, "missing range")
+			const rangeMs = yield* this.duration(rangeNode)
+			if (rangeMs <= 0) return yield* fail(rangeNode, "range must be positive")
+			return rangeMs
+		})
+	}
+
+	/** Lezer's operator tree in source order; signs it folded into number tokens become unary operators. */
+	flatten(node: SyntaxNode, out: Token[]): R<Token[]> {
+		return Result.gen(this, function* () {
+			const inner = () => required(exprChildren(node)[0], node, `missing operand in ${this.text(node)}`)
+			switch (node.name) {
+				case "BinaryExpr": {
+					const [lhs, rhs] = exprChildren(node)
+					yield* this.flatten(yield* required(lhs, node, "missing left operand"), out)
+					out.push({ kind: "binary", node })
+					yield* this.flatten(yield* required(rhs, node, "missing right operand"), out)
+					return out
+				}
+				case "UnaryExpr": {
+					const opNode = yield* required(node.getChild("UnaryOp"), node, "missing unary operator")
+					out.push({
+						kind: "unary",
+						op: this.text(opNode) === "-" ? "-" : "+",
+						position: node.from,
+					})
+					return yield* this.flatten(yield* inner(), out)
+				}
+				case "NumberDurationLiteral": {
+					const text = this.text(node)
+					const sign = /^([+-])\s*/.exec(text)
+					if (sign === null) {
+						out.push({ kind: "operand", node })
+						return out
+					}
+					out.push({ kind: "unary", op: sign[1] === "-" ? "-" : "+", position: node.from })
+					out.push({ kind: "number", node, text: text.slice(sign[0].length) })
+					return out
+				}
+				case "OffsetExpr":
+				case "StepInvariantExpr":
+				case "SubqueryExpr":
+					yield* this.flatten(yield* inner(), out)
+					out.push({ kind: "postfix", node })
+					return out
+				case "MatrixSelector":
+					if (node.getChild("VectorSelector") !== null) break
+					yield* this.flatten(yield* inner(), out)
+					out.push({ kind: "postfix", node })
+					return out
+			}
+			out.push({ kind: "operand", node })
+			return out
+		})
+	}
+
+	/** Regroups operators by Prometheus' precedence: modifiers bind to the nearest operand, unary minus as `*`. */
+	operators(node: SyntaxNode): R<Expr> {
+		return Result.gen(this, function* () {
+			const tokens = yield* this.flatten(node, [])
+			const state = { next: 0 }
+			const expr = yield* this.climb(tokens, state, 0)
+			if (state.next !== tokens.length) return yield* fail(node, `unexpected ${this.text(node)}`)
+			return expr
+		})
+	}
+
+	climb(tokens: ReadonlyArray<Token>, state: { next: number }, minPrecedence: number): R<Expr> {
+		return Result.gen(this, function* () {
+			const first = tokens[state.next]
+			if (first === undefined) return yield* fail(this.source.length, "unexpected end of input")
+			state.next += 1
+			let left = yield* this.prefix(first, tokens, state)
+			for (let token = tokens[state.next]; token !== undefined; token = tokens[state.next]) {
+				if (token.kind === "postfix") {
+					state.next += 1
+					left = this.located(yield* this.postfix(left, token.node), left)
+					continue
+				}
+				if (token.kind !== "binary") break
+				const opNode = yield* required(
+					children(token.node).find((c) => lookup(BINARY_OPS, c.name) !== undefined),
+					token.node,
+					"missing operator",
+				)
+				const op = yield* required(lookup(BINARY_OPS, opNode.name), opNode, "unknown operator")
+				const own = lookup(PRECEDENCE, op) ?? 0
+				if (own < minPrecedence) break
+				state.next += 1
+				const rhs = yield* this.climb(tokens, state, op === "^" ? own : own + 1)
+				left = this.located(yield* this.binary(token.node, op, left, rhs), left)
+			}
+			return left
+		})
+	}
+
+	prefix(token: Token, tokens: ReadonlyArray<Token>, state: { next: number }): R<Expr> {
+		return Result.gen(this, function* () {
+			switch (token.kind) {
+				case "operand":
+					return yield* this.expr(token.node)
+				case "number": {
+					const value = yield* required(
+						parseNumber(token.text),
+						token.node,
+						`invalid number ${token.text}`,
+					)
+					const literal: Expr = { type: "NumberLiteral", value }
+					this.positions.set(literal, token.node.from)
+					return literal
+				}
+				case "unary": {
+					// `unary_op expr %prec MUL`: only `^` and modifiers bind tighter.
+					const inner = yield* this.climb(tokens, state, UNARY_OPERAND_PRECEDENCE)
+					// `-1` is a literal, as in Prometheus' own parser.
+					const expr: Expr =
+						inner.type === "NumberLiteral"
+							? { type: "NumberLiteral", value: token.op === "-" ? -inner.value : inner.value }
+							: { type: "Unary", op: token.op, expr: inner }
+					this.positions.set(expr, token.position)
+					return expr
+				}
+				default:
+					return yield* fail(token.node, `unexpected ${this.text(token.node)}`)
+			}
+		})
+	}
+
+	located(expr: Expr, from: Expr): Expr {
+		const position = this.positions.get(from)
+		if (!this.positions.has(expr) && position !== undefined) this.positions.set(expr, position)
+		return expr
+	}
+
+	postfix(expr: Expr, node: SyntaxNode): R<Expr> {
+		return Result.gen(this, function* () {
+			switch (node.name) {
+				case "OffsetExpr": {
+					const offsetNode = yield* required(
+						node.getChild("OffsetDurationExpr"),
+						node,
+						"missing offset",
+					)
+					return yield* this.withModifier(expr, node, { offsetMs: yield* this.offset(offsetNode) })
+				}
+				case "StepInvariantExpr":
+					return yield* this.withModifier(expr, node, { at: yield* this.at(node) })
+				case "MatrixSelector": {
+					// Prometheus points a misplaced range at its `[`.
+					const bracket = this.source.lastIndexOf(
+						"[",
+						node.getChild("DurationExpr")?.from ?? node.to,
+					)
+					if (expr.type !== "VectorSelector")
+						return yield* fail(bracket, "ranges only allowed for vector selectors")
+					if (expr.offsetMs !== 0)
+						return yield* fail(bracket, "no offset modifiers allowed before range")
+					if (expr.at !== undefined)
+						return yield* fail(bracket, "no @ modifiers allowed before range")
+					const matrix: Expr = {
+						type: "MatrixSelector",
+						vector: expr,
+						rangeMs: yield* this.range(node),
+					}
+					return matrix
+				}
+				default: {
+					const durations = children(node).filter((c) => c.name === "DurationExpr")
+					const rangeNode = yield* required(durations[0], node, "missing subquery range")
+					const rangeMs = yield* this.duration(rangeNode)
+					const stepMs = durations[1] === undefined ? undefined : yield* this.duration(durations[1])
+					if (rangeMs <= 0) return yield* fail(rangeNode, "zero or negative subquery range")
+					if (stepMs !== undefined && stepMs <= 0)
+						return yield* fail(node, "zero or negative subquery step")
+					const subquery: Expr = {
+						type: "Subquery",
+						expr,
+						rangeMs,
+						stepMs,
+						offsetMs: 0,
+						at: undefined,
+					}
+					return subquery
+				}
+			}
+		})
+	}
+
+	binary(node: SyntaxNode, op: BinaryOp, lhs: Expr, rhs: Expr): R<Expr> {
+		return Result.gen(this, function* () {
 			if (node.getChild("FillModifier") !== null)
 				return yield* fail(node, "fill modifiers are not supported")
 			const clause = node.getChild("MatchingModifierClause")
@@ -505,8 +669,6 @@ class Converter {
 					include: yield* this.grouping(groups[1] ?? null),
 				}
 			}
-			const lhs = yield* this.expr(lhsNode)
-			const rhs = yield* this.expr(rhsNode)
 			// Prometheus drops an empty `on()`/`ignoring()` next to a scalar; a non-empty one fails type checks.
 			const scalarSide = valueTypeOf(lhs) === "scalar" || valueTypeOf(rhs) === "scalar"
 			if (scalarSide && matching?.labels.length === 0) matching = undefined
