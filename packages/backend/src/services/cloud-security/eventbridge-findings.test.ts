@@ -126,7 +126,7 @@ describe("findingEvent", () => {
 				status: "CLOSED",
 				firstObservedAt: "Mar 31, 2026, 10:51:08 PM",
 				lastObservedAt: "Nov 16, 2026, 9:05:00 AM",
-				updatedAt: "Nov 16, 2026, 12:30:00 PM",
+				updatedAt: "Nov 16, 2026, 12:30:00\u202fPM",
 				packageVulnerabilityDetails: { vulnerabilityId: "CVE-2026-0001" },
 				resources: [{ type: "AWS_EC2_INSTANCE", id: "i-0abc" }],
 			}),
