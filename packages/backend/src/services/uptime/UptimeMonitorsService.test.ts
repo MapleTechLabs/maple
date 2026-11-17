@@ -18,11 +18,16 @@ import { BillingCustomer, OrgId, UserId } from "@maple/domain/http"
 import { AlertDestinationId, UptimeIntervalSeconds, UptimeMonitorId } from "@maple/primitives"
 import {
 	type UptimeCertificate,
+	UPTIME_MAX_BODY_LENGTH,
+	UPTIME_MAX_ERROR_LENGTH,
+	UPTIME_MAX_URL_LENGTH,
 	UPTIME_USER_AGENT,
 	UptimeCheckReport,
 	type UptimeMonitorConfig,
 } from "@maple/domain/uptime"
 import { Env } from "@maple/backend/platform/Env"
+import { sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
+import { uptimeMonitorHeadersSlot } from "@maple/backend/platform/secret-slots"
 import {
 	cleanupTestDbs,
 	createTestDb,
@@ -45,6 +50,8 @@ afterEach(() => cleanupTestDbs(trackedDbs))
 const ORG = Schema.decodeSync(OrgId)("org_uptime")
 const OTHER_ORG = Schema.decodeSync(OrgId)("org_uptime_other")
 const USER = Schema.decodeSync(UserId)("user_uptime")
+
+const repeat = (text: string, count: number) => Str.repeat(count)(text)
 const tokenOf = (url: string) =>
 	Str.slice(Option.match(Str.lastIndexOf("/")(url), { onNone: () => 0, onSome: (index) => index + 1 }))(url)
 const UNKNOWN_ID = UptimeMonitorId.make("00000000-0000-4000-8000-000000000000")
@@ -1721,6 +1728,346 @@ describe("UptimeMonitorsService backing alert rule", () => {
 					"Uptime monitor has request headers outside the sealed columns",
 				])
 			}).pipe(Effect.provide(Layer.merge(makeLayer(testDb), captureWarnings)))
+		})
+
+		const bodyOf = (config: UptimeMonitorConfig) => (config._tag === "http" ? config.body : null)
+		const storedConfig = (testDb: TestDb, id: UptimeMonitorId) =>
+			Effect.map(
+				Effect.promise(() =>
+					queryFirstRow<{ readonly config: string }>(
+						testDb,
+						"select config_json::text as config from uptime_monitors where id = $1",
+						[id],
+					),
+				),
+				(row) => row?.config ?? "",
+			)
+		/** Replaces a monitor's sealed columns with `payload`, sealed as a row written earlier held it. */
+		const sealAs = (testDb: TestDb, id: UptimeMonitorId, payload: unknown) =>
+			Effect.gen(function* () {
+				const env = yield* Env
+				const keyring = yield* secretKeyringFromEnv(env, (message) => message)
+				const sealed = yield* sealSecret(
+					keyring,
+					uptimeMonitorHeadersSlot,
+					{ orgId: ORG, id },
+					JSON.stringify(payload),
+					(message) => message,
+				)
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						`update uptime_monitors set headers_ciphertext = $1, headers_iv = $2, headers_tag = $3
+						 where id = $4`,
+						[sealed.ciphertext, sealed.iv, sealed.tag, id],
+					),
+				)
+			}).pipe(Effect.orDie, Effect.provide(Env.layer.pipe(Layer.provide(config()))))
+		const LOGIN_BODY = '{"user":"probe","password":"hunter2-body"}'
+		const postConfig = (overrides: Partial<Omit<HttpMonitorConfig, "_tag" | "url">> = {}) =>
+			httpConfig(undefined, { method: "POST", body: LOGIN_BODY, ...overrides })
+
+		it.effect("stores a request body sealed, and hands it back to the editor and the probe", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const monitor = yield* service.create(ORG, {
+					name: "Login",
+					kind: "http",
+					config: postConfig(),
+					createdBy: USER,
+				})
+				const dump = yield* Effect.promise(() =>
+					queryFirstRow<{ readonly row: string }>(
+						testDb,
+						"select row_to_json(m)::text as row from uptime_monitors m where id = $1",
+						[monitor.id],
+					),
+				)
+				assert.notInclude(dump?.row ?? "", "hunter2-body")
+				assert.strictEqual(bodyOf(monitor.config), LOGIN_BODY)
+				assert.strictEqual(bodyOf((yield* service.get(ORG, monitor.id)).config), LOGIN_BODY)
+				const [target] = yield* service.listProbeTargets
+				assert.strictEqual(target === undefined ? null : bodyOf(target.config), LOGIN_BODY)
+
+				// Dropping the body leaves nothing sealed behind.
+				const cleared = yield* service.update(ORG, monitor.id, {
+					updatedBy: USER,
+					config: httpConfig(),
+				})
+				assert.isUndefined(bodyOf(cleared.config))
+				assert.strictEqual((yield* storedHeaders(testDb, monitor.id))?.headers_ciphertext, null)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("opens a row sealed before bodies were, and seals its body on the next write", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const monitor = yield* service.create(ORG, {
+					name: "Old login",
+					kind: "http",
+					config: postConfig({ headers: SECRET }),
+					createdBy: USER,
+				})
+				// As written before this change: the header map alone is sealed, the body is in the config.
+				yield* sealAs(testDb, monitor.id, SECRET)
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						`update uptime_monitors
+						 set config_json = jsonb_set(config_json, '{body}', to_jsonb($1::text)) where id = $2`,
+						[LOGIN_BODY, monitor.id],
+					),
+				)
+				assert.include(yield* storedConfig(testDb, monitor.id), "hunter2-body")
+
+				const read = yield* service.get(ORG, monitor.id)
+				assert.deepStrictEqual(headersOf(read.config), SECRET)
+				assert.strictEqual(bodyOf(read.config), LOGIN_BODY)
+				const [target] = yield* service.listProbeTargets
+				assert.strictEqual(target === undefined ? null : bodyOf(target.config), LOGIN_BODY)
+
+				// A write that does not touch the config still moves the body into the sealed columns.
+				const renamed = yield* service.update(ORG, monitor.id, { updatedBy: USER, name: "Login" })
+				assert.notInclude(yield* storedConfig(testDb, monitor.id), "hunter2-body")
+				assert.deepStrictEqual(headersOf(renamed.config), SECRET)
+				assert.strictEqual(bodyOf(renamed.config), LOGIN_BODY)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("opens a multi-step row sealed as one header map per step", () => {
+			const testDb = createTestDb(trackedDbs)
+			const steps = [
+				{
+					name: "Log in",
+					method: "POST" as const,
+					url: "https://status.example.com/login",
+					headers: { "X-Api-Key": "key-123" },
+					body: LOGIN_BODY,
+					assertions: [],
+					extract: [],
+				},
+				{
+					name: "Orders",
+					method: "GET" as const,
+					url: "https://status.example.com/orders",
+					headers: { Authorization: "Bearer static" },
+					assertions: [],
+					extract: [],
+				},
+			]
+			return Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const monitor = yield* service.create(ORG, {
+					name: "Flow",
+					kind: "multistep",
+					config: { _tag: "multistep", timeoutMs: 30_000, steps },
+					createdBy: USER,
+				})
+				assert.notInclude(yield* storedConfig(testDb, monitor.id), "hunter2-body")
+				yield* sealAs(testDb, monitor.id, [
+					{ "X-Api-Key": "key-123" },
+					{ Authorization: "Bearer static" },
+				])
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						`update uptime_monitors
+						 set config_json = jsonb_set(config_json, '{steps,0,body}', to_jsonb($1::text))
+						 where id = $2`,
+						[LOGIN_BODY, monitor.id],
+					),
+				)
+				const read = yield* service.get(ORG, monitor.id)
+				assert.deepStrictEqual(read.config._tag === "multistep" ? read.config.steps : null, steps)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("keeps the stored body for a hidden one, at the same origin only", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const monitor = yield* service.create(ORG, {
+					name: "Login",
+					kind: "http",
+					config: postConfig(),
+					createdBy: USER,
+				})
+				const kept = yield* service.update(ORG, monitor.id, {
+					updatedBy: USER,
+					config: httpConfig("https://status.example.com/v2/login", {
+						method: "POST",
+						body: "[redacted]",
+					}),
+				})
+				assert.strictEqual(bodyOf(kept.config), LOGIN_BODY)
+
+				const moved = yield* Effect.flip(
+					service.update(ORG, monitor.id, {
+						updatedBy: USER,
+						config: httpConfig("https://elsewhere.example.net/login", {
+							method: "POST",
+							body: "[redacted]",
+						}),
+					}),
+				)
+				assert.strictEqual(moved._tag, "@maple/http/errors/UptimeMonitorValidationError")
+				assert.strictEqual(bodyOf((yield* service.get(ORG, monitor.id)).config), LOGIN_BODY)
+
+				// With no body stored there is nothing to keep.
+				const bare = yield* createHttp("No body")
+				const orphan = yield* Effect.flip(
+					service.update(ORG, bare.id, {
+						updatedBy: USER,
+						config: httpConfig(undefined, { method: "POST", body: "[redacted]" }),
+					}),
+				)
+				assert.include(orphan.message, "no stored body to keep")
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("keeps a step's hidden body with that step, and with no other", () => {
+			const testDb = createTestDb(trackedDbs)
+			const step = (name: string, url: string, body?: string) => ({
+				name,
+				method: "POST" as const,
+				url,
+				headers: {},
+				...(body === undefined ? undefined : { body }),
+				assertions: [],
+				extract: [],
+			})
+			const flow = (steps: ReadonlyArray<ReturnType<typeof step>>): UptimeMonitorConfig => ({
+				_tag: "multistep",
+				timeoutMs: 30_000,
+				steps,
+			})
+			const bodies = (config: UptimeMonitorConfig) =>
+				config._tag === "multistep" ? Arr.map(config.steps, (each) => each.body) : null
+			return Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const monitor = yield* service.create(ORG, {
+					name: "Flow",
+					kind: "multistep",
+					config: flow([
+						step("Log in", "https://status.example.com/login", LOGIN_BODY),
+						step("Order", "https://status.example.com/orders", '{"sku":"a-1"}'),
+					]),
+					createdBy: USER,
+				})
+				// Reordered: each hidden body follows its step by name.
+				const reordered = yield* service.update(ORG, monitor.id, {
+					updatedBy: USER,
+					config: flow([
+						step("Order", "https://status.example.com/orders", "[redacted]"),
+						step("Log in", "https://status.example.com/login", "[redacted]"),
+					]),
+				})
+				assert.deepStrictEqual(bodies(reordered.config), ['{"sku":"a-1"}', LOGIN_BODY])
+
+				// The same step name on another origin gets nothing.
+				const moved = yield* Effect.flip(
+					service.update(ORG, monitor.id, {
+						updatedBy: USER,
+						config: flow([step("Log in", "https://elsewhere.example.net/login", "[redacted]")]),
+					}),
+				)
+				assert.strictEqual(
+					moved.message,
+					"Step 1 (Log in) has no stored body to keep; send the real body",
+				)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+	})
+
+	describe("request size limits", () => {
+		it.effect("refuses an oversized body or URL, and a variable that is part of a step's host", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const create = (config: UptimeMonitorConfig) =>
+					Effect.flip(
+						service.create(ORG, { name: "Big", kind: config._tag, config, createdBy: USER }),
+					)
+				const body = yield* create(
+					httpConfig(undefined, { method: "POST", body: repeat("b", UPTIME_MAX_BODY_LENGTH + 1) }),
+				)
+				assert.strictEqual(body._tag, "@maple/http/errors/UptimeMonitorValidationError")
+				// The refusal says which limit, never what was sent.
+				assert.isBelow(body.message.length, 300)
+				const url = yield* create(
+					httpConfig(`https://status.example.com/${repeat("p", UPTIME_MAX_URL_LENGTH)}`),
+				)
+				assert.strictEqual(url._tag, "@maple/http/errors/UptimeMonitorValidationError")
+				const host = yield* create({
+					_tag: "multistep",
+					timeoutMs: 30_000,
+					steps: [
+						{
+							name: "Start",
+							method: "GET",
+							url: "https://status.example.com/start",
+							headers: {},
+							assertions: [],
+							extract: [{ name: "next", from: { _tag: "json_path", path: "next" } }],
+						},
+						{
+							name: "Next",
+							method: "GET",
+							url: "https://status.example.com{{next}}",
+							headers: {},
+							assertions: [],
+							extract: [],
+						},
+					],
+				})
+				assert.include(host.message, "Step 2 (Next): a variable can't be part of the URL's host")
+				assert.deepStrictEqual(yield* service.list(ORG), [])
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("still reads a monitor saved past a limit, and leaves only it off the probe list", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const healthy = yield* createHttp("healthy")
+				const oversized = yield* createHttp("oversized")
+				const longUrl = `https://status.example.com/${repeat("p", UPTIME_MAX_URL_LENGTH)}`
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						`update uptime_monitors
+						 set config_json = jsonb_set(config_json, '{url}', to_jsonb($1::text)) where id = $2`,
+						[longUrl, oversized.id],
+					),
+				)
+				const read = yield* service.get(ORG, oversized.id)
+				assert.strictEqual(read.config._tag === "http" ? read.config.url : null, longUrl)
+				assert.lengthOf(yield* service.list(ORG), 2)
+				assert.deepStrictEqual(
+					Arr.map(yield* service.listProbeTargets, (target) => target.id),
+					[healthy.id],
+				)
+				// Saving it again within the limits puts it back on the list.
+				yield* service.update(ORG, oversized.id, { updatedBy: USER, config: httpConfig() })
+				assert.lengthOf(yield* service.listProbeTargets, 2)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("keeps a reported failure sentence at a bounded length", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const monitor = yield* createHttp("API")
+				const failing = yield* current(monitor.id, 1_000, false)
+				yield* service.recordChecks([
+					new UptimeCheckReport({ ...failing, error: `Status 503 ${repeat("x", 5_000)}` }),
+				])
+				const stored = (yield* service.get(ORG, monitor.id)).state.lastCheck?.error ?? ""
+				assert.lengthOf(stored, UPTIME_MAX_ERROR_LENGTH)
+				assert.isTrue(Str.startsWith("Status 503 ")(stored))
+			}).pipe(Effect.provide(makeLayer(testDb)))
 		})
 	})
 })

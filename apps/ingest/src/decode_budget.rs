@@ -159,7 +159,7 @@ pub fn protobuf_cost(signal: OtlpSignal, payload: &[u8], budget: u64) -> Result<
     };
     let mut meter = Meter::new(budget);
     meter.charge(root.size())?;
-    match walk(root, payload, 0, &mut meter) {
+    match walk(root, payload, 0, &mut meter, &mut [0_u64; LIST_TAGS]) {
         Ok(()) | Err(Stop::Malformed) => Ok(meter.total()),
         Err(Stop::OverBudget) => Err(OverBudget),
     }
@@ -368,7 +368,8 @@ impl Meter {
     }
 }
 
-/// Every repeated field's tag is below this.
+/// Every repeated field's tag is below this, and so is every singular message
+/// field's: `walk` keeps both kinds of count in tables of this size, by tag.
 const LIST_TAGS: usize = 16;
 
 impl From<Stop> for OverBudget {
@@ -647,12 +648,21 @@ pub(crate) const WIRE_START_GROUP: u64 = 3;
 const WIRE_END_GROUP: u64 = 4;
 pub(crate) const WIRE_FIXED32: u64 = 5;
 
-fn walk(msg: Msg, mut buf: &[u8], depth: u32, meter: &mut Meter) -> Result<(), Stop> {
+/// Walks one occurrence of `msg`. `lists` holds the element bytes of each of its
+/// repeated fields, by tag, counted over the occurrences walked so far.
+fn walk(
+    msg: Msg,
+    mut buf: &[u8],
+    depth: u32,
+    meter: &mut Meter,
+    lists: &mut [u64; LIST_TAGS],
+) -> Result<(), Stop> {
     if depth > MAX_DEPTH {
         return Err(Stop::Malformed);
     }
-    // Element bytes of each repeated field of this message, by tag.
-    let mut lists = [0_u64; LIST_TAGS];
+    // The lists of each singular message field, by tag. A decoder merges that
+    // field's occurrences into one message, so a list inside it grows across them.
+    let mut merged: [Option<[u64; LIST_TAGS]>; LIST_TAGS] = [None; LIST_TAGS];
     while !buf.is_empty() {
         let key = varint(&mut buf)?;
         let (tag, wire) = (key >> 3, key & 7);
@@ -664,14 +674,14 @@ fn walk(msg: Msg, mut buf: &[u8], depth: u32, meter: &mut Meter) -> Result<(), S
             WIRE_VARINT => {
                 varint(&mut buf)?;
                 if field == Field::NumberList {
-                    meter.charge_list(&mut lists, tag, 8, 1)?;
+                    meter.charge_list(lists, tag, 8, 1)?;
                 }
             }
             WIRE_FIXED64 | WIRE_FIXED32 => {
                 let width = if wire == WIRE_FIXED64 { 8 } else { 4 };
                 buf = buf.get(width..).ok_or(Stop::Malformed)?;
                 if field == Field::NumberList {
-                    meter.charge_list(&mut lists, tag, 8, 1)?;
+                    meter.charge_list(lists, tag, 8, 1)?;
                 }
             }
             WIRE_LEN => {
@@ -682,21 +692,30 @@ fn walk(msg: Msg, mut buf: &[u8], depth: u32, meter: &mut Meter) -> Result<(), S
                 let (body, rest) = buf.split_at(len);
                 buf = rest;
                 match field {
-                    Field::Message(child, repeated) => {
-                        if repeated == Repeated::Yes {
-                            meter.charge_list(&mut lists, tag, child.size(), 1)?;
-                        }
-                        walk(child, body, depth + 1, meter)?;
+                    Field::Message(child, Repeated::Yes) => {
+                        meter.charge_list(lists, tag, child.size(), 1)?;
+                        walk(child, body, depth + 1, meter, &mut [0_u64; LIST_TAGS])?;
+                    }
+                    Field::Message(child, Repeated::No) => {
+                        // A tag past the table is not kept: it counts from empty each time.
+                        let mut unkeyed: Option<[u64; LIST_TAGS]> = None;
+                        let slot = match usize::try_from(tag) {
+                            Ok(tag) => merged.get_mut(tag),
+                            Err(_) => None,
+                        };
+                        let child_lists =
+                            slot.unwrap_or(&mut unkeyed).get_or_insert([0; LIST_TAGS]);
+                        walk(child, body, depth + 1, meter, child_lists)?;
                     }
                     Field::Text => meter.charge(heap_len(len))?,
                     Field::TextList => {
-                        meter.charge_list(&mut lists, tag, size_of::<String>() as u64, 1)?;
+                        meter.charge_list(lists, tag, size_of::<String>() as u64, 1)?;
                         meter.charge(heap_len(len))?;
                     }
                     // Packed: one element per varint, or per eight bytes when fixed.
                     Field::NumberList => {
                         let varints = body.iter().filter(|byte| **byte < 0x80).count();
-                        meter.charge_list(&mut lists, tag, 8, varints.max(len / 8) as u64)?;
+                        meter.charge_list(lists, tag, 8, varints.max(len / 8) as u64)?;
                     }
                     Field::Inline => {}
                 }
@@ -752,6 +771,24 @@ mod tests {
     /// `count` copies of field 1 holding an empty message.
     fn empty_entries(count: usize) -> Vec<u8> {
         [0x0a, 0x00].repeat(count)
+    }
+
+    /// `count` empty strings of a profiles dictionary's string table (field 5).
+    fn empty_strings(count: usize) -> Vec<u8> {
+        [0x2a, 0x00].repeat(count)
+    }
+
+    /// `body` as the length-delimited field `field`.
+    fn nested(field: u8, body: &[u8]) -> Vec<u8> {
+        let mut out = vec![field << 3 | 2];
+        let mut len = body.len();
+        while len >= 0x80 {
+            out.push(0x80 | u8::try_from(len % 0x80).unwrap());
+            len /= 0x80;
+        }
+        out.push(u8::try_from(len).unwrap());
+        out.extend_from_slice(body);
+        out
     }
 
     #[test]
@@ -811,6 +848,26 @@ mod tests {
         assert_eq!(
             protobuf_cost(OtlpSignal::Logs, &payload, cost - 1),
             Err(OverBudget)
+        );
+    }
+
+    #[test]
+    fn a_singular_message_in_many_occurrences_is_costed_as_the_one_it_decodes_into() {
+        // A profiles dictionary of a thousand strings, whole and as ten occurrences
+        // of the dictionary field: both decode into the same one string table.
+        let whole = nested(2, &empty_strings(1_000));
+        let split = nested(2, &empty_strings(100)).repeat(10);
+        let whole_cost = protobuf_cost(OtlpSignal::Profiles, &whole, u64::MAX).unwrap();
+        let split_cost = protobuf_cost(OtlpSignal::Profiles, &split, u64::MAX).unwrap();
+        // The table's capacity (twice its strings, and the first four) and its regrowth.
+        let string = size_of::<String>() as u64;
+        assert_eq!(
+            whole_cost,
+            size_of::<ExportProfilesServiceRequest>() as u64 + 3 * 1_000 * string + 2 * string
+        );
+        assert!(
+            split_cost >= whole_cost,
+            "split {split_cost} below whole {whole_cost}"
         );
     }
 

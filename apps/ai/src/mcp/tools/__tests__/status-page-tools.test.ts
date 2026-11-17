@@ -1,6 +1,7 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import { afterAll, beforeAll, describe, expect, it, onTestFinished } from "vitest"
 import { Schema, Array as Arr, String as Str } from "effect"
 import { RoleName } from "@maple/domain/http"
+import { permissions } from "@maple/domain/policy"
 import {
 	ApplyStatusPageConfigOutput,
 	GetStatusPageOutput,
@@ -467,6 +468,46 @@ describe("status page tools", () => {
 				config: { ...after.structuredContent.config, visibility: "public" },
 			})
 			expect(markdown(restored)).toContain("Fields changed: visibility")
+		})
+
+		it("asks for the access permission, beyond the edit one, when a config changes who can read the page", async () => {
+			// Engineers hold both today, so the two checks only tell apart with access raised to admins.
+			const held = permissions["status_pages:access"]
+			onTestFinished(() => void Reflect.set(permissions, "status_pages:access", held))
+			Reflect.set(permissions, "status_pages:access", { ...held, min: "admin" })
+
+			const engineer = withRole("org:engineer")
+			const read = await readConfig(rt, "config-page")
+			const { config } = read.structuredContent
+			const refused = await runToolDirect(engineer, "apply_status_page_config", {
+				page: "config-page",
+				config: { ...config, visibility: "internal" },
+			})
+			expect(refused.isError).toBe(true)
+			expect(markdown(refused)).toContain(
+				"apply_status_page_config would change who can read the page. Only org admins can change who can view status pages. Leave `visibility` as it is, or ask someone who can.",
+			)
+			expect((await readConfig(rt, "config-page")).structuredContent.config).toEqual(config)
+
+			// The same visibility, or none, is no change: the edit permission is enough.
+			const edited = await runToolDirect(engineer, "apply_status_page_config", {
+				page: "config-page",
+				config: { ...config, description: "Edited by an engineer." },
+			})
+			expect(markdown(edited)).toContain("Fields changed: description")
+			const after = await readConfig(rt, "config-page")
+			expect(after.structuredContent.config.visibility).toBe(config.visibility)
+
+			const changed = await runToolDirect(admin(), "apply_status_page_config", {
+				page: "config-page",
+				config: { ...after.structuredContent.config, visibility: "internal" },
+			})
+			expect(markdown(changed)).toContain("Fields changed: visibility")
+			const hidden = await readConfig(rt, "config-page")
+			await runToolDirect(admin(), "apply_status_page_config", {
+				page: "config-page",
+				config: { ...hidden.structuredContent.config, visibility: "public" },
+			})
 		})
 
 		it("refuses members and names a component id from another page", async () => {

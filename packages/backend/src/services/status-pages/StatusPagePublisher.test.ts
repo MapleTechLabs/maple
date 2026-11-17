@@ -2,7 +2,12 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect, Exit, Layer, Option, Array as Arr, String as Str } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { TestClock } from "effect/testing"
-import { decodeStatusPageSnapshotJson, StatusPageKeys, utcDay } from "@maple/domain/status-page"
+import {
+	decodeStatusPageSnapshotJson,
+	isStatusPageTombstone,
+	StatusPageKeys,
+	utcDay,
+} from "@maple/domain/status-page"
 import { StatusPageId } from "@maple/primitives"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { CloudflareCustomHostnames } from "./CloudflareCustomHostnames"
@@ -268,9 +273,12 @@ describe("StatusPagePublisher visibility", () => {
 				assert.isFalse(hidden.written)
 				const { kv, objects } = yield* store.contents
 				assert.isFalse(kv.has(StatusPageKeys.slug("acme-internal")))
-				assert.isFalse(objects.has(StatusPageKeys.slugObject("acme-internal")))
 				assert.isFalse(kv.has(StatusPageKeys.snapshot(pageId)))
-				assert.isFalse(objects.has(StatusPageKeys.snapshotObject(pageId)))
+				// R2 keeps a tombstone in place of each, with nothing of the page in it.
+				assert.isTrue(
+					isStatusPageTombstone(objects.get(StatusPageKeys.slugObject("acme-internal")) ?? ""),
+				)
+				assert.isTrue(isStatusPageTombstone(objects.get(StatusPageKeys.snapshotObject(pageId)) ?? ""))
 				assert.strictEqual((yield* readPage(testDb, pageId))?.published_revision, "2")
 
 				// Nothing else changed, yet the page must go back up.
@@ -280,6 +288,50 @@ describe("StatusPagePublisher visibility", () => {
 				const after = yield* store.contents
 				assert.strictEqual(after.kv.get(StatusPageKeys.slug("acme-internal")), pageId)
 				assert.isTrue(after.kv.has(StatusPageKeys.snapshot(pageId)))
+				// The publish replaces both tombstones.
+				assert.strictEqual(after.objects.get(StatusPageKeys.slugObject("acme-internal")), pageId)
+				assert.strictEqual(
+					after.objects.get(StatusPageKeys.snapshotObject(pageId)),
+					after.kv.get(StatusPageKeys.snapshot(pageId)),
+				)
+			}),
+		),
+	)
+
+	it.effect("leaves another page's slug route alone when taking an internal page off the edge", () =>
+		withPublisher(({ testDb, store, publisher }) =>
+			Effect.gen(function* () {
+				const pageId = newPageId()
+				const other = newPageId()
+				yield* seedPage(testDb, { id: pageId, slug: "acme-shared" })
+				yield* store.api.putRoutes(other, { slug: "acme-shared", hostnames: [] })
+				yield* setVisibility(testDb, pageId, "internal")
+				yield* publisher.publish(pageId)
+				const { kv, objects } = yield* store.contents
+				assert.strictEqual(kv.get(StatusPageKeys.slug("acme-shared")), other)
+				assert.strictEqual(objects.get(StatusPageKeys.slugObject("acme-shared")), other)
+				assert.isTrue(isStatusPageTombstone(objects.get(StatusPageKeys.snapshotObject(pageId)) ?? ""))
+			}),
+		),
+	)
+
+	it.effect("removes an internal page's tombstones when the page is deleted", () =>
+		withPublisher(({ testDb, store, publisher }) =>
+			Effect.gen(function* () {
+				const pageId = newPageId()
+				yield* seedPage(testDb, { id: pageId, slug: "acme-retired" })
+				yield* publisher.publish(pageId)
+				yield* setVisibility(testDb, pageId, "internal")
+				yield* publisher.publish(pageId)
+
+				yield* seedCleanup(testDb, { pageId, slug: "acme-retired", deleteSnapshot: true, at: NOW })
+				yield* Effect.promise(() =>
+					executeSql(testDb, "DELETE FROM status_pages WHERE id = $1", [pageId]),
+				)
+				yield* publisher.sweep(NOW)
+				const { objects } = yield* store.contents
+				assert.isFalse(objects.has(StatusPageKeys.slugObject("acme-retired")))
+				assert.isFalse(objects.has(StatusPageKeys.snapshotObject(pageId)))
 			}),
 		),
 	)

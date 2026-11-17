@@ -125,6 +125,8 @@ const VERB_ICONS = {
 	repository_enabled: "MediaPlayIcon",
 	repository_disabled: "MediaPauseIcon",
 	repository_rules_updated: "PencilIcon",
+	events_key_read: "EyeIcon",
+	events_key_rotated: "ArrowRotateClockwiseIcon",
 } as const satisfies { readonly [Verb in AuditVerb]: IconName }
 
 const hasVerbIcon = (verb: string): verb is keyof typeof VERB_ICONS =>

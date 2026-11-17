@@ -145,6 +145,22 @@ const pendingDomain = customDomain({
 	created_at: "2026-10-01T12:00:00.000Z",
 })
 
+/** A new claim: nothing is set up until its ownership record is found. */
+const unprovenDomain = customDomain({
+	hostname: "status.acme.com",
+	status: "pending_dns",
+	dns_records: [
+		{ type: "CNAME", name: "status.acme.com", value: "status-domains.maple.dev", purpose: "routing" },
+		{
+			type: "TXT",
+			name: "_maple-challenge.status.acme.com",
+			value: "maple-status-page=1c2ba8fdad86fbbe9cdd85449b0e85c6",
+			purpose: "ownership",
+		},
+	],
+	created_at: "2026-10-01T12:00:00.000Z",
+})
+
 const loaded = (fixture: Fixture = {}): Model => {
 	const entered = init(
 		{
@@ -1330,7 +1346,10 @@ const comboMounted = Mount.resolve(Combobox.MountCombobox, Combobox.Message.Comp
 /** The Appearance section's colour pickers, mounted: the accent alone in Auto, all five in Light or Dark. */
 const pickersMounted = (count: number) =>
 	Mount.resolveAll(
-		...Arr.makeBy(count, () => [MountColorPicker, ColorPickerMessage.CompletedMountColorPicker()] as const),
+		...Arr.makeBy(
+			count,
+			() => [MountColorPicker, ColorPickerMessage.CompletedMountColorPicker()] as const,
+		),
 	)
 
 /** The reviewed message as the public page's markup renders it; the incident's sheet is a dialog too. */
@@ -2833,7 +2852,10 @@ describe("settings", () => {
 		const read = pageUpdate(png.model, done).model
 		expect(read.settingsEdits?.faviconUrl).toBe("data:image/png;base64,cG5n")
 		// Removed while the file was still being read: the late read does not bring it back.
-		const removed = pageUpdate(png.model, Message.ClickedRemoveBrandingImage({ field: "faviconUrl" })).model
+		const removed = pageUpdate(
+			png.model,
+			Message.ClickedRemoveBrandingImage({ field: "faviconUrl" }),
+		).model
 		expect(pageUpdate(removed, done).model.settingsEdits?.faviconUrl).toBe("")
 		scene(
 			{ update: pageUpdate, view },
@@ -2845,7 +2867,10 @@ describe("settings", () => {
 	})
 
 	test("an image is added from its dialog: a link applies on Use link, a bad one waits", () => {
-		const opened = pageUpdate(loaded(APPEARANCE), Message.ClickedEditBrandingImage({ field: "logoUrl" })).model
+		const opened = pageUpdate(
+			loaded(APPEARANCE),
+			Message.ClickedEditBrandingImage({ field: "logoUrl" }),
+		).model
 		expect(opened.brandingDialog.isOpen).toBe(true)
 		scene(
 			{ update: pageUpdate, view },
@@ -2858,7 +2883,10 @@ describe("settings", () => {
 			expectView(text("Use an https URL.")).toExist(),
 			expectView(role("button", { name: "Use link" })).toBeDisabled(),
 		)
-		const typed = pageUpdate(opened, Message.ChangedBrandingLink({ value: " https://acme.example/logo.svg " }))
+		const typed = pageUpdate(
+			opened,
+			Message.ChangedBrandingLink({ value: " https://acme.example/logo.svg " }),
+		)
 		const applied = pageUpdate(typed.model, Message.SubmittedBrandingLink()).model
 		expect(applied.settingsEdits?.logoUrl).toBe("https://acme.example/logo.svg")
 		expect(applied.brandingDialog.isOpen).toBe(false)
@@ -3321,6 +3349,52 @@ describe("custom domain", () => {
 			expectView(text("custom hostname does not CNAME to this zone.")).toExist(),
 			expectView(role("button", { name: "Copy ownership TXT value" })).toExist(),
 			expectView(role("button", { name: "Check now" })).toExist(),
+		)
+	})
+
+	test("a new domain asks for the CNAME and the ownership record, both copyable", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ ...BASIC, customDomain: unprovenDomain })),
+			expectView(text("Waiting for DNS")).toExist(),
+			expectView(text(/Add both records below/u)).toExist(),
+			expectView(text(/remove the TXT record once the domain is active/u)).toExist(),
+			expectView(text("_maple-challenge.status.acme.com")).toExist(),
+			expectView(text("maple-status-page=1c2ba8fdad86fbbe9cdd85449b0e85c6")).toExist(),
+			expectView(text("Proves you own the domain (needed until it is active)")).toExist(),
+			expectView(role("button", { name: "Copy routing CNAME value" })).toExist(),
+			expectView(role("button", { name: "Copy ownership TXT name" })).toExist(),
+			expectView(role("button", { name: "Copy ownership TXT value" })).toExist(),
+		)
+		// Once the record is found, the hostname's own optional record keeps its label.
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ ...BASIC, customDomain: pendingDomain })),
+			expectView(text(/Add both records below/u)).not.toExist(),
+			expectView(text("Proves you own it (optional with the CNAME in place)")).toExist(),
+		)
+	})
+
+	test("a hostname held by a claim nobody proved shows the record that claims it", () => {
+		const message =
+			"status.acme.com is held by another status page that has not proved it owns the domain. To claim it, add a TXT record named _maple-challenge.status.acme.com with the value maple-status-page=1c2ba8fdad86fbbe9cdd85449b0e85c6 at your DNS provider, then add the domain again."
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(BASIC)),
+			type(role("textbox", { name: "Hostname" }), "status.acme.com"),
+			submit(role("form", { name: "Custom domain" })),
+			Command.resolve(
+				SetCustomDomain,
+				Message.CompletedSetCustomDomain({
+					result: Result.fail({
+						...toLoadFailure(new Error(message)),
+						message,
+						retryable: false,
+					}),
+				}),
+			),
+			expectView(text(message)).toExist(),
+			expectView(role("textbox", { name: "Hostname" })).toHaveAttr("aria-invalid", "true"),
 		)
 	})
 

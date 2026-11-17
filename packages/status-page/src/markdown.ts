@@ -12,8 +12,19 @@ interface Block {
 	readonly lines: ReadonlyArray<string>
 }
 
+/** A block still being filled; see `blocks`. */
+interface OpenBlock {
+	readonly kind: BlockKind
+	readonly lines: Array<string>
+}
+
+/** The longest update body allowed. A longer line is not parsed for inline marks, only escaped. */
+const MAX_INLINE_CHARS = 20_000
+
+// The link label and target are length-capped, so a `[` with no link after it costs a fixed amount
+// of matching instead of a scan to the end of the line.
 const INLINE =
-	/`([^`\n]+)`|\[([^\]\n]+)\]\(([^\s)]+)\)|(https?:\/\/[^\s<>"]+)|\*\*([^*\n]+)\*\*|(?<![\w*])\*([^*\s][^*\n]*)\*(?![\w*])/gu
+	/`([^`\n]+)`|\[([^\]\n]{1,500})\]\(([^\s)]{1,2000})\)|(https?:\/\/[^\s<>"]+)|\*\*([^*\n]+)\*\*|(?<![\w*])\*([^*\s][^*\n]*)\*(?![\w*])/gu
 
 const anchor = (href: string, label: string): string | null => {
 	const url = safeUrl(href, ["https:", "http:"])
@@ -31,6 +42,7 @@ const bareLink = (text: string): string => {
 }
 
 const inline = (text: string): string => {
+	if (text.length > MAX_INLINE_CHARS) return escapeHtml(text)
 	const done = Arr.reduce(
 		Arr.fromIterable(Str.matchAll(INLINE)(text)),
 		{ html: "", at: 0 },
@@ -67,39 +79,29 @@ const classify = (line: string): { readonly kind: BlockKind; readonly text: stri
 }
 
 /** Runs of lines of one kind; a blank line ends the run. */
-const blocks = (text: string): ReadonlyArray<Block> =>
-	Arr.reduce(
-		Str.split("\n")(Str.replaceAll("\r\n", "\n")(text)),
-		{ blocks: Arr.empty<Block>(), open: false },
-		(state, line) => {
-			if (Str.trim(line) === "") return { blocks: state.blocks, open: false }
-			const { kind, text: content } = classify(line)
-			const last = state.blocks.at(-1)
-			const item = last?.lines.at(-1)
-			// An indented line under a list item is that item's wrapped text, not a new paragraph.
-			if (
-				state.open &&
-				last !== undefined &&
-				item !== undefined &&
-				last.kind !== "p" &&
-				kind === "p" &&
-				/^\s/u.test(line)
-			)
-				return {
-					blocks: [
-						...state.blocks.slice(0, -1),
-						{ kind: last.kind, lines: [...last.lines.slice(0, -1), `${item} ${Str.trim(line)}`] },
-					],
-					open: true,
-				}
-			return state.open && last !== undefined && last.kind === kind
-				? {
-						blocks: [...state.blocks.slice(0, -1), { kind, lines: [...last.lines, content] }],
-						open: true,
-					}
-				: { blocks: [...state.blocks, { kind, lines: [content] }], open: true }
-		},
-	).blocks
+const blocks = (text: string): ReadonlyArray<Block> => {
+	// Filled in place: copying the list for every line makes a body of many lines cost its square.
+	const out: Array<OpenBlock> = []
+	Arr.reduce(Str.split("\n")(Str.replaceAll("\r\n", "\n")(text)), false, (open, line) => {
+		if (Str.trim(line) === "") return false
+		const { kind, text: content } = classify(line)
+		const last = open ? out.at(-1) : undefined
+		const item = last?.lines.at(-1)
+		// An indented line under a list item is that item's wrapped text, not a new paragraph.
+		if (
+			last !== undefined &&
+			item !== undefined &&
+			last.kind !== "p" &&
+			kind === "p" &&
+			/^\s/u.test(line)
+		)
+			last.lines[last.lines.length - 1] = `${item} ${Str.trim(line)}`
+		else if (last !== undefined && last.kind === kind) last.lines.push(content)
+		else out.push({ kind, lines: [content] })
+		return true
+	})
+	return out
+}
 
 const renderBlock = (block: Block): string =>
 	block.kind === "p"

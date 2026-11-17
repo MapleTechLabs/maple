@@ -21,6 +21,7 @@ const testEnv: ScraperEnvConfig = {
 	SCRAPER_OTLP_MAX_DATA_POINTS: 10_000,
 	SCRAPER_OTLP_MAX_BODY_BYTES: 4 * 1024 * 1024,
 	UPTIME_CONCURRENCY: 20,
+	UPTIME_ORG_CONCURRENCY: 4,
 	PORT: 0,
 }
 
@@ -41,7 +42,7 @@ const makeHarness = (targets: ReadonlyArray<UptimeProbeTarget>): Harness => ({
 })
 
 /** Real registry, reporter and scheduler over a stubbed API and a prober where every check fails. */
-const harnessLayer = (harness: Harness) =>
+const harnessLayer = (harness: Harness, env: ScraperEnvConfig = testEnv) =>
 	UptimeScheduler.layer.pipe(
 		Layer.provide(
 			Layer.mergeAll(
@@ -84,7 +85,7 @@ const harnessLayer = (harness: Harness) =>
 					),
 					reportUptimeResults: (results) => Effect.sync(() => void harness.reported.push(results)),
 				}),
-				Layer.succeed(ScraperEnv, testEnv),
+				Layer.succeed(ScraperEnv, env),
 			),
 		),
 		Layer.provide(Layer.succeed(StartJitter, () => 0)),
@@ -104,6 +105,53 @@ const checksOf = (harness: Harness, id: string) =>
 	)
 
 describe("UptimeScheduler", () => {
+	it.effect("holds one org to its share of the permits, so another org's check still runs", () =>
+		Effect.gen(function* () {
+			const busy = Arr.makeBy(6, (index) =>
+				mkUptimeTarget({
+					id: `aaaaaaaa-aaaa-4aaa-8aaa-00000000000${index}`,
+					orgId: "org_busy",
+					intervalSeconds: 3600,
+				}),
+			)
+			const quiet = mkUptimeTarget({ id: MONITOR_B, orgId: "org_quiet", intervalSeconds: 3600 })
+			const harness = makeHarness([...busy, quiet])
+			// Four permits in all, two per org: without the share, the busy org's six would take all four.
+			const env = { ...testEnv, UPTIME_CONCURRENCY: 4, UPTIME_ORG_CONCURRENCY: 2 }
+			yield* startScheduler.pipe(Effect.provide(harnessLayer(harness, env)))
+			yield* TestClock.adjust(Duration.seconds(10))
+			const startsOf = (orgId: string) =>
+				Arr.map(
+					Arr.filter(harness.checked, (entry) => entry.target.orgId === orgId),
+					(entry) => entry.at / 1000,
+				)
+			// Each check takes 4 s: the busy org runs two at a time, the quiet org is never queued.
+			assert.deepStrictEqual(startsOf("org_busy"), [0, 0, 4, 4, 8, 8])
+			assert.deepStrictEqual(startsOf("org_quiet"), [0])
+		}),
+	)
+
+	it.effect("lets several orgs fill the shared permits together", () =>
+		Effect.gen(function* () {
+			const targets = Arr.makeBy(6, (index) =>
+				mkUptimeTarget({
+					id: `aaaaaaaa-aaaa-4aaa-8aaa-00000000000${index}`,
+					orgId: `org_${index % 3}`,
+					intervalSeconds: 3600,
+				}),
+			)
+			const harness = makeHarness(targets)
+			// Three orgs with two checks each, but only four permits: the org share does not raise the total.
+			const env = { ...testEnv, UPTIME_CONCURRENCY: 4, UPTIME_ORG_CONCURRENCY: 2 }
+			yield* startScheduler.pipe(Effect.provide(harnessLayer(harness, env)))
+			yield* TestClock.adjust(Duration.seconds(10))
+			assert.deepStrictEqual(
+				Arr.map(harness.checked, (entry) => entry.at / 1000),
+				[0, 0, 0, 0, 4, 4],
+			)
+		}),
+	)
+
 	it.effect("a failing monitor keeps its start-to-start cadence, with no backoff", () =>
 		Effect.gen(function* () {
 			const harness = makeHarness([mkUptimeTarget({ intervalSeconds: 30 })])

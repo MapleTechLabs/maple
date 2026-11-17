@@ -1,7 +1,8 @@
 /** Pieces the uptime monitor MCP tools share: rows, target summaries, config building, errors. */
 import { Effect, Option, Schema, Array as Arr, Record as Rec } from "effect"
 import type { UptimeMonitorRow } from "@maple/domain/mcp-outputs"
-import { UPTIME_DEFAULT_TIMEOUT_MS } from "@maple/domain/http/v2"
+import { scopeAllows, UPTIME_DEFAULT_TIMEOUT_MS } from "@maple/domain/http/v2"
+import * as Policy from "@maple/domain/policy"
 import type { UptimeMonitorKind } from "@maple/primitives"
 import {
 	UptimeMonitorConfig,
@@ -58,7 +59,20 @@ export const targetSummary = (config: UptimeMonitorConfig): string => {
 export const uptimeRatio = (recent: ReadonlyArray<UptimeRecentCheck>): number | null =>
 	recent.length === 0 ? null : Arr.filter(recent, (check) => check.ok).length / recent.length
 
-/** `canWrite`: the ping URL is a credential, so only org admins see it. */
+/**
+ * Whether the caller may change monitors, as the REST route judges it: the role, a credential
+ * that is not read-only, and for a scoped key the `uptime_monitors` write scope.
+ */
+export const canWriteUptimeMonitors = (tenant: {
+	readonly roles: ReadonlyArray<string>
+	readonly readOnly?: true
+	readonly scopes?: ReadonlyArray<string> | undefined
+}): boolean =>
+	Policy.can(tenant.roles, "uptime_monitors:manage") &&
+	tenant.readOnly !== true &&
+	scopeAllows(tenant.scopes, { family: "uptime_monitors", access: "write" })
+
+/** `canWrite`: the ping URL is a credential, so only callers who may change monitors see it. */
 export const toMonitorRow = (
 	monitor: UptimeMonitorRecord,
 	canWrite: boolean,

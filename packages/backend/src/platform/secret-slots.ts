@@ -132,7 +132,7 @@ export const scrapeTargetCredentialsSlot: SecretSlot<OrgRowRef> = {
 	binding: orgRowBinding,
 }
 
-/** An HTTP check's request headers, as one JSON object. */
+/** An HTTP or multi-step check's request headers and bodies, as one JSON document. */
 export const uptimeMonitorHeadersSlot: SecretSlot<OrgRowRef> = {
 	name: "uptime_monitors.headers",
 	binding: orgRowBinding,
