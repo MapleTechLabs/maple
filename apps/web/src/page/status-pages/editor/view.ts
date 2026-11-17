@@ -34,7 +34,7 @@ import { denialReason, gatedControl } from "../../kit/session-grants"
 import { componentsOf, incidentsOf, monitorsOf, pageOf, statusReadsReady } from "./reads"
 import { type EditorTab, PAGE_MENU_ID, resolveView } from "./update"
 import { livePage } from "./view-canvas"
-import { incidentsTab, maintenanceTab, openIncidentCount } from "./view-incidents"
+import { incidentsTab, isEmptyTab, maintenanceTab, openIncidentCount, postButton } from "./view-incidents"
 import { addressLine, liveView } from "./view-live"
 import { addSheetBody, addSheetFooter, incidentSheetBody, type TimeInputs } from "./view-panel"
 import {
@@ -129,30 +129,11 @@ const openPageButton = (h: H, page: V2StatusPage): Html =>
 /** Incidents and Maintenance lead with posting one; the other tabs with the page itself. */
 const headerActions = (h: H, model: Model, page: V2StatusPage): Html => {
 	const tab = resolveView(model.search).tab
-	if (tab === "incidents" || tab === "maintenance")
-		return detailActions(h, [
-			gatedControl(h, model, "status_page_incidents:post", (isDisabled) =>
-				button(
-					h,
-					{
-						size: "sm",
-						isDisabled,
-						attributes: isDisabled
-							? []
-							: [
-									h.OnClick(
-										Message.ClickedNewIncident({
-											kind: tab === "incidents" ? "incident" : "maintenance",
-										}),
-									),
-								],
-					},
-					tab === "incidents"
-						? [icon(h, "PlusIcon"), "Declare incident"]
-						: [icon(h, "CalendarIcon"), "Schedule maintenance"],
-				),
-			),
-		])
+	if (tab === "incidents" || tab === "maintenance") {
+		const kind = tab === "incidents" ? "incident" : "maintenance"
+		// An empty tab's own empty state carries the button.
+		return detailActions(h, isEmptyTab(model, kind) ? [] : [postButton(h, model, kind)])
+	}
 	const entries = menuEntries(model, page)
 	return detailActions(h, [
 		...(page.draft ? [publishButton(h, model)] : []),

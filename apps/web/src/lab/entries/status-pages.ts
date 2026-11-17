@@ -41,9 +41,10 @@ import type { StatusPageSummary } from "../../page/status-pages/shared/derive"
 import { labGrants, LabRole, readLabRole } from "../viewer-role"
 
 // `/lab/status-pages`: the status pages list, the look picker and the form fields over fixture
-// pages, the list with no page yet, a page's editor open on an incident, or on Settings > Monitors
-// with grouped components to drag, or the full-screen preview "Open page" opens, as a public,
-// password or internal page (`?page=list|empty|editor|monitors|preview&visibility=public|password|internal`),
+// pages, the list with no page yet, a page's editor open on an incident, on Settings > Monitors
+// with grouped components to drag, on the Incidents or Maintenance tab with nothing posted, or
+// the full-screen preview "Open page" opens, as a public, password or internal page
+// (`?page=list|empty|editor|monitors|incidents-empty|maintenance-empty|preview&visibility=public|password|internal`),
 // as the viewer `?role=` names: an analyst reads the incident and gets no control that posts,
 // edits or deletes one. The editor runs for real with no API: a reorder, a component's Save and
 // an Access save land at once, every other read and write is dropped.
@@ -54,7 +55,15 @@ const context: PageContext = {
 	timeZone: "UTC",
 }
 
-const PAGES = ["list", "empty", "editor", "monitors", "preview"] as const
+const PAGES = [
+	"list",
+	"empty",
+	"editor",
+	"monitors",
+	"incidents-empty",
+	"maintenance-empty",
+	"preview",
+] as const
 const LabPage = Schema.Literals(PAGES)
 type LabPage = typeof LabPage.Type
 /** The list over the fixture pages, or over none for its empty state. */
@@ -73,6 +82,25 @@ type Message = typeof Message.Type
 const Flags = Schema.Struct({ page: LabPage, role: LabRole, visibility: StatusPageVisibility })
 const decodeVisibility = Schema.decodeUnknownOption(StatusPageVisibility)
 type Flags = typeof Flags.Type
+type EditorPage = Exclude<LabPage, "list" | "empty" | "preview">
+
+/** The URL search each editor page opens on. */
+const editorSearch = (page: EditorPage) => {
+	switch (page) {
+		case "editor":
+			return {}
+		case "monitors":
+			// `&section=basic|appearance|…` opens another Settings section beside Monitors' fixtures.
+			return {
+				view: "settings",
+				section: new URLSearchParams(globalThis.location.search).get("section") ?? "monitors",
+			}
+		case "incidents-empty":
+			return { view: "incidents" }
+		case "maintenance-empty":
+			return { view: "maintenance" }
+	}
+}
 
 const listModel = (role: LabRole, pages: ReadonlyArray<StatusPageSummary>): ListModel => {
 	const step = (model: ListModel, message: ListMessage) => listUpdate(model, message, context).model
@@ -120,23 +148,16 @@ const MONITOR_COMPONENTS = [
 
 /**
  * The editor over a live page with an open incident, a draft maintenance and one resolved: open on
- * the first incident, or on Settings > Monitors over grouped components.
+ * the first incident, or on Settings > Monitors over grouped components. The empty pages post
+ * nothing, so their tab shows its empty state.
  */
-const editorModel = (role: LabRole, page: "editor" | "monitors"): EditorModel => {
+const editorModel = (role: LabRole, page: EditorPage): EditorModel => {
 	const step = (model: EditorModel, message: EditorMessage) => editorUpdate(model, message, context).model
 	const entered = editorInit(
 		{
 			_tag: "StatusPage",
 			pageId: Schema.encodeSync(StatusPagePublicId)(statusPage().id),
-			// `&section=basic|appearance|…` opens another Settings section beside Monitors' fixtures.
-			search:
-				page === "monitors"
-					? {
-							view: "settings",
-							section:
-								new URLSearchParams(globalThis.location.search).get("section") ?? "monitors",
-						}
-					: {},
+			search: editorSearch(page),
 		},
 		context,
 	).model
@@ -162,11 +183,19 @@ const editorModel = (role: LabRole, page: "editor" | "monitors"): EditorModel =>
 			}),
 			EditorMessage.CompletedFetchIncidents({
 				key: entered.incidents.key ?? "",
-				result: Result.succeed([
-					incident(1, { title: "Elevated API errors" }),
-					incident(2, { kind: "maintenance", title: "Database upgrade", published: false }),
-					incident(3, { title: "Delayed ingest", status: "resolved" }),
-				]),
+				result: Result.succeed(
+					page === "incidents-empty" || page === "maintenance-empty"
+						? []
+						: [
+								incident(1, { title: "Elevated API errors" }),
+								incident(2, {
+									kind: "maintenance",
+									title: "Database upgrade",
+									published: false,
+								}),
+								incident(3, { title: "Delayed ingest", status: "resolved" }),
+							],
+				),
 			}),
 			EditorMessage.CompletedFetchMonitors({
 				key: entered.monitors.key ?? "",
@@ -377,7 +406,12 @@ export const lab = defineShellLab("Status pages", {
 		model: {
 			page: flags.page,
 			list: listModel(flags.role, flags.page === "empty" ? [] : LAB_PAGES),
-			editor: editorModel(flags.role, flags.page === "monitors" ? "monitors" : "editor"),
+			editor: editorModel(
+				flags.role,
+				flags.page === "list" || flags.page === "empty" || flags.page === "preview"
+					? "editor"
+					: flags.page,
+			),
 			viewer: viewerModel(flags.visibility),
 		},
 	}),
