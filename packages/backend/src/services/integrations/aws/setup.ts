@@ -1,6 +1,9 @@
 import {
+	AWS_AUDIT_DETAIL_TYPES,
+	AWS_AUDIT_HOME_REGION,
 	AWS_ROLE_NAME_PREFIX,
 	AWS_TEMPLATE_VERSION,
+	awsConnectionResourceNames,
 	type AwsMetricStream,
 	type AwsSetupPlan,
 } from "@maple/domain/aws"
@@ -104,6 +107,102 @@ export interface AwsStreamTarget extends AwsMetricStream {
 }
 
 /**
+ * A Firehose that posts to Maple with the stack's `AccessKey` parameter, and the bucket that keeps
+ * the batches Maple did not accept for 7 days.
+ */
+const firehoseResources = (streamName: string, endpoint: string, roleDescription: string) => ({
+	FailedDeliveries: {
+		Type: "AWS::S3::Bucket",
+		Properties: {
+			BucketEncryption: {
+				ServerSideEncryptionConfiguration: [
+					{ ServerSideEncryptionByDefault: { SSEAlgorithm: "AES256" } },
+				],
+			},
+			PublicAccessBlockConfiguration: {
+				BlockPublicAcls: true,
+				BlockPublicPolicy: true,
+				IgnorePublicAcls: true,
+				RestrictPublicBuckets: true,
+			},
+			OwnershipControls: { Rules: [{ ObjectOwnership: "BucketOwnerEnforced" }] },
+			LifecycleConfiguration: {
+				Rules: [{ Id: "expire-failed-deliveries", Status: "Enabled", ExpirationInDays: 7 }],
+			},
+		},
+	},
+	FirehoseRole: {
+		Type: "AWS::IAM::Role",
+		Properties: {
+			Description: roleDescription,
+			AssumeRolePolicyDocument: {
+				Version: "2012-10-17",
+				Statement: [
+					{
+						Effect: "Allow",
+						Principal: { Service: "firehose.amazonaws.com" },
+						Action: "sts:AssumeRole",
+						Condition: {
+							StringEquals: { "aws:SourceAccount": { Ref: "AWS::AccountId" } },
+						},
+					},
+				],
+			},
+			Policies: [
+				{
+					PolicyName: "failed-deliveries",
+					PolicyDocument: {
+						Version: "2012-10-17",
+						Statement: [
+							{
+								Effect: "Allow",
+								Action: [
+									"s3:AbortMultipartUpload",
+									"s3:GetBucketLocation",
+									"s3:GetObject",
+									"s3:ListBucket",
+									"s3:ListBucketMultipartUploads",
+									"s3:PutObject",
+								],
+								Resource: [
+									{ "Fn::GetAtt": ["FailedDeliveries", "Arn"] },
+									{ "Fn::Sub": "${FailedDeliveries.Arn}/*" },
+								],
+							},
+						],
+					},
+				},
+			],
+		},
+	},
+	DeliveryStream: {
+		Type: "AWS::KinesisFirehose::DeliveryStream",
+		Properties: {
+			DeliveryStreamName: streamName,
+			DeliveryStreamType: "DirectPut",
+			HttpEndpointDestinationConfiguration: {
+				EndpointConfiguration: {
+					Name: "Maple",
+					Url: endpoint,
+					AccessKey: { Ref: "AccessKey" },
+				},
+				RequestConfiguration: { ContentEncoding: "GZIP" },
+				BufferingHints: { IntervalInSeconds: 60, SizeInMBs: 1 },
+				RetryOptions: { DurationInSeconds: 3600 },
+				RoleARN: { "Fn::GetAtt": ["FirehoseRole", "Arn"] },
+				S3BackupMode: "FailedDataOnly",
+				S3Configuration: {
+					BucketARN: { "Fn::GetAtt": ["FailedDeliveries", "Arn"] },
+					RoleARN: { "Fn::GetAtt": ["FirehoseRole", "Arn"] },
+					CompressionFormat: "GZIP",
+					Prefix: "failed/",
+				},
+			},
+		},
+	},
+})
+
+/**
  * One region's metric stream: CloudWatch streams that region's metrics to a Firehose, which posts
  * them to Maple. Failed batches land in a bucket that empties itself after 7 days.
  */
@@ -124,95 +223,11 @@ export const renderAwsMetricsCloudFormation = (
 			},
 		},
 		Resources: {
-			FailedDeliveries: {
-				Type: "AWS::S3::Bucket",
-				Properties: {
-					BucketEncryption: {
-						ServerSideEncryptionConfiguration: [
-							{ ServerSideEncryptionByDefault: { SSEAlgorithm: "AES256" } },
-						],
-					},
-					PublicAccessBlockConfiguration: {
-						BlockPublicAcls: true,
-						BlockPublicPolicy: true,
-						IgnorePublicAcls: true,
-						RestrictPublicBuckets: true,
-					},
-					OwnershipControls: { Rules: [{ ObjectOwnership: "BucketOwnerEnforced" }] },
-					LifecycleConfiguration: {
-						Rules: [{ Id: "expire-failed-deliveries", Status: "Enabled", ExpirationInDays: 7 }],
-					},
-				},
-			},
-			FirehoseRole: {
-				Type: "AWS::IAM::Role",
-				Properties: {
-					Description: "Lets the Maple Firehose keep batches Maple could not accept",
-					AssumeRolePolicyDocument: {
-						Version: "2012-10-17",
-						Statement: [
-							{
-								Effect: "Allow",
-								Principal: { Service: "firehose.amazonaws.com" },
-								Action: "sts:AssumeRole",
-								Condition: {
-									StringEquals: { "aws:SourceAccount": { Ref: "AWS::AccountId" } },
-								},
-							},
-						],
-					},
-					Policies: [
-						{
-							PolicyName: "failed-deliveries",
-							PolicyDocument: {
-								Version: "2012-10-17",
-								Statement: [
-									{
-										Effect: "Allow",
-										Action: [
-											"s3:AbortMultipartUpload",
-											"s3:GetBucketLocation",
-											"s3:GetObject",
-											"s3:ListBucket",
-											"s3:ListBucketMultipartUploads",
-											"s3:PutObject",
-										],
-										Resource: [
-											{ "Fn::GetAtt": ["FailedDeliveries", "Arn"] },
-											{ "Fn::Sub": "${FailedDeliveries.Arn}/*" },
-										],
-									},
-								],
-							},
-						},
-					],
-				},
-			},
-			DeliveryStream: {
-				Type: "AWS::KinesisFirehose::DeliveryStream",
-				Properties: {
-					DeliveryStreamName: streamName,
-					DeliveryStreamType: "DirectPut",
-					HttpEndpointDestinationConfiguration: {
-						EndpointConfiguration: {
-							Name: "Maple",
-							Url: stream.endpoint,
-							AccessKey: { Ref: "AccessKey" },
-						},
-						RequestConfiguration: { ContentEncoding: "GZIP" },
-						BufferingHints: { IntervalInSeconds: 60, SizeInMBs: 1 },
-						RetryOptions: { DurationInSeconds: 3600 },
-						RoleARN: { "Fn::GetAtt": ["FirehoseRole", "Arn"] },
-						S3BackupMode: "FailedDataOnly",
-						S3Configuration: {
-							BucketARN: { "Fn::GetAtt": ["FailedDeliveries", "Arn"] },
-							RoleARN: { "Fn::GetAtt": ["FirehoseRole", "Arn"] },
-							CompressionFormat: "GZIP",
-							Prefix: "failed/",
-						},
-					},
-				},
-			},
+			...firehoseResources(
+				streamName,
+				stream.endpoint,
+				"Lets the Maple Firehose keep batches Maple could not accept",
+			),
 			MetricStreamRole: {
 				Type: "AWS::IAM::Role",
 				Properties: {
@@ -262,10 +277,216 @@ export const renderAwsMetricsCloudFormation = (
 	return `${encodePrettyJson(template)}\n`
 }
 
+/** A connection's CloudTrail feed as its setup renders it. */
+export interface AwsAuditTarget {
+	/** The ingest URL the Firehose posts to, and the secret it sends as its access key. */
+	readonly endpoint: string
+	readonly accessKey: string
+}
+
+/** Matches the CloudTrail events the feed sends. Reads are never matched by an `ENABLED` rule. */
+const auditEventPattern = { "detail-type": AWS_AUDIT_DETAIL_TYPES }
+
+/** A role EventBridge assumes to deliver a rule's events, allowed one action on one resource. */
+const eventsRole = (description: string, action: string | ReadonlyArray<string>, resource: unknown) => ({
+	Type: "AWS::IAM::Role",
+	Properties: {
+		Description: description,
+		AssumeRolePolicyDocument: {
+			Version: "2012-10-17",
+			Statement: [
+				{
+					Effect: "Allow",
+					Principal: { Service: "events.amazonaws.com" },
+					Action: "sts:AssumeRole",
+					Condition: { StringEquals: { "aws:SourceAccount": { Ref: "AWS::AccountId" } } },
+				},
+			],
+		},
+		Policies: [
+			{
+				PolicyName: "deliver",
+				PolicyDocument: {
+					Version: "2012-10-17",
+					Statement: [{ Effect: "Allow", Action: action, Resource: resource }],
+				},
+			},
+		],
+	},
+})
+
+/**
+ * The CloudTrail feed's home stack, in us-east-1 where IAM, STS and sign-in events land: a rule on
+ * the default bus sends CloudTrail's changes and console activity, this region's and those the other
+ * regions forward, to a Firehose that posts them to Maple. EventBridge sees CloudTrail events only
+ * while a trail logs, so `CreateTrail` adds a multi-region one for an account without; its bucket
+ * outlives the stack, since it holds the account's audit history.
+ */
+export const renderAwsAuditCloudFormation = (
+	connectionId: AwsConnectionId,
+	names: { readonly streamName: string; readonly trailName: string },
+	endpoint: string,
+) => {
+	const trailArn = {
+		"Fn::Sub": `arn:\${AWS::Partition}:cloudtrail:\${AWS::Region}:\${AWS::AccountId}:trail/${names.trailName}`,
+	}
+	const template = {
+		AWSTemplateFormatVersion: "2010-09-09",
+		Description: `Maple integration ${connectionId}: sends this account's CloudTrail changes and console sign-ins to Maple's audit log. ${DOCS_URL}`,
+		Parameters: {
+			AccessKey: {
+				Type: "String",
+				NoEcho: true,
+				MinLength: 1,
+				Description: "Sent with every delivery so Maple knows which connection it is for",
+			},
+			CreateTrail: {
+				Type: "String",
+				AllowedValues: ["true", "false"],
+				Default: "false",
+				Description:
+					"Whether to create a multi-region trail. EventBridge only sees CloudTrail events while a trail logs; choose false if the account already has one.",
+			},
+		},
+		Conditions: { CreateTrail: { "Fn::Equals": [{ Ref: "CreateTrail" }, "true"] } },
+		Resources: {
+			...firehoseResources(
+				names.streamName,
+				endpoint,
+				"Lets the Maple audit Firehose keep batches Maple could not accept",
+			),
+			AuditRuleRole: eventsRole(
+				"Lets the Maple audit rule write to its Firehose",
+				["firehose:PutRecord", "firehose:PutRecordBatch"],
+				{ "Fn::GetAtt": ["DeliveryStream", "Arn"] },
+			),
+			AuditRule: {
+				Type: "AWS::Events::Rule",
+				Properties: {
+					Name: names.streamName,
+					Description: "Sends CloudTrail changes and console sign-ins to Maple",
+					EventPattern: auditEventPattern,
+					State: "ENABLED",
+					Targets: [
+						{
+							Id: "maple",
+							Arn: { "Fn::GetAtt": ["DeliveryStream", "Arn"] },
+							RoleArn: { "Fn::GetAtt": ["AuditRuleRole", "Arn"] },
+						},
+					],
+				},
+			},
+			TrailBucket: {
+				Type: "AWS::S3::Bucket",
+				Condition: "CreateTrail",
+				DeletionPolicy: "Retain",
+				UpdateReplacePolicy: "Retain",
+				Properties: {
+					BucketEncryption: {
+						ServerSideEncryptionConfiguration: [
+							{ ServerSideEncryptionByDefault: { SSEAlgorithm: "AES256" } },
+						],
+					},
+					PublicAccessBlockConfiguration: {
+						BlockPublicAcls: true,
+						BlockPublicPolicy: true,
+						IgnorePublicAcls: true,
+						RestrictPublicBuckets: true,
+					},
+					OwnershipControls: { Rules: [{ ObjectOwnership: "BucketOwnerEnforced" }] },
+					LifecycleConfiguration: {
+						Rules: [{ Id: "expire-trail-logs", Status: "Enabled", ExpirationInDays: 365 }],
+					},
+				},
+			},
+			TrailBucketPolicy: {
+				Type: "AWS::S3::BucketPolicy",
+				Condition: "CreateTrail",
+				Properties: {
+					Bucket: { Ref: "TrailBucket" },
+					PolicyDocument: {
+						Version: "2012-10-17",
+						Statement: [
+							{
+								Sid: "CloudTrailAclCheck",
+								Effect: "Allow",
+								Principal: { Service: "cloudtrail.amazonaws.com" },
+								Action: "s3:GetBucketAcl",
+								Resource: { "Fn::GetAtt": ["TrailBucket", "Arn"] },
+								Condition: { StringEquals: { "aws:SourceArn": trailArn } },
+							},
+							{
+								Sid: "CloudTrailWrite",
+								Effect: "Allow",
+								Principal: { Service: "cloudtrail.amazonaws.com" },
+								Action: "s3:PutObject",
+								Resource: { "Fn::Sub": "${TrailBucket.Arn}/AWSLogs/${AWS::AccountId}/*" },
+								Condition: { StringEquals: { "aws:SourceArn": trailArn } },
+							},
+						],
+					},
+				},
+			},
+			Trail: {
+				Type: "AWS::CloudTrail::Trail",
+				Condition: "CreateTrail",
+				DependsOn: "TrailBucketPolicy",
+				Properties: {
+					TrailName: names.trailName,
+					S3BucketName: { Ref: "TrailBucket" },
+					IsLogging: true,
+					IsMultiRegionTrail: true,
+					IncludeGlobalServiceEvents: true,
+					EnableLogFileValidation: true,
+				},
+			},
+		},
+	}
+	return `${encodePrettyJson(template)}\n`
+}
+
+/** One region's forwarder: a rule that sends its CloudTrail changes to the default bus in us-east-1. */
+export const renderAwsAuditForwarderCloudFormation = (connectionId: AwsConnectionId, ruleName: string) => {
+	const homeBus = {
+		"Fn::Sub": `arn:\${AWS::Partition}:events:${AWS_AUDIT_HOME_REGION}:\${AWS::AccountId}:event-bus/default`,
+	}
+	const template = {
+		AWSTemplateFormatVersion: "2010-09-09",
+		Description: `Maple integration ${connectionId}: forwards this region's CloudTrail changes to ${AWS_AUDIT_HOME_REGION}, where Maple's audit feed sends them on. ${DOCS_URL}`,
+		Resources: {
+			ForwardRuleRole: eventsRole(
+				`Lets the Maple audit rule forward events to ${AWS_AUDIT_HOME_REGION}`,
+				"events:PutEvents",
+				homeBus,
+			),
+			ForwardRule: {
+				Type: "AWS::Events::Rule",
+				Properties: {
+					Name: ruleName,
+					Description: `Forwards CloudTrail changes and console sign-ins to ${AWS_AUDIT_HOME_REGION} for Maple`,
+					EventPattern: auditEventPattern,
+					State: "ENABLED",
+					Targets: [
+						{
+							Id: "maple-home-region",
+							Arn: homeBus,
+							RoleArn: { "Fn::GetAtt": ["ForwardRuleRole", "Arn"] },
+						},
+					],
+				},
+			},
+		},
+	}
+	return `${encodePrettyJson(template)}\n`
+}
+
 export interface AwsScriptTarget {
 	readonly accountId: AwsAccountId
 	readonly stackName: string
 	readonly metricsStackName: string
+	readonly auditStackName: string
+	readonly auditForwarderStackName: string
+	readonly auditTrailName: string
 	readonly oidcProvider: AwsSetupPlan["oidcProvider"]
 }
 
@@ -306,39 +527,43 @@ fi
 `
 
 /**
- * Deletes the metric stream stack from every enabled region not in `keep`. A stream turned off, or
- * a region dropped, leaves a stack only a later setup or the cleanup knows to remove.
+ * Deletes one region's stack (`$1` region, `$2` stack, `$3` what it is). CloudFormation cannot delete
+ * a bucket with objects in it, and failed batches land in it, so the bucket is emptied first; once
+ * more if Firehose wrote into it while the stack was being deleted.
  */
-/**
- * Deletes one region's metric stream stack. CloudFormation cannot delete a bucket with objects in
- * it, and failed batches land in it, so the bucket is emptied first; once more if Firehose wrote
- * into it while the stack was being deleted.
- */
-const deleteMetricsStackFunction = (stackName: string) => `delete_metrics_stack() {
+const DELETE_EMPTIED_STACK = `delete_emptied_stack() {
   for attempt in 1 2; do
-    bucket="$(aws cloudformation describe-stack-resource --region "$1" --stack-name ${stackName} --logical-resource-id FailedDeliveries --query 'StackResourceDetail.PhysicalResourceId' --output text 2>/dev/null || true)"
+    bucket="$(aws cloudformation describe-stack-resource --region "$1" --stack-name "$2" --logical-resource-id FailedDeliveries --query 'StackResourceDetail.PhysicalResourceId' --output text 2>/dev/null || true)"
     if [ -n "$bucket" ] && [ "$bucket" != "None" ]; then
       aws s3 rm "s3://$bucket" --recursive --region "$1" >/dev/null 2>&1 || true
     fi
-    if aws cloudformation delete-stack --region "$1" --stack-name ${stackName} &&
-      aws cloudformation wait stack-delete-complete --region "$1" --stack-name ${stackName}; then
+    if aws cloudformation delete-stack --region "$1" --stack-name "$2" &&
+      aws cloudformation wait stack-delete-complete --region "$1" --stack-name "$2"; then
       return 0
     fi
-    echo "Deleting the metric stream stack in $1 failed (attempt $attempt)." >&2
+    echo "Deleting the $3 stack in $1 failed (attempt $attempt)." >&2
   done
   return 1
 }
 `
 
-const removeMetricsStacks = (
+const ENABLED_REGIONS = `$(aws ec2 describe-regions --region ${AWS_STACK_REGION} --query 'Regions[].RegionName' --output text)`
+
+/**
+ * Deletes `stackName` from every enabled region not in `keep`. A feature turned off, or a region
+ * dropped, leaves a stack only a later setup or the cleanup knows to remove.
+ */
+const removeStacks = (
 	stackName: string,
 	keep: ReadonlyArray<string>,
+	what: string,
 ) => `keep=" ${Arr.join(keep, " ")} "
-for region in $(aws ec2 describe-regions --region ${AWS_STACK_REGION} --query 'Regions[].RegionName' --output text); do
+regions="${ENABLED_REGIONS}"
+for region in $regions; do
   case "$keep" in *" $region "*) continue ;; esac
   if aws cloudformation describe-stacks --region "$region" --stack-name ${stackName} >/dev/null 2>&1; then
-    echo "Removing the metric stream from $region..."
-    delete_metrics_stack "$region"
+    echo "Removing the ${what} from $region..."
+    delete_emptied_stack "$region" ${stackName} "${what}"
   fi
 done
 `
@@ -354,7 +579,7 @@ ${template}MAPLE_METRICS_TEMPLATE
 for region in ${Arr.join(stream.regions, " ")}; do
   status="$(aws cloudformation describe-stacks --region "$region" --stack-name ${stackName} --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)"
   if [ "$status" = "ROLLBACK_COMPLETE" ]; then
-    delete_metrics_stack "$region"
+    delete_emptied_stack "$region" ${stackName} "metric stream"
   fi
   echo "Deploying the metric stream to $region..."
   aws cloudformation deploy \\
@@ -368,6 +593,116 @@ done
 rm -f "$metrics_template"
 `
 
+/** The CloudTrail feed's rendered stacks. */
+export interface AwsAuditStacks {
+	readonly target: AwsAuditTarget
+	readonly template: string
+	readonly forwarderTemplate: string
+}
+
+/** A trail a Maple feed created (`maple-` and 24 hex digits), in any connection to the account. */
+const MAPLE_TRAIL_GLOB = `*/maple-${Str.repeat(24)("?")}`
+
+/**
+ * Whether the account needs Maple's trail: none of its other multi-region trails logs write
+ * management events. A trail whose status or selectors cannot be read (an organization trail seen
+ * from a member account) counts, so the feed never adds a second trail, which AWS bills, beside
+ * one it cannot see into. Trails other Maple connections created never count: one of them may
+ * be removed while this feed still needs a trail. The lists are read into variables first, so a
+ * failed AWS call stops the script instead of reading as "no trails".
+ */
+const trailCheck = (
+	trailName: string,
+) => `trails="$(aws cloudtrail describe-trails --region ${AWS_AUDIT_HOME_REGION} --include-shadow-trails --query 'trailList[?IsMultiRegionTrail].TrailARN' --output text)"
+create_trail=true
+for trail in $trails; do
+  case "$trail" in None | ${MAPLE_TRAIL_GLOB}) continue ;; esac
+  logging="$(aws cloudtrail get-trail-status --region ${AWS_AUDIT_HOME_REGION} --name "$trail" --query IsLogging --output text 2>/dev/null || echo unknown)"
+  [ "$logging" = "False" ] && continue
+  selectors="$(aws cloudtrail get-event-selectors --region ${AWS_AUDIT_HOME_REGION} --trail-name "$trail" --query '[length(EventSelectors[?IncludeManagementEvents && ReadWriteType != \`ReadOnly\`] || \`[]\`), length(AdvancedEventSelectors || \`[]\`)]' --output text 2>/dev/null || echo unknown)"
+  # Advanced selectors are trusted to include management events: reading them is not worth a guess.
+  set -- $selectors
+  [ "\${1:-}" = "0" ] && [ "\${2:-}" = "0" ] && continue
+  create_trail=false
+  break
+done
+if [ "$create_trail" = "true" ]; then
+  echo "No other multi-region trail records changes in this account: the CloudTrail feed creates ${trailName}."
+fi
+`
+
+/**
+ * Deploys the CloudTrail feed: its home stack in us-east-1, then a forwarder in every other enabled
+ * region, side by side so a first run does not take a region at a time. Any region that fails is
+ * named, with its output, and fails the script.
+ */
+const deployAuditStacks = (target: AwsScriptTarget, audit: AwsAuditStacks) => `audit_template="$(mktemp)"
+cat > "$audit_template" <<'MAPLE_AUDIT_TEMPLATE'
+${audit.template}MAPLE_AUDIT_TEMPLATE
+forwarder_template="$(mktemp)"
+cat > "$forwarder_template" <<'MAPLE_AUDIT_FORWARDER_TEMPLATE'
+${audit.forwarderTemplate}MAPLE_AUDIT_FORWARDER_TEMPLATE
+${trailCheck(target.auditTrailName)}status="$(aws cloudformation describe-stacks --region ${AWS_AUDIT_HOME_REGION} --stack-name ${target.auditStackName} --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)"
+if [ "$status" = "ROLLBACK_COMPLETE" ]; then
+  delete_emptied_stack ${AWS_AUDIT_HOME_REGION} ${target.auditStackName} "CloudTrail feed"
+fi
+echo "Deploying the CloudTrail feed to ${AWS_AUDIT_HOME_REGION}..."
+aws cloudformation deploy \\
+  --region ${AWS_AUDIT_HOME_REGION} \\
+  --stack-name ${target.auditStackName} \\
+  --template-file "$audit_template" \\
+  --capabilities CAPABILITY_IAM \\
+  --parameter-overrides "AccessKey=${audit.target.accessKey}" "CreateTrail=$create_trail" \\
+  --no-fail-on-empty-changeset
+forwarder_logs="$(mktemp -d)"
+jobs_started=""
+regions="${ENABLED_REGIONS}"
+for region in $regions; do
+  [ "$region" = "${AWS_AUDIT_HOME_REGION}" ] && continue
+  (
+    status="$(aws cloudformation describe-stacks --region "$region" --stack-name ${target.auditForwarderStackName} --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)"
+    if [ "$status" = "ROLLBACK_COMPLETE" ]; then
+      aws cloudformation delete-stack --region "$region" --stack-name ${target.auditForwarderStackName}
+      aws cloudformation wait stack-delete-complete --region "$region" --stack-name ${target.auditForwarderStackName}
+    fi
+    aws cloudformation deploy \\
+      --region "$region" \\
+      --stack-name ${target.auditForwarderStackName} \\
+      --template-file "$forwarder_template" \\
+      --capabilities CAPABILITY_IAM \\
+      --no-fail-on-empty-changeset
+  ) >"$forwarder_logs/$region.log" 2>&1 &
+  jobs_started="$jobs_started $!:$region"
+done
+echo "Forwarding CloudTrail events from every other enabled region..."
+failed=""
+blocked=""
+for job in $jobs_started; do
+  region="\${job#*:}"
+  if ! wait "\${job%%:*}"; then
+    # A region an organization policy denies is not this account's to use: skip it.
+    if grep -qE "AccessDenied|explicit deny|not authorized" "$forwarder_logs/$region.log"; then
+      blocked="$blocked $region"
+    else
+      failed="$failed $region"
+    fi
+  fi
+done
+rm -f "$audit_template" "$forwarder_template"
+if [ -n "$blocked" ]; then
+  echo "Skipped regions this account may not deploy to (an organization policy denies them):$blocked"
+fi
+if [ -n "$failed" ]; then
+  for region in $failed; do
+    echo "Deploying the CloudTrail forwarder to $region failed:" >&2
+    cat "$forwarder_logs/$region.log" >&2
+  done
+  rm -rf "$forwarder_logs"
+  exit 1
+fi
+rm -rf "$forwarder_logs"
+`
+
 /**
  * The script an administrator pastes into AWS CloudShell. It deploys the stack, which converges: a
  * re-run after a module change updates the role and its policies in place. With a metric stream it
@@ -377,6 +712,7 @@ export const renderAwsSetupScript = (
 	target: AwsScriptTarget,
 	template: string,
 	metrics: { readonly stream: AwsStreamTarget; readonly template: string } | null,
+	audit: AwsAuditStacks | null,
 ) =>
 	forPaste(
 		"AWS",
@@ -401,7 +737,7 @@ aws cloudformation deploy \\
   --parameter-overrides CreateOidcProvider=false \\
   --no-fail-on-empty-changeset
 rm -f "$template"
-${deleteMetricsStackFunction(target.metricsStackName)}${metrics === null ? "" : deployMetricsStacks(target.metricsStackName, metrics.stream, metrics.template)}${removeMetricsStacks(target.metricsStackName, metrics?.stream.regions ?? [])}echo "Done. Go back to Maple and select Check connection. Details: ${DOCS_URL}"
+${DELETE_EMPTIED_STACK}${metrics === null ? "" : deployMetricsStacks(target.metricsStackName, metrics.stream, metrics.template)}${removeStacks(target.metricsStackName, metrics?.stream.regions ?? [], "metric stream")}${audit === null ? `${removeStacks(target.auditForwarderStackName, [], "CloudTrail forwarder")}${removeStacks(target.auditStackName, [], "CloudTrail feed")}` : deployAuditStacks(target, audit)}echo "Done. Go back to Maple and select Check connection. Details: ${DOCS_URL}"
 `,
 	)
 
@@ -410,7 +746,7 @@ export const renderAwsCleanupScript = (target: AwsScriptTarget) =>
 		"AWS",
 		"MAPLE_CLEANUP_SCRIPT",
 		`set -euo pipefail
-${accountGuard(target.accountId)}${deleteMetricsStackFunction(target.metricsStackName)}${removeMetricsStacks(target.metricsStackName, [])}echo "Deleting ${target.stackName} from account ${target.accountId}..."
+${accountGuard(target.accountId)}${DELETE_EMPTIED_STACK}${removeStacks(target.metricsStackName, [], "metric stream")}${removeStacks(target.auditForwarderStackName, [], "CloudTrail forwarder")}${removeStacks(target.auditStackName, [], "CloudTrail feed")}echo "Deleting ${target.stackName} from account ${target.accountId}..."
 aws cloudformation delete-stack --region ${AWS_STACK_REGION} --stack-name ${target.stackName}
 aws cloudformation wait stack-delete-complete --region ${AWS_STACK_REGION} --stack-name ${target.stackName}
 ${removeOidcProviderIfUnused(target.oidcProvider)}echo "Done. The role Maple used is gone."
@@ -485,19 +821,34 @@ output "maple_role_arn" {
 `
 }
 
+/** What the setup and cleanup scripts of a connection name in the account. */
+export const awsScriptTarget = (
+	connectionId: AwsConnectionId,
+	accountId: AwsAccountId,
+	oidcProvider: AwsSetupPlan["oidcProvider"],
+): AwsScriptTarget => {
+	const names = awsConnectionResourceNames(connectionId)
+	return {
+		accountId,
+		stackName: names.stackName,
+		metricsStackName: names.metricsStackName,
+		auditStackName: names.auditStackName,
+		auditForwarderStackName: names.auditForwarderStackName,
+		auditTrailName: names.auditTrailName,
+		oidcProvider,
+	}
+}
+
 /** Every rendering of one connection's setup. */
 export const renderAwsSetup = Effect.fn("renderAwsSetup")(function* (
 	connectionId: AwsConnectionId,
 	accountId: AwsAccountId,
 	plan: AwsSetupPlan,
 	stream: AwsStreamTarget | null,
+	audit: AwsAuditTarget | null,
 ) {
-	const target = {
-		accountId,
-		stackName: plan.stackName,
-		metricsStackName: plan.metricsStackName,
-		oidcProvider: plan.oidcProvider,
-	}
+	const target = awsScriptTarget(connectionId, accountId, plan.oidcProvider)
+	const names = awsConnectionResourceNames(connectionId)
 	const template = renderAwsCloudFormation(connectionId, plan)
 	const metrics =
 		stream === null
@@ -506,10 +857,25 @@ export const renderAwsSetup = Effect.fn("renderAwsSetup")(function* (
 					stream,
 					template: renderAwsMetricsCloudFormation(connectionId, plan.metricStreamName, stream),
 				}
+	const auditStacks =
+		audit === null
+			? null
+			: {
+					target: audit,
+					template: renderAwsAuditCloudFormation(
+						connectionId,
+						{ streamName: names.auditStreamName, trailName: names.auditTrailName },
+						audit.endpoint,
+					),
+					forwarderTemplate: renderAwsAuditForwarderCloudFormation(
+						connectionId,
+						names.auditStreamName,
+					),
+				}
 	return {
 		stackName: plan.stackName,
 		stackRegion: AWS_STACK_REGION,
-		setupScript: yield* renderAwsSetupScript(target, template, metrics),
+		setupScript: yield* renderAwsSetupScript(target, template, metrics, auditStacks),
 		cleanupScript: yield* renderAwsCleanupScript(target),
 		cloudformationTemplate: template,
 		terraform: renderAwsTerraform(connectionId, plan),

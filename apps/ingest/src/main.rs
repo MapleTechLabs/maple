@@ -1065,6 +1065,8 @@ struct AwsConnectionResolver {
     /// (connection id, succeeded) pairs already written within
     /// `AWS_STREAM_HEALTH_WRITE_INTERVAL`.
     recent_health_writes: Cache<(String, bool), ()>,
+    /// The same, for the audit event stream's health.
+    recent_audit_health_writes: Cache<(String, bool), ()>,
 }
 
 struct OrgRoutingResolver {
@@ -1263,6 +1265,15 @@ trait KeyStore: Send + Sync {
         error: Option<&str>,
         now_ms: i64,
     ) -> Result<(), String>;
+
+    /// Stamps `audit_last_received_at` and clears `audit_last_error`
+    /// (`error == None`), or writes `audit_last_error`.
+    async fn record_aws_audit_health(
+        &self,
+        connection_id: &str,
+        error: Option<&str>,
+        now_ms: i64,
+    ) -> Result<(), String>;
 }
 
 #[derive(Clone, Debug)]
@@ -1335,6 +1346,9 @@ struct AwsConnectionRow {
     org_id: String,
     self_managed: bool,
     clickhouse_ready: bool,
+    /// Whether the connection asked for its CloudTrail feed. A feed turned off
+    /// in Maple may still be deployed in the account until the setup runs again.
+    audit_trail_enabled: bool,
     /// The connection's `sources` row, joined through `source_id`.
     source: Option<PullSourceRow>,
 }
@@ -1447,12 +1461,14 @@ struct AwsConnectionIdentity {
     source: Option<SourceRef>,
     /// That source's pause window, judged per delivery so a timed pause ends on time.
     source_pause: PauseWindow,
+    audit_trail_enabled: bool,
 }
 
 impl AwsConnectionIdentity {
     fn into_resolved(self, routing: &OrgRouting) -> ResolvedAwsConnection {
         ResolvedAwsConnection {
             source_pause: self.source_pause,
+            audit_trail_enabled: self.audit_trail_enabled,
             key: ResolvedIngestKey {
                 org_id: self.org_id,
                 key_type: IngestKeyType::Connector,
@@ -1758,6 +1774,8 @@ struct ResolvedGcpConnector {
 struct ResolvedAwsConnection {
     /// The integration source's pause window: a paused source's deliveries are acked and dropped.
     source_pause: PauseWindow,
+    /// Audit deliveries for a connection that did not ask for them are dropped.
+    audit_trail_enabled: bool,
     key: ResolvedIngestKey,
 }
 
@@ -4182,6 +4200,10 @@ fn ingest_routes() -> Router<Arc<AppState>> {
         .route(
             "/v1/firehose/aws/{connection_id}",
             post(handle_aws_firehose),
+        )
+        .route(
+            "/v1/firehose/aws/{connection_id}/audit",
+            post(handle_aws_firehose_audit),
         )
 }
 
@@ -7916,34 +7938,7 @@ async fn handle_aws_firehose_inner(
     body: &Bytes,
     request_id: &mut String,
 ) -> Result<AwsStreamOutcome, (ApiError, &'static str)> {
-    let unauthorized = || {
-        (
-            ApiError::unauthorized("Invalid connection credentials"),
-            "auth",
-        )
-    };
-    let access_key = access_key.map(str::trim).filter(|key| !key.is_empty());
-    let (Some(access_key), true) = (access_key, is_aws_connection_id(connection_id)) else {
-        warn!("Missing Firehose access key or malformed AWS connection id");
-        return Err(unauthorized());
-    };
-    Span::current().record("maple.aws.connection_id", connection_id);
-
-    let resolved = state
-        .aws_resolver
-        .resolve_connection(connection_id, access_key)
-        .await
-        .map_err(|error| {
-            error!(error = %error, connection_id, "AWS connection resolution failed");
-            (
-                ApiError::service_unavailable("Connection authentication unavailable"),
-                "auth",
-            )
-        })?
-        .ok_or_else(|| {
-            warn!(connection_id, "Invalid AWS metric stream credentials");
-            unauthorized()
-        })?;
+    let resolved = authenticate_aws_delivery(state, connection_id, access_key).await?;
     let org_id = resolved.key.org_id.as_str();
     let signal = Signal::Metrics.path();
 
@@ -8147,6 +8142,485 @@ fn is_aws_connection_id(value: &str) -> bool {
             8 | 13 | 18 | 23 => byte == b'-',
             _ => byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte),
         })
+}
+
+/// AWS CloudTrail deliveries one org may make each second, across the fleet.
+/// Firehose batches about a minute per region, one stack per enabled region.
+const AUDIT_TRAIL_AWS_ORG_RPS: u32 = 10;
+
+/// What an AWS audit delivery's ack means.
+enum AwsAuditOutcome {
+    Stored {
+        events: usize,
+        skipped: usize,
+    },
+    /// The body can never decode, so a retry is pointless.
+    Undecodable,
+    SourcePaused,
+    /// The connection's CloudTrail feed is off in Maple, though still deployed.
+    FeedOff,
+    /// This gateway does not store the audit trail yet.
+    NotStoredYet,
+}
+
+/// An AWS audit delivery once decoded.
+enum AwsAuditDelivery {
+    Rows {
+        request_id: Option<String>,
+        rows: Vec<Vec<u8>>,
+        /// Events that are not audit events (read-only calls, service events).
+        skipped: usize,
+        /// Records that are not EventBridge events; the rest are kept.
+        unreadable_records: usize,
+    },
+    Unreadable,
+    TooLarge,
+}
+
+/// Receives CloudTrail management events that an EventBridge rule sends to a
+/// Firehose HTTP endpoint destination, as rows of `audit_trail_events`.
+/// Authenticated and answered like the metric stream route.
+async fn handle_aws_firehose_audit(
+    State(state): State<Arc<AppState>>,
+    Path(connection_id): Path<String>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let start = Instant::now();
+
+    metrics::request_started();
+    let _guard = InFlightGuard;
+
+    let span = tracing::info_span!(
+        "aws_firehose_audit",
+        otel.name = "POST /v1/firehose/aws/{connection_id}/audit",
+        otel.kind = "server",
+        otel.status_code = tracing::field::Empty,
+        otel.status_description = tracing::field::Empty,
+        "maple.ingest.reject_reason" = tracing::field::Empty,
+        "http.request.method" = "POST",
+        "http.route" = "/v1/firehose/aws/{connection_id}/audit",
+        "http.request.body.size" = body.len(),
+        "http.response.status_code" = tracing::field::Empty,
+        "error.type" = tracing::field::Empty,
+        "maple.signal" = "audit_trail",
+        "maple.org_id" = tracing::field::Empty,
+        "maple.aws.connection_id" = tracing::field::Empty,
+        "maple.audit_trail.events" = tracing::field::Empty,
+        "maple.audit_trail.skipped" = tracing::field::Empty,
+    );
+    let span_handle = span.clone();
+
+    let header = |name: &str| headers.get(name).and_then(|value| value.to_str().ok());
+    // The body's `requestId` replaces this once the body is read.
+    let mut request_id = header(FIREHOSE_REQUEST_ID_HEADER)
+        .unwrap_or_default()
+        .to_owned();
+    let content_encoding = header(CONTENT_ENCODING.as_str())
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| !value.is_empty() && value != "identity");
+    let result = handle_aws_firehose_audit_inner(
+        &state,
+        &connection_id,
+        header(FIREHOSE_ACCESS_KEY_HEADER),
+        content_encoding.as_deref(),
+        &body,
+        &mut request_id,
+    )
+    .instrument(span)
+    .await;
+    let duration = start.elapsed().as_secs_f64();
+    let signal = TelemetrySignal::AuditTrail.as_str();
+
+    match result {
+        Ok(outcome) => {
+            span_handle.record("http.response.status_code", StatusCode::OK.as_u16());
+            match outcome {
+                AwsAuditOutcome::Stored { events, skipped } => {
+                    span_handle.record("otel.status_code", "Ok");
+                    span_handle.record("maple.audit_trail.events", events);
+                    span_handle.record("maple.audit_trail.skipped", skipped);
+                    metrics::request_completed(signal, "ok", "none", duration);
+                }
+                AwsAuditOutcome::Undecodable => {
+                    // Acked, but the events are gone: an `Error` like the metric route's.
+                    span_handle.record("error.type", "decode");
+                    record_rejection_reason(
+                        &span_handle,
+                        200,
+                        "decode",
+                        "Firehose delivery is not EventBridge events",
+                    );
+                    metrics::request_completed(signal, "error", "decode", duration);
+                }
+                AwsAuditOutcome::SourcePaused => {
+                    span_handle.record("otel.status_code", "Ok");
+                    span_handle.record("maple.ingest.reject_reason", "source_paused");
+                    metrics::request_completed(signal, "ok", "none", duration);
+                }
+                AwsAuditOutcome::FeedOff => {
+                    span_handle.record("otel.status_code", "Ok");
+                    span_handle.record("maple.ingest.reject_reason", "audit_trail_off");
+                    metrics::request_completed(signal, "ok", "none", duration);
+                }
+                AwsAuditOutcome::NotStoredYet => {
+                    span_handle.record("otel.status_code", "Ok");
+                    span_handle.record("maple.ingest.reject_reason", "audit_trail_disabled");
+                    metrics::request_completed(signal, "ok", "none", duration);
+                }
+            }
+            firehose_response(StatusCode::OK, &request_id, None)
+        }
+        Err((error, error_kind)) => {
+            let status = error.status.as_u16();
+            span_handle.record("http.response.status_code", status);
+            span_handle.record("error.type", error_kind);
+            record_rejection_reason(&span_handle, status, error_kind, error.reason().as_str());
+            metrics::request_completed(signal, "error", error_kind, duration);
+            firehose_response(error.status, &request_id, Some(&error))
+        }
+    }
+}
+
+/// Why an authenticated audit delivery is acked without being stored, if it is:
+/// a paused source, a feed turned off in Maple, or a gateway that does not store
+/// the audit trail yet.
+async fn aws_audit_dropped(
+    state: &AppState,
+    resolved: &ResolvedAwsConnection,
+    connection_id: &str,
+) -> Option<AwsAuditOutcome> {
+    let org_id = resolved.key.org_id.as_str();
+    let signal = TelemetrySignal::AuditTrail.as_str();
+    if resolved.source_pause.is_paused(current_time_millis()) {
+        metrics::source_paused_drop(org_id, signal);
+        debug!(
+            org_id,
+            connection_id, "AWS integration source paused; audit delivery acked and dropped"
+        );
+        return Some(AwsAuditOutcome::SourcePaused);
+    }
+    if !resolved.audit_trail_enabled {
+        debug!(
+            org_id,
+            connection_id, "AWS audit feed is off for this connection; delivery acked and dropped"
+        );
+        return Some(AwsAuditOutcome::FeedOff);
+    }
+    if !state.config.stores_audit_trail() {
+        state
+            .aws_resolver
+            .record_audit_health(connection_id, Some(audit_trail::AWS_AUDIT_NOT_STORED_YET))
+            .await;
+        return Some(AwsAuditOutcome::NotStoredYet);
+    }
+    None
+}
+
+/// Returns what the ack means, or Err((ApiError, error_kind_label)).
+/// `request_id` takes the body's `requestId` once the body is read.
+async fn handle_aws_firehose_audit_inner(
+    state: &AppState,
+    connection_id: &str,
+    access_key: Option<&str>,
+    content_encoding: Option<&str>,
+    body: &Bytes,
+    request_id: &mut String,
+) -> Result<AwsAuditOutcome, (ApiError, &'static str)> {
+    let resolved = authenticate_aws_delivery(state, connection_id, access_key).await?;
+    let org_id = resolved.key.org_id.as_str();
+    Span::current().record("maple.org_id", org_id);
+
+    if let Some(outcome) = aws_audit_dropped(state, &resolved, connection_id).await {
+        return Ok(outcome);
+    }
+
+    // No entitlement check and no metering: an audit event is evidence, not usage.
+    audit_trail_rate_gate(state, org_id, "aws", AUDIT_TRAIL_AWS_ORG_RPS)
+        .await
+        .map_err(|error| (error, "throttle"))?;
+    let _org_inflight_permit = state
+        .org_inflight_limiter
+        .try_acquire(org_id)
+        .ok_or_else(|| {
+            warn!(
+                org_id,
+                connection_id, "Per-org in-flight ingest limit exceeded"
+            );
+            (
+                ApiError::too_many_requests("Per-org ingest limit exceeded"),
+                "throttle",
+            )
+        })?;
+    let pipeline = native_rows_pipeline_for(
+        state,
+        ExportDestination::Tinybird,
+        "Audit event storage is not configured",
+    )
+    .map_err(|error| (error, "config"))?;
+
+    let delivery =
+        decode_aws_audit_delivery(state, body.clone(), content_encoding, org_id.to_owned())
+            .await
+            .map_err(|error| {
+                let kind = error.error_kind();
+                (error, kind)
+            })?;
+    let (rows, skipped, unreadable_records) = match delivery {
+        AwsAuditDelivery::TooLarge => {
+            return Err(refuse_oversized_audit_delivery(state, connection_id, org_id).await);
+        }
+        AwsAuditDelivery::Unreadable => {
+            ack_undecodable_audit_delivery(state, connection_id, org_id).await;
+            return Ok(AwsAuditOutcome::Undecodable);
+        }
+        AwsAuditDelivery::Rows {
+            request_id: body_request_id,
+            rows,
+            skipped,
+            unreadable_records,
+        } => {
+            if let Some(body_request_id) = body_request_id {
+                *request_id = body_request_id;
+            }
+            (rows, skipped, unreadable_records)
+        }
+    };
+
+    let events = match store_audit_trail_rows(pipeline, org_id, rows).await {
+        Ok(events) => events,
+        Err(error) => {
+            state
+                .aws_resolver
+                .record_audit_health(connection_id, Some(audit_trail::AWS_AUDIT_NOT_STORED))
+                .await;
+            return Err((error, "forward"));
+        }
+    };
+    // Events arrived even when a record did not: stamp them, then say what was lost.
+    state
+        .aws_resolver
+        .record_audit_health(connection_id, None)
+        .await;
+    if unreadable_records > 0 {
+        ack_undecodable_audit_delivery(state, connection_id, org_id).await;
+    }
+    state.resolver.note_source_use(&resolved.key, false);
+    Ok(AwsAuditOutcome::Stored { events, skipped })
+}
+
+/// The connection a Firehose delivery names, when its access key is that
+/// connection's stream secret.
+async fn authenticate_aws_delivery(
+    state: &AppState,
+    connection_id: &str,
+    access_key: Option<&str>,
+) -> Result<ResolvedAwsConnection, (ApiError, &'static str)> {
+    let unauthorized = || {
+        (
+            ApiError::unauthorized("Invalid connection credentials"),
+            "auth",
+        )
+    };
+    let access_key = access_key.map(str::trim).filter(|key| !key.is_empty());
+    let (Some(access_key), true) = (access_key, is_aws_connection_id(connection_id)) else {
+        warn!("Missing Firehose access key or malformed AWS connection id");
+        return Err(unauthorized());
+    };
+    Span::current().record("maple.aws.connection_id", connection_id);
+
+    state
+        .aws_resolver
+        .resolve_connection(connection_id, access_key)
+        .await
+        .map_err(|error| {
+            error!(error = %error, connection_id, "AWS connection resolution failed");
+            (
+                ApiError::service_unavailable("Connection authentication unavailable"),
+                "auth",
+            )
+        })?
+        .ok_or_else(|| {
+            warn!(connection_id, "Invalid AWS Firehose credentials");
+            unauthorized()
+        })
+}
+
+/// Firehose does not retry a 413, so the delivery is lost.
+async fn refuse_oversized_audit_delivery(
+    state: &AppState,
+    connection_id: &str,
+    org_id: &str,
+) -> (ApiError, &'static str) {
+    warn!(
+        org_id,
+        connection_id, "AWS audit delivery decodes past the size limit"
+    );
+    metrics::org_data_loss(
+        org_id,
+        TelemetrySignal::AuditTrail.as_str(),
+        "payload_too_large",
+    );
+    state
+        .aws_resolver
+        .record_audit_health(
+            connection_id,
+            Some(audit_trail::AWS_AUDIT_DELIVERY_TOO_LARGE),
+        )
+        .await;
+    (
+        ApiError::payload_too_large("Decoded delivery too large"),
+        "payload_too_large",
+    )
+}
+
+/// An audit delivery, or a record in it, that can never decode: acked so
+/// Firehose does not retry it, and counted as lost.
+async fn ack_undecodable_audit_delivery(state: &AppState, connection_id: &str, org_id: &str) {
+    debug!(
+        org_id,
+        connection_id, "AWS audit delivery cannot be decoded; acked and dropped"
+    );
+    metrics::org_data_loss(org_id, TelemetrySignal::AuditTrail.as_str(), "decode");
+    state
+        .aws_resolver
+        .record_audit_health(
+            connection_id,
+            Some(audit_trail::AWS_AUDIT_UNREADABLE_DELIVERY),
+        )
+        .await;
+}
+
+/// An AWS audit delivery as rows. Inflated and parsed on the blocking pool
+/// inside the decode memory budget, like `decode_vercel_audit_drain`.
+async fn decode_aws_audit_delivery(
+    state: &AppState,
+    body: Bytes,
+    content_encoding: Option<&str>,
+    org_id: String,
+) -> Result<AwsAuditDelivery, ApiError> {
+    let gzip = match content_encoding {
+        None => false,
+        Some("gzip") => true,
+        Some(_) => return Ok(AwsAuditDelivery::Unreadable),
+    };
+    let mut reservation = state.decode_memory.reservation();
+    let heap_budget = state.config.max_decode_heap_bytes;
+    let max_decoded = state
+        .config
+        .max_decoded_body_bytes
+        .min(AUDIT_TRAIL_MAX_DECODED_BYTES);
+    tokio::task::spawn_blocking(move || {
+        let busy = || {
+            ApiError::tagged(
+                StatusCode::SERVICE_UNAVAILABLE,
+                &INGEST_DECODE_BUSY,
+                "Ingest gateway is busy decoding other requests; retry shortly",
+            )
+        };
+        let mut reserve = |bytes: u64| {
+            if reservation.try_add(bytes) {
+                Ok(())
+            } else {
+                Err(busy())
+            }
+        };
+        if body.len() > max_decoded {
+            return Ok(AwsAuditDelivery::TooLarge);
+        }
+        reserve(body.len() as u64)?;
+        let payload = if gzip {
+            let Some(declared) = decode_budget::gzip_declared_len(&body) else {
+                return Ok(AwsAuditDelivery::Unreadable);
+            };
+            let declared = usize::try_from(declared).unwrap_or(usize::MAX);
+            if declared > max_decoded {
+                return Ok(AwsAuditDelivery::TooLarge);
+            }
+            reserve(declared as u64)?;
+            match gunzip_declared(&body, declared) {
+                Ok(inflated) => inflated,
+                Err(GunzipError::Invalid(_)) => return Ok(AwsAuditDelivery::Unreadable),
+                Err(GunzipError::TooLarge) => return Ok(AwsAuditDelivery::TooLarge),
+            }
+        } else {
+            body.to_vec()
+        };
+        drop(body);
+        let Ok(estimate) = decode_budget::json_cost(&payload, heap_budget) else {
+            return Ok(AwsAuditDelivery::TooLarge);
+        };
+        reserve(estimate)?;
+        let Some(delivery) = aws_metric_stream::parse_delivery(&payload) else {
+            return Ok(AwsAuditDelivery::Unreadable);
+        };
+        drop(payload);
+        let records = match delivery.record_bytes(max_decoded) {
+            Ok(records) => records,
+            Err(aws_metric_stream::RecordError::TooLarge) => return Ok(AwsAuditDelivery::TooLarge),
+            Err(aws_metric_stream::RecordError::Unreadable) => {
+                return Ok(AwsAuditDelivery::Unreadable)
+            }
+        };
+
+        aws_audit_rows(
+            &records,
+            delivery.request_id,
+            &org_id,
+            heap_budget,
+            &mut reserve,
+        )
+    })
+    .await
+    .unwrap_or_else(|join_error| {
+        error!(error = %join_error, "AWS audit delivery decode task failed");
+        Err(ApiError::service_unavailable(
+            "Ingest gateway failed to decode the request",
+        ))
+    })
+}
+
+/// A delivery's records as audit rows, each record's parse reserved first.
+fn aws_audit_rows(
+    records: &[Vec<u8>],
+    request_id: Option<String>,
+    org_id: &str,
+    heap_budget: u64,
+    reserve: &mut impl FnMut(u64) -> Result<(), ApiError>,
+) -> Result<AwsAuditDelivery, ApiError> {
+    let now_ms = audit_trail::now_ms();
+    let mut rows = Vec::new();
+    let mut events_seen = 0_usize;
+    let mut unreadable_records = 0_usize;
+    for record in records {
+        let Ok(estimate) = decode_budget::json_cost(record, heap_budget) else {
+            return Ok(AwsAuditDelivery::TooLarge);
+        };
+        reserve(estimate)?;
+        let Some(events) = audit_trail::aws_record_events(record) else {
+            unreadable_records += 1;
+            continue;
+        };
+        events_seen += events.len();
+        if events_seen > AUDIT_TRAIL_MAX_EVENTS {
+            return Ok(AwsAuditDelivery::TooLarge);
+        }
+        rows.extend(
+            events
+                .iter()
+                .filter_map(|event| audit_trail::aws_event(event, now_ms))
+                .map(|event| event.to_row(org_id, now_ms)),
+        );
+    }
+    if unreadable_records > 0 && unreadable_records == records.len() {
+        return Ok(AwsAuditDelivery::Unreadable);
+    }
+    Ok(AwsAuditDelivery::Rows {
+        request_id,
+        skipped: events_seen - rows.len(),
+        rows,
+        unreadable_records,
+    })
 }
 
 enum ParsedCloudflarePayload {
@@ -10589,6 +11063,10 @@ impl AwsConnectionResolver {
                 .time_to_live(AWS_STREAM_HEALTH_WRITE_INTERVAL)
                 .max_capacity(20_000)
                 .build(),
+            recent_audit_health_writes: Cache::builder()
+                .time_to_live(AWS_STREAM_HEALTH_WRITE_INTERVAL)
+                .max_capacity(20_000)
+                .build(),
         }
     }
 
@@ -10626,6 +11104,7 @@ impl AwsConnectionResolver {
             secret_key_id: cache_key.1.chars().take(16).collect(),
             source,
             source_pause,
+            audit_trail_enabled: row.audit_trail_enabled,
         };
 
         self.cache.insert(cache_key, identity.clone()).await;
@@ -10660,6 +11139,35 @@ impl AwsConnectionResolver {
                 connection_id,
                 error = write_error,
                 "Failed to record AWS stream health"
+            );
+        }
+    }
+
+    /// `record_health` for the audit event stream: `audit_last_received_at` or
+    /// `audit_last_error`, throttled the same way.
+    async fn record_audit_health(&self, connection_id: &str, error: Option<&str>) {
+        let throttle_key = (connection_id.to_owned(), error.is_none());
+        let throttle = self
+            .recent_audit_health_writes
+            .entry(throttle_key)
+            .or_insert(());
+        if !throttle.await.is_fresh() {
+            return;
+        }
+        // Each outcome's write clears the other's throttle: a success clears the
+        // stored error, so the next error must be written again, and the reverse.
+        self.recent_audit_health_writes
+            .invalidate(&(connection_id.to_owned(), error.is_some()))
+            .await;
+        if let Err(write_error) = self
+            .store
+            .record_aws_audit_health(connection_id, error, current_time_millis())
+            .await
+        {
+            debug!(
+                connection_id,
+                error = write_error,
+                "Failed to record AWS audit stream health"
             );
         }
     }
@@ -11774,7 +12282,7 @@ impl KeyStore for PostgresKeyStore {
         let revision = required_schema_revision();
         let client = self.client().await?;
         let sql = format!(
-            "SELECT c.org_id, \
+            "SELECT c.org_id, c.audit_trail_enabled, \
              COALESCE(s.sync_status = 'connected', false) AS self_managed, \
              COALESCE(s.sync_status = 'connected' AND {SCHEMA_REVISION_COMPATIBLE_SQL}, false) AS clickhouse_ready, \
              {CONNECTOR_SOURCE_COLUMNS} \
@@ -11797,6 +12305,7 @@ impl KeyStore for PostgresKeyStore {
             org_id: row.get("org_id"),
             self_managed: row.get("self_managed"),
             clickhouse_ready: row.get("clickhouse_ready"),
+            audit_trail_enabled: row.get("audit_trail_enabled"),
             source: connector_source(row),
         }))
     }
@@ -11845,6 +12354,52 @@ impl KeyStore for PostgresKeyStore {
         written
             .map(|_| ())
             .map_err(|err| format!("postgres record_aws_stream_health failed: {err}"))
+    }
+
+    async fn record_aws_audit_health(
+        &self,
+        connection_id: &str,
+        error: Option<&str>,
+        now_ms: i64,
+    ) -> Result<(), String> {
+        let client = self.client().await?;
+        // `updated_at` is left alone: it tracks the connection's settings, not its traffic.
+        let written = match error {
+            None => {
+                client
+                    .execute(
+                        "UPDATE aws_connections \
+                         SET audit_last_received_at = to_timestamp($1::bigint / 1000.0), \
+                             audit_last_error = NULL \
+                         WHERE id = $2",
+                        &[&now_ms, &connection_id],
+                    )
+                    .instrument(postgres_client_span(
+                        "record_aws_audit_health",
+                        "UPDATE",
+                        AWS_CONNECTIONS_TABLE,
+                        &self.target,
+                    ))
+                    .await
+            }
+            Some(error) => {
+                client
+                    .execute(
+                        "UPDATE aws_connections SET audit_last_error = $1 WHERE id = $2",
+                        &[&error, &connection_id],
+                    )
+                    .instrument(postgres_client_span(
+                        "record_aws_audit_health",
+                        "UPDATE",
+                        AWS_CONNECTIONS_TABLE,
+                        &self.target,
+                    ))
+                    .await
+            }
+        };
+        written
+            .map(|_| ())
+            .map_err(|err| format!("postgres record_aws_audit_health failed: {err}"))
     }
 }
 
@@ -12019,6 +12574,15 @@ impl KeyStore for StaticKeyStore {
     }
 
     async fn record_aws_stream_health(
+        &self,
+        _connection_id: &str,
+        _error: Option<&str>,
+        _now_ms: i64,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+
+    async fn record_aws_audit_health(
         &self,
         _connection_id: &str,
         _error: Option<&str>,
@@ -13506,6 +14070,8 @@ mod tests {
             std::sync::Mutex<std::collections::HashMap<(String, String), AwsConnectionRow>>,
         /// (connection id, error) of every `record_aws_stream_health` call.
         aws_stream_health: std::sync::Mutex<Vec<(String, Option<String>)>>,
+        /// (connection id, error) of every `record_aws_audit_health` call.
+        aws_audit_health: std::sync::Mutex<Vec<(String, Option<String>)>>,
         routings: std::sync::Mutex<std::collections::HashMap<String, OrgRouting>>,
         /// `org_billing_links`: sub-org to the org that pays for it.
         billing_links: std::sync::Mutex<std::collections::HashMap<String, String>>,
@@ -13830,6 +14396,18 @@ mod tests {
             _now_ms: i64,
         ) -> Result<(), String> {
             self.aws_stream_health
+                .lock()
+                .unwrap()
+                .push((connection_id.to_owned(), error.map(str::to_owned)));
+            Ok(())
+        }
+        async fn record_aws_audit_health(
+            &self,
+            connection_id: &str,
+            error: Option<&str>,
+            _now_ms: i64,
+        ) -> Result<(), String> {
+            self.aws_audit_health
                 .lock()
                 .unwrap()
                 .push((connection_id.to_owned(), error.map(str::to_owned)));
@@ -18033,6 +18611,7 @@ mod tests {
                 org_id: "org_aws".to_owned(),
                 self_managed: true,
                 clickhouse_ready: true,
+                audit_trail_enabled: true,
                 source: None,
             },
         );
@@ -18160,6 +18739,18 @@ mod tests {
         body: Bytes,
         gzip: bool,
     ) -> (StatusCode, JsonValue) {
+        let response = handle_aws_firehose(
+            State(Arc::clone(state)),
+            Path(connection_id.to_owned()),
+            firehose_headers(secret, gzip),
+            body,
+        )
+        .await;
+        firehose_reply(response).await
+    }
+
+    /// What Firehose sends with a delivery.
+    fn firehose_headers(secret: Option<&str>, gzip: bool) -> HeaderMap {
         let mut headers = HeaderMap::new();
         headers.insert(
             FIREHOSE_REQUEST_ID_HEADER,
@@ -18174,13 +18765,10 @@ mod tests {
         if gzip {
             headers.insert(CONTENT_ENCODING, HeaderValue::from_static("gzip"));
         }
-        let response = handle_aws_firehose(
-            State(Arc::clone(state)),
-            Path(connection_id.to_owned()),
-            headers,
-            body,
-        )
-        .await;
+        headers
+    }
+
+    async fn firehose_reply(response: Response) -> (StatusCode, JsonValue) {
         let status = response.status();
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
@@ -18337,6 +18925,255 @@ mod tests {
             )]
         );
 
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    /// Two CloudTrail management events as an EventBridge rule hands them to Firehose.
+    const AWS_AUDIT_CREATE_ACCESS_KEY: &str = r#"{"version":"0","id":"evb-1","detail-type":"AWS API Call via CloudTrail","source":"aws.iam","account":"123456789012","time":"2026-11-17T10:00:00Z","region":"us-east-1","resources":[],"detail":{"userIdentity":{"type":"IAMUser","principalId":"AIDAEXAMPLE","arn":"arn:aws:iam::123456789012:user/ada","accountId":"123456789012","userName":"ada"},"eventTime":"2026-11-17T10:00:00Z","eventSource":"iam.amazonaws.com","eventName":"CreateAccessKey","awsRegion":"us-east-1","sourceIPAddress":"203.0.113.7","userAgent":"aws-cli/2.15.0","requestParameters":{"userName":"deploy-bot"},"eventID":"ct-evt-1","readOnly":false,"eventType":"AwsApiCall","recipientAccountId":"123456789012"}}"#;
+    const AWS_AUDIT_CONSOLE_LOGIN: &str = r#"{"version":"0","id":"evb-2","detail-type":"AWS Console Signin via CloudTrail","source":"aws.signin","account":"123456789012","time":"2026-11-17T10:01:00Z","region":"us-east-1","resources":[],"detail":{"userIdentity":{"type":"Root","principalId":"123456789012","arn":"arn:aws:iam::123456789012:root","accountId":"123456789012"},"eventTime":"2026-11-17T10:01:00Z","eventSource":"signin.amazonaws.com","eventName":"ConsoleLogin","awsRegion":"us-east-1","sourceIPAddress":"198.51.100.4","responseElements":{"ConsoleLogin":"Success"},"eventID":"ct-evt-2","readOnly":false,"eventType":"AwsConsoleSignIn","recipientAccountId":"123456789012"}}"#;
+
+    async fn aws_audit_deliver(
+        state: &Arc<AppState>,
+        secret: Option<&str>,
+        body: Bytes,
+        gzip: bool,
+    ) -> (StatusCode, JsonValue) {
+        let response = handle_aws_firehose_audit(
+            State(Arc::clone(state)),
+            Path(AWS_CONNECTION.to_owned()),
+            firehose_headers(secret, gzip),
+            body,
+        )
+        .await;
+        firehose_reply(response).await
+    }
+
+    /// The AWS Firehose test gateway, storing the audit trail in a fake Tinybird.
+    async fn aws_audit_state(
+        name: &str,
+    ) -> (Arc<AppState>, Arc<FakeKeyStore>, PathBuf, TinybirdImports) {
+        let (mut state, store, queue_dir) =
+            aws_firehose_state(name, "http://127.0.0.1:1", 8 * 1024 * 1024).await;
+        let imports = store_audit_trail(
+            Arc::get_mut(&mut state).expect("the state is not shared yet"),
+            &queue_dir,
+        )
+        .await;
+        (state, store, queue_dir, imports)
+    }
+
+    fn audit_record(events: &[&str]) -> String {
+        STANDARD.encode(events.join("\n"))
+    }
+
+    #[tokio::test]
+    async fn aws_firehose_audit_stores_each_event_as_an_audit_row_for_the_org() {
+        let (state, store, queue_dir, mut imports) = aws_audit_state("aws-audit-accept").await;
+
+        let body = gzip_bytes(firehose_body(&[
+            &audit_record(&[AWS_AUDIT_CREATE_ACCESS_KEY]),
+            &audit_record(&[AWS_AUDIT_CONSOLE_LOGIN]),
+        ]));
+        let (status, response) =
+            aws_audit_deliver(&state, Some(AWS_STREAM_SECRET), body, true).await;
+
+        assert_eq!(status, StatusCode::OK, "{response}");
+        assert_eq!(response["requestId"], "body-request-id");
+        let mut rows = Vec::new();
+        while rows.len() < 2 {
+            let (datasource, batch) = tokio::time::timeout(Duration::from_secs(2), imports.recv())
+                .await
+                .expect("the events should reach Tinybird")
+                .expect("the Tinybird channel should stay open");
+            assert_eq!(datasource, "audit_trail_events");
+            rows.extend(
+                batch
+                    .lines()
+                    .map(|line| serde_json::from_str::<JsonValue>(line).expect("an NDJSON row")),
+            );
+        }
+        let mut stored: Vec<(&str, &str, &str)> = rows
+            .iter()
+            .map(|row| {
+                (
+                    row["OrgId"].as_str().unwrap_or_default(),
+                    row["Action"].as_str().unwrap_or_default(),
+                    row["Category"].as_str().unwrap_or_default(),
+                )
+            })
+            .collect();
+        stored.sort_unstable();
+        assert_eq!(
+            stored,
+            [
+                ("org_aws", "iam:CreateAccessKey", "credential"),
+                ("org_aws", "signin:ConsoleLogin", "authentication"),
+            ]
+        );
+        assert_eq!(
+            *store.aws_audit_health.lock().unwrap(),
+            [(AWS_CONNECTION.to_owned(), None)]
+        );
+        // The metric stream's health is its own.
+        assert!(store.aws_stream_health.lock().unwrap().is_empty());
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn aws_firehose_audit_refuses_a_wrong_access_key_and_stores_nothing() {
+        let (state, store, queue_dir, mut imports) = aws_audit_state("aws-audit-auth").await;
+        let body = || {
+            Bytes::from(firehose_body(&[&audit_record(&[
+                AWS_AUDIT_CREATE_ACCESS_KEY,
+            ])]))
+        };
+
+        for secret in [None, Some("wrong-secret")] {
+            let (status, response) = aws_audit_deliver(&state, secret, body(), false).await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED, "{secret:?}");
+            assert!(response["errorMessage"].is_string());
+        }
+
+        assert!(nothing_reaches_the_audit_trail(&mut imports).await);
+        assert!(store.aws_audit_health.lock().unwrap().is_empty());
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    // Production does not store the audit trail yet. Firehose would retry
+    // anything but a 200 for a day, so the delivery is acked and the connection says why.
+    #[tokio::test]
+    async fn aws_firehose_audit_acks_and_drops_while_the_gateway_does_not_store_the_audit_trail() {
+        let (mut state, store, queue_dir, mut imports) = aws_audit_state("aws-audit-off").await;
+        Arc::get_mut(&mut state)
+            .expect("the state is not shared yet")
+            .config
+            .audit_trail_enabled = false;
+
+        let (status, _) = aws_audit_deliver(
+            &state,
+            Some(AWS_STREAM_SECRET),
+            Bytes::from(firehose_body(&[&audit_record(&[
+                AWS_AUDIT_CREATE_ACCESS_KEY,
+            ])])),
+            false,
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert!(nothing_reaches_the_audit_trail(&mut imports).await);
+        assert_eq!(
+            *store.aws_audit_health.lock().unwrap(),
+            [(
+                AWS_CONNECTION.to_owned(),
+                Some(audit_trail::AWS_AUDIT_NOT_STORED_YET.to_owned())
+            )]
+        );
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn aws_firehose_audit_acks_an_unreadable_delivery_and_keeps_the_readable_records() {
+        let (state, store, queue_dir, mut imports) = aws_audit_state("aws-audit-unreadable").await;
+
+        // Bad base64 never decodes, so Firehose must not retry it.
+        let (status, _) = aws_audit_deliver(
+            &state,
+            Some(AWS_STREAM_SECRET),
+            Bytes::from(firehose_body(&["!!not base64!!"])),
+            false,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(nothing_reaches_the_audit_trail(&mut imports).await);
+        let unreadable = || {
+            (
+                AWS_CONNECTION.to_owned(),
+                Some(audit_trail::AWS_AUDIT_UNREADABLE_DELIVERY.to_owned()),
+            )
+        };
+        assert_eq!(*store.aws_audit_health.lock().unwrap(), [unreadable()]);
+
+        // A record that is not JSON costs only itself: its neighbour is stored.
+        let (status, _) = aws_audit_deliver(
+            &state,
+            Some(AWS_STREAM_SECRET),
+            Bytes::from(firehose_body(&[
+                &STANDARD.encode("not an event"),
+                &audit_record(&[AWS_AUDIT_CREATE_ACCESS_KEY]),
+            ])),
+            false,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let (_, rows) = tokio::time::timeout(Duration::from_secs(2), imports.recv())
+            .await
+            .expect("the readable event should reach Tinybird")
+            .expect("the Tinybird channel should stay open");
+        assert_eq!(rows.trim().lines().count(), 1);
+        // The stored event is stamped, then the lost record is reported: the
+        // connection ends with both a last event and the error.
+        assert_eq!(
+            *store.aws_audit_health.lock().unwrap(),
+            [unreadable(), (AWS_CONNECTION.to_owned(), None), unreadable()]
+        );
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    // Turned off in Maple, a feed may still be deployed until the setup runs again.
+    #[tokio::test]
+    async fn aws_firehose_audit_drops_deliveries_for_a_connection_whose_feed_is_off() {
+        let (state, store, queue_dir, mut imports) = aws_audit_state("aws-audit-feed-off").await;
+        store.insert_aws_connection(
+            AWS_CONNECTION,
+            AWS_STREAM_SECRET,
+            AwsConnectionRow {
+                org_id: "org_aws".to_owned(),
+                self_managed: true,
+                clickhouse_ready: true,
+                audit_trail_enabled: false,
+                source: None,
+            },
+        );
+
+        let (status, _) = aws_audit_deliver(
+            &state,
+            Some(AWS_STREAM_SECRET),
+            Bytes::from(firehose_body(&[&audit_record(&[AWS_AUDIT_CREATE_ACCESS_KEY])])),
+            false,
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert!(nothing_reaches_the_audit_trail(&mut imports).await);
+        assert!(store.aws_audit_health.lock().unwrap().is_empty());
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn aws_firehose_audit_refuses_a_delivery_that_inflates_past_its_limit() {
+        let (state, store, queue_dir, mut imports) = aws_audit_state("aws-audit-too-large").await;
+        let record = STANDARD.encode(" ".repeat(AUDIT_TRAIL_MAX_DECODED_BYTES));
+
+        let (status, _) = aws_audit_deliver(
+            &state,
+            Some(AWS_STREAM_SECRET),
+            gzip_bytes(firehose_body(&[&record])),
+            true,
+        )
+        .await;
+
+        // Firehose does not retry a 413.
+        assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert!(nothing_reaches_the_audit_trail(&mut imports).await);
+        assert_eq!(
+            *store.aws_audit_health.lock().unwrap(),
+            [(
+                AWS_CONNECTION.to_owned(),
+                Some(audit_trail::AWS_AUDIT_DELIVERY_TOO_LARGE.to_owned())
+            )]
+        );
         drop(std::fs::remove_dir_all(queue_dir));
     }
 

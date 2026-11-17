@@ -415,6 +415,62 @@ describe("AwsConnectionService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
 
+	it.effect(
+		"feeds CloudTrail with the stream's secret, which outlives the stream while the feed is on",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const aws = makeFakeAws()
+			const regions = [Schema.decodeSync(AwsRegion)("us-east-1")]
+			const streamSecretHash = (id: string) =>
+				Effect.promise(() =>
+					queryFirstRow<{ stream_secret_hash: string | null }>(
+						testDb,
+						"SELECT stream_secret_hash FROM aws_connections WHERE id = $1",
+						[id],
+					),
+				).pipe(Effect.map((row) => row?.stream_secret_hash))
+			const accessKeysOf = (script: string) =>
+				Arr.dedupe(
+					Arr.map([...Str.matchAll(/AccessKey=(maple_aws_[\w-]+)/gu)(script)], (match) => match[1]),
+				)
+			return Effect.gen(function* () {
+				const service = yield* AwsConnectionService
+				const created = yield* service.create(orgId, userId, {
+					accountId: account,
+					modules: [],
+					metricStream: { regions, namespaces: ["AWS/ECS"] },
+					auditTrail: true,
+				})
+				assert.isTrue(created.auditTrail)
+				assert.strictEqual(created.auditTrailChangedAt, created.createdAt)
+				const both = (yield* service.setup(orgId, created.id)).setupScript
+				assert.include(both, `https://ingest.test/v1/firehose/aws/${created.id}/audit`)
+				// One secret for the stream and the feed: the gateway verifies either against the same row.
+				assert.strictEqual(accessKeysOf(both).length, 1)
+				const accessKey = accessKeysOf(both)[0] ?? ""
+
+				const auditOnly = yield* service.update(orgId, created.id, { metricStream: null })
+				assert.isNull(auditOnly.metricStream)
+				assert.strictEqual(
+					yield* streamSecretHash(created.id),
+					hashIngestKey(accessKey, "maple-test-lookup-secret"),
+				)
+				assert.deepStrictEqual(accessKeysOf((yield* service.setup(orgId, created.id)).setupScript), [
+					accessKey,
+				])
+
+				// With both off nothing may post with it any more, and the setup removes the feed's stacks.
+				const off = yield* service.update(orgId, created.id, { auditTrail: false })
+				assert.isFalse(off.auditTrail)
+				assert.isNull(off.auditTrailChangedAt)
+				assert.isNull(yield* streamSecretHash(created.id))
+				const removed = (yield* service.setup(orgId, created.id)).setupScript
+				assert.deepStrictEqual(accessKeysOf(removed), [])
+				assert.include(removed, "Removing the CloudTrail feed")
+			}).pipe(Effect.provide(makeLayer(testDb, aws)))
+		},
+	)
+
 	it.effect("refuses a stored stream secret that is not in the v2 envelope", () => {
 		const testDb = createTestDb(trackedDbs)
 		const aws = makeFakeAws()

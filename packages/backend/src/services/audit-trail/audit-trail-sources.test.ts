@@ -97,9 +97,37 @@ describe("auditTrailSources", () => {
 		expect(stateOf(sources, "gcp")).toBe("off")
 	})
 
+	it("reads an AWS account by its CloudTrail feed, not by its metric stream", () => {
+		const aws = (resources: ReadonlyArray<IntegrationResource>) =>
+			stateOf(
+				auditTrailSources([], {
+					integrations: [entry({ provider: "aws", account: "123456789012", resources })],
+					available: [],
+				}),
+				"aws",
+			)
+		const role = resource({ kind: "role", name: "123456789012" })
+		expect(aws([role, resource({ kind: "metric stream", name: "123456789012" })])).toBe("off")
+		expect(aws([role, resource({ kind: "audit", name: "123456789012", status: "pending" })])).toBe(
+			"waiting",
+		)
+		expect(
+			aws([
+				role,
+				resource({ kind: "audit", name: "123456789012", status: "failing", lastError: "denied" }),
+			]),
+		).toBe("failing")
+	})
+
 	it("keeps a platform a newer writer added, so its events are not unaccounted for", () => {
 		const sources = auditTrailSources([{ provider: "github", events: 2, lastEventAt: 9 }], null)
-		expect(Arr.map(sources, (source) => source.provider)).toEqual(["maple", "vercel", "gcp", "github"])
+		expect(Arr.map(sources, (source) => source.provider)).toEqual([
+			"maple",
+			"vercel",
+			"gcp",
+			"aws",
+			"github",
+		])
 		expect(stateOf(sources, "github")).toBe("receiving")
 	})
 })

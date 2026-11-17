@@ -39,6 +39,10 @@ const toV2Connection = (connection: AwsConnection): V2AwsConnection => ({
 	metric_stream_changed_at: isoTimestampOrNull(connection.metricStreamChangedAt),
 	metrics_last_received_at: isoTimestampOrNull(connection.metricsLastReceivedAt),
 	metrics_last_error: connection.metricsLastError,
+	audit_trail: connection.auditTrail,
+	audit_trail_changed_at: isoTimestampOrNull(connection.auditTrailChangedAt),
+	audit_last_received_at: isoTimestampOrNull(connection.auditLastReceivedAt),
+	audit_last_error: connection.auditLastError,
 	created_at: isoTimestamp(connection.createdAt),
 })
 
@@ -46,6 +50,7 @@ const auditMetadata = (connection: AwsConnection) => ({
 	account_id: connection.accountId,
 	modules: connection.modules,
 	metric_stream: connection.metricStream,
+	audit_trail: connection.auditTrail,
 })
 
 export const HttpV2AwsIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "awsIntegration", (handlers) =>
@@ -76,6 +81,7 @@ export const HttpV2AwsIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "awsIn
 						accountId: payload.account_id,
 						modules: payload.modules ?? [],
 						metricStream: payload.metric_stream ?? null,
+						auditTrail: payload.audit_trail ?? false,
 					})
 					yield* recordHttpAudit("aws_connection.created", {
 						resourceId: connection.id,
@@ -93,6 +99,7 @@ export const HttpV2AwsIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "awsIn
 					const connection = yield* aws.update(tenant.orgId, params.id, {
 						modules: payload.modules,
 						metricStream: payload.metric_stream,
+						auditTrail: payload.audit_trail,
 					})
 					yield* recordHttpAudit("aws_connection.updated", {
 						resourceId: connection.id,

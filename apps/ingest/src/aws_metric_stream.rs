@@ -103,6 +103,24 @@ pub fn parse_delivery(payload: &[u8]) -> Option<Delivery> {
 }
 
 impl Delivery {
+    /// Every record's bytes, in order. Fails once they add up to more than
+    /// `max_decoded` bytes, or when a record is not base64.
+    pub fn record_bytes(&self, max_decoded: usize) -> Result<Vec<Vec<u8>>, RecordError> {
+        let mut decoded_total = 0_usize;
+        let mut records = Vec::with_capacity(self.records.len());
+        for record in &self.records {
+            let bytes = STANDARD
+                .decode(record.data.as_bytes())
+                .map_err(|_| RecordError::Unreadable)?;
+            decoded_total = decoded_total.saturating_add(bytes.len());
+            if decoded_total > max_decoded {
+                return Err(RecordError::TooLarge);
+            }
+            records.push(bytes);
+        }
+        Ok(records)
+    }
+
     /// Every request in the records, in order. Fails once the base64-decoded
     /// records add up to more than `max_decoded` bytes.
     pub fn metric_requests(

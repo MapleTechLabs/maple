@@ -1146,7 +1146,7 @@ export const SecurityDependenciesSearch = Schema.Struct({
 
 /** The Security hub's audit log filters; each absent one shows everything. */
 export const SecurityAuditLogSearch = Schema.Struct({
-	/** The platform the events came from (`maple`, `vercel`, `gcp`). */
+	/** The platform the events came from (`maple`, `vercel`, `gcp`, `aws`). */
 	provider: StringParam,
 	category: StringParam,
 	outcome: StringParam,

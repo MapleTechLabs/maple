@@ -202,6 +202,10 @@ describe("v2 aws integration over HTTP", () => {
 			metric_stream_changed_at: null,
 			metrics_last_received_at: null,
 			metrics_last_error: null,
+			audit_trail: false,
+			audit_trail_changed_at: null,
+			audit_last_received_at: null,
+			audit_last_error: null,
 			created_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T.*Z$/),
 		})
 		const id: string = created.body.id

@@ -1,5 +1,5 @@
 import * as Policy from "@maple/domain/policy"
-import { type AwsStreamState, awsStreamState } from "@maple/domain/aws"
+import { type AwsAuditState, type AwsStreamState, awsAuditState, awsStreamState } from "@maple/domain/aws"
 import type { V2AwsConnection } from "@maple/domain/http/v2"
 import { countLabel } from "@maple/ui/lib/format"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
@@ -57,27 +57,43 @@ export const awsStreamOf = (connection: V2AwsConnection, nowMs: number): AwsStre
 		nowMs,
 	)
 
-/** The one thing a connection needs next, or that it receives metrics; worst first. */
+export const awsAuditOf = (connection: V2AwsConnection): AwsAuditState =>
+	awsAuditState({
+		auditTrail: connection.audit_trail,
+		auditLastReceivedAt: isoMs(connection.audit_last_received_at),
+		auditLastError: connection.audit_last_error,
+	})
+
+/**
+ * The one thing a connection needs next, or that it receives metrics; worst first. An account
+ * that only feeds the audit log reads by its CloudTrail feed instead of its absent stream.
+ */
 export type AwsConnectionCondition =
 	| "setup"
 	| "failing"
 	| "not-receiving"
+	| "audit-refused"
 	| "outdated"
 	| "metrics-off"
 	| "stopped"
 	| "waiting"
+	| "audit-waiting"
 	| "receiving"
+	| "audit-receiving"
 
 /** Worst first: a connection's own condition and the integration's worst follow this order. */
 const AWS_CONDITION_RANK: ReadonlyArray<AwsConnectionCondition> = [
 	"failing",
 	"not-receiving",
+	"audit-refused",
 	"stopped",
 	"setup",
 	"outdated",
 	"metrics-off",
 	"waiting",
+	"audit-waiting",
 	"receiving",
+	"audit-receiving",
 ]
 
 export const awsConditionOf = (connection: V2AwsConnection, nowMs: number): AwsConnectionCondition => {
@@ -86,10 +102,12 @@ export const awsConditionOf = (connection: V2AwsConnection, nowMs: number): AwsC
 	const stream = awsStreamOf(connection, nowMs)
 	if (stream._tag === "refused" || stream._tag === "undelivered") return "not-receiving"
 	if (stream._tag === "silent") return "stopped"
+	const audit = awsAuditOf(connection)
+	if (audit._tag === "refused") return "audit-refused"
 	if (connection.setup_outdated) return "outdated"
 	switch (stream._tag) {
 		case "off":
-			return "metrics-off"
+			return audit._tag === "off" ? "metrics-off" : `audit-${audit._tag}`
 		case "waiting":
 			return "waiting"
 		case "delivering":
@@ -101,11 +119,14 @@ export const AWS_CONDITION_LABEL = {
 	setup: "Finish setup",
 	failing: "Needs attention",
 	"not-receiving": "No metrics arriving",
+	"audit-refused": "Audit events refused",
 	outdated: "Update the stack",
 	"metrics-off": "Metrics off",
 	stopped: "Metrics stopped",
 	waiting: "Waiting for metrics",
 	receiving: "Receiving metrics",
+	"audit-waiting": "Waiting for audit events",
+	"audit-receiving": "Receiving audit events",
 } satisfies Record<AwsConnectionCondition, string>
 
 export const HEALTH_TONE = {
@@ -242,26 +263,30 @@ const awsOverview = (statuses: Statuses, nowMs: number) =>
 			const issue =
 				worst === "failing"
 					? `${countLabel(failing, "account")} failing`
-					: worst === "receiving"
+					: worst === "receiving" || worst === "audit-receiving"
 						? null
 						: AWS_CONDITION_LABEL[worst]
 			// A stack not deployed yet, or a first delivery on its way, is setup in progress, not a failure.
 			const health: Pick<IntegrationOverview & { kind: "connected" }, "health" | "stateLabel"> =
-				worst === "setup" || worst === "waiting"
+				worst === "setup" || worst === "waiting" || worst === "audit-waiting"
 					? { health: "pending", stateLabel: AWS_CONDITION_LABEL[worst] }
 					: attentionOr(issue)
-			const receiving = Arr.filter(conditions, (condition) => condition === "receiving").length
+			const receiving = Arr.filter(
+				conditions,
+				(condition) => condition === "receiving" || condition === "audit-receiving",
+			).length
 			const accounts = countLabel(status.connections.length, "account")
 			return {
 				kind: "connected",
 				...health,
 				context: status.connections.length === 1 ? (status.connections[0]?.account_id ?? null) : null,
-				stat: conditions.includes("setup") ? accounts : `${receiving} of ${accounts} sending metrics`,
+				stat: conditions.includes("setup") ? accounts : `${receiving} of ${accounts} sending data`,
 				lastSync: lastSyncOf(
 					maxMs(
-						Arr.map(status.connections, (connection) =>
+						Arr.flatMap(status.connections, (connection) => [
 							isoMs(connection.metrics_last_received_at),
-						),
+							isoMs(connection.audit_last_received_at),
+						]),
 					),
 					"last data",
 				),

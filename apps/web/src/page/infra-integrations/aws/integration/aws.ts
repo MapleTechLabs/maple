@@ -82,6 +82,8 @@ export const AwsCardModel = Schema.Struct({
 	removed: Schema.Array(AwsRemovedStack),
 	metrics: AwsMetricsEdit,
 	moduleSave: AwsModuleSave,
+	/** The CloudTrail feed's switch, saved on its own so its refusal shows on its own row. */
+	auditSave: AwsModuleSave,
 	/** The modules ticked for the account the connect flow is about to connect. */
 	newModules: Schema.Array(AwsModule),
 	/** What each streaming connection stored in the last hour, by connection id. */
@@ -109,6 +111,7 @@ export const initAwsCard = (): AwsCardModel => ({
 	removed: [],
 	metrics: { _tag: "Idle" },
 	moduleSave: { _tag: "Idle" },
+	auditSave: { _tag: "Idle" },
 	newModules: [],
 	ingest: {},
 })
@@ -245,6 +248,29 @@ export const UpdateAwsModules = Command.define("UpdateAwsModules", {
 						error: messageOf(error, "Couldn't change what Maple reads."),
 					}),
 				onSuccess: (connection) => Message.CompletedAwsModules({ id, connection, error: null }),
+			}),
+		),
+})
+
+export const UpdateAwsAuditTrail = Command.define("UpdateAwsAuditTrail", {
+	args: { id: AwsConnectionId, auditTrail: Schema.Boolean },
+	messages: [Message.CompletedAwsAuditTrail],
+	execute: ({ id, auditTrail }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleApiV2Client
+			return yield* client.awsIntegration.updateConnection({
+				params: { id },
+				payload: { audit_trail: auditTrail },
+			})
+		}).pipe(
+			Effect.match({
+				onFailure: (error) =>
+					Message.CompletedAwsAuditTrail({
+						id,
+						connection: null,
+						error: messageOf(error, "Couldn't change the audit log feed."),
+					}),
+				onSuccess: (connection) => Message.CompletedAwsAuditTrail({ id, connection, error: null }),
 			}),
 		),
 })

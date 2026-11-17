@@ -45,6 +45,13 @@ export const AwsConnections = PG.table("aws_connections", {
 			name: "stream_last_received_at",
 		}),
 		streamLastError: PG.column(PG.nullable(PG.text), { name: "stream_last_error" }),
+		// CloudTrail into the audit log: one EventBridge rule and Firehose per enabled region, posting
+		// to `/v1/firehose/aws/{id}/audit` with the stream secret.
+		auditTrailEnabled: PG.column(PG.bool, { name: "audit_trail_enabled", default: false }),
+		auditTrailChangedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "audit_trail_changed_at" }),
+		// Written by the receiver, like the stream's two columns above.
+		auditLastReceivedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "audit_last_received_at" }),
+		auditLastError: PG.column(PG.nullable(PG.text), { name: "audit_last_error" }),
 		createdBy: PG.column(PG.text, { name: "created_by" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),

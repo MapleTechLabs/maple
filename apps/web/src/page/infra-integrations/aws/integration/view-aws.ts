@@ -1,6 +1,7 @@
 import { AWS_METRICS_OFF } from "@maple/domain/aws"
 import type { V2AwsConnection, V2AwsIngest, V2AwsIntegration } from "@maple/domain/http/v2"
 import { countLabel, formatNumber } from "@maple/ui/lib/format"
+import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
@@ -31,6 +32,7 @@ import {
 import {
 	AWS_CONDITION_LABEL,
 	type AwsConnectionCondition,
+	awsAuditOf,
 	awsConditionOf,
 	awsStreamOf,
 } from "../../../integrations/derive"
@@ -53,6 +55,8 @@ export const AWS_FLOW_HREF = hrefOf(AppRoute.SourcesNew({ search: { integration:
 
 const COST_HREF = hrefOf(AppRoute.Cost({ search: {} }))
 
+const AUDIT_LOG_HREF = hrefOf(AppRoute.SecurityAuditLog({ search: { provider: "aws" } }))
+
 const COST_BILLING_NOTE = "AWS bills USD 0.01 per Cost Explorer request."
 
 const MODULES_ADMIN_ONLY = "Only org admins and engineers can change what Maple reads from AWS."
@@ -63,6 +67,9 @@ const CONDITION_VARIANT = {
 	"not-receiving": "crit",
 	outdated: "warn",
 	"metrics-off": "warn",
+	"audit-refused": "crit",
+	"audit-waiting": "muted",
+	"audit-receiving": "ok",
 	stopped: "warn",
 	waiting: "muted",
 	receiving: "ok",
@@ -595,6 +602,104 @@ const costRow = (h: H, model: Model, connection: V2AwsConnection, info: AwsModul
 	)
 }
 
+type AuditRowState = Readonly<{
+	badge: Readonly<{ variant: "ok" | "crit" | "muted"; label: string }> | null
+	description: string
+	/** The one thing to do next, beside the switch. */
+	action: Html | null
+	/** When the last event arrived, after the description. */
+	receivedAt: number | null
+}>
+
+/** Where the CloudTrail feed stands: off, waiting for the stack or a first event, refused, or receiving. */
+const auditState = (h: H, model: Model, connection: V2AwsConnection): AuditRowState => {
+	const state = awsAuditOf(connection)
+	const updateStack = setupToggle(h, model, connection, "Update the stack")
+	switch (state._tag) {
+		case "off":
+			return {
+				badge: null,
+				description:
+					"CloudTrail changes and console sign-ins from every region, in the Security audit log. Reads are left out.",
+				action: null,
+				receivedAt: null,
+			}
+		case "waiting":
+			return connection.verified_at === null
+				? {
+						badge: { variant: "muted", label: "Waiting for the stack" },
+						description: "Maple receives CloudTrail events once the stack is deployed.",
+						action: null,
+						receivedAt: null,
+					}
+				: {
+						badge: { variant: "muted", label: "No events yet" },
+						description:
+							"Run the setup script again if you have not since turning this on: it deploys the feed to every region. Events arrive within minutes of the next change in the account.",
+						action: updateStack,
+						receivedAt: null,
+					}
+		case "refused":
+			return {
+				badge: { variant: "crit", label: "Failing" },
+				description: state.error,
+				action: updateStack,
+				receivedAt: state.receivedAt,
+			}
+		case "receiving":
+			return {
+				badge: { variant: "ok", label: "Receiving" },
+				description:
+					"CloudTrail changes and console sign-ins from every region arrive in the audit log.",
+				action: linkButton(h, { size: "sm", variant: "outline", href: AUDIT_LOG_HREF }, [
+					"Open audit log",
+				]),
+				receivedAt: state.receivedAt,
+			}
+	}
+}
+
+/** The CloudTrail feed's switch and state. */
+const auditRow = (h: H, model: Model, connection: V2AwsConnection): Html => {
+	const save = model.awsCard.auditSave
+	const error = moduleErrorOf(save, connection.id)
+	const state = auditState(h, model, connection)
+	return switchRow(
+		h,
+		{
+			id: `aws-audit-${connection.id}`,
+			framed: true,
+			icon: icon(h, "HistoryIcon", { size: 16, className: "mt-0.5 text-muted-foreground" }),
+			label: "Audit log",
+			...(state.badge !== null && {
+				status: badge(h, { variant: state.badge.variant }, [state.badge.label]),
+			}),
+			description:
+				state.receivedAt === null
+					? state.description
+					: `${state.description} Last event ${formatRelativeTime(state.receivedAt, model.nowMs)}.`,
+			isChecked: connection.audit_trail,
+			isDisabled: !canManage(model) || save._tag === "Saving",
+			onToggle: Message.ToggledAwsAuditTrail({ id: connection.id }),
+			before: state.action === null ? [] : [state.action],
+		},
+		[
+			...(error === null
+				? []
+				: [
+						typography(
+							h,
+							{ size: "xs", tone: "destructive", as: "p", attributes: [h.Role("alert")] },
+							[error],
+						),
+					]),
+			...(canManage(model)
+				? []
+				: [typography(h, { size: "2xs", tone: "muted", as: "p" }, [MODULES_ADMIN_ONLY])]),
+		],
+	)
+}
+
 const connectionRow = (
 	h: H,
 	model: Model,
@@ -629,6 +734,7 @@ const connectionRow = (
 				onNone: () => [],
 				onSome: (info) => [costRow(h, model, connection, info)],
 			}),
+			auditRow(h, model, connection),
 		],
 		actions: hstack(h, { gap: "2", align: "stretch", wrap: true, className: "pt-1" }, [
 			// The stack's script: it finishes a setup, which is the one thing to do then, and

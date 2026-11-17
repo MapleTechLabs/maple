@@ -48,6 +48,9 @@ export const LabState = Schema.Literals([
 	"failing",
 	"stopped",
 	"metrics-off",
+	"audit-waiting",
+	"audit-receiving",
+	"audit-refused",
 	"flow",
 	"flow-before",
 ])
@@ -98,6 +101,10 @@ const CONNECTED: V2AwsConnection = {
 	metric_stream_changed_at: at(60 * 24 * 14),
 	metrics_last_received_at: at(1),
 	metrics_last_error: null,
+	audit_trail: false,
+	audit_trail_changed_at: null,
+	audit_last_received_at: null,
+	audit_last_error: null,
 	created_at: at(60 * 24 * 14),
 }
 
@@ -206,6 +213,22 @@ const fixtureFor = (state: LabState): Fixture => {
 					metric_stream: null,
 					metric_stream_changed_at: null,
 					metrics_last_received_at: null,
+				},
+			],
+		}
+	if (state === "audit-waiting" || state === "audit-receiving" || state === "audit-refused")
+		return {
+			isOffered,
+			connections: [
+				{
+					...CONNECTED,
+					audit_trail: true,
+					audit_trail_changed_at: at(30),
+					audit_last_received_at: state === "audit-waiting" ? null : at(4),
+					audit_last_error:
+						state === "audit-refused"
+							? "Maple could not read a CloudTrail delivery. Run the setup script again. Events sent meanwhile are lost."
+							: null,
 				},
 			],
 		}

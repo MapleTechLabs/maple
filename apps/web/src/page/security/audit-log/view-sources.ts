@@ -52,6 +52,12 @@ const COPY = {
 		turnOn: "Turn on log forwarding: admin activity arrives through the log sink.",
 		connect: "Connect a project or organization with log forwarding on.",
 	},
+	aws: {
+		brand: providerBrand("aws"),
+		sends: "CloudTrail changes and console sign-ins, from every region",
+		turnOn: "Turn on the audit log feed on the AWS connection, then run its setup script again.",
+		connect: "Connect an AWS account and turn on its audit log feed.",
+	},
 } satisfies Record<AuditTrailProvider, SourceCopy>
 
 /** A platform a newer writer added: its events still show, with nothing to set up. */

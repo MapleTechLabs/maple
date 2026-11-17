@@ -472,6 +472,369 @@ pub fn gcp_entry(entry: &JsonObject, now_ms: i64) -> Option<AuditEvent> {
     })
 }
 
+// What a connection's `audit_last_error` holds. The customer reads it on the
+// connection: one sentence of cause, one of what to do.
+
+/// The gateway is not storing audit events yet (`INGEST_AUDIT_TRAIL_ENABLED` off).
+pub const AWS_AUDIT_NOT_STORED_YET: &str = "Maple is not storing AWS audit events in this \
+    region yet. Nothing to do: they start arriving once it does.";
+
+/// A delivery, or a record in it, that is not EventBridge events as JSON.
+pub const AWS_AUDIT_UNREADABLE_DELIVERY: &str = "Maple could not read an AWS audit event \
+    delivery. Check that the EventBridge rule targets the Firehose stream Maple set up, with no \
+    input transformer. Audit events sent meanwhile are lost.";
+
+/// A delivery over the decoded size or event count Maple accepts.
+pub const AWS_AUDIT_DELIVERY_TOO_LARGE: &str = "An AWS audit event delivery was larger than \
+    Maple accepts. Lower the Firehose stream's buffer size. Audit events sent meanwhile are lost.";
+
+/// A delivery Maple accepted but could not hand to storage.
+pub const AWS_AUDIT_NOT_STORED: &str = "Maple could not store an AWS audit event delivery just \
+    now. Firehose retries it. Nothing to do.";
+
+/// The EventBridge `detail-type`s, and the matching CloudTrail `eventType`s,
+/// that are audit events. A service event is AWS acting on its own.
+const AWS_DETAIL_TYPES: [&str; 3] = [
+    "AWS API Call via CloudTrail",
+    "AWS Console Signin via CloudTrail",
+    "AWS Console Action via CloudTrail",
+];
+const AWS_EVENT_TYPES: [&str; 3] = ["AwsApiCall", "AwsConsoleSignIn", "AwsConsoleAction"];
+
+/// The EventBridge events in one Firehose record: one JSON object as a rule
+/// delivers it, or several concatenated or newline-separated. `None` when the
+/// record holds anything else.
+pub fn aws_record_events(record: &[u8]) -> Option<Vec<JsonObject>> {
+    serde_json::Deserializer::from_slice(record)
+        .into_iter::<JsonValue>()
+        .map(|value| match value {
+            Ok(JsonValue::Object(object)) => Some(object),
+            _ => None,
+        })
+        .collect()
+}
+
+/// `errorCode`s AWS returns for a call the caller was not allowed to make.
+const AWS_DENIED_CODES: [&str; 5] = [
+    "AccessDenied",
+    "AccessDeniedException",
+    "UnauthorizedOperation",
+    "UnauthorizedAccess",
+    "Client.UnauthorizedOperation",
+];
+
+fn aws_is_denied(error_code: &str) -> bool {
+    AWS_DENIED_CODES.contains(&error_code)
+        || error_code.contains("AccessDenied")
+        || error_code.contains("Unauthorized")
+}
+
+/// Services whose every change is to how the account is watched or governed.
+const AWS_CONFIGURATION_SERVICES: [&str; 8] = [
+    "cloudtrail",
+    "config",
+    "guardduty",
+    "securityhub",
+    "access-analyzer",
+    "organizations",
+    "logs",
+    "events",
+];
+
+const AWS_BILLING_SERVICES: [&str; 12] = [
+    "billing",
+    "billingconsole",
+    "ce",
+    "budgets",
+    "account",
+    "payments",
+    "purchase-orders",
+    "tax",
+    "invoicing",
+    "freetier",
+    "cur",
+    "aws-portal",
+];
+
+/// Calls that add or remove a person, a group or an account.
+const AWS_MEMBERSHIP_CALLS: [&str; 9] = [
+    "CreateUser",
+    "DeleteUser",
+    "CreateGroup",
+    "DeleteGroup",
+    "CreateAccount",
+    "CloseAccount",
+    "InviteAccountToOrganization",
+    "RemoveAccountFromOrganization",
+    "LeaveOrganization",
+];
+
+const AWS_SIGNIN_CALLS: [&str; 5] = [
+    "ConsoleLogin",
+    "CheckMfa",
+    "SwitchRole",
+    "ExitRole",
+    "GetSigninToken",
+];
+
+/// What an AWS call is about, read off its service (`eventSource` without
+/// `.amazonaws.com`) and name. The order decides a name with two readings: an
+/// SCP attach is governance, a security group rule is network configuration.
+fn aws_category(service: &str, event_name: &str, event_type: &str) -> &'static str {
+    let words = words(event_name);
+    let has = |needles: &[&str]| has_word(&words, needles);
+    // `MFADevice` reads as one word, so MFA is matched inside the name.
+    let mfa = event_name.to_ascii_lowercase().contains("mfa");
+    if event_type == "AwsConsoleSignIn"
+        || AWS_SIGNIN_CALLS.contains(&event_name)
+        || service == "signin"
+        || (service == "sso"
+            && (mfa
+                || has(&[
+                    "login",
+                    "logout",
+                    "signin",
+                    "signout",
+                    "authenticate",
+                    "federate",
+                ])))
+    {
+        "authentication"
+    } else if AWS_MEMBERSHIP_CALLS.contains(&event_name)
+        && ["iam", "identitystore", "sso-directory", "organizations"].contains(&service)
+    {
+        "membership"
+    } else if AWS_CONFIGURATION_SERVICES.contains(&service)
+        || (has(&["security"]) && has(&["group"]))
+        || (has(&["network"]) && has(&["acl"]))
+        || (has(&["flow"]) && has(&["log"]))
+    {
+        "configuration"
+    } else if AWS_BILLING_SERVICES.contains(&service) {
+        "billing"
+    } else if has(&["role", "permission", "acl", "grant"])
+        || (has(&["policy"]) && !has(&["scaling", "lifecycle", "retention", "backup"]))
+        || (has(&["public"]) && has(&["access"]))
+        || matches!(event_name, "AddUserToGroup" | "RemoveUserFromGroup")
+    {
+        "permission"
+    } else if mfa
+        || has(&["key", "password", "credential", "secret", "certificate"])
+        || (has(&["login"]) && has(&["profile"]))
+        || ["kms", "secretsmanager", "acm", "acm-pca"].contains(&service)
+    {
+        "credential"
+    } else {
+        "resource"
+    }
+}
+
+/// `value` when it is an email address, else "".
+fn email_in(value: &str) -> &str {
+    if value.contains('@') {
+        value
+    } else {
+        ""
+    }
+}
+
+/// Who made an AWS call: `(type, id, name, email)`.
+///
+/// Root is always the account's person. A call a service made for a principal
+/// (`invokedBy` beside an IAM user or role, as CloudFormation does) stays that
+/// principal's; only an `AWSService` identity is the service itself. An assumed
+/// role is a person when IAM Identity Center issued it or its session is named
+/// by an email, and a workload otherwise.
+fn aws_actor(identity: Option<&JsonObject>) -> (&'static str, String, String, String) {
+    let Some(identity) = identity else {
+        return ("unknown", String::new(), String::new(), String::new());
+    };
+    let get = |key: &str| text(identity, key).unwrap_or_default();
+    let arn = get("arn");
+    let user_name = get("userName");
+    let issuer =
+        object(identity, "sessionContext").and_then(|context| object(context, "sessionIssuer"));
+    let issuer_name = issuer
+        .and_then(|issuer| text(issuer, "userName"))
+        .unwrap_or_default();
+    // `AROA...:session-name` for an assumed role.
+    let session = get("principalId")
+        .split_once(':')
+        .map_or("", |(_, session)| session);
+    let kind = get("type");
+    let invoked_by = get("invokedBy");
+    if kind == "Root" {
+        let id = if arn.is_empty() { "root" } else { arn };
+        return ("user", id.to_owned(), "root".to_owned(), String::new());
+    }
+    let first = |values: &[&str]| {
+        values
+            .iter()
+            .find(|value| !value.is_empty())
+            .copied()
+            .unwrap_or_default()
+            .to_owned()
+    };
+    match kind {
+        "IAMUser" | "IdentityCenterUser" => (
+            "user",
+            first(&[arn, get("principalId")]),
+            user_name.to_owned(),
+            email_in(user_name).to_owned(),
+        ),
+        "FederatedUser" => (
+            "user",
+            first(&[arn, get("principalId")]),
+            first(&[session, issuer_name, user_name]),
+            email_in(session).to_owned(),
+        ),
+        "AssumedRole" => {
+            let person = session.contains('@') || issuer_name.starts_with("AWSReservedSSO_");
+            if person {
+                (
+                    "user",
+                    arn.to_owned(),
+                    first(&[session, issuer_name]),
+                    email_in(session).to_owned(),
+                )
+            } else {
+                (
+                    "service",
+                    arn.to_owned(),
+                    issuer_name.to_owned(),
+                    String::new(),
+                )
+            }
+        }
+        "AWSService" | "AWSAccount" => (
+            "service",
+            first(&[invoked_by, get("accountId"), get("principalId"), arn]),
+            invoked_by.to_owned(),
+            String::new(),
+        ),
+        _ => (
+            "unknown",
+            first(&[arn, get("principalId")]),
+            user_name.to_owned(),
+            email_in(user_name).to_owned(),
+        ),
+    }
+}
+
+/// The `requestParameters` that name what a call was done to, most specific first.
+const AWS_TARGET_NAME_KEYS: [&str; 7] = [
+    "userName",
+    "roleName",
+    "bucketName",
+    "groupName",
+    "policyName",
+    "functionName",
+    "instanceId",
+];
+
+/// One CloudTrail management event as EventBridge delivers it. `None` for a
+/// read-only call, an AWS service event, or anything with no event name.
+pub fn aws_event(envelope: &JsonObject, now_ms: i64) -> Option<AuditEvent> {
+    let detail = object(envelope, "detail")?;
+    let event_name = text(detail, "eventName")?;
+    let read_only = match detail.get("readOnly") {
+        Some(JsonValue::Bool(read_only)) => *read_only,
+        Some(JsonValue::String(read_only)) => read_only.eq_ignore_ascii_case("true"),
+        _ => false,
+    };
+    if read_only {
+        return None;
+    }
+    if text(envelope, "detail-type").is_some_and(|kind| !AWS_DETAIL_TYPES.contains(&kind)) {
+        return None;
+    }
+    let event_type = text(detail, "eventType").unwrap_or_default();
+    if !event_type.is_empty() && !AWS_EVENT_TYPES.contains(&event_type) {
+        return None;
+    }
+
+    let event_source = text(detail, "eventSource").unwrap_or_default();
+    let service = event_source
+        .strip_suffix(".amazonaws.com")
+        .unwrap_or(event_source);
+    let action = if service.is_empty() {
+        event_name.to_owned()
+    } else {
+        format!("{service}:{event_name}")
+    };
+
+    let error_code = text(detail, "errorCode").unwrap_or_default();
+    // A sign-in step reports itself under its own name: `{"CheckMfa": "Failure"}`.
+    let login_failed = object(detail, "responseElements")
+        .and_then(|response| text(response, event_name))
+        == Some("Failure");
+    let outcome = if login_failed {
+        "failure"
+    } else if error_code.is_empty() {
+        "success"
+    } else if aws_is_denied(error_code) {
+        "denied"
+    } else {
+        "failure"
+    };
+    let outcome_reason = text(detail, "errorMessage")
+        .filter(|message| !message.is_empty())
+        .unwrap_or(error_code);
+
+    let (actor_type, actor_id, actor_name, actor_email) = aws_actor(object(detail, "userIdentity"));
+    let resource = detail
+        .get("resources")
+        .and_then(JsonValue::as_array)
+        .and_then(|resources| resources.first())
+        .and_then(JsonValue::as_object);
+    let target_type = resource
+        .and_then(|resource| text(resource, "type"))
+        .unwrap_or(service);
+    let request = object(detail, "requestParameters");
+    let target_name = request.and_then(|request| {
+        AWS_TARGET_NAME_KEYS
+            .iter()
+            .find_map(|key| text(request, key))
+    });
+    let source_ip = text(detail, "sourceIPAddress").unwrap_or_default();
+    let origin_ip = if source_ip.parse::<std::net::IpAddr>().is_ok() {
+        source_ip
+    } else {
+        ""
+    };
+    let claimed_ms = text(detail, "eventTime")
+        .or_else(|| text(envelope, "time"))
+        .and_then(|time| DateTime::parse_from_rfc3339(time).ok())
+        .map(|time| time.timestamp_millis());
+    let account = text(detail, "recipientAccountId")
+        .or_else(|| text(envelope, "account"))
+        .unwrap_or_default();
+    let provider_event_id = text(detail, "eventID")
+        .or_else(|| text(envelope, "id"))
+        .map_or_else(|| content_id(detail), str::to_owned);
+
+    Some(AuditEvent {
+        provider: "aws",
+        account: account.to_owned(),
+        provider_event_id,
+        occurred_at_ms: occurred_at_ms(claimed_ms, now_ms),
+        actor_type,
+        actor_id,
+        actor_name,
+        actor_email,
+        category: aws_category(service, event_name, event_type),
+        action,
+        outcome,
+        outcome_reason: outcome_reason.to_owned(),
+        target_type: target_type.to_owned(),
+        target_id: owned(resource.and_then(|resource| text(resource, "ARN"))),
+        target_name: owned(target_name),
+        origin_ip: origin_ip.to_owned(),
+        user_agent: owned(text(detail, "userAgent")),
+        raw: raw_of(detail),
+    })
+}
+
 /// Now, as the warehouse and this module count it.
 pub fn now_ms() -> i64 {
     Utc::now().timestamp_millis()
@@ -835,5 +1198,422 @@ mod tests {
             ),
             ("service", subject, "")
         );
+    }
+
+    /// An IAM user creating an access key for another user, as EventBridge delivers it.
+    const AWS_CREATE_ACCESS_KEY: &str = r#"{"version":"0","id":"6a7e8feb-b491-4cf7-a9f1-bf3703467718","detail-type":"AWS API Call via CloudTrail","source":"aws.iam","account":"123456789012","time":"2023-11-14T22:13:20Z","region":"us-east-1","resources":[],"detail":{"eventVersion":"1.09","userIdentity":{"type":"IAMUser","principalId":"AIDAEXAMPLE","arn":"arn:aws:iam::123456789012:user/ada","accountId":"123456789012","accessKeyId":"AKIAEXAMPLE","userName":"ada"},"eventTime":"2023-11-14T22:13:20Z","eventSource":"iam.amazonaws.com","eventName":"CreateAccessKey","awsRegion":"us-east-1","sourceIPAddress":"203.0.113.7","userAgent":"aws-cli/2.15.0","requestParameters":{"userName":"deploy-bot"},"responseElements":{"accessKey":{"accessKeyId":"AKIANEW","status":"Active","userName":"deploy-bot"}},"requestID":"req-1","eventID":"0d3c9f2e-1111-4a5b-9c8d-000000000001","readOnly":false,"resources":[{"accountId":"123456789012","type":"AWS::IAM::User","ARN":"arn:aws:iam::123456789012:user/deploy-bot"}],"eventType":"AwsApiCall","managementEvent":true,"recipientAccountId":"123456789012","eventCategory":"Management"}}"#;
+
+    const AWS_CONSOLE_LOGIN: &str = r#"{"version":"0","id":"evb-2","detail-type":"AWS Console Signin via CloudTrail","source":"aws.signin","account":"123456789012","time":"2023-11-14T22:13:20Z","region":"us-east-1","resources":[],"detail":{"eventVersion":"1.09","userIdentity":{"type":"IAMUser","principalId":"AIDAEXAMPLE","arn":"arn:aws:iam::123456789012:user/ada","accountId":"123456789012","userName":"ada"},"eventTime":"2023-11-14T22:13:20Z","eventSource":"signin.amazonaws.com","eventName":"ConsoleLogin","awsRegion":"us-east-1","sourceIPAddress":"198.51.100.4","userAgent":"Mozilla/5.0","errorMessage":"Failed authentication","requestParameters":null,"responseElements":{"ConsoleLogin":"Failure"},"additionalEventData":{"MFAUsed":"No"},"eventID":"login-1","readOnly":false,"eventType":"AwsConsoleSignIn","managementEvent":true,"recipientAccountId":"123456789012"}}"#;
+
+    fn aws(json: &str) -> AuditEvent {
+        aws_event(&parse(json), NOW).expect("a CloudTrail management event")
+    }
+
+    /// `AWS_CREATE_ACCESS_KEY` with `detail` fields replaced.
+    fn aws_with(detail: &JsonValue) -> JsonObject {
+        let mut envelope = parse(AWS_CREATE_ACCESS_KEY);
+        let target = envelope["detail"].as_object_mut().unwrap();
+        for (key, value) in detail.as_object().unwrap() {
+            target.insert(key.clone(), value.clone());
+        }
+        envelope
+    }
+
+    #[test]
+    fn an_iam_user_creating_an_access_key_becomes_a_credential_row() {
+        let event = aws(AWS_CREATE_ACCESS_KEY);
+        let row = row(&event);
+
+        assert_eq!(row["Provider"], "aws");
+        assert_eq!(row["Account"], "123456789012");
+        assert_eq!(
+            row["ProviderEventId"],
+            "0d3c9f2e-1111-4a5b-9c8d-000000000001"
+        );
+        assert_eq!(row["OccurredAt"], "2023-11-14 22:13:20.000");
+        assert_eq!(row["ActorType"], "user");
+        assert_eq!(row["ActorId"], "arn:aws:iam::123456789012:user/ada");
+        assert_eq!(row["ActorName"], "ada");
+        assert_eq!(row["ActorEmail"], "");
+        assert_eq!(row["Action"], "iam:CreateAccessKey");
+        assert_eq!(row["Category"], "credential");
+        assert_eq!(row["Outcome"], "success");
+        assert_eq!(row["TargetType"], "AWS::IAM::User");
+        assert_eq!(row["TargetId"], "arn:aws:iam::123456789012:user/deploy-bot");
+        assert_eq!(row["TargetName"], "deploy-bot");
+        assert_eq!(row["OriginIp"], "203.0.113.7");
+        assert_eq!(row["UserAgent"], "aws-cli/2.15.0");
+        // The CloudTrail record is kept, not the EventBridge envelope around it.
+        let raw: JsonObject = serde_json::from_str(row["Raw"].as_str().unwrap()).unwrap();
+        assert_eq!(raw["eventName"], "CreateAccessKey");
+        assert!(raw.get("detail-type").is_none());
+    }
+
+    #[test]
+    fn a_failed_console_login_is_an_authentication_failure() {
+        let event = aws(AWS_CONSOLE_LOGIN);
+
+        assert_eq!(event.action, "signin:ConsoleLogin");
+        assert_eq!(event.category, "authentication");
+        assert_eq!(event.outcome, "failure");
+        assert_eq!(event.outcome_reason, "Failed authentication");
+        assert_eq!(event.origin_ip, "198.51.100.4");
+    }
+
+    #[test]
+    fn a_root_console_login_is_the_root_user() {
+        let mut envelope = parse(AWS_CONSOLE_LOGIN);
+        let detail = envelope["detail"].as_object_mut().unwrap();
+        detail.remove("errorMessage");
+        detail.insert(
+            "responseElements".into(),
+            json!({ "ConsoleLogin": "Success" }),
+        );
+        detail.insert(
+            "userIdentity".into(),
+            json!({ "type": "Root", "principalId": "123456789012", "arn": "arn:aws:iam::123456789012:root", "accountId": "123456789012" }),
+        );
+        let event = aws_event(&envelope, NOW).expect("a console sign-in");
+
+        assert_eq!(
+            (
+                event.actor_type,
+                event.actor_id.as_str(),
+                event.actor_name.as_str()
+            ),
+            ("user", "arn:aws:iam::123456789012:root", "root")
+        );
+        assert_eq!(
+            (event.category, event.outcome),
+            ("authentication", "success")
+        );
+    }
+
+    #[test]
+    fn a_refused_call_by_an_assumed_role_is_denied_with_its_reason() {
+        let envelope = aws_with(&json!({
+            "eventSource": "s3.amazonaws.com",
+            "eventName": "PutBucketPolicy",
+            "errorCode": "AccessDenied",
+            "errorMessage": "User is not authorized to perform s3:PutBucketPolicy",
+            "requestParameters": { "bucketName": "acme-logs" },
+            "resources": [{ "type": "AWS::S3::Bucket", "ARN": "arn:aws:s3:::acme-logs" }],
+            "userIdentity": {
+                "type": "AssumedRole",
+                "principalId": "AROAEXAMPLE:ci-run-42",
+                "arn": "arn:aws:sts::123456789012:assumed-role/deployer/ci-run-42",
+                "sessionContext": { "sessionIssuer": { "type": "Role", "userName": "deployer", "arn": "arn:aws:iam::123456789012:role/deployer" } }
+            }
+        }));
+        let event = aws_event(&envelope, NOW).expect("an API call");
+
+        assert_eq!(event.outcome, "denied");
+        assert_eq!(
+            event.outcome_reason,
+            "User is not authorized to perform s3:PutBucketPolicy"
+        );
+        // Filed by what was attempted, not by the refusal.
+        assert_eq!(event.category, "permission");
+        assert_eq!(event.action, "s3:PutBucketPolicy");
+        assert_eq!(event.target_name, "acme-logs");
+        assert_eq!(
+            (event.actor_type, event.actor_name.as_str()),
+            ("service", "deployer")
+        );
+    }
+
+    #[test]
+    fn a_failed_call_that_was_not_refused_is_a_failure_with_its_code() {
+        let envelope = aws_with(&json!({ "errorCode": "LimitExceeded" }));
+        let event = aws_event(&envelope, NOW).expect("an API call");
+
+        assert_eq!(
+            (event.outcome, event.outcome_reason.as_str()),
+            ("failure", "LimitExceeded")
+        );
+    }
+
+    #[test]
+    fn a_role_from_identity_center_is_the_person_signed_in() {
+        let envelope = aws_with(&json!({
+            "userIdentity": {
+                "type": "AssumedRole",
+                "principalId": "AROAEXAMPLE:ada@acme.test",
+                "arn": "arn:aws:sts::123456789012:assumed-role/AWSReservedSSO_Admin_0123/ada@acme.test",
+                "sessionContext": { "sessionIssuer": { "type": "Role", "userName": "AWSReservedSSO_Admin_0123" } }
+            }
+        }));
+        let event = aws_event(&envelope, NOW).expect("an API call");
+
+        assert_eq!(
+            (
+                event.actor_type,
+                event.actor_name.as_str(),
+                event.actor_email.as_str()
+            ),
+            ("user", "ada@acme.test", "ada@acme.test")
+        );
+    }
+
+    #[test]
+    fn a_call_a_service_made_has_that_service_as_actor_and_no_origin_ip() {
+        let envelope = aws_with(&json!({
+            "eventSource": "ec2.amazonaws.com",
+            "eventName": "RunInstances",
+            "sourceIPAddress": "autoscaling.amazonaws.com",
+            "userAgent": "autoscaling.amazonaws.com",
+            "requestParameters": { "instanceType": "m7g.large" },
+            "resources": [],
+            "userIdentity": {
+                "type": "AssumedRole",
+                "principalId": "AROAEXAMPLE:AutoScaling",
+                "arn": "arn:aws:sts::123456789012:assumed-role/AWSServiceRoleForAutoScaling/AutoScaling",
+                "invokedBy": "autoscaling.amazonaws.com",
+                "sessionContext": { "sessionIssuer": { "type": "Role", "userName": "AWSServiceRoleForAutoScaling" } }
+            }
+        }));
+        let event = aws_event(&envelope, NOW).expect("an API call");
+
+        assert_eq!(
+            (event.actor_type, event.actor_name.as_str()),
+            ("service", "AWSServiceRoleForAutoScaling")
+        );
+        assert_eq!(event.origin_ip, "");
+        assert_eq!(event.category, "resource");
+        assert_eq!(event.target_type, "ec2");
+    }
+
+    // CloudFormation, SSM and the like act for the person who asked: the trail
+    // must still say who deleted the bucket.
+    #[test]
+    fn a_person_acting_through_a_service_stays_the_actor() {
+        let envelope = aws_with(&json!({
+            "eventSource": "s3.amazonaws.com",
+            "eventName": "DeleteBucket",
+            "sourceIPAddress": "cloudformation.amazonaws.com",
+            "userIdentity": {
+                "type": "IAMUser",
+                "principalId": "AIDAEXAMPLE",
+                "arn": "arn:aws:iam::123456789012:user/ada",
+                "userName": "ada",
+                "invokedBy": "cloudformation.amazonaws.com"
+            }
+        }));
+        let event = aws_event(&envelope, NOW).expect("an API call");
+
+        assert_eq!(
+            (
+                event.actor_type,
+                event.actor_id.as_str(),
+                event.actor_name.as_str()
+            ),
+            ("user", "arn:aws:iam::123456789012:user/ada", "ada")
+        );
+        assert_eq!(event.origin_ip, "");
+    }
+
+    #[test]
+    fn a_failed_sign_in_step_is_a_failure_though_it_has_no_error_code() {
+        let envelope = aws_with(&json!({
+            "eventSource": "signin.amazonaws.com",
+            "eventName": "CheckMfa",
+            "eventType": "AwsConsoleSignIn",
+            "responseElements": { "CheckMfa": "Failure" }
+        }));
+        let event = aws_event(&envelope, NOW).expect("a sign-in step");
+
+        assert_eq!(
+            (event.category, event.outcome),
+            ("authentication", "failure")
+        );
+    }
+
+    #[test]
+    fn identities_without_a_person_behind_them_are_services_or_unknown() {
+        let actor = |identity: JsonValue| {
+            let envelope = aws_with(&json!({ "userIdentity": identity }));
+            let event = aws_event(&envelope, NOW).expect("an API call");
+            (event.actor_type, event.actor_id)
+        };
+
+        assert_eq!(
+            actor(json!({ "type": "AWSService", "invokedBy": "config.amazonaws.com" })),
+            ("service", "config.amazonaws.com".to_owned())
+        );
+        assert_eq!(
+            actor(
+                json!({ "type": "AWSAccount", "principalId": "AIDAX", "accountId": "210987654321" })
+            ),
+            ("service", "210987654321".to_owned())
+        );
+        assert_eq!(
+            actor(
+                json!({ "type": "FederatedUser", "principalId": "123456789012:grace@acme.test", "arn": "arn:aws:sts::123456789012:federated-user/grace" })
+            ),
+            (
+                "user",
+                "arn:aws:sts::123456789012:federated-user/grace".to_owned()
+            )
+        );
+        assert_eq!(
+            actor(
+                json!({ "type": "IdentityCenterUser", "principalId": "1234-abcd", "userName": "grace@acme.test" })
+            ),
+            ("user", "1234-abcd".to_owned())
+        );
+        assert_eq!(actor(JsonValue::Null), ("unknown", String::new()));
+    }
+
+    // StopLogging and DeleteTrail are how an intruder blinds an account.
+    #[test]
+    fn stopping_a_trail_and_opening_a_security_group_are_configuration() {
+        for (source, name) in [
+            ("cloudtrail.amazonaws.com", "StopLogging"),
+            ("ec2.amazonaws.com", "AuthorizeSecurityGroupIngress"),
+        ] {
+            let envelope = aws_with(&json!({ "eventSource": source, "eventName": name }));
+            let event = aws_event(&envelope, NOW).expect("an API call");
+            assert_eq!(event.category, "configuration", "{name}");
+        }
+    }
+
+    #[test]
+    fn read_only_calls_and_service_events_are_not_audit_events() {
+        assert_eq!(
+            aws_event(&aws_with(&json!({ "readOnly": true })), NOW),
+            None
+        );
+        let mut service_event = aws_with(&json!({ "eventType": "AwsServiceEvent" }));
+        assert_eq!(aws_event(&service_event, NOW), None);
+        service_event.insert(
+            "detail-type".into(),
+            json!("AWS Service Event via CloudTrail"),
+        );
+        service_event["detail"]
+            .as_object_mut()
+            .unwrap()
+            .insert("eventType".into(), json!("AwsApiCall"));
+        assert_eq!(aws_event(&service_event, NOW), None);
+        let mut no_detail = parse(AWS_CREATE_ACCESS_KEY);
+        no_detail.remove("detail");
+        assert_eq!(aws_event(&no_detail, NOW), None);
+    }
+
+    // Firehose retries a delivery it did not see acked, and EventBridge delivers
+    // at least once: both must land on the row already there.
+    #[test]
+    fn a_redelivered_aws_event_lands_on_the_same_key() {
+        let first = row(&aws(AWS_CREATE_ACCESS_KEY));
+        let again: JsonObject = serde_json::from_slice(
+            &aws_event(&parse(AWS_CREATE_ACCESS_KEY), NOW + 90_000)
+                .expect("a CloudTrail management event")
+                .to_row("org_1", NOW + 90_000),
+        )
+        .unwrap();
+
+        assert_eq!(first["Id"], again["Id"]);
+        assert_eq!(
+            first["Id"],
+            event_id(
+                "aws",
+                "123456789012",
+                "0d3c9f2e-1111-4a5b-9c8d-000000000001"
+            )
+        );
+    }
+
+    #[test]
+    fn an_aws_call_is_filed_by_its_service_and_name() {
+        for (service, name, event_type, category) in [
+            (
+                "signin",
+                "ConsoleLogin",
+                "AwsConsoleSignIn",
+                "authentication",
+            ),
+            ("sts", "GetSigninToken", "AwsApiCall", "authentication"),
+            ("sso", "Federate", "AwsApiCall", "authentication"),
+            ("iam", "CreateUser", "AwsApiCall", "membership"),
+            ("identitystore", "DeleteUser", "AwsApiCall", "membership"),
+            ("organizations", "CreateAccount", "AwsApiCall", "membership"),
+            (
+                "organizations",
+                "AttachPolicy",
+                "AwsApiCall",
+                "configuration",
+            ),
+            ("cloudtrail", "DeleteTrail", "AwsApiCall", "configuration"),
+            ("guardduty", "DeleteDetector", "AwsApiCall", "configuration"),
+            (
+                "logs",
+                "DeleteRetentionPolicy",
+                "AwsApiCall",
+                "configuration",
+            ),
+            (
+                "ec2",
+                "RevokeSecurityGroupEgress",
+                "AwsApiCall",
+                "configuration",
+            ),
+            (
+                "ec2",
+                "CreateNetworkAclEntry",
+                "AwsApiCall",
+                "configuration",
+            ),
+            ("ec2", "DeleteFlowLogs", "AwsApiCall", "configuration"),
+            ("budgets", "DeleteBudget", "AwsApiCall", "billing"),
+            ("account", "PutAlternateContact", "AwsApiCall", "billing"),
+            ("iam", "PutRolePolicy", "AwsApiCall", "permission"),
+            ("iam", "AttachUserPolicy", "AwsApiCall", "permission"),
+            ("iam", "AddUserToGroup", "AwsApiCall", "permission"),
+            ("iam", "UpdateAssumeRolePolicy", "AwsApiCall", "permission"),
+            ("s3", "PutBucketAcl", "AwsApiCall", "permission"),
+            ("s3", "DeletePublicAccessBlock", "AwsApiCall", "permission"),
+            ("lambda", "AddPermission", "AwsApiCall", "permission"),
+            ("kms", "CreateGrant", "AwsApiCall", "permission"),
+            ("sso", "CreatePermissionSet", "AwsApiCall", "permission"),
+            ("iam", "CreateAccessKey", "AwsApiCall", "credential"),
+            ("iam", "UpdateLoginProfile", "AwsApiCall", "credential"),
+            ("iam", "ChangePassword", "AwsApiCall", "credential"),
+            ("iam", "DeactivateMFADevice", "AwsApiCall", "credential"),
+            ("iam", "UploadSSHPublicKey", "AwsApiCall", "credential"),
+            ("ec2", "CreateKeyPair", "AwsApiCall", "credential"),
+            ("kms", "ScheduleKeyDeletion", "AwsApiCall", "credential"),
+            (
+                "secretsmanager",
+                "PutSecretValue",
+                "AwsApiCall",
+                "credential",
+            ),
+            ("autoscaling", "PutScalingPolicy", "AwsApiCall", "resource"),
+            ("ec2", "ModifySnapshotAttribute", "AwsApiCall", "resource"),
+            ("ec2", "RunInstances", "AwsApiCall", "resource"),
+            ("s3", "DeleteBucket", "AwsApiCall", "resource"),
+        ] {
+            assert_eq!(
+                aws_category(service, name, event_type),
+                category,
+                "{service}:{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_firehose_record_may_hold_several_events_and_must_hold_only_events() {
+        let one = serde_json::to_string(&parse(AWS_CREATE_ACCESS_KEY)).unwrap();
+        let two = format!("{one}\n{one}{one}\n");
+
+        assert_eq!(
+            aws_record_events(one.as_bytes()).map(|events| events.len()),
+            Some(1)
+        );
+        assert_eq!(
+            aws_record_events(two.as_bytes()).map(|events| events.len()),
+            Some(3)
+        );
+        assert_eq!(aws_record_events(b"not json"), None);
+        assert_eq!(aws_record_events(format!("{one}\n[1]").as_bytes()), None);
     }
 }

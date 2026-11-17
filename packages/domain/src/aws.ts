@@ -144,8 +144,26 @@ export const awsConnectionResourceNames = (connectionId: AwsConnectionId) => {
 		/** The stack of one region's metric stream; the same name in every region it runs in. */
 		metricsStackName: `maple-metrics-${hex}`,
 		metricStreamName: `maple-${hex}`,
+		/** The CloudTrail feed's stack in us-east-1: its rule, its Firehose, and a trail if needed. */
+		auditStackName: `maple-audit-${hex}`,
+		/** The stack in every other enabled region that forwards CloudTrail events to us-east-1. */
+		auditForwarderStackName: `maple-audit-fwd-${hex}`,
+		/** The feed's EventBridge rules and its Firehose. */
+		auditStreamName: `maple-audit-${hex}`,
+		/** The trail the feed creates when the account has no multi-region trail logging. */
+		auditTrailName: `maple-${hex}`,
 	}
 }
+
+/** The region that receives IAM, STS and sign-in events, where the CloudTrail feed's Firehose runs. */
+export const AWS_AUDIT_HOME_REGION = "us-east-1"
+
+/** The CloudTrail events the feed sends: changes and console activity, never reads. */
+export const AWS_AUDIT_DETAIL_TYPES = [
+	"AWS API Call via CloudTrail",
+	"AWS Console Signin via CloudTrail",
+	"AWS Console Action via CloudTrail",
+] as const
 
 /**
  * A connection's CloudWatch metric stream. Streams are regional, so the setup deploys one stack
@@ -334,3 +352,28 @@ export const awsStreamState = (facts: AwsStreamFacts, now: number): AwsStreamSta
 export const AWS_METRICS_OFF = "No metric stream: Maple receives nothing from this account"
 export const AWS_NO_DELIVERY =
 	"No metrics have arrived. Run the setup script again to deploy the metric stream"
+
+/**
+ * Where a connection's CloudTrail feed stands. A quiet account sends nothing for hours, so there is
+ * no "stopped": `waiting` until the first event, `receiving` after, `refused` when the last delivery was.
+ */
+export type AwsAuditState =
+	| { readonly _tag: "off" }
+	| { readonly _tag: "waiting" }
+	| { readonly _tag: "refused"; readonly error: string; readonly receivedAt: number | null }
+	| { readonly _tag: "receiving"; readonly receivedAt: number }
+
+export interface AwsAuditFacts {
+	readonly auditTrail: boolean
+	readonly auditLastReceivedAt: number | null
+	readonly auditLastError: string | null
+}
+
+export const awsAuditState = (facts: AwsAuditFacts): AwsAuditState => {
+	if (!facts.auditTrail) return { _tag: "off" }
+	if (facts.auditLastError !== null)
+		return { _tag: "refused", error: facts.auditLastError, receivedAt: facts.auditLastReceivedAt }
+	return facts.auditLastReceivedAt === null
+		? { _tag: "waiting" }
+		: { _tag: "receiving", receivedAt: facts.auditLastReceivedAt }
+}

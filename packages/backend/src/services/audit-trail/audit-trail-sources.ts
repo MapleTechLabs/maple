@@ -23,6 +23,8 @@ const FEED_OF = {
 	vercel: (resource: IntegrationResource) => resource.kind === "drain" && resource.name === "audit log",
 	// Admin Activity and Policy Denied ride the log sink the setup script creates.
 	gcp: (resource: IntegrationResource) => resource.kind === "logs",
+	// CloudTrail, through each connected account's EventBridge rules and Firehose.
+	aws: (resource: IntegrationResource) => resource.kind === "audit",
 } as const satisfies Record<Exclude<AuditTrailProvider, "maple">, (resource: IntegrationResource) => boolean>
 
 type ConnectableProvider = keyof typeof FEED_OF

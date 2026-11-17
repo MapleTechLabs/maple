@@ -399,6 +399,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedAwsModules: ({ id, connection, error }) =>
 			Aws.completedModules(model, context, id, connection, error),
 		ToggledAwsNewModule: ({ module }) => Aws.toggledNewModule(model, module),
+		ToggledAwsAuditTrail: ({ id }) => Aws.toggledAuditTrail(model, id),
+		CompletedAwsAuditTrail: ({ id, connection, error }) =>
+			Aws.completedAuditTrail(model, context, id, connection, error),
 		CompletedGcpLogVolume: ({ key, result }) =>
 			Gcp.updateGcpCard(model, { logVolume: Keyed.accept(model.gcpCard.logVolume, key, result) }),
 		CompletedGcpFleet: ({ key, result }) =>

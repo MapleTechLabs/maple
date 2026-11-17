@@ -7,7 +7,7 @@ order: 11
 
 The AWS integration connects one AWS account to Maple through an IAM role in that account. The setup registers Maple as an **OIDC identity provider** in the account (`https://api.maple.dev/oidc/aws`, or `https://api.eu.maple.dev/oidc/aws` on the EU instance), the same mechanism GitHub Actions uses to reach AWS. To assume the role, Maple signs a token valid for five minutes and exchanges it with AWS STS for a 15-minute session. The role trusts only tokens whose subject is your connection (`aws-connection:<id>`), so no other Maple organization or connection can assume it. Maple stores no access key, secret or session for your account, and holds no long-lived AWS credential of its own.
 
-Maple checks each connection every hour, and whenever you click **Sync now** on the connection. The check assumes the role and reads the role's own tags and attached policies. CloudWatch metrics can be streamed to Maple as well (see below). A resource inventory, a security scan and cost each come as a **module**: a policy of its own on the same role, added by deploying the stack again.
+Maple checks each connection every hour, and whenever you click **Sync now** on the connection. The check assumes the role and reads the role's own tags and attached policies. CloudWatch metrics can be streamed to Maple as well, and CloudTrail activity can feed the Security audit log (see below). A resource inventory, a security scan and cost each come as a **module**: a policy of its own on the same role, added by deploying the stack again.
 
 ## Prerequisites
 
@@ -64,6 +64,23 @@ Once metrics arrive, **AWS** shows under **Infrastructure** in the sidebar. It h
 AWS bills the metric stream at $0.003 per 1,000 metric updates, and each metric updates once a minute, so 100 metrics cost about $13 a month. Firehose adds a few cents per gigabyte. Stream only the namespaces you need.
 
 To stop streaming, turn the metric stream off in Maple and run the setup script again: it removes the stack from every region. The cleanup script removes it too.
+
+## CloudTrail audit log
+
+A connection can send the account's CloudTrail activity to the audit log under **Security → Audit log**, beside Maple's own audit events and those of your other connected platforms. Switch on **Audit log** on the connection, then click **Update the stack** and run the script in CloudShell. Maple receives every change made in the account (IAM, security groups, keys, buckets, any API call that writes), console sign-ins and sign-in steps such as MFA, and calls AWS denied. Read-only calls (`Get`, `List`, `Describe`) stay out. The events are visible only to org admins, never as logs, and you can alert on them with [audit log detections](/docs/alerting/alert-rules#audit-log-detections), for example on `signin:ConsoleLogin` failures or `cloudtrail:StopLogging`. Actions are named `<service>:<event>`, as in `iam:CreateAccessKey`.
+
+AWS sends CloudTrail events to EventBridge only while a trail logs them. The script checks whether the account already has a multi-region trail that records changes, as most accounts in an AWS organization do. If it has none, the script creates one, `maple-<id>`, with a bucket that keeps its logs for a year. The script deploys:
+
+| Resource                                       | Where                      | Purpose                                                                                                                      |
+| ---------------------------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Stack `maple-audit-<id>`: EventBridge rule     | `us-east-1`                | Matches CloudTrail changes and console activity, including what the other regions forward. IAM and sign-in events land here. |
+| Firehose delivery stream, S3 bucket, IAM roles | `us-east-1`                | Posts the events to Maple with the same secret as the metric stream, and keeps batches Maple could not accept for 7 days.    |
+| Trail `maple-<id>` and its S3 bucket           | `us-east-1`, if needed     | Only when no other multi-region trail records changes. The bucket stays when the stack is deleted.                           |
+| Stack `maple-audit-fwd-<id>`: EventBridge rule | Every other enabled region | Forwards that region's events to `us-east-1`, so activity in a region nobody uses is seen too.                               |
+
+The script deploys the regions side by side. It skips a region an organization policy denies (a region-deny guardrail, for example) and says which ones it skipped. AWS bills the forwarding as cross-region EventBridge events, and the trail Maple creates as S3 storage; the first copy of management events in a trail is free.
+
+Turning **Audit log** off stops Maple storing the events at once. Run the script again to remove the stacks; the bucket of a trail Maple created stays, with the logs it already holds.
 
 ## Audit what Maple does
 

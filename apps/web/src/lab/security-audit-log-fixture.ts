@@ -43,6 +43,43 @@ const system: AuditTrailEntry["actor"] = { type: "system", id: null, name: null,
 
 const SEEDS: ReadonlyArray<Seed> = [
 	{
+		provider: "aws",
+		account: "465760687006",
+		minutesAgo: 1,
+		action: "signin:ConsoleLogin",
+		category: "authentication",
+		outcome: "failure",
+		outcomeReason: "Failed authentication",
+		actor: { type: "user", id: "arn:aws:iam::465760687006:user/deploy", name: "deploy", email: null },
+		target: { type: "signin" },
+		originIp: "198.51.100.77",
+		raw: {
+			eventSource: "signin.amazonaws.com",
+			eventName: "ConsoleLogin",
+			responseElements: { ConsoleLogin: "Failure" },
+		},
+	},
+	{
+		provider: "aws",
+		account: "465760687006",
+		minutesAgo: 7,
+		action: "iam:CreateAccessKey",
+		category: "credential",
+		actor: {
+			type: "user",
+			id: "arn:aws:sts::465760687006:assumed-role/AWSReservedSSO_Admin_1a2b/ada@acme.test",
+			name: "AWSReservedSSO_Admin_1a2b",
+			email: "ada@acme.test",
+		},
+		target: { type: "AWS::IAM::User", id: "arn:aws:iam::465760687006:user/ci", name: "ci" },
+		originIp: "203.0.113.7",
+		raw: {
+			eventSource: "iam.amazonaws.com",
+			eventName: "CreateAccessKey",
+			requestParameters: { userName: "ci" },
+		},
+	},
+	{
 		provider: "vercel",
 		account: "team_acme",
 		minutesAgo: 2,
@@ -190,7 +227,7 @@ export const auditEventsOf = (nowMs: number, hasMore = true): AuditTrailListResp
 
 export const noAuditEvents: AuditTrailListResponse = { events: [], nextCursor: null }
 
-/** Maple and a Vercel team sending, Google Cloud connected with its log forwarding off. */
+/** Maple, a Vercel team and an AWS account sending, Google Cloud connected with its log forwarding off. */
 export const auditSourcesOf = (nowMs: number): AuditTrailSourcesResponse => ({
 	windowDays: 30,
 	sources: [
@@ -218,6 +255,14 @@ export const auditSourcesOf = (nowMs: number): AuditTrailSourcesResponse => ({
 			events: 0,
 			lastEventAt: null,
 		},
+		{
+			provider: "aws",
+			state: "receiving",
+			account: "465760687006",
+			problem: null,
+			events: 1_284,
+			lastEventAt: nowMs - MINUTE,
+		},
 	],
 })
 
@@ -236,6 +281,14 @@ export const noAuditSources: AuditTrailSourcesResponse = {
 		},
 		{
 			provider: "gcp",
+			state: "not_connected",
+			account: null,
+			problem: null,
+			events: 0,
+			lastEventAt: null,
+		},
+		{
+			provider: "aws",
 			state: "not_connected",
 			account: null,
 			problem: null,

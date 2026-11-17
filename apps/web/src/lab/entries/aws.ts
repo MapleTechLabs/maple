@@ -55,6 +55,10 @@ const connection: V2AwsConnection = {
 	metric_stream_changed_at: null,
 	metrics_last_received_at: null,
 	metrics_last_error: null,
+	audit_trail: false,
+	audit_trail_changed_at: null,
+	audit_last_received_at: null,
+	audit_last_error: null,
 	created_at: Schema.decodeSync(Timestamp)("2026-10-20T10:00:00.000Z"),
 }
 

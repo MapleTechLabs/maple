@@ -54,7 +54,7 @@ import {
 import { reconcileAwsCostSources } from "../cost/aws-cost-sources"
 import { AwsApiError, checkRole } from "./aws/api"
 import { type AwsOidcSigner, makeAwsOidcSigner } from "./aws/oidc"
-import { renderAwsCleanupScript, renderAwsSetup } from "./aws/setup"
+import { awsScriptTarget, renderAwsCleanupScript, renderAwsSetup } from "./aws/setup"
 
 export interface AwsConnection {
 	readonly id: AwsConnectionId
@@ -79,6 +79,12 @@ export interface AwsConnection {
 	/** The last metric delivery the receiver accepted, and why the last one failed. */
 	readonly metricsLastReceivedAt: number | null
 	readonly metricsLastError: string | null
+	/** Whether CloudTrail feeds the audit log; when it was last turned on. */
+	readonly auditTrail: boolean
+	readonly auditTrailChangedAt: number | null
+	/** The last CloudTrail delivery the receiver accepted, and why the last one failed. */
+	readonly auditLastReceivedAt: number | null
+	readonly auditLastError: string | null
 	readonly createdAt: number
 }
 
@@ -127,6 +133,8 @@ export interface AwsConnectionServiceApi {
 			readonly modules: ReadonlyArray<AwsModule>
 			/** Omitted: no metric stream. */
 			readonly metricStream?: AwsMetricStream | null | undefined
+			/** Omitted: no CloudTrail feed. */
+			readonly auditTrail?: boolean | undefined
 		},
 	) => Effect.Effect<
 		AwsConnection,
@@ -143,6 +151,8 @@ export interface AwsConnectionServiceApi {
 			readonly modules?: ReadonlyArray<AwsModule> | undefined
 			/** Null turns the stream off; undefined leaves it. */
 			readonly metricStream?: AwsMetricStream | null | undefined
+			/** Undefined leaves the CloudTrail feed as it is. */
+			readonly auditTrail?: boolean | undefined
 		},
 	) => Effect.Effect<AwsConnection, IntegrationsNotFoundError | ModulesError | IntegrationsPersistenceError>
 	readonly setup: (
@@ -226,6 +236,10 @@ const toConnection = (issuer: string, row: AwsConnectionRow): AwsConnection => {
 		metricStreamChangedAt: row.metricStreamChangedAt,
 		metricsLastReceivedAt: row.streamLastReceivedAt,
 		metricsLastError: row.streamLastError,
+		auditTrail: row.auditTrailEnabled,
+		auditTrailChangedAt: row.auditTrailChangedAt,
+		auditLastReceivedAt: row.auditLastReceivedAt,
+		auditLastError: row.auditLastError,
 		createdAt: row.createdAt,
 	}
 }
@@ -437,6 +451,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 					readonly accountId: AwsAccountId
 					readonly modules: ReadonlyArray<AwsModule>
 					readonly metricStream?: AwsMetricStream | null | undefined
+					readonly auditTrail?: boolean | undefined
 				},
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.aws.account_id": input.accountId })
@@ -467,6 +482,8 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 										metricStream: input.metricStream ?? null,
 										metricStreamChangedAt:
 											(input.metricStream ?? null) === null ? null : now,
+										auditTrailEnabled: input.auditTrail === true,
+										auditTrailChangedAt: input.auditTrail === true ? now : null,
 										...streamSecret,
 										createdBy: userId,
 										createdAt: now,
@@ -496,37 +513,62 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 				patch: {
 					readonly modules?: ReadonlyArray<AwsModule> | undefined
 					readonly metricStream?: AwsMetricStream | null | undefined
+					readonly auditTrail?: boolean | undefined
 				},
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.aws.connection_id": connectionId })
 				const flags = yield* featureFlags.flags(orgId)
 				const modules =
 					patch.modules === undefined ? undefined : yield* validateModules(patch.modules, flags)
-				const updatedAt = yield* Clock.currentTimeMillis
-				const changes = {
-					...(modules !== undefined && { modules }),
-					...(patch.metricStream !== undefined && {
-						metricStream: patch.metricStream,
-						// A stream turned on or changed is due its first delivery from the next deploy.
-						metricStreamChangedAt: patch.metricStream === null ? null : updatedAt,
-					}),
-					// A stream turned off stops authenticating at once, though its Firehose may still be
-					// deployed; turning it back on mints a new secret for the next setup.
-					...(patch.metricStream === null && {
-						streamSecretCiphertext: null,
-						streamSecretIv: null,
-						streamSecretTag: null,
-						streamSecretHash: null,
-					}),
-				}
-				// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.keys would need a cast
-				if (Object.keys(changes).length === 0) {
+				if (
+					modules === undefined &&
+					patch.metricStream === undefined &&
+					patch.auditTrail === undefined
+				) {
 					const current = yield* selectRow(orgId, connectionId)
 					return connectionOf(current)
 				}
+				const updatedAt = yield* Clock.currentTimeMillis
 				const [row] = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
+							// Locked: two updates turning off the stream and the feed must not each see the other on.
+							const [current] = yield* db.run(
+								PG.from(AwsConnections)
+									.select()
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(connectionId)])
+									.limit(1)
+									.forUpdate(),
+							)
+							if (current === undefined) return []
+							const metricStream =
+								patch.metricStream === undefined ? current.metricStream : patch.metricStream
+							const auditTrail = patch.auditTrail ?? current.auditTrailEnabled
+							const changes = {
+								...(modules !== undefined && { modules }),
+								...(patch.metricStream !== undefined && {
+									metricStream: patch.metricStream,
+									// A stream turned on or changed is due its first delivery from the next deploy.
+									metricStreamChangedAt: patch.metricStream === null ? null : updatedAt,
+								}),
+								...(auditTrail !== current.auditTrailEnabled && {
+									auditTrailEnabled: auditTrail,
+									auditTrailChangedAt: auditTrail ? updatedAt : null,
+									// A feed turned back on reports from its next delivery, not an old one.
+									auditLastReceivedAt: null,
+									auditLastError: null,
+								}),
+								// The stream and the CloudTrail feed send the same secret. With both off it stops
+								// authenticating at once, though a Firehose may still be deployed; turning either
+								// back on mints a new secret for the next setup.
+								...(metricStream === null &&
+									!auditTrail && {
+										streamSecretCiphertext: null,
+										streamSecretIv: null,
+										streamSecretTag: null,
+										streamSecretHash: null,
+									}),
+							}
 							const rows = yield* db.run(
 								PG.update(AwsConnections)
 									.set({ ...changes, updatedAt })
@@ -593,15 +635,22 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 					issuer,
 					modules: row.modules,
 				})
+				// The stream and the CloudTrail feed post with the same secret.
+				const accessKey =
+					row.metricStream === null && !row.auditTrailEnabled ? null : yield* streamAccessKey(row)
 				const stream =
-					row.metricStream === null
+					row.metricStream === null || accessKey === null
 						? null
 						: {
 								...row.metricStream,
 								endpoint: `${ingestBase}/v1/firehose/aws/${row.id}`,
-								accessKey: yield* streamAccessKey(row),
+								accessKey,
 							}
-				return yield* renderAwsSetup(row.id, row.accountId, plan, stream)
+				const audit =
+					!row.auditTrailEnabled || accessKey === null
+						? null
+						: { endpoint: `${ingestBase}/v1/firehose/aws/${row.id}/audit`, accessKey }
+				return yield* renderAwsSetup(row.id, row.accountId, plan, stream, audit)
 			})
 
 			/** Assumes the row's role and writes what it found, on the row and on its source. */
@@ -789,18 +838,18 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.aws.connection_id": connectionId })
 				const current = yield* selectRow(orgId, connectionId)
 				// Rendered first: once the row is gone, a failed render would lose the only cleanup.
-				const names = awsConnectionResourceNames(current.id)
-				const cleanupScript = yield* renderAwsCleanupScript({
-					accountId: current.accountId,
-					stackName: names.stackName,
-					metricsStackName: names.metricsStackName,
-					oidcProvider: awsSetupPlan({
-						connectionId: current.id,
-						accountId: current.accountId,
-						issuer,
-						modules: [],
-					}).oidcProvider,
-				})
+				const cleanupScript = yield* renderAwsCleanupScript(
+					awsScriptTarget(
+						current.id,
+						current.accountId,
+						awsSetupPlan({
+							connectionId: current.id,
+							accountId: current.accountId,
+							issuer,
+							modules: [],
+						}).oidcProvider,
+					),
+				)
 				// Its source goes with it.
 				const [row] = yield* dbExecute((db) =>
 					db.transaction(

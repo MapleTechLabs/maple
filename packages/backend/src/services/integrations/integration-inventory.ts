@@ -15,6 +15,7 @@ import {
 	AWS_NO_DELIVERY,
 	AWS_TEMPLATE_VERSION,
 	type AwsMetricStream,
+	awsAuditState,
 	awsStreamState,
 } from "@maple/domain/aws"
 import { GCP_PROJECT_ASSET_TYPE } from "@maple/domain/gcp-metrics"
@@ -205,6 +206,9 @@ export interface IntegrationInventoryInputs {
 		readonly metricStreamChangedAt: number | null
 		readonly streamLastReceivedAt: number | null
 		readonly streamLastError: string | null
+		readonly auditTrailEnabled: boolean
+		readonly auditLastReceivedAt: number | null
+		readonly auditLastError: string | null
 		readonly createdAt: number
 	}>
 	/** Its grant is the `oauthConnections` row with provider "supabase". */
@@ -255,7 +259,10 @@ export const INTEGRATION_FEEDS = {
 		"Cloud Logging logs through a Pub/Sub push subscription",
 		"Cloud Monitoring metrics and the Cloud Asset Inventory of the connected scope",
 	],
-	aws: ["CloudWatch metrics through a metric stream, for the regions and namespaces picked"],
+	aws: [
+		"CloudWatch metrics through a metric stream, for the regions and namespaces picked",
+		"CloudTrail changes and console sign-ins into the audit log, from every enabled region",
+	],
 	railway: ["per-service CPU, memory, network and disk metrics"],
 	vercel: [
 		"function, edge, build and request logs through a log drain",
@@ -840,8 +847,11 @@ const aws = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry 
 		]
 		const streams = ((): ReadonlyArray<IntegrationResource> => {
 			switch (state._tag) {
+				// An account that only feeds the audit log is not paused for having no stream.
 				case "off":
-					return c.verifiedAt === null ? [] : stream("paused", null, AWS_METRICS_OFF)
+					return c.verifiedAt === null || c.auditTrailEnabled
+						? []
+						: stream("paused", null, AWS_METRICS_OFF)
 				case "waiting":
 					return stream("pending", null, `waiting for the first delivery (${regions})`)
 				case "undelivered":
@@ -853,7 +863,35 @@ const aws = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry 
 					return stream(state._tag === "silent" ? "stale" : "healthy", null, regions)
 			}
 		})()
-		return [role, ...streams]
+		const auditState = awsAuditState({
+			auditTrail: c.auditTrailEnabled,
+			auditLastReceivedAt: c.auditLastReceivedAt,
+			auditLastError: c.auditLastError,
+		})
+		const audit = (status: IntegrationStatus, lastError: string | null, note: string | null) => [
+			{
+				kind: "audit",
+				name: c.accountId,
+				status,
+				lastSuccessAt: c.auditLastReceivedAt,
+				lastError,
+				note,
+			} satisfies IntegrationResource,
+		]
+		const audits = ((): ReadonlyArray<IntegrationResource> => {
+			switch (auditState._tag) {
+				case "off":
+					return []
+				case "waiting":
+					return audit("pending", null, "waiting for the first CloudTrail event")
+				case "refused":
+					return audit("failing", auditState.error, null)
+				// A quiet account sends nothing for hours: an old last event is not a stopped feed.
+				case "receiving":
+					return audit("healthy", null, null)
+			}
+		})()
+		return [role, ...streams, ...audits]
 	})
 	return entry("aws", now, {
 		account: Arr.join(

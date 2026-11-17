@@ -590,6 +590,9 @@ describe("aws", () => {
 		metricStreamChangedAt: null,
 		streamLastReceivedAt: null,
 		streamLastError: null,
+		auditTrailEnabled: false,
+		auditLastReceivedAt: null,
+		auditLastError: null,
 		createdAt: NOW - 48 * 60 * MINUTE,
 	} satisfies IntegrationInventoryInputs["awsConnections"][number]
 	const stream = Schema.decodeSync(AwsMetricStream)({
@@ -630,6 +633,22 @@ describe("aws", () => {
 			"aws",
 		)
 		expect(undeployed?.status).toBe("pending")
+	})
+
+	it("reads the CloudTrail feed as its own resource, and an audit-only account as healthy", () => {
+		const auditOnly = (overrides: Partial<IntegrationInventoryInputs["awsConnections"][number]>) =>
+			providerOf({ awsConnections: [{ ...connection, auditTrailEnabled: true, ...overrides }] }, "aws")
+		const audit = (overrides: Partial<IntegrationInventoryInputs["awsConnections"][number]>) =>
+			Arr.findFirst(auditOnly(overrides)?.resources ?? [], (r) => r.kind === "audit")
+
+		expect(Option.map(audit({}), (r) => r.status)).toEqual(Option.some("pending"))
+		const receiving = auditOnly({ auditLastReceivedAt: NOW - 600 * MINUTE })
+		// Hours without an event are a quiet account, not a stopped feed; no stream is no pause.
+		expect(receiving?.status).toBe("healthy")
+		expect(Arr.map(receiving?.resources ?? [], (r) => r.kind)).toEqual(["role", "audit"])
+		const refused = auditOnly({ auditLastError: "Maple could not read a CloudTrail delivery." })
+		expect(refused?.status).toBe("failing")
+		expect(refused?.problem).toContain("could not read a CloudTrail delivery")
 	})
 
 	it("fails when the role can no longer be assumed", () => {

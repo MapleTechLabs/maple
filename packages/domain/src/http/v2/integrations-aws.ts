@@ -42,12 +42,22 @@ const connectionExample = {
 	metric_stream_changed_at: "2026-10-21T12:00:00.000Z",
 	metrics_last_received_at: "2026-10-21T13:04:00.000Z",
 	metrics_last_error: null,
+	audit_trail: true,
+	audit_trail_changed_at: "2026-10-21T12:00:00.000Z",
+	audit_last_received_at: "2026-10-21T13:02:00.000Z",
+	audit_last_error: null,
 	created_at: "2026-10-21T12:00:00.000Z",
 } as const
 
 const metricStreamField = AwsMetricStream.annotate({
 	description:
 		"Which regions stream which CloudWatch namespaces to Maple. Each region gets a metric stream and a Firehose, deployed by `setup`.",
+})
+
+const auditTrailField = Schema.Boolean.annotate({
+	description:
+		"Whether the account's CloudTrail management events (changes and console sign-ins, not reads) feed the Security audit log. `setup` deploys an EventBridge rule in every enabled region and a Firehose to Maple, and a trail when the account has no multi-region one.",
+	examples: [true],
 })
 
 export const V2AwsConnection = Schema.Struct({
@@ -113,6 +123,19 @@ export const V2AwsConnection = Schema.Struct({
 		description: "Why the latest metric delivery was refused, or `null`.",
 		examples: [null],
 	}),
+	audit_trail: auditTrailField,
+	audit_trail_changed_at: Schema.NullOr(Timestamp).annotate({
+		description:
+			"When the CloudTrail feed was last turned on, or `null` while it is off. Its events follow the next deploy of `setup`.",
+	}),
+	audit_last_received_at: Schema.NullOr(Timestamp).annotate({
+		description:
+			"When Maple last accepted CloudTrail events from the account, or `null` before the first.",
+	}),
+	audit_last_error: Schema.NullOr(Schema.String).annotate({
+		description: "Why the latest CloudTrail delivery was refused, or `null`.",
+		examples: [null],
+	}),
 	created_at: Timestamp.annotate({ description: "When the connection was created." }),
 }).annotate({
 	identifier: "AwsConnection",
@@ -172,6 +195,7 @@ export const V2AwsCreateConnectionRequest = Schema.Struct({
 		"What Maple may read. Defaults to none: the role then only lets Maple confirm the setup.",
 	),
 	metric_stream: Schema.optionalKey(Schema.NullOr(metricStreamField)),
+	audit_trail: Schema.optionalKey(auditTrailField),
 }).annotate({
 	identifier: "AwsCreateConnectionRequest",
 	title: "AWS connection create request",
@@ -188,6 +212,7 @@ export const V2AwsUpdateConnectionRequest = Schema.Struct({
 			description: "The metric stream. Omitted: unchanged; `null` turns it off.",
 		}),
 	),
+	audit_trail: Schema.optionalKey(auditTrailField),
 }).annotate({
 	identifier: "AwsUpdateConnectionRequest",
 	title: "AWS connection update request",

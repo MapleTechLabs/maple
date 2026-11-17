@@ -165,6 +165,9 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 								"metricStreamChangedAt",
 								"streamLastReceivedAt",
 								"streamLastError",
+								"auditTrailEnabled",
+								"auditLastReceivedAt",
+								"auditLastError",
 								"createdAt",
 							)
 							.where(($) => [$.orgId.eq(orgId)]),

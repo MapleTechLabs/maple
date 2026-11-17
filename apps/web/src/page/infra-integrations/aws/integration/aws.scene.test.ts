@@ -9,7 +9,14 @@ import { click, Command, expect as expectView, given, role, scene, text, withVie
 import { describe, expect, test } from "vitest"
 import * as Field from "@maple/views/ui/field"
 import { PageOutMessage, type PageContext } from "../../../contract"
-import { isMetricsPanelOpen, isSavingMetricsOf, LoadAwsSetup, metricsErrorOf, UpdateAwsModules } from "./aws"
+import {
+	isMetricsPanelOpen,
+	isSavingMetricsOf,
+	LoadAwsSetup,
+	metricsErrorOf,
+	UpdateAwsAuditTrail,
+	UpdateAwsModules,
+} from "./aws"
 import { Message } from "../../../integrations/message"
 import type { Model } from "../../../integrations/model"
 import { init, update } from "../../../integrations/update"
@@ -44,6 +51,10 @@ const connection = (overrides: Partial<V2AwsConnection> = {}): V2AwsConnection =
 	metric_stream_changed_at: null,
 	metrics_last_received_at: null,
 	metrics_last_error: null,
+	audit_trail: false,
+	audit_trail_changed_at: null,
+	audit_last_received_at: null,
+	audit_last_error: null,
 	created_at: Schema.decodeSync(Timestamp)("2026-10-21T12:00:00.000Z"),
 	...overrides,
 })
@@ -870,6 +881,110 @@ describe("aws card", () => {
 						.commands,
 				),
 			).toEqual([])
+		})
+	})
+
+	describe("the audit log feed", () => {
+		const verified_at = Schema.decodeSync(Timestamp)("2026-10-21T12:05:00.000Z")
+		const verified = (overrides: Partial<V2AwsConnection> = {}) =>
+			connection({ verified_at, template_version: 2, granted_modules: [], ...overrides })
+		const auditSwitch = role("switch", { name: "Audit log" })
+
+		test("turning it on saves only the feed, then reopens the setup that deploys it", () => {
+			const model = withStatus(entered(), [verified({ metric_stream: stream })])
+			const sent = pageUpdate(model, Message.ToggledAwsAuditTrail({ id: connectionId }))
+			expect(Arr.map(sent.commands ?? [], ({ name, args }) => ({ name, args }))).toEqual([
+				{ name: UpdateAwsAuditTrail.name, args: { id: connectionId, auditTrail: true } },
+			])
+			// A second toggle while saving sends nothing.
+			expect(
+				names(pageUpdate(sent.model, Message.ToggledAwsAuditTrail({ id: connectionId })).commands),
+			).toEqual([])
+			const saved = pageUpdate(
+				sent.model,
+				Message.CompletedAwsAuditTrail({
+					id: connectionId,
+					connection: verified({ metric_stream: stream, audit_trail: true }),
+					error: null,
+				}),
+			)
+			expect(names(saved.commands)).toContain("LoadAwsSetup")
+			expect(saved.outMessage).toEqual(
+				PageOutMessage.RequestedToast({
+					type: "success",
+					title: "Audit log feed turned on",
+					description: "Run the setup again in AWS: it deploys the feed to every region.",
+				}),
+			)
+			scene(
+				{ update: pageUpdate, view },
+				given(saved.model),
+				expectView(auditSwitch).toBeChecked(),
+				expectView(text("No events yet")).toExist(),
+				expectView(role("button", { name: "Update the stack" })).toExist(),
+			)
+		})
+
+		test("a receiving feed links to its events in the audit log, and a refused one says why", () => {
+			const at = Schema.decodeSync(Timestamp)("2026-10-21T13:00:00.000Z")
+			scene(
+				{ update: pageUpdate, view },
+				given(withStatus(entered(), [verified({ audit_trail: true, audit_last_received_at: at })])),
+				expectView(text("Receiving")).toExist(),
+				expectView(role("link", { name: "Open audit log" })).toHaveAttr(
+					"href",
+					"/security/audit-log?provider=aws",
+				),
+				expectView(role("button", { name: "Update the stack" })).not.toExist(),
+			)
+			const reason = "Maple could not read a CloudTrail delivery. Run the setup script again."
+			scene(
+				{ update: pageUpdate, view },
+				given(
+					withStatus(entered(), [
+						verified({ audit_trail: true, audit_last_received_at: at, audit_last_error: reason }),
+					]),
+				),
+				expectView(text("Failing")).toExist(),
+				expectView(text(reason, { exact: false })).toExist(),
+				expectView(role("button", { name: "Update the stack" })).toExist(),
+			)
+		})
+
+		test("an account that only feeds the audit log reads by its feed, not as metrics off", () => {
+			const at = Schema.decodeSync(Timestamp)("2026-10-21T13:00:00.000Z")
+			const overview = (overrides: Partial<V2AwsConnection>) => {
+				const model = withStatus(entered(), [verified(overrides)])
+				return overviewOf(model.statuses, model.nowMs, "aws")
+			}
+			expect(overview({})).toMatchObject({ issue: "Metrics off" })
+			expect(overview({ audit_trail: true })).toMatchObject({ issue: "Waiting for audit events" })
+			expect(overview({ audit_trail: true, audit_last_error: "refused" })).toMatchObject({
+				issue: "Audit events refused",
+			})
+			const receiving = overview({ audit_trail: true, audit_last_received_at: at })
+			expect(receiving?.kind === "connected" && receiving.health).toBe("healthy")
+		})
+
+		test("a refused change says why on the row and leaves the switch as it was", () => {
+			scene(
+				{ update: pageUpdate, view },
+				given(withStatus(entered(), [verified()])),
+				click(auditSwitch),
+				Command.expectHas(UpdateAwsAuditTrail({ id: connectionId, auditTrail: true })),
+				expectView(auditSwitch).toBeDisabled(),
+				Command.resolve(
+					UpdateAwsAuditTrail,
+					Message.CompletedAwsAuditTrail({
+						id: connectionId,
+						connection: null,
+						error: "Not allowed.",
+					}),
+				),
+				expectView(auditSwitch).not.toBeChecked(),
+				expectView(auditSwitch).toBeEnabled(),
+				expectView(role("alert")).toHaveText("Not allowed."),
+			)
 		})
 	})
 })

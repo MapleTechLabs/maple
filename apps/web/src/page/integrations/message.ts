@@ -273,6 +273,12 @@ export const Message = defineMessageUnion({
 	},
 	/** The connect flow's opt-in for a module on the account about to be connected. */
 	ToggledAwsNewModule: { module: AwsModule },
+	ToggledAwsAuditTrail: { id: AwsConnectionId },
+	CompletedAwsAuditTrail: {
+		id: AwsConnectionId,
+		connection: Schema.NullOr(V2AwsConnection),
+		error: Schema.NullOr(Schema.String),
+	},
 	CompletedGcpLogVolume: { key: Schema.String, result: Schema.Result(LogVolume, LoadFailure) },
 	CompletedGcpFleet: { key: Schema.String, result: Schema.Result(Schema.Array(FleetRead), LoadFailure) },
 	CompletedGcpInventory: result(GcpResourcesResponse),

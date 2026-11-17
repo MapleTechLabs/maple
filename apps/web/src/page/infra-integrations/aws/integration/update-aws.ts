@@ -31,6 +31,7 @@ import {
 	ReadAwsRemoved,
 	selectionOf,
 	UpdateAwsMetricStream,
+	UpdateAwsAuditTrail,
 	UpdateAwsModules,
 	WriteAwsRemoved,
 } from "./aws"
@@ -537,6 +538,51 @@ export const toggledModule = (model: Model, id: AwsConnectionId, module: AwsModu
 		model: withCard(model, { moduleSave: { _tag: "Saving", id } }),
 		commands: [UpdateAwsModules({ id, modules: flip(found.value.modules, module) })],
 	}
+}
+
+/** The CloudTrail feed on or off; AWS follows once the setup script runs again. */
+export const toggledAuditTrail = (model: Model, id: AwsConnectionId): Return => {
+	const found = Arr.findFirst(connectionsOf(model), (entry) => entry.id === id)
+	if (Option.isNone(found) || !canManage(model) || model.awsCard.auditSave._tag === "Saving")
+		return { model }
+	return {
+		model: withCard(model, { auditSave: { _tag: "Saving", id } }),
+		commands: [UpdateAwsAuditTrail({ id, auditTrail: !found.value.audit_trail })],
+	}
+}
+
+/** Like a module change: the setup opens with the new script, which deploys or removes the feed. */
+export const completedAuditTrail = (
+	model: Model,
+	context: PageContext,
+	id: AwsConnectionId,
+	connection: V2AwsConnection | null,
+	error: string | null,
+): Return => {
+	if (connection === null)
+		return {
+			model: withCard(model, {
+				auditSave: { _tag: "Refused", id, error: error ?? "Couldn't change the audit log feed." },
+			}),
+		}
+	return chain(withCard(withConnection(model, connection), { auditSave: { _tag: "Idle" } }), [
+		(next) => openSetup(next, context, connection.id, "Supersede"),
+		(next) => requestStatus(next, context, "aws", "Supersede"),
+		(next) =>
+			connection.audit_trail
+				? toast(
+						next,
+						"success",
+						"Audit log feed turned on",
+						"Run the setup again in AWS: it deploys the feed to every region.",
+					)
+				: toast(
+						next,
+						"success",
+						"Audit log feed turned off",
+						"Run the setup again in AWS to remove it.",
+					),
+	])
 }
 
 /** The answered connection takes its place in the status, so the switch does not wait for the re-read. */
