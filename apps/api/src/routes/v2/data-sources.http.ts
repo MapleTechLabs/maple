@@ -50,7 +50,7 @@ export const HttpV2DataSourcesLive = HttpApiBuilder.group(MapleApiV2, "dataSourc
 			return tenant
 		})
 
-		// Sources hold credentials to the org's own systems: writes, tests and refreshes are admin-only.
+		// Sources hold credentials to the org's own systems: writes, tests and refreshes need an engineer.
 		const requireManage = Effect.gen(function* () {
 			const tenant = yield* enabledTenant
 			yield* Policy.check(tenant.roles, "data_sources:manage", (denial) =>

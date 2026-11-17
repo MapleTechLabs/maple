@@ -243,7 +243,7 @@ describe("v2 data sources over HTTP", () => {
 		await harness.dispose()
 	})
 
-	it("lets members read and only admins connect, and never returns the secret", async () => {
+	it("lets members read and only engineers and admins connect, and never returns the secret", async () => {
 		const harness = makeHarness(createdDbs, makeSource())
 		const [admin, member] = [await harness.adminKey(), await harness.memberKey()]
 

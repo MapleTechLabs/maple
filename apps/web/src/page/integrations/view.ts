@@ -7,7 +7,8 @@ import { button } from "@maple/views/ui/button"
 import { type CatalogEntry, catalogEntry, entryOfSearch, type IntegrationId } from "./catalog"
 import { ConnectProvider } from "./connect"
 import { Message } from "./message"
-import { canManage, type Model } from "./model"
+import type { Model } from "./model"
+import { gatedControl } from "../kit/session-grants"
 import { navShell } from "../kit/nav-shell"
 import { isClerkAuthEnabled } from "../../platform/auth-mode"
 import { visibleSections } from "../settings/nav"
@@ -29,18 +30,21 @@ const selectIntegration = (id: IntegrationId) => Message.ClickedIntegration({ in
 export const connectButton = (h: H, model: Model, integration: IntegrationId): Html | undefined => {
 	if (!Schema.is(ConnectProvider)(integration)) return undefined
 	const entry = catalogEntry(integration)
-	return button(
-		h,
-		{
-			size: "sm",
-			isLoading: model.connect.isStarting,
-			// Linear's and Google's starts are admin-only on the server.
-			isDisabled:
-				(integration === "linear" || integration === "google-search-console") && !canManage(model),
-			attributes: [h.OnClick(Message.ClickedConnect())],
-		},
-		[entryGlyph(h, entry, undefined), "Connect ", entry.name],
-	)
+	const control = (isDisabled: boolean): Html =>
+		button(
+			h,
+			{
+				size: "sm",
+				isLoading: model.connect.isStarting,
+				isDisabled,
+				attributes: [h.OnClick(Message.ClickedConnect())],
+			},
+			[entryGlyph(h, entry, undefined), "Connect ", entry.name],
+		)
+	// Linear's and Google's starts are gated on the server.
+	return integration === "linear" || integration === "google-search-console"
+		? gatedControl(h, model, "integrations:manage", control)
+		: control(false)
 }
 
 /** The integration's own card under the header. */

@@ -119,7 +119,7 @@ describe("billing account", () => {
 			{ update: step, view },
 			given(read),
 			expectView(text("Billed through Acme")).toExist(),
-			expectView(role("button", { name: "Stop billing through Acme" })).not.toExist(),
+			expectView(role("button", { name: "Stop billing through Acme" })).toBeDisabled(),
 		)
 	})
 

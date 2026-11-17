@@ -51,6 +51,17 @@ const toV2UptimeMonitor = (monitor: UptimeMonitorRecord): V2UptimeMonitor => ({
 						duration_ms: monitor.state.lastCheck.durationMs,
 						error: monitor.state.lastCheck.error,
 						trace_id: monitor.state.lastCheck.traceId,
+						...(monitor.state.lastCheck.certificate === undefined
+							? undefined
+							: {
+									certificate: {
+										expires_at: isoTimestamp(
+											monitor.state.lastCheck.certificate.expiresAt,
+										),
+										subject: monitor.state.lastCheck.certificate.subject,
+										issuer: monitor.state.lastCheck.certificate.issuer,
+									},
+								}),
 					},
 		recent: Arr.map(monitor.state.recent, (check) => ({
 			at: isoTimestamp(check.at),
@@ -72,11 +83,20 @@ const canWriteMonitors = (tenant: CurrentTenant.TenantContext) =>
 const forReader = (monitor: V2UptimeMonitor, canWrite: boolean): V2UptimeMonitor => {
 	if (canWrite) return monitor
 	const readable = { ...monitor, heartbeat_url: null }
+	const redact = (headers: Readonly<Record<string, string>>) =>
+		Rec.fromEntries(Arr.map(Rec.keys(headers), (name) => [name, UPTIME_REDACTED_HEADER_VALUE]))
+	if (readable.config.type === "multistep")
+		return {
+			...readable,
+			config: {
+				...readable.config,
+				steps: Arr.map(readable.config.steps, (step) =>
+					step.headers === undefined ? step : { ...step, headers: redact(step.headers) },
+				),
+			},
+		}
 	if (readable.config.type !== "http" || readable.config.headers === undefined) return readable
-	const headers = Rec.fromEntries(
-		Arr.map(Rec.keys(readable.config.headers), (name) => [name, UPTIME_REDACTED_HEADER_VALUE]),
-	)
-	return { ...readable, config: { ...readable.config, headers } }
+	return { ...readable, config: { ...readable.config, headers: redact(readable.config.headers) } }
 }
 
 const monitorAuditDiff = auditDiff({

@@ -4,9 +4,10 @@ import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { linkButton } from "@maple/views/ui/button"
+import { button, linkButton } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import { errorState } from "@maple/views/ui/error-state"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
@@ -19,7 +20,8 @@ import { rowNameLink } from "@maple/views/ui/table"
 import { newStatusPageHref, publicAddress, statusPageHref } from "../shared/commands"
 import { COMPONENT_STATUS_LABEL, COMPONENT_STATUS_TONE, type StatusPageSummary } from "../shared/derive"
 import { Message } from "./message"
-import { canManage, type Model } from "./model"
+import type { Model } from "./model"
+import { gatedControl } from "../../kit/session-grants"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { borderedBox } from "@maple/views/ui/bordered-box"
@@ -29,13 +31,22 @@ import { dividedList } from "@maple/views/ui/rule"
 
 type H = HtmlBuilder<Message>
 
-type ViewInputs = Readonly<{ canEdit: boolean; nowMs: number; timeZone: string }>
+type ViewInputs = Readonly<{ nowMs: number; timeZone: string }>
+
+/** The builder link; a disabled button for a viewer who may not edit status pages. */
+const newPageButton = (h: H, model: Model, label: string): Html =>
+	gatedControl(h, model, "status_pages:edit", (isDisabled) => {
+		const children = [icon(h, "PlusIcon"), label]
+		return isDisabled
+			? button(h, { size: "sm", isDisabled }, children)
+			: linkButton(h, { size: "sm", href: newStatusPageHref() }, children)
+	})
 
 const ROW_GRID =
 	"grid grid-cols-[minmax(220px,1.6fr)_minmax(130px,0.8fr)_96px_112px_128px] items-center gap-x-5"
 
 /** No page yet: what a status page is, and the builder. */
-const emptyState = (h: H, canEdit: boolean): Html =>
+const emptyState = (h: H, model: Model): Html =>
 	empty(
 		h,
 		[
@@ -46,20 +57,26 @@ const emptyState = (h: H, canEdit: boolean): Html =>
 					"A public page that tells your customers what is up. Components follow your uptime monitors, incidents are written by you, and the page stays online when Maple is not.",
 				]),
 			]),
-			...(canEdit
-				? [
-						emptyActions(h, [
-							linkButton(h, { size: "sm", href: newStatusPageHref() }, [
-								icon(h, "PlusIcon"),
-								"Create a status page",
-							]),
-						]),
-					]
-				: [
-						typography(h, { size: "xs", tone: "muted", as: "p" }, [
-							"Ask an org admin to create one.",
-						]),
-					]),
+			emptyActions(h, [newPageButton(h, model, "Create a status page")]),
+		],
+		"py-12",
+	)
+
+/** The API's answer for an org outside the rollout: a state of the org, not a failed load. */
+const isNotEnabled = (failure: LoadFailure): boolean => failure.code === "status_pages_disabled"
+
+/** Nothing here retries or creates: the org has to be added to the rollout first. */
+const notEnabledState = (h: H): Html =>
+	empty(
+		h,
+		[
+			emptyHeader(h, [
+				emptyMedia(h, { variant: "icon" }, [icon(h, "WindowChartLineIcon", { size: 18 })]),
+				emptyTitle(h, ["Status pages are not enabled"]),
+				emptyDescription(h, [
+					"Status pages are rolling out one organization at a time, and this one is not in yet. Contact Maple support to turn them on.",
+				]),
+			]),
 		],
 		"py-12",
 	)
@@ -184,6 +201,7 @@ const table = (h: H, pages: ReadonlyArray<StatusPageSummary>, inputs: ViewInputs
 
 const body = (h: H, model: Model, inputs: ViewInputs): Html => {
 	const data = model.pages.data
+	if (AsyncData.isFailure(data) && isNotEnabled(data.error)) return notEnabledState(h)
 	if (AsyncData.isFailure(data))
 		return errorState(h, {
 			failure: data.error,
@@ -195,7 +213,7 @@ const body = (h: H, model: Model, inputs: ViewInputs): Html => {
 		onNone: () => vstack(h, { gap: "4" }, [skeleton(h, "h-9 w-1/3"), skeleton(h, "h-48 w-full")]),
 		onSome: (pages) =>
 			pages.length === 0
-				? emptyState(h, inputs.canEdit)
+				? emptyState(h, model)
 				: vstack(h, { gap: "3" }, [
 						typography(h, { size: "xs", tone: "muted", as: "p" }, [
 							`${countLabel(pages.length, "page")}. Each one is served from edge storage, so it stays up when Maple does not.`,
@@ -216,17 +234,10 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		h,
 		{
 			title: "Status pages",
-			actions:
-				canManage(model) && hasPages(model)
-					? linkButton(h, { size: "sm", href: newStatusPageHref() }, [
-							icon(h, "PlusIcon"),
-							"New status page",
-						])
-					: undefined,
+			actions: hasPages(model) ? newPageButton(h, model, "New status page") : undefined,
 		},
 		[
 			body(h, model, {
-				canEdit: canManage(model),
 				nowMs: model.nowMs ?? 0,
 				timeZone: inputs.context.timeZone,
 			}),

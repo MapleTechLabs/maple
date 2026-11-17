@@ -3,7 +3,7 @@ import type { StatusPageDraftComponent, V2UptimeMonitor } from "@maple/domain/ht
 import { STATUS_PAGE_MAX_URL_LENGTH } from "@maple/domain/status-page"
 import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { bareUrl } from "../../kit/uptime/derive"
+import { bareUrl, stepsLine } from "../../kit/uptime/derive"
 import { formIssues, nameFromUrl, wirePayload } from "../../kit/uptime/form-derive"
 import { emptyForm } from "../../kit/uptime/form"
 import { orNull } from "./form"
@@ -81,6 +81,8 @@ export const monitorTarget = (monitor: V2UptimeMonitor): string => {
 			return `${config.host}:${config.port}`
 		case "dns":
 			return `${config.record_type} ${config.hostname}`
+		case "multistep":
+			return stepsLine(config)
 		case "heartbeat":
 			return "heartbeat"
 	}

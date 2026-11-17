@@ -69,11 +69,17 @@ export const Message = defineMessageUnion({
 	PressedEscape: {},
 	// Components
 	ChangedComponentField: { field: ComponentTextField, value: Schema.String },
-	CommittedComponent: {},
-	PickedComponentField: { field: ComponentTextField, value: Schema.String },
 	ToggledComponentUptime: {},
+	/** The Monitors save bar: a moved order and the open component's edits, together. */
+	ClickedSaveMonitors: {},
+	ClickedDiscardMonitors: {},
 	CompletedSaveComponent: { result: LoadOutcome(V2StatusPageComponent) },
-	ClickedMoveComponent: { componentId: StatusPageComponentId, offset: Schema.Number },
+	ClickedConfirmDiscardComponent: {},
+	GotDiscardComponentDialogMessage: { message: Dialog.Message },
+	/** A grip drag let go over `index`, the slot within the component's group; the order waits on Save. */
+	DroppedComponent: { componentId: StatusPageComponentId, index: Schema.Number },
+	/** ArrowUp (-1) or ArrowDown (1) on a component's grip. */
+	PressedMoveComponent: { componentId: StatusPageComponentId, offset: Schema.Number },
 	CompletedReorder: { result: LoadOutcome(Schema.Array(V2StatusPageComponent)) },
 	ClickedDeleteComponent: { componentId: StatusPageComponentId },
 	ClickedConfirmDeleteComponent: {},
@@ -149,11 +155,9 @@ export const Message = defineMessageUnion({
 	ClickedDismissToken: {},
 	// Access
 	PickedVisibility: { visibility: StatusPageVisibility },
-	ClickedChangePassword: {},
 	ChangedPassword: { value: Schema.String },
-	ClickedCancelPassword: {},
-	SubmittedPassword: {},
-	ClickedRemovePassword: {},
+	ClickedDiscardAccess: {},
+	ClickedSaveAccess: {},
 	CompletedAccessChange: { action: AccessAction, result: LoadOutcome(V2StatusPage) },
 	// Custom domain
 	CompletedFetchCustomDomain: { key: Schema.String, result: LoadOutcome(V2StatusPageCustomDomain) },

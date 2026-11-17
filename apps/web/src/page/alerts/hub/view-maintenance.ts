@@ -31,7 +31,8 @@ import { silenceScopeParts } from "../shared/silences"
 import { Message } from "./message"
 import { type Model } from "./model"
 import { windowMenuId } from "./update"
-import { canManageAlerts } from "../../kit/session-grants"
+import { canManageAlerts, gatedControl } from "../../kit/session-grants"
+import { gatedEntries, gatedSwitch } from "../../kit/gated-controls"
 
 // The Maintenance tab: planned, recurring quiet periods, each written ahead as silences.
 
@@ -79,7 +80,7 @@ const rowMenu = (h: H, model: Model, window: V2AlertMaintenanceWindow): Html => 
 	return rowActionsMenu(h, {
 		slotId: menuId,
 		model: model.menus[menuId] ?? Menu.init(menuId),
-		entries,
+		entries: gatedEntries(model, "alerts:manage", entries),
 		label: `Actions for ${window.name}`,
 		toParentMessage: (message) => Message.GotRowMenuMessage({ menuId, message }),
 	})
@@ -131,16 +132,23 @@ export const windowRow = (
 					),
 				]),
 				hstack(h, { gap: "2", className: "shrink-0" }, [
-					...switchControl(h, {
-						id: `window-switch-${window.id}`,
-						inputId: `window-switch-input-${window.id}`,
-						isChecked: window.enabled,
-						isDisabled:
-							isEnded || !canManageAlerts(model) || model.togglingWindowIds.includes(window.id),
-						ariaLabel: window.enabled ? `Disable ${window.name}` : `Enable ${window.name}`,
-						onToggle: Message.ClickedToggleWindow({ windowId: window.id }),
-					}),
-					...(canManageAlerts(model) ? [rowMenu(h, model, window)] : []),
+					...gatedSwitch(
+						h,
+						model,
+						"alerts:manage",
+						switchControl(h, {
+							id: `window-switch-${window.id}`,
+							inputId: `window-switch-input-${window.id}`,
+							isChecked: window.enabled,
+							isDisabled:
+								isEnded ||
+								!canManageAlerts(model) ||
+								model.togglingWindowIds.includes(window.id),
+							ariaLabel: window.enabled ? `Disable ${window.name}` : `Enable ${window.name}`,
+							onToggle: Message.ClickedToggleWindow({ windowId: window.id }),
+						}),
+					),
+					rowMenu(h, model, window),
 				]),
 			]),
 		],
@@ -159,21 +167,19 @@ const windowsEmpty = (h: H, model: Model): Html =>
 					...(canManageAlerts(model) ? [] : [" Ask an org admin to create one."]),
 				]),
 			]),
-			...(canManageAlerts(model)
-				? [
-						emptyActions(h, [
-							button(
-								h,
-								{
-									size: "sm",
-									isDisabled: model.nowMs === null,
-									attributes: [h.OnClick(Message.ClickedNewWindow())],
-								},
-								[icon(h, "PlusIcon"), "Create window"],
-							),
-						]),
-					]
-				: []),
+			emptyActions(h, [
+				gatedControl(h, model, "alerts:manage", (isLocked) =>
+					button(
+						h,
+						{
+							size: "sm",
+							isDisabled: isLocked || model.nowMs === null,
+							attributes: [h.OnClick(Message.ClickedNewWindow())],
+						},
+						[icon(h, "PlusIcon"), "Create window"],
+					),
+				),
+			]),
 		],
 		"py-12",
 	)

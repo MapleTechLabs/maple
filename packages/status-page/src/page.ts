@@ -115,7 +115,7 @@ const renderHero = (
 }
 
 /** The hero as the page's components and active incidents call it. */
-export const renderPageHero = (snapshot: StatusPagePublicSnapshot): string =>
+const renderPageHero = (snapshot: StatusPagePublicSnapshot): string =>
 	renderHero(
 		overallStatus(snapshot),
 		activeIncidents(snapshot),
@@ -169,7 +169,7 @@ const renderComponent = (component: StatusPageSnapshotComponent, options: Render
 }
 
 /** The System status panel; with `onlyId`, just that component under its group's head. */
-export const renderSystemStatus = (
+const renderSystemStatus = (
 	snapshot: StatusPagePublicSnapshot,
 	options: RenderOptions,
 	onlyId?: string,
@@ -311,7 +311,7 @@ const scriptJson = (value: ReturnType<typeof pageData>): string =>
 		),
 	)
 
-export const renderFooter = (
+const renderFooter = (
 	snapshot: StatusPagePublicSnapshot,
 	freshness: StatusPageFreshness,
 	nowMs: number,

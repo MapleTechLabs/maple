@@ -55,6 +55,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/display.ts` `kbd`, `kbdGroup`, `badgeClass`, `badge`, `separator`, `avatarFallback`: Small display pieces: keyboard keys, badges, separators and avatars.
 - `packages/views/src/ui/dither-field.ts` `fieldAt`, `ditherLevel`, `startDitherField`: The onboarding backdrop: square pixels lit in the primary colour through an 8x8 ordered dither, spreading from the bottom-left corner.
 - `packages/views/src/ui/docs-link.ts` `docsLink`: A docs link under an empty state: muted text and an external-link glyph, opening in a new tab.
+- `packages/views/src/ui/drag-grip.ts` `dragGrip`: `DragGrip`: the handle at the start of a reorderable row.
 - `packages/views/src/ui/dropdown-menu.ts` `menuTriggerAttributes`, `positionerStyle`, `menuPopup`, `menuGroup`, `menuLabel`, `menuItem`, `menuSeparator`, `menuShortcut`, `menuCheckableItem`, `menuRadioGroup`, `menuSubTrigger`: The dropdown menu's popup, groups, items and triggers over Base UI's Menu DOM.
 - `packages/views/src/ui/empty.ts` `empty`, `emptyHeader`, `emptyTitle`, `emptyDescription`, `emptyContent`, `emptyMedia`, `emptyMessage`, `emptyFrameClass`: The Empty state: a centred media, title, description and content stack.
 - `packages/views/src/ui/error-count-pill.ts` `errorCountPill`: `ErrorCountPill`: a failure count as a toned pill, led by a dot or its kind's glyph.
@@ -93,6 +94,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/layer.ts` `layer`: A layer stretched over its positioned parent that lets the pointer through (a vignette, a backdrop canvas, a chart overlay); `clip` cuts what overflows it.
 - `packages/views/src/ui/list-footer.ts` `listFooter`, `loadingMoreRow`: A list's footer: the count, a load-more button and the loading-more row.
 - `packages/views/src/ui/list-row.ts` `listRow`: Icon + title + meta + trailing row.
+- `packages/views/src/ui/locked-control.ts` `lockedControl`: `LockedControl`: a control the viewer may not use, drawn disabled with the reason as its tooltip.
 - `packages/views/src/ui/logs/chip-card.ts` `place`, `chipCard`: Base UI PreviewCard positioning for `side="bottom" align="start"`, offsets 4, collision padding 5.
 - `packages/views/src/ui/logs/highlight.ts` `splitOnMatches`, `highlightedText`: Occurrences of `query` in `text` as alternating plain/match segments: one case-insensitive substring, like the backend's `Body ILIKE`.
 - `packages/views/src/ui/logs/log-message.ts` `logMessageOf`, `truncationNote`, `cappedCode`, `logMessageView`: The log detail hero's message, shared by the dashboard and Maple Local.
@@ -128,7 +130,6 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/overlay/select-align.ts` `alignItemWithTrigger`: Base UI Select's `alignItemWithTrigger` (select/popup/SelectPopup.mjs, @base-ui/react 1.8): the popup opens over the trigger so the selected item's text sits on the trigger's va...
 - `packages/views/src/ui/overlay/transition.ts` `isLeaving`, `isMounted`, `stateAttributes`, `focusGuard`: Base UI's transition status on a Foldkit Animation: `data-starting-style` on the first frame of an open, `data-ending-style` while it closes, and `data-open` / `data-closed` thr...
 - `packages/views/src/ui/page-layout.ts` `pageLayoutRoot`, `pageTitle`, `pageDescription`, `pageHeader`, `pageHeaderActions`: A page's root and header: title, description and header actions.
-- `packages/views/src/ui/page-mockup.ts` `browserTabMockup`, `searchResultMockup`: Drawings of where a page shows up outside itself: a browser tab and a search result.
 - `packages/views/src/ui/page-rails.ts` `splitPageRails`: The filter and right sidebars below `lg`: each renders as a sheet, not an inline rail, and puts a trigger in the top bar while one is mounted.
 - `packages/views/src/ui/panel.ts` `panel`, `panelTitle`, `panelHeader`, `panelBody`, `panelChartBody`: The flat bordered section frame.
 - `packages/views/src/ui/person-avatar.ts` `personAvatar`, `personLabel`: `PersonAvatar` and `PersonLabel`: a member of the org as a warm initials tile (or their own image), alone or beside their name.
@@ -234,6 +235,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/feature-list.ts` `featureList`, `featurePanel`: An integration's features as one list of switches: the same list when connecting and afterwards.
 - `apps/web/src/page/kit/form-section.ts` `formSection`, `formScrollArea`, `formCard`, `formActionBar`, `managersOnlyPage`: One row of a form card, what it sets on the left (a title and an optional hint) and its controls on the right; the two stack in a card under 36rem wide (a phone, or a form besid...
 - `apps/web/src/page/kit/funnel-steps.ts` `applyStepEdit`, `applyAnchorEdit`, `stepControlId`, `stepEditOf`, `stepComboUpdate`, `stepFilterLine`, `stepBuilder`: The funnel step builder: an ordered list of steps, each an event name, a page path or (first step only) a session dimension.
+- `apps/web/src/page/kit/gated-controls.ts` `gatedEntries`, `gatedSwitch`, `gatedLinkButton`, `gatedBy`: Controls behind a permission, drawn disabled with who can use them for a viewer without it: menu items, switches, link buttons, and any control when the view only has the verdict.
 - `apps/web/src/page/kit/grid-list-row.ts` `gridListRow`: One `<li>` of a bordered grid list (the alerts inbox, rules and resolved lists), padded, tinted on hover and press, positioned so a stretched row link covers it.
 - `apps/web/src/page/kit/guided-setup.ts` `keyFor`, `setupBlocks`, `serverKey`, `promptKey`, `frameworkIconStrip`, `frameworkPicker`, `setupAgentPrompt`, `agentPromptButton`, `connectInstructions`: The SDK setup guide: the stack picker, then the Install / Instrument / coding-agent tabs filled in with the org's ingest keys.
 - `apps/web/src/page/kit/health-gap-notice.ts` `healthGapOf`, `healthGapText`, `healthGapNotice`: Service health is the overview joined with firing alerts and baseline anomalies.
@@ -264,6 +266,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/own-services.ts` `isOwnService`: The service onboarding's "Send test trace" reports as.
 - `apps/web/src/page/kit/page-rail-sheet.ts` `pageRailSheet`: A page's filter or context rail below `lg`, in a side sheet with an sr-only header.
 - `apps/web/src/page/kit/page-time.ts` `stepTimePicker`, `pickerStep`, `withPreset`, `pageTime`: The header time cluster pages share, and the picker's update step.
+- `apps/web/src/page/kit/panel-toolbar.ts` `panelToolbar`: A panel's filter row above its list: selects, a search field and a clear button, wrapping, ruled below.
 - `apps/web/src/page/kit/peek-keys.ts` `peekStepFor`: The list peeks' step keys: down/J forward, up/K back, except in a text field or with a modifier.
 - `apps/web/src/page/kit/pick-chips.ts` `pickChips`: `PickList` for a sentence, where the picks sit inline on the sentence's own line.
 - `apps/web/src/page/kit/pick-list.ts` `pickList`: What a form has picked (destinations, people, schedules), each removable and, in an ordered list, movable, then an "Add" menu of the rest.
@@ -313,7 +316,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/service-metrics/markers-view.ts` `markersOverlay`: Commit markers over a chart.
 - `apps/web/src/page/kit/service-metrics/markers.ts` `commitMarkers`, `markerShas`, `markerLayout`: Commit markers over a chart: the markers, their commit labels and their geometry (./marker-layout.ts).
 - `apps/web/src/page/kit/service-runtimes.ts` `runtimeLink`, `workloadLink`: Where a service runs, as links to the infra pages: its platform resources (`ServiceRuntimesResponse`) and its Kubernetes workloads.
-- `apps/web/src/page/kit/session-grants.ts` `fetchSessionGrants`, `acceptGrants`, `canManageAlerts`, `canRespondToIncidents`, `canRunInvestigations`, `canReadAuditLog`: A page's read of the viewer's permissions: the answer carries the org it was asked for, so a late answer for another org is dropped.
+- `apps/web/src/page/kit/session-grants.ts` `fetchSessionGrants`, `acceptGrants`, `canManageAlerts`, `canRespondToIncidents`, `canRunInvestigations`, `canReadAuditLog`, `gatedControl`, `denialReason`: A page's read of the viewer's permissions: the answer carries the org it was asked for, so a late answer for another org is dropped.
 - `apps/web/src/page/kit/settings-section.ts` `settingsSection`, `settingsSections`, `adminOnlyNote`, `sectionNote`: A settings tab's titled sections, the stack they sit in, and the admin-only note.
 - `apps/web/src/page/kit/severity-tokens.ts` `statusLabel`: Canonical severity/status → Tailwind class maps for the infrastructure UI.
 - `apps/web/src/page/kit/sheet-detail-header.ts` `sheetDetailHeader`: A detail sheet's eyebrow kind, title, screen-reader description and meta row.
@@ -343,7 +346,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/tools/toolbar.ts` `initFacetSelect`, `facetValue`, `facetSelectStep`, `facetSelect`, `toolFilterToolbar`: The tool filter toolbar and its facet selects.
 - `apps/web/src/page/kit/underline-tabs.ts` `underlineTabStrip`, `underlineTabClass`, `linkTabStrip`: A row of tabs with an underlined active tab.
 - `apps/web/src/page/kit/uptime/commands.ts` `listMonitors`, `retrieveMonitor`, `setMonitorEnabled`, `deleteMonitor`, `testMonitorConfig`, `saveMonitor`, `monitorIdFromUrl`, `monitorHref`, `newMonitorHref`, `editMonitorHref`, `uptimeTabHref`, `uptimeTracesHref`, `traceHref`: The uptime monitor reads and writes, as Effects the pages' Commands wrap, and their links.
-- `apps/web/src/page/kit/uptime/derive.ts` `displayStatus`, `formatEvery`, `statusLabel`, `bareUrl`, `heartbeatScheduleLabel`, `targetLine`, `requestLine`, `uptimeShare`, `formatShare`, `latencyPercentiles`, `checkHealth`, `formatMs`, `matchesStatus`, `matchesQuery`, `summarize`: Pure reads of an uptime monitor shared by the Uptime tab, the monitor page and the service card.
+- `apps/web/src/page/kit/uptime/derive.ts` `displayStatus`, `formatEvery`, `statusLabel`, `bareUrl`, `heartbeatScheduleLabel`, `stepsLine`, `targetLine`, `requestLine`, `uptimeShare`, `formatShare`, `latencyPercentiles`, `checkHealth`, `formatMs`, `matchesStatus`, `matchesQuery`, `summarize`, `certificateSummary`: Pure reads of an uptime monitor shared by the Uptime tab, the monitor page and the service card.
 - `apps/web/src/page/kit/uptime/form-derive.ts` `nameFromUrl`, `defaultName`, `isPrivateHost`, `everySeconds`, `graceSeconds`, `formIssues`, `parseHeaders`, `wireConfig`, `wirePayload`, `formFromMonitor`: The form's checks, its wire payload, and the form an existing monitor opens as.
 - `apps/web/src/page/kit/uptime/form.ts` `emptyForm`: The uptime form's draft: every field as the inputs hold it, strings until the payload is built.
 - `apps/web/src/page/kit/uptime/test-monitors.ts` `monitorId`, `recentChecks`, `httpMonitor`, `downMonitor`, `pausedMonitor`, `heartbeatMonitor`: Uptime monitors as `uptimeMonitors.list` decodes them, for the scene tests.

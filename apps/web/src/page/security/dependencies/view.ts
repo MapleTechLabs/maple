@@ -50,7 +50,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const clock: Clock = { nowMs: model.nowMs, timeZone: inputs.context.timeZone }
 	return securityLayout(
 		h,
-		{ source: "dependencies", overlay: [findingSheet(h, model, clock)] },
+		{
+			hasCloud: inputs.context.hasCloudSecurity === true,
+			source: "dependencies",
+			overlay: [findingSheet(h, model, clock)],
+		},
 		body(h, model, clock),
 	)
 })

@@ -64,38 +64,41 @@ const loaded = (
 const DRAFT = incident(1, { published: false })
 const MAINTENANCE = incident(2, { kind: "maintenance", title: "Database upgrade" })
 
+const POST_DENIAL = Policy.denialFor("status_page_incidents:post").message
+
 const mounted = Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog())
 
 const opened = (grants: ReadonlyArray<Policy.Permission>, row: ReturnType<typeof incident>, n: number) =>
 	pageUpdate(loaded(grants, [row]), Message.ClickedIncident({ incidentId: incidentId(n) })).model
 
 describe("status page editor, analyst", () => {
-	test("Declare incident is offered to a member and not to an analyst", () => {
+	test("Declare incident is offered to a member and locked for an analyst", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(ANALYST, [])),
 			expectView(text("No open incidents.")).toExist(),
-			expectView(role("button", { name: "Declare incident" })).toBeAbsent(),
+			expectView(role("button", { name: "Declare incident" })).toBeDisabled(),
+			expectView(role("group", { name: POST_DENIAL })).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(MEMBER, [])),
-			expectView(role("button", { name: "Declare incident" })).toExist(),
+			expectView(role("button", { name: "Declare incident" })).not.toBeDisabled(),
 		)
 	})
 
-	test("an analyst reads an open incident's updates and gets none of its actions", () => {
+	test("an analyst reads an open incident's updates and sees its actions locked", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(opened(ANALYST, DRAFT, 1)),
 			mounted,
 			expectView(text("Draft, not public")).toExist(),
 			expectView(role("region", { name: "Updates" })).toExist(),
-			expectView(role("button", { name: "Publish" })).toBeAbsent(),
-			expectView(role("button", { name: "Post update" })).toBeAbsent(),
-			expectView(role("button", { name: "Resolve" })).toBeAbsent(),
-			expectView(role("button", { name: "Edit details" })).toBeAbsent(),
-			expectView(role("button", { name: "Delete incident" })).toBeAbsent(),
+			expectView(role("button", { name: "Publish" })).toBeDisabled(),
+			expectView(role("button", { name: "Post update" })).toBeDisabled(),
+			expectView(role("button", { name: "Resolve" })).toBeDisabled(),
+			expectView(role("button", { name: "Edit details" })).toBeDisabled(),
+			expectView(role("button", { name: "Delete incident" })).toBeDisabled(),
 		)
 	})
 
@@ -117,8 +120,8 @@ describe("status page editor, analyst", () => {
 			{ update: pageUpdate, view },
 			given(opened(ANALYST, MAINTENANCE, 2)),
 			mounted,
-			expectView(role("button", { name: "Complete" })).toBeAbsent(),
-			expectView(role("button", { name: "Delete maintenance" })).toBeAbsent(),
+			expectView(role("button", { name: "Complete" })).toBeDisabled(),
+			expectView(role("button", { name: "Delete maintenance" })).toBeDisabled(),
 		)
 		scene(
 			{ update: pageUpdate, view },

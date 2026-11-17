@@ -24,6 +24,7 @@ import type { H } from "./view-form"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
+import { panelToolbar } from "../../kit/panel-toolbar"
 
 // The right column: the draft run over recent records, plus the callouts that apply.
 
@@ -154,7 +155,7 @@ const body = (h: H, model: Model): Html => {
 }
 
 const controls = (h: H, model: Model): Html =>
-	hstack(h, { gap: "2", align: "center", wrap: true, className: "border-b px-4 py-2.5" }, [
+	panelToolbar(h, [
 		segmentedSelect<PreviewSignal, Message>(h, {
 			size: "xs",
 			ariaLabel: "Preview signal",

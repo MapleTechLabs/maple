@@ -13,7 +13,8 @@ import {
 import { icon } from "@maple/views/ui/icon"
 import { panel, panelHeader } from "@maple/views/ui/panel"
 import { activeRepositoriesOf } from "./derive"
-import { canRunAudits, Message, type Model } from "./model"
+import { Message, type Model } from "./model"
+import { gatedControl } from "../../kit/session-grants"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
@@ -76,14 +77,13 @@ export const emptyOnRamp = (h: H, model: Model): Html => {
 			emptyContent(h, [
 				hstack(h, { gap: "2", justify: "center", wrap: true }, [
 					isConnected
-						? canRunAudits(model)
-							? button(h, { attributes: [h.OnClick(Message.ClickedAddTarget())] }, [
-									icon(h, "PlusIcon"),
-									"Add target",
-								])
-							: typography(h, { size: "sm", tone: "muted" }, [
-									"An org admin can add the first target.",
-								])
+						? gatedControl(h, model, "security_audit:run", (isDisabled) =>
+								button(
+									h,
+									{ isDisabled, attributes: [h.OnClick(Message.ClickedAddTarget())] },
+									[icon(h, "PlusIcon"), "Add target"],
+								),
+							)
 						: linkButton(h, { href: integrations }, [icon(h, "GithubIcon"), "Connect GitHub"]),
 				]),
 				typography(h, { size: "xs", tone: "muted", as: "p" }, [

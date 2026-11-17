@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import type { V2ApiKey } from "@maple/domain/http/v2"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
@@ -18,6 +19,7 @@ import { relativeTime } from "../../kit/relative-time"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
+import { denialReason } from "../../kit/session-grants"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack, vstackClass } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
@@ -80,26 +82,42 @@ const statusBadge = (h: H, row: KeyRow, now: number): ReadonlyArray<Html> => {
 	return []
 }
 
+/** A menu item's lock: disabled with the `api_keys:manage` denial when the viewer may not use it. */
+const lockedUnless = (isAllowed: boolean): Pick<MenuView.MenuItemEntry, "isDisabled" | "tooltip"> =>
+	isAllowed ? {} : { isDisabled: true, tooltip: { content: [denialReason("api_keys:manage")] } }
+
 const apiRow = (h: H, model: Model, row: KeyRow, inputs: Inputs, formatDate: (iso: string) => Html): Html => {
 	const key: V2ApiKey = row.key
 	const isDead = row.status === "revoked" || row.status === "expired"
-	const can = apiKeyRowPermissions(key, { canManageKeys: canManage(model), userId: model.userId })
-	const entries: ReadonlyArray<MenuView.MenuEntry> = [
-		...(can.canRoll
-			? [{ _tag: "Item" as const, value: "roll", label: "Roll key", icon: "ArrowPathIcon" as const }]
-			: []),
-		...(can.canRevoke
-			? [
-					{
-						_tag: "Item" as const,
-						value: "revoke",
-						label: "Revoke key",
-						icon: "TrashIcon" as const,
-						variant: "destructive" as const,
-					},
-				]
-			: []),
-	]
+	const can = apiKeyRowPermissions(key, {
+		canManageKeys: canManage(model),
+		canCreateRestricted: Policy.has(model.grants, "api_keys:create_restricted"),
+		userId: model.userId,
+	})
+	// A live key always lists Roll and Revoke; the ones the viewer may not use are locked with the reason.
+	const entries: ReadonlyArray<MenuView.MenuEntry> = key.revoked
+		? []
+		: [
+				...(key.kind === "device"
+					? []
+					: [
+							{
+								_tag: "Item" as const,
+								value: "roll",
+								label: "Roll key",
+								icon: "ArrowPathIcon" as const,
+								...lockedUnless(can.canRoll),
+							},
+						]),
+				{
+					_tag: "Item" as const,
+					value: "revoke",
+					label: "Revoke key",
+					icon: "TrashIcon" as const,
+					variant: "destructive" as const,
+					...lockedUnless(can.canRevoke),
+				},
+			]
 	return h.div(
 		[
 			h.Key(row.id),
@@ -224,18 +242,23 @@ const deviceRow = (
 	formatDate: (iso: string) => Html,
 ): Html => {
 	const key: V2ApiKey = row.key
-	const can = apiKeyRowPermissions(key, { canManageKeys: canManage(model), userId: model.userId })
-	const entries: ReadonlyArray<MenuView.MenuEntry> = can.canRevoke
-		? [
+	const can = apiKeyRowPermissions(key, {
+		canManageKeys: canManage(model),
+		canCreateRestricted: Policy.has(model.grants, "api_keys:create_restricted"),
+		userId: model.userId,
+	})
+	const entries: ReadonlyArray<MenuView.MenuEntry> = key.revoked
+		? []
+		: [
 				{
 					_tag: "Item",
 					value: "revoke",
 					label: "Revoke device key",
 					icon: "TrashIcon",
 					variant: "destructive",
+					...lockedUnless(can.canRevoke),
 				},
 			]
-		: []
 	return h.div(
 		[h.Key(row.id), h.Class(cn(ROW_CLASS, "hover:bg-surface-sunken active:bg-surface-sunken"))],
 		[

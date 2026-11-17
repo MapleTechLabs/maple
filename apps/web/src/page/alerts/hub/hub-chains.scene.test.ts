@@ -91,17 +91,21 @@ describe("alerts hub, escalation chains", () => {
 		)
 	})
 
-	test("a member sees the chains but cannot create, edit or delete one", () => {
+	test("a member sees the chains with create, edit and delete locked", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(onRouting(MEMBER, [])),
-			expectView(role("link", { name: "Create chain" })).not.toExist(),
-			expectView(text(/Ask an org admin to create one/u)).toExist(),
+			expectView(role("button", { name: "Create chain" })).toBeDisabled(),
+			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
 		)
+		const menuId = chainMenuId(Schema.decodeSync(EscalationChainId)(chainUuid(1)))
+		const routing = onRouting(MEMBER, CHAINS)
 		scene(
 			{ update: pageUpdate, view },
-			given(onRouting(MEMBER, CHAINS)),
-			expectView(role("button", { name: "Actions for Checkout on-call" })).not.toExist(),
+			given({ ...routing, menus: { ...routing.menus, [menuId]: Menu.init(menuId, { isOpen: true }) } }),
+			Mount.resolve(Menu.MountMenu, Menu.Message.CompletedMountMenu()),
+			expectView(role("menuitem", { name: "Edit" })).toHaveAttr("aria-disabled", "true"),
+			expectView(role("menuitem", { name: "Delete" })).toHaveAttr("aria-disabled", "true"),
 		)
 	})
 

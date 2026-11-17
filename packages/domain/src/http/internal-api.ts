@@ -7,6 +7,7 @@ import { BillingApiGroup } from "./billing"
 import { CodeReviewApiGroup } from "./code-review"
 import { DemoApiGroup } from "./demo"
 import { AuditTrailApiGroup } from "./audit-trail"
+import { CloudSecurityApiGroup } from "./cloud-security"
 import { AnthropicCostApiGroup } from "./anthropic-cost"
 import { CloudflareCostApiGroup } from "./cloudflare-cost"
 import { OpenAiCostApiGroup } from "./openai-cost"
@@ -63,6 +64,7 @@ export class MapleInternalApi extends HttpApi.make("MapleInternalApi")
 	.add(AiTriageApiGroup)
 	.add(AuditTrailApiGroup)
 	.add(BillingApiGroup)
+	.add(CloudSecurityApiGroup)
 	.add(CodeReviewApiGroup)
 	.add(DemoApiGroup)
 	.add(DependencyScanApiGroup)

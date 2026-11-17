@@ -52,31 +52,31 @@ import {
 	sliPanel,
 } from "./view-panels"
 import { textLink } from "@maple/views/ui/text-link"
-import { canManageAlerts } from "../../kit/session-grants"
+import { gatedControl } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
 const headerActions = (h: H, model: Model, slo: Slo): Html =>
-	detailActions(
-		h,
-		canManageAlerts(model)
-			? [
-					linkButton(h, { size: "sm", variant: "outline", href: editSloHref(slo.id) }, [
-						icon(h, "PencilIcon"),
-						"Edit",
-					]),
-					button(
-						h,
-						{
-							size: "sm",
-							variant: "destructive-outline",
-							attributes: [h.OnClick(Message.ClickedDelete())],
-						},
-						[icon(h, "TrashIcon"), "Delete"],
-					),
-				]
-			: [],
-	)
+	detailActions(h, [
+		gatedControl(h, model, "alerts:manage", (isDisabled) => {
+			const children = [icon(h, "PencilIcon"), "Edit"]
+			return isDisabled
+				? button(h, { size: "sm", variant: "outline", isDisabled }, children)
+				: linkButton(h, { size: "sm", variant: "outline", href: editSloHref(slo.id) }, children)
+		}),
+		gatedControl(h, model, "alerts:manage", (isDisabled) =>
+			button(
+				h,
+				{
+					size: "sm",
+					variant: "destructive-outline",
+					isDisabled,
+					attributes: [h.OnClick(Message.ClickedDelete())],
+				},
+				[icon(h, "TrashIcon"), "Delete"],
+			),
+		),
+	])
 
 const statusOf = (model: Model): Option.Option<SloStatus> => AsyncData.getData(model.status.data)
 

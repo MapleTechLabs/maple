@@ -891,6 +891,24 @@ SELECT
           AND ci_runs.Result != 'skip'
         FORMAT JSON
 
+-- builder:cloud-resources:cloudResourceServicesQuery:default  [dbe0d8a8]
+SELECT
+          arrayJoin([if(traces.ResourceAttributes['host.id'] IN ('i-0abc123'), concat('host.id', traces.ResourceAttributes['host.id']), ''), if(((traces.ResourceAttributes['faas.name'] IN ('checkout-fn') AND traces.ResourceAttributes['cloud.account.id'] IN ('', '111111111111')) AND traces.ResourceAttributes['cloud.region'] IN ('', 'us-east-1')), concat('faas.name111111111111/us-east-1', traces.ResourceAttributes['faas.name']), ''), if(traces.ResourceAttributes['cloud.resource_id'] IN ('arn:aws:lambda:us-east-1:123456789012:function:checkout-fn'), concat('cloud.resource_id', traces.ResourceAttributes['cloud.resource_id']), '')]) AS match,
+          traces.ServiceName AS service,
+          toUInt64(sum(traces.SampleRate)) AS requests
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.IsEntryPoint = 1
+          AND hasAny(mapValues(traces.ResourceAttributes), ['i-0abc123', 'checkout-fn', 'arn:aws:lambda:us-east-1:123456789012:function:checkout-fn']) = 1
+          AND (traces.ResourceAttributes['host.id'] IN ('i-0abc123') OR traces.ResourceAttributes['faas.name'] IN ('checkout-fn') OR traces.ResourceAttributes['cloud.resource_id'] IN ('arn:aws:lambda:us-east-1:123456789012:function:checkout-fn'))
+        GROUP BY match, service
+        HAVING match != ''
+        ORDER BY requests DESC
+        LIMIT 1001
+        FORMAT JSON
+
 -- builder:containers:containerCountersSummaryQuery:default  [1b4fe1f9]
 SELECT
           avg(hosts.memoryBytesAvg) AS memoryBytesAvg,

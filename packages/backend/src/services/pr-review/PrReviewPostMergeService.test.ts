@@ -123,6 +123,7 @@ const layerFor = (
 		commitFiles: unused,
 		fetchPullRequestContext: unused,
 		publishPullRequestReview: unused,
+		withdrawPullRequestApprovals: unused,
 		writePullRequestCheck: unused,
 		writePullRequestSummaryComment: unused,
 		searchCode: unused,
