@@ -107,6 +107,44 @@ describe("CloudSecurityEventsService", () => {
 		}).pipe(Effect.provide(world.layer))
 	})
 
+	it.effect("closes a stored Access Analyzer finding when its deletion event arrives", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const events = yield* CloudSecurityEventsService
+			const store = yield* CloudSecurityStore
+			const connection = yield* connect()
+			const key = yield* events.eventsKey(connection.id)
+			const accessEvent = (detail: Record<string, unknown>) =>
+				encodeJson({
+					source: "aws.access-analyzer",
+					"detail-type": "Access Analyzer Finding",
+					region: "us-east-1",
+					detail: {
+						id: "aa-1",
+						status: "ACTIVE",
+						resourceType: "AWS::S3::Bucket",
+						resource: "arn:aws:s3:::my-bucket",
+						accountId: ACCOUNT,
+						...detail,
+					},
+				})
+			yield* events.receive(connection.id, key, accessEvent({ updatedAt: "2026-11-16T01:00:00Z" }))
+			const statusOf = (status: "active" | "resolved") =>
+				Effect.map(store.listFindings(orgId, { status }, { limit: 10, offset: 0 }), (page) =>
+					Arr.map(page.rows, (row) => row.findingId),
+				)
+			assert.deepStrictEqual(yield* statusOf("active"), ["aa-1"])
+			// AWS keeps the last status on a deletion and sets `isDeleted`.
+			yield* events.receive(
+				connection.id,
+				key,
+				accessEvent({ updatedAt: "2026-11-16T02:00:00Z", isDeleted: true }),
+			)
+			assert.deepStrictEqual(yield* statusOf("active"), [])
+			assert.deepStrictEqual(yield* statusOf("resolved"), ["aa-1"])
+		}).pipe(Effect.provide(world.layer))
+	})
+
 	it.effect("refuses another connection's key and an unknown connection, storing nothing", () => {
 		const world = makeWorld()
 		return Effect.gen(function* () {
