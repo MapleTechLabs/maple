@@ -14,7 +14,13 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { statusPageHref, statusPagesHref } from "../shared/commands"
 import { statusPageNotFound } from "../shared/not-found"
-import { previewDocument, previewFrame } from "../shared/preview"
+import {
+	previewControls,
+	previewDocument,
+	previewExampleNote,
+	previewFrame,
+	simulateSnapshot,
+} from "../shared/preview"
 import { Message } from "./message"
 import type { Model } from "./model"
 
@@ -26,35 +32,51 @@ const NOTE = {
 	internal: "Only members of this organization can read this page.",
 } as const
 
-/** The slim bar over the full-screen page: that it is a preview, what visitors get, the way back. */
-const previewBar = (h: H, snapshot: StatusPagePublicSnapshot, editorHref: string): Html =>
-	hstack(h, { gap: "3", align: "center", justify: "between", className: "border-b px-4 py-2" }, [
-		hstack(h, { gap: "2", align: "center", className: "min-w-0" }, [
-			badge(h, { variant: "muted" }, ["Preview"]),
-			typography(h, { size: "xs", tone: "muted", as: "p", className: "truncate" }, [
-				NOTE[snapshot.page.visibility],
+/** The slim bar over the full-screen page: that it is a preview, its switches, the way back. */
+const previewBar = (h: H, model: Model, snapshot: StatusPagePublicSnapshot, editorHref: string): Html =>
+	hstack(
+		h,
+		{ gap: "3", align: "center", justify: "between", wrap: true, className: "border-b px-4 py-2" },
+		[
+			hstack(h, { gap: "2", align: "center", className: "min-w-0" }, [
+				badge(h, { variant: "muted" }, ["Preview"]),
+				typography(h, { size: "xs", tone: "muted", as: "p", className: "truncate" }, [
+					NOTE[snapshot.page.visibility],
+				]),
+				...previewExampleNote(h, model.previewState),
 			]),
-		]),
-		linkButton(h, { size: "sm", variant: "outline", href: editorHref }, [
-			icon(h, "XmarkIcon"),
-			"Close preview",
-		]),
-	])
+			hstack(h, { gap: "2", align: "center", wrap: true }, [
+				previewControls(h, {
+					state: model.previewState,
+					width: model.previewWidth,
+					scheme: snapshot.page.theme.appearance === "auto" ? model.previewScheme : null,
+					onState: (state) => Message.PickedPreviewState({ state }),
+					onWidth: (width) => Message.PickedPreviewWidth({ width }),
+					onScheme: (scheme) => Message.PickedPreviewScheme({ scheme }),
+				}),
+				linkButton(h, { size: "sm", variant: "outline", href: editorHref }, [
+					icon(h, "XmarkIcon"),
+					"Close preview",
+				]),
+			]),
+		],
+	)
 
 /** The page fills the window over the shell (under its menus and toasts), as visitors see it. */
-const fullScreen = (h: H, snapshot: StatusPagePublicSnapshot, editorHref: string): Html =>
+const fullScreen = (h: H, model: Model, snapshot: StatusPagePublicSnapshot, editorHref: string): Html =>
 	vstack(h, { className: "fixed inset-0 z-45 bg-background" }, [
-		previewBar(h, snapshot, editorHref),
+		previewBar(h, model, snapshot, editorHref),
 		previewFrame(h, {
 			title: pageTitle(snapshot.page.name),
 			document: previewDocument({
-				snapshot,
+				snapshot: simulateSnapshot(snapshot, model.previewState, model.previewScheme),
 				nowMs: snapshot.generatedAt,
 				isSelectable: false,
 				publicUrl: null,
 				opensLinks: true,
 			}),
 			opensLinks: true,
+			width: model.previewWidth,
 			className: "min-h-0 flex-1 rounded-none border-0",
 		}),
 	])
@@ -77,7 +99,7 @@ const body = (h: H, model: Model): Html => {
 	const editorHref = statusPageHref(model.pageId)
 	return Option.match(AsyncData.getData(data), {
 		onNone: () => dashboardPage(h, {}, [skeleton(h, "h-[640px] w-full")]),
-		onSome: (snapshot) => fullScreen(h, snapshot, editorHref),
+		onSome: (snapshot) => fullScreen(h, model, snapshot, editorHref),
 	})
 }
 
