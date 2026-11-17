@@ -13,7 +13,7 @@ import { pageOf, type Return, toast } from "./reads"
 import { customDomainOf } from "./update-domain"
 import { withPage } from "./update-settings"
 
-// The Settings tab's Access section: who can read the page, and its password, picked as a draft
+// Basic settings' Who can view: who can read the page, and its password, picked as a draft
 // and saved together with the save bar, admins only. Each part saves through its own endpoint, in
 // an order that never leaves the page behind a password it lacks.
 
@@ -41,7 +41,7 @@ export const blockedReason = (
 		onSome: (domain) => (domain.hostname === null ? null : "Remove the custom domain first."),
 		onNone: () =>
 			AsyncData.hasError(model.customDomain.data)
-				? "Couldn't check for a custom domain. Try again under Basic settings."
+				? "Couldn't check for a custom domain. Try again above."
 				: "Checking for a custom domain…",
 	})
 }
