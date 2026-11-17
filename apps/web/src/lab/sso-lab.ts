@@ -182,6 +182,7 @@ const documentOf = (state: LabState): EnterpriseSsoDocument => {
 					spEntityId: null,
 					spMetadataUrl: null,
 					idpMetadataUrl: null,
+					idpCertificateExpiresAt: null,
 				}),
 				directory: new ScimDirectoryDocument({
 					enabled: true,
