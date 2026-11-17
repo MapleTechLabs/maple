@@ -187,7 +187,7 @@ const MONITOR_COMPONENTS = [
 
 /**
  * The editor over a live page with an open incident, a draft maintenance and one resolved: open on
- * the first incident, or on Settings > Monitors over grouped components. The empty pages post
+ * the first incident (opened in `init`), or on Settings > Monitors over grouped components. The empty pages post
  * nothing, so their tab shows its empty state.
  */
 const editorModel = (role: LabRole, page: EditorPage): EditorModel => {
@@ -240,7 +240,6 @@ const editorModel = (role: LabRole, page: EditorPage): EditorModel => {
 				key: entered.monitors.key ?? "",
 				result: Result.succeed([httpMonitor(), downMonitor()]),
 			}),
-			...(page === "editor" ? [EditorMessage.ClickedIncident({ incidentId: incidentId(1) })] : []),
 		],
 		entered,
 		step,
@@ -579,16 +578,23 @@ export const lab = defineShellLab("Status pages", {
 	init: (flags: Flags) => {
 		const builder = builderModel(flags.role, flags.page)
 		const editor = editorModel(flags.role, editorPageOf(flags.page))
-		// `monitors-group`: API open, its Group dropdown open.
-		const grouped =
-			flags.page === "monitors-group"
-				? Arr.reduce(
-						[
+		// `editor`: the first incident's sheet open; `monitors-group`: API open, its Group dropdown open.
+		// Their commands run, or the sheet never leaves its starting style and covers the page unseen.
+		const opening: ReadonlyArray<EditorMessage> =
+			flags.page === "editor"
+				? [EditorMessage.ClickedIncident({ incidentId: incidentId(1) })]
+				: flags.page === "monitors-group"
+					? [
 							EditorMessage.ClickedComponent({ componentId: componentId(1) }),
 							EditorMessage.GotGroupPickerMessage({
 								message: Combobox.Message.ClickedTriggerOf({ items: [] }),
 							}),
-						],
+						]
+					: []
+		const opened =
+			opening.length > 0
+				? Arr.reduce(
+						opening,
 						{ model: editor, commands: [] } as Update.Return<
 							EditorModel,
 							EditorMessage,
@@ -607,7 +613,7 @@ export const lab = defineShellLab("Status pages", {
 			model: {
 				page: flags.page,
 				list: listModel(flags.role, flags.page === "empty" ? [] : LAB_PAGES),
-				editor: grouped.model,
+				editor: opened.model,
 				viewer: viewerModel(flags.visibility),
 				builder: builder.model,
 			},
@@ -615,7 +621,7 @@ export const lab = defineShellLab("Status pages", {
 				...Command.mapMessages(builder.commands ?? [], (message) =>
 					Message.GotBuilderMessage({ message }),
 				),
-				...Command.mapMessages(grouped.commands ?? [], (message) =>
+				...Command.mapMessages(opened.commands ?? [], (message) =>
 					Message.GotEditorMessage({ message }),
 				),
 			],
