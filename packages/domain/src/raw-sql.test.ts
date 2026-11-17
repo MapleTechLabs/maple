@@ -336,6 +336,22 @@ describe("rawSqlIssue org filter placement", () => {
 			"describe_warehouse_tables",
 		)
 	})
+
+	it.each([
+		"SELECT 1 FROM tinybird.pipe_stats_rt WHERE $__orgFilter",
+		"SELECT 1 FROM `tinybird`.datasources_ops_log WHERE $__orgFilter",
+		"SELECT 1 FROM traces WHERE $__orgFilter AND TraceId IN (SELECT trace_id FROM organization.pipe_stats)",
+		"SELECT 1 FROM TINYBIRD . pipe_stats WHERE $__orgFilter",
+	])("refuses the warehouse's own service tables: %s", (sql) => {
+		expect(rawSqlIssue(sql)?.code).toBe("DisallowedStatement")
+	})
+
+	it.each([
+		"SELECT organization FROM traces WHERE $__orgFilter",
+		"SELECT 1 FROM traces WHERE $__orgFilter AND SpanName = 'tinybird.pipe_stats'",
+	])("leaves a column or a string with the same name alone: %s", (sql) => {
+		expect(rawSqlIssue(sql)).toBeNull()
+	})
 })
 
 describe("rawSqlIssue org filter review follow-ups", () => {
