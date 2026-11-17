@@ -43,6 +43,8 @@ const READ_CONCURRENCY = 2
 const CONNECTION_CONCURRENCY = 2
 /** A tick stops starting reads after this long, inside the lane's 270 s; the rest wait for the next one. */
 export const TICK_BUDGET_MS = 200 * 1000
+/** One connection's share of a tick: past it, its remaining reads wait and its slot goes to the next one. */
+export const CONNECTION_BUDGET_MS = 40 * 1000
 const FALLBACK_REGION = Schema.decodeSync(AwsRegion)("us-east-1")
 
 export interface AwsSecurityPollSummary {
@@ -120,14 +122,17 @@ export class AwsSecurityFindingsService extends Context.Service<
 		const pollConnection = Effect.fn("AwsSecurityFindingsService.pollConnection")(function* (
 			signerKey: AwsOidcSigner,
 			row: AwsConnectionRow,
-			deadlineMs: number,
+			tickDeadlineMs: number,
 		) {
 			yield* Effect.annotateCurrentSpan({
 				"tenant.orgId": row.orgId,
 				"maple.aws.connection_id": row.id,
 			})
+			const startedAt = yield* Clock.currentTimeMillis
+			// Its own share of the tick, so a connection with much to read cannot hold a slot to the end.
+			const deadlineMs = Math.min(tickDeadlineMs, startedAt + CONNECTION_BUDGET_MS)
 			// Past the tick's budget: not even the role is assumed; the next tick starts with it.
-			if ((yield* Clock.currentTimeMillis) >= deadlineMs) {
+			if (startedAt >= tickDeadlineMs) {
 				yield* Effect.annotateCurrentSpan("maple.cloud_security.deferred_connection", true)
 				return { reads: 0, findings: 0, auditEvents: 0, failed: false } satisfies ConnectionPoll
 			}
