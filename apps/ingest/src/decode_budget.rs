@@ -368,7 +368,8 @@ impl Meter {
     }
 }
 
-/// Every repeated field's tag is below this.
+/// Every repeated field's tag is below this, and so is every singular message
+/// field's: `walk` keeps both kinds of count in tables of this size, by tag.
 const LIST_TAGS: usize = 16;
 
 impl From<Stop> for OverBudget {
