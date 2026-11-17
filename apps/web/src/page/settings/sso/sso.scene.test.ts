@@ -112,8 +112,11 @@ describe("sso tab", () => {
 			{ update, view },
 			given(model),
 			expectView(text("Only admins can change SSO and SCIM settings.")).toExist(),
-			expectView(role("button", { name: "Add domain" })).not.toExist(),
-			expectView(role("button", { name: "Edit" })).not.toExist(),
+			expectView(role("button", { name: "Add domain" })).toBeDisabled(),
+			expectView(role("button", { name: "Edit" })).toBeDisabled(),
+			expectView(
+				role("group", { name: "Only org admins can manage single sign-on and SCIM provisioning." }),
+			).toExist(),
 		)
 		expect(names(update(model, Message.ClickedConfirmEnforce()))).toEqual([])
 		expect(names(update(model, Message.ClickedSetUpScim()))).toEqual([])
@@ -315,7 +318,7 @@ describe("sso tab", () => {
 			{ update, view: withViewInputs(ssoView, { isKnownMember: false })() },
 			given(loaded(doc({ domains: [verifiedDomain], connection }), false)),
 			expectView(text("Only admins can change SSO and SCIM settings.")).not.toExist(),
-			expectView(role("button", { name: "Edit" })).not.toExist(),
+			expectView(role("button", { name: "Edit" })).toBeDisabled(),
 		)
 	})
 

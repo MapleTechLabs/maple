@@ -161,6 +161,10 @@ export const rulesFormSkeleton = <M>(h: HtmlBuilder<M>, mode: Mode): Html => {
 				slug: "post-merge",
 				...RULES_COPY.postMerge,
 			}),
+			toggleSkeleton(h, mode, {
+				slug: "auto-approve",
+				...RULES_COPY.autoApprove,
+			}),
 			hstack(h, { gap: "3", align: "center", justify: "end", className: "border-t pt-4" }, [
 				bar(h, "h-8 w-16 rounded-md"),
 				bar(h, "h-8 w-16 rounded-md"),

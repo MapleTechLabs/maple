@@ -35,6 +35,7 @@ import { HttpDigestLive } from "@/routes/internal/digest.http"
 import { HttpSavedViewsLive } from "@/routes/internal/saved-views.http"
 import { HttpCodeReviewLive } from "@/routes/internal/code-review.http"
 import { HttpAuditTrailLive } from "@/routes/internal/audit-trail.http"
+import { HttpCloudSecurityLive } from "@/routes/internal/cloud-security.http"
 import { HttpDependencyScanLive } from "@/routes/internal/dependency-scan.http"
 import { HttpErrorsLive } from "@/routes/internal/errors.http"
 import { HttpIntegrationsLive } from "@/routes/internal/integrations.http"
@@ -47,6 +48,7 @@ import {
 	HttpOrganizationsLive,
 } from "@/routes/internal/organizations.http"
 import { PlanetScaleWebhookRouter } from "@/routes/webhooks/planetscale.http"
+import { AwsEventsRouter } from "@/routes/webhooks/aws-events.http"
 import { HttpQueryEngineLive } from "@/routes/internal/query-engine.http"
 import { HttpSessionReplaysInternalLive } from "@/routes/internal/session-replays.http"
 import { ScraperInternalRouter } from "@/routes/scraper-internal.http"
@@ -177,6 +179,7 @@ const ApiInternalRoutes = HttpApiBuilder.layer(MapleInternalApi).pipe(
 			HttpBillingLive,
 			HttpDemoLive,
 			HttpAuditTrailLive,
+			HttpCloudSecurityLive,
 			HttpDependencyScanLive,
 			HttpDigestLive,
 			HttpSavedViewsLive,
@@ -271,6 +274,7 @@ const RawRoutes = rawRoutes<Layer.Success<ApiPortsLayer>>()(
 		ChatCallbackRouter,
 		OAuthDiscoveryRouter,
 		PlanetScaleWebhookRouter,
+		AwsEventsRouter,
 		ScraperInternalRouter,
 		UptimeInternalRouter,
 		UptimeHeartbeatRouter,

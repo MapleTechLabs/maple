@@ -11,6 +11,7 @@ import {
 import { META_CHIP_CLASS, severityToneFor, TRIAGE_STATUS_CHIP } from "@maple/views/lib/anomaly-display"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
+import { gatedBy } from "../../kit/gated-controls"
 import { detailRailGroup, detailRailRow } from "@maple/views/ui/detail-rail"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
@@ -43,45 +44,31 @@ const mono = (h: H, value: string, className: string): Html =>
 /** Resolve the anomaly, and link it to an error issue or take the link away. */
 const actionsGroup = (h: H, input: SidebarInput): Html => {
 	const { incident } = input
-	return detailRailGroup(h, "Actions", [
-		...(incident.status === "open"
-			? [
-					button(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							className: "w-full",
-							isDisabled: input.isBusy,
-							attributes: [h.OnClick(Message.ClickedResolve())],
-						},
-						["Resolve anomaly"],
-					),
-				]
-			: []),
-		incident.errorIssueId === null
-			? button(
+	// Locked for a viewer without `incidents:respond`: shown disabled with who can.
+	const action = (onClick: Message, children: ReadonlyArray<Html | string>): Html =>
+		gatedBy(
+			h,
+			input.canRespond,
+			"incidents:respond",
+			(isLocked) =>
+				button(
 					h,
 					{
 						size: "sm",
 						variant: "outline",
 						className: "w-full",
-						isDisabled: input.isBusy,
-						attributes: [h.OnClick(Message.ClickedLinkIssue())],
+						isDisabled: isLocked || input.isBusy,
+						attributes: [h.OnClick(onClick)],
 					},
-					[icon(h, "LinkIcon"), "Link issue"],
-				)
-			: button(
-					h,
-					{
-						size: "sm",
-						variant: "outline",
-						className: "w-full",
-						isDisabled: input.isBusy,
-						attributes: [h.OnClick(Message.ClickedUnlink())],
-					},
-					["Unlink ", shortIssueId(incident.errorIssueId)],
+					children,
 				),
+			{ className: "w-full" },
+		)
+	return detailRailGroup(h, "Actions", [
+		...(incident.status === "open" ? [action(Message.ClickedResolve(), ["Resolve anomaly"])] : []),
+		incident.errorIssueId === null
+			? action(Message.ClickedLinkIssue(), [icon(h, "LinkIcon"), "Link issue"])
+			: action(Message.ClickedUnlink(), ["Unlink ", shortIssueId(incident.errorIssueId)]),
 	])
 }
 
@@ -97,7 +84,7 @@ export const anomalySidebar = (h: H, input: SidebarInput): Html => {
 	const time = (value: string, className?: string) =>
 		relativeTime(h, { value, nowMs: input.nowMs, timeZone: input.timeZone, className })
 	return vstack(h, {}, [
-		...(input.canRespond ? [actionsGroup(h, input)] : []),
+		actionsGroup(h, input),
 		detailRailGroup(h, "Details", [
 			row(h, "State", [
 				h.span(

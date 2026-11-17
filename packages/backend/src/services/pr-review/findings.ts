@@ -329,6 +329,11 @@ export const withoutRepeats = (
 	readonly repeated: number
 	/** Of `repeated`, privacy findings blocked for naming what an earlier dismissal named. */
 	readonly reraisedDismissed: number
+	/**
+	 * Of `repeated`, findings that restate one marked resolved: a person closed it, or a scan
+	 * flags its lines again. They are still on the head, so auto-approval counts them.
+	 */
+	readonly restatedResolved: ReadonlyArray<PrReviewFinding>
 } => {
 	// A fix a review confirmed may regress, so its restatement is posted; one a person closed, or a
 	// deterministic scan's (which re-reads its own lines every push), stays quiet.
@@ -353,6 +358,16 @@ export const withoutRepeats = (
 		fresh,
 		repeated: findings.length - fresh.length,
 		reraisedDismissed: Arr.filter(findings, reraised).length,
+		restatedResolved: Arr.filter(
+			findings,
+			(finding) =>
+				!fresh.includes(finding) &&
+				Arr.some(
+					tracked,
+					(known) =>
+						known.status === "resolved" && blocks(finding, known) && restates(finding, known),
+				),
+		),
 	}
 }
 

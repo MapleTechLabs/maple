@@ -17,7 +17,8 @@ import { checkedRows, hasRowIssues } from "../shared/picker"
 import { pickerView } from "../shared/picker-view"
 import { FocusNewRow } from "./command"
 import { Message } from "./message"
-import { canPostIncidents, type Model } from "./model"
+import type { Model } from "./model"
+import { gatedControl } from "../../kit/session-grants"
 import { componentsOf, monitorsOf } from "./reads"
 import { ADD_PICKER_ID } from "./update-components"
 import { typography } from "@maple/views/ui/typography"
@@ -87,66 +88,80 @@ const impactBadgeVariant = (impact: StatusPageIncidentImpact) =>
 /** An open incident can be published, updated and closed; any incident can have its details edited. */
 const incidentActions = (h: H, model: Model, incident: V2StatusPageIncident): Html => {
 	const isOpen = isOpenIncident(incident)
+	const post = (control: (isDisabled: boolean) => Html): Html =>
+		gatedControl(h, model, "status_page_incidents:post", control)
 	return hstack(h, { gap: "2", align: "stretch", wrap: true }, [
 		...(isOpen && !incident.published
 			? [
-					button(
-						h,
-						{
-							size: "sm",
-							isLoading: model.publishingIncidentIds.includes(incident.id),
-							attributes: [
-								h.OnClick(Message.ClickedPublishIncident({ incidentId: incident.id })),
-							],
-						},
-						["Publish"],
+					post((isDisabled) =>
+						button(
+							h,
+							{
+								size: "sm",
+								isDisabled,
+								isLoading: model.publishingIncidentIds.includes(incident.id),
+								attributes: [
+									h.OnClick(Message.ClickedPublishIncident({ incidentId: incident.id })),
+								],
+							},
+							["Publish"],
+						),
 					),
 				]
 			: []),
 		...(isOpen
 			? [
-					button(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							attributes: [
-								h.OnClick(
-									Message.ClickedPostUpdate({
-										incidentId: incident.id,
-										isResolving: false,
-									}),
-								),
-							],
-						},
-						["Post update"],
+					post((isDisabled) =>
+						button(
+							h,
+							{
+								size: "sm",
+								isDisabled,
+								variant: "outline",
+								attributes: [
+									h.OnClick(
+										Message.ClickedPostUpdate({
+											incidentId: incident.id,
+											isResolving: false,
+										}),
+									),
+								],
+							},
+							["Post update"],
+						),
 					),
-					button(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							attributes: [
-								h.OnClick(
-									Message.ClickedPostUpdate({
-										incidentId: incident.id,
-										isResolving: true,
-									}),
-								),
-							],
-						},
-						[incident.kind === "incident" ? "Resolve" : "Complete"],
+					post((isDisabled) =>
+						button(
+							h,
+							{
+								size: "sm",
+								isDisabled,
+								variant: "outline",
+								attributes: [
+									h.OnClick(
+										Message.ClickedPostUpdate({
+											incidentId: incident.id,
+											isResolving: true,
+										}),
+									),
+								],
+							},
+							[incident.kind === "incident" ? "Resolve" : "Complete"],
+						),
 					),
 				]
 			: []),
-		button(
-			h,
-			{
-				size: "sm",
-				variant: "outline",
-				attributes: [h.OnClick(Message.ClickedEditIncident({ incidentId: incident.id }))],
-			},
-			["Edit details"],
+		post((isDisabled) =>
+			button(
+				h,
+				{
+					size: "sm",
+					isDisabled,
+					variant: "outline",
+					attributes: [h.OnClick(Message.ClickedEditIncident({ incidentId: incident.id }))],
+				},
+				["Edit details"],
+			),
 		),
 	])
 }
@@ -191,7 +206,7 @@ export const incidentSheetBody = (
 						: []),
 				]),
 			]),
-			...(canPostIncidents(model) ? [incidentActions(h, model, incident)] : []),
+			incidentActions(h, model, incident),
 			vstack(h, { gap: "2", as: "section", attributes: [h.AriaLabel("Updates")] }, [
 				eyebrow(h, { as: "h3" }, ["Updates"]),
 				h.ol(
@@ -223,23 +238,26 @@ export const incidentSheetBody = (
 					),
 				),
 			]),
-			...(canPostIncidents(model) ? [deleteIncidentAction(h, incident)] : []),
+			deleteIncidentAction(h, model, incident),
 		]),
 	]
 }
 
-const deleteIncidentAction = (h: H, incident: V2StatusPageIncident): Html =>
+const deleteIncidentAction = (h: H, model: Model, incident: V2StatusPageIncident): Html =>
 	h.div(
 		[h.Class("border-t pt-4")],
 		[
-			button(
-				h,
-				{
-					size: "sm",
-					variant: "destructive-outline",
-					attributes: [h.OnClick(Message.ClickedDeleteIncident({ incidentId: incident.id }))],
-				},
-				[incident.kind === "incident" ? "Delete incident" : "Delete maintenance"],
+			gatedControl(h, model, "status_page_incidents:post", (isDisabled) =>
+				button(
+					h,
+					{
+						size: "sm",
+						variant: "destructive-outline",
+						isDisabled,
+						attributes: [h.OnClick(Message.ClickedDeleteIncident({ incidentId: incident.id }))],
+					},
+					[incident.kind === "incident" ? "Delete incident" : "Delete maintenance"],
+				),
 			),
 		],
 	)

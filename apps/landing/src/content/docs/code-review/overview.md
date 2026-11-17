@@ -39,6 +39,21 @@ The review flags a change that removes a span, attribute or metric name that an 
 
 When a reviewed pull request merges, Maple waits for the deploy that carries it, then compares an hour of traffic on each side of the deploy. It comments on the pull request with the deploy, the operations its files touch, new errors, and whether the errors the review linked to its files stopped. The first look is 15 minutes after the merge. Maple keeps looking for a deploy for 48 hours. Turn this off with **Check production after merge**.
 
+### Approval
+
+Turn on **Approve low-risk pull requests** and the review approves a pull request on GitHub when it is safe to merge without a person reading it. Every one of these must hold:
+
+- The review read the whole diff, not only the commits since the last review, and finished. Maple could read the diff itself, every changed file has a patch to read (a binary file, or one too large for GitHub to show, needs a person), and no changed file is under an ignored path.
+- No warning or critical finding is open, including ones from earlier pushes. Notes are fine.
+- No warning or critical on the pull request was ever dismissed, or held back by the repository's lenses or the team's feedback, and the review did not find again one a person had closed. A person set it aside, so a person approves.
+- The review rated the risk low. Auth, tenancy, migrations, billing and concurrency are never low.
+- The review judged that tests cover the change, or that it needs none. A review that did not assess tests does not approve.
+- No step before merge is left unticked, and no telemetry contract is broken.
+- The confidence is 9 or more.
+- The pull request is open and not a draft, its head is still the commit reviewed, and its author can push to the repository.
+
+Maple dismisses its approval when new commits are pushed, when a later review does not approve, and when a later review of the same commit ends early. Turning the rule off leaves existing approvals in place. GitHub may only let a repository admin, or someone listed as allowed to dismiss reviews, dismiss a review on a protected branch, so also turn on **Dismiss stale pull request approvals when new commits are pushed** in the branch's protection or ruleset. An approval from Maple counts toward required approvals but never satisfies a `CODEOWNERS` review.
+
 ## Talk to the reviewer
 
 Mention the reviewer in a comment on the pull request. It reacts with 👀 and replies in the thread.
@@ -79,6 +94,7 @@ A new push while a review runs supersedes it, and the newer head is reviewed.
 | **Learn from feedback**                | Whole organization   | Skips findings like ones your team downvoted or dismissed, learned across the organization, this repository only, or off. Security and critical findings are always posted. |
 | **Fail the check on broken telemetry** | Off                  | See [telemetry contracts](#telemetry-contracts).                                                                                                                            |
 | **Check production after merge**       | On                   | See [after merge](#after-merge).                                                                                                                                            |
+| **Approve low-risk pull requests**     | Off                  | See [approval](#approval).                                                                                                                                                  |
 
 Instructions and ignored paths add up: a repository's own are read after the organization's, so a repository can narrow the defaults but not drop them. The reviewer also reads `CLAUDE.md`, `AGENTS.md` and `.maple/review.md` from the repository.
 

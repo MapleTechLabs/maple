@@ -409,12 +409,14 @@ describe("on-call schedule page", () => {
 		expect(names(gone.commands)).toContain("FetchOnCallShifts")
 	})
 
-	test("a member reads the calendar but cannot add or delete an override", () => {
+	test("a member reads the calendar and sees adding, editing and deleting locked", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(ONCALL_NOW, MEMBER)),
-			expectView(role("button", { name: "Add override" })).not.toExist(),
-			expectView(role("button", { name: /^Delete Dana Kim's override, /u })).not.toExist(),
+			expectView(role("button", { name: "Add override" })).toBeDisabled(),
+			expectView(role("button", { name: "Edit schedule" })).toBeDisabled(),
+			expectView(role("button", { name: /^Delete Dana Kim's override, /u })).toBeDisabled(),
+			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
 			expectView(text("Your time zone is UTC.")).toExist(),
 		)
 	})

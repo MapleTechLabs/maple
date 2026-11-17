@@ -426,8 +426,10 @@ const chooseStep = (h: H, model: Model): Html => {
 					[isBound ? "Save" : "Start collecting"],
 				),
 			]),
-			stepCard(h, { icon: "ChartBarIcon", title: "What to collect", note: CHANGE_LATER_NOTE }, [
-				...(status !== null && status.connected
+			stepCard(
+				h,
+				{ icon: "ChartBarIcon", title: "What to collect", note: CHANGE_LATER_NOTE },
+				status !== null && status.connected
 					? [
 							planetscaleFeatureChoice(h, model, status),
 							...(card.features.error === null
@@ -443,8 +445,8 @@ const chooseStep = (h: H, model: Model): Html => {
 							typography(h, { size: "sm", tone: "muted", as: "p" }, [
 								"Branch metrics and events are both on. Switch either off here once the organization is saved.",
 							]),
-						]),
-			]),
+						],
+			),
 			chooseStatus(h, model, status),
 		],
 		chooseRail(h, model, status),

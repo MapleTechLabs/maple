@@ -180,7 +180,7 @@ const mounted = [
 ] as const
 
 describe("error issue for an analyst", () => {
-	test("the rail reads state and severity and offers no pick, claim or attach", () => {
+	test("the rail reads state and severity, offers no pick, and locks claim and attach", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ grants: ANALYST })),
@@ -189,8 +189,11 @@ describe("error issue for an analyst", () => {
 			expectView(text("High")).toExist(),
 			expectView(text("Unclaimed")).toExist(),
 			expectView(role("combobox")).toBeAbsent(),
-			expectView(role("button", { name: "Claim" })).toBeAbsent(),
-			expectView(role("button", { name: "Attach" })).toBeAbsent(),
+			expectView(role("button", { name: "Claim" })).toBeDisabled(),
+			expectView(role("button", { name: "Attach" })).toBeDisabled(),
+			expectView(
+				role("group", { name: "Only org admins, engineers and members can triage error issues." }),
+			).toExist(),
 			expectView(role("button", { name: "Attach the PR that fixes this" })).toBeAbsent(),
 		)
 	})
@@ -208,15 +211,18 @@ describe("error issue for an analyst", () => {
 		)
 	})
 
-	test("a held lease shows its countdown without Extend or Release", () => {
+	test("a held lease shows its countdown with Extend and Release locked", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ grants: ANALYST, detail: HELD })),
 			...mounted,
 			expectView(text("Active lease")).toExist(),
 			expectView(text("5:00")).toExist(),
-			expectView(role("button", { name: "Extend" })).toBeAbsent(),
-			expectView(role("button", { name: "Release" })).toBeAbsent(),
+			expectView(role("button", { name: "Extend" })).toBeDisabled(),
+			expectView(role("button", { name: "Release" })).toBeDisabled(),
+			expectView(
+				role("group", { name: "Only org admins, engineers and members can triage error issues." }),
+			).toExist(),
 		)
 	})
 
@@ -230,14 +236,17 @@ describe("error issue for an analyst", () => {
 		)
 	})
 
-	test("a merged issue says where it went and offers no Unmerge", () => {
+	test("a merged issue says where it went and locks Unmerge", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ grants: ANALYST, detail: MERGED })),
 			...mounted,
 			expectView(text("Merged into another issue")).toExist(),
 			expectView(role("link", { name: "the issue it was merged into" })).toExist(),
-			expectView(role("button", { name: "Unmerge" })).toBeAbsent(),
+			expectView(role("button", { name: "Unmerge" })).toBeDisabled(),
+			expectView(
+				role("group", { name: "Only org admins, engineers and members can triage error issues." }),
+			).toExist(),
 		)
 	})
 
@@ -250,13 +259,16 @@ describe("error issue for an analyst", () => {
 		)
 	})
 
-	test("a linked pull request is a link with no detach", () => {
+	test("a linked pull request is a link with detach locked", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ grants: ANALYST, hasPullRequest: true })),
 			...mounted,
 			expectView(role("link", { name: "acme/payments#412" })).toExist(),
-			expectView(role("button", { name: "Detach acme/payments#412" })).toBeAbsent(),
+			expectView(role("button", { name: "Detach acme/payments#412" })).toBeDisabled(),
+			expectView(
+				role("group", { name: "Only org admins, engineers and members can triage error issues." }),
+			).toExist(),
 		)
 	})
 

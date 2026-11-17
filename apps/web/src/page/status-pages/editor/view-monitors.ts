@@ -1,21 +1,21 @@
-import type { V2StatusPage, V2StatusPageComponent } from "@maple/domain/http/v2"
+import type { V2StatusPageComponent } from "@maple/domain/http/v2"
 import { Array as Arr, Option, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { alert, alertDescription } from "@maple/views/ui/alert"
 import { button } from "@maple/views/ui/button"
-import * as Checkbox from "@maple/views/ui/checkbox"
+import { dragGrip } from "@maple/views/ui/drag-grip"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
-import { iconButton } from "@maple/views/ui/icon-button"
 import { label } from "@maple/views/ui/label"
 import { pressable } from "@maple/views/ui/pressable"
 import { grid } from "@maple/views/ui/grid"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
+import { switchControl } from "@maple/views/ui/switch"
 import { type TypographyTone, typography } from "@maple/views/ui/typography"
 import type { Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { expandChevron } from "../../kit/expand-chevron"
+import { saveBar } from "../../kit/save-bar"
 import { adminOnlyNote, settingsSection } from "../../kit/settings-section"
 import {
 	COMPONENT_STATUS_LABEL,
@@ -25,19 +25,23 @@ import {
 	statusReason,
 } from "../shared/derive"
 import { selectField, textField } from "../shared/fields"
-import { onYourPage } from "../shared/preview"
 import { RevealOpenComponent } from "./command"
+import { GRIP_ATTRIBUTE, LIST_ATTRIBUTE, ROW_ATTRIBUTE, SLOT_ATTRIBUTE } from "./component-drag"
 import { Message } from "./message"
 import { canManage, type ComponentSave, type Model } from "./model"
-import { componentsOf, incidentsOf, monitorsOf } from "./reads"
-import { componentRowId, groupedOrder, moved } from "./update-components"
-import { settingsOf } from "./update-settings"
-import { settingsFormOf } from "../shared/form"
+import { gatedControl } from "../../kit/session-grants"
+import { componentsOf, incidentsOf, listedComponentsOf, monitorsOf } from "./reads"
+import {
+	componentGripId,
+	componentRowId,
+	groupedOrder,
+	unsavedComponent,
+	unsavedOrder,
+} from "./update-components"
 import { failureAlert } from "./view-panel"
-import { fragmentPreview } from "./view-canvas"
 
 // Settings > Monitors: the page's components by group, each opening in place with its fields and
-// how its row reads on the page.
+// reordered by its grip, both saved from one bar; the page preview beside Settings shows how it reads.
 
 type H = HtmlBuilder<Message>
 
@@ -69,63 +73,42 @@ const saveIndicator = (h: H, save: ComponentSave | null): Html =>
 		[save === null ? "" : SAVE_LABEL[save._tag]],
 	)
 
-/** The page's other groups as one-click picks, so a group is never retyped (or mistyped). */
-const groupSuggestions = (h: H, model: Model, isReadOnly: boolean): ReadonlyArray<Html> => {
-	const current = Str.trim(model.componentForm.group)
-	const groups = Arr.filter(
-		Arr.dedupe(Arr.flatMap(componentsOf(model), (row) => (row.group === null ? [] : [row.group]))),
-		(group) => group !== current,
-	)
-	return isReadOnly || groups.length === 0
+/** Why the component shows what it shows, when that is not its monitor's plain reading. */
+const reasonLine = (h: H, model: Model, component: V2StatusPageComponent): ReadonlyArray<Html> => {
+	const reason = statusReason(component, monitorsOf(model), incidentsOf(model))
+	const tone = COMPONENT_STATUS_TONE[componentStatus(component, monitorsOf(model), incidentsOf(model))]
+	return reason === null
 		? []
 		: [
-				hstack(
-					h,
-					{
-						gap: "1.5",
-						wrap: true,
-						className: "sm:col-span-2",
-						attributes: [h.Role("group"), h.AriaLabel("Groups on this page")],
-					},
-					Arr.map(groups, (group) =>
-						button(
-							h,
-							{
-								size: "xs",
-								variant: "outline",
-								attributes: [
-									h.Key(group),
-									h.OnClick(Message.PickedComponentField({ field: "group", value: group })),
-								],
-							},
-							[group],
-						),
-					),
-				),
+				hstack(h, { gap: "2", align: "start" }, [
+					typography(h, { tone: LABEL_TONE[tone], className: "mt-px shrink-0" }, [
+						icon(h, "AlertWarningIcon", { size: 14 }),
+					]),
+					typography(h, { size: "xs", tone: "muted", as: "p" }, [reason]),
+				]),
 			]
 }
 
-/** The open component's fields, why it shows what it shows, and its row as visitors see it. */
-const componentForm = (h: H, model: Model, page: V2StatusPage, component: V2StatusPageComponent): Html => {
+/** The open component's fields, why it shows what it shows. The page preview beside Settings shows its row. */
+const componentForm = (h: H, model: Model, component: V2StatusPageComponent): Html => {
 	const form = model.componentForm
 	const isReadOnly = !canManage(model)
 	const hasMonitor = form.monitorId !== ""
 	const uptimeId = "status-page-panel-uptime"
-	const reason = statusReason(component, monitorsOf(model), incidentsOf(model))
 	const save = saveOf(model, component)
-	const settings = Option.getOrElse(settingsOf(model), () => settingsFormOf(page))
 	return vstack(
 		h,
 		{
 			gap: "4",
-			className: "px-4 pt-1 pb-4 sm:pl-12",
+			// Level with the row's status dot, past the grip.
+			className: "pt-1 pr-4 pb-4 pl-10.5",
 			attributes: model.revealComponentId === component.id ? [h.OnMount(RevealOpenComponent())] : [],
 		},
 		[
 			...(isReadOnly
 				? [adminOnlyNote(h, ["Only org admins and engineers can change components."])]
 				: []),
-			grid(h, { sm: 2, gap: "4" }, [
+			grid(h, { sm: 2, gap: "4", className: "items-start" }, [
 				textField(h, {
 					id: "status-page-panel-name",
 					label: "Shown as",
@@ -133,30 +116,25 @@ const componentForm = (h: H, model: Model, page: V2StatusPage, component: V2Stat
 					isDisabled: isReadOnly,
 					error: Str.trim(form.name) === "" ? "Add a name." : null,
 					onInput: (value) => Message.ChangedComponentField({ field: "name", value }),
-					onBlur: Message.CommittedComponent(),
 				}),
 				textField(h, {
 					id: "status-page-panel-group",
 					label: "Group",
 					value: form.group,
-					placeholder: "None",
-					hint: "Components with one group are listed under it.",
+					placeholder: "No group",
 					isDisabled: isReadOnly,
 					onInput: (value) => Message.ChangedComponentField({ field: "group", value }),
-					onBlur: Message.CommittedComponent(),
 				}),
-				...groupSuggestions(h, model, isReadOnly),
-				textField(h, {
-					id: "status-page-panel-description",
-					label: "Description",
-					value: form.description,
-					placeholder: "None",
-					hint: "A line under the name, for what this covers.",
-					isDisabled: isReadOnly,
-					className: "sm:col-span-2",
-					onInput: (value) => Message.ChangedComponentField({ field: "description", value }),
-					onBlur: Message.CommittedComponent(),
-				}),
+			]),
+			textField(h, {
+				id: "status-page-panel-description",
+				label: "Description",
+				value: form.description,
+				placeholder: "Optional",
+				isDisabled: isReadOnly,
+				onInput: (value) => Message.ChangedComponentField({ field: "description", value }),
+			}),
+			grid(h, { sm: 2, gap: "4", className: "items-start" }, [
 				selectField(h, {
 					id: "status-page-panel-monitor",
 					label: "Driven by",
@@ -169,16 +147,13 @@ const componentForm = (h: H, model: Model, page: V2StatusPage, component: V2Stat
 							label: monitor.name,
 						})),
 					],
-					onInput: (value) => Message.PickedComponentField({ field: "monitorId", value }),
+					onInput: (value) => Message.ChangedComponentField({ field: "monitorId", value }),
 				}),
 				selectField(h, {
 					id: "status-page-panel-status",
 					label: "Override status",
 					value: form.manualStatus,
 					isDisabled: isReadOnly,
-					hint: hasMonitor
-						? "Automatic follows the monitor and open incidents."
-						: "Automatic follows open incidents.",
 					entries: [
 						{ value: "", label: "Automatic" },
 						...Arr.map(COMPONENT_STATUS_OPTIONS, (value) => ({
@@ -186,34 +161,28 @@ const componentForm = (h: H, model: Model, page: V2StatusPage, component: V2Stat
 							label: COMPONENT_STATUS_LABEL[value],
 						})),
 					],
-					onInput: (value) => Message.PickedComponentField({ field: "manualStatus", value }),
+					onInput: (value) => Message.ChangedComponentField({ field: "manualStatus", value }),
 				}),
 			]),
-			...(reason === null
-				? []
-				: [
-						alert(h, { variant: "warn", size: "sm" }, [
-							icon(h, "AlertWarningIcon"),
-							alertDescription(h, [reason]),
-						]),
-					]),
+			...reasonLine(h, model, component),
 			vstack(h, { gap: "1" }, [
 				label(
 					h,
 					{
-						className: "flex font-normal text-sm sm:text-sm",
-						attributes: [h.Id(Checkbox.labelId(uptimeId))],
+						className: "flex items-center gap-2 font-normal text-sm sm:text-sm",
+						attributes: [h.Id(`${uptimeId}-label`)],
 					},
 					[
-						...Checkbox.view(h, {
+						...switchControl(h, {
 							// The stored value, shown as is; it only takes effect once a monitor drives the component.
-							model: { isChecked: form.showUptime },
-							toParentMessage: () => Message.ToggledComponentUptime(),
-							id: `${uptimeId}-root`,
-							inputId: uptimeId,
+							id: uptimeId,
+							inputId: `${uptimeId}-input`,
+							isChecked: form.showUptime,
 							isDisabled: isReadOnly || !hasMonitor,
+							labelledBy: `${uptimeId}-label`,
+							onToggle: Message.ToggledComponentUptime(),
 						}),
-						h.span([], ["Show uptime bars"]),
+						"Show uptime bars",
 					],
 				),
 				...(hasMonitor
@@ -224,54 +193,58 @@ const componentForm = (h: H, model: Model, page: V2StatusPage, component: V2Stat
 							]),
 						]),
 			]),
-			onYourPage(
-				h,
-				fragmentPreview(h, model, page, settings, {
-					title: `${component.name} as visitors see it`,
-					parts: ["components"],
-					componentId: component.id,
-					className: "h-48",
-				}),
-			),
 			...failureAlert(h, "Couldn't save the component", save?._tag === "Failed" ? save.failure : null),
 			hstack(h, { gap: "3", justify: "between", wrap: true }, [
-				isReadOnly
-					? h.span([], [])
-					: button(
-							h,
-							{
-								size: "sm",
-								variant: "destructive-outline",
-								attributes: [
-									h.OnClick(Message.ClickedDeleteComponent({ componentId: component.id })),
-								],
-							},
-							["Remove from page"],
-						),
+				gatedControl(h, model, "status_pages:edit", (isDisabled) =>
+					button(
+						h,
+						{
+							size: "sm",
+							variant: "destructive-ghost",
+							isDisabled,
+							// Its text level with the fields above.
+							className: "-ml-2.5",
+							attributes: [
+								h.OnClick(Message.ClickedDeleteComponent({ componentId: component.id })),
+							],
+						},
+						["Remove from page"],
+					),
+				),
 				saveIndicator(h, save),
 			]),
 		],
 	)
 }
 
-const moveButtons = (h: H, model: Model, component: V2StatusPageComponent): Html => {
-	const rows = componentsOf(model)
-	const move = (offset: number, glyph: "ChevronUpIcon" | "ChevronDownIcon", word: string) =>
-		iconButton(
-			h,
-			{
-				label: `Move ${component.name} ${word}`,
-				size: "icon-2xs",
-				isDisabled: model.isReordering || moved(rows, component.id, offset) === null,
-				attributes: [h.OnClick(Message.ClickedMoveComponent({ componentId: component.id, offset }))],
-			},
-			[icon(h, glyph)],
-		)
-	return vstack(h, { className: "shrink-0" }, [
-		move(-1, "ChevronUpIcon", "up"),
-		move(1, "ChevronDownIcon", "down"),
-	])
-}
+const REORDER_HINT_ID = "status-page-reorder-hint"
+
+/**
+ * The row's handle: dragged, or moved a slot with the arrow keys, within its group. Locked, it
+ * drops its drag marker, so the drag subscription never picks it up.
+ */
+const grip = (h: H, model: Model, component: V2StatusPageComponent): Html =>
+	gatedControl(
+		h,
+		model,
+		"status_pages:edit",
+		(isDisabled) =>
+			dragGrip(h, {
+				label: `Reorder ${component.name}`,
+				onMove: (offset) => Message.PressedMoveComponent({ componentId: component.id, offset }),
+				className: "self-stretch px-1",
+				attributes: isDisabled
+					? [h.Disabled(true)]
+					: [
+							h.Id(componentGripId(component.id)),
+							h.DataAttribute(GRIP_ATTRIBUTE, ""),
+							h.AriaDescribedBy(REORDER_HINT_ID),
+							// Still focusable while the order saves, so the keyboard keeps its place.
+							h.AriaDisabled(model.isSavingOrder),
+						],
+			}),
+		{ className: "self-stretch" },
+	)
 
 /** What drives the component: its monitor by name, or incidents alone. */
 const sourceLine = (model: Model, component: V2StatusPageComponent): string =>
@@ -282,14 +255,20 @@ const sourceLine = (model: Model, component: V2StatusPageComponent): string =>
 				{ onNone: () => "Monitor not found", onSome: (monitor) => `Monitor: ${monitor.name}` },
 			)
 
-const componentRow = (h: H, model: Model, page: V2StatusPage, component: V2StatusPageComponent): Html => {
+const componentRow = (h: H, model: Model, component: V2StatusPageComponent): Html => {
 	const status = componentStatus(component, monitorsOf(model), incidentsOf(model))
 	const isOpen = model.panel?._tag === "Component" && model.panel.componentId === component.id
 	return h.li(
-		[h.Key(component.id), h.Class("border-t first:border-t-0")],
+		[
+			h.Key(component.id),
+			h.DataAttribute(ROW_ATTRIBUTE, component.id),
+			h.Class(
+				"border-t first:border-t-0 data-dragging:relative data-dragging:z-10 data-dragging:rounded-md data-dragging:bg-card data-dragging:shadow-popup data-dragging:outline data-dragging:outline-primary-a4",
+			),
+		],
 		[
 			hstack(h, { gap: "1", className: "pl-2" }, [
-				...(canManage(model) ? [moveButtons(h, model, component)] : []),
+				grip(h, model, component),
 				pressable(
 					h,
 					{
@@ -323,20 +302,34 @@ const componentRow = (h: H, model: Model, page: V2StatusPage, component: V2Statu
 					],
 				),
 			]),
-			...(isOpen ? [componentForm(h, model, page, component)] : []),
+			...(isOpen ? [componentForm(h, model, component)] : []),
 		],
 	)
 }
 
 /** The components under each group's head, in page order, ungrouped last. */
-const componentList = (h: H, model: Model, page: V2StatusPage): Html => {
-	const rows = groupedOrder(componentsOf(model))
+const componentList = (h: H, model: Model): Html => {
+	const rows = groupedOrder(listedComponentsOf(model))
 	const groups = Arr.dedupe(Arr.map(rows, (row) => row.group))
 	const hasGroups = Arr.some(groups, (group) => group !== null)
-	return vstack(
-		h,
-		{ attributes: [h.AriaLabel("Components")] },
-		Arr.map(groups, (group) =>
+	return vstack(h, { attributes: [h.AriaLabel("Components")] }, [
+		...(canManage(model)
+			? [
+					h.span(
+						[h.Id(REORDER_HINT_ID), h.Class("sr-only")],
+						["Drag, or press the up and down arrow keys, to move it within its group."],
+					),
+				]
+			: []),
+		...(model.orderFailure === null
+			? []
+			: [
+					h.div(
+						[h.Key("order-failure"), h.Class("p-4 pb-0")],
+						failureAlert(h, "Couldn't save the order", model.orderFailure),
+					),
+				]),
+		...Arr.map(groups, (group) =>
 			vstack(h, { attributes: [h.Key(group ?? "")] }, [
 				...(hasGroups
 					? [
@@ -346,19 +339,62 @@ const componentList = (h: H, model: Model, page: V2StatusPage): Html => {
 							),
 						]
 					: []),
-				h.ul(
-					[h.AriaLabel(group ?? "No group")],
-					Arr.map(
-						Arr.filter(rows, (row) => row.group === group),
-						(component) => componentRow(h, model, page, component),
-					),
+				// The slot outline sits under the rows; a drag moves it to where the held row lands.
+				h.div(
+					[h.DataAttribute(LIST_ATTRIBUTE, ""), h.Class("relative")],
+					[
+						h.div(
+							[
+								h.DataAttribute(SLOT_ATTRIBUTE, ""),
+								h.AriaHidden(true),
+								h.Class(
+									"pointer-events-none invisible absolute inset-x-1 top-0 rounded-md border border-dashed border-primary-a4 bg-primary-a1 data-dragging:visible",
+								),
+							],
+							[],
+						),
+						h.ul(
+							[h.AriaLabel(group ?? "No group")],
+							Arr.map(
+								Arr.filter(rows, (row) => row.group === group),
+								(component) => componentRow(h, model, component),
+							),
+						),
+					],
 				),
 			]),
 		),
-	)
+	])
 }
 
-export const monitorsSection = (h: H, model: Model, page: V2StatusPage): Html =>
+/**
+ * The Monitors save bar, while the order was moved or the open component's form differs from it, or
+ * either saves. Save sends both.
+ */
+export const monitorsSaveBar = (h: H, model: Model): ReadonlyArray<Html> => {
+	const unsaved = Option.getOrNull(unsavedComponent(model))
+	const isOrderUnsaved = Option.isSome(unsavedOrder(model))
+	const isNameMissing = unsaved !== null && Str.trim(model.componentForm.name) === ""
+	const save = model.componentSave
+	return saveBar(h, {
+		isDirty: unsaved !== null || isOrderUnsaved,
+		isPending:
+			model.isSavingOrder ||
+			(save?._tag === "Saving" && save.componentId === model.componentForm.editingId),
+		context: isNameMissing
+			? "Fix the fields marked above."
+			: Arr.join(
+					[...(isOrderUnsaved ? ["New order"] : []), ...(unsaved === null ? [] : [unsaved.name])],
+					", ",
+				),
+		onDiscard: Message.ClickedDiscardMonitors(),
+		onSave: Message.ClickedSaveMonitors(),
+		// One save at a time, even another component's.
+		isSaveDisabled: isNameMissing || save?._tag === "Saving" || model.isSavingOrder,
+	})
+}
+
+export const monitorsSection = (h: H, model: Model): Html =>
 	settingsSection(
 		h,
 		{
@@ -366,18 +402,19 @@ export const monitorsSection = (h: H, model: Model, page: V2StatusPage): Html =>
 			title: "Monitors",
 			description: ["Each one is a row under System status, in this order."],
 			padded: false,
-			actions: canManage(model)
-				? button(
-						h,
-						{
-							size: "sm",
-							// Reopened mid-save, Add would list the monitors being added again.
-							isLoading: model.isAddingComponents,
-							attributes: [h.OnClick(Message.ClickedAddComponent())],
-						},
-						[icon(h, "PlusIcon"), "Add monitors"],
-					)
-				: undefined,
+			actions: gatedControl(h, model, "status_pages:edit", (isDisabled) =>
+				button(
+					h,
+					{
+						size: "sm",
+						// Reopened mid-save, Add would list the monitors being added again.
+						isLoading: model.isAddingComponents,
+						isDisabled,
+						attributes: [h.OnClick(Message.ClickedAddComponent())],
+					},
+					[icon(h, "PlusIcon"), "Add monitors"],
+				),
+			),
 		},
 		[
 			componentsOf(model).length === 0
@@ -386,6 +423,6 @@ export const monitorsSection = (h: H, model: Model, page: V2StatusPage): Html =>
 							? "Nothing yet. Add a monitor and visitors see its status and uptime."
 							: "No monitors on this page yet.",
 					])
-				: componentList(h, model, page),
+				: componentList(h, model),
 		],
 	)

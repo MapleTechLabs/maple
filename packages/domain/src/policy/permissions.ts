@@ -35,17 +35,19 @@ export const permissions = {
 	"error_policy:manage": { min: "engineer", action: "manage error notifications and escalation" },
 	"ai_triage:configure": { min: "engineer", action: "manage AI triage settings" },
 	"security:manage": { min: "engineer", action: "open the Security Center and triage its findings" },
+	"ingest_keys:roll": { min: "engineer", action: "roll ingest keys" },
+	"status_pages:access": { min: "engineer", action: "change who can view status pages" },
+	"data_sources:manage": { min: "engineer", action: "connect and manage data sources" },
+	// Pinned to the creator's role, and only for the scopes they could use themselves.
+	"api_keys:create_restricted": { min: "engineer", action: "create restricted API keys" },
 
 	// The organization, money and credentials: admins only.
 	"organization:manage": { min: "admin", action: "change the organization's settings" },
 	"members:manage": { min: "admin", action: "manage members" },
 	"billing:manage": { min: "admin", action: "manage billing" },
 	"api_keys:manage": { min: "admin", action: "manage API keys" },
-	"ingest_keys:roll": { min: "admin", action: "roll ingest keys" },
 	"status_pages:break_glass": { min: "admin", action: "manage status page break-glass tokens" },
-	"status_pages:access": { min: "admin", action: "change who can view status pages" },
 	"warehouse:manage": { min: "admin", action: "manage the data warehouse" },
-	"data_sources:manage": { min: "admin", action: "connect and manage data sources" },
 	"security_audit:run": { min: "admin", action: "configure and run code security audits" },
 	"audit_log:read": { min: "admin", action: "read the audit log" },
 	"llm_keys:manage": { min: "admin", action: "manage the organization's model provider keys" },

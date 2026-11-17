@@ -2,6 +2,8 @@ import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Option, Array as Arr } from "effect"
 import { button } from "@maple/views/ui/button"
+import { lockedControl } from "@maple/views/ui/locked-control"
+import { denialReason } from "../../kit/session-grants"
 import { field, fieldDescription, fieldError, type FieldIds, fieldLabel } from "@maple/views/ui/field"
 import type { FieldState } from "@maple/views/ui/input"
 import * as SelectView from "@maple/views/ui/select-view"
@@ -72,6 +74,23 @@ const connectNote = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>, isRevoked: boolean
 	const { model } = inputs
 	const accent = providerOf("linear")
 	const isAllowed = canConnect(model) === true
+	const connectButton = button(
+		h,
+		{
+			size: "sm",
+			isLoading: model.isConnecting,
+			isDisabled: !isAllowed,
+			attributes: [
+				h.OnClick(inputs.toMessage(LinearMessage.ClickedConnect())),
+				h.Style({
+					background: accent.accent,
+					"border-color": accent.accent,
+					color: model.isConnecting ? "transparent" : accent.accentOn,
+				}),
+			],
+		},
+		[isRevoked ? "Reconnect Linear" : "Connect Linear"],
+	)
 	return h.div(
 		[h.Class("space-y-2 rounded-md border border-dashed border-border-subtle p-3")],
 		[
@@ -92,27 +111,10 @@ const connectNote = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>, isRevoked: boolean
 						]),
 					]),
 			hstack(h, { gap: "2", align: "stretch", wrap: true }, [
-				...(canConnect(model) === false
-					? []
-					: [
-							button(
-								h,
-								{
-									size: "sm",
-									isLoading: model.isConnecting,
-									isDisabled: !isAllowed,
-									attributes: [
-										h.OnClick(inputs.toMessage(LinearMessage.ClickedConnect())),
-										h.Style({
-											background: accent.accent,
-											"border-color": accent.accent,
-											color: model.isConnecting ? "transparent" : accent.accentOn,
-										}),
-									],
-								},
-								[isRevoked ? "Reconnect Linear" : "Connect Linear"],
-							),
-						]),
+				// Grants not yet read leave the button disabled without a reason; a denial names who can.
+				canConnect(model) === false
+					? lockedControl(h, denialReason("alerts:manage"), connectButton)
+					: connectButton,
 				retry(h, inputs, "Check again"),
 			]),
 		],

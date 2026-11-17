@@ -3,7 +3,6 @@ import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { linkButton } from "@maple/views/ui/button"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { badge } from "@maple/views/ui/display"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
@@ -50,7 +49,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { borderedBox } from "@maple/views/ui/bordered-box"
 import { dividedList } from "@maple/views/ui/rule"
-import { canManageAlerts } from "../../kit/session-grants"
+import { gatedEntries, gatedLinkButton } from "../../kit/gated-controls"
 
 type H = HtmlBuilder<Message>
 
@@ -70,7 +69,7 @@ const KIND_FILTERS: ReadonlyArray<{ value: UptimeKindFilter; label: string }> = 
 const isKindFilter = (value: string): value is UptimeKindFilter =>
 	Arr.some(KIND_FILTERS, (kind) => kind.value === value)
 
-const uptimeEmptyState = (h: H, serviceName: string | undefined, canEdit: boolean): Html =>
+const uptimeEmptyState = (h: H, model: Model, serviceName: string | undefined): Html =>
 	empty(
 		h,
 		[
@@ -81,16 +80,15 @@ const uptimeEmptyState = (h: H, serviceName: string | undefined, canEdit: boolea
 					"Maple checks a URL, port or DNS record from outside on a schedule, or waits for your cron job to ping it. Each check is a trace, and a failing one opens an incident.",
 				]),
 			]),
-			...(canEdit
-				? [
-						emptyActions(h, [
-							linkButton(h, { size: "sm", href: newMonitorHref({ serviceName }) }, [
-								icon(h, "PlusIcon"),
-								"New uptime check",
-							]),
-						]),
-					]
-				: []),
+			emptyActions(h, [
+				gatedLinkButton(
+					h,
+					model,
+					"alerts:manage",
+					{ size: "sm", href: newMonitorHref({ serviceName }) },
+					[icon(h, "PlusIcon"), "New uptime check"],
+				),
+			]),
 		],
 		"py-12",
 	)
@@ -193,7 +191,7 @@ const rowMenu = (h: H, model: Model, monitor: UptimeMonitor): Html => {
 	return rowActionsMenu(h, {
 		slotId: menuId,
 		model: model.menus[menuId] ?? Menu.init(menuId),
-		entries,
+		entries: gatedEntries(model, "alerts:manage", entries),
 		label: `Actions for ${monitor.name}`,
 		className: ROW_LINK_LIFT,
 		toParentMessage: (message) => Message.GotRowMenuMessage({ menuId, message }),
@@ -280,7 +278,7 @@ const monitorRow = (h: H, model: Model, monitor: UptimeMonitor, nowMs: number): 
 						isPaused ? "–" : formatShare(uptimeShare(recent)),
 					]),
 					...latencyCells(h, monitor),
-					...(canManageAlerts(model) ? [rowMenu(h, model, monitor)] : [h.span([], [])]),
+					rowMenu(h, model, monitor),
 				],
 			),
 		],
@@ -364,7 +362,7 @@ const loaded = (
 	nowMs: number,
 	pinnedNamespace: string | null,
 ): Html => {
-	if (all.length === 0) return uptimeEmptyState(h, model.search.serviceName, canManageAlerts(model))
+	if (all.length === 0) return uptimeEmptyState(h, model, model.search.serviceName)
 	const namespaces = AsyncData.getData(model.serviceNamespaces.data)
 	const monitors = scoped(all, namespaces, pinnedNamespace)
 	if (monitors.length === 0)

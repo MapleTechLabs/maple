@@ -1,11 +1,22 @@
 import * as http from "node:http"
 import * as https from "node:https"
 import { pipeline, Readable, type Transform } from "node:stream"
+import * as tls from "node:tls"
 import * as zlib from "node:zlib"
-import { Effect, type Layer, Predicate, Array as Arr, Record as Rec, String as Str } from "effect"
+import {
+	DateTime,
+	Effect,
+	type Layer,
+	Option,
+	Predicate,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { HttpClient, HttpClientError, type HttpClientRequest, HttpClientResponse } from "effect/http"
 import { DialServerName } from "@maple/safe-fetch"
-import { recordPhases } from "./UptimePhases"
+import type { UptimeCertificate } from "@maple/domain/uptime"
+import { recordCertificate, recordPhases } from "./UptimePhases"
 
 /** Statuses a web `Response` must be built without a body. */
 const NULL_BODY_STATUSES: ReadonlySet<number> = new Set([101, 204, 205, 304])
@@ -69,6 +80,22 @@ interface HopPhases {
 interface Answer {
 	readonly response: http.IncomingMessage
 	readonly phases: HopPhases
+	/** None without a completed TLS handshake (plain http://). */
+	readonly certificate: Option.Option<UptimeCertificate | null>
+}
+
+/** The leaf certificate of a completed handshake; null when the runtime gives no readable expiry. */
+export const peerCertificate = (socket: tls.TLSSocket): UptimeCertificate | null => {
+	const leaf = socket.getPeerCertificate()
+	// `valid_to` is OpenSSL's `Dec 25 22:56:35 2026 GMT`, zoned, so no host timezone leaks in.
+	const name = (field: unknown): string => (typeof field === "string" ? field : "")
+	return Option.getOrNull(
+		Option.map(DateTime.make(leaf.valid_to), (expires) => ({
+			expiresAt: DateTime.toEpochMillis(expires),
+			subject: name(leaf.subject?.CN),
+			issuer: name(leaf.issuer?.CN),
+		})),
+	)
 }
 
 /** One request on a fresh connection, timing connect, TLS and the wait for the headers off its socket. */
@@ -83,6 +110,8 @@ const exchange = (
 		const startedAt = performance.now()
 		// Socket events land in callbacks, so their times are kept here until the headers arrive.
 		const marks = new Map<"connect" | "tls", number>()
+		// Set once a handshake completes: the leaf's certificate, or null when its expiry is unreadable.
+		let certificate: Option.Option<UptimeCertificate | null> = Option.none()
 		const options: https.RequestOptions = {
 			method: request.method,
 			headers: { "accept-encoding": ACCEPT_ENCODING, ...request.headers },
@@ -94,7 +123,10 @@ const exchange = (
 		const outgoing = url.protocol === "https:" ? https.request(url, options) : http.request(url, options)
 		outgoing.once("socket", (socket) => {
 			socket.once("connect", () => marks.set("connect", performance.now()))
-			socket.once("secureConnect", () => marks.set("tls", performance.now()))
+			socket.once("secureConnect", () => {
+				marks.set("tls", performance.now())
+				if (socket instanceof tls.TLSSocket) certificate = Option.some(peerCertificate(socket))
+			})
 		})
 		const connected = (): HopPhases => {
 			const connectAt = marks.get("connect")
@@ -106,19 +138,37 @@ const exchange = (
 					: { tlsMs: tlsAt - connectAt }),
 			}
 		}
+		// A handshake that completed is a certificate read, whatever the request does next.
+		const presented = Effect.suspend(() =>
+			Option.match(certificate, { onNone: () => Effect.void, onSome: recordCertificate }),
+		)
 		// Kept for the request's life: an abort after the headers still emits here. A failed hop
-		// still reports what it got through (a connect before a refused handshake).
+		// still reports what it got through (a connect before a refused handshake, a TLS certificate
+		// before a reset).
 		outgoing.on("error", (cause) =>
-			resume(Effect.andThen(recordPhases(connected()), Effect.fail(transportError(request, cause)))),
+			resume(
+				Effect.andThen(
+					Effect.andThen(recordPhases(connected()), presented),
+					Effect.fail(transportError(request, cause)),
+				),
+			),
 		)
 		outgoing.once("response", (response) => {
 			const ready = marks.get("tls") ?? marks.get("connect") ?? startedAt
 			resume(
-				Effect.succeed({ response, phases: { ...connected(), ttfbMs: performance.now() - ready } }),
+				Effect.succeed({
+					response,
+					phases: { ...connected(), ttfbMs: performance.now() - ready },
+					certificate,
+				}),
 			)
 		})
 		outgoing.end(body)
-		return Effect.sync(() => outgoing.destroy())
+		// Interrupted (the check's timeout) before the headers: keep the certificate it got.
+		return Effect.andThen(
+			presented,
+			Effect.sync(() => outgoing.destroy()),
+		)
 	})
 
 const toWeb = (request: HttpClientRequest.HttpClientRequest, response: http.IncomingMessage) =>
@@ -155,8 +205,15 @@ const toWeb = (request: HttpClientRequest.HttpClientRequest, response: http.Inco
 export const timedHttpClient: HttpClient.HttpClient = HttpClient.make((request, url, signal, fiber) =>
 	Effect.gen(function* () {
 		const body = yield* bodyOf(request)
-		const { response, phases } = yield* exchange(request, url, signal, body, fiber.getRef(DialServerName))
+		const { response, phases, certificate } = yield* exchange(
+			request,
+			url,
+			signal,
+			body,
+			fiber.getRef(DialServerName),
+		)
 		yield* recordPhases(phases)
+		if (Option.isSome(certificate)) yield* recordCertificate(certificate.value)
 		return yield* toWeb(request, response)
 	}),
 )

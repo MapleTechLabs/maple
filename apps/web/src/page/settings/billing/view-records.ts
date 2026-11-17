@@ -20,6 +20,8 @@ import { errorState } from "@maple/views/ui/error-state"
 import { INLINE_LINK_CLASS, settingsSection } from "../../kit/settings-section"
 import { taxIdValue, view as detailsDialogView } from "./details/view"
 import { canManage, Message, type Model } from "./model"
+import { denialReason, gatedControl } from "../../kit/session-grants"
+import { lockedControl } from "@maple/views/ui/locked-control"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
@@ -344,18 +346,20 @@ export const detailsSection = (h: H, model: Model): Html => {
 			title: "Billing details",
 			description: ["Printed on every invoice."],
 			framed: false,
-			...(canManage(model) &&
-				profile !== null && {
-					actions: button(
+			...(profile !== null && {
+				actions: gatedControl(h, model, "billing:manage", (isDisabled) =>
+					button(
 						h,
 						{
 							variant: "outline",
 							size: "sm",
-							attributes: [h.OnClick(Message.ClickedEditDetails())],
+							isDisabled,
+							attributes: isDisabled ? [] : [h.OnClick(Message.ClickedEditDetails())],
 						},
 						["Edit"],
 					),
-				}),
+				),
+			}),
 		},
 		[
 			body,
@@ -416,8 +420,19 @@ export const unpaidInvoicesNotice = (h: H, model: Model, timeZone: string): Read
 					? ". Pay it with a card or bank transfer on the invoice page; it updates here once Stripe confirms the payment."
 					: ". An org admin can pay it from this page.",
 			]),
-			...(canManage(model)
+			...(!canManage(model)
 				? [
+						alertAction(h, [
+							lockedControl(
+								h,
+								denialReason("billing:manage"),
+								button(h, { size: "sm", isDisabled: true }, [
+									unpaid.length === 1 ? "Pay invoice" : "Pay oldest invoice",
+								]),
+							),
+						]),
+					]
+				: [
 						alertAction(h, [
 							url === null
 								? button(
@@ -438,8 +453,7 @@ export const unpaidInvoicesNotice = (h: H, model: Model, timeZone: string): Read
 										[unpaid.length === 1 ? "Pay invoice" : "Pay oldest invoice"],
 									),
 						]),
-					]
-				: []),
+					]),
 		]),
 	]
 }
