@@ -37,7 +37,15 @@ import { docsLink } from "../../kit/signal-empty-state"
 import { formatDaysUptime } from "../../kit/uptime/derive"
 import { uptimeDaysStrip } from "../../kit/uptime/view"
 import { emptyActions } from "@maple/views/ui/signal-empty-state"
-import { newStatusPageHref, publicAddress, statusPageHref } from "../shared/commands"
+import {
+	newStatusPageHref,
+	publicAddress,
+	publicPageLink,
+	publicUrl,
+	STATUS_PAGE_BASE_URL,
+	statusPageHref,
+} from "../shared/commands"
+import { openPreviewButton, openPublicPageButton } from "../shared/open-page"
 import {
 	COMPONENT_STATUS_LABEL,
 	COMPONENT_STATUS_TONE,
@@ -48,7 +56,7 @@ import {
 import { windowLine } from "../editor/view-panel"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
-import { openTargetOf, rowMenuId } from "./update"
+import { rowMenuId } from "./update"
 import { gatedControl } from "../../kit/session-grants"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -167,40 +175,19 @@ const lastPublished = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Ht
 	])
 }
 
-/** Edit and Delete for those who may change the page; Open page for everyone, disabled with the reason while it has no address. */
-const pageMenuEntries = (summary: StatusPageSummary, isEditable: boolean): ReadonlyArray<MenuEntry> => {
-	const target = openTargetOf(summary)
-	const open: MenuEntry =
-		target._tag === "Unavailable"
-			? {
-					_tag: "Item",
-					value: "open",
-					label: "Open page",
-					icon: "ExternalLinkIcon",
-					isDisabled: true,
-					tooltip: { content: [target.reason], side: "left" },
-				}
-			: {
-					_tag: "Item",
-					value: "open",
-					label: "Open page",
-					icon: target._tag === "InApp" ? "EyeIcon" : "ExternalLinkIcon",
-				}
-	if (!isEditable) return [open]
-	return [
-		{ _tag: "Item", value: "edit", label: "Edit", icon: "PencilIcon" },
-		open,
-		{ _tag: "Separator" },
-		{ _tag: "Item", value: "delete", label: "Delete", icon: "TrashIcon", variant: "destructive" },
-	]
-}
+/** Edit and Delete, for those who may change the page; opening it is the card's buttons. */
+const PAGE_MENU_ENTRIES: ReadonlyArray<MenuEntry> = [
+	{ _tag: "Item", value: "edit", label: "Edit", icon: "PencilIcon" },
+	{ _tag: "Separator" },
+	{ _tag: "Item", value: "delete", label: "Delete", icon: "TrashIcon", variant: "destructive" },
+]
 
-const pageMenu = (h: H, model: Model, summary: StatusPageSummary, isEditable: boolean): Html => {
+const pageMenu = (h: H, model: Model, summary: StatusPageSummary): Html => {
 	const menuId = rowMenuId(summary.page.id)
 	return rowActionsMenu(h, {
 		slotId: menuId,
 		model: model.rowMenus[menuId] ?? Menu.init(menuId),
-		entries: pageMenuEntries(summary, isEditable),
+		entries: PAGE_MENU_ENTRIES,
 		label: `Actions for ${summary.page.name}`,
 		toParentMessage: (message) => Message.GotRowMenuMessage({ pageId: summary.page.id, message }),
 	})
@@ -236,9 +223,11 @@ const cardHeader = (
 				]),
 			]),
 		]),
-		hstack(h, { gap: "3", align: "center", className: "shrink-0" }, [
+		hstack(h, { gap: "2", align: "center", wrap: true, justify: "end" }, [
 			lastPublished(h, summary, inputs),
-			pageMenu(h, model, summary, isEditable),
+			openPublicPageButton(h, publicPageLink(page, publicUrl(STATUS_PAGE_BASE_URL, page.slug))),
+			openPreviewButton(h, page.id),
+			...(isEditable ? [pageMenu(h, model, summary)] : []),
 		]),
 	])
 }

@@ -59,6 +59,17 @@ export const ReadEditorClock = readClock("ReadStatusPageClock", Message.ReadCloc
 
 export const FetchEditorSession = fetchSessionGrants("FetchStatusPageSession", Message.CompletedFetchSession)
 
+/** The public page in a new tab: a menu item has no `<a>` to carry `target="_blank"`. */
+export const OpenPublicPage = Command.define("OpenStatusPublicPage", {
+	args: { url: Schema.String },
+	messages: [Message.CompletedOpenPublicPage],
+	execute: ({ url }) =>
+		Effect.sync(() => {
+			window.open(url, "_blank", "noopener,noreferrer")
+			return Message.CompletedOpenPublicPage()
+		}),
+})
+
 export const FetchPage = Command.define("FetchStatusPage", {
 	args: { key: Schema.String, pageId: StatusPageId },
 	messages: [Message.CompletedFetchPage],

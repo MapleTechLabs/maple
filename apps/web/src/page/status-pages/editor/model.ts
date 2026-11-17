@@ -203,6 +203,8 @@ export const Model = Schema.Struct({
 	/** Basic settings' Save: Who can view saves once the fields have, so neither reply overwrites the other's page. */
 	savesAccessNext: Schema.Boolean,
 	settingsFailure: Schema.NullOr(LoadFailure),
+	/** The address the last save was refused for, another page having it; shown on the field while it is typed. */
+	takenSlug: Schema.NullOr(Schema.String),
 	isPublishing: Schema.Boolean,
 	breakGlassDialog: Dialog.Model,
 	breakGlassAction: Schema.NullOr(BreakGlassAction),

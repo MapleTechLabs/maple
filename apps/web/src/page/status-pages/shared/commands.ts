@@ -1,4 +1,9 @@
-import { type StatusPageComponentId, StatusPageId, type StatusPageIncidentId } from "@maple/domain"
+import {
+	type StatusPageComponentId,
+	StatusPageId,
+	type StatusPageIncidentId,
+	type StatusPageVisibility,
+} from "@maple/domain"
 import {
 	type StatusPageConfig,
 	type StatusPagePreviewParams,
@@ -272,7 +277,7 @@ export const statusPageHref = (id: StatusPageId, view?: EditorView, section?: Se
 		}),
 	)
 
-/** The page as members read it inside Maple: an internal page's only address. */
+/** The dev preview: the page as members read it inside Maple, whatever its visibility; an internal page's only address. */
 export const statusPageViewHref = (id: StatusPageId): string =>
 	hrefOf(AppRoute.StatusPageView({ pageId: encodePublicId(id) }))
 
@@ -296,3 +301,23 @@ export const canonicalUrl = (baseUrl: string, slug: string, customDomain: string
 
 /** The page's address as text: the full URL when known, its `/s/<slug>` path otherwise. */
 export const publicAddress = (slug: string): string => publicUrl(STATUS_PAGE_BASE_URL, slug) ?? `/s/${slug}`
+
+/** The public page to open, or why there is none: it is internal, a draft, or the stage has no status domain. */
+export type PublicPageLink =
+	| Readonly<{ _tag: "Open"; url: string }>
+	| Readonly<{ _tag: "Unavailable"; reason: string }>
+
+/** `url` is where visitors read the page ({@link publicUrl} or {@link canonicalUrl}), null without a status domain. */
+export const publicPageLink = (
+	page: Readonly<{ visibility: StatusPageVisibility; draft: boolean }>,
+	url: string | null,
+): PublicPageLink => {
+	if (page.visibility === "internal")
+		return {
+			_tag: "Unavailable",
+			reason: "Internal pages are not served publicly. Members read them in the dev preview.",
+		}
+	if (url === null) return { _tag: "Unavailable", reason: "No status domain is configured" }
+	if (page.draft) return { _tag: "Unavailable", reason: "Publish the page to open it" }
+	return { _tag: "Open", url }
+}

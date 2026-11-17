@@ -235,13 +235,29 @@ describe("status page card menu", () => {
 			}),
 		)
 
-	test("Edit opens the editor; Open page opens an internal page in Maple", () => {
-		const model = withPages([summaryOf(statusPage({ visibility: "internal" }))])
+	test("Edit opens the editor", () => {
+		const model = withPages([summaryOf(statusPage())])
 		expect(pick(model, pageId(1), "edit").outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({ url: statusPageHref(pageId(1)), isReplace: false }),
 		)
-		expect(pick(model, pageId(1), "open").outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({ url: statusPageViewHref(pageId(1)), isReplace: false }),
+	})
+
+	test("each card opens its dev preview; an internal page's public page is disabled and says why", () => {
+		scene(
+			{ update: listUpdate, view },
+			given(withPages([summaryOf(statusPage({ visibility: "internal" }))], false)),
+			expectView(role("link", { name: "Open dev preview" })).toHaveAttr(
+				"href",
+				statusPageViewHref(pageId(1)),
+			),
+			expectView(role("button", { name: "Open public page" })).toBeDisabled(),
+			expectView(
+				role("group", {
+					name: "Internal pages are not served publicly. Members read them in the dev preview.",
+				}),
+			).toExist(),
+			// A member who cannot edit gets no actions menu.
+			expectView(role("button", { name: /Actions for/u })).not.toExist(),
 		)
 	})
 

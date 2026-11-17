@@ -43,6 +43,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import { ColorPickerMessage, MountColorPicker } from "@maple/views/ui/color-picker"
 import { MountDialog } from "@maple/views/ui/dialog"
 import { toLoadFailure } from "@maple/views/data/load-failure"
+import { StatusPageSlugTakenError } from "@maple/domain/http"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { statusPageHref, statusPagesHref } from "../shared/commands"
 import { selectionOf } from "../shared/preview"
@@ -2513,25 +2514,41 @@ describe("header", () => {
 		).toContain("FetchStatusPageConfig")
 	})
 
-	test("Open page previews the page full screen in Maple, whatever its visibility, draft state or domain", () => {
-		const models = [
-			{ ...loaded({ tab: "settings" }), publicBaseUrl: "https://status-pr-7.maple.dev" },
-			{
-				...loaded({ page: statusPage({ draft: true, published_at: null }) }),
-				publicBaseUrl: "https://status-pr-7.maple.dev",
-			},
-			{ ...loaded(), publicBaseUrl: "" },
-			loaded({ page: statusPage({ visibility: "password", has_password: true }) }),
-			loaded({ page: statusPage({ visibility: "internal" }) }),
-		]
-		for (const model of models)
-			scene(
-				{ update: pageUpdate, view },
-				given(model),
-				expectView(role("link", { name: "Open page" })).toHaveAttr(
-					"href",
-					`/status-pages/${PUBLIC_ID}/view`,
-				),
+	test("the header has no open button: the menu opens the public page or the dev preview", () => {
+		const pick = (model: Model, value: string) =>
+			pageUpdate(
+				model,
+				Message.GotPageMenuMessage({
+					message: { _tag: "ClickedItem", index: 0, item: { kind: "Item", value } },
+				}),
+			)
+		const published = { ...loaded(), publicBaseUrl: "https://status-pages.maple.dev" }
+		scene(
+			{ update: pageUpdate, view },
+			given(published),
+			expectView(role("link", { name: "Open page" })).not.toExist(),
+			expectView(role("link", { name: "Open public page" })).not.toExist(),
+		)
+		expect(pick(published, "open-public").commands?.at(-1)).toMatchObject({
+			name: "OpenStatusPublicPage",
+			args: { url: "https://status-pages.maple.dev/s/acme-status" },
+		})
+		const internal = {
+			...loaded({ page: statusPage({ visibility: "internal" }) }),
+			publicBaseUrl: "https://status-pages.maple.dev",
+		}
+		expect(names(pick(internal, "open-public").commands)).not.toContain("OpenStatusPublicPage")
+		const draft = {
+			...loaded({ page: statusPage({ draft: true, published_at: null }) }),
+			publicBaseUrl: "https://status-pages.maple.dev",
+		}
+		expect(names(pick(draft, "open-public").commands)).not.toContain("OpenStatusPublicPage")
+		for (const model of [published, internal, draft])
+			expect(pick(model, "open-preview").outMessage).toEqual(
+				PageOutMessage.RequestedNavigation({
+					url: `/status-pages/${PUBLIC_ID}/view`,
+					isReplace: false,
+				}),
 			)
 	})
 })
@@ -2593,7 +2610,7 @@ describe("live screen", () => {
 			expectView(selector("#status-page-public-url")).toHaveValue(
 				"https://status-pr-7.maple.dev/s/acme-status",
 			),
-			expectView(role("link", { name: "Open" })).toHaveAttr(
+			expectView(role("link", { name: "Open public page" })).toHaveAttr(
 				"href",
 				"https://status-pr-7.maple.dev/s/acme-status",
 			),
@@ -2613,7 +2630,7 @@ describe("live screen", () => {
 			given(model),
 			expectView(text("Public address appears once a status domain is configured")).toExist(),
 			expectView(selector("#status-page-public-url")).not.toExist(),
-			expectView(role("link", { name: "Open" })).not.toExist(),
+			expectView(role("link", { name: "Open public page" })).not.toExist(),
 			expectView(role("link", { name: /\/s\/acme-status/u })).not.toExist(),
 			expectView(role("button", { name: "Get break-glass token" })).toExist(),
 		)
@@ -2652,8 +2669,7 @@ describe("live screen", () => {
 			expectView(text(/Visitors can read it now/u)).not.toExist(),
 			expectView(selector("#status-page-public-url")).not.toExist(),
 			expectView(role("link", { name: /\/s\/acme-status/u })).not.toExist(),
-			expectAll(all.role("link", { name: "Open page" })).toHaveCount(2),
-			expectView(role("link", { name: "Open page" })).toHaveAttr(
+			expectView(role("link", { name: "Open dev preview" })).toHaveAttr(
 				"href",
 				`/status-pages/${PUBLIC_ID}/view`,
 			),
@@ -3154,6 +3170,31 @@ describe("settings", () => {
 			change(role("radio", { name: "Public" }), "on"),
 			expectView(role("textbox", { name: "Password" })).not.toExist(),
 			expectView(text("Unsaved changes")).not.toExist(),
+		)
+	})
+
+	test("a taken address shows on the field; the hint gives the full link", () => {
+		const typed = pageUpdate(
+			{ ...loaded(ACCESS), publicBaseUrl: "https://status-pages.maple.dev" },
+			Message.ChangedSetting({ field: "slug", value: "taken" }),
+		).model
+		const refused = pageUpdate(
+			pageUpdate(typed, Message.ClickedSaveSettings()).model,
+			Message.CompletedSaveSettings({
+				result: Result.fail(
+					toLoadFailure(new StatusPageSlugTakenError({ slug: "taken", message: "taken" })),
+				),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(refused),
+			expectView(text("That address is taken. Pick another.")).toExist(),
+			type(role("textbox", { name: "Address" }), "free-one"),
+			expectView(text("That address is taken. Pick another.")).not.toExist(),
+			expectView(
+				text(/Visitors read the page at https:\/\/status-pages\.maple\.dev\/s\/free-one\./u),
+			).toExist(),
 		)
 	})
 

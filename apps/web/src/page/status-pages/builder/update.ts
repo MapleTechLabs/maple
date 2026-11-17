@@ -36,7 +36,7 @@ import {
 	updatePicker,
 } from "../shared/picker"
 import { historyFrom } from "../shared/preview"
-import { slugFromName, slugIssue } from "../shared/slug"
+import { SLUG_TAKEN, SLUG_TAKEN_MESSAGE, slugFromName, slugIssue } from "../shared/slug"
 import {
 	CreateBuilderMonitor,
 	CreateBuilderPage,
@@ -65,8 +65,6 @@ export const NAME_ID = "status-page-builder-name"
 export const SLUG_ID = "status-page-builder-slug"
 export const DOMAIN_ID = "status-page-builder-domain-input"
 
-const SLUG_TAKEN = "status_page_slug_taken"
-
 const monitorsKey = (context: PageContext) =>
 	requestKey(context.orgId, "uptimeMonitors.list", { query: { limit: UPTIME_LIST_LIMIT } })
 
@@ -93,7 +91,7 @@ export const nameIssue = (model: Model): string | null =>
 /** The address's problem: the server's "taken", or what the API would refuse. */
 export const slugError = (model: Model): string | null =>
 	model.takenSlug !== null && model.takenSlug === model.slug
-		? "That address is taken. Pick another."
+		? SLUG_TAKEN_MESSAGE
 		: model.slug === "" && !model.isNameTouched
 			? null
 			: slugIssue(model.slug)

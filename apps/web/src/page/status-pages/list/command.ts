@@ -20,17 +20,6 @@ export const FetchStatusPages = Command.define("FetchStatusPageSummaries", {
 		),
 })
 
-/** The public page in a new tab: a menu item has no `<a>` to carry `target="_blank"`. */
-export const OpenPageInNewTab = Command.define("OpenStatusPageInNewTab", {
-	args: { url: Schema.String },
-	messages: [Message.CompletedOpenPage],
-	execute: ({ url }) =>
-		Effect.sync(() => {
-			window.open(url, "_blank", "noopener,noreferrer")
-			return Message.CompletedOpenPage()
-		}),
-})
-
 export const DeleteListedPage = Command.define("DeleteListedStatusPage", {
 	args: { pageId: StatusPageId },
 	messages: [Message.CompletedDelete],

@@ -14,9 +14,12 @@ import {
 	pageIdFromUrl,
 	SETTINGS_SECTIONS,
 	type SettingsSection,
+	publicPageLink,
 	STATUS_PAGE_BASE_URL,
 	statusPageHref,
+	statusPageViewHref,
 } from "../shared/commands"
+import { OPEN_PREVIEW_VALUE, OPEN_PUBLIC_VALUE } from "../shared/open-page"
 import { emptyComponentForm, emptyIncidentForm } from "../shared/form"
 import { initGroupPicker } from "../shared/group-picker"
 import { emptyPicker } from "../shared/picker"
@@ -24,6 +27,7 @@ import { historyFrom, type PreviewSelection } from "../shared/preview"
 import {
 	FetchEditorPreview,
 	FetchEditorSession,
+	OpenPublicPage,
 	PREVIEW_FIELD_TARGETS,
 	ReadEditorClock,
 	RevealEditorField,
@@ -139,6 +143,7 @@ import {
 	checkCustomDomain,
 	checkedCustomDomain,
 	confirmRemoveCustomDomain,
+	pageUrlOf,
 	readCustomDomain,
 	removeCustomDomainDialog,
 	removedCustomDomain,
@@ -267,6 +272,7 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		isSavingSettings: false,
 		savesAccessNext: false,
 		settingsFailure: null,
+		takenSlug: null,
 		isPublishing: false,
 		breakGlassDialog: Dialog.init("status-page-break-glass", "alert-dialog"),
 		breakGlassAction: null,
@@ -513,6 +519,18 @@ const updatePageMenu = (model: Model, message: Menu.Message): Return => {
 		outMessage: PageOutMessage.RequestedNavigation({ url, isReplace: false }),
 	})
 	switch (result.outMessage.value) {
+		case OPEN_PUBLIC_VALUE:
+			return Option.match(pageOf(next), {
+				onNone: () => ({ model: next, commands }),
+				onSome: (page): Return => {
+					const link = publicPageLink(page, pageUrlOf(next, page))
+					return link._tag === "Open"
+						? { model: next, commands: [...commands, OpenPublicPage({ url: link.url })] }
+						: { model: next, commands }
+				},
+			})
+		case OPEN_PREVIEW_VALUE:
+			return navigate(statusPageViewHref(model.pageId))
 		case "break-glass":
 			return navigate(
 				`${statusPageHref(model.pageId, "settings", "advanced")}#status-page-settings-break-glass`,
@@ -579,6 +597,7 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 				whenJson(context, "Supersede"),
 			),
 		GotPageMenuMessage: ({ message: child }) => updatePageMenu(model, child),
+		CompletedOpenPublicPage: () => ({ model }),
 		// A reveal happens once: a later remount of the same row (back from another section) stays put.
 		CompletedFocus: () => ({ model: { ...model, revealComponentId: null } }),
 		// Preview and selection

@@ -16,7 +16,14 @@ import { dangerRow, dangerZone } from "../../kit/danger-zone"
 import { navShell } from "../../kit/nav-shell"
 import { saveBar } from "../../kit/save-bar"
 import { adminOnlyNote, settingsSection, settingsSections } from "../../kit/settings-section"
-import { publicAddress, SETTINGS_SECTIONS, type SettingsSection, statusPageHref } from "../shared/commands"
+import { SLUG_TAKEN_MESSAGE } from "../shared/slug"
+import {
+	publicAddress,
+	publicUrl,
+	SETTINGS_SECTIONS,
+	type SettingsSection,
+	statusPageHref,
+} from "../shared/commands"
 import { selectField, textareaField, textField } from "../shared/fields"
 import {
 	hasAppearanceIssues,
@@ -101,8 +108,11 @@ const pageSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm)
 					value: form.slug,
 					isMono: true,
 					isDisabled: isReadOnly,
-					error: issues.slug,
-					hint: `The last part of the page's Maple URL: ${publicAddress(form.slug)}. Changing it moves the page and the old URL stops working. A custom domain, below, serves the page at your own address instead.`,
+					error:
+						model.takenSlug !== null && model.takenSlug === form.slug
+							? SLUG_TAKEN_MESSAGE
+							: issues.slug,
+					hint: `Visitors read the page at ${publicUrl(model.publicBaseUrl, form.slug) ?? `/s/${form.slug}`}. Each address belongs to one page across Maple; changing it moves the page and the old address stops working. A custom domain, below, serves the page at your own address instead.`,
 					onInput: (value) => Message.ChangedSetting({ field: "slug", value }),
 				}),
 				textareaField(h, {

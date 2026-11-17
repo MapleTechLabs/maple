@@ -8,15 +8,9 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import type { AppRoute } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import { STATUS_PAGE_BASE_URL, publicUrl, statusPageHref, statusPageViewHref } from "../shared/commands"
+import { statusPageHref } from "../shared/commands"
 import type { StatusPageSummary } from "../shared/derive"
-import {
-	DeleteListedPage,
-	FetchListSession,
-	FetchStatusPages,
-	OpenPageInNewTab,
-	ReadListClock,
-} from "./command"
+import { DeleteListedPage, FetchListSession, FetchStatusPages, ReadListClock } from "./command"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import { acceptGrants } from "../../kit/session-grants"
@@ -57,21 +51,6 @@ export const init = (_route: ListRoute, context: PageContext): Return => {
 
 export const rowMenuId = (pageId: StatusPageId): string => `status-pages-row-menu-${pageId}`
 
-/** Where "Open page" goes: Maple's own view for an internal page, the public address for a published one. */
-export type OpenTarget =
-	| Readonly<{ _tag: "InApp"; url: string }>
-	| Readonly<{ _tag: "External"; url: string }>
-	| Readonly<{ _tag: "Unavailable"; reason: string }>
-
-export const openTargetOf = (summary: StatusPageSummary): OpenTarget => {
-	const page = summary.page
-	if (page.visibility === "internal") return { _tag: "InApp", url: statusPageViewHref(page.id) }
-	const url = publicUrl(STATUS_PAGE_BASE_URL, page.slug)
-	if (url === null) return { _tag: "Unavailable", reason: "No status domain is configured yet" }
-	if (page.draft) return { _tag: "Unavailable", reason: "Publish the page to open it" }
-	return { _tag: "External", url }
-}
-
 const summaryOf = (model: Model, pageId: StatusPageId): Option.Option<StatusPageSummary> =>
 	Arr.findFirst(
 		AsyncData.getOrElse(model.pages.data, () => []),
@@ -98,17 +77,10 @@ const liftDeleteDialog = (model: Model, step: ReturnType<typeof Dialog.update>):
 const pickedRowAction = (model: Model, pageId: StatusPageId, value: string): Return =>
 	Option.match(summaryOf(model, pageId), {
 		onNone: () => ({ model }),
-		onSome: (summary): Return => {
+		onSome: (): Return => {
 			switch (value) {
 				case "edit":
 					return navigate(model, statusPageHref(pageId))
-				case "open": {
-					const target = openTargetOf(summary)
-					if (target._tag === "InApp") return navigate(model, target.url)
-					if (target._tag === "External")
-						return { model, commands: [OpenPageInNewTab({ url: target.url })] }
-					return { model }
-				}
 				case "delete":
 					return canManage(model)
 						? liftDeleteDialog(
@@ -180,7 +152,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		ClickedRetry: () => request(model, context, "Supersede"),
 		GotRowMenuMessage: ({ pageId, message: child }) => updateRowMenu(model, pageId, child),
-		CompletedOpenPage: () => ({ model }),
 		ClickedConfirmDelete: () => confirmDelete(model),
 		CompletedDelete: ({ result }) => deleted(model, context, result),
 		GotDeleteDialogMessage: ({ message: child }) =>
