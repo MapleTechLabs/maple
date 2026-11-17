@@ -1155,6 +1155,27 @@ export const SecurityAuditLogSearch = Schema.Struct({
 })
 export type SecurityAuditLogSearch = typeof SecurityAuditLogSearch.Type
 
+/** The Security hub's Cloud findings filters; each absent one shows everything (status: active). */
+export const SecurityCloudSearch = Schema.Struct({
+	status: StringParam,
+	severity: StringParam,
+	source: StringParam,
+	account: StringParam,
+	region: StringParam,
+	/** Matched against a finding's title, type and resource id. */
+	q: StringParam,
+})
+export type SecurityCloudSearch = typeof SecurityCloudSearch.Type
+
+/** One cloud finding: its connection, region, service and the service's id for it. */
+export const SecurityCloudFindingSearch = Schema.Struct({
+	connection: StringParam,
+	region: StringParam,
+	source: StringParam,
+	id: StringParam,
+})
+export type SecurityCloudFindingSearch = typeof SecurityCloudFindingSearch.Type
+
 /**
  * `/security/detections/new`: `detectionId` edits that detection. The rest prefill a new one: a
  * ready-made `template`, or the audit log's filters. The form drops a value it has no name for.

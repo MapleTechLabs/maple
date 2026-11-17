@@ -195,19 +195,27 @@ export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
 		() => Option.none(),
 	)
 
+const isStatusPageRoute = AppRoute.isAnyOf(["StatusPages", "StatusPageNew", "StatusPage", "StatusPageView"])
+
 const isCostRoute = AppRoute.isAnyOf(["Cost", "CostBudgets", "CostBudgetNew"])
 
 const isProductAnalyticsRoute = AppRoute.isAnyOf(["ProductAnalytics"])
 
+const isCloudSecurityRoute = AppRoute.isAnyOf(["SecurityCloud", "SecurityCloudFinding"])
+
 /**
- * A route an org outside its rollout cannot open goes home (`/cost` without `cloudCost`,
- * `/product-analytics` without `productAnalytics`).
+ * A route an org outside its rollout cannot open goes home (`/status-pages` without `statusPages`,
+ * `/cost` without `cloudCost`, `/product-analytics` without `productAnalytics`, `/security/cloud`
+ * without `cloudSecurity`).
  */
 export const flaggedRouteRedirect = (
 	route: AppRoute,
-	flags: Pick<OrganizationFeatureFlags, "cloudCost" | "productAnalytics">,
+	flags: Pick<OrganizationFeatureFlags, "statusPages" | "cloudCost" | "productAnalytics" | "cloudSecurity">,
 ): Option.Option<Redirect> =>
-	(!flags.cloudCost && isCostRoute(route)) || (!flags.productAnalytics && isProductAnalyticsRoute(route))
+	(!flags.statusPages && isStatusPageRoute(route)) ||
+	(!flags.cloudCost && isCostRoute(route)) ||
+	(!flags.productAnalytics && isProductAnalyticsRoute(route)) ||
+	(!flags.cloudSecurity && isCloudSecurityRoute(route))
 		? redirect(AppRoute.Home({ search: {} }), true)
 		: Option.none()
 
@@ -220,6 +228,8 @@ const isSecurityRoute = AppRoute.isAnyOf([
 	"SecurityRuntimes",
 	"SecurityDependencies",
 	"SecurityAuditLog",
+	"SecurityCloud",
+	"SecurityCloudFinding",
 	"SecurityDetections",
 	"SecurityDetectionNew",
 	"SecurityRun",

@@ -53,6 +53,8 @@ export const AwsConnections = PG.table("aws_connections", {
 	indexes: [
 		PG.index("aws_connections_source_idx", ["sourceId"]),
 		PG.uniqueIndex("aws_connections_org_account_idx", ["orgId", "accountId"]),
+		// What the cloud security tables reference, so their rows always name a connection of their own org.
+		PG.uniqueIndex("aws_connections_org_id_idx", ["orgId", "id"]),
 		PG.uniqueIndex("aws_connections_stream_secret_hash_idx", ["streamSecretHash"]),
 	],
 	foreignKeys: [

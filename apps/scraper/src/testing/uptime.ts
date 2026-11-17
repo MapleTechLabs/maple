@@ -25,6 +25,7 @@ export const mkUptimeTarget = (
 		readonly ingestKey?: string
 		readonly name?: string
 		readonly config?: Record<string, unknown>
+		readonly revision?: number
 	} = {},
 ): UptimeProbeTarget =>
 	decodeTarget({
@@ -35,6 +36,7 @@ export const mkUptimeTarget = (
 		intervalSeconds: options.intervalSeconds ?? 30,
 		config: options.config ?? httpConfig(),
 		ingestKey: options.ingestKey ?? "maple_pk_test",
+		...(options.revision === undefined ? undefined : { revision: options.revision }),
 	})
 
 /** A fixed DNS: no test reaches a real resolver. Unknown names fail like NXDOMAIN. */

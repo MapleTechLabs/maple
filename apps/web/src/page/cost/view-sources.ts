@@ -4,6 +4,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "@maple/views/ui/button"
+import { lockedControl } from "@maple/views/ui/locked-control"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { panel, panelHeader } from "@maple/views/ui/panel"
@@ -45,23 +46,41 @@ const actionName = (action: string, source: CostSourceSummary, isRepeated: boole
 	isRepeated ? `${action} ${accountOf(source)}` : action
 
 /** A row's action. Its accessible name says whose source it acts on: two rows can offer the same one. */
-const rowButton = (h: H, label: string, name: string, onClick: Message, isBusy: boolean): Html =>
-	button(
+const rowButton = (
+	h: H,
+	label: string,
+	name: string,
+	onClick: Message,
+	options: Readonly<{ isBusy: boolean; lockReason: string | null }>,
+): Html => {
+	const control = button(
 		h,
 		{
 			variant: "ghost",
 			size: "sm",
-			isDisabled: isBusy,
+			isDisabled: options.isBusy || options.lockReason !== null,
 			attributes: [h.AriaLabel(name), h.OnClick(onClick)],
 		},
 		[label],
 	)
+	return options.lockReason === null ? control : lockedControl(h, options.lockReason, control)
+}
 
 /** Where the source's connection is changed: an account's Cost module, a team's token, an organization's authorization. */
-const connectionLink = (h: H, name: string, href: string): Html =>
-	linkButton(h, { variant: "ghost", size: "sm", href, attributes: [h.AriaLabel(name)] }, [
-		"Manage connection",
-	])
+const connectionLink = (h: H, name: string, href: string, lockReason: string | null): Html =>
+	lockReason === null
+		? linkButton(h, { variant: "ghost", size: "sm", href, attributes: [h.AriaLabel(name)] }, [
+				"Manage connection",
+			])
+		: lockedControl(
+				h,
+				lockReason,
+				button(
+					h,
+					{ variant: "ghost", size: "sm", isDisabled: true, attributes: [h.AriaLabel(name)] },
+					["Manage connection"],
+				),
+			)
 
 /**
  * What a row offers: an AWS source is its connection's, a pasted credential's is replaced or
@@ -72,7 +91,7 @@ const connectionLink = (h: H, name: string, href: string): Html =>
 const actions = (
 	h: H,
 	source: CostSourceSummary,
-	options: Readonly<{ isBusy: boolean; isRepeated: boolean }>,
+	options: Readonly<{ isBusy: boolean; isRepeated: boolean; lockReason: string | null }>,
 ): ReadonlyArray<Html> => {
 	const { name } = COST_PROVIDERS[source.provider]
 	const named = (action: string) => actionName(action, source, options.isRepeated)
@@ -81,9 +100,10 @@ const actions = (
 		"Remove",
 		named(`Remove ${name} source`),
 		Message.ClickedRemoveSource({ sourceId: source.id }),
-		options.isBusy,
+		options,
 	)
-	const manage = (href: string) => connectionLink(h, named(`Manage ${name} connection`), href)
+	const manage = (href: string) =>
+		connectionLink(h, named(`Manage ${name} connection`), href, options.lockReason)
 	switch (source.provider) {
 		case "openrouter":
 		case "cloudflare":
@@ -97,7 +117,7 @@ const actions = (
 					// "Replace key" as "Replace OpenRouter key".
 					named(Str.replace("Replace", `Replace ${name}`)(label)),
 					Message.ClickedReplaceCredential({ provider: source.provider }),
-					options.isBusy,
+					options,
 				),
 				remove,
 			]
@@ -167,7 +187,12 @@ const sourceRow = (
 	source: CostSourceSummary,
 	nowMs: number,
 	timeZone: string,
-	options: Readonly<{ isBusy: boolean; canManage: boolean; isRepeated: boolean }>,
+	options: Readonly<{
+		isBusy: boolean
+		showsActions: boolean
+		lockReason: string | null
+		isRepeated: boolean
+	}>,
 ): Html => {
 	const provider: CostProviderEntry = COST_PROVIDERS[source.provider]
 	const status = STATUS[source.status]
@@ -192,7 +217,7 @@ const sourceRow = (
 						]),
 						badge(h, { variant: status.variant, size: "sm" }, [status.label]),
 					]),
-					...(options.canManage
+					...(options.showsActions
 						? [hstack(h, { gap: "1", className: "-my-1 shrink-0" }, actions(h, source, options))]
 						: []),
 				]),
@@ -222,8 +247,10 @@ export const sourcesSection = (
 	options: Readonly<{
 		/** A credential write is in flight: the row actions wait for it. */
 		isBusy: boolean
-		/** The viewer may replace and remove sources; without it no such action is offered. */
-		canManage: boolean
+		/** False until the viewer's grants are read. */
+		showsActions: boolean
+		/** Why the viewer may not replace or remove sources: the row actions show disabled with it. */
+		lockReason: string | null
 	}>,
 ): Html =>
 	panel(h, {}, [

@@ -22,6 +22,7 @@ import * as TimedHttpClient from "./TimedHttpClient"
 import { telemetryLayer } from "./Telemetry"
 import { UptimeDnsProbe } from "./UptimeDnsProbe"
 import { UptimeHttpProbe } from "./UptimeHttpProbe"
+import { UptimeMultiStepProbe } from "./UptimeMultiStepProbe"
 import { UptimeProber } from "./UptimeProber"
 import { UptimeRegistry } from "./UptimeRegistry"
 import { UptimeScheduler } from "./UptimeScheduler"
@@ -35,12 +36,15 @@ const ScrapeLive = ScrapeScheduler.layer.pipe(
 	Layer.provide(Layer.mergeAll(OtlpIngest.layer, TargetFetcher.layer)),
 )
 
+const HttpProbeLive = UptimeHttpProbe.layer.pipe(Layer.provide(TimedHttpClient.layer))
+
 const UptimeLive = UptimeScheduler.layer.pipe(
 	Layer.provide(Layer.mergeAll(UptimeRegistry.layer, UptimeReporter.layer, UptimeProber.layer)),
 	Layer.provide(
 		Layer.mergeAll(
 			// HTTP checks dial through node:https so each phase is timed; the rest stays on fetch.
-			UptimeHttpProbe.layer.pipe(Layer.provide(TimedHttpClient.layer)),
+			// Multi-step checks send each step through the same HTTP probe.
+			UptimeMultiStepProbe.layer.pipe(Layer.provideMerge(HttpProbeLive)),
 			UptimeTcpProbe.layer,
 			UptimeDnsProbe.layer,
 			UptimeSpanExporter.layer,

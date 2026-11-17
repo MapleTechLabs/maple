@@ -334,6 +334,28 @@ describe("prompt cache prefix under the run-status line", () => {
 	)
 })
 
+describe("OpenRouter provider order", () => {
+	it.live("tries the configured providers first and still falls back", () =>
+		Effect.gen(function* () {
+			const captured = yield* captureRequest(
+				{ ...openRouterEnv, MAPLE_OPENROUTER_PROVIDER_ORDER: " Morph, deepinfra ," },
+				tags,
+				resolveReviewModel,
+			)
+
+			expect(captured.body.provider).toEqual({ order: ["morph", "deepinfra"], allow_fallbacks: true })
+		}),
+	)
+
+	it.live("leaves routing to OpenRouter when no order is set", () =>
+		Effect.gen(function* () {
+			const captured = yield* captureRequest(openRouterEnv, tags)
+
+			expect(captured.body).not.toHaveProperty("provider")
+		}),
+	)
+})
+
 describe("reasoning effort", () => {
 	it.live("sends no reasoning field for triage", () =>
 		Effect.gen(function* () {

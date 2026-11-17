@@ -97,13 +97,16 @@ describe("alerts hub, on-call schedules", () => {
 		)
 	})
 
-	test("a member sees the schedules but cannot create, edit or delete one", () => {
+	test("a member sees the schedules with create, edit and delete locked", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(onTab("on-call", MEMBER, SCHEDULES)),
 			expectView(text("Checkout primary")).toExist(),
 			expectView(role("link", { name: "New schedule" })).not.toExist(),
-			expectView(role("button", { name: "Actions for Checkout primary" })).not.toExist(),
+			expectView(role("button", { name: "New schedule" })).toBeDisabled(),
+			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
+			// The row menu stays, its items disabled with the same reason.
+			expectView(role("button", { name: "Actions for Checkout primary" })).toExist(),
 		)
 	})
 

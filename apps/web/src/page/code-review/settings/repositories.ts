@@ -16,6 +16,8 @@ import { searchInput } from "@maple/views/ui/search-input"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { textLink } from "@maple/views/ui/text-link"
+import { lockedControl } from "@maple/views/ui/locked-control"
+import { denialReason } from "../../kit/session-grants"
 
 export const RepoFilter = Schema.Literals(["all", "reviewed", "off"])
 
@@ -87,6 +89,22 @@ const repositoryName = <M>(h: HtmlBuilder<M>, fullName: string): Html => {
 	])
 }
 
+/** The switch as is for an editor, else locked with the denial as its tooltip. */
+const lockedUnless = <M>(
+	h: HtmlBuilder<M>,
+	canEdit: boolean,
+	parts: ReadonlyArray<Html>,
+): ReadonlyArray<Html> =>
+	canEdit
+		? parts
+		: [
+				lockedControl(
+					h,
+					denialReason("code_review:configure"),
+					hstack(h, { as: "span", align: "center" }, parts),
+				),
+			]
+
 const repositoryRow = <M>(h: HtmlBuilder<M>, repo: GithubRepoSummary, options: RepoListOptions<M>): Html => {
 	const id = `code-review-repo-${repo.id}`
 	const isEnabled = options.isEnabled(repo)
@@ -137,15 +155,19 @@ const repositoryRow = <M>(h: HtmlBuilder<M>, repo: GithubRepoSummary, options: R
 				// Icon-only below sm, so a phone row still shows the repository's name.
 				[icon(h, "GearIcon"), h.span([h.Class("max-sm:hidden")], ["Configure"])],
 			),
-			...Switch.switchControl(h, {
-				id: `${id}-switch`,
-				inputId: id,
-				isChecked: isEnabled,
-				isDisabled: !options.canEdit,
-				ariaLabel: `Review pull requests on ${repo.fullName}`,
-				// Ignored while a change is in flight, rather than disabled, which would drop focus.
-				onToggle: options.busy.includes(repo.id) ? undefined : options.onToggle(repo),
-			}),
+			...lockedUnless(
+				h,
+				options.canEdit,
+				Switch.switchControl(h, {
+					id: `${id}-switch`,
+					inputId: id,
+					isChecked: isEnabled,
+					isDisabled: !options.canEdit,
+					ariaLabel: `Review pull requests on ${repo.fullName}`,
+					// Ignored while a change is in flight, rather than disabled, which would drop focus.
+					onToggle: options.busy.includes(repo.id) ? undefined : options.onToggle(repo),
+				}),
+			),
 		],
 	)
 }

@@ -35,6 +35,7 @@ import {
 	StatusPageIncidentNotFoundError,
 	StatusPageNotFoundError,
 	StatusPagePersistenceError,
+	StatusPagesDisabledError,
 	StatusPageSlugTakenError,
 	StatusPageValidationError,
 } from "../status-pages"
@@ -1123,6 +1124,7 @@ const [
 	slugTaken,
 	conflict,
 	persistence,
+	disabled,
 	customDomainNotFound,
 	customDomainTaken,
 	customDomainsUnavailable,
@@ -1134,6 +1136,7 @@ const [
 	StatusPageSlugTakenError,
 	StatusPageConflictError,
 	StatusPagePersistenceError,
+	StatusPagesDisabledError,
 	StatusPageCustomDomainNotFoundError,
 	StatusPageCustomDomainTakenError,
 	StatusPageCustomDomainsUnavailableError,
@@ -1173,7 +1176,7 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 		HttpApiEndpoint.get("list", "/", {
 			query: ListQuery,
 			success: StatusPageList,
-			error: [V2ParameterInvalid.schema, persistence],
+			error: [V2ParameterInvalid.schema, persistence, disabled],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "listStatusPages",
@@ -1187,7 +1190,7 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 		HttpApiEndpoint.post("create", "/", {
 			payload: V2StatusPageCreateParams,
 			success: V2StatusPage,
-			error: [V2InsufficientPermissions.schema, validation, slugTaken, persistence],
+			error: [V2InsufficientPermissions.schema, validation, slugTaken, persistence, disabled],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "createStatusPage",
@@ -1200,7 +1203,7 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 		HttpApiEndpoint.post("preview", "/preview", {
 			payload: StatusPagePreviewParams,
 			success: StatusPagePublicSnapshot,
-			error: [V2ParameterInvalid.schema, validation, persistence],
+			error: [V2ParameterInvalid.schema, validation, persistence, disabled],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "previewStatusPage",
@@ -1214,7 +1217,7 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 		HttpApiEndpoint.get("retrieve", "/:id", {
 			params: pageParams,
 			success: V2StatusPage,
-			error: [pageNotFound, persistence],
+			error: [pageNotFound, persistence, disabled],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "getStatusPage",
@@ -1228,7 +1231,7 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 		HttpApiEndpoint.get("view", "/:id/view", {
 			params: pageParams,
 			success: StatusPagePublicSnapshot,
-			error: [pageNotFound, persistence],
+			error: [pageNotFound, persistence, disabled],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "viewStatusPage",
@@ -1243,7 +1246,14 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 			params: pageParams,
 			payload: V2StatusPageUpdateParams,
 			success: V2StatusPage,
-			error: [V2InsufficientPermissions.schema, pageNotFound, validation, slugTaken, persistence],
+			error: [
+				V2InsufficientPermissions.schema,
+				pageNotFound,
+				validation,
+				slugTaken,
+				persistence,
+				disabled,
+			],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "updateStatusPage",
@@ -1256,7 +1266,7 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 		HttpApiEndpoint.delete("delete", "/:id", {
 			params: pageParams,
 			success: V2StatusPageDeleteResponse,
-			error: [V2InsufficientPermissions.schema, pageNotFound, persistence],
+			error: [V2InsufficientPermissions.schema, pageNotFound, persistence, disabled],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "deleteStatusPage",
@@ -1269,7 +1279,7 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 		HttpApiEndpoint.post("publish", "/:id/publish", {
 			params: pageParams,
 			success: V2StatusPagePublishResult,
-			error: [V2InsufficientPermissions.schema, pageNotFound, persistence],
+			error: [V2InsufficientPermissions.schema, pageNotFound, persistence, disabled],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "publishStatusPage",
@@ -1282,7 +1292,7 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 		HttpApiEndpoint.post("rotateBreakGlass", "/:id/rotate_break_glass", {
 			params: pageParams,
 			success: V2StatusPageBreakGlassToken,
-			error: [V2InsufficientPermissions.schema, pageNotFound, persistence],
+			error: [V2InsufficientPermissions.schema, pageNotFound, persistence, disabled],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "rotateStatusPageBreakGlassToken",
@@ -1295,7 +1305,7 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 		HttpApiEndpoint.delete("revokeBreakGlass", "/:id/break_glass", {
 			params: pageParams,
 			success: V2StatusPage,
-			error: [V2InsufficientPermissions.schema, pageNotFound, persistence],
+			error: [V2InsufficientPermissions.schema, pageNotFound, persistence, disabled],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "revokeStatusPageBreakGlassToken",
@@ -1309,7 +1319,7 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 			params: pageParams,
 			payload: V2StatusPagePasswordParams,
 			success: V2StatusPage,
-			error: [V2InsufficientPermissions.schema, pageNotFound, validation, persistence],
+			error: [V2InsufficientPermissions.schema, pageNotFound, validation, persistence, disabled],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "setStatusPagePassword",
@@ -1322,7 +1332,7 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 		HttpApiEndpoint.delete("removePassword", "/:id/password", {
 			params: pageParams,
 			success: V2StatusPage,
-			error: [V2InsufficientPermissions.schema, pageNotFound, validation, persistence],
+			error: [V2InsufficientPermissions.schema, pageNotFound, validation, persistence, disabled],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "removeStatusPagePassword",
@@ -1335,7 +1345,7 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 		HttpApiEndpoint.get("getCustomDomain", "/:id/custom_domain", {
 			params: pageParams,
 			success: V2StatusPageCustomDomain,
-			error: [pageNotFound, persistence],
+			error: [pageNotFound, persistence, disabled],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "getStatusPageCustomDomain",
@@ -1357,6 +1367,7 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 				customDomainTaken,
 				customDomainsUnavailable,
 				persistence,
+				disabled,
 			],
 		}).annotateMerge(
 			OpenApi.annotations({
@@ -1370,7 +1381,13 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 		HttpApiEndpoint.delete("removeCustomDomain", "/:id/custom_domain", {
 			params: pageParams,
 			success: V2StatusPageCustomDomain,
-			error: [V2InsufficientPermissions.schema, pageNotFound, customDomainNotFound, persistence],
+			error: [
+				V2InsufficientPermissions.schema,
+				pageNotFound,
+				customDomainNotFound,
+				persistence,
+				disabled,
+			],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "removeStatusPageCustomDomain",
@@ -1389,6 +1406,7 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 				customDomainNotFound,
 				customDomainsUnavailable,
 				persistence,
+				disabled,
 			],
 		}).annotateMerge(
 			OpenApi.annotations({
@@ -1402,7 +1420,7 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 		HttpApiEndpoint.get("getConfig", "/:id/config", {
 			params: pageParams,
 			success: StatusPageConfig,
-			error: [pageNotFound, persistence],
+			error: [pageNotFound, persistence, disabled],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "getStatusPageConfig",
@@ -1426,6 +1444,7 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 				slugTaken,
 				conflict,
 				persistence,
+				disabled,
 			],
 		})
 			// A misspelt key would otherwise be dropped and its field reset to the default.
@@ -1443,7 +1462,7 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 			params: pageParams,
 			query: ListQuery,
 			success: StatusPageComponentList,
-			error: [V2ParameterInvalid.schema, pageNotFound, persistence],
+			error: [V2ParameterInvalid.schema, pageNotFound, persistence, disabled],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "listStatusPageComponents",
@@ -1458,7 +1477,7 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 			params: pageParams,
 			payload: V2StatusPageComponentCreateParams,
 			success: V2StatusPageComponent,
-			error: [V2InsufficientPermissions.schema, pageNotFound, validation, persistence],
+			error: [V2InsufficientPermissions.schema, pageNotFound, validation, persistence, disabled],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "createStatusPageComponent",
@@ -1472,7 +1491,7 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 			params: pageParams,
 			payload: V2StatusPageComponentReorderParams,
 			success: StatusPageComponentList,
-			error: [V2InsufficientPermissions.schema, pageNotFound, validation, persistence],
+			error: [V2InsufficientPermissions.schema, pageNotFound, validation, persistence, disabled],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "reorderStatusPageComponents",
@@ -1492,6 +1511,7 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 				componentNotFound,
 				validation,
 				persistence,
+				disabled,
 			],
 		}).annotateMerge(
 			OpenApi.annotations({
@@ -1511,6 +1531,7 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 				componentNotFound,
 				validation,
 				persistence,
+				disabled,
 			],
 		}).annotateMerge(
 			OpenApi.annotations({
@@ -1535,7 +1556,7 @@ export class V2StatusPageIncidentsApiGroup extends HttpApiGroup.make("statusPage
 		HttpApiEndpoint.get("list", "/", {
 			query: IncidentsQuery,
 			success: StatusPageIncidentList,
-			error: [V2ParameterInvalid.schema, pageNotFound, persistence],
+			error: [V2ParameterInvalid.schema, pageNotFound, persistence, disabled],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "listStatusPageIncidents",
@@ -1549,7 +1570,7 @@ export class V2StatusPageIncidentsApiGroup extends HttpApiGroup.make("statusPage
 		HttpApiEndpoint.post("create", "/", {
 			payload: V2StatusPageIncidentCreateParams,
 			success: V2StatusPageIncident,
-			error: [pageNotFound, validation, persistence],
+			error: [pageNotFound, validation, persistence, disabled],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "createStatusPageIncident",
@@ -1563,7 +1584,7 @@ export class V2StatusPageIncidentsApiGroup extends HttpApiGroup.make("statusPage
 		HttpApiEndpoint.get("retrieve", "/:id", {
 			params: { id: StatusPageIncidentPublicId },
 			success: V2StatusPageIncident,
-			error: [incidentNotFound, persistence],
+			error: [incidentNotFound, persistence, disabled],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "getStatusPageIncident",
@@ -1578,7 +1599,7 @@ export class V2StatusPageIncidentsApiGroup extends HttpApiGroup.make("statusPage
 			params: { id: StatusPageIncidentPublicId },
 			payload: V2StatusPageIncidentUpdateParams,
 			success: V2StatusPageIncident,
-			error: [incidentNotFound, pageNotFound, validation, persistence],
+			error: [incidentNotFound, pageNotFound, validation, persistence, disabled],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "updateStatusPageIncident",
@@ -1592,7 +1613,7 @@ export class V2StatusPageIncidentsApiGroup extends HttpApiGroup.make("statusPage
 		HttpApiEndpoint.delete("delete", "/:id", {
 			params: { id: StatusPageIncidentPublicId },
 			success: V2StatusPageIncidentDeleteResponse,
-			error: [incidentNotFound, pageNotFound, validation, persistence],
+			error: [incidentNotFound, pageNotFound, validation, persistence, disabled],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "deleteStatusPageIncident",
@@ -1607,7 +1628,7 @@ export class V2StatusPageIncidentsApiGroup extends HttpApiGroup.make("statusPage
 			params: { id: StatusPageIncidentPublicId },
 			payload: V2StatusPageIncidentPostUpdateParams,
 			success: V2StatusPageIncident,
-			error: [incidentNotFound, pageNotFound, validation, persistence],
+			error: [incidentNotFound, pageNotFound, validation, persistence, disabled],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "postStatusPageIncidentUpdate",

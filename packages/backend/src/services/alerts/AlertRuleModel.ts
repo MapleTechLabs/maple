@@ -284,9 +284,13 @@ export const MANAGED_RULE_PLAN = new CompiledAlertQueryPlan({
 	noDataBehavior: "skip",
 })
 
+/** What an uptime rule observes: a down monitor, and an HTTPS certificate inside its warning window. */
+export const UPTIME_OBSERVED_VALUE = { down: 1, certificateExpiring: 0.5, healthy: 0 } as const
+
 /**
- * The `alert_rules` columns of a monitor's backing rule: down (1) breaches, one check opens
- * and one healthy check resolves. Scoped to the monitor's service so links follow it.
+ * The `alert_rules` columns of a monitor's backing rule: down (1) is critical, an expiring
+ * certificate (0.5) a warning; one check opens and one healthy check resolves. Scoped to the
+ * monitor's service so links follow it.
  */
 export const uptimeRuleFields = (monitor: {
 	readonly name: string
@@ -296,8 +300,15 @@ export const uptimeRuleFields = (monitor: {
 }) => {
 	const thresholds: AlertThresholds = [
 		{
+			severity: "warning",
+			value: UPTIME_OBSERVED_VALUE.certificateExpiring,
+			upper: null,
+			recoveryValue: null,
+			destinationIds: [...monitor.destinationIds],
+		},
+		{
 			severity: "critical",
-			value: 1,
+			value: UPTIME_OBSERVED_VALUE.down,
 			upper: null,
 			recoveryValue: null,
 			destinationIds: [...monitor.destinationIds],
@@ -317,7 +328,7 @@ export const uptimeRuleFields = (monitor: {
 		groupBy: null,
 		signalType: "uptime",
 		comparator: "gte",
-		threshold: 1,
+		threshold: UPTIME_OBSERVED_VALUE.certificateExpiring,
 		thresholdUpper: null,
 		thresholdsJson: thresholds,
 		windowMinutes: 1,

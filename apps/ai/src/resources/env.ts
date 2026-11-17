@@ -23,6 +23,8 @@ export const aiConfiguredEnv = (input: {
 		optionalPlain("MAPLE_TRIAGE_MODEL_OPENROUTER"),
 		optionalPlain("MAPLE_TRIAGE_MODEL_WORKERS_AI"),
 		optionalPlain("MAPLE_REVIEW_MODEL_OPENROUTER"),
+		// Providers OpenRouter tries first, e.g. `morph` to use an org-wide BYOK key.
+		optionalPlain("MAPLE_OPENROUTER_PROVIDER_ORDER"),
 		Secrets.OpenRouterApiKey.optional,
 		// Decision model, on Workers AI via the gateway binding (`layerDecisionModel`).
 		optionalPlain("MAPLE_DECISION_MODEL"),

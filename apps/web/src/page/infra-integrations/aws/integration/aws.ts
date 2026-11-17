@@ -51,11 +51,11 @@ export const AwsMetricsEdit = Schema.Union([
 ])
 export type AwsMetricsEdit = typeof AwsMetricsEdit.Type
 
-/** One connection's module change: `Saving` while its write runs, `Refused` with why it failed. */
+/** One module change on one connection: `Saving` while its write runs, `Refused` with why it failed. */
 export const AwsModuleSave = Schema.Union([
 	Schema.TaggedStruct("Idle", {}),
-	Schema.TaggedStruct("Saving", { id: AwsConnectionId }),
-	Schema.TaggedStruct("Refused", { id: AwsConnectionId, error: Schema.String }),
+	Schema.TaggedStruct("Saving", { id: AwsConnectionId, module: AwsModule }),
+	Schema.TaggedStruct("Refused", { id: AwsConnectionId, module: AwsModule, error: Schema.String }),
 ])
 export type AwsModuleSave = typeof AwsModuleSave.Type
 
@@ -156,6 +156,10 @@ export const isSelectionSaved = (connection: V2AwsConnection, selection: AwsSele
 
 export type AwsModuleInfo = V2AwsIntegration["modules"][number]
 
+/** The modules the dashboard lets a person turn on, in the order the connect form and the card list them. */
+export const AWS_OPT_IN_MODULES = ["cost", "security"] as const satisfies ReadonlyArray<AwsModule>
+export type AwsOptInModule = (typeof AWS_OPT_IN_MODULES)[number]
+
 /** The module as the status offers it to this org; none for one the org cannot turn on. */
 export const offeredModule = (
 	status: V2AwsIntegration | null,
@@ -173,9 +177,9 @@ export const moduleStateOf = (connection: V2AwsConnection, module: AwsModule): A
 			? "granted"
 			: "ungranted"
 
-/** Why this connection's last module change was refused, if it was. */
-export const moduleErrorOf = (save: AwsModuleSave, id: AwsConnectionId): string | null =>
-	save._tag === "Refused" && save.id === id ? save.error : null
+/** Why this module's last change on this connection was refused, if it was. */
+export const moduleErrorOf = (save: AwsModuleSave, id: AwsConnectionId, module: AwsModule): string | null =>
+	save._tag === "Refused" && save.id === id && save.module === module ? save.error : null
 
 export const METRIC_SELECTION_HINT = "Pick at least one region and one service."
 

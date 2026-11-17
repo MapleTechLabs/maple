@@ -563,10 +563,70 @@ describe("v2 api_keys over HTTP", () => {
 			type: "permission_error",
 			code: "insufficient_permissions",
 			title: "Permission required",
-			message: "Only org admins can manage API keys.",
+			message: "Only org admins and engineers can create restricted API keys.",
 			retryable: false,
 			recovery: "request_access",
 		})
+		await harness.dispose()
+	})
+
+	it("lets an engineer create a restricted key pinned to their role, within the scopes they can use", async () => {
+		const harness = makeHarness()
+		const engineer = await harness.bootstrapKey(undefined, "standard", {
+			metadataJson: { source: "maple_cli", roles: ["org:engineer"], deviceName: "laptop" },
+		})
+		const create = (scopes?: ReadonlyArray<string>) =>
+			harness.request("POST", "/v2/api_keys", {
+				token: engineer.secret,
+				body: { name: "ci", ...(scopes !== undefined ? { scopes } : undefined) },
+			})
+
+		const created = await create(["alerts:write", "traces:read", "ingest_keys:read"])
+		expect(created.status).toBe(200)
+		const resolved = await harness.resolveKey(created.body.secret)
+		expect(Option.map(resolved, (key) => key.roles)).toEqual(Option.some(["org:engineer"]))
+
+		for (const scopes of [undefined, ["*"], ["api_keys:write"], ["audit_log:read"]]) {
+			const refused = await create(scopes)
+			expect(refused.status).toBe(403)
+			expect(refused.body.error.code).toBe("insufficient_permissions")
+		}
+
+		const rolled = await harness.request("POST", `/v2/api_keys/${created.body.id}/roll`, {
+			token: engineer.secret,
+		})
+		expect(rolled.status).toBe(200)
+		const successor = await harness.resolveKey(rolled.body.secret)
+		expect(Option.map(successor, (key) => key.roles)).toEqual(Option.some(["org:engineer"]))
+
+		const revoked = await harness.request("DELETE", `/v2/api_keys/${rolled.body.id}`, {
+			token: engineer.secret,
+		})
+		expect(revoked.status).toBe(200)
+		expect(revoked.body.revoked).toBe(true)
+		await harness.dispose()
+	})
+
+	it("refuses an engineer's roll of their own key that carries more than their role", async () => {
+		const harness = makeHarness()
+		const engineer = await harness.bootstrapKey(undefined, "standard", {
+			metadataJson: { source: "maple_cli", roles: ["org:engineer"], deviceName: "laptop" },
+		})
+		// Made with no pinned roles, the way an admin's key is: it resolves as `root`.
+		const unpinned = await harness.bootstrapKey(["traces:read"], "standard")
+		const { encodePublicId } = await import("@maple/domain/http/v2")
+		const refused = await harness.request(
+			"POST",
+			`/v2/api_keys/${encodePublicId("key", unpinned.id)}/roll`,
+			{
+				token: engineer.secret,
+			},
+		)
+		expect(refused.status).toBe(403)
+		expect(refused.body.error.message).toBe(
+			"Only org admins can roll a key with more access than your role has.",
+		)
+		expect(Option.isSome(await harness.resolveKey(unpinned.secret))).toBe(true)
 		await harness.dispose()
 	})
 

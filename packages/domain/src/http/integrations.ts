@@ -48,6 +48,7 @@ const RETURN_PATH_MAX_LENGTH = 2048
 // One leading `/`, never `//` or `/\` (protocol-relative or backslash origin
 // tricks), and no backslash, whitespace or control character anywhere — which
 // leaves no room for a scheme or embedded credentials.
+// oxlint-disable-next-line no-control-regex -- refusing control characters is the point
 export const RETURN_PATH_PATTERN = /^\/(?![/\\])[^\\\s\u0000-\u001f\u007f]*$/u
 
 /**

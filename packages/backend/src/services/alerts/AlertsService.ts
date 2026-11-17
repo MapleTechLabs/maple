@@ -191,7 +191,10 @@ import {
 } from "./AlertDestinationDelivery"
 import { AlertReadModelsService } from "./AlertReadModelsService"
 import { makeAlertRulePersistence } from "./AlertRulesService"
-import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
+import {
+	UPTIME_CERTIFICATE_GROUP_KEY,
+	UptimeAlertSource,
+} from "@maple/backend/services/uptime/UptimeAlertSource"
 import { SloAlertSource } from "@maple/backend/services/slos/SloAlertSource"
 import { AuditTrailService } from "@maple/backend/services/audit-trail/AuditTrailService"
 import { auditCountReason } from "@maple/backend/services/audit-trail/audit-detection-rule"
@@ -230,9 +233,13 @@ const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 export { AlertRuntime, type AlertRuntimeApi } from "./AlertRuntime"
 export type { AlertSchedulerLane } from "./AlertRuleModel"
 
-/** An anomaly rule's evaluation also carries the anomaly it observed, for linking and display. */
+/**
+ * An anomaly rule's evaluation also carries the anomaly it observed, for linking and display; an
+ * uptime rule's certificate group carries the label it is shown under.
+ */
 type EvaluatedRule = import("@maple/alerting-core").AlertEvaluation & {
 	readonly anomaly?: AnomalyAlertObservation
+	readonly groupLabel?: string
 }
 
 /** The service and environment an anomaly is about; null when it names neither. */
@@ -621,6 +628,9 @@ export interface AlertsServiceApi {
 	>
 }
 
+/** How often an open certificate warning re-notifies: once a day. */
+const CERTIFICATE_RENOTIFY_MINUTES = 24 * 60
+
 /** Longest an uptime incident's status-page write may delay the alert tick. */
 const STATUS_PAGE_SYNC_TIMEOUT = "3 seconds"
 
@@ -691,7 +701,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			// alert write commits, bounded so a slow page write cannot hold the notification behind
 			// it; a failure or timeout is logged (the repair sweep catches up) and never blocks alerting.
 			const syncStatusPages = <E>(
-				signalType: string,
+				signalType: string | null,
 				context: { readonly orgId: OrgId; readonly alertIncidentId: string },
 				write: (db: MapleDb) => Effect.Effect<unknown, E>,
 			) =>
@@ -1103,32 +1113,33 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				| WarehouseQueryPathError
 			> {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.alert.rule_id": rule.id })
-				// An uptime rule observes its monitor, never the warehouse: 1 while down, 0 otherwise.
-				// A probe with no recent check has no data, so it skips and shows as a blind spot
-				// instead of reading healthy. A monitor that is gone observes nothing.
+				// An uptime rule observes its monitor, never the warehouse: 1 while down, 0 otherwise,
+				// and its certificate as a group of its own (0.5 inside the expiry window). A probe with
+				// no recent check has no data, so it skips and shows as a blind spot instead of reading
+				// healthy. A monitor that is gone observes nothing.
 				if (rule.signalType === "uptime") {
 					const observedAt = yield* now
-					const observation = yield* uptimeAlerts
+					const observations = yield* uptimeAlerts
 						.observe(orgId, rule.id, observedAt)
 						.pipe(Effect.mapError(makePersistenceError))
-					return Option.match(observation, {
-						onNone: () => [],
-						onSome: (observed) => {
-							const reason = observed.detail ?? "The check is passing"
-							const evaluation = applyEvaluationLogic(
-								rule,
-								observed.stale
-									? EMPTY_OBSERVATION
-									: { value: observed.down ? 1 : 0, sampleCount: 1, hasData: true },
-								reason,
-							)
-							return [
-								{
-									evaluation: observed.stale ? { ...evaluation, reason } : evaluation,
-									groupKey: observed.groupKey,
-								},
-							]
-						},
+					return Arr.map(observations, (observed) => {
+						const reason = observed.detail ?? "The check is passing"
+						const evaluation = applyEvaluationLogic(
+							rule,
+							observed.stale
+								? EMPTY_OBSERVATION
+								: { value: observed.value, sampleCount: 1, hasData: true },
+							reason,
+						)
+						return {
+							evaluation: {
+								...(observed.stale ? { ...evaluation, reason } : evaluation),
+								...(observed.groupLabel === undefined
+									? undefined
+									: { groupLabel: observed.groupLabel }),
+							},
+							groupKey: observed.groupKey,
+						}
 					})
 				}
 				// An anomaly rule observes the detector's open incidents: one group per anomaly
@@ -1419,7 +1430,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							value: evaluation.value,
 							detail: signalCarriesDetail(rule.signalType) ? evaluation.reason : null,
 							groupKey: incident.groupKey,
-							groupLabel: incident.groupLabel ?? evaluation.anomaly?.groupLabel ?? null,
+							groupLabel:
+								incident.groupLabel ??
+								evaluation.anomaly?.groupLabel ??
+								evaluation.groupLabel ??
+								null,
 							serviceNames: rule.serviceNames,
 							windowMinutes: rule.windowMinutes,
 							dedupeKey: incident.dedupeKey,
@@ -1598,7 +1613,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							ruleId: rule.id,
 							ruleName: rule.name,
 							groupKey: incident.groupKey,
-							groupLabel: incident.groupLabel ?? evaluation.anomaly?.groupLabel ?? null,
+							groupLabel:
+								incident.groupLabel ??
+								evaluation.anomaly?.groupLabel ??
+								evaluation.groupLabel ??
+								null,
 							signalType: rule.signalType,
 							severity: rule.severity,
 							// Snapshotted with the event: a retry or a late delivery
@@ -3432,7 +3451,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							consecutiveBreachesRequired: normalized.consecutiveBreachesRequired,
 							breachWindow: normalized.breachesOutOf ?? normalized.consecutiveBreachesRequired,
 							consecutiveHealthyRequired: normalized.consecutiveHealthyRequired,
-							renotifyIntervalMinutes: normalized.renotifyIntervalMinutes,
+							// A certificate warning stays open until renewal: a daily reminder is enough.
+							renotifyIntervalMinutes:
+								normalized.signalType === "uptime" &&
+								groupKey === UPTIME_CERTIFICATE_GROUP_KEY
+									? CERTIFICATE_RENOTIFY_MINUTES
+									: normalized.renotifyIntervalMinutes,
 							severities: Arr.map(normalized.thresholds, (tier) => tier.severity),
 						},
 						evaluation,
@@ -3600,7 +3624,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							...clearedAcknowledgement,
 							errorIssueId: anomalyLink?.errorIssueId ?? null,
 							anomalyIncidentId: anomalyLink?.anomalyIncidentId ?? null,
-							groupLabel: anomalyLink?.groupLabel ?? null,
+							groupLabel: anomalyLink?.groupLabel ?? evaluation.groupLabel ?? null,
 							labelsJson: labels,
 							silenceId: silence?.id ?? null,
 							silencedAt: silence === null ? null : timestamp,
@@ -3691,8 +3715,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								severity: lifecycle.severity,
 							}
 						}
+						// Only an outage reaches a status page: a warning (an expiring certificate) stays internal.
 						yield* syncStatusPages(
-							normalized.signalType,
+							openedRule.severity === "critical" ? normalized.signalType : null,
 							{ orgId: row.orgId, alertIncidentId: incidentId },
 							(db) =>
 								openForAlertIncident(db, {
@@ -4202,11 +4227,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// An anomaly incident already has its issue and AI triage; the alert must not add a second.
 				// An audit detection is no fault in a service: it has no place in the triage queue,
 				// and a root-cause run over telemetry has nothing to find.
-				// Neither is a budget that is spent.
+				// Neither is a budget that is spent, nor a certificate to renew.
 				const ownsIssue =
 					normalized.signalType !== "anomaly" &&
 					normalized.signalType !== "audit" &&
-					normalized.signalType !== "cost_budget"
+					normalized.signalType !== "cost_budget" &&
+					!(normalized.signalType === "uptime" && groupKey === UPTIME_CERTIFICATE_GROUP_KEY)
 				if (ownsIssue && outcome.transition === "escalated" && outcome.severity === "critical") {
 					yield* escalateAlertIssue({
 						orgId: row.orgId,
@@ -5071,7 +5097,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					readonly orgId: OrgId
 					readonly ruleId: AlertRuleId
 					readonly grouped: boolean
-					/** Anomaly rules only: state rows to drop. They skip the shape self-heal below. */
+					/** Anomaly and uptime rules only: state rows to drop. They skip the shape self-heal below. */
 					readonly staleGroupKeys: ReadonlyArray<string> | undefined
 				}>,
 				clearError: ReadonlyArray<{
@@ -5728,7 +5754,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							normalized.signalType === "anomaly"
 								? true
 								: normalized.signalType === "uptime"
-									? Arr.some(results, (r) => r.groupKey !== UNGROUPED_GROUP_KEY)
+									? Arr.some(
+											results,
+											(r) =>
+												r.groupKey !== UNGROUPED_GROUP_KEY &&
+												r.groupKey !== UPTIME_CERTIFICATE_GROUP_KEY,
+										)
 									: isGroupedPlan(normalized.compiledPlan)
 						const excludeSet = HashSet.fromIterable(normalized.excludeServiceNames)
 						const eligible = grouped
@@ -5794,8 +5825,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						// here.
 						// An anomaly rule keeps its heartbeat and the groups reported this tick; `observe`
 						// reports a group while its incident is open, so the rest are anomalies long gone.
+						// An uptime rule owns its monitor's row beside its certificate's, of both key shapes,
+						// so it too drops only the groups it stopped reporting.
 						const staleGroupKeys =
-							normalized.signalType === "anomaly"
+							normalized.signalType === "anomaly" || normalized.signalType === "uptime"
 								? Arr.filter(
 										prefetch.stateKeysForRule(row.orgId, row.id),
 										(key) => !HashSet.has(evaluatedGroups, key),

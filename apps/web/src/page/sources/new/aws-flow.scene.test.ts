@@ -312,6 +312,34 @@ describe("aws connect flow", () => {
 			])
 		})
 
+		test("an org offered Security scan can tick it, and the connection asks for it", () => {
+			const security = {
+				module: "security",
+				title: "Security scan",
+				summary: "GuardDuty, Security Hub, Inspector and Access Analyzer findings, and CloudTrail.",
+				available: true,
+			}
+			const model = withAccountId(withConnections([], [COST_MODULE, security]), "123456789012")
+			const securityChoice = role("checkbox", { name: "Security scan" })
+			scene(
+				{ update: pageUpdate, view },
+				given(model),
+				expectView(securityChoice).toExist(),
+				expectView(text("Security policy")).not.toExist(),
+				change(securityChoice, "on"),
+				expectView(securityChoice).toBeChecked(),
+				// The stack summary lists the policy the module adds.
+				expectView(text("Security policy")).toExist(),
+			)
+			const ticked = inner(model, IntegrationMessage.ToggledAwsNewModule({ module: "security" }))
+			expect(submitted(ticked)).toEqual([
+				{
+					name: "CreateAwsConnection",
+					args: { request: { account_id: "123456789012", modules: ["security"] } },
+				},
+			])
+		})
+
 		test("an org the module is not offered to gets no choice and sends nothing new", () => {
 			const unavailable = [{ ...COST_MODULE, available: false }]
 			const model = withAccountId(withConnections([], unavailable), "123456789012")

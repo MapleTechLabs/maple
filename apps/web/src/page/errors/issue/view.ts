@@ -43,6 +43,7 @@ import { button } from "@maple/views/ui/button"
 import { typography } from "@maple/views/ui/typography"
 import { canRunInvestigations } from "../../kit/session-grants"
 import { canTriageIssues } from "../kit/grants"
+import { gatedBy } from "../../kit/gated-controls"
 
 type H = HtmlBuilder<Message>
 
@@ -132,23 +133,22 @@ const mergedNotice = (h: H, model: Model, issue: ErrorIssueDetailResponse["issue
 						),
 						canTriageIssues(model) ? ". Unmerge it to track it on its own again." : ".",
 					]),
-					// Unmerging is triage: an analyst reads where the occurrences go.
-					...(canTriageIssues(model)
-						? [
-								alertAction(h, [
-									button(
-										h,
-										{
-											size: "sm",
-											variant: "outline",
-											isLoading: model.busy.includes("unmerge"),
-											attributes: [h.OnClick(Message.ClickedUnmerge())],
-										},
-										["Unmerge"],
-									),
-								]),
-							]
-						: []),
+					// Unmerging is triage: a viewer without it sees Unmerge locked with who can.
+					alertAction(h, [
+						gatedBy(h, canTriageIssues(model), "error_issues:triage", (isDisabled) =>
+							button(
+								h,
+								{
+									size: "sm",
+									variant: "outline",
+									isDisabled,
+									isLoading: model.busy.includes("unmerge"),
+									attributes: [h.OnClick(Message.ClickedUnmerge())],
+								},
+								["Unmerge"],
+							),
+						),
+					]),
 				]),
 			]
 

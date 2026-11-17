@@ -5,7 +5,6 @@ import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { borderedBox } from "@maple/views/ui/bordered-box"
-import { linkButton } from "@maple/views/ui/button"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
 import { errorState } from "@maple/views/ui/error-state"
@@ -28,6 +27,7 @@ import { type Model } from "./model"
 import { DELETE_SCHEDULE_DIALOG_ID, scheduleMenuId } from "./update"
 import { dividedList } from "@maple/views/ui/rule"
 import { canManageAlerts } from "../../kit/session-grants"
+import { gatedEntries, gatedLinkButton } from "../../kit/gated-controls"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
 type H = HtmlBuilder<Message>
@@ -116,18 +116,13 @@ const scheduleRow = (h: H, model: Model, schedule: V2OnCallSchedule, nowMs: numb
 						},
 						[handoff],
 					),
-					...(canManageAlerts(model)
-						? [
-								rowActionsMenu(h, {
-									slotId: menuId,
-									model: model.menus[menuId] ?? Menu.init(menuId),
-									entries,
-									label: `Actions for ${schedule.name}`,
-									toParentMessage: (message) =>
-										Message.GotRowMenuMessage({ menuId, message }),
-								}),
-							]
-						: []),
+					rowActionsMenu(h, {
+						slotId: menuId,
+						model: model.menus[menuId] ?? Menu.init(menuId),
+						entries: gatedEntries(model, "alerts:manage", entries),
+						label: `Actions for ${schedule.name}`,
+						toParentMessage: (message) => Message.GotRowMenuMessage({ menuId, message }),
+					}),
 				]),
 			]),
 		],
@@ -146,16 +141,12 @@ const schedulesEmpty = (h: H, model: Model): Html =>
 					...(canManageAlerts(model) ? [] : [" Ask an org admin to create one."]),
 				]),
 			]),
-			...(canManageAlerts(model)
-				? [
-						emptyActions(h, [
-							linkButton(h, { size: "sm", href: newScheduleHref() }, [
-								icon(h, "PlusIcon"),
-								"Create schedule",
-							]),
-						]),
-					]
-				: []),
+			emptyActions(h, [
+				gatedLinkButton(h, model, "alerts:manage", { size: "sm", href: newScheduleHref() }, [
+					icon(h, "PlusIcon"),
+					"Create schedule",
+				]),
+			]),
 		],
 		"py-12",
 	)

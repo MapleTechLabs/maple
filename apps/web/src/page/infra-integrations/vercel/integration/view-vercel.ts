@@ -39,7 +39,8 @@ import { relativeTime } from "../../../kit/relative-time"
 import { providerBrand } from "../../../kit/providers"
 import { Message } from "../../../integrations/message"
 import { VercelMessage } from "./vercel"
-import { canManage, type Model } from "../../../integrations/model"
+import type { Model } from "../../../integrations/model"
+import { gatedControl } from "../../../kit/session-grants"
 import { vercelStatusOf } from "./update-vercel"
 import { toHub, vercelConfigure } from "./view-vercel-configure"
 
@@ -83,29 +84,22 @@ const notConnected = (h: H, model: Model): Html =>
 		integrationEmptyFeatures(h, FEATURES),
 		integrationEmptyCard(h, [
 			integrationEmptyMedia(h, BRAND),
-			...(canManage(model)
-				? [
-						integrationEmptyHint(h, [
-							"Paste a Vercel token. Maple creates a logs, a traces and an AI Gateway drain on the team you pick.",
-						]),
-						button(
-							h,
-							{
-								attributes: [
-									h.OnClick(toHub(VercelMessage.ClickedConfigure({ target: "connect" }))),
-								],
-							},
-							[icon(h, "VercelIcon"), "Connect Vercel"],
-						),
-						integrationEmptyFooter(h, [
-							"Needs Vercel Pro or Enterprise · Vercel bills drains by volume · sampling lowers it",
-						]),
-					]
-				: [
-						integrationEmptyHint(h, [
-							"A Maple organization admin connects Vercel with a team token.",
-						]),
-					]),
+			integrationEmptyHint(h, [
+				"Paste a Vercel token. Maple creates a logs, a traces and an AI Gateway drain on the team you pick.",
+			]),
+			gatedControl(h, model, "integrations:manage", (isDisabled) =>
+				button(
+					h,
+					{
+						isDisabled,
+						attributes: [h.OnClick(toHub(VercelMessage.ClickedConfigure({ target: "connect" })))],
+					},
+					[icon(h, "VercelIcon"), "Connect Vercel"],
+				),
+			),
+			integrationEmptyFooter(h, [
+				"Needs Vercel Pro or Enterprise · Vercel bills drains by volume · sampling lowers it",
+			]),
 		]),
 	])
 
@@ -157,20 +151,19 @@ export const vercelHeaderStatus = (h: H, model: Model, timeZone: string): Html |
 
 /** `VercelHeaderActions`: Sync now for admins, and the way to the Vercel dashboard. */
 export const vercelHeaderActions = (h: H, model: Model): ReadonlyArray<Html> => [
-	...(canManage(model)
-		? [
-				button(
-					h,
-					{
-						size: "sm",
-						variant: "outline",
-						isLoading: model.vercelCard.isSyncing,
-						attributes: [h.OnClick(toHub(VercelMessage.ClickedSync()))],
-					},
-					[icon(h, "ArrowRotateClockwiseIcon"), "Sync now"],
-				),
-			]
-		: []),
+	gatedControl(h, model, "integrations:manage", (isDisabled) =>
+		button(
+			h,
+			{
+				size: "sm",
+				variant: "outline",
+				isLoading: model.vercelCard.isSyncing,
+				isDisabled,
+				attributes: [h.OnClick(toHub(VercelMessage.ClickedSync()))],
+			},
+			[icon(h, "ArrowRotateClockwiseIcon"), "Sync now"],
+		),
+	),
 	linkButton(h, { size: "sm", href: hrefOf(AppRoute.InfraVercel({ search: {} })) }, [
 		"Open Vercel dashboard",
 		icon(h, "ArrowRightIcon"),
@@ -211,35 +204,33 @@ const issueAlert = (h: H, model: Model, issue: VercelIssue): Html =>
 						),
 					]),
 		]),
-		...(canManage(model)
-			? [
-					alertAction(h, [
-						issue.fix === "token"
-							? button(
-									h,
-									{
-										size: "sm",
-										attributes: [
-											h.OnClick(
-												toHub(VercelMessage.ClickedConfigure({ target: "token" })),
-											),
-										],
-									},
-									["Paste a new token"],
-								)
-							: button(
-									h,
-									{
-										size: "sm",
-										variant: "outline",
-										isLoading: model.vercelCard.isReapplying,
-										attributes: [h.OnClick(toHub(VercelMessage.ClickedReapply()))],
-									},
-									["Re-apply drains"],
-								),
-					]),
-				]
-			: []),
+		alertAction(h, [
+			gatedControl(h, model, "integrations:manage", (isDisabled) =>
+				issue.fix === "token"
+					? button(
+							h,
+							{
+								size: "sm",
+								isDisabled,
+								attributes: [
+									h.OnClick(toHub(VercelMessage.ClickedConfigure({ target: "token" }))),
+								],
+							},
+							["Paste a new token"],
+						)
+					: button(
+							h,
+							{
+								size: "sm",
+								variant: "outline",
+								isLoading: model.vercelCard.isReapplying,
+								isDisabled,
+								attributes: [h.OnClick(toHub(VercelMessage.ClickedReapply()))],
+							},
+							["Re-apply drains"],
+						),
+			),
+		]),
 	])
 
 /** What each drain carries, and the part of Maple it feeds. */
@@ -279,18 +270,19 @@ const SIGNALS = {
 /** Vercel samples only logs and traces. */
 const SAMPLED = new Set<string>(["logs", "traces"])
 
-const configureButton = (h: H, model: Model, label: string): Html | undefined =>
-	canManage(model)
-		? button(
-				h,
-				{
-					size: "sm",
-					variant: "outline",
-					attributes: [h.OnClick(toHub(VercelMessage.ClickedConfigure({ target: "configure" })))],
-				},
-				[label],
-			)
-		: undefined
+const configureButton = (h: H, model: Model, label: string): Html =>
+	gatedControl(h, model, "integrations:manage", (isDisabled) =>
+		button(
+			h,
+			{
+				size: "sm",
+				variant: "outline",
+				isDisabled,
+				attributes: [h.OnClick(toHub(VercelMessage.ClickedConfigure({ target: "configure" })))],
+			},
+			[label],
+		),
+	)
 
 /** The six drains: what each carries, what it powers, its sampling and its state on Vercel. */
 const receivesSection = (h: H, model: Model, status: VercelIntegrationStatus): Html =>
@@ -463,7 +455,7 @@ const projectsSection = (h: H, model: Model, status: VercelIntegrationStatus, ti
 						? "All projects"
 						: `Selected · ${forwarded} of ${status.projects.length}`,
 				]),
-				...(editScope === undefined ? [] : [editScope]),
+				editScope,
 			]),
 		},
 		[
@@ -508,39 +500,35 @@ const accessSection = (h: H, model: Model, status: VercelIntegrationStatus, time
 									}),
 					]),
 				]),
-				...(canManage(model)
-					? [
-							hstack(h, { gap: "2" }, [
-								button(
-									h,
-									{
-										size: "sm",
-										variant: "outline",
-										attributes: [
-											h.OnClick(
-												toHub(VercelMessage.ClickedConfigure({ target: "token" })),
-											),
-										],
-									},
-									["Replace token"],
-								),
-								button(
-									h,
-									{
-										size: "sm",
-										variant: "destructive-outline",
-										isLoading: model.disconnect.isPending,
-										attributes: [h.OnClick(Message.ClickedDisconnect())],
-									},
-									["Disconnect"],
-								),
-							]),
-						]
-					: [
-							typography(h, { size: "xs", tone: "muted" }, [
-								"Only Maple organization admins can replace the token or disconnect Vercel.",
-							]),
-						]),
+				hstack(h, { gap: "2" }, [
+					gatedControl(h, model, "integrations:manage", (isDisabled) =>
+						button(
+							h,
+							{
+								size: "sm",
+								variant: "outline",
+								isDisabled,
+								attributes: [
+									h.OnClick(toHub(VercelMessage.ClickedConfigure({ target: "token" }))),
+								],
+							},
+							["Replace token"],
+						),
+					),
+					gatedControl(h, model, "integrations:manage", (isDisabled) =>
+						button(
+							h,
+							{
+								size: "sm",
+								variant: "destructive-outline",
+								isLoading: model.disconnect.isPending,
+								isDisabled,
+								attributes: [h.OnClick(Message.ClickedDisconnect())],
+							},
+							["Disconnect"],
+						),
+					),
+				]),
 			]),
 		]),
 	])

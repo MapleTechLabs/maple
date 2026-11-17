@@ -10,7 +10,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon, type IconName } from "@maple/views/ui/icon"
-import type { MenuEntry } from "@maple/views/ui/menu-view"
+import type { MenuEntry, MenuItemEntry } from "@maple/views/ui/menu-view"
 import * as MenuView from "@maple/views/ui/menu-view"
 import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import type { PageViewInputs } from "../../contract"
@@ -51,7 +51,7 @@ import { slosTab } from "./view-slos"
 import { deleteScheduleDialog, hasSchedules, oncallTab, whoIsOnCallStrip } from "./view-oncall"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
-import { canManageAlerts, canRespondToIncidents } from "../../kit/session-grants"
+import { canManageAlerts, canRespondToIncidents, denialReason, gatedControl } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
@@ -81,18 +81,24 @@ const newRuleItem = (
 	label: string,
 	iconName: IconName,
 	description: string,
-): MenuEntry => ({
-	_tag: "Item",
-	value,
-	label,
-	content: [
-		icon(h, iconName, { className: "mt-0.5 self-start" }),
-		vstack(h, { gap: "0.5", shrink: true, as: "span" }, [
-			typography(h, { size: "sm" }, [label]),
-			typography(h, { size: "xs", tone: "muted", className: "whitespace-normal" }, [description]),
-		]),
-	],
-})
+	lockedReason?: string,
+): MenuEntry => {
+	const entry: MenuItemEntry = {
+		_tag: "Item",
+		value,
+		label,
+		content: [
+			icon(h, iconName, { className: "mt-0.5 self-start" }),
+			vstack(h, { gap: "0.5", shrink: true, as: "span" }, [
+				typography(h, { size: "sm" }, [label]),
+				typography(h, { size: "xs", tone: "muted", className: "whitespace-normal" }, [description]),
+			]),
+		],
+	}
+	return lockedReason === undefined
+		? entry
+		: { ...entry, isDisabled: true, tooltip: { content: [lockedReason] } }
+}
 
 /** The Inbox's and Rules' split create button: a telemetry rule, and behind the chevron every kind. */
 const newRuleButton = (h: H, model: Model): Html => {
@@ -127,25 +133,23 @@ const newRuleButton = (h: H, model: Model): Html => {
 						"PulseIcon",
 						"Route what Maple's anomaly detector finds for some services, environments or signals.",
 					),
-					// Uptime monitors are admin-only to create; the API refuses members too.
-					...(canManageAlerts(model)
-						? [
-								newRuleItem(
-									h,
-									"uptime",
-									"Uptime check",
-									"GlobeIcon",
-									"Check a URL, port, DNS record or cron job from outside.",
-								),
-								newRuleItem(
-									h,
-									"slo",
-									"SLO",
-									"GaugeIcon",
-									"An error budget on a service's availability or latency, with burn-rate alerts.",
-								),
-							]
-						: []),
+					// Uptime monitors and SLOs are for org admins and engineers; the API refuses members too.
+					newRuleItem(
+						h,
+						"uptime",
+						"Uptime check",
+						"GlobeIcon",
+						"Check a URL, port, DNS record or cron job from outside.",
+						manageLock(model),
+					),
+					newRuleItem(
+						h,
+						"slo",
+						"SLO",
+						"GaugeIcon",
+						"An error budget on a service's availability or latency, with burn-rate alerts.",
+						manageLock(model),
+					),
 				],
 				align: "end",
 				className: "w-80",
@@ -173,11 +177,24 @@ const newRuleButton = (h: H, model: Model): Html => {
 const hasRows = <A>(rows: Option.Option<ReadonlyArray<A>>): boolean =>
 	Option.exists(rows, (list) => list.length > 0)
 
-const primaryLink = (h: H, href: string, label: string): Html =>
-	linkButton(h, { size: "sm", href }, [icon(h, "PlusIcon"), label])
+/** The denial a create item shows to a viewer who may not manage alerts, else none. */
+const manageLock = (model: Model): string | undefined =>
+	canManageAlerts(model) ? undefined : denialReason("alerts:manage")
 
-const primaryButton = (h: H, onClick: Message, label: string, isDisabled = false): Html =>
-	button(h, { size: "sm", isDisabled, attributes: [h.OnClick(onClick)] }, [icon(h, "PlusIcon"), label])
+const primaryLink = (h: H, model: Model, href: string, label: string): Html =>
+	gatedControl(h, model, "alerts:manage", (isDisabled) =>
+		isDisabled
+			? button(h, { size: "sm", isDisabled }, [icon(h, "PlusIcon"), label])
+			: linkButton(h, { size: "sm", href }, [icon(h, "PlusIcon"), label]),
+	)
+
+const primaryButton = (h: H, model: Model, onClick: Message, label: string, isBusy = false): Html =>
+	gatedControl(h, model, "alerts:manage", (isLocked) =>
+		button(h, { size: "sm", isDisabled: isLocked || isBusy, attributes: [h.OnClick(onClick)] }, [
+			icon(h, "PlusIcon"),
+			label,
+		]),
+	)
 
 /**
  * The header's one primary action: what the open section lists. A section whose empty state
@@ -197,28 +214,27 @@ const headerActions = (
 		return canManageAlerts(model) && Option.exists(overview, (data) => isFirstRun(model, data, tab))
 			? undefined
 			: newRuleButton(h, model)
-	if (!canManageAlerts(model)) return undefined
 	const serviceName = model.search.serviceName
 	switch (tab) {
 		case "uptime":
 			return hasRows(AsyncData.getData(model.monitors.data))
-				? primaryLink(h, newMonitorHref({ serviceName }), "New monitor")
+				? primaryLink(h, model, newMonitorHref({ serviceName }), "New monitor")
 				: undefined
 		case "slos":
 			return hasRows(AsyncData.getData(model.slos.data))
-				? primaryLink(h, newSloHref({ serviceName }), "New SLO")
+				? primaryLink(h, model, newSloHref({ serviceName }), "New SLO")
 				: undefined
 		case "silences":
-			return primaryButton(h, Message.ClickedNewSilence(), "New silence")
+			return primaryButton(h, model, Message.ClickedNewSilence(), "New silence")
 		case "maintenance":
 			return hasWindows(model)
-				? primaryButton(h, Message.ClickedNewWindow(), "New window", model.nowMs === null)
+				? primaryButton(h, model, Message.ClickedNewWindow(), "New window", model.nowMs === null)
 				: undefined
 		case "on-call":
-			return hasSchedules(model) ? primaryLink(h, newScheduleHref(), "New schedule") : undefined
+			return hasSchedules(model) ? primaryLink(h, model, newScheduleHref(), "New schedule") : undefined
 		case "routing":
 			return destinationsOf(model).length > 0
-				? primaryButton(h, Message.ClickedNewDestination(), "Add destination")
+				? primaryButton(h, model, Message.ClickedNewDestination(), "Add destination")
 				: undefined
 	}
 }
@@ -262,7 +278,7 @@ const hubBody = (
 				canEdit: canManageAlerts(model),
 				hasDestinations: destinations.length > 0,
 				serviceName: model.search.serviceName,
-				onAddDestination: canManageAlerts(model) ? Message.ClickedNewDestination() : undefined,
+				onAddDestination: Message.ClickedNewDestination(),
 			})
 			const acknowledge = canRespondToIncidents(model)
 				? {

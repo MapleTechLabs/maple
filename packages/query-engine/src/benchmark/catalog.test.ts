@@ -58,6 +58,7 @@ import * as sessionReplayQueries from "../ch/queries/session-replays"
 import * as webAnalyticsQueries from "../ch/queries/web-analytics"
 import * as webAnalyticsAiQueries from "../ch/queries/web-analytics-ai"
 import * as securityTelemetryQueries from "../ch/queries/security-telemetry"
+import * as cloudResourceQueries from "../ch/queries/cloud-resources"
 import * as userActivityQueries from "../ch/queries/user-activity"
 import * as productEventQueries from "../ch/queries/product-events"
 import * as productEventPathQueries from "../ch/queries/product-events-paths"
@@ -314,6 +315,7 @@ const QUERY_MODULES: Record<string, Record<string, unknown>> = {
 	"web-analytics": webAnalyticsQueries,
 	"web-analytics-ai": webAnalyticsAiQueries,
 	"security-telemetry": securityTelemetryQueries,
+	"cloud-resources": cloudResourceQueries,
 	"user-activity": userActivityQueries,
 	"product-events": productEventQueries,
 	"product-events-paths": productEventPathQueries,

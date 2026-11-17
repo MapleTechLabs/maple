@@ -276,6 +276,7 @@ const cleanPrReviewConfig = Effect.fn("GithubConnectService.cleanPrReviewConfig"
 			? undefined
 			: { blockOnContractBreaks: config.blockOnContractBreaks }),
 		...(config.postMergeCheck === undefined ? undefined : { postMergeCheck: config.postMergeCheck }),
+		...(config.autoApprove === undefined ? undefined : { autoApprove: config.autoApprove }),
 	})
 })
 

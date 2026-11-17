@@ -11,7 +11,7 @@ import {
 } from "@maple/web-data/alerts/form-utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button, linkButton } from "@maple/views/ui/button"
+import { button } from "@maple/views/ui/button"
 import { badge, separator } from "@maple/views/ui/display"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
 import { errorState } from "@maple/views/ui/error-state"
@@ -40,7 +40,8 @@ import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { borderedBox } from "@maple/views/ui/bordered-box"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { Array as Arr, Option } from "effect"
-import { canManageAlerts } from "../../kit/session-grants"
+import { canManageAlerts, gatedControl } from "../../kit/session-grants"
+import { gatedEntries, gatedLinkButton, gatedSwitch } from "../../kit/gated-controls"
 
 export const HEALTH_WINDOW = 20
 export const DESTINATION_ROW_GRID = "grid grid-cols-[minmax(0,1fr)_110px_140px_110px_auto] items-center gap-4"
@@ -120,15 +121,17 @@ const destinationsSection = (
 					]),
 				]),
 				emptyActions(h, [
-					...(canManageAlerts(model)
-						? [
-								button(
-									h,
-									{ size: "sm", attributes: [h.OnClick(Message.ClickedNewDestination())] },
-									[icon(h, "PlusIcon"), "Add destination"],
-								),
-							]
-						: []),
+					gatedControl(h, model, "alerts:manage", (isDisabled) =>
+						button(
+							h,
+							{
+								size: "sm",
+								isDisabled,
+								attributes: [h.OnClick(Message.ClickedNewDestination())],
+							},
+							[icon(h, "PlusIcon"), "Add destination"],
+						),
+					),
 					docsLink(h, "destinations"),
 				]),
 			],
@@ -277,41 +280,43 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 						],
 					),
 					hstack(h, { gap: "2", justify: "end" }, [
-						...switchControl(h, {
-							id: `destination-switch-${destination.id}`,
-							inputId: `destination-switch-input-${destination.id}`,
-							isChecked: destination.enabled,
-							isDisabled: !canManageAlerts(model),
-							ariaLabel: destination.enabled ? "Disable destination" : "Enable destination",
-							onToggle: Message.ClickedToggleDestination({ destinationId: destination.id }),
-						}),
-						button(
+						...gatedSwitch(
 							h,
-							{
-								size: "sm",
-								variant: "outline",
+							model,
+							"alerts:manage",
+							switchControl(h, {
+								id: `destination-switch-${destination.id}`,
+								inputId: `destination-switch-input-${destination.id}`,
+								isChecked: destination.enabled,
 								isDisabled: !canManageAlerts(model),
-								isLoading: model.testingDestinationIds.includes(destination.id),
-								attributes: [
-									h.OnClick(
-										Message.ClickedTestDestination({ destinationId: destination.id }),
-									),
-								],
-							},
-							[icon(h, "CheckIcon"), "Test"],
+								ariaLabel: destination.enabled ? "Disable destination" : "Enable destination",
+								onToggle: Message.ClickedToggleDestination({ destinationId: destination.id }),
+							}),
 						),
-						...(canManageAlerts(model)
-							? [
-									rowActionsMenu(h, {
-										slotId: menuId,
-										model: model.menus[menuId] ?? Menu.init(menuId),
-										entries,
-										label: `Actions for ${destination.name}`,
-										toParentMessage: (message) =>
-											Message.GotRowMenuMessage({ menuId, message }),
-									}),
-								]
-							: []),
+						gatedControl(h, model, "alerts:manage", (isDisabled) =>
+							button(
+								h,
+								{
+									size: "sm",
+									variant: "outline",
+									isDisabled,
+									isLoading: model.testingDestinationIds.includes(destination.id),
+									attributes: [
+										h.OnClick(
+											Message.ClickedTestDestination({ destinationId: destination.id }),
+										),
+									],
+								},
+								[icon(h, "CheckIcon"), "Test"],
+							),
+						),
+						rowActionsMenu(h, {
+							slotId: menuId,
+							model: model.menus[menuId] ?? Menu.init(menuId),
+							entries: gatedEntries(model, "alerts:manage", entries),
+							label: `Actions for ${destination.name}`,
+							toParentMessage: (message) => Message.GotRowMenuMessage({ menuId, message }),
+						}),
 					]),
 				],
 			),
@@ -401,13 +406,13 @@ const logTable = (
 					]),
 				]),
 				emptyActions(h, [
-					...(canManageAlerts(model)
-						? [
-								linkButton(h, { variant: "outline", size: "sm", href: createHref({}) }, [
-									"Create an alert rule",
-								]),
-							]
-						: []),
+					gatedLinkButton(
+						h,
+						model,
+						"alerts:manage",
+						{ variant: "outline", size: "sm", href: createHref({}) },
+						["Create an alert rule"],
+					),
 					docsLink(h, "destinations"),
 				]),
 			],
@@ -433,15 +438,11 @@ const logTable = (
 						[
 							eyebrow(h, { className: hstackClass({ gap: "2" }) }, [
 								group.label,
-								typography(
-									h,
-									{ tone: "subtle", numeric: true },
-									[
-										String(group.events.length),
-										" ",
-										pluralize(group.events.length, "attempt"),
-									],
-								),
+								typography(h, { tone: "subtle", numeric: true }, [
+									String(group.events.length),
+									" ",
+									pluralize(group.events.length, "attempt"),
+								]),
 							]),
 						],
 						"bg-surface-sunken py-1.5",
