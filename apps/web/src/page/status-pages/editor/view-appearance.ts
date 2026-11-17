@@ -15,6 +15,7 @@ import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { heading } from "@maple/views/ui/heading"
 import { settingsSection } from "../../kit/settings-section"
+import { switchRow } from "../../kit/switch-row"
 import { selectField, textField } from "../shared/fields"
 import {
 	type SettingsForm,
@@ -47,7 +48,7 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
-// The Settings view's Appearance section and the live preview of the public page.
+// The Appearance tab's Branding and Appearance sections and the live preview of the public page.
 
 type H = HtmlBuilder<Message>
 
@@ -132,7 +133,7 @@ export const brandingSection = (h: H, model: Model, form: SettingsForm): Html =>
 		{
 			id: "status-page-settings-branding",
 			title: "Branding",
-			description: ["Your logo in the page header and the icon in the browser tab."],
+			description: ["Your logo in the page header, the icon in the browser tab and the footer credit."],
 		},
 		[
 			h.div(
@@ -169,6 +170,15 @@ export const brandingSection = (h: H, model: Model, form: SettingsForm): Html =>
 					}),
 				],
 			),
+			switchRow(h, {
+				id: "status-page-powered-by",
+				label: "Show powered by Maple",
+				description: "A small credit in the page footer.",
+				isChecked: form.showPoweredBy,
+				isDisabled: isReadOnly,
+				onToggle: Message.ToggledPoweredBy(),
+				className: "mt-4 border-t pt-4",
+			}),
 		],
 	)
 }

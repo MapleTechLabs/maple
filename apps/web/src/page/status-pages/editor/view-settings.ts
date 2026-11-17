@@ -10,7 +10,6 @@ import { failureMessage } from "@maple/views/data/load-failure"
 import { dangerRow, dangerZone } from "../../kit/danger-zone"
 import { saveBar } from "../../kit/save-bar"
 import { adminOnlyNote, settingsSection, settingsSections } from "../../kit/settings-section"
-import { switchRow } from "../../kit/switch-row"
 import { publicAddress } from "../shared/commands"
 import { selectField, textareaField, textField } from "../shared/fields"
 import {
@@ -31,7 +30,7 @@ import { isSettingsDirty, settingsOf } from "./update-settings"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
-// The Settings tab: the page's fields, who can view it, the break-glass token and deleting the page.
+// The Settings tab: the page's fields, its custom domain, who can view it, the break-glass token and deleting the page.
 
 type H = HtmlBuilder<Message>
 
@@ -48,8 +47,8 @@ const pageSection = (h: H, model: Model, form: SettingsForm): Html => {
 		h,
 		{
 			id: "status-page-settings-page",
-			title: "Page",
-			description: ["What visitors see at the top of the page."],
+			title: "Basic settings",
+			description: ["The page's name, address and links, and what happens when a monitor goes down."],
 		},
 		[
 			h.div(
@@ -120,43 +119,21 @@ const pageSection = (h: H, model: Model, form: SettingsForm): Html => {
 						hint: "Linked in the page header as Contact support.",
 						onInput: (value) => Message.ChangedSetting({ field: "supportUrl", value }),
 					}),
+					selectField(h, {
+						id: "status-page-auto-incidents",
+						label: "When a linked monitor goes down",
+						value: form.autoIncidents,
+						entries: AUTO_INCIDENT_ENTRIES,
+						isDisabled: isReadOnly,
+						className: "sm:col-span-2",
+						hint: "A draft waits for you under Incidents in the editor's On this page list; a published one shows on the page at once.",
+						onInput: (value) => Message.ChangedSetting({ field: "autoIncidents", value }),
+					}),
 				],
 			),
 		],
 	)
 }
-
-const behaviourSection = (h: H, model: Model, form: SettingsForm): Html =>
-	settingsSection(h, { id: "status-page-settings-behaviour", title: "Behaviour", padded: false }, [
-		h.div(
-			[h.Class("divide-y")],
-			[
-				switchRow(h, {
-					id: "status-page-powered-by",
-					label: "Show powered by Maple",
-					description: "A small credit in the page footer.",
-					isChecked: form.showPoweredBy,
-					isDisabled: !canManage(model),
-					onToggle: Message.ToggledPoweredBy(),
-					className: "p-4",
-				}),
-				h.div(
-					[h.Class("p-4")],
-					[
-						selectField(h, {
-							id: "status-page-auto-incidents",
-							label: "When a linked monitor goes down",
-							value: form.autoIncidents,
-							entries: AUTO_INCIDENT_ENTRIES,
-							isDisabled: !canManage(model),
-							hint: "A draft waits for you under Incidents in the editor's On this page list; a published one shows on the page at once.",
-							onInput: (value) => Message.ChangedSetting({ field: "autoIncidents", value }),
-						}),
-					],
-				),
-			],
-		),
-	])
 
 export const revealedToken = (h: H, model: Model): ReadonlyArray<Html> =>
 	model.revealedToken === null
@@ -332,9 +309,8 @@ const formView = (
 export const settingsView = (h: H, model: Model, page: V2StatusPage): Html =>
 	formView(h, model, page, "settings", (form) => [
 		pageSection(h, model, form),
-		behaviourSection(h, model, form),
-		accessSection(h, model, page),
 		customDomainSection(h, model, page),
+		accessSection(h, model, page),
 		// Break-glass posts at the public address, which an internal page does not answer on.
 		...(page.visibility === "internal" ? [] : [breakGlassSection(h, model, page)]),
 		...(canManage(model) ? [deleteSection(h)] : []),
