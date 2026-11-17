@@ -426,6 +426,20 @@ describe("break-glass updates", () => {
 		expect(overlayEntries(fake)).toEqual([])
 	})
 
+	it("rate limits an IPv6 client by its /64", async () => {
+		fake.limits.allow = false
+		const fields = new URLSearchParams(await update(TOKEN).text())
+		const response = await send(fake, postForm(`${PAGE}_manage`, [...fields], "2001:db8:12:3400:a:b:c:d"))
+		expect(response.status).toBe(429)
+		expect(fake.limits.keys).toEqual([`2001:db8:12:3400::/64:${FIXTURE_PAGE_ID}`])
+	})
+
+	it("still takes an update when the limiter cannot answer", async () => {
+		fake.limiterDown.add("client")
+		expect((await send(fake, update(TOKEN))).status).toBe(303)
+		expect(overlayEntries(fake)).toHaveLength(1)
+	})
+
 	it("refuses once the page holds the maximum number of listed entry keys", async () => {
 		Array.from({ length: 49 }, (_, index) => putOverlayEntry(fake, entry({ id: `e${index}` })))
 		// A corrupt key still counts toward the cap.

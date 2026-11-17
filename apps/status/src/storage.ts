@@ -10,6 +10,7 @@ export interface StatusBindings {
 	readonly kv: cf.KVNamespace
 	readonly bucket: cf.R2Bucket
 	readonly limiter: cf.RateLimit
+	readonly pageLimiter: cf.RateLimit
 	// The global (DOM) Cache type: `caches.open` returns it and it accepts a global Response.
 	readonly cache: Promise<Cache>
 }
@@ -65,6 +66,10 @@ export const nativeStorage = (bindings: StatusBindings): StatusStorage => {
 			),
 		rateLimit: (key) =>
 			call("rate-limit", key, () => bindings.limiter.limit({ key })).pipe(
+				Effect.map((outcome) => outcome.success),
+			),
+		pageRateLimit: (key) =>
+			call("rate-limit", key, () => bindings.pageLimiter.limit({ key })).pipe(
 				Effect.map((outcome) => outcome.success),
 			),
 	}

@@ -14,6 +14,7 @@ import { STATUS_PAGE_WINDOW_DAYS } from "@maple/domain/status-page"
 import { Effect, Option, Schema, String as Str } from "effect"
 import { accessPage, hasAccess, postAccess } from "./access"
 import { parseForm, postBreakGlassUpdate } from "./break-glass"
+import { clientRateLimitKey } from "./client-key"
 import type { StatusEnv } from "./ports"
 import { asset, html, jsonError, notFound, PUBLIC_CACHE_CONTROL, plain, redirect } from "./responses"
 import { type Lookup, loadView, type PageView, pageIdForHost, pageIdForSlug } from "./snapshot"
@@ -98,10 +99,11 @@ const NOT_SAVED =
 
 const postManage = (env: StatusEnv, request: Request, view: PageView, target: Target) =>
 	Effect.gen(function* () {
-		const ip = request.headers.get("cf-connecting-ip") ?? "unknown"
+		const client = clientRateLimitKey(request.headers.get("cf-connecting-ip") ?? "unknown")
 		// Fails open: the token carries 256 bits, and this form exists for when things are broken.
+		// No budget across clients either, which would let anyone hold the form shut.
 		const allowed = yield* env.storage
-			.rateLimit(`${ip}:${target.pageId}`)
+			.rateLimit(`${client}:${target.pageId}`)
 			.pipe(Effect.orElseSucceed(() => true))
 		if (!allowed) {
 			return managePage(env, view, target, 429, {
@@ -247,6 +249,7 @@ export const handleRequest = (request: Request, env: StatusEnv): Effect.Effect<R
 		const visibility = view.value.snapshot.page.visibility
 		// Internal pages are taken off the edge; one still reachable here answers as if it were.
 		if (visibility === "internal") return notFound()
-		if (visibility === "password") return yield* serveProtected(env, request, url, view.value, target.value)
+		if (visibility === "password")
+			return yield* serveProtected(env, request, url, view.value, target.value)
 		return yield* servePage(env, request, url, view.value, target.value)
 	})

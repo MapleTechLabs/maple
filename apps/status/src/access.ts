@@ -9,7 +9,8 @@ import type { StatusPageSnapshot } from "@maple/domain/status-page"
 import { ACCESS_FIELD, renderAccessPage } from "@maple/status-page"
 import { Effect, Result, Array as Arr, String as Str } from "effect"
 import { readFormData } from "./break-glass"
-import type { StatusEnv } from "./ports"
+import { clientRateLimitKey } from "./client-key"
+import type { StatusEnv, StatusStorageError } from "./ports"
 import { html, redirect } from "./responses"
 
 // The gate in front of a password-protected page: a form that checks the password against the
@@ -46,9 +47,29 @@ export const accessPage = (
 	})
 }
 
+/** A limiter that cannot answer refuses the attempt. */
+const allowedOrClosed = (
+	check: Effect.Effect<boolean, StatusStorageError>,
+	pageId: string,
+	scope: "client" | "page",
+): Effect.Effect<boolean> =>
+	check.pipe(
+		Effect.tapError((error) =>
+			Effect.logWarning("Status page access rate limit unavailable").pipe(
+				Effect.annotateLogs({
+					"maple.status_page.id": pageId,
+					"maple.status_page.rate_limit_scope": scope,
+					"error.type": error._tag,
+				}),
+			),
+		),
+		Effect.orElseSucceed(() => false),
+	)
+
 /**
- * Checks a posted password. Rate-limited per address and page, failing closed: a page password
- * is guessable where a break-glass token is not, and a visitor locked out loses nothing urgent.
+ * Checks a posted password. Rate-limited per client and page, then per page across every client,
+ * both failing closed: a page password is guessable where a break-glass token is not, and a
+ * visitor locked out loses nothing urgent.
  */
 export const postAccess = (
 	env: StatusEnv,
@@ -57,18 +78,19 @@ export const postAccess = (
 	basePath: string,
 ): Effect.Effect<Response> =>
 	Effect.gen(function* () {
-		const ip = request.headers.get("cf-connecting-ip") ?? "unknown"
-		const allowed = yield* env.storage.rateLimit(`access:${ip}:${snapshot.pageId}`).pipe(
-			Effect.tapError((error) =>
-				Effect.logWarning("Status page access rate limit unavailable").pipe(
-					Effect.annotateLogs({
-						"maple.status_page.id": snapshot.pageId,
-						"error.type": error._tag,
-					}),
-				),
-			),
-			Effect.orElseSucceed(() => false),
-		)
+		const client = clientRateLimitKey(request.headers.get("cf-connecting-ip") ?? "unknown")
+		// The page budget is asked only for a client within its own, so one client cannot spend it all.
+		const allowed =
+			(yield* allowedOrClosed(
+				env.storage.rateLimit(`access:${client}:${snapshot.pageId}`),
+				snapshot.pageId,
+				"client",
+			)) &&
+			(yield* allowedOrClosed(
+				env.storage.pageRateLimit(`access:${snapshot.pageId}`),
+				snapshot.pageId,
+				"page",
+			))
 		if (!allowed) {
 			return accessPage(env, snapshot, basePath, 429, "Too many attempts. Wait a minute and try again.")
 		}

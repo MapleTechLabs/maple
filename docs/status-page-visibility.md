@@ -38,8 +38,10 @@ domain cannot be added to an internal page).
   cookie signed under the old hash stops verifying. A value expiring more than 30 days out is
   refused even with a valid signature.
 - **Gate** (`apps/status/src/access.ts`): `/_access` serves the branded form (GET) and checks a
-  posted password (POST), rate-limited per `access:<ip>:<page>` on the break-glass limiter
-  (10 a minute) and failing closed. Every other path, `/_manage` and the feeds included, needs
+  posted password (POST). Two limits, both failing closed: 10 a minute per client and page
+  (`access:<client>:<page>` on the break-glass limiter, where an IPv6 client is its /64), then
+  100 a minute per page across every client (`access:<page>` on
+  `STATUS_PAGE_ACCESS_RATE_LIMITER`). Every other path, `/_manage` and the feeds included, needs
   the cookie: `/` answers 401 with the form, anything else 401 text. Every response of a
   password page is `cache-control: private, no-store` and `x-robots-tag: noindex`.
 - **Page**: no subscribe link or dialog, no feed links, `noindex` (the same for an internal
