@@ -379,7 +379,7 @@ const settingsNav = (h: H, page: V2StatusPage, section: SettingsSection): Html =
  * Settings below the page's header and tabs: the section menu, the section's form and, for the
  * sections that change how the page looks, the page itself, side by side, each scrolling on its
  * own so the menu and preview stay in place. The preview needs the room of `xl`; below `md` the
- * menu sits above the form.
+ * menu sits above the form and both scroll with the page.
  */
 export const settingsLayout = (
 	h: H,
@@ -393,17 +393,17 @@ export const settingsLayout = (
 		[
 			h.Class(
 				cn(
-					"grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] md:grid-cols-[13rem_minmax(0,1fr)] md:grid-rows-1",
+					"grid min-h-0 flex-1 md:grid-cols-[13rem_minmax(0,1fr)] md:grid-rows-1",
 					hasPreview && "xl:grid-cols-[13rem_minmax(0,1fr)_minmax(20rem,0.8fr)]",
 				),
 			),
 		],
 		[
 			h.div(
-				[h.Class("min-h-0 overflow-y-auto border-b px-3 pb-4 md:border-r md:border-b-0")],
+				[h.Class("min-h-0 border-b px-3 pb-4 md:overflow-y-auto md:border-r md:border-b-0")],
 				[settingsNav(h, page, section)],
 			),
-			h.div([h.Class("min-h-0 overflow-y-auto px-(--page-gutter) pb-6")], [content]),
+			h.div([h.Class("min-h-0 px-(--page-gutter) pb-6 md:overflow-y-auto")], [content]),
 			...(hasPreview
 				? [
 						h.aside(

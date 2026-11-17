@@ -383,6 +383,8 @@ const loaded = (h: H, model: Model, page: V2StatusPage, inputs: PageViewInputs):
 					// Settings and the Live page own their scrolling: Settings' panes each scroll alone,
 					// and the Live page's frame takes exactly the height left, so the page never scrolls.
 					fill: location.tab === "settings" || location.tab === "page",
+					// The Live page's frame takes the height under the header, so only it stays pinned.
+					unpinHeaderOnMobile: location.tab !== "page",
 				},
 				[
 					location.tab === "settings"
