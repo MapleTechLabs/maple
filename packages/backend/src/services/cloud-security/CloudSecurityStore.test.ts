@@ -464,7 +464,7 @@ describe("CloudSecurityStore", () => {
 		}).pipe(Effect.provide(world.layer))
 	})
 
-	it.effect("leaves a finding an event stored during a whole read out of what the read resolves", () => {
+	it.effect("leaves a finding an event stored during a read out of what the read resolves", () => {
 		const world = makeWorld()
 		return Effect.gen(function* () {
 			const store = yield* CloudSecurityStore
@@ -474,6 +474,8 @@ describe("CloudSecurityStore", () => {
 			// The read started at 10; an event stored "pushed" at 12, after the listing passed it.
 			yield* store.upsertFindings([finding(connection, orgId, { findingId: "pushed" })], 12)
 			assert.strictEqual(yield* store.resolve(feed, { except: [] }, 10), 1)
+			// A recheck by id that found it gone, before the event: the event's version stays open.
+			assert.strictEqual(yield* store.resolve(feed, { only: ["pushed"] }, 10), 0)
 			const rows = yield* Effect.promise(() =>
 				queryRows<{ finding_id: string; status: string }>(
 					world.testDb,

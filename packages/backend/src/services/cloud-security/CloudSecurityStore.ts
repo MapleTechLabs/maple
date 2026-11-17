@@ -402,15 +402,13 @@ export class CloudSecurityStore extends Context.Service<CloudSecurityStore, Clou
 									$.region.eq(feed.region),
 									$.source.eq(feed.source),
 									$.status.eq(from),
+									// A finding an event stored after the read began is newer than what the read saw.
+									$.syncedAt.lt(at),
 									...("only" in ids
 										? [PG.inList($.findingId, ids.only)]
-										: [
-												// A finding an event stored while the listing ran is newer than the listing.
-												$.syncedAt.lt(at),
-												...(ids.except.length === 0
-													? []
-													: [PG.notInList($.findingId, ids.except)]),
-											]),
+										: ids.except.length === 0
+											? []
+											: [PG.notInList($.findingId, ids.except)]),
 								])
 								.returning(($) => ({ findingId: $.findingId })),
 						),
