@@ -4,6 +4,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
 import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { columnHead, dataTable, dataTableEmpty, skeletonRows, ROW_LINK_CLASS } from "../../../kit/data-table"
 import { type Sort, sortRowsByField } from "../../../kit/table-sort"
@@ -123,6 +124,17 @@ const metaChip = (h: H, text: string): Html =>
 		[typography(h, { size: "3xs", tone: "subtle", mono: true }, [text])],
 	)
 
+/** The database engine's logo, named for screen readers and on hover. */
+const engineIcon = (h: H, kind: string): Html => {
+	const label = kind === "postgresql" ? "Postgres" : "MySQL"
+	return hstack(h, { as: "span", inline: true, shrink: false, attributes: [h.Title(label)] }, [
+		icon(h, kind === "postgresql" ? "PostgresIcon" : "MysqlDolphinIcon", {
+			size: 14,
+			attributes: [h.Role("img"), h.AriaLabel(label)],
+		}),
+	])
+}
+
 const metricCells = (h: H, row: DatabaseRow): ReadonlyArray<Html> => [
 	h.div([h.Class(cn("w-24", CELL))], [row.hasStats ? formatNumber(row.connectionsAvg) : EMPTY_VALUE]),
 	h.div(
@@ -169,9 +181,7 @@ const databaseRow = (h: H, row: DatabaseRow, metricsPaused: boolean): Html => {
 					],
 					[row.name],
 				),
-				badge(h, { variant: "outline", className: "shrink-0" }, [
-					row.kind === "postgresql" ? "Postgres" : "MySQL",
-				]),
+				engineIcon(h, row.kind),
 				...(state === null ? [] : [badge(h, { variant: "warn", className: "shrink-0" }, [state])]),
 				...(row.region ? [metaChip(h, row.region)] : []),
 				...(row.plan ? [metaChip(h, row.plan)] : []),

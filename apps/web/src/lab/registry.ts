@@ -246,6 +246,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/planetscale",
+		title: "PlanetScale",
+		description:
+			"The PlanetScale databases table over fixtures: Postgres and MySQL engines, hot metrics and a sleeping database.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/gcp-infra",
 		title: "Google Cloud infrastructure",
 		description:
