@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "527460d2368423e96b0c8a39a9e3c1eddb15c915ee840274e04d5b48fdfa66e5",
+	"id": "ed86573650d888d0ee65fa1c851b76bab7ad798e4ea1c904631c5b6ed50e2253",
 	"prevIds": [
-		"7e60170d4790d4476090fa7b8b69322e0dbe50fa239d1b5273ddc53682cd8db6"
+		"67d835e1f2b7a2930cc82196ec2f542d1c9b99900b5d0068bc39ad8017fd1359"
 	],
 	"entities": [
 		{
@@ -5560,6 +5560,16 @@
 			"position": 8,
 			"type": "timestamp with time zone",
 			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloud_security_service_states",
+			"name": "pushed_at",
+			"position": 9,
+			"type": "timestamp with time zone",
+			"notNull": false,
 			"default": null,
 			"identity": null
 		},
