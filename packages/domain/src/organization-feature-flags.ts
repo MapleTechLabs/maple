@@ -22,6 +22,8 @@ export const OrganizationFeatureFlags = Schema.Struct({
 	aiAutoTriage: DisabledByDefaultFeatureFlag,
 	/** Gates cloud cost: the cost reads and the AWS connection's `cost` module. */
 	cloudCost: DisabledByDefaultFeatureFlag,
+	/** Gates cloud security findings: the AWS connection's `security` module and the Cloud findings tab. */
+	cloudSecurity: DisabledByDefaultFeatureFlag,
 	/**
 	 * Gates external data sources: the Settings tab, the v2 API, and the agent tools and prompt
 	 * section that read them.
@@ -43,6 +45,7 @@ export const OrganizationFeatureFlags = Schema.Struct({
 	Schema.encodeKeys({
 		aiAutoTriage: "aiautotriage",
 		cloudCost: "cloudcost",
+		cloudSecurity: "cloudsecurity",
 		dataSources: "datasources",
 		productAnalytics: "productanalytics",
 		profiling: "profiling",
@@ -58,6 +61,7 @@ const decodeOrganizationFeatureFlags = Schema.decodeUnknownOption(OrganizationFe
 export const DISABLED_ORGANIZATION_FEATURE_FLAGS: OrganizationFeatureFlags = {
 	aiAutoTriage: false,
 	cloudCost: false,
+	cloudSecurity: false,
 	dataSources: false,
 	productAnalytics: false,
 	profiling: false,
@@ -72,6 +76,7 @@ export const DISABLED_ORGANIZATION_FEATURE_FLAGS: OrganizationFeatureFlags = {
 export const ENABLED_ORGANIZATION_FEATURE_FLAGS: OrganizationFeatureFlags = {
 	aiAutoTriage: true,
 	cloudCost: true,
+	cloudSecurity: true,
 	dataSources: true,
 	productAnalytics: true,
 	profiling: true,
