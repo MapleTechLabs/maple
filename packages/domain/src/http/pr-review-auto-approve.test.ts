@@ -78,7 +78,11 @@ const telemetryWithBreak = new PrReviewTelemetry({
 
 /** A decision over a submission the model sent clean and whole; each case overrides what it breaks. */
 const decide = (input: Parameters<typeof prReviewAutoApproval>[0]) =>
-	prReviewAutoApproval({ submitted: { verdict: "clean", droppedFindings: 0 }, ...input })
+	prReviewAutoApproval({
+		submitted: { verdict: "clean", droppedFindings: 0 },
+		diff: signals([file("src/orders/label.ts")]),
+		...input,
+	})
 
 const file = (path: string, overrides: Partial<PullRequestFile> = {}): PullRequestFile => ({
 	path,
@@ -333,9 +337,21 @@ describe("prReviewAutoApproval", () => {
 	})
 
 	it("refuses a submission it was told nothing about", () => {
-		const decision = prReviewAutoApproval({ report: approvable() })
+		const decision = prReviewAutoApproval({
+			report: approvable(),
+			diff: signals([file("src/orders/label.ts")]),
+		})
 		assert.isFalse(decision.approve)
 		if (!decision.approve) assert.equal(decision.refusal, "submitted_verdict")
+	})
+
+	it("refuses when Maple's own read of the diff is missing", () => {
+		const decision = prReviewAutoApproval({
+			report: approvable(),
+			submitted: { verdict: "clean", droppedFindings: 0 },
+		})
+		assert.isFalse(decision.approve)
+		if (!decision.approve) assert.equal(decision.refusal, "diff_unavailable")
 	})
 
 	it("names up to three sensitive paths and counts the rest", () => {

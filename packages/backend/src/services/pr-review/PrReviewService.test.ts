@@ -2741,7 +2741,7 @@ describe("PrReviewService auto-approve", () => {
 		}),
 	)
 
-	it.effect("withdraws when the pull request is edited, since its base may have changed", () => {
+	it.effect("withdraws when an edit moves the pull request to another base, and only then", () => {
 		const testDb = createTestDb(trackedDbs)
 		const withdrawals: Array<string> = []
 		return Effect.gen(function* () {
@@ -2756,12 +2756,17 @@ describe("PrReviewService auto-approve", () => {
 				repositoryId,
 				new PrReviewRepositoryConfig({ autoApprove: true }),
 			)
+			// A title or description edit leaves the approval alone.
+			yield* reviews.onPullRequestEvent(orgId, job({ action: "edited", baseChanged: false }))
+			assert.deepStrictEqual(withdrawals, [])
 			const outcome = yield* reviews.onPullRequestEvent(
 				orgId,
-				job({ action: "edited", baseRef: "release" }),
+				job({ action: "edited", baseRef: "release", baseChanged: true }),
 			)
 			assert.strictEqual(outcome.outcome, "skipped")
-			assert.deepStrictEqual(withdrawals, ["612:the pull request changed since it approved"])
+			assert.deepStrictEqual(withdrawals, [
+				"612:the pull request's base branch changed since it approved",
+			])
 		}).pipe(Effect.provide(layerFor(testDb, { withdrawals })))
 	})
 

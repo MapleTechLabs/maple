@@ -126,6 +126,8 @@ const RefEventPayload = Schema.Struct({
 const PullRequestPayload = Schema.Struct({
 	action: Schema.String,
 	number: Schema.Number,
+	// On `edited`: what the edit changed. Only whether the base branch is among it is read.
+	changes: Schema.optionalKey(Schema.Struct({ base: Schema.optionalKey(Schema.Unknown) })),
 	pull_request: Schema.Struct({
 		html_url: Schema.String,
 		title: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -805,6 +807,9 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						...(pr.head?.ref === undefined ? undefined : { headRef: pr.head.ref }),
 						...(pr.base?.ref === undefined ? undefined : { baseRef: pr.base.ref }),
 						...(pr.draft === undefined || pr.draft === null ? undefined : { draft: pr.draft }),
+						...(payload.action === "edited"
+							? { baseChanged: payload.changes?.base !== undefined }
+							: undefined),
 						...(pr.head === undefined
 							? undefined
 							: { headRepoFullName: pr.head.repo?.full_name ?? null }),

@@ -555,6 +555,8 @@ export const PullRequestEventJob = Schema.Struct({
 	draft: Schema.optionalKey(Schema.Boolean),
 	/** The head repository, which differs from `repoFullName` on a fork's pull request. */
 	headRepoFullName: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	/** On `edited`: whether the edit moved the pull request to another base branch. */
+	baseChanged: Schema.optionalKey(Schema.Boolean),
 	/**
 	 * Set on the copy the review trigger re-enqueues with a delay, to start a review once a burst
 	 * of pushes settles. Every other reader of pull request events ignores that copy.

@@ -2302,10 +2302,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						}
 					}
 				}
-				// An edit can retarget the pull request at another base, which changes the merged diff
-				// under an approval of the same head. The reviewed base is not kept, so any edit of a
-				// pull request in a repository that approves withdraws; the next review approves again.
-				if (job.action === "edited") {
+				// Retargeting a pull request at another base changes the merged diff under an approval
+				// of the same head, so that edit withdraws. A title or description edit does not.
+				if (job.action === "edited" && job.baseChanged === true) {
 					const edited = yield* repositories
 						.resolveRepository(orgId, job.provider, job.externalRepoId)
 						.pipe(Effect.mapError(toPersistence))
@@ -2318,7 +2317,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								orgId,
 								edited.value,
 								job.number,
-								"the pull request changed since it approved",
+								"the pull request's base branch changed since it approved",
 							)
 						}
 					}

@@ -123,7 +123,7 @@ const CONTAINER_PATH = /(^|\/)(Dockerfile[^/]*|[^/]+\.dockerfile|(docker-)?compo
 const MIGRATION_PATH = /(^|\/)(migrations?|drizzle)\/|\.sql$/i
 const SECRET_FILE_PATH = /(^|\/)\.env[^/]*$|\.(pem|key|p12|pfx|jks|keystore)$/i
 /** What the review reads as instructions, and other agents' rule directories beside them. */
-const REVIEWER_RULES_PATH = /(^|\/)(CLAUDE|AGENTS)\.md$|(^|\/)\.(maple|claude|cursor)\//
+const REVIEWER_RULES_PATH = /(^|\/)(CLAUDE|AGENTS|SKILL)\.md$|(^|\/)\.(maple|claude|cursor)\//
 
 const SENSITIVE_PATTERNS: ReadonlyArray<RegExp> = [
 	CI_CONFIG_PATH,

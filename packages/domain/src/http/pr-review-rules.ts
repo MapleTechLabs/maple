@@ -983,7 +983,12 @@ export const prReviewAutoApproval = (input: {
 	const checks: ReadonlyArray<readonly [boolean, PrReviewAutoApprovalRefusal, string]> = [
 		[report.wholeDiff !== true, "not_whole_diff", "the review read only the commits since the last one"],
 		[(report.unreviewed?.length ?? 0) > 0, "unread", "some reviewed files were not read"],
-		[input.diffUnavailable === true, "diff_unavailable", "Maple could not read the diff"],
+		// No signals from Maple's own read is the same as no read: nothing below could be checked.
+		[
+			input.diffUnavailable === true || diff === undefined,
+			"diff_unavailable",
+			"Maple could not read the diff",
+		],
 		[
 			(input.patchlessFiles ?? 0) > 0,
 			"patchless",

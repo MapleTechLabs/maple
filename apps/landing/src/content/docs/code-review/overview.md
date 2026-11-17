@@ -61,7 +61,7 @@ Every one of these must hold:
 - The confidence is 9 or more.
 - The pull request is open and not a draft, it targets the repository's default branch, its head is still the commit reviewed, and its author can push to the repository.
 
-Maple dismisses its approval when new commits are pushed, when a later review does not approve, when a later review of the same commit ends early, and when the pull request is edited. An edit can change the base branch, and with it what merges, so any edit withdraws the approval, a changed title or description included. The next review approves again if everything still holds. If Maple cannot withdraw an approval, it says so in a comment on the pull request so a person can dismiss it.
+Maple dismisses its approval when new commits are pushed, when a later review does not approve, when a later review of the same commit ends early, and when the pull request is moved to another base branch, since that changes what merges. Editing the title or description leaves the approval in place. If Maple cannot withdraw an approval, it says so in a comment on the pull request so a person can dismiss it.
 
 Turning the rule off leaves existing approvals in place. GitHub may only let a repository admin, or someone listed as allowed to dismiss reviews, dismiss a review on a protected branch, so also turn on **Dismiss stale pull request approvals when new commits are pushed** in the branch's protection or ruleset. Changes to these settings are recorded in the audit log.
 
