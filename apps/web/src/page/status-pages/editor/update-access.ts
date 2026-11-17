@@ -41,7 +41,7 @@ export const blockedReason = (
 		onSome: (domain) => (domain.hostname === null ? null : "Remove the custom domain first."),
 		onNone: () =>
 			AsyncData.hasError(model.customDomain.data)
-				? "Couldn't check for a custom domain. Try again under Advanced."
+				? "Couldn't check for a custom domain. Try again under Basic settings."
 				: "Checking for a custom domain…",
 	})
 }
