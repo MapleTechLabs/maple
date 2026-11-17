@@ -52,6 +52,8 @@ export type DashboardPageOptions = Readonly<{
 	fill?: boolean
 	/** A scroller below has left the top: the sticky area raises its shadow. */
 	isScrolled?: boolean
+	/** Below `md` the header and tabs scroll away with the body, for a header too tall to pin on a phone. */
+	unpinHeaderOnMobile?: boolean
 }>
 
 export const pageBody = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
@@ -82,12 +84,13 @@ export const pageContent = <M>(
 	h: HtmlBuilder<M>,
 	children: ReadonlyArray<Html>,
 	attributes: ReadonlyArray<Attribute<M>> = [],
+	className?: string,
 ): Html =>
 	h.main(
 		[
 			h.Id("main-content"),
 			h.DataAttribute("slot", "page-content"),
-			h.Class(pageContentStyles),
+			h.Class(cn(pageContentStyles, className)),
 			...attributes,
 		],
 		children,
@@ -193,16 +196,29 @@ export const dashboardPage = <M>(
 			: [h.div([h.DataAttribute("slot", "page-tabs"), h.Class("min-w-0")], [options.tabs])]),
 		...(options.sticky === undefined || options.sticky === null ? [] : [options.sticky]),
 	]
+	// The column scrolls as a whole below `md`; the scroll area grows to its content inside it.
+	const unpin = options.unpinHeaderOnMobile === true && options.fill !== true
 	return pageBody(h, [
 		...(options.filters === undefined
 			? []
 			: [filterRail(h, options.filters, options.filtersWidth, options.filtersLabel)]),
-		pageContent(h, [
-			...(sticky.length > 0 ? [stickyArea(h, sticky, options.isScrolled)] : []),
-			options.fill === true
-				? fillArea(h, children)
-				: scrollArea(h, children, options.scrollClassName, options.width, options.gap),
-		]),
+		pageContent(
+			h,
+			[
+				...(sticky.length > 0 ? [stickyArea(h, sticky, options.isScrolled)] : []),
+				options.fill === true
+					? fillArea(h, children)
+					: scrollArea(
+							h,
+							children,
+							cn(options.scrollClassName, unpin && "max-md:flex-none max-md:overflow-visible"),
+							options.width,
+							options.gap,
+						),
+			],
+			[],
+			unpin ? "max-md:overflow-y-auto" : undefined,
+		),
 		...(options.rightPanel === undefined
 			? []
 			: [

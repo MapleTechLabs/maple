@@ -349,6 +349,7 @@ const loaded = (h: H, model: Model, page: V2StatusPage, inputs: PageViewInputs):
 					actions: headerActions(h, model, page),
 					tabs: tabs(h, model, page),
 					gap: "md",
+					unpinHeaderOnMobile: true,
 				},
 				[body(h, model, page, timeZone)],
 			),
