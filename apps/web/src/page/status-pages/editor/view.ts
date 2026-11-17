@@ -265,7 +265,10 @@ const body = (h: H, model: Model, page: V2StatusPage, time: TimeInputs): Html =>
 			return maintenanceTab(h, model, time)
 		case "page":
 			return canManage(model) && page.draft
-				? vstack(h, { gap: "4" }, [draftCallout(h), livePage(h, model, page)])
+				? vstack(h, { gap: "4", className: "min-h-0 flex-1" }, [
+						draftCallout(h),
+						livePage(h, model, page),
+					])
 				: livePage(h, model, page)
 	}
 }
@@ -415,13 +418,23 @@ const loaded = (h: H, model: Model, page: V2StatusPage, inputs: PageViewInputs):
 					actions: headerActions(h, model, page),
 					tabs: tabs(h, model, page),
 					gap: "md",
-					// Settings owns its scrolling: the menu, the form and the preview each scroll alone.
-					fill: location.tab === "settings",
+					// Settings and the Live page own their scrolling: Settings' panes each scroll alone,
+					// and the Live page's frame takes exactly the height left, so the page never scrolls.
+					fill: location.tab === "settings" || location.tab === "page",
 				},
 				[
 					location.tab === "settings"
 						? settingsLayout(h, model, page, location.section, body(h, model, page, time))
-						: body(h, model, page, time),
+						: location.tab === "page"
+							? h.div(
+									[
+										h.Class(
+											"flex min-h-0 flex-1 flex-col px-(--page-gutter) pb-(--page-gutter)",
+										),
+									],
+									[body(h, model, page, time)],
+								)
+							: body(h, model, page, time),
 				],
 			),
 			panelSheet(h, model, time),

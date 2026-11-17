@@ -162,27 +162,37 @@ export const canvasDocument = (model: Model, page: V2StatusPage): string =>
 	})
 
 export const livePage = (h: H, model: Model, page: V2StatusPage): Html =>
-	vstack(h, { gap: "2", shrink: true, as: "section", attributes: [h.AriaLabel("Page preview")] }, [
-		hstack(h, { gap: "3", justify: "between", wrap: true, className: "min-h-7" }, [
-			typography(h, { size: "xs", tone: "muted", as: "p" }, [
-				"Click a component or incident to edit it.",
+	vstack(
+		h,
+		{
+			gap: "2",
+			shrink: true,
+			as: "section",
+			className: "min-h-0 flex-1",
+			attributes: [h.AriaLabel("Page preview")],
+		},
+		[
+			hstack(h, { gap: "3", justify: "between", wrap: true, className: "min-h-7" }, [
+				typography(h, { size: "xs", tone: "muted", as: "p" }, [
+					"Click a component or incident to edit it.",
+				]),
+				previewControls(h, {
+					state: model.previewState,
+					width: model.previewWidth,
+					scheme: page.theme.appearance === "auto" ? model.previewScheme : null,
+					onState: (state) => Message.PickedPreviewState({ state }),
+					onWidth: (width) => Message.PickedPreviewWidth({ width }),
+					onScheme: (scheme) => Message.PickedPreviewScheme({ scheme }),
+				}),
 			]),
-			previewControls(h, {
-				state: model.previewState,
+			// Above the frame: the frame takes the height left, so a note under it is never seen.
+			...previewExampleNote(h, model.previewState),
+			previewFrame(h, {
+				title: `${page.name} as visitors see it`,
+				document: canvasDocument(model, page),
+				isSelectable: true,
 				width: model.previewWidth,
-				scheme: page.theme.appearance === "auto" ? model.previewScheme : null,
-				onState: (state) => Message.PickedPreviewState({ state }),
-				onWidth: (width) => Message.PickedPreviewWidth({ width }),
-				onScheme: (scheme) => Message.PickedPreviewScheme({ scheme }),
+				className: "min-h-80 flex-1",
 			}),
-		]),
-		// Above the frame: the frame fills the viewport, so a note under it is never seen.
-		...previewExampleNote(h, model.previewState),
-		previewFrame(h, {
-			title: `${page.name} as visitors see it`,
-			document: canvasDocument(model, page),
-			isSelectable: true,
-			width: model.previewWidth,
-			className: "h-[640px] lg:h-[calc(100vh-16rem)] lg:min-h-[520px]",
-		}),
-	])
+		],
+	)
