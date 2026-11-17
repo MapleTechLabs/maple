@@ -54,7 +54,7 @@ describe("DnsTxtResolver", () => {
 				Effect.flip,
 				Effect.provide(resolverAnswering(200, { Status: 2 })),
 			)
-			assert.strictEqual(servfail._tag, "@maple/backend/services/org/enterprise-sso/DnsLookupError")
+			assert.strictEqual(servfail._tag, "@maple/backend/platform/DnsLookupError")
 		}),
 	)
 })

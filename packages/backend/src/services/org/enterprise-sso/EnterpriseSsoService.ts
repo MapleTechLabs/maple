@@ -59,7 +59,7 @@ import {
 	type ClerkSsoConnectionInput,
 	type ClerkSsoDirectory,
 } from "./ClerkSsoGateway"
-import { DnsTxtResolver } from "./DnsTxtResolver"
+import { DnsTxtResolver } from "@maple/backend/platform/DnsTxtResolver"
 
 type Entitlement = "entitled" | "not_entitled" | "unknown"
 /** Which add-on a write needs. */

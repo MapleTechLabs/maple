@@ -2,7 +2,7 @@ import { Array as Arr, Context, Duration, Effect, Layer, Option, Schema, String 
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 
 export class DnsLookupError extends Schema.TaggedError<DnsLookupError>()(
-	"@maple/backend/services/org/enterprise-sso/DnsLookupError",
+	"@maple/backend/platform/DnsLookupError",
 	{ recordName: Schema.String, message: Schema.String },
 ) {}
 
@@ -76,7 +76,7 @@ const make = Effect.gen(function* () {
 })
 
 export class DnsTxtResolver extends Context.Service<DnsTxtResolver, DnsTxtResolverApi>()(
-	"@maple/backend/services/org/enterprise-sso/DnsTxtResolver",
+	"@maple/backend/platform/DnsTxtResolver",
 	{ make },
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(FetchHttpClient.layer))
