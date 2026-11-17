@@ -7,7 +7,7 @@ import { button } from "@maple/views/ui/button"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { copyableField } from "@maple/views/ui/copyable-field"
 import { errorState } from "@maple/views/ui/error-state"
-import { icon } from "@maple/views/ui/icon"
+import { icon, type IconName } from "@maple/views/ui/icon"
 import { navRailRow } from "@maple/views/ui/nav-rail-row"
 import { searchResultMockup } from "@maple/views/ui/page-mockup"
 import { pageTitle } from "@maple/status-page"
@@ -40,7 +40,7 @@ import { appearanceSection, brandingSection } from "./view-appearance"
 import { customDomainSection } from "./view-domain"
 import { jsonTab } from "./view-json"
 import { monitorsSection } from "./view-monitors"
-import { draftName, fragmentPreview, settingsPagePreview, tabPreview } from "./view-canvas"
+import { draftName, settingsPagePreview, tabPreview } from "./view-canvas"
 import { activeCustomDomain, pageUrlOf } from "./update-domain"
 import { Message } from "./message"
 import { canBreakGlass, canManage, type Model } from "./model"
@@ -61,6 +61,14 @@ const SECTION_LABEL = {
 	access: "Access",
 	advanced: "Advanced",
 } as const satisfies Record<SettingsSection, string>
+
+const SECTION_ICON = {
+	basic: "GearIcon",
+	monitors: "PulseIcon",
+	appearance: "PaletteIcon",
+	access: "LockIcon",
+	advanced: "CodeIcon",
+} as const satisfies Record<SettingsSection, IconName>
 
 const AUTO_INCIDENT_ENTRIES = [
 	{ value: "off", label: "Off" },
@@ -103,7 +111,7 @@ const pageSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm)
 					hint: `${publicAddress(form.slug)}. Changing it moves the page; the old address stops working.`,
 					onInput: (value) => Message.ChangedSetting({ field: "slug", value }),
 				}),
-				onYourPage(h, tabPreview(h, model, page, form, address)),
+				onYourPage(h, tabPreview(h, page, form, address)),
 				textareaField(h, {
 					id: "status-page-description",
 					label: "Description",
@@ -167,7 +175,7 @@ const pageSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm)
 	)
 }
 
-const behaviourSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm): Html =>
+const behaviourSection = (h: H, model: Model, form: SettingsForm): Html =>
 	settingsSection(h, { id: "status-page-settings-behaviour", title: "Behaviour" }, [
 		vstack(h, { gap: "4" }, [
 			selectField(h, {
@@ -187,14 +195,6 @@ const behaviourSection = (h: H, model: Model, page: V2StatusPage, form: Settings
 				isDisabled: !canManage(model),
 				onToggle: Message.ToggledPoweredBy(),
 			}),
-			onYourPage(
-				h,
-				fragmentPreview(h, model, page, form, {
-					title: "The page footer as visitors see it",
-					parts: ["footer"],
-					className: "h-32",
-				}),
-			),
 		]),
 	])
 
@@ -355,12 +355,12 @@ const sectionBody = (
 			return [
 				pageSection(h, model, page, form),
 				customDomainSection(h, model, page),
-				behaviourSection(h, model, page, form),
+				behaviourSection(h, model, form),
 			]
 		case "monitors":
-			return [monitorsSection(h, model, page)]
+			return [monitorsSection(h, model)]
 		case "appearance":
-			return [brandingSection(h, model, page, form), appearanceSection(h, model, page, form)]
+			return [brandingSection(h, model, page, form), appearanceSection(h, model, form)]
 		case "access":
 			return [accessSection(h, model, page, form)]
 		case "advanced":
@@ -388,7 +388,7 @@ const sectionMenu = (h: H, page: V2StatusPage, section: SettingsSection): Html =
 							href: statusPageHref(page.id, "settings", entry),
 							attributes: [h.Key(entry)],
 						},
-						[SECTION_LABEL[entry]],
+						[icon(h, SECTION_ICON[entry], { size: 16 }), SECTION_LABEL[entry]],
 					),
 				),
 			),
@@ -399,8 +399,10 @@ export const settingsView = (h: H, model: Model, page: V2StatusPage, section: Se
 	const form = Option.getOrElse(settingsOf(model), () => settingsFormOf(page))
 	return h.div(
 		[
+			// The wide breakpoint is in rem like `md`: Tailwind orders a px `min-[…]` before the rem
+			// breakpoints, so `md`'s two columns would win and the preview would wrap under the menu.
 			h.Class(
-				"grid items-start gap-6 md:grid-cols-[12rem_minmax(0,1fr)] lg:gap-10 min-[1360px]:grid-cols-[11rem_minmax(26rem,1fr)_minmax(20rem,1fr)]",
+				"grid items-start gap-6 md:grid-cols-[12rem_minmax(0,1fr)] lg:gap-10 min-[85rem]:grid-cols-[11rem_minmax(26rem,1fr)_minmax(20rem,1fr)]",
 			),
 		],
 		[
@@ -435,7 +437,11 @@ export const settingsView = (h: H, model: Model, page: V2StatusPage, section: Se
 				}),
 			]),
 			h.aside(
-				[h.Class("hidden min-w-0 min-[1360px]:sticky min-[1360px]:top-6 min-[1360px]:block")],
+				[
+					h.Class(
+						"min-w-0 md:col-start-2 min-[85rem]:sticky min-[85rem]:top-6 min-[85rem]:col-start-auto",
+					),
+				],
 				[settingsPagePreview(h, model, page, form)],
 			),
 		],
