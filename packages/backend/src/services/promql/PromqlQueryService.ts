@@ -577,7 +577,10 @@ const make = Effect.gen(function* () {
 			[...prometheusMetadata(rows)],
 			([name]) => input.metric === undefined || input.metric === name,
 		)
-		const limit = input.limit !== undefined && input.limit > 0 ? input.limit : entries.length
+		const limit = Math.min(
+			input.limit !== undefined && input.limit > 0 ? input.limit : DISCOVERY_LIMIT,
+			DISCOVERY_LIMIT,
+		)
 		return new Map(
 			Arr.take(
 				Arr.sort(

@@ -759,23 +759,27 @@ export type PromqlPushdownRow = typeof promqlPushdownRowSchema.Type
 
 /** Type, unit and description of every stored metric in the window, for `/api/v1/metadata`. */
 export function promqlMetadataQuery(opts: { readonly limit: number }) {
-	return from(Datasources.metricCatalog)
-		.select(($) => ({
-			metricName: $.MetricName,
-			metricType: $.MetricType,
-			// One name in two units is two metrics (`_seconds`, `_milliseconds`), as in the catalog.
-			unit: $.MetricUnit,
-			description: CH.any_($.MetricDescription),
-			isMonotonic: sql(T.uint8)`max(${$.IsMonotonic})`,
-		}))
-		.where(($) => [
-			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(utcHourFloor("startTime")),
-			$.Hour.lte(utcSecondsParam("endTime")),
-		])
-		.groupBy("metricName", "metricType", "unit")
-		.limit(opts.limit)
-		.format("JSON")
+	return (
+		from(Datasources.metricCatalog)
+			.select(($) => ({
+				metricName: $.MetricName,
+				metricType: $.MetricType,
+				// One name in two units is two metrics (`_seconds`, `_milliseconds`), as in the catalog.
+				unit: $.MetricUnit,
+				description: CH.any_($.MetricDescription),
+				isMonotonic: sql(T.uint8)`max(${$.IsMonotonic})`,
+			}))
+			.where(($) => [
+				$.OrgId.eq(orgIdParam),
+				$.Hour.gte(utcHourFloor("startTime")),
+				$.Hour.lte(utcSecondsParam("endTime")),
+			])
+			.groupBy("metricName", "metricType", "unit")
+			// Deterministic: the limit and each family's entry order must not depend on scan order.
+			.orderBy(["metricName", "asc"], ["metricType", "asc"], ["unit", "asc"])
+			.limit(opts.limit)
+			.format("JSON")
+	)
 }
 
 /** Params: `orgId`, epoch ms `startMs`/`endMs` (both inclusive). */

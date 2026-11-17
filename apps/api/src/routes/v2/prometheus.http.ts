@@ -66,8 +66,12 @@ const toErrorResponse = <E extends { readonly _tag: string; readonly message: st
 		case "@maple/backend/promql/PromqlExecutionError":
 			return errorResponse("execution", error.message)
 		default:
+			// A 503: the span carries the failure (error.type) though the client sees a generic message.
 			return Effect.andThen(
-				Effect.logWarning("Prometheus API warehouse read failed", error),
+				Effect.andThen(
+					Effect.annotateCurrentSpan({ "error.type": error._tag, "error.message": error.message }),
+					Effect.logError("Prometheus API warehouse read failed", error),
+				),
 				errorResponse("unavailable", "the metric store is unavailable, try again"),
 			)
 	}
