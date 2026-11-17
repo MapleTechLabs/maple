@@ -60,7 +60,7 @@ const previewBar = (h: H, model: Model, snapshot: StatusPagePublicSnapshot, edit
 
 /** The page fills the window over the shell (under its menus and toasts), as visitors see it. */
 const fullScreen = (h: H, model: Model, snapshot: StatusPagePublicSnapshot, editorHref: string): Html =>
-	vstack(h, { className: "fixed inset-0 z-45 bg-background" }, [
+	vstack(h, { className: "fixed inset-0 z-45 overscroll-none bg-background" }, [
 		previewBar(h, model, snapshot, editorHref),
 		previewFrame(h, {
 			title: pageTitle(snapshot.page.name),

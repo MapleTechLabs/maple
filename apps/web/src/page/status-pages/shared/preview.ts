@@ -273,7 +273,8 @@ export const previewDocument = (options: PreviewDocumentOptions): string => {
 			? { preview, inDashboard: true }
 			: { preview, inDashboard: true, publicUrl: options.publicUrl },
 	)
-	const stay = `<script>${stayInFrameScript(options.opensLinks === true)}</script><script>${KEEP_SCROLL_SCRIPT}</script>`
+	// No rubber-band at the frame's edges: it bounced the page and chained the scroll to Maple's.
+	const stay = `<style>html,body{overscroll-behavior:none}</style><script>${stayInFrameScript(options.opensLinks === true)}</script><script>${KEEP_SCROLL_SCRIPT}</script>`
 	if (!options.isSelectable) return Str.replace("</body>", `${stay}</body>`)(html)
 	const extra = `<style>${SELECTABLE_STYLES}</style><script>${SELECT_SCRIPT}</script>${stay}`
 	return Str.replace("</body>", `${extra}</body>`)(html)
