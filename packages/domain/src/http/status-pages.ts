@@ -175,7 +175,10 @@ export class StatusPageCustomDomainNotFoundError extends HttpTaggedError<StatusP
 	},
 ) {}
 
-/** Another status page, in any organization, already uses the hostname. */
+/**
+ * Another status page, in any organization, holds the hostname. The message is the caller's to
+ * read: when the holder never proved ownership, it names the record that claims the hostname.
+ */
 export class StatusPageCustomDomainTakenError extends HttpTaggedError<StatusPageCustomDomainTakenError>()(
 	"@maple/http/errors/StatusPageCustomDomainTakenError",
 	{
@@ -186,11 +189,10 @@ export class StatusPageCustomDomainTakenError extends HttpTaggedError<StatusPage
 		status: 409,
 		code: "status_page_custom_domain_taken",
 		title: "Custom domain is taken",
-		message: "Another status page already uses this hostname.",
 		param: "hostname",
 		retry: "never",
 		recovery: "fix_request",
-		exposure: "redacted",
+		exposure: "public_message",
 	},
 ) {}
 
