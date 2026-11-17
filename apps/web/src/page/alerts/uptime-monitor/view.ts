@@ -1,3 +1,4 @@
+import { UPTIME_CERTIFICATE_GROUP_KEY } from "@maple/domain/uptime"
 import { formatTimeInTimezone } from "@maple/ui/lib/timezone-format"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -108,13 +109,16 @@ const headerActions = (h: H, model: Model, monitor: UptimeMonitor): Html =>
 			: []),
 	])
 
-/** The open incident of the monitor's backing alert rule. */
+/** The open outage incident of the monitor's backing alert rule, not its certificate warning. */
 const openIncidentId = (model: Model, monitor: UptimeMonitor): string | null =>
 	monitor.alert_rule_id === null
 		? null
 		: Arr.findFirst(
 				model.incidents ?? [],
-				(row) => row.rule_id === monitor.alert_rule_id && row.status === "open",
+				(row) =>
+					row.rule_id === monitor.alert_rule_id &&
+					row.status === "open" &&
+					row.group_key !== UPTIME_CERTIFICATE_GROUP_KEY,
 			).pipe(
 				Option.flatMapNullishOr((found) => found.id),
 				Option.getOrNull,
@@ -200,7 +204,7 @@ const body = (
 					checksPanel(h, monitor, timeZone),
 				]),
 				vstack(h, { gap: "4" }, [
-					lastCheckPanel(h, monitor),
+					lastCheckPanel(h, monitor, nowMs),
 					setupPanel(h, model, monitor, serviceHrefOf(monitor)),
 				]),
 			],

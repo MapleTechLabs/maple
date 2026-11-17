@@ -8,6 +8,7 @@ import type {
 	AlertSignalType,
 	InvestigationId,
 } from "@maple/domain/http"
+import { isUptimeCertificateIncident } from "@maple/domain/uptime"
 import type { V2AlertIncidentEvent, V2Investigation } from "@maple/domain/http/v2"
 import type { Tone } from "@maple/ui/lib/tone"
 import { UNGROUPED_GROUP_KEY } from "@maple/domain/http"
@@ -325,8 +326,9 @@ export function buildIncidentTimeline(input: {
 	const { incident } = input
 	const group = incidentGroup(incident)
 	// An uptime rule has no threshold to read out; an SLO's reads its tier factor, not today's burn.
-	const condition =
-		incident.signalType === "uptime"
+	const condition = isUptimeCertificateIncident(incident)
+		? `${incident.ruleName}'s certificate entered its expiry window`
+		: incident.signalType === "uptime"
 			? `${incident.ruleName} went down`
 			: incident.signalType === "slo_burn_rate"
 				? `SLO burning its error budget at ${formatSignalValue(incident.signalType, incident.threshold)} or more`
