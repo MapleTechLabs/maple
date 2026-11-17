@@ -306,6 +306,13 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 				description: RULES_COPY.postMerge.description,
 				inherited: parent.postMergeCheck ?? BUILT_IN.postMergeCheck,
 			}),
+			toggleSetting(h, model, {
+				name: "autoApprove",
+				slug: "auto-approve",
+				label: RULES_COPY.autoApprove.label,
+				description: RULES_COPY.autoApprove.description,
+				inherited: parent.autoApprove ?? BUILT_IN.autoApprove,
+			}),
 			...footer(h, model, inputs.canEdit),
 		],
 	)

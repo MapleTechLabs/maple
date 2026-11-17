@@ -22,6 +22,7 @@ import {
 	PrReviewTestSignal,
 	PrReviewVerdict,
 } from "./pr-review"
+import { openContractBreaks } from "./pr-review-telemetry"
 
 /**
  * The config a review of one repository runs with: the repository's fields over the
@@ -58,6 +59,7 @@ export const mergePrReviewConfig = (
 			...pick("feedbackScope"),
 			...pick("blockOnContractBreaks"),
 			...pick("postMergeCheck"),
+			...pick("autoApprove"),
 		},
 		{ disableChecks: true },
 	)
@@ -789,4 +791,106 @@ export const parseReplyCommand = (
 	const command: PrReviewReplyCommand =
 		lowerWord === "review" ? "review" : lowerWord === "fix" ? "fix" : "ask"
 	return { command, text: Str.trim(body) }
+}
+
+/** The lowest confidence a review may approve at: a clean, low-risk change scores 9 or 10. */
+export const PR_REVIEW_AUTO_APPROVE_MIN_CONFIDENCE = 9
+
+/** Why a review did not approve, low-cardinality so it can sit on a span. */
+export type PrReviewAutoApprovalRefusal =
+	| "partial"
+	| "not_whole_diff"
+	| "unread"
+	| "ignored_files"
+	| "dismissed"
+	| "filtered"
+	| "unchecked_fixes"
+	| "verdict"
+	| "findings"
+	| "risk"
+	| "tests"
+	| "merge_steps"
+	| "contract_break"
+	| "confidence"
+
+export type PrReviewAutoApproval =
+	| { readonly approve: true; readonly reason: string }
+	| { readonly approve: false; readonly refusal: PrReviewAutoApprovalRefusal; readonly reason: string }
+
+const refuse = (refusal: PrReviewAutoApprovalRefusal, reason: string): PrReviewAutoApproval => ({
+	approve: false,
+	refusal,
+	reason,
+})
+
+/**
+ * Whether the review may approve the pull request without a person reading it: its blast radius is
+ * low and nothing is left for anyone to do. Every condition must hold, and an unknown reads as no:
+ * the pass read the whole diff (not only the commits since the last review) and finished, no file of
+ * the diff sits under an ignored path, found no warning or critical (open ones from earlier pushes
+ * included), none was ever dismissed on the pull request or held back by the repository's lenses or
+ * the team's feedback, rated the risk `low` (auth, tenancy, migrations, billing and concurrency are
+ * never low), saw tests cover the change or not need to, left no step before merge open and no
+ * telemetry contract broken, and scored {@link PR_REVIEW_AUTO_APPROVE_MIN_CONFIDENCE} or more.
+ *
+ * A dismissal is a person's judgment that a warning does not hold, often the author's own, so a
+ * pull request that had one waits for a person to approve it too.
+ *
+ * Who wrote the pull request, and whether its head is still the one reviewed, are the provider's
+ * to check when it approves: they are facts about the pull request now, not about the report.
+ */
+export const prReviewAutoApproval = (input: {
+	readonly report: PrReviewReport
+	readonly carriedOpen?: ReadonlyArray<{ readonly severity: PrReviewSeverity; readonly category?: string }>
+	readonly partial?: boolean
+	readonly uncheckedFixes?: number
+	/** Files of the diff under the repository's ignored paths: the review never read them. */
+	readonly ignoredFiles?: number
+	/** Warnings and criticals on the pull request a person or the reviewer dismissed, ever. */
+	readonly dismissedIssues?: number
+	/** Warnings and criticals the review found but the repository's lenses or feedback held back. */
+	readonly filteredIssues?: number
+}): PrReviewAutoApproval => {
+	const { report } = input
+	const carriedOpen = input.carriedOpen ?? []
+	const uncheckedFixes = input.uncheckedFixes ?? 0
+	if (input.partial === true) return refuse("partial", "the review ended early")
+	if (report.wholeDiff !== true) {
+		return refuse("not_whole_diff", "the review read only the commits since the last one")
+	}
+	if ((report.unreviewed?.length ?? 0) > 0) return refuse("unread", "some reviewed files were not read")
+	if ((input.ignoredFiles ?? 0) > 0) return refuse("ignored_files", "some files are under ignored paths")
+	if ((input.dismissedIssues ?? 0) > 0) {
+		return refuse("dismissed", "a warning or critical on the pull request was dismissed")
+	}
+	if ((input.filteredIssues ?? 0) > 0) {
+		return refuse("filtered", "a warning or critical was held back by the repository's rules")
+	}
+	if (uncheckedFixes > 0)
+		return refuse("unchecked_fixes", "a fix has not been re-checked against the whole diff")
+	if (report.verdict !== "clean") return refuse("verdict", `the verdict is ${report.verdict}`)
+	if (Arr.some([...report.findings, ...carriedOpen], (finding) => finding.severity !== "info")) {
+		return refuse("findings", "a warning or critical finding is open")
+	}
+	if (report.risk !== "low") return refuse("risk", `the risk is ${report.risk ?? "not rated"}`)
+	if (report.tests === "missing" || report.tests === "partial") {
+		return refuse("tests", `tests are ${report.tests}`)
+	}
+	if (Arr.some(report.beforeMerge ?? [], (step) => step.done !== true)) {
+		return refuse("merge_steps", "a step before merge is open")
+	}
+	if (openContractBreaks(report.telemetry).length > 0) {
+		return refuse("contract_break", "a telemetry contract break is open")
+	}
+	const confidence = confidencePrReview(report, carriedOpen, false, uncheckedFixes)
+	if (confidence === undefined || confidence.confidence < PR_REVIEW_AUTO_APPROVE_MIN_CONFIDENCE) {
+		return refuse(
+			"confidence",
+			`confidence is ${confidence?.confidence ?? "unscored"}, under ${PR_REVIEW_AUTO_APPROVE_MIN_CONFIDENCE}`,
+		)
+	}
+	return {
+		approve: true,
+		reason: `Low blast radius, no open findings and confidence ${confidence.confidence}/${PR_REVIEW_CONFIDENCE_MAX}.`,
+	}
 }
