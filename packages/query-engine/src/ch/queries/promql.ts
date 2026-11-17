@@ -761,6 +761,61 @@ export function promqlMetadataQuery(opts: { readonly limit: number }) {
 		.format("JSON")
 }
 
+/** Params: `orgId`, epoch ms `startMs`/`endMs` (both inclusive). */
+export interface PromqlSeriesLabelsOpts {
+	readonly table: PromqlMetricTable
+	/** Stored names to read; undefined reads every metric of the table, for a selector without a name. */
+	readonly metricNames: ReadonlyArray<string> | undefined
+	/** Label matchers as WHERE conditions, built from the table's columns. */
+	readonly conditions: ($: PromqlLabelColumns) => ReadonlyArray<CH.Condition | undefined>
+	readonly limit: number
+}
+
+/**
+ * One row per stored metric and label set in the window, for series discovery: no samples and no
+ * fan-out per metric. A histogram row lists its bucket bounds (as `toString` prints them), and
+ * rows come in a fixed order so a cut at the limit is deterministic.
+ */
+export function promqlSeriesLabelsQuery(opts: PromqlSeriesLabelsOpts) {
+	const names = opts.metricNames
+	return from(metricTable(opts.table))
+		.select(($) => ({
+			metricName: sql(T.string)`concat(${$.MetricName}, ${METRIC_UNIT_SEPARATOR}, ${$.MetricUnit})`,
+			labelKey: sql(T.string)`toString(cityHash64(${labelSetExpr($, false)}))`,
+			serviceName: CH.any_($.ServiceName),
+			attributes: CH.any_($.Attributes),
+			resourceAttributes: CH.any_($.ResourceAttributes),
+			bounds:
+				opts.table === "metrics_histogram"
+					? sql(
+							T.array(T.string),
+						)`arrayMap(b -> toString(b), arraySort(groupUniqArrayArrayIf(arrayPushBack(ExplicitBounds, inf), length(BucketCounts) = length(ExplicitBounds) + 1)))`
+					: sql(T.array(T.string))`emptyArrayString()`,
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			names === undefined ? undefined : $.MetricName.in_(...names),
+			sql.cond`${$.TimeUnix} >= fromUnixTimestamp64Milli(toInt64(${param.int("startMs")}))`,
+			sql.cond`${$.TimeUnix} <= fromUnixTimestamp64Milli(toInt64(${param.int("endMs")}))`,
+			sql.cond`bitAnd(Flags, 1) = 0`,
+			...opts.conditions($),
+		])
+		.groupBy("metricName", "labelKey")
+		.orderBy(["metricName", "asc"], ["labelKey", "asc"])
+		.limit(opts.limit)
+		.format("JSON")
+}
+
+export const promqlSeriesLabelsRowSchema = Schema.Struct({
+	metricName: Schema.String,
+	labelKey: Schema.String,
+	serviceName: Schema.String,
+	attributes: Schema.Record(Schema.String, Schema.String),
+	resourceAttributes: Schema.Record(Schema.String, Schema.String),
+	bounds: Schema.Array(Schema.String),
+})
+export type PromqlSeriesLabelsRow = typeof promqlSeriesLabelsRowSchema.Type
+
 /**
  * Distinct `job` or `instance` values in one metric table, built by the same expression as series
  * labels (a datapoint label first, then the resource: `service.namespace/service`,

@@ -11,6 +11,7 @@ import { Context, Effect, Layer, Option, Order, Result, Schema, Array as Arr, Re
 import {
 	DEFAULT_LIMITS,
 	evaluate,
+	isInstant,
 	MAX_POINTS_PER_SERIES,
 	type Expr,
 	parse,
@@ -23,12 +24,14 @@ import {
 	type QueryResult,
 	type SelectorData,
 	type SelectorRequest,
+	valueTypeOf,
 	type VectorSelector,
 } from "@maple/promql"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import {
 	buildPushdownQuery,
 	buildSelectorQueries,
+	buildSeriesLabelsQueries,
 	canonicalPromNames,
 	catalogFromRows,
 	catalogQuery,
@@ -43,6 +46,7 @@ import {
 	type PushdownPlan,
 	toPushdownData,
 	toSelectorData,
+	toSeriesLabels,
 } from "@maple/query-engine/promql"
 import type { CatalogMetric } from "@maple/query-engine/promql"
 import type { TenantContext } from "@maple/domain/http"
@@ -116,6 +120,13 @@ const validate = (query: PromqlQuery): Effect.Effect<Expr, PromqlBadQueryError> 
 				position: parsed.failure.position,
 			})
 		}
+		// Prometheus refuses these before evaluating, as bad_data.
+		const type = valueTypeOf(parsed.success)
+		if (!isInstant(query) && (type === "matrix" || type === "string")) {
+			return yield* new PromqlBadQueryError({
+				message: `invalid expression type "${type === "matrix" ? "range vector" : "string"}" for range query, must be Scalar or instant Vector`,
+			})
+		}
 		return parsed.success
 	})
 
@@ -179,16 +190,14 @@ const parseMatch = (text: string): Effect.Effect<VectorSelector, PromqlBadQueryE
 	return Effect.succeed(expr)
 }
 
-/** One bucket covering `[startMs, endMs]`: the cheapest read that still yields every label set. */
-const discoveryRequest = (selector: VectorSelector, window: DiscoveryWindow): SelectorRequest => ({
-	metricName: selector.name,
-	matchers: selector.matchers,
-	startMs: window.startMs - 1,
-	endMs: window.endMs,
-	originMs: window.startMs - 1,
-	widthMs: window.endMs - window.startMs + 1,
-	needsValues: false,
-})
+/** Past this many stored names in a table, a discovery read scans the table unfiltered by name. */
+const DISCOVERY_NAME_FILTER_LIMIT = 500
+
+/**
+ * The window `job` and `instance` values are read over. No rollup keeps them, so the read scans
+ * raw tables; values only seen before the last day of a longer range are left out.
+ */
+const IDENTITY_WINDOW_MS = 24 * 3_600_000
 
 /** A label set as one string, NUL-separated: label names never hold NUL, and values practically never do. */
 const seriesKey = (labels: Readonly<Record<string, string>>): string =>
@@ -371,16 +380,32 @@ const make = Effect.gen(function* () {
 		}
 		const selectors = yield* Effect.forEach(input.matches, parseMatch)
 		const catalog = yield* readCatalog(tenant, window)
+		// Not the query path's per-metric reads: `{job="api"}` resolves to every metric, which a
+		// discovery call must still answer. One label-set read per table instead, cut at the limit.
 		const read = yield* Effect.forEach(
-			selectors,
-			(selector) => readSelector(tenant, discoveryRequest(selector, window), catalog),
+			Arr.flatMap(selectors, (selector) =>
+				Arr.map(
+					buildSeriesLabelsQueries(selector.matchers, window, catalog, {
+						orgId: tenant.orgId,
+						limit: DISCOVERY_LIMIT,
+						maxNameFilter: DISCOVERY_NAME_FILTER_LIMIT,
+					}),
+					(plan) => ({ selector, plan }),
+				),
+			),
+			({ selector, plan }) =>
+				Effect.map(
+					warehouse.compiledQuery(tenant, plan.compiled, {
+						profile: "discovery",
+						context: "promqlSeries",
+					}),
+					(rows) => toSeriesLabels(selector.matchers, [{ plan, rows }]),
+				),
 			{ concurrency: WAREHOUSE_CONCURRENCY },
 		)
 		// seriesLabels sorts its keys, so the joined pairs are a stable identity.
 		const unique = new Map(
-			Arr.flatMap(read, (data) =>
-				Arr.map(data.series, (s) => [seriesKey(s.labels), s.labels] as const),
-			),
+			Arr.flatMap(read, (found) => Arr.map(found, (labels) => [seriesKey(labels), labels] as const)),
 		)
 		const limit = Math.min(input.limit ?? DISCOVERY_LIMIT, DISCOVERY_LIMIT)
 		yield* Effect.annotateCurrentSpan({
@@ -472,6 +497,7 @@ const make = Effect.gen(function* () {
 		window: DiscoveryWindow,
 		label: "job" | "instance",
 	) {
+		const startMs = Math.max(window.startMs, window.endMs - IDENTITY_WINDOW_MS)
 		const perTable = yield* Effect.forEach(
 			PROMQL_METRIC_TABLES,
 			(table) =>
@@ -479,7 +505,7 @@ const make = Effect.gen(function* () {
 					tenant,
 					CH.compile(promqlIdentityValuesQuery({ table, label, limit: DISCOVERY_LIMIT }), {
 						orgId: tenant.orgId,
-						startMs: window.startMs,
+						startMs,
 						endMs: window.endMs,
 					}),
 					{ profile: "discovery", context: label === "job" ? "promqlJobs" : "promqlInstances" },

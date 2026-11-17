@@ -123,6 +123,9 @@ export const EXCLUDED_KEY = sql.raw(
 
 /** The exact key first; only a missing key pays for normalizing every key of the map. */
 const mapLookupExpr = (map: CH.Expr<Record<string, string>>, name: string, filterExcluded: boolean) => {
+	// Normalizing writes `_` for every change, so a name without one (job, instance) comes only from
+	// that exact key, never an excluded one: skip the per-row regex over every key.
+	if (!Str.includes("_")(name)) return sql(chString)`${map}[${name}]`
 	const fallback = filterExcluded
 		? sql(
 				chString,
