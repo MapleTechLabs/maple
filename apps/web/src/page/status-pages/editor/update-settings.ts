@@ -90,8 +90,9 @@ export const takeBrandingImage = (
 	const file = files[0]
 	if (file === undefined || !canManage(model)) return { model: settled }
 	const issue = imageUploadIssue({ type: File.mimeType(file), size: File.size(file) })
+	const read = model.brandingRead + 1
 	return issue === null
-		? { model: settled, commands: [ReadBrandingImage({ field, file })] }
+		? { model: { ...settled, brandingRead: read }, commands: [ReadBrandingImage({ field, read, file })] }
 		: { model: settled, outMessage: toast("error", "Couldn't use that image", issue) }
 }
 
@@ -109,7 +110,13 @@ export const editBrandingImage = (model: Model, field: BrandingField): Return =>
 	const current = Option.match(settingsOf(model), { onNone: () => "", onSome: (form) => Str.trim(form[field]) })
 	const link = Str.startsWith("https://")(current) ? current : ""
 	return brandingDialog(
-		{ ...model, brandingDialogField: field, brandingLink: link, brandingDrag: null },
+		{
+			...model,
+			brandingDialogField: field,
+			brandingLink: link,
+			brandingDrag: null,
+			brandingRead: model.brandingRead + 1,
+		},
 		Dialog.open(model.brandingDialog),
 	)
 }
@@ -122,16 +129,27 @@ const applyBrandingImage = (model: Model, field: BrandingField, value: string): 
 		: changed
 }
 
-export const readBrandingImage = (model: Model, field: BrandingField, dataUrl: string | null): Return =>
-	dataUrl === null
-		? { model, outMessage: toast("error", "Couldn't read that image") }
-		: applyBrandingImage(model, field, dataUrl)
+/** A finished file read; one superseded by a later upload, link, removal or discard is dropped. */
+export const readBrandingImage = (
+	model: Model,
+	field: BrandingField,
+	read: number,
+	dataUrl: string | null,
+): Return =>
+	read !== model.brandingRead
+		? { model }
+		: dataUrl === null
+			? { model, outMessage: toast("error", "Couldn't read that image") }
+			: applyBrandingImage(model, field, dataUrl)
+
+export const removeBrandingImage = (model: Model, field: BrandingField): Return =>
+	changeSetting({ ...model, brandingRead: model.brandingRead + 1 }, field, "")
 
 export const submitBrandingLink = (model: Model): Return => {
 	const link = Str.trim(model.brandingLink)
 	return link === "" || httpsIssue(link) !== null
 		? { model }
-		: applyBrandingImage(model, model.brandingDialogField, link)
+		: applyBrandingImage({ ...model, brandingRead: model.brandingRead + 1 }, model.brandingDialogField, link)
 }
 
 export const saveSettings = (model: Model): Return => {

@@ -2778,11 +2778,16 @@ describe("settings", () => {
 			}),
 		)
 		expect(names(png.commands)).toEqual(["ReadStatusPageBrandingImage"])
-		const read = pageUpdate(
-			png.model,
-			Message.CompletedReadBrandingImage({ field: "faviconUrl", dataUrl: "data:image/png;base64,cG5n" }),
-		).model
+		const done = Message.CompletedReadBrandingImage({
+			field: "faviconUrl",
+			read: png.model.brandingRead,
+			dataUrl: "data:image/png;base64,cG5n",
+		})
+		const read = pageUpdate(png.model, done).model
 		expect(read.settingsEdits?.faviconUrl).toBe("data:image/png;base64,cG5n")
+		// Removed while the file was still being read: the late read does not bring it back.
+		const removed = pageUpdate(png.model, Message.ClickedRemoveBrandingImage({ field: "faviconUrl" })).model
+		expect(pageUpdate(removed, done).model.settingsEdits?.faviconUrl).toBe("")
 		scene(
 			{ update: pageUpdate, view },
 			given(read),

@@ -112,6 +112,7 @@ import {
 	submitBrandingLink,
 	takeBrandingImage,
 	readBrandingImage,
+	removeBrandingImage,
 	changeTheme,
 	updateTokenCopy,
 } from "./update-settings"
@@ -253,6 +254,7 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		brandingDialog: Dialog.init("status-page-branding-image", "dialog"),
 		brandingDialogField: "logoUrl",
 		brandingLink: "",
+		brandingRead: 0,
 		isSavingSettings: false,
 		savesAccessNext: false,
 		settingsFailure: null,
@@ -685,7 +687,8 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 		ChangedBrandingLink: ({ value }) => ({ model: { ...model, brandingLink: value } }),
 		SubmittedBrandingLink: () => submitBrandingLink(model),
 		PickedBrandingImage: ({ field, files }) => takeBrandingImage(model, field, files),
-		CompletedReadBrandingImage: ({ field, dataUrl }) => readBrandingImage(model, field, dataUrl),
+		CompletedReadBrandingImage: ({ field, read, dataUrl }) => readBrandingImage(model, field, read, dataUrl),
+		ClickedRemoveBrandingImage: ({ field }) => removeBrandingImage(model, field),
 		PickedThemePreset: ({ preset }) =>
 			changeTheme(model, { preset, ...STATUS_PAGE_PRESET_DEFAULTS[preset] }),
 		PickedThemeAppearance: ({ appearance }) => changeTheme(model, { appearance }),
@@ -696,7 +699,9 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 		PickedPreviewScheme: ({ scheme }) => ({ model: { ...model, previewScheme: scheme } }),
 		PickedPreviewWidth: ({ width }) => ({ model: { ...model, previewWidth: width } }),
 		PickedPreviewState: ({ state }) => ({ model: { ...model, previewState: state } }),
-		ClickedDiscardSettings: () => ({ model: { ...model, settingsEdits: null, settingsFailure: null } }),
+		ClickedDiscardSettings: () => ({
+			model: { ...model, settingsEdits: null, settingsFailure: null, brandingRead: model.brandingRead + 1 },
+		}),
 		ClickedSaveSettings: () => saveSettings(model),
 		// Basic settings' Save goes on to Who can view once the fields saved; a failure stops there.
 		CompletedSaveSettings: ({ result }) => {
