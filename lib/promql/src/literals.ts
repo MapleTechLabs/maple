@@ -31,12 +31,20 @@ const parsePlainNumber = (text: string): number | undefined => {
 /** Go's math.Round: halves round away from zero (JavaScript's Math.round rounds them up). */
 export const roundHalfAway = (value: number): number => Math.sign(value) * Math.round(Math.abs(value)) + 0
 
+/** Go's time.Duration is int64 nanoseconds; longer durations are "out of range" in Prometheus. */
+const MAX_DURATION_MS = 9_223_372_036_854
+
+const inDurationRange = (ms: number): number | undefined =>
+	Number.isFinite(ms) && Math.abs(ms) <= MAX_DURATION_MS ? ms : undefined
+
 /** A Prometheus duration (`1h30m`, `5m`, `250ms`) or a plain number of seconds, in ms. Undefined when invalid. */
 export const parseDurationMs = (text: string): number | undefined => {
 	const seconds = parsePlainNumber(text)
 	// As Prometheus: seconds round to nanoseconds, then truncate to the milliseconds samples use.
 	if (seconds !== undefined)
-		return Number.isFinite(seconds) ? Math.trunc(roundHalfAway(seconds * 1e9) / 1e6) : undefined
+		return Number.isFinite(seconds)
+			? inDurationRange(Math.trunc(roundHalfAway(seconds * 1e9) / 1e6))
+			: undefined
 	if (!/^(\d+(ms|y|w|d|h|m|s))+$/.test(text)) return undefined
 	let total = 0
 	let lastUnit = -1
@@ -48,7 +56,7 @@ export const parseDurationMs = (text: string): number | undefined => {
 		lastUnit = order
 		total += Number(match[1]) * (lookup(UNIT_MS, unit) ?? 0)
 	}
-	return total
+	return inDurationRange(total)
 }
 
 /** Prometheus' canonical spelling of a duration, the inverse of `parseDurationMs`. */
