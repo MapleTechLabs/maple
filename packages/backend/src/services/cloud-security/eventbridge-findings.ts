@@ -41,7 +41,8 @@ const objectsAt = (value: Json | undefined, key: string): ReadonlyArray<Json> =>
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-const INSPECTOR_TIME = /^([A-Z][a-z]{2}) (\d{1,2}), (\d{4}), (\d{1,2}):(\d{2}):(\d{2}) (AM|PM)$/u
+// Newer formatters put a narrow no-break space before AM/PM.
+const INSPECTOR_TIME = /^([A-Z][a-z]{2}) (\d{1,2}), (\d{4}), (\d{1,2}):(\d{2}):(\d{2})[ \u202f](AM|PM)$/u
 
 /** Inspector's events write times as `Mar 31, 2022, 10:51:08 PM` (UTC); its API writes ISO. */
 const inspectorTime = (value: string | undefined): number | undefined => {
