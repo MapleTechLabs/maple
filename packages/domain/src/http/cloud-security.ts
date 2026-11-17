@@ -114,6 +114,8 @@ export const CloudSecurityServiceStatus = Schema.Struct({
 	state: CloudServiceState,
 	lastError: Schema.NullOr(Schema.String),
 	checkedAt: Schema.Finite,
+	/** The last finding event EventBridge delivered; null while the feed is only polled. */
+	pushedAt: Schema.NullOr(Schema.Finite),
 })
 export type CloudSecurityServiceStatus = typeof CloudSecurityServiceStatus.Type
 

@@ -164,6 +164,34 @@ describe("routes", () => {
 		expect(routeRedirect(parse("/releases"))).toEqual(Option.some({ url: "/services", isReplace: true }))
 	})
 
+	test("a settings tab is a path segment that round-trips with its search", () => {
+		const route = parse("/settings/audit-log?outcome=denied")
+		expect(route).toMatchObject({ _tag: "Settings", search: { tab: "audit-log", outcome: "denied" } })
+		expect(hrefOf(route)).toBe("/settings/audit-log?outcome=denied")
+		expect(hrefOf(AppRoute.Settings({ search: {} }))).toBe("/settings")
+		expect(parse("/settings")).toEqual(AppRoute.Settings({ search: {} }))
+		expect(parse("/settings/nope")._tag).toBe("NotFound")
+		expect(parse("/settings/billing/ai-credits")._tag).toBe("BillingAiCredits")
+		expect(parse("/settings/ingestion/rules/new")._tag).toBe("IngestRuleNew")
+	})
+
+	test("an old settings `?tab=` link moves to the tab's path; a retired tab to its new home", () => {
+		const redirectOf = (url: string) => Option.map(routeRedirect(parse(url)), (to) => to.url)
+		expect(routeRedirect(parse("/settings?tab=keys"))).toEqual(
+			Option.some({ url: "/settings/keys", isReplace: true }),
+		)
+		expect(redirectOf("/settings?tab=audit-log&outcome=denied")).toEqual(
+			Option.some("/settings/audit-log?outcome=denied"),
+		)
+		expect(redirectOf("/settings?tab=api-keys")).toEqual(Option.some("/settings/keys"))
+		expect(redirectOf("/settings?tab=connectors")).toEqual(Option.some("/integrations"))
+		expect(redirectOf("/settings?tab=notifications")).toEqual(
+			Option.some("/account?tab=email-preferences"),
+		)
+		expect(redirectOf("/settings?tab=bogus")).toEqual(Option.some("/settings"))
+		expect(routeRedirect(parse("/settings/keys"))).toEqual(Option.none())
+	})
+
 	test("an old `?tab=` link replaces itself with its section's path and keeps its other params", () => {
 		const redirectOf = (url: string) => Option.map(routeRedirect(parse(url)), (to) => to.url)
 		expect(redirectOf("/alerts?tab=rules&status=firing")).toEqual(
@@ -377,7 +405,7 @@ describe("routes", () => {
 
 	test("legacy beforeLoad redirects", () => {
 		expect(routeRedirect(parse("/developer?tab=ingestion"))).toEqual(
-			Option.some({ url: "/settings?tab=ingestion", isReplace: true }),
+			Option.some({ url: "/settings/ingestion", isReplace: true }),
 		)
 		expect(routeRedirect(parse("/errors/issues?workflowState=done&severity=all"))).toEqual(
 			Option.some({ url: "/errors?view=closed", isReplace: true }),
@@ -392,7 +420,7 @@ describe("routes", () => {
 			Option.some({ url: "/alerts", isReplace: true }),
 		)
 		expect(routeRedirect(parse("/recommendations"))).toEqual(
-			Option.some({ url: "/settings?tab=ingestion", isReplace: true }),
+			Option.some({ url: "/settings/ingestion", isReplace: true }),
 		)
 		expect(parse("/alerts/incidents/inc_1")._tag).toBe("AlertIncident")
 		expect(parse("/recommendations/rec_1")._tag).toBe("Recommendation")

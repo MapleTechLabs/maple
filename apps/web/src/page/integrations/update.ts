@@ -323,7 +323,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedTrackDisconnected: () => ({ model }),
 		ClickedIntegration: ({ integration }) =>
 			navigateTo(model, hrefOfSearch(integration === null ? {} : { integration }), false),
-		ClickedSettingsTab: ({ tab }) => navigateTo(model, `/settings?tab=${encodeURIComponent(tab)}`, false),
+		ClickedSettingsTab: ({ tab }) => navigateTo(model, `/settings/${encodeURIComponent(tab)}`, false),
 		CompletedChatToast: () => {
 			const callback = chatCallbackOf(model.search)
 			return callback === null ? { model } : navigateTo(model, hrefOfSearch(callback.next), true)

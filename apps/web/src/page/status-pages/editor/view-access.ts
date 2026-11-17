@@ -11,6 +11,7 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { failureMessage } from "@maple/views/data/load-failure"
 import { saveBar } from "../../kit/save-bar"
+import { denialReason } from "../../kit/session-grants"
 import { adminOnlyNote, settingsSection } from "../../kit/settings-section"
 import { statusPageViewHref } from "../shared/commands"
 import { textField } from "../shared/fields"
@@ -139,9 +140,7 @@ export const accessSection = (h: H, model: Model, page: V2StatusPage, form: Sett
 		},
 		[
 			vstack(h, { gap: "4" }, [
-				...(canChangeAccess(model)
-					? []
-					: [adminOnlyNote(h, ["Only org admins can change who can view a status page."])]),
+				...(canChangeAccess(model) ? [] : [adminOnlyNote(h, [denialReason("status_pages:access")])]),
 				h.div(
 					[h.Class("grid gap-2 sm:grid-cols-3"), h.Role("radiogroup"), h.AriaLabel("Who can view")],
 					Arr.map(VISIBILITIES, (option) => visibilityChoice(h, model, page, option)),

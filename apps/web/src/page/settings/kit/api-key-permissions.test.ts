@@ -33,6 +33,18 @@ describe("apiKeyRowPermissions", () => {
 		})
 	})
 
+	it("lets an engineer roll and revoke the standard keys they created, and no others", () => {
+		const engineer = { canManageKeys: false, canCreateRestricted: true, userId: ME }
+		expect(apiKeyRowPermissions({ ...live, kind: "standard" }, engineer)).toEqual({
+			canRoll: true,
+			canRevoke: true,
+		})
+		expect(apiKeyRowPermissions({ ...live, kind: "standard", created_by: OTHER }, engineer)).toEqual({
+			canRoll: false,
+			canRevoke: false,
+		})
+	})
+
 	it("lets a member revoke their own phone's device key; an admin revokes any but rolls none", () => {
 		expect(
 			apiKeyRowPermissions({ ...live, kind: "device" }, { canManageKeys: false, userId: ME }),
