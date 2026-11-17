@@ -399,8 +399,10 @@ export const settingsView = (h: H, model: Model, page: V2StatusPage, section: Se
 	const form = Option.getOrElse(settingsOf(model), () => settingsFormOf(page))
 	return h.div(
 		[
+			// The wide breakpoint is in rem like `md`: Tailwind orders a px `min-[…]` before the rem
+			// breakpoints, so `md`'s two columns would win and the preview would wrap under the menu.
 			h.Class(
-				"grid items-start gap-6 md:grid-cols-[12rem_minmax(0,1fr)] lg:gap-10 min-[1360px]:grid-cols-[11rem_minmax(26rem,1fr)_minmax(20rem,1fr)]",
+				"grid items-start gap-6 md:grid-cols-[12rem_minmax(0,1fr)] lg:gap-10 min-[85rem]:grid-cols-[11rem_minmax(26rem,1fr)_minmax(20rem,1fr)]",
 			),
 		],
 		[
@@ -435,7 +437,7 @@ export const settingsView = (h: H, model: Model, page: V2StatusPage, section: Se
 				}),
 			]),
 			h.aside(
-				[h.Class("hidden min-w-0 min-[1360px]:sticky min-[1360px]:top-6 min-[1360px]:block")],
+				[h.Class("hidden min-w-0 min-[85rem]:sticky min-[85rem]:top-6 min-[85rem]:block")],
 				[settingsPagePreview(h, model, page, form)],
 			),
 		],
