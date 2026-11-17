@@ -1,7 +1,7 @@
 import type { StatusPagePublicSnapshot } from "@maple/domain/status-page"
 import { escapeHtml } from "@maple/strings"
 import { escapeXml } from "./escape"
-import { INCIDENT_STATUS_LABEL } from "./format"
+import { INCIDENT_STATUS_LABEL, pageTitle } from "./format"
 import { latestActivityAt } from "./select"
 import { Array as Arr, String as Str } from "effect"
 
@@ -45,7 +45,7 @@ export const renderAtomFeed = (snapshot: StatusPagePublicSnapshot, pageUrl: stri
 		),
 		"",
 	)
-	return `<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom"><id>urn:maple:status:${escapeXml(snapshot.pageId)}</id><title>${escapeXml(`${snapshot.page.name} status`)}</title><updated>${iso(latestActivityAt(snapshot))}</updated><link rel="alternate" href="${escapeXml(`${base}/`)}"/><link rel="self" href="${escapeXml(`${base}/feed.atom`)}"/><author><name>${escapeXml(snapshot.page.name)}</name></author>${entries}</feed>`
+	return `<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom"><id>urn:maple:status:${escapeXml(snapshot.pageId)}</id><title>${escapeXml(pageTitle(snapshot.page.name))}</title><updated>${iso(latestActivityAt(snapshot))}</updated><link rel="alternate" href="${escapeXml(`${base}/`)}"/><link rel="self" href="${escapeXml(`${base}/feed.atom`)}"/><author><name>${escapeXml(snapshot.page.name)}</name></author>${entries}</feed>`
 }
 
 /** RFC 822 date, as RSS 2.0 requires. */
@@ -62,6 +62,6 @@ export const renderRssFeed = (snapshot: StatusPagePublicSnapshot, pageUrl: strin
 		),
 		"",
 	)
-	const title = escapeXml(`${snapshot.page.name} status`)
+	const title = escapeXml(pageTitle(snapshot.page.name))
 	return `<?xml version="1.0" encoding="utf-8"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>${title}</title><link>${escapeXml(`${base}/`)}</link><description>${title}</description><lastBuildDate>${rfc822(latestActivityAt(snapshot))}</lastBuildDate><atom:link href="${escapeXml(`${base}/feed.rss`)}" rel="self" type="application/rss+xml"/>${items}</channel></rss>`
 }

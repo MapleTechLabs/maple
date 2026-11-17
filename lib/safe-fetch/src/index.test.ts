@@ -1,5 +1,5 @@
 import { assert, describe, expect, it } from "@effect/vitest"
-import { Effect, Exit, Fiber, Result, Array as Arr } from "effect"
+import { Effect, Exit, Fiber, Result, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient, HttpBody, HttpClient, HttpClientError } from "effect/http"
 import {
@@ -13,6 +13,13 @@ import {
 const rejects = (raw: string) => Result.isFailure(parseExternalUrl(raw))
 
 describe("parseExternalUrl", () => {
+	it("checks a hostname with a long internal dot run in linear time", () => {
+		const started = performance.now()
+		const url = Result.getOrThrow(parseExternalUrl(`https://a${Str.repeat(100_000)(".")}b.example.com/`))
+		assert.isBelow(performance.now() - started, 1000)
+		assert.strictEqual(url.protocol, "https:")
+	})
+
 	it("accepts public https URLs", () => {
 		const url = Result.getOrThrow(parseExternalUrl("https://api.example.com/probe"))
 		expect(url.hostname).toBe("api.example.com")
@@ -57,6 +64,9 @@ describe("parseExternalUrl", () => {
 		// it, so a blocklist keyed on the bare name used to miss it entirely.
 		"http://localhost./",
 		"http://metadata.google.internal./computeMetadata/v1/",
+		// The URL parser drops only one trailing dot, so `127.0.0.1..` stays a name.
+		"http://127.0.0.1../",
+		"http://localhost../",
 		// Link-local is fe80::/10, not fe80::/16 — everything up to febf: is in range.
 		"http://[fe9f::1]/",
 		"http://[fea0::1]/",

@@ -231,7 +231,13 @@ export const layerStatelessMcpHttp = (options: {
 				})
 
 			const disconnects = yield* Queue.make<number>()
-			let writeRequest!: (clientId: number, message: FromClientEncoded) => Effect.Effect<void>
+			let writeRequest_!: (clientId: number, message: FromClientEncoded) => Effect.Effect<void>
+			// Resolved when the effect runs, not when it is built. Until the server's `run` starts,
+			// `writeRequest_` returns a buffering effect, and one built before `run` swaps in the
+			// real writer but run after it would buffer into a list nothing replays: the message
+			// is lost, and a lost Eof leaves the request waiting forever.
+			const writeRequest = (clientId: number, message: FromClientEncoded) =>
+				Effect.suspend(() => writeRequest_(clientId, message))
 			// RpcServer answers an Interrupt for a request that already finished on an ended client
 			// with `Effect.interrupt`, which would otherwise take this request's fiber down with it.
 			const interrupt = (clientId: number, requestId: RequestId) =>
@@ -493,10 +499,8 @@ export const layerStatelessMcpHttp = (options: {
 				{ discard: true },
 			)
 
-			return yield* RpcServer.Protocol.make((writeRequest_) => {
-				// effect's `withRun` buffers writes until the server runs and picks buffer or server when the
-				// effect is built: a fiber that yields between build and run would buffer after the drain and hang.
-				writeRequest = (clientId, message) => Effect.suspend(() => writeRequest_(clientId, message))
+			return yield* RpcServer.Protocol.make((write) => {
+				writeRequest_ = write
 				return Effect.succeed({
 					disconnects,
 					send: (targetClientId: number, response: FromServerEncoded) => {

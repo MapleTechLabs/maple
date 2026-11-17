@@ -158,9 +158,10 @@ describe("transport render: guard flags", () => {
 			([name]) => name,
 		)
 		// telegram is the first provider where this disagrees with `guarded`: a
-		// fixed vendor host, but the bot token rides in the path. google-chat carries its
-		// credential in the query string, which no span records.
-		assert.deepStrictEqual(sensitive, ["discord", "telegram"])
+		// fixed vendor host, but the bot token rides in the path. A tenant webhook
+		// path may hold the receiver's token. google-chat and teams carry theirs in
+		// the query string, which no span records.
+		assert.deepStrictEqual(sensitive, ["webhook", "discord", "telegram"])
 	})
 
 	it("always produces a parseable JSON body", () => {

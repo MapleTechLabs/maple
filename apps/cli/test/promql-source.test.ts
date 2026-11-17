@@ -16,6 +16,7 @@ import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
 import * as CH from "@maple/query-engine/ch"
 import {
 	buildSelectorQueries,
+	buildSeriesLabelsQueries,
 	catalogFromRows,
 	catalogQuery,
 	promqlCatalogRowSchema,
@@ -24,7 +25,9 @@ import {
 	promqlMetadataRowSchema,
 	prometheusMetadata,
 	promqlSelectorRowSchema,
+	promqlSeriesLabelsRowSchema,
 	toSelectorData,
+	toSeriesLabels,
 	type CatalogMetric,
 } from "@maple/query-engine/promql"
 import type { SampleBucket, SeriesData } from "@maple/promql"
@@ -338,6 +341,7 @@ const decodeRows = decodeJsonEachRow(promqlSelectorRowSchema)
 const decodeCatalog = decodeJsonEachRow(promqlCatalogRowSchema)
 const decodeMetadata = decodeJsonEachRow(promqlMetadataRowSchema)
 const decodeValues = decodeJsonEachRow(Schema.Struct({ value: Schema.String }))
+const decodeSeriesLabels = decodeJsonEachRow(promqlSeriesLabelsRowSchema)
 
 const catalogOf = (db: Chdb, org: string): ReadonlyArray<CatalogMetric> => {
 	const compiled = CH.compileUnsafe(catalogQuery(), {
@@ -662,6 +666,54 @@ describeWithChdb("PromQL selector source", () => {
 		})
 		expect(identity(ORG_A, "metrics_gauge", "job", 2 * HOUR_MS + 750)).toContain("scrape-job")
 		expect(identity(ORG_A, "metrics_gauge", "instance", 2 * HOUR_MS + 750)).toContain("host:9090")
+	})
+
+	test("series discovery reads the label sets the selector source returns, in one query per table", () => {
+		const window = { startMs: BASE_MS - HOUR_MS, endMs: BASE_MS + HOUR_MS }
+		const discover = (matchers: ReadonlyArray<Matcher>) => {
+			const plans = buildSeriesLabelsQueries(matchers, window, catalogOf(db, ORG_A), {
+				orgId: OrgId.make(ORG_A),
+				limit: 1000,
+				maxNameFilter: 1,
+			})
+			const sorted = (found: ReadonlyArray<Record<string, string>>) =>
+				Arr.sort(
+					Arr.map(found, (labels) => JSON.stringify(labels)),
+					Order.String,
+				)
+			return {
+				tables: Arr.map(plans, (plan) => plan.table),
+				series: sorted(
+					toSeriesLabels(
+						matchers,
+						Arr.map(plans, (plan) => ({
+							plan,
+							rows: decodeSeriesLabels(
+								db.query(normalizeSqlForClickHouseClient(Effect.runSync(plan.compiled).sql)),
+							),
+						})),
+					),
+				),
+				sorted,
+			}
+		}
+		const viaSelector = (name: string) =>
+			Arr.map(
+				select(db, ORG_A, request(name, [], { startMs: window.startMs, endMs: window.endMs })).series,
+				(s) => s.labels,
+			)
+		const histogramName = "http_server_request_duration_seconds_bucket"
+		const buckets = discover([{ name: "__name__", op: "=", value: histogramName }])
+		expect(buckets.tables).toEqual(["metrics_histogram"])
+		expect(buckets.series).toEqual(buckets.sorted(viaSelector(histogramName)))
+		// No name: every metric of the org, one read per table, each label set once.
+		const everything = discover([{ name: "job", op: "=", value: "api" }])
+		expect(new Set(everything.tables).size).toBe(everything.tables.length)
+		expect(everything.series).toEqual(expect.arrayContaining(buckets.series))
+		expect(everything.series).toEqual(
+			expect.arrayContaining(buckets.sorted(viaSelector("requests_total"))),
+		)
+		expect(Arr.some(everything.series, (s) => Str.includes('"route":"/b"')(s))).toBe(true)
 	})
 
 	test("rows whose labels resolve the same are one series", () => {

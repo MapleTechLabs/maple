@@ -71,6 +71,27 @@ describe("date functions", () => {
 			].map(read),
 		).toEqual([2024, 2, 29, 4, 60, 29, 13, 45])
 	})
+
+	it("truncate toward zero like Go's int64()", () => {
+		expect(values("hour", [-0.5])).toEqual([0])
+		expect(values("minute", [-0.5])).toEqual([0])
+		expect(values("hour", [-3601])).toEqual([22])
+		expect(values("year", [-1])).toEqual([1969])
+		expect(values("day_of_week", [-1])).toEqual([3])
+	})
+
+	it("compute dates past JavaScript Date's range, as Prometheus 3.5 returns them", () => {
+		const read = (func: string) => values(func, [1e13])[0]
+		expect(
+			["year", "month", "day_of_month", "day_of_week", "day_of_year", "days_in_month"].map(read),
+		).toEqual([318857, 5, 20, 0, 140, 31])
+		expect(values("year", [-1e13])).toEqual([-314918])
+		expect(values("day_of_year", [-1e13])).toEqual([225])
+		expect(values("year", [1e19, Number.POSITIVE_INFINITY, Number.NaN])).toEqual([
+			292277026596, 292277026596, 1970,
+		])
+		expect(values("day_of_year", [1735603200])).toEqual([366])
+	})
 })
 
 describe("label_replace and label_join", () => {

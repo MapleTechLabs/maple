@@ -2,7 +2,9 @@ import { OrgId } from "@maple/domain"
 import { StatusPagePublicId } from "@maple/domain/http/v2"
 import * as Policy from "@maple/domain/policy"
 import { Result, Schema, Array as Arr } from "effect"
-import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import * as Dialog from "@maple/views/ui/dialog"
+import { MountDialog } from "@maple/views/ui/dialog"
 import { describe, test } from "vitest"
 import type { PageContext } from "../../contract"
 import { ORG } from "../../kit/alert-test-rows"
@@ -23,13 +25,17 @@ const view = withViewInputs(pageView, { context })()
 const MEMBER = Policy.grantsOf(["org:member"])
 const ANALYST = Policy.grantsOf(["org:analyst"])
 
-/** The editor's Page tab over `incidents`, read by a session holding `grants`. */
+/** The editor's Incidents tab over `incidents`, read by a session holding `grants`. */
 const loaded = (
 	grants: ReadonlyArray<Policy.Permission>,
 	incidents: ReadonlyArray<ReturnType<typeof incident>>,
 ): Model => {
 	const entered = init(
-		{ _tag: "StatusPage", pageId: Schema.encodeSync(StatusPagePublicId)(statusPage().id), search: {} },
+		{
+			_tag: "StatusPage",
+			pageId: Schema.encodeSync(StatusPagePublicId)(statusPage().id),
+			search: { view: "incidents" },
+		},
 		context,
 	).model
 	return Arr.reduce(
@@ -58,22 +64,23 @@ const loaded = (
 const DRAFT = incident(1, { published: false })
 const MAINTENANCE = incident(2, { kind: "maintenance", title: "Database upgrade" })
 
+const mounted = Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog())
+
 const opened = (grants: ReadonlyArray<Policy.Permission>, row: ReturnType<typeof incident>, n: number) =>
 	pageUpdate(loaded(grants, [row]), Message.ClickedIncident({ incidentId: incidentId(n) })).model
 
 describe("status page editor, analyst", () => {
-	test("Post incident is offered to a member and not to an analyst", () => {
+	test("Declare incident is offered to a member and not to an analyst", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(ANALYST, [])),
-			expectView(text("Nothing posted.")).toExist(),
-			expectView(role("button", { name: "Post incident" })).toBeAbsent(),
+			expectView(text("No open incidents.")).toExist(),
+			expectView(role("button", { name: "Declare incident" })).toBeAbsent(),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(MEMBER, [])),
-			expectView(text("Nothing posted. Post incident when something breaks.")).toExist(),
-			expectView(role("button", { name: "Post incident" })).toExist(),
+			expectView(role("button", { name: "Declare incident" })).toExist(),
 		)
 	})
 
@@ -81,6 +88,7 @@ describe("status page editor, analyst", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(opened(ANALYST, DRAFT, 1)),
+			mounted,
 			expectView(text("Draft, not public")).toExist(),
 			expectView(role("region", { name: "Updates" })).toExist(),
 			expectView(role("button", { name: "Publish" })).toBeAbsent(),
@@ -95,6 +103,7 @@ describe("status page editor, analyst", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(opened(MEMBER, DRAFT, 1)),
+			mounted,
 			expectView(role("button", { name: "Publish" })).toExist(),
 			expectView(role("button", { name: "Post update" })).toExist(),
 			expectView(role("button", { name: "Resolve" })).toExist(),
@@ -107,12 +116,14 @@ describe("status page editor, analyst", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(opened(ANALYST, MAINTENANCE, 2)),
+			mounted,
 			expectView(role("button", { name: "Complete" })).toBeAbsent(),
 			expectView(role("button", { name: "Delete maintenance" })).toBeAbsent(),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given(opened(MEMBER, MAINTENANCE, 2)),
+			mounted,
 			expectView(role("button", { name: "Complete" })).toExist(),
 			expectView(role("button", { name: "Delete maintenance" })).toExist(),
 		)

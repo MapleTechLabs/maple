@@ -296,6 +296,40 @@ describe("v2 Prometheus query API", () => {
 		await harness.dispose()
 	})
 
+	it("refuses a range vector in a range query, an over-long query and an over-wide range as bad_data", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["metrics:read"])
+		const matrix = await harness.send(
+			key.secret,
+			`/query_range?query=${encodeURIComponent("up[5m]")}&start=${T}&end=${T + 60}&step=15s`,
+		)
+		expect(matrix.status).toBe(400)
+		expect(matrix.body).toMatchObject({ status: "error", errorType: "bad_data" })
+		const long = await harness.send(
+			key.secret,
+			"/query",
+			new URLSearchParams({ query: Str.repeat(5001)("1+") + "1" }),
+		)
+		expect(long.status).toBe(400)
+		expect(long.body).toMatchObject({ errorType: "bad_data", error: expect.stringMatching(/"query"/) })
+		const wide = `start=${T - 40 * 86_400}&end=${T}`
+		for (const path of [
+			`/query_range?query=1&${wide}&step=1h`,
+			`/series?match[]=up&${wide}`,
+			`/labels?${wide}`,
+			`/label/job/values?${wide}`,
+			`/metadata?${wide}`,
+		]) {
+			const refused = await harness.send(key.secret, path)
+			expect(refused.status).toBe(400)
+			expect(refused.body).toMatchObject({
+				errorType: "bad_data",
+				error: "the time range exceeds the maximum of 32 days",
+			})
+		}
+		await harness.dispose()
+	})
+
 	it("reports a warehouse failure as unavailable without its diagnostic", async () => {
 		const harness = makeHarness(failingWarehouse)
 		const key = await harness.bootstrapKey(["metrics:read"])

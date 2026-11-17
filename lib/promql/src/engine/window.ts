@@ -194,6 +194,38 @@ const stdvar = (values: ReadonlyArray<number>): number => {
 	return (aux + cAux) / count
 }
 
+/**
+ * Prometheus' sum_over_time and avg_over_time: Kahan sums, and for the mean an incremental
+ * mean once the running sum would overflow. A bucket adds its pre-summed count at once.
+ */
+const kahanOverTime = (w: Window, mean: boolean): number => {
+	let sum = 0
+	let c = 0
+	let count = 0
+	let average = 0
+	let incremental = false
+	for (let i = w.from; i < w.to; i++) {
+		const b = at(w, i)
+		if (b === undefined || b.count === 0) continue
+		const next = count + b.count
+		if (!incremental) {
+			const [newSum, newC] = kahanInc(b.sum, sum, c)
+			if (!mean || count === 0 || (newSum !== Infinity && newSum !== -Infinity)) {
+				;[sum, c, count] = [newSum, newC, next]
+				continue
+			}
+			incremental = true
+			average = sum / count
+			c /= count
+		}
+		const q = count / next
+		;[average, c] = kahanInc(b.sum / next, q * average, q * c)
+		count = next
+	}
+	if (!mean) return sum === Infinity || sum === -Infinity ? sum : sum + c
+	return incremental ? average + c : sum / count + c / count
+}
+
 export type OverTimeFunction =
 	| "avg_over_time"
 	| "sum_over_time"
@@ -213,9 +245,9 @@ export const overTime = (func: OverTimeFunction, w: Window): number | undefined 
 	if (m.count === 0) return undefined
 	switch (func) {
 		case "avg_over_time":
-			return m.sum / m.count
+			return kahanOverTime(w, true)
 		case "sum_over_time":
-			return m.sum
+			return kahanOverTime(w, false)
 		case "count_over_time":
 			return m.count
 		case "min_over_time":

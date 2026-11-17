@@ -6,6 +6,7 @@ import { defineMessageUnion } from "foldkit/message"
 import { bareUrl } from "../../kit/uptime/derive"
 import { formIssues, nameFromUrl, wirePayload } from "../../kit/uptime/form-derive"
 import { emptyForm } from "../../kit/uptime/form"
+import { orNull } from "./form"
 
 // "What's on it": the org's monitors as a checklist, components without a monitor, and a URL
 // that becomes a new HTTP monitor. The builder and the editor's Add component share it.
@@ -243,8 +244,6 @@ export const rowIssue = (row: PickerRow): string | null =>
 
 export const hasRowIssues = (picker: Picker): boolean =>
 	Arr.some(picker.rows, (row) => rowIssue(row) !== null)
-
-const orNull = (value: string): string | null => (Str.trim(value) === "" ? null : Str.trim(value))
 
 /**
  * The page's components as the create and the preview take them, in list order. A row with no

@@ -6,6 +6,8 @@ import { HttpServerResponse } from "effect/http"
 import { Clock, Effect, Array as Arr, Record as Rec } from "effect"
 import type { QueryResult } from "@maple/promql"
 import { CurrentTenant } from "@maple/domain/http"
+import { MAX_PROMQL_QUERY_LENGTH } from "@maple/primitives"
+import { formatRangeSeconds, MAX_QUERY_RANGE_SECONDS } from "@maple/query-engine"
 import { MapleApiV2, type PrometheusParams } from "@maple/domain/http/v2"
 import { PromqlBadQueryError, PromqlQueryService } from "@maple/backend/services/promql/PromqlQueryService"
 import {
@@ -99,6 +101,26 @@ const parseLimit = (text: string | undefined) => {
 			)
 }
 
+/** The `query` parameter, capped at the length the other PromQL routes take. */
+const parseQuery = (text: string | undefined) =>
+	text !== undefined && text.length > MAX_PROMQL_QUERY_LENGTH
+		? Effect.fail(
+				new PromqlBadQueryError({
+					message: `invalid parameter "query": longer than ${MAX_PROMQL_QUERY_LENGTH} characters`,
+				}),
+			)
+		: Effect.succeed(text ?? "")
+
+/** The widest `[start, end]` the other v2 metrics endpoints serve; order is checked downstream. */
+const checkRange = (startMs: number, endMs: number) =>
+	(endMs - startMs) / 1000 > MAX_QUERY_RANGE_SECONDS
+		? Effect.fail(
+				new PromqlBadQueryError({
+					message: `the time range exceeds the maximum of ${formatRangeSeconds(MAX_QUERY_RANGE_SECONDS)}`,
+				}),
+			)
+		: Effect.void
+
 /** `[start, end]` of a discovery call; missing bounds mean the last `defaultMs` up to now. */
 const discoveryWindow = (params: Params, defaultMs: number) =>
 	Effect.gen(function* () {
@@ -108,6 +130,7 @@ const discoveryWindow = (params: Params, defaultMs: number) =>
 			params.start === undefined
 				? Math.max(endMs - defaultMs, -MAX_DATE_MS)
 				: yield* parseTime("start", params.start)
+		yield* checkRange(startMs, endMs)
 		return { startMs, endMs }
 	})
 
@@ -118,10 +141,11 @@ export const HttpV2PrometheusLive = HttpApiBuilder.group(MapleApiV2, "prometheus
 		const instantQuery = Effect.fn("PrometheusApi.query")(function* (params: Params) {
 			const tenant = yield* CurrentTenant.Context
 			const now = yield* Clock.currentTimeMillis
+			const query = yield* parseQuery(params.query)
 			const timeMs = params.time === undefined ? now : yield* parseTime("time", params.time)
 			const limit = yield* parseLimit(params.limit)
 			const answer = yield* promql.query(tenant, {
-				query: params.query ?? "",
+				query,
 				startMs: timeMs,
 				endMs: timeMs,
 				stepMs: 0,
@@ -137,13 +161,15 @@ export const HttpV2PrometheusLive = HttpApiBuilder.group(MapleApiV2, "prometheus
 
 		const rangeQuery = Effect.fn("PrometheusApi.queryRange")(function* (params: Params) {
 			const tenant = yield* CurrentTenant.Context
+			const query = yield* parseQuery(params.query)
 			const startMs = yield* parseTime("start", params.start ?? "")
 			const endMs = yield* parseTime("end", params.end ?? "")
+			yield* checkRange(startMs, endMs)
 			const stepMs = yield* parseStep(params.step ?? "")
 			const limit = yield* parseLimit(params.limit)
 			// Range mode even when start equals end: Prometheus answers a one-point matrix.
 			const answer = yield* promql.query(tenant, {
-				query: params.query ?? "",
+				query,
 				startMs,
 				endMs,
 				stepMs,

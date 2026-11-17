@@ -70,6 +70,30 @@ export const ClerkUserDeletedData = Schema.Struct({
 	id: Schema.optionalKey(Schema.String),
 })
 
+/** `user.updated`: only the fields Maple acts on. `deprovisioned` is set by SCIM deactivation. */
+export const ClerkUserUpdatedData = Schema.Struct({
+	id: Schema.String,
+	deprovisioned: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),
+})
+
+/** `directoryGroup.*`: a group the IdP pushed over SCIM. */
+export const ClerkDirectoryGroupData = Schema.Struct({
+	id: Schema.String,
+	directory_id: Schema.String,
+	display_name: Schema.String,
+	updated_at: Schema.Number,
+})
+
+export const CLERK_DIRECTORY_GROUP_EVENTS = [
+	"directoryGroup.created",
+	"directoryGroup.updated",
+	"directoryGroup.synced",
+	"directoryGroup.deleted",
+] as const
+export type ClerkDirectoryGroupEventType = (typeof CLERK_DIRECTORY_GROUP_EVENTS)[number]
+export const isClerkDirectoryGroupEvent = (type: string): type is ClerkDirectoryGroupEventType =>
+	(CLERK_DIRECTORY_GROUP_EVENTS as ReadonlyArray<string>).includes(type)
+
 export const ClerkWebhookEnvelope = Schema.Struct({
 	type: Schema.String,
 	data: Schema.Unknown,
@@ -82,6 +106,8 @@ export const decodeClerkEnvelope = Schema.decodeUnknownEffect(Schema.fromJsonStr
 export const decodeClerkUserCreated = Schema.decodeUnknownEffect(ClerkUserCreatedData)
 export const decodeClerkOrganizationMembership = Schema.decodeUnknownEffect(ClerkOrganizationMembershipData)
 export const decodeClerkUserDeleted = Schema.decodeUnknownEffect(ClerkUserDeletedData)
+export const decodeClerkUserUpdated = Schema.decodeUnknownEffect(ClerkUserUpdatedData)
+export const decodeClerkDirectoryGroup = Schema.decodeUnknownEffect(ClerkDirectoryGroupData)
 type ClerkUserCreatedData = Schema.Schema.Type<typeof ClerkUserCreatedData>
 
 const emailDomain = (data: ClerkUserCreatedData): string | undefined => {
