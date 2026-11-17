@@ -208,8 +208,10 @@ const compute = (groupBy: Dimension, filters: ReadonlyArray<Filter>, sort: SortB
 		previousCost: round(Num.sumAll(Arr.map(entries, (entry) => entry.previous))),
 	}))
 	const largestFirst = Arr.sort(groups, byCost)
-	const head = Arr.take(largestFirst, MAX_SERIES)
-	const tail = Arr.drop(largestFirst, MAX_SERIES)
+	// A tail of one key is drawn as itself: an "Other" that holds one thing says less than its name.
+	const shown = largestFirst.length === MAX_SERIES + 1 ? MAX_SERIES + 1 : MAX_SERIES
+	const head = Arr.take(largestFirst, shown)
+	const tail = Arr.drop(largestFirst, shown)
 	const series = [
 		...Arr.map(head, (group) => ({ name: keyLabel(groupBy, group.key), points: group.points })),
 		...(tail.length === 0

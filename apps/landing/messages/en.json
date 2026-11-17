@@ -1607,7 +1607,7 @@
 	"cost_budgets_rule_3_body": "Budgets are checked every hour. Everyone in the organization can see them. People who manage alerts can change them.",
 	"feat_cost_cap_title": "Group, compare, drill down",
 	"feat_cost_cap_1_title": "Six ways to group",
-	"feat_cost_cap_1_body": "Service, provider, category, region, resource or account. A resource is a GitHub repository, a Vercel project or a PlanetScale branch.",
+	"feat_cost_cap_1_body": "Service, provider, category, region, resource or account. A resource is a GitHub repository, a Vercel project or a PlanetScale branch. The demo above has four of the six.",
 	"feat_cost_cap_2_title": "Click a row to go deeper",
 	"feat_cost_cap_2_body": "The page filters to that row and splits it by the next dimension. A provider splits into services, a service into regions.",
 	"feat_cost_cap_3_title": "Compared with the period before",

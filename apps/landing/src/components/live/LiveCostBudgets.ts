@@ -164,7 +164,13 @@ const view = (_props: Readonly<{}>, h: H): Html =>
 		[
 			h.div(
 				[h.Class("live-frame__head")],
-				[h.span([], ["/cost/budgets"]), h.span([], [`${BUDGETS.length} budgets · USD`])],
+				[
+					h.span([], [`/cost/budgets · ${BUDGETS.length} budgets · USD`]),
+					h.span(
+						[h.Class("live-frame__live")],
+						[h.span([h.Class("live-frame__live-dot")], []), "DEMO"],
+					),
+				],
 			),
 			h.div(
 				[h.Class("bg-background font-sans text-foreground")],

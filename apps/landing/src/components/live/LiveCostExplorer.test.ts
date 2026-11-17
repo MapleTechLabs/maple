@@ -33,6 +33,16 @@ describe("LiveCostExplorer island", () => {
 			unit: "currency:USD",
 		})
 
+		// A legend entry hides its series in the plot, and shows it again on the next click.
+		const legendEntry = element.querySelector<HTMLButtonElement>("button[title='AWS']")
+		assert(legendEntry !== null)
+		legendEntry.click()
+		await vi.waitFor(() =>
+			expect(Option.getOrThrow(chartSpec(element))).toMatchObject({ hidden: ["s1"] }),
+		)
+		legendEntry.click()
+		await vi.waitFor(() => expect(Option.getOrThrow(chartSpec(element))).not.toHaveProperty("hidden"))
+
 		const aws = element.querySelector<HTMLButtonElement>("tbody tr button")
 		assert(aws !== null)
 		aws.click()
@@ -58,6 +68,13 @@ describe("LiveCostExplorer island", () => {
 		region.click()
 		await vi.waitFor(() => expect(element.querySelector("tbody tr button")).toBeNull())
 		await vi.waitFor(() => expect(document.activeElement?.getAttribute("aria-label")).toBe("Region"))
+
+		// Removing a chip takes its button away: focus goes to the grouping, not to the page.
+		element.querySelector<HTMLButtonElement>("[aria-label^='Remove filter: Region']")?.click()
+		await vi.waitFor(() =>
+			expect(element.querySelector("[aria-label^='Remove filter: Region']")).toBeNull(),
+		)
+		await vi.waitFor(() => expect(document.activeElement?.getAttribute("aria-pressed")).toBe("true"))
 
 		element.dispatchEvent(new Event("astro:unmount"))
 		await vi.waitFor(() => expect(element.textContent).toBe(""))

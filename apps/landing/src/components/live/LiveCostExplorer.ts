@@ -91,6 +91,8 @@ const BREAKDOWN_ID = "landing-cost-breakdown"
 const GROUP_BY_ID = "landing-cost-group-by"
 
 /** A row's click replaces the row that held focus: it moves on to a control that is still there. */
+const GROUPING = `#${GROUP_BY_ID} [aria-pressed="true"]`
+
 const FocusAfterDrill = Command.define("FocusAfterDrill", {
 	args: { selector: Schema.String },
 	messages: [Message.CompletedFocusRow],
@@ -123,12 +125,10 @@ const update = (model: Model, message: Message): Update.Return<Model, Message> =
 			const groupBy = drillTarget(filter.dimension, filters)
 			// Regrouped, every new row can be clicked. On the last level the one row left is plain
 			// text, so focus goes to the grouping in effect.
-			const selector =
-				groupBy === filter.dimension
-					? `#${GROUP_BY_ID} [aria-pressed="true"]`
-					: `#${BREAKDOWN_ID} tbody button`
+			const selector = groupBy === filter.dimension ? GROUPING : `#${BREAKDOWN_ID} tbody button`
 			return { model: { ...model, filters, groupBy }, commands: [FocusAfterDrill({ selector })] }
 		},
+		// The removed chip held focus, and so did Clear all: it moves to the grouping in effect.
 		ClickedRemoveFilter: ({ filter }) => ({
 			model: {
 				...model,
@@ -137,8 +137,12 @@ const update = (model: Model, message: Message): Update.Return<Model, Message> =
 					(entry) => entry.dimension !== filter.dimension || entry.value !== filter.value,
 				),
 			},
+			commands: [FocusAfterDrill({ selector: GROUPING })],
 		}),
-		ClickedClearFilters: () => ({ model: { ...model, filters: [] } }),
+		ClickedClearFilters: () => ({
+			model: { ...model, filters: [] },
+			commands: [FocusAfterDrill({ selector: GROUPING })],
+		}),
 		ClickedSort: ({ sort }) => ({ model: { ...model, sort } }),
 		CompletedFocusRow: () => ({ model }),
 	})
@@ -198,15 +202,16 @@ const toolbar = (h: H, model: Model): Html => {
 			onRemove: Message.ClickedRemoveFilter({ filter }),
 		})),
 		onClearAll: Message.ClickedClearFilters(),
-		className: "mb-0",
+		className: "mb-0 min-w-0 max-w-full",
 	})
 	return hstack(h, { gap: "4", wrap: true, className: "gap-y-2" }, [
 		hstack(h, { gap: "2", className: "min-w-0 max-w-full", attributes: [h.Id(GROUP_BY_ID)] }, [
-			typography(h, { size: "xs", tone: "muted", className: "shrink-0" }, ["Group by"]),
+			// On a phone the four options need the row: the control carries the name itself.
+			typography(h, { size: "xs", tone: "muted", className: "shrink-0 max-sm:sr-only" }, ["Group by"]),
 			segmentedSelect(h, {
 				ariaLabel: "Group by",
 				size: "sm",
-				className: "min-w-0 overflow-x-auto",
+				className: "min-w-0 overflow-x-auto max-sm:[&_[data-slot=toggle]]:px-2",
 				value: model.groupBy,
 				options: Arr.map(DIMENSIONS, (dimension) => ({
 					value: dimension,
@@ -388,7 +393,7 @@ const row = (h: H, model: Model, data: CostView, entry: BreakdownRow): Html => {
 								),
 					]),
 				],
-				cn("min-w-40", FIRST),
+				cn("min-w-32", FIRST),
 			),
 			numericTableCell(h, [formatMoney(entry.cost)]),
 			numericTableCell(h, [formatPercent(entry.cost / data.cost, { floor: 0.001 })], ROOMY),
@@ -421,7 +426,17 @@ const breakdown = (h: H, model: Model, data: CostView): Html =>
 	panel(h, { attributes: [h.Id(BREAKDOWN_ID)] }, [
 		panelHeader(h, {
 			title: `Cost by ${DIMENSION_TEXT[model.groupBy].noun}`,
-			action: typography(h, { size: "2xs", tone: "subtle" }, ["Select a row to break it down"]),
+			// On the last level the one row left is not a control, and the hint would point at nothing.
+			...(Arr.some(
+				data.rows,
+				(entry) => !hasFilter(model, { dimension: model.groupBy, value: entry.key }),
+			)
+				? {
+						action: typography(h, { size: "2xs", tone: "subtle" }, [
+							"Select a row to break it down",
+						]),
+					}
+				: undefined),
 		}),
 		table(h, { size: "sm", ariaLabel: `Cost by ${DIMENSION_TEXT[model.groupBy].noun}` }, [
 			head(h, model),

@@ -1503,7 +1503,7 @@
 	"cost_budgets_rule_3_body": "예산은 매시간 확인됩니다. 조직의 모든 사람이 예산을 볼 수 있습니다. 변경은 알림을 관리하는 사람이 할 수 있습니다.",
 	"feat_cost_cap_title": "묶고, 비교하고, 파고들기",
 	"feat_cost_cap_1_title": "여섯 가지로 묶기",
-	"feat_cost_cap_1_body": "서비스, 프로바이더, 카테고리, 리전, 리소스, 계정. 리소스는 GitHub 저장소, Vercel 프로젝트, PlanetScale 브랜치를 말합니다.",
+	"feat_cost_cap_1_body": "서비스, 프로바이더, 카테고리, 리전, 리소스, 계정. 리소스는 GitHub 저장소, Vercel 프로젝트, PlanetScale 브랜치를 말합니다. 위 데모에서는 이 가운데 네 가지를 쓸 수 있습니다.",
 	"feat_cost_cap_2_title": "행을 클릭해 더 깊이",
 	"feat_cost_cap_2_body": "페이지가 그 행으로 필터링되고 다음 차원으로 나뉩니다. 프로바이더는 서비스로, 서비스는 리전으로 나뉩니다.",
 	"feat_cost_cap_3_title": "이전 기간과의 비교",

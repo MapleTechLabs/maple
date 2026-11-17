@@ -14,11 +14,12 @@ const rules = [
 <section class="border-t border-border bg-bg">
 	<div class="shell py-16 md:py-32">
 		<div class="grid gap-12 lg:grid-cols-[1.15fr_0.85fr] lg:gap-20">
-			<div class="min-w-0 self-start">
+			<!-- Below `lg` the copy comes first, so the table never shows before its heading. -->
+			<div class="order-2 min-w-0 self-start lg:order-1">
 				<LiveCostBudgets />
 			</div>
 
-			<div class="flex min-w-0 flex-col">
+			<div class="order-1 flex min-w-0 flex-col lg:order-2">
 				<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{m.cost_budgets_eyebrow()}</p>
 				<h2
 					class="mt-4 max-w-[16ch] font-display text-3xl font-medium leading-[1.05] tracking-[-0.02em] text-fg md:text-[40px]"
