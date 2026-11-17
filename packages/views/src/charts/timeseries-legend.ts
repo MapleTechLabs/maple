@@ -11,7 +11,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { pressable } from "../ui/pressable"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../ui/table"
-import { Message, type Model } from "./chart"
+import { hiddenNamesIn, Message, type Model } from "./chart"
 import { bucketSecondsOf, normaliseRows, scaleRates, type SeriesDefinition } from "./timeseries"
 import { hstack } from "../ui/stack"
 import { swatch } from "../ui/swatch"
@@ -205,18 +205,6 @@ const statsTable = (
 			),
 		],
 	)
-}
-
-/**
- * The remembered names that hide a series of this data. When they would hide every series (the
- * data changed to only hidden ones), none is hidden: a plot is never left empty by an old choice.
- */
-export const hiddenNamesIn = (
-	hiddenNames: ReadonlyArray<string>,
-	names: ReadonlyArray<string>,
-): ReadonlyArray<string> => {
-	const present = Arr.filter(names, (name) => hiddenNames.includes(name))
-	return present.length === names.length ? [] : present
 }
 
 /**
