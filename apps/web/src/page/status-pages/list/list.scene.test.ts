@@ -246,11 +246,11 @@ describe("status page card menu", () => {
 		scene(
 			{ update: listUpdate, view },
 			given(withPages([summaryOf(statusPage({ visibility: "internal" }))], false)),
-			expectView(role("link", { name: "Open dev preview" })).toHaveAttr(
+			expectView(role("link", { name: "Open dev preview for Acme Status" })).toHaveAttr(
 				"href",
 				statusPageViewHref(pageId(1)),
 			),
-			expectView(role("button", { name: "Open public page" })).toBeDisabled(),
+			expectView(role("button", { name: "Open public page for Acme Status" })).toBeDisabled(),
 			expectView(
 				role("group", {
 					name: "Internal pages are not served publicly. Members read them in the dev preview.",

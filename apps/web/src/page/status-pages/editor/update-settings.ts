@@ -177,7 +177,7 @@ export const withPage = (model: Model, page: V2StatusPage): Model => ({
 export const savedSettings = (model: Model, result: Result.Result<V2StatusPage, LoadFailure>): Return =>
 	Result.match(result, {
 		onSuccess: (page): Return => {
-			const next = withPage({ ...model, isSavingSettings: false }, page)
+			const next = withPage({ ...model, isSavingSettings: false, takenSlug: null }, page)
 			const isCaughtUp =
 				next.settingsEdits !== null && isSameSettings(next.settingsEdits, settingsFormOf(page))
 			return {

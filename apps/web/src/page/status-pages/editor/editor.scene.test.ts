@@ -3196,6 +3196,25 @@ describe("settings", () => {
 				text(/Visitors read the page at https:\/\/status-pages\.maple\.dev\/s\/free-one\./u),
 			).toExist(),
 		)
+		// Once the address is free and the save goes through, the field no longer calls it taken.
+		const saved = pageUpdate(
+			pageUpdate(refused, Message.ClickedSaveSettings()).model,
+			Message.CompletedSaveSettings({ result: Result.succeed(statusPage({ slug: "taken" })) }),
+		).model
+		expect(saved.takenSlug).toBeNull()
+	})
+
+	test("the Address hint does not tell an internal or draft page's admin that visitors read it", () => {
+		for (const [page, expected] of [
+			[statusPage({ visibility: "internal" }), /internal pages are not served there/u],
+			[statusPage({ draft: true, published_at: null }), /once it is published/u],
+		] as const)
+			scene(
+				{ update: pageUpdate, view },
+				given({ ...loaded({ ...ACCESS, page }), publicBaseUrl: "https://status-pages.maple.dev" }),
+				expectView(text(expected)).toExist(),
+				expectView(text(/Visitors read the page at/u)).not.toExist(),
+			)
 	})
 
 	test("with the fields and Who can view both edited, one bar saves the fields, then who can view", () => {

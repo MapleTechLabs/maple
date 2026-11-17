@@ -225,8 +225,12 @@ const cardHeader = (
 		]),
 		hstack(h, { gap: "2", align: "center", wrap: true, justify: "end" }, [
 			lastPublished(h, summary, inputs),
-			openPublicPageButton(h, publicPageLink(page, publicUrl(STATUS_PAGE_BASE_URL, page.slug))),
-			openPreviewButton(h, page.id),
+			openPublicPageButton(
+				h,
+				publicPageLink(page, publicUrl(STATUS_PAGE_BASE_URL, page.slug)),
+				page.name,
+			),
+			openPreviewButton(h, page.id, page.name),
 			...(isEditable ? [pageMenu(h, model, summary)] : []),
 		]),
 	])

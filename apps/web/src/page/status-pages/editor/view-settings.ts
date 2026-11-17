@@ -79,6 +79,14 @@ const AUTO_INCIDENT_ENTRIES = [
 const nameShown = (form: SettingsForm, page: V2StatusPage): string =>
 	Str.trim(form.name) === "" ? page.name : Str.trim(form.name)
 
+/** The Address hint's first sentence: only a published public or password page is read there. */
+const whereVisitorsRead = (page: V2StatusPage, url: string): string => {
+	if (page.visibility === "internal")
+		return `Its address is ${url}, but internal pages are not served there.`
+	if (page.draft) return `Visitors will read the page at ${url} once it is published.`
+	return `Visitors read the page at ${url}.`
+}
+
 const pageSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm): Html => {
 	const issues = settingsIssues(form)
 	const isReadOnly = !canManage(model)
@@ -112,7 +120,7 @@ const pageSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm)
 						model.takenSlug !== null && model.takenSlug === form.slug
 							? SLUG_TAKEN_MESSAGE
 							: issues.slug,
-					hint: `Visitors read the page at ${publicUrl(model.publicBaseUrl, form.slug) ?? `/s/${form.slug}`}. Each address belongs to one page across Maple; changing it moves the page and the old address stops working. A custom domain, below, serves the page at your own address instead.`,
+					hint: `${whereVisitorsRead(page, publicUrl(model.publicBaseUrl, form.slug) ?? `/s/${form.slug}`)} Each address belongs to one page across Maple; changing it moves the page and the old address stops working. A custom domain, below, serves the page at your own address instead.`,
 					onInput: (value) => Message.ChangedSetting({ field: "slug", value }),
 				}),
 				textareaField(h, {

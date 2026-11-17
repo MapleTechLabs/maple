@@ -16,8 +16,12 @@ export const OPEN_PREVIEW_LABEL = "Open dev preview"
 export const OPEN_PUBLIC_VALUE = "open-public"
 export const OPEN_PREVIEW_VALUE = "open-preview"
 
+/** The accessible name: the visible label, plus the page where several cards share the label. */
+const nameOf = <M>(h: HtmlBuilder<M>, label: string, pageName: string | undefined) =>
+	pageName === undefined ? [] : [h.AriaLabel(`${label} for ${pageName}`)]
+
 /** The public page in a new tab; disabled, with the reason as its tooltip, while there is none. */
-export const openPublicPageButton = <M>(h: HtmlBuilder<M>, link: PublicPageLink): Html =>
+export const openPublicPageButton = <M>(h: HtmlBuilder<M>, link: PublicPageLink, pageName?: string): Html =>
 	link._tag === "Open"
 		? linkButton(
 				h,
@@ -25,25 +29,41 @@ export const openPublicPageButton = <M>(h: HtmlBuilder<M>, link: PublicPageLink)
 					size: "sm",
 					variant: "outline",
 					href: link.url,
-					attributes: [h.Target("_blank"), h.Rel("noopener")],
+					attributes: [
+						h.Target("_blank"),
+						h.Rel("noopener"),
+						...nameOf(h, OPEN_PUBLIC_LABEL, pageName),
+					],
 				},
 				[icon(h, "ExternalLinkIcon"), OPEN_PUBLIC_LABEL],
 			)
 		: lockedControl(
 				h,
 				link.reason,
-				button(h, { size: "sm", variant: "outline", isDisabled: true }, [
-					icon(h, "ExternalLinkIcon"),
-					OPEN_PUBLIC_LABEL,
-				]),
+				button(
+					h,
+					{
+						size: "sm",
+						variant: "outline",
+						isDisabled: true,
+						attributes: nameOf(h, OPEN_PUBLIC_LABEL, pageName),
+					},
+					[icon(h, "ExternalLinkIcon"), OPEN_PUBLIC_LABEL],
+				),
 			)
 
 /** The page inside Maple, for members: always available. */
-export const openPreviewButton = <M>(h: HtmlBuilder<M>, pageId: StatusPageId): Html =>
-	linkButton(h, { size: "sm", variant: "outline", href: statusPageViewHref(pageId) }, [
-		icon(h, "EyeIcon"),
-		OPEN_PREVIEW_LABEL,
-	])
+export const openPreviewButton = <M>(h: HtmlBuilder<M>, pageId: StatusPageId, pageName?: string): Html =>
+	linkButton(
+		h,
+		{
+			size: "sm",
+			variant: "outline",
+			href: statusPageViewHref(pageId),
+			attributes: nameOf(h, OPEN_PREVIEW_LABEL, pageName),
+		},
+		[icon(h, "EyeIcon"), OPEN_PREVIEW_LABEL],
+	)
 
 /** The same two actions as menu items. */
 export const openMenuEntries = (link: PublicPageLink): ReadonlyArray<MenuItemEntry> => [
