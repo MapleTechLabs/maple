@@ -504,7 +504,14 @@ const isAuditResourceType = (type: string): type is AuditResourceType =>
  * and API requests. A heavy agent user writes hundreds of these a day. The
  * server filters by them and the web mutes them, so both read this one list.
  */
-export const AUDIT_ACCESS_ACTION_SUFFIXES = [".read", ".called", ".sql_executed", ".request"] as const
+export const AUDIT_ACCESS_ACTION_SUFFIXES = [
+	".read",
+	".called",
+	".sql_executed",
+	".request",
+	// Reading a setup that carries the events key changes nothing.
+	".events_key_read",
+] as const
 
 /** True for an access action (see {@link AUDIT_ACCESS_ACTION_SUFFIXES}). */
 export const isAuditAccessAction = (action: string): boolean =>
