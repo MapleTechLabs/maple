@@ -35,6 +35,7 @@ import {
 	ThemeColorField,
 } from "../shared/form"
 import { AccessAction } from "./model"
+import { GroupDialogMessage } from "../shared/group-dialog"
 import { PickerMessage } from "../shared/picker"
 import { PreviewScheme, PreviewSelection, PreviewState, PreviewWidth } from "../shared/preview"
 import { LoadOutcome } from "../../kit/load-schemas"
@@ -70,6 +71,7 @@ export const Message = defineMessageUnion({
 	// Components
 	ChangedComponentField: { field: ComponentTextField, value: Schema.String },
 	ToggledComponentUptime: {},
+	GotGroupDialogMessage: { message: GroupDialogMessage },
 	/** The Monitors save bar: a moved order and the open component's edits, together. */
 	ClickedSaveMonitors: {},
 	ClickedDiscardMonitors: {},

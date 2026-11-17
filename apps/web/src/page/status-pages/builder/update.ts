@@ -1,11 +1,13 @@
 import type {
+	StatusPageDraftComponent,
 	StatusPagePreviewParams,
 	V2StatusPageCreateParams,
 	V2UptimeMonitor,
 } from "@maple/domain/http/v2"
 import { STATUS_PAGE_PRESET_DEFAULTS } from "@maple/domain/status-page"
-import { Option, Result, String as Str } from "effect"
-import { AsyncData } from "foldkit"
+import { Option, Result, Array as Arr, String as Str } from "effect"
+import { AsyncData, Command as FoldkitCommand } from "foldkit"
+import * as Dialog from "@maple/views/ui/dialog"
 import * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
@@ -13,12 +15,18 @@ import type { AppRoute } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { UPTIME_LIST_LIMIT } from "../../kit/uptime/commands"
 import { statusPageHref } from "../shared/commands"
+import { groupedOrder, groupIndexOf, moved } from "../shared/component-order"
+import { componentPayload, type ComponentForm, emptyComponentForm, orNull } from "../shared/form"
+import { type GroupDialogMessage, initGroupDialog, updateGroupDialog } from "../shared/group-dialog"
 import {
 	draftComponents,
 	emptyPicker,
 	hasRowIssues,
 	monitorCreated,
 	monitorFailed,
+	monitorKey,
+	PRECHECK_MAX_MONITORS,
+	type PickerMessage,
 	seedPicker,
 	updatePicker,
 } from "../shared/picker"
@@ -37,7 +45,7 @@ import {
 	WaitBuilderPreview,
 } from "./command"
 import { Message } from "./message"
-import { canManage, type Model, type SubmitMode } from "./model"
+import { canManage, type DraftRow, type Model, type SubmitMode } from "./model"
 import { acceptGrants } from "../../kit/session-grants"
 
 export type Return = PageReturn<Model, Message>
@@ -45,6 +53,8 @@ export type Return = PageReturn<Model, Message>
 type BuilderRoute = Extract<AppRoute, { readonly _tag: "StatusPageNew" }>
 
 export const PICKER_ID = "status-page-builder"
+export const ADD_PICKER_ID = "status-page-builder-add"
+export const FIELDS_ID = "status-page-builder-component"
 export const NAME_ID = "status-page-builder-name"
 export const SLUG_ID = "status-page-builder-slug"
 
@@ -75,15 +85,33 @@ export const slugError = (model: Model): string | null =>
 			? null
 			: slugIssue(model.slug)
 
+const safeKey = (key: string) => Str.replace(":", "-")(key)
+
+/** A row's head in the list: the button that opens and closes it. */
+export const rowIdOf = (key: string): string => `${PICKER_ID}-row-${safeKey(key)}`
+
+/** A row's drag grip in the list. */
+export const gripIdOf = (key: string): string => `${PICKER_ID}-grip-${safeKey(key)}`
+
+/** The rows as the order helpers take them: the key as the id, a blank group as none. */
+const placed = (rows: ReadonlyArray<DraftRow>) =>
+	Arr.map(rows, (row) => ({ id: row.key, group: orNull(row.form.group), row }))
+
+/** The rows as the page lists them: each group where its first member is, members in order. */
+export const orderedRows = (model: Model): ReadonlyArray<DraftRow> =>
+	Arr.map(groupedOrder(placed(model.rows)), (item) => item.row)
+
+const isNamed = (row: DraftRow) => Str.trim(row.form.name) !== ""
+
 /** Every check a create must pass, so neither button sends a page the API would refuse. */
 export const canSubmit = (model: Model): boolean =>
 	canManage(model) &&
 	model.submitting === null &&
-	!model.picker.isCreatingMonitor &&
+	!model.addPicker.isCreatingMonitor &&
 	Str.trim(model.name) !== "" &&
 	slugIssue(model.slug) === null &&
 	model.takenSlug !== model.slug &&
-	!hasRowIssues(model.picker)
+	Arr.every(model.rows, isNamed)
 
 /** The preset carries its own font and corners; the builder offers no other choice of either. */
 const themeOf = (model: Model) => ({
@@ -92,19 +120,22 @@ const themeOf = (model: Model) => ({
 	...STATUS_PAGE_PRESET_DEFAULTS[model.preset],
 })
 
-/** What the preview reads; `draftComponents` leaves out rows not named yet, which the API refuses. */
+/** The page's components in page order; rows not named yet are left out, which the API refuses. */
+const componentsOf = (model: Model): ReadonlyArray<StatusPageDraftComponent> =>
+	Arr.map(Arr.filter(orderedRows(model), isNamed), (row) => componentPayload(row.form))
+
 export const previewDraft = (model: Model): StatusPagePreviewParams => ({
 	name: Str.trim(model.name),
 	slug: model.slug,
 	theme: themeOf(model),
-	components: draftComponents(model.picker),
+	components: componentsOf(model),
 })
 
 export const createPayload = (model: Model, mode: SubmitMode): V2StatusPageCreateParams => ({
 	name: Str.trim(model.name),
 	slug: model.slug,
 	theme: themeOf(model),
-	components: draftComponents(model.picker),
+	components: componentsOf(model),
 	publish: mode === "publish",
 })
 
@@ -128,7 +159,12 @@ export const init = (_route: BuilderRoute, context: PageContext): Return => {
 		slug: "",
 		isSlugEdited: false,
 		isNameTouched: false,
-		picker: emptyPicker,
+		rows: [],
+		nextKey: 1,
+		openKey: null,
+		groupDialog: initGroupDialog("status-page-builder-group"),
+		addSheet: Dialog.init("status-page-builder-add", "sheet"),
+		addPicker: emptyPicker,
 		preset: "default",
 		appearance: "auto",
 		previewScheme: "light",
@@ -152,7 +188,23 @@ export const init = (_route: BuilderRoute, context: PageContext): Return => {
 	}
 }
 
-/** The first monitors read fills the checklist; later reads (a retry) leave the user's picks. */
+const monitorForm = (monitor: V2UptimeMonitor): ComponentForm => ({
+	...emptyComponentForm,
+	name: monitor.name,
+	monitorId: monitor.id,
+})
+
+/** A small org's page starts with every monitor on it but heartbeats; past that, the user adds them. */
+const seedRows = (monitors: ReadonlyArray<V2UptimeMonitor>): ReadonlyArray<DraftRow> =>
+	monitors.length > PRECHECK_MAX_MONITORS
+		? []
+		: Arr.flatMap(monitors, (monitor) =>
+				monitor.kind === "heartbeat"
+					? []
+					: [{ key: monitorKey(monitor.id), form: monitorForm(monitor) }],
+			)
+
+/** The first monitors read fills the list; later reads (a retry) leave the user's rows.*/
 const acceptMonitors = (
 	model: Model,
 	key: string,
@@ -164,25 +216,122 @@ const acceptMonitors = (
 	return edited({
 		...next,
 		isSeeded: true,
-		picker: seedPicker(
-			AsyncData.getOrElse(monitors.data, () => []),
-			true,
-		),
+		rows: seedRows(AsyncData.getOrElse(monitors.data, () => [])),
 	})
 }
 
-const pickerStep = (model: Model, message: Parameters<typeof updatePicker>[1]): Return => {
-	const step = updatePicker(model.picker, message)
-	const next = edited({ ...model, picker: step.picker })
+/** The open row's fields, changed by `change`; an edit, so the preview follows. */
+const editOpen = (model: Model, change: (form: ComponentForm) => ComponentForm): Return =>
+	model.openKey === null
+		? { model }
+		: edited({
+				...model,
+				rows: Arr.map(model.rows, (row) =>
+					row.key === model.openKey ? { ...row, form: change(row.form) } : row,
+				),
+			})
+
+const groupDialogStep = (model: Model, message: GroupDialogMessage): Return => {
+	const step = updateGroupDialog(model.groupDialog, message)
+	const withState = { ...model, groupDialog: step.state }
+	const next = Option.match(step.picked, {
+		onNone: (): Return => ({ model: withState }),
+		onSome: (group) => editOpen(withState, (form) => ({ ...form, group })),
+	})
 	return {
-		model: next.model,
+		...next,
 		commands: [
 			...(next.commands ?? []),
-			...Option.match(step.createMonitor, {
-				onNone: () => [],
-				onSome: (url) => [CreateBuilderMonitor({ url })],
-			}),
+			...FoldkitCommand.mapMessages(step.commands, (child) =>
+				Message.GotGroupDialogMessage({ message: child }),
+			),
 		],
+	}
+}
+
+/** The row at `index` among its group's rows; nothing when it is already there. */
+const moveRow = (model: Model, key: string, index: number): Model | null => {
+	const next = moved(placed(model.rows), key, index)
+	return next === null ? null : { ...model, rows: Arr.map(next, (item) => item.row) }
+}
+
+/** An arrow key on the grip: one slot up (-1) or down (1), focus kept on the moved row's grip. */
+const nudgeRow = (model: Model, key: string, offset: number): Return => {
+	const from = groupIndexOf(placed(model.rows), key)
+	const next = from === null ? null : moveRow(model, key, from + offset)
+	if (next === null) return { model }
+	const step = edited(next)
+	return { ...step, commands: [...(step.commands ?? []), FocusBuilderField({ id: gripIdOf(key) })] }
+}
+
+const removeRow = (model: Model, key: string): Return =>
+	edited({
+		...model,
+		rows: Arr.filter(model.rows, (row) => row.key !== key),
+		openKey: model.openKey === key ? null : model.openKey,
+	})
+
+const sheetCommands = (step: ReturnType<typeof Dialog.update>) =>
+	FoldkitCommand.mapMessages(step.commands ?? [], (message) => Message.GotAddSheetMessage({ message }))
+
+/** Add components: the monitors not on the page yet, none picked; a URL or a component by hand join them. */
+const openAdd = (model: Model): Return => {
+	const used = new Set(
+		Arr.flatMap(model.rows, (row) => (row.form.monitorId === "" ? [] : [row.form.monitorId])),
+	)
+	const step = Dialog.open(model.addSheet)
+	return {
+		model: {
+			...model,
+			addSheet: step.model,
+			addPicker: seedPicker(
+				Arr.filter(monitorsOf(model), (monitor) => !used.has(monitor.id)),
+				false,
+			),
+		},
+		commands: sheetCommands(step),
+	}
+}
+
+const formOf = (component: StatusPageDraftComponent): ComponentForm => ({
+	...emptyComponentForm,
+	name: component.name,
+	group: component.group ?? "",
+	monitorId: component.monitor_id ?? "",
+	manualStatus: component.manual_status ?? "",
+	showUptime: component.show_uptime ?? true,
+})
+
+/** What is ticked joins the page at the end, and the sheet closes. */
+const submitAdd = (model: Model): Return => {
+	const components = draftComponents(model.addPicker)
+	if (components.length === 0 || hasRowIssues(model.addPicker) || model.addPicker.isCreatingMonitor)
+		return { model }
+	const added = Arr.map(components, (component, index): DraftRow => ({
+		key:
+			component.monitor_id === null || component.monitor_id === undefined
+				? `c:${model.nextKey + index}`
+				: monitorKey(component.monitor_id),
+		form: formOf(component),
+	}))
+	const step = Dialog.close(model.addSheet)
+	const next = edited({
+		...model,
+		rows: [...model.rows, ...added],
+		nextKey: model.nextKey + added.length,
+		addSheet: step.model,
+	})
+	return { ...next, commands: [...(next.commands ?? []), ...sheetCommands(step)] }
+}
+
+const addPickerStep = (model: Model, message: PickerMessage): Return => {
+	const step = updatePicker(model.addPicker, message)
+	return {
+		model: { ...model, addPicker: step.picker },
+		commands: Option.match(step.createMonitor, {
+			onNone: () => [],
+			onSome: (url) => [CreateBuilderMonitor({ url })],
+		}),
 	}
 }
 
@@ -214,17 +363,34 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				isSlugEdited: slug !== "",
 			})
 		},
-		GotPickerMessage: ({ message: child }) => pickerStep(model, child),
+		ClickedRow: ({ key }) => ({ model: { ...model, openKey: model.openKey === key ? null : key } }),
+		ChangedRowField: ({ field, value }) => editOpen(model, (form) => ({ ...form, [field]: value })),
+		ToggledRowUptime: () => editOpen(model, (form) => ({ ...form, showUptime: !form.showUptime })),
+		GotGroupDialogMessage: ({ message: child }) => groupDialogStep(model, child),
+		ClickedRemoveRow: ({ key }) => removeRow(model, key),
+		DroppedRow: ({ key, index }) => {
+			const next = moveRow(model, key, index)
+			return next === null ? { model } : edited(next)
+		},
+		PressedMoveRow: ({ key, offset }) => nudgeRow(model, key, offset),
+		ClickedAddComponents: () => openAdd(model),
+		GotAddSheetMessage: ({ message: child }) => {
+			const step = Dialog.update(model.addSheet, child)
+			return { model: { ...model, addSheet: step.model }, commands: sheetCommands(step) }
+		},
+		GotAddPickerMessage: ({ message: child }) => addPickerStep(model, child),
+		ClickedSubmitAdd: () => submitAdd(model),
+		// A monitored URL goes straight onto the page, with any rows already ticked beside it.
 		CompletedCreateMonitor: ({ result }) =>
 			Result.match(result, {
 				onSuccess: (monitor): Return => {
-					const next = edited({
+					const next = submitAdd({
 						...model,
 						monitors: {
 							...model.monitors,
 							data: AsyncData.map(model.monitors.data, (monitors) => [...monitors, monitor]),
 						},
-						picker: monitorCreated(model.picker, monitor),
+						addPicker: monitorCreated(model.addPicker, monitor),
 					})
 					return {
 						...next,
@@ -232,7 +398,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					}
 				},
 				onFailure: (failure): Return => ({
-					model: { ...model, picker: monitorFailed(model.picker, failure.message) },
+					model: { ...model, addPicker: monitorFailed(model.addPicker, failure.message) },
 				}),
 			}),
 		CompletedFocus: () => ({ model }),

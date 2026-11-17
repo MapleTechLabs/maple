@@ -1,15 +1,14 @@
-import { StatusPageComponentId } from "@maple/domain"
-import { Array as Arr, Effect, Option, Queue, Schema, Stream } from "effect"
-import { Message } from "./message"
+import { Array as Arr, Effect, Queue, Stream } from "effect"
 
 // A pointer drag on a component's grip lifts its row and follows the pointer within its group; the
 // group's other rows slide aside to open the slot it would land in, which a dashed outline marks.
-// Letting go settles the row into that slot and sends one `DroppedComponent`, since each reorder is
-// a save. Escape or a cancelled pointer springs it back and sends nothing.
+// Letting go settles the row into that slot and sends one drop (the row's key and its new index in
+// the group). Escape or a cancelled pointer springs it back and sends nothing. The builder and
+// Settings > Monitors share it.
 
 /** On a group's wrapper, around its list and its slot outline. */
 export const LIST_ATTRIBUTE = "component-list"
-/** On a component's row, valued with its id. */
+/** On a component's row, valued with its key. */
 export const ROW_ATTRIBUTE = "component-row"
 export const GRIP_ATTRIBUTE = "component-grip"
 /** On the outline drawn where the held row would land. */
@@ -50,13 +49,14 @@ export const dropIndex = (spans: ReadonlyArray<Span>, from: number, offset: numb
 			: best,
 	)
 
-const decodeId = Schema.decodeUnknownOption(StatusPageComponentId)
+/** A row let go over a new slot: its key and its index among its group's rows. */
+export type ComponentDrop = Readonly<{ key: string; index: number }>
 
 const translate = (offset: number): string => (offset === 0 ? "" : `translateY(${offset}px)`)
 
 const startDrag = (
 	event: PointerEvent,
-	emit: (message: Message) => void,
+	emit: (drop: ComponentDrop) => void,
 	busy: { isDragging: boolean },
 ): void => {
 	if (busy.isDragging || event.button !== 0 || !(event.target instanceof Element)) return
@@ -71,7 +71,7 @@ const startDrag = (
 		!(slot instanceof HTMLElement)
 	)
 		return
-	const componentId = decodeId(row.getAttribute(`data-${ROW_ATTRIBUTE}`))
+	const key = row.getAttribute(`data-${ROW_ATTRIBUTE}`)
 	const rows = Arr.filter(
 		[...list.querySelectorAll(`[data-${ROW_ATTRIBUTE}]`)],
 		(other): other is HTMLElement => other instanceof HTMLElement,
@@ -84,8 +84,7 @@ const startDrag = (
 	const origin = spans[from]
 	const first = spans[0]
 	const last = spans[spans.length - 1]
-	if (Option.isNone(componentId) || origin === undefined || first === undefined || last === undefined)
-		return
+	if (key === null || origin === undefined || first === undefined || last === undefined) return
 	event.preventDefault()
 	busy.isDragging = true
 	grip.setPointerCapture(event.pointerId)
@@ -163,7 +162,7 @@ const startDrag = (
 					reset()
 				}, RENDER_WAIT_MS)
 				observer.observe(row.parentElement ?? row, { childList: true })
-				emit(Message.DroppedComponent({ componentId: componentId.value, index: to }))
+				emit({ key, index: to })
 			},
 			ease === "" ? 0 : MOVE_MS,
 		)
@@ -184,13 +183,13 @@ const startDrag = (
 	window.addEventListener("keydown", onKey, true)
 }
 
-/** Grip drags in the Monitors list, each let go over a new slot as one `DroppedComponent`. */
-export const componentDrags: Stream.Stream<Message> = Stream.callback<Message>((queue) =>
+/** Grip drags in a component list, each let go over a new slot as one drop. */
+export const componentDrags: Stream.Stream<ComponentDrop> = Stream.callback<ComponentDrop>((queue) =>
 	Effect.acquireRelease(
 		Effect.sync(() => {
 			const busy = { isDragging: false }
 			const onDown = (event: PointerEvent) =>
-				startDrag(event, (message) => Queue.offerUnsafe(queue, message), busy)
+				startDrag(event, (drop) => Queue.offerUnsafe(queue, drop), busy)
 			document.addEventListener("pointerdown", onDown)
 			return () => document.removeEventListener("pointerdown", onDown)
 		}),

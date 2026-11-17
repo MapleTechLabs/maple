@@ -1,11 +1,17 @@
-import { StatusPageComponentId, StatusPageId } from "@maple/domain"
+import {
+	StatusPageComponentId,
+	StatusPageComponentStatus,
+	StatusPageId,
+	UptimeMonitorId,
+} from "@maple/domain"
 import {
 	DEFAULT_STATUS_PAGE_THEME,
+	deriveComponentStatus,
 	STATUS_PAGE_PRESET_DEFAULTS,
 	StatusPageSlug,
 } from "@maple/domain/status-page"
 import { previewSnapshot } from "@maple/status-page"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { failureMessage } from "@maple/views/data/load-failure"
@@ -15,6 +21,7 @@ import { button, linkButton } from "@maple/views/ui/button"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { sidePanelSheet } from "@maple/views/ui/sheet"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { heading } from "@maple/views/ui/heading"
 import type { PageViewInputs } from "../../contract"
@@ -26,13 +33,27 @@ import { textField } from "../shared/fields"
 import { APPEARANCES, presetCards } from "../shared/look"
 import { monitorStatusOf } from "../shared/derive"
 import { orNull } from "../shared/form"
-import { checkedRows } from "../shared/picker"
+import { componentFields, componentList, removeButton, sourceLine } from "../shared/component-list"
+import { GroupDialogMessage, groupDialogView, groupsOf } from "../shared/group-dialog"
+import { checkedRows, hasRowIssues } from "../shared/picker"
 import { pickerView } from "../shared/picker-view"
 import { daysOf, previewDocument, previewFrame, previewTheme } from "../shared/preview"
 import { FocusNewRow } from "./command"
 import { Message } from "./message"
-import { canManage, type Model } from "./model"
-import { canSubmit, monitorsOf, NAME_ID, nameIssue, PICKER_ID, SLUG_ID, slugError } from "./update"
+import { canManage, type DraftRow, type Model } from "./model"
+import {
+	ADD_PICKER_ID,
+	canSubmit,
+	FIELDS_ID,
+	gripIdOf,
+	monitorsOf,
+	NAME_ID,
+	nameIssue,
+	orderedRows,
+	rowIdOf,
+	SLUG_ID,
+	slugError,
+} from "./update"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
@@ -42,6 +63,8 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 type H = HtmlBuilder<Message>
 
 const isSlug = Schema.is(StatusPageSlug)
+const decodeMonitorId = Schema.decodeUnknownOption(UptimeMonitorId)
+const decodeStatus = Schema.decodeUnknownOption(StatusPageComponentStatus)
 const DRAFT_PAGE_ID = Schema.decodeSync(StatusPageId)("00000000-0000-4000-8000-000000000000")
 const draftComponentId = (index: number) =>
 	Schema.decodeSync(StatusPageComponentId)(
@@ -73,46 +96,164 @@ const pageSection = (h: H, model: Model): Html =>
 		]),
 	])
 
+const ROW_HINT_ID = "status-page-builder-reorder-hint"
+
+/** A row's status as the page would show it today: its override, else its monitor's reading. */
+const rowStatus = (model: Model, row: DraftRow): StatusPageComponentStatus =>
+	deriveComponentStatus({
+		monitorStatus: monitorStatusOf(
+			monitorsOf(model),
+			Option.getOrNull(decodeMonitorId(row.form.monitorId)),
+		),
+		manualStatus: Option.getOrNull(decodeStatus(row.form.manualStatus)),
+		incidentStatuses: [],
+	})
+
+const rowBody = (h: H, model: Model, row: DraftRow): ReadonlyArray<Html> => [
+	...componentFields(h, {
+		idPrefix: FIELDS_ID,
+		form: row.form,
+		monitors: monitorsOf(model),
+		isReadOnly: model.submitting !== null,
+		onField: (field, value) => Message.ChangedRowField({ field, value }),
+		onToggleUptime: Message.ToggledRowUptime(),
+		onOpenGroup: Message.GotGroupDialogMessage({ message: GroupDialogMessage.ClickedOpen() }),
+	}),
+	hstack(h, {}, [
+		removeButton(h, {
+			isDisabled: model.submitting !== null,
+			onClick: Message.ClickedRemoveRow({ key: row.key }),
+		}),
+	]),
+]
+
+const componentRows = (h: H, model: Model): Html =>
+	componentList(h, {
+		grants: model,
+		isReorderBusy: model.submitting !== null,
+		hintId: ROW_HINT_ID,
+		rows: Arr.map(orderedRows(model), (row) => {
+			const isOpen = model.openKey === row.key
+			const name = Str.trim(row.form.name)
+			return {
+				key: row.key,
+				name: name === "" ? "Untitled component" : name,
+				group: orNull(row.form.group),
+				status: rowStatus(model, row),
+				source: sourceLine(monitorsOf(model), row.form.monitorId),
+				isOpen,
+				rowId: rowIdOf(row.key),
+				gripId: gripIdOf(row.key),
+				onToggle: Message.ClickedRow({ key: row.key }),
+				onMove: (offset) => Message.PressedMoveRow({ key: row.key, offset }),
+				body: isOpen ? rowBody(h, model, row) : [],
+			}
+		}),
+	})
+
 const componentsBody = (h: H, model: Model): Html => {
 	const data = model.monitors.data
 	if (AsyncData.isFailure(data))
-		return errorState(h, {
-			failure: data.error,
-			title: "Couldn't load your monitors",
-			onRetry: Message.ClickedRetry(),
-			className: "rounded-md border py-8",
-		})
+		return h.div(
+			[h.Class("p-4")],
+			[
+				errorState(h, {
+					failure: data.error,
+					title: "Couldn't load your monitors",
+					onRetry: Message.ClickedRetry(),
+					className: "rounded-md border py-8",
+				}),
+			],
+		)
 	if (!model.isSeeded)
-		return vstack(h, { gap: "2", attributes: [h.AriaBusy(true)] }, [
+		return vstack(h, { gap: "2", className: "p-4", attributes: [h.AriaBusy(true)] }, [
 			skeleton(h, "h-12 w-full"),
 			skeleton(h, "h-12 w-full"),
 			skeleton(h, "h-12 w-full"),
 		])
-	return pickerView(h, {
-		picker: model.picker,
-		monitors: monitorsOf(model),
-		toMessage: (message) => Message.GotPickerMessage({ message }),
-		idPrefix: PICKER_ID,
-		isDisabled: model.submitting !== null,
-		focusOnMount: h.OnMount(FocusNewRow()),
-	})
+	if (model.rows.length === 0)
+		return typography(h, { size: "sm", tone: "muted", as: "p", className: "p-4" }, [
+			monitorsOf(model).length === 0
+				? "Nothing yet. Add a URL for Maple to check, or a component you update yourself."
+				: "Nothing yet. Add your monitors, a URL for Maple to check, or a component you update yourself.",
+		])
+	return componentRows(h, model)
 }
 
-const componentsSection = (h: H, model: Model): Html => {
-	const count = checkedRows(model.picker).length
-	return settingsSection(
+/** The open row's Group dialog, its choices the groups the page has so far. */
+const groupDialog = (h: H, model: Model): ReadonlyArray<Html> => {
+	const open = Arr.findFirst(model.rows, (row) => row.key === model.openKey)
+	if (Option.isNone(open)) return []
+	const groups = Arr.map(model.rows, (row) => orNull(row.form.group))
+	const name = Str.trim(open.value.form.name)
+	return [
+		groupDialogView(h, {
+			state: model.groupDialog,
+			groups: Arr.map(groupsOf(groups), (group) => ({
+				name: group,
+				count: Arr.filter(groups, (entry) => entry === group).length,
+			})),
+			current: open.value.form.group,
+			componentName: name === "" ? "this component" : name,
+			toMessage: (message) => Message.GotGroupDialogMessage({ message }),
+		}),
+	]
+}
+
+const componentsSection = (h: H, model: Model): Html =>
+	settingsSection(
 		h,
 		{
 			id: "status-page-builder-components",
-			title: "What's on it",
+			title: "Components",
 			description: [
-				count === 0
-					? "Each component shows its status and uptime. Monitored ones follow their monitor."
-					: `${count} ${count === 1 ? "component" : "components"}. Monitored ones follow their monitor; rename or group them as visitors should read them.`,
+				"Each component is a row on the page with its status. One driven by a monitor follows its checks and shows its uptime; one without a monitor shows the status you set.",
 			],
+			padded: false,
+			actions: button(
+				h,
+				{
+					size: "sm",
+					isDisabled: !model.isSeeded || model.submitting !== null,
+					attributes: [h.OnClick(Message.ClickedAddComponents())],
+				},
+				[icon(h, "PlusIcon"), "Add components"],
+			),
 		},
-		[componentsBody(h, model)],
+		[componentsBody(h, model), ...groupDialog(h, model)],
 	)
+
+const addSheet = (h: H, model: Model): Html => {
+	const count = checkedRows(model.addPicker).length
+	return sidePanelSheet(h, {
+		sheet: model.addSheet,
+		title: "Add components",
+		body: [
+			pickerView(h, {
+				picker: model.addPicker,
+				monitors: monitorsOf(model),
+				toMessage: (message) => Message.GotAddPickerMessage({ message }),
+				idPrefix: ADD_PICKER_ID,
+				// Locked while a URL is being monitored: its completion adds what is ticked.
+				isDisabled: model.addPicker.isCreatingMonitor,
+				focusOnMount: h.OnMount(FocusNewRow()),
+				isOrderable: false,
+			}),
+		],
+		footer: (close) => [
+			button(h, { variant: "outline", attributes: close }, ["Cancel"]),
+			button(
+				h,
+				{
+					isDisabled:
+						count === 0 || hasRowIssues(model.addPicker) || model.addPicker.isCreatingMonitor,
+					attributes: [h.OnClick(Message.ClickedSubmitAdd())],
+				},
+				[count <= 1 ? "Add component" : `Add ${count} components`],
+			),
+		],
+		toParentMessage: (message) => Message.GotAddSheetMessage({ message }),
+	})
 }
 
 const lookSection = (h: H, model: Model): Html =>
@@ -179,17 +320,20 @@ const draftDocument = (model: Model): string => {
 				model.previewScheme,
 			),
 		},
-		components: Arr.map(checkedRows(model.picker), (row, index) => ({
-			id: draftComponentId(index),
-			name: Str.trim(row.name) === "" ? "Untitled component" : Str.trim(row.name),
-			description: null,
-			group: orNull(row.group),
-			monitorStatus: monitorStatusOf(monitors, row.monitorId),
-			manualStatus: row.monitorId === null ? row.manualStatus : null,
-			showUptime: true,
-			monitored: row.monitorId !== null,
-			days: daysOf(model.previewHistory, row.monitorId),
-		})),
+		components: Arr.map(orderedRows(model), (row, index) => {
+			const monitorId = Option.getOrNull(decodeMonitorId(row.form.monitorId))
+			return {
+				id: draftComponentId(index),
+				name: Str.trim(row.form.name) === "" ? "Untitled component" : Str.trim(row.form.name),
+				description: orNull(row.form.description),
+				group: orNull(row.form.group),
+				monitorStatus: monitorStatusOf(monitors, monitorId),
+				manualStatus: Option.getOrNull(decodeStatus(row.form.manualStatus)),
+				showUptime: row.form.showUptime,
+				monitored: monitorId !== null,
+				days: daysOf(model.previewHistory, monitorId),
+			}
+		}),
 		incidents: [],
 		nowMs,
 	})
@@ -261,6 +405,7 @@ const footerBar = (h: H, model: Model): Html => {
 			typography(h, { size: "xs", tone: "muted", as: "p" }, ["Nothing is public until you publish."]),
 		],
 		actions: [
+			linkButton(h, { size: "sm", variant: "ghost", href: statusPagesHref() }, ["Cancel"]),
 			button(
 				h,
 				{
@@ -309,6 +454,7 @@ const builder = (h: H, model: Model): Html =>
 			],
 		),
 		footerBar(h, model),
+		addSheet(h, model),
 	])
 
 const membersOnly = (h: H): Html =>
@@ -319,21 +465,14 @@ const membersOnly = (h: H): Html =>
 	})
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) =>
-	dashboardPage(
-		h,
-		{
-			title: "New status page",
-			actions: linkButton(h, { size: "sm", variant: "ghost", href: statusPagesHref() }, ["Cancel"]),
-		},
-		[
-			!model.isSessionLoaded
-				? vstack(h, { gap: "4", attributes: [h.AriaBusy(true)] }, [
-						skeleton(h, "h-9 w-1/3"),
-						skeleton(h, "h-64 w-full"),
-					])
-				: canManage(model)
-					? builder(h, model)
-					: membersOnly(h),
-		],
-	),
+	dashboardPage(h, { title: "New status page" }, [
+		!model.isSessionLoaded
+			? vstack(h, { gap: "4", attributes: [h.AriaBusy(true)] }, [
+					skeleton(h, "h-9 w-1/3"),
+					skeleton(h, "h-64 w-full"),
+				])
+			: canManage(model)
+				? builder(h, model)
+				: membersOnly(h),
+	]),
 )

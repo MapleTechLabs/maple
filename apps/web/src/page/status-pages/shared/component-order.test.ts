@@ -1,7 +1,7 @@
 import { Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
-import { component, componentId } from "../shared/test-pages"
-import { moved } from "./update-components"
+import { component, componentId } from "./test-pages"
+import { moved } from "./component-order"
 
 const ids = (rows: ReadonlyArray<{ readonly id: string }> | null) =>
 	rows === null ? null : Arr.map(rows, (row) => row.id)

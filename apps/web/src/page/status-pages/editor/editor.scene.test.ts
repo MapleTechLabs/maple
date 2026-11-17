@@ -56,6 +56,7 @@ import {
 	statusPage,
 	statusPageConfig,
 } from "../shared/test-pages"
+import { GroupDialogMessage } from "../shared/group-dialog"
 import { PickerMessage } from "../shared/picker"
 import {
 	CheckCustomDomain,
@@ -75,7 +76,8 @@ import {
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
-import { componentGripId, groupedOrder } from "./update-components"
+import { groupedOrder } from "../shared/component-order"
+import { componentGripId } from "./update-components"
 import { customDomainOf } from "./update-domain"
 import { canvasDocument } from "./view-canvas"
 import { maintenanceDurationMs } from "./view-incidents"
@@ -292,7 +294,10 @@ const MONITORS = { tab: "settings", section: "monitors" } as const
 const srcdocOf =
 	(title: string) =>
 	(html: Parameters<ReturnType<typeof find>>[0]): string =>
-		Option.getOrElse(Option.flatMap(find(`iframe[title="${title}"]`)(html), attr("srcdoc")), () => "")
+		Option.getOrElse(
+			Option.flatMap(find(`maple-preview-frame[frame-title="${title}"]`)(html), attr("srcdoc")),
+			() => "",
+		)
 const APPEARANCE = { tab: "settings", section: "appearance" } as const
 const ACCESS = { tab: "settings", section: "access" } as const
 const ADVANCED = { tab: "settings", section: "advanced" } as const
@@ -630,7 +635,7 @@ describe("components under Settings > Monitors", () => {
 			Mount.expectNone(),
 			expectView(role("button", { name: /^API/u })).toHaveAttr("aria-expanded", "true"),
 			expectView(role("textbox", { name: "Shown as" })).toHaveValue("API"),
-			expectView(role("textbox", { name: "Group" })).toHaveValue("Core"),
+			expectView(role("button", { name: "Group Core" })).toExist(),
 			expectView(text("Degraded, set under Override status.")).toExist(),
 			click(role("button", { name: /^API/u })),
 			Command.resolve(FocusEditorElement, Message.CompletedFocus()),
@@ -701,7 +706,9 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(editing),
-			expectView(selector('iframe[title="Component 2 as visitors see it"]')).not.toExist(),
+			expectView(
+				selector('maple-preview-frame[frame-title="Component 2 as visitors see it"]'),
+			).not.toExist(),
 			tap(({ html }) => {
 				expect(page(html)).toContain("Payments")
 				expect(page(html)).toContain("Core")
@@ -796,7 +803,7 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
-			expectView(selector("iframe")).toHaveAttr("sandbox", "allow-scripts"),
+			expectView(selector("maple-preview-frame")).toHaveAttr("sandbox", "allow-scripts"),
 		)
 		const document = canvasDocument(model, statusPage())
 		expect(document).toContain(`data-incident-id="${incidentId(1)}"`)
@@ -901,23 +908,47 @@ describe("components under Settings > Monitors", () => {
 		)
 	})
 
-	test("Group is typed, a new one included, and waits for Save", () => {
+	test("Group is picked from the page's groups or created in its dialog, and waits for Save", () => {
 		const rows = [component(1, { group: "Core" }), component(2, { group: "Edge" }), component(3)]
+		const opened = pageUpdate(
+			selected(3, { components: rows }),
+			Message.GotGroupDialogMessage({ message: GroupDialogMessage.ClickedOpen() }),
+		).model
 		scene(
 			{ update: pageUpdate, view },
-			given(selected(3, { components: rows })),
-			type(role("textbox", { name: "Group" }), "Payments"),
-			expectView(text("Unsaved changes")).toExist(),
+			given(opened),
+			mounted,
+			expectView(role("dialog", { name: "Group for Component 3" })).toExist(),
+			expectView(
+				within(role("list", { name: "Groups on this page" }), role("button", { name: /^Core/u })),
+			).toExist(),
+			expectView(
+				within(role("list", { name: "Groups on this page" }), role("button", { name: /^Edge/u })),
+			).toExist(),
 		)
-		const typed = steps(selected(3, { components: rows }), [
-			Message.ChangedComponentField({ field: "group", value: "Edge" }),
+		const picked = steps(opened, [
+			Message.GotGroupDialogMessage({ message: GroupDialogMessage.PickedGroup({ group: "Edge" }) }),
 		])
-		expect(pageUpdate(typed, Message.ClickedSaveMonitors()).commands).toMatchObject([
+		expect(picked.groupDialog.dialog.isOpen).toBe(false)
+		expect(pageUpdate(picked, Message.ClickedSaveMonitors()).commands).toMatchObject([
 			{
 				name: "SaveStatusPageComponent",
 				args: { componentId: componentId(3), payload: { group: "Edge" } },
 			},
 		])
+		const created = steps(opened, [
+			Message.GotGroupDialogMessage({
+				message: GroupDialogMessage.ChangedDraft({ value: " Payments " }),
+			}),
+			Message.GotGroupDialogMessage({ message: GroupDialogMessage.SubmittedDraft() }),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(created),
+			mounted,
+			expectView(role("button", { name: "Group Payments" })).toExist(),
+			expectView(text("Unsaved changes")).toExist(),
+		)
 	})
 
 	test("a failed save keeps the edits and says so in the panel, and Save tries again", () => {
@@ -2610,10 +2641,9 @@ describe("settings", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(APPEARANCE)),
-			expectView(selector('iframe[title="Acme Status with these settings"]')).toHaveAttr(
-				"sandbox",
-				"allow-scripts",
-			),
+			expectView(
+				selector('maple-preview-frame[frame-title="Acme Status with these settings"]'),
+			).toHaveAttr("sandbox", "allow-scripts"),
 			tap(({ html }) => {
 				expect(theme(html)).toContain("Component 1")
 				expect(theme(html)).toContain("color-scheme:light;")
@@ -2698,7 +2728,14 @@ describe("settings", () => {
 	})
 
 	test("a password-protected page, saved or picked, previews the password form visitors meet", () => {
-		const gate = srcdocOf("The password form visitors see first")
+		const gate = (html: Parameters<ReturnType<typeof srcdocOf>>[0]): string =>
+			Option.getOrElse(
+				Option.flatMap(
+					find('iframe[title="The password form visitors see first"]')(html),
+					attr("srcdoc"),
+				),
+				() => "",
+			)
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ ...ACCESS, page: statusPage({ visibility: "password", has_password: true }) })),
@@ -2747,7 +2784,7 @@ describe("settings", () => {
 	})
 
 	test("the live page can show a state the page is not in, and says it is an example", () => {
-		const iframeOf = find("iframe")
+		const iframeOf = find("maple-preview-frame")
 		const srcdoc = (html: Parameters<typeof iframeOf>[0]): string =>
 			Option.getOrElse(Option.flatMap(iframeOf(html), attr("srcdoc")), () => "")
 		const note = text("Showing an example state. Visitors still see the live page.")
@@ -2782,12 +2819,12 @@ describe("settings", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded()),
-			expectView(selector("iframe")).toHaveAttr("data-width", "desktop"),
+			expectView(selector("maple-preview-frame")).toHaveAttr("data-width", "desktop"),
 			pick("Mobile"),
-			expectView(selector("iframe")).toHaveAttr("data-width", "mobile"),
+			expectView(selector("maple-preview-frame")).toHaveAttr("data-width", "mobile"),
 			expectView(text("Unsaved changes")).not.toExist(),
 			pick("Desktop"),
-			expectView(selector("iframe")).toHaveAttr("data-width", "desktop"),
+			expectView(selector("maple-preview-frame")).toHaveAttr("data-width", "desktop"),
 		)
 	})
 
@@ -3747,13 +3784,17 @@ describe("the sheet, the previews and the reads they wait on", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(withPage),
-			expectView(selector('iframe[title="Acme Status with these settings"]')).not.toExist(),
+			expectView(
+				selector('maple-preview-frame[frame-title="Acme Status with these settings"]'),
+			).not.toExist(),
 			expectView(role("region", { name: "Page preview" })).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ ...APPEARANCE, monitorsFail: true })),
-			expectView(selector('iframe[title="Acme Status with these settings"]')).not.toExist(),
+			expectView(
+				selector('maple-preview-frame[frame-title="Acme Status with these settings"]'),
+			).not.toExist(),
 			expectView(text("No preview: the page's components didn't load.")).toExist(),
 		)
 	})

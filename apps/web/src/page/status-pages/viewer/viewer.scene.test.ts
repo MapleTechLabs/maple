@@ -38,7 +38,7 @@ describe("status page viewer", () => {
 			{ update: viewerUpdate, view },
 			given(loaded),
 			expectView(text("Only members of this organization can read this page.")).toExist(),
-			expectView(selector('iframe[title="Acme status"]')).toHaveAttr(
+			expectView(selector('maple-preview-frame[frame-title="Acme status"]')).toHaveAttr(
 				"sandbox",
 				"allow-scripts allow-popups allow-popups-to-escape-sandbox",
 			),

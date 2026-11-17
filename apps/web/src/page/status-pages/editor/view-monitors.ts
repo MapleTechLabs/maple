@@ -2,55 +2,33 @@ import type { V2StatusPageComponent } from "@maple/domain/http/v2"
 import { Array as Arr, Option, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
-import { dragGrip } from "@maple/views/ui/drag-grip"
-import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
-import { label } from "@maple/views/ui/label"
-import { pressable } from "@maple/views/ui/pressable"
-import { grid } from "@maple/views/ui/grid"
 import { hstack, vstack } from "@maple/views/ui/stack"
-import { statusDot } from "@maple/views/ui/status-dot"
-import { switchControl } from "@maple/views/ui/switch"
-import { type TypographyTone, typography } from "@maple/views/ui/typography"
-import type { Tone } from "@maple/ui/lib/tone"
-import { cn } from "@maple/ui/lib/utils"
-import { expandChevron } from "../../kit/expand-chevron"
+import { typography } from "@maple/views/ui/typography"
 import { saveBar } from "../../kit/save-bar"
 import { adminOnlyNote, settingsSection } from "../../kit/settings-section"
 import {
-	COMPONENT_STATUS_LABEL,
-	COMPONENT_STATUS_OPTIONS,
-	COMPONENT_STATUS_TONE,
-	componentStatus,
-	statusReason,
-} from "../shared/derive"
-import { selectField, textField } from "../shared/fields"
+	componentFields,
+	componentList,
+	LABEL_TONE,
+	removeButton,
+	sourceLine,
+} from "../shared/component-list"
+import { groupedOrder } from "../shared/component-order"
+import { COMPONENT_STATUS_TONE, componentStatus, statusReason } from "../shared/derive"
+import { GroupDialogMessage, groupDialogView, groupsOf } from "../shared/group-dialog"
 import { RevealOpenComponent } from "./command"
-import { GRIP_ATTRIBUTE, LIST_ATTRIBUTE, ROW_ATTRIBUTE, SLOT_ATTRIBUTE } from "./component-drag"
 import { Message } from "./message"
 import { canManage, type ComponentSave, type Model } from "./model"
 import { gatedControl } from "../../kit/session-grants"
 import { componentsOf, incidentsOf, listedComponentsOf, monitorsOf } from "./reads"
-import {
-	componentGripId,
-	componentRowId,
-	groupedOrder,
-	unsavedComponent,
-	unsavedOrder,
-} from "./update-components"
+import { componentGripId, componentRowId, unsavedComponent, unsavedOrder } from "./update-components"
 import { failureAlert } from "./view-panel"
 
 // Settings > Monitors: the page's components by group, each opening in place with its fields and
 // reordered by its grip, both saved from one bar; the page preview beside Settings shows how it reads.
 
 type H = HtmlBuilder<Message>
-
-const LABEL_TONE = {
-	ok: "muted",
-	info: "muted",
-	warn: "warning",
-	crit: "error",
-} as const satisfies Partial<Record<Tone, TypographyTone>>
 
 const SAVE_LABEL = { Saving: "Saving", Saved: "Saved", Failed: "Not saved" } as const satisfies Record<
 	ComponentSave["_tag"],
@@ -90,281 +68,103 @@ const reasonLine = (h: H, model: Model, component: V2StatusPageComponent): Reado
 }
 
 /** The open component's fields, why it shows what it shows. The page preview beside Settings shows its row. */
-const componentForm = (h: H, model: Model, component: V2StatusPageComponent): Html => {
-	const form = model.componentForm
+const componentBody = (h: H, model: Model, component: V2StatusPageComponent): ReadonlyArray<Html> => {
 	const isReadOnly = !canManage(model)
-	const hasMonitor = form.monitorId !== ""
-	const uptimeId = "status-page-panel-uptime"
 	const save = saveOf(model, component)
-	return vstack(
-		h,
-		{
-			gap: "4",
-			// Level with the row's status dot, past the grip.
-			className: "pt-1 pr-4 pb-4 pl-10.5",
-			attributes: model.revealComponentId === component.id ? [h.OnMount(RevealOpenComponent())] : [],
-		},
-		[
-			...(isReadOnly
-				? [adminOnlyNote(h, ["Only org admins and engineers can change components."])]
-				: []),
-			grid(h, { sm: 2, gap: "4", className: "items-start" }, [
-				textField(h, {
-					id: "status-page-panel-name",
-					label: "Shown as",
-					value: form.name,
-					isDisabled: isReadOnly,
-					error: Str.trim(form.name) === "" ? "Add a name." : null,
-					onInput: (value) => Message.ChangedComponentField({ field: "name", value }),
+	return [
+		...(isReadOnly ? [adminOnlyNote(h, ["Only org admins and engineers can change components."])] : []),
+		...componentFields(h, {
+			idPrefix: "status-page-panel",
+			form: model.componentForm,
+			monitors: monitorsOf(model),
+			isReadOnly,
+			onField: (field, value) => Message.ChangedComponentField({ field, value }),
+			onToggleUptime: Message.ToggledComponentUptime(),
+			onOpenGroup: Message.GotGroupDialogMessage({ message: GroupDialogMessage.ClickedOpen() }),
+		}),
+		...reasonLine(h, model, component),
+		...failureAlert(h, "Couldn't save the component", save?._tag === "Failed" ? save.failure : null),
+		hstack(h, { gap: "3", justify: "between", wrap: true }, [
+			gatedControl(h, model, "status_pages:edit", (isDisabled) =>
+				removeButton(h, {
+					isDisabled,
+					onClick: Message.ClickedDeleteComponent({ componentId: component.id }),
 				}),
-				textField(h, {
-					id: "status-page-panel-group",
-					label: "Group",
-					value: form.group,
-					placeholder: "No group",
-					isDisabled: isReadOnly,
-					onInput: (value) => Message.ChangedComponentField({ field: "group", value }),
-				}),
-			]),
-			textField(h, {
-				id: "status-page-panel-description",
-				label: "Description",
-				value: form.description,
-				placeholder: "Optional",
-				isDisabled: isReadOnly,
-				onInput: (value) => Message.ChangedComponentField({ field: "description", value }),
-			}),
-			grid(h, { sm: 2, gap: "4", className: "items-start" }, [
-				selectField(h, {
-					id: "status-page-panel-monitor",
-					label: "Driven by",
-					value: form.monitorId,
-					isDisabled: isReadOnly,
-					entries: [
-						{ value: "", label: "No monitor" },
-						...Arr.map(monitorsOf(model), (monitor) => ({
-							value: monitor.id,
-							label: monitor.name,
-						})),
-					],
-					onInput: (value) => Message.ChangedComponentField({ field: "monitorId", value }),
-				}),
-				selectField(h, {
-					id: "status-page-panel-status",
-					label: "Override status",
-					value: form.manualStatus,
-					isDisabled: isReadOnly,
-					entries: [
-						{ value: "", label: "Automatic" },
-						...Arr.map(COMPONENT_STATUS_OPTIONS, (value) => ({
-							value,
-							label: COMPONENT_STATUS_LABEL[value],
-						})),
-					],
-					onInput: (value) => Message.ChangedComponentField({ field: "manualStatus", value }),
-				}),
-			]),
-			...reasonLine(h, model, component),
-			vstack(h, { gap: "1" }, [
-				label(
-					h,
-					{
-						className: "flex items-center gap-2 font-normal text-sm sm:text-sm",
-						attributes: [h.Id(`${uptimeId}-label`)],
-					},
-					[
-						...switchControl(h, {
-							// The stored value, shown as is; it only takes effect once a monitor drives the component.
-							id: uptimeId,
-							inputId: `${uptimeId}-input`,
-							isChecked: form.showUptime,
-							isDisabled: isReadOnly || !hasMonitor,
-							labelledBy: `${uptimeId}-label`,
-							onToggle: Message.ToggledComponentUptime(),
-						}),
-						"Show uptime bars",
-					],
-				),
-				...(hasMonitor
-					? []
-					: [
-							typography(h, { size: "xs", tone: "muted", as: "p" }, [
-								"Uptime bars need a monitor.",
-							]),
-						]),
-			]),
-			...failureAlert(h, "Couldn't save the component", save?._tag === "Failed" ? save.failure : null),
-			hstack(h, { gap: "3", justify: "between", wrap: true }, [
-				gatedControl(h, model, "status_pages:edit", (isDisabled) =>
-					button(
-						h,
-						{
-							size: "sm",
-							variant: "destructive-ghost",
-							isDisabled,
-							// Its text level with the fields above.
-							className: "-ml-2.5",
-							attributes: [
-								h.OnClick(Message.ClickedDeleteComponent({ componentId: component.id })),
-							],
-						},
-						["Remove from page"],
-					),
-				),
-				saveIndicator(h, save),
-			]),
-		],
-	)
+			),
+			saveIndicator(h, save),
+		]),
+	]
 }
 
 const REORDER_HINT_ID = "status-page-reorder-hint"
 
-/**
- * The row's handle: dragged, or moved a slot with the arrow keys, within its group. Locked, it
- * drops its drag marker, so the drag subscription never picks it up.
- */
-const grip = (h: H, model: Model, component: V2StatusPageComponent): Html =>
-	gatedControl(
-		h,
-		model,
-		"status_pages:edit",
-		(isDisabled) =>
-			dragGrip(h, {
-				label: `Reorder ${component.name}`,
-				onMove: (offset) => Message.PressedMoveComponent({ componentId: component.id, offset }),
-				className: "self-stretch px-1",
-				attributes: isDisabled
-					? [h.Disabled(true)]
-					: [
-							h.Id(componentGripId(component.id)),
-							h.DataAttribute(GRIP_ATTRIBUTE, ""),
-							h.AriaDescribedBy(REORDER_HINT_ID),
-							// Still focusable while the order saves, so the keyboard keeps its place.
-							h.AriaDisabled(model.isSavingOrder),
-						],
-			}),
-		{ className: "self-stretch" },
-	)
-
-/** What drives the component: its monitor by name, or incidents alone. */
-const sourceLine = (model: Model, component: V2StatusPageComponent): string =>
-	component.monitor_id === null
-		? "No monitor. Follows incidents only"
-		: Option.match(
-				Arr.findFirst(monitorsOf(model), (monitor) => monitor.id === component.monitor_id),
-				{ onNone: () => "Monitor not found", onSome: (monitor) => `Monitor: ${monitor.name}` },
-			)
-
-const componentRow = (h: H, model: Model, component: V2StatusPageComponent): Html => {
-	const status = componentStatus(component, monitorsOf(model), incidentsOf(model))
-	const isOpen = model.panel?._tag === "Component" && model.panel.componentId === component.id
-	return h.li(
-		[
-			h.Key(component.id),
-			h.DataAttribute(ROW_ATTRIBUTE, component.id),
-			h.Class(
-				"border-t first:border-t-0 data-dragging:relative data-dragging:z-10 data-dragging:rounded-md data-dragging:bg-card data-dragging:shadow-popup data-dragging:outline data-dragging:outline-primary-a4",
-			),
-		],
-		[
-			hstack(h, { gap: "1", className: "pl-2" }, [
-				grip(h, model, component),
-				pressable(
-					h,
-					{
-						onClick: Message.ClickedComponent({ componentId: component.id }),
-						className: cn(
-							"flex min-w-0 flex-1 items-center gap-3 px-2 py-3 text-left hover:bg-surface-sunken active:bg-surface-sunken",
-							isOpen && "bg-surface-sunken",
-						),
-						attributes: [h.Id(componentRowId(component.id)), h.AriaExpanded(isOpen)],
-					},
-					[
-						statusDot(h, { tone: COMPONENT_STATUS_TONE[status], size: "lg" }),
-						typography(
-							h,
-							{ size: "sm", weight: "medium", truncate: true, className: "shrink-0" },
-							[component.name],
-						),
-						typography(h, { size: "xs", tone: "muted", mono: true, truncate: true }, [
-							sourceLine(model, component),
-						]),
-						typography(
-							h,
-							{
-								size: "xs",
-								tone: LABEL_TONE[COMPONENT_STATUS_TONE[status]],
-								className: "ml-auto shrink-0",
-							},
-							[COMPONENT_STATUS_LABEL[status]],
-						),
-						expandChevron(h, isOpen),
-					],
-				),
-			]),
-			...(isOpen ? [componentForm(h, model, component)] : []),
-		],
-	)
-}
-
 /** The components under each group's head, in page order, ungrouped last. */
-const componentList = (h: H, model: Model): Html => {
-	const rows = groupedOrder(listedComponentsOf(model))
-	const groups = Arr.dedupe(Arr.map(rows, (row) => row.group))
-	const hasGroups = Arr.some(groups, (group) => group !== null)
-	return vstack(h, { attributes: [h.AriaLabel("Components")] }, [
-		...(canManage(model)
-			? [
-					h.span(
-						[h.Id(REORDER_HINT_ID), h.Class("sr-only")],
-						["Drag, or press the up and down arrow keys, to move it within its group."],
-					),
-				]
-			: []),
-		...(model.orderFailure === null
-			? []
-			: [
-					h.div(
-						[h.Key("order-failure"), h.Class("p-4 pb-0")],
-						failureAlert(h, "Couldn't save the order", model.orderFailure),
-					),
-				]),
-		...Arr.map(groups, (group) =>
-			vstack(h, { attributes: [h.Key(group ?? "")] }, [
-				...(hasGroups
+const componentListView = (h: H, model: Model): Html =>
+	componentList(h, {
+		grants: model,
+		isReorderBusy: model.isSavingOrder,
+		hintId: REORDER_HINT_ID,
+		leading:
+			model.orderFailure === null
+				? []
+				: [
+						h.div(
+							[h.Key("order-failure"), h.Class("p-4 pb-0")],
+							failureAlert(h, "Couldn't save the order", model.orderFailure),
+						),
+					],
+		rows: Arr.map(groupedOrder(listedComponentsOf(model)), (component) => {
+			const isOpen = model.panel?._tag === "Component" && model.panel.componentId === component.id
+			return {
+				key: component.id,
+				name: component.name,
+				group: component.group,
+				status: componentStatus(component, monitorsOf(model), incidentsOf(model)),
+				source: sourceLine(monitorsOf(model), component.monitor_id),
+				isOpen,
+				rowId: componentRowId(component.id),
+				gripId: componentGripId(component.id),
+				onToggle: Message.ClickedComponent({ componentId: component.id }),
+				onMove: (offset) => Message.PressedMoveComponent({ componentId: component.id, offset }),
+				body: isOpen
 					? [
-							h.div(
-								[h.Class("bg-surface-sunken px-4 py-2")],
-								[eyebrow(h, {}, [group ?? "No group"])],
+							vstack(
+								h,
+								{
+									gap: "4",
+									attributes:
+										model.revealComponentId === component.id
+											? [h.OnMount(RevealOpenComponent())]
+											: [],
+								},
+								componentBody(h, model, component),
 							),
 						]
-					: []),
-				// The slot outline sits under the rows; a drag moves it to where the held row lands.
-				h.div(
-					[h.DataAttribute(LIST_ATTRIBUTE, ""), h.Class("relative")],
-					[
-						h.div(
-							[
-								h.DataAttribute(SLOT_ATTRIBUTE, ""),
-								h.AriaHidden(true),
-								h.Class(
-									"pointer-events-none invisible absolute inset-x-1 top-0 rounded-md border border-dashed border-primary-a4 bg-primary-a1 data-dragging:visible",
-								),
-							],
-							[],
-						),
-						h.ul(
-							[h.AriaLabel(group ?? "No group")],
-							Arr.map(
-								Arr.filter(rows, (row) => row.group === group),
-								(component) => componentRow(h, model, component),
-							),
-						),
-					],
-				),
-			]),
-		),
-	])
+					: [],
+			}
+		}),
+	})
+
+/** The open component's Group dialog, its choices the page's groups as listed. */
+const groupDialog = (h: H, model: Model): ReadonlyArray<Html> => {
+	const panel = model.panel
+	if (panel?._tag !== "Component") return []
+	const listed = listedComponentsOf(model)
+	return [
+		groupDialogView(h, {
+			state: model.groupDialog,
+			groups: Arr.map(groupsOf(Arr.map(listed, (row) => row.group)), (name) => ({
+				name,
+				count: Arr.filter(listed, (row) => row.group === name).length,
+			})),
+			current: model.componentForm.group,
+			componentName:
+				Str.trim(model.componentForm.name) === ""
+					? "this component"
+					: Str.trim(model.componentForm.name),
+			toMessage: (message) => Message.GotGroupDialogMessage({ message }),
+		}),
+	]
 }
 
 /**
@@ -423,6 +223,7 @@ export const monitorsSection = (h: H, model: Model): Html =>
 							? "Nothing yet. Add a monitor and visitors see its status and uptime."
 							: "No monitors on this page yet.",
 					])
-				: componentList(h, model),
+				: componentListView(h, model),
+			...groupDialog(h, model),
 		],
 	)

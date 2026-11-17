@@ -6,6 +6,9 @@ import {
 } from "@maple/domain/status-page"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
+import * as Dialog from "@maple/views/ui/dialog"
+import { ComponentTextField } from "../shared/form"
+import { GroupDialogMessage } from "../shared/group-dialog"
 import { PickerMessage } from "../shared/picker"
 import { PreviewScheme } from "../shared/preview"
 import { SubmitMode } from "./model"
@@ -20,7 +23,20 @@ export const Message = defineMessageUnion({
 	ChangedName: { value: Schema.String },
 	BlurredName: {},
 	ChangedSlug: { value: Schema.String },
-	GotPickerMessage: { message: PickerMessage },
+	/** A row's head: opens it in place, or closes it when open. */
+	ClickedRow: { key: Schema.String },
+	ChangedRowField: { field: ComponentTextField, value: Schema.String },
+	ToggledRowUptime: {},
+	GotGroupDialogMessage: { message: GroupDialogMessage },
+	ClickedRemoveRow: { key: Schema.String },
+	/** A grip drag let go over `index`, the slot within the row's group. */
+	DroppedRow: { key: Schema.String, index: Schema.Number },
+	/** ArrowUp (-1) or ArrowDown (1) on a row's grip. */
+	PressedMoveRow: { key: Schema.String, offset: Schema.Number },
+	ClickedAddComponents: {},
+	GotAddSheetMessage: { message: Dialog.Message },
+	GotAddPickerMessage: { message: PickerMessage },
+	ClickedSubmitAdd: {},
 	CompletedCreateMonitor: { result: LoadOutcome(V2UptimeMonitor) },
 	CompletedFocus: {},
 	PickedPreset: { preset: StatusPageThemePreset },

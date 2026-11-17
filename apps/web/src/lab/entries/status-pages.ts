@@ -18,6 +18,12 @@ import {
 	SaveComponent,
 	SaveVisibility,
 } from "../../page/status-pages/editor/command"
+import { FocusBuilderField } from "../../page/status-pages/builder/command"
+import { Message as BuilderMessage } from "../../page/status-pages/builder/message"
+import { Model as BuilderModel } from "../../page/status-pages/builder/model"
+import { subscriptions as builderSubscriptions } from "../../page/status-pages/builder/subscription"
+import { init as builderInit, update as builderUpdate } from "../../page/status-pages/builder/update"
+import { view as builderView } from "../../page/status-pages/builder/view"
 import { Message as EditorMessage } from "../../page/status-pages/editor/message"
 import { AccessAction, Model as EditorModel } from "../../page/status-pages/editor/model"
 import { componentsOf, listedComponentsOf, pageOf } from "../../page/status-pages/editor/reads"
@@ -26,7 +32,7 @@ import { init as editorInit, update as editorUpdate } from "../../page/status-pa
 import { view as editorView } from "../../page/status-pages/editor/view"
 import { componentPayload } from "../../page/status-pages/shared/form"
 import { component, incident, incidentId, statusPage } from "../../page/status-pages/shared/test-pages"
-import { downMonitor, httpMonitor } from "../../page/kit/uptime/test-monitors"
+import { downMonitor, httpMonitor, monitorId } from "../../page/kit/uptime/test-monitors"
 import type { Resources } from "../../platform/resources"
 import { keepLocal } from "../local-commands"
 import { defineShellLab } from "../shell-lab"
@@ -35,7 +41,7 @@ import { labGrants, LabRole, readLabRole } from "../viewer-role"
 
 // `/lab/status-pages`: the status pages list, the look picker and the form fields over fixture
 // pages, a page's editor open on an incident, or on Settings > Monitors with grouped components
-// to drag (`?page=list|editor|monitors`), as the viewer `?role=` names: an analyst reads the
+// to drag, or the new page builder (`?page=list|editor|monitors|new`), as the viewer `?role=` names: an analyst reads the
 // incident and gets no control that posts, edits or deletes one. The editor runs for real with no
 // API: a reorder, a component's Save and an Access save land at once, every other read and write
 // is dropped.
@@ -46,16 +52,17 @@ const context: PageContext = {
 	timeZone: "UTC",
 }
 
-const PAGES = ["list", "editor", "monitors"] as const
+const PAGES = ["list", "editor", "monitors", "new"] as const
 const LabPage = Schema.Literals(PAGES)
 type LabPage = typeof LabPage.Type
 const decodePage = Schema.decodeUnknownOption(LabPage)
 
-const Model = Schema.Struct({ page: LabPage, list: ListModel, editor: EditorModel })
+const Model = Schema.Struct({ page: LabPage, list: ListModel, editor: EditorModel, builder: BuilderModel })
 type Model = typeof Model.Type
 const Message = defineMessageUnion({
 	GotListMessage: { message: ListMessage },
 	GotEditorMessage: { message: EditorMessage },
+	GotBuilderMessage: { message: BuilderMessage },
 	Ignored: {},
 })
 type Message = typeof Message.Type
@@ -150,6 +157,32 @@ const editorModel = (role: LabRole, page: "editor" | "monitors"): EditorModel =>
 	)
 }
 
+/** The builder over five monitors, all on the page from the start. */
+const builderModel = (role: LabRole): BuilderModel => {
+	const step = (model: BuilderModel, message: BuilderMessage) =>
+		builderUpdate(model, message, context).model
+	const entered = builderInit({ _tag: "StatusPageNew" }, context).model
+	return Arr.reduce(
+		[
+			BuilderMessage.ReadClock({ nowMs: LAB_NOW_MS }),
+			BuilderMessage.CompletedFetchSession({ orgId: LAB_ORG, grants: labGrants(role) }),
+			BuilderMessage.CompletedFetchMonitors({
+				key: entered.monitors.key ?? "",
+				result: Result.succeed([
+					httpMonitor(),
+					downMonitor(),
+					httpMonitor({ id: monitorId(3), name: "dashboard" }),
+					httpMonitor({ id: monitorId(4), name: "webhooks" }),
+					httpMonitor({ id: monitorId(5), name: "docs" }),
+				]),
+			}),
+			BuilderMessage.ChangedName({ value: "Acme Status" }),
+		],
+		entered,
+		step,
+	)
+}
+
 const section = (h: HtmlBuilder<Message>, title: string, children: ReadonlyArray<Html>): Html =>
 	h.section(
 		[h.Class("flex flex-col gap-3")],
@@ -237,26 +270,59 @@ const update = (model: Model, message: Message): Return =>
 				),
 			}
 		},
+		GotBuilderMessage: ({ message: child }) => {
+			const next = builderUpdate(model.builder, child, context)
+			return {
+				model: { ...model, builder: next.model },
+				commands: Command.mapMessages(
+					[
+						...keepLocal(next.commands),
+						...Arr.filter(
+							next.commands ?? [],
+							(command) => command.name === FocusBuilderField.name,
+						),
+					],
+					(inner) => Message.GotBuilderMessage({ message: inner }),
+				),
+			}
+		},
 		GotListMessage: () => ({ model }),
 		Ignored: () => ({ model }),
 	})
 
 /** The editor's own: Escape closes what is open, a grip drags its row. */
-const subscriptions = Subscription.lift(editorSubscriptions)<Model, Message>({
-	read: (model) => (model.page === "list" ? Option.none() : Option.some({ model: model.editor, context })),
+const editorSubscriptionsLifted = Subscription.lift(editorSubscriptions)<Model, Message>({
+	read: (model) =>
+		model.page === "editor" || model.page === "monitors"
+			? Option.some({ model: model.editor, context })
+			: Option.none(),
 	toParentMessage: (message) => Message.GotEditorMessage({ message }),
 })
 
+/** The builder's own: a grip drags its row. */
+const builderSubscriptionsLifted = Subscription.lift(builderSubscriptions)<Model, Message>({
+	read: (model) => (model.page === "new" ? Option.some({ model: model.builder, context }) : Option.none()),
+	toParentMessage: (message) => Message.GotBuilderMessage({ message }),
+})
+
 const view = (model: Model, h: HtmlBuilder<Message>): Html =>
-	model.page !== "list"
+	model.page === "new"
 		? h.submodel({
-				slotId: "status-pages-lab-editor",
-				model: model.editor,
-				view: editorView,
+				slotId: "status-pages-lab-builder",
+				model: model.builder,
+				view: builderView,
 				viewInputs: { context },
-				toParentMessage: (message) => Message.GotEditorMessage({ message }),
+				toParentMessage: (message) => Message.GotBuilderMessage({ message }),
 			})
-		: listPage(model, h)
+		: model.page !== "list"
+			? h.submodel({
+					slotId: "status-pages-lab-editor",
+					model: model.editor,
+					view: editorView,
+					viewInputs: { context },
+					toParentMessage: (message) => Message.GotEditorMessage({ message }),
+				})
+			: listPage(model, h)
 
 const listPage = (model: Model, h: HtmlBuilder<Message>): Html =>
 	h.div(
@@ -330,10 +396,11 @@ export const lab = defineShellLab("Status pages", {
 			page: flags.page,
 			list: listModel(flags.role),
 			editor: editorModel(flags.role, flags.page === "monitors" ? "monitors" : "editor"),
+			builder: builderModel(flags.role),
 		},
 	}),
 	update,
-	subscriptions,
+	subscriptions: { ...editorSubscriptionsLifted, ...builderSubscriptionsLifted },
 	view,
 	currentPath: "/lab/status-pages",
 	breadcrumbs: [{ label: "Lab" }, { label: "Status pages" }],

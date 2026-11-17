@@ -2,7 +2,7 @@ import { encodeJson } from "@maple/views/data/request-key"
 import type { StatusPageComponentId } from "@maple/domain"
 import type { V2StatusPageComponent, V2UptimeMonitor } from "@maple/domain/http/v2"
 import { Option, Result, Array as Arr, String as Str } from "effect"
-import { AsyncData } from "foldkit"
+import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
 import type { PageContext } from "../../contract"
@@ -13,6 +13,8 @@ import {
 	type ComponentForm,
 	emptyComponentForm,
 } from "../shared/form"
+import { groupIndexOf, moved } from "../shared/component-order"
+import { type GroupDialogMessage, updateGroupDialog } from "../shared/group-dialog"
 import {
 	draftComponents,
 	hasRowIssues,
@@ -176,6 +178,21 @@ export const confirmDiscardComponent = (model: Model): Return => {
 export const changeComponent = (model: Model, field: ComponentTextField, value: string): Return =>
 	editComponent(model, { ...model.componentForm, [field]: value })
 
+/** The Group dialog: picking or creating a group sets the open component's, waiting on Save. */
+export const groupDialogStep = (model: Model, message: GroupDialogMessage): Return => {
+	const step = updateGroupDialog(model.groupDialog, message)
+	const next = Option.match(step.picked, {
+		onNone: () => ({ model: { ...model, groupDialog: step.state } }),
+		onSome: (group) => changeComponent({ ...model, groupDialog: step.state }, "group", group),
+	})
+	return {
+		...next,
+		commands: FoldkitCommand.mapMessages(step.commands, (child) =>
+			Message.GotGroupDialogMessage({ message: child }),
+		),
+	}
+}
+
 export const toggleComponentUptime = (model: Model): Return =>
 	editComponent(model, { ...model.componentForm, showUptime: !model.componentForm.showUptime })
 
@@ -265,52 +282,6 @@ export const savedComponent = (
 			model: { ...model, componentSave: { _tag: "Failed", componentId: save.componentId, failure } },
 		}),
 	})
-}
-
-type Groupable = { readonly id: StatusPageComponentId; readonly group: string | null }
-
-/**
- * The components as the public page lists them: each group, ungrouped ones too, where its first
- * member is, then its members in page order.
- */
-export const groupedOrder = <A extends Groupable>(components: ReadonlyArray<A>): ReadonlyArray<A> =>
-	Arr.flatMap(Arr.dedupe(Arr.map(components, (component) => component.group)), (group) =>
-		Arr.filter(components, (component) => component.group === group),
-	)
-
-/** A component's place among its group's members; `null` when it is not listed. */
-const groupIndexOf = <A extends Groupable>(
-	components: ReadonlyArray<A>,
-	componentId: StatusPageComponentId,
-): number | null =>
-	Option.getOrNull(
-		Option.map(
-			Arr.findFirst(components, (component) => component.id === componentId),
-			(item) => Arr.filter(components, (component) => component.group === item.group).indexOf(item),
-		),
-	)
-
-/**
- * The list with `componentId` at `index` among its group's members (clamped to the group), the
- * members between shifting a slot; other groups keep their places. `null` when it is not listed
- * or already there.
- */
-export const moved = <A extends Groupable>(
-	components: ReadonlyArray<A>,
-	componentId: StatusPageComponentId,
-	index: number,
-): ReadonlyArray<A> | null => {
-	const item = Arr.findFirst(components, (component) => component.id === componentId)
-	if (Option.isNone(item)) return null
-	const group = Arr.filter(components, (component) => component.group === item.value.group)
-	const to = Math.min(Math.max(index, 0), group.length - 1)
-	if (to === group.indexOf(item.value)) return null
-	const rest = Arr.filter(group, (component) => component.id !== componentId)
-	const order = [...Arr.take(rest, to), item.value, ...Arr.drop(rest, to)]
-	// The group's slots in page order, filled with its new order.
-	return Arr.mapAccum(components, 0, (rank, component): [number, A] =>
-		component.group === item.value.group ? [rank + 1, order[rank] ?? component] : [rank, component],
-	)[1]
 }
 
 /** The listed order with the row at `index` in its group, waiting on Save; `null` when nothing moves. */
