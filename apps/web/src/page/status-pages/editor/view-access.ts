@@ -65,7 +65,7 @@ const blockedReason = (model: Model, page: V2StatusPage, value: StatusPageVisibi
 		onSome: (domain) => (domain.hostname === null ? null : "Remove the custom domain first."),
 		onNone: () =>
 			AsyncData.hasError(model.customDomain.data)
-				? "Couldn't check for a custom domain. Try again under Basic settings."
+				? "Couldn't check for a custom domain. Try again under Advanced."
 				: "Checking for a custom domain…",
 	})
 }

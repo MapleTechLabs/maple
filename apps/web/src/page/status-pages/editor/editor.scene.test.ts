@@ -2520,7 +2520,6 @@ describe("settings", () => {
 	})
 
 	test("Basic settings preview the tab title, the search result and the page as typed", () => {
-		const footer = srcdocOf("Globex with these settings")
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ tab: "settings" })),
@@ -2528,9 +2527,17 @@ describe("settings", () => {
 			type(role("textbox", { name: "Description" }), "Live status of Globex"),
 			expectAll(all.text("Globex status")).toHaveCount(2),
 			expectView(text("Live status of Globex")).toExist(),
-			tap(({ html }) => expect(footer(html)).toContain("Powered by")),
+		)
+	})
+
+	test("Advanced holds the page's behaviour: the powered-by credit leaves the page as toggled", () => {
+		const page = srcdocOf("Acme Status with these settings")
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(ADVANCED)),
+			tap(({ html }) => expect(page(html)).toContain("Powered by")),
 			click(role("switch", { name: "Show powered by Maple" })),
-			tap(({ html }) => expect(footer(html)).not.toContain("Powered by")),
+			tap(({ html }) => expect(page(html)).not.toContain("Powered by")),
 		)
 	})
 
@@ -2766,7 +2773,7 @@ describe("custom domain", () => {
 	test("adding a domain sends the hostname as typed, normalized, then shows the DNS records to add", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ tab: "settings" })),
+			given(loaded(ADVANCED)),
 			expectView(role("button", { name: "Add domain" })).toBeDisabled(),
 			type(role("textbox", { name: "Hostname" }), " Status.Acme.com "),
 			submit(role("form", { name: "Custom domain" })),
@@ -2788,7 +2795,7 @@ describe("custom domain", () => {
 		for (const hostname of ["acme.com", "10.0.0.1", "status.maple.dev"])
 			scene(
 				{ update: pageUpdate, view },
-				given(loaded({ tab: "settings" })),
+				given(loaded(ADVANCED)),
 				type(role("textbox", { name: "Hostname" }), hostname),
 				expectView(role("button", { name: "Add domain" })).toBeDisabled(),
 				expectView(role("textbox", { name: "Hostname" })).toHaveAttr("aria-invalid", "true"),
@@ -2797,7 +2804,7 @@ describe("custom domain", () => {
 
 	test("Check now asks Cloudflare again and an active domain becomes the page's address", () => {
 		const checking = pageUpdate(
-			loaded({ tab: "settings", customDomain: pendingDomain }),
+			loaded({ ...ADVANCED, customDomain: pendingDomain }),
 			Message.ClickedCheckCustomDomain(),
 		)
 		expect(checking.commands).toMatchObject([
@@ -2828,7 +2835,7 @@ describe("custom domain", () => {
 			{ update: pageUpdate, view },
 			given(
 				loaded({
-					tab: "settings",
+					...ADVANCED,
 					customDomain: customDomain({
 						hostname: "status.acme.com",
 						status: "failed",
@@ -2843,7 +2850,7 @@ describe("custom domain", () => {
 
 	test("removing the domain asks first, then removes it once", () => {
 		const asking = pageUpdate(
-			loaded({ tab: "settings", customDomain: pendingDomain }),
+			loaded({ ...ADVANCED, customDomain: pendingDomain }),
 			Message.ClickedRemoveCustomDomain(),
 		)
 		expect(asking.model.removeCustomDomainDialog.isOpen).toBe(true)
@@ -2880,7 +2887,7 @@ describe("custom domain", () => {
 	test("an internal page takes no custom domain, and has no break-glass token to issue", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ tab: "settings", page: statusPage({ visibility: "internal" }) })),
+			given(loaded({ ...ADVANCED, page: statusPage({ visibility: "internal" }) })),
 			expectView(role("textbox", { name: "Hostname" })).toBeDisabled(),
 			expectView(role("button", { name: "Add domain" })).toBeDisabled(),
 			expectView(
@@ -2894,7 +2901,7 @@ describe("custom domain", () => {
 	test("members see the domain and its records but no control to change them", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ tab: "settings", grants: MEMBER, customDomain: pendingDomain })),
+			given(loaded({ ...ADVANCED, grants: MEMBER, customDomain: pendingDomain })),
 			expectView(text("_cf-custom-hostname.status.acme.com")).toExist(),
 			expectView(role("textbox", { name: "Hostname" })).toBeDisabled(),
 			expectView(role("button", { name: "Check now" })).not.toExist(),
@@ -2907,7 +2914,7 @@ describe("custom domain", () => {
 			{ update: pageUpdate, view },
 			given(
 				loaded({
-					tab: "settings",
+					...ADVANCED,
 					customDomain: customDomain({ available: false, cname_target: null }),
 				}),
 			),
@@ -3592,7 +3599,7 @@ describe("the sheet, the previews and the reads they wait on", () => {
 
 	test("a failed custom domain read can be retried, and Access does not offer Internal until it is known", () => {
 		const failed = {
-			...loaded({ tab: "settings" }),
+			...loaded(ADVANCED),
 			customDomain: {
 				key: "custom-domain",
 				data: AsyncData.Failure({ error: toLoadFailure(new Error("unreachable")) }),
@@ -3608,7 +3615,7 @@ describe("the sheet, the previews and the reads they wait on", () => {
 			{ update: pageUpdate, view },
 			given({ ...failed, search: { view: "settings", section: "access" } }),
 			expectView(role("radio", { name: "Internal" })).toBeDisabled(),
-			expectView(text("Couldn't check for a custom domain. Try again under Basic settings.")).toExist(),
+			expectView(text("Couldn't check for a custom domain. Try again under Advanced.")).toExist(),
 		)
 	})
 })

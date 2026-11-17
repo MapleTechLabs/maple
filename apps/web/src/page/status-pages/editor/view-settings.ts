@@ -355,11 +355,7 @@ const sectionBody = (
 ): ReadonlyArray<Html> => {
 	switch (section) {
 		case "basic":
-			return [
-				pageSection(h, model, page, form),
-				customDomainSection(h, model, page),
-				behaviourSection(h, model, form),
-			]
+			return [pageSection(h, model, page, form)]
 		case "monitors":
 			return [monitorsSection(h, model)]
 		case "appearance":
@@ -368,6 +364,8 @@ const sectionBody = (
 			return [accessSection(h, model, page, form)]
 		case "advanced":
 			return [
+				customDomainSection(h, model, page),
+				behaviourSection(h, model, form),
 				// Break-glass posts at the public address, which an internal page does not answer on.
 				...(page.visibility === "internal" ? [] : [breakGlassSection(h, model, page)]),
 				jsonSection(h, model),
