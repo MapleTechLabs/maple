@@ -17,6 +17,7 @@ import { typography } from "@maple/views/ui/typography"
 import { Option, Schema, Stream, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { toEpochMs } from "@maple/ui/lib/time-format"
+import { previewFrameElement, SCROLL_MESSAGE, SCROLL_NAME_PREFIX } from "./preview-frame-element"
 
 // The live preview: the public renderer's page in a sandboxed frame, with the monitors' real
 // history, and in the editor a click on a component or incident posted back to open it.
@@ -257,10 +258,10 @@ const stayInFrameScript = (opensLinks: boolean): string =>
 	`(function(){var o=${opensLinks};document.addEventListener("click",function(e){if(e.defaultPrevented)return;var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(!a)return;var h=a.getAttribute("href");if(o&&h&&/^https?:/i.test(h)){a.target="_blank";a.rel="noopener noreferrer";return}e.preventDefault();if(h&&h.charAt(0)==="#"){var t=document.getElementById(decodeURIComponent(h.slice(1)));if(t)t.scrollIntoView({block:"start"})}});document.addEventListener("submit",function(e){e.preventDefault()})})();`
 
 /**
- * Each edit rebuilds the document, and a new `srcdoc` reloads the frame at the top. The frame's
- * `window.name` survives that reload, so the scroll is kept there and put back before paint.
+ * Each edit loads a new document in a new frame (`<maple-preview-frame>`), named with the shown
+ * frame's scroll, which this puts back before paint. Scrolling reports itself to that element.
  */
-const KEEP_SCROLL_SCRIPT = `(function(){var k="maple-preview-scroll:";var y=window.name.indexOf(k)===0?Number(window.name.slice(k.length)):0;var to=function(){window.scrollTo({top:y,behavior:"instant"})};if(y>0){to();addEventListener("load",to)}addEventListener("scroll",function(){window.name=k+Math.round(window.scrollY)},{passive:true})})();`
+const KEEP_SCROLL_SCRIPT = `(function(){var k="${SCROLL_NAME_PREFIX}";var y=window.name.indexOf(k)===0?Number(window.name.slice(k.length)):0;var to=function(){window.scrollTo({top:y,behavior:"instant"})};if(y>0){to();addEventListener("load",to)}addEventListener("scroll",function(){parent.postMessage({type:"${SCROLL_MESSAGE}",y:Math.round(window.scrollY)},"*")},{passive:true})})();`
 
 /** The public page as the renderer draws it, plus, when selectable, the selection script. */
 export const previewDocument = (options: PreviewDocumentOptions): string => {
@@ -383,29 +384,26 @@ export const previewFrame = <M>(
 		width?: PreviewWidth
 	}>,
 ): Html =>
-	h.iframe(
-		[
-			...(options.isSelectable === true ? [h.Id(PREVIEW_FRAME_ID)] : []),
-			h.Title(options.title),
-			h.Sandbox(
-				options.opensLinks === true
-					? "allow-scripts allow-popups allow-popups-to-escape-sandbox"
-					: "allow-scripts",
+	previewFrameElement.withMessage(h)([
+		...(options.isSelectable === true ? [h.Attribute("frame-id", PREVIEW_FRAME_ID)] : []),
+		h.Attribute("frame-title", options.title),
+		h.Sandbox(
+			options.opensLinks === true
+				? "allow-scripts allow-popups allow-popups-to-escape-sandbox"
+				: "allow-scripts",
+		),
+		// The Slack command's Copy button; without it the button selects the command instead.
+		h.Allow("clipboard-write"),
+		h.Srcdoc(options.document),
+		h.DataAttribute("width", options.width ?? "desktop"),
+		h.Class(
+			cn(
+				"relative block w-full overflow-hidden rounded-lg border bg-background",
+				options.width === "mobile" && "mx-auto max-w-sm",
+				options.className,
 			),
-			// The Slack command's Copy button; without it the button selects the command instead.
-			h.Allow("clipboard-write"),
-			h.Srcdoc(options.document),
-			h.DataAttribute("width", options.width ?? "desktop"),
-			h.Class(
-				cn(
-					"block w-full rounded-lg border bg-background",
-					options.width === "mobile" && "mx-auto max-w-sm",
-					options.className,
-				),
-			),
-		],
-		[],
-	)
+		),
+	])
 
 /**
  * A small inert frame (the access gate as visitors meet it): fully sandboxed, no scripts, and it

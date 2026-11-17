@@ -2,7 +2,7 @@ import { encodeJson } from "@maple/views/data/request-key"
 import type { StatusPageComponentId } from "@maple/domain"
 import type { V2StatusPageComponent, V2UptimeMonitor } from "@maple/domain/http/v2"
 import { Option, Result, Array as Arr, String as Str } from "effect"
-import { AsyncData } from "foldkit"
+import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
 import type { PageContext } from "../../contract"
@@ -13,6 +13,9 @@ import {
 	type ComponentForm,
 	emptyComponentForm,
 } from "../shared/form"
+import { groupIndexOf, groupOrder, moved, movedGroup } from "../shared/component-order"
+import type * as Combobox from "@maple/views/ui/combobox"
+import { updateGroupPicker } from "../shared/group-picker"
 import {
 	draftComponents,
 	hasRowIssues,
@@ -176,6 +179,21 @@ export const confirmDiscardComponent = (model: Model): Return => {
 export const changeComponent = (model: Model, field: ComponentTextField, value: string): Return =>
 	editComponent(model, { ...model.componentForm, [field]: value })
 
+/** The Group dropdown: picking or creating a group sets the open component's, waiting on Save. */
+export const groupPickerStep = (model: Model, message: Combobox.Message): Return => {
+	const step = updateGroupPicker(model.groupPicker, message)
+	const next = Option.match(step.picked, {
+		onNone: () => ({ model: { ...model, groupPicker: step.picker } }),
+		onSome: (group) => changeComponent({ ...model, groupPicker: step.picker }, "group", group),
+	})
+	return {
+		...next,
+		commands: FoldkitCommand.mapMessages(step.commands, (child) =>
+			Message.GotGroupPickerMessage({ message: child }),
+		),
+	}
+}
+
 export const toggleComponentUptime = (model: Model): Return =>
 	editComponent(model, { ...model.componentForm, showUptime: !model.componentForm.showUptime })
 
@@ -267,52 +285,6 @@ export const savedComponent = (
 	})
 }
 
-type Groupable = { readonly id: StatusPageComponentId; readonly group: string | null }
-
-/**
- * The components as the public page lists them: each group, ungrouped ones too, where its first
- * member is, then its members in page order.
- */
-export const groupedOrder = <A extends Groupable>(components: ReadonlyArray<A>): ReadonlyArray<A> =>
-	Arr.flatMap(Arr.dedupe(Arr.map(components, (component) => component.group)), (group) =>
-		Arr.filter(components, (component) => component.group === group),
-	)
-
-/** A component's place among its group's members; `null` when it is not listed. */
-const groupIndexOf = <A extends Groupable>(
-	components: ReadonlyArray<A>,
-	componentId: StatusPageComponentId,
-): number | null =>
-	Option.getOrNull(
-		Option.map(
-			Arr.findFirst(components, (component) => component.id === componentId),
-			(item) => Arr.filter(components, (component) => component.group === item.group).indexOf(item),
-		),
-	)
-
-/**
- * The list with `componentId` at `index` among its group's members (clamped to the group), the
- * members between shifting a slot; other groups keep their places. `null` when it is not listed
- * or already there.
- */
-export const moved = <A extends Groupable>(
-	components: ReadonlyArray<A>,
-	componentId: StatusPageComponentId,
-	index: number,
-): ReadonlyArray<A> | null => {
-	const item = Arr.findFirst(components, (component) => component.id === componentId)
-	if (Option.isNone(item)) return null
-	const group = Arr.filter(components, (component) => component.group === item.value.group)
-	const to = Math.min(Math.max(index, 0), group.length - 1)
-	if (to === group.indexOf(item.value)) return null
-	const rest = Arr.filter(group, (component) => component.id !== componentId)
-	const order = [...Arr.take(rest, to), item.value, ...Arr.drop(rest, to)]
-	// The group's slots in page order, filled with its new order.
-	return Arr.mapAccum(components, 0, (rank, component): [number, A] =>
-		component.group === item.value.group ? [rank + 1, order[rank] ?? component] : [rank, component],
-	)[1]
-}
-
 /** The listed order with the row at `index` in its group, waiting on Save; `null` when nothing moves. */
 const reorder = (model: Model, componentId: StatusPageComponentId, index: number): Model | null => {
 	const next = moved(listedComponentsOf(model), componentId, index)
@@ -333,6 +305,32 @@ export const nudgeComponent = (model: Model, componentId: StatusPageComponentId,
 	return next === null
 		? { model }
 		: { model: next, commands: [FocusEditorElement({ id: componentGripId(componentId) })] }
+}
+
+/** A group's drag grip in the Monitors list. */
+export const groupGripId = (group: string | null): string =>
+	`status-page-group-grip-${group === null ? "none" : encodeURIComponent(group)}`
+
+/** The listed order with `group` at `index` among the groups, waiting on Save; `null` when nothing moves. */
+const reorderGroup = (model: Model, group: string | null, index: number): Model | null => {
+	const next = movedGroup(listedComponentsOf(model), group, index)
+	return next === null || model.isSavingOrder || !canManage(model)
+		? null
+		: { ...model, pendingOrder: Arr.map(next, (component) => component.id) }
+}
+
+/** A group's drop: its components take the group's new place together. */
+export const moveGroup = (model: Model, group: string | null, index: number): Return => ({
+	model: reorderGroup(model, group, index) ?? model,
+})
+
+/** An arrow key on a group's grip: one place up or down, focus kept on its grip. */
+export const nudgeGroup = (model: Model, group: string | null, offset: number): Return => {
+	const from = groupOrder(listedComponentsOf(model)).indexOf(group)
+	const next = from === -1 ? null : reorderGroup(model, group, from + offset)
+	return next === null
+		? { model }
+		: { model: next, commands: [FocusEditorElement({ id: groupGripId(group) })] }
 }
 
 /** The ids Save sends as the new order, while the listed order differs from the saved one. */

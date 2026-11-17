@@ -51,7 +51,7 @@ describe("status page viewer", () => {
 			{ update: viewerUpdate, view },
 			given(loaded),
 			expectView(text("Only members of this organization can read this page.")).toExist(),
-			expectView(selector('iframe[title="Acme status"]')).toHaveAttr(
+			expectView(selector('maple-preview-frame[frame-title="Acme status"]')).toHaveAttr(
 				"sandbox",
 				"allow-scripts allow-popups allow-popups-to-escape-sandbox",
 			),
@@ -76,7 +76,7 @@ describe("status page viewer", () => {
 					}),
 				}),
 			).model
-		const iframeOf = find("iframe")
+		const iframeOf = find("maple-preview-frame")
 		const srcdoc = (html: Parameters<typeof iframeOf>[0]): string =>
 			Option.getOrElse(Option.flatMap(iframeOf(html), attr("srcdoc")), () => "")
 		const pick = (group: string, name: string) =>
@@ -93,7 +93,7 @@ describe("status page viewer", () => {
 			pick("Preview state", "Maintenance"),
 			tap(({ html }) => expect(srcdoc(html)).toContain("Example maintenance")),
 			pick("Preview width", "Mobile"),
-			expectView(selector("iframe")).toHaveAttr("data-width", "mobile"),
+			expectView(selector("maple-preview-frame")).toHaveAttr("data-width", "mobile"),
 			expectView(role("group", { name: "Preview mode" })).toExist(),
 		)
 		scene(

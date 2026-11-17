@@ -25,6 +25,7 @@ import {
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import {
@@ -70,6 +71,7 @@ export const Message = defineMessageUnion({
 	// Components
 	ChangedComponentField: { field: ComponentTextField, value: Schema.String },
 	ToggledComponentUptime: {},
+	GotGroupPickerMessage: { message: Combobox.Message },
 	/** The Monitors save bar: a moved order and the open component's edits, together. */
 	ClickedSaveMonitors: {},
 	ClickedDiscardMonitors: {},
@@ -78,6 +80,10 @@ export const Message = defineMessageUnion({
 	GotDiscardComponentDialogMessage: { message: Dialog.Message },
 	/** A grip drag let go over `index`, the slot within the component's group; the order waits on Save. */
 	DroppedComponent: { componentId: StatusPageComponentId, index: Schema.Number },
+	/** A group's grip let go over `index` among the groups (`null` is "No group"); waits on Save. */
+	DroppedGroup: { group: Schema.NullOr(Schema.String), index: Schema.Number },
+	/** ArrowUp (-1) or ArrowDown (1) on a group's grip. */
+	PressedMoveGroup: { group: Schema.NullOr(Schema.String), offset: Schema.Number },
 	/** ArrowUp (-1) or ArrowDown (1) on a component's grip. */
 	PressedMoveComponent: { componentId: StatusPageComponentId, offset: Schema.Number },
 	CompletedReorder: { result: LoadOutcome(Schema.Array(V2StatusPageComponent)) },

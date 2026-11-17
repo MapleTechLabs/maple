@@ -17,6 +17,7 @@ import {
 	statusPageHref,
 } from "../shared/commands"
 import { emptyComponentForm, emptyIncidentForm } from "../shared/form"
+import { initGroupPicker } from "../shared/group-picker"
 import { emptyPicker } from "../shared/picker"
 import { historyFrom } from "../shared/preview"
 import { FetchEditorPreview, FetchEditorSession, ReadEditorClock, WaitEditorPreview } from "./command"
@@ -46,8 +47,11 @@ import {
 	deletedComponent,
 	discardComponentDialog,
 	discardMonitors,
+	groupPickerStep,
 	leaveComponent,
 	moveComponent,
+	moveGroup,
+	nudgeGroup,
 	nudgeComponent,
 	reordered,
 	saveMonitors,
@@ -201,6 +205,7 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		previewHistory: [],
 		componentForm: emptyComponentForm,
 		componentSave: null,
+		groupPicker: initGroupPicker("status-page-component-group"),
 		pendingLeave: null,
 		discardComponentDialog: Dialog.init("status-page-discard-component", "alert-dialog"),
 		confirmDeleteComponentId: null,
@@ -554,6 +559,7 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 		// Components
 		ChangedComponentField: ({ field, value }) => changeComponent(model, field, value),
 		ToggledComponentUptime: () => toggleComponentUptime(model),
+		GotGroupPickerMessage: ({ message: child }) => groupPickerStep(model, child),
 		ClickedSaveMonitors: () => saveMonitors(model),
 		ClickedDiscardMonitors: () => discardMonitors(model),
 		CompletedSaveComponent: ({ result }) => savedComponent(model, result, context),
@@ -562,6 +568,8 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 			discardComponentDialog(model, Dialog.update(model.discardComponentDialog, child)),
 		DroppedComponent: ({ componentId, index }) => moveComponent(model, componentId, index),
 		PressedMoveComponent: ({ componentId, offset }) => nudgeComponent(model, componentId, offset),
+		DroppedGroup: ({ group, index }) => moveGroup(model, group, index),
+		PressedMoveGroup: ({ group, offset }) => nudgeGroup(model, group, offset),
 		CompletedReorder: ({ result }) => reordered(model, result, context),
 		ClickedDeleteComponent: ({ componentId }) => askDeleteComponent(model, componentId),
 		ClickedConfirmDeleteComponent: () => confirmDeleteComponent(model),

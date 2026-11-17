@@ -1,19 +1,24 @@
-import { StatusPageComponentId } from "@maple/domain"
-import { Array as Arr, Effect, Option, Queue, Schema, Stream } from "effect"
-import { Message } from "./message"
+import { Array as Arr, Effect, Queue, Stream } from "effect"
 
 // A pointer drag on a component's grip lifts its row and follows the pointer within its group; the
 // group's other rows slide aside to open the slot it would land in, which a dashed outline marks.
-// Letting go settles the row into that slot and sends one `DroppedComponent`, since each reorder is
-// a save. Escape or a cancelled pointer springs it back and sends nothing.
+// Letting go settles the row into that slot and sends one drop (the row's key and its new index in
+// the group). Escape or a cancelled pointer springs it back and sends nothing. The builder and
+// Settings > Monitors share it.
 
 /** On a group's wrapper, around its list and its slot outline. */
 export const LIST_ATTRIBUTE = "component-list"
-/** On a component's row, valued with its id. */
+/** On a component's row, valued with its key. */
 export const ROW_ATTRIBUTE = "component-row"
 export const GRIP_ATTRIBUTE = "component-grip"
 /** On the outline drawn where the held row would land. */
 export const SLOT_ATTRIBUTE = "component-slot"
+/** The same four for the groups: each group's block (its head and its rows) moves as one. */
+export const GROUP_LIST_ATTRIBUTE = "group-list"
+/** On a group's block, valued with the group's name (`""` for no group). */
+export const GROUP_ROW_ATTRIBUTE = "group-row"
+export const GROUP_GRIP_ATTRIBUTE = "group-grip"
+export const GROUP_SLOT_ATTRIBUTE = "group-slot"
 /** Set on the held row and the slot outline while a drag runs; the view styles it. */
 const DRAGGING = "data-dragging"
 
@@ -50,20 +55,46 @@ export const dropIndex = (spans: ReadonlyArray<Span>, from: number, offset: numb
 			: best,
 	)
 
-const decodeId = Schema.decodeUnknownOption(StatusPageComponentId)
+/** What a grip drags: a component within its group, or a whole group among the groups. */
+export type DragKind = "component" | "group"
+
+/** The markers of one kind of list: its wrapper, rows, grips and slot outline. */
+type Markers = Readonly<{ list: string; row: string; grip: string; slot: string }>
+
+const MARKERS = {
+	component: { list: LIST_ATTRIBUTE, row: ROW_ATTRIBUTE, grip: GRIP_ATTRIBUTE, slot: SLOT_ATTRIBUTE },
+	group: {
+		list: GROUP_LIST_ATTRIBUTE,
+		row: GROUP_ROW_ATTRIBUTE,
+		grip: GROUP_GRIP_ATTRIBUTE,
+		slot: GROUP_SLOT_ATTRIBUTE,
+	},
+} as const satisfies Record<DragKind, Markers>
+
+/** A row let go over a new slot: what it is, its key and its new index among its siblings. */
+export type ComponentDrop = Readonly<{ kind: DragKind; key: string; index: number }>
 
 const translate = (offset: number): string => (offset === 0 ? "" : `translateY(${offset}px)`)
 
 const startDrag = (
 	event: PointerEvent,
-	emit: (message: Message) => void,
+	emit: (drop: ComponentDrop) => void,
 	busy: { isDragging: boolean },
 ): void => {
 	if (busy.isDragging || event.button !== 0 || !(event.target instanceof Element)) return
-	const grip = event.target.closest(`[data-${GRIP_ATTRIBUTE}]`)
-	const row = grip?.closest(`[data-${ROW_ATTRIBUTE}]`)
-	const list = row?.closest(`[data-${LIST_ATTRIBUTE}]`)
-	const slot = list?.querySelector(`[data-${SLOT_ATTRIBUTE}]`)
+	const kind: DragKind | null =
+		event.target.closest(`[data-${GRIP_ATTRIBUTE}]`) !== null
+			? "component"
+			: event.target.closest(`[data-${GROUP_GRIP_ATTRIBUTE}]`) !== null
+				? "group"
+				: null
+	if (kind === null) return
+	const markers = MARKERS[kind]
+	const grip = event.target.closest(`[data-${markers.grip}]`)
+	const row = grip?.closest(`[data-${markers.row}]`)
+	const list = row?.closest(`[data-${markers.list}]`)
+	// The list's own slot: a group's block holds its rows' list and slot too.
+	const slot = list?.querySelector(`:scope > [data-${markers.slot}]`)
 	if (
 		!(grip instanceof HTMLElement) ||
 		!(row instanceof HTMLElement) ||
@@ -71,9 +102,9 @@ const startDrag = (
 		!(slot instanceof HTMLElement)
 	)
 		return
-	const componentId = decodeId(row.getAttribute(`data-${ROW_ATTRIBUTE}`))
+	const key = row.getAttribute(`data-${markers.row}`)
 	const rows = Arr.filter(
-		[...list.querySelectorAll(`[data-${ROW_ATTRIBUTE}]`)],
+		[...list.querySelectorAll(`[data-${markers.row}]`)],
 		(other): other is HTMLElement => other instanceof HTMLElement,
 	)
 	const from = rows.indexOf(row)
@@ -84,8 +115,7 @@ const startDrag = (
 	const origin = spans[from]
 	const first = spans[0]
 	const last = spans[spans.length - 1]
-	if (Option.isNone(componentId) || origin === undefined || first === undefined || last === undefined)
-		return
+	if (key === null || origin === undefined || first === undefined || last === undefined) return
 	event.preventDefault()
 	busy.isDragging = true
 	grip.setPointerCapture(event.pointerId)
@@ -163,7 +193,7 @@ const startDrag = (
 					reset()
 				}, RENDER_WAIT_MS)
 				observer.observe(row.parentElement ?? row, { childList: true })
-				emit(Message.DroppedComponent({ componentId: componentId.value, index: to }))
+				emit({ kind, key, index: to })
 			},
 			ease === "" ? 0 : MOVE_MS,
 		)
@@ -184,13 +214,13 @@ const startDrag = (
 	window.addEventListener("keydown", onKey, true)
 }
 
-/** Grip drags in the Monitors list, each let go over a new slot as one `DroppedComponent`. */
-export const componentDrags: Stream.Stream<Message> = Stream.callback<Message>((queue) =>
+/** Grip drags in a component list, of a component or a group, each let go over a new slot as one drop. */
+export const componentDrags: Stream.Stream<ComponentDrop> = Stream.callback<ComponentDrop>((queue) =>
 	Effect.acquireRelease(
 		Effect.sync(() => {
 			const busy = { isDragging: false }
 			const onDown = (event: PointerEvent) =>
-				startDrag(event, (message) => Queue.offerUnsafe(queue, message), busy)
+				startDrag(event, (drop) => Queue.offerUnsafe(queue, drop), busy)
 			document.addEventListener("pointerdown", onDown)
 			return () => document.removeEventListener("pointerdown", onDown)
 		}),

@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { StatusPagePublicId, V2StatusPage, V2StatusPageComponent } from "@maple/domain/http/v2"
-import { Effect, Option, Result, Schema, Array as Arr } from "effect"
+import { Effect, Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import { Command, Subscription, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -18,6 +18,12 @@ import {
 	SaveComponent,
 	SaveVisibility,
 } from "../../page/status-pages/editor/command"
+import { FocusBuilderField } from "../../page/status-pages/builder/command"
+import { Message as BuilderMessage } from "../../page/status-pages/builder/message"
+import { Model as BuilderModel } from "../../page/status-pages/builder/model"
+import { subscriptions as builderSubscriptions } from "../../page/status-pages/builder/subscription"
+import { init as builderInit, update as builderUpdate } from "../../page/status-pages/builder/update"
+import { view as builderView } from "../../page/status-pages/builder/view"
 import { Message as EditorMessage } from "../../page/status-pages/editor/message"
 import { AccessAction, Model as EditorModel } from "../../page/status-pages/editor/model"
 import { componentsOf, listedComponentsOf, pageOf } from "../../page/status-pages/editor/reads"
@@ -31,8 +37,17 @@ import { view as viewerView } from "../../page/status-pages/viewer/view"
 import { StatusPageVisibility } from "@maple/domain"
 import { makeSnapshot } from "@maple/status-page/fixtures"
 import { componentPayload } from "../../page/status-pages/shared/form"
-import { component, incident, incidentId, statusPage } from "../../page/status-pages/shared/test-pages"
-import { downMonitor, httpMonitor } from "../../page/kit/uptime/test-monitors"
+import * as Combobox from "@maple/views/ui/combobox"
+import { groupPickerValue } from "../../page/status-pages/shared/group-picker"
+import { monitorKey } from "../../page/status-pages/shared/picker"
+import {
+	component,
+	componentId,
+	incident,
+	incidentId,
+	statusPage,
+} from "../../page/status-pages/shared/test-pages"
+import { downMonitor, httpMonitor, monitorId } from "../../page/kit/uptime/test-monitors"
 import type { Resources } from "../../platform/resources"
 import { keepLocal } from "../local-commands"
 import { defineShellLab } from "../shell-lab"
@@ -42,12 +57,13 @@ import { labGrants, LabRole, readLabRole } from "../viewer-role"
 
 // `/lab/status-pages`: the status pages list, the look picker and the form fields over fixture
 // pages, the list with no page yet, a page's editor open on an incident, on Settings > Monitors
-// with grouped components to drag, on the Incidents or Maintenance tab with nothing posted, or
-// the full-screen preview "Open page" opens, as a public, password or internal page
-// (`?page=list|empty|editor|monitors|incidents-empty|maintenance-empty|preview&visibility=public|password|internal`),
-// as the viewer `?role=` names: an analyst reads the incident and gets no control that posts,
-// edits or deletes one. The editor runs for real with no API: a reorder, a component's Save and
-// an Access save land at once, every other read and write is dropped.
+// with grouped components to drag (`monitors-group` with the Group dropdown open), on the Incidents
+// or Maintenance tab with nothing posted (`incidents-empty`, `maintenance-empty`), the full-screen
+// preview "Open page" opens, as a public, password or internal page (`preview&visibility=public|
+// password|internal`), or the new page builder (`new`, `new-empty`, `new-add`, `new-group`,
+// `new-domain`), as the viewer `?role=` names: an analyst reads the incident and gets no control
+// that posts, edits or deletes one. The editor runs for real with no API: a reorder, a component's
+// Save and an Access save land at once, every other read and write is dropped.
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)(LAB_ORG),
@@ -60,21 +76,36 @@ const PAGES = [
 	"empty",
 	"editor",
 	"monitors",
+	"monitors-group",
 	"incidents-empty",
 	"maintenance-empty",
 	"preview",
+	"new",
+	"new-empty",
+	"new-add",
+	"new-group",
+	"new-domain",
 ] as const
 const LabPage = Schema.Literals(PAGES)
 type LabPage = typeof LabPage.Type
 /** The list over the fixture pages, or over none for its empty state. */
 const isListPage = (page: LabPage): boolean => page === "list" || page === "empty"
+/** The new page builder, in one of its states. */
+const isBuilderPage = (page: LabPage): boolean => Str.startsWith("new")(page)
 const decodePage = Schema.decodeUnknownOption(LabPage)
 
-const Model = Schema.Struct({ page: LabPage, list: ListModel, editor: EditorModel, viewer: ViewerModel })
+const Model = Schema.Struct({
+	page: LabPage,
+	list: ListModel,
+	editor: EditorModel,
+	viewer: ViewerModel,
+	builder: BuilderModel,
+})
 type Model = typeof Model.Type
 const Message = defineMessageUnion({
 	GotListMessage: { message: ListMessage },
 	GotEditorMessage: { message: EditorMessage },
+	GotBuilderMessage: { message: BuilderMessage },
 	GotViewerMessage: { message: ViewerMessage },
 	Ignored: {},
 })
@@ -82,7 +113,15 @@ type Message = typeof Message.Type
 const Flags = Schema.Struct({ page: LabPage, role: LabRole, visibility: StatusPageVisibility })
 const decodeVisibility = Schema.decodeUnknownOption(StatusPageVisibility)
 type Flags = typeof Flags.Type
-type EditorPage = Exclude<LabPage, "list" | "empty" | "preview">
+type EditorPage = "editor" | "monitors" | "incidents-empty" | "maintenance-empty"
+
+/** The editor state a lab page shows; pages that show no editor still build the plain one. */
+const editorPageOf = (page: LabPage): EditorPage =>
+	page === "monitors" || page === "monitors-group"
+		? "monitors"
+		: page === "incidents-empty" || page === "maintenance-empty"
+			? page
+			: "editor"
 
 /** The URL search each editor page opens on. */
 const editorSearch = (page: EditorPage) => {
@@ -208,6 +247,69 @@ const editorModel = (role: LabRole, page: EditorPage): EditorModel => {
 	)
 }
 
+/** The builder over five monitors, all on the page from the start. */
+const LAB_MONITORS = [
+	httpMonitor(),
+	downMonitor(),
+	httpMonitor({ id: monitorId(3), name: "dashboard" }),
+	httpMonitor({ id: monitorId(4), name: "webhooks" }),
+	httpMonitor({ id: monitorId(5), name: "docs" }),
+]
+
+const groupOf = (message: Combobox.Message) => BuilderMessage.GotGroupPickerMessage({ message })
+
+/** The steps after the monitors read that put the builder in `page`'s state. */
+const builderSteps = (page: LabPage): ReadonlyArray<BuilderMessage> => {
+	switch (page) {
+		case "new-add":
+			return [
+				BuilderMessage.ClickedRemoveRow({ key: monitorKey(monitorId(4)) }),
+				BuilderMessage.ClickedRemoveRow({ key: monitorKey(monitorId(5)) }),
+				BuilderMessage.ClickedAddComponents(),
+			]
+		case "new-group":
+			return [
+				BuilderMessage.ClickedRow({ key: monitorKey(httpMonitor().id) }),
+				groupOf(Combobox.Message.ClickedItem({ value: groupPickerValue.create("Core") })),
+				BuilderMessage.ClickedRow({ key: monitorKey(downMonitor().id) }),
+				groupOf(Combobox.Message.ClickedTriggerOf({ items: [] })),
+				groupOf(Combobox.Message.ChangedInput({ value: "Pay" })),
+			]
+		case "new-domain":
+			return [BuilderMessage.ChangedCustomDomain({ value: "status.acme.com" })]
+		default:
+			return []
+	}
+}
+
+/**
+ * The builder over five monitors, all on the page from the start (none with `new-empty`); `new-add`
+ * opens Add components, `new-group` the Group dropdown with "Pay" typed, `new-domain` fills the custom domain.
+ */
+const builderModel = (
+	role: LabRole,
+	page: LabPage,
+): Update.Return<BuilderModel, BuilderMessage, Resources> => {
+	const entered = builderInit({ _tag: "StatusPageNew" }, context).model
+	return Arr.reduce(
+		[
+			BuilderMessage.ReadClock({ nowMs: LAB_NOW_MS }),
+			BuilderMessage.CompletedFetchSession({ orgId: LAB_ORG, grants: labGrants(role) }),
+			BuilderMessage.CompletedFetchMonitors({
+				key: entered.monitors.key ?? "",
+				result: Result.succeed(page === "new-empty" ? [] : LAB_MONITORS),
+			}),
+			BuilderMessage.ChangedName({ value: "Acme Status" }),
+			...builderSteps(page),
+		],
+		{ model: entered, commands: [] } as Update.Return<BuilderModel, BuilderMessage, Resources>,
+		(current, message) => {
+			const next = builderUpdate(current.model, message, context)
+			return { model: next.model, commands: [...(current.commands ?? []), ...keepLocal(next.commands)] }
+		},
+	)
+}
+
 const section = (h: HtmlBuilder<Message>, title: string, children: ReadonlyArray<Html>): Html =>
 	h.section(
 		[h.Class("flex flex-col gap-3")],
@@ -295,6 +397,22 @@ const update = (model: Model, message: Message): Return =>
 				),
 			}
 		},
+		GotBuilderMessage: ({ message: child }) => {
+			const next = builderUpdate(model.builder, child, context)
+			return {
+				model: { ...model, builder: next.model },
+				commands: Command.mapMessages(
+					[
+						...keepLocal(next.commands),
+						...Arr.filter(
+							next.commands ?? [],
+							(command) => command.name === FocusBuilderField.name,
+						),
+					],
+					(inner) => Message.GotBuilderMessage({ message: inner }),
+				),
+			}
+		},
 		// The preview's switches only redraw it; its one read (Try again) is dropped.
 		GotViewerMessage: ({ message: child }) => ({
 			model: { ...model, viewer: viewerUpdate(model.viewer, child, context).model },
@@ -304,32 +422,51 @@ const update = (model: Model, message: Message): Return =>
 	})
 
 /** The editor's own: Escape closes what is open, a grip drags its row. */
-const subscriptions = Subscription.lift(editorSubscriptions)<Model, Message>({
+const editorSubscriptionsLifted = Subscription.lift(editorSubscriptions)<Model, Message>({
 	read: (model) =>
-		isListPage(model.page) || model.page === "preview"
-			? Option.none()
-			: Option.some({ model: model.editor, context }),
+		model.page === "editor" ||
+		model.page === "monitors" ||
+		model.page === "monitors-group" ||
+		model.page === "incidents-empty" ||
+		model.page === "maintenance-empty"
+			? Option.some({ model: model.editor, context })
+			: Option.none(),
 	toParentMessage: (message) => Message.GotEditorMessage({ message }),
 })
 
+/** The builder's own: a grip drags its row. */
+const builderSubscriptionsLifted = Subscription.lift(builderSubscriptions)<Model, Message>({
+	read: (model) =>
+		isBuilderPage(model.page) ? Option.some({ model: model.builder, context }) : Option.none(),
+	toParentMessage: (message) => Message.GotBuilderMessage({ message }),
+})
+
 const view = (model: Model, h: HtmlBuilder<Message>): Html =>
-	model.page === "preview"
+	isBuilderPage(model.page)
 		? h.submodel({
-				slotId: "status-pages-lab-viewer",
-				model: model.viewer,
-				view: viewerView,
+				slotId: "status-pages-lab-builder",
+				model: model.builder,
+				view: builderView,
 				viewInputs: { context },
-				toParentMessage: (message) => Message.GotViewerMessage({ message }),
+				toParentMessage: (message) => Message.GotBuilderMessage({ message }),
 			})
-		: !isListPage(model.page)
+		: model.page === "preview"
 			? h.submodel({
-					slotId: "status-pages-lab-editor",
-					model: model.editor,
-					view: editorView,
+					slotId: "status-pages-lab-viewer",
+					model: model.viewer,
+					view: viewerView,
 					viewInputs: { context },
-					toParentMessage: (message) => Message.GotEditorMessage({ message }),
+					toParentMessage: (message) => Message.GotViewerMessage({ message }),
 				})
-			: listPage(model, h)
+			: !isListPage(model.page)
+				? h.submodel({
+						slotId: "status-pages-lab-editor",
+						model: model.editor,
+						view: editorView,
+						viewInputs: { context },
+						toParentMessage: (message) => Message.GotEditorMessage({ message }),
+					})
+				: listPage(model, h)
 
 const listPage = (model: Model, h: HtmlBuilder<Message>): Html =>
 	h.div(
@@ -402,21 +539,53 @@ export const lab = defineShellLab("Status pages", {
 			(): StatusPageVisibility => "public",
 		),
 	})),
-	init: (flags: Flags) => ({
-		model: {
-			page: flags.page,
-			list: listModel(flags.role, flags.page === "empty" ? [] : LAB_PAGES),
-			editor: editorModel(
-				flags.role,
-				flags.page === "list" || flags.page === "empty" || flags.page === "preview"
-					? "editor"
-					: flags.page,
-			),
-			viewer: viewerModel(flags.visibility),
-		},
-	}),
+	init: (flags: Flags) => {
+		const builder = builderModel(flags.role, flags.page)
+		const editor = editorModel(flags.role, editorPageOf(flags.page))
+		// `monitors-group`: API open, its Group dropdown open.
+		const grouped =
+			flags.page === "monitors-group"
+				? Arr.reduce(
+						[
+							EditorMessage.ClickedComponent({ componentId: componentId(1) }),
+							EditorMessage.GotGroupPickerMessage({
+								message: Combobox.Message.ClickedTriggerOf({ items: [] }),
+							}),
+						],
+						{ model: editor, commands: [] } as Update.Return<
+							EditorModel,
+							EditorMessage,
+							Resources
+						>,
+						(current, message) => {
+							const next = editorUpdate(current.model, message, context)
+							return {
+								model: next.model,
+								commands: [...(current.commands ?? []), ...keepLocal(next.commands)],
+							}
+						},
+					)
+				: { model: editor, commands: [] }
+		return {
+			model: {
+				page: flags.page,
+				list: listModel(flags.role, flags.page === "empty" ? [] : LAB_PAGES),
+				editor: grouped.model,
+				viewer: viewerModel(flags.visibility),
+				builder: builder.model,
+			},
+			commands: [
+				...Command.mapMessages(builder.commands ?? [], (message) =>
+					Message.GotBuilderMessage({ message }),
+				),
+				...Command.mapMessages(grouped.commands ?? [], (message) =>
+					Message.GotEditorMessage({ message }),
+				),
+			],
+		}
+	},
 	update,
-	subscriptions,
+	subscriptions: { ...editorSubscriptionsLifted, ...builderSubscriptionsLifted },
 	view,
 	currentPath: "/lab/status-pages",
 	breadcrumbs: [{ label: "Lab" }, { label: "Status pages" }],

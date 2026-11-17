@@ -3,7 +3,8 @@ import { Option, Schema, Stream } from "effect"
 import { Dom, Subscription } from "foldkit"
 import type { PageSubscriptionInput } from "../../contract"
 import { previewSelections } from "../shared/preview"
-import { componentDrags } from "./component-drag"
+import { StatusPageComponentId } from "@maple/domain"
+import { componentDrags } from "../shared/component-drag"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import { resolveView } from "./update"
@@ -30,6 +31,8 @@ const focusedOf = (element: Element): Focused => ({
 	getAttribute: (name) => element.getAttribute(name),
 	isInside: (selector) => element.closest(selector) !== null,
 })
+
+const decodeComponentId = Schema.decodeUnknownOption(StatusPageComponentId)
 
 const escapes: Stream.Stream<Message> = Dom.streamFromEventFilterMap({
 	target: () => document,
@@ -75,7 +78,22 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 						!model.isSavingOrder,
 				}
 			},
-			dependenciesToStream: ({ canDrag }) => (canDrag ? componentDrags : Stream.empty),
+			dependenciesToStream: ({ canDrag }) =>
+				canDrag
+					? componentDrags.pipe(
+							Stream.flatMap(({ kind, key, index }): Stream.Stream<Message> =>
+								kind === "group"
+									? Stream.make(
+											Message.DroppedGroup({ group: key === "" ? null : key, index }),
+										)
+									: Option.match(decodeComponentId(key), {
+											onNone: (): Stream.Stream<Message> => Stream.empty,
+											onSome: (componentId) =>
+												Stream.make(Message.DroppedComponent({ componentId, index })),
+										}),
+							),
+						)
+					: Stream.empty,
 		},
 	),
 }))

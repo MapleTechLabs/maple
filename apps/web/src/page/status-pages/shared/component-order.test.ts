@@ -1,7 +1,7 @@
 import { Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
-import { component, componentId } from "../shared/test-pages"
-import { moved } from "./update-components"
+import { component, componentId } from "./test-pages"
+import { moved, movedGroup } from "./component-order"
 
 const ids = (rows: ReadonlyArray<{ readonly id: string }> | null) =>
 	rows === null ? null : Arr.map(rows, (row) => row.id)
@@ -77,5 +77,32 @@ describe("moved", () => {
 		expect(moved(rows, componentId(1), -1)).toBeNull()
 		expect(moved([component(1, { group: "Core" }), component(2)], componentId(1), 1)).toBeNull()
 		expect(moved(rows, componentId(9), 0)).toBeNull()
+	})
+})
+
+describe("movedGroup", () => {
+	const rows = [
+		component(1, { group: "Core" }),
+		component(2, { group: "Edge" }),
+		component(3, { group: "Core" }),
+		component(4),
+		component(5, { group: "Edge" }),
+	]
+
+	test("moves the group's members together to its new place, each group keeping its order", () => {
+		expect(ids(movedGroup(rows, "Edge", 0))).toEqual(
+			ids([rows[1]!, rows[4]!, rows[0]!, rows[2]!, rows[3]!]),
+		)
+		expect(ids(movedGroup(rows, null, 0))).toEqual(
+			ids([rows[3]!, rows[0]!, rows[2]!, rows[1]!, rows[4]!]),
+		)
+	})
+
+	test("clamps past the ends, and is null when nothing moves", () => {
+		expect(ids(movedGroup(rows, "Core", 9))).toEqual(
+			ids([rows[1]!, rows[4]!, rows[3]!, rows[0]!, rows[2]!]),
+		)
+		expect(movedGroup(rows, "Core", 0)).toBeNull()
+		expect(movedGroup(rows, "Missing", 1)).toBeNull()
 	})
 })
