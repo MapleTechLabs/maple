@@ -152,35 +152,45 @@ const rowView = <M>(h: HtmlBuilder<M>, options: ComponentListOptions<M>, row: Co
 			h.Class(cn("border-t first:border-t-0", HELD_CLASS)),
 		],
 		[
-			hstack(h, { gap: "1", className: "pl-2" }, [
-				grip(h, options, row),
-				pressable(
-					h,
-					{
-						onClick: row.onToggle,
-						className: cn(
-							"flex min-w-0 flex-1 items-center gap-3 px-2 py-3 text-left hover:bg-surface-sunken active:bg-surface-sunken",
-							row.isOpen && "bg-surface-sunken",
-						),
-						attributes: [h.Id(row.rowId), h.AriaExpanded(row.isOpen)],
-					},
-					[
-						statusDot(h, { tone, size: "lg" }),
-						typography(
-							h,
-							{ size: "sm", weight: "medium", truncate: true, className: "shrink-0" },
-							[row.name],
-						),
-						typography(h, { size: "xs", tone: "muted", mono: true, truncate: true }, [
-							row.source,
-						]),
-						typography(h, { size: "xs", tone: LABEL_TONE[tone], className: "ml-auto shrink-0" }, [
-							COMPONENT_STATUS_LABEL[row.status],
-						]),
-						expandChevron(h, row.isOpen),
-					],
-				),
-			]),
+			// The hover and open tint cover the whole row, the grip's lane included.
+			hstack(
+				h,
+				{
+					gap: "1",
+					className: cn(
+						"pl-2 hover:bg-surface-sunken active:bg-surface-sunken",
+						row.isOpen && "bg-surface-sunken",
+					),
+				},
+				[
+					grip(h, options, row),
+					pressable(
+						h,
+						{
+							onClick: row.onToggle,
+							className: "flex min-w-0 flex-1 items-center gap-3 px-2 py-3 text-left",
+							attributes: [h.Id(row.rowId), h.AriaExpanded(row.isOpen)],
+						},
+						[
+							statusDot(h, { tone, size: "lg" }),
+							typography(
+								h,
+								{ size: "sm", weight: "medium", truncate: true, className: "shrink-0" },
+								[row.name],
+							),
+							typography(h, { size: "xs", tone: "muted", mono: true, truncate: true }, [
+								row.source,
+							]),
+							typography(
+								h,
+								{ size: "xs", tone: LABEL_TONE[tone], className: "ml-auto shrink-0" },
+								[COMPONENT_STATUS_LABEL[row.status]],
+							),
+							expandChevron(h, row.isOpen),
+						],
+					),
+				],
+			),
 			// Level with the row's status dot, past the grip.
 			...(row.isOpen ? [vstack(h, { gap: "4", className: "pt-1 pr-4 pb-4 pl-10.5" }, row.body)] : []),
 		],
