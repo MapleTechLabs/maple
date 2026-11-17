@@ -94,10 +94,19 @@ export const prometheusMetadata = (
 			isMonotonic: row.isMonotonic > 0,
 			unit: row.unit,
 		}
+		// A family stored as several metrics (types, units) lists each, as Prometheus does.
 		const name = familyName(metric)
-		if (out.has(name)) continue
-		const unit = Arr.join(unitSuffix(row.unit, metric.metricType), "_")
-		out.set(name, [{ type: typeOf(metric), help: row.description, unit }])
+		const entry = {
+			type: typeOf(metric),
+			help: row.description,
+			unit: Arr.join(unitSuffix(row.unit, metric.metricType), "_"),
+		}
+		const known = out.get(name) ?? []
+		const seen = Arr.some(
+			known,
+			(e) => e.type === entry.type && e.unit === entry.unit && e.help === entry.help,
+		)
+		if (!seen) out.set(name, [...known, entry])
 	}
 	return out
 }
