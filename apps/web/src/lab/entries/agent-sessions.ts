@@ -23,6 +23,7 @@ import { filtersRail } from "../../page/agent-sessions/list/view-filters"
 import { filterRail } from "../../page/kit/dashboard-page"
 import { hstack } from "@maple/views/ui/stack"
 import type { Resources } from "../../platform/resources"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import * as Toast from "@maple/views/ui/toast"
 import { ViewerFlags, viewerFlags } from "../viewer-flags"
 import { buildToolAnalyticsFixture, buildToolCells } from "../agent-tools-fixture"
@@ -116,6 +117,15 @@ const stepList = (model: Model, message: ListMessage): Return => {
 			return set({ ...list, detections: { ...list.detections, [message.key]: message.models } })
 		case "ChangedListWindow":
 			return set({ ...list, listWindow: message.window })
+		case "GotFilterSectionsMessage": {
+			const next = FilterSections.update(list.filterSections, message.message)
+			return {
+				model: { ...model, list: { ...list, filterSections: next.model } },
+				commands: Command.mapMessages(next.commands ?? [], (inner) =>
+					toLab(ListMessage.GotFilterSectionsMessage({ message: inner })),
+				),
+			}
+		}
 		default:
 			return { model }
 	}
