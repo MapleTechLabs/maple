@@ -1004,8 +1004,20 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				yield* Effect.annotateCurrentSpan({ orgId })
 				const row = yield* loadConnectionRow(orgId)
 				yield* Effect.annotateCurrentSpan({ "maple.sso.configured": Option.isSome(row) })
-				// Without Clerk there is nothing on its side to delete; the rows go with the purge.
-				if (Option.isNone(row) || !clerk.available) return
+				if (Option.isNone(row)) return
+				// Without Clerk configured its side cannot be reached, and refusing would block the
+				// deletion for good: the ids are logged so what is left there can be removed by hand.
+				if (!clerk.available) {
+					return yield* Effect.logWarning(
+						"Organization deleted with an SSO connection the identity service could not be asked to remove",
+					).pipe(
+						Effect.annotateLogs({
+							orgId,
+							"maple.sso.connection_id": row.value.clerkConnectionId,
+							"maple.sso.directory_id": row.value.clerkDirectoryId ?? "none",
+						}),
+					)
+				}
 				yield* dropConnection(orgId, row.value)
 			})
 
