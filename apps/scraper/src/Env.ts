@@ -67,7 +67,8 @@ const envConfig = Config.all({
 		Config.withDefault(10_000),
 	),
 	UPTIME_CONCURRENCY: positiveInt("UPTIME_CONCURRENCY", 10_000).pipe(Config.withDefault(20)),
-	UPTIME_ORG_CONCURRENCY: positiveInt("UPTIME_ORG_CONCURRENCY", 10_000).pipe(Config.withDefault(4)),
+	// Half the permits above: one org cannot hold them all, and a large org is not slowed while the rest sit idle.
+	UPTIME_ORG_CONCURRENCY: positiveInt("UPTIME_ORG_CONCURRENCY", 10_000).pipe(Config.withDefault(10)),
 	// 4 MiB uncompressed: a 5x margin under the gateway's 20 MB limit even
 	// before gzip, and few enough chunks for the largest discovery cycles.
 	SCRAPER_OTLP_MAX_BODY_BYTES: positiveInt("SCRAPER_OTLP_MAX_BODY_BYTES", 16 * 1024 * 1024).pipe(
