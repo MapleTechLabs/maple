@@ -396,26 +396,19 @@ describe("components under Settings > Monitors", () => {
 		expect(moved(rows, componentId(4), 1)).toBeNull()
 	})
 
-	test("the open component's row shows how it reads on the page, as typed", () => {
+	test("the page preview follows the open component as typed, with no preview of its own", () => {
 		const editing = pageUpdate(
 			selected(2, { components: [component(1, { group: "Core" }), component(2, { group: "Core" })] }),
 			Message.ChangedComponentField({ field: "name", value: "Payments" }),
 		).model
+		const page = srcdocOf("Acme Status with these settings")
 		scene(
 			{ update: pageUpdate, view },
 			given(editing),
-			expectView(selector('iframe[title="Component 2 as visitors see it"]')).toHaveAttr("sandbox", ""),
+			expectView(selector('iframe[title="Component 2 as visitors see it"]')).not.toExist(),
 			tap(({ html }) => {
-				const srcdoc = Option.getOrElse(
-					Option.flatMap(
-						find('iframe[title="Component 2 as visitors see it"]')(html),
-						attr("srcdoc"),
-					),
-					() => "",
-				)
-				expect(srcdoc).toContain("Payments")
-				expect(srcdoc).toContain("Core")
-				expect(srcdoc).not.toContain("Component 1")
+				expect(page(html)).toContain("Payments")
+				expect(page(html)).toContain("Core")
 			}),
 		)
 	})
@@ -2184,16 +2177,17 @@ describe("settings", () => {
 		)
 	})
 
-	test("the theme preview is the page's own renderer, sandboxed, following the unsaved theme", () => {
-		const theme = srcdocOf("The theme as visitors see it")
+	test("the page preview is the page's own renderer, sandboxed, following the unsaved theme", () => {
+		const theme = srcdocOf("Acme Status with these settings")
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(APPEARANCE)),
-			expectView(selector('iframe[title="The theme as visitors see it"]')).toHaveAttr("sandbox", ""),
+			expectView(selector('iframe[title="Acme Status with these settings"]')).toHaveAttr(
+				"sandbox",
+				"allow-scripts",
+			),
 			tap(({ html }) => {
-				expect(theme(html)).toContain("Acme Status")
 				expect(theme(html)).toContain("Component 1")
-				expect(theme(html)).not.toContain("Component 2")
 				expect(theme(html)).toContain("color-scheme:light;")
 			}),
 			inside(role("group", { name: "Mode" }), click(role("button", { name: "Dark" }))),
@@ -2204,7 +2198,7 @@ describe("settings", () => {
 	})
 
 	test("the branding links preview at once: the logo in the header, the favicon in the tab", () => {
-		const header = srcdocOf("The page header as visitors see it")
+		const header = srcdocOf("Acme Status with these settings")
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(APPEARANCE)),
@@ -2241,8 +2235,8 @@ describe("settings", () => {
 		)
 	})
 
-	test("Basic settings preview the header, the tab title, the search result and the footer as typed", () => {
-		const footer = srcdocOf("The page footer as visitors see it")
+	test("Basic settings preview the tab title, the search result and the page as typed", () => {
+		const footer = srcdocOf("Globex with these settings")
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ tab: "settings" })),
@@ -3212,7 +3206,7 @@ describe("the sheet, the previews and the reads they wait on", () => {
 		)
 	})
 
-	test("the theme preview waits for the statuses' reads, and says so when they fail", () => {
+	test("the page preview waits for the statuses' reads, and says so when they fail", () => {
 		const entered = init(
 			{ _tag: "StatusPage", pageId: PUBLIC_ID, search: { view: "settings", section: "appearance" } },
 			context,
@@ -3224,13 +3218,13 @@ describe("the sheet, the previews and the reads they wait on", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(withPage),
-			expectView(selector('iframe[title="The theme as visitors see it"]')).not.toExist(),
-			expectView(selector('iframe[title="The page header as visitors see it"]')).toExist(),
+			expectView(selector('iframe[title="Acme Status with these settings"]')).not.toExist(),
+			expectView(role("region", { name: "Page preview" })).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ ...APPEARANCE, monitorsFail: true })),
-			expectView(selector('iframe[title="The theme as visitors see it"]')).not.toExist(),
+			expectView(selector('iframe[title="Acme Status with these settings"]')).not.toExist(),
 			expectView(text("No preview: the page's components didn't load.")).toExist(),
 		)
 	})

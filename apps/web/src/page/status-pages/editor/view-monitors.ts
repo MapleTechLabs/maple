@@ -1,4 +1,4 @@
-import type { V2StatusPage, V2StatusPageComponent } from "@maple/domain/http/v2"
+import type { V2StatusPageComponent } from "@maple/domain/http/v2"
 import { Array as Arr, Option, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription } from "@maple/views/ui/alert"
@@ -25,19 +25,15 @@ import {
 	statusReason,
 } from "../shared/derive"
 import { selectField, textField } from "../shared/fields"
-import { onYourPage } from "../shared/preview"
 import { RevealOpenComponent } from "./command"
 import { Message } from "./message"
 import { canManage, type ComponentSave, type Model } from "./model"
 import { componentsOf, incidentsOf, monitorsOf } from "./reads"
 import { componentRowId, groupedOrder, moved } from "./update-components"
-import { settingsOf } from "./update-settings"
-import { settingsFormOf } from "../shared/form"
 import { failureAlert } from "./view-panel"
-import { fragmentPreview } from "./view-canvas"
 
-// Settings > Monitors: the page's components by group, each opening in place with its fields and
-// how its row reads on the page.
+// Settings > Monitors: the page's components by group, each opening in place with its fields; the
+// page preview beside Settings shows how it reads.
 
 type H = HtmlBuilder<Message>
 
@@ -105,15 +101,14 @@ const groupSuggestions = (h: H, model: Model, isReadOnly: boolean): ReadonlyArra
 			]
 }
 
-/** The open component's fields, why it shows what it shows, and its row as visitors see it. */
-const componentForm = (h: H, model: Model, page: V2StatusPage, component: V2StatusPageComponent): Html => {
+/** The open component's fields, why it shows what it shows. The page preview beside Settings shows its row. */
+const componentForm = (h: H, model: Model, component: V2StatusPageComponent): Html => {
 	const form = model.componentForm
 	const isReadOnly = !canManage(model)
 	const hasMonitor = form.monitorId !== ""
 	const uptimeId = "status-page-panel-uptime"
 	const reason = statusReason(component, monitorsOf(model), incidentsOf(model))
 	const save = saveOf(model, component)
-	const settings = Option.getOrElse(settingsOf(model), () => settingsFormOf(page))
 	return vstack(
 		h,
 		{
@@ -224,15 +219,6 @@ const componentForm = (h: H, model: Model, page: V2StatusPage, component: V2Stat
 							]),
 						]),
 			]),
-			onYourPage(
-				h,
-				fragmentPreview(h, model, page, settings, {
-					title: `${component.name} as visitors see it`,
-					parts: ["components"],
-					componentId: component.id,
-					className: "h-48",
-				}),
-			),
 			...failureAlert(h, "Couldn't save the component", save?._tag === "Failed" ? save.failure : null),
 			hstack(h, { gap: "3", justify: "between", wrap: true }, [
 				isReadOnly
@@ -282,7 +268,7 @@ const sourceLine = (model: Model, component: V2StatusPageComponent): string =>
 				{ onNone: () => "Monitor not found", onSome: (monitor) => `Monitor: ${monitor.name}` },
 			)
 
-const componentRow = (h: H, model: Model, page: V2StatusPage, component: V2StatusPageComponent): Html => {
+const componentRow = (h: H, model: Model, component: V2StatusPageComponent): Html => {
 	const status = componentStatus(component, monitorsOf(model), incidentsOf(model))
 	const isOpen = model.panel?._tag === "Component" && model.panel.componentId === component.id
 	return h.li(
@@ -323,13 +309,13 @@ const componentRow = (h: H, model: Model, page: V2StatusPage, component: V2Statu
 					],
 				),
 			]),
-			...(isOpen ? [componentForm(h, model, page, component)] : []),
+			...(isOpen ? [componentForm(h, model, component)] : []),
 		],
 	)
 }
 
 /** The components under each group's head, in page order, ungrouped last. */
-const componentList = (h: H, model: Model, page: V2StatusPage): Html => {
+const componentList = (h: H, model: Model): Html => {
 	const rows = groupedOrder(componentsOf(model))
 	const groups = Arr.dedupe(Arr.map(rows, (row) => row.group))
 	const hasGroups = Arr.some(groups, (group) => group !== null)
@@ -350,7 +336,7 @@ const componentList = (h: H, model: Model, page: V2StatusPage): Html => {
 					[h.AriaLabel(group ?? "No group")],
 					Arr.map(
 						Arr.filter(rows, (row) => row.group === group),
-						(component) => componentRow(h, model, page, component),
+						(component) => componentRow(h, model, component),
 					),
 				),
 			]),
@@ -358,7 +344,7 @@ const componentList = (h: H, model: Model, page: V2StatusPage): Html => {
 	)
 }
 
-export const monitorsSection = (h: H, model: Model, page: V2StatusPage): Html =>
+export const monitorsSection = (h: H, model: Model): Html =>
 	settingsSection(
 		h,
 		{
@@ -386,6 +372,6 @@ export const monitorsSection = (h: H, model: Model, page: V2StatusPage): Html =>
 							? "Nothing yet. Add a monitor and visitors see its status and uptime."
 							: "No monitors on this page yet.",
 					])
-				: componentList(h, model, page),
+				: componentList(h, model),
 		],
 	)

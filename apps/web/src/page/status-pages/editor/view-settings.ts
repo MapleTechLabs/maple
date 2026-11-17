@@ -40,7 +40,7 @@ import { appearanceSection, brandingSection } from "./view-appearance"
 import { customDomainSection } from "./view-domain"
 import { jsonTab } from "./view-json"
 import { monitorsSection } from "./view-monitors"
-import { draftName, fragmentPreview, settingsPagePreview, tabPreview } from "./view-canvas"
+import { draftName, settingsPagePreview, tabPreview } from "./view-canvas"
 import { activeCustomDomain, pageUrlOf } from "./update-domain"
 import { Message } from "./message"
 import { canBreakGlass, canManage, type Model } from "./model"
@@ -103,7 +103,7 @@ const pageSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm)
 					hint: `${publicAddress(form.slug)}. Changing it moves the page; the old address stops working.`,
 					onInput: (value) => Message.ChangedSetting({ field: "slug", value }),
 				}),
-				onYourPage(h, tabPreview(h, model, page, form, address)),
+				onYourPage(h, tabPreview(h, page, form, address)),
 				textareaField(h, {
 					id: "status-page-description",
 					label: "Description",
@@ -167,7 +167,7 @@ const pageSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm)
 	)
 }
 
-const behaviourSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm): Html =>
+const behaviourSection = (h: H, model: Model, form: SettingsForm): Html =>
 	settingsSection(h, { id: "status-page-settings-behaviour", title: "Behaviour" }, [
 		vstack(h, { gap: "4" }, [
 			selectField(h, {
@@ -187,14 +187,6 @@ const behaviourSection = (h: H, model: Model, page: V2StatusPage, form: Settings
 				isDisabled: !canManage(model),
 				onToggle: Message.ToggledPoweredBy(),
 			}),
-			onYourPage(
-				h,
-				fragmentPreview(h, model, page, form, {
-					title: "The page footer as visitors see it",
-					parts: ["footer"],
-					className: "h-32",
-				}),
-			),
 		]),
 	])
 
@@ -355,12 +347,12 @@ const sectionBody = (
 			return [
 				pageSection(h, model, page, form),
 				customDomainSection(h, model, page),
-				behaviourSection(h, model, page, form),
+				behaviourSection(h, model, form),
 			]
 		case "monitors":
-			return [monitorsSection(h, model, page)]
+			return [monitorsSection(h, model)]
 		case "appearance":
-			return [brandingSection(h, model, page, form), appearanceSection(h, model, page, form)]
+			return [brandingSection(h, model, page, form), appearanceSection(h, model, form)]
 		case "access":
 			return [accessSection(h, model, page, form)]
 		case "advanced":
@@ -437,7 +429,11 @@ export const settingsView = (h: H, model: Model, page: V2StatusPage, section: Se
 				}),
 			]),
 			h.aside(
-				[h.Class("hidden min-w-0 min-[85rem]:sticky min-[85rem]:top-6 min-[85rem]:block")],
+				[
+					h.Class(
+						"min-w-0 md:col-start-2 min-[85rem]:sticky min-[85rem]:top-6 min-[85rem]:col-start-auto",
+					),
+				],
 				[settingsPagePreview(h, model, page, form)],
 			),
 		],
