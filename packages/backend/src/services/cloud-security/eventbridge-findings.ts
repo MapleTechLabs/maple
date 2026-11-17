@@ -35,6 +35,8 @@ const numberAt = (value: Json | undefined, key: string): number | undefined => {
 	const found = value?.[key]
 	return typeof found === "number" && Number.isFinite(found) ? found : undefined
 }
+const isTrueAt = (value: Json | undefined, key: string): boolean => value?.[key] === true
+
 const objectsAt = (value: Json | undefined, key: string): ReadonlyArray<Json> => {
 	const found = value?.[key]
 	return Arr.isArray(found) ? Arr.filter(found, isJson) : []
@@ -188,7 +190,8 @@ const accessAnalyzerFinding = (detail: Json, unusedAccess: boolean): Option.Opti
 		title: accessAnalyzerTitle(findingType),
 		description: textAt(detail, "error"),
 		severity: accessAnalyzerSeverity(findingType),
-		status: accessAnalyzerStatus(textAt(detail, "status")),
+		// A deleted finding keeps its last status and says so with `isDeleted`.
+		status: isTrueAt(detail, "isDeleted") ? "resolved" : accessAnalyzerStatus(textAt(detail, "status")),
 		resourceType: textAt(detail, "resourceType"),
 		resourceId: textAt(detail, "resource"),
 		resourceName: undefined,

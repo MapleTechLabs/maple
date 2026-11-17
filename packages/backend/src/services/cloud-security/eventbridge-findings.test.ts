@@ -162,8 +162,22 @@ describe("findingEvent", () => {
 			findingId: "aa-external-1",
 			type: "ExternalAccess",
 			severity: "high",
+			status: "active",
 			resourceId: "arn:aws:s3:::my-bucket",
 		})
+		// A deletion keeps its last status and sets `isDeleted`: the finding is gone.
+		const deleted = read(
+			envelope("aws.access-analyzer", "Access Analyzer Finding", {
+				id: "aa-external-1",
+				status: "ACTIVE",
+				isDeleted: true,
+				resourceType: "AWS::S3::Bucket",
+				resource: "arn:aws:s3:::my-bucket",
+				updatedAt: "2026-11-16T02:00:00.000Z",
+				accountId: ACCOUNT,
+			}),
+		)
+		expect(deleted?.findings[0]?.status).toBe("resolved")
 		const unused = read(
 			envelope("aws.access-analyzer", "Unused Access Finding for IAM entities", {
 				version: "1.0",
