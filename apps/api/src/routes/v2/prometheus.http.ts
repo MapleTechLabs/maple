@@ -9,6 +9,7 @@ import { CurrentTenant } from "@maple/domain/http"
 import { MAX_PROMQL_QUERY_LENGTH } from "@maple/primitives"
 import { formatRangeSeconds, MAX_QUERY_RANGE_SECONDS } from "@maple/query-engine"
 import { MapleApiV2, type PrometheusParams } from "@maple/domain/http/v2"
+import { recordRenderedFailure } from "@maple/backend/http/rendered-failure"
 import { PromqlBadQueryError, PromqlQueryService } from "@maple/backend/services/promql/PromqlQueryService"
 import {
 	encodeQueryResult,
@@ -66,12 +67,17 @@ const toErrorResponse = <E extends { readonly _tag: string; readonly message: st
 		case "@maple/backend/promql/PromqlExecutionError":
 			return errorResponse("execution", error.message)
 		default:
-			// A 503: the span carries the failure (error.type) though the client sees a generic message.
+			// The client sees a generic 503; the span and log carry the diagnosis, as for every API failure.
 			return Effect.andThen(
-				Effect.andThen(
-					Effect.annotateCurrentSpan({ "error.type": error._tag, "error.message": error.message }),
-					Effect.logError("Prometheus API warehouse read failed", error),
-				),
+				recordRenderedFailure({
+					group: "prometheus",
+					operation: "read",
+					errorType: error._tag,
+					summary: "Prometheus API warehouse read failed",
+					message: error.message,
+					status: 503,
+					cause: error,
+				}),
 				errorResponse("unavailable", "the metric store is unavailable, try again"),
 			)
 	}
