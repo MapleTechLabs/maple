@@ -259,14 +259,18 @@ const decodeInternalId = Schema.decodeUnknownOption(StatusPageId)
 export const pageIdFromUrl = (raw: string): Option.Option<StatusPageId> =>
 	Option.orElse(decodePublicId(raw), () => decodeInternalId(raw))
 
-/** The editor's views: the page itself (none), its settings, its JSON, or the just-published screen. */
-export type EditorView = "appearance" | "settings" | "json" | "live"
+/** The editor's tabs after the live page (none), and the screen right after publishing. */
+export type EditorView = "incidents" | "maintenance" | "settings" | "live"
 
-export const statusPageHref = (id: StatusPageId, view?: EditorView): string =>
+/** The Settings tab's sections, in menu order. */
+export const SETTINGS_SECTIONS = ["basic", "monitors", "appearance", "access", "advanced"] as const
+export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]
+
+export const statusPageHref = (id: StatusPageId, view?: EditorView, section?: SettingsSection): string =>
 	hrefOf(
 		AppRoute.StatusPage({
 			pageId: encodePublicId(id),
-			search: view === undefined ? {} : { view },
+			search: { view, section },
 		}),
 	)
 

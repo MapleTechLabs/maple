@@ -59,6 +59,9 @@ export const isMissingServiceOperationsRollup = isMissingWarehouseTable(
 	Datasources.serviceOperationsHourly,
 )
 
+/** `service_overview_minutely` ships with `requiredForIngest: false`; the anomaly detector's current window then reads hourly rows. */
+export const isMissingServiceOverviewMinutely = isMissingWarehouseTable(Datasources.serviceOverviewMinutely)
+
 /** `service_map_db_edges_minutely` ships in migration 0049; the map's DB edges then read raw traces. */
 export const isMissingServiceMapDbEdgesMinutely = isMissingWarehouseTable(
 	Datasources.serviceMapDbEdgesMinutely,

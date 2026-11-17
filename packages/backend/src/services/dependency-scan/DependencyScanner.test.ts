@@ -28,7 +28,7 @@ import osvFixture from "../security/__fixtures__/osv.json"
 import { DependencyScanner, DependencySources, MAX_LOCKFILE_BYTES } from "./DependencyScanner"
 import { DependencyScanStore } from "./DependencyScanStore"
 import { RESCAN_AFTER_MS } from "./production"
-import { MAX_LOCKFILES, MAX_MANIFEST_BYTES } from "./lockfile-selection"
+import { MAX_LOCKFILES, MAX_MANIFEST_BYTES, MAX_SKIPPED_LOCKFILES } from "./lockfile-selection"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -433,6 +433,50 @@ describe("DependencyScanner", () => {
 			state.head = sha("b")
 			const again = yield* scanner.scan(installation, repository, { trigger: "push" })
 			assert.strictEqual(again._tag, "Unchanged")
+		}).pipe(Effect.provide(scannerFor(state)))
+	})
+
+	it.effect("records skipped lockfiles only up to a cap, and leaves a scan past it unreconciled", () => {
+		const total = MAX_LOCKFILES + MAX_SKIPPED_LOCKFILES + 5
+		const many = Rec.fromEntries(
+			Array.from({ length: total }, (_, i): [string, string] => [
+				`pkg${i}/package-lock.json`,
+				packageLock("4.17.15"),
+			]),
+		)
+		const state = world(many)
+		return Effect.gen(function* () {
+			const scanner = yield* DependencyScanner
+			const outcome = yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			assert.strictEqual(outcome._tag, "Scanned")
+			if (outcome._tag !== "Scanned") return
+			assert.strictEqual(outcome.scan.lockfiles.length, MAX_LOCKFILES + MAX_SKIPPED_LOCKFILES)
+			assert.strictEqual(
+				outcome.scan.error,
+				`5 lockfiles past the ${MAX_LOCKFILES + MAX_SKIPPED_LOCKFILES} a scan records were left out`,
+			)
+		}).pipe(Effect.provide(scannerFor(state)))
+	})
+
+	it.effect("rescans a push that adds a lockfile past the record cap to a full scan", () => {
+		const many = Rec.fromEntries(
+			Array.from({ length: MAX_LOCKFILES + MAX_SKIPPED_LOCKFILES }, (_, i): [string, string] => [
+				`pkg${i}/package-lock.json`,
+				packageLock("4.17.15"),
+			]),
+		)
+		const state = world(many)
+		return Effect.gen(function* () {
+			const scanner = yield* DependencyScanner
+			const first = yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			assert.isTrue(first._tag === "Scanned" && first.scan.error === null)
+			state.head = sha("b")
+			state.files.set("zzz/deep/new/package-lock.json", {
+				sha: "deep-1",
+				content: packageLock("4.17.15"),
+			})
+			const again = yield* scanner.scan(installation, repository, { trigger: "push" })
+			assert.strictEqual(again._tag, "Scanned")
 		}).pipe(Effect.provide(scannerFor(state)))
 	})
 

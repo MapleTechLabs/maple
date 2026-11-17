@@ -4,7 +4,7 @@
 
 import type { LabelMatcher } from "@maple/promql"
 import * as CH from "@maple-dev/effect-orm/expr"
-import { map as chMap, sql, string as chString } from "@maple-dev/effect-orm/clickhouse"
+import { map as chMap, sql, string as chString, uint8 as chUInt8 } from "@maple-dev/effect-orm/clickhouse"
 import { Array as Arr, Option, pipe, Record as Rec, String as Str } from "effect"
 import { matchesValue } from "./names"
 
@@ -108,9 +108,13 @@ export interface LabelColumns {
 	readonly ServiceName: CH.Expr<string>
 }
 
-/** `normalizeLabelName` of the lambda variable `_k`, in ClickHouse. */
+/**
+ * `normalizeLabelName` of the lambda variable `_k`, in ClickHouse. Replacing then collapsing turns
+ * each run of non-alphanumerics into one `_`, and a leading digit survives both, so one pass does.
+ * The common OTel shape (`http.route`: single dots or underscores between words) skips the rewrite.
+ */
 const NORMALIZED_KEY = sql.raw(
-	"concat(if(match(_k, '^[0-9]'), '_', ''), replaceRegexpAll(replaceRegexpAll(_k, '[^a-zA-Z0-9_]', '_'), '_+', '_'))",
+	"if(match(_k, '^[a-zA-Z][a-zA-Z0-9]*([._][a-zA-Z0-9]+)*$'), replaceAll(_k, '.', '_'), concat(if(substring(_k, 1, 1) BETWEEN '0' AND '9', '_', ''), replaceRegexpAll(_k, '[^a-zA-Z0-9]+', '_')))",
 )
 
 /** Whether resource key `_k` is left out of the labels, in ClickHouse. */
@@ -123,6 +127,9 @@ export const EXCLUDED_KEY = sql.raw(
 
 /** The exact key first; only a missing key pays for normalizing every key of the map. */
 const mapLookupExpr = (map: CH.Expr<Record<string, string>>, name: string, filterExcluded: boolean) => {
+	// Normalizing writes `_` for every change, so a name without one (job, instance) comes only from
+	// that exact key, never an excluded one: skip the per-row regex over every key.
+	if (!Str.includes("_")(name)) return sql(chString)`${map}[${name}]`
 	const fallback = filterExcluded
 		? sql(
 				chString,
@@ -147,8 +154,9 @@ export const labelValueExpr = ($: LabelColumns, name: string): CH.Expr<string> |
 	return sql(chString)`if(${datapoint} != '', ${datapoint}, ${fromResource})`
 }
 
-const jobExpr = ($: LabelColumns): CH.Expr<string> => {
-	const datapoint = mapLookupExpr($.Attributes, "job", false)
+const jobExpr = ($: LabelColumns): CH.Expr<string> => jobFrom($, mapLookupExpr($.Attributes, "job", false))
+
+const jobFrom = ($: LabelColumns, datapoint: CH.Expr<string>): CH.Expr<string> => {
 	const resource = $.ResourceAttributes
 	const service = sql(
 		chString,
@@ -159,33 +167,38 @@ const jobExpr = ($: LabelColumns): CH.Expr<string> => {
 	)`if(${datapoint} != '', ${datapoint}, if(${namespace} != '', concat(${namespace}, '/', ${service}), ${service}))`
 }
 
-const instanceExpr = ($: LabelColumns): CH.Expr<string> => {
-	const datapoint = mapLookupExpr($.Attributes, "instance", false)
-	return sql(chString)`if(${datapoint} != '', ${datapoint}, ${$.ResourceAttributes}['service.instance.id'])`
-}
+const instanceExpr = ($: LabelColumns): CH.Expr<string> =>
+	instanceFrom($, mapLookupExpr($.Attributes, "instance", false))
 
-/** Label names a map entry never sets: the name, job, instance, and `le` on a bucket. */
-const computedNames = (bucket: boolean) =>
-	sql.raw(bucket ? "['__name__', 'job', 'instance', 'le']" : "['__name__', 'job', 'instance']")
+const instanceFrom = ($: LabelColumns, datapoint: CH.Expr<string>): CH.Expr<string> =>
+	sql(chString)`if(${datapoint} != '', ${datapoint}, ${$.ResourceAttributes}['service.instance.id'])`
 
-/** A map's `(label name, value)` pairs, resolved as `lookup` does, empty values dropped. */
-const mapLabelPairs = (map: CH.Expr<Record<string, string>>, bucket: boolean) => {
-	const names = sql`arrayMap(_k -> ${NORMALIZED_KEY}, mapKeys(${map}))`
-	return sql`arrayFilter(_p -> _p.2 != '' AND NOT has(${computedNames(bucket)}, _p.1), arrayDistinct(arrayMap(_n -> (_n, if(mapContains(${map}, _n), ${map}[_n], mapValues(${map})[indexOf(${names}, _n)])), ${names})))`
-}
+/** A map's entries as `(name, source, inexact, index, value)`, each key normalized once. */
+const entryTuples = (map: CH.Expr<Record<string, string>>, source: CH.Expr<number>) =>
+	sql`arrayMap((_n, _k, _v, _i) -> (_n, ${source}, _k != _n, _i, _v), arrayMap(_k -> ${NORMALIZED_KEY}, mapKeys(${map})), mapKeys(${map}), mapValues(${map}), arrayEnumerate(mapKeys(${map})))`
+
+/** Entries that never label: `__name__`, a bucket's `le`, a resource job or instance. */
+const droppedEntry = (bucket: boolean) =>
+	sql.raw(
+		`_t.1 = '__name__'${bucket ? " OR _t.1 = 'le'" : ""} OR (_t.2 = 1 AND _t.1 IN ('job', 'instance'))`,
+	)
 
 /**
- * The labels `seriesLabels` gives a row, minus `__name__` and a bucket's `le`, as a ClickHouse
- * value that is equal exactly when they are: what the series key hashes.
+ * The labels `seriesLabels` gives a row, minus `__name__` and a bucket's `le`: what the series key
+ * hashes. Entries sort by (name, source, inexact, index), so the first of a (name, source) is the one
+ * `lookup` picks and, once empty values drop, the first of a name is the label (datapoint first).
  */
 export const labelSetExpr = ($: LabelColumns, bucket: boolean) => {
-	const datapoint = mapLabelPairs($.Attributes, bucket)
-	const resource = mapLabelPairs(
+	const datapoint = entryTuples($.Attributes, sql(chUInt8)`toUInt8(0)`)
+	const resource = entryTuples(
 		sql(chMap(chString, chString))`mapFilter((_k, _v) -> NOT ${EXCLUDED_KEY}, ${$.ResourceAttributes})`,
-		bucket,
+		sql(chUInt8)`toUInt8(1)`,
 	)
-	const shown = sql`arrayMap(_s -> _s.1, ${datapoint})`
-	return sql`${jobExpr($)}, ${instanceExpr($)}, arraySort(arrayConcat(${datapoint}, arrayFilter(_r -> NOT has(${shown}, _r.1), ${resource})))`
+	const entries = sql`arraySort(arrayFilter(_t -> NOT (${droppedEntry(bucket)}), arrayConcat(${datapoint}, ${resource})))`
+	const picked = sql`arrayFilter((_t, _u) -> _u = 1 AND _t.5 != '', ${entries}, arrayEnumerateUniq(arrayMap(_t -> _t.1, ${entries}), arrayMap(_t -> _t.2, ${entries})))`
+	const labels = sql`arrayFilter((_t, _u) -> _u = 1 AND _t.1 NOT IN ('job', 'instance'), ${picked}, arrayEnumerateUniq(arrayMap(_t -> _t.1, ${picked})))`
+	const fromDatapoint = (name: string) => sql(chString)`arrayFirst(_t -> _t.1 = ${name}, ${picked}).5`
+	return sql`${jobFrom($, fromDatapoint("job"))}, ${instanceFrom($, fromDatapoint("instance"))}, arrayMap(_t -> (_t.1, _t.5), ${labels})`
 }
 
 /** A matcher as a WHERE condition, Prometheus semantics; `undefined` when it cannot be pushed down. */

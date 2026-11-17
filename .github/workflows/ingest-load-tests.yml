@@ -44,11 +44,11 @@ jobs:
 
             # mise caches the pinned toolchain; rust-cache below covers the cargo
             # registry and target dir.
-            - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
+            - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
               with:
                   install_args: rust
 
-            - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
+            - uses: Swatinem/rust-cache@eedcf2fb1c22f010a0eb66b92f378c110977f266 # v2
               with:
                   workspaces: apps/ingest
 

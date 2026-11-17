@@ -2,6 +2,7 @@ import { lookup } from "../lookup"
 import { Option } from "effect"
 import type { LabelMatcher } from "../ast"
 import { anchoredRegex } from "../regex"
+import { kahanInc } from "./aggregate"
 import type { Labels, SampleBucket, SelectorData, SelectorRequest } from "./types"
 
 export interface RawSeries {
@@ -37,6 +38,7 @@ interface Acc {
 	prevV: number
 	count: number
 	sum: number
+	sumC: number
 	min: number
 	max: number
 	sumSquares: number
@@ -73,7 +75,7 @@ export const bucketSamples = (
 			current.lastT = t
 			current.lastV = v
 			current.count += 1
-			current.sum += v
+			;[current.sum, current.sumC] = kahanInc(v, current.sum, current.sumC)
 			if (v < current.min || Number.isNaN(current.min)) current.min = v
 			if (v > current.max || Number.isNaN(current.max)) current.max = v
 			current.sumSquares += v * v
@@ -93,6 +95,7 @@ export const bucketSamples = (
 			prevV: v,
 			count: 1,
 			sum: v,
+			sumC: 0,
 			min: v,
 			max: v,
 			sumSquares: v * v,
@@ -106,7 +109,11 @@ export const bucketSamples = (
 		}
 		out.push(current)
 	}
-	return out.map(({ values, ...rest }) => (request.needsValues ? { ...rest, values } : rest))
+	// A bucket's sum is Kahan-compensated, as Prometheus sums raw samples.
+	return out.map(({ values, sum, sumC, ...rest }) => {
+		const bucket = { ...rest, sum: sum === Infinity || sum === -Infinity ? sum : sum + sumC }
+		return request.needsValues ? { ...bucket, values } : bucket
+	})
 }
 
 /** A source over in-memory series, for tests and compliance runs. */

@@ -23,6 +23,9 @@ export const HERO_SENTENCE = {
 	major_outage: "We're experiencing a major outage",
 } as const satisfies Record<StatusPageComponentStatus, string>
 
+/** The page's title: its browser tab, feeds and search results. */
+export const pageTitle = (name: string): string => `${name} status`
+
 export const INCIDENT_STATUS_LABEL = {
 	investigating: "Investigating",
 	identified: "Identified",

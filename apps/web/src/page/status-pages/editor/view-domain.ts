@@ -3,7 +3,7 @@ import type { StatusPageCustomDomainRecordPurpose } from "@maple/domain/status-p
 import { Array as Arr, Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { button } from "@maple/views/ui/button"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import * as CopyButton from "@maple/views/ui/copy-button"
@@ -228,6 +228,18 @@ export const customDomainSection = (h: H, model: Model, page: V2StatusPage): Htm
 								icon(h, "CircleXmarkIcon"),
 								alertTitle(h, ["Couldn't load the custom domain"]),
 								alertDescription(h, [failureMessage(failure)]),
+								alertAction(h, [
+									button(
+										h,
+										{
+											size: "sm",
+											variant: "outline",
+											isLoading: model.customDomain.retrying === true,
+											attributes: [h.OnClick(Message.ClickedRetryCustomDomain())],
+										},
+										["Try again"],
+									),
+								]),
 							]),
 					}),
 			}),

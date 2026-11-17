@@ -14,4 +14,7 @@ export {
 	promqlMetadataQuery,
 	type PromqlSelectorRow,
 	promqlSelectorRowSchema,
+	type PromqlSeriesLabelsRow,
+	promqlSeriesLabelsQuery,
+	promqlSeriesLabelsRowSchema,
 } from "../ch/queries/promql"

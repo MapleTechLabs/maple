@@ -607,19 +607,40 @@ export const seedSecurityWorld = async (rt: EvalRuntime) => {
 const lastSeen = (hoursAgo: number) => wire(Date.now() - hoursAgo * HOUR)
 
 const SIGNATURES = [
-	{ signature: "/.env", service: "api-gateway", requests: 340, answered: 0, sources: 14 },
-	{ signature: "/.git/", service: "api-gateway", requests: 120, answered: 0, sources: 9 },
-	{ signature: "/wp-login.php", service: "api-gateway", requests: 910, answered: 0, sources: 22 },
-	{ signature: "/.env", service: "legacy-admin", requests: 6, answered: 3, sources: 2 },
-	{ signature: "/.git/", service: "legacy-admin", requests: 4, answered: 0, sources: 2 },
-	{ signature: "/phpmyadmin", service: "legacy-admin", requests: 9, answered: 0, sources: 3 },
-	{ signature: "/actuator/env", service: "billing", requests: 12, answered: 12, sources: 1 },
-	{ signature: "../", service: "billing", requests: 40, answered: 0, sources: 4 },
-	{ signature: "/.env", service: "marketing-site", requests: 80, answered: 80, sources: 11 },
-	{ signature: "/.git/", service: "marketing-site", requests: 60, answered: 60, sources: 8 },
-	{ signature: "/server-status", service: "marketing-site", requests: 30, answered: 30, sources: 5 },
-	{ signature: "/phpmyadmin", service: "marketing-site", requests: 25, answered: 25, sources: 6 },
-	{ signature: "", service: "api-gateway", requests: 2200, answered: 2150, sources: 3 },
+	{ signature: "/.env", service: "api-gateway", requests: 340, inPath: 340, answered: 0, sources: 14 },
+	{ signature: "/.git/", service: "api-gateway", requests: 120, inPath: 120, answered: 0, sources: 9 },
+	{
+		signature: "/wp-login.php",
+		service: "api-gateway",
+		requests: 910,
+		inPath: 910,
+		answered: 0,
+		sources: 22,
+	},
+	{ signature: "/.env", service: "legacy-admin", requests: 6, inPath: 6, answered: 3, sources: 2 },
+	{ signature: "/.git/", service: "legacy-admin", requests: 4, inPath: 4, answered: 0, sources: 2 },
+	{ signature: "/phpmyadmin", service: "legacy-admin", requests: 9, inPath: 9, answered: 0, sources: 3 },
+	{ signature: "/actuator/env", service: "billing", requests: 12, inPath: 12, answered: 12, sources: 1 },
+	{ signature: "../", service: "billing", requests: 40, inPath: 40, answered: 0, sources: 4 },
+	{ signature: "/.env", service: "marketing-site", requests: 80, inPath: 80, answered: 80, sources: 11 },
+	{ signature: "/.git/", service: "marketing-site", requests: 60, inPath: 60, answered: 60, sources: 8 },
+	{
+		signature: "/server-status",
+		service: "marketing-site",
+		requests: 30,
+		inPath: 30,
+		answered: 30,
+		sources: 5,
+	},
+	{
+		signature: "/phpmyadmin",
+		service: "marketing-site",
+		requests: 25,
+		inPath: 25,
+		answered: 25,
+		sources: 6,
+	},
+	{ signature: "", service: "api-gateway", requests: 2200, inPath: 0, answered: 2150, sources: 3 },
 ]
 
 const EXPOSED = [
