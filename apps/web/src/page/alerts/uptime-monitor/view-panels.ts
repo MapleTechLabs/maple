@@ -34,6 +34,7 @@ import {
 	formatEvery,
 	formatMs,
 	formatShare,
+	certificateSummary,
 	checkHealth,
 	latencyPercentiles,
 	STATUS_TONE,
@@ -1113,7 +1114,8 @@ const heartbeatExpectation = (config: Extract<UptimeMonitor["config"], { type: "
 	return `${schedule}, ${formatEvery(config.grace_seconds)} grace`
 }
 
-export const lastCheckPanel = (h: H, monitor: UptimeMonitor): Html => {
+export const lastCheckPanel = (h: H, monitor: UptimeMonitor, nowMs: number): Html => {
+	const certificate = certificateSummary(monitor, nowMs)
 	const last = monitor.state.last_check
 	const result =
 		last === null
@@ -1129,6 +1131,16 @@ export const lastCheckPanel = (h: H, monitor: UptimeMonitor): Html => {
 		panelHeader(h, { title: "Last check" }),
 		fact(h, "Result", result, last !== null && !last.ok ? TONE_TEXT.crit : undefined),
 		...(isHeartbeat ? [] : [fact(h, "Duration", formatMs(last?.duration_ms ?? null))]),
+		...(certificate === null
+			? []
+			: [
+					fact(
+						h,
+						"Certificate",
+						certificate.text,
+						certificate.tone === null ? undefined : TONE_TEXT[certificate.tone],
+					),
+				]),
 		fact(h, "Probe", isHeartbeat ? "Your job" : "Ashburn, US"),
 		config.type === "heartbeat"
 			? fact(h, "Expected", heartbeatExpectation(config))

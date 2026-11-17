@@ -16,6 +16,7 @@ import {
 	effectiveAssertions,
 	firstFailedAssertion,
 	type UptimeAssertion,
+	type UptimeCertificate,
 	type UptimeHttpConfig,
 	uptimeHttpRequest,
 } from "@maple/domain/uptime"
@@ -31,7 +32,14 @@ import {
 	succeeded,
 	traceparentOf,
 } from "./UptimeProbe"
-import { addPhases, hasPhases, NO_PHASES, PhaseRecorder, recordPhases } from "./UptimePhases"
+import {
+	addPhases,
+	CertificateRecorder,
+	hasPhases,
+	NO_PHASES,
+	PhaseRecorder,
+	recordPhases,
+} from "./UptimePhases"
 
 export type HttpProbeConfig = Schema.Schema.Type<typeof UptimeHttpConfig>
 
@@ -195,14 +203,32 @@ export class UptimeHttpProbe extends Context.Service<UptimeHttpProbe, UptimeHttp
 			const probe = (config: HttpProbeConfig, trace: CheckTraceContext) =>
 				Effect.gen(function* () {
 					const phases = yield* Ref.make(NO_PHASES)
+					// The first TLS hop's result, an unreadable (null) one included.
+					const certificate = yield* Ref.make<Option.Option<UptimeCertificate | null>>(
+						Option.none(),
+					)
 					const outcome = yield* check(config, trace).pipe(
 						Effect.provideService(PhaseRecorder, (hop) =>
 							Ref.update(phases, (total) => addPhases(total, hop)),
 						),
+						// The first hop's, so only for an https:// URL: a redirect's host does not stand in for it.
+						Effect.provideService(CertificateRecorder, (seen) =>
+							Str.startsWith("https:")(Str.toLowerCase(Str.trim(config.url)))
+								? Ref.update(certificate, (first) =>
+										Option.isSome(first) ? first : Option.some(seen),
+									)
+								: Effect.void,
+						),
 					)
 					// The phases that completed, a failed check's too (DNS and connect before a TLS error).
 					const timings = yield* Ref.get(phases)
-					return hasPhases(timings) ? { ...outcome, timings } : outcome
+					const firstHop = yield* Ref.get(certificate)
+					const presented = Option.getOrNull(Option.flatMapNullishOr(firstHop, (seen) => seen))
+					return {
+						...outcome,
+						...(hasPhases(timings) ? { timings } : undefined),
+						...(presented === null ? undefined : { certificate: presented }),
+					}
 				})
 
 			return { probe } satisfies UptimeHttpProbeApi

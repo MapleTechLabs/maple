@@ -127,6 +127,20 @@ export const timingAttributes = (timings: PhaseTimings | undefined): Record<stri
 		}),
 	)
 
+/** OTel `tls.server.*` attributes of the certificate the target presented; names are written as DNs. */
+export const certificateAttributes = (certificate: ProbeOutcome["certificate"]): Record<string, string> =>
+	certificate === undefined
+		? {}
+		: {
+				"tls.server.not_after": new Date(certificate.expiresAt).toISOString(),
+				...(certificate.subject === ""
+					? undefined
+					: { "tls.server.subject": `CN=${certificate.subject}` }),
+				...(certificate.issuer === ""
+					? undefined
+					: { "tls.server.issuer": `CN=${certificate.issuer}` }),
+			}
+
 /** One CLIENT span for a check, ids equal to the `traceparent` the target saw. */
 export const toOtlpSpan = (check: UptimeCheckSpan): OtlpSpan => {
 	const { outcome } = check
@@ -147,6 +161,7 @@ export const toOtlpSpan = (check: UptimeCheckSpan): OtlpSpan => {
 			...(outcome.errorType === null ? undefined : { "error.type": outcome.errorType }),
 			...(outcome.error === null ? undefined : { "maple.uptime.failure": outcome.error }),
 			...timingAttributes(outcome.timings),
+			...certificateAttributes(outcome.certificate),
 		}),
 		status: outcome.ok ? { code: 1 } : { code: 2, message: outcome.error ?? "Check failed" },
 	}

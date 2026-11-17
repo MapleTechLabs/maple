@@ -240,6 +240,28 @@ describe("renderIncidentPush", () => {
 		expect(resolved.interruptionLevel).toBe("passive")
 	})
 
+	it("calls an expiring certificate a heads-up, not an outage", () => {
+		const certificate = event({
+			signalType: "uptime",
+			severity: "warning",
+			ruleName: "Checkout health",
+			value: 0.5,
+			groupKey: "__tls_certificate__",
+			detail: "Certificate for checkout.example.com expires in 9 days (2026-11-24)",
+		})
+		const opened = renderIncidentPush(certificate)
+		const renewed = renderIncidentPush({ ...certificate, eventType: "resolve", value: 0 })
+		assert.deepStrictEqual(
+			[opened.alert.title, opened.alert.body, opened.interruptionLevel, renewed.alert.title],
+			[
+				"Certificate expiring · Checkout health",
+				"Certificate for checkout.example.com expires in 9 days (2026-11-24).",
+				"active",
+				"Certificate renewed · Checkout health",
+			],
+		)
+	})
+
 	it("says how long a repeat has been going on", () => {
 		const rendered = renderIncidentPush(event({ eventType: "renotify", openForMs: 2 * 3_600_000 }))
 		expect(rendered.alert.title).toBe("Still critical · Checkout error rate")

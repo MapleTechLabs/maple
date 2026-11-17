@@ -63,16 +63,24 @@ export const AWS_MODULE_SPECS = {
 	},
 	security: {
 		title: "Security scan",
-		summary: "Misconfigurations and findings, ranked by the traffic they are exposed to.",
+		summary:
+			"GuardDuty, Security Hub, Inspector and Access Analyzer findings, matched to the services they affect, and the CloudTrail audit log.",
 		available: false,
+		rolloutFlag: "cloudSecurity",
 		managedPolicies: ["arn:aws:iam::aws:policy/SecurityAudit"],
+		// Every read the findings poller and the CloudTrail feed make, so none hangs on the managed policy.
 		actions: [
-			"securityhub:GetFindings",
+			"account:ListRegions",
 			"guardduty:ListDetectors",
 			"guardduty:ListFindings",
 			"guardduty:GetFindings",
+			"securityhub:DescribeHub",
+			"securityhub:GetFindings",
+			"inspector2:BatchGetAccountStatus",
 			"inspector2:ListFindings",
+			"access-analyzer:ListAnalyzers",
 			"access-analyzer:ListFindingsV2",
+			"cloudtrail:LookupEvents",
 		],
 	},
 	cost: {

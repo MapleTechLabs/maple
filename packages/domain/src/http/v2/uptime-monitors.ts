@@ -329,6 +329,14 @@ const failuresToDownField = Schema.Number.check(
 	examples: [2],
 })
 
+export const V2UptimeCertificate = Schema.Struct({
+	expires_at: Timestamp.annotate({ description: "When the certificate stops being valid (`notAfter`)." }),
+	subject: Schema.String.annotate({
+		description: "The certificate's common name; empty when it has none.",
+	}),
+	issuer: Schema.String.annotate({ description: "The issuer's common name; empty when it has none." }),
+}).annotate({ identifier: "UptimeCertificate", title: "TLS certificate" })
+
 export const V2UptimeLastCheck = Schema.Struct({
 	at: Timestamp.annotate({ description: "When the check ran." }),
 	ok: Schema.Boolean.annotate({ description: "Whether the check passed." }),
@@ -341,6 +349,10 @@ export const V2UptimeLastCheck = Schema.Struct({
 	}),
 	trace_id: Schema.NullOr(Schema.String).annotate({
 		description: "Trace id of the check's span in your traces, when recorded.",
+	}),
+	certificate: Schema.optionalKey(V2UptimeCertificate).annotate({
+		description:
+			"HTTPS checks: the certificate the URL's host presented on a completed handshake. A certificate that fails verification is never read, so a failed check keeps the previous one. Within 14 days of `expires_at` the monitor's alert opens a warning incident.",
 	}),
 }).annotate({ identifier: "UptimeLastCheck", title: "Last uptime check" })
 

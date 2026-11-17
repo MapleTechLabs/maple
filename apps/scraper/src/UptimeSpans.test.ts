@@ -102,6 +102,29 @@ describe("toOtlpSpan", () => {
 		})
 	})
 
+	it("puts the presented certificate on the span as OTel tls.server attributes", () => {
+		const span = toOtlpSpan(
+			check({
+				outcome: {
+					...succeeded(48, 200),
+					certificate: {
+						expiresAt: Date.UTC(2026, 11, 25),
+						subject: "api.example.com",
+						issuer: "R11",
+					},
+				},
+			}),
+		)
+		const tlsAttributes = Rec.fromEntries(
+			Arr.filter(Rec.toEntries(attrs(span.attributes)), ([key]) => Str.startsWith("tls.")(key)),
+		)
+		assert.deepStrictEqual(tlsAttributes, {
+			"tls.server.not_after": { stringValue: "2026-12-25T00:00:00.000Z" },
+			"tls.server.subject": { stringValue: "CN=api.example.com" },
+			"tls.server.issuer": { stringValue: "CN=R11" },
+		})
+	})
+
 	it("records url.full without the query or fragment, which may carry credentials", () => {
 		const monitor = mkUptimeTarget({
 			config: httpConfig({ url: "https://api.example.com:8443/health?token=s3cret&x=1#frag" }),
