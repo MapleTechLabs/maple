@@ -463,7 +463,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/status-pages",
 		title: "Status pages",
 		description:
-			"The status pages list, each row's Edit, Open page and Delete menu, the look picker and the form fields (hint and error) over fixture pages.",
+			"The status pages list (with uploaded favicons), each row's Edit, Open page and Delete menu, the look picker and the form fields (hint and error) over fixture pages.",
 		kind: "lab",
 		session: "none",
 	},
@@ -471,7 +471,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/status-page-settings",
 		title: "Status page settings",
 		description:
-			"The status page editor's Settings tab: Basic settings with Who can view, custom domain, break-glass token and delete (`?state=public|password|set-password|internal|member`).",
+			"The status page editor's Settings tab (Who can view, custom domain, break-glass token, delete) and Appearance tab (logo and favicon uploads, theme, colour pickers): `?state=public|password|set-password|internal|member|appearance|appearance-dark|appearance-empty`.",
 		kind: "lab",
 		session: "none",
 	},

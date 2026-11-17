@@ -183,6 +183,7 @@ const brandingImageField = (
 			title: entry.title,
 			hint: `${entry.hint} ${UPLOAD_HINT}`,
 			accept: IMAGE_ACCEPT,
+			isWide: entry.field !== "faviconUrl",
 			preview,
 			isUploading: false,
 			isDragging: model.brandingDrag === entry.field,

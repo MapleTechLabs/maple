@@ -40,6 +40,8 @@ export type ImageDropzoneOptions<M> = Readonly<{
 	isReadOnly?: boolean
 	targetLabel: string
 	changeLabel: string
+	/** A wide target (logos), instead of the square one (avatars, icons). */
+	isWide?: boolean
 	/** The file picker's `accept` filter; PNG, JPEG, WebP and GIF by default. */
 	accept?: string
 	/** `null` hides the hint; `undefined` shows the default one. */
@@ -95,7 +97,8 @@ export const imageDropzone = <M>(h: HtmlBuilder<M>, options: ImageDropzoneOption
 					: [h.AriaDisabled(!isInteractive), h.AriaLabel(options.targetLabel), h.Role("button")]),
 				h.Class(
 					cn(
-						"relative flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-md border border-dashed p-1 outline-none",
+						"relative flex h-16 shrink-0 items-center justify-center overflow-hidden rounded-md border border-dashed p-1 outline-none",
+						options.isWide === true ? "w-32" : "w-16",
 						isReadOnly
 							? null
 							: isInteractive
