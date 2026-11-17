@@ -37,15 +37,16 @@ import type { Resources } from "../../platform/resources"
 import { keepLocal } from "../local-commands"
 import { defineShellLab } from "../shell-lab"
 import { LAB_NOW_MS, LAB_ORG, LAB_PAGES } from "../status-pages-fixture"
+import type { StatusPageSummary } from "../../page/status-pages/shared/derive"
 import { labGrants, LabRole, readLabRole } from "../viewer-role"
 
 // `/lab/status-pages`: the status pages list, the look picker and the form fields over fixture
-// pages, a page's editor open on an incident, or on Settings > Monitors with grouped components
-// to drag, or the full-screen preview "Open page" opens, as a public, password or internal page
-// (`?page=list|editor|monitors|preview&visibility=public|password|internal`), as the viewer `?role=` names: an analyst reads the
-// incident and gets no control that posts, edits or deletes one. The editor runs for real with no
-// API: a reorder, a component's Save and an Access save land at once, every other read and write
-// is dropped.
+// pages, the list with no page yet, a page's editor open on an incident, or on Settings > Monitors
+// with grouped components to drag, or the full-screen preview "Open page" opens, as a public,
+// password or internal page (`?page=list|empty|editor|monitors|preview&visibility=public|password|internal`),
+// as the viewer `?role=` names: an analyst reads the incident and gets no control that posts,
+// edits or deletes one. The editor runs for real with no API: a reorder, a component's Save and
+// an Access save land at once, every other read and write is dropped.
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)(LAB_ORG),
@@ -53,9 +54,11 @@ const context: PageContext = {
 	timeZone: "UTC",
 }
 
-const PAGES = ["list", "editor", "monitors", "preview"] as const
+const PAGES = ["list", "empty", "editor", "monitors", "preview"] as const
 const LabPage = Schema.Literals(PAGES)
 type LabPage = typeof LabPage.Type
+/** The list over the fixture pages, or over none for its empty state. */
+const isListPage = (page: LabPage): boolean => page === "list" || page === "empty"
 const decodePage = Schema.decodeUnknownOption(LabPage)
 
 const Model = Schema.Struct({ page: LabPage, list: ListModel, editor: EditorModel, viewer: ViewerModel })
@@ -71,7 +74,7 @@ const Flags = Schema.Struct({ page: LabPage, role: LabRole, visibility: StatusPa
 const decodeVisibility = Schema.decodeUnknownOption(StatusPageVisibility)
 type Flags = typeof Flags.Type
 
-const listModel = (role: LabRole): ListModel => {
+const listModel = (role: LabRole, pages: ReadonlyArray<StatusPageSummary>): ListModel => {
 	const step = (model: ListModel, message: ListMessage) => listUpdate(model, message, context).model
 	const entered = Arr.reduce(
 		[
@@ -83,7 +86,7 @@ const listModel = (role: LabRole): ListModel => {
 	)
 	return step(
 		entered,
-		ListMessage.CompletedFetchPages({ key: entered.pages.key ?? "", result: Result.succeed(LAB_PAGES) }),
+		ListMessage.CompletedFetchPages({ key: entered.pages.key ?? "", result: Result.succeed(pages) }),
 	)
 }
 
@@ -274,7 +277,7 @@ const update = (model: Model, message: Message): Return =>
 /** The editor's own: Escape closes what is open, a grip drags its row. */
 const subscriptions = Subscription.lift(editorSubscriptions)<Model, Message>({
 	read: (model) =>
-		model.page === "list" || model.page === "preview"
+		isListPage(model.page) || model.page === "preview"
 			? Option.none()
 			: Option.some({ model: model.editor, context }),
 	toParentMessage: (message) => Message.GotEditorMessage({ message }),
@@ -289,7 +292,7 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 				viewInputs: { context },
 				toParentMessage: (message) => Message.GotViewerMessage({ message }),
 			})
-		: model.page !== "list"
+		: !isListPage(model.page)
 			? h.submodel({
 					slotId: "status-pages-lab-editor",
 					model: model.editor,
@@ -373,7 +376,7 @@ export const lab = defineShellLab("Status pages", {
 	init: (flags: Flags) => ({
 		model: {
 			page: flags.page,
-			list: listModel(flags.role),
+			list: listModel(flags.role, flags.page === "empty" ? [] : LAB_PAGES),
 			editor: editorModel(flags.role, flags.page === "monitors" ? "monitors" : "editor"),
 			viewer: viewerModel(flags.visibility),
 		},
