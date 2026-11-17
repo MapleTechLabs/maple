@@ -254,6 +254,8 @@ describe("cost page", () => {
 			given(step.model),
 			resolveTheme,
 			expectView(text("No cost source yet")).toExist(),
+			// Free while in beta, said before anything is connected.
+			expectView(text("Free during the beta")).toExist(),
 			expectView(text(/a PlanetScale organization by database and branch/)).toExist(),
 			expectView(role("button", { name: "Add a cost source" })).toExist(),
 			expectView(text("Group by")).not.toExist(),
