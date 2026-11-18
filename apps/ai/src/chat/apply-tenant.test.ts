@@ -4,12 +4,10 @@
  * This is the whole security model of approving a write, so each case is pinned separately:
  *
  *   - a person in the app acts as themselves, with the tenant and roles the route authenticated;
- *   - a connector that cannot name the clicker acts as the org-level connector identity, which
- *     carries `org:admin` because there is no person whose roles could be read;
- *   - a connector that CAN name them acts as that Maple user, with the roles they hold in the org
- *     right now — read live, never frozen at link time, and never widened here;
- *   - anything that cannot be found out refuses, because the alternative is silently downgrading
- *     an approval to the identity that does carry `org:admin`.
+ *   - a connector approver acts as the Maple user they are linked to, with the roles they hold in
+ *     the org right now, read live, never frozen at link time, and never widened here;
+ *   - a click that names no Maple user applies nothing: there is no identity to apply it as;
+ *   - anything that cannot be found out refuses, because "could not find out" is not "allowed".
  */
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Schema } from "effect"
@@ -87,13 +85,13 @@ const actorsThat = (actor: ActorId | undefined): Layer.Layer<ErrorActorsService>
 const memberships = (verify: OrgMembershipService["Service"]["verify"]): Layer.Layer<OrgMembershipService> =>
 	Layer.succeed(OrgMembershipService, { verify })
 
-const proposal = (actingUserId?: UserId) => ({
+const proposal = (actingUserId: UserId) => ({
 	env: {},
 	sessionId: `${ORG}:bot-testchat-c1`,
 	approver: APPROVER,
 	tool: "create_alert_rule",
 	input: {},
-	...(actingUserId === undefined ? undefined : { actingUserId }),
+	actingUserId,
 })
 
 describe("whose authority an approval runs under", () => {
@@ -145,8 +143,7 @@ describe("whose authority an approval runs under", () => {
 
 	it.effect("refuses a linked user who is no longer in the organization", () =>
 		Effect.gen(function* () {
-			// The link outlived the membership. Falling back to the org-level identity here would
-			// hand `org:admin` to somebody who was removed.
+			// The link outlived the membership, and there is nothing to fall back to.
 			const failure = yield* resolveTenant(ORG, proposal(ADA)).pipe(
 				Effect.provide([memberships(() => Effect.succeedNone), noActors]),
 				Effect.flip,
@@ -177,29 +174,30 @@ describe("whose authority an approval runs under", () => {
 		}),
 	)
 
-	it.effect("acts as the org, with `org:admin`, when the connector cannot name who clicked", () =>
+	it.effect("applies nothing for a click that names no Maple user", () =>
 		Effect.gen(function* () {
-			const tenant: TenantContext = yield* resolveTenant(ORG, proposal()).pipe(
-				// The membership check is never consulted: there is no user to check. The actor lookup
-				// failing must not cost an answer either; `withConnectorActor` absorbs it.
-				Effect.provide([memberships(die), actorsThat(undefined)]),
+			// What a relay build from before this rule could still send over RPC, where nothing
+			// decodes the settlement: an approver, and nobody the change would run as.
+			const { actingUserId: _nobody, ...unnamed } = proposal(ADA)
+			const failure = yield* resolveTenant(ORG, JSON.parse(JSON.stringify(unnamed))).pipe(
+				// Neither lookup is consulted: there is no user to check and no connector identity.
+				Effect.provide([memberships(die), noActors]),
+				Effect.flip,
 			)
 
-			// The placeholder user, because nobody can be named — and the one role the mutating
-			// tools check, granted here and only here.
-			assert.strictEqual(tenant.userId, CONNECTOR_TENANT_USER_ID)
-			assert.deepStrictEqual(tenant.roles, [ADMIN])
-			assert.deepStrictEqual(tenant.turnOrigin, APPROVER)
+			assert.strictEqual(failure._tag, "@maple/ai/LinkedUserNotPermitted")
+			assert.include(failure.message, "Maple app")
 		}),
 	)
 
-	it.effect("pins the connector's agent actor on that path, so the audit log names it", () =>
+	it.effect("applies nothing for an acting user id that does not decode", () =>
 		Effect.gen(function* () {
-			const tenant: TenantContext = yield* resolveTenant(ORG, proposal()).pipe(
-				Effect.provide([memberships(die), actorsThat(CONNECTOR_ACTOR)]),
-			)
+			const failure = yield* resolveTenant(
+				ORG,
+				JSON.parse(JSON.stringify({ ...proposal(ADA), actingUserId: "" })),
+			).pipe(Effect.provide([memberships(die), noActors]), Effect.flip)
 
-			assert.strictEqual(tenant.actorId, CONNECTOR_ACTOR)
+			assert.strictEqual(failure._tag, "@maple/ai/LinkedUserNotPermitted")
 		}),
 	)
 })

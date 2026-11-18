@@ -6,22 +6,27 @@
  * surface and be billed, traced or prompted as another.
  */
 import type { ChatTurnOrigin } from "@maple/domain/chat-session"
+import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { PermissionRule, type PermissionRuleset } from "@maple/domain/permission"
 import * as Policy from "@maple/domain/policy"
 import { Array as Arr } from "effect"
 import { DASHBOARD_AUTHORING_TOOLS } from "../mcp/tools/types"
 import type { AgentDefinition } from "./agents"
 import { READ_ONLY_RULESET } from "./permissions"
-import { CONNECTOR_SYSTEM_PROMPT } from "./prompts"
+import { CONNECTOR_ANONYMOUS_SYSTEM_PROMPT, CONNECTOR_SYSTEM_PROMPT } from "./prompts"
 import type { LlmCallTags } from "../platform/Llm"
 
-/** The tool audience, and the label on the LLM tags, the billing source and the turn span. */
+/** The label on the LLM tags, the billing source and the turn span. */
 export type ChatSurface = LlmCallTags["surface"]
 
 export interface TurnProfile {
 	readonly surface: ChatSurface
+	/** The tool audience. Narrower than `surface` only for a connector turn nobody is named on. */
+	readonly toolSurface: McpToolSurface
 	readonly ruleset: PermissionRuleset
 	readonly prompt: string
+	/** Whether the prompt may name the org's data sources: only where their tools are offered. */
+	readonly namesDataSources: boolean
 }
 
 /** The ruleset an analyst's turn runs under: only dashboard changes are still proposed to them. */
@@ -39,20 +44,45 @@ export const profileForRoles = (profile: TurnProfile, roles: ReadonlyArray<strin
 export const profileForTurn = (agent: AgentDefinition, origin: ChatTurnOrigin): TurnProfile => {
 	switch (origin.kind) {
 		case "app":
-			return { surface: "chat", ruleset: agent.permission, prompt: agent.prompt }
+			return {
+				surface: "chat",
+				toolSurface: "chat",
+				ruleset: agent.permission,
+				prompt: agent.prompt,
+				namesDataSources: true,
+			}
 		case "autonomous":
 			// Nobody can approve an unattended pass, so a gated tool is a wasted call and a
 			// repeated-failure slot. Denial is the only thing that works here.
 			// An agent with its own unattended allowlist (the reviewer) runs under that instead.
 			return {
 				surface: "chat",
+				toolSurface: "chat",
 				ruleset: agent.autonomousPermission ?? READ_ONLY_RULESET,
 				prompt: agent.prompt,
+				namesDataSources: true,
 			}
 		case "connector":
+			// See `ChatConnector.identity`. Nobody Maple can name is asking: a reduced read set, and
+			// no proposal, because an approval card needs a Maple user to apply it as.
+			if (origin.actingUserId === undefined) {
+				return {
+					surface: "bot",
+					toolSurface: "bot_anonymous",
+					ruleset: READ_ONLY_RULESET,
+					prompt: CONNECTOR_ANONYMOUS_SYSTEM_PROMPT,
+					namesDataSources: false,
+				}
+			}
 			// Mutations are proposed exactly as in the app; the connector renders the approval. `bot`
 			// sees the agent-audience tools (the repository sandbox) but not the internal ones (the
 			// pull request reviewer's), which are absent rather than gated.
-			return { surface: "bot", ruleset: agent.permission, prompt: CONNECTOR_SYSTEM_PROMPT }
+			return {
+				surface: "bot",
+				toolSurface: "bot",
+				ruleset: agent.permission,
+				prompt: CONNECTOR_SYSTEM_PROMPT,
+				namesDataSources: true,
+			}
 	}
 }

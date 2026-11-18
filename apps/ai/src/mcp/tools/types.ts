@@ -154,13 +154,16 @@ export const refusalFor = (
  * Who a tool is for.
  *
  * `public` tools are listed on and callable from every surface, the MCP transport
- * included. `agent` tools exist for Maple's own agents, the chat-platform bot included,
- * and the public transport neither lists nor executes them. `internal` tools are
- * narrower still: the in-product agents only. Declared at registration, so a tool
- * cannot reach a third-party MCP client by the mere fact of being in the registry:
- * until this existed, registering was publishing, and `sandbox_exec` shipped as a public tool.
+ * included. `identified` tools are public too, but only for a caller Maple can name: they
+ * read what an org shares with its members (its own data sources, raw SQL, its end users),
+ * so the bot does not offer them to someone it cannot name. `agent` tools exist for Maple's
+ * own agents, the chat-platform bot included when it knows who is asking, and the public
+ * transport neither lists nor executes them. `internal` tools are narrower still: the
+ * in-product agents only. Declared at registration, so a tool cannot reach a third-party MCP
+ * client by the mere fact of being in the registry: until this existed, registering was
+ * publishing, and `sandbox_exec` shipped as a public tool.
  */
-export type McpToolAudience = "public" | "agent" | "internal"
+export type McpToolAudience = "public" | "identified" | "agent" | "internal"
 
 /**
  * What a call is doing, in words a chat channel reads while it runs: `Running a query`, never
@@ -170,9 +173,10 @@ export type McpToolAudience = "public" | "agent" | "internal"
 export type McpToolPhrases = readonly [string, ...Array<string>]
 
 /**
- * The surfaces an `agent` tool is offered on: every Maple agent, the bot included.
+ * The surfaces an `agent` tool is offered on: every Maple agent, the bot included when it
+ * answers a linked Maple user.
  *
- * The bot answers into a channel anyone in it can read, under an org-level actor. The sandbox
+ * The bot answers into a channel anyone in it can read, as the Maple user who asked. The sandbox
  * tools are fit for that: the checkout is the same source `read_source_file` already serves the
  * bot, and `sandbox_exec` runs unprivileged, read-only, with no network and an empty environment,
  * so its output is the repository and what can be computed from it.
@@ -186,17 +190,34 @@ const AGENT_SURFACES: ReadonlySet<McpToolSurface> = new Set<McpToolSurface>(["ch
  */
 const INTERNAL_SURFACES: ReadonlySet<McpToolSurface> = new Set<McpToolSurface>(["chat", "workflow"])
 
+/**
+ * The bot answering someone Maple cannot name (a connector with no account linking). Absent
+ * from the two sets above, so it is offered `public` tools only.
+ */
+const ANONYMOUS_SURFACE: McpToolSurface = "bot_anonymous"
+
 /** Whether a surface may see and call a tool of this audience. */
-export const audienceAdmits = (audience: McpToolAudience, surface: McpToolSurface): boolean => {
+const audienceAdmits = (audience: McpToolAudience, surface: McpToolSurface): boolean => {
 	switch (audience) {
 		case "public":
 			return true
+		case "identified":
+			return surface !== ANONYMOUS_SURFACE
 		case "agent":
 			return AGENT_SURFACES.has(surface)
 		case "internal":
 			return INTERNAL_SURFACES.has(surface)
 	}
 }
+
+/**
+ * Whether a surface may see and call this tool: its audience admits the surface, and where
+ * nobody is named nothing changes data, because a change is only ever applied as a Maple user.
+ */
+export const surfaceAdmits = (
+	tool: { readonly audience: McpToolAudience; readonly hints: Pick<McpToolHints, "readOnly"> },
+	surface: McpToolSurface,
+): boolean => audienceAdmits(tool.audience, surface) && (surface !== ANONYMOUS_SURFACE || tool.hints.readOnly)
 
 /**
  * A tool, declared as data: typed input, typed output, how the output reads to a model, and what

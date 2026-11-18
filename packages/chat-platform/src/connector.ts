@@ -45,20 +45,23 @@ export interface ChatConnector<R = never> {
 	/**
 	 * How one person proves which account on this platform is theirs, where the platform can say.
 	 *
-	 * **This is where the chat policy is written down.** Its absence is a policy rather than a gap,
-	 * and the three cases are:
+	 * **This is where the chat policy is written down.** One rule holds in every case: a change is
+	 * only ever applied as a Maple user, under the roles that user holds in the org at that moment.
+	 * There is no connector identity that can apply one. The three cases are:
 	 *
 	 *   - **no `identity`**: the connector cannot tell Maple who is asking or who clicked. Anyone in
-	 *     the conversation may ask, and the turn reads as the connector with no roles. Anyone who
-	 *     can see a proposal may approve it, and the change runs as the org-level connector identity
-	 *     (`connectorApprovalTenant`), which carries `org:admin` because there is no person whose
-	 *     roles could be read. The weaker rule, and deliberate: the alternative is a bot that can
-	 *     propose changes and never apply them.
+	 *     the conversation may ask, and the turn reads as the connector with no roles and a reduced
+	 *     tool set: service health, traces, logs, metrics and errors, but no data source, raw SQL,
+	 *     end-user or source code tool, and no tool that changes anything. It proposes nothing, so
+	 *     it posts no approval, and a click on one changes nothing: the clicker is sent to the
+	 *     Maple app.
 	 *   - **`identity`, linked**: a question and an approval both run as the Maple user that person
 	 *     linked to, under the roles they hold in the org at that moment. Nothing is granted: a tool
 	 *     that needs an admin refuses a member exactly as it would in the app.
 	 *   - **`identity`, not linked**: refused, for a question as much as for an approval. A bot that
 	 *     lands in a public channel must not read an org's data for whoever mentions it.
+	 *
+	 * The workspace's "Answer questions" switch is above all three: off, nothing is asked or decided.
 	 */
 	readonly identity?: ChatConnectorIdentity
 }

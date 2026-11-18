@@ -94,10 +94,11 @@ its content then says everything.
 ## Who may ask and approve
 
 There is no `identity` half yet: Hazel has no way for a person to prove to Maple which Hazel account
-is theirs. So anyone in a linked workspace may ask, and anyone who can see a proposal may approve
-it, and the change runs as the org-level connector identity — the policy `ChatConnector.identity`
-writes down for a connector without one. Linking the workspace is an admin's decision on both
-sides, which is what this rests on.
+is theirs. So anyone in a linked workspace may ask, and the turn answers from a reduced read set
+with no tool that changes anything. Nobody approves from Hazel: a change is only ever applied as a
+Maple user, so the agent proposes none here and sends people to the Maple app. This is the policy
+`ChatConnector.identity` writes down for a connector without one. Linking the workspace is an
+admin's decision on both sides, which is what answering anyone in it rests on.
 
 ## The gateway
 

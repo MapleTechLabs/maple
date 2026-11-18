@@ -53,11 +53,13 @@ describe("names for Maple's own agents and codes", () => {
 		expect(auditToolCallerLabel("chat", null)).toBe("Maple agent")
 		expect(auditToolCallerLabel("chat", "toString")).toBe("Maple agent")
 		expect(auditToolCallerLabel("bot", null)).toBe("Maple bot")
+		expect(auditToolCallerLabel("bot_anonymous", null)).toBe("Maple bot")
 		expect(auditToolCallerLabel("mcp", null)).toBe("MCP tool")
 	})
 
 	it("puts internal metadata codes in words and leaves everything else as recorded", () => {
 		expect(auditMetadataValueLabel("surface", "chat")).toBe("Maple agent")
+		expect(auditMetadataValueLabel("surface", "bot_anonymous")).toBe("Maple bot")
 		expect(auditMetadataValueLabel("agent", "pr-review")).toBe("Maple code review")
 		expect(auditMetadataValueLabel("context", "mcp.run_sql")).toBe("run_sql tool")
 		expect(auditMetadataValueLabel("context", "somethingNew")).toBeNull()

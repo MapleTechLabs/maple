@@ -1,16 +1,18 @@
 /**
  * The two things an approved proposal is refused for before anything is built.
  *
- * The tool check is the one that matters: `connectorApprovalTenant` hands the executor
- * `org:admin`, so `MUTATING_TOOL_NAMES` is the last thing standing between an entry in a session's
- * own log and an org-admin tool execution. Reaching it at all means the ruleset that proposes and
- * the allowlist that applies have drifted apart.
+ * The tool check is the one that matters: `MUTATING_TOOL_NAMES` is the last thing standing
+ * between an entry in a session's own log and a tool execution under the approver's roles.
+ * Reaching it at all means the ruleset that proposes and the allowlist that applies have drifted
+ * apart.
  *
  * Both answers are returned before the MCP service graph or a database connection is reached, so
  * this runs without either. Everything past that point needs a real deployment.
  */
 import { assert, describe, it } from "vitest"
 import type { ChatConnectorOrigin } from "@maple/domain/chat-session"
+import { UserId } from "@maple/primitives"
+import { Schema } from "effect"
 import { applyChatProposal } from "./apply-proposal"
 
 const ADA: ChatConnectorOrigin = {
@@ -26,6 +28,7 @@ const apply = (overrides: { sessionId?: string; tool?: string }) =>
 		env: {},
 		sessionId: "org_1:bot-testchat-c1",
 		approver: ADA,
+		actingUserId: Schema.decodeSync(UserId)("user_ada"),
 		tool: "create_alert_rule",
 		input: {},
 		...overrides,

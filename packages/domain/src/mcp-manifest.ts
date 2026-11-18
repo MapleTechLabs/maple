@@ -112,6 +112,11 @@ export type McpToolSurface =
 	 * internal one: see `AGENT_SURFACES` in `apps/ai/src/mcp/tools/types.ts`.
 	 */
 	| "bot"
+	/**
+	 * The bot answering someone Maple cannot name: a connector with no account linking. Offered
+	 * less than `bot`, and nothing that changes data (`audienceAdmits`, same file as above).
+	 */
+	| "bot_anonymous"
 	/** Retired agent workflow passes. Kept so already-audited rows stay readable. */
 	| "workflow"
 	/** Retired worker-to-worker internal RPC. Kept so already-audited rows stay readable. */

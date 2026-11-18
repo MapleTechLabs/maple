@@ -266,7 +266,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 	// `meterTurn` resolves its own because it runs as a finalizer and is separately exported.
 	const { agent, row } = sessionOf(input.sessionId)
 	const autonomous = isAutonomousTurn(row, origin)
-	const surface = profileForTurn(agent, origin).surface
+	const { surface, namesDataSources } = profileForTurn(agent, origin)
 	const observability = makeTurnObservability()
 	// Hoisted out of the program: `submit_diagnosis` reads it mid-run — the tool is invoked mid-run
 	// so there is no later moment to hand it a total — and the metering finalizer reads it after the
@@ -464,19 +464,22 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				yield* forkRequestScoped(toolExecutor.prepareConnectedRepositories(runTenant))
 			}
 			// The org's data sources, one line each, for the prompt. Never fails the turn: logged and left out.
-			const dataSourcesSection = yield* toolExecutor.listDataSources(runTenant).pipe(
-				Effect.map(dataSourcesPromptSection),
-				Effect.catchCause((cause) =>
-					Effect.logWarning("Could not list data sources for the prompt", cause).pipe(
-						Effect.annotateLogs({
-							orgId: tenant.orgId,
-							sessionId: input.sessionId,
-							turnId: input.messageId,
-						}),
-						Effect.as(undefined),
-					),
-				),
-			)
+			// Not read at all for a turn that is not offered their tools: the names are org data too.
+			const dataSourcesSection = namesDataSources
+				? yield* toolExecutor.listDataSources(runTenant).pipe(
+						Effect.map(dataSourcesPromptSection),
+						Effect.catchCause((cause) =>
+							Effect.logWarning("Could not list data sources for the prompt", cause).pipe(
+								Effect.annotateLogs({
+									orgId: tenant.orgId,
+									sessionId: input.sessionId,
+									turnId: input.messageId,
+								}),
+								Effect.as(undefined),
+							),
+						),
+					)
+				: undefined
 			const history = input.session.history()
 			const tags = { surface, orgId: tenant.orgId, sessionId: input.sessionId, turnId: input.messageId }
 			const deploySettings = yield* loadLlmSettings

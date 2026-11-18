@@ -7,23 +7,23 @@
  *
  * The one way an approved mutation runs, whether the click came from the web app
  * (`POST /internal/chat/apply`) or a chat platform: refuse a tool that is not approval-gated, run it
- * under a resolved tenant, and hand back what it said. See `ChatConnector.identity` for the
- * connector half of the approval policy; a connector approver's chat account rides along as
- * forensic context on the audit entry.
+ * as a Maple user, and hand back what it said. See `ChatConnector.identity` for the connector half
+ * of the approval policy; a connector approver's chat account rides along as forensic context on
+ * the audit entry.
  */
 import {
 	chatSessionKind,
-	connectorApprovalTenant,
 	decidedBy,
 	orgIdFromChatSessionId,
 	type ChatProposalApproval,
+	type ChatTurnOrigin,
 } from "@maple/domain/chat-session"
-import { OrgId } from "@maple/primitives"
+import { OrgId, UserId } from "@maple/primitives"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
 import { Cause, Effect, Layer, ManagedRuntime, Option, Schema, Array as Arr } from "effect"
 import { chatPlatformLayer, type ChatRuntimeInput, chatTelemetry, releaseChatRuntime } from "./do-runtime"
-import { linkedUserTenant, toTenantContext, withConnectorActor } from "./turn-actor"
+import { LinkedUserNotPermitted, linkedUserTenant, toTenantContext } from "./turn-actor"
 
 export type ApplyChatProposalInput = ChatProposalApproval &
 	ChatRuntimeInput & {
@@ -51,10 +51,12 @@ const failure = (output: string): AppliedProposal => ({ output, isError: true })
 const UNCERTAIN = "Maple couldn't confirm the change went through — check it in Maple."
 
 const decodeOrgId = Schema.decodeUnknownOption(OrgId)
+const decodeUserId = Schema.decodeUnknownOption(UserId)
 
 /**
- * Who the change runs as — which the caller decided before the session was ever reached. A person
- * in the app acts as themselves; see `ChatConnector.identity` for the connector cases.
+ * Who the change runs as, which the caller decided before the session was ever reached: always a
+ * Maple user. A person in the app acts as themselves, and a connector approver as the user their
+ * chat account is linked to (see `ChatConnector.identity`).
  */
 export const resolveTenant = Effect.fnUntraced(function* (orgId: OrgId, input: ApplyChatProposalInput) {
 	// The route authenticated them and resolved their roles; the audit entry names them.
@@ -62,20 +64,23 @@ export const resolveTenant = Effect.fnUntraced(function* (orgId: OrgId, input: A
 		yield* Effect.annotateCurrentSpan("maple.chat.apply.as", "app")
 		return toTenantContext(input.tenant, input.approver)
 	}
-	if (input.actingUserId === undefined) {
-		// What attributes the audit entry: the actor is the connector's agent, and the approver's
-		// platform identity is the forensic context an auditor asks for.
-		const tenant = toTenantContext(connectorApprovalTenant(orgId), input.approver)
-		yield* Effect.annotateCurrentSpan("maple.chat.apply.as", "connector")
-		// The same pinned agent actor a connector TURN runs as, so the change and the conversation
-		// that proposed it are attributed to one identity.
-		return yield* withConnectorActor(tenant, input.approver)
+	// Re-checked because it arrives undecoded over RPC: a click that names no Maple user (an older
+	// relay build included) applies nothing, whatever its type says.
+	const userId = decodeUserId(input.actingUserId)
+	if (Option.isNone(userId)) {
+		return yield* new LinkedUserNotPermitted({
+			reason: "unavailable",
+			message: "Maple could not tell which Maple user approved this. Make the change in the Maple app.",
+		})
 	}
-
-	const tenant = yield* linkedUserTenant(orgId, input.actingUserId, input.approver)
+	const tenant = yield* linkedUserTenant(orgId, userId.value, input.approver)
 	yield* Effect.annotateCurrentSpan("maple.chat.apply.as", "user")
 	return tenant
 })
+
+/** The origin of the turn that wrote the proposal, as far as its tool surface goes. */
+const proposingOrigin = (input: ApplyChatProposalInput): ChatTurnOrigin =>
+	"tenant" in input ? input.approver : { ...input.approver, actingUserId: input.actingUserId }
 
 /**
  * Apply one approved proposal and answer with what to record.
@@ -98,10 +103,8 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 	}
 
 	// Defense in depth: only an approval-gated mutation is applicable here, whatever the log happens
-	// to hold. `connectorApprovalTenant` below grants `org:admin`, so this is the last thing between
-	// an entry in a session's own log and an org-admin execution — which is why it answers here,
-	// ahead of a runtime whose layers can die on a misconfigured environment, rather than from
-	// inside one.
+	// to hold. It answers here, ahead of a runtime whose layers can die on a misconfigured
+	// environment, rather than from inside one.
 	// Loaded here, not with this module: the set is derived from the tool registry, which the agent
 	// records (read for the surface below) depend on too.
 	const [{ MUTATING_TOOL_NAMES }, { agentForSession }, { profileForTurn }] = await Promise.all([
@@ -136,7 +139,7 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 			input.tool,
 			input.input,
 			// The surface the turn that proposed it ran on.
-			profileForTurn(agentForSession(input.sessionId), approver).surface,
+			profileForTurn(agentForSession(input.sessionId), proposingOrigin(input)).toolSurface,
 		)
 		const content = Arr.join(
 			Arr.map(result.content, (entry) => entry.text),
