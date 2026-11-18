@@ -49,6 +49,7 @@ import type {
 } from "@maple/backend/services/integrations/vcs/VcsProviderClient"
 import { QUEUE_MESSAGE_LIMIT_BYTES } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
 import { anchorComments } from "@maple/backend/services/integrations/vcs/diff-anchors"
+import { githubAuditEvent } from "./github-audit-events"
 import { type FileChange, rangeDiffPaths } from "@maple/backend/services/integrations/vcs/range-diff"
 import {
 	type GithubApiCommit,
@@ -310,6 +311,9 @@ const decodePush = Schema.decodeUnknownEffect(PushPayload)
 const decodePullRequest = Schema.decodeUnknownEffect(PullRequestPayload)
 const decodeInstallationEvent = Schema.decodeUnknownEffect(InstallationPayload)
 const decodeRefEvent = Schema.decodeUnknownEffect(RefEventPayload)
+const decodeAuditInstallation = Schema.decodeUnknownOption(
+	Schema.Struct({ installation: Schema.Struct({ id: Schema.Number }) }),
+)
 
 const parseError = (message: string) => new VcsWebhookParseError({ message })
 
@@ -670,7 +674,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 
 			const mapInstallationEvent =
 				(event: string, reasonFor: (action: string) => VcsInstallationSyncReason | null) =>
-				(raw: unknown) =>
+				(raw: unknown, audited: boolean) =>
 					Effect.gen(function* () {
 						const payload = yield* parsePayload(event, decodeInstallationEvent(raw))
 						const externalInstallationId = String(payload.installation.id)
@@ -680,10 +684,15 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						})
 						const reason = reasonFor(payload.action)
 						if (!reason) {
-							yield* Effect.annotateCurrentSpan({
-								"vcs.webhook.outcome": "skipped",
-								"vcs.webhook.skip_reason": "unhandled_action",
-							})
+							// No sync for this action, but the audit log may still keep it.
+							yield* Effect.annotateCurrentSpan(
+								audited
+									? { "vcs.webhook.outcome": "handled", "vcs.webhook.audit_only": true }
+									: {
+											"vcs.webhook.outcome": "skipped",
+											"vcs.webhook.skip_reason": "unhandled_action",
+										},
+							)
 							return []
 						}
 						yield* Effect.annotateCurrentSpan({ "vcs.webhook.outcome": "handled" })
@@ -1100,25 +1109,64 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 			// Dispatch a verified, parsed event to its mapper. Annotations (outcome /
 			// skip_reason / identifiers) are made by each mapper onto the surrounding
 			// `webhookToJobs` span.
-			const mapEvent = (event: string | undefined, parsed: unknown, now: number) =>
+			const mapEvent = (event: string | undefined, parsed: unknown, now: number, audited: boolean) =>
 				Match.value(event).pipe(
 					Match.when("push", () => mapPush(parsed, now)),
 					Match.when("pull_request", () => mapPullRequest(parsed)),
 					Match.when("issue_comment", () => mapIssueComment(parsed)),
 					Match.when("pull_request_review_comment", () => mapReviewComment(parsed)),
-					Match.when("installation", () => mapInstallation(parsed)),
-					Match.when("installation_repositories", () => mapInstallationRepositories(parsed)),
+					Match.when("installation", () => mapInstallation(parsed, audited)),
+					Match.when("installation_repositories", () =>
+						mapInstallationRepositories(parsed, audited),
+					),
 					Match.when("create", () => mapRefEvent("created")(parsed)),
 					Match.when("delete", () => mapRefEvent("deleted")(parsed)),
 					Match.when("workflow_run", () => mapWorkflowRun(parsed)),
 					Match.when("workflow_job", () => mapWorkflowJob(parsed)),
 					Match.orElse(() =>
-						// ping and unhandled events are accepted no-ops.
-						Effect.annotateCurrentSpan({
-							"vcs.webhook.outcome": "skipped",
-							"vcs.webhook.skip_reason": "unhandled_event",
-						}).pipe(Effect.as([])),
+						// ping and unhandled events are accepted no-ops, unless the audit log keeps them.
+						Effect.annotateCurrentSpan(
+							audited
+								? { "vcs.webhook.outcome": "handled", "vcs.webhook.audit_only": true }
+								: {
+										"vcs.webhook.outcome": "skipped",
+										"vcs.webhook.skip_reason": "unhandled_event",
+									},
+						).pipe(Effect.as([])),
 					),
+				)
+
+			// The same delivery as an audit trail event, beside whatever jobs it made above. A payload
+			// without its installation has no org to land in.
+			const auditJob = (
+				event: string | undefined,
+				deliveryId: string | undefined,
+				parsed: unknown,
+				now: number,
+			): ReadonlyArray<VcsSyncJob> =>
+				Option.match(
+					Option.all({
+						installationId: decodeAuditInstallation(parsed).pipe(
+							Option.map((payload) => String(payload.installation.id)),
+						),
+						auditEvent: githubAuditEvent({
+							event,
+							deliveryId,
+							payload: parsed,
+							receivedAtMs: now,
+						}),
+					}),
+					{
+						onNone: () => [],
+						onSome: ({ installationId, auditEvent }) => [
+							{
+								kind: "audit-event",
+								provider: PROVIDER,
+								externalInstallationId: installationId,
+								event: auditEvent,
+							},
+						],
+					},
 				)
 
 			const webhookToJobs = (input: VcsWebhookRequest) =>
@@ -1134,13 +1182,15 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						),
 					)
 					const now = yield* Clock.currentTimeMillis
-					const jobs = yield* mapEvent(input.headers["x-github-event"], parsed, now)
+					const event = input.headers["x-github-event"]
+					const deliveryId = input.headers["x-github-delivery"]
+					const audit = auditJob(event, deliveryId, parsed, now)
+					const jobs = [...(yield* mapEvent(event, parsed, now, audit.length > 0)), ...audit]
 					// Stamp the GitHub delivery id onto every job this webhook produced, so
 					// the queue consumer's processMessage span can be correlated back to this
 					// webhook's receive span (both carry `vcs.webhook.delivery_id`). Every
 					// webhook-origin job kind (installation-sync / push / branch-event) carries
 					// the optional field; Schema strips it from any kind that doesn't.
-					const deliveryId = input.headers["x-github-delivery"]
 					return deliveryId ? Arr.map(jobs, (job) => ({ ...job, deliveryId })) : jobs
 				}).pipe(
 					Effect.withSpan("GithubProvider.webhookToJobs", {

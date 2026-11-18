@@ -103,7 +103,7 @@ describe("chat workspace credentials", () => {
 				tag: Buffer.alloc(16, 2).toString("base64"),
 			}
 			const error = yield* open(stored).pipe(Effect.flip)
-			assert.strictEqual(error.message, "Stored value is not in the v2 envelope")
+			assert.strictEqual(error.message, "Stored value is not in the v2 or v3 envelope")
 		}),
 	)
 

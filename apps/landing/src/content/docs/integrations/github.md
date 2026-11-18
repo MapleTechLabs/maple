@@ -7,10 +7,11 @@ order: 4
 
 The Maple GitHub App syncs your repositories and their commit history into Maple. You install the app, choose which repositories to share, and pick one branch to track per repository. Maple backfills the last 90 days of commits on that branch and keeps it current through GitHub webhooks.
 
-Once connected, the integration does three things:
+Once connected, the integration does four things:
 
 - **Commit context in telemetry.** When your services report the `vcs.ref.head.revision` resource attribute, Maple resolves the SHA against synced commits. The trace view and service pages show a commit hover card with the author, message, and a link to GitHub.
 - **CI traces.** Every finished GitHub Actions run becomes a trace under the `github-actions` service: the run is the root span, each job a child span, and each step a span inside its job. No workflow changes are needed. Each job's log comes along as logs on those spans.
+- **Audit log.** Changes to the organization's people, access and repositories go to the audit log in the Security section, which only organization admins can read.
 - **Source code for Maple's agents.** Investigations and pull request review read your repositories through the app installation, so they can go from an exception in a trace to the code that raised it. These reads are not offered to third-party assistants on the [MCP server](/docs/reference/mcp).
 
 ## Prerequisites
@@ -71,6 +72,26 @@ Maple also downloads each finished job's log from GitHub and writes every line a
 - **Secrets:** GitHub masks registered secrets as `***` before Maple reads the log. Values a job prints that were never registered as secrets are kept as written.
 
 Logs arrive a few seconds after their job's spans, since GitHub publishes a log shortly after the job finishes.
+
+## Audit log
+
+Maple writes these GitHub events to **Security → Audit log** under the GitHub platform, one entry per webhook delivery. Each entry names who acted (the GitHub user or bot), what changed and the organization or account it belongs to.
+
+| Category      | Events                                                                                                                                                 |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Membership    | People added to, removed from or invited to the organization; repository collaborators added or removed; team changes                                  |
+| Permissions   | A collaborator's role changed; a team given or removed from a repository; the Maple app installed, removed, suspended, or given or denied repositories |
+| Resources     | Repositories created, deleted, renamed, transferred, archived or edited                                                                                |
+| Configuration | A repository made public or private; branch protection rules, rulesets and code security settings changed; the organization renamed                    |
+| Credentials   | Deploy keys added or removed                                                                                                                           |
+
+- **Permissions:** the Maple app's lifecycle and the organization, member, team and repository events need no new permission. Branch protections, rulesets and code security settings need **Administration: Read**, and deploy keys need **Deployments: Read**: until an owner accepts that request on GitHub (organization **Settings > GitHub Apps > Review request**), those events do not arrive. Maple never changes repository settings.
+- **Time:** GitHub's webhooks carry no event time, so an entry's time is when Maple received it, normally within seconds.
+- **Not covered:** sign-ins, Git operations, Actions settings, and other events GitHub records only in its own audit log, which GitHub offers on Enterprise Cloud.
+
+Pushes, pull requests and CI runs are not audit events and stay out of the audit log.
+
+The audit log is on by default. To stop it, an admin turns off **Audit log** on the GitHub source in **Sources**; events that happen while it is off are not recorded, and turning it back on does not fill the gap. Entries already in the audit log stay.
 
 ## Verify
 

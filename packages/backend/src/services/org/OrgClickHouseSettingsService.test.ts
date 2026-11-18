@@ -418,7 +418,7 @@ describe("resolveRuntimeConfig caching", () => {
 				onError,
 			).pipe(
 				Effect.flatMap((keyring) =>
-					sealSecret(keyring, clickHousePasswordSlot, { orgId }, "stored-password", onError),
+					sealSecret(keyring, clickHousePasswordSlot, { orgId, chUrl }, "stored-password", onError),
 				),
 			),
 		)
@@ -772,7 +772,13 @@ describe("resolveRuntimeConfig caching", () => {
 		const sealedBy = (byte: number) =>
 			parseSecretKeyring({ primary: keyOf(byte), decryptOnly: Option.none() }, String).pipe(
 				Effect.flatMap((keyring) =>
-					sealSecret(keyring, clickHousePasswordSlot, { orgId }, "ch-pass", String),
+					sealSecret(
+						keyring,
+						clickHousePasswordSlot,
+						{ orgId, chUrl: "https://rotated.example" },
+						"ch-pass",
+						String,
+					),
 				),
 			)
 		const deployment = (byte: number) =>

@@ -162,6 +162,29 @@ describe("google search console card", () => {
 		)
 	})
 
+	test("a viewer who cannot manage sees what is imported, and Google's list is not read for them", () => {
+		const initial = init({ search: { integration: "google-search-console" } }, context).model
+		const viewer = pageUpdate(
+			initial,
+			Message.CompletedLoadSession({ grants: [], hasDataSources: false }),
+		).model
+		const step = statusRead(viewer, status({ connected: true, enabled: ["sc-domain:acme.dev"] }))
+		expect(names(step.commands)).toEqual([])
+		scene(
+			{ update: pageUpdate, view },
+			given(step.model),
+			expectView(role("checkbox", { name: "acme.dev (domain)" })).toBeChecked(),
+			expectView(role("checkbox", { name: "acme.dev (domain)" })).toBeDisabled(),
+			expectView(text(/Couldn't load your Search Console properties/)).not.toExist(),
+		)
+		// The grants may answer after the status: the list is read once the viewer is known to manage.
+		const manager = pageUpdate(
+			step.model,
+			Message.CompletedLoadSession({ grants: ["integrations:manage"], hasDataSources: false }),
+		)
+		expect(names(manager.commands)).toEqual(["FetchSearchConsoleSites"])
+	})
+
 	test("saving sends the toggled selection once, then re-reads the status", () => {
 		const loaded = withSites(status({ connected: true, enabled: ["sc-domain:acme.dev"] }))
 		const toggled = pageUpdate(loaded, sc.ToggledSite({ siteUrl: "https://blog.acme.dev/" })).model

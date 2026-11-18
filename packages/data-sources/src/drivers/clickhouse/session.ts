@@ -20,7 +20,8 @@ export const MAX_MEMORY_BYTES = 2_000_000_000
 
 /**
  * What every query sends. Verified on ClickHouse 26.2: `readonly=1` in the URL still lets the
- * other URL settings apply, and then refuses writes and any `SETTINGS` override in the query.
+ * other URL settings apply, and then refuses writes and a top-level `SETTINGS` override. A
+ * subquery's own `SETTINGS` is not held to it, which is why `clickHouseSqlIssue` refuses the clause.
  */
 export const readOnlySettings = (limits: QueryLimits): Readonly<Record<string, string | number>> => ({
 	readonly: 1,

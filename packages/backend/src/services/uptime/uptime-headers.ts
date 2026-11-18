@@ -88,7 +88,9 @@ export const sealConfigSecrets = <E>(
 			: withoutSecrets(config)
 	return encodeRequests({ v: 2, requests: Arr.map(requests, secretsOf) }).pipe(
 		Effect.mapError(() => onError("Headers and body could not be encoded")),
-		Effect.flatMap((json) => sealSecret(keyring, uptimeMonitorHeadersSlot, ref, json, onError)),
+		Effect.flatMap((json) =>
+			sealSecret(keyring, uptimeMonitorHeadersSlot, { ...ref, config: configJson }, json, onError),
+		),
 		Effect.map((sealed) => ({
 			configJson,
 			headersCiphertext: sealed.ciphertext,
@@ -143,7 +145,7 @@ export const openConfigSecrets = <E>(
 	const opened = openSecret(
 		keyring,
 		uptimeMonitorHeadersSlot,
-		{ orgId: row.orgId, id: row.id },
+		{ orgId: row.orgId, id: row.id, config },
 		{ ciphertext: row.headersCiphertext, iv: row.headersIv, tag: row.headersTag },
 		onError,
 	)

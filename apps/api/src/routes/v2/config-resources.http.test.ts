@@ -194,6 +194,15 @@ const makeHarness = () => {
 				return yield* service.create(ORG, USER, { name: "config-test", scopes })
 			}),
 		)
+	/** A full-access key of another organization. */
+	const bootstrapOtherOrgKey = () =>
+		runtime.runPromise(
+			Effect.gen(function* () {
+				const service = yield* ApiKeysService
+				const otherOrg = Schema.decodeSync(OrgId)("org_config_e2e_other")
+				return yield* service.create(otherOrg, USER, { name: "config-test-other-org" })
+			}),
+		)
 	/** A key whose pinned roles make it a plain member rather than `root`. */
 	const bootstrapMemberKey = () =>
 		runtime.runPromise(
@@ -237,6 +246,7 @@ const makeHarness = () => {
 	return {
 		request,
 		bootstrapKey,
+		bootstrapOtherOrgKey,
 		bootstrapMemberKey,
 		seedScrapeChecks,
 		corruptScrapeDiscoveryConfig,
@@ -652,6 +662,111 @@ describe("v2 scrape_targets over HTTP", () => {
 		})
 		expect(after.status).toBe(200)
 		expect(after.body.url).toBe("https://example.com:1/metrics")
+		await harness.dispose()
+	})
+
+	it("shows the stored URL to a manager and hides its query values from readers", async () => {
+		const harness = makeHarness()
+		const adminKey = await harness.bootstrapKey()
+		const memberKey = await harness.bootstrapMemberKey()
+		const readKey = await harness.bootstrapKey(["scrape_targets:read"])
+		const stored = "https://example.com:1/metrics?token=s3cr3t&format=text"
+		const hidden = "https://example.com:1/metrics?token=[redacted]&format=[redacted]"
+
+		const created = await harness.request("POST", "/v2/scrape_targets", {
+			token: adminKey.secret,
+			body: { name: "tokenised", url: stored, target_type: "prometheus" },
+		})
+		expect(created.status).toBe(200)
+		expect(created.body.url).toBe(stored)
+		const path = `/v2/scrape_targets/${created.body.id}`
+
+		const asManager = await harness.request("GET", path, { token: adminKey.secret })
+		expect(asManager.body.url).toBe(stored)
+		const listedAsManager = await harness.request("GET", "/v2/scrape_targets", {
+			token: adminKey.secret,
+		})
+		expect(listedAsManager.body.data[0].url).toBe(stored)
+
+		// A member lacks the role; a read-scoped key holds the role but not the write scope.
+		for (const token of [memberKey.secret, readKey.secret]) {
+			const retrieved = await harness.request("GET", path, { token })
+			expect(retrieved.status).toBe(200)
+			expect(retrieved.body.url).toBe(hidden)
+			const listed = await harness.request("GET", "/v2/scrape_targets", { token })
+			expect(listed.body.data[0].url).toBe(hidden)
+		}
+		await harness.dispose()
+	})
+
+	it("answers 404 for another organization's target, on reads and on writes", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey()
+		const otherOrg = await harness.bootstrapOtherOrgKey()
+		const stored = "https://example.com:1/metrics?token=s3cr3t"
+		const created = await harness.request("POST", "/v2/scrape_targets", {
+			token: key.secret,
+			body: { name: "tokenised", url: stored, target_type: "prometheus" },
+		})
+		expect(created.status).toBe(200)
+		const path = `/v2/scrape_targets/${created.body.id}`
+
+		const listed = await harness.request("GET", "/v2/scrape_targets", { token: otherOrg.secret })
+		expect(listed.body.data).toEqual([])
+		for (const [method, target, body] of [
+			["GET", path, undefined],
+			["GET", `${path}/checks`, undefined],
+			["PATCH", path, { url: "https://example.org/metrics" }],
+			["POST", `${path}/probe`, undefined],
+			["DELETE", path, undefined],
+		] as const) {
+			const answer = await harness.request(method, target, {
+				token: otherOrg.secret,
+				...(body === undefined ? undefined : { body }),
+			})
+			expect([method, answer.status]).toEqual([method, 404])
+			expect(JSON.stringify(answer.body)).not.toContain("s3cr3t")
+		}
+
+		const after = await harness.request("GET", path, { token: key.secret })
+		expect(after.body.url).toBe(stored)
+		await harness.dispose()
+	})
+
+	it("refuses to save a URL that carries the hidden-value marker", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey()
+		const stored = "https://example.com:1/metrics?token=s3cr3t"
+		const hidden = "https://example.com:1/metrics?token=[redacted]"
+
+		const created = await harness.request("POST", "/v2/scrape_targets", {
+			token: key.secret,
+			body: { name: "tokenised", url: stored, target_type: "prometheus" },
+		})
+		expect(created.status).toBe(200)
+
+		const updated = await harness.request("PATCH", `/v2/scrape_targets/${created.body.id}`, {
+			token: key.secret,
+			body: { url: hidden },
+		})
+		expect(updated.status).toBe(400)
+		const lowerCased = await harness.request("PATCH", `/v2/scrape_targets/${created.body.id}`, {
+			token: key.secret,
+			body: { url: "https://example.com:1/metrics?token=%5bredacted%5d" },
+		})
+		expect(lowerCased.status).toBe(400)
+		const createdHidden = await harness.request("POST", "/v2/scrape_targets", {
+			token: key.secret,
+			body: { name: "copied", url: hidden, target_type: "prometheus" },
+		})
+		expect(createdHidden.status).toBe(400)
+
+		const after = await harness.request("GET", `/v2/scrape_targets/${created.body.id}`, {
+			token: key.secret,
+		})
+		expect(after.body.url).toBe(stored)
+		const list = await harness.request("GET", "/v2/scrape_targets", { token: key.secret })
+		expect(list.body.data).toHaveLength(1)
 		await harness.dispose()
 	})
 

@@ -6,6 +6,7 @@ import * as CH from "@maple/query-engine/ch"
 import { Clock, Context, DateTime, Effect, Layer, Option, Array as Arr } from "effect"
 import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/auth/system-tenant"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { AuditEventSink } from "@maple/backend/services/integrations/vcs/AuditEventSink"
 import { auditTrailEventToRow, storedRowToEntry } from "./audit-trail-row"
 import type { AuditTrailProviderStats } from "./audit-trail-sources"
 
@@ -212,3 +213,12 @@ export class AuditTrailService extends Context.Service<AuditTrailService, AuditT
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(WarehouseQueryService.layer))
 }
+
+/** The VCS layer's `AuditEventSink`, writing provider audit events (GitHub) to the trail. */
+export const AuditTrailEventSinkLive = Layer.effect(
+	AuditEventSink,
+	Effect.gen(function* () {
+		const trail = yield* AuditTrailService
+		return { onAuditEvent: (orgId: OrgId, event: AuditTrailEvent) => trail.write(orgId, [event]) }
+	}),
+)

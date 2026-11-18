@@ -1,6 +1,17 @@
 import * as ClickHouseHttp from "@maple-dev/effect-clickhouse-http"
 import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientError } from "effect/http"
-import { Context, Effect, Layer, Option, Redacted, Schema, Stream, Array as Arr, String as Str } from "effect"
+import {
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Ref,
+	Schema,
+	Stream,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { WarehouseConfigError, WarehouseUpstreamError, type TenantContext } from "@maple/domain/http"
 import {
 	BackendDialect,
@@ -105,6 +116,29 @@ const clickHouseSessionSettings = (kind: ClickHouseProtocolBackendConfig["kind"]
 	}
 }
 
+/** An account whose profile is already `readonly=2` refuses any change to `readonly`, a repeat included. */
+const refusesReadOnlyChange = (error: ClickHouseHttp.ClickHouseError): boolean =>
+	error._tag === "@effect-clickhouse-http/ServerError" &&
+	error.code === "164" &&
+	/Cannot modify 'readonly'/.test(error.message)
+
+/**
+ * Whether the account's own profile is `readonly=2`, asked with no setting of Maple's. A
+ * statement that sets `readonly` itself draws the same refusal, so the refusal alone must
+ * never be what drops Maple's `readonly=1`.
+ */
+const profileForbidsWrites = (client: ClickHouseHttp.Client) =>
+	client
+		.query({
+			sql: "SELECT toString(getSetting('readonly')) AS readonly",
+			limits: { maxRows: 1, maxBytes: 4_096 },
+		})
+		.pipe(
+			Effect.map(({ data }) => Arr.some(data, (row) => row["readonly"] === "2")),
+			// An unanswered question is not a yes: the caller then reports the original refusal.
+			Effect.orElseSucceed(() => false),
+		)
+
 const createClickHouseSqlClient = (
 	config: ClickHouseProtocolBackendConfig,
 ): Effect.Effect<WarehouseSqlClient, WarehouseDriverError, HttpClient.HttpClient> =>
@@ -117,28 +151,51 @@ const createClickHouseSqlClient = (
 		// is untouched. See `BackendDialect` for why each one is there.
 		settings: clickHouseSessionSettings(config.kind),
 	}).pipe(
-		Effect.mapBoth({
-			onFailure: (error) =>
-				new WarehouseDriverError({ reason: "config", message: error.message, cause: error }),
-			onSuccess: (client): WarehouseSqlClient => ({
+		Effect.mapError(
+			(error) => new WarehouseDriverError({ reason: "config", message: error.message, cause: error }),
+		),
+		Effect.flatMap((client) =>
+			Effect.map(Ref.make(false), (profileIsReadOnly): WarehouseSqlClient => ({
 				// `wireFormat: "out-of-band"` for every ClickHouse-protocol backend: the
 				// executor has already stripped any FORMAT clause and the client appends
 				// its own.
 				// Trusted queries pass no limits, so the client's 16 MiB `maxRowBytes`
 				// default still applies: it bounds the buffer a single unfinished row can
 				// take and is far above anything a Maple query returns.
-				sql: (statement, options) =>
-					client
-						.query({
+				sql: (statement, options) => {
+					const run = (settings?: Readonly<Record<string, number>>) =>
+						client.query({
 							sql: statement.text,
 							...(options?.responseLimits ? { limits: options.responseLimits } : undefined),
+							...(settings === undefined ? undefined : { settings }),
 						})
-						.pipe(
-							Effect.mapBoth({
-								onSuccess: ({ data }) => ({ data }),
-								onFailure: clickHouseDriverError,
-							}),
-						),
+					const limits = options?.readOnly?.settings
+					const query =
+						limits === undefined
+							? run()
+							: Effect.flatMap(Ref.get(profileIsReadOnly), (known) =>
+									known
+										? run(limits)
+										: run({ ...limits, readonly: 1 }).pipe(
+												Effect.catchIf(refusesReadOnlyChange, (error) =>
+													Effect.flatMap(profileForbidsWrites(client), (forbids) =>
+														forbids
+															? Effect.andThen(
+																	Ref.set(profileIsReadOnly, true),
+																	run(limits),
+																)
+															: Effect.fail(error),
+													),
+												),
+											),
+								)
+					return query.pipe(
+						Effect.mapBoth({
+							onSuccess: ({ data }) => ({ data }),
+							onFailure: clickHouseDriverError,
+						}),
+					)
+				},
 				insert: () =>
 					// ClickHouse is READ-ONLY for Maple: the managed CLICKHOUSE_URL endpoint is
 					// a query gateway that rejects inserts ("Only SELECT or DESCRIBE queries are
@@ -151,8 +208,8 @@ const createClickHouseSqlClient = (
 							message: "ClickHouse is read-only for Maple — ingest must use Tinybird",
 						}),
 					),
-			}),
-		}),
+			})),
+		),
 	)
 
 // Tinybird's `/v0/sql` speaks plain HTTP: POST the SQL as text with a bearer

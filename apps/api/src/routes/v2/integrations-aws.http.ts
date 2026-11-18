@@ -5,9 +5,7 @@ import {
 	MapleApiV2,
 	isoTimestamp,
 	isoTimestampOrNull,
-	scopeAllows,
 	V2InsufficientPermissions,
-	V2InsufficientScope,
 } from "@maple/domain/http/v2"
 import { Effect, Array as Arr } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
@@ -107,14 +105,13 @@ export const HttpV2AwsIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "awsIn
 					yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
-					// The rendered setup holds the metric stream's access key, which writes to ingest.
-					if (!scopeAllows(tenant.scopes, { family: "integrations", access: "write" })) {
-						return yield* V2InsufficientScope.make(
-							'A connection\'s setup contains its stream access key, so this API key needs "integrations:write".',
-						)
-					}
+					// A rendered setup can hold keys that write to ingest, so `requiredScopeForRoute`
+					// asks a scoped key for write on this GET.
 					const setup = yield* aws.setup(tenant.orgId, params.id)
-					// The key itself stays out of the entry: it records that the key was handed out.
+					// One entry per key handed out; the keys themselves stay out of the entries.
+					if (setup.containsStreamKey) {
+						yield* recordHttpAudit("aws_connection.stream_key_read", { resourceId: params.id })
+					}
 					if (setup.containsEventsKey) {
 						yield* recordHttpAudit("aws_connection.events_key_read", { resourceId: params.id })
 					}
@@ -137,12 +134,6 @@ export const HttpV2AwsIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "awsIn
 					yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
-					// The same bar as `setup`, which hands the new key out.
-					if (!scopeAllows(tenant.scopes, { family: "integrations", access: "write" })) {
-						return yield* V2InsufficientScope.make(
-							'Rotating a connection\'s events key needs "integrations:write".',
-						)
-					}
 					const connection = yield* aws.rotateEventsKey(tenant.orgId, params.id)
 					yield* recordHttpAudit("aws_connection.events_key_rotated", {
 						resourceId: connection.id,

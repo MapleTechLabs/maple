@@ -8,6 +8,13 @@ import {
 } from "@maple/primitives"
 import { HttpTaggedError } from "./error-policy"
 
+/**
+ * What a caller who cannot manage scrape targets sees in place of each of a URL's query values
+ * (the path stays). A URL that carries it is refused on create and update, so it never replaces
+ * the stored value.
+ */
+export const SCRAPE_TARGET_REDACTED_VALUE = "[redacted]"
+
 export class ScrapeTargetResponse extends Schema.Class<ScrapeTargetResponse>("ScrapeTargetResponse")({
 	id: ScrapeTargetId,
 	name: Schema.String,
