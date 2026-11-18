@@ -71,6 +71,15 @@ export const COST_PROVIDERS = {
 		iconClassName: "text-foreground",
 		requestUsd: null,
 	},
+	// Read from the org's BigQuery billing export: no per-request price, but each sync's query
+	// scans bytes BigQuery bills to the connection's host project.
+	gcp: {
+		name: PROVIDERS.gcp.name,
+		icon: PROVIDERS.gcp.icon,
+		requestUsd: null,
+		sourceNote:
+			"Read from the BigQuery billing export. Each sync runs one query, which BigQuery bills to the connection's project, usually a fraction of a cent.",
+	},
 } as const satisfies Record<CostProvider, CostProviderEntry>
 
 /**

@@ -42,6 +42,8 @@ import { OpenAiCostProvider } from "./providers/openai/OpenAiCostProvider"
 import { OpenRouterCostProvider } from "./providers/openrouter/OpenRouterCostProvider"
 import { PlanetScaleCostProvider } from "./providers/planetscale/PlanetScaleCostProvider"
 import { VercelCostProvider } from "./providers/vercel/VercelCostProvider"
+import { GcpCostProvider } from "./providers/gcp/GcpCostProvider"
+import { reconcileGcpCostSources } from "./gcp-cost-sources"
 import {
 	advanceCostSync,
 	batchWholeDays,
@@ -175,6 +177,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 				planetscale: yield* PlanetScaleCostProvider,
 				anthropic: yield* AnthropicCostProvider,
 				openai: yield* OpenAiCostProvider,
+				gcp: yield* GcpCostProvider,
 			} satisfies Record<CostProvider, CostProviderAdapter>
 			const dbExecute = makeDbExecute(
 				database,
@@ -256,6 +259,15 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 				})
 			})
 
+			/** GCP sources whose billing export is gone, with its connector or by itself. */
+			const reconcileGcp = Effect.fn("CostSyncService.reconcileGcp")(function* () {
+				const reconciled = yield* dbExecute((db) => reconcileGcpCostSources(db))
+				yield* Effect.annotateCurrentSpan({
+					"maple.cost.provider": "gcp",
+					"maple.cost.sources_removed": reconciled.removed,
+				})
+			})
+
 			/** One function per provider or connection table; each owns the sources of its own. */
 			const reconcile = (now: number) =>
 				Effect.all(
@@ -266,6 +278,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 						reconcileVercel(),
 						reconcileConnections(now),
 						reconcilePlanetScale(),
+						reconcileGcp(),
 					],
 					{ discard: true },
 				)
@@ -708,6 +721,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 				PlanetScaleCostProvider.layer,
 				AnthropicCostProvider.layer,
 				OpenAiCostProvider.layer,
+				GcpCostProvider.layer,
 				WarehouseQueryService.layer,
 			),
 		),
