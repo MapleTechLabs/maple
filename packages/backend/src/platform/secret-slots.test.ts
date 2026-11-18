@@ -1,7 +1,8 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Option } from "effect"
 import { openSecret, parseSecretKeyring } from "./SecretBox"
-import { clickHousePasswordSlot } from "./secret-slots"
+import type { UptimeMonitorConfig, UptimeStep } from "@maple/domain/uptime"
+import { clickHousePasswordSlot, uptimeMonitorHeadersSlot } from "./secret-slots"
 
 // The ingest gateway opens this column in Rust. The same triples are pinned in
 // apps/ingest/src/main.rs, so a change to either envelope breaks one of the two tests.
@@ -20,7 +21,7 @@ const v2Fixture = {
 const v3Fixture = {
 	ciphertext: "v3.IGjfnBNl.xeDTFXH6xa2O+HjUIA==",
 	iv: "AAECAwQFBgcICQoL",
-	tag: "cG8TD4fQzD4DFygS8QA5tw==",
+	tag: "kDzWdYJ8UBBoQYMWpL9KSg==",
 }
 
 const open = (chUrl: string, stored: typeof v2Fixture) =>
@@ -42,4 +43,60 @@ describe("clickHousePasswordSlot", () => {
 			expect(moved).toBe("Decryption failed")
 		}),
 	)
+})
+
+describe("uptimeMonitorHeadersSlot", () => {
+	const step = (url: string, extract: UptimeStep["extract"] = []): UptimeStep => ({
+		name: url,
+		method: "GET",
+		url,
+		headers: {},
+		assertions: [],
+		extract,
+	})
+	const multistep = (steps: ReadonlyArray<UptimeStep>): UptimeMonitorConfig => ({
+		_tag: "multistep",
+		steps,
+		timeoutMs: 10_000,
+	})
+	const destinationOf = (config: UptimeMonitorConfig) =>
+		uptimeMonitorHeadersSlot.destination?.({ orgId: "org_a", id: "mon_1", config })
+
+	// A later step's host can be a variable an earlier step filled: changing where that value is
+	// read from moves the request as surely as changing its URL.
+	it("binds a multi-step check to every step's URL and what each step extracts", () => {
+		const login = step("https://api.example/login", [
+			{ name: "api", from: { _tag: "json_path", path: "$.endpoint" } },
+		])
+		const original = destinationOf(multistep([login, step("{{api}}/me")]))
+		const otherPath = destinationOf(
+			multistep([{ ...login, url: "https://api.example/echo?x=1" }, step("{{api}}/me")]),
+		)
+		const otherExtract = destinationOf(
+			multistep([
+				{ ...login, extract: [{ name: "api", from: { _tag: "json_path", path: "$.x" } }] },
+				step("{{api}}/me"),
+			]),
+		)
+		expect(otherPath).not.toEqual(original)
+		expect(otherExtract).not.toEqual(original)
+		expect(destinationOf(multistep([login, step("{{api}}/me")]))).toEqual(original)
+	})
+
+	it("binds an HTTP check to its host only", () => {
+		const http = (url: string): UptimeMonitorConfig => ({
+			_tag: "http",
+			url,
+			method: "GET",
+			headers: {},
+			assertions: [],
+			timeoutMs: 5000,
+		})
+		expect(destinationOf(http("https://a.example/one"))).toEqual(
+			destinationOf(http("https://a.example/two")),
+		)
+		expect(destinationOf(http("https://b.example/one"))).not.toEqual(
+			destinationOf(http("https://a.example/one")),
+		)
+	})
 })

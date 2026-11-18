@@ -164,13 +164,25 @@ export interface UptimeMonitorHeadersRef extends OrgRowRef {
 	readonly config: UptimeMonitorConfig
 }
 
-/** Every host the check requests, in step order. */
-const uptimeHosts = (config: UptimeMonitorConfig): ReadonlyArray<string> => {
+/**
+ * Where a check sends its headers. An HTTP check: its host. A multi-step check: every step's
+ * whole URL and what it extracts, since a later step's host can be a variable an earlier step
+ * filled from its response.
+ */
+const uptimeDestination = (config: UptimeMonitorConfig): ReadonlyArray<string> => {
 	switch (config._tag) {
 		case "http":
 			return [urlHost(config.url)]
 		case "multistep":
-			return Arr.map(config.steps, (step) => urlHost(step.url))
+			return Arr.flatMap(config.steps, (step) => [
+				step.url,
+				String(step.extract.length),
+				...Arr.flatMap(step.extract, (extraction) => [
+					extraction.name,
+					extraction.from._tag,
+					extraction.from._tag === "json_path" ? extraction.from.path : extraction.from.name,
+				]),
+			])
 		default:
 			return []
 	}
@@ -180,5 +192,5 @@ const uptimeHosts = (config: UptimeMonitorConfig): ReadonlyArray<string> => {
 export const uptimeMonitorHeadersSlot: SecretSlot<UptimeMonitorHeadersRef> = {
 	name: "uptime_monitors.headers",
 	binding: orgRowBinding,
-	destination: (ref) => uptimeHosts(ref.config),
+	destination: (ref) => uptimeDestination(ref.config),
 }

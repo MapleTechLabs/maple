@@ -20,6 +20,8 @@ import { decryptAes256Gcm, encryptAes256Gcm, type EncryptedValue } from "./Crypt
 const ENVELOPE_PREFIX = "v2"
 /** The v2 envelope with the slot's destination added to the AAD. */
 const DESTINATION_ENVELOPE_PREFIX = "v3"
+/** Separates row from destination in the v3 AAD, so no v3 AAD equals a v2 one. */
+const DESTINATION_AAD_MARKER = "destination"
 const SUBKEY_INFO_PREFIX = "maple/secret-box/v2/slot/"
 const KEY_ID_INFO = "maple/secret-box/v2/key-id"
 
@@ -50,6 +52,21 @@ export interface SecretSlot<Ref> {
 	 */
 	readonly destination?: (ref: Ref) => ReadonlyArray<string>
 }
+
+/**
+ * The prefixes a current value of `slot` starts with. A destination slot accepts v3 too, so a
+ * reseal pass does not turn a later release's v3 values back into v2 (docs/secret-encryption.md).
+ */
+export const currentEnvelopePrefixes = <Ref>(
+	keyring: SecretKeyring,
+	slot: SecretSlot<Ref>,
+): ReadonlyArray<string> =>
+	slot.destination !== undefined
+		? [
+				`${ENVELOPE_PREFIX}.${keyring.primary.id}.`,
+				`${DESTINATION_ENVELOPE_PREFIX}.${keyring.primary.id}.`,
+			]
+		: [`${ENVELOPE_PREFIX}.${keyring.primary.id}.`]
 
 /** HKDF-SHA256 (RFC 5869) with an empty salt: the first 32-byte output block. */
 export const hkdfSha256 = (inputKey: Buffer, info: string): Buffer => {
@@ -170,6 +187,7 @@ const aadParts = <Ref>(
 		? Option.some(slot.binding(ref))
 		: Option.map(Option.fromUndefinedOr(slot.destination), (destination) => [
 				...slot.binding(ref),
+				DESTINATION_AAD_MARKER,
 				...destination(ref),
 			])
 

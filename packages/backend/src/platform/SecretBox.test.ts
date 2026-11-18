@@ -191,6 +191,22 @@ describe("v3 envelope", () => {
 		}),
 	)
 
+	it.effect("does not open a v2 value relabelled v3 even when the destination is empty", () =>
+		Effect.gen(function* () {
+			const ring = yield* keyring(1)
+			const noDestination: SecretSlot<Ref> = { ...slot, destination: () => [] }
+			const sealed = yield* sealSecret(ring, slot, ref, "hunter2", fail)
+			const error = yield* openSecret(
+				ring,
+				noDestination,
+				ref,
+				{ ...sealed, ...relabel(sealed, "v3") },
+				fail,
+			).pipe(Effect.flip)
+			expect(error).toBe("Decryption failed")
+		}),
+	)
+
 	it.effect("is refused on a slot that names no destination", () =>
 		Effect.gen(function* () {
 			const ring = yield* keyring(1)
