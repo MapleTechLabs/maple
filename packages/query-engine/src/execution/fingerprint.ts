@@ -14,6 +14,8 @@ export const truncateSql = (s: string, maxLen: number) =>
 	s.length > maxLen ? Str.slice(0, maxLen)(s) + "...[truncated]" : s
 
 const IDENT_CHAR = /[A-Za-z0-9_]/
+/** The server reads `$` inside a bare identifier as part of it, so `a$t$` never opens a heredoc. */
+const IDENT_PART = /[A-Za-z0-9_$]/
 const NUMBER_CHAR = /[A-Za-z0-9_.]/
 const HEREDOC_TAG = /^\$[A-Za-z0-9_]*\$/
 /** A heredoc tag is short; the scan never looks further ahead for one. */
@@ -105,7 +107,7 @@ export const redactSqlLiterals = (sql: string): string => {
 			i = j
 		} else if (IDENT_CHAR.test(c)) {
 			let j = i + 1
-			while (j < sql.length && IDENT_CHAR.test(at(sql, j))) j++
+			while (j < sql.length && IDENT_PART.test(at(sql, j))) j++
 			out += Str.slice(i, j)(sql)
 			i = j
 		} else {

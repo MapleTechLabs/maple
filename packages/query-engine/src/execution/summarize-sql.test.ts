@@ -131,6 +131,7 @@ describe("redactSqlLiterals", () => {
 			["SELECT $tag$x$TAG$alice@example.com$tag$ AS v", "SELECT ? AS v"],
 			["SELECT 123_456, 1.5e-3, 0x1E-2 FROM traces_v2", "SELECT ?, ?, ?-? FROM traces_v2"],
 			["SELECT a / b FROM t", "SELECT a / b FROM t"],
+			["SELECT a$t$ FROM t WHERE e = 'alice@example.com'", "SELECT a$t$ FROM t WHERE e = ?"],
 		]
 		for (const [sql, redacted] of cases) {
 			expect(redactSqlLiterals(sql)).toBe(redacted)
