@@ -25,7 +25,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/button.ts` `button`, `linkButton`: The Button: variant and size classes, attributes and a loading spinner.
 - `packages/views/src/ui/calendar-view.ts` `view`: react-day-picker's DOM for `<Calendar mode="single">` (en-US): rdp-* classes, Maple's `calendarClassNames`, the same ARIA labels.
 - `packages/views/src/ui/calendar.ts` `isoDay`, `gridWeeks`, `tabbableDay` (stateful: Model, init, update): Single mode: react-day-picker's state as a Submodel.
-- `packages/views/src/ui/card-button.ts` `cardButtonClass`, `cardButton`: `CardButton`: a whole card as one click target (template tiles, source and destination pickers, metric cards).
+- `packages/views/src/ui/card-button.ts` `cardButtonClass`, `cardButton`, `cardLink`: `CardButton`: a whole card as one click target (template tiles, source and destination pickers, metric cards).
 - `packages/views/src/ui/card.ts` `card`, `cardHeader`, `cardTitle`, `cardDescription`, `cardPanel`, `cardFooter`, `cardAction`: The Card surface (styles in ./card.styles.ts): rounded-md, and its parts.
 - `packages/views/src/ui/chart-frame.ts` `chartFrameClass`, `chartNoData`: The classes of a chart's box: `fill` is the className a host gives a chart to fill its tile instead of keeping an aspect ratio, `plot` a chart's own root, `centered` its message...
 - `packages/views/src/ui/chart-skeleton-shapes.ts` `heatmapGhost`, `hbarGhost`, `funnelGhost`, `pathsGhost`, `pieGhost`, `gaugeGhost`, `statGhost`, `dropoffGhost`: The heatmap, hbar, funnel, drop-off, paths, pie, gauge and stat ghosts of `ChartSkeleton`, markup and numbers as there.
@@ -274,6 +274,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/peek-keys.ts` `peekStepFor`: The list peeks' step keys: down/J forward, up/K back, except in a text field or with a modifier.
 - `apps/web/src/page/kit/pick-chips.ts` `pickChips`: `PickList` for a sentence, where the picks sit inline on the sentence's own line.
 - `apps/web/src/page/kit/pick-list.ts` `pickList`: What a form has picked (destinations, people, schedules), each removable and, in an ordered list, movable, then an "Add" menu of the rest.
+- `apps/web/src/page/kit/picker-card.ts` `pickerCard`: A provider in a picker grid (`/sources/new`, the Cost page's add dialog): its tile, name and what it brings in, as one card that acts in place or navigates.
 - `apps/web/src/page/kit/pinned-namespace-notice.ts` `pinnedNamespaceNotice`: Replaces a rail's Namespace section while the org-global pin is on.
 - `apps/web/src/page/kit/providers.ts` `providerBrand`: The integration providers: each one's name, mark, accent, docs and infra page, read by the integrations catalog, the sidebar, the infra overview, Sources and the provider pages.
 - `apps/web/src/page/kit/query-builder/change.ts` `withRootOnly`, `switchDataSource`, `applyQueryChange`: One edit a `QueryPanel` makes to its draft, as data the host applies.

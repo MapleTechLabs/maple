@@ -76,6 +76,7 @@ export const Message = defineMessageUnion({
 	CompletedReadGrants: { grants: Schema.Array(Policy.PermissionName) },
 	/** Opens the add-source dialog on the providers. */
 	ClickedAddSource: {},
+	ChangedProviderSearch: { value: Schema.String },
 	/** Picks a provider added by pasting a credential: the dialog moves to its form. */
 	PickedProvider: { provider: CredentialProvider },
 	/** Turns the dialog to Vercel and reads the org's connection; also the step's Try again. */

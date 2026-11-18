@@ -96,6 +96,8 @@ export const Model = Schema.Struct({
 	grants: Schema.NullOr(Schema.Array(Policy.PermissionName)),
 	addDialog: Dialog.Model,
 	addStep: AddStep,
+	/** What the provider step's search narrows the providers to; cleared whichever way the dialog opens. */
+	providerSearch: Schema.String,
 	/** The credential being typed (a key or a token); cleared whichever way the dialog closes. */
 	credentialDraft: Field.Model,
 	/** Why the last save was refused, shown under the field until the credential changes. */
