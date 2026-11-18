@@ -375,7 +375,7 @@
 	background: var(--primary);
 }
 /* Caption. All three lines share one grid cell, so the box is as tall as the
-   tallest line and a longer ja/ko string never shifts the plate below it.
+   tallest line and a longer ja/ko string never moves what follows it.
    The swap is a blur-and-fade rather than a slide: the outgoing line dissolves
    in place, which reads as the same sentence resolving into a new one instead
    of two labels racing past each other. */
@@ -655,7 +655,7 @@
 	background: var(--primary);
 }
 
-/* A logs stream in a third-width plate keeps time and message: the app's Service column (shown
+/* A logs stream in a narrow plate keeps time and message: the app's Service column (shown
    from md) and Level column would leave the message no room. Warn and error keep their row rail. */
 .live-logs--plate :is(.w-40.md\:flex, .w-40.md\:inline-block, .shrink-0.w-11) {
 	display: none;

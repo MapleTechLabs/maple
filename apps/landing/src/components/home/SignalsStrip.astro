@@ -1,14 +1,7 @@
 ---
 /**
- * Signals: the trace across the full shell, logs and session replay under it.
- *
- * Not the three OTel signals: metrics is the least legible surface at plate
- * size, while a replay joined to a trace id is a real differentiator. Metrics
- * has its own tab in the surface explorer further down.
- *
- * The trace and logs plates are the dashboard's own waterfall and logs stream
- * on example data, drawn large enough to read and use. The session plate is a
- * capture, cropped to the part of the screen the heading is about.
+ * Signals: the dashboard's own trace waterfall across the shell, with its logs stream and a
+ * session replay capture at half the shell. Metrics has a tab in the surface explorer instead.
  */
 import * as m from "../../paraglide/messages.js";
 import { featurePath } from "../../lib/page-registry";
@@ -53,7 +46,7 @@ const session = {
 
 		<div class="mt-12 grid gap-12 md:mt-16 lg:grid-cols-2 lg:gap-8">
 			<div class="flex min-w-0 flex-col">
-				<div class="grid grid-cols-[minmax(0,1fr)_max-content] items-baseline gap-x-8 gap-y-2">
+				<div class="grid flex-1 grid-cols-[minmax(0,1fr)_max-content] content-start items-baseline gap-x-8 gap-y-2">
 					<h2 class="font-display text-2xl leading-tight tracking-[-0.01em] text-fg md:text-[28px]">{logs.title}</h2>
 					<p class="col-span-2 row-start-2 max-w-[62ch] text-[15px] leading-relaxed text-fg-muted">{logs.sub}</p>
 					<a href={logs.href} class="col-start-2 row-start-1 whitespace-nowrap text-sm text-fg transition-colors hover:text-primary">{logs.link}<span aria-hidden="true"> →</span></a>
@@ -63,11 +56,12 @@ const session = {
 				</div>
 			</div>
 			<div class="flex min-w-0 flex-col">
-				<div class="grid grid-cols-[minmax(0,1fr)_max-content] items-baseline gap-x-8 gap-y-2">
+				<div class="grid flex-1 grid-cols-[minmax(0,1fr)_max-content] content-start items-baseline gap-x-8 gap-y-2">
 					<h2 class="font-display text-2xl leading-tight tracking-[-0.01em] text-fg md:text-[28px]">{session.title}</h2>
 					<p class="col-span-2 row-start-2 max-w-[62ch] text-[15px] leading-relaxed text-fg-muted">{session.sub}</p>
 					<a href={session.href} class="col-start-2 row-start-1 whitespace-nowrap text-sm text-fg transition-colors hover:text-primary">{session.link}<span aria-hidden="true"> →</span></a>
 				</div>
+				{/* Declared 16:10 like the logs plate beside it; the crop window still ends inside the capture. */}
 				<div class="mt-6">
 					<MediaFrame
 						label="A browser session replay showing the recorded page and captured network requests"

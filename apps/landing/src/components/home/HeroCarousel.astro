@@ -77,6 +77,7 @@ const slides = [
 					role="tabpanel"
 					aria-labelledby={`hero-tab-${slide.key}`}
 					aria-hidden={i === 0 ? "false" : "true"}
+					inert={i !== 0}
 				>
 					<MediaFrame
 						label={slide.label}
@@ -117,8 +118,8 @@ const slides = [
 		}
 	</div>
 
-	{/* One grid cell, three lines stacked in it — the box sizes itself to the
-	    tallest, so a longer line in ja/ko never shifts the plate. */}
+	{/* One grid cell, three lines stacked in it: the box sizes itself to the
+	    tallest, so a longer line in ja/ko never moves what follows. */}
 	<div class="hero-caption">
 		{
 			slides.map((slide, i) => (
@@ -175,8 +176,10 @@ const slides = [
 			warm((next + 1) % panes.length);
 			panes.forEach((pane, i) => {
 				pane.toggleAttribute("data-on", i === index);
-				// One image alt reaches the screen reader, not three.
+				// One image alt reaches the screen reader, not three, and the two
+				// faded-out plates take no focus stop for their lightbox.
 				pane.setAttribute("aria-hidden", i === index ? "false" : "true");
+				pane.inert = i !== index;
 			});
 			captions.forEach((caption, i) => {
 				caption.toggleAttribute("data-on", i === index);
@@ -288,7 +291,9 @@ const slides = [
 				for (const entry of entries) onscreen = entry.isIntersecting;
 				sync();
 			},
-			{ threshold: 0.25 },
+			// Low, because the plate starts at the foot of the first viewport and
+			// the reel should already run while only its top edge is in view.
+			{ threshold: 0.1 },
 		).observe(root);
 
 		// Chain slide 2 off slide 1's load rather than starting both at once: the

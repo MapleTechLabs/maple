@@ -1,15 +1,7 @@
 ---
 /**
- * Platform: one large frame that switches surface, and the page's link hub to
- * the feature pages (SEO load-bearing, so every pane's link is in the markup).
- *
- * It replaces the six-cell contact sheet and the five sections that followed
- * it (Kubernetes, web analytics, product events, uptime, GitHub). Those showed
- * each surface small, beside a column of copy; here each one gets the full
- * shell and a single line. The feature pages carry the detail.
- *
- * Inactive panes are `hidden`, so the section is as tall as the surface on
- * show. No pane measures itself at load, which is what makes that safe.
+ * Platform: one frame the width of the shell that switches surface, and the link hub to the
+ * feature pages. Inactive panes are `hidden`; no pane measures itself at load, so that is safe.
  */
 import * as m from "../../paraglide/messages.js";
 import { featurePath } from "../../lib/page-registry";
@@ -24,8 +16,9 @@ const locale = Astro.currentLocale ?? "en";
 const l = (slug: string) => featurePath(locale, slug);
 
 // Sentence one of a longer description: the pane takes a line, not a paragraph.
+// Japanese puts no space after its full stop, so it ends a sentence on its own.
 const firstSentence = (text: string) => {
-	const end = text.search(/[.。](\s|$)/);
+	const end = text.search(/。|\.(\s|$)/);
 	return end === -1 ? text : text.slice(0, end + 1);
 };
 
@@ -193,7 +186,6 @@ const githubSteps = [m.home_github_step_1_title(), m.home_github_step_2_title(),
 						aria-labelledby={`surface-tab-${surface.key}`}
 						data-pane={i}
 						hidden={i !== 0}
-						class="surface-pane"
 					>
 						<div class="flex flex-col gap-x-10 gap-y-3 py-6 md:flex-row md:items-end md:justify-between md:py-8">
 							<div class="min-w-0">
@@ -274,13 +266,13 @@ const githubSteps = [m.home_github_step_1_title(), m.home_github_step_2_title(),
 </section>
 
 <style>
-	/* One hairline under the row, and the active tab draws over it. The row
-	   scrolls sideways on narrow screens instead of wrapping to three lines. */
+	/* The row scrolls sideways on narrow screens. Its hairline is an inset shadow,
+	   so the active tab's border lies on it inside the scroll box, not clipped below. */
 	.surface-tabs {
 		display: flex;
 		gap: 0 1.75rem;
 		overflow-x: auto;
-		border-bottom: 1px solid var(--border);
+		box-shadow: inset 0 -1px 0 var(--border);
 		scrollbar-width: none;
 	}
 	.surface-tabs::-webkit-scrollbar {
@@ -288,7 +280,6 @@ const githubSteps = [m.home_github_step_1_title(), m.home_github_step_2_title(),
 	}
 	.surface-tab {
 		flex: none;
-		margin-bottom: -1px;
 		padding: 0.75rem 0;
 		border-bottom: 1px solid transparent;
 		font-size: 0.875rem;
@@ -335,8 +326,15 @@ const githubSteps = [m.home_github_step_1_title(), m.home_github_step_2_title(),
 		const panes = [...root.querySelectorAll<HTMLElement>("[data-pane]")];
 		let index = 0;
 
+		// Pane captures are lazy and `hidden`, so nothing fetches them until asked.
+		const warm = (i: number) => {
+			for (const img of panes[i]?.querySelectorAll("img") ?? []) img.loading = "eager";
+		};
+
 		const show = (next: number) => {
 			index = next;
+			warm(next);
+			warm((next + 1) % panes.length);
 			panes.forEach((pane, i) => {
 				pane.hidden = i !== index;
 			});
@@ -351,6 +349,8 @@ const githubSteps = [m.home_github_step_1_title(), m.home_github_step_2_title(),
 
 		tabs.forEach((tab, i) => {
 			tab.addEventListener("click", () => show(i));
+			// A pointer on the way to a tab buys the fetch a head start.
+			tab.addEventListener("pointerenter", () => warm(i));
 		});
 
 		tablist?.addEventListener("keydown", (event) => {
