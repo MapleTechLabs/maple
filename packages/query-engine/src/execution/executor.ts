@@ -31,6 +31,7 @@ import { parseStatement, withFormat, withSettings } from "@maple-dev/effect-orm/
 import type { WarehouseDriverError } from "./driver-error"
 import type { WarehouseExecutorApi } from "../observability"
 import {
+	clickHouseSettings,
 	mergeSettingsClauses,
 	settingsClause,
 	type QueryProfileName,
@@ -561,8 +562,19 @@ WHERE name = 'enable_full_text_index'`,
 		// Parsed once here and passed to the driver as a statement, so no driver
 		// re-derives from SQL text which terminal clauses it already carries.
 		const parsed = parseStatement(sql)
+		// Read-only mode refuses a `SETTINGS` clause, so there the limits travel with the request.
+		const readOnly =
+			execution === "raw" && dialect.readOnlyRawSql
+				? { settings: clickHouseSettings(settings) }
+				: undefined
+		yield* Effect.annotateCurrentSpan("maple.warehouse.read_only", readOnly !== undefined)
 		const statement = withFormat(
-			withSettings(parsed, mergeSettingsClauses(parsed.settings, settingsClause(settings))),
+			withSettings(
+				parsed,
+				readOnly === undefined
+					? mergeSettingsClauses(parsed.settings, settingsClause(settings))
+					: parsed.settings,
+			),
 			dialect.wireFormat === "in-statement" ? (parsed.format ?? dialect.statementFormat) : undefined,
 		)
 		const finalSql = statement.text
@@ -608,12 +620,12 @@ WHERE name = 'enable_full_text_index'`,
 		// slot count reflects the connection, not the retry schedule's sleeps.
 		const queryAttempt = trackOutboundSlot(
 			client
-				.sql(
-					statement,
-					effectiveResponseLimits === undefined
+				.sql(statement, {
+					...(effectiveResponseLimits === undefined
 						? undefined
-						: { responseLimits: effectiveResponseLimits },
-				)
+						: { responseLimits: effectiveResponseLimits }),
+					...(readOnly === undefined ? undefined : { readOnly }),
+				})
 				.pipe(
 					Effect.mapError((error) =>
 						Schema.is(WarehouseResponseLimitError)(error)

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto"
 import {
 	IsoDateTimeString,
 	OrgId,
+	SCRAPE_TARGET_REDACTED_VALUE,
 	ScrapeAuthType,
 	ScrapeIntervalSeconds,
 	ScrapeTargetDeleteResponse,
@@ -22,6 +23,7 @@ import {
 	type ScrapeResultReport,
 	type UpdateScrapeTargetRequest,
 } from "@maple/domain/http"
+import { urlHoldsRedaction } from "@maple/domain/url-redaction"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
@@ -48,7 +50,10 @@ import {
 } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { sealSecret, secretKeyringFromEnv, type SecretKeyring } from "@maple/backend/platform/SecretBox"
-import { scrapeTargetCredentialsSlot } from "@maple/backend/platform/secret-slots"
+import {
+	scrapeTargetCredentialsSlot,
+	type ScrapeTargetCredentialsRef,
+} from "@maple/backend/platform/secret-slots"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -323,11 +328,7 @@ const normalizeBranchPatterns = (patterns: ReadonlyArray<string> | undefined): s
 }
 
 /** Seals credentials for the scrape target row that `ref` names. */
-const encryptCredentials = (
-	keyring: SecretKeyring,
-	ref: { readonly orgId: OrgId; readonly id: ScrapeTargetId },
-	plaintext: string,
-) =>
+const encryptCredentials = (keyring: SecretKeyring, ref: ScrapeTargetCredentialsRef, plaintext: string) =>
 	sealSecret(keyring, scrapeTargetCredentialsSlot, ref, plaintext, () =>
 		toEncryptionError("Failed to encrypt credentials"),
 	)
@@ -498,6 +499,14 @@ const isReservedLabelKey = (key: string): boolean => {
 
 const validateUrl = (url: string) => {
 	const trimmed = Str.trim(url)
+	// A URL read back from a response that hid its query values would save the marker as the value.
+	if (urlHoldsRedaction(trimmed, SCRAPE_TARGET_REDACTED_VALUE)) {
+		return Effect.fail(
+			new ScrapeTargetValidationError({
+				message: `The URL holds a hidden value (${SCRAPE_TARGET_REDACTED_VALUE}). Send the real URL, or leave url out of the update.`,
+			}),
+		)
+	}
 	return validateExternalUrl(trimmed).pipe(
 		Effect.as(trimmed),
 		Effect.mapError(
@@ -800,7 +809,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 					yield* validateAuthCredentials(authType, request.authCredentials)
 					const encrypted = yield* encryptCredentials(
 						keyring,
-						{ orgId, id },
+						{ orgId, id, url },
 						request.authCredentials!,
 					)
 					credentialFields = {
@@ -1045,7 +1054,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 						yield* validateAuthCredentials(newAuthType!, request.authCredentials)
 						const encrypted = yield* encryptCredentials(
 							keyring,
-							{ orgId: existing.orgId, id: existing.id },
+							{ orgId: existing.orgId, id: existing.id, url: nextUrl ?? existing.url },
 							request.authCredentials!,
 						)
 						updates.authCredentialsCiphertext = encrypted.ciphertext
@@ -1058,7 +1067,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 						yield* validateAuthCredentials(currentAuthType, request.authCredentials)
 						const encrypted = yield* encryptCredentials(
 							keyring,
-							{ orgId: existing.orgId, id: existing.id },
+							{ orgId: existing.orgId, id: existing.id, url: nextUrl ?? existing.url },
 							request.authCredentials,
 						)
 						updates.authCredentialsCiphertext = encrypted.ciphertext

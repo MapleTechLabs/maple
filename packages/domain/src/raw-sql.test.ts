@@ -214,10 +214,39 @@ describe("rawSqlIssue", () => {
 		["SELECT $$it's$$ FROM traces WHERE $__orgFilter", "Heredoc strings"],
 		["SELECT $q$x$q$ FROM traces WHERE $__orgFilter", "Heredoc strings"],
 		["SELECT 1 FROM traces /* a /* b */ c */ WHERE $__orgFilter", "Nested /* */ comments"],
+		// The closing half of the outer comment sits where the masker reads a string.
+		[
+			"SELECT 1 FROM traces WHERE $__orgFilter AND 1 /* /* */ '*/ OR 1 OR 'a' = 'a'",
+			"Nested /* */ comments",
+		],
+		["SELECT 1 FROM traces WHERE 1 /*/*/ 'x */ ' != '*/ -- ' AND $__orgFilter", "Nested /* */ comments"],
+		["SELECT 1 FROM traces WHERE 1 // '\n-- ' AND $__orgFilter", "'//' comments"],
+		["SELECT 1 FROM traces WHERE 1 //* '\n-- */ AND $__orgFilter", "'//' comments"],
+		["SELECT 1 FROM traces WHERE $__orgFilter) AS a UNION ALL SELECT 2 FROM (SELECT 2", "Unbalanced"],
+		["SELECT count( FROM traces WHERE $__orgFilter", "Unbalanced"],
+		["SELECT $1$ ' $1$ AS a, 2 AS b, $1$ ' $1$ AS c FROM traces WHERE $__orgFilter", "Heredoc strings"],
+		[
+			"SELECT \u2018'\u2019 AS a, 2 AS b, \u2018'\u2019 AS c FROM traces WHERE $__orgFilter",
+			"plain ASCII",
+		],
+		[
+			"SELECT ServiceName FROM traces WHERE \u2018x\u2019 != \u2018 AND $__orgFilter AND \u2019",
+			"plain ASCII",
+		],
+		["SELECT \u201Ca'b\u201D FROM traces WHERE $__orgFilter", "plain ASCII"],
+		["SELECT count() FROM numbers\u200B(3) WHERE $__orgFilter", "plain ASCII"],
+		["SELECT count() FROM system\u2060.tables WHERE $__orgFilter", "plain ASCII"],
+		["SELECT 1 FROM traces\u3000WHERE $__orgFilter", "plain ASCII"],
+		["SELECT 1 FROM traces WHERE $__orgFilter \u0000 AND 1", "plain ASCII"],
 	])("rejects syntax the validator cannot see through: %s", (sql, message) => {
 		const issue = rawSqlIssue(sql)
 		expect(issue?.code).toBe("DisallowedStatement")
 		expect(issue?.message).toContain(message)
+	})
+
+	it("says where the character it cannot read is", () => {
+		const issue = rawSqlIssue("SELECT 1\nFROM traces\nWHERE $__orgFilter AND\u200BDuration > 0")
+		expect(issue?.message).toContain("U+200B at line 3, column 23")
 	})
 
 	it.each([
@@ -226,6 +255,14 @@ describe("rawSqlIssue", () => {
 		'SELECT `file`, "url" FROM traces WHERE $__orgFilter -- # not code',
 		"SELECT `Url` AS u, count(`Url`) AS c FROM traces WHERE $__orgFilter /* $$ */",
 		"SELECT urlHash(Url) AS h FROM traces WHERE $__orgFilter AND Url IN ('a', \"b\")",
+		"SELECT 'caf\u00E9 \u2018quoted\u2019 \u200B' AS s FROM traces WHERE $__orgFilter -- \u2192 note",
+		"SELECT count() AS `gr\u00F6\u00DFe` FROM traces /* \u2265 0, see /docs */ WHERE $__orgFilter",
+		"SELECT 1 /* one */ AS a, 2 /* two */ AS b, '/* not a comment' AS c FROM traces WHERE $__orgFilter",
+		"SELECT 1 / 2 AS half, '//' AS s, ')' AS p FROM traces WHERE $__orgFilter -- see http://x/ (docs",
+		"SELECT\f1 AS a,\v2 AS b FROM traces WHERE $__orgFilter",
+		// A no-break space, as pasted from a chat or a document.
+		"SELECT count()\u00A0AS c FROM\u00A0traces WHERE\u00A0$__orgFilter",
+		"SELECT `a.b` AS x, \"c d\" AS y, 'C:\\\\dir' AS z FROM traces WHERE $__orgFilter",
 	])("still accepts these characters in literals, comments and plain identifiers: %s", (sql) => {
 		expect(rawSqlIssue(sql)).toBeNull()
 	})

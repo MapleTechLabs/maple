@@ -24,6 +24,7 @@ import {
 	UPTIME_USER_AGENT,
 	UptimeCheckReport,
 	type UptimeMonitorConfig,
+	StoredUptimeMonitorConfig,
 } from "@maple/domain/uptime"
 import { Env } from "@maple/backend/platform/Env"
 import { sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
@@ -1747,10 +1748,13 @@ describe("UptimeMonitorsService backing alert rule", () => {
 			Effect.gen(function* () {
 				const env = yield* Env
 				const keyring = yield* secretKeyringFromEnv(env, (message) => message)
+				const config = yield* Schema.decodeEffect(
+					Schema.fromJsonString(StoredUptimeMonitorConfig),
+				)(yield* storedConfig(testDb, id))
 				const sealed = yield* sealSecret(
 					keyring,
 					uptimeMonitorHeadersSlot,
-					{ orgId: ORG, id },
+					{ orgId: ORG, id, config },
 					JSON.stringify(payload),
 					(message) => message,
 				)

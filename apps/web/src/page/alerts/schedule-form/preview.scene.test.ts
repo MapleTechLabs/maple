@@ -1,18 +1,9 @@
 import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
-import { Option, Result, Schema, Array as Arr } from "effect"
-import {
-	click,
-	expect as expectView,
-	find,
-	given,
-	role,
-	scene,
-	tap,
-	text,
-	type,
-	withViewInputs,
-} from "foldkit/scene"
+import { Result, Schema, Array as Arr } from "effect"
+import { expect as expectView, given, scene, text, withViewInputs } from "foldkit/scene"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { Lazy } from "foldkit/test"
 import { expect, test } from "vitest"
 import type { PageContext } from "../../contract"
 import { memberId, ONCALL_NOW, oncallMembers } from "../shared/oncall-test-fixtures"
@@ -20,6 +11,7 @@ import { ORG } from "../../kit/alert-test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
+import { schedulePreview } from "./preview"
 import { view as pageView } from "./view"
 
 // The preview renders the whole schedule, so it must not redo that work on edits it does not read.
@@ -47,27 +39,26 @@ const staffed = (): Model =>
 		(model, message) => pageUpdate(model, message).model,
 	)
 
+/** Renders `first`, then `second` on the next render: `Lazy.expectAllReused` throws when a slot misses. */
+const previewOf = (first: Model, second: Model) => {
+	const renders = { count: 0 }
+	return (_model: Model, h: HtmlBuilder<Message>): Html =>
+		schedulePreview(h, renders.count++ === 0 ? first : second)
+}
+
 test("typing the name keeps the drawn preview; a new range draws it again", () => {
-	// The preview's rendered node: the same object while nothing it reads has changed.
-	const drawn: Array<unknown> = []
-	const keep = tap<Model, Message>((simulation) => {
-		drawn.push(Option.getOrNull(find(simulation.html, '[data-slot="coverage-preview"]')))
-	})
-	scene(
-		{ update: pageUpdate, view },
-		given(staffed()),
-		expectView(text("Covered in this period")).toExist(),
-		keep,
-		type(role("textbox", { name: "Name" }), "Checkout primary"),
-		type(role("textbox", { name: "Description (optional)" }), "Who swaps with whom"),
-		keep,
-		click(role("button", { name: "4 weeks" })),
-		expectView(text("Covered in this period")).toExist(),
-		keep,
+	const model = staffed()
+	const named = Arr.reduce(
+		[
+			Message.ChangedName({ value: "Checkout primary" }),
+			Message.ChangedDescription({ value: "Who swaps" }),
+		],
+		model,
+		(current, message) => pageUpdate(current, message).model,
 	)
-	expect(drawn[0]).not.toBeNull()
-	expect(drawn[1]).toBe(drawn[0])
-	expect(drawn[2]).not.toBe(drawn[0])
+	Lazy.expectAllReused({ view: previewOf(model, named), model })
+	const ranged = pageUpdate(model, Message.PickedPreviewRange({ days: "28" })).model
+	expect(() => Lazy.expectAllReused({ view: previewOf(model, ranged), model })).toThrow(/ArgumentsChanged/)
 })
 
 test("the clock moves the preview's now line while the editor stays open", () => {

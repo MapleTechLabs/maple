@@ -268,6 +268,7 @@ const githubStatus = new GithubIntegrationStatus({
 	accountType: null,
 	repositorySelection: null,
 	ciTracesEnabled: true,
+	auditLogEnabled: true,
 	repositoryDiscovery: null,
 	repositories: Arr.map(
 		REPOSITORIES,

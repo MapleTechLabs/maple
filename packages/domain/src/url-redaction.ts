@@ -36,6 +36,9 @@ export const redactUrlCredentials = (raw: string, marker: string): string => {
 	return `${scheme}${host}${path}${pairs.length === 0 ? "" : `?${Arr.join(pairs, "&")}`}`
 }
 
+/** A percent-encoded query part decoded; none when its encoding is malformed. */
+const decodeUrlPart = Option.liftThrowable(decodeURIComponent)
+
 /**
  * Whether a URL (or URL template) carries `marker` where {@link redactUrlCredentials} writes it:
  * as a query value, plain or percent-encoded. Such a URL was read back from a redacted response,
@@ -44,14 +47,32 @@ export const redactUrlCredentials = (raw: string, marker: string): string => {
 export const urlHoldsRedaction = (raw: string, marker: string): boolean => {
 	const [, , , , query] = URL_TEMPLATE_PARTS.exec(Str.trim(raw)) ?? []
 	if (query === undefined) return false
-	const markers = [marker, encodeURIComponent(marker)]
-	return Arr.some(
-		Str.split(Str.slice(1)(query), "&"),
-		(pair) =>
-			Arr.contains(markers, pair) ||
-			Option.match(Str.indexOf("=")(pair), {
-				onNone: () => false,
-				onSome: (equals) => Arr.contains(markers, Str.slice(equals + 1)(pair)),
-			}),
+	// Compared decoded and without case: `%5bredacted%5d` is the marker as much as `%5Bredacted%5D`.
+	const isMarker = (value: string) =>
+		Str.toLowerCase(Option.getOrElse(decodeUrlPart(value), () => value)) === Str.toLowerCase(marker)
+	return Arr.some(Str.split(Str.slice(1)(query), "&"), (pair) =>
+		Option.match(Str.indexOf("=")(pair), {
+			onNone: () => isMarker(pair),
+			onSome: (equals) => isMarker(Str.slice(equals + 1)(pair)),
+		}),
 	)
+}
+
+/** One http(s) URL and nothing else: no whitespace, so free text that starts with a URL is not one. */
+const WHOLE_HTTP_URL = /^https?:\/\/\S+$/iu
+
+/**
+ * `text` cut to scheme, host and path ({@link redactUrlSecrets}) when it is an http(s) URL with
+ * userinfo, a query or a fragment. Only a string that is a URL as a whole (surrounding whitespace
+ * aside) is handled: a URL inside other text is left alone, with the text.
+ */
+export const redactWholeUrlSecrets = (text: string): string => {
+	const url = Str.trim(text)
+	if (!WHOLE_HTTP_URL.test(url)) return text
+	// One that does not parse cannot be cut, so it is judged by its text and none of it is kept.
+	if (!URL.canParse(url)) return /[?#@]/u.test(url) ? redactUrlSecrets(url) : text
+	const parsed = new URL(url)
+	return parsed.username === "" && parsed.password === "" && parsed.search === "" && parsed.hash === ""
+		? text
+		: redactUrlSecrets(url)
 }
