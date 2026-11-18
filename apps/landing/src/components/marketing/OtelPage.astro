@@ -1,0 +1,110 @@
+---
+/**
+ * /opentelemetry in every locale. The three route files only claim the path: one template, so a
+ * change here reaches en, ja and ko together.
+ *
+ * A live trace sits beside the hero and the logs page sits under the spec grid, because the page's
+ * claim is that OTLP data lands in a working product, and prose alone does not show that.
+ */
+import { featureBySlug } from "../../lib/features";
+import { featurePath } from "../../lib/page-registry";
+import Layout from "../../layouts/Layout.astro";
+import * as m from "../../paraglide/messages.js";
+import BottomCTA from "../BottomCTA.astro";
+import FeatureDetailGrid from "../FeatureDetailGrid.astro";
+import Footer from "../Footer.astro";
+import Nav from "../Nav.astro";
+import SeoHead from "../SeoHead.astro";
+import CrossLinks from "../page/CrossLinks.astro";
+import PageHero from "../page/PageHero.astro";
+import ProductFrame from "./ProductFrame.astro";
+
+const locale = Astro.currentLocale ?? "en";
+const pageTitle = m.page_otel_title();
+const pageDescription = m.page_otel_desc();
+
+const reasons = [
+	{ title: m.page_otel_no_vendor(), description: m.page_otel_no_vendor_desc() },
+	{ title: m.page_otel_one_standard(), description: m.page_otel_one_standard_desc() },
+	{ title: m.page_otel_community(), description: m.page_otel_community_desc() },
+	{ title: m.page_otel_language(), description: m.page_otel_language_desc() },
+	{ title: m.page_otel_future(), description: m.page_otel_future_desc() },
+	{ title: m.page_otel_ecosystem_title(), description: m.page_otel_ecosystem_desc() },
+];
+
+const spec = [
+	{ title: m.page_otel_spec_otlp(), description: m.page_otel_spec_otlp_desc() },
+	{ title: m.page_otel_spec_semantic(), description: m.page_otel_spec_semantic_desc() },
+	{ title: m.page_otel_spec_signals(), description: m.page_otel_spec_signals_desc() },
+	{ title: m.page_otel_spec_collector(), description: m.page_otel_spec_collector_desc() },
+	{ title: m.page_otel_spec_sdk(), description: m.page_otel_spec_sdk_desc() },
+	{ title: m.page_otel_spec_context(), description: m.page_otel_spec_context_desc() },
+];
+
+// The three signals the page is about, each with its feature page.
+const crossLinks = ["distributed-tracing", "log-management", "metrics-dashboards"].flatMap((slug) => {
+	const feature = featureBySlug(slug);
+	return feature ? [{ href: featurePath(locale, feature.slug), name: feature.navLabel(), desc: feature.navDesc() }] : [];
+});
+
+const eyebrow = "text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted";
+const h2 = "mt-4 max-w-[24ch] font-display text-2xl font-medium leading-[1.08] tracking-[-0.02em] text-fg md:text-3xl";
+const prose = "text-sm leading-relaxed text-fg-muted md:text-base";
+---
+
+<Layout title={pageTitle} description={pageDescription}>
+	<SeoHead title={pageTitle} description={pageDescription} type="WebPage" />
+	<Nav />
+
+	<PageHero
+		title={m.page_otel_heading()}
+		lede={m.page_otel_subtitle()}
+		breadcrumb={[{ label: m.breadcrumb_home(), href: "/" }, { label: m.page_otel_label() }]}
+	>
+		<ProductFrame slot="aside" surface="trace" />
+	</PageHero>
+
+	<section class="border-t border-border bg-bg">
+		<div class="shell py-16 md:py-24">
+			<p class={eyebrow}>{m.page_otel_standard()}</p>
+			<h2 class={h2}>{m.page_otel_what_is()}</h2>
+			<div class="mt-6 max-w-3xl space-y-4">
+				<p class={prose}>{m.page_otel_what_is_p1()}</p>
+				<p class={prose}>{m.page_otel_what_is_p2()}</p>
+			</div>
+
+			<p class={`mt-16 md:mt-20 ${eyebrow}`}>{m.page_otel_approach()}</p>
+			<h2 class={h2}>{m.page_otel_why_heading()}</h2>
+			<div class="mt-10">
+				<FeatureDetailGrid items={reasons} />
+			</div>
+		</div>
+	</section>
+
+	<section class="border-t border-border bg-bg">
+		<div class="shell py-16 md:py-24">
+			<p class={eyebrow}>{m.page_otel_spec()}</p>
+			<h2 class={h2}>{m.page_otel_spec_heading()}</h2>
+			<div class="mt-10">
+				<FeatureDetailGrid items={spec} />
+			</div>
+			<ProductFrame surface="logs" size="wide" class="mt-10 md:mt-14" />
+		</div>
+	</section>
+
+	<section class="border-t border-border bg-bg">
+		<div class="shell py-16 md:py-24">
+			<p class={eyebrow}>{m.page_otel_ecosystem()}</p>
+			<h2 class={h2}>{m.page_otel_ecosystem_heading()}</h2>
+			<div class="mt-6 max-w-3xl space-y-4">
+				<p class={prose}>{m.page_otel_ecosystem_p1()}</p>
+				<p class={prose}>{m.page_otel_ecosystem_p2()}</p>
+			</div>
+		</div>
+	</section>
+
+	<CrossLinks eyebrow={m.page_cross_eyebrow()} title={m.page_cross_features_title()} links={crossLinks} />
+
+	<BottomCTA />
+	<Footer />
+</Layout>

@@ -12,6 +12,7 @@ import { formatDate, isoDate, readingTime } from "../../lib/blog";
 import { getSortedStories, getStoryCustomer } from "../../lib/customers";
 import { LOGOS } from "../../lib/customer-logos";
 import Icon from "../../components/Icon.astro";
+import ProductFrame, { type ProductSurface } from "../../components/marketing/ProductFrame.astro";
 
 export async function getStaticPaths() {
     const stories = await getCollection("customers", ({ data }) => !data.draft || import.meta.env.DEV);
@@ -26,6 +27,10 @@ const { title, description, date, author, authorRole, highlights, cover, coverAl
 const { Content, headings } = await render(story);
 const customer = await getStoryCustomer(story);
 const Logo = customer ? LOGOS[customer.id] : undefined;
+
+// The surface the story is about, shown beside its title. Superwall's headline is latency per
+// service; the trace sits inside its text, so its header takes the services page.
+const heroSurface: ProductSurface = story.id === "superwall" ? "services" : "trace";
 
 const minutes = readingTime(story.body);
 const hasToc = headings.some((h) => h.depth === 2);
@@ -75,9 +80,9 @@ const backLink =
 
     <article class="relative pt-[19px]">
         <div class="mx-auto max-w-6xl px-6 pt-20 md:pt-24">
-            <div class:list={["lg:grid lg:gap-16", hasToc && "lg:grid-cols-[minmax(0,1fr)_14rem]"]}>
-                <div class="min-w-0">
-                    <div class="mx-auto w-full max-w-[42rem]">
+            {/* Title beside the product from lg; on a phone the frame follows the byline. */}
+            <div class="grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,30rem)] lg:items-center lg:gap-14">
+                    <div class="min-w-0">
                         <a href="/customers" class={backLink}>
                             <span aria-hidden="true">←</span> all customer stories
                         </a>
@@ -105,6 +110,13 @@ const backLink =
                             <span>{author}</span>
                             {authorRole && <span class="text-fg-muted">{authorRole}</span>}
                         </div>
+                    </div>
+                    <ProductFrame surface={heroSurface} loading="eager" />
+            </div>
+
+            <div class:list={["lg:mt-6 lg:grid lg:gap-16", hasToc && "lg:grid-cols-[minmax(0,1fr)_14rem]"]}>
+                <div class="min-w-0">
+                    <div class="mx-auto w-full max-w-[42rem]">
 
                         {/* The numbers up front, a step wider than the prose. */}
                         {highlights.length > 0 && (
@@ -160,7 +172,7 @@ const backLink =
                 </div>
 
                 {hasToc && (
-                    <aside class="hidden lg:block">
+                    <aside class="hidden pt-10 lg:block">
                         <TableOfContents headings={headings} maxDepth={2} class="sticky top-28 max-h-[calc(100vh-9rem)] overflow-y-auto" />
                     </aside>
                 )}
