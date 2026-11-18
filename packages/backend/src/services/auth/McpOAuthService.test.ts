@@ -497,6 +497,24 @@ describe("McpOAuthService", () => {
 		}).pipe(Effect.provide(makeLayer(db)))
 	})
 
+	it.effect("keeps the approved client name on the access key a refresh mints", () => {
+		const db = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			const oauth = yield* McpOAuthService
+			const apiKeys = yield* ApiKeysService
+			const grant = yield* issueGrant(oauth, "Named Editor")
+			const rotated = yield* oauth.refresh(
+				{ refreshToken: grant.tokens.refresh_token, clientId: grant.clientId, resource },
+				"127.0.0.1",
+			)
+			const live = yield* Effect.promise(() =>
+				db.pglite.query<{ name: string }>("select name from api_keys where revoked = false"),
+			)
+			expect(live.rows.map((row) => row.name)).toEqual(["Named Editor"])
+			expect(Option.isSome(yield* apiKeys.resolveByKey(rotated.access_token))).toBe(true)
+		}).pipe(Effect.provide(makeLayer(db)))
+	})
+
 	it.effect("carries the family expiry across a rotation instead of resetting it", () => {
 		const db = createTestDb(createdDbs)
 		return Effect.gen(function* () {

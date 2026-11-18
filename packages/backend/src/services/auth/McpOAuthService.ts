@@ -802,7 +802,7 @@ export class McpOAuthService extends Context.Service<
 				const accessKeyRows = yield* dbExecute((db) =>
 					db.run(
 						PG.from(ApiKeys)
-							.select("revoked")
+							.select("revoked", "name")
 							.where(($) => [$.id.eq(row.accessKeyId)])
 							.limit(1),
 					),
@@ -824,7 +824,7 @@ export class McpOAuthService extends Context.Service<
 				}
 				const values = makeTokenValues({
 					clientId: row.clientId,
-					clientName: "Maple MCP client",
+					clientName: accessKeyRow.name,
 					resource: row.resource,
 					scopes: requestedScopes,
 					orgId: row.orgId,
@@ -859,7 +859,8 @@ export class McpOAuthService extends Context.Service<
 								PG.insertInto(ApiKeys).values({
 									id: values.accessKeyId,
 									orgId: row.orgId,
-									name: "Maple MCP client",
+									// The client name the member approved, so the key stays recognisable.
+									name: accessKeyRow.name,
 									description: "OAuth access token for the Maple MCP server",
 									keyHash: hashApiKey(values.accessToken, apiKeyHmacKey),
 									keyPrefix: Str.slice(0, 12)(values.accessToken) + "...",
