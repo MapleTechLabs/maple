@@ -54,7 +54,7 @@ The illustration occupies the right background and fades behind the copy; on sma
 
 ## Documentation home
 
-`/docs` pairs a heavy display title with a cropped capture of the Maple trace waterfall on a flat background. The screenshot opens at full size. "Start here" is a framed strip beneath the opening, with amber icons that match the sidebar. Sections use an eyebrow, a heavy heading and sharp hairline frames. Cells have no radius and hover to `--card`. The "Any OTLP exporter" row spans the language grid. Article pages use the docs reading scale and place diagrams beside the concepts they explain. The docs 404 uses the same title weight and sharp list frame.
+`/docs` pairs a heavy display title with the shared Maple Waterfall component on a flat background. The example checkout trace is pre-rendered, and readers can expand or collapse spans once the page loads. "Start here" is a framed strip beneath the opening, with amber icons that match the sidebar. Sections use an eyebrow, a heavy heading and sharp hairline frames. Cells have no radius and hover to `--card`. The "Any OTLP exporter" row spans the language grid. Article pages use the docs reading scale and place diagrams beside the concepts they explain. The docs 404 uses the same title weight and sharp list frame.
 
 ## Social previews
 

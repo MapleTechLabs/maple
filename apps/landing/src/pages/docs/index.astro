@@ -5,9 +5,9 @@
 import { getCollection } from "astro:content";
 import DocsLayout from "../../layouts/DocsLayout.astro";
 import DocsCategoryIcon from "../../components/docs/DocsCategoryIcon.astro";
+import { DocsTraceWaterfall } from "../../components/docs/DocsTraceWaterfall";
 import LanguageLogo from "../../components/docs/LanguageLogo.astro";
 import BrandMarkIcon from "../../components/BrandMarkIcon.astro";
-import MediaFrame from "../../components/home/MediaFrame.astro";
 import { LANGUAGES } from "../../lib/docs-languages";
 import { INSTRUMENTATION_SLUG } from "../../lib/docs-nav";
 
@@ -108,16 +108,11 @@ const introduction = bySlug("getting-started/introduction");
                         )}
                     </p>
                 </div>
-                <figure class="docs-hero__capture">
-                    <MediaFrame
-                        src="/screenshots/strip-trace.webp"
-                        label="A failed checkout request in Maple's trace waterfall, with nested spans, durations and HTTP statuses"
-                        width={2880}
-                        height={1620}
-                        crop={{ x: 0.18, y: 0.075, zoom: 1.23 }}
-                        loading="eager"
-                    />
-                    <figcaption>A checkout trace in Maple</figcaption>
+                <figure class="docs-hero__trace">
+                    <figcaption>Example checkout trace</figcaption>
+                    <div class="docs-hero__waterfall">
+                        <DocsTraceWaterfall client:visible />
+                    </div>
                 </figure>
             </div>
 
@@ -281,7 +276,7 @@ const introduction = bySlug("getting-started/introduction");
         gap: 24px;
     }
     .docs-hero__title {
-        font-size: clamp(2.25rem, 5.5cqw, 4rem);
+        font-size: clamp(2.25rem, 4.9cqw, 4rem);
         font-weight: 700;
         line-height: 1.03;
         letter-spacing: -0.04em;
@@ -295,15 +290,17 @@ const introduction = bySlug("getting-started/introduction");
         text-wrap: pretty;
         color: var(--foreground);
     }
-    .docs-hero__capture {
+    .docs-hero__trace {
         width: 100%;
-        max-width: 34rem;
+        min-width: 0;
+        max-width: 44rem;
     }
-    .docs-hero__capture :global(.media-crop) {
-        mask-image: none;
+    .docs-hero__waterfall {
+        height: 17rem;
+        font-family: var(--font-mono);
     }
-    .docs-hero__capture figcaption {
-        margin-top: 8px;
+    .docs-hero__trace figcaption {
+        margin-bottom: 8px;
         color: var(--muted-foreground);
         font-size: 13px;
     }
@@ -588,12 +585,12 @@ const introduction = bySlug("getting-started/introduction");
             justify-content: space-between;
         }
     }
-    @container (min-width: 820px) {
+    @container (min-width: 1120px) {
         .docs-hero__overview {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: clamp(24px, 4cqw, 56px);
+            grid-template-columns: minmax(0, 1fr) minmax(37rem, 1.3fr);
+            gap: 32px;
         }
-        .docs-hero__capture {
+        .docs-hero__trace {
             justify-self: end;
         }
     }
