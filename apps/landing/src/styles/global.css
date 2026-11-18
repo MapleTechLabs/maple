@@ -657,9 +657,9 @@
 	background: var(--primary);
 }
 
-/* A logs stream in a third-width plate: the app shows its Service column from the md
-   breakpoint, which here would leave the message no room. */
-.live-logs--plate :is(.w-40.md\:flex, .w-40.md\:inline-block) {
+/* A logs stream in a third-width plate keeps time and message: the app's Service column (shown
+   from md) and Level column would leave the message no room. Warn and error keep their row rail. */
+.live-logs--plate :is(.w-40.md\:flex, .w-40.md\:inline-block, .shrink-0.w-11) {
 	display: none;
 }
 

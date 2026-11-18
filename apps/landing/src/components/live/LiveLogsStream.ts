@@ -20,6 +20,17 @@ const NO_LINKS: LogRowLinks = { trace: () => "", log: Option.none() }
 
 const rows = Arr.map(LOGS_STREAM_ROWS, (log) => toLogRowView(log, [], logTimeFormat(TIME_ZONE), NO_LINKS))
 
+/** The stream's own update, except that the landing has no detail sheet: opening a row expands it. */
+export const update = (model: LogsStream.Model, message: LogsStream.Message) => {
+	const next = LogsStream.update(model, message)
+	if (next.outMessage?._tag !== "OpenedLog") return { model: next.model, commands: next.commands }
+	const expanded = LogsStream.update(
+		next.model,
+		LogsStream.Message.ClickedExpand({ index: next.outMessage.index }),
+	)
+	return { model: expanded.model, commands: [...(next.commands ?? []), ...(expanded.commands ?? [])] }
+}
+
 export const LiveLogsStream = makeIsland({
 	name: "LiveLogsStream",
 	Props: Schema.Struct({}),
@@ -31,16 +42,7 @@ export const LiveLogsStream = makeIsland({
 			totalSize: rows.length * ROW_HEIGHT,
 		},
 	}),
-	update: (model, message: LogsStream.Message) => {
-		const next = LogsStream.update(model, message)
-		// The landing has no detail sheet: opening a row expands it in place.
-		if (next.outMessage?._tag !== "OpenedLog") return { model: next.model, commands: next.commands }
-		const expanded = LogsStream.update(
-			next.model,
-			LogsStream.Message.ClickedExpand({ index: next.outMessage.index }),
-		)
-		return { model: expanded.model, commands: [...(next.commands ?? []), ...(expanded.commands ?? [])] }
-	},
+	update,
 	view: (model, h) =>
 		LogsStreamView.view(
 			model,
