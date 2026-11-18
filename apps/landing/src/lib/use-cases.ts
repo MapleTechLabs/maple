@@ -4,13 +4,13 @@
  * Read `page-registry.ts` first — messages are stored uncalled, and this file
  * must not import `.astro` or `astro:i18n`.
  *
- * Each entry drives one `ScrollStory`. The device is the homepage's, but the
+ * Each entry drives one `UseCaseStory`. The device is the homepage's, but the
  * argument is not: what the frame head holds is a different kind of object on
  * every page — an SLO, an order id, a release — and the head also carries a
  * clock, because a use case's claim is partly about how little time it took.
  *
- * Every story here runs at least two real plates, so none falls back to the
- * inline layout (see `storyIsPinnable`).
+ * Every plate here is a real capture: the story's pinned pane opens the page
+ * beside the headline (`UseCaseStory`) and has no placeholder state.
  */
 import * as m from "../paraglide/messages.js"
 import type { UseCase } from "./page-registry"
