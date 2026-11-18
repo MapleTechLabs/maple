@@ -128,9 +128,16 @@ const refusesReadOnlyChange = (error: ClickHouseHttp.ClickHouseError): boolean =
  * never be what drops Maple's `readonly=1`.
  */
 const profileForbidsWrites = (client: ClickHouseHttp.Client) =>
-	Effect.map(client.query({ sql: "SELECT toString(getSetting('readonly')) AS readonly" }), ({ data }) =>
-		Arr.some(data, (row) => row["readonly"] === "2"),
-	)
+	client
+		.query({
+			sql: "SELECT toString(getSetting('readonly')) AS readonly",
+			limits: { maxRows: 1, maxBytes: 4_096 },
+		})
+		.pipe(
+			Effect.map(({ data }) => Arr.some(data, (row) => row["readonly"] === "2")),
+			// An unanswered question is not a yes: the caller then reports the original refusal.
+			Effect.orElseSucceed(() => false),
+		)
 
 const createClickHouseSqlClient = (
 	config: ClickHouseProtocolBackendConfig,

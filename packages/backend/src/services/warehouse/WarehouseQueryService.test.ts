@@ -1467,6 +1467,30 @@ describe("customer ClickHouse read-only raw SQL", () => {
 		}),
 	)
 
+	it.effect("reports the refusal when the profile cannot be read, without rerunning", () =>
+		Effect.gen(function* () {
+			const bodies: Array<string> = []
+			const requestFetch: typeof fetch = async (_input, init) => {
+				const body = requestBodyText(init?.body)
+				bodies.push(body)
+				return Str.includes("getSetting('readonly')")(body)
+					? new Response("Code: 241. DB::Exception: Memory limit exceeded", { status: 500 })
+					: refusal("readonly")
+			}
+			const error = yield* Effect.flip(
+				makeClickHouseTestClient(chConfig, requestFetch).sql(parseStatement("SELECT 1 AS n"), {
+					readOnly: { settings: limits },
+				}),
+			)
+			assert.instanceOf(error, WarehouseDriverError)
+			assert.strictEqual(error.code, "164")
+			assert.lengthOf(
+				Arr.filter(bodies, (body) => Str.includes("SELECT 1 AS n")(body)),
+				1,
+			)
+		}),
+	)
+
 	it.effect("never drops readonly because the statement itself drew the refusal", () =>
 		Effect.gen(function* () {
 			const seen: Array<{ params: URLSearchParams; body: string }> = []
