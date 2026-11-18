@@ -240,8 +240,9 @@ const clamp = (text: string, max: number): string =>
 
 /** Code spans and fences, where Discord neither links nor previews a URL. */
 const CODE = /(```[\s\S]*?```|`[^`\n]*`)/
-/** A markdown link's target, an already-suppressed `<url>`, or a bare URL. */
-const LINK = /(\]\(\s*)<?(https?:\/\/[^\s)>]+)>?(?=\s*\))|<https?:\/\/[^\s>]+>|https?:\/\/[^\s<>]+/g
+/** A markdown link's target (balanced parentheses kept), an already-suppressed `<url>`, or a bare URL. */
+const LINK =
+	/(\]\(\s*)<?(https?:\/\/(?:[^\s()<>]|\([^\s()<>]*\))+)>?(?=\s*\))|<https?:\/\/[^\s>]+>|https?:\/\/[^\s<>]+/g
 /** Punctuation that ends a sentence rather than the URL before it. */
 const TRAILING = /[.,;:!?'"]+$|\)+$/
 

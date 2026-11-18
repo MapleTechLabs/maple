@@ -216,6 +216,13 @@ describe("renderDiscordMessage", () => {
 		expect(Str.endsWith("…")(payload.content)).toBe(true)
 	})
 
+	it("keeps a link target's balanced parentheses when it suppresses the preview", () => {
+		const payload = renderDiscordMessage([
+			{ kind: "prose", markdown: "[docs](https://x.example/wiki/Foo_(bar)) here" },
+		])
+		expect(payload.content).toBe("[docs](<https://x.example/wiki/Foo_(bar)>) here")
+	})
+
 	it("posts every URL in the body in Discord's no-preview form, and keeps chart embeds", () => {
 		const payload = renderDiscordMessage([
 			{
