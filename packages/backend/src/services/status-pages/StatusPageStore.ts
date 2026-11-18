@@ -47,7 +47,8 @@ export interface StatusPageBucket {
 }
 
 export interface StatusPageRoutes {
-	readonly slug: string
+	/** The page's `statusPageAddress` (`<org key>/<slug>`), served at `/s/<address>`. */
+	readonly address: string
 	readonly hostnames: ReadonlyArray<string>
 }
 
@@ -66,13 +67,13 @@ export interface StatusPageKeyListing {
 export interface StatusPageStoreApi {
 	/** Writes the snapshot to KV and its R2 copy. */
 	readonly putSnapshot: (pageId: StatusPageId, json: string) => Effect.Effect<void, StatusPageStoreError>
-	/** Points the slug and hostnames at the page, in KV and in R2 for the edge's fallback. */
+	/** Points the address and hostnames at the page, in KV and in R2 for the edge's fallback. */
 	readonly putRoutes: (
 		pageId: StatusPageId,
 		routes: StatusPageRoutes,
 	) => Effect.Effect<void, StatusPageStoreError>
-	/** The page id the slug's KV route points at, or null. */
-	readonly readSlugRoute: (slug: string) => Effect.Effect<string | null, StatusPageStoreError>
+	/** The page id the address's KV route points at, or null. */
+	readonly readSlugRoute: (address: string) => Effect.Effect<string | null, StatusPageStoreError>
 	/** The page id a custom hostname's KV route points at, or null. */
 	readonly readHostRoute: (hostname: string) => Effect.Effect<string | null, StatusPageStoreError>
 	/** Removes the routes from KV and R2, a tombstone included. */
@@ -84,8 +85,8 @@ export interface StatusPageStoreApi {
 	 * KV copy goes. Break-glass entries stay for the reconciler to import.
 	 */
 	readonly retireSnapshot: (pageId: StatusPageId) => Effect.Effect<void, StatusPageStoreError>
-	/** Takes a slug route off the edge the same way: a tombstone in R2, nothing in KV. */
-	readonly retireSlugRoute: (slug: string) => Effect.Effect<void, StatusPageStoreError>
+	/** Takes an address route off the edge the same way: a tombstone in R2, nothing in KV. */
+	readonly retireSlugRoute: (address: string) => Effect.Effect<void, StatusPageStoreError>
 	/** Removes the snapshot (KV and R2, a tombstone included) and every break-glass entry of the page. */
 	readonly deletePage: (pageId: StatusPageId) => Effect.Effect<void, StatusPageStoreError>
 	readonly putHeartbeat: (
@@ -173,8 +174,8 @@ const makeApi = (backend: StoreBackend): StatusPageStoreApi => ({
 	putRoutes: (pageId, routes) =>
 		Effect.all(
 			[
-				backend.kvPut(StatusPageKeys.slug(routes.slug), pageId),
-				backend.objectPut(StatusPageKeys.slugObject(routes.slug), pageId),
+				backend.kvPut(StatusPageKeys.slug(routes.address), pageId),
+				backend.objectPut(StatusPageKeys.slugObject(routes.address), pageId),
 				...Arr.flatMap(routes.hostnames, (hostname) => [
 					backend.kvPut(StatusPageKeys.host(hostname), pageId),
 					backend.objectPut(StatusPageKeys.hostObject(hostname), pageId),
@@ -182,7 +183,7 @@ const makeApi = (backend: StoreBackend): StatusPageStoreApi => ({
 			],
 			{ concurrency: 4, discard: true },
 		),
-	readSlugRoute: (slug) => backend.kvGet(StatusPageKeys.slug(slug)),
+	readSlugRoute: (address) => backend.kvGet(StatusPageKeys.slug(address)),
 	readHostRoute: (hostname) => backend.kvGet(StatusPageKeys.host(hostname)),
 	deleteHostRoute: (hostname) =>
 		Effect.all(
@@ -195,8 +196,8 @@ const makeApi = (backend: StoreBackend): StatusPageStoreApi => ({
 	deleteRoutes: (routes) =>
 		Effect.all(
 			[
-				backend.kvDelete(StatusPageKeys.slug(routes.slug)),
-				backend.objectDelete(StatusPageKeys.slugObject(routes.slug)),
+				backend.kvDelete(StatusPageKeys.slug(routes.address)),
+				backend.objectDelete(StatusPageKeys.slugObject(routes.address)),
 				...Arr.flatMap(routes.hostnames, (hostname) => [
 					backend.kvDelete(StatusPageKeys.host(hostname)),
 					backend.objectDelete(StatusPageKeys.hostObject(hostname)),
@@ -209,10 +210,10 @@ const makeApi = (backend: StoreBackend): StatusPageStoreApi => ({
 		backend
 			.objectPut(StatusPageKeys.snapshotObject(pageId), STATUS_PAGE_TOMBSTONE)
 			.pipe(Effect.andThen(backend.kvDelete(StatusPageKeys.snapshot(pageId)))),
-	retireSlugRoute: (slug) =>
+	retireSlugRoute: (address) =>
 		backend
-			.objectPut(StatusPageKeys.slugObject(slug), STATUS_PAGE_TOMBSTONE)
-			.pipe(Effect.andThen(backend.kvDelete(StatusPageKeys.slug(slug)))),
+			.objectPut(StatusPageKeys.slugObject(address), STATUS_PAGE_TOMBSTONE)
+			.pipe(Effect.andThen(backend.kvDelete(StatusPageKeys.slug(address)))),
 	deletePage: (pageId) =>
 		Effect.all(
 			[

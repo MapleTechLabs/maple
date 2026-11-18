@@ -15,6 +15,8 @@ type EncodedIncident = Encoded["incidents"][number]
 type EncodedDay = EncodedComponent["days"][number]
 
 export const FIXTURE_PAGE_ID = "0b4c9b8e-6f2a-4d1e-9a5b-2f6c8d7e1a01"
+/** The fixture page's org key: its shared-host address is `/s/a1b2c3d4e5f6/acme`. */
+export const FIXTURE_ORG_KEY = "a1b2c3d4e5f6"
 export const FIXTURE_NOW = Date.UTC(2026, 9, 28, 12, 0, 0)
 
 const COMPONENT_IDS = [
@@ -87,6 +89,7 @@ export const makeSnapshot = (fields: Partial<Encoded> = {}): StatusPageSnapshot 
 		page: {
 			name: "Acme",
 			slug: "acme",
+			orgKey: FIXTURE_ORG_KEY,
 			description: "Status of Acme services",
 			websiteUrl: "https://acme.example",
 			logoUrl: null,

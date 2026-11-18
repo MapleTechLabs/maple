@@ -11,22 +11,33 @@ import {
 	UPTIME_MAX_DAYS,
 } from "@maple/status-page"
 import { STATUS_PAGE_WINDOW_DAYS } from "@maple/domain/status-page"
-import { Effect, Schema, String as Str } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { accessPage, hasAccess, postAccess } from "./access"
 import { parseForm, postBreakGlassUpdate } from "./break-glass"
 import { clientRateLimitKey } from "./client-key"
 import type { StatusEnv } from "./ports"
-import { asset, html, jsonError, notFound, PUBLIC_CACHE_CONTROL, plain, redirect } from "./responses"
+import {
+	asset,
+	html,
+	jsonError,
+	movedPermanently,
+	notFound,
+	PUBLIC_CACHE_CONTROL,
+	plain,
+	redirect,
+} from "./responses"
 import { type Lookup, loadView, type PageView, pageIdForHost, pageIdForSlug } from "./snapshot"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
-/** `/s/<slug>` and `/s/<slug>/<rest>`: path addressing for hosts without a page of their own. */
-const SLUG_PATH = /^\/s\/([a-z0-9][a-z0-9-]{1,46}[a-z0-9])(\/.*)?$/u
+/** `/s/<org key>/<slug>` and `/s/<org key>/<slug>/<rest>`: path addressing for hosts without a page of their own. */
+const ADDRESS_PATH = /^\/s\/([0-9a-f]{12})\/([a-z0-9][a-z0-9-]{1,46}[a-z0-9])(\/.*)?$/u
+/** `/s/<slug>[/<rest>]`: an address from before slugs were per org, redirected to the page's current one. */
+const LEGACY_SLUG_PATH = /^\/s\/([a-z0-9][a-z0-9-]{1,46}[a-z0-9])(\/.*)?$/u
 
 /**
  * Whether a hostname is one of Maple's own for this Worker: its status domain, workers.dev, or a
- * local dev name. Only these serve `/s/<slug>`; any other host is a custom domain.
+ * local dev name. Only these serve `/s/<org key>/<slug>`; any other host is a custom domain.
  */
 export const sharedHostMatcher =
 	(statusHost: string | null) =>
@@ -46,12 +57,14 @@ interface Target {
 	readonly basePath: string
 	/** Path within the page, always starting with `/`. */
 	readonly path: string
-	/** The slug the request named, when it came in by `/s/<slug>`. */
+	/** The slug the request named, when it came in by path. */
 	readonly slug: string | null
+	/** Came in by a bare `/s/<slug>`, which only pages published before slugs were per org have. */
+	readonly legacy: boolean
 }
 
 /**
- * The page a request is for: its hostname first, then the `/s/<slug>` path form. Path addressing
+ * The page a request is for: its hostname first, then the `/s/<org key>/<slug>` path form. Path addressing
  * is for Maple's own hosts only: a customer's domain never serves another customer's page.
  */
 const resolveTarget = (env: StatusEnv, url: URL): Effect.Effect<Lookup<Target>> =>
@@ -60,22 +73,48 @@ const resolveTarget = (env: StatusEnv, url: URL): Effect.Effect<Lookup<Target>> 
 		if (byHost._tag === "found")
 			return {
 				_tag: "found",
-				value: { pageId: byHost.value, basePath: "", path: url.pathname, slug: null },
+				value: { pageId: byHost.value, basePath: "", path: url.pathname, slug: null, legacy: false },
 			}
 		if (!env.isSharedHost(url.hostname)) return byHost
-		const match = SLUG_PATH.exec(url.pathname)
-		const slug = match?.[1]
-		if (slug === undefined) return byHost
-		const bySlug = yield* pageIdForSlug(env, slug)
-		if (bySlug._tag === "found") {
-			return {
-				_tag: "found",
-				value: { pageId: bySlug.value, basePath: `/s/${slug}`, path: match?.[2] ?? "/", slug },
+		// A legacy slug can look like an org key, so a miss on the address form tries the bare slug.
+		const byAddress = ADDRESS_PATH.exec(url.pathname)
+		const byLegacy = LEGACY_SLUG_PATH.exec(url.pathname)
+		const candidates = [
+			...(byAddress === null
+				? []
+				: [{ key: byAddress[1] ?? "", slug: byAddress[2] ?? "", rest: byAddress[3], legacy: false }]),
+			...(byLegacy === null
+				? []
+				: [{ key: null, slug: byLegacy[1] ?? "", rest: byLegacy[2], legacy: true }]),
+		]
+		const misses: Array<Lookup<string>> = []
+		for (const candidate of candidates) {
+			const address = candidate.key === null ? candidate.slug : `${candidate.key}/${candidate.slug}`
+			const byPath = yield* pageIdForSlug(env, address)
+			if (byPath._tag === "found") {
+				return {
+					_tag: "found",
+					value: {
+						pageId: byPath.value,
+						basePath: `/s/${address}`,
+						path: candidate.rest ?? "/",
+						slug: candidate.slug,
+						legacy: candidate.legacy,
+					},
+				}
 			}
+			misses.push(byPath)
 		}
-		// Either store being down means the 404 could be wrong, so it must not be cached. A slug the
-		// publisher took down is a 404 for certain.
-		return byHost._tag === "unavailable" && bySlug._tag !== "gone" ? byHost : bySlug
+		// An address the publisher took down is a 404 for certain. Otherwise any store being down
+		// means the 404 could be wrong, so it must not be cached.
+		const lookups = [byHost, ...misses]
+		return Option.getOrElse(
+			Option.orElse(
+				Arr.findFirst(lookups, (lookup) => lookup._tag === "gone"),
+				() => Arr.findFirst(lookups, (lookup) => lookup._tag === "unavailable"),
+			),
+			() => byHost,
+		)
 	})
 
 const managePage = (
@@ -246,10 +285,15 @@ export const handleRequest = (request: Request, env: StatusEnv): Effect.Effect<R
 			yield* Effect.logWarning("Status page snapshot missing from every store")
 			return plain(UNAVAILABLE, 503)
 		}
+		const page = view.value.snapshot.page
+		// An old `/s/<slug>` link moves to the page's address; a snapshot from before org keys serves as it is.
+		if (target.value.legacy && page.orgKey !== "" && page.visibility !== "internal")
+			return movedPermanently(
+				`/s/${page.orgKey}/${page.slug}${Str.slice(target.value.basePath.length)(url.pathname)}${url.search}`,
+			)
 		// A renamed page keeps its old `slug:` key until cleanup; only the current slug serves it.
-		if (target.value.slug !== null && view.value.snapshot.page.slug !== target.value.slug)
-			return notFound()
-		const visibility = view.value.snapshot.page.visibility
+		if (target.value.slug !== null && page.slug !== target.value.slug) return notFound()
+		const visibility = page.visibility
 		// Internal pages are taken off the edge; one still reachable here answers as if it were.
 		if (visibility === "internal") return notFound()
 		if (visibility === "password")

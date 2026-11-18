@@ -101,10 +101,12 @@ describe("a password-protected page", () => {
 	it("scopes the cookie to the page's path on Maple's shared host", async () => {
 		const login = await send(
 			fake,
-			postForm("https://status.maple.workers.dev/s/acme/_access", [["password", PASSWORD]]),
+			postForm("https://status.maple.workers.dev/s/a1b2c3d4e5f6/acme/_access", [
+				["password", PASSWORD],
+			]),
 		)
-		expect(login.headers.get("location")).toBe("/s/acme/")
-		expect(login.headers.get("set-cookie")).toContain("Path=/s/acme;")
+		expect(login.headers.get("location")).toBe("/s/a1b2c3d4e5f6/acme/")
+		expect(login.headers.get("set-cookie")).toContain("Path=/s/a1b2c3d4e5f6/acme;")
 	})
 
 	it("asks again once the cookie expires", async () => {
@@ -208,8 +210,8 @@ describe("an internal page", () => {
 			`${PAGE}api/v1/status.json`,
 			`${PAGE}badge.svg`,
 			`${PAGE}_manage`,
-			"https://status.maple.workers.dev/s/acme/",
-			"https://status.maple.workers.dev/s/acme/feed.atom",
+			"https://status.maple.workers.dev/s/a1b2c3d4e5f6/acme/",
+			"https://status.maple.workers.dev/s/a1b2c3d4e5f6/acme/feed.atom",
 		]) {
 			const response = await send(fake, url)
 			expect(response.status, url).toBe(404)

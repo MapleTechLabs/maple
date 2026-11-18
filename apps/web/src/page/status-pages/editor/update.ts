@@ -1,5 +1,5 @@
 import type { StatusPagePreviewParams } from "@maple/domain/http/v2"
-import { STATUS_PAGE_PRESET_DEFAULTS } from "@maple/domain/status-page"
+import { STATUS_PAGE_PRESET_DEFAULTS, statusPageOrgKey } from "@maple/domain/status-page"
 import { PREVIEW_FIELDS } from "@maple/status-page"
 import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
@@ -262,6 +262,7 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		deleteIncidentDialog: Dialog.init("status-page-delete-incident", "alert-dialog"),
 		isDeletingIncident: false,
 		publicBaseUrl: STATUS_PAGE_BASE_URL,
+		orgKey: statusPageOrgKey(context.orgId),
 		urlCopy: CopyButton.init(),
 		settingsEdits: null,
 		brandingDrag: null,
@@ -734,7 +735,8 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 		ChangedBrandingLink: ({ value }) => ({ model: { ...model, brandingLink: value } }),
 		SubmittedBrandingLink: () => submitBrandingLink(model),
 		PickedBrandingImage: ({ field, files }) => takeBrandingImage(model, field, files),
-		CompletedReadBrandingImage: ({ field, read, dataUrl }) => readBrandingImage(model, field, read, dataUrl),
+		CompletedReadBrandingImage: ({ field, read, dataUrl }) =>
+			readBrandingImage(model, field, read, dataUrl),
 		ClickedRemoveBrandingImage: ({ field }) => removeBrandingImage(model, field),
 		PickedThemePreset: ({ preset }) =>
 			changeTheme(model, { preset, ...STATUS_PAGE_PRESET_DEFAULTS[preset] }),
@@ -747,7 +749,12 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 		PickedPreviewWidth: ({ width }) => ({ model: { ...model, previewWidth: width } }),
 		PickedPreviewState: ({ state }) => ({ model: { ...model, previewState: state } }),
 		ClickedDiscardSettings: () => ({
-			model: { ...model, settingsEdits: null, settingsFailure: null, brandingRead: model.brandingRead + 1 },
+			model: {
+				...model,
+				settingsEdits: null,
+				settingsFailure: null,
+				brandingRead: model.brandingRead + 1,
+			},
 		}),
 		ClickedSaveSettings: () => saveSettings(model),
 		// Basic settings' Save goes on to Who can view once the fields saved; a failure stops there.

@@ -125,7 +125,7 @@ const decodePageId = (raw: string): Option.Option<string> => {
 
 /**
  * The page a hostname serves: KV `host:`, R2 `hosts/` when KV fails, then any cached answer.
- * A miss is remembered: the shared host has no page, and every `/s/<slug>` request asks it first.
+ * A miss is remembered: the shared host has no page, and every `/s/<address>` request asks it first.
  */
 export const pageIdForHost = (env: StatusEnv, hostname: string): Effect.Effect<Lookup<string>> =>
 	readThrough(env, {
@@ -137,12 +137,12 @@ export const pageIdForHost = (env: StatusEnv, hostname: string): Effect.Effect<L
 		decode: decodePageId,
 	})
 
-/** The page at `/s/<slug>`: KV `slug:`, R2 `slugs/` when KV fails, then any cached answer. */
-export const pageIdForSlug = (env: StatusEnv, slug: string): Effect.Effect<Lookup<string>> =>
+/** The page at `/s/<address>`: KV `slug:`, R2 `slugs/` when KV fails, then any cached answer. */
+export const pageIdForSlug = (env: StatusEnv, address: string): Effect.Effect<Lookup<string>> =>
 	readThrough(env, {
-		cacheKey: cacheKey("slug", slug),
-		kvKey: StatusPageKeys.slug(slug),
-		r2Key: StatusPageKeys.slugObject(slug),
+		cacheKey: cacheKey("slug", address),
+		kvKey: StatusPageKeys.slug(address),
+		r2Key: StatusPageKeys.slugObject(address),
 		kvMissIsFinal: true,
 		rememberMiss: false,
 		decode: decodePageId,

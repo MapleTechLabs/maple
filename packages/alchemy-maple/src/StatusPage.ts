@@ -55,7 +55,7 @@ export interface StatusPageThemeProps {
  */
 export interface StatusPageProps {
 	name: string
-	/** The page's address, `<slug>.<status domain>`: 3 to 48 lowercase letters, digits or inner hyphens. */
+	/** The page's address, `/s/<org key>/<slug>` on the status domain: 3 to 48 lowercase letters, digits or inner hyphens. */
 	slug: string
 	description?: string | null
 	website_url?: string | null

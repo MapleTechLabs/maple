@@ -168,7 +168,7 @@ resource "maple_status_page" "acme" {
 
 | Argument                                                                | Type         | Notes                                                                                                                           |
 | ----------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| `name`, `slug`                                                          | string       | Required. The page is served at `<slug>.<status domain>`                                                                        |
+| `name`, `slug`                                                          | string       | Required. The page is served at `/s/<org key>/<slug>`                                                                           |
 | `description`, `website_url`, `support_url`, `privacy_url`, `terms_url` | string       | Page text and links                                                                                                             |
 | `logo_url`, `logo_dark_url`, `favicon_url`                              | string       | An https URL, or a base64 `data:image/...` URL of at most 128 KB                                                                |
 | `show_powered_by`                                                       | bool         | **default** `true`                                                                                                              |

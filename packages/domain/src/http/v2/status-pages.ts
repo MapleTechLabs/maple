@@ -65,7 +65,7 @@ const NonEmptyString = Schema.String.check(Schema.isMinLength(1))
 
 const slugField = Schema.String.annotate({
 	description:
-		"The page's address, `<slug>.<status domain>`: 3 to 48 lowercase letters, digits or inner hyphens. Unique across Maple.",
+		"The page's address, `/s/<org key>/<slug>` on the status domain: 3 to 48 lowercase letters, digits or inner hyphens. Unique within the organization.",
 	examples: ["acme-status"],
 })
 
