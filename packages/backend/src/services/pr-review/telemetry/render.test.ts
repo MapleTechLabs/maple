@@ -88,9 +88,12 @@ const finding = (overrides: Partial<ConstructorParameters<typeof PrReviewFinding
 		...overrides,
 	})
 
+const PRIVATE = { isPrivate: true } as const
+const PUBLIC = { isPrivate: false } as const
+
 describe("telemetryFindings", () => {
 	it("files an alert break as critical and a dashboard break as a warning", () => {
-		const findings = telemetryFindings(telemetry())
+		const findings = telemetryFindings(telemetry(), PRIVATE)
 		assert.deepStrictEqual(
 			Arr.map(findings, (item) => [item.checkId, item.severity, item.title]),
 			[
@@ -114,6 +117,7 @@ describe("telemetryFindings", () => {
 					new PrReviewCostNote({ path: "a.ts", line: 3, kind: "span_name", note: "n" }),
 				],
 			}),
+			PRIVATE,
 		)
 		assert.deepStrictEqual(
 			Arr.map(findings, (item) => [item.checkId, item.severity, item.line]),
@@ -129,18 +133,42 @@ describe("telemetryFindings", () => {
 			{ name: "payment.provider", path: "src/other.ts", line: 4 },
 		])
 		assert.deepStrictEqual(
-			Arr.map(telemetryFindings(proved), (item) => Str.split(",")(item.title)[0]),
+			Arr.map(telemetryFindings(proved, PRIVATE), (item) => Str.split(",")(item.title)[0]),
 			["Removes `Payments.charge`"],
 		)
 		assert.deepStrictEqual(proved.contractBreaks[0]?.dismissed, { path: "src/other.ts", line: 4 })
+	})
+
+	it("names no alert or dashboard on a public repository", () => {
+		const findings = telemetryFindings(telemetry(), PUBLIC)
+		assert.deepStrictEqual(
+			Arr.map(findings, (item) => item.title),
+			[
+				"Removes `payment.provider`, which 1 alert reads",
+				"Removes `Payments.charge`, which 1 dashboard reads",
+			],
+		)
+		const text = Arr.join(
+			Arr.map(findings, (item) => `${item.title} ${item.body}`),
+			" ",
+		)
+		assert.notInclude(text, "Checkout by provider")
+		assert.notInclude(text, "“Payments”")
 	})
 })
 
 describe("weighByTraffic", () => {
 	it("raises an observability note in a busy file to a warning and says why", () => {
-		const [raised] = weighByTraffic([finding()], telemetry())
+		const [raised] = weighByTraffic([finding()], telemetry(), PRIVATE)
 		assert.strictEqual(raised?.severity, "warn")
 		assert.include(raised?.body ?? "", "41k calls a day")
+		assert.include(raised?.body ?? "", "busiest")
+	})
+
+	it("names no span when it raises a note on a public repository", () => {
+		const [raised] = weighByTraffic([finding()], telemetry(), PUBLIC)
+		assert.strictEqual(raised?.severity, "warn")
+		assert.notInclude(raised?.body ?? "", "busiest")
 	})
 
 	it("leaves other lenses, quiet files and existing warnings alone", () => {
@@ -156,7 +184,7 @@ describe("weighByTraffic", () => {
 			finding({ path: "src/quiet.ts" }),
 			finding({ severity: "warn" }),
 		]
-		assert.deepStrictEqual(weighByTraffic(kept, telemetry()), kept)
+		assert.deepStrictEqual(weighByTraffic(kept, telemetry(), PRIVATE), kept)
 	})
 })
 
@@ -204,22 +232,61 @@ describe("fixedContractBreaks", () => {
 
 describe("rendering", () => {
 	it("states the breaks and traffic in the kickoff", () => {
-		const text = Arr.join(renderTelemetryKickoff(telemetry()), "\n")
+		const text = Arr.join(renderTelemetryKickoff(telemetry(), { isPrivate: true }), "\n")
 		assert.include(text, "`payment.provider` (attribute, ~1.0k/day) removed at src/pay.ts:12")
 		assert.include(text, "telemetryDismissals")
 		assert.include(text, "src/checkout.ts: ~41k calls/day")
+		assert.include(text, "POST /checkout")
+	})
+
+	it("gives a public repository's kickoff counts, and no span or error text", () => {
+		const facts = telemetry({
+			linkedIssues: [
+				new PrReviewLinkedIssue({
+					issueId: "i-1",
+					fingerprintHash: "fp-1",
+					title: "TypeError: secret@example.com",
+					service: "billing",
+					path: "src/checkout.ts",
+					topFrame: "src/checkout.ts:9",
+					occurrences: 40,
+					lastSeenAt: 0,
+				}),
+			],
+		})
+		const text = Arr.join(renderTelemetryKickoff(facts, { isPrivate: false }), "\n")
+		assert.include(text, "src/checkout.ts: ~41k calls/day")
+		assert.include(text, "An issue with 40 occurrences → src/checkout.ts")
+		for (const leaked of ["POST /checkout", "secret@example.com", "billing", "src/checkout.ts:9"]) {
+			assert.notInclude(text, leaked)
+		}
 	})
 
 	it("says the check blocks only when the repository asked", () => {
 		assert.include(
-			Arr.join(renderTelemetryMarkdown(telemetry(), { blocking: true }), "\n"),
+			Arr.join(renderTelemetryMarkdown(telemetry(), { blocking: true, isPrivate: true }), "\n"),
 			"This check fails",
 		)
 		assert.notInclude(
-			Arr.join(renderTelemetryMarkdown(telemetry(), { blocking: false }), "\n"),
+			Arr.join(renderTelemetryMarkdown(telemetry(), { blocking: false, isPrivate: true }), "\n"),
 			"This check fails",
 		)
-		assert.deepStrictEqual(renderTelemetryMarkdown(undefined, { blocking: false }), [])
+		assert.deepStrictEqual(renderTelemetryMarkdown(undefined, { blocking: false, isPrivate: true }), [])
+	})
+
+	it("names no alert, dashboard, span or error in a public repository's summary", () => {
+		const text = Arr.join(
+			renderTelemetryMarkdown(telemetry({ linkedIssues: [issue("a", "ForbiddenError", 4_600)] }), {
+				blocking: false,
+				isPrivate: false,
+			}),
+			"\n",
+		)
+		assert.include(text, "1 alert")
+		assert.include(text, "1 open error group")
+		for (const name of ["Checkout by provider", "“Payments”", "ForbiddenError", "POST /checkout"]) {
+			assert.notInclude(text, name)
+		}
 	})
 
 	const issue = (id: string, title: string, occurrences: number) =>
@@ -247,7 +314,7 @@ describe("rendering", () => {
 						issue("d", "WarehouseAuthError", 1_500),
 					],
 				}),
-				{ blocking: false },
+				{ blocking: false, isPrivate: true },
 			),
 			"\n",
 		)
@@ -274,19 +341,26 @@ describe("rendering", () => {
 				}),
 			],
 		})
-		const brief = Arr.join(renderTelemetryMarkdown(full, { blocking: false, brief: true }), "\n")
+		const brief = Arr.join(
+			renderTelemetryMarkdown(full, { blocking: false, brief: true, isPrivate: true }),
+			"\n",
+		)
 		assert.include(brief, "`payment.provider` (attribute")
 		assert.include(brief, "Open errors in the changed files (1)")
 		assert.notInclude(brief, "Production traffic")
 		assert.notInclude(brief, "Telemetry this change adds and removes")
 		assert.notInclude(brief, "Ingest cost of new log lines")
-		const check = Arr.join(renderTelemetryMarkdown(full, { blocking: false }), "\n")
+		const check = Arr.join(renderTelemetryMarkdown(full, { blocking: false, isPrivate: true }), "\n")
 		assert.include(check, "Production traffic")
 		assert.include(check, "Telemetry this change adds and removes (1)")
 		assert.include(check, "Ingest cost of new log lines")
 		// Nothing that needs action: the comment has no section at all.
 		assert.deepStrictEqual(
-			renderTelemetryMarkdown(telemetry({ contractBreaks: [] }), { blocking: false, brief: true }),
+			renderTelemetryMarkdown(telemetry({ contractBreaks: [] }), {
+				blocking: false,
+				brief: true,
+				isPrivate: true,
+			}),
 			[],
 		)
 	})
@@ -387,9 +461,36 @@ describe("post-merge", () => {
 				missing: [],
 				verdict: "clean",
 			}),
+			PRIVATE,
 		)
 		assert.include(body, "<!-- maple-pr-post-merge r-1 -->")
 		assert.include(body, "Shipped clean")
 		assert.include(body, "`abcdef1`")
+		assert.include(body, "`api`")
+	})
+
+	it("names no service on a public repository's follow-up", () => {
+		const body = renderPostMergeComment(
+			"r-1",
+			new PrReviewPostMerge({
+				deploy: {
+					service: "api",
+					environment: "production",
+					commitSha: "abcdef123",
+					firstSeen: DateTime.makeUnsafe(0),
+					exact: true,
+				},
+				windowMinutes: 60,
+				operations: [],
+				newIssues: [],
+				linkedIssues: [],
+				missing: [],
+				verdict: "clean",
+			}),
+			PUBLIC,
+		)
+		assert.include(body, "Shipped clean")
+		assert.notInclude(body, "`api`")
+		assert.notInclude(body, "production")
 	})
 })

@@ -51,6 +51,10 @@ export const V2DataSource = Schema.Struct({
 	agent_pii: Schema.Boolean.annotate({
 		description: "Whether agents may read fields marked personal data.",
 	}),
+	supports_pii_redaction: Schema.Boolean.annotate({
+		description:
+			"Whether this kind of source marks fields as personal data. When false, `agent_pii` changes nothing: agents read every column of the entries they can see.",
+	}),
 	connection: V2DataSourceConnection,
 	has_secret: Schema.Boolean.annotate({
 		description: "Whether a password or key is stored. The secret itself is never returned.",
@@ -84,6 +88,7 @@ export const V2DataSource = Schema.Struct({
 			tags: ["shop"],
 			agent_access: true,
 			agent_pii: false,
+			supports_pii_redaction: false,
 			connection: {
 				type: "clickhouse",
 				url: "https://ch.example.com:8443",

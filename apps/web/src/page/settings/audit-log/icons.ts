@@ -130,6 +130,8 @@ const VERB_ICONS = {
 	push_secret_read: "EyeIcon",
 	webhook_secret_read: "EyeIcon",
 	events_key_rotated: "ArrowRotateClockwiseIcon",
+	granted: "KeyIcon",
+	approved: "CircleCheckIcon",
 } as const satisfies { readonly [Verb in AuditVerb]: IconName }
 
 const hasVerbIcon = (verb: string): verb is keyof typeof VERB_ICONS =>

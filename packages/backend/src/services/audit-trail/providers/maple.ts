@@ -40,6 +40,7 @@ const CATEGORY_BY_RESOURCE = {
 	source: "configuration",
 	ingest_key: "credential",
 	mcp_connection: "configuration",
+	cli_session: "credential",
 	mcp_tool: "data_access",
 	investigation: "resource",
 	onboarding_reward: "billing",
@@ -79,6 +80,7 @@ const CATEGORY_BY_ACTION = {
 	"status_page.password_set": "credential",
 	"status_page.password_removed": "credential",
 	"planetscale_integration.metrics_token_set": "credential",
+	"mcp_connection.granted": "credential",
 	"mcp_connection.revoked": "credential",
 	// The link is standing authority to act as the member from the chat platform.
 	"chat_integration.identity_link_started": "permission",

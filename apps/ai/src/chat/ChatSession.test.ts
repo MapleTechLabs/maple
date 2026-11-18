@@ -255,6 +255,33 @@ describe("ChatSession turn mutex", () => {
 		assert.lengthOf(session.history(), 0)
 	})
 
+	it("refuses a turn whose origin is not one the schema knows, and leaves no trace of it", () => {
+		const { session } = makeSession()
+		const begin = (origin: unknown) =>
+			session.beginTurn({
+				sessionId: "org_test:tab",
+				messageId: "m1",
+				text: "what failed in checkout?",
+				tenant: TENANT,
+				// BOUNDARY: the RPC is typed, and what crosses it is still whatever the caller sent.
+				origin: origin as ChatTurnOrigin,
+			})
+		const refused = [
+			begin({ kind: "autonomous", startedBy: { kind: "producer", producer: "anything_i_like" } }),
+			begin({ kind: "autonomous", startedBy: { kind: "producer" } }),
+			begin({ kind: "autonomous", startedBy: "producer" }),
+			begin({ kind: "operator" }),
+			begin(undefined),
+		]
+		assert.deepStrictEqual(refused, [undefined, undefined, undefined, undefined, undefined])
+		assert.isFalse(session.running())
+		assert.lengthOf(session.history(), 0)
+		// A producer's origin as a producer builds it is admitted.
+		assert.isDefined(
+			begin({ kind: "autonomous", startedBy: { kind: "producer", producer: "incident_triage" } }),
+		)
+	})
+
 	it("admits one turn and refuses a second", () => {
 		const { session } = makeSession()
 		const first = session.beginTurn({

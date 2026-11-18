@@ -12,7 +12,7 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import type { MapleDb, MapleDbError } from "@maple/db/client"
 import { AiTriageSettings, Investigations } from "@maple/db/tables"
 import { wrapChatContext } from "@maple/domain/chat-preamble"
-import { encodeChatTurnTenant } from "@maple/domain/chat-session"
+import { type AutonomousTurnStarter, encodeChatTurnTenant } from "@maple/domain/chat-session"
 import type {
 	InvestigationSubject,
 	InvestigationSubjectSnapshot,
@@ -63,6 +63,11 @@ export interface StartInvestigationTurnInput {
 	readonly investigationId: InvestigationId
 	readonly subject: InvestigationSubject
 	readonly snapshot: InvestigationSubjectSnapshot | null
+	/**
+	 * Who caused the pass: the producer that raised it, or the person who started it or wrote its
+	 * subject. Decides what the pass may reach that takes a role, so every caller says which.
+	 */
+	readonly startedBy: AutonomousTurnStarter
 	readonly nowMs: number
 	/** Extra span attributes merged into every outcome annotation. */
 	readonly annotations?: Record<string, string>
@@ -177,6 +182,7 @@ export class InvestigationStarter extends Context.Service<InvestigationStarter, 
 					Effect.annotateCurrentSpan({
 						orgId,
 						"maple.investigation.id": investigationId,
+						"maple.investigation.started_by": input.startedBy.kind,
 						"maple.investigation.start_result": result,
 						...input.annotations,
 					})
@@ -221,7 +227,7 @@ export class InvestigationStarter extends Context.Service<InvestigationStarter, 
 							roles: [],
 							authMode: "self_hosted",
 						}),
-						origin: { kind: "autonomous" },
+						origin: { kind: "autonomous", startedBy: input.startedBy },
 					}),
 				)
 

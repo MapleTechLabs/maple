@@ -6,6 +6,7 @@ import {
 	MAX_RAW_SQL_LENGTH,
 	calledFunction,
 	disallowedTableFunction,
+	hasStringTableSource,
 	isReaderName,
 	maskLiteralsAndComments,
 	unlexableSyntaxIssue,
@@ -73,6 +74,17 @@ const unknownMacroIssue = (sql: string): string | null => {
 	return null
 }
 
+// `$` and digits are name characters to the server, so `orders_$__interval_s` would expand into
+// one name the checks never read. `\w+` already takes a name glued on the right.
+const GLUED_MACRO_RE = /(?<=[\w$])\$__\w+|\$__\w+(?=\$)/
+
+const gluedMacroIssue = (sql: string): string | null => {
+	const glued = GLUED_MACRO_RE.exec(sql)
+	return glued === null
+		? null
+		: `${glued[0]} is joined to a name or number. Put a space or an operator around a macro: it expands to a value, never to part of a name.`
+}
+
 /** The first reason this SQL cannot run on an external ClickHouse source, or null. */
 export const clickHouseSqlIssue = (sql: string): string | null => {
 	if (Str.trim(sql).length === 0 || sql.length > MAX_RAW_SQL_LENGTH) {
@@ -82,7 +94,7 @@ export const clickHouseSqlIssue = (sql: string): string | null => {
 	const unlexable = unlexableSyntaxIssue(sql, masked)
 	if (unlexable !== null) return Str.replace(/raw SQL/g, "this query")(unlexable)
 	// Masked text, like expansion: `'$__x'` in a literal or comment is text, not a macro.
-	const macroIssue = macroArgumentIssue(masked) ?? unknownMacroIssue(masked)
+	const macroIssue = gluedMacroIssue(masked) ?? macroArgumentIssue(masked) ?? unknownMacroIssue(masked)
 	if (macroIssue !== null) return macroIssue
 	const body = maskLiteralsAndComments(stripTerminal(sql))
 	if (Str.includes(";")(body)) return "Send one statement at a time: remove the ';' separators."
@@ -99,6 +111,11 @@ export const clickHouseSqlIssue = (sql: string): string | null => {
 		return isReaderName(tableFunction)
 			? `Table function '${tableFunction}' is not allowed: it reads outside this database.`
 			: `Table function '${tableFunction}(...)' is not allowed where a table goes; only numbers() and generateSeries() are.`
+	}
+	// The server reads a string in a table position as a table name (or a file to open), which no
+	// check on names sees.
+	if (hasStringTableSource(sql)) {
+		return "A string literal cannot stand where a table goes. Name the table as an identifier (`db.table`, in backticks if it needs them)."
 	}
 	// The server is the org's own, so its settings and system tables are theirs to read. The
 	// request headers are not: they carry the stored password.

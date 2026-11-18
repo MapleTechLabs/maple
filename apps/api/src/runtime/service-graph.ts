@@ -48,6 +48,7 @@ import { SearchConsoleImportService } from "@maple/backend/services/integrations
 import { McpConnectionsService } from "@maple/backend/services/auth/McpConnectionsService"
 import { McpOAuthService } from "@maple/backend/services/auth/McpOAuthService"
 import { PreviewSignInService } from "@maple/backend/services/auth/PreviewSignInService"
+import { SelfHostedLoginRateLimiter } from "@maple/backend/services/auth/SelfHostedLoginRateLimiter"
 
 import { DailySpendService } from "@maple/backend/services/billing/DailySpendService"
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
@@ -190,6 +191,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	McpOAuthService.layer,
 	McpConnectionsService.layer,
 	PreviewSignInService.layer,
+	SelfHostedLoginRateLimiter.layer,
 	CloudflareOAuthService.layer,
 	DashboardPersistenceService.layer,
 	SharedDashboardService.layer,

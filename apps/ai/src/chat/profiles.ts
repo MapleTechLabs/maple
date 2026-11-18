@@ -8,7 +8,9 @@
 import type { ChatConnectorOrigin, ChatTurnOrigin } from "@maple/domain/chat-session"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { PermissionRule, type PermissionRuleset } from "@maple/domain/permission"
+import type { TenantContext } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
+import { mayQueryDataSources, queryCallerOf } from "@maple/backend/services/data-sources/query-caller"
 import { Array as Arr } from "effect"
 import { DASHBOARD_AUTHORING_TOOLS } from "../mcp/tools/types"
 import type { AgentDefinition } from "./agents"
@@ -41,6 +43,26 @@ const forAnalyst = (ruleset: PermissionRuleset): PermissionRuleset =>
 export const profileForRoles = (profile: TurnProfile, roles: ReadonlyArray<string>): TurnProfile =>
 	Policy.isAnalyst(roles) ? { ...profile, ruleset: forAnalyst(profile.ruleset) } : profile
 
+/** The tool whose call the data source service would refuse this turn. */
+const QUERY_DATA_SOURCE = "query_data_source"
+
+/**
+ * The profile for the tenant a turn's tools run as. On top of the role rules, a turn whose query
+ * the service would refuse is not offered the tool: a listed tool invites a call that only fails.
+ */
+export const profileForTenant = (
+	profile: TurnProfile,
+	tenant: Pick<TenantContext, "roles" | "turnOrigin" | "turnStarter">,
+): TurnProfile => {
+	const byRole = profileForRoles(profile, tenant.roles)
+	return mayQueryDataSources(queryCallerOf(tenant))
+		? byRole
+		: {
+				...byRole,
+				ruleset: [...byRole.ruleset, new PermissionRule({ tool: QUERY_DATA_SOURCE, action: "deny" })],
+			}
+}
+
 export const profileForTurn = (agent: AgentDefinition, origin: ChatTurnOrigin): TurnProfile => {
 	switch (origin.kind) {
 		case "app":
@@ -54,11 +76,15 @@ export const profileForTurn = (agent: AgentDefinition, origin: ChatTurnOrigin): 
 		case "autonomous":
 			// Nobody can approve an unattended pass, so a gated tool is a wasted call and a
 			// repeated-failure slot. Denial is the only thing that works here.
-			// An agent with its own unattended allowlist (the reviewer) runs under that instead.
+			// An agent with its own unattended allowlists (the reviewer) runs under the one for where it
+			// posts; a turn that does not say is treated as public, the narrower one.
 			return {
 				surface: "chat",
 				toolSurface: "chat",
-				ruleset: agent.autonomousPermission ?? READ_ONLY_RULESET,
+				ruleset:
+					agent.autonomousPermission === undefined
+						? READ_ONLY_RULESET
+						: agent.autonomousPermission[origin.repository ?? "public"],
 				prompt: agent.prompt,
 				namesDataSources: true,
 			}

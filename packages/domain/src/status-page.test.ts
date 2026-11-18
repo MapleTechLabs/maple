@@ -9,6 +9,7 @@ import {
 	customDomainIssue,
 	isCustomDomainChallengeRecord,
 	normalizeCustomDomain,
+	slugFromName,
 	StatusPageCustomDomainHostname,
 	DEFAULT_STATUS_PAGE_THEME,
 	decodeStatusPageSnapshotJson,
@@ -683,5 +684,16 @@ describe("custom domain hostnames", () => {
 			{ type: "CNAME", name: "status.acme.com" },
 		] as const)
 			assert.isFalse(isCustomDomainChallengeRecord(record), record.name)
+	})
+})
+
+describe("slugFromName", () => {
+	it("keeps accented letters as their base letter instead of splitting them with hyphens", () => {
+		expect(slugFromName("Crème Brûlée")).toBe("creme-brulee")
+		expect(slugFromName("Über Status")).toBe("uber-status")
+	})
+
+	it("collapses punctuation and trims hyphens at the ends", () => {
+		expect(slugFromName("  Acme Status! ")).toBe("acme-status")
 	})
 })

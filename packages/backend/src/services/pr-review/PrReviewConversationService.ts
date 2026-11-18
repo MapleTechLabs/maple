@@ -26,7 +26,7 @@ import {
 	parseReplyCommand,
 } from "@maple/domain/http"
 import { wrapChatContext } from "@maple/domain/chat-preamble"
-import { encodeChatTurnTenant, prReplySessionId } from "@maple/domain/chat-session"
+import { encodeChatTurnTenant, prReplySessionId, pullRequestTurnOrigin } from "@maple/domain/chat-session"
 import { UserId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
@@ -596,7 +596,7 @@ export class PrReviewConversationService extends Context.Service<
 					sessionId,
 					messageId: randomUUID(),
 					text: kickoff,
-					origin: { kind: "autonomous" },
+					origin: pullRequestTurnOrigin(repo),
 					tenant: encodeChatTurnTenant({
 						orgId,
 						userId: internalServiceUserId,

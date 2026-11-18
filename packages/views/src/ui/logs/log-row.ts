@@ -55,6 +55,12 @@ const SEVERITY_ROW = new Map([
 	["WARN", "before:bg-severity-warn"],
 	["WARNING", "before:bg-severity-warn"],
 ])
+/**
+ * A compact, unwrapped, collapsed row's height: its 22px message lane, `py-[calc(--spacing(2)-1px)]`
+ * (7px) above and below, and the 1px bottom border. A page that renders rows before the virtualizer
+ * measures them places them with it.
+ */
+export const COMPACT_ROW_HEIGHT = 37
 const QUIET_SEVERITIES = new Set(["DEBUG", "TRACE"])
 // Fatal reads one step past error: a filled label, not just a red word.
 const FILLED_SEVERITIES = new Set(["FATAL", "CRITICAL"])

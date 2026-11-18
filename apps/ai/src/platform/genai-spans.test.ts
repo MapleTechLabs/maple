@@ -6,6 +6,7 @@ import { assert, describe, it } from "@effect/vitest"
 import { Array as Arr, Effect, Exit, Option, String as Str } from "effect"
 import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
 import {
+	genAiContentFor,
 	messagesJson,
 	toolCallJson,
 	withReturnedToolFailuresOk,
@@ -134,6 +135,7 @@ describe("withToolCallContent", () => {
 			const result = yield* withToolCallContent(Effect.succeed("done"), {
 				description: "a tool",
 				params: {},
+				content: "record",
 			}).pipe(Effect.withSpan("not_a_tool"), Effect.withTracer(tracer))
 
 			assert.strictEqual(result, "done")
@@ -148,6 +150,7 @@ describe("withToolCallContent", () => {
 			yield* withToolCallContent(Effect.succeed("done"), {
 				description: "a tool",
 				params: {},
+				content: "record",
 				sessionAttributes: { "maple_ai.session.id": "org_1:inv-abc", "maple_ai.turn.id": "msg_1" },
 			}).pipe(Effect.withSpan("execute_tool search_logs"), Effect.withTracer(tracer))
 
@@ -155,6 +158,45 @@ describe("withToolCallContent", () => {
 			assert.strictEqual(spans[0]?.attributes.get("maple_ai.turn.id"), "msg_1")
 		}),
 	)
+
+	const toolSpan = (content: "record" | "redact") =>
+		Effect.gen(function* () {
+			const { spans, tracer } = makeRecordingTracer()
+			yield* withToolCallContent(Effect.succeed({ rows: ["customer@example.com"] }), {
+				description: "a tool",
+				params: { query: "user_id = 42" },
+				content,
+			}).pipe(Effect.withSpan("execute_tool search_logs"), Effect.withTracer(tracer))
+			return spans[0]?.attributes
+		})
+
+	it.effect("records the arguments and result for a run that records content", () =>
+		Effect.gen(function* () {
+			const attributes = yield* toolSpan("record")
+			assert.include(String(attributes?.get("gen_ai.tool.call.arguments")), "user_id = 42")
+			assert.include(String(attributes?.get("gen_ai.tool.call.result")), "customer@example.com")
+			assert.isUndefined(attributes?.get("maple.genai.content_redacted"))
+		}),
+	)
+
+	it.effect("leaves the arguments and result off for a run that redacts content", () =>
+		Effect.gen(function* () {
+			const attributes = yield* toolSpan("redact")
+			assert.isUndefined(attributes?.get("gen_ai.tool.call.arguments"))
+			assert.isUndefined(attributes?.get("gen_ai.tool.call.result"))
+			assert.strictEqual(attributes?.get("maple.genai.content_redacted"), true)
+			assert.strictEqual(attributes?.get("gen_ai.tool.description"), "a tool")
+		}),
+	)
+})
+
+describe("genAiContentFor", () => {
+	it("records only for Maple's internal org, and only when it is configured", () => {
+		assert.strictEqual(genAiContentFor("org_maple", "org_maple"), "record")
+		assert.strictEqual(genAiContentFor("org_customer", "org_maple"), "redact")
+		assert.strictEqual(genAiContentFor("org_maple", undefined), "redact")
+		assert.strictEqual(genAiContentFor(undefined, "org_maple"), "redact")
+	})
 })
 
 describe("withReturnedToolFailuresOk", () => {

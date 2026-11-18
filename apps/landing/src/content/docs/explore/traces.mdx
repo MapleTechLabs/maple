@@ -5,6 +5,8 @@ group: "Explore"
 order: 1
 ---
 
+import LiveTraceFrame from "../../../components/live/LiveTraceFrame.astro"
+
 The **Traces** page lists the traces Maple received in the selected time range. Filter the list with sidebar facets or a query, then open a trace to see every span on a waterfall, timeline, or flow view. From a trace you can jump to its logs and to the session replay that produced it.
 
 ## What data it needs
@@ -80,8 +82,8 @@ Three views show the spans:
 - **Flow**: spans as a graph of nodes and edges, with repeated child spans combined into one card with a count.
 
 <figure class="shot">
-  <img src="/screenshots/docs/traces-02-timeline.webp" alt="A 148-span trace for GET /v2/widget_summary on the Timeline view: a duration header, a service breakdown bar, and nested spans for API key lookups, warehouse queries and SQL statements drawn on a time axis." loading="lazy" />
-  <figcaption>A trace on the Timeline view, with nested database and warehouse spans.</figcaption>
+  <LiveTraceFrame />
+  <figcaption>A checkout trace on the Waterfall view. Click a span to select it, or the arrow beside a parent to collapse its children.</figcaption>
 </figure>
 
 Click a span to open the span panel. Press Esc to close it. The selected span is kept in the URL, so you can share a link to it.

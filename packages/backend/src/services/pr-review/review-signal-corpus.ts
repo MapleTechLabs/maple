@@ -521,6 +521,8 @@ export const scoreCase = (
 			report: review.report,
 			partial: review.partial,
 			repositoryUrl: `https://github.com/${item.repo}`,
+			// The corpus scores what a private repository's review shows; nothing here is posted.
+			isPrivate: true,
 			carried: { open, resolved, uncheckedFixes },
 		})
 		const next = parsed[index + 1]

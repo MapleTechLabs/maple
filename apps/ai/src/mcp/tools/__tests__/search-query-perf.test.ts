@@ -264,8 +264,8 @@ describe("inspect_trace without a timestamp", () => {
 			"cache.result": "hit",
 		})
 		const text = markdown(result)
-		expect(text).toContain("cache.result=hit")
-		expect(text).not.toContain("http.route=/orders")
+		expect(text).toContain('cache.result="hit"')
+		expect(text).not.toContain("http.route=")
 	})
 })
 
