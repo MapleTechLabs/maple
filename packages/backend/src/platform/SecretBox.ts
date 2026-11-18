@@ -7,7 +7,10 @@
  * belongs to, so a triple copied onto another row, column or org does not open. `keyId` names
  * the master key that sealed it, which is what makes rotation possible (docs/secret-encryption.md).
  *
- * A ciphertext without that prefix is not opened: an unbound value from before v2 could
+ * A slot that sends its value somewhere (a URL, a host) also has the v3 envelope: the same, with
+ * that destination in the AAD too, so a row pointed at another host in the database stops opening.
+ *
+ * A ciphertext without one of those prefixes is not opened: an unbound value from before v2 could
  * otherwise be replayed onto another row.
  */
 import { createHmac } from "node:crypto"
@@ -15,6 +18,8 @@ import { Array as Arr, Effect, Option, Result, String as Str } from "effect"
 import { decryptAes256Gcm, encryptAes256Gcm, type EncryptedValue } from "./Crypto"
 
 const ENVELOPE_PREFIX = "v2"
+/** The v2 envelope with the slot's destination added to the AAD. */
+const DESTINATION_ENVELOPE_PREFIX = "v3"
 const SUBKEY_INFO_PREFIX = "maple/secret-box/v2/slot/"
 const KEY_ID_INFO = "maple/secret-box/v2/key-id"
 
@@ -39,6 +44,11 @@ export interface SecretKeyring {
 export interface SecretSlot<Ref> {
 	readonly name: string
 	readonly binding: (ref: Ref) => ReadonlyArray<string>
+	/**
+	 * Where the opened value is sent. Part of the v3 AAD after `binding`, so a value only opens
+	 * while the row still points where it pointed when sealed.
+	 */
+	readonly destination?: (ref: Ref) => ReadonlyArray<string>
 }
 
 /** HKDF-SHA256 (RFC 5869) with an empty salt: the first 32-byte output block. */
@@ -134,17 +144,34 @@ export const secretKeyringFromEnv = <E>(
 ): Effect.Effect<SecretKeyring, E> => keyringOrFail(env.secretKeyring, onError)
 
 interface Envelope {
+	readonly version: typeof ENVELOPE_PREFIX | typeof DESTINATION_ENVELOPE_PREFIX
 	readonly keyId: string
 	readonly ciphertext: string
 }
 
 const parseEnvelope = (stored: string): Option.Option<Envelope> => {
 	const parts = Str.split(stored, ".")
-	const [prefix, keyId, ciphertext] = parts
-	return parts.length === 3 && prefix === ENVELOPE_PREFIX && keyId !== undefined && ciphertext !== undefined
-		? Option.some({ keyId, ciphertext })
+	const [version, keyId, ciphertext] = parts
+	return parts.length === 3 &&
+		(version === ENVELOPE_PREFIX || version === DESTINATION_ENVELOPE_PREFIX) &&
+		keyId !== undefined &&
+		ciphertext !== undefined
+		? Option.some({ version, keyId, ciphertext })
 		: Option.none()
 }
+
+/** The AAD parts after the slot name: the row, then for v3 the destination. */
+const aadParts = <Ref>(
+	slot: SecretSlot<Ref>,
+	ref: Ref,
+	version: Envelope["version"],
+): Option.Option<ReadonlyArray<string>> =>
+	version === ENVELOPE_PREFIX
+		? Option.some(slot.binding(ref))
+		: Option.map(Option.fromUndefinedOr(slot.destination), (destination) => [
+				...slot.binding(ref),
+				...destination(ref),
+			])
 
 /** What every ciphertext sealed by the primary key starts with. */
 export const currentEnvelopePrefix = (keyring: SecretKeyring): string =>
@@ -179,19 +206,24 @@ export const openSecret = <Ref, E>(
 	onError: (message: string) => E,
 ): Effect.Effect<string, E> =>
 	Option.match(parseEnvelope(stored.ciphertext), {
-		onNone: () => Effect.fail(onError("Stored value is not in the v2 envelope")),
+		onNone: () => Effect.fail(onError("Stored value is not in the v2 or v3 envelope")),
 		onSome: (envelope) =>
 			Option.match(
 				Arr.findFirst(keyring.keys, (key) => key.id === envelope.keyId),
 				{
 					onNone: () => Effect.fail(onError("Sealed with a key this deployment does not hold")),
 					onSome: (key) =>
-						decryptAes256Gcm(
-							{ ciphertext: envelope.ciphertext, iv: stored.iv, tag: stored.tag },
-							subkeyFor(key, slot.name),
-							onError,
-							secretAad(slot.name, slot.binding(ref)),
-						),
+						Option.match(aadParts(slot, ref, envelope.version), {
+							onNone: () =>
+								Effect.fail(onError("Stored value names a destination this slot has not")),
+							onSome: (parts) =>
+								decryptAes256Gcm(
+									{ ciphertext: envelope.ciphertext, iv: stored.iv, tag: stored.tag },
+									subkeyFor(key, slot.name),
+									onError,
+									secretAad(slot.name, parts),
+								),
+						}),
 				},
 			),
 	})

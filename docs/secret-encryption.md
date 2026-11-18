@@ -24,12 +24,39 @@ slot, and bound to the slot, the org and the row.
 - **Exceptions**: `cli_device_authorizations.token` has no org until it is approved, so it
   binds to the row's primary key alone. `cloudflare_logpush_connectors.secret_*` is not sealed
   through `SecretBox`: nothing reads or writes those three columns.
+- **Destination (v3)**: a slot whose value Maple sends somewhere names a `destination` in
+  `secret-slots.ts`, and its values use `v3.<keyId>.<base64>`: the AAD is the slot, the row,
+  then the destination. Write access to the database is then not enough to point a stored
+  credential at another host: the edited row stops opening. The slots and what they bind:
+
+    | Slot                                  | Destination                                       |
+    | ------------------------------------- | ------------------------------------------------- |
+    | `org_clickhouse_settings.ch_password` | `ch_url` exactly as stored (the gateway opens it) |
+    | `scrape_targets.auth_credentials`     | scheme, host and port of `url`                    |
+    | `external_data_sources.secret`        | `secretDestination(config)`                       |
+    | `uptime_monitors.headers`             | scheme, host and port of every request, in order  |
+
+    A destination is derived from stored columns only, and never differently: a change to how it
+    is derived stops every stored value of that slot opening. Code that changes the destination
+    seals again for the new one.
+
 - **Key id**: `HKDF-SHA256(master, info = "maple/secret-box/v2/key-id")`, first 6 bytes,
   base64url. It names the master key that sealed the value and reveals nothing about it.
 
 The ingest gateway (Rust, `apps/ingest/src/main.rs`) opens one slot itself:
 `org_clickhouse_settings.ch_password`. Both implementations are pinned to the same test
 fixture (`secret-slots.test.ts` and the gateway's `secret_keyring_*` tests).
+
+### Rolling out v3
+
+Readers and writers deploy separately (the ingest gateway apart from the Workers), so v3 goes
+out in three steps:
+
+1. Every reader opens v2 and v3. Writers still seal v2.
+2. Once step 1 runs everywhere, the gateway included: writers seal v3 for destination slots,
+   and the hourly reseal pass rewrites their v2 values as v3.
+3. Once `secretsResealRemaining` is 0 on two passes: destination slots stop opening v2. Until
+   this step a v2 value still opens wherever its row points, so the protection starts here.
 
 ## Keys
 

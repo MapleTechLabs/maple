@@ -26,6 +26,8 @@ import {
 	UptimeMonitors,
 	VercelConnections,
 } from "@maple/db/tables"
+import { DataSourceConfig } from "@maple/domain/data-sources"
+import { StoredUptimeMonitorConfig } from "@maple/domain/uptime"
 import { Array as Arr, Effect, Schema } from "effect"
 import type { EncryptedValue } from "@maple/backend/platform/Crypto"
 import {
@@ -83,7 +85,7 @@ const Three = Schema.Tuple([Schema.String, Schema.String, Schema.String])
 const PendingCountRow = Schema.Struct({ pending: Schema.NumberFromString })
 const WrittenRow = Schema.Struct({ written: Schema.Number })
 
-const tripleTarget = <T extends TableLike, Keys extends ReadonlyArray<string>, Ref>(config: {
+interface TripleTargetConfig<T extends TableLike, Keys extends ReadonlyArray<string>, Ref, Context> {
 	readonly slot: SecretSlot<Ref>
 	readonly table: T
 	readonly columns: {
@@ -94,16 +96,40 @@ const tripleTarget = <T extends TableLike, Keys extends ReadonlyArray<string>, R
 	/** Columns that identify one row and carry everything the slot's ref needs. */
 	readonly identity: ReadonlyArray<keyof T["columns"] & string>
 	readonly keys: Schema.Codec<Keys, ReadonlyArray<string>>
-	readonly ref: (keys: Keys) => Ref
-}): ResealTarget => {
+	/** Other columns the ref needs (where the value is sent), decoded from a JSON array of them. */
+	readonly context: {
+		readonly columns: ReadonlyArray<keyof T["columns"] & string>
+		readonly schema: Schema.Codec<Context, unknown>
+	}
+	readonly ref: (keys: Keys, context: Context) => Ref
+}
+
+const NO_CONTEXT = { columns: [], schema: Schema.Null }
+
+/** A slot whose ref is the row's identity alone. */
+const tripleTarget = <T extends TableLike, Keys extends ReadonlyArray<string>, Ref>(
+	config: Omit<TripleTargetConfig<T, Keys, Ref, null>, "context" | "ref"> & {
+		readonly ref: (keys: Keys) => Ref
+	},
+): ResealTarget => tripleTargetWithContext({ ...config, context: NO_CONTEXT })
+
+const tripleTargetWithContext = <T extends TableLike, Keys extends ReadonlyArray<string>, Ref, Context>(
+	config: TripleTargetConfig<T, Keys, Ref, Context>,
+): ResealTarget => {
 	const table = Orm.sql.identifier(config.table.name)
 	const ciphertext = sqlColumn(config.table, config.columns.ciphertext)
 	const iv = sqlColumn(config.table, config.columns.iv)
 	const tag = sqlColumn(config.table, config.columns.tag)
 	const identity = Arr.map(config.identity, (key) => sqlColumn(config.table, key))
 	const identityList = Orm.sql.join(identity)
+	const contextList = Arr.isReadonlyArrayNonEmpty(config.context.columns)
+		? Orm.sql`jsonb_build_array(${Orm.sql.join(
+				Arr.map(config.context.columns, (key) => sqlColumn(config.table, key)),
+			)})::text`
+		: Orm.sql`'null'`
 	const PendingRow = Schema.Struct({
 		keys: Schema.fromJsonString(config.keys),
+		context: Schema.fromJsonString(config.context.schema),
 		ciphertext: Schema.String,
 		iv: Schema.String,
 		tag: Schema.String,
@@ -112,7 +138,7 @@ const tripleTarget = <T extends TableLike, Keys extends ReadonlyArray<string>, R
 		Orm.sql`${ciphertext} is not null and ${iv} is not null and ${tag} is not null and not starts_with(${ciphertext}, ${prefix})`
 
 	const toPending = (row: typeof PendingRow.Type): PendingSecret => {
-		const ref = config.ref(row.keys)
+		const ref = config.ref(row.keys, row.context)
 		const stored = { ciphertext: row.ciphertext, iv: row.iv, tag: row.tag }
 		return {
 			keys: row.keys,
@@ -143,7 +169,7 @@ const tripleTarget = <T extends TableLike, Keys extends ReadonlyArray<string>, R
 			db
 				.query(
 					Orm.sql`
-						select jsonb_build_array(${identityList})::text as keys,
+						select jsonb_build_array(${identityList})::text as keys, ${contextList} as context,
 							${ciphertext} as ciphertext, ${iv} as iv, ${tag} as tag
 						from ${table}
 						where ${isPending(prefix)}${
@@ -211,13 +237,14 @@ export const RESEAL_TARGETS = {
 		keys: Two,
 		ref: orgRow,
 	}),
-	externalDataSourceSecretSlot: tripleTarget({
+	externalDataSourceSecretSlot: tripleTargetWithContext({
 		slot: slots.externalDataSourceSecretSlot,
 		table: ExternalDataSources,
 		columns: { ciphertext: "secretCiphertext", iv: "secretIv", tag: "secretTag" },
 		identity: ["orgId", "id"],
 		keys: Two,
-		ref: orgRow,
+		context: { columns: ["config"], schema: Schema.Tuple([DataSourceConfig]) },
+		ref: ([orgId, id], [config]) => ({ orgId, id, config }),
 	}),
 	gcpConnectorSecretSlot: tripleTarget({
 		slot: slots.gcpConnectorSecretSlot,
@@ -243,13 +270,14 @@ export const RESEAL_TARGETS = {
 		keys: Two,
 		ref: oauth,
 	}),
-	clickHousePasswordSlot: tripleTarget({
+	clickHousePasswordSlot: tripleTargetWithContext({
 		slot: slots.clickHousePasswordSlot,
 		table: OrgClickHouseSettings,
 		columns: { ciphertext: "chPasswordCiphertext", iv: "chPasswordIv", tag: "chPasswordTag" },
 		identity: ["orgId"],
 		keys: One,
-		ref: org,
+		context: { columns: ["chUrl"], schema: One },
+		ref: ([orgId], [chUrl]) => ({ orgId, chUrl }),
 	}),
 	ingestPrivateKeySlot: tripleTarget({
 		slot: slots.ingestPrivateKeySlot,
@@ -307,7 +335,7 @@ export const RESEAL_TARGETS = {
 		keys: One,
 		ref: org,
 	}),
-	scrapeTargetCredentialsSlot: tripleTarget({
+	scrapeTargetCredentialsSlot: tripleTargetWithContext({
 		slot: slots.scrapeTargetCredentialsSlot,
 		table: ScrapeTargets,
 		columns: {
@@ -317,15 +345,17 @@ export const RESEAL_TARGETS = {
 		},
 		identity: ["orgId", "id"],
 		keys: Two,
-		ref: orgRow,
+		context: { columns: ["url"], schema: One },
+		ref: ([orgId, id], [url]) => ({ orgId, id, url }),
 	}),
-	uptimeMonitorHeadersSlot: tripleTarget({
+	uptimeMonitorHeadersSlot: tripleTargetWithContext({
 		slot: slots.uptimeMonitorHeadersSlot,
 		table: UptimeMonitors,
 		columns: { ciphertext: "headersCiphertext", iv: "headersIv", tag: "headersTag" },
 		identity: ["orgId", "id"],
 		keys: Two,
-		ref: orgRow,
+		context: { columns: ["configJson"], schema: Schema.Tuple([StoredUptimeMonitorConfig]) },
+		ref: ([orgId, id], [config]) => ({ orgId, id, config }),
 	}),
 	vercelTokenSlot: tripleTarget({
 		slot: slots.vercelTokenSlot,

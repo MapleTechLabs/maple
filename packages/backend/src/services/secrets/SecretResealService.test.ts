@@ -1,5 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Array as Arr, ConfigProvider, Effect, Layer, Option, String as Str } from "effect"
+import type { UptimeMonitorConfig } from "@maple/domain/uptime"
 import type { EncryptedValue } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
@@ -9,6 +10,7 @@ import {
 	oauthAccessTokenSlot,
 	oauthRefreshTokenSlot,
 	openRouterKeySlot,
+	uptimeMonitorHeadersSlot,
 } from "@maple/backend/platform/secret-slots"
 import {
 	cleanupTestDbs,
@@ -66,6 +68,7 @@ const sweep = (testDb: TestDb, primary: number, decryptOnly: ReadonlyArray<numbe
 	)
 
 const NOW = "2026-11-10T00:00:00.000Z"
+const CH_URL = "https://ch.example"
 
 const seedClickHouseSettings = (testDb: TestDb, orgId: string, password: EncryptedValue) =>
 	Effect.promise(() =>
@@ -74,8 +77,8 @@ const seedClickHouseSettings = (testDb: TestDb, orgId: string, password: Encrypt
 			`insert into org_clickhouse_settings
 				(org_id, ch_url, ch_user, ch_password_ciphertext, ch_password_iv, ch_password_tag,
 				 ch_database, sync_status, created_at, updated_at, created_by, updated_by)
-			 values ($1, 'https://ch.example', 'maple', $2, $3, $4, 'maple', 'connected', $5, $5, 'u', 'u')`,
-			[orgId, password.ciphertext, password.iv, password.tag, NOW],
+			 values ($1, $6, 'maple', $2, $3, $4, 'maple', 'connected', $5, $5, 'u', 'u')`,
+			[orgId, password.ciphertext, password.iv, password.tag, NOW, CH_URL],
 		),
 	)
 
@@ -137,7 +140,7 @@ const clickHousePassword = (testDb: TestDb, orgId: string) =>
 /** A ClickHouse password sealed for `orgId` by a deployment whose primary key was `key`. */
 const sealedPassword = (key: number, orgId: string, password: string) =>
 	Effect.flatMap(keyring(key), (ring) =>
-		sealSecret(ring, clickHousePasswordSlot, { orgId }, password, fail),
+		sealSecret(ring, clickHousePasswordSlot, { orgId, chUrl: CH_URL }, password, fail),
 	)
 
 describe("SecretResealService", () => {
@@ -176,13 +179,19 @@ describe("SecretResealService", () => {
 				const password = yield* clickHousePassword(testDb, "org_a")
 				assert.isTrue(Str.startsWith(`v2.${ring.primary.id}.`)(password.ciphertext))
 				assert.strictEqual(
-					yield* openSecret(ring, clickHousePasswordSlot, { orgId: "org_a" }, password, fail),
+					yield* openSecret(
+						ring,
+						clickHousePasswordSlot,
+						{ orgId: "org_a", chUrl: CH_URL },
+						password,
+						fail,
+					),
 					"ch-pass",
 				)
 				const moved = yield* openSecret(
 					ring,
 					clickHousePasswordSlot,
-					{ orgId: "org_b" },
+					{ orgId: "org_b", chUrl: CH_URL },
 					password,
 					fail,
 				).pipe(Effect.option)
@@ -258,6 +267,46 @@ describe("SecretResealService", () => {
 		})
 	})
 
+	it.effect("reseals a value whose ref reads the row's stored config", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const config: UptimeMonitorConfig = {
+				_tag: "http",
+				url: "https://status.example/health",
+				method: "GET",
+				headers: {},
+				assertions: [],
+				timeoutMs: 5000,
+			}
+			const ref = { orgId: "org_a", id: "mon_1", config }
+			const headers = yield* Effect.flatMap(keyring(1), (ring) =>
+				sealSecret(ring, uptimeMonitorHeadersSlot, ref, '{"v":2,"requests":[]}', fail),
+			)
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`insert into uptime_monitors
+						(id, org_id, name, kind, config_json, headers_ciphertext, headers_iv, headers_tag,
+						 created_by, created_at, updated_at)
+					 values ('mon_1', 'org_a', 'Health', 'http', $1::jsonb, $2, $3, $4, 'user_1', $5, $5)`,
+					[JSON.stringify(config), headers.ciphertext, headers.iv, headers.tag, NOW],
+				),
+			)
+
+			assert.deepStrictEqual(yield* sweep(testDb, 2, [1]), { resealed: 1, failed: 0, remaining: 0 })
+			const resealed = yield* readTriple(
+				testDb,
+				`select headers_ciphertext as ciphertext, headers_iv as iv, headers_tag as tag
+				 from uptime_monitors where id = 'mon_1'`,
+				[],
+			)
+			const opened = yield* Effect.flatMap(keyring(2), (ring) =>
+				openSecret(ring, uptimeMonitorHeadersSlot, ref, resealed, fail),
+			)
+			assert.strictEqual(opened, '{"v":2,"requests":[]}')
+		})
+	})
+
 	it.effect("does not overwrite a value that changed after it was read", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
@@ -273,7 +322,7 @@ describe("SecretResealService", () => {
 			const newer = yield* sealSecret(
 				ring,
 				clickHousePasswordSlot,
-				{ orgId: "org_a" },
+				{ orgId: "org_a", chUrl: CH_URL },
 				"new-pass",
 				fail,
 			)
