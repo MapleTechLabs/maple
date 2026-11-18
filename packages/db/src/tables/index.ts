@@ -50,6 +50,7 @@ import { AwsConnections } from "./aws-connections"
 import { CloudSecurityFindings, CloudSecurityServiceStates } from "./cloud-security"
 import { CostSources } from "./cost-sources"
 import { GcpConnectors } from "./gcp-connectors"
+import { GcpCostExports } from "./gcp-cost-exports"
 import { GcpResources } from "./gcp-resources"
 import { Investigations } from "./investigations"
 import { LinearFeatureSettings } from "./linear-feature-settings"
@@ -151,6 +152,7 @@ export * from "./oncall-schedules"
 export * from "./aws-connections"
 export * from "./cost-sources"
 export * from "./gcp-connectors"
+export * from "./gcp-cost-exports"
 export * from "./gcp-resources"
 export * from "./investigations"
 export * from "./linear-feature-settings"
@@ -240,6 +242,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	OnCallSchedules,
 	OnCallOverrides,
 	GcpConnectors,
+	GcpCostExports,
 	GcpResources,
 	AwsConnections,
 	CloudSecurityFindings,

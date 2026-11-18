@@ -42,6 +42,7 @@ import {
 	type VercelCostProviderApi,
 	VercelCostReadError,
 } from "./providers/vercel/VercelCostProvider"
+import { GcpCostProvider } from "./providers/gcp/GcpCostProvider"
 import { BACKFILL_REQUEST_BUDGET, daysOfWindow, MONTHLY_REQUEST_BUDGET } from "./sync-plan"
 
 const trackedDbs: TestDb[] = []
@@ -272,6 +273,7 @@ const harness = (options: FakeProviderOptions = {}) => {
 				Layer.succeed(GithubCostProvider, adapterOf("github")),
 				Layer.succeed(VercelCostProvider, vercelAdapter),
 				Layer.succeed(PlanetScaleCostProvider, planetScaleAdapter),
+				Layer.succeed(GcpCostProvider, adapterOf("gcp")),
 				warehouse,
 			),
 		),
@@ -1657,6 +1659,63 @@ describe("CostSyncService request budgets", () => {
 			// Cleared once: it is not claimed again until its head is due.
 			yield* TestClock.adjust("1 hour")
 			assert.strictEqual((yield* poll).due, 0)
+		}).pipe(Effect.provide(h.layer))
+	})
+})
+
+describe("CostSyncService GCP sources", () => {
+	const CONNECTOR = "018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8"
+
+	/** A GCP connector of `org_a` with a billing export added as a cost source. */
+	const addExport = (h: ReturnType<typeof harness>) =>
+		Effect.gen(function* () {
+			yield* h.sql(
+				`INSERT INTO sources (id, org_id, name, platform, kind, created_at, updated_at)
+				 VALUES ('src_gcp', 'org_a', 'Google Cloud acme-prod', 'gcp', 'integration', now(), now())`,
+			)
+			yield* h.sql(
+				`INSERT INTO gcp_connectors
+				   (id, org_id, scope_type, scope_id, project_id, secret_ciphertext, secret_iv, secret_tag,
+				    secret_hash, metrics_enabled, created_by, created_at, updated_at, source_id)
+				 VALUES ($1, 'org_a', 'project', 'acme-prod', 'acme-prod', 'c', 'i', 't', $1, true, 'user_1', now(), now(), 'src_gcp')`,
+				[CONNECTOR],
+			)
+			yield* h.sql(
+				`INSERT INTO gcp_cost_exports
+				   (id, org_id, connector_id, table_ref, billing_account_id, created_by, created_at, updated_at)
+				 VALUES ('export_1', 'org_a', $1, 'billing-proj.exports.gcp_billing_export_v1_01ABCD_234567_89ABCD',
+				         '01ABCD-234567-89ABCD', 'user_1', now(), now())`,
+				[CONNECTOR],
+			)
+			yield* h.sql(
+				`INSERT INTO cost_sources (id, org_id, provider, connection_ref, account_id, created_at, updated_at)
+				 VALUES ('0b8f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8', 'org_a', 'gcp', 'export_1', '01ABCD-234567-89ABCD', now(), now())`,
+			)
+		})
+
+	it.effect("pulls an added export from the previous month through today", () => {
+		const h = harness()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(NOW)
+			yield* addExport(h)
+			const summary = yield* poll
+			assert.deepStrictEqual([summary.due, summary.synced], [1, 1])
+			assert.deepStrictEqual(h.windows()[0], ["2026-10-01", "2026-11-11"])
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect("removes the source once its connector, and with it the export, is deleted", () => {
+		const h = harness()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(NOW)
+			yield* addExport(h)
+			yield* poll
+			assert.deepStrictEqual(yield* h.sourceRefs, [["org_a", "export_1", "01ABCD-234567-89ABCD"]])
+
+			yield* h.sql("DELETE FROM gcp_connectors")
+			yield* TestClock.adjust("1 hour")
+			yield* poll
+			assert.deepStrictEqual(yield* h.sourceRefs, [])
 		}).pipe(Effect.provide(h.layer))
 	})
 })
