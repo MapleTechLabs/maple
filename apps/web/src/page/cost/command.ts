@@ -3,12 +3,14 @@ import {
 	AnthropicCostKeyRequest,
 	CloudflareCostTokenRequest,
 	CostBreakdownSortBy,
+	GcpCostAddRequest,
 	OpenAiCostKeyRequest,
 	OpenRouterKeyUpdateRequest,
 	PlanetScaleCostAddRequest,
 	VercelCostAddRequest,
 } from "@maple/domain/http"
 import { VcsInstallationId } from "@maple/domain/vcs"
+import { GcpConnectorId } from "@maple/primitives"
 import { reloadSpin } from "@maple/views/data/timing"
 import { settleTo } from "@maple/views/data/load-failure"
 import {
@@ -309,4 +311,35 @@ export const RemovePlanetScaleCostSource = Command.define("RemovePlanetScaleCost
 	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.planetScaleCost.remove()).pipe(
 		settleTo((result) => Message.CompletedRemovePlanetScale({ result })),
 	),
+})
+
+// A GCP source reads through a connection's reader account: no command of it carries a secret.
+
+/** The org's GCP connections, with each one's reader account, and the billing exports it reads. */
+export const FetchGcpCostStatus = Command.define("FetchGcpCostStatus", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedLoadGcpStatus],
+	execute: ({ key }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) => client.gcpCost.status()).pipe(
+			settleTo((result) => Message.CompletedLoadGcpStatus({ key, result })),
+		),
+})
+
+/** Saves a billing export as a cost source, read through the connection named. */
+export const AddGcpCostSource = Command.define("AddGcpCostSource", {
+	args: { connectorId: GcpConnectorId, tableRef: Schema.String },
+	messages: [Message.CompletedAddGcp],
+	execute: ({ connectorId, tableRef }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) =>
+			client.gcpCost.add({ payload: new GcpCostAddRequest({ connectorId, tableRef }) }),
+		).pipe(settleTo((result) => Message.CompletedAddGcp({ result }))),
+})
+
+export const RemoveGcpCostSource = Command.define("RemoveGcpCostSource", {
+	args: { exportId: Schema.String },
+	messages: [Message.CompletedRemoveGcp],
+	execute: ({ exportId }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) =>
+			client.gcpCost.remove({ params: { exportId } }),
+		).pipe(settleTo((result) => Message.CompletedRemoveGcp({ result }))),
 })
