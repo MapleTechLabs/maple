@@ -105,4 +105,16 @@ describe("redactSqlLiterals", () => {
 			),
 		).toBe("SELECT count() FROM traces_v2 WHERE Name = ? AND Note = ? AND Ms > ? AND Id IN (?, ?)")
 	})
+
+	it("reads a quote in a comment or a quoted identifier as no string", () => {
+		expect(
+			redactSqlLiterals(
+				"SELECT 1 -- don't\nFROM t /* it's */ WHERE \"it's\" = 'a@b.c' AND `x'y` = 'secret'",
+			),
+		).toBe("SELECT ? --\nFROM t /* */ WHERE \"it's\" = ? AND `x'y` = ?")
+	})
+
+	it("redacts an unclosed string to the end", () => {
+		expect(redactSqlLiterals("WHERE e = 'a@b.c")).toBe("WHERE e = ?")
+	})
 })

@@ -15,11 +15,19 @@ export const truncateSql = (s: string, maxLen: number) =>
 
 /**
  * SQL with every string and numeric literal replaced by `?`, for traces and logs: the values are
- * customer data (search text, ids, emails). Quoted strings honour `\'` and `''` escapes, so an
- * escaped quote never ends one early. Identifiers and keywords stay.
+ * customer data (search text, ids, emails). One left-to-right scan, so a quote inside a comment or a
+ * quoted identifier never starts a string; comments are dropped and an unclosed string runs to the end.
  */
+const SQL_TOKEN =
+	/--[^\n]*|\/\*[\s\S]*?(?:\*\/|$)|'(?:[^'\\]|\\.|'')*(?:'|$)|"(?:[^"\\]|\\.)*"|`[^`]*`|\b\d+(?:\.\d+)?(?:e[+-]?\d+)?\b/gi
+
 export const redactSqlLiterals = (s: string): string =>
-	Str.replace(/\b\d+(?:\.\d+)?(?:e[+-]?\d+)?\b/gi, "?")(Str.replace(/'(?:[^'\\]|\\.|'')*'/g, "?")(s))
+	s.replace(SQL_TOKEN, (token) => {
+		if (token.startsWith("--")) return "--"
+		if (token.startsWith("/*")) return "/* */"
+		if (token.startsWith('"') || token.startsWith("`")) return token
+		return "?"
+	})
 
 /**
  * Stable 32-bit FNV-1a hash over SQL with literals and numbers normalized. Lets
