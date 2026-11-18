@@ -53,21 +53,6 @@ export interface SecretSlot<Ref> {
 	readonly destination?: (ref: Ref) => ReadonlyArray<string>
 }
 
-/**
- * The prefixes a current value of `slot` starts with. A destination slot accepts v3 too, so a
- * reseal pass does not turn a later release's v3 values back into v2 (docs/secret-encryption.md).
- */
-export const currentEnvelopePrefixes = <Ref>(
-	keyring: SecretKeyring,
-	slot: SecretSlot<Ref>,
-): ReadonlyArray<string> =>
-	slot.destination !== undefined
-		? [
-				`${ENVELOPE_PREFIX}.${keyring.primary.id}.`,
-				`${DESTINATION_ENVELOPE_PREFIX}.${keyring.primary.id}.`,
-			]
-		: [`${ENVELOPE_PREFIX}.${keyring.primary.id}.`]
-
 /** HKDF-SHA256 (RFC 5869) with an empty salt: the first 32-byte output block. */
 export const hkdfSha256 = (inputKey: Buffer, info: string): Buffer => {
 	const pseudoRandomKey = createHmac("sha256", Buffer.alloc(32)).update(inputKey).digest()
@@ -191,9 +176,19 @@ const aadParts = <Ref>(
 				...destination(ref),
 			])
 
-/** What every ciphertext sealed by the primary key starts with. */
-export const currentEnvelopePrefix = (keyring: SecretKeyring): string =>
-	`${ENVELOPE_PREFIX}.${keyring.primary.id}.`
+/** The envelope new values of `slot` are sealed in: v3 when it names a destination. */
+const envelopeFor = <Ref>(slot: SecretSlot<Ref>): Envelope["version"] =>
+	slot.destination === undefined ? ENVELOPE_PREFIX : DESTINATION_ENVELOPE_PREFIX
+
+/** What every ciphertext of `slot` sealed by the primary key starts with. */
+const currentEnvelopePrefix = <Ref>(keyring: SecretKeyring, slot: SecretSlot<Ref>): string =>
+	`${envelopeFor(slot)}.${keyring.primary.id}.`
+
+/** The prefixes a current value of `slot` starts with: the primary key in the slot's envelope. */
+export const currentEnvelopePrefixes = <Ref>(
+	keyring: SecretKeyring,
+	slot: SecretSlot<Ref>,
+): ReadonlyArray<string> => [currentEnvelopePrefix(keyring, slot)]
 
 /** Seals a value for `slot` on the row `ref` names: slot subkey, row-bound, key id recorded. */
 export const sealSecret = <Ref, E>(
@@ -207,11 +202,16 @@ export const sealSecret = <Ref, E>(
 		plaintext,
 		subkeyFor(keyring.primary, slot.name),
 		onError,
-		secretAad(slot.name, slot.binding(ref)),
+		secretAad(
+			slot.name,
+			slot.destination === undefined
+				? slot.binding(ref)
+				: [...slot.binding(ref), DESTINATION_AAD_MARKER, ...slot.destination(ref)],
+		),
 	).pipe(
 		Effect.map((sealed) => ({
 			...sealed,
-			ciphertext: `${currentEnvelopePrefix(keyring)}${sealed.ciphertext}`,
+			ciphertext: `${currentEnvelopePrefix(keyring, slot)}${sealed.ciphertext}`,
 		})),
 	)
 

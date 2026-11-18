@@ -6,7 +6,7 @@ import BottomCTA from "../../components/BottomCTA.astro";
 import Breadcrumb from "../../components/Breadcrumb.astro";
 import FAQ from "../../components/FAQ.astro";
 import SeoHead from "../../components/SeoHead.astro";
-import TableOfContents from "../../components/TableOfContents.astro";
+import GuideBody from "../../components/guides/GuideBody.astro";
 
 const pageTitle = "What Is APM? Application Performance Monitoring Explained";
 const pageDescription =
@@ -76,6 +76,7 @@ const articleJsonLd = {
     <script is:inline type="application/ld+json" set:html={JSON.stringify(articleJsonLd)} />
     <Nav />
     <Breadcrumb
+        class="shell pt-4"
         items={[
             { label: "Home", href: "/" },
             { label: "Guides", href: "/guides" },
@@ -91,7 +92,7 @@ const articleJsonLd = {
                 style="background-image: linear-gradient(to right, oklch(1 0 0 / 4%) 1px, transparent 1px), linear-gradient(to bottom, oklch(1 0 0 / 4%) 1px, transparent 1px); background-size: 60px 60px; mask-image: radial-gradient(ellipse 78% 68% at 22% 26%, black, transparent);"
             >
             </div>
-            <div class="relative mx-auto grid max-w-6xl gap-12 px-6 pb-16 pt-20 md:pb-24 md:pt-28 lg:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.75fr)] lg:items-center lg:gap-16">
+            <div class="shell relative grid gap-12 pb-16 pt-20 md:pb-24 md:pt-28 lg:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.75fr)] lg:items-center lg:gap-16">
                 <div>
                     <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
                         <span class="border border-primary/40 px-2 py-1 text-primary">APM fundamentals</span>
@@ -109,7 +110,7 @@ const articleJsonLd = {
                     </div>
                 </div>
 
-                <div class="rounded-xl border border-border bg-bg-deep p-4 shadow-2xl shadow-black/20 md:p-5" aria-label="The five questions a useful APM workflow answers">
+                <div class="rounded-xl border border-border bg-bg-deep p-4 md:p-5" aria-label="The five questions a useful APM workflow answers">
                     <div class="flex items-center justify-between border-b border-border pb-3 font-mono text-[10px] text-fg-muted">
                         <span>apm / investigation</span>
                         <span class="text-primary">5 questions</span>
@@ -138,20 +139,7 @@ const articleJsonLd = {
             </div>
         </header>
 
-        <nav aria-label="Guide sections" class="border-b border-border bg-bg-deep">
-            <div class="mx-auto flex max-w-6xl gap-6 overflow-x-auto px-6 py-4 font-mono text-[10px] whitespace-nowrap text-fg-muted">
-                {toc.map(([id, label]) => (
-                    <a href={`#${id}`} class="transition-colors hover:text-primary">{label}</a>
-                ))}
-            </div>
-        </nav>
-
-        <div class="mx-auto grid max-w-6xl gap-12 px-6 py-16 md:py-24 lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-16">
-            <aside class="hidden lg:block">
-                <TableOfContents headings={tocHeadings} class="sticky top-28" />
-            </aside>
-
-            <article class="guide-copy min-w-0">
+        <GuideBody headings={tocHeadings} class="guide-copy">
                 <section id="definition" class="scroll-mt-24">
                     <p class="guide-eyebrow">01 · Definition</p>
                     <h2>APM measures how an application behaves and helps explain why</h2>
@@ -378,8 +366,7 @@ const articleJsonLd = {
                         <li><a href="https://www.dash0.com/application-performance-management" target="_blank" rel="noopener noreferrer">Dash0: Application performance management</a></li>
                     </ul>
                 </section>
-            </article>
-        </div>
+        </GuideBody>
     </main>
 
     <FAQ items={faqs} />
@@ -392,7 +379,7 @@ const articleJsonLd = {
     .guide-copy .guide-eyebrow { margin: 0 0 0.9rem; font-family: var(--font-mono); font-size: 10px; line-height: 1.4; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-foreground); }
     .guide-copy h2 { max-width: 21ch; margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
     .guide-copy h3 { margin: 2.5rem 0 0.8rem; font-family: var(--font-display); font-size: 1.15rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
-    .guide-copy > section > p:not(.guide-eyebrow, .guide-kicker), .guide-copy .guide-answer p { max-width: 70ch; margin: 0 0 1.15rem; font-size: 15px; line-height: 1.8; color: var(--muted-foreground); }
+    .guide-copy > section > p:not(.guide-eyebrow, .guide-kicker), .guide-copy .guide-answer p { max-width: 38em; margin: 0 0 1.15rem; font-size: 15px; line-height: 1.8; color: var(--muted-foreground); }
     .guide-copy strong { font-weight: 600; color: var(--foreground); }
     .guide-copy a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
     .guide-copy a:not(.guide-button):hover { color: var(--foreground); }

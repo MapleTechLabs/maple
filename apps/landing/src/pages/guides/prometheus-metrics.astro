@@ -6,7 +6,7 @@ import BottomCTA from "../../components/BottomCTA.astro";
 import Breadcrumb from "../../components/Breadcrumb.astro";
 import FAQ from "../../components/FAQ.astro";
 import SeoHead from "../../components/SeoHead.astro";
-import TableOfContents from "../../components/TableOfContents.astro";
+import GuideBody from "../../components/guides/GuideBody.astro";
 import { CONTRIBUTORS } from "../../lib/changelog-meta";
 import { highlight, type GuideLang } from "../../lib/guide-highlight";
 import LanguageTabs from "../../components/docs/LanguageTabs.astro";
@@ -34,7 +34,6 @@ const toc = [
     { depth: 3, slug: "maple", text: "Maple" },
     { depth: 2, slug: "mistakes", text: "Common mistakes" },
 ];
-const sectionNav = toc.filter((h) => h.depth === 2);
 
 // One color per metric type, used by every badge, chart and table on the page.
 const types = [
@@ -285,6 +284,7 @@ const articleJsonLd = {
     <script is:inline type="application/ld+json" set:html={JSON.stringify(articleJsonLd)} />
     <Nav />
     <Breadcrumb
+        class="shell pt-4"
         items={[
             { label: "Home", href: "/" },
             { label: "Guides", href: "/guides" },
@@ -300,7 +300,7 @@ const articleJsonLd = {
                 style="background-image: linear-gradient(to right, oklch(1 0 0 / 4%) 1px, transparent 1px), linear-gradient(to bottom, oklch(1 0 0 / 4%) 1px, transparent 1px); background-size: 60px 60px; mask-image: radial-gradient(ellipse 78% 68% at 22% 26%, black, transparent);"
             >
             </div>
-            <div class="relative mx-auto max-w-6xl px-6 pb-16 pt-20 md:pb-20 md:pt-28">
+            <div class="shell relative pb-16 pt-20 md:pb-20 md:pt-28">
                 <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
                     <span class="border border-primary/40 px-2 py-1 text-primary">Metrics</span>
                     <span>7 min read</span>
@@ -321,20 +321,7 @@ const articleJsonLd = {
             </div>
         </header>
 
-        <nav aria-label="Guide sections" class="border-b border-border bg-bg-deep">
-            <div class="mx-auto flex max-w-6xl gap-6 overflow-x-auto px-6 py-4 font-mono text-[10px] whitespace-nowrap text-fg-muted">
-                {sectionNav.map((h) => (
-                    <a href={`#${h.slug}`} class="transition-colors hover:text-primary">{h.text}</a>
-                ))}
-            </div>
-        </nav>
-
-        <div class="mx-auto grid max-w-6xl gap-12 px-6 py-16 md:py-24 lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-16">
-            <aside class="hidden lg:block">
-                <TableOfContents headings={toc} class="sticky top-28" />
-            </aside>
-
-            <article class="prom-guide min-w-0">
+        <GuideBody headings={toc} class="prom-guide">
                 <section class="guide-lead">
                     <p>
                         <strong>Prometheus</strong> is an open-source monitoring system that collects numeric measurements, called metrics, from your applications and servers and stores them as time series. You query them with PromQL, chart them in Grafana and alert on them.
@@ -693,8 +680,7 @@ const articleJsonLd = {
                         <li><a href="/docs/explore/metrics">Maple docs: Metrics</a></li>
                     </ul>
                 </section>
-            </article>
-        </div>
+        </GuideBody>
     </main>
 
     <FAQ items={faqs} />

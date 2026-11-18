@@ -84,8 +84,9 @@ the schema-apply workflow and the ingest gateway.
 ## Resealing
 
 `SecretResealService.resealDue` runs hourly in the alerting Worker (lane `secret_reseal`). It
-rewrites every stored value whose ciphertext does not start with the primary key's prefix
-(`v2.<primary key id>.`), which is every value sealed by a key that is no longer primary. A
+rewrites every stored value whose ciphertext does not start with the primary key's prefix in
+its slot's envelope (`v2.<primary key id>.`, or `v3.` for a slot with a destination): every
+value sealed by a key that is no longer primary, and every v2 value of a destination slot. A
 value left over from before the v2 envelope is not opened: it counts as failed and as
 remaining on every pass, which is how one gets noticed. Each write is conditional on the row still holding the value that was read, so
 it never overwrites a concurrent change. A value that will not open is left as it is, logged as
