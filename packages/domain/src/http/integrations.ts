@@ -1720,6 +1720,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		HttpApiEndpoint.get("linearTeams", "/linear/teams", {
 			success: LinearTeamsListResponse,
 			error: [
+				IntegrationsForbiddenError,
 				IntegrationsValidationError,
 				IntegrationsNotConnectedError,
 				IntegrationsRevokedError,
@@ -1760,6 +1761,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		HttpApiEndpoint.get("searchConsoleSites", "/google-search-console/sites", {
 			success: SearchConsoleAvailableSitesResponse,
 			error: [
+				IntegrationsForbiddenError,
 				IntegrationsNotConnectedError,
 				IntegrationsRevokedError,
 				IntegrationsValidationError,

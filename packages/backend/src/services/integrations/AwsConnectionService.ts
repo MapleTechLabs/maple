@@ -102,6 +102,8 @@ export interface AwsSetup {
 	readonly metricsCloudformationTemplate: string | null
 	/** Whether the scripts carry the events key: true with the security module on. */
 	readonly containsEventsKey: boolean
+	/** Whether the scripts carry the stream access key: true with a metric stream set. */
+	readonly containsStreamKey: boolean
 }
 
 export interface AwsCheckSweep {
@@ -625,7 +627,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 						}
 					: null
 				const rendered = yield* renderAwsSetup(row.id, row.accountId, plan, stream, events)
-				return { ...rendered, containsEventsKey: events !== null }
+				return { ...rendered, containsEventsKey: events !== null, containsStreamKey: stream !== null }
 			})
 
 			const rotateEventsKey = Effect.fn("AwsConnectionService.rotateEventsKey")(function* (
