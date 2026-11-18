@@ -61,7 +61,7 @@ const COPY = {
 	},
 	github: {
 		brand: providerBrand("github"),
-		sends: "Organization members, teams, repositories and branch protections",
+		sends: "Members, teams, repositories, branch protections, rulesets and deploy keys",
 		turnOn: "Turn on Audit log on the GitHub source in Sources.",
 		connect: "Install the Maple GitHub App on your organization.",
 	},
