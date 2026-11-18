@@ -321,7 +321,8 @@ const buildReviewCompletion = (
 						// Unpostable, or cut by the report's finding cap.
 						"maple.pr_review.child_findings_dropped": unaccounted.length - childPosted,
 						"maple.pr_review.child_dismissals": normalized.childDismissals.length,
-						...(normalized.childDismissals.length > 0
+						// The reasons quote the customer's code: only Maple's own org records them.
+						...(normalized.childDismissals.length > 0 && content === "record"
 							? {
 									"maple.pr_review.child_dismissal_reasons": Arr.join(
 										Arr.map(
