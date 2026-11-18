@@ -2155,7 +2155,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						sessionId,
 						messageId: randomUUID(),
 						text,
-						origin: { kind: "autonomous" },
+						// The review reads a pull request its author wrote, and no Maple user stands behind them.
+						origin: { kind: "autonomous", startedBy: { kind: "person", roles: [] } },
 						tenant: encodeChatTurnTenant({
 							orgId,
 							userId: internalServiceUserId,

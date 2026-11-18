@@ -34,7 +34,7 @@ import { agentSessionSpanAttributes, type ResolvedModel } from "../platform/Llm"
 import { withRunSessionAttributes } from "../platform/genai-spans"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { type AgentDefinition, agentForSession, chatAgent } from "./agents"
-import { profileForRoles, profileForTurn } from "./profiles"
+import { profileForTenant, profileForTurn } from "./profiles"
 import { MUTATING_TOOL_NAMES } from "./permissions"
 import {
 	makeTextSanitizer,
@@ -165,7 +165,7 @@ export const runChatTurn = (input: ChatRunInput) =>
 
 const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 	const agent = input.agent ?? agentForSession(input.sessionId)
-	const profile = profileForRoles(profileForTurn(agent, input.origin), input.tenant.roles)
+	const profile = profileForTenant(profileForTurn(agent, input.origin), input.tenant)
 	const sessionAttributes = agentSessionSpanAttributes(input.model.tags)
 	const completion = input.completion?.({
 		turnId: input.messageId,

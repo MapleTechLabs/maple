@@ -63,6 +63,18 @@ describe("dataSourcesPromptSection", () => {
 	})
 })
 
+describe("dataSourcesPromptSection for a turn that cannot query", () => {
+	it("names the catalog tools and says a query takes a role, without naming the query tool", () => {
+		const withQuery = dataSourcesPromptSection([source(0)]) ?? ""
+		const withoutQuery = dataSourcesPromptSection([source(0)], false) ?? ""
+		expect(withQuery).toContain("`query_data_source`")
+		expect(withoutQuery).not.toContain("query_data_source")
+		expect(withoutQuery).toContain("`describe_data_source`")
+		expect(withoutQuery).toContain("engineer or admin role")
+		expect(withoutQuery).toContain("- src-0 (")
+	})
+})
+
 describe("dataSourcesResourceText", () => {
 	it("points to Settings when nothing is connected, and lists sources otherwise", () => {
 		expect(dataSourcesResourceText([])).toContain("Settings -> Data sources")

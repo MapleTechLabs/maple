@@ -259,7 +259,7 @@ export const HttpV2InvestigationsLive = HttpApiBuilder.group(MapleApiV2, "invest
 					yield* requireInvestigationScopes(tenant.scopes)
 					const doc = yield* service.createAndStartInvestigation(
 						tenant.orgId,
-						tenant.userId,
+						{ userId: tenant.userId, roles: tenant.roles },
 						new InvestigationCreateRequest({
 							subject: toInternalSubject(payload.subject),
 							...(payload.snapshot !== undefined
@@ -281,7 +281,10 @@ export const HttpV2InvestigationsLive = HttpApiBuilder.group(MapleApiV2, "invest
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					yield* requireInvestigationScopes(tenant.scopes)
-					const doc = yield* service.restartInvestigation(tenant.orgId, params.id)
+					const doc = yield* service.restartInvestigation(tenant.orgId, params.id, {
+						userId: tenant.userId,
+						roles: tenant.roles,
+					})
 					yield* recordHttpAudit("investigation.restarted", { resourceId: doc.id })
 
 					return yield* serializeInvestigation(doc)

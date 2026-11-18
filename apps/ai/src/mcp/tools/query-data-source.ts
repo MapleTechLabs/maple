@@ -119,7 +119,7 @@ export function registerQueryDataSourceTool(server: McpToolRegistrar) {
 					AGENT_AUDIENCE,
 					queryCallerOf(tenant),
 				)
-				.pipe(mapDataSourceError(TOOL, "data_source"))
+				.pipe(mapDataSourceError(TOOL, "data_source", tenant))
 			yield* Effect.annotateCurrentSpan({
 				"maple.data_source.kind": source.kind,
 				"maple.data_source.executed": result.executed,

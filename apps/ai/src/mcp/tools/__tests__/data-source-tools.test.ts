@@ -20,8 +20,18 @@ import {
 	SearchDataSourcesOutput,
 } from "@maple/domain/mcp-outputs"
 import type { McpToolResult } from "../types"
-import { RoleName, type TenantContext } from "@maple/domain/http"
-import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
+import { RoleName } from "@maple/domain/http"
+import {
+	asCaller,
+	ENGINEER_CALLER,
+	makeEvalRuntime,
+	markdown,
+	runToolDirect,
+	type EvalRuntime,
+} from "../../__evals__/eval-runtime"
+import { CONNECTOR_TENANT_USER_ID, type AutonomousTurnStarter } from "@maple/domain/chat-session"
+import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
+import { turnStarterOf } from "../../../chat/turn-actor"
 import {
 	fakeDataSources,
 	makeDataSourceWorld,
@@ -40,9 +50,10 @@ beforeAll(async () => {
 		fakeDataSources(makeDataSourceWorld()),
 	)
 	await flaggedOff.runtime.runPromise(seedDataSources)
-	empty = makeEvalRuntime(undefined, fakeDataSources(makeDataSourceWorld()))
-	seeded = makeEvalRuntime(undefined, fakeDataSources(world))
-	capped = makeEvalRuntime(undefined, fakeDataSources(makeDataSourceWorld()))
+	// An engineer by default: a query takes that role, and each test that asks who may says who.
+	empty = asCaller(makeEvalRuntime(undefined, fakeDataSources(makeDataSourceWorld())), ENGINEER_CALLER)
+	seeded = asCaller(makeEvalRuntime(undefined, fakeDataSources(world)), ENGINEER_CALLER)
+	capped = asCaller(makeEvalRuntime(undefined, fakeDataSources(makeDataSourceWorld())), ENGINEER_CALLER)
 	await seeded.runtime.runPromise(seedDataSources)
 	await capped.runtime.runPromise(seedCappedSource)
 })
@@ -54,12 +65,6 @@ afterAll(async () => {
 })
 
 const role = Schema.decodeSync(RoleName)
-const ENGINEER = { roles: [role("org:engineer")] }
-/** The same runtime, called by someone else. */
-const as = (
-	rt: EvalRuntime,
-	caller: Pick<TenantContext, "roles"> & Partial<Pick<TenantContext, "turnOrigin" | "scopes">>,
-): EvalRuntime => ({ ...rt, tenant: { ...rt.tenant, ...caller } })
 
 const decode = <S extends Schema.Codec<unknown, unknown>>(schema: S, result: McpToolResult) =>
 	Schema.decodeSync(schema)(result.structuredContent)
@@ -268,29 +273,125 @@ describe("who may run query_data_source", () => {
 		["an analyst", { roles: [role("org:analyst")] }],
 		["a key pinned below the engineer role", { roles: [role("org:member")] }],
 		["a chat turn a person drives without a role", { roles: [], turnOrigin: { kind: "app" } }],
+		[
+			"an unattended pass nobody is recorded as starting",
+			{ roles: [], turnOrigin: { kind: "autonomous" } },
+		],
 	] as const)("refuses %s, and nothing reaches the source", async (_who, caller) => {
 		const before = world.runs
-		const result = await runToolDirect(as(seeded, caller), "query_data_source", query)
+		const result = await runToolDirect(asCaller(seeded, caller), "query_data_source", query)
 		expect(result.failureCategory).toBe("permission")
 		expect(markdown(result)).toContain("Only org admins and engineers can query connected data sources.")
 		expect(world.runs).toBe(before)
 	})
 
 	it.each([
-		["an engineer", ENGINEER],
+		["an engineer", ENGINEER_CALLER],
 		["an admin", { roles: [role("org:admin")] }],
-		["Maple's own unattended run", { roles: [], turnOrigin: { kind: "autonomous" } }],
 	] as const)("runs the query for %s", async (_who, caller) => {
-		const result = await runToolDirect(as(seeded, caller), "query_data_source", query)
+		const result = await runToolDirect(asCaller(seeded, caller), "query_data_source", query)
 		expect(decode(QueryDataSourceOutput, result)).toMatchObject({ executed: true, rowCount: 2 })
 	})
 
 	it("still lets an analyst read the stored catalog", async () => {
-		const analyst = as(seeded, { roles: [role("org:analyst")] })
+		const analyst = asCaller(seeded, { roles: [role("org:analyst")] })
 		const listed = decode(ListDataSourcesOutput, await runToolDirect(analyst, "list_data_sources", {}))
 		expect(Arr.map(listed.sources, (source) => source.name)).toContain("shop-prod")
 		const described = await runToolDirect(analyst, "describe_data_source", { data_source: "shop-prod" })
 		expect(described.isError).not.toBe(true)
+	})
+})
+
+describe("an investigation's own pass and query_data_source", () => {
+	const query = { data_source: "shop-prod", sql: "SELECT count() AS n FROM shop.payments", ...WINDOW }
+
+	/** The tenant the pass's tools run as, with who answers for it settled as a turn settles it. */
+	const pass = async (startedBy: AutonomousTurnStarter, holdsNow = "org:member") => {
+		const origin = { kind: "autonomous", startedBy } as const
+		const turnStarter = await Effect.runPromise(
+			turnStarterOf(seeded.tenant.orgId, origin).pipe(
+				Effect.provideService(OrgMembershipService, {
+					verify: (_userId, orgId) => Effect.succeedSome({ orgId, role: role(holdsNow) }),
+				}),
+			),
+		)
+		return asCaller(seeded, { roles: [], turnOrigin: origin, turnStarter })
+	}
+	const person = (roleName: string): AutonomousTurnStarter => ({
+		kind: "person",
+		userId: "user_starter",
+		roles: [roleName],
+	})
+	const alert: AutonomousTurnStarter = { kind: "producer", producer: "incident_triage" }
+
+	it("is refused the query when a member started it, with a prompt of their own or not", async () => {
+		const before = world.runs
+		const result = await runToolDirect(
+			await pass(person("org:member"), "org:member"),
+			"query_data_source",
+			query,
+		)
+		expect(result.failureCategory).toBe("permission")
+		expect(markdown(result)).toContain("This run was started by someone without that role")
+		expect(world.runs).toBe(before)
+	})
+
+	it("runs the query when an engineer started it", async () => {
+		const result = await runToolDirect(
+			await pass(person("org:engineer"), "org:engineer"),
+			"query_data_source",
+			query,
+		)
+		expect(decode(QueryDataSourceOutput, result)).toMatchObject({ executed: true, rowCount: 2 })
+	})
+
+	it("is refused once the engineer who started it no longer holds the role", async () => {
+		const result = await runToolDirect(
+			await pass(person("org:engineer"), "org:member"),
+			"query_data_source",
+			query,
+		)
+		expect(result.failureCategory).toBe("permission")
+	})
+
+	it("runs the query when an alert started it and the source lets agents in", async () => {
+		const result = await runToolDirect(await pass(alert), "query_data_source", query)
+		expect(decode(QueryDataSourceOutput, result)).toMatchObject({ executed: true, rowCount: 2 })
+	})
+
+	it("finds no source when an alert started it and the source keeps agents out", async () => {
+		const before = world.runs
+		const result = await runToolDirect(await pass(alert), "query_data_source", {
+			...query,
+			data_source: "secret-db",
+		})
+		expect(result.isError).toBe(true)
+		expect(markdown(result)).toContain('No data source "secret-db"')
+		expect(world.runs).toBe(before)
+	})
+})
+
+describe("a chat connector nobody is linked in", () => {
+	it("is told Maple cannot check who is asking", async () => {
+		const unlinked = asCaller(seeded, {
+			userId: CONNECTOR_TENANT_USER_ID,
+			roles: [],
+			turnOrigin: {
+				kind: "connector",
+				connectorId: "testchat",
+				workspaceId: "w1",
+				externalUserId: "u-1",
+				displayName: "Ada",
+			},
+		})
+		const result = await runToolDirect(
+			unlinked,
+			"query_data_source",
+			{ data_source: "shop-prod", sql: "SELECT 1", ...WINDOW },
+			"bot",
+		)
+		expect(result.failureCategory).toBe("permission")
+		expect(markdown(result)).toContain("Maple cannot tell which Maple user is asking in this chat")
 	})
 })
 
@@ -301,12 +402,15 @@ describe("the sources a prompt or resource may name", () => {
 		)
 
 	it("are none for a scoped key without data_sources:read", async () => {
-		const scoped = as(seeded, { roles: [role("org:admin")], scopes: ["traces:read", "dashboards:write"] })
+		const scoped = asCaller(seeded, {
+			roles: [role("org:admin")],
+			scopes: ["traces:read", "dashboards:write"],
+		})
 		expect(await list(scoped)).toEqual([])
 	})
 
 	it("are the org's agent-visible sources for a key with the scope", async () => {
-		const scoped = as(seeded, { roles: [role("org:admin")], scopes: ["data_sources:read"] })
+		const scoped = asCaller(seeded, { roles: [role("org:admin")], scopes: ["data_sources:read"] })
 		const names = Arr.map(await list(scoped), (source) => source.name)
 		expect(names).toContain("shop-prod")
 		expect(names).not.toContain("secret-db")
@@ -317,7 +421,7 @@ describe("query_data_source", () => {
 	it("states the source, language and plan first, then the rows", async () => {
 		const sql =
 			"SELECT status, count() AS n FROM shop.payments WHERE $__timeFilter(inserted) GROUP BY status"
-		const result = await runToolDirect(as(seeded, ENGINEER), "query_data_source", {
+		const result = await runToolDirect(seeded, "query_data_source", {
 			data_source: "shop-prod",
 			sql,
 			...WINDOW,
@@ -332,7 +436,7 @@ describe("query_data_source", () => {
 	})
 
 	it("does not count a time macro inside a comment as a time filter", async () => {
-		const result = await runToolDirect(as(seeded, ENGINEER), "query_data_source", {
+		const result = await runToolDirect(seeded, "query_data_source", {
 			data_source: "shop-prod",
 			sql: "SELECT count() AS n FROM shop.payments -- add $__timeFilter(inserted) later",
 			...WINDOW,
@@ -342,7 +446,7 @@ describe("query_data_source", () => {
 
 	it("plans an API query without running it under explain", async () => {
 		const before = world.runs
-		const result = await runToolDirect(as(seeded, ENGINEER), "query_data_source", {
+		const result = await runToolDirect(seeded, "query_data_source", {
 			data_source: "clerk-prod",
 			resource: { resource: "users", measure: { fn: "count" } },
 			explain: true,
@@ -353,7 +457,7 @@ describe("query_data_source", () => {
 	})
 
 	it("refuses SQL sent to an API source with the right form", async () => {
-		const result = await runToolDirect(as(seeded, ENGINEER), "query_data_source", {
+		const result = await runToolDirect(seeded, "query_data_source", {
 			data_source: "clerk-prod",
 			sql: "SELECT count(*) FROM users",
 		})
@@ -365,7 +469,7 @@ describe("query_data_source", () => {
 	})
 
 	it("refuses a resource query sent to a database source with an SQL example", async () => {
-		const result = await runToolDirect(as(seeded, ENGINEER), "query_data_source", {
+		const result = await runToolDirect(seeded, "query_data_source", {
 			data_source: "shop-prod",
 			resource: { resource: "payments", measure: { fn: "count" } },
 		})
@@ -374,7 +478,7 @@ describe("query_data_source", () => {
 	})
 
 	it("asks for exactly one of sql and resource", async () => {
-		const result = await runToolDirect(as(seeded, ENGINEER), "query_data_source", {
+		const result = await runToolDirect(seeded, "query_data_source", {
 			data_source: "shop-prod",
 		})
 		expect(markdown(result)).toContain("Send the query")
@@ -388,7 +492,7 @@ describe("query_data_source", () => {
 		[new DataSourceQueryError({ message: "Unknown column foo" }), "query"],
 	])("maps %s to the %s failure", async (error, category) => {
 		world.failWith = error
-		const result = await runToolDirect(as(seeded, ENGINEER), "query_data_source", {
+		const result = await runToolDirect(seeded, "query_data_source", {
 			data_source: "shop-prod",
 			sql: "SELECT 1",
 		})
@@ -399,12 +503,12 @@ describe("query_data_source", () => {
 
 	it("names the tool's own parameter, not the service field, on a refused value", async () => {
 		world.failWith = new DataSourceValidationError({ field: "granularitySeconds", message: "too fine" })
-		const result = await runToolDirect(as(seeded, ENGINEER), "query_data_source", {
+		const result = await runToolDirect(seeded, "query_data_source", {
 			data_source: "shop-prod",
 			sql: "SELECT 1",
 		})
 		world.failWith = new DataSourceValidationError({ field: "timeField", message: "no time field" })
-		const internal = await runToolDirect(as(seeded, ENGINEER), "query_data_source", {
+		const internal = await runToolDirect(seeded, "query_data_source", {
 			data_source: "shop-prod",
 			sql: "SELECT 1",
 		})

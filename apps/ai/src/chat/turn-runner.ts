@@ -60,6 +60,7 @@ import type { SessionRepositoryScope } from "./maple-toolkit"
 import { runChatTurn } from "./run"
 import { toTenantContext, turnTenant } from "./turn-actor"
 import { dataSourcesPromptSection } from "../mcp/lib/data-sources"
+import { mayQueryDataSources, queryCallerOf } from "@maple/backend/services/data-sources/query-caller"
 import { creditRefusalError, creditRefusalNotice, turnCreditRefusal } from "./turn-credits"
 import type { AiCreditsExhausted } from "@maple/backend/services/billing/AiCredits"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -465,7 +466,9 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			}
 			// The org's data sources, one line each, for the prompt. Never fails the turn: logged and left out.
 			const dataSourcesSection = yield* toolExecutor.listDataSources(runTenant).pipe(
-				Effect.map(dataSourcesPromptSection),
+				Effect.map((sources) =>
+					dataSourcesPromptSection(sources, mayQueryDataSources(queryCallerOf(runTenant))),
+				),
 				Effect.catchCause((cause) =>
 					Effect.logWarning("Could not list data sources for the prompt", cause).pipe(
 						Effect.annotateLogs({

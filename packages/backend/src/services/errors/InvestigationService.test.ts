@@ -19,7 +19,8 @@ import {
 	OrgId,
 	SubmitDiagnosisRequest,
 } from "@maple/domain/http"
-import { AnomalyIncidentId, ErrorIssueId } from "@maple/primitives"
+import { AnomalyIncidentId, ErrorIssueId, RoleName, UserId } from "@maple/primitives"
+import type { ChatTurnOrigin } from "@maple/domain/chat-session"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
@@ -76,6 +77,12 @@ const makeHarness = (
 const makeLayer = () => makeHarness().layer
 
 const ORG = Schema.decodeSync(OrgId)("org_investigation_test")
+/** A manual start by a key or session nobody is named for. */
+const NOBODY = { userId: null, roles: [] } as const
+const MEMBER = {
+	userId: Schema.decodeSync(UserId)("user_member"),
+	roles: [Schema.decodeSync(RoleName)("org:member")],
+}
 const asInvestigationId = Schema.decodeUnknownSync(InvestigationId)
 const asIssueId = Schema.decodeUnknownSync(ErrorIssueId)
 
@@ -373,7 +380,7 @@ describe("InvestigationService", () => {
 				created.id,
 				new SubmitDiagnosisRequest({ report: sampleReport() }),
 			)
-			yield* service.restartInvestigation(ORG, created.id)
+			yield* service.restartInvestigation(ORG, created.id, NOBODY)
 			yield* service.failInvestigation(ORG, created.id, "no_diagnosis: the pass ended in prose")
 			yield* service.updateStatus(ORG, created.id, "resolved")
 
@@ -424,14 +431,14 @@ describe("InvestigationService", () => {
 			)
 		return Effect.gen(function* () {
 			const service = yield* InvestigationService
-			yield* service.createAndStartInvestigation(ORG, null, freeformRequest("why is checkout slow"))
+			yield* service.createAndStartInvestigation(ORG, NOBODY, freeformRequest("why is checkout slow"))
 			assert.lengthOf(events(), 1)
 			const [event] = events()
 			assert.strictEqual(event.attributes.get("maple.product_event.group_id"), ORG)
 			assert.strictEqual(event.attributes.get("maple.product_event.prop.subject_type"), "freeform")
-			yield* service.createAndStartInvestigation(ORG, null, criticalIncidentRequest("err_once"))
+			yield* service.createAndStartInvestigation(ORG, NOBODY, criticalIncidentRequest("err_once"))
 			// The same incident again joins the run already going: no second event.
-			yield* service.createAndStartInvestigation(ORG, null, criticalIncidentRequest("err_once"))
+			yield* service.createAndStartInvestigation(ORG, NOBODY, criticalIncidentRequest("err_once"))
 			assert.lengthOf(events(), 2)
 		}).pipe(Effect.withTracer(tracer), Effect.provide(harness.layer))
 	})
@@ -443,10 +450,10 @@ describe("InvestigationService", () => {
 			const service = yield* InvestigationService
 			const started = yield* service.createAndStartInvestigation(
 				ORG,
-				null,
+				NOBODY,
 				freeformRequest("in flight"),
 			)
-			const refused = yield* Effect.flip(service.restartInvestigation(ORG, started.id))
+			const refused = yield* Effect.flip(service.restartInvestigation(ORG, started.id, NOBODY))
 			assert.instanceOf(refused, InvestigationTransitionError)
 			assert.lengthOf(chat.beginTurns, 1)
 		}).pipe(Effect.provide(harness.layer))
@@ -459,7 +466,7 @@ describe("InvestigationService", () => {
 			const service = yield* InvestigationService
 			// Created but never started: `investigating` with no `startedAt`, so nothing is running.
 			const orphan = yield* service.createInvestigation(ORG, null, freeformRequest("orphan"))
-			const restarted = yield* service.restartInvestigation(ORG, orphan.id)
+			const restarted = yield* service.restartInvestigation(ORG, orphan.id, NOBODY)
 			assert.strictEqual(restarted.status, "investigating")
 			assert.lengthOf(chat.beginTurns, 1)
 		}).pipe(Effect.provide(harness.layer))
@@ -496,11 +503,11 @@ describe("InvestigationService", () => {
 	 * which is the point.
 	 */
 	const chatSessionHarness = (options?: { readonly busy?: boolean }) => {
-		const beginTurns: Array<{ messageId: string; text: string }> = []
+		const beginTurns: Array<{ messageId: string; text: string; origin: ChatTurnOrigin }> = []
 		const chatSessions = fakeChatSessionsLayer(() => ({
 			history: async () => [],
-			beginTurn: async (input: { messageId: string; text: string }) => {
-				beginTurns.push({ messageId: input.messageId, text: input.text })
+			beginTurn: async (input: { messageId: string; text: string; origin: ChatTurnOrigin }) => {
+				beginTurns.push({ messageId: input.messageId, text: input.text, origin: input.origin })
 				return options?.busy === true
 					? undefined
 					: { cursor: 0, messageId: input.messageId, turnMessageId: input.messageId }
@@ -522,7 +529,7 @@ describe("InvestigationService", () => {
 			const database = yield* Database
 			const started = yield* InvestigationService.pipe(
 				Effect.flatMap((service) =>
-					service.createAndStartInvestigation(ORG, null, criticalIncidentRequest("err_incident")),
+					service.createAndStartInvestigation(ORG, NOBODY, criticalIncidentRequest("err_incident")),
 				),
 			)
 			assert.strictEqual(started.status, "investigating")
@@ -541,13 +548,39 @@ describe("InvestigationService", () => {
 		}).pipe(Effect.provide(harness.layer))
 	})
 
+	it.effect("stamps a manual start and a restart with the person who asked and their roles", () => {
+		const chat = chatSessionHarness()
+		const harness = makeHarness(chat.env, chat.chatSessions)
+		return Effect.gen(function* () {
+			const service = yield* InvestigationService
+			const started = yield* service.createAndStartInvestigation(
+				ORG,
+				MEMBER,
+				freeformRequest("list every row of the payments table"),
+			)
+			yield* service.failInvestigation(ORG, started.id, "no_diagnosis: the pass ended in prose")
+			yield* service.restartInvestigation(ORG, started.id, NOBODY)
+			assert.deepStrictEqual(
+				Arr.map(chat.beginTurns, (turn) => turn.origin),
+				[
+					{
+						kind: "autonomous",
+						startedBy: { kind: "person", userId: MEMBER.userId, roles: MEMBER.roles },
+					},
+					// The restart is the restarter's to answer for, not the first starter's.
+					{ kind: "autonomous", startedBy: { kind: "person", roles: [] } },
+				],
+			)
+		}).pipe(Effect.provide(harness.layer))
+	})
+
 	it.effect("keeps a free-form question on the same single turn", () => {
 		const chat = chatSessionHarness()
 		const harness = makeHarness(chat.env, chat.chatSessions)
 		return Effect.gen(function* () {
 			const started = yield* InvestigationService.pipe(
 				Effect.flatMap((service) =>
-					service.createAndStartInvestigation(ORG, null, freeformRequest("why is checkout slow")),
+					service.createAndStartInvestigation(ORG, NOBODY, freeformRequest("why is checkout slow")),
 				),
 			)
 			assert.strictEqual(started.status, "investigating")
@@ -572,7 +605,7 @@ describe("InvestigationService", () => {
 			const exit = yield* Effect.exit(
 				InvestigationService.pipe(
 					Effect.flatMap((service) =>
-						service.createAndStartInvestigation(ORG, null, criticalIncidentRequest("err_busy")),
+						service.createAndStartInvestigation(ORG, NOBODY, criticalIncidentRequest("err_busy")),
 					),
 				),
 			)
@@ -627,13 +660,13 @@ describe("InvestigationService", () => {
 
 			const started = yield* service.createAndStartInvestigation(
 				ORG,
-				null,
+				NOBODY,
 				criticalIncidentRequest("err_over_budget"),
 			)
 			assert.strictEqual(started.status, "investigating")
 			yield* service.failInvestigation(ORG, started.id, "no_diagnosis: the pass ended in prose")
 
-			const restarted = yield* service.restartInvestigation(ORG, started.id)
+			const restarted = yield* service.restartInvestigation(ORG, started.id, NOBODY)
 			assert.strictEqual(restarted.status, "investigating")
 			assert.lengthOf(chat.beginTurns, 2)
 		}).pipe(Effect.provide(harness.layer))
@@ -647,7 +680,7 @@ describe("InvestigationService", () => {
 			const service = yield* InvestigationService
 			const started = yield* service.createAndStartInvestigation(
 				ORG,
-				null,
+				NOBODY,
 				criticalIncidentRequest("err_fail"),
 			)
 			yield* service.failInvestigation(ORG, started.id, "no_diagnosis: the pass ended in prose")
@@ -724,7 +757,7 @@ describe("InvestigationService", () => {
 					.pipe(Effect.orDie, Effect.asVoid),
 			}
 
-			const refused = yield* Effect.flip(service.restartInvestigation(ORG, created.id))
+			const refused = yield* Effect.flip(service.restartInvestigation(ORG, created.id, NOBODY))
 			assert.instanceOf(refused, InvestigationTransitionError)
 			assert.include(refused.message, "changed while restarting")
 			assert.isUndefined(armed)
@@ -808,7 +841,7 @@ describe("InvestigationService", () => {
 			assert.deepStrictEqual(yield* statuses, ["completed", "skipped", "skipped"])
 
 			// A retry is triaging again, and its diagnosis completes it.
-			yield* service.restartInvestigation(ORG, failed.id)
+			yield* service.restartInvestigation(ORG, failed.id, NOBODY)
 			assert.deepStrictEqual(yield* statuses, ["completed", "pending", "skipped"])
 			yield* service.submitDiagnosis(
 				ORG,
@@ -828,7 +861,7 @@ describe("InvestigationService", () => {
 			const service = yield* InvestigationService
 			const started = yield* service.createAndStartInvestigation(
 				ORG,
-				null,
+				NOBODY,
 				freeformRequest("err_autonomous_start"),
 			)
 			assert.strictEqual(started.status, "investigating")
@@ -857,7 +890,7 @@ describe("InvestigationService", () => {
 		return Effect.gen(function* () {
 			const service = yield* InvestigationService
 			const error = yield* Effect.flip(
-				service.createAndStartInvestigation(ORG, null, incidentRequest("err_no_binding")),
+				service.createAndStartInvestigation(ORG, NOBODY, incidentRequest("err_no_binding")),
 			)
 			assert.instanceOf(error, InvestigationAgentUnavailableError)
 		}).pipe(Effect.provide(harness.layer))
@@ -869,7 +902,7 @@ describe("InvestigationService", () => {
 		return Effect.gen(function* () {
 			const service = yield* InvestigationService
 			const error = yield* Effect.flip(
-				service.createAndStartInvestigation(ORG, null, freeformRequest("err_busy")),
+				service.createAndStartInvestigation(ORG, NOBODY, freeformRequest("err_busy")),
 			)
 			assert.instanceOf(error, InvestigationStartFailedError)
 		}).pipe(Effect.provide(harness.layer))

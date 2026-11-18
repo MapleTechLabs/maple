@@ -36,7 +36,6 @@ import {
 	type UpdateCatalogEntryInput,
 	type UpdateExternalDataSourceInput,
 } from "@maple/domain/data-sources"
-import type { TenantContext } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import type { OrgId, UserId } from "@maple/primitives"
 import {
@@ -70,6 +69,9 @@ import { Env } from "@maple/backend/platform/Env"
 import { DataSourceCallBudget, DataSourceDrivers } from "./DataSourceDrivers"
 import { DataSourceCallBudgetLive } from "./DataSourceCallBudgetLive"
 import { DATA_SOURCE_DRIVERS } from "./drivers"
+import type { QueryCaller } from "./query-caller"
+
+export { mayQueryDataSources, queryCallerOf, type QueryCaller } from "./query-caller"
 
 // Connected systems Maple queries in place. Owns storage, secrets, catalogs, search and the
 // query path every surface (dashboards, alerts, MCP tools, the API) goes through.
@@ -89,20 +91,6 @@ export type ExternalDataSourceServiceError =
 export interface Audience {
 	readonly agent: boolean
 }
-
-/**
- * Who asks for a query to run. A person or a key answers with its roles. One of Maple's own
- * unattended runs has no person behind it: the source's `agentAccess` is what admits it.
- */
-export type QueryCaller =
-	| { readonly kind: "principal"; readonly roles: ReadonlyArray<string> }
-	| { readonly kind: "unattended" }
-
-/** The caller behind a tenant. Unattended only when its turn says so, never because roles are absent. */
-export const queryCallerOf = (tenant: Pick<TenantContext, "roles" | "turnOrigin">): QueryCaller =>
-	tenant.turnOrigin?.kind === "autonomous"
-		? { kind: "unattended" }
-		: { kind: "principal", roles: tenant.roles }
 
 export interface QueryInput {
 	readonly startMs: number

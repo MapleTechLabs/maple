@@ -16,6 +16,8 @@ import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import type { ActorDocument, TenantContext } from "@maple/domain/http"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
+import * as Policy from "@maple/domain/policy"
+import { RoleName } from "@maple/primitives"
 import { Cause, Effect, Option, Schema } from "effect"
 
 /**
@@ -135,10 +137,49 @@ export const linkedUserTenant = Effect.fn("ChatTurnActor.linkedUserTenant")(func
 })
 
 const decodeUserId = Schema.decodeUnknownOption(UserId)
+const decodeRoles = Schema.decodeUnknownOption(Schema.Array(RoleName))
+
+type AutonomousOrigin = Extract<ChatTurnOrigin, { readonly kind: "autonomous" }>
+
+/** A person nobody can name or confirm: they answer for the pass, holding nothing. */
+const NOBODY = { kind: "person", roles: [] } as const satisfies NonNullable<TenantContext["turnStarter"]>
+
+/**
+ * Who answers for an unattended pass. A person does so with the lower of the roles they hold in the
+ * org now and the roles their credential held when they started it, so a restricted key stays
+ * restricted and a demotion lands. An unreadable membership answers as nobody: the pass still runs.
+ */
+export const turnStarterOf = Effect.fn("ChatTurnActor.turnStarterOf")(function* (
+	orgId: OrgId,
+	origin: AutonomousOrigin,
+) {
+	const startedBy = origin.startedBy
+	if (startedBy?.kind === "producer") return { kind: "producer" } as const
+	const userId = Option.flatMap(Option.fromNullishOr(startedBy?.userId), decodeUserId)
+	const then = Option.flatMap(Option.fromNullishOr(startedBy?.roles), decodeRoles)
+	if (Option.isNone(userId) || Option.isNone(then)) return NOBODY
+	const memberships = yield* OrgMembershipService
+	const membership = yield* memberships
+		.verify(userId.value, orgId)
+		.pipe(
+			Effect.catch((error) =>
+				Effect.logWarning(
+					"Could not read the roles of the person who started an unattended pass",
+				).pipe(Effect.annotateLogs({ orgId, error: error.message }), Effect.as(Option.none())),
+			),
+		)
+	if (Option.isNone(membership)) return NOBODY
+	const now = [membership.value.role]
+	return {
+		kind: "person",
+		roles: Policy.outranks(Policy.highestRole(now), Policy.highestRole(then.value)) ? then.value : now,
+	} as const
+})
 
 /**
  * Who a turn's tools run as: the linked Maple user when the connector named one, the connector's
- * agent actor otherwise, and the tenant itself for an app or autonomous turn.
+ * agent actor otherwise, the tenant itself for an app turn, and for an unattended one the tenant
+ * with who answers for it.
  */
 export const turnTenant = Effect.fn("ChatTurnActor.turnTenant")(function* (
 	tenant: TenantContext,
@@ -155,7 +196,12 @@ export const turnTenant = Effect.fn("ChatTurnActor.turnTenant")(function* (
 				message: "Maple could not tell which Maple user you are.",
 			})
 		}
-		return yield* linkedUserTenant(tenant.orgId, userId.value, origin)
+		const linked: TenantContext = yield* linkedUserTenant(tenant.orgId, userId.value, origin)
+		return linked
+	}
+	if (origin.kind === "autonomous") {
+		const turnStarter = yield* turnStarterOf(tenant.orgId, origin)
+		return { ...tenant, turnStarter } satisfies TenantContext
 	}
 	return yield* withConnectorActor(tenant, origin)
 })

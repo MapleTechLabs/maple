@@ -44,7 +44,11 @@ const OTHER_ORG = Schema.decodeSync(OrgId)("org_other")
 const USER = Schema.decodeSync(UserId)("user_admin")
 const SECRET = "sk_test_supersecretvalue1234"
 const roles = (...names: ReadonlyArray<string>) => Arr.map(names, (name) => Schema.decodeSync(RoleName)(name))
-const ROLES = { analyst: roles("org:analyst"), engineer: roles("org:engineer") }
+const ROLES = {
+	analyst: roles("org:analyst"),
+	member: roles("org:member"),
+	engineer: roles("org:engineer"),
+}
 /** A person or key that may run queries. */
 const ENGINEER: QueryCaller = { kind: "principal", roles: ["org:engineer"] }
 
@@ -817,12 +821,12 @@ describe("ExternalDataSourceService", () => {
 		}).pipe(Effect.provide(makeLayer(world)))
 	})
 
-	it.effect("tells an unattended run from a person by the turn's origin, never by missing roles", () => {
+	it.effect("admits an unattended pass by who started it, never by its missing roles", () => {
 		const world = makeWorld()
 		return Effect.gen(function* () {
 			const service = yield* ExternalDataSourceService
 			yield* service.create(ORG, USER, shopProd)
-			const ask = (caller: QueryCaller) =>
+			const ask = (tenant: Parameters<typeof queryCallerOf>[0]) =>
 				service
 					.query(
 						ORG,
@@ -830,23 +834,35 @@ describe("ExternalDataSourceService", () => {
 						{ _tag: "sql", sql: "SELECT 1" },
 						window,
 						{ agent: true },
-						caller,
+						queryCallerOf(tenant),
 					)
-					.pipe(Effect.result)
-			const unattended = yield* ask(queryCallerOf({ roles: [], turnOrigin: { kind: "autonomous" } }))
-			expect(unattended._tag).toBe("Success")
-			const withoutRoles = yield* ask(queryCallerOf({ roles: [] }))
-			const analystInApp = yield* ask(
-				queryCallerOf({ roles: ROLES.analyst, turnOrigin: { kind: "app" } }),
-			)
-			const engineerInApp = yield* ask(
-				queryCallerOf({ roles: ROLES.engineer, turnOrigin: { kind: "app" } }),
-			)
-			expect([withoutRoles._tag, analystInApp._tag, engineerInApp._tag]).toEqual([
-				"Failure",
-				"Failure",
-				"Success",
-			])
+					.pipe(
+						Effect.as("ran"),
+						Effect.catchTag("@maple/data-sources/Forbidden", () => Effect.succeed("refused")),
+					)
+			const pass = { roles: [], turnOrigin: { kind: "autonomous" } } as const
+			const verdicts = {
+				producer: yield* ask({ ...pass, turnStarter: { kind: "producer" } }),
+				engineerStarted: yield* ask({
+					...pass,
+					turnStarter: { kind: "person", roles: ROLES.engineer },
+				}),
+				memberStarted: yield* ask({ ...pass, turnStarter: { kind: "person", roles: ROLES.member } }),
+				// Recorded before starters were, or by a caller that named none.
+				nobodyRecorded: yield* ask(pass),
+				withoutRoles: yield* ask({ roles: [] }),
+				analystInApp: yield* ask({ roles: ROLES.analyst, turnOrigin: { kind: "app" } }),
+				engineerInApp: yield* ask({ roles: ROLES.engineer, turnOrigin: { kind: "app" } }),
+			}
+			expect(verdicts).toEqual({
+				producer: "ran",
+				engineerStarted: "ran",
+				memberStarted: "refused",
+				nobodyRecorded: "refused",
+				withoutRoles: "refused",
+				analystInApp: "refused",
+				engineerInApp: "ran",
+			})
 		}).pipe(Effect.provide(makeLayer(world)))
 	})
 
