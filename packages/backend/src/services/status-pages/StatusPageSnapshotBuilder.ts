@@ -42,6 +42,7 @@ import {
 	themeContrastIssue,
 	isStatusPageImageSource,
 	type StatusPageSnapshot,
+	statusPageOrgKey,
 	type StatusPageIncidentHistoryEntry,
 	type StatusPageSnapshotIncident,
 	utcDay,
@@ -61,6 +62,8 @@ export interface SnapshotPageInput {
 	readonly id: StatusPageId
 	readonly name: string
 	readonly slug: string
+	/** `statusPageOrgKey` of the page's org: the first part of its hosted address. */
+	readonly orgKey: string
 	readonly description: string | null
 	readonly websiteUrl: string | null
 	readonly logoUrl: string | null
@@ -260,6 +263,7 @@ export const toSnapshot = (input: SnapshotInput): StatusPageSnapshot => {
 		page: {
 			name: input.page.name,
 			slug: input.page.slug,
+			orgKey: input.page.orgKey,
 			description: input.page.description,
 			websiteUrl: input.page.websiteUrl,
 			logoUrl: input.page.logoUrl,
@@ -285,7 +289,7 @@ export const toSnapshot = (input: SnapshotInput): StatusPageSnapshot => {
 export interface StatusPageDraft {
 	readonly page: Omit<
 		SnapshotPageInput,
-		"id" | "breakGlassTokenSha256" | "passwordHash" | "revision" | "customDomain"
+		"id" | "orgKey" | "breakGlassTokenSha256" | "passwordHash" | "revision" | "customDomain"
 	>
 	readonly components: ReadonlyArray<Omit<SnapshotComponentInput, "id" | "monitorStatus">>
 }
@@ -547,7 +551,11 @@ export class StatusPageSnapshotBuilder extends Context.Service<
 										]),
 								)
 					return {
-						page: { ...page, customDomain: domain?.hostname ?? null },
+						page: {
+							...page,
+							orgKey: statusPageOrgKey(orgId),
+							customDomain: domain?.hostname ?? null,
+						},
 						components,
 						daily,
 						incidents,
@@ -586,6 +594,7 @@ export class StatusPageSnapshotBuilder extends Context.Service<
 				page: {
 					...draft.page,
 					id: DRAFT_PAGE_ID,
+					orgKey: statusPageOrgKey(orgId),
 					breakGlassTokenSha256: null,
 					passwordHash: null,
 					revision: 0,

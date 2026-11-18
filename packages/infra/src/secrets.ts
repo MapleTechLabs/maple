@@ -45,6 +45,15 @@ export class MapleRootPassword extends Secret<MapleRootPassword>()("MAPLE_ROOT_P
 	consumers: ["api", "ai", "alerting", "electric-sync"],
 }) {}
 
+/** Optional key self-hosted session tokens are signed from, so a token does not expose the root password. */
+export class MapleSessionSigningSecret extends Secret<MapleSessionSigningSecret>()(
+	"MAPLE_SESSION_SIGNING_SECRET",
+	{
+		issuer: "maple",
+		consumers: ["api", "ai", "alerting", "electric-sync"],
+	},
+) {}
+
 export class ClerkSecretKey extends Secret<ClerkSecretKey>()("CLERK_SECRET_KEY", {
 	issuer: "clerk",
 	consumers: ["api", "ai", "alerting", "electric-sync"],
@@ -72,12 +81,13 @@ export class PreviewSigninKey extends Secret<PreviewSigninKey>()("PREVIEW_SIGNIN
 
 export class IngestKeyEncryptionKey extends Secret<IngestKeyEncryptionKey>()(
 	"MAPLE_INGEST_KEY_ENCRYPTION_KEY",
-	{ issuer: "maple", consumers: ["api", "ai", "alerting", "chat-bot", "ingest"] },
+	// ingest gets only its ClickHouse password slot keys (secret-slot-keys.ts).
+	{ issuer: "maple", consumers: ["api", "ai", "alerting", "chat-bot"], derivedFor: ["ingest"] },
 ) {}
 
 export class IngestKeyDecryptionKeys extends Secret<IngestKeyDecryptionKeys>()(
 	"MAPLE_INGEST_KEY_DECRYPTION_KEYS",
-	{ issuer: "maple", consumers: ["api", "ai", "alerting", "chat-bot", "ingest"] },
+	{ issuer: "maple", consumers: ["api", "ai", "alerting", "chat-bot"], derivedFor: ["ingest"] },
 ) {}
 
 export class IngestKeyLookupHmacKey extends Secret<IngestKeyLookupHmacKey>()(
@@ -213,7 +223,7 @@ export class SupabaseOAuthClientSecret extends Secret<SupabaseOAuthClientSecret>
 
 export class StatusDomainsApiToken extends Secret<StatusDomainsApiToken>()("MAPLE_STATUS_DOMAINS_API_TOKEN", {
 	issuer: "cloudflare",
-	consumers: ["api", "ai", "alerting"],
+	consumers: ["api", "alerting"],
 	environments: PRD_ONLY,
 }) {}
 

@@ -13,9 +13,8 @@ import {
 	McpQueryError,
 	McpUnavailableError,
 } from "../tools/types"
-import { truncate } from "./format"
+import { truncate, untrustedText } from "./format"
 import { CurrentMcpTenant } from "../tenant"
-import { stringifyJson } from "./json"
 
 /** The data source tools read through the agent audience: hidden sources and PII stay out. */
 export const AGENT_AUDIENCE = { agent: true } as const
@@ -79,16 +78,6 @@ export const queryLanguageLabel = (language: QueryLanguage): string => {
 	return `${SQL_DIALECT_NAMES.get(dialect) ?? dialect} SQL`
 }
 
-/** A JSON string literal: the text cannot end the quote or start a new prompt section. */
-const quoted = (text: string): string => stringifyJson(text) ?? `"${Str.replace(/"/g, "'")(text)}"`
-
-/**
- * Text an admin or the source itself wrote (descriptions, catalog notes, DB comments), as one quoted
- * line: it cannot end its quote, start a new section or read as an instruction to the model.
- */
-export const untrustedText = (text: string, max = 300): string =>
-	quoted(truncate(Str.replace(/\s+/g, " ")(text), max))
-
 /** `name (kind, query language, environment): description`, one per source. */
 export const dataSourceLine = (source: {
 	readonly name: string
@@ -97,7 +86,7 @@ export const dataSourceLine = (source: {
 	readonly environment: string
 	readonly description: string
 }): string =>
-	`${source.name} (${source.kind}, ${queryLanguageLabel(source.queryLanguage)}, ${source.environment}): ${quoted(truncate(Str.replace(/\s+/g, " ")(source.description), MAX_LINE_DESCRIPTION_CHARS))}`
+	`${source.name} (${source.kind}, ${queryLanguageLabel(source.queryLanguage)}, ${source.environment}): ${untrustedText(source.description, MAX_LINE_DESCRIPTION_CHARS)}`
 
 /** The plan's one-line summary: expanded SQL, or the API calls and rows it reads. */
 export const planLine = (plan: QueryPlanSummary): string =>

@@ -111,6 +111,7 @@ export const authEnv: Config.Config<WorkerEnv> = merge(
 	derived("CLERK_TELEMETRY_DISABLED", "1"),
 	plainWithDefault("MAPLE_DEFAULT_ORG_ID", "default"),
 	Secrets.MapleRootPassword.optional,
+	Secrets.MapleSessionSigningSecret.optional,
 	Secrets.ClerkSecretKey.optional,
 	optionalPlain("CLERK_PUBLISHABLE_KEY"),
 	Secrets.ClerkJwtKey.optional,
@@ -170,7 +171,8 @@ export const STATUS_DOMAINS_CNAME_TARGET = "status-domains.maple.dev"
 /**
  * Status page custom domains (docs/status-page-custom-domains.md): the zone and a token that may
  * edit its custom hostnames and Worker routes. Either unset (every dev stage by default) leaves
- * custom domains unavailable. The status Worker's name is where per-hostname routes point.
+ * custom domains unavailable. The status Worker's name is where per-hostname routes point. Bound
+ * by api and alerting only, the two Workers that build `CloudflareCustomHostnames`.
  */
 export const statusDomainsEnv = (
 	stage: MapleStage,
@@ -250,7 +252,6 @@ export const mapleServerEnv = (
 		authEnv,
 		ingestKeyCryptoEnv,
 		appUrlsEnv(domains),
-		statusDomainsEnv(stage, region),
 		selfObservabilityEnv(stage, region),
 		// Dev-only; the runtime ignores it outside MAPLE_ENVIRONMENT=development.
 		optionalPlain("MAPLE_IGNORE_ORG_CLICKHOUSE"),

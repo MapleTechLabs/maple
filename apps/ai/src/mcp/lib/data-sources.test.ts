@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest"
 import { Array as Arr, Effect, Schema, String as Str } from "effect"
 import { ExternalDataSourceId, type ExternalDataSourceDocument } from "@maple/domain/data-sources"
-import { dataSourcesPromptSection, MAX_PROMPT_SOURCES, untrustedText } from "./data-sources"
+import { dataSourcesPromptSection, MAX_PROMPT_SOURCES } from "./data-sources"
+import { untrustedText } from "./format"
 import { dataSourcesResourceText, readDataSourcesResource } from "../resources/data-sources"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
 

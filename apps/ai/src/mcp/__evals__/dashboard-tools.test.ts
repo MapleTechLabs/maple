@@ -16,6 +16,7 @@ import { makeEvalRuntime, runToolDirect, markdown, type EvalRuntime } from "./ev
 import { installFakeWarehouse, restoreWarehouse } from "./fake-warehouse"
 import type { McpToolResult } from "../tools/types"
 import { DASHBOARD_TEMPLATES } from "@maple/backend/dashboard-templates"
+import { sharedExportDashboard } from "@maple/backend/services/dashboards/grafana-dashboard-import.fixtures"
 
 let rt: EvalRuntime
 
@@ -64,6 +65,34 @@ describe("dashboard tools", () => {
 		const text = markdown(result)
 		expect(text).toContain(`ID: ${dashboardId}`)
 		expect(text).not.toContain("__maple_ui")
+	})
+
+	it("imports a Grafana dashboard with its warnings and panel counts", async () => {
+		const result = await call("create_dashboard", {
+			name: "Imported API",
+			import_json: JSON.stringify({ dashboard: sharedExportDashboard, meta: {} }),
+			validate: "false",
+		})
+		expect(result.isError).toBeUndefined()
+		const output = Schema.decodeUnknownSync(CreateDashboardOutput)(result.structuredContent)
+		expect(output.source).toBe("grafana_import")
+		expect(output.dashboard.name).toBe("Imported API")
+		expect(output.importStats).toEqual({ panels: 5, converted: 2, placeholders: 3 })
+		expect(output.importWarnings).toContain(
+			'Panel "Error logs" queries Loki, which Maple cannot run; it was imported as a placeholder.',
+		)
+		const text = markdown(result)
+		expect(text).toContain("2 of 5 (3 kept as notes)")
+		expect(text).toContain("Import warnings")
+	})
+
+	it("refuses import_json that is neither Grafana nor Perses", async () => {
+		const result = await call("create_dashboard", {
+			name: "Nope",
+			import_json: JSON.stringify({ name: "Maple", widgets: [] }),
+		})
+		expect(result.isError).toBe(true)
+		expect(markdown(result)).toContain("import_json is neither a Grafana dashboard")
 	})
 
 	it("lists it with a next call that opens it", async () => {

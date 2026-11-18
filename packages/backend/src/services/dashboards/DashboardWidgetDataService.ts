@@ -72,6 +72,7 @@ import {
 	widgetReadPath,
 } from "./widget-read-families"
 import { systemTenant } from "@maple/backend/services/auth/system-tenant"
+import { PromqlQueryService } from "@maple/backend/services/promql/PromqlQueryService"
 
 // Shares and the API's widget data read both land here, so the wording names neither.
 const UNSUPPORTED_WIDGET_MESSAGE = "This widget type can't be read outside the dashboard yet."
@@ -211,6 +212,16 @@ const PlannedRawSqlParams = Schema.Struct({
 })
 const decodePlannedRawSql = Schema.decodeUnknownEffect(PlannedRawSqlParams)
 
+const PlannedPromqlParams = Schema.Struct({
+	promql: Schema.String,
+	legendFormat: Schema.optionalKey(Schema.String),
+	minStepSeconds: Schema.optionalKey(Schema.Number),
+	displayType: Schema.optionalKey(Schema.String),
+	maxDataPoints: Schema.optionalKey(Schema.Number),
+})
+const decodePlannedPromql = Schema.decodeUnknownEffect(PlannedPromqlParams)
+const isShareWidgetExecutionError = Schema.is(ShareWidgetExecutionError)
+
 /** The list cap applied to a window that exceeds it: last `MAX_LIST_RANGE_SECONDS` up to its end. */
 const narrowToListCap = (window: ResolvedWindow): ResolvedWindow => ({
 	startTime: formatWarehouseDateTime(
@@ -290,6 +301,7 @@ export class DashboardWidgetDataService extends Context.Service<
 	make: Effect.gen(function* () {
 		const queryEngine = yield* QueryEngineService
 		const warehouse = yield* WarehouseQueryService
+		const promql = yield* PromqlQueryService
 
 		const resolve = Effect.fn("DashboardWidgetDataService.resolve")(function* (
 			orgId: OrgId,
@@ -484,6 +496,55 @@ export class DashboardWidgetDataService extends Context.Service<
 				return outcome({ data: rows })
 			}
 
+			if (path._tag === "Promql") {
+				// The author's PromQL, variables already filled by the planner. A query that does
+				// not parse or cannot run says why, so the tile shows the parser's message.
+				const rows = yield* Effect.gen(function* () {
+					const params = yield* decodePlannedPromql(executed.params)
+					const result = yield* promql.widget(tenant, {
+						query: params.promql,
+						startTime: executed.window.startTime,
+						endTime: executed.window.endTime,
+						...(params.legendFormat === undefined
+							? undefined
+							: { legendFormat: params.legendFormat }),
+						...(params.minStepSeconds === undefined
+							? undefined
+							: { minStepSeconds: params.minStepSeconds }),
+						...(params.maxDataPoints === undefined
+							? undefined
+							: { maxDataPoints: params.maxDataPoints }),
+						...(params.displayType === undefined
+							? undefined
+							: { displayType: params.displayType }),
+					})
+					return result.rows
+				}).pipe(
+					Effect.catchTags({
+						"@maple/backend/promql/PromqlBadQueryError": (error) =>
+							Effect.fail(
+								new ShareWidgetExecutionError({
+									message: `Invalid PromQL: ${error.message}`,
+									widgetId: request.widgetId,
+								}),
+							),
+						"@maple/backend/promql/PromqlExecutionError": (error) =>
+							Effect.fail(
+								new ShareWidgetExecutionError({
+									message: error.message,
+									widgetId: request.widgetId,
+								}),
+							),
+					}),
+					Effect.catchIf(
+						(error) => !isShareWidgetExecutionError(error),
+						executionFailed(request.widgetId, "promql"),
+					),
+					Effect.catchDefect(executionFailed(request.widgetId, "promql")),
+				)
+				return outcome({ data: rows })
+			}
+
 			const context: RouteEndpointContext = {
 				tenant,
 				queryEngine,
@@ -630,7 +691,9 @@ export class DashboardWidgetDataService extends Context.Service<
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(WarehouseQueryService.layer, QueryEngineService.layer)),
+		Layer.provide(
+			Layer.mergeAll(WarehouseQueryService.layer, QueryEngineService.layer, PromqlQueryService.layer),
+		),
 	)
 }
 

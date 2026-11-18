@@ -21,6 +21,7 @@ import { whereFieldsInputsOf, whereFieldsOf } from "./where-fields"
 import { reseedForType } from "./raw-sql"
 import { withDefaultMetric } from "./metric-options"
 import { runSqlPreview, sqlStep } from "./sql-step"
+import { promqlStep, runPromqlPreview, savedPromql } from "./promql-step"
 import { Message } from "./message"
 import type { Model } from "./model"
 import {
@@ -36,7 +37,9 @@ import {
 import {
 	backHref,
 	canApply,
+	editedSourceOf,
 	editedWidget,
+	isPromqlSource,
 	isSqlSource,
 	editState,
 	leave,
@@ -105,7 +108,12 @@ const tabsStep = (model: Model, context: PageContext, message: Tabs.Message): Re
 		{
 			...model,
 			sourceTabs: next.model,
-			sourceMode: next.model.selected === "rawSql" ? "rawSql" : "builder",
+			sourceMode:
+				next.model.selected === "rawSql"
+					? "rawSql"
+					: next.model.selected === "promql"
+						? "promql"
+						: "builder",
 		},
 		context,
 	)
@@ -155,7 +163,7 @@ const apply = (model: Model, context: PageContext, listQueryId: string | null): 
 	const widget = widgetOf(model)
 	if (model.isSaving || widget === null || model.state === null) return { model }
 	if (!canApply(model)) return { model }
-	const rawSql = isSqlSource(model) ? (model.rawSql?.draft ?? null) : null
+	const source = editedSourceOf(model, "draft")
 	if (listQueryId === null && isEngineList(model, model.state))
 		return { model, commands: generate("applyList", "") }
 	return {
@@ -164,7 +172,7 @@ const apply = (model: Model, context: PageContext, listQueryId: string | null): 
 			SaveWidget({
 				orgId: context.orgId,
 				dashboardId: model.dashboardId,
-				widget: editedWidget(widget, withListQueryId(model.state, listQueryId), rawSql),
+				widget: editedWidget(widget, withListQueryId(model.state, listQueryId), source),
 			}),
 		],
 	}
@@ -282,7 +290,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRemoveFormula: ({ formulaId }) =>
 			editState(model, context, (state) => removeFormula(state, formulaId)),
 		ClickedRunPreview: () =>
-			isSqlSource(model) ? runSqlPreview(model, context) : runPreview(model, context),
+			isPromqlSource(model)
+				? runPromqlPreview(model, context)
+				: isSqlSource(model)
+					? runSqlPreview(model, context)
+					: runPreview(model, context),
+		ChangedPromql: (m) => promqlStep(model, m),
+		ChangedPromqlLegend: (m) => promqlStep(model, m),
+		ChangedPromqlMinStep: (m) => promqlStep(model, m),
 		ChangedSql: (m) => sqlStep(model, m),
 		ChangedSqlBucket: (m) => sqlStep(model, m),
 		ClickedSqlToken: (m) => sqlStep(model, m),
@@ -390,6 +405,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 							initial: model.state,
 							initialSourceMode: model.sourceMode,
 							rawSql: savedSql(model),
+							promql: savedPromql(model),
 						},
 						backHref(model),
 					)
@@ -409,6 +425,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						initial: model.state,
 						sourceMode: model.initialSourceMode,
 						rawSql: savedSql(model),
+						promql: savedPromql(model),
 					},
 					model.pendingLeaveUrl ?? backHref(model),
 				),

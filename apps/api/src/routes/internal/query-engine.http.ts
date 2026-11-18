@@ -7,6 +7,8 @@ import {
 	CurrentTenant,
 	MapleInternalApi,
 	RawSqlExecuteResponse,
+	PromqlExecuteResponse,
+	QueryEngineValidationError,
 	SpanHierarchyResponse,
 	ProfileSampleTypesResponse,
 	ProfileStacksResponse,
@@ -157,6 +159,7 @@ import {
 import type { QueryEngineDirectError } from "@maple/query-engine/runtime"
 import { makeRunAuditedRawSql } from "@maple/backend/services/warehouse/audited-raw-sql"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { PromqlQueryService } from "@maple/backend/services/promql/PromqlQueryService"
 import {
 	alignServiceApiBucketSeconds,
 	CH,
@@ -373,6 +376,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 	Effect.gen(function* () {
 		const queryEngine = yield* QueryEngineService
 		const warehouse = yield* WarehouseQueryService
+		const promql = yield* PromqlQueryService
 		const runtimeReleases = yield* RuntimeReleaseCatalog
 		const runtimeAdvisories = yield* RuntimeAdvisoryCatalog
 		const reads = makeDashboardReads({ warehouse, queryEngine })
@@ -2713,6 +2717,60 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 				.handle(
 					"productEventTraceSamples",
 					serve.rows(Queries.productEventTraceSamples, ProductEventTraceSamplesResponse),
+				)
+				.handle("executePromql", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const result = yield* mapExecError(
+							promql.widget(tenant, {
+								query: payload.query,
+								startTime: payload.startTime,
+								endTime: payload.endTime,
+								...(payload.legendFormat === undefined
+									? undefined
+									: { legendFormat: payload.legendFormat }),
+								...(payload.minStepSeconds === undefined
+									? undefined
+									: { minStepSeconds: payload.minStepSeconds }),
+								...(payload.maxDataPoints === undefined
+									? undefined
+									: { maxDataPoints: payload.maxDataPoints }),
+								...(payload.displayType === undefined
+									? undefined
+									: { displayType: payload.displayType }),
+							}),
+							"promql query failed",
+						).pipe(
+							// A query that does not parse or cannot run is the author's to fix: a 400 with the reason.
+							Effect.catchTags({
+								"@maple/backend/promql/PromqlBadQueryError": (error) =>
+									Effect.fail(
+										new QueryEngineValidationError({
+											message: `Invalid PromQL: ${error.message}`,
+											details:
+												error.position === undefined
+													? []
+													: [`position ${error.position}`],
+										}),
+									),
+								"@maple/backend/promql/PromqlExecutionError": (error) =>
+									Effect.fail(
+										new QueryEngineValidationError({
+											message: error.message,
+											details: [],
+										}),
+									),
+							}),
+						)
+						return new PromqlExecuteResponse({
+							data: result.rows,
+							meta: {
+								resultType: result.resultType,
+								seriesCount: result.seriesCount,
+								stepSeconds: result.stepSeconds,
+							},
+						})
+					}),
 				)
 				.handle("executeRawSql", ({ payload }) =>
 					Effect.gen(function* () {

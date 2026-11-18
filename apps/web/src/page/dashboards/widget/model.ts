@@ -19,6 +19,7 @@ import { TableSort } from "../kit/tiles"
 import { WidgetFailure, WidgetGate } from "../kit/widget-data"
 import { EditorState } from "./editor-state"
 import { RawSqlState } from "./raw-sql"
+import { PromqlState } from "./promql"
 import { MetricKeysSchema } from "../../kit/query-builder/metrics-body"
 import { MetricPageSchema } from "../../kit/query-builder/metric-options"
 import { Suggestion } from "./suggestions"
@@ -26,7 +27,7 @@ import { Suggestion } from "./suggestions"
 export const Status = Schema.Literals(["Loading", "Ready", "Missing"])
 export type Status = typeof Status.Type
 
-export const SourceMode = Schema.Literals(["builder", "rawSql"])
+export const SourceMode = Schema.Literals(["builder", "rawSql", "promql"])
 export type SourceMode = typeof SourceMode.Type
 
 export const Model = Schema.Struct({
@@ -45,6 +46,7 @@ export const Model = Schema.Struct({
 	/** The source the widget was opened in: switching tabs is an unsaved change. */
 	initialSourceMode: SourceMode,
 	rawSql: Schema.NullOr(RawSqlState),
+	promql: Schema.NullOr(PromqlState),
 	/** The preview's window: the board's range on open, then the editor's own picker (never saved). */
 	timeRange: Schema.NullOr(TimeRangeSchema),
 	nowMs: Schema.NullOr(Schema.Number),

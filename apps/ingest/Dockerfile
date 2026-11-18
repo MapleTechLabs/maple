@@ -19,6 +19,11 @@ RUN apt-get update && \
 
 COPY --from=build /app/target/release/maple-ingest /usr/local/bin/maple-ingest
 
+# The gateway runs as an unprivileged user; the entrypoint (root only until it has handed the WAL
+# directory over) drops to it. See docker/entrypoint.sh.
+RUN useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin maple-ingest
+COPY docker/entrypoint.sh /usr/local/bin/maple-ingest-entrypoint
+
 EXPOSE 3474
 
-CMD ["maple-ingest"]
+ENTRYPOINT ["/usr/local/bin/maple-ingest-entrypoint"]

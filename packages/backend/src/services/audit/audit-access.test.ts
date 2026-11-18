@@ -107,6 +107,46 @@ describe("withAuditedRead", () => {
 		}),
 	)
 
+	it.effect("records reads of AI sessions, MCP servers, services, the service map and anomaly series", () =>
+		Effect.gen(function* () {
+			const audit = makeMemoryAuditLog()
+			const ok = Effect.succeed(HttpServerResponse.empty({ status: 200 }))
+			const reads = [
+				[
+					"POST",
+					"/internal/ai-sessions/details",
+					endpointOf(MapleInternalApi, "aiSessionsInternal", "details"),
+				],
+				[
+					"POST",
+					"/internal/mcp-servers/session",
+					endpointOf(MapleInternalApi, "mcpInternal", "session"),
+				],
+				["GET", "/v2/services", endpointOf(MapleApiV2, "services", "list")],
+				["GET", "/v2/service_map", endpointOf(MapleApiV2, "serviceMap", "retrieve")],
+				[
+					"GET",
+					"/v2/anomalies/incidents/a1/timeseries",
+					endpointOf(MapleApiV2, "anomalies", "getIncidentTimeseries"),
+				],
+				// Incident records and settings are not telemetry.
+				["GET", "/v2/anomalies/incidents", endpointOf(MapleApiV2, "anomalies", "listIncidents")],
+			] as const
+			yield* Effect.forEach(reads, ([method, url, options]) =>
+				withAuditedRead(audit, request(method, url), options, subject)(ok),
+			)
+
+			const entries = yield* audit.list(ORG, { limit: 10, offset: 0 })
+			expect(Arr.map(entries, (entry) => entry.metadata?.endpoint).sort()).toEqual([
+				"aiSessionsInternal.details",
+				"anomalies.getIncidentTimeseries",
+				"mcpInternal.session",
+				"serviceMap.retrieve",
+				"services.list",
+			])
+		}),
+	)
+
 	it.effect("still records an attempted read when the handler fails", () =>
 		Effect.gen(function* () {
 			const audit = makeMemoryAuditLog()

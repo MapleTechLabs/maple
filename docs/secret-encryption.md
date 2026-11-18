@@ -66,8 +66,22 @@ out in three steps:
 | `MAPLE_INGEST_KEY_ENCRYPTION_KEY`  | The primary master key. Seals every new value. Base64, 32 bytes.  |
 | `MAPLE_INGEST_KEY_DECRYPTION_KEYS` | Optional, comma-separated. Master keys accepted for opening only. |
 
-Every deployable that opens secrets reads both: the API, AI, alerting and chat-bot Workers,
-the schema-apply workflow and the ingest gateway.
+Every deployable that opens secrets reads both: the API, AI, alerting and chat-bot Workers and
+the schema-apply workflow.
+
+The ingest gateway does not receive the master keys. Its deploy derives the subkeys of the one
+slot it opens (`packages/infra/src/secret-slot-keys.ts`, read through `resolveDerived` in
+`@maple/infra/secret-guard`) and hands it only those:
+
+| Variable                             | Purpose                                                                                                                     |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `MAPLE_INGEST_CH_PASSWORD_SLOT_KEYS` | `<keyId>:<base64 subkey>` per master key, comma-separated, primary first. Opens `org_clickhouse_settings.ch_password` only. |
+
+The gateway prefers it and falls back to the two master-key variables when it is unset, which a
+self-hosted or local deploy still sets. It refuses to start with neither. A key rotation needs no
+gateway step of its own: each deploy derives the slot keys from the masters it loads.
+`secret-slot-keys-parity.test.ts` holds the infra derivation equal to SecretBox's, and the
+fixture master's slot keys are pinned there and in the gateway's tests.
 
 ## Adding a secret column
 
@@ -118,3 +132,8 @@ The pre-v2 envelope was read, and rewritten by the hourly pass, only by the rele
 the one that introduced v2 and the one that stopped reading it. A deployment that skips those
 releases keeps values nothing can open any more, the ingest keys among them. Run one of them
 until `secretsResealRemaining` is 0 before upgrading further.
+
+The same holds for the v3 envelope: a release that seals v3 but still opens v2 has to run
+until `secretsResealRemaining` is 0 before one that refuses v2 for destination slots. Skipping
+it leaves BYO ClickHouse passwords, scrape credentials, data source secrets and uptime headers
+that no longer open, and they have to be entered again.

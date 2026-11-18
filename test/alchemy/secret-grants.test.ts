@@ -9,7 +9,7 @@ import { Array as Arr, ConfigProvider, Effect, Order, Record as Rec } from "effe
 import { managedDbSecrets, type MapleStage, workersObservabilitySecrets } from "@maple/infra/cloudflare"
 import { selfObservabilityEnv } from "@maple/infra/env"
 import type { SecretConsumer } from "@maple/infra/secret"
-import { resolveAs } from "@maple/infra/secret-guard"
+import { resolveAs, resolveDerived } from "@maple/infra/secret-guard"
 import * as Catalog from "@maple/infra/secrets"
 import { aiConfiguredEnv } from "../../apps/ai/src/resources/env.ts"
 import { alertingConfiguredEnv } from "../../apps/alerting/src/resources/env.ts"
@@ -17,7 +17,7 @@ import { apiConfiguredEnv } from "../../apps/api/src/resources/env.ts"
 import { chatBotConfiguredEnv } from "../../apps/chat-bot/src/resources/env.ts"
 import { electricSecrets } from "../../apps/electric/alchemy/secrets.ts"
 import { electricSyncConfiguredEnv } from "../../apps/electric-sync/src/resources/env.ts"
-import { ingestPgUrl, ingestSecrets } from "../../apps/ingest/alchemy/secrets.ts"
+import { ingestPgUrl, ingestSecrets, ingestSlotKeyMasters } from "../../apps/ingest/alchemy/secrets.ts"
 import { landingBuildSecrets } from "../../apps/landing/src/resources/env.ts"
 import { sandboxSecrets } from "../../apps/sandbox/alchemy/secrets.ts"
 import { scraperSecrets } from "../../apps/scraper/alchemy/secrets.ts"
@@ -34,11 +34,27 @@ const grantedTo = (consumer: SecretConsumer) =>
 		Order.String,
 	)
 
+const derivableBy = (consumer: SecretConsumer) =>
+	Arr.sort(
+		Arr.map(
+			Arr.filter(catalog, (secret) => secret.meta.derivedFor?.includes(consumer) ?? false),
+			(secret) => secret.envKey,
+		),
+		Order.String,
+	)
+
 /**
  * The catalog secrets `config` reads through the deploy's own `resolveAs`, set in the environment
  * or not: every key is answered, and a read the catalog denies throws.
  */
-const secretsRead = (consumer: SecretConsumer, config: Config.Config<unknown>) => {
+const secretsRead = (
+	consumer: SecretConsumer,
+	config: Config.Config<unknown>,
+	resolve: (
+		consumer: SecretConsumer,
+		config: Config.Config<unknown>,
+	) => Effect.Effect<unknown, Config.ConfigError> = resolveAs,
+) => {
 	const read = new Set<string>()
 	// "1" parses as a string, a number and a boolean, so a typed var beside a secret still resolves.
 	const answersEverything = ConfigProvider.make((path) =>
@@ -49,7 +65,7 @@ const secretsRead = (consumer: SecretConsumer, config: Config.Config<unknown>) =
 		}),
 	)
 	Effect.runSync(
-		Effect.provideService(resolveAs(consumer, config), ConfigProvider.ConfigProvider, answersEverything),
+		Effect.provideService(resolve(consumer, config), ConfigProvider.ConfigProvider, answersEverything),
 	)
 	return Arr.fromIterable(read)
 }
@@ -92,6 +108,32 @@ test.each(Rec.toEntries(DEPLOYABLES))(
 		expect(Arr.sort(Arr.dedupe(read), Order.String)).toEqual(grantedTo(consumer))
 	},
 )
+
+/** What a deployable derives its own values from, read only through `resolveDerived`. */
+const derivedFrom = (consumer: SecretConsumer): ReadonlyArray<Config.Config<unknown>> =>
+	consumer === "ingest" ? [ingestSlotKeyMasters] : []
+
+// Only the reads are under test: every key answers "1", so the derivation itself stops here.
+const readDerived = (consumer: SecretConsumer, config: Config.Config<unknown>) =>
+	resolveDerived(consumer, config, () => Effect.die("derivation is not under test")).pipe(
+		Effect.catchDefect(() => Effect.void),
+	)
+
+test.each(Rec.keys(DEPLOYABLES))(
+	"%s derives from exactly the secrets the catalog lists it in derivedFor",
+	(consumer) => {
+		const read = Arr.flatMap(derivedFrom(consumer), (config) =>
+			secretsRead(consumer, config, readDerived),
+		)
+		expect(Arr.sort(Arr.dedupe(read), Order.String)).toEqual(derivableBy(consumer))
+	},
+)
+
+test("ingest is refused the master keys it derives its slot keys from", () => {
+	expect(() => secretsRead("ingest", ingestSlotKeyMasters)).toThrow(
+		"ingest may receive only a value derived from MAPLE_INGEST_KEY_ENCRYPTION_KEY",
+	)
+})
 
 test("a deployable is refused a secret the catalog grants only to others", () => {
 	expect(() => secretsRead("landing", Catalog.StripeSecretKey.required)).toThrow(

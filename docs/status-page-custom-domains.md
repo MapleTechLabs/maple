@@ -17,8 +17,13 @@ on its Maple address (`/feed.atom`, `/feed.rss`, `/api/v1/status.json`, `/api/v1
    wildcard would also take `maple.dev` hostnames that have no Worker of their own (ingest).
 3. The status Worker looks the hostname up (`host:<hostname>` in KV, `hosts/<hostname>` in
    R2). Only Maple's own hosts (the stage's status domain, `*.workers.dev`, local dev) also
-   serve `/s/<slug>`; any other host with no route is a 404, so one customer's domain never
-   serves another customer's page.
+   serve `/s/<org key>/<slug>`; any other host with no route is a 404, so one customer's domain
+   never serves another customer's page. Slugs are unique per org; the org key
+   (`statusPageOrgKey`, 12 hex digits of SHA-256 over the org id) keeps two orgs' `status` apart
+   without putting the org id in the URL. A bare `/s/<slug>` from before slugs were per org
+   answers 308 to the page's current address while its old `slug:<slug>` key lasts (the page's
+   rename or delete drops it). Such a slug (`legacy_slug_route`) stays reserved in every org until
+   the page is renamed, so no other org's page ever takes that old link.
 
 ## Ownership proof
 
@@ -77,7 +82,7 @@ Done once per zone, by hand:
    (`declareStatusDomainsOrigin`, `packages/infra/src/cloudflare/status-pages.ts`). The
    fallback origin takes a few minutes to become active.
 
-Every stage whose api, alerting and maple-ai Workers carry both variables offers custom
+Every stage whose api and alerting Workers carry both variables offers custom
 domains; the rest (local dev by default) say "custom domains unavailable". Previews share the
 zone and its fallback origin with prd, and route their hostnames to their own status Worker.
 The zone holds each hostname once, so a hostname used by prd cannot be added on a preview.
@@ -92,4 +97,6 @@ The zone holds each hostname once, so a hostname used by prd cannot be added on 
 - A hostname longer than 236 characters is refused: its `_maple-challenge` name would not fit
   in DNS.
 - The domain is not part of the config document (`GET/PUT .../config`, MCP
-  `apply_status_page_config`): it has its own asynchronous lifecycle and failure modes.
+  `apply_status_page_config`): it has its own asynchronous lifecycle and failure modes. Over
+  MCP it is `set_status_page_domain`: set, remove, or the page's current domain again to check
+  it now (`POST .../custom_domain/check`); `get_status_page` shows it on the page.

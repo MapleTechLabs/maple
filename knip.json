@@ -94,6 +94,7 @@
 		},
 		"apps/cli": {
 			"entry": [
+				"scripts/*.ts",
 				"test/probes/*.ts",
 				"test/archive-probe-helpers.ts",
 				"test/merge-injection-probe.ts",
@@ -123,6 +124,9 @@
 			"entry": ["scripts/**/*.ts"],
 			"ignore": ["src/generated/**"],
 			"ignoreDependencies": ["tailwindcss"]
+		},
+		"lib/promql": {
+			"entry": ["scripts/compliance/run.ts"]
 		},
 		"lib/ai-model-catalog": {
 			"entry": ["scripts/**/*.ts"]

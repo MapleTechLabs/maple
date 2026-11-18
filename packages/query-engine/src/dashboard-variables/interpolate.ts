@@ -21,6 +21,7 @@ import { escapeClickHouseString } from "@maple-dev/effect-orm/sql"
 import { parseWhereClause, splitWhereClause } from "@maple/domain/where-clause"
 import { Schema, Array as Arr, Record as Rec, String as Str, Predicate } from "effect"
 import { replaceWith } from "@maple/strings"
+import { collectPromqlVariableRefs, interpolatePromqlVariables } from "../promql-widget/variables"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -209,6 +210,7 @@ export const collectWhereClauses = (value: unknown, key?: string): string[] => {
 }
 
 function interpolateString(input: string, key: string | undefined, values: VariableValues): string {
+	if (key === "promql") return interpolatePromqlVariables(input, values)
 	if (!Str.includes("$")(input)) return input
 	if (key === "sql") {
 		return replaceRefs(input, (name) => {
@@ -280,6 +282,7 @@ export function hasUnresolvedVariableRefs(
 	values: VariableValues,
 ): boolean {
 	if (!params || definedNames.length === 0) return false
-	const refs = collectVariableRefs(encodeJson(params))
+	const encoded = encodeJson(params)
+	const refs = [...collectVariableRefs(encoded), ...collectPromqlVariableRefs(encoded)]
 	return Arr.some(refs, (name) => definedNames.includes(name) && values[name] === undefined)
 }

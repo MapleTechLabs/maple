@@ -98,6 +98,10 @@ export const makeFakeStorage = () => {
 
 export type FakeStorage = ReturnType<typeof makeFakeStorage>
 
+/** The `/s/` address the publisher routes a snapshot's page at. */
+export const addressOf = (snapshot: StatusPageSnapshot): string =>
+	`${snapshot.page.orgKey}/${snapshot.page.slug}`
+
 /** Publishes a snapshot the way the publisher does: host and slug keys, KV and R2 copies, heartbeat. */
 export const publish = (
 	fake: FakeStorage,
@@ -107,11 +111,11 @@ export const publish = (
 	const json = encodeJson(snapshot)
 	const host = options.host ?? "status.acme.example"
 	fake.kv.set(StatusPageKeys.host(host), snapshot.pageId)
-	fake.kv.set(StatusPageKeys.slug(snapshot.page.slug), snapshot.pageId)
+	fake.kv.set(StatusPageKeys.slug(addressOf(snapshot)), snapshot.pageId)
 	fake.kv.set(StatusPageKeys.snapshot(snapshot.pageId), json)
 	fake.r2.set(StatusPageKeys.snapshotObject(snapshot.pageId), json)
 	fake.r2.set(StatusPageKeys.hostObject(host), snapshot.pageId)
-	fake.r2.set(StatusPageKeys.slugObject(snapshot.page.slug), snapshot.pageId)
+	fake.r2.set(StatusPageKeys.slugObject(addressOf(snapshot)), snapshot.pageId)
 	const heartbeatAt = options.heartbeatAt === undefined ? FIXTURE_NOW : options.heartbeatAt
 	if (heartbeatAt !== null) {
 		const heartbeat: StatusPagePublisherHeartbeat = {
@@ -124,8 +128,8 @@ export const publish = (
 
 /** Takes a page off the edge the way the publisher does: KV keys gone, a tombstone in R2 for each. */
 export const takeOffEdge = (fake: FakeStorage, snapshot: StatusPageSnapshot) => {
-	fake.r2.set(StatusPageKeys.slugObject(snapshot.page.slug), STATUS_PAGE_TOMBSTONE)
-	fake.kv.delete(StatusPageKeys.slug(snapshot.page.slug))
+	fake.r2.set(StatusPageKeys.slugObject(addressOf(snapshot)), STATUS_PAGE_TOMBSTONE)
+	fake.kv.delete(StatusPageKeys.slug(addressOf(snapshot)))
 	fake.r2.set(StatusPageKeys.snapshotObject(snapshot.pageId), STATUS_PAGE_TOMBSTONE)
 	fake.kv.delete(StatusPageKeys.snapshot(snapshot.pageId))
 }

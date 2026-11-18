@@ -246,6 +246,7 @@ describe("the v2 data source covers every stored kind", () => {
 			// The arm validates its SQL now, so the fixture has to be a query the
 			// engine would accept — this asserts arm coverage, not SQL leniency.
 			raw_sql: { kind: "raw_sql", sql: "SELECT count() FROM logs WHERE $__orgFilter" },
+			promql: { kind: "promql", query: "sum(rate(http_requests_total[5m]))", legend_format: "{{job}}" },
 			route: { kind: "route", endpoint: "list_traces" },
 			static: { kind: "static" },
 		}[kind]

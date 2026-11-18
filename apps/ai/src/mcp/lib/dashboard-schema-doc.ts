@@ -1,6 +1,7 @@
 import { PANEL_TYPES, WIDGET_TYPES, WIDGET_UNITS, type WidgetTypeMeta } from "@maple/domain/http"
 import {
 	makeProductEventsFunnelDataSource,
+	makePromqlDataSource,
 	makeQueryDataSource,
 	makeRawSqlDataSource,
 	makeStaticDataSource,
@@ -218,6 +219,24 @@ const dataSourcesSection = (): string =>
 				makeRawSqlDataSource({
 					sql: "SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
 					displayType: "stat",
+				}),
+			),
+			"",
+			'### `kind: "promql"`: a PromQL query over the metrics',
+			"",
+			"Prometheus names: `http.server.request.duration` answers to",
+			"`http_server_request_duration_seconds_bucket`, a monotonic sum to `..._total`. Grafana",
+			"variables work (`$var`, `${var}`, `${var:regex}`, `[[var]]`, an All selection becomes",
+			"`(a|b)`), plus `$__interval`, `$__rate_interval`, `$__range` and `$__range_s`.",
+			"`legendFormat` names series with `{{label}}`; `minStepSeconds` floors the step;",
+			"`displayType` is the panel's raw-SQL display type (a stat reads the newest point of the",
+			"first series with the `first` reducer on field `value`; a table gets one row per series).",
+			"",
+			json(
+				makePromqlDataSource({
+					query: 'sum by (job) (rate(http_server_request_duration_seconds_count{job=~"$service"}[$__rate_interval]))',
+					legendFormat: "{{job}}",
+					displayType: "line",
 				}),
 			),
 			"",
@@ -584,7 +603,7 @@ const SECTION_RENDERERS = {
 
 const SECTION_SUMMARIES = {
 	panel_types: "The 14 panel types, what each persists as, and which need a group-by or a reduction.",
-	data_sources: "The four `kind` arms of a widget data source, with a decodable example of each.",
+	data_sources: "The five `kind` arms of a widget data source, with a decodable example of each.",
 	units: "The unit vocabulary, and the percent-vs-percent_100 scale rule.",
 	queries: "Aggregations and group-by tokens per source, the whereClause grammar, formulas.",
 	display: "Display config keys per panel type, including the ones that are stored but inert.",

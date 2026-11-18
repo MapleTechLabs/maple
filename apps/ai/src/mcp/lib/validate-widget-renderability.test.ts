@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
 	makeProductEventsFunnelDataSource,
+	makePromqlDataSource,
 	makeQueryDataSource,
 	makeRawSqlDataSource,
 	makeStaticDataSource,
@@ -270,5 +271,40 @@ describe("all three write paths agree on scalar repair", () => {
 			const repaired = withScalarReduction(querySource(), panel.resolved.meta.isScalar)
 			expect(validateWidgetRenderability(widget(visualization, repaired)).fatal).toEqual([])
 		}
+	})
+})
+
+describe("a promql data source", () => {
+	it("renders on a line chart with no issues", () => {
+		const issues = validateWidgetRenderability(
+			widget("line", makePromqlDataSource({ query: "up", displayType: "line" })),
+		)
+		expect(issues.fatal).toEqual([])
+		expect(issues.warnings).toEqual([])
+	})
+
+	it("needs a query, a reduction on a stat, and is refused on a list", () => {
+		const empty = validateWidgetRenderability(widget("line", makePromqlDataSource({ query: " " })))
+		expect(Arr.join(empty.fatal, " ")).toContain("needs a `query`")
+		const stat = validateWidgetRenderability(
+			widget("stat", makePromqlDataSource({ query: "up", displayType: "stat" })),
+		)
+		expect(Arr.join(stat.fatal, " ")).toContain("reduceToValue")
+		const list = validateWidgetRenderability(widget("list", makePromqlDataSource({ query: "up" })))
+		expect(Arr.join(list.fatal, " ")).toContain("cannot draw PromQL")
+	})
+
+	it("warns when the display type does not match the panel", () => {
+		const { warnings } = validateWidgetRenderability(
+			widget("table", makePromqlDataSource({ query: "up", displayType: "line" })),
+		)
+		expect(Arr.join(warnings, " ")).toContain('displayType: "table"')
+	})
+
+	it("reads an absent display type as a line chart, so a table without one is warned", () => {
+		const table = validateWidgetRenderability(widget("table", makePromqlDataSource({ query: "up" })))
+		expect(Arr.join(table.warnings, " ")).toContain('displayType: "table"')
+		const line = validateWidgetRenderability(widget("line", makePromqlDataSource({ query: "up" })))
+		expect(line.warnings).toEqual([])
 	})
 })

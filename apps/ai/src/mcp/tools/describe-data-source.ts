@@ -10,8 +10,8 @@ import {
 	tenantWithDataSourceCatalog,
 	mapDataSourceError,
 	queryLanguageLabel,
-	untrustedText,
 } from "../lib/data-sources"
+import { untrustedText } from "../lib/format"
 import { cheatSheet, exampleQuery, fieldLine, queryText } from "../lib/data-source-cheat-sheet"
 import { toDataSourceSummary } from "./list-data-sources"
 

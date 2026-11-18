@@ -426,7 +426,7 @@ jobs:
                   MAPLE_INGEST_KEY_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
                   MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
                   MAPLE_SHARE_TOKEN_HMAC_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
-                  MAPLE_ROOT_PASSWORD: placeholder
+                  MAPLE_ROOT_PASSWORD: ci-placeholder-root-password
               run: bun run test:alchemy
 
     # One server version, pinned to docker-compose.development.yml's tag.
@@ -537,7 +537,7 @@ jobs:
             # MAPLE_REQUIRE_LIBCHDB turns a missing library into a failure, not a skip. One
             # process per file: chDB is process-global.
             - name: Run chDB-backed CLI tests
-              timeout-minutes: 4
+              timeout-minutes: 8
               working-directory: apps/cli
               env:
                   MAPLE_LIBCHDB: ${{ github.workspace }}/dist/libchdb.so
@@ -545,6 +545,20 @@ jobs:
                   MAPLE_TELEMETRY: off
               run: |
                   for file in tenant-isolation scoped-delete local-service-map-rollup checkpoint-merge-freeze local-store-traces-rekey local-query-guard local-query-guard.fuzz funnel-scenarios users-identity histogram-metrics exponential-histogram-metrics release-verification profile-sample-types profile-hotspots service-usage-profiles search-traces-filters cloud-resources; do
+                      bun test --timeout 30000 "test/$file.test.ts"
+                  done
+
+            # The PromQL reference suite runs every corpus query on chDB in five grids, with and without
+            # pushdown (about 2.5 minutes locally), so it has its own budget instead of the shared one.
+            - name: Run PromQL chDB suites
+              timeout-minutes: 8
+              working-directory: apps/cli
+              env:
+                  MAPLE_LIBCHDB: ${{ github.workspace }}/dist/libchdb.so
+                  MAPLE_REQUIRE_LIBCHDB: "1"
+                  MAPLE_TELEMETRY: off
+              run: |
+                  for file in promql-source promql-engine; do
                       bun test --timeout 30000 "test/$file.test.ts"
                   done
 

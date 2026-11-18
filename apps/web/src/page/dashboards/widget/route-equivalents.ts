@@ -148,6 +148,8 @@ const ROUTE_STAND_INS = {
 	custom_query_builder_list: fixed,
 	// A `kind: "route"` SQL widget is not a preset; it reads as a builder query, as before presets mapped.
 	raw_sql_chart: legacyChart,
+	// PromQL is a `kind: "promql"` source, never a stored route.
+	promql_chart: fixed,
 	product_events_funnel: fixed,
 	product_events_paths: fixed,
 	markdown_static: fixed,

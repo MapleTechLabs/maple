@@ -330,7 +330,7 @@ const IMPACT_ENTRIES = Arr.map(StatusPageIncidentImpact.literals, (impact) => ({
 	label: IMPACT_LABEL[impact],
 }))
 
-/** "Acme Status · status.maple.dev/s/acme": the page and where visitors read it. */
+/** "Acme Status · status.maple.dev/s/<org key>/acme": the page and where visitors read it. */
 const pageLine = (model: Model, page: V2StatusPage): ReadonlyArray<string> => {
 	const url = pageUrlOf(model, page)
 	return url === null ? [page.name] : [page.name, " · ", Str.replace(/^https?:\/\//u, "")(url)]

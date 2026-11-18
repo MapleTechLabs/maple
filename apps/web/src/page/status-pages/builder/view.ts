@@ -24,11 +24,26 @@ import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { sidePanelSheet } from "@maple/views/ui/sheet"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { heading } from "@maple/views/ui/heading"
+import { textLink } from "@maple/views/ui/text-link"
+import { agentPromptButton } from "../../kit/guided-setup"
+import { codeBlock } from "../../kit/code-block"
+import { claudeCodeCommand, cursorInstallUrl, vscodeInstallUrl } from "../../kit/mcp-client-config"
+import { docsUrl } from "../../kit/docs"
+import { mcpUrl } from "../../../platform/mcp-url"
+import { AppRoute, hrefOf } from "../../../route"
+import { statusPageAgentPrompt } from "./agent-prompt"
+import { methodChoice } from "./setup-choice"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { settingsSection } from "../../kit/settings-section"
-import { publicAddress, publicUrl, STATUS_PAGE_BASE_URL, statusPagesHref } from "../shared/commands"
+import {
+	newStatusPageHref,
+	publicAddress,
+	publicUrl,
+	STATUS_PAGE_BASE_URL,
+	statusPagesHref,
+} from "../shared/commands"
 import { textField } from "../shared/fields"
 import { APPEARANCES, presetCards } from "../shared/look"
 import { monitorStatusOf } from "../shared/derive"
@@ -92,12 +107,29 @@ const pageSection = (h: H, model: Model): Html =>
 				value: model.slug,
 				placeholder: "acme-status",
 				isMono: true,
-				hint: model.slug === "" ? "Follows the name until you type one." : publicAddress(model.slug),
+				hint:
+					model.slug === ""
+						? "Follows the name until you type one."
+						: publicAddress(model.orgKey, model.slug),
 				error: slugError(model),
 				onInput: (value) => Message.ChangedSlug({ value }),
 			}),
 		]),
 	])
+
+/** A short numbered list of muted lines: how something works, in order. */
+const numberedSteps = (h: H, steps: ReadonlyArray<Html | string>): Html =>
+	h.ol(
+		[h.Class(vstackClass({ gap: "2" }))],
+		Arr.map(steps, (step, index) =>
+			hstack(h, { gap: "2.5", align: "start", as: "li", attributes: [h.Key(String(index))] }, [
+				typography(h, { size: "xs", tone: "muted", mono: true, className: "shrink-0" }, [
+					String(index + 1),
+				]),
+				typography(h, { size: "xs", tone: "muted" }, [step]),
+			]),
+		),
+	)
 
 const DOMAIN_STEPS: ReadonlyArray<string> = [
 	"Pick a subdomain you own, like status.acme.com. A bare domain (acme.com) can't point at Maple.",
@@ -128,23 +160,7 @@ const domainSection = (h: H, model: Model): Html =>
 				}),
 				vstack(h, { gap: "2" }, [
 					typography(h, { size: "xs", weight: "medium", tone: "muted", as: "p" }, ["How it works"]),
-					h.ol(
-						[h.Class(vstackClass({ gap: "2" }))],
-						Arr.map(DOMAIN_STEPS, (step, index) =>
-							hstack(
-								h,
-								{ gap: "2.5", align: "start", as: "li", attributes: [h.Key(String(index))] },
-								[
-									typography(
-										h,
-										{ size: "xs", tone: "muted", mono: true, className: "shrink-0" },
-										[String(index + 1)],
-									),
-									typography(h, { size: "xs", tone: "muted" }, [step]),
-								],
-							),
-						),
-					),
+					numberedSteps(h, DOMAIN_STEPS),
 				]),
 			]),
 		],
@@ -343,6 +359,7 @@ const draftDocument = (model: Model): string => {
 		page: {
 			name: Str.trim(model.name) === "" ? "Status page" : Str.trim(model.name),
 			slug: isSlug(model.slug) ? model.slug : "preview",
+			orgKey: model.orgKey,
 			description: null,
 			websiteUrl: null,
 			logoUrl: null,
@@ -385,7 +402,7 @@ const draftDocument = (model: Model): string => {
 		snapshot,
 		nowMs,
 		isSelectable: false,
-		publicUrl: isSlug(model.slug) ? publicUrl(STATUS_PAGE_BASE_URL, model.slug) : null,
+		publicUrl: isSlug(model.slug) ? publicUrl(STATUS_PAGE_BASE_URL, model.orgKey, model.slug) : null,
 	})
 }
 
@@ -502,6 +519,106 @@ const builder = (h: H, model: Model): Html =>
 		addSheet(h, model),
 	])
 
+const MCP_ENDPOINT = `${mcpUrl}/mcp`
+const AGENT_PROMPT = statusPageAgentPrompt(MCP_ENDPOINT)
+
+const AGENT_STEPS: ReadonlyArray<string> = [
+	"Connects the Maple MCP if your agent does not have it yet.",
+	"Asks whether to manage the page as code (Terraform or Alchemy, when your repo uses them) or directly through the MCP.",
+	"Finds the endpoints your customers depend on and proposes an uptime monitor for each, and the components the page lists.",
+	"Sets up the page, private until you approve it, and matches its colors, font and logo to your product.",
+	"For a page your customers read, sets up your domain and gives you the DNS records to add.",
+	"Publishes only after you approve.",
+]
+
+const agentStep = (
+	h: H,
+	options: Readonly<{ id: string; title: string; description: string }>,
+	children: ReadonlyArray<Html>,
+): Html =>
+	settingsSection(h, { id: options.id, title: options.title, description: [options.description] }, [
+		vstack(h, { gap: "3" }, children),
+	])
+
+const agentSetup = (h: H, model: Model): Html =>
+	vstack(h, { gap: "8", className: "max-w-3xl pb-16" }, [
+		agentStep(
+			h,
+			{
+				id: "status-page-agent-mcp",
+				title: "1. Connect the Maple MCP",
+				description:
+					"Your agent works on the page through the Maple MCP. Skip this if it is connected already; the prompt checks first.",
+			},
+			[
+				codeBlock(h, {
+					code: claudeCodeCommand(MCP_ENDPOINT),
+					language: "Claude Code",
+					lang: "bash",
+					copy: model.mcpCommandCopy,
+					toCopyMessage: (message) => Message.GotMcpCommandCopyMessage({ message }),
+				}),
+				hstack(h, { gap: "2", wrap: true }, [
+					linkButton(h, { size: "sm", variant: "outline", href: cursorInstallUrl(MCP_ENDPOINT) }, [
+						icon(h, "CursorIcon"),
+						"Add to Cursor",
+					]),
+					linkButton(h, { size: "sm", variant: "outline", href: vscodeInstallUrl(MCP_ENDPOINT) }, [
+						icon(h, "VsCodeIcon"),
+						"Add to VS Code",
+					]),
+					typography(h, { size: "xs" }, [
+						textLink(h, { href: hrefOf(AppRoute.Settings({ search: { tab: "mcp" } })), tone: "muted" }, [
+							"Other clients",
+						]),
+					]),
+				]),
+			],
+		),
+		agentStep(
+			h,
+			{
+				id: "status-page-agent-prompt",
+				title: "2. Give your agent this prompt",
+				description: "Run it in the repository of the product the page is for, so the agent can read its endpoints and brand.",
+			},
+			[
+				agentPromptButton(h, {
+					prompt: AGENT_PROMPT,
+					copy: model.promptCopy,
+					toCopyMessage: (message) => Message.GotPromptCopyMessage({ message }),
+				}),
+				codeBlock(h, {
+					code: AGENT_PROMPT,
+					language: "Prompt",
+					isPlain: true,
+					bodyClassName: "max-h-72",
+					copy: model.promptCopy,
+					toCopyMessage: (message) => Message.GotPromptCopyMessage({ message }),
+				}),
+			],
+		),
+		agentStep(
+			h,
+			{
+				id: "status-page-agent-steps",
+				title: "What your agent does",
+				description: "It asks before each choice. The page shows up under Status pages as soon as the agent creates it.",
+			},
+			[
+				numberedSteps(h, AGENT_STEPS),
+				typography(h, { size: "xs", as: "div" }, [
+					hstack(h, { gap: "4", wrap: true }, [
+						textLink(h, { href: docsUrl("statusPages"), tone: "muted" }, ["Status pages docs"]),
+						textLink(h, { href: newStatusPageHref("manual"), tone: "muted" }, [
+							"Set it up in the dashboard instead",
+						]),
+					]),
+				]),
+			],
+		),
+	])
+
 const membersOnly = (h: H): Html =>
 	resourceNotFound(h, {
 		title: "Only org admins and engineers can create status pages",
@@ -509,15 +626,33 @@ const membersOnly = (h: H): Html =>
 		back: { href: statusPagesHref(), label: "Back to status pages" },
 	})
 
+/** Back to the choice of method, once one is picked. */
+const changeMethod = (h: H): Html =>
+	linkButton(h, { size: "sm", variant: "ghost", href: newStatusPageHref() }, [
+		icon(h, "ArrowLeftIcon"),
+		"Change method",
+	])
+
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) =>
-	dashboardPage(h, { title: "New status page" }, [
-		!model.isSessionLoaded
-			? vstack(h, { gap: "4", attributes: [h.AriaBusy(true)] }, [
-					skeleton(h, "h-9 w-1/3"),
-					skeleton(h, "h-64 w-full"),
-				])
-			: canManage(model)
-				? builder(h, model)
-				: membersOnly(h),
-	]),
+	dashboardPage(
+		h,
+		{
+			title: model.setup === "agent" ? "Set up a status page with your agent" : "New status page",
+			actions: model.setup === null || !canManage(model) ? undefined : changeMethod(h),
+		},
+		[
+			!model.isSessionLoaded
+				? vstack(h, { gap: "4", attributes: [h.AriaBusy(true)] }, [
+						skeleton(h, "h-9 w-1/3"),
+						skeleton(h, "h-64 w-full"),
+					])
+				: !canManage(model)
+					? membersOnly(h)
+					: model.setup === null
+						? methodChoice(h)
+						: model.setup === "agent"
+							? agentSetup(h, model)
+							: builder(h, model),
+		],
+	),
 )

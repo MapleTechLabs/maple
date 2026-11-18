@@ -9,8 +9,8 @@ import {
 	tenantWithDataSourceCatalog,
 	mapDataSourceError,
 	queryLanguageLabel,
-	untrustedText,
 } from "../lib/data-sources"
+import { untrustedText } from "../lib/format"
 
 const TOOL = "list_data_sources"
 export const DATA_SOURCES_PAGE_SIZE = 50

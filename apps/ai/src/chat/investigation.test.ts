@@ -28,6 +28,7 @@ const runFor = (partial = false): CompletionRun => ({
 	modelName: "@cf/test/model",
 	partial,
 	sessionAttributes: SESSION_ATTRIBUTES,
+	content: "record",
 })
 
 const submitDiagnosis: SubmitDiagnosis = () => Effect.undefined

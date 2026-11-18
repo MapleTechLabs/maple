@@ -22,7 +22,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isString = (value: unknown): value is string => typeof value === "string"
 
 // Re-exported for the `@maple/widgets/dashboard` barrel.
-export { QUERY_RESULT_ENDPOINTS, RAW_SQL_ENDPOINT } from "./legacy-endpoints"
+export { PROMQL_ENDPOINT, QUERY_RESULT_ENDPOINTS, RAW_SQL_ENDPOINT } from "./legacy-endpoints"
 
 /**
  * The endpoint name, for consumers that still dispatch on it.
@@ -139,6 +139,24 @@ export const dataSourceRawSql = (dataSource: unknown): RawSqlDataSource | null =
 		displayType: typeof source.displayType === "string" ? source.displayType : undefined,
 		granularitySeconds:
 			typeof source.granularitySeconds === "number" ? source.granularitySeconds : undefined,
+	}
+}
+
+export interface PromqlDataSource {
+	query: string
+	legendFormat?: string
+	minStepSeconds?: number
+	displayType?: string
+}
+
+/** The PromQL payload of a v3 `promql` source; v2 never stored one. */
+export const dataSourcePromql = (dataSource: unknown): PromqlDataSource | null => {
+	if (!isRecord(dataSource) || dataSource.kind !== "promql") return null
+	return {
+		query: typeof dataSource.query === "string" ? dataSource.query : "",
+		legendFormat: typeof dataSource.legendFormat === "string" ? dataSource.legendFormat : undefined,
+		minStepSeconds: typeof dataSource.minStepSeconds === "number" ? dataSource.minStepSeconds : undefined,
+		displayType: typeof dataSource.displayType === "string" ? dataSource.displayType : undefined,
 	}
 }
 

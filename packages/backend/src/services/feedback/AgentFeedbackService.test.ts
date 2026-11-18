@@ -1,7 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Order, Result, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
-import { OrgId, UserId } from "@maple/domain/http"
+import { OrgId, RoleName, UserId } from "@maple/domain/http"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { testEnv } from "@maple/backend/services/integrations/vcs/__tests__/harness"
 import { AgentFeedbackService } from "./AgentFeedbackService"
@@ -14,6 +14,7 @@ const OTHER_ORG = Schema.decodeSync(OrgId)("org_other")
 const USER = Schema.decodeSync(UserId)("user_feedback")
 
 const INTERNAL_ORG = Schema.decodeSync(OrgId)("org_maple_internal")
+const INTERNAL_ADMIN = { orgId: INTERNAL_ORG, roles: [RoleName.make("org:admin")] }
 
 const provideWith =
 	(env: Record<string, unknown>) =>
@@ -127,7 +128,7 @@ describe("AgentFeedbackService", () => {
 			provide(
 				Effect.gen(function* () {
 					const service = yield* seed
-					const all = yield* service.triage(INTERNAL_ORG, { limit: 10 })
+					const all = yield* service.triage(INTERNAL_ADMIN, { limit: 10 })
 					assert.deepStrictEqual(
 						Arr.map(all, (row) => row.orgId),
 						[OTHER_ORG, ORG, ORG],
@@ -142,7 +143,7 @@ describe("AgentFeedbackService", () => {
 					const service = yield* seed
 					const summaries = (filter: Parameters<typeof service.triage>[1]) =>
 						service
-							.triage(INTERNAL_ORG, filter)
+							.triage(INTERNAL_ADMIN, filter)
 							.pipe(Effect.map((rows) => Arr.map(rows, (row) => row.summary)))
 					assert.deepStrictEqual(yield* summaries({ limit: 10, kind: "bug" }), [
 						"run_sql rejects a valid query",
@@ -161,7 +162,7 @@ describe("AgentFeedbackService", () => {
 						Arr.sort(yield* summaries({ limit: 10, orgId: ORG }), Order.String),
 						["runXsql decoy", "run_sql rejects a valid query"],
 					)
-					const newest = yield* service.triage(INTERNAL_ORG, { limit: 1 })
+					const newest = yield* service.triage(INTERNAL_ADMIN, { limit: 1 })
 					assert.deepStrictEqual(yield* summaries({ limit: 10, sinceMs: newest[0]?.createdAtMs }), [
 						"search_traces description is vague",
 					])
@@ -173,7 +174,9 @@ describe("AgentFeedbackService", () => {
 			provide(
 				Effect.gen(function* () {
 					const service = yield* seed
-					const result = yield* Effect.result(service.triage(ORG, { limit: 10 }))
+					const result = yield* Effect.result(
+						service.triage({ orgId: ORG, roles: [RoleName.make("org:admin")] }, { limit: 10 }),
+					)
 					assert.isTrue(Result.isFailure(result))
 					if (Result.isFailure(result)) {
 						assert.strictEqual(
@@ -185,11 +188,27 @@ describe("AgentFeedbackService", () => {
 			),
 		)
 
+		it.effect("refuses an internal-org seat below admin", () =>
+			provide(
+				Effect.gen(function* () {
+					const service = yield* seed
+					yield* Effect.forEach(["org:analyst", "org:member", "org:engineer"], (role) =>
+						Effect.result(
+							service.triage(
+								{ orgId: INTERNAL_ORG, roles: [RoleName.make(role)] },
+								{ limit: 10 },
+							),
+						).pipe(Effect.map((result) => assert.isTrue(Result.isFailure(result), role))),
+					)
+				}),
+			),
+		)
+
 		it.effect("refuses every org while MAPLE_INTERNAL_ORG_ID is unset", () =>
 			provideWith({})(
 				Effect.gen(function* () {
 					const service = yield* seed
-					const result = yield* Effect.result(service.triage(INTERNAL_ORG, { limit: 10 }))
+					const result = yield* Effect.result(service.triage(INTERNAL_ADMIN, { limit: 10 }))
 					assert.isTrue(Result.isFailure(result))
 				}),
 			),

@@ -1,5 +1,9 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { Array as Arr } from "effect"
+import { countLabel } from "@maple/ui/lib/format"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
+import { dividedList } from "@maple/views/ui/rule"
+import { typography } from "@maple/views/ui/typography"
 import { displayName } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -19,3 +23,52 @@ export const deleteDialog = (h: H, model: Model): Html =>
 		isPending: model.isDeleting,
 		onConfirm: Message.ClickedConfirmDelete(),
 	})
+
+/** The report's summary line; a dashboard with no panels says so instead of "0 of 0". */
+export const importReportSummary = (report: {
+	readonly panels: number
+	readonly converted: number
+}): string => {
+	if (report.panels === 0) return "The dashboard has no panels to convert."
+	const notes = report.panels - report.converted
+	const noteText =
+		notes === 1
+			? " 1 panel Maple cannot run yet became a note that keeps its original queries."
+			: notes > 1
+				? ` ${countLabel(notes, "panel")} Maple cannot run yet became notes that keep the original queries.`
+				: ""
+	return `${report.converted} of ${countLabel(report.panels, "panel")} converted.${noteText}`
+}
+
+/** After a Grafana import: how many panels converted, and every warning, before opening it. */
+export const importReportDialog = (h: H, model: Model): Html => {
+	const report = model.importReport
+	if (report === null) return h.empty
+	return confirmDialog(h, {
+		slotId: model.importReportDialog.id,
+		model: model.importReportDialog,
+		toParentMessage: (message) => Message.GotImportReportDialogMessage({ message }),
+		tone: "default",
+		hasIcon: false,
+		title: ["Imported “", displayName(report.name), "”"],
+		description: importReportSummary(report),
+		children:
+			report.warnings.length === 0
+				? []
+				: [
+						dividedList(
+							h,
+							{ as: "ul", className: "max-h-72 overflow-y-auto" },
+							Arr.map(report.warnings, (warning) =>
+								h.li(
+									[h.Class("px-3 py-2")],
+									[typography(h, { size: "sm", tone: "muted" }, [warning])],
+								),
+							),
+						),
+					],
+		cancelLabel: "Close",
+		confirmLabel: "Open dashboard",
+		onConfirm: Message.ClickedOpenImportedDashboard(),
+	})
+}

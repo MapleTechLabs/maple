@@ -162,7 +162,10 @@ On the [MCP server](/docs/reference/mcp):
 
 - `get_status_page` lists every page, or with `page` (slug, name or id) shows one as visitors see it, drafts included. `include_config=true` adds the page's config document.
 - `post_status_page_update` opens an incident on `page` with `title` and `message`, or maintenance when you pass `starts_at` and `ends_at`. With `incident`, it posts the next update and moves it to `status`. `impact` and `components` are optional. New posts are drafts unless `publish=true`.
+- `create_status_page` creates a page from a `name` (and optional `slug` and `description`). It starts as a draft with no components.
 - `apply_status_page_config` replaces a page's settings, theme and components with an edited config document. It refuses the write if the config changed since you read it (`if_version`).
+- `set_status_page_domain` serves a page on your own subdomain (`domain`) and returns the DNS records to add. Call it again with the same domain to check them now; `remove=true` removes it.
+- `publish_status_page` makes a draft page public. It goes live within a minute.
 
 In the [REST API](/docs/reference/api), pages live under `/v2/status_pages` (scopes `status_pages:read` and `status_pages:write`) and incidents under `/v2/status_page_incidents` (scopes `status_page_incidents:read` and `status_page_incidents:write`):
 
@@ -186,7 +189,7 @@ Writes to a page need the engineer role; the password and break-glass endpoints,
 
 ## Limits
 
-- **Address** (slug): 3 to 48 lowercase letters, digits or inner hyphens, unique across Maple.
+- **Address** (slug): 3 to 48 lowercase letters, digits or inner hyphens, unique within your organization.
 - Components: at most 200 per page.
 - An incident update message: up to 20,000 characters. A break-glass message: up to 5,000 characters, with a title of up to 200.
 - Page links: up to 2,048 characters, `https` only.

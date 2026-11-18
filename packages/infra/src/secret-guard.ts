@@ -12,6 +12,7 @@ import {
 } from "effect"
 import type { SecretConsumer, SecretEnvironment } from "./secret.ts"
 import * as Catalog from "./secrets.ts"
+import { type DerivedSecret, isDerivedSecret } from "./secret-slot-keys.ts"
 
 const secrets = Rec.values(Catalog)
 const bySourceKey = new Map<string, (typeof secrets)[number]>(
@@ -24,6 +25,11 @@ const CurrentSecretConsumer = Context.Reference<Option.Option<SecretConsumer>>(
 	"@maple/infra/CurrentSecretConsumer",
 	{ defaultValue: () => Option.none() },
 )
+
+/** Set while `resolveDerived` parses: a `derivedFor` consumer may read the secret to derive from it. */
+const CurrentDerivedRead = Context.Reference<boolean>("@maple/infra/CurrentDerivedRead", {
+	defaultValue: () => false,
+})
 
 const CATALOG_PATH = "packages/infra/src/secrets.ts"
 
@@ -44,7 +50,14 @@ const guard = (provider: ConfigProvider.ConfigProvider): ConfigProvider.ConfigPr
 					`${secret.envKey} was read outside a deployable's scope. Resolve it through resolveAs or resolveWorkerEnv (@maple/infra/secret-guard).`,
 				)
 			}
-			if (!secret.meta.consumers.includes(consumer.value)) {
+			const derivedRead = yield* CurrentDerivedRead
+			const derivable = derivedRead && (secret.meta.derivedFor?.includes(consumer.value) ?? false)
+			if (!secret.meta.consumers.includes(consumer.value) && !derivable) {
+				if (secret.meta.derivedFor?.includes(consumer.value) ?? false) {
+					return yield* refusal(
+						`${consumer.value} may receive only a value derived from ${secret.envKey}: read it through resolveDerived.`,
+					)
+				}
 				return yield* refusal(
 					`${consumer.value} may not read ${secret.envKey}: ${CATALOG_PATH} does not list it as a consumer.`,
 				)
@@ -102,6 +115,28 @@ export const resolveAs = <A>(consumer: SecretConsumer, config: Config.Config<A>)
 		const provider = yield* ConfigProvider.ConfigProvider
 		return yield* config.parse(guard(provider))
 	}).pipe(Effect.provideService(CurrentSecretConsumer, Option.some(consumer)))
+
+/**
+ * `derive(value)` of `config` resolved as `consumer`, for a secret that lists it in `derivedFor`:
+ * the deployable is handed what `derive` returns, never the secret itself.
+ */
+export const resolveDerived = <A, E, R>(
+	consumer: SecretConsumer,
+	config: Config.Config<A>,
+	derive: (value: A) => Effect.Effect<DerivedSecret, E, R>,
+) =>
+	resolveAs(consumer, config).pipe(
+		Effect.provideService(CurrentDerivedRead, true),
+		Effect.flatMap(derive),
+		// The type already demands a minted value; this also stops one forced past it.
+		Effect.filterOrFail(
+			(derived): derived is DerivedSecret => isDerivedSecret(derived),
+			() =>
+				new Config.ConfigError(
+					refusal(`resolveDerived for ${consumer} was handed a value no derivation minted`),
+				),
+		),
+	)
 
 /**
  * A Worker's config-sourced env, resolved as `consumer`. Also refuses a catalog secret read as a

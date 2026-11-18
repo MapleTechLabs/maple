@@ -73,6 +73,7 @@ import { InvestigationService } from "@maple/backend/services/errors/Investigati
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { InvestigationStarter } from "@maple/backend/services/errors/InvestigationStarter"
 import { SloReadService } from "@maple/backend/services/slos/SloReadService"
+import { PromqlQueryService } from "@maple/backend/services/promql/PromqlQueryService"
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
@@ -237,7 +238,12 @@ const makeHarness = () => {
 		Layer.provide(
 			Layer.mergeAll(
 				HttpV2DashboardsLive.pipe(
-					Layer.provide(Layer.effect(DashboardWidgetDataService, DashboardWidgetDataService.make)),
+					Layer.provide(
+						Layer.effect(DashboardWidgetDataService, DashboardWidgetDataService.make).pipe(
+							// Over the inert warehouse, not the real one `PromqlQueryService.layer` brings.
+							Layer.provide(Layer.effect(PromqlQueryService, PromqlQueryService.make)),
+						),
+					),
 				),
 				HttpV2AlertDestinationsLive,
 				HttpV2AlertRulesLive,

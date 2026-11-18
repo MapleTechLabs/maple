@@ -15,7 +15,7 @@ import {
 } from "@maple/domain/executor"
 import { Effect, Ref, Schema, Semaphore, Array as Arr, String as Str } from "effect"
 import { Tool, Toolkit } from "effect/ai"
-import { toolHandlersWithContent } from "../platform/genai-spans"
+import { type GenAiContent, toolHandlersWithContent } from "../platform/genai-spans"
 import { AUDIT_TOOLKIT, type SourceReaderApi, sourceHandlers, ToolFailure } from "./source"
 
 export class AuditExecutionError extends Schema.TaggedError<AuditExecutionError>()(
@@ -157,6 +157,7 @@ export const executionToolHandlers = (
 	source: SourceReaderApi,
 	execution: Pick<AuditExecutionApi, "run">,
 	agentId: string,
+	content: GenAiContent,
 	onCall: Effect.Effect<void> = Effect.void,
 	onPromoted: (paths: ReadonlyArray<string>) => Effect.Effect<void> = () => Effect.void,
 ) => {
@@ -212,5 +213,6 @@ export const executionToolHandlers = (
 					return renderRun(agentId, result)
 				}),
 		}),
+		content,
 	)
 }

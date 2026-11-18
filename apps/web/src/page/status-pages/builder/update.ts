@@ -7,10 +7,13 @@ import type {
 import {
 	customDomainIssue,
 	normalizeCustomDomain,
+	slugFromName,
 	STATUS_PAGE_PRESET_DEFAULTS,
+	statusPageOrgKey,
 } from "@maple/domain/status-page"
 import { Option, Result, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
@@ -36,7 +39,7 @@ import {
 	updatePicker,
 } from "../shared/picker"
 import { historyFrom } from "../shared/preview"
-import { SLUG_TAKEN, SLUG_TAKEN_MESSAGE, slugFromName, slugIssue } from "../shared/slug"
+import { SLUG_TAKEN, SLUG_TAKEN_MESSAGE, slugIssue } from "../shared/slug"
 import {
 	CreateBuilderMonitor,
 	CreateBuilderPage,
@@ -164,8 +167,11 @@ const edited = (model: Model): Return => {
 	}
 }
 
-export const init = (_route: BuilderRoute, context: PageContext): Return => {
+export const init = (route: BuilderRoute, context: PageContext): Return => {
 	const model: Model = {
+		setup: route.search.setup ?? null,
+		promptCopy: CopyButton.init(),
+		mcpCommandCopy: CopyButton.init(),
 		nowMs: null,
 		grants: [],
 		isSessionLoaded: false,
@@ -173,6 +179,7 @@ export const init = (_route: BuilderRoute, context: PageContext): Return => {
 		isSeeded: false,
 		name: "",
 		slug: "",
+		orgKey: statusPageOrgKey(context.orgId),
 		customDomain: "",
 		isSlugEdited: false,
 		isNameTouched: false,
@@ -204,6 +211,11 @@ export const init = (_route: BuilderRoute, context: PageContext): Return => {
 		],
 	}
 }
+
+/** The method in the address changed (picked, or Back to the choice); the builder keeps its edits. */
+export const routeChanged = (model: Model, route: BuilderRoute): Return => ({
+	model: { ...model, setup: route.search.setup ?? null },
+})
 
 const monitorForm = (monitor: V2UptimeMonitor): ComponentForm => ({
 	...emptyComponentForm,
@@ -385,6 +397,24 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		CompletedFetchMonitors: ({ key, result }) => acceptMonitors(model, key, result),
 		ClickedRetry: () => readMonitors(model, context, "Supersede"),
+		GotPromptCopyMessage: ({ message: inner }) => {
+			const next = CopyButton.update(model.promptCopy, inner)
+			return {
+				model: { ...model, promptCopy: next.model },
+				commands: FoldkitCommand.mapMessages(next.commands ?? [], (message) =>
+					Message.GotPromptCopyMessage({ message }),
+				),
+			}
+		},
+		GotMcpCommandCopyMessage: ({ message: inner }) => {
+			const next = CopyButton.update(model.mcpCommandCopy, inner)
+			return {
+				model: { ...model, mcpCommandCopy: next.model },
+				commands: FoldkitCommand.mapMessages(next.commands ?? [], (message) =>
+					Message.GotMcpCommandCopyMessage({ message }),
+				),
+			}
+		},
 		ChangedName: ({ value }) =>
 			edited({ ...model, name: value, slug: model.isSlugEdited ? model.slug : slugFromName(value) }),
 		BlurredName: () => ({ model: { ...model, isNameTouched: true } }),

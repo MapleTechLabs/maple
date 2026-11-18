@@ -7,6 +7,7 @@ import { ADVISORY_SEVERITIES } from "../runtime-advisories"
 import { ATTACK_STAGES } from "../security-telemetry"
 import { SERVICE_RUNTIME_KIND_IDS } from "../service-runtimes"
 import { MAX_RAW_SQL_LENGTH } from "../raw-sql"
+import { MAX_PROMQL_LEGEND_LENGTH, MAX_PROMQL_QUERY_LENGTH } from "../promql"
 import { RawSqlDisplayType } from "@maple/widgets"
 import {
 	CommitSha,
@@ -4075,6 +4076,30 @@ export class RawSqlExecuteResponse extends Schema.Class<RawSqlExecuteResponse>("
 	}),
 }) {}
 
+/**
+ * A PromQL widget query over a window. The server picks the step from the window,
+ * `maxDataPoints` and `minStepSeconds`, fills the time built-ins, and shapes the rows
+ * for `displayType` with `legendFormat` naming the series.
+ */
+export class PromqlExecuteRequest extends Schema.Class<PromqlExecuteRequest>("PromqlExecuteRequest")({
+	query: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(MAX_PROMQL_QUERY_LENGTH)),
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	legendFormat: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(MAX_PROMQL_LEGEND_LENGTH))),
+	minStepSeconds: Schema.optionalKey(Schema.Number.check(Schema.isFinite(), Schema.isGreaterThan(0))),
+	maxDataPoints: Schema.optionalKey(Schema.Number.check(Schema.isFinite(), Schema.isGreaterThan(0))),
+	displayType: Schema.optionalKey(RawSqlDisplayType),
+}) {}
+
+export class PromqlExecuteResponse extends Schema.Class<PromqlExecuteResponse>("PromqlExecuteResponse")({
+	data: Schema.Array(WireRow),
+	meta: Schema.Struct({
+		resultType: Schema.Literals(["matrix", "vector", "scalar", "string"]),
+		seriesCount: Schema.Number,
+		stepSeconds: Schema.Number,
+	}),
+}) {}
+
 export class RawSqlValidationError extends Schema.TaggedError<RawSqlValidationError>()(
 	"@maple/http/errors/RawSqlValidationError",
 	{
@@ -5113,6 +5138,13 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 			payload: ProductEventTraceSamplesRequest,
 			success: ProductEventTraceSamplesResponse,
 			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("executePromql", "/execute-promql", {
+			payload: PromqlExecuteRequest,
+			success: PromqlExecuteResponse,
+			error: validatedQueryEndpointErrors,
 		}),
 	)
 	.add(

@@ -90,6 +90,7 @@ export const draftSnapshot = (
 		page: {
 			name: draftName(page, form),
 			slug: form.slug,
+			orgKey: model.orgKey,
 			description: orNull(form.description),
 			websiteUrl: orNull(form.websiteUrl),
 			logoUrl: orNull(form.logoUrl),

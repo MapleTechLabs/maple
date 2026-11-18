@@ -48,6 +48,7 @@ import { SearchConsoleImportService } from "@maple/backend/services/integrations
 import { McpConnectionsService } from "@maple/backend/services/auth/McpConnectionsService"
 import { McpOAuthService } from "@maple/backend/services/auth/McpOAuthService"
 import { PreviewSignInService } from "@maple/backend/services/auth/PreviewSignInService"
+import { SelfHostedLoginRateLimiter } from "@maple/backend/services/auth/SelfHostedLoginRateLimiter"
 
 import { DailySpendService } from "@maple/backend/services/billing/DailySpendService"
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
@@ -145,6 +146,7 @@ import { AuditDetectionsService } from "@maple/backend/services/audit-trail/Audi
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
+import { PromqlQueryService } from "@maple/backend/services/promql/PromqlQueryService"
 import { TelemetryReadService } from "@maple/backend/services/warehouse/TelemetryReadService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
@@ -189,6 +191,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	McpOAuthService.layer,
 	McpConnectionsService.layer,
 	PreviewSignInService.layer,
+	SelfHostedLoginRateLimiter.layer,
 	CloudflareOAuthService.layer,
 	DashboardPersistenceService.layer,
 	SharedDashboardService.layer,
@@ -266,6 +269,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	IntegrationInventoryService.layer,
 	WarehouseQueryService.layer,
 	QueryEngineService.layer,
+	PromqlQueryService.layer,
 	RuntimeReleaseCatalog.layer,
 	RuntimeAdvisoryCatalog.layer,
 	DependencyScanService.layer,

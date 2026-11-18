@@ -162,19 +162,11 @@ const parseEnvelope = (stored: string): Option.Option<Envelope> => {
 		: Option.none()
 }
 
-/** The AAD parts after the slot name: the row, then for v3 the destination. */
-const aadParts = <Ref>(
-	slot: SecretSlot<Ref>,
-	ref: Ref,
-	version: Envelope["version"],
-): Option.Option<ReadonlyArray<string>> =>
-	version === ENVELOPE_PREFIX
-		? Option.some(slot.binding(ref))
-		: Option.map(Option.fromUndefinedOr(slot.destination), (destination) => [
-				...slot.binding(ref),
-				DESTINATION_AAD_MARKER,
-				...destination(ref),
-			])
+/** The AAD parts after the slot name: the row, then the destination when the slot names one. */
+const aadParts = <Ref>(slot: SecretSlot<Ref>, ref: Ref): ReadonlyArray<string> =>
+	slot.destination === undefined
+		? slot.binding(ref)
+		: [...slot.binding(ref), DESTINATION_AAD_MARKER, ...slot.destination(ref)]
 
 /** The envelope new values of `slot` are sealed in: v3 when it names a destination. */
 const envelopeFor = <Ref>(slot: SecretSlot<Ref>): Envelope["version"] =>
@@ -202,12 +194,7 @@ export const sealSecret = <Ref, E>(
 		plaintext,
 		subkeyFor(keyring.primary, slot.name),
 		onError,
-		secretAad(
-			slot.name,
-			slot.destination === undefined
-				? slot.binding(ref)
-				: [...slot.binding(ref), DESTINATION_AAD_MARKER, ...slot.destination(ref)],
-		),
+		secretAad(slot.name, aadParts(slot, ref)),
 	).pipe(
 		Effect.map((sealed) => ({
 			...sealed,
@@ -231,17 +218,20 @@ export const openSecret = <Ref, E>(
 				{
 					onNone: () => Effect.fail(onError("Sealed with a key this deployment does not hold")),
 					onSome: (key) =>
-						Option.match(aadParts(slot, ref, envelope.version), {
-							onNone: () =>
-								Effect.fail(onError("Stored value names a destination this slot has not")),
-							onSome: (parts) =>
-								decryptAes256Gcm(
+						envelope.version === envelopeFor(slot)
+							? decryptAes256Gcm(
 									{ ciphertext: envelope.ciphertext, iv: stored.iv, tag: stored.tag },
 									subkeyFor(key, slot.name),
 									onError,
-									secretAad(slot.name, parts),
+									secretAad(slot.name, aadParts(slot, ref)),
+								)
+							: Effect.fail(
+									onError(
+										envelope.version === DESTINATION_ENVELOPE_PREFIX
+											? "Stored value names a destination this slot has not"
+											: "Stored value is not bound to its destination",
+									),
 								),
-						}),
 				},
 			),
 	})

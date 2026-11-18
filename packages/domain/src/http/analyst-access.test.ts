@@ -45,6 +45,7 @@ describe("isOpenToAnalysts", () => {
 	it("lets an analyst change dashboards in every way a member can", () => {
 		const writes = [
 			"create",
+			"importGrafana",
 			"importPerses",
 			"instantiateTemplate",
 			"update",

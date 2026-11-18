@@ -20,6 +20,7 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { readAllPages as readAll } from "../../../platform/read-all-pages"
 import { AppRoute, hrefOf } from "../../../route"
+import type { StatusPageSetupMethod } from "../../../route/search"
 import { summarizePage } from "./derive"
 
 // The status page reads and writes, as Effects the pages' Commands wrap, and their links.
@@ -283,7 +284,8 @@ export const statusPageViewHref = (id: StatusPageId): string =>
 
 export const statusPagesHref = (): string => hrefOf(AppRoute.StatusPages())
 
-export const newStatusPageHref = (): string => hrefOf(AppRoute.StatusPageNew())
+export const newStatusPageHref = (setup?: StatusPageSetupMethod): string =>
+	hrefOf(AppRoute.StatusPageNew({ search: setup === undefined ? {} : { setup } }))
 
 /** The status Worker's origin; empty where the stage has no status domain. */
 export const STATUS_PAGE_BASE_URL: string = Str.replace(
@@ -291,16 +293,24 @@ export const STATUS_PAGE_BASE_URL: string = Str.replace(
 	"",
 )(Str.trim(import.meta.env.VITE_STATUS_PAGE_BASE_URL ?? ""))
 
+/** The page's path on the status domain: `/s/<org key>/<slug>`, slugs being unique per org. */
+export const publicPath = (orgKey: string, slug: string): string => `/s/${orgKey}/${slug}`
+
 /** Where visitors read the page, or `null` while no status domain is configured. */
-export const publicUrl = (baseUrl: string, slug: string): string | null =>
-	baseUrl === "" ? null : `${baseUrl}/s/${slug}`
+export const publicUrl = (baseUrl: string, orgKey: string, slug: string): string | null =>
+	baseUrl === "" ? null : `${baseUrl}${publicPath(orgKey, slug)}`
 
 /** The page's canonical address: its active custom domain, else {@link publicUrl}. */
-export const canonicalUrl = (baseUrl: string, slug: string, customDomain: string | null): string | null =>
-	customDomain === null ? publicUrl(baseUrl, slug) : `https://${customDomain}`
+export const canonicalUrl = (
+	baseUrl: string,
+	orgKey: string,
+	slug: string,
+	customDomain: string | null,
+): string | null => (customDomain === null ? publicUrl(baseUrl, orgKey, slug) : `https://${customDomain}`)
 
-/** The page's address as text: the full URL when known, its `/s/<slug>` path otherwise. */
-export const publicAddress = (slug: string): string => publicUrl(STATUS_PAGE_BASE_URL, slug) ?? `/s/${slug}`
+/** The page's address as text: the full URL when known, its path otherwise. */
+export const publicAddress = (orgKey: string, slug: string): string =>
+	publicUrl(STATUS_PAGE_BASE_URL, orgKey, slug) ?? publicPath(orgKey, slug)
 
 /** The public page to open, or why there is none: it is internal, a draft, or the stage has no status domain. */
 export type PublicPageLink =

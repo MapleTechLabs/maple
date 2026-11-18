@@ -5,12 +5,15 @@ import { Schema } from "effect"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Combobox from "@maple/views/ui/combobox"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
+import { StatusPageSetupMethod } from "../../../route/search"
 import { ComponentForm } from "../shared/form"
 import { Picker } from "../shared/picker"
 import { PreviewHistory, PreviewScheme } from "../shared/preview"
 
-// `/status-pages/new`: a page's name, address, components and look on one screen, beside the
+// `/status-pages/new`: first the choice between a coding agent (over the MCP) and the builder. The
+// builder: a page's name, address, components and look on one screen, beside the
 // page as visitors will get it.
 
 /** Publish makes the page public at once; a draft stays private until published. */
@@ -22,6 +25,11 @@ export const DraftRow = Schema.Struct({ key: Schema.String, form: ComponentForm 
 export type DraftRow = typeof DraftRow.Type
 
 export const Model = Schema.Struct({
+	/** How the page is set up; `null` until the user picks (`?setup=`). */
+	setup: Schema.NullOr(StatusPageSetupMethod),
+	/** The agent setup's copy buttons: its prompt, and the Claude Code `mcp add` command. */
+	promptCopy: CopyButton.Model,
+	mcpCommandCopy: CopyButton.Model,
 	nowMs: Schema.NullOr(Schema.Number),
 	grants: Schema.Array(Policy.PermissionName),
 	isSessionLoaded: Schema.Boolean,
@@ -30,6 +38,8 @@ export const Model = Schema.Struct({
 	isSeeded: Schema.Boolean,
 	name: Schema.String,
 	slug: Schema.String,
+	/** `statusPageOrgKey` of the org: the address is `/s/<org key>/<slug>`. */
+	orgKey: Schema.String,
 	/** An optional custom domain (`status.acme.com`), set right after the page is created. */
 	customDomain: Schema.String,
 	/** The user typed an address; until then it follows the name. */

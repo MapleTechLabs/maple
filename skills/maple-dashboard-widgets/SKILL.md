@@ -81,7 +81,7 @@ authoring an assembled widget rather than calling `add_dashboard_widget`. A pane
 
 ## Data sources
 
-A widget's `dataSource` is a discriminated union over `kind`: `query`, `raw_sql`, `route`, `static`. Every arm requires its `kind`.
+A widget's `dataSource` is a discriminated union over `kind`: `query`, `raw_sql`, `promql`, `route`, `static`. Every arm requires its `kind`.
 
 > **If you have seen `{ "endpoint": …, "params": … }` anywhere, that is the retired v2 shape
 > and it will not decode.** A `query` source spreads `queries`/`formulas` at the TOP LEVEL,
@@ -133,6 +133,25 @@ A widget's `dataSource` is a discriminated union over `kind`: `query`, `raw_sql`
   "kind": "raw_sql",
   "sql": "SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
   "displayType": "stat"
+}
+```
+
+### `kind: "promql"`: a PromQL query over the metrics
+
+Prometheus names: `http.server.request.duration` answers to
+`http_server_request_duration_seconds_bucket`, a monotonic sum to `..._total`. Grafana
+variables work (`$var`, `${var}`, `${var:regex}`, `[[var]]`, an All selection becomes
+`(a|b)`), plus `$__interval`, `$__rate_interval`, `$__range` and `$__range_s`.
+`legendFormat` names series with `{{label}}`; `minStepSeconds` floors the step;
+`displayType` is the panel's raw-SQL display type (a stat reads the newest point of the
+first series with the `first` reducer on field `value`; a table gets one row per series).
+
+```json
+{
+  "kind": "promql",
+  "query": "sum by (job) (rate(http_server_request_duration_seconds_count{job=~\"$service\"}[$__rate_interval]))",
+  "legendFormat": "{{job}}",
+  "displayType": "line"
 }
 ```
 
@@ -478,13 +497,14 @@ why `groupBy` without `addOns.groupBy: true` silently does nothing.
 |---|---|
 | `traces` | `count`, `avg_duration`, `p50_duration`, `p95_duration`, `p99_duration`, `error_rate` |
 | `logs` | `count` |
-| `metrics` | `avg`, `sum`, `min`, `max`, `count`, `latest`, `rate`, `increase` |
+| `metrics` | `avg`, `sum`, `min`, `max`, `count`, `latest`, `rate`, `increase`, `p50`, `p75`, `p90`, `p95`, `p99` |
 | `product_events` | `count`, `sessions`, `persons`, `users`, `visitors` |
 
 On traces only, setting `valueField: "attr.<key>"` switches the query to numeric-attribute
 mode, where the aggregation is one of `avg`, `sum`, `min`, `max`, `p50`, `p95`, `p99`.
-This is the **only** place a bare `p50`/`p95`/`p99` is valid; latency percentiles are
-spelled `p95_duration`. Metrics never accept percentiles.
+Trace latency percentiles are spelled `p95_duration`; a bare `p50` to `p99` is valid only in this
+numeric-attribute mode and as a `metrics` aggregation, where a histogram estimates the quantile
+from its merged buckets and a gauge or sum takes it over each series' samples.
 
 ### Group-by tokens
 

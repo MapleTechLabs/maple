@@ -185,7 +185,8 @@ Secrets source model (CI):
     - `MAPLE_INGEST_KEY_ENCRYPTION_KEY`
     - `MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY`
     - `MAPLE_AUTH_MODE`
-    - `MAPLE_ROOT_PASSWORD` (required in `self_hosted` mode)
+    - `MAPLE_ROOT_PASSWORD` (required in `self_hosted` mode, at least 16 characters: `openssl rand -base64 24`)
+    - `MAPLE_SESSION_SIGNING_SECRET` (optional, recommended in `self_hosted` mode: `openssl rand -base64 32`)
     - `CLERK_SECRET_KEY`
     - `CLERK_PUBLISHABLE_KEY`
     - `CLERK_JWT_KEY`
@@ -264,13 +265,20 @@ Maple supports exactly two auth modes via `MAPLE_AUTH_MODE`:
     - Optionally override `VITE_CLERK_SIGN_IN_URL` and `VITE_CLERK_SIGN_UP_URL`
 2. `self_hosted`
     - Set `MAPLE_AUTH_MODE=self_hosted`
-    - Set `MAPLE_ROOT_PASSWORD` (required)
+    - Set `MAPLE_ROOT_PASSWORD` (required). It must be at least 16 characters and not a placeholder
+      such as `change-me`, or the api refuses to start. Generate one with `openssl rand -base64 24`.
+    - Set `MAPLE_SESSION_SIGNING_SECRET` (recommended) to `openssl rand -base64 32`. Session tokens are
+      signed with a key derived from it, so a leaked token says nothing about the root password.
+      Without it the key is derived from the root password alone, and the api logs a warning.
+    - Sign-in is limited to 10 attempts per minute per client address; past that it answers 429
+      with `Retry-After`.
     - Set `MAPLE_DEFAULT_ORG_ID` (defaults to `default`)
     - Users must sign in at `/sign-in` with the root password before accessing the dashboard/API.
     - Session tokens are valid for 12 hours and renew silently against
       `POST /api/auth/session/refresh`, up to an absolute cap of 7 days from sign-in. Past the cap
-      the root password is required again. Rotating `MAPLE_ROOT_PASSWORD` still invalidates every
-      token immediately — it is the HMAC key, and the only way to revoke a session early.
+      the root password is required again. Rotating `MAPLE_ROOT_PASSWORD` or
+      `MAPLE_SESSION_SIGNING_SECRET` invalidates every token immediately (both feed the signing
+      key), and is the only way to revoke a session early.
 
 Start apps:
 

@@ -27,6 +27,7 @@ import {
 	type ChatMode,
 	type ChatSessionKind,
 	type ChatTurnOrigin,
+	type PullRequestTurnRepository,
 } from "@maple/domain/chat-session"
 import { PrReviewId, PrReviewReplyId } from "@maple/domain/http"
 import { InvestigationId } from "@maple/primitives"
@@ -44,7 +45,7 @@ import {
 } from "./budgets"
 import type { PermissionRuleset } from "@maple/domain/permission"
 import type { ResolvedModel } from "../platform/Llm"
-import { DEFAULT_RULESET, PR_REVIEW_RULESET } from "./permissions"
+import { DEFAULT_RULESET, PR_REVIEW_RULESETS } from "./permissions"
 import {
 	CLOSE_OUT_PROMPT,
 	INVESTIGATE_SYSTEM_PROMPT,
@@ -82,10 +83,11 @@ export interface AgentDefinition {
 	readonly prompt: string
 	readonly permission: PermissionRuleset
 	/**
-	 * The narrower ruleset the agent's *unattended* pass runs under, when it has one of its own.
-	 * Without it an autonomous turn runs read-only; see `profileForTurn`.
+	 * The narrower rulesets a pull request agent's *unattended* pass runs under, by where it posts:
+	 * on a public repository nothing it reads may come from telemetry. Without them an autonomous
+	 * turn runs read-only; see `profileForTurn`.
 	 */
-	readonly autonomousPermission?: PermissionRuleset
+	readonly autonomousPermission?: { readonly [R in PullRequestTurnRepository]: PermissionRuleset }
 	/**
 	 * What a turn as this agent may spend. An attended reply and an unattended investigation are
 	 * different work; they shared one budget until 2026-09-20, and it was the investigation's.
@@ -145,9 +147,9 @@ export const AGENTS: {
 		description: "Reviews a pull request: correctness, security, performance and observability.",
 		prompt: PR_REVIEW_SYSTEM_PROMPT,
 		permission: DEFAULT_RULESET,
-		// The pass sees the diff, the code, and the read-only telemetry tools its rubric needs, and
-		// nothing else: every unoffered schema is prompt it does not pay for on each call.
-		autonomousPermission: PR_REVIEW_RULESET,
+		// The pass sees the diff, the code, and on a private repository the read-only telemetry tools
+		// its rubric needs, and nothing else: every unoffered schema is prompt it does not pay for.
+		autonomousPermission: PR_REVIEW_RULESETS,
 		budget: PR_REVIEW_BUDGET,
 		model: "review",
 		codeMode: true,
@@ -165,7 +167,7 @@ export const AGENTS: {
 		description: "Answers a mention on a pull request, and makes a fix when asked.",
 		prompt: PR_REPLY_SYSTEM_PROMPT,
 		permission: DEFAULT_RULESET,
-		autonomousPermission: PR_REVIEW_RULESET,
+		autonomousPermission: PR_REVIEW_RULESETS,
 		budget: PR_REPLY_BUDGET,
 		model: "review",
 		completion: {

@@ -147,6 +147,7 @@ export const makeAuditAgents = (
 										source,
 										sandbox,
 										invocation.agentId,
+										model.content,
 										counted,
 										(paths) => Ref.update(promoted, (all) => [...all, ...paths]),
 									).layer,
@@ -159,7 +160,10 @@ export const makeAuditAgents = (
 					: AgentRuntime.run(auditAgent(invocation.role, model), invocation.prompt, options).pipe(
 							// oxlint-disable-next-line effecttsgo/strict-effect-provide -- each sub-agent runs on the model layer chosen for its role
 							Effect.provide(
-								Layer.merge(auditToolHandlers(source, counted).layer, InMemory.layer),
+								Layer.merge(
+									auditToolHandlers(source, model.content, counted).layer,
+									InMemory.layer,
+								),
 							),
 						)
 				const promotedPaths = yield* Ref.get(promoted)

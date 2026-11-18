@@ -1,3 +1,4 @@
+import { statusPageOrgKey } from "@maple/domain/status-page"
 import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { StatusPagesDisabledError } from "@maple/domain/http"
@@ -18,6 +19,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
 import { view as listView } from "./view"
+
+const KEY = statusPageOrgKey(ORG)
 
 const ENGINEER = Policy.grantsOf(["org:engineer"])
 const MEMBER = Policy.grantsOf(["org:member"])
@@ -99,7 +102,7 @@ describe("status pages list", () => {
 			expectView(text("Password")).toExist(),
 			expectView(text("Internal")).toExist(),
 			expectView(text("Members only, in Maple")).toExist(),
-			expectView(text("/s/acme-internal")).not.toExist(),
+			expectView(text(`/s/${KEY}/acme-internal`)).not.toExist(),
 		)
 	})
 
@@ -115,7 +118,7 @@ describe("status pages list", () => {
 			{ update: listUpdate, view },
 			given(withPages([live, summaryOf(statusPage({ id: pageId(2), name: "Internal", draft: true }))])),
 			expectView(role("link", { name: "Acme Status" })).toHaveAttr("href", statusPageHref(page.id)),
-			expectView(text("/s/acme-status")).toExist(),
+			expectView(text(`/s/${KEY}/acme-status`)).toExist(),
 			expectView(text("Partial outage")).toExist(),
 			expectView(text("Platform")).toExist(),
 			expectView(role("img", { name: "API: 100.00% over the last 90 days" })).toExist(),
@@ -243,7 +246,10 @@ describe("status page card menu", () => {
 	})
 
 	test("the menu opens the dev preview; an internal or draft page has no public page to open", () => {
-		for (const page of [statusPage({ visibility: "internal" }), statusPage({ draft: true, published_at: null })]) {
+		for (const page of [
+			statusPage({ visibility: "internal" }),
+			statusPage({ draft: true, published_at: null }),
+		]) {
 			const model = withPages([summaryOf(page)])
 			expect(names(pick(model, pageId(1), "open-public").commands)).not.toContain(
 				"OpenStatusPageInNewTab",

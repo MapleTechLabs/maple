@@ -9,11 +9,19 @@ import {
 	Record as Rec,
 	Redacted,
 	Schema,
+	String as Str,
 } from "effect"
 import { assert, describe, expect, it } from "vitest"
-import { resolveAs, resolveWorkerEnv, withSecretGuard } from "./secret-guard.ts"
+import { resolveAs, resolveDerived, resolveWorkerEnv, withSecretGuard } from "./secret-guard.ts"
+import { clickHousePasswordSlotKeys, isDerivedSecret } from "./secret-slot-keys.ts"
 import * as Catalog from "./secrets.ts"
-import { OpenRouterApiKey, OtelIngestKey, StripeSecretKey } from "./secrets.ts"
+import {
+	IngestKeyDecryptionKeys,
+	IngestKeyEncryptionKey,
+	OpenRouterApiKey,
+	OtelIngestKey,
+	StripeSecretKey,
+} from "./secrets.ts"
 
 type Env = Record<string, string>
 
@@ -136,6 +144,58 @@ describe("the catalog as a default-deny guard", () => {
 		const exit = run(withSecretGuard(plain), { MAPLE_LLM_PROVIDER: "openrouter" })
 		assert(Exit.isSuccess(exit))
 		expect(exit.value).toEqual({ provider: "openrouter" })
+	})
+})
+
+describe("a value derived from a secret", () => {
+	const key = (fill: number) => Buffer.alloc(32, fill).toString("base64")
+	const MASTER = { MAPLE_INGEST_KEY_ENCRYPTION_KEY: key(5), MAPLE_INGEST_KEY_DECRYPTION_KEYS: key(6) }
+	const masters = Config.all({
+		primary: IngestKeyEncryptionKey.requiredValue,
+		decryptOnly: IngestKeyDecryptionKeys.optionalValue,
+	})
+	const derive = clickHousePasswordSlotKeys
+
+	it("hands a derivedFor deployable only what the derivation mints", () => {
+		const exit = run(withSecretGuard(resolveDerived("ingest", masters, derive)), MASTER)
+		assert(Exit.isSuccess(exit))
+		expect(isDerivedSecret(exit.value)).toBe(true)
+		const value = Redacted.value(exit.value.value)
+		expect(Str.startsWith("IGjfnBNl:")(value)).toBe(true)
+		expect(value).not.toContain(key(5))
+		expect(value).not.toContain(key(6))
+	})
+
+	it("refuses a derive that hands the secret back instead of a derivation", () => {
+		const leak = (value: { primary: Redacted.Redacted; decryptOnly: Option.Option<Redacted.Redacted> }) =>
+			Effect.succeed(value)
+		// @ts-expect-error resolveDerived accepts only a value a derivation minted
+		const exit = run(withSecretGuard(resolveDerived("ingest", masters, leak)), MASTER)
+		assert(Exit.isFailure(exit))
+		expect(String(exit.cause)).toContain("was handed a value no derivation minted")
+	})
+
+	it("refuses that deployable the raw value, however it is read", () => {
+		const derivedOnly = "ingest may receive only a value derived from MAPLE_INGEST_KEY_ENCRYPTION_KEY"
+		expect(failure(resolveAs("ingest", IngestKeyEncryptionKey.requiredValue), MASTER).message).toContain(
+			derivedOnly,
+		)
+		expect(
+			failure(resolveAs("ingest", Config.String("MAPLE_INGEST_KEY_ENCRYPTION_KEY")), MASTER).message,
+		).toContain(derivedOnly)
+		expect(failure(resolveAs("ingest", IngestKeyDecryptionKeys.optionalValue), MASTER).message).toContain(
+			"ingest may receive only a value derived from MAPLE_INGEST_KEY_DECRYPTION_KEYS",
+		)
+	})
+
+	it("refuses a derived read by a deployable the secret does not list in derivedFor", () => {
+		expect(failure(resolveDerived("landing", masters, () => Effect.die("unreached")), MASTER).message).toContain(
+			"landing may not read MAPLE_INGEST_KEY_ENCRYPTION_KEY",
+		)
+		expect(
+			failure(resolveDerived("ingest", StripeSecretKey.required, () => Effect.die("unreached")), STRIPE)
+				.message,
+		).toContain("ingest may not read STRIPE_SECRET_KEY")
 	})
 })
 

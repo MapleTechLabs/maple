@@ -44,6 +44,16 @@ export type Fallback = typeof Fallback.Type
 export const Scope = Schema.Literals(["all", "favorites"])
 export type Scope = typeof Scope.Type
 
+/** What a Grafana import changed, shown before opening the new dashboard. */
+export const ImportReport = Schema.Struct({
+	id: Schema.String,
+	name: Schema.String,
+	warnings: Schema.Array(Schema.String),
+	panels: Schema.Number,
+	converted: Schema.Number,
+})
+export type ImportReport = typeof ImportReport.Type
+
 export const Model = Schema.Struct({
 	search: DashboardsSearch,
 	/** `null` until the collection is ready. */
@@ -73,6 +83,9 @@ export const Model = Schema.Struct({
 	/** A failed write turns the list read-only with this reason. */
 	persistenceError: Schema.NullOr(Schema.String),
 	isCreating: Schema.Boolean,
+	/** The last import's report; its dialog lists the warnings. */
+	importReport: Schema.NullOr(ImportReport),
+	importReportDialog: Dialog.Model,
 	/** The live list never answered within `COLLECTION_LOAD_TIMEOUT_MS`: the HTTP snapshot's state. */
 	fallback: Fallback,
 	/** The keyboard-focused row, by id: the live list reorders under it. None until J or K is pressed. */

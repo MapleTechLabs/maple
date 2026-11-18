@@ -31,6 +31,7 @@ export function registerListErrorIncidentsTool(server: McpToolRegistrar) {
 			),
 			limit: P.limit({ default: 100, max: MAX_LIMIT, noun: "incidents" }),
 		}),
+		untrustedOutput: true,
 		hints: { readOnly: true },
 		phrases: ["Listing error incidents"],
 		handler: Effect.fn("McpTool.listErrorIncidents")(function* (params) {

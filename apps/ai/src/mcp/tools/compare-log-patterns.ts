@@ -77,6 +77,7 @@ export function registerCompareLogPatternsTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 30, max: 100, noun: "changed patterns" }),
 		}),
 		aliases: P.SERVICE_ALIASES,
+		untrustedOutput: true,
 		hints: { readOnly: true },
 		phrases: ["Comparing log patterns", "Diffing logs across a deploy"],
 		handler: Effect.fn("McpTool.compareLogPatterns")(function* (params) {

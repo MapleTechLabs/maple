@@ -144,7 +144,9 @@ export const legacyDataSourceHint = (value: unknown): string | undefined => {
 /** Every data-source arm with its minimal shape, for errors that would otherwise list union failures. */
 export const DATA_SOURCE_VARIANTS =
 	'`{"kind":"query","resultShape":"timeseries"|"breakdown"|"list"|...,"queries":[...]}` (query builder), ' +
-	'`{"kind":"raw_sql","sql":"SELECT ... WHERE $__orgFilter AND $__timeFilter(Timestamp)"}`, `{"kind":"route","endpoint":"...","params":{...}}`, ' +
+	'`{"kind":"raw_sql","sql":"SELECT ... WHERE $__orgFilter AND $__timeFilter(Timestamp)"}`, ' +
+	'`{"kind":"promql","query":"sum(rate(...[$__rate_interval]))","legendFormat":"{{job}}","displayType":"line"}`, ' +
+	'`{"kind":"route","endpoint":"...","params":{...}}`, ' +
 	'or `{"kind":"static"}` (markdown note: panel_type markdown with display `{"markdown":{"content":"..."}}`)'
 
 const decodeKindField = Schema.decodeUnknownResult(Schema.Struct({ kind: Schema.Unknown }))

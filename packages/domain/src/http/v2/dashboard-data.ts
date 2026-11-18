@@ -24,6 +24,7 @@ import {
 	QueryComparisonSchema,
 } from "@maple/query-model"
 import { RawSqlText } from "../../raw-sql"
+import { MAX_PROMQL_LEGEND_LENGTH, MAX_PROMQL_QUERY_LENGTH } from "../../promql"
 import { Timestamp } from "./timestamp"
 import { replaceWith } from "@maple/strings"
 
@@ -207,6 +208,22 @@ const V2RawSqlDataSource = Schema.Struct({
 	transform: optional(V2WidgetTransform),
 }).pipe(Schema.encodeKeys({ displayType: "display_type", granularitySeconds: "granularity_seconds" }))
 
+/** A PromQL query over the metric tables; `legend_format` names series with `{{label}}`. */
+const V2PromqlDataSource = Schema.Struct({
+	kind: Schema.Literal("promql"),
+	query: Schema.String.check(Schema.isMaxLength(MAX_PROMQL_QUERY_LENGTH)),
+	legendFormat: optional(Schema.String.check(Schema.isMaxLength(MAX_PROMQL_LEGEND_LENGTH))),
+	minStepSeconds: optional(Schema.Number.check(Schema.isFinite(), Schema.isGreaterThan(0))),
+	displayType: optional(Schema.String),
+	transform: optional(V2WidgetTransform),
+}).pipe(
+	Schema.encodeKeys({
+		legendFormat: "legend_format",
+		minStepSeconds: "min_step_seconds",
+		displayType: "display_type",
+	}),
+)
+
 // Raw SQL has one door: the `raw_sql` arm. The route arm could carry it too —
 // `dataSourceRawSql` still reads `params.sql` under the pre-v3 `raw_sql_chart`
 // endpoint — which meant a second, unvalidated way to store a query. Refused
@@ -242,6 +259,7 @@ const V2StaticDataSource = Schema.Struct({
 const widgetDataSourceSchema = Schema.Union([
 	V2QueryDataSource,
 	V2RawSqlDataSource,
+	V2PromqlDataSource,
 	V2RouteDataSource,
 	V2StaticDataSource,
 ]).annotate({ identifier: "DashboardWidgetDataSource", title: "Dashboard widget data source" })

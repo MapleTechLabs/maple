@@ -250,7 +250,7 @@ describe("inspect_span drill-down", () => {
 		expect(text).toContain("table orders does not exist")
 		// The raw maps are still there, and still below the decoded view.
 		expect(Option.getOrThrow(Str.indexOf("why is checkout failing?")(text))).toBeLessThan(
-			Option.getOrThrow(Str.indexOf("`gen_ai.request.model`")(text)),
+			Option.getOrThrow(Str.indexOf('"gen_ai.request.model"')(text)),
 		)
 		expect(text).toContain('get_agent_session session_id="wrun_01KZEVAL"')
 	})
@@ -381,7 +381,7 @@ describe("search_logs entries", () => {
 		})
 		const text = markdown(result)
 		expect(text).toContain(`trace=${FIXTURES.traceId} span=${FIXTURES.spanId}`)
-		expect(text).toContain("log.error: ECONNRESET at pool.acquire")
+		expect(text).toContain('"log.error": "ECONNRESET at pool.acquire"')
 		expect(text).not.toContain("http.method")
 		expect(text).toContain(`inspect_trace trace_id="${FIXTURES.traceId}" timestamp="2026-06-02 10:00:00"`)
 	})

@@ -2,6 +2,8 @@ import { existsSync } from "node:fs"
 import { resolve } from "node:path"
 import * as AWS from "@alchemy.run/aws"
 import * as Output from "alchemy/Output"
+import * as Config from "effect/Config"
+import * as ConfigProvider from "effect/ConfigProvider"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import { ecsSecrets, pgUrlRequireSsl, resolveAwsRegion } from "@maple/infra/aws"
@@ -16,9 +18,10 @@ import {
 import { r2BucketCredentials } from "@maple/infra/r2-credentials"
 // Only the primitives: these values feed ECS `env:` and Secrets Manager, not Worker bindings.
 import { commitShaEnv, optionalPlain, requiredPlain } from "@maple/infra/env"
-import { resolveAs } from "@maple/infra/secret-guard"
+import { resolveAs, resolveDerived } from "@maple/infra/secret-guard"
+import { CH_PASSWORD_SLOT_KEYS_ENV, clickHousePasswordSlotKeys } from "@maple/infra/secret-slot-keys"
 import { createIngestCollector } from "./alchemy/collector.ts"
-import { ingestPgUrl, ingestSecrets } from "./alchemy/secrets.ts"
+import { ingestPgUrl, ingestSecrets, ingestSlotKeyMasters } from "./alchemy/secrets.ts"
 import { blockedIngestKeysEnv, blockIngestKeysAtEdge } from "./alchemy/edge-block.ts"
 import { gatewayTuningEnv } from "./alchemy/gateway-env.ts"
 
@@ -226,6 +229,10 @@ export const createMapleIngest = ({ stage, region, hostname, profile, dbLogin }:
 			securityGroupIds: [instanceSecurityGroup.groupId],
 			instanceProfileName: instanceProfile.instanceProfileName,
 			associatePublicIpAddress: true,
+			// IMDSv2 only: a forged request from inside the gateway (SSRF) cannot read the instance
+			// role, and hop limit 1 keeps it off any bridge-networked container. The gateway's own
+			// host lookup already uses the token flow (src/host_identity.rs).
+			metadataOptions: { httpTokens: "required", httpPutResponseHopLimit: 1, httpEndpoint: "enabled" },
 			userData: ec2UserData(clusterName, WAL_STORAGE[instanceType].disk),
 			tags,
 		})
@@ -279,10 +286,20 @@ export const createMapleIngest = ({ stage, region, hostname, profile, dbLogin }:
 			: yield* resolveAs("ingest", ingestPgUrl).pipe(
 					Effect.flatMap((url) => secret("maple-pg-url", url)),
 				)
-		const keyEncryptionKey = yield* secret("ingest-key-encryption-key", secrets.keyEncryptionKey)
-		const keyDecryptionKeys = Option.isSome(secrets.keyDecryptionKeys)
-			? yield* secret("ingest-key-decryption-keys", secrets.keyDecryptionKeys.value)
-			: undefined
+		// Only the subkeys for the one slot the gateway opens, derived here from the master keys.
+		const chPasswordSlotKeys = yield* resolveDerived(
+			"ingest",
+			ingestSlotKeyMasters,
+			clickHousePasswordSlotKeys,
+		).pipe(
+			// A malformed master key is bad config: fail the deploy as one.
+			Effect.catchTag("@maple/infra/SlotKeyDerivationError", (error) =>
+				Effect.fail(
+					new Config.ConfigError(new ConfigProvider.SourceError({ message: error.message })),
+				),
+			),
+			Effect.flatMap((derived) => secret("ingest-ch-password-slot-keys", derived.value)),
+		)
 		const keyLookupHmacKey = yield* secret("ingest-key-lookup-hmac-key", secrets.keyLookupHmacKey)
 		const autumnSecret = Option.isSome(secrets.autumnSecretKey)
 			? yield* secret("autumn-secret-key", secrets.autumnSecretKey.value)
@@ -459,10 +476,7 @@ export const createMapleIngest = ({ stage, region, hostname, profile, dbLogin }:
 			secrets: {
 				TINYBIRD_TOKEN: tinybirdToken.secretArn,
 				MAPLE_PG_URL: pgUrl.secretArn,
-				MAPLE_INGEST_KEY_ENCRYPTION_KEY: keyEncryptionKey.secretArn,
-				...(keyDecryptionKeys
-					? { MAPLE_INGEST_KEY_DECRYPTION_KEYS: keyDecryptionKeys.secretArn }
-					: undefined),
+				[CH_PASSWORD_SLOT_KEYS_ENV]: chPasswordSlotKeys.secretArn,
 				MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: keyLookupHmacKey.secretArn,
 				...(autumnSecret ? { AUTUMN_SECRET_KEY: autumnSecret.secretArn } : undefined),
 				...(replayR2Secret && replayR2AccessKeyId

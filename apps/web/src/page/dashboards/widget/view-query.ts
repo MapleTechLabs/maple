@@ -15,8 +15,9 @@ import type { EditorState } from "./editor-state"
 import { isNote, isProductEventsFunnel, queryCapabilitiesOf, validationErrorOf } from "./lowering"
 import { listPanel } from "./view-list"
 import { funnelPanel, pathsPanel } from "./view-panels"
-import { autoIntervalLabel, isSqlSource, showsSourceToggle } from "./update"
+import { autoIntervalLabel, isPromqlSource, isSqlSource, showsSourceToggle } from "./update"
 import { rawSqlEditor } from "./view-sql"
+import { promqlEditor } from "./view-promql"
 import { Message } from "./message"
 import { metricKeysOf } from "../../kit/query-builder/where-values"
 import { baseValuesOf } from "./where-inputs"
@@ -109,7 +110,7 @@ const sourceToggle = (h: H, model: Model): Html =>
 			slotId: "widget-editor-source",
 			model: model.sourceTabs,
 			view: TabsView.view,
-			viewInputs: { labels: ["Query builder", "Raw SQL"], panel: () => undefined },
+			viewInputs: { labels: ["Query builder", "Raw SQL", "PromQL"], panel: () => undefined },
 			toParentMessage: (message) => Message.GotSourceTabsMessage({ message }),
 		}),
 	])
@@ -161,22 +162,24 @@ export const queryEditor = (h: H, model: Model, timeZone: string): Html => {
 			...(showsSourceToggle(state) ? [sourceToggle(h, model)] : []),
 			...(isNoteEditor
 				? [markdownEditor(h, state.markdownContent)]
-				: isSqlSource(model) && model.rawSql !== null
-					? rawSqlEditor(h, model, model.rawSql)
-					: [
-							...(error === null
-								? []
-								: [fieldErrorText(h, { className: "font-medium" }, error)]),
-							...(panel === "list"
-								? listPanel(h, model, state)
-								: panel === "paths"
-									? pathsPanel(h, model, state)
-									: isProductEventsFunnel(state)
-										? funnelPanel(h, model, state)
-										: state.queryFixed
-											? [fixedQueryNote(h), runPreviewButton(h, false)]
-											: queryPanels(h, model, state, timeZone)),
-						]),
+				: isPromqlSource(model) && model.promql !== null
+					? promqlEditor(h, model, model.promql)
+					: isSqlSource(model) && model.rawSql !== null
+						? rawSqlEditor(h, model, model.rawSql)
+						: [
+								...(error === null
+									? []
+									: [fieldErrorText(h, { className: "font-medium" }, error)]),
+								...(panel === "list"
+									? listPanel(h, model, state)
+									: panel === "paths"
+										? pathsPanel(h, model, state)
+										: isProductEventsFunnel(state)
+											? funnelPanel(h, model, state)
+											: state.queryFixed
+												? [fixedQueryNote(h), runPreviewButton(h, false)]
+												: queryPanels(h, model, state, timeZone)),
+							]),
 		],
 	)
 }

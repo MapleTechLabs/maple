@@ -353,6 +353,32 @@ export const V2DashboardPersesImportResponse = Schema.Struct({
 	warnings: Schema.Array(Schema.String),
 }).annotate({ identifier: "DashboardPersesImport", title: "Perses dashboard import" })
 
+export const V2DashboardGrafanaImportParams = Schema.Struct({
+	dashboard: Schema.Record(Schema.String, Schema.Unknown),
+}).annotate({
+	identifier: "DashboardGrafanaImportParams",
+	title: "Grafana import parameters",
+	description:
+		"A Grafana dashboard JSON: the bare dashboard, the `{ dashboard, meta }` API envelope, or an export for sharing.",
+})
+
+export const V2DashboardGrafanaImportStats = Schema.Struct({
+	panels: Schema.Number,
+	converted: Schema.Number,
+	placeholders: Schema.Number,
+}).annotate({
+	identifier: "DashboardGrafanaImportStats",
+	title: "Grafana import stats",
+	description: "Panels read (rows excluded), panels that became working widgets, and panels kept as notes.",
+})
+
+export const V2DashboardGrafanaImportResponse = Schema.Struct({
+	object: Schema.Literal("dashboard_import"),
+	dashboard: V2DashboardMutation,
+	warnings: Schema.Array(Schema.String),
+	stats: V2DashboardGrafanaImportStats,
+}).annotate({ identifier: "DashboardGrafanaImport", title: "Grafana dashboard import" })
+
 /**
  * A dashboard's share link, as its owner sees it.
  *
@@ -554,6 +580,22 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 					summary: "Import a Perses dashboard",
 					description:
 						"Converts a Perses dashboard into Maple's dashboard model and returns any conversion warnings.",
+				}),
+			),
+	)
+	.add(
+		HttpApiEndpoint.post("importGrafana", "/import/grafana", {
+			payload: V2DashboardGrafanaImportParams,
+			success: V2DashboardGrafanaImportResponse,
+			error: dashboardCreateErrors,
+		})
+			.annotate(AnalystAccess, "author")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "importGrafanaDashboard",
+					summary: "Import a Grafana dashboard",
+					description:
+						"Converts a Grafana dashboard into Maple's dashboard model: rows become sections, Prometheus targets PromQL widgets, and panels Maple cannot run notes. Returns the warnings and how many panels converted.",
 				}),
 			),
 	)

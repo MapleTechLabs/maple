@@ -6,7 +6,12 @@ import {
 	type DashboardWidgetSchema,
 	type PanelType,
 } from "@maple/domain/http"
-import { dataSourceQuerySet, dataSourceRawSql, dataSourceTransform } from "@maple/widgets/dashboard"
+import {
+	dataSourcePromql,
+	dataSourceQuerySet,
+	dataSourceRawSql,
+	dataSourceTransform,
+} from "@maple/widgets/dashboard"
 import { FUNNEL_MAX_STEPS, PATHS_MAX_BRANCHES, PATHS_MAX_DEPTH } from "@maple/query-model"
 import { isGroupByRequested } from "./inspect-widget"
 import { stringifyJson } from "./json"
@@ -109,6 +114,29 @@ export const validateWidgetRenderability = (input: ValidateWidgetRenderabilityIn
 		fatal.push(
 			'`panel_type: "list"` has no raw-SQL rendering — a list is configured by its `display_json.listDataSource`, not by SQL. For tabular SQL results use `panel_type: "table"`.',
 		)
+	}
+
+	const promql = dataSourcePromql(widget.dataSource)
+	if (promql !== null) {
+		if (Str.trim(promql.query) === "") fatal.push('A `kind: "promql"` data source needs a `query`.')
+		if (panelType === "list") {
+			fatal.push(
+				'`panel_type: "list"` cannot draw PromQL. Use `panel_type: "table"` for one row per series.',
+			)
+		}
+		const expected = meta.rawSqlDisplayType
+		// An absent displayType shapes rows for a line chart, so it is checked as "line".
+		const rowsFor = promql.displayType ?? "line"
+		if (expected !== undefined && rowsFor !== expected) {
+			warnings.push(
+				`The PromQL \`displayType\` is \`${promql.displayType ?? "unset (line)"}\` but a \`${panelType}\` panel draws \`${expected}\` rows; set \`displayType: "${expected}"\`.`,
+			)
+		}
+		if (meta.isScalar && transform?.reduceToValue === undefined) {
+			fatal.push(
+				`\`panel_type: "${panelType}"\` needs \`transform: { "reduceToValue": { "field": "value", "aggregate": "first" } }\` on a PromQL source (\`first\` is the newest point).`,
+			)
+		}
 	}
 
 	// A scalar tile reads `data[0].value`; without the reduction it receives a row
