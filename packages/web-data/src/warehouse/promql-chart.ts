@@ -16,7 +16,9 @@ const GetPromqlChartInputSchema = Schema.Struct({
 	legendFormat: Schema.optional(Schema.String.check(Schema.isMaxLength(MAX_PROMQL_LEGEND_LENGTH))),
 	minStepSeconds: Schema.optional(Schema.Number.check(Schema.isFinite(), Schema.isGreaterThan(0))),
 	maxDataPoints: Schema.optional(Schema.Number.check(Schema.isFinite(), Schema.isGreaterThan(0))),
-	displayType: Schema.optional(RawSqlDisplayType),
+	// Stored PromQL sources type it as any string; one this host cannot draw falls back to table rows,
+	// as `raw-sql-chart.ts` does, instead of failing the whole tile.
+	displayType: Schema.optional(Schema.String),
 })
 
 export type GetPromqlChartInput = Schema.Schema.Type<typeof GetPromqlChartInputSchema>
@@ -27,6 +29,7 @@ export const getPromqlChart = Effect.fn("QueryEngine.getPromqlChart")(function* 
 	data: GetPromqlChartInput
 }) {
 	const input = yield* decodeInput(GetPromqlChartInputSchema, data, "getPromqlChart")
+	const displayType = Schema.is(RawSqlDisplayType)(input.displayType) ? input.displayType : undefined
 
 	const result = yield* runWarehouseQuery("promqlChart", () =>
 		Effect.gen(function* () {
@@ -43,7 +46,7 @@ export const getPromqlChart = Effect.fn("QueryEngine.getPromqlChart")(function* 
 					...(input.maxDataPoints === undefined
 						? undefined
 						: { maxDataPoints: input.maxDataPoints }),
-					...(input.displayType === undefined ? undefined : { displayType: input.displayType }),
+					...(displayType === undefined ? undefined : { displayType }),
 				}),
 			})
 		}),
