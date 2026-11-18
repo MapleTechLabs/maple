@@ -1,0 +1,212 @@
+// PromQL over Maple's metric tables.
+//
+// The engine (`@maple/promql`) parses, plans and evaluates; this service is the
+// Maple source behind it: one catalog read resolves Prometheus names to stored
+// metrics, then every selector's warehouse queries run concurrently and the
+// evaluator recombines their pre-aggregated buckets.
+
+import { Context, Effect, Layer, Result, Schema, Array as Arr } from "effect"
+import {
+	DEFAULT_LIMITS,
+	evaluate,
+	MAX_POINTS_PER_SERIES,
+	type Expr,
+	parse,
+	planRequests,
+	type QueryParams,
+	resolutionError,
+	type QueryResult,
+	type SelectorData,
+	type SelectorRequest,
+	type VectorSelector,
+} from "@maple/promql"
+import { CH, formatWarehouseDateTime } from "@maple/query-engine"
+import {
+	buildSelectorQueries,
+	catalogFromRows,
+	catalogQuery,
+	toSelectorData,
+} from "@maple/query-engine/promql"
+import type { CatalogMetric } from "@maple/query-engine/promql"
+import type { TenantContext } from "@maple/domain/http"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+
+/** The query is not valid PromQL, or its parameters are out of range. Prometheus' `bad_data`. */
+export class PromqlBadQueryError extends Schema.TaggedError<PromqlBadQueryError>()(
+	"@maple/backend/promql/PromqlBadQueryError",
+	{ message: Schema.String, position: Schema.optionalKey(Schema.Number) },
+) {}
+
+/** The query is valid but cannot be evaluated: limits, many-to-many matching. Prometheus' `execution`. */
+export class PromqlExecutionError extends Schema.TaggedError<PromqlExecutionError>()(
+	"@maple/backend/promql/PromqlExecutionError",
+	{ message: Schema.String },
+) {}
+
+/** Prometheus' cap on whole steps in a range query; the engine's `resolutionError` enforces it. */
+export const MAX_STEPS = MAX_POINTS_PER_SERIES
+
+/** Selectors one query may read; each is at least one warehouse query. */
+const MAX_SELECTORS = 20
+
+const WAREHOUSE_CONCURRENCY = 4
+
+/** Stored metrics one selector may read; `{__name__=~".+"}` would otherwise read them all. */
+const MAX_METRICS_PER_SELECTOR = 100
+
+/** Catalog rows read to resolve names; one more comes back when the org has more. */
+const CATALOG_LIMIT = 50_000
+
+export interface PromqlQuery extends QueryParams {
+	readonly query: string
+}
+
+/** The epoch ms a JavaScript Date can hold, and so the warehouse time formatting. */
+const MAX_DATE_MS = 8.64e15
+
+const inDateRange = (ms: number): boolean => Number.isFinite(ms) && Math.abs(ms) <= MAX_DATE_MS
+
+const validate = (query: PromqlQuery): Effect.Effect<Expr, PromqlBadQueryError> =>
+	Effect.gen(function* () {
+		const { startMs, endMs, stepMs } = query
+		if (!inDateRange(startMs) || !inDateRange(endMs) || !Number.isFinite(stepMs)) {
+			return yield* new PromqlBadQueryError({
+				message: "timestamps and step must be finite and in range",
+			})
+		}
+		if (endMs < startMs) {
+			return yield* new PromqlBadQueryError({ message: "end timestamp must not be before start time" })
+		}
+		const parsed = parse(query.query)
+		if (Result.isFailure(parsed)) {
+			return yield* new PromqlBadQueryError({
+				message: parsed.failure.message,
+				position: parsed.failure.position,
+			})
+		}
+		return parsed.success
+	})
+
+const span = (requests: ReadonlyArray<SelectorRequest>) => ({
+	startMs: Math.min(...Arr.map(requests, (r) => r.startMs)),
+	endMs: Math.max(...Arr.map(requests, (r) => r.endMs)),
+})
+
+const make = Effect.gen(function* () {
+	const warehouse = yield* WarehouseQueryService
+
+	const readCatalog = Effect.fn("PromqlQueryService.readCatalog")(function* (
+		tenant: TenantContext,
+		window: { readonly startMs: number; readonly endMs: number },
+	) {
+		const compiled = CH.compile(catalogQuery(CATALOG_LIMIT + 1), {
+			orgId: tenant.orgId,
+			startTime: formatWarehouseDateTime(window.startMs),
+			endTime: formatWarehouseDateTime(window.endMs),
+		})
+		const rows = yield* warehouse.compiledQuery(tenant, compiled, {
+			profile: "discovery",
+			context: "promqlCatalog",
+		})
+		if (rows.length > CATALOG_LIMIT) {
+			// A cut catalog would silently drop names; refuse instead.
+			return yield* new PromqlExecutionError({
+				message: `this organization has more than ${CATALOG_LIMIT} metrics in the range; shorten the range`,
+			})
+		}
+		return catalogFromRows(rows)
+	})
+
+	const readSelector = Effect.fn("PromqlQueryService.readSelector")(function* (
+		tenant: TenantContext,
+		request: SelectorRequest,
+		catalog: ReadonlyArray<CatalogMetric>,
+	) {
+		const plans = buildSelectorQueries(request, catalog, {
+			orgId: tenant.orgId,
+			maxSeries: DEFAULT_LIMITS.maxSeries,
+		})
+		// A histogram's _bucket, _count and _sum are three plans over one stored metric.
+		const metrics = new Set(Arr.flatMap(plans, (plan) => [...plan.promNames.keys()])).size
+		if (metrics > MAX_METRICS_PER_SELECTOR) {
+			return yield* new PromqlExecutionError({
+				message: `a selector matches ${metrics} metrics, at most ${MAX_METRICS_PER_SELECTOR}; narrow its __name__ matcher`,
+			})
+		}
+		yield* Effect.annotateCurrentSpan({
+			"maple.promql.metric": request.metricName ?? "",
+			"maple.promql.bucket_ms": request.widthMs,
+			"maple.promql.queries": plans.length,
+		})
+		const results = yield* Effect.forEach(
+			plans,
+			(plan) =>
+				Effect.map(
+					warehouse.compiledQuery(tenant, plan.compiled, {
+						profile: "aggregation",
+						context: "promqlSelector",
+					}),
+					(rows) => ({ plan, rows }),
+				),
+			{ concurrency: WAREHOUSE_CONCURRENCY },
+		)
+		// A query that hit its LIMIT was cut, maybe before the regex `le` check after it; refuse a partial answer.
+		if (Arr.some(results, ({ rows }) => rows.length > DEFAULT_LIMITS.maxSeries)) {
+			return yield* new PromqlExecutionError({
+				message: `query selects more than ${DEFAULT_LIMITS.maxSeries} series; narrow the selector`,
+			})
+		}
+		return toSelectorData(request, results)
+	})
+
+	const query = Effect.fn("PromqlQueryService.query")(function* (
+		tenant: TenantContext,
+		input: PromqlQuery,
+	) {
+		yield* Effect.annotateCurrentSpan({
+			"maple.promql.query_length": input.query.length,
+			"maple.promql.range_ms": input.endMs - input.startMs,
+			"maple.promql.step_ms": input.stepMs,
+		})
+		const expr = yield* validate(input)
+		const resolution = resolutionError(expr, input)
+		if (resolution !== undefined) return yield* new PromqlBadQueryError({ message: resolution })
+		const plan = planRequests(expr, input)
+		const entries = [...plan.entries()]
+		if (entries.length > MAX_SELECTORS) {
+			return yield* new PromqlBadQueryError({
+				message: `query reads more than ${MAX_SELECTORS} selectors`,
+			})
+		}
+		const window = span(Arr.map(entries, ([, request]) => request))
+		// `@` and `offset` move reads past the request's own range.
+		if (entries.length > 0 && !(inDateRange(window.startMs) && inDateRange(window.endMs))) {
+			return yield* new PromqlBadQueryError({
+				message: "query reads samples outside the supported time range",
+			})
+		}
+		const catalog = entries.length === 0 ? [] : yield* readCatalog(tenant, window)
+		const read = yield* Effect.forEach(
+			entries,
+			([selector, request]) =>
+				Effect.map(
+					readSelector(tenant, request, catalog),
+					(selectorData): readonly [VectorSelector, SelectorData] => [selector, selectorData],
+				),
+			{ concurrency: WAREHOUSE_CONCURRENCY },
+		)
+		const result = evaluate({ expr, params: input, data: new Map(read) })
+		if (Result.isFailure(result))
+			return yield* new PromqlExecutionError({ message: result.failure.message })
+		return result.success satisfies QueryResult
+	})
+
+	return { query }
+})
+
+export class PromqlQueryService extends Context.Service<PromqlQueryService>()(
+	"@maple/backend/services/PromqlQueryService",
+	{ make },
+) {
+	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(WarehouseQueryService.layer))
+}
