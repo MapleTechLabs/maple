@@ -381,7 +381,7 @@ describe("search_logs entries", () => {
 		})
 		const text = markdown(result)
 		expect(text).toContain(`trace=${FIXTURES.traceId} span=${FIXTURES.spanId}`)
-		expect(text).toContain("log.error: ECONNRESET at pool.acquire")
+		expect(text).toContain('log.error: "ECONNRESET at pool.acquire"')
 		expect(text).not.toContain("http.method")
 		expect(text).toContain(`inspect_trace trace_id="${FIXTURES.traceId}" timestamp="2026-06-02 10:00:00"`)
 	})
