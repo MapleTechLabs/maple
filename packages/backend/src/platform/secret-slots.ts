@@ -4,7 +4,13 @@
  * A slot's `binding` must be known before the row is written and must not change for the life
  * of the row. Tables written with `ON CONFLICT DO UPDATE` keep their original `id`, so those
  * bind to the conflict target (org, provider, ...) instead of the id.
+ *
+ * A slot whose value Maple sends somewhere also names that `destination`, the host it goes to.
+ * Derive it from stored columns only, the same way forever: a change stops old values opening.
  */
+import { secretDestination, type DataSourceConfig } from "@maple/domain/data-sources"
+import type { UptimeMonitorConfig } from "@maple/domain/uptime"
+import { Array as Arr } from "effect"
 import type { SecretSlot } from "./SecretBox"
 
 interface OrgRef {
@@ -17,6 +23,12 @@ interface OrgRowRef extends OrgRef {
 
 const orgBinding = (ref: OrgRef) => [ref.orgId]
 const orgRowBinding = (ref: OrgRowRef) => [ref.orgId, ref.id]
+
+/** Scheme, host and port; the raw text when it is not a URL (a typo, a `{{variable}}`). */
+const urlHost = (raw: string): string => {
+	const url = URL.canParse(raw) ? new URL(raw) : null
+	return url === null ? raw : `${url.protocol}//${url.host}`
+}
 
 export const alertDestinationSecretSlot: SecretSlot<OrgRowRef> = {
 	name: "alert_destinations.secret",
@@ -49,9 +61,14 @@ export const dashboardShareTokenSlot: SecretSlot<OrgRowRef> = {
 	binding: orgRowBinding,
 }
 
-export const externalDataSourceSecretSlot: SecretSlot<OrgRowRef> = {
+export interface ExternalDataSourceSecretRef extends OrgRowRef {
+	readonly config: DataSourceConfig
+}
+
+export const externalDataSourceSecretSlot: SecretSlot<ExternalDataSourceSecretRef> = {
 	name: "external_data_sources.secret",
 	binding: orgRowBinding,
+	destination: (ref) => [secretDestination(ref.config)],
 }
 
 export const gcpConnectorSecretSlot: SecretSlot<OrgRowRef> = {
@@ -75,9 +92,15 @@ export const oauthRefreshTokenSlot: SecretSlot<OAuthConnectionRef> = {
 	binding: oauthBinding,
 }
 
-export const clickHousePasswordSlot: SecretSlot<OrgRef> = {
+export interface ClickHousePasswordRef extends OrgRef {
+	readonly chUrl: string
+}
+
+/** The ingest gateway opens this one too, so the destination is `ch_url` exactly as stored. */
+export const clickHousePasswordSlot: SecretSlot<ClickHousePasswordRef> = {
 	name: "org_clickhouse_settings.ch_password",
 	binding: orgBinding,
+	destination: (ref) => [ref.chUrl],
 }
 
 export const ingestPrivateKeySlot: SecretSlot<OrgRef> = {
@@ -127,13 +150,47 @@ export const vercelTokenSlot: SecretSlot<OrgRef> = {
 	binding: orgBinding,
 }
 
-export const scrapeTargetCredentialsSlot: SecretSlot<OrgRowRef> = {
+export interface ScrapeTargetCredentialsRef extends OrgRowRef {
+	readonly url: string
+}
+
+export const scrapeTargetCredentialsSlot: SecretSlot<ScrapeTargetCredentialsRef> = {
 	name: "scrape_targets.auth_credentials",
 	binding: orgRowBinding,
+	destination: (ref) => [urlHost(ref.url)],
+}
+
+export interface UptimeMonitorHeadersRef extends OrgRowRef {
+	readonly config: UptimeMonitorConfig
+}
+
+/**
+ * Where a check sends its headers. An HTTP check: its host. A multi-step check: every step's
+ * whole URL and what it extracts, since a later step's host can be a variable an earlier step
+ * filled from its response.
+ */
+const uptimeDestination = (config: UptimeMonitorConfig): ReadonlyArray<string> => {
+	switch (config._tag) {
+		case "http":
+			return [urlHost(config.url)]
+		case "multistep":
+			return Arr.flatMap(config.steps, (step) => [
+				step.url,
+				String(step.extract.length),
+				...Arr.flatMap(step.extract, (extraction) => [
+					extraction.name,
+					extraction.from._tag,
+					extraction.from._tag === "json_path" ? extraction.from.path : extraction.from.name,
+				]),
+			])
+		default:
+			return []
+	}
 }
 
 /** An HTTP or multi-step check's request headers and bodies, as one JSON document. */
-export const uptimeMonitorHeadersSlot: SecretSlot<OrgRowRef> = {
+export const uptimeMonitorHeadersSlot: SecretSlot<UptimeMonitorHeadersRef> = {
 	name: "uptime_monitors.headers",
 	binding: orgRowBinding,
+	destination: (ref) => uptimeDestination(ref.config),
 }

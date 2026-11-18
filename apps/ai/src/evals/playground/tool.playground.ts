@@ -30,11 +30,11 @@ import {
 } from "@/mcp/__evals__/ds-world/runtime"
 import { providerFixtureRules } from "@/mcp/__evals__/provider-world"
 import { securityCatalogFetch, securityFixtureRules, seedSecurityWorld } from "@/mcp/__evals__/security-world"
-import { inputSchemaOf, mapleToolCatalog } from "@/mcp/tools/registry"
+import { inputSchemaOf, mapleToolCatalogFor } from "@/mcp/tools/registry"
 
 const env = process.env
 const out = env.PLAYGROUND_OUT ?? "/tmp/maple-tool-playground.txt"
-const publicTools = Arr.filter(mapleToolCatalog, (entry) => entry.audience === "public")
+const publicTools = mapleToolCatalogFor("mcp")
 
 let rt: EvalRuntime | undefined
 beforeAll(async () => {

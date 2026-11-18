@@ -41,6 +41,9 @@ describe("audit action labels", () => {
 describe("access actions", () => {
 	it("counts reading a key as access and replacing it as a change", () => {
 		expect(isAuditAccessAction("aws_connection.events_key_read")).toBe(true)
+		expect(isAuditAccessAction("aws_connection.stream_key_read")).toBe(true)
+		expect(isAuditAccessAction("gcp_connector.push_secret_read")).toBe(true)
+		expect(isAuditAccessAction("planetscale_integration.webhook_secret_read")).toBe(true)
 		expect(isAuditAccessAction("aws_connection.events_key_rotated")).toBe(false)
 		expect(isAuditAccessAction("aws_connection.updated")).toBe(false)
 	})
@@ -53,11 +56,13 @@ describe("names for Maple's own agents and codes", () => {
 		expect(auditToolCallerLabel("chat", null)).toBe("Maple agent")
 		expect(auditToolCallerLabel("chat", "toString")).toBe("Maple agent")
 		expect(auditToolCallerLabel("bot", null)).toBe("Maple bot")
+		expect(auditToolCallerLabel("bot_anonymous", null)).toBe("Maple bot")
 		expect(auditToolCallerLabel("mcp", null)).toBe("MCP tool")
 	})
 
 	it("puts internal metadata codes in words and leaves everything else as recorded", () => {
 		expect(auditMetadataValueLabel("surface", "chat")).toBe("Maple agent")
+		expect(auditMetadataValueLabel("surface", "bot_anonymous")).toBe("Maple bot")
 		expect(auditMetadataValueLabel("agent", "pr-review")).toBe("Maple code review")
 		expect(auditMetadataValueLabel("context", "mcp.run_sql")).toBe("run_sql tool")
 		expect(auditMetadataValueLabel("context", "somethingNew")).toBeNull()

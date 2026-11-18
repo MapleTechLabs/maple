@@ -185,7 +185,7 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		input.toolExecutor,
 		input.tenant,
 		profile.ruleset,
-		profile.surface,
+		profile.toolSurface,
 		sessionAttributes,
 		review?.coverage.observe,
 		(toolCallId, ui, call) =>

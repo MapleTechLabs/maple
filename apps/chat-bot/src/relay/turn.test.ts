@@ -418,8 +418,8 @@ describe("relaying a mention", () => {
 			const turn = agent.turns[0]
 			assert.isDefined(turn)
 			expect(turn.sessionId).toBe(SESSION_ID)
-			// The org's own tenant, with no roles: a connector turn proposes mutations, it does not
-			// perform them.
+			// The org's own tenant, with no roles, and nobody named on the origin below: the agent
+			// answers this turn from a reduced read set and proposes nothing.
 			expect(turn.tenant).toMatchObject({ orgId: ORG, roles: [] })
 			// The agreed single protection: a `bot-` session is only ever driven with this origin.
 			expect(turn.origin).toEqual({
@@ -995,6 +995,8 @@ describe("relaying a message that mentioned nobody", () => {
 })
 
 const ADA = Schema.decodeSync(UserId)("user_ada")
+/** A connector that links accounts, and a clicker the host resolved to their Maple user. */
+const LINKED = { supportsIdentity: true, linkedUserId: ADA } as const
 const CALL_ID = "call_9"
 const CONTROL = chatActionControlId("approve", encodeChatActionToken(CALL_ID))
 
@@ -1127,7 +1129,7 @@ describe("settling an approval somebody clicked", () => {
 			const agent = session([], {
 				transcript: decidedTranscript("Declined by Ada. The tool did not run.", true),
 			})
-			const deployment = host(platform.outbound, agent.stub)
+			const deployment = host(platform.outbound, agent.stub, LINKED)
 
 			yield* relayInboundEvent(
 				click({
@@ -1176,17 +1178,56 @@ describe("settling an approval somebody clicked", () => {
 		}),
 	)
 
-	it.effect("lets anyone in the conversation decide when the connector cannot identify them", () =>
+	it.effect("changes nothing for a click on a connector that cannot say who clicked", () =>
 		Effect.gen(function* () {
 			const platform = chat()
 			const agent = session([], { transcript: decidedTranscript("Approved by Ada.\nDone.") })
 			const deployment = host(platform.outbound, agent.stub, { supportsIdentity: false })
 
-			yield* relayInboundEvent(click(), deployment.ports)
+			const reason = yield* refusalReason(relayInboundEvent(click(), deployment.ports))
 
-			// Settled, and with no acting user — the apply runs as the org-level connector identity.
-			expect(agent.settlements).toHaveLength(1)
-			expect(agent.settlements[0]).not.toHaveProperty("actingUserId")
+			// Nothing reaches the session, so nothing is applied and the card is left as it was.
+			expect(reason).toEqual(Option.some("unlinked"))
+			expect(agent.settlements).toEqual([])
+			// Only the clicker is told, and sent to where a change is made.
+			expect(Arr.map(platform.calls, (call) => call.verb)).toEqual(["whisper"])
+			expect(notices(blocksOf(platform.calls))).toEqual([
+				"Maple can't tell which Maple user you are from here, so it changes nothing. Make this change in the Maple app.",
+			])
+		}),
+	)
+
+	it.effect("declines nothing for that click either: a denial needs a Maple user too", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const agent = session([])
+			const deployment = host(platform.outbound, agent.stub, { supportsIdentity: false })
+
+			yield* relayInboundEvent(
+				click({ actionToken: chatActionControlId("deny", encodeChatActionToken(CALL_ID)) }),
+				deployment.ports,
+			)
+
+			expect(agent.settlements).toEqual([])
+			expect(Arr.map(platform.calls, (call) => call.verb)).toEqual(["whisper"])
+		}),
+	)
+
+	it.effect("refuses a click while the workspace has the assistant switched off", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const agent = session([], { transcript: decidedTranscript("Approved by Ada.\nDone.") })
+			// A linked clicker who could otherwise approve: the switch is above the link.
+			const deployment = host(platform.outbound, agent.stub, { ...LINKED, assistantOff: true })
+
+			const reason = yield* refusalReason(relayInboundEvent(click(), deployment.ports))
+
+			expect(reason).toEqual(Option.some("assistant_off"))
+			expect(agent.settlements).toEqual([])
+			expect(Arr.map(platform.calls, (call) => call.verb)).toEqual(["whisper"])
+			expect(notices(blocksOf(platform.calls))).toEqual([
+				"Maple's assistant is switched off for this workspace, so it changes nothing from here. Make this change in the Maple app.",
+			])
 		}),
 	)
 
@@ -1208,7 +1249,7 @@ describe("settling an approval somebody clicked", () => {
 		Effect.gen(function* () {
 			const platform = chat()
 			const agent = session([])
-			const deployment = host(platform.outbound, agent.stub)
+			const deployment = host(platform.outbound, agent.stub, LINKED)
 
 			// A control is forgeable by design and names only a call, so the session is rebuilt from
 			// the workspace's org and the clicked conversation. A proposal raised elsewhere is not in
@@ -1292,7 +1333,7 @@ describe("settling an approval somebody clicked", () => {
 						),
 				})),
 			}
-			const deployment = host(refusing, agent.stub)
+			const deployment = host(refusing, agent.stub, LINKED)
 
 			yield* relayInboundEvent(click(), deployment.ports).pipe(
 				Effect.provideContext(
@@ -1324,7 +1365,7 @@ describe("settling an approval somebody clicked", () => {
 				settles: "settled",
 				transcript: decidedTranscript("Approved by Ada.\nDone."),
 			})
-			const deployment = host(platform.outbound, agent.stub)
+			const deployment = host(platform.outbound, agent.stub, LINKED)
 
 			yield* relayInboundEvent(click(), deployment.ports)
 
@@ -1344,7 +1385,7 @@ describe("settling an approval somebody clicked", () => {
 		Effect.gen(function* () {
 			const platform = chat()
 			const agent = session([], { settles: "unknown" })
-			const deployment = host(platform.outbound, agent.stub)
+			const deployment = host(platform.outbound, agent.stub, LINKED)
 
 			yield* relayInboundEvent(click(), deployment.ports)
 
@@ -1358,10 +1399,11 @@ describe("settling an approval somebody clicked", () => {
 		Effect.gen(function* () {
 			const platform = chat()
 			const agent = session([])
-			const deployment = host(platform.outbound, {
-				...agent.stub,
-				settleProposal: () => Promise.reject(new Error("no such object")),
-			})
+			const deployment = host(
+				platform.outbound,
+				{ ...agent.stub, settleProposal: () => Promise.reject(new Error("no such object")) },
+				LINKED,
+			)
 
 			yield* relayInboundEvent(click(), deployment.ports)
 
@@ -1659,7 +1701,7 @@ describe("reading the workspace row", () => {
 					return options?.linked === false
 						? Option.none()
 						: Option.some({
-								relay: { orgId: ORG, assistantEnabled: true },
+								relay: { orgId: ORG, assistantEnabled: true, linkedUserId: ADA },
 								credentials: "sealed",
 							})
 				}),

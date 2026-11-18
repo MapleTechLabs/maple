@@ -66,6 +66,7 @@ export class TargetFetcher extends Context.Service<TargetFetcher, TargetFetcherA
 			// `server.address` + `url.path`, never `url.full`: PlanetScale authenticates
 			// its metrics data plane with `?sig=&exp=` query params, i.e. credentials.
 			// `pathname` drops the query, so the signed URL cannot leak into telemetry.
+			// A user-entered target keeps only its host: its path may itself be a token.
 			//
 			// `peer.service` is deliberately low-cardinality (one per managed provider plus
 			// `scrape-target`, never per target): a per-target name would fragment the
@@ -81,8 +82,9 @@ export class TargetFetcher extends Context.Service<TargetFetcher, TargetFetcherA
 						"peer.service": peerServiceOf(target.targetType),
 						"http.request.method": "GET",
 						"maple.scrape.target_type": target.targetType,
-						...(Option.isSome(parsed)
-							? { "server.address": parsed.value.host, "url.path": parsed.value.pathname }
+						...(Option.isSome(parsed) ? { "server.address": parsed.value.host } : undefined),
+						...(Option.isSome(parsed) && target.targetType !== "prometheus"
+							? { "url.path": parsed.value.pathname }
 							: undefined),
 					})
 

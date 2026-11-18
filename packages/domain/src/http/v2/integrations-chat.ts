@@ -393,7 +393,7 @@ export class V2ChatIntegrationsApiGroup extends HttpApiGroup.make("chatIntegrati
 				identifier: "installChatConnector",
 				summary: "Begin linking a chat workspace",
 				description:
-					"Returns the chat platform's authorization URL to redirect the user to. Running it again links an additional workspace; it does not replace the existing ones. Requires an org-admin role and the `integrations:write` scope.",
+					"Returns the chat platform's authorization URL to redirect the user to. Running it again links an additional workspace; it does not replace the existing ones. The install is bound to the person who starts it, so this takes a signed-in session and refuses an API key. Requires an org-admin or engineer role.",
 			}),
 		),
 	)
@@ -446,7 +446,7 @@ export class V2ChatIntegrationsApiGroup extends HttpApiGroup.make("chatIntegrati
 				identifier: "updateChatWorkspace",
 				summary: "Update a chat workspace",
 				description:
-					"Replaces a linked workspace's connector-defined settings, and turns its features (alert posts, direct-message pages, the bot's answers) on or off. Requires an org-admin role and the `integrations:write` scope.",
+					"Replaces a linked workspace's connector-defined settings, and turns its features (alert posts, direct-message pages, the bot's answers) on or off. Requires an org-admin or engineer role and the `integrations:write` scope.",
 			}),
 		),
 	)
@@ -467,7 +467,7 @@ export class V2ChatIntegrationsApiGroup extends HttpApiGroup.make("chatIntegrati
 				identifier: "listChatWorkspaceDestinations",
 				summary: "List a chat workspace's alert destinations",
 				description:
-					"Lists the channels in a linked workspace that Maple can post an alert to, read live from the chat platform. A workspace whose install predates channel access answers `integration_not_connected`: reinstall the app to grant it. Requires an org-admin role and the `integrations:read` scope.",
+					"Lists the channels in a linked workspace that Maple can post an alert to, read live from the chat platform. A workspace whose install predates channel access answers `integration_not_connected`: reinstall the app to grant it. Requires an org-admin or engineer role and the `integrations:read` scope.",
 			}),
 		),
 	)
@@ -481,7 +481,7 @@ export class V2ChatIntegrationsApiGroup extends HttpApiGroup.make("chatIntegrati
 				identifier: "deleteChatWorkspace",
 				summary: "Unlink a chat workspace",
 				description:
-					"Unlinks a chat workspace from your organization. Removing the bot from the workspace itself is done on the chat platform. Requires an org-admin role and the `integrations:write` scope.",
+					"Unlinks a chat workspace from your organization. Removing the bot from the workspace itself is done on the chat platform. Requires an org-admin or engineer role and the `integrations:write` scope.",
 			}),
 		),
 	)

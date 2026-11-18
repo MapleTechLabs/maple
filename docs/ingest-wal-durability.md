@@ -9,6 +9,20 @@ destroyed with the task.
 
 This is how it stays durable.
 
+```mermaid
+flowchart TD
+    accTitle: Ingest WAL write, export and recovery
+    accDescr: Ingest acknowledges the request after a disk sync. Export and sealed segment backups run in the background.
+    Decode["Decode OTLP and apply ingest rules"] --> Append["Append native rows to the active WAL segment"]
+    Append --> Sync["Sync the appended bytes to disk"]
+    Sync --> Ack["Acknowledge the request"]
+    Sync --> Export["Export committed frames in the background"]
+    Export --> Warehouse["Tinybird or ClickHouse"]
+    Sync --> Seal["Seal the segment on rotation or shutdown"]
+    Seal -->|"If the exporter hasn't passed it"| Ship["Ship the sealed segment to S3"]
+    Ship -->|"A new task claims the backlog"| Recover["Re-commit and re-ship before deleting the source object"]
+```
+
 ## Ingest rules
 
 Customer drop and redact rules ([ingest-rules.md](ingest-rules.md)) run in

@@ -471,7 +471,7 @@ export class ExternalDataSourceService extends Context.Service<
 			const secret = yield* openSecret(
 				keyring,
 				externalDataSourceSecretSlot,
-				{ orgId: row.orgId, id: row.id },
+				{ orgId: row.orgId, id: row.id, config: row.config },
 				{ ciphertext: row.secretCiphertext, iv: row.secretIv, tag: row.secretTag },
 				persistenceError,
 			)
@@ -762,7 +762,7 @@ export class ExternalDataSourceService extends Context.Service<
 					: yield* sealSecret(
 							keyring,
 							externalDataSourceSecretSlot,
-							{ orgId, id },
+							{ orgId, id, config: validated.config },
 							validated.secret,
 							persistenceError,
 						)
@@ -862,7 +862,7 @@ export class ExternalDataSourceService extends Context.Service<
 						: yield* sealSecret(
 								keyring,
 								externalDataSourceSecretSlot,
-								{ orgId: row.orgId, id: row.id },
+								{ orgId: row.orgId, id: row.id, config: validated.config },
 								validated.secret,
 								persistenceError,
 							)

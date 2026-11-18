@@ -127,7 +127,7 @@ import { registerSandboxTools } from "./sandbox"
 import { registerPullRequestTools } from "./pull-request"
 import { registerUpdateDashboardTool } from "./update-dashboard"
 import { registerUpdateDashboardWidgetTool } from "./update-dashboard-widget"
-import { audienceAdmits } from "./types"
+import { surfaceAdmits } from "./types"
 import {
 	collectToolDefinitions,
 	executeRegisteredTool,
@@ -325,7 +325,7 @@ export const mapleToolPhrase = (name: string): string | undefined => {
 
 /** The catalog as one surface sees it. What a surface cannot see, it cannot call either. */
 export const mapleToolCatalogFor = (surface: McpToolSurface): ReadonlyArray<MapleToolCatalogEntry> =>
-	Arr.filter(mapleToolCatalog, (definition) => audienceAdmits(definition.audience, surface))
+	Arr.filter(mapleToolCatalog, (definition) => surfaceAdmits(definition, surface))
 
 /** The whole registry as a lookup, for callers that already hold it. */
 const registryLookup: McpToolLookup = {

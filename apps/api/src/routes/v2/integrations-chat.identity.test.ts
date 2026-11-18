@@ -1,22 +1,18 @@
 /**
- * Linking a chat account takes a personal credential.
- *
- * `CurrentTenant.userId` is "whoever is calling" only under a signed-in session. Under an API key
- * it is the human who CREATED the key, so without this guard a key scoped to `integrations:write`
- * could bind an attacker's chat account to that human — and every approval from it would then run
- * with their roles, through the Durable Object, where the key's scopes are never consulted.
- * Revoking the key would not undo it.
+ * A personal action takes a personal credential: linking a chat account, and starting an install
+ * or a connection, are bound to `CurrentTenant.userId`, which is the caller only under a signed-in
+ * session. Under an API key it is the member who created the key.
  */
 import { assert, describe, it } from "@effect/vitest"
 import { Effect } from "effect"
 import type { AuditActorInfo } from "@maple/backend/services/auth/audit-actor"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
-import { requirePerson } from "./integrations-chat.http"
+import { requirePerson } from "./require-person"
 
 const asActor = (info: AuditActorInfo | undefined) =>
 	requirePerson.pipe(Effect.provideService(CurrentAuditActor, info), Effect.exit)
 
-describe("who may link a chat account", () => {
+describe("who may take a personal action", () => {
 	it.effect("lets a signed-in person through", () =>
 		Effect.gen(function* () {
 			const result = yield* asActor({ type: "user", source: "dashboard" })
@@ -28,6 +24,13 @@ describe("who may link a chat account", () => {
 		Effect.gen(function* () {
 			// The key's creator is a real admin; that is exactly what makes this dangerous.
 			const result = yield* asActor({ type: "api_key", source: "api", label: "ci-deploy" })
+			assert.isTrue(result._tag === "Failure")
+		}),
+	)
+
+	it.effect("refuses a device credential, which is a user's but not a session", () =>
+		Effect.gen(function* () {
+			const result = yield* asActor({ type: "user", source: "api", label: "Device credential" })
 			assert.isTrue(result._tag === "Failure")
 		}),
 	)

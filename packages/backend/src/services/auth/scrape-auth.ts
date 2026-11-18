@@ -29,6 +29,8 @@ export const TokenCredentialsSchema = Schema.Struct({
 export interface ScrapeAuthRowLike {
 	readonly id: string
 	readonly orgId: string
+	/** The URL the headers are sent to; the credentials only open for its host. */
+	readonly url: string
 	readonly authType: string
 	readonly authCredentialsCiphertext: string | null
 	readonly authCredentialsIv: string | null
@@ -59,7 +61,7 @@ export const buildScrapeAuthHeaders = Effect.fn("ScrapeAuth.buildScrapeAuthHeade
 	const credentialsJson = yield* openSecret(
 		keyring,
 		scrapeTargetCredentialsSlot,
-		{ orgId: row.orgId, id: row.id },
+		{ orgId: row.orgId, id: row.id, url: row.url },
 		{
 			ciphertext: row.authCredentialsCiphertext,
 			iv: row.authCredentialsIv,
