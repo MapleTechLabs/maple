@@ -648,6 +648,37 @@ describe("ClickHouse org scoping reads code, not comments or literals", () => {
 		}),
 	)
 
+	it.effect("finds an EXCEPT or INTERSECT however its SELECT is spaced or commented", () =>
+		Effect.gen(function* () {
+			const scoped = "SELECT 1 FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)"
+			const open = "SELECT 1 FROM logs WHERE $__timeFilter(Timestamp)"
+			for (const op of ["EXCEPT /*c*/ ", "EXCEPT -- c\n", "EXCEPT(", "EXCEPT ALL(", "INTERSECT DISTINCT /* x */ ("]) {
+				const close = Str.endsWith("(")(op) ? ")" : ""
+				expect(yield* importSql(`${scoped} ${op}${open}${close}`), op).toBeNull()
+			}
+			// Column exclusion is not a set operation.
+			expect(
+				yield* importSql("SELECT * EXCEPT (Body) FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)"),
+			).not.toBeNull()
+		}),
+	)
+
+	it.effect("leaves a join scoped only by one OrgId to its author", () =>
+		Effect.gen(function* () {
+			expect(
+				yield* importSql(
+					"SELECT x.* FROM traces t JOIN (SELECT * FROM logs) x ON 1 WHERE t.OrgId = 'a' AND $__timeFilter(t.Timestamp)",
+				),
+			).toBeNull()
+			// ARRAY JOIN unrolls the same rows, so the outer filter still covers them.
+			expect(
+				yield* importSql(
+					"SELECT tag FROM logs ARRAY JOIN Tags AS tag WHERE OrgId = 'a' AND $__timeFilter(Timestamp)",
+				),
+			).toBe("SELECT tag FROM logs ARRAY JOIN Tags AS tag WHERE (OrgId = 'a' AND $__timeFilter(Timestamp)) AND $__orgFilter")
+		}),
+	)
+
 	it.effect("does not read a column named like a clause as that clause", () =>
 		Effect.gen(function* () {
 			expect(
@@ -659,6 +690,21 @@ describe("ClickHouse org scoping reads code, not comments or literals", () => {
 				),
 			).toBe(
 				"SELECT count() FROM logs WHERE (OrgId = 1 AND limit IN (1, 2) AND $__timeFilter(Timestamp)) AND $__orgFilter LIMIT 5",
+			)
+			// Two-word clauses and a clause after a comment or a negated sort key stay clauses.
+			expect(
+				yield* importSql(
+					"SELECT SpanName FROM traces WHERE OrgId = 'a' AND $__timeFilter(Timestamp) ORDER BY -Duration LIMIT 5",
+				),
+			).toBe(
+				"SELECT SpanName FROM traces WHERE (OrgId = 'a' AND $__timeFilter(Timestamp)) AND $__orgFilter ORDER BY -Duration LIMIT 5",
+			)
+			expect(
+				yield* importSql(
+					"SELECT OrgId, count() FROM traces WHERE OrgId = 'a' AND $__timeFilter(Timestamp) GROUP BY /* k */ OrgId HAVING count() > 1",
+				),
+			).toBe(
+				"SELECT OrgId, count() FROM traces WHERE (OrgId = 'a' AND $__timeFilter(Timestamp)) AND $__orgFilter GROUP BY /* k */ OrgId HAVING count() > 1",
 			)
 		}),
 	)

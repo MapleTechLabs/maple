@@ -123,15 +123,19 @@ const topLevelIndex = (code: string, keyword: RegExp, from = 0): number | undefi
 // Every clause ClickHouse allows after WHERE; the org filter goes before the first of them.
 const TRAILING_CLAUSE = /GROUP\s+BY|HAVING|WINDOW|QUALIFY|ORDER\s+BY|LIMIT|OFFSET|FORMAT|SETTINGS/
 
-// What follows a column named like a clause (`format = 'json'`, `limit IN (1)`), never a clause.
-const COLUMN_FOLLOWER = /^\s*(?:[=<>!,)+\-*/%.:|]|(?:IN|IS|NOT|LIKE|ILIKE|BETWEEN|AND|OR|AS|GLOBAL)(?![A-Za-z0-9_]))/i
+// What follows a column named like a one-word clause (`format = 'json'`, `limit IN (1)`), never
+// the clause. A comment (`--`, `/*`) is not an operator.
+const COLUMN_FOLLOWER =
+	/^\s*(?:[=<>!,)+*%.:|]|-(?!-)|\/(?!\*)|(?:IN|IS|NOT|LIKE|ILIKE|BETWEEN|AND|OR|AS|GLOBAL)(?![A-Za-z0-9_]))/i
 
 /** The outer query's first trailing clause: after its FROM, and not a column that shares the name. */
 function trailingClauseIndex(code: string): number | undefined {
 	const fromAt = topLevelIndex(code, /FROM/) ?? 0
 	const clause = Arr.findFirst(
 		topLevelMatches(code, TRAILING_CLAUSE, fromAt),
-		([, end]) => !COLUMN_FOLLOWER.test(Str.slice(end)(code)),
+		// GROUP BY and ORDER BY are two words, so never a column name.
+		([start, end]) =>
+			/\s/.test(Str.slice(start, end)(code)) || !COLUMN_FOLLOWER.test(Str.slice(end)(code)),
 	)
 	return Option.getOrUndefined(Option.map(clause, ([start]) => start))
 }
@@ -160,9 +164,17 @@ function withOrgFilter(sql: string): string {
 	return `${Str.slice(0, predicateAt)(head)} (${predicate}${close} AND $__orgFilter${tail}`
 }
 
+// Whitespace and the (blanked) comments `codeOnly` leaves between two tokens.
+const GAP = String.raw`(?:\s|/\*\s*\*/|--[^\n]*(?:\n|$))*`
+
 // A UNION, INTERSECT or EXCEPT joins statements that each need their own scope. `SELECT * EXCEPT (col)`
 // is ClickHouse's column exclusion, not a set operation, so EXCEPT counts only before a SELECT.
-const SET_OPERATION = /UNION|INTERSECT|EXCEPT(?=\s+(?:ALL\s+|DISTINCT\s+)?\(?\s*SELECT)/
+const SET_OPERATION = new RegExp(
+	String.raw`UNION|INTERSECT|EXCEPT(?=${GAP}(?:(?:ALL|DISTINCT)(?![A-Za-z0-9_])${GAP})?\(?${GAP}SELECT(?![A-Za-z0-9_]))`,
+)
+
+// A table join; `ARRAY JOIN` unrolls a column of the same rows and reads no other table.
+const TABLE_JOIN = /(?<!ARRAY\s+(?:LEFT\s+)?)JOIN/
 
 /** The SELECTs a top-level set operation combines, as slices of `code`; one when there is none. */
 const combinedSelects = (code: string): string[] => {
@@ -204,6 +216,16 @@ export function normalizeClickHouseSql(sql: string, warnings: string[], panelTit
 		)
 		return {
 			placeholderReason: "This ClickHouse query needs $__orgFilter inside its subquery before it can run.",
+		}
+	}
+
+	// One OrgId predicate scopes one table; Maple's filter goes on the outer WHERE only.
+	if (!hasOrgFilter(code) && topLevelIndex(code, TABLE_JOIN) !== undefined) {
+		warnings.push(
+			`Panel "${panelTitle}" was imported as a placeholder because its ClickHouse query joins tables; add $__orgFilter for each of them.`,
+		)
+		return {
+			placeholderReason: "This ClickHouse query needs $__orgFilter for each table it joins before it can run.",
 		}
 	}
 
