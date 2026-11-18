@@ -246,6 +246,38 @@ describe("errorDetail", () => {
 		}),
 	)
 
+	it.effect("keeps each correlated log's cause attributes, and only those", () =>
+		Effect.gen(function* () {
+			const captured: CapturedCalls = { pipeCalls: [] }
+			const logs = [
+				{
+					timestamp: "2026-04-03 12:00:01",
+					severityText: "Error",
+					body: "request failed",
+					logAttributes: JSON.stringify({
+						"log.error": "pq: too many connections",
+						"http.route": "/api/org",
+					}),
+				},
+				{
+					timestamp: "2026-04-03 12:00:02",
+					severityText: "Info",
+					body: "retrying",
+					logAttributes: "{}",
+				},
+			]
+			const result = yield* errorDetail({ fingerprintHash: "123", timeRange }).pipe(
+				Effect.provide(
+					makeLayer(makeMockExecutor(captured, [traceRow("t1", "2026-04-03 12:00:00")], {}, logs)),
+				),
+			)
+			assert.deepStrictEqual(
+				Arr.map(Arr.getUnsafe(result.traces, 0).logs, (l) => l.keyAttributes),
+				[{ "log.error": "pq: too many connections" }, undefined],
+			)
+		}),
+	)
+
 	it.effect("names fingerprints that fire in the same traces", () =>
 		Effect.gen(function* () {
 			const captured: CapturedCalls = { pipeCalls: [] }

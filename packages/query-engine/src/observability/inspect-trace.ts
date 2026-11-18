@@ -15,6 +15,7 @@ import type { SpanHierarchyRow, ListLogsRow } from "../ch/pipe-rows"
 import { WarehouseExecutor, type WarehouseExecutorApi } from "./WarehouseExecutor"
 import type { InspectTraceOutput, SpanNode, TimeRange } from "./types"
 import { toLogEntry } from "./row-mappers"
+import { withKeyLogAttributes } from "./search-logs"
 import { parseProjectedAttributes } from "../row-text"
 import { TRACE_RETENTION_HOURS, locateTrace } from "./locate-trace"
 
@@ -239,6 +240,10 @@ export const inspectTrace = Effect.fn("Observability.inspectTrace")(function* (
 		rootDurationMs: roots[0]?.durationMs ?? 0,
 		spans: roots,
 		scanned,
-		logs: pipe(logsResult.data, Arr.take(20), Arr.map(toLogEntry)),
+		logs: pipe(
+			logsResult.data,
+			Arr.take(20),
+			Arr.map((row) => ({ ...toLogEntry(row), ...withKeyLogAttributes(row) })),
+		),
 	} satisfies InspectTraceOutput
 })
