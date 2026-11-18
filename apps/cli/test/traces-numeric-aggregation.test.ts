@@ -39,9 +39,11 @@ const seeds: ReadonlyArray<SpanSeed> = [
 	{ service: "llm-api", attributes: { "gen_ai.usage.cost": "1.5", "gen_ai.usage.output_tokens": "300" } },
 	// Sampled 1 in 2: stands for two spans in the sum, one value everywhere else.
 	{ service: "llm-api", attributes: { "gen_ai.usage.cost": "2", SampleRate: "2" } },
-	// No value, and a value that is not a number: counted spans, never values.
+	// No value, a value that is not a number, and non-finite ones: counted spans, never values.
 	{ service: "llm-api", attributes: {} },
 	{ service: "llm-api", attributes: { "gen_ai.usage.cost": "n/a" } },
+	{ service: "llm-api", attributes: { "gen_ai.usage.cost": "NaN" } },
+	{ service: "llm-api", attributes: { "gen_ai.usage.cost": "inf" } },
 	{ service: "batch", attributes: { "gen_ai.usage.cost": "10" } },
 	{ org: "org_other", service: "llm-api", attributes: { "gen_ai.usage.cost": "1000" } },
 ]

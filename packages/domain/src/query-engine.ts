@@ -172,7 +172,7 @@ export const TracesFilters = Schema.Struct({
 	excludedNamespaces: Schema.optional(Schema.Array(ServiceNamespace)),
 	excludedCommitShas: Schema.optional(Schema.Array(CommitSha)),
 	// The spec keeps `metric: "count"`; this replaces the charted value.
-	numericAggregation: Schema.optional(TracesNumericAggregation),
+	numericAggregation: Schema.optionalKey(TracesNumericAggregation),
 })
 export type TracesFilters = Schema.Schema.Type<typeof TracesFilters>
 

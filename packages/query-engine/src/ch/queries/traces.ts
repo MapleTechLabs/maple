@@ -156,7 +156,7 @@ function metricSelectExprs(
 /**
  * `fn` over a numeric span attribute. `toFloat64OrNull` turns a missing or
  * non-numeric value into NULL, which every aggregate skips, so avg/min and the
- * quantiles see only spans carrying a number. `sum` is sample-weighted like
+ * quantiles see only spans carrying a finite number. `sum` is sample-weighted like
  * `count` (see COUNT SEMANTICS). `valueCount` counts the spans that carried one,
  * so callers can tell "no values" from a real 0.
  */
@@ -165,10 +165,18 @@ function numericValueColumns(
 	aggregation: TracesNumericAggregation | undefined,
 ): { value?: CH.Expr<number>; valueCount?: CH.Expr<number> } {
 	if (aggregation === undefined) return {}
-	const numeric = CH.compileTypedFnCall(
+	const parsed = CH.compileTypedFnCall(
 		"toFloat64OrNull",
 		T.nullable(T.float64).schema,
 		$.SpanAttributes.get(aggregation.key),
+	)
+	// "NaN" and "inf" parse; read them as no value so one cannot poison a bucket.
+	const numeric = CH.compileTypedFnCall(
+		"if",
+		T.nullable(T.float64).schema,
+		CH.compileFnCallCond("isFinite", parsed),
+		parsed,
+		CH.rawExpr("NULL", T.nullable(T.float64)),
 	)
 	return {
 		value: CH.ifNull(aggregateNumeric(numeric, $.SampleRate, aggregation.fn), CH.lit(0)),
