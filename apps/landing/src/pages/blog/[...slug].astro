@@ -10,6 +10,8 @@ import PostCard from "../../components/blog/PostCard.astro";
 import ArticleEnhancements from "../../components/blog/ArticleEnhancements.astro";
 import TableOfContents from "../../components/TableOfContents.astro";
 import { CATEGORY_META, formatDate, isoDate, readingTime, getSortedPosts } from "../../lib/blog";
+import { authorByName, authorHref, authorPerson } from "../../lib/authors";
+import { Option } from "effect";
 import Icon from "../../components/Icon.astro";
 
 export async function getStaticPaths() {
@@ -32,6 +34,8 @@ const hasToc = headings.some((h) => h.depth === 2);
 const all = await getSortedPosts();
 const readNext = all.filter((p) => p.id !== post.id).slice(0, 3);
 
+const authorProfile = Option.getOrUndefined(authorByName(author));
+
 const pageTitle = `${title} — Maple Blog`;
 const canonicalUrl = Astro.site ? new URL(Astro.url.pathname, Astro.site).toString() : undefined;
 const absoluteCover = cover && Astro.site ? new URL(cover, Astro.site).toString() : undefined;
@@ -43,7 +47,9 @@ const jsonLd = {
     description,
     datePublished: isoDate(date),
     dateModified: isoDate(date),
-    author: { "@type": "Person", name: author, ...(authorRole ? { jobTitle: authorRole } : undefined) },
+    author: authorProfile
+        ? authorPerson(authorProfile, Astro.site)
+        : { "@type": "Person", name: author, ...(authorRole ? { jobTitle: authorRole } : undefined) },
     publisher: {
         "@type": "Organization",
         name: "Maple",
@@ -102,11 +108,33 @@ const backLink =
                         </h1>
                         <p class="mt-5 font-display text-[17px] leading-[1.65] text-pretty text-fg-muted">{description}</p>
 
-                        <div class="mt-6 flex items-center gap-2.5 font-mono text-xs text-fg/80">
-                            <Icon name="MapleMark" size={22} class="text-primary" aria-hidden="true" />
-                            <span>{author}</span>
-                            {authorRole && <span class="text-fg-muted">{authorRole}</span>}
-                        </div>
+                        {authorProfile ? (
+                            <a
+                                href={authorHref(authorProfile)}
+                                rel="author"
+                                class="group mt-6 inline-flex items-center gap-2.5 font-mono text-xs text-fg/80"
+                            >
+                                {authorProfile.avatar ? (
+                                    <img
+                                        src={authorProfile.avatar}
+                                        alt=""
+                                        width="28"
+                                        height="28"
+                                        class="size-7 rounded-full border border-border object-cover"
+                                    />
+                                ) : (
+                                    <Icon name="MapleMark" size={22} class="text-primary" aria-hidden="true" />
+                                )}
+                                <span class="transition-colors group-hover:text-primary">{authorProfile.name}</span>
+                                <span class="text-fg-muted">{authorProfile.role}</span>
+                            </a>
+                        ) : (
+                            <div class="mt-6 flex items-center gap-2.5 font-mono text-xs text-fg/80">
+                                <Icon name="MapleMark" size={22} class="text-primary" aria-hidden="true" />
+                                <span>{author}</span>
+                                {authorRole && <span class="text-fg-muted">{authorRole}</span>}
+                            </div>
+                        )}
 
                         {/* Cover banner — a step wider than the prose for presence. */}
                         <div class="mt-10 overflow-hidden rounded-lg border border-border md:mt-12 xl:-mx-16">
