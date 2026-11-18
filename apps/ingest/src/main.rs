@@ -20242,10 +20242,14 @@ mod tests {
     }
 
     #[test]
-    fn secret_keyring_slot_keys_open_the_v2_and_v3_fixtures() {
+    fn secret_keyring_slot_keys_open_v3_and_refuse_an_unbound_v2() {
         let keyring = SecretKeyring::parse_slot_keys(FIXTURE_SLOT_KEYS).expect("slot keys parse");
+        // Slot keys refuse an unbound v2 value exactly as the master key does (#2804).
         let v2 = keyring.open_clickhouse_password("org_fixture", CH_URL, V2_CIPHERTEXT, V2_IV, V2_TAG);
-        assert_eq!(v2, Ok("ch-secret-123".to_owned()));
+        assert_eq!(
+            v2,
+            Err("Stored value is not bound to its destination".to_owned())
+        );
         let v3 = keyring.open_clickhouse_password("org_fixture", CH_URL, V3_CIPHERTEXT, V3_IV, V3_TAG);
         assert_eq!(v3, Ok("ch-secret-123".to_owned()));
         let moved = keyring.open_clickhouse_password(
@@ -20257,7 +20261,7 @@ mod tests {
         );
         assert_eq!(moved, Err("Decryption failed".to_owned()));
         let other_org =
-            keyring.open_clickhouse_password("org_other", CH_URL, V2_CIPHERTEXT, V2_IV, V2_TAG);
+            keyring.open_clickhouse_password("org_other", CH_URL, V3_CIPHERTEXT, V3_IV, V3_TAG);
         assert_eq!(other_org, Err("Decryption failed".to_owned()));
     }
 
@@ -20265,8 +20269,8 @@ mod tests {
     fn secret_keyring_slot_keys_open_with_a_decrypt_only_entry_after_rotation() {
         let rotated = format!(" {} , {FIXTURE_SLOT_KEYS} ,", slot_keys_of(OTHER_KEY));
         let keyring = SecretKeyring::parse_slot_keys(&rotated).expect("slot keys parse");
-        let v2 = keyring.open_clickhouse_password("org_fixture", CH_URL, V2_CIPHERTEXT, V2_IV, V2_TAG);
-        assert_eq!(v2, Ok("ch-secret-123".to_owned()));
+        let v3 = keyring.open_clickhouse_password("org_fixture", CH_URL, V3_CIPHERTEXT, V3_IV, V3_TAG);
+        assert_eq!(v3, Ok("ch-secret-123".to_owned()));
     }
 
     #[test]
@@ -20274,7 +20278,7 @@ mod tests {
         let wrong_id = SecretKeyring::parse_slot_keys(&FIXTURE_SLOT_KEYS.replace("IGjfnBNl", "AAAAAAAA"))
             .expect("slot keys parse");
         assert_eq!(
-            wrong_id.open_clickhouse_password("org_fixture", CH_URL, V2_CIPHERTEXT, V2_IV, V2_TAG),
+            wrong_id.open_clickhouse_password("org_fixture", CH_URL, V3_CIPHERTEXT, V3_IV, V3_TAG),
             Err("Sealed with a key this deployment does not hold".to_owned())
         );
         // The fixture's keyId with another master's subkey: a mislabelled key does not open.
@@ -20283,7 +20287,7 @@ mod tests {
         let mislabelled =
             SecretKeyring::parse_slot_keys(&format!("IGjfnBNl:{subkey}")).expect("slot keys parse");
         assert_eq!(
-            mislabelled.open_clickhouse_password("org_fixture", CH_URL, V2_CIPHERTEXT, V2_IV, V2_TAG),
+            mislabelled.open_clickhouse_password("org_fixture", CH_URL, V3_CIPHERTEXT, V3_IV, V3_TAG),
             Err("Decryption failed".to_owned())
         );
     }
@@ -20312,13 +20316,13 @@ mod tests {
             SecretKeyring::from_env_values(Some(FIXTURE_SLOT_KEYS), Some("not-a-key"), None)
                 .expect("slot keys used");
         assert!(from_slot_keys
-            .open_clickhouse_password("org_fixture", CH_URL, V2_CIPHERTEXT, V2_IV, V2_TAG)
+            .open_clickhouse_password("org_fixture", CH_URL, V3_CIPHERTEXT, V3_IV, V3_TAG)
             .is_ok());
         // Blank slot keys fall back to the master key, as on a self-hosted deploy.
         let from_master = SecretKeyring::from_env_values(Some("  "), Some(FIXTURE_KEY), None)
             .expect("master key used");
         assert!(from_master
-            .open_clickhouse_password("org_fixture", CH_URL, V2_CIPHERTEXT, V2_IV, V2_TAG)
+            .open_clickhouse_password("org_fixture", CH_URL, V3_CIPHERTEXT, V3_IV, V3_TAG)
             .is_ok());
         assert!(SecretKeyring::from_env_values(None, None, None).is_err());
         assert!(SecretKeyring::from_env_values(Some("IGjfnBNl:bad"), Some(FIXTURE_KEY), None).is_err());
