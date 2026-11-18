@@ -238,6 +238,17 @@ describe("renderDiscordMessage", () => {
 		expect(withoutLinkPreviews(`https://x.example/a${parens}`)).toBe(`<https://x.example/a>${parens}`)
 	})
 
+	it("handles a long run inside a URL that does not end it, in linear time", () => {
+		const underscores = Str.repeat(200_000)("_")
+		const parens = Str.repeat(200_000)(")")
+		const started = performance.now()
+		expect(withoutLinkPreviews(`_https://x.example/${underscores}a`)).toBe(
+			`_<https://x.example/${underscores}a>`,
+		)
+		expect(withoutLinkPreviews(`https://x.example/${parens}a`)).toBe(`<https://x.example/${parens}a>`)
+		expect(performance.now() - started).toBeLessThan(1_000)
+	})
+
 	it("suppresses a URL left in prose when the cut drops a code span's closing backtick", () => {
 		const markdown = `${Str.repeat(1_950)("x")} \`https://a.example/b ${Str.repeat(100)("y")}\``
 		const payload = renderDiscordMessage([{ kind: "prose", markdown }])

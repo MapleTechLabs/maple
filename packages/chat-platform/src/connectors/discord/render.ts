@@ -245,26 +245,35 @@ const CODE = /((?<!\\)```[\s\S]*?```|(?<!\\)`[^`\n]*`)/
 const LINK =
 	/(\]\(\s*)<?(https?:\/\/(?:[^\s()<>]|\([^\s()<>]*\))+)>?(?=\s*\))|<https?:\/\/[^\s>]+>|https?:\/\/[^\s<>[\]\\`]+/g
 /** Sentence punctuation or bold/italic stars after a URL, which are not part of it. */
-const TRAILING = /[.,;:!?'"*]+$/
+const TRAILING = ".,;:!?'\"*"
 
 const count = (text: string, char: string) => Str.split(char)(text).length - 1
+
+/**
+ * How many characters at the end of `text` are in `set`: one backward pass. An anchored `[...]+$`
+ * regex retries from every start in a long run, which is quadratic on a crafted message.
+ */
+const trailingRun = (text: string, set: string): number => {
+	const chars = Str.split("")(text)
+	const last = Arr.findLastIndex(chars, (char) => !Str.includes(char)(set))
+	return chars.length - 1 - Option.getOrElse(last, () => -1)
+}
+
+const dropEnd = (text: string, n: number) => Str.slice(0, Str.length(text) - n)(text)
 
 /**
  * The URL without what follows it in prose: trailing punctuation, `)` it never opened, and a `_` or
  * `~` run only when the same mark opens right before it (emphasis), since both are valid in a URL.
  */
 const urlPart = (url: string, before: string): string => {
-	// Fixed passes, never one step per character: a URL can be as long as the message.
-	const suffix = before === "_" ? /[.,;:!?'"*_]+$/ : before === "~" ? /[.,;:!?'"*~]+$/ : TRAILING
-	const trimmed = Str.replace(suffix, "")(url)
-	const closing = Str.length(
-		Str.match(/\)+$/)(trimmed).pipe(
-			Option.map(([run]) => run),
-			Option.getOrElse(() => ""),
-		),
+	const suffix = before === "_" || before === "~" ? `${TRAILING}${before}` : TRAILING
+	const trimmed = dropEnd(url, trailingRun(url, suffix))
+	const unopened = Math.min(
+		trailingRun(trimmed, ")"),
+		Math.max(0, count(trimmed, ")") - count(trimmed, "(")),
 	)
-	const unopened = Math.min(closing, Math.max(0, count(trimmed, ")") - count(trimmed, "(")))
-	return Str.replace(suffix, "")(Str.slice(0, Str.length(trimmed) - unopened)(trimmed))
+	const cut = dropEnd(trimmed, unopened)
+	return dropEnd(cut, trailingRun(cut, suffix))
 }
 
 const suppressBare = (url: string, before: string): string => {
