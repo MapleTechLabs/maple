@@ -39,31 +39,34 @@ const itemListJsonLd = {
     <SeoHead title={pageTitle} description={pageDescription} type="WebPage" />
     <script is:inline type="application/ld+json" set:html={JSON.stringify(itemListJsonLd)} />
     <Nav />
-    <Breadcrumb items={[{ label: "Home", href: "/" }, { label: "Guides" }]} />
+    <Breadcrumb class="shell pt-4" items={[{ label: "Home", href: "/" }, { label: "Guides" }]} />
 
-    <main class="mx-auto max-w-6xl px-6 pb-20 pt-14 font-display md:pb-28 md:pt-20">
-        <header>
-            <h1 class="text-[34px] font-semibold leading-[1.1] tracking-[-0.03em] text-fg md:text-[40px]">Guides</h1>
-            <p class="mt-4 max-w-[58ch] text-[16px] leading-[1.6] text-pretty text-fg-muted">
-                Practical guides to APM, observability and OpenTelemetry: what the terms mean, which signals to watch, and how to debug production software.
-            </p>
-        </header>
+    <main class="shell pb-20 pt-14 font-display md:pb-28 md:pt-20">
+        {/* Title on the left; from `lg` the way out to the docs sits beside it. */}
+        <div class="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] lg:items-end lg:gap-16">
+            <header>
+                <h1 class="text-[clamp(40px,6.3vw,72px)] font-semibold leading-[0.98] tracking-[-0.04em] text-fg">Guides</h1>
+                <p class="mt-6 max-w-[58ch] text-base leading-[1.6] text-pretty text-fg-muted md:text-[17px]">
+                    Practical guides to APM, observability and OpenTelemetry: what the terms mean, which signals to watch, and how to debug production software.
+                </p>
+            </header>
 
-        <a
-            href="/docs"
-            class="group mt-8 flex items-center gap-4 rounded-xl border border-border p-4 transition-colors hover:border-primary/40 hover:bg-bg-elevated md:p-5"
-        >
-            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-bg-elevated text-primary" aria-hidden="true">
-                <Icon name="FileIcon" class="h-4 w-4" />
-            </span>
-            <span class="min-w-0 flex-1">
-                <span class="block text-[14px] font-medium text-fg">Looking for Maple's documentation?</span>
-                <span class="mt-0.5 block text-[13px] leading-relaxed text-fg-muted">Setup, instrumentation for every language, alerting and the API reference are in the docs.</span>
-            </span>
-            <span class="shrink-0 text-[13px] text-primary transition-colors group-hover:text-fg">Go to docs →</span>
-        </a>
+            <a
+                href="/docs"
+                class="group flex items-center gap-4 rounded-xl border border-border p-4 hover:border-primary/40 hover:bg-bg-elevated active:border-primary/40 active:bg-bg-elevated md:p-5"
+            >
+                <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-bg-elevated text-primary" aria-hidden="true">
+                    <Icon name="FileIcon" class="h-4 w-4" />
+                </span>
+                <span class="min-w-0 flex-1">
+                    <span class="block text-[14px] font-medium text-fg">Looking for Maple's documentation?</span>
+                    <span class="mt-0.5 block text-[13px] leading-relaxed text-fg-muted">Setup, instrumentation, alerting and the API reference are in the docs.</span>
+                </span>
+                <span class="shrink-0 text-[13px] text-primary" aria-hidden="true">→</span>
+            </a>
+        </div>
 
-        <section class="mt-10" aria-labelledby="start-here">
+        <section class="mt-12 md:mt-16" aria-labelledby="start-here">
             <h2 id="start-here" class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Start here</h2>
             <div class="hairline-grid mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
                 {startHere.map((guide) => (

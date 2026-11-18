@@ -6,7 +6,7 @@ import BottomCTA from "../../components/BottomCTA.astro";
 import Breadcrumb from "../../components/Breadcrumb.astro";
 import FAQ from "../../components/FAQ.astro";
 import SeoHead from "../../components/SeoHead.astro";
-import TableOfContents from "../../components/TableOfContents.astro";
+import GuideBody from "../../components/guides/GuideBody.astro";
 import LatencyClockDiagram from "../../components/guides/LatencyClockDiagram.astro";
 
 const pageTitle = "API Latency: Debug p99 with OpenTelemetry | Maple";
@@ -72,6 +72,7 @@ const articleJsonLd = {
     <script is:inline type="application/ld+json" set:html={JSON.stringify(articleJsonLd)} />
     <Nav />
     <Breadcrumb
+        class="shell pt-4"
         items={[
             { label: "Home", href: "/" },
             { label: "Guides", href: "/guides" },
@@ -87,7 +88,7 @@ const articleJsonLd = {
                 style="background-image: linear-gradient(to right, oklch(1 0 0 / 4%) 1px, transparent 1px), linear-gradient(to bottom, oklch(1 0 0 / 4%) 1px, transparent 1px); background-size: 60px 60px; mask-image: radial-gradient(ellipse 80% 72% at 24% 28%, black, transparent);"
             >
             </div>
-            <div class="relative mx-auto grid max-w-6xl gap-12 px-6 pb-16 pt-20 md:pb-24 md:pt-28 lg:grid-cols-[minmax(0,0.9fr)_minmax(430px,1.1fr)] lg:items-center lg:gap-16">
+            <div class="shell relative grid gap-12 pb-16 pt-20 md:pb-24 md:pt-28 lg:grid-cols-[minmax(0,0.9fr)_minmax(430px,1.1fr)] lg:items-center lg:gap-16">
                 <div>
                     <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
                         <span class="border border-primary/40 px-2 py-1 text-primary">API performance</span>
@@ -109,20 +110,7 @@ const articleJsonLd = {
             </div>
         </header>
 
-        <nav aria-label="Guide sections" class="border-b border-border bg-bg-deep">
-            <div class="mx-auto flex max-w-6xl gap-6 overflow-x-auto px-6 py-4 font-mono text-[10px] whitespace-nowrap text-fg-muted">
-                {toc.map(([id, label]) => (
-                    <a href={`#${id}`} class="transition-colors hover:text-primary">{label}</a>
-                ))}
-            </div>
-        </nav>
-
-        <div class="mx-auto grid max-w-6xl gap-12 px-6 py-16 md:py-24 lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-16">
-            <aside class="hidden lg:block">
-                <TableOfContents headings={tocHeadings} class="sticky top-28" />
-            </aside>
-
-            <article class="latency-guide min-w-0">
+        <GuideBody headings={tocHeadings} class="latency-guide">
                 <section id="definition" class="scroll-mt-24">
                     <p class="guide-eyebrow">01 · Definition</p>
                     <h2>API latency is only useful after you define the clock</h2>
@@ -409,8 +397,7 @@ duration &gt; 200ms</code></pre>
                         <li><a href="https://opentelemetry.io/docs/collector/components/connector/" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector: Connectors</a></li>
                     </ul>
                 </section>
-            </article>
-        </div>
+        </GuideBody>
     </main>
 
     <FAQ items={faqs} />
@@ -423,13 +410,13 @@ duration &gt; 200ms</code></pre>
     .latency-guide .guide-eyebrow { margin: 0 0 0.9rem; font-family: var(--font-mono); font-size: 10px; line-height: 1.4; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-foreground); }
     .latency-guide h2 { max-width: 22ch; margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
     .latency-guide h3 { margin: 2.5rem 0 0.8rem; font-family: var(--font-display); font-size: 1.15rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
-    .latency-guide > section > p:not(.guide-eyebrow, .guide-kicker), .latency-guide .guide-answer p { max-width: 70ch; margin: 0 0 1.15rem; font-size: 15px; line-height: 1.8; color: var(--muted-foreground); }
+    .latency-guide > section > p:not(.guide-eyebrow, .guide-kicker), .latency-guide .guide-answer p { max-width: 38em; margin: 0 0 1.15rem; font-size: 15px; line-height: 1.8; color: var(--muted-foreground); }
     .latency-guide strong { font-weight: 600; color: var(--foreground); }
     .latency-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
     .latency-guide a:not(.guide-button):hover { color: var(--foreground); }
     .latency-guide code:not(pre code) { border: 1px solid var(--border); background: var(--bg-elevated); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); }
     .latency-guide pre { max-width: 100%; margin: 1.5rem 0 1.75rem; overflow-x: auto; border: 1px solid var(--border); border-left: 2px solid var(--primary); background: var(--bg-deep); padding: 1rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); }
-    .latency-guide ul { display: grid; gap: 0.65rem; max-width: 70ch; margin: 1.3rem 0 1.6rem; padding-left: 1.1rem; color: var(--muted-foreground); font-size: 14px; line-height: 1.7; }
+    .latency-guide ul { display: grid; gap: 0.65rem; max-width: 38em; margin: 1.3rem 0 1.6rem; padding-left: 1.1rem; color: var(--muted-foreground); font-size: 14px; line-height: 1.7; }
     .latency-guide li::marker { color: var(--primary); }
     .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); background: var(--bg-deep); padding: 1.25rem 1.35rem; }
     .latency-guide .guide-answer p { margin: 0; font-size: 16px; color: var(--foreground); }
