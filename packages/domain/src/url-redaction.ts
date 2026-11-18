@@ -57,3 +57,22 @@ export const urlHoldsRedaction = (raw: string, marker: string): boolean => {
 		}),
 	)
 }
+
+/** One http(s) URL and nothing else: no whitespace, so free text that starts with a URL is not one. */
+const WHOLE_HTTP_URL = /^https?:\/\/\S+$/iu
+
+/**
+ * `text` cut to scheme, host and path ({@link redactUrlSecrets}) when it is an http(s) URL with
+ * userinfo, a query or a fragment. Only a string that is a URL as a whole (surrounding whitespace
+ * aside) is handled: a URL inside other text is left alone, with the text.
+ */
+export const redactWholeUrlSecrets = (text: string): string => {
+	const url = Str.trim(text)
+	if (!WHOLE_HTTP_URL.test(url)) return text
+	// One that does not parse cannot be cut, so it is judged by its text and none of it is kept.
+	if (!URL.canParse(url)) return /[?#@]/u.test(url) ? redactUrlSecrets(url) : text
+	const parsed = new URL(url)
+	return parsed.username === "" && parsed.password === "" && parsed.search === "" && parsed.hash === ""
+		? text
+		: redactUrlSecrets(url)
+}
