@@ -214,6 +214,19 @@ describe("rawSqlIssue", () => {
 		["SELECT $$it's$$ FROM traces WHERE $__orgFilter", "Heredoc strings"],
 		["SELECT $q$x$q$ FROM traces WHERE $__orgFilter", "Heredoc strings"],
 		["SELECT 1 FROM traces /* a /* b */ c */ WHERE $__orgFilter", "Nested /* */ comments"],
+		// The closing half of the outer comment sits where the masker reads a string.
+		[
+			"SELECT 1 FROM traces WHERE $__orgFilter AND 1 /* /* */ '*/ OR 1 OR 'a' = 'a'",
+			"Nested /* */ comments",
+		],
+		["SELECT $1$ ' $1$ AS a, 2 AS b, $1$ ' $1$ AS c FROM traces WHERE $__orgFilter", "Heredoc strings"],
+		["SELECT ‘'’ AS a, 2 AS b, ‘'’ AS c FROM traces WHERE $__orgFilter", "plain ASCII"],
+		["SELECT ServiceName FROM traces WHERE ‘x’ != ‘ AND $__orgFilter AND ’", "plain ASCII"],
+		["SELECT “a'b” FROM traces WHERE $__orgFilter", "plain ASCII"],
+		["SELECT count() FROM numbers​(3) WHERE $__orgFilter", "plain ASCII"],
+		["SELECT count() FROM system⁠.tables WHERE $__orgFilter", "plain ASCII"],
+		["SELECT 1 FROM traces WHERE $__orgFilter", "plain ASCII"],
+		["SELECT 1 FROM traces WHERE $__orgFilter \u0000 AND 1", "plain ASCII"],
 	])("rejects syntax the validator cannot see through: %s", (sql, message) => {
 		const issue = rawSqlIssue(sql)
 		expect(issue?.code).toBe("DisallowedStatement")
@@ -226,6 +239,9 @@ describe("rawSqlIssue", () => {
 		'SELECT `file`, "url" FROM traces WHERE $__orgFilter -- # not code',
 		"SELECT `Url` AS u, count(`Url`) AS c FROM traces WHERE $__orgFilter /* $$ */",
 		"SELECT urlHash(Url) AS h FROM traces WHERE $__orgFilter AND Url IN ('a', \"b\")",
+		"SELECT 'café ‘quoted’ ​' AS s FROM traces WHERE $__orgFilter -- → note",
+		"SELECT count() AS `größe` FROM traces /* ≥ 0, see /docs */ WHERE $__orgFilter",
+		"SELECT 1 /* one */ AS a, 2 /* two */ AS b, '/* not a comment' AS c FROM traces WHERE $__orgFilter",
 	])("still accepts these characters in literals, comments and plain identifiers: %s", (sql) => {
 		expect(rawSqlIssue(sql)).toBeNull()
 	})

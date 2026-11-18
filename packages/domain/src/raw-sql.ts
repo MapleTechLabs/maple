@@ -81,9 +81,10 @@ export const INTO_OUTFILE_RE = /\bINTO\s+OUTFILE\b/i
  *
  * An allow list is the only shape that cannot go stale: a new reader family is
  * refused the day it lands, with no regex to keep in step. The check runs over a
- * token stream (comments stripped, strings and quoted identifiers lexed as the
- * server lexes them), so a quoted, commented, cased or Unicode-quoted spelling
- * of a blocked name resolves to the same token and is refused all the same.
+ * token stream (comments stripped, strings and quoted identifiers lexed), so a
+ * quoted, commented or cased spelling of a blocked name resolves to the same
+ * token. That only holds while the lexer and the server agree on what is code,
+ * which `unlexableSyntaxIssue` enforces before any of this runs.
  */
 const ALLOWED_TABLE_FUNCTIONS = new Set(["numbers", "generateseries"])
 
@@ -196,9 +197,13 @@ const indexFrom = (text: string, search: string, from: number): number =>
  * character its own single-char token so a `(`'s left neighbour is always known.
  * A pure lexer, so it uses local indices rather than Effect primitives.
  */
-const tokenizeSql = (sql: string): ReadonlyArray<SqlToken> => {
+const tokenizeSql = (sql: string): ReadonlyArray<SqlToken> => lexSql(sql).tokens
+
+/** The token stream, and whether a block comment opens another before it closes. */
+function lexSql(sql: string): { readonly tokens: ReadonlyArray<SqlToken>; readonly nestedComment: boolean } {
 	const tokens: Array<SqlToken> = []
 	const n = sql.length
+	let nestedComment = false
 	let i = 0
 	while (i < n) {
 		const c = charAt(sql, i)
@@ -209,6 +214,10 @@ const tokenizeSql = (sql: string): ReadonlyArray<SqlToken> => {
 			i = nl === -1 ? n : nl
 		} else if (c === "/" && charAt(sql, i + 1) === "*") {
 			const end = indexFrom(sql, "*/", i + 2)
+			const close = end === -1 ? n : end
+			// The server nests block comments and this lexer does not, so past an inner
+			// open the two disagree on where the comment ends.
+			if (Str.includes("/*")(Str.slice(i + 2, close)(sql))) nestedComment = true
 			i = end === -1 ? n : end + 2
 		} else if (c === "'") {
 			i++
@@ -267,7 +276,7 @@ const tokenizeSql = (sql: string): ReadonlyArray<SqlToken> => {
 			i++
 		}
 	}
-	return tokens
+	return { tokens, nestedComment }
 }
 
 // Keywords that end the FROM list, so a later comma no longer introduces a table.
@@ -420,22 +429,24 @@ const SERVER_READER_NAMES = new Set([
 	"defaultprofiles",
 ])
 
-/** The first server-reading scalar called anywhere, or null; quoting and comments do not hide it. */
-const disallowedServerFunction = (sql: string): string | null => {
+/** The first function called anywhere whose lowercased name matches; quoting and comments do not hide it. */
+export const calledFunction = (sql: string, matches: (name: string) => boolean): string | null => {
 	const tokens = tokenizeSql(sql)
 	const hit = Arr.findFirst(tokens, (t, i) => {
 		const next = tokens[i + 1]
-		return (
-			t.ident &&
-			next !== undefined &&
-			!next.ident &&
-			next.v === "(" &&
-			(SERVER_READER_NAMES.has(t.v) ||
-				Arr.some(SERVER_READER_PREFIXES, (prefix) => Str.startsWith(prefix)(t.v)))
-		)
+		return t.ident && next !== undefined && !next.ident && next.v === "(" && matches(t.v)
 	})
 	return Option.getOrNull(Option.map(hit, (t) => t.v))
 }
+
+/** The first server-reading scalar called anywhere, or null. */
+const disallowedServerFunction = (sql: string): string | null =>
+	calledFunction(
+		sql,
+		(name) =>
+			SERVER_READER_NAMES.has(name) ||
+			Arr.some(SERVER_READER_PREFIXES, (prefix) => Str.startsWith(prefix)(name)),
+	)
 
 // Databases whose tables describe the whole server rather than this org's data. `tinybird` and
 // `organization` hold the managed warehouse's own service tables (query logs, usage).
@@ -456,23 +467,43 @@ const systemDatabaseReference = (sql: string): string | null => {
 	return Option.getOrNull(Option.map(hit, (t) => t.v))
 }
 
+const NESTED_COMMENT_MESSAGE =
+	"Nested /* */ comments are not supported in raw SQL. Close each comment before opening another."
+
 /**
  * ClickHouse syntax the masker does not lex: `#` / `#!` line comments, `$$` and
- * `$tag$` heredoc strings, and nested block comments (the masker ends a comment at
- * the first close, leaving the outer one's `*\/` behind). Where these appear the
- * masked text and the server disagree on what is code, so every check is moot.
+ * `$tag$` heredoc strings (the tag may be digits), nested block comments (the masker
+ * ends a comment at the first close, leaving the outer one's `*\/` behind), and the
+ * non-ASCII characters the server reads as quotes or whitespace. Where these appear
+ * the masked text and the server disagree on what is code, so every check is moot.
  */
-export const UNMASKED_SYNTAX: ReadonlyArray<readonly [RegExp, string]> = [
+const UNMASKED_SYNTAX: ReadonlyArray<readonly [RegExp, string]> = [
 	[/#/, "'#' comments are not supported in raw SQL. Use -- or /* */ comments."],
 	[
-		/\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/,
+		/\$[A-Za-z0-9_]*\$/,
 		"Heredoc strings ($$...$$ or $tag$...$tag$) are not supported in raw SQL. Use single-quoted strings.",
 	],
+	[/\*\//, NESTED_COMMENT_MESSAGE],
 	[
-		/\*\//,
-		"Nested /* */ comments are not supported in raw SQL. Close each comment before opening another.",
+		// Curly quotes are string delimiters to the server, and zero-width or other
+		// Unicode spaces are whitespace; neither is to the lexers here.
+		/[^\t\n\r\x20-\x7E]/,
+		"Only plain ASCII is supported in raw SQL outside quoted strings, quoted identifiers and comments. Remove the non-ASCII or control character (often a curly quote or an invisible space pasted from a document).",
 	],
 ]
+
+/**
+ * The first reason the lexers here and the server could disagree on what is code,
+ * or null. Every text check depends on that agreement, so each gate runs this first.
+ */
+export const unlexableSyntaxIssue = (
+	sql: string,
+	maskedSql: string = maskLiteralsAndComments(sql),
+): string | null => {
+	const unmasked = Arr.findFirst(UNMASKED_SYNTAX, ([pattern]) => pattern.test(maskedSql))
+	if (Option.isSome(unmasked)) return unmasked.value[1]
+	return lexSql(sql).nestedComment ? NESTED_COMMENT_MESSAGE : null
+}
 
 /** Macros the engine expands. Anything else `$__`-shaped is a typo. */
 export const RAW_SQL_MACROS = [
@@ -703,8 +734,8 @@ export const rawSqlIssue = (
 	// input: `prepareRawSql` expands macros wherever they appear, literals
 	// included, so a macro hidden in a string still has to be a legal one.
 	const maskedSql = maskLiteralsAndComments(sql)
-	const unmasked = Arr.findFirst(UNMASKED_SYNTAX, ([pattern]) => pattern.test(maskedSql))
-	if (Option.isSome(unmasked)) return issue("DisallowedStatement", unmasked.value[1])
+	const unlexable = unlexableSyntaxIssue(sql, maskedSql)
+	if (unlexable !== null) return issue("DisallowedStatement", unlexable)
 	if (!Str.includes("$__orgFilter")(maskedSql)) {
 		return issue(
 			"MissingOrgFilter",

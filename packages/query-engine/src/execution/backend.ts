@@ -140,6 +140,16 @@ export interface WarehouseBackendDialect {
 	 * so it keeps the live answer too.
 	 */
 	readonly managedSchema: boolean
+	/**
+	 * Run caller-written SQL in the server's read-only mode, with Maple's limits sent
+	 * beside the statement. The stored account usually can write and call table
+	 * functions that leave the server, so the server refuses those for raw SQL instead
+	 * of the text checks alone. It does not hold a subquery's own `SETTINGS` to that mode
+	 * (checked on 26.2), so `rawSqlIssue` refusing the clause is still required. Tinybird
+	 * restricts the setting and scopes raw SQL with the per-org token; chDB is the user's
+	 * own local data.
+	 */
+	readonly readOnlyRawSql: boolean
 }
 
 /** Single source of truth for per-backend behavior. */
@@ -156,6 +166,7 @@ export const BackendDialect: Record<WarehouseBackendKind, WarehouseBackendDialec
 		unquote64BitIntegers: false,
 		pinSessionTimezoneUtc: false,
 		managedSchema: true,
+		readOnlyRawSql: false,
 	},
 	"tinybird-gateway": {
 		driver: "clickhouse-web",
@@ -168,6 +179,7 @@ export const BackendDialect: Record<WarehouseBackendKind, WarehouseBackendDialec
 		unquote64BitIntegers: true,
 		pinSessionTimezoneUtc: false,
 		managedSchema: true,
+		readOnlyRawSql: false,
 	},
 	clickhouse: {
 		driver: "clickhouse-web",
@@ -180,6 +192,7 @@ export const BackendDialect: Record<WarehouseBackendKind, WarehouseBackendDialec
 		unquote64BitIntegers: true,
 		pinSessionTimezoneUtc: true,
 		managedSchema: false,
+		readOnlyRawSql: true,
 	},
 	chdb: {
 		driver: "clickhouse-web",
@@ -192,5 +205,6 @@ export const BackendDialect: Record<WarehouseBackendKind, WarehouseBackendDialec
 		unquote64BitIntegers: true,
 		pinSessionTimezoneUtc: true,
 		managedSchema: false,
+		readOnlyRawSql: false,
 	},
 } satisfies Record<WarehouseBackendKind, WarehouseBackendDialect>

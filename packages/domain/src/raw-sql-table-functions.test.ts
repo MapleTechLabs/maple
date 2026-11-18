@@ -6,6 +6,7 @@ describe("rawSqlIssue table sources", () => {
 		// ClickHouse lexes Unicode double quotes as a quoted identifier.
 		"SELECT * FROM “file”('/x', LineAsString) WHERE $__orgFilter",
 		"SELECT * FROM traces WHERE $__orgFilter AND SpanId IN (SELECT * FROM “url”('http://x/'))",
+		"SELECT “getMacro”('shard') AS v FROM traces WHERE $__orgFilter",
 	])("rejects Unicode-quoted names: %s", (sql) => {
 		expect(rawSqlIssue(sql)).not.toBeNull()
 	})
@@ -145,7 +146,6 @@ describe("rawSqlIssue table sources", () => {
 		"SELECT DICTGET('d', 'v', 1) AS v FROM traces WHERE $__orgFilter",
 		"SELECT `dictGet`('d', 'v', 1) AS v FROM traces WHERE $__orgFilter",
 		"SELECT \"hasColumnInTable\"('system', 'tables', 'name') AS h FROM traces WHERE $__orgFilter",
-		"SELECT “getMacro”('shard') AS v FROM traces WHERE $__orgFilter",
 		"SELECT `\\x64ictGet`('d', 'v', 1) AS v FROM traces WHERE $__orgFilter",
 		"SELECT dictGet /* c */ ('d', 'v', 1) AS v FROM traces WHERE $__orgFilter",
 		"SELECT * FROM traces WHERE $__orgFilter AND SpanName = (SELECT getSetting('x'))",
