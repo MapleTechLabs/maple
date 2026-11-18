@@ -35,6 +35,7 @@ export const request = (overrides: Partial<QueryRequest> = {}): QueryRequest => 
 	limits: DEFAULT_LIMITS.interactive,
 	workload: "interactive",
 	redactPii: false,
+	hiddenEntries: [],
 	...overrides,
 })
 

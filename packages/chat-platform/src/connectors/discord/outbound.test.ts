@@ -420,6 +420,38 @@ describe("discord transport", () => {
 		}).pipe(Effect.provide(http.layer))
 	})
 
+	it.effect("sends edits and private replies with URLs that Discord will not preview", () => {
+		const http = stub([
+			{ status: 200, body: CREATED },
+			{ status: 200, body: CREATED },
+		])
+		const click: InboundAction = {
+			type: "action",
+			connector: DISCORD_CONNECTOR_ID,
+			workspaceId: "guild_1",
+			channelId: "conv_1",
+			messageId: "msg_3",
+			actionToken: "approval:abc",
+			actor: { id: "user_2", displayName: "Ada" },
+			replyHandle: "app_1/interaction-token",
+		}
+		const blocks = [
+			{ kind: "prose" as const, markdown: "see https://x.example/a?d=1 and [x](https://x.example)" },
+		]
+		return Effect.gen(function* () {
+			const transport = yield* discordOutbound.transport
+			yield* transport.edit({ target, messageId: "m1" }, blocks)
+			yield* transport.whisper(click, blocks)
+
+			for (const request of http.seen) {
+				expect(sentThreadBody(request)).toMatchObject({
+					content: "see <https://x.example/a?d=1> and [x](<https://x.example>)",
+				})
+			}
+			expect(http.seen).toHaveLength(2)
+		}).pipe(Effect.provide(http.layer))
+	})
+
 	it.effect("reports a rejection as a typed failure carrying the status", () => {
 		const http = stub([{ status: 403, body: '{"message":"Missing Access"}' }])
 		return Effect.gen(function* () {

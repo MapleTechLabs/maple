@@ -45,7 +45,14 @@ import {
 	type WarehouseReadExecutionError,
 } from "./errors"
 import { WarehouseResponseLimitError, type WarehouseResponseLimits } from "./response-limits"
-import { SQL_LOG_MAX, SQL_TRACE_MAX, fingerprintSql, summarizeSql, truncateSql } from "./fingerprint"
+import {
+	SQL_LOG_MAX,
+	SQL_TRACE_MAX,
+	fingerprintSql,
+	redactSqlLiterals,
+	summarizeSql,
+	truncateSql,
+} from "./fingerprint"
 import { BackendDialect, warehouseTargetAttributes } from "./backend"
 import { managedWarehouseCapabilities } from "./managed-capabilities"
 import { resolveCompiledQuery } from "./compiled-input"
@@ -580,7 +587,11 @@ WHERE name = 'enable_full_text_index'`,
 		const finalSql = statement.text
 		const sqlLength = finalSql.length
 		const sqlTruncated = sqlLength > SQL_TRACE_MAX
-		yield* Effect.annotateCurrentSpan("db.query.text", truncateSql(finalSql, SQL_TRACE_MAX))
+		// Literals are customer data; the length and fingerprint below still describe the real statement.
+		yield* Effect.annotateCurrentSpan(
+			"db.query.text",
+			truncateSql(redactSqlLiterals(finalSql), SQL_TRACE_MAX),
+		)
 		yield* Effect.annotateCurrentSpan("db.query.length", sqlLength)
 		yield* Effect.annotateCurrentSpan("db.query.truncated", sqlTruncated)
 		// Fingerprint the body, not the rendered statement: SETTINGS and FORMAT
@@ -699,8 +710,9 @@ WHERE name = 'enable_full_text_index'`,
 						durationMs: elapsedMs,
 						retryAttempts: attempts,
 						errorTag: error._tag,
-						message: error.message,
-						sql: truncateSql(finalSql, SQL_LOG_MAX),
+						// Driver messages quote the offending value; the caller still gets the original.
+						message: redactSqlLiterals(error.message),
+						sql: truncateSql(redactSqlLiterals(finalSql), SQL_LOG_MAX),
 						sqlLength,
 						sqlFingerprint: fingerprintSql(finalSql),
 						profile: options?.profile,

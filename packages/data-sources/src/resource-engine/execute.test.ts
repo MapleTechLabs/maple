@@ -59,6 +59,7 @@ const request = (granularitySeconds: number, days = 1): QueryRequest => ({
 	limits: DEFAULT_LIMITS.interactive,
 	workload: "interactive",
 	redactPii: false,
+	hiddenEntries: [],
 })
 
 const noNetwork = Layer.succeed(

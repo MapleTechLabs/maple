@@ -175,7 +175,11 @@ const routers = {
 		Route.mapTo(AppRoute.AlertsStatusPage),
 	),
 	StatusPages: pipe(path("status-pages"), Route.mapTo(AppRoute.StatusPages)),
-	StatusPageNew: pipe(path("status-pages", "new"), Route.mapTo(AppRoute.StatusPageNew)),
+	StatusPageNew: pipe(
+		path("status-pages", "new"),
+		search(Search.StatusPageNewSearch),
+		Route.mapTo(AppRoute.StatusPageNew),
+	),
 	StatusPage: pipe(
 		path("status-pages"),
 		slash(segment("pageId")),

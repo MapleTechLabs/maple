@@ -19,11 +19,15 @@ import {
 	V2ApiKeyCreateParams,
 	V2InvalidRequest,
 	V2DashboardCreateParams,
+	StatusPageConfig,
+	V2UptimeMonitorCreateParams,
 } from "@maple/domain/http/v2"
 import { _alertDestinationCreateBody } from "../src/AlertDestination"
 import { _alertRuleCreateBody } from "../src/AlertRule"
 import { _apiKeyCreateBody } from "../src/ApiKey"
 import { _dashboardCreateBody } from "../src/Dashboard"
+import { _statusPageConfigBody } from "../src/StatusPage"
+import { _uptimeMonitorCreateBody } from "../src/UptimeMonitor"
 import { DashboardData, DashboardWidget } from "../src/DashboardData"
 import { MapleErrorTags, MaplePublicErrorBodySchema, type MaplePublicErrorBody } from "../src/errors"
 
@@ -207,5 +211,74 @@ describe("provider request bodies decode against the real v2 create-param schema
 			expires_in_seconds: 7_776_000,
 		})
 		expect(() => decodes(V2ApiKeyCreateParams, body)).not.toThrow()
+	})
+
+	it("uptime monitor create bodies", () => {
+		const bodies = [
+			_uptimeMonitorCreateBody({
+				name: "API health",
+				config: {
+					type: "http",
+					url: "https://api.example.com/health",
+					method: "GET",
+				},
+				interval_seconds: 60,
+				destination_ids: ["dest_oybbpTBhtSFGShMjjLiCrh"],
+			}),
+			_uptimeMonitorCreateBody({
+				name: "Nightly backup",
+				config: {
+					type: "heartbeat",
+					schedule: { type: "interval", seconds: 86400 },
+					grace_seconds: 600,
+				},
+			}),
+		]
+		for (const body of bodies) {
+			expect(() => decodes(V2UptimeMonitorCreateParams, body)).not.toThrow()
+		}
+	})
+
+	it("status page config body", () => {
+		const body = _statusPageConfigBody(
+			{
+				name: "Acme Status",
+				slug: "acme-status",
+				description: "Live status",
+				support_url: "https://acme.example/support",
+				show_powered_by: false,
+				auto_incidents: "draft",
+				visibility: "public",
+				theme: { preset: "midnight", accent: "#a5b4fc" },
+				components: [
+					{
+						name: "API",
+						monitor_id: "upm_YofPTrK9782DWwcnXhpcCw",
+						manual_status: "degraded",
+					},
+					{ name: "Docs", group: "Websites", show_uptime: false },
+				],
+				password: "correct horse battery",
+				custom_domain: "status.acme.com",
+			},
+			{
+				version: "v1",
+				name: "Acme Status",
+				slug: "acme-status",
+				components: [
+					{
+						id: "stc_YofPTrK9782DWwcnXhpcCw",
+						name: "Docs",
+						manual_status: null,
+					},
+				],
+			},
+		)
+		// The apply refuses keys the document does not define, so nothing else may leak in.
+		expect(() =>
+			Schema.decodeUnknownSync(StatusPageConfig)(body, {
+				onExcessProperty: "error",
+			}),
+		).not.toThrow()
 	})
 })

@@ -1,0 +1,126 @@
+---
+title: "How to fix your $8k PostHog bill"
+description: "Same product events and session replays for about 7x less. A quick guide to moving them from PostHog to Maple, with the code."
+cover: "/blog/fix-your-posthog-bill.png"
+coverAlt: "How to fix your $8k PostHog bill. About 7x less. Two bars compare one month of 5M events and 20k replays: $627.50 on PostHog, $89 on Maple."
+date: 2026-11-18
+author: "David Granzin"
+authorRole: "Founder, Maple"
+category: "product"
+draft: false
+---
+
+import ProductFunnelDemo from "../../components/blog/demos/ProductFunnelDemo.astro"
+import ProductPathsDemo from "../../components/blog/demos/ProductPathsDemo.astro"
+import PriceCompare from "../../components/blog/demos/PriceCompare.astro"
+
+My timeline this week is pretty much all PostHog invoices. If one of them is yours, this is the quick version of moving your analytics over to Maple.
+
+Maple covers the stuff most teams use every day: product events, funnels, web analytics, a page per user, and session replay. An event costs the same whether the person is signed in or not. Every replay also links to the backend traces behind it.
+
+Here's what that comes to for a normal SaaS month, 5 million events from signed-in users and 20,000 recorded sessions:
+
+<PriceCompare />
+
+## What maps to what
+
+| In PostHog        | In Maple                                         |
+| ----------------- | ------------------------------------------------ |
+| Events            | Product events                                   |
+| Funnels and paths | **Product analytics**                            |
+| Trends            | A dashboard chart on product events              |
+| Web analytics     | **Web analytics**                                |
+| Persons           | **Users**, with each person's events and replays |
+| Session replay    | **Replays**, linked to the traces and errors     |
+| HogQL             | SQL                                              |
+
+## What it looks like
+
+Funnels count people across the browser and your backend, with conversion, time to convert and where people drop off. These two are the real charts from the app on demo data, so hover them.
+
+<ProductFunnelDemo />
+
+Paths show what people did after (or before) any event or page.
+
+<ProductPathsDemo />
+
+Every replay sits next to the requests it made, so a failed checkout shows the `500` and the trace behind it.
+
+<figure class="shot">
+	<img
+		src="/screenshots/strip-session.webp"
+		alt="A session replay of a checkout page, with the event list beside it showing a POST /api/checkout that returned 500 because payment-svc timed out."
+		loading="lazy"
+	/>
+	<figcaption>A replay with the failing request right there in the event list.</figcaption>
+</figure>
+
+And each user gets one page with their sessions, errors, traces and events.
+
+<figure class="shot">
+	<img
+		src="/blog/fix-your-posthog-bill/users.webp"
+		alt="One user's page in Maple: 14 sessions, 4 errors, 2.1K requests and 230 events, with a timeline mixing a checkout error, a failed API request, a checkout_started event and a session to replay."
+		loading="lazy"
+	/>
+	<figcaption>One user, everything they did.</figcaption>
+</figure>
+
+## Switching
+
+**1. Add the SDK.**
+
+```bash
+bun add @maple-dev/browser
+```
+
+```ts
+import { MapleBrowser } from "@maple-dev/browser"
+
+MapleBrowser.init({ ingestKey: "maple_pk_...", serviceName: "web" })
+```
+
+That's enough to get page views, sessions, replays and errors coming in.
+
+**2. Swap your calls.** They map almost one to one:
+
+```ts
+// posthog.identify(user.id, { email: user.email })
+MapleBrowser.identify({ id: user.id, email: user.email })
+
+// posthog.capture("plan_started", { plan: "pro" })
+MapleBrowser.track("plan_started", { plan: "pro" })
+
+// posthog.reset()
+MapleBrowser.identify(null)
+```
+
+If your calls are all over the codebase, put both SDKs behind one small `analytics.ts` for now. Then you only have to touch one file when you remove PostHog later.
+
+**3. Move server-side events.** You post them to one endpoint, from any language:
+
+```bash
+curl -X POST https://ingest.maple.dev/v1/events \
+  -H "Authorization: Bearer YOUR_INGEST_KEY" \
+  -H "Content-Type: application/x-ndjson" \
+  --data-binary $'{"name":"plan_started","user_id":"user_123"}\n'
+```
+
+If you already trace that request with OpenTelemetry, just add `maple.product_event.name` to the span and skip the extra call.
+
+**4. Rebuild the funnels you actually look at.** Usually that's like five or ten. Skip the rest.
+
+**5. Run both for a week.** Once the numbers agree, delete the PostHog lines.
+
+## What Maple doesn't do yet
+
+Tbh there's a list:
+
+- Feature flags, experiments and surveys
+- Retention and cohort charts
+- Heatmaps
+- Mobile SDKs and mobile replay
+
+If you use any of these, keep a small PostHog plan for just those and move the rest. Most of the bill is usually events and replays anyway.
+
+[Try Maple free for 14 days](https://app.maple.dev), or read the [product events docs](/docs/product-events/overview).

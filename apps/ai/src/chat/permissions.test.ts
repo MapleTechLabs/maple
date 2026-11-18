@@ -10,11 +10,14 @@ import { CHAT_BUDGET } from "./budgets"
 import {
 	DEFAULT_RULESET,
 	MUTATING_TOOL_NAMES,
+	PR_REVIEW_PUBLIC_RULESET,
+	PR_REVIEW_PUBLIC_TOOLS,
 	PR_REVIEW_RULESET,
 	PR_REVIEW_TOOLS,
 	READ_ONLY_RULESET,
 } from "./permissions"
 import { profileForTurn } from "./profiles"
+import { pullRequestTurnOrigin } from "@maple/domain/chat-session"
 import { Array as Arr } from "effect"
 
 describe("PR_REVIEW_RULESET", () => {
@@ -41,10 +44,53 @@ describe("PR_REVIEW_RULESET", () => {
 })
 
 describe("profileForTurn for the reviewer", () => {
+	const PUBLIC = pullRequestTurnOrigin({ isPrivate: false })
+	const PRIVATE = pullRequestTurnOrigin({ isPrivate: true })
+	// Every org telemetry read the private reviewer has: none may reach a world-readable comment.
+	const telemetryTools = Arr.filter(PR_REVIEW_TOOLS, (name) => !PR_REVIEW_PUBLIC_TOOLS.includes(name))
+
 	it("gives the review agent its own ruleset for the unattended pass only", () => {
 		const agent = AGENTS["pr-review"]
-		assert.strictEqual(profileForTurn(agent, { kind: "autonomous" }).ruleset, PR_REVIEW_RULESET)
+		assert.strictEqual(profileForTurn(agent, PRIVATE).ruleset, PR_REVIEW_RULESET)
 		assert.strictEqual(profileForTurn(agent, { kind: "app" }).ruleset, agent.permission)
+	})
+
+	it.each(["pr-review", "pr-reply"] as const)(
+		"offers %s no telemetry tool on a public repository, and the full set on a private one",
+		(mode) => {
+			const agent = AGENTS[mode]
+			const publicRules = profileForTurn(agent, PUBLIC).ruleset
+			const privateRules = profileForTurn(agent, PRIVATE).ruleset
+			for (const name of ["find_errors", "error_detail", "explore_attributes", "search_traces"]) {
+				assert.include(telemetryTools, name)
+			}
+			for (const name of telemetryTools) {
+				assert.equal(
+					evaluatePermission(publicRules, name),
+					"deny",
+					`${name} offered on a public repository`,
+				)
+				assert.equal(
+					evaluatePermission(privateRules, name),
+					"allow",
+					`${name} denied on a private one`,
+				)
+			}
+			for (const name of PR_REVIEW_PUBLIC_TOOLS) {
+				assert.equal(
+					evaluatePermission(publicRules, name),
+					"allow",
+					`${name} denied on a public repository`,
+				)
+			}
+		},
+	)
+
+	it("treats a pass that does not say where it posts as public", () => {
+		assert.strictEqual(
+			profileForTurn(AGENTS["pr-review"], { kind: "autonomous" }).ruleset,
+			PR_REVIEW_PUBLIC_RULESET,
+		)
 	})
 
 	it("keeps the investigation's unattended pass read-only", () => {

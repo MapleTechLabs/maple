@@ -2,7 +2,7 @@ import type { McpToolRegistrar } from "./types"
 import { warehouseReadHandlers, warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { withTenantExecutor } from "../lib/query-warehouse"
 import { CurrentMcpTenant } from "../tenant"
-import { formatDurationFromMs, toSecondTimestamp, truncate } from "../lib/format"
+import { formatDurationFromMs, toSecondTimestamp, untrustedText } from "../lib/format"
 import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
 import { DateTime, Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
@@ -52,7 +52,7 @@ const spanBlocks = (output: Output): Array<DocBlock> => {
 	if (output.spanName === undefined) return []
 	const status =
 		output.statusCode === "Error" && output.statusMessage
-			? `Error: ${truncate(output.statusMessage, 500)}`
+			? `Error: ${untrustedText(output.statusMessage, 500)}`
 			: output.statusCode
 	return [
 		doc.fields([
@@ -133,7 +133,7 @@ const attributeBlocks = (label: string, attrs: Output["attributes"]): Array<DocB
 	if (entries.length === 0) return []
 	return [
 		doc.heading(`${label} (${entries.length})`),
-		doc.list(Arr.map(entries, ([k, v]) => `\`${k}\`: ${truncate(v, 500)}`)),
+		doc.list(Arr.map(entries, ([k, v]) => `${untrustedText(k, 200)}: ${untrustedText(v, 500)}`)),
 	]
 }
 
@@ -174,6 +174,7 @@ export function registerInspectSpanTool(server: McpToolRegistrar) {
 				description: "Max characters per captured message or payload (AI spans only)",
 			}),
 		}),
+		untrustedOutput: true,
 		hints: { readOnly: true },
 		phrases: ["Inspecting a span", "Reading span details"],
 		handler: Effect.fn("McpTool.inspectSpan")(function* ({

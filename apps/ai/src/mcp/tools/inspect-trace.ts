@@ -37,6 +37,7 @@ export function registerInspectTraceTool(server: McpToolRegistrar) {
 				description: "Max spans to render in the tree; errors and roots are always kept",
 			}),
 		}),
+		untrustedOutput: true,
 		hints: { readOnly: true },
 		phrases: ["Inspecting a trace", "Opening a trace"],
 		handler: Effect.fn("McpTool.inspectTrace")(function* ({

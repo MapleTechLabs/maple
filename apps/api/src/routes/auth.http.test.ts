@@ -1,12 +1,22 @@
 // SAFETY-FILE: JSON in this test is emitted by the route under test before its fields are asserted.
 import { describe, expect, it } from "@effect/vitest"
-import { ApiSchemaErrors, ApiUnexpectedErrors, AuthSessionApiGroup } from "@maple/domain/http"
-import { ConfigProvider, Context, Layer } from "effect"
+import { makeLoginSelfHosted } from "@maple/auth"
+import {
+	ApiSchemaErrors,
+	ApiUnexpectedErrors,
+	AuthSessionApiGroup,
+	CliDeviceActionResponse,
+	CliDeviceInfoResponse,
+	McpOAuthAuthorizationActionResponse,
+	McpOAuthAuthorizationInfoResponse,
+	OrgId,
+} from "@maple/domain/http"
+import { Array as Arr, ConfigProvider, Context, Effect, Layer, Schema } from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { Env } from "@maple/backend/platform/Env"
-import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import { AuditLogService, makeMemoryAuditLog } from "@maple/backend/services/audit/AuditLogService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { CliDeviceAuthService } from "@maple/backend/services/auth/CliDeviceAuthService"
 import { McpOAuthService } from "@maple/backend/services/auth/McpOAuthService"
@@ -35,18 +45,27 @@ const ConfigLive = ConfigProvider.layer(
 
 // The flow services are unimplemented mocks: a request that reached a handler
 // would die on the first call instead of answering with the middleware's refusal.
-const makeHarness = () => {
+const makeHarness = (
+	services: {
+		readonly cli?: Partial<CliDeviceAuthService["Service"]>
+		readonly mcp?: Partial<McpOAuthService["Service"]>
+		readonly auth?: Partial<AuthService["Service"]>
+		readonly audit?: AuditLogService["Service"]
+	} = {},
+) => {
 	const routes = HttpApiBuilder.layer(AuthSessionOnlyApi).pipe(
 		Layer.provide(HttpAuthSessionLive),
 		Layer.provide(ApiErrorBoundaryLive),
 		Layer.provideMerge(SessionAuthorizationLive),
 		Layer.provide(
 			Layer.mergeAll(
-				Layer.mock(CliDeviceAuthService)({}),
-				Layer.mock(McpOAuthService)({}),
-				Layer.mock(AuthService)({}),
-				Layer.mock(AuditLogService)({}),
-				Layer.mock(OrganizationRegionService)({}),
+				Layer.mock(CliDeviceAuthService)(services.cli ?? {}),
+				Layer.mock(McpOAuthService)(services.mcp ?? {}),
+				Layer.mock(AuthService)(services.auth ?? {}),
+				services.audit !== undefined
+					? Layer.succeed(AuditLogService, services.audit)
+					: Layer.mock(AuditLogService)({}),
+				Layer.mock(OrganizationRegionService)({ ensureServedHere: () => Effect.void }),
 			),
 		),
 		Layer.provide(Env.layer),
@@ -67,8 +86,18 @@ const makeHarness = () => {
 		return { status: response.status, body: JSON.parse(await response.text()) as Record<string, unknown> }
 	}
 
-	return { call, dispose }
+	const sessionToken = () =>
+		Effect.runPromise(
+			Effect.gen(function* () {
+				const env = yield* Env
+				return (yield* makeLoginSelfHosted(env)("test-root-password")).token
+			}).pipe(Effect.provide(Env.layer.pipe(Layer.provide(ConfigLive)))),
+		)
+
+	return { call, dispose, sessionToken }
 }
+
+const DEFAULT_ORG = Schema.decodeSync(OrgId)("default")
 
 const LOGIN_ENDPOINTS = [
 	["GET", "cli/device/ABCD-EFGH"],
@@ -96,6 +125,79 @@ describe("login approval endpoints", () => {
 		try {
 			const response = await harness.call("POST", "cli/device/ABCD-EFGH/approve", "not-a-session")
 			expect(response.status).toBe(401)
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("records an approved CLI login with the device it was for", async () => {
+		const audit = makeMemoryAuditLog()
+		const harness = makeHarness({
+			audit,
+			auth: { getUserEmail: () => Effect.succeed("root@maple.test") },
+			cli: {
+				inspect: () =>
+					Effect.succeed(
+						new CliDeviceInfoResponse({
+							userCode: "ABCD-EFGH",
+							deviceName: "work laptop",
+							expiresAt: "2026-11-18T00:00:00.000Z",
+							status: "pending",
+						}),
+					),
+				approve: () => Effect.succeed(new CliDeviceActionResponse({ status: "approved" })),
+			},
+		})
+		try {
+			const token = await harness.sessionToken()
+			const response = await harness.call("POST", "cli/device/ABCD-EFGH/approve", token)
+			expect(response.status).toBe(200)
+			const entries = await Effect.runPromise(
+				audit.list(DEFAULT_ORG, { action: "cli_session.approved", limit: 10, offset: 0 }),
+			)
+			expect(Arr.map(entries, (entry) => entry.metadata?.deviceName)).toEqual(["work laptop"])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("records a granted MCP connection with its client and redirect host, not the redirect", async () => {
+		const audit = makeMemoryAuditLog()
+		const harness = makeHarness({
+			audit,
+			auth: { getUserEmail: () => Effect.succeed("root@maple.test") },
+			mcp: {
+				inspect: () =>
+					Effect.succeed(
+						new McpOAuthAuthorizationInfoResponse({
+							clientName: "Editor",
+							redirectUri: "https://client.example/cb",
+							resource: "https://mcp.maple.test/mcp",
+							scopes: ["mcp"],
+							expiresAt: "2026-11-18T00:00:00.000Z",
+							status: "pending",
+						}),
+					),
+				approve: () =>
+					Effect.succeed(
+						new McpOAuthAuthorizationActionResponse({
+							status: "approved",
+							redirectUri: "https://client.example/cb?code=secret",
+						}),
+					),
+			},
+		})
+		try {
+			const token = await harness.sessionToken()
+			const response = await harness.call("POST", "mcp/oauth/authorization/req_1/approve", token)
+			expect(response.status).toBe(200)
+			const entries = await Effect.runPromise(
+				audit.list(DEFAULT_ORG, { action: "mcp_connection.granted", limit: 10, offset: 0 }),
+			)
+			expect(Arr.map(entries, (entry) => entry.metadata)).toEqual([
+				expect.objectContaining({ clientName: "Editor", redirectHost: "client.example" }),
+			])
+			expect(JSON.stringify(entries)).not.toContain("code=secret")
 		} finally {
 			await harness.dispose()
 		}

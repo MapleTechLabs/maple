@@ -177,7 +177,7 @@ describe("SecretResealService", () => {
 				// The old key is gone from this keyring: everything must open with the new one alone.
 				const ring = yield* keyring(2)
 				const password = yield* clickHousePassword(testDb, "org_a")
-				assert.isTrue(Str.startsWith(`v2.${ring.primary.id}.`)(password.ciphertext))
+				assert.isTrue(Str.startsWith(`v3.${ring.primary.id}.`)(password.ciphertext))
 				assert.strictEqual(
 					yield* openSecret(
 						ring,
@@ -298,6 +298,20 @@ describe("SecretResealService", () => {
 				fail,
 			),
 		)
+
+	it.effect("counts a destination slot's leftover v2 value as failed and remaining, untouched", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const ring = yield* keyring(1)
+			// How writers sealed this column before it named a destination.
+			const v2Slot = { name: clickHousePasswordSlot.name, binding: clickHousePasswordSlot.binding }
+			const v2 = yield* sealSecret(ring, v2Slot, { orgId: "org_a" }, "ch-pass", fail)
+			yield* seedClickHouseSettings(testDb, "org_a", v2)
+
+			assert.deepStrictEqual(yield* sweep(testDb, 1), { resealed: 0, failed: 1, remaining: 1 })
+			assert.deepStrictEqual(yield* clickHousePassword(testDb, "org_a"), v2)
+		})
+	})
 
 	it.effect("reseals a value whose ref reads the row's stored config", () => {
 		const testDb = createTestDb(trackedDbs)

@@ -82,6 +82,7 @@ export const replyCompletion = (origin: ChatTurnOrigin, writes: ReplyWrites) => 
 					[PROPOSE_EDIT]: (edit: PrReviewEditSubmission) =>
 						writes.stageEdit(edit).pipe(Effect.catchCause(asToolFailure(PROPOSE_EDIT))),
 				},
+				run.content,
 				run.sessionAttributes,
 			),
 			submitted: () => submitted,

@@ -21,6 +21,7 @@ export function registerListErrorIssueEventsTool(server: McpToolRegistrar) {
 			issue_id: issueIdParam(),
 			limit: P.limit({ default: 100, max: MAX_EVENTS, noun: "events" }),
 		}),
+		untrustedOutput: true,
 		hints: { readOnly: true },
 		phrases: ["Reading issue history"],
 		handler: Effect.fn("McpTool.listErrorIssueEvents")(function* (params) {

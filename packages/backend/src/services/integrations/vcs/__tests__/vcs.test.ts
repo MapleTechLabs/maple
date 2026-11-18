@@ -861,6 +861,30 @@ describe("GithubProvider.webhookToJobs", () => {
 		}).pipe(Effect.provide(providerLayer())),
 	)
 
+	it.effect(
+		"re-lists repositories when one is made public or private, and ignores other repository actions",
+		() =>
+			Effect.gen(function* () {
+				const provider = yield* GithubProvider
+				const reasons = yield* Effect.forEach(["publicized", "privatized", "renamed"], (action) => {
+					const body = JSON.stringify({ action, installation: { id: 99 }, repository: { id: 1 } })
+					return provider
+						.webhookToJobs({
+							headers: { "x-github-event": "repository", "x-hub-signature-256": sign(body) },
+							rawBody: body,
+						})
+						.pipe(
+							Effect.map((jobs) =>
+								Arr.flatMap(jobs, (job) =>
+									job.kind === "installation-sync" ? [job.reason] : [],
+								),
+							),
+						)
+				})
+				assert.deepStrictEqual(reasons, [["repositories_added"], ["repositories_added"], []])
+			}).pipe(Effect.provide(providerLayer())),
+	)
+
 	// Signature is the security boundary; each rejection reason is a distinct branch.
 	// A missing header must be rejected BEFORE any HMAC compute (the existing
 	// invalid-signature test only covers the `mismatch` branch).

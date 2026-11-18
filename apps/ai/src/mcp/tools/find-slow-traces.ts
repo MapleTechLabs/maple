@@ -23,6 +23,7 @@ export function registerFindSlowTracesTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 10, max: 100, noun: "traces" }),
 		}),
 		aliases: P.SERVICE_ALIASES,
+		untrustedOutput: true,
 		hints: { readOnly: true },
 		phrases: ["Finding slow traces", "Looking for slow requests"],
 		handler: Effect.fn("McpTool.findSlowTraces")(function* (params) {

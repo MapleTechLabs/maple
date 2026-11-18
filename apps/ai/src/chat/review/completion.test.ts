@@ -36,6 +36,7 @@ const runFor = (partial = false): CompletionRun => ({
 	modelName: "@cf/test/model",
 	partial,
 	sessionAttributes: SESSION_ATTRIBUTES,
+	content: "record",
 })
 
 /** Nothing unread and no whole-diff read: a pass whose coverage nobody is checking. */

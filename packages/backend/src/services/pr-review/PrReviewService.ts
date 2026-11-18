@@ -64,7 +64,7 @@ import {
 	type VcsRepositoryId,
 } from "@maple/domain/http"
 import { wrapChatContext } from "@maple/domain/chat-preamble"
-import { encodeChatTurnTenant, prReviewSessionId } from "@maple/domain/chat-session"
+import { encodeChatTurnTenant, prReviewSessionId, pullRequestTurnOrigin } from "@maple/domain/chat-session"
 import { UserId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
@@ -364,6 +364,8 @@ export const buildReviewKickoff = (input: {
 	readonly rules?: ReadonlyArray<RepositoryRuleFile>
 	/** What production telemetry says about the diff; absent when it could not be read. */
 	readonly telemetry?: PrReviewTelemetry
+	/** A public repository's review is world-readable: it reads no telemetry text and no tools. */
+	readonly isPrivate: boolean
 }): string => {
 	const body = Str.trim(input.body ?? "")
 	const quoted =
@@ -388,7 +390,13 @@ export const buildReviewKickoff = (input: {
 		"",
 		...renderConfigRules(input.config),
 		...(input.followUp === undefined || input.followUp.length === 0 ? [] : [...input.followUp, ""]),
-		...renderTelemetryKickoff(input.telemetry),
+		...renderTelemetryKickoff(input.telemetry, input),
+		...(input.isPrivate
+			? []
+			: [
+					"This repository is public, so its review is world-readable: no telemetry tools are offered. Review from the diff and the code.",
+					"",
+				]),
 		"Start with pr_changed_files. Read every hunk that adds code with pr_file_diff before you decide anything. Finish with submit_review.",
 	]
 	return wrapChatContext(Arr.join(lines, "\n"), "")
@@ -660,6 +668,8 @@ export interface ReviewMarkdownInput {
 	readonly mention?: string
 	/** The repository fails the check on a broken telemetry contract. */
 	readonly blocking?: boolean
+	/** A public repository's summary is world-readable: its telemetry section names nothing. */
+	readonly isPrivate: boolean
 	/** Why the review did not auto-approve, said under the score; absent when it did or never asked. */
 	readonly notApproved?: ReadonlyArray<string>
 }
@@ -889,7 +899,11 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 		)
 	}
 	lines.push(
-		...renderTelemetryMarkdown(report.telemetry, { blocking: input.blocking === true, brief: comment }),
+		...renderTelemetryMarkdown(report.telemetry, {
+			blocking: input.blocking === true,
+			brief: comment,
+			isPrivate: input.isPrivate,
+		}),
 	)
 	const checked = comment ? [] : (report.checked ?? [])
 	if (checked.length > 0) {
@@ -1068,6 +1082,8 @@ export const buildPublication = (input: {
 	readonly report: PrReviewReport
 	readonly partial: boolean
 	readonly repositoryUrl: string
+	/** Whether the repository is private; a public one's summary names nothing from telemetry. */
+	readonly isPrivate: boolean
 	readonly carried?: CarriedFindings
 	readonly minInlineSeverity?: PrReviewSeverity
 	readonly keys?: ReadonlyMap<string, string>
@@ -1108,6 +1124,7 @@ export const buildPublication = (input: {
 		partial: input.partial,
 		headSha: input.headSha,
 		repositoryUrl: input.repositoryUrl,
+		isPrivate: input.isPrivate,
 		carried,
 		...(input.mention === undefined ? undefined : { mention: input.mention }),
 		...(input.providerRefusal !== undefined
@@ -2147,6 +2164,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					...(followUp === undefined ? undefined : { followUp }),
 					...(rules === undefined ? undefined : { rules }),
 					...(telemetry === undefined ? undefined : { telemetry }),
+					isPrivate: repo.isPrivate,
 				})
 				// Before the turn, so a fast turn's finished summary is never overwritten by this notice.
 				yield* postReviewStatus(orgId, reviewId, repo, job.number, { kind: "reviewing", headSha })
@@ -2155,7 +2173,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						sessionId,
 						messageId: randomUUID(),
 						text,
-						origin: { kind: "autonomous" },
+						origin: pullRequestTurnOrigin(repo),
 						tenant: encodeChatTurnTenant({
 							orgId,
 							userId: internalServiceUserId,
@@ -2389,10 +2407,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					yield* annotate("skipped", { "maple.pr_review.skip_reason": "bot_author" })
 					return skip("bot_author")
 				}
-				// The automatic review reads org telemetry and posts to the pull request, so on a public
-				// repository it runs only for a trusted author. GitHub reports private org members as
-				// CONTRIBUTOR in webhooks, and only people with access can open a pull request on a private one.
-				// Webhooks also report them as CONTRIBUTOR on public repositories, so their push access is asked.
+				// The automatic review spends the org's quota, so on a public repository it runs only for a
+				// trusted author. Webhooks report org members as CONTRIBUTOR, so their push access is asked;
+				// only people with access can open a pull request on a private one.
 				const outsideAuthor =
 					mode === "automatic" &&
 					!repo.isPrivate &&
@@ -2965,9 +2982,11 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				// The model's findings weighed by production traffic, and the facts the service files
 				// itself. The repository's settings are enforced here, not only stated in the kickoff.
 				const scanned = withoutReviewerOverlap(read?.privacy ?? [], sourced.findings)
+				// A repository Maple cannot read back is treated as public.
+				const visibility = { isPrivate: Option.isSome(repository) && repository.value.isPrivate }
 				const proposed = [
-					...weighByTraffic(sourced.findings, telemetry),
-					...telemetryFindings(telemetry),
+					...weighByTraffic(sourced.findings, telemetry, visibility),
+					...telemetryFindings(telemetry, visibility),
 					...scanned,
 				]
 				const allowed = Arr.filter(
@@ -3322,6 +3341,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						reviewId,
 						commentAttempt: yield* commentAttemptOf(orgId, reviewId),
 						repositoryUrl: repo.htmlUrl,
+						isPrivate: repo.isPrivate,
 						number: review.number,
 						headSha: review.headSha,
 						baseSha: review.baseSha,

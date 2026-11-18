@@ -413,6 +413,15 @@ export const StatusPageSearch = Schema.Struct({
 	section: StringParam,
 })
 
+/** How `/status-pages/new` sets the page up: a coding agent over the MCP, or the builder. */
+export const StatusPageSetupMethod = Schema.Literals(["agent", "manual"])
+export type StatusPageSetupMethod = typeof StatusPageSetupMethod.Type
+
+/** `/status-pages/new`: none is the choice between the two `setup` methods. */
+export const StatusPageNewSearch = Schema.Struct({
+	setup: Schema.optional(StatusPageSetupMethod),
+})
+
 export const CodeReviewCiSearch = Schema.Struct(CodeReviewCiSearchFields)
 
 export const CodeReviewTeamSearch = Schema.Struct(CodeReviewTeamSearchFields)
