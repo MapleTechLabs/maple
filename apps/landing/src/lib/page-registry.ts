@@ -52,6 +52,7 @@ export type SectionId =
 	| "k8s-views"
 	| "k8s-correlation"
 	| "k8s-install"
+	| "product-events-paths"
 	| "product-events-sources"
 	| "github-ci"
 	| "github-after-merge"
@@ -62,8 +63,24 @@ export type SectionId =
 	| "cost-sources"
 	| "cost-budgets"
 
-/** A live piece in the hero's right-hand column, in place of an engraving. */
-export type HeroAsideId = "cost-statement"
+/** A live piece built for the hero, on a page with no artifact to put there. */
+export type HeroAsideId = "cost-statement" | "trace-waterfall"
+
+/**
+ * A legible window of a capture. `x` and `y` are the window's top-left corner as
+ * fractions of the image and `zoom` is how much larger than the frame the image is
+ * drawn. `aspect` (width / height) reshapes the frame; it defaults to the capture's.
+ */
+export interface Crop {
+	x: number
+	y: number
+	zoom: number
+	aspect?: number
+}
+
+/** The app's main pane at full height: every 1440 px capture has the same 256 px sidebar. */
+const SIDEBAR = 0.1785
+export const APP_MAIN: Crop = { x: SIDEBAR, y: 0, zoom: 1 / (1 - SIDEBAR), aspect: ((1 - SIDEBAR) * 1440) / 810 }
 
 /**
  * A plate. `src` unset renders MediaFrame's placeholder, which prints the
@@ -81,6 +98,8 @@ interface Plate {
 	alt: string
 	/** Placeholder-only: what to capture. */
 	caption?: string
+	/** Feature panels only: show this window of the capture instead of the whole screen. */
+	crop?: Crop
 }
 
 /** One row of the operator gutter. `op` is a literal product string. */
@@ -115,6 +134,16 @@ export interface GalleryShot {
 	/** Frame head, right: what to look at. */
 	title: string
 	alt: string
+	/** The part of the screen the title points at. Unset shows the main pane. */
+	crop?: Crop
+}
+
+/**
+ * A capture beside the hero copy, for a page whose main surface is a screen
+ * rather than its live artifact. Shown nowhere else on the page.
+ */
+export interface HeroShot extends GalleryShot {
+	crop: Crop
 }
 
 /** Every capture is 1440×810 CSS px at 2x. */
@@ -131,8 +160,12 @@ export interface Feature {
 	slug: string
 	/** Decorative Roman engraving, shared by all locale variants. Unset renders a plain hero. */
 	illustration?: string
-	/** A live piece beside the hero copy from `lg` up, for a page that has no engraving. */
+	/**
+	 * What the hero shows beside the copy: `heroAside`, else `heroShot`, else the
+	 * artifact, which then has no section of its own lower down.
+	 */
 	heroAside?: HeroAsideId
+	heroShot?: HeroShot
 	navLabel: Msg
 	navDesc: Msg
 	seoTitle: Msg
@@ -210,11 +243,3 @@ export const featurePath = (locale: string, slug: string) => localePath(locale, 
 export const useCasePath = (locale: string, slug: string) => localePath(locale, `/use-cases/${slug}`)
 
 export const pricingPath = (locale: string) => localePath(locale, "/pricing")
-
-/**
- * A story is only allowed to pin its pane when at least two plates are real.
- * A pinned frame crossfading between identical placeholder dot-grids reads as
- * broken rather than as pending, so those instances fall back to the same
- * inline layout `<lg` and `prefers-reduced-motion` already produce.
- */
-export const storyIsPinnable = (steps: StoryStepSpec[]) => steps.filter((step) => step.plate.src).length >= 2

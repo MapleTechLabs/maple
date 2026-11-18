@@ -148,6 +148,8 @@ export const sectionMarkdown = (id: SectionId, site: URL | undefined): string =>
 					(step, i) => `${i + 1}. ${step.caption()}\n\n${fence("bash", step.code)}`,
 				),
 			)
+		case "product-events-paths":
+			return section(m.pe_paths_title(), m.pe_paths_lede())
 		case "product-events-sources":
 			return section(
 				m.pe_src_title(),
