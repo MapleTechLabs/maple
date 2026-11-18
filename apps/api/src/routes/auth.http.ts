@@ -10,6 +10,7 @@ import {
 import { Effect, Option, String as Str } from "effect"
 import { HttpServerRequest } from "effect/http"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { CliDeviceAuthService } from "@maple/backend/services/auth/CliDeviceAuthService"
 import { McpOAuthService } from "@maple/backend/services/auth/McpOAuthService"
@@ -102,12 +103,17 @@ export const HttpAuthSessionLive = HttpApiBuilder.group(MapleApi, "authSession",
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					const userEmail = yield* auth.getUserEmail(tenant.userId)
-					return yield* cliAuth.approve(params.userCode, {
+					const pending = yield* cliAuth.inspect(params.userCode)
+					const approved = yield* cliAuth.approve(params.userCode, {
 						orgId: tenant.orgId,
 						userId: tenant.userId,
 						roles: tenant.roles,
 						userEmail,
 					})
+					yield* recordHttpAudit("cli_session.approved", {
+						metadata: { deviceName: pending.deviceName, roles: [...tenant.roles] },
+					})
+					return approved
 				}),
 			)
 			.handle("cliDeviceDeny", ({ params }) => cliAuth.deny(params.userCode))
@@ -116,12 +122,25 @@ export const HttpAuthSessionLive = HttpApiBuilder.group(MapleApi, "authSession",
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					const userEmail = yield* auth.getUserEmail(tenant.userId)
-					return yield* mcpOAuth.approve(params.requestId, {
+					const pending = yield* mcpOAuth.inspect(params.requestId)
+					const approved = yield* mcpOAuth.approve(params.requestId, {
 						orgId: tenant.orgId,
 						userId: tenant.userId,
 						roles: tenant.roles,
 						userEmail,
 					})
+					// The redirect's host only: its query can carry the client's state.
+					const redirectHost = Option.liftThrowable(() => new URL(pending.redirectUri).host)()
+					yield* recordHttpAudit("mcp_connection.granted", {
+						metadata: {
+							clientName: pending.clientName,
+							resource: pending.resource,
+							scopes: pending.scopes,
+							roles: [...tenant.roles],
+							...(Option.isSome(redirectHost) ? { redirectHost: redirectHost.value } : undefined),
+						},
+					})
+					return approved
 				}),
 			)
 			.handle("mcpOAuthAuthorizationDeny", ({ params }) => mcpOAuth.deny(params.requestId))
