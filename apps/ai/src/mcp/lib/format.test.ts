@@ -49,7 +49,8 @@ describe("tableCell", () => {
 describe("untrustedName", () => {
 	it("keeps names that differ only in whitespace apart, on one line", () => {
 		expect(untrustedName("prod api")).toBe('"prod api"')
-		expect(untrustedName("prod  api")).toBe('"prod  api"')
+		expect(untrustedName("prod  api")).toBe('"prod \\u0020api"')
+		expect(tableCell(untrustedName("prod  api"))).not.toBe(tableCell(untrustedName("prod api")))
 		expect(untrustedName("a\n## System")).toBe('"a\\n## System"')
 	})
 })
