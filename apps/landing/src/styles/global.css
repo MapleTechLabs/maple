@@ -25,6 +25,11 @@
 @source "../../../../packages/views/src/charts/{bar-chart,timeseries-legend}.ts";
 @source "../../../../packages/views/src/ui/{table,segmented-select,toggle,delta,swatch,stat-figure,panel,meter,truncated-text,icon-button,eyebrow,info-hint}.ts";
 @source "../../../../packages/views/src/ui/filters/active-filter-chips.ts";
+/* The logs stream island: its rows, chips, expanded body and attribute panel. */
+@source "../../../../packages/views/src/ui/{logs,attributes}";
+@source "../../../../packages/views/src/ui/{list-row,badge,copy-button,timestamp,collapsible,input-group}.styles.ts";
+@source "../../../../packages/views/src/ui/{timestamp,copy-button,row-focus,search-input,inline-code,input-group}.ts";
+@source "../../../../packages/views/src/lib/display-text.ts";
 
 /* Landing-only tokens — marketing surfaces, not part of the shared system. */
 :root {
@@ -653,83 +658,6 @@
 }
 
 /* ──────────────────────────────────────────────────────────────
-   Auto-scrolling log stream.
-   Two copies of the log list stacked vertically; container
-   translates upward by exactly the height of one copy, then
-   the keyframe restarts. Continuous illusion of an infinite feed.
-   ────────────────────────────────────────────────────────────── */
-@keyframes log-scroll {
-	0% {
-		transform: translate3d(0, 0, 0);
-	}
-	100% {
-		transform: translate3d(0, -50%, 0);
-	}
-}
-.log-stream__viewport {
-	position: relative;
-	height: 320px;
-	overflow: hidden;
-}
-.log-stream__viewport::after {
-	content: "";
-	position: absolute;
-	inset: 0;
-	pointer-events: none;
-	background: linear-gradient(
-		to bottom,
-		var(--bg-deep) 0%,
-		transparent 14%,
-		transparent 86%,
-		var(--bg-deep) 100%
-	);
-}
-.log-stream__belt {
-	display: flex;
-	flex-direction: column;
-	animation: log-scroll 32s linear infinite;
-	will-change: transform;
-}
-.log-row {
-	display: grid;
-	grid-template-columns: 9ch 6ch 14ch 1fr 6ch;
-	gap: 12px;
-	padding: 4px 14px;
-	font-size: 11.5px;
-	line-height: 1.55;
-	color: var(--muted-foreground);
-	border-bottom: 1px solid color-mix(in oklab, var(--border) 40%, transparent);
-}
-.log-row__lvl {
-	font-weight: 600;
-}
-.log-row[data-level="info"] .log-row__lvl {
-	color: var(--severity-info);
-}
-.log-row[data-level="warn"] .log-row__lvl {
-	color: var(--severity-warn);
-}
-.log-row[data-level="error"] .log-row__lvl {
-	color: var(--severity-error);
-}
-.log-row[data-level="debug"] .log-row__lvl {
-	color: var(--severity-debug);
-}
-.log-row[data-level="error"] {
-	background: color-mix(in oklab, var(--primary) 6%, transparent);
-}
-.log-row__svc {
-	color: var(--foreground);
-}
-.log-row__msg {
-	color: var(--foreground);
-}
-.log-row__dur {
-	color: var(--muted-foreground);
-	justify-self: end;
-}
-
-/* ──────────────────────────────────────────────────────────────
    Service map.
    Mirrors the in-product service map: rounded-rect cards with health
    dot + label + req/s · err% · avg metrics, smoothstep edges rendered
@@ -1196,7 +1124,6 @@
 		filter: none !important;
 	}
 
-	.log-stream__belt,
 	.logo-marquee__belt,
 	.svc-map-flow,
 	.mcp-caret,

@@ -21,7 +21,7 @@ import LiveAnomaly from "../live/LiveAnomaly.astro"
 import LiveBrowserSessions from "../live/LiveBrowserSessions.astro"
 import LiveFunnel from "../live/LiveFunnel.astro"
 import LiveK8sHeatmap from "../live/LiveK8sHeatmap.astro"
-import LiveLogStream from "../live/LiveLogStream.astro"
+import LiveLogs from "../live/LiveLogs.astro"
 import LiveMcpTranscript from "../live/LiveMcpTranscript.astro"
 import LiveServiceMap from "../live/LiveServiceMap.astro"
 import LiveStatusPage from "../live/LiveStatusPage.astro"
@@ -52,7 +52,7 @@ import UptimeSetup from "./sections/UptimeSetup.astro"
 export const ARTIFACTS = {
 	"trace-visualization": TraceExplorer,
 	"browser-sessions": LiveBrowserSessions,
-	"log-stream": LiveLogStream,
+	"log-stream": LiveLogs,
 	"logs-volume": LogsVolume,
 	"service-map": LiveServiceMap,
 	"mcp-transcript": LiveMcpTranscript,
