@@ -28,6 +28,9 @@ import {
 	themeContrastIssue,
 	STATUS_PAGE_MAX_URL_LENGTH,
 	STATUS_PAGE_UPDATE_MAX_LENGTH,
+	STATUS_PAGE_IMAGE_TYPES,
+	STATUS_PAGE_MAX_IMAGE_BYTES,
+	isStatusPageImageDataUrl,
 } from "@maple/domain/status-page"
 import { DateTime, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { closingStatus, STATUSES_OF_KIND } from "./derive"
@@ -458,8 +461,20 @@ export type SettingsTextField = typeof SettingsTextField.Type
 
 /** The page fields the Appearance tab edits; the rest are on the Settings tab. */
 export const BRANDING_FIELDS = ["logoUrl", "logoDarkUrl", "faviconUrl"] as const
-const isBrandingField = (field: SettingsTextField): boolean =>
-	Arr.some(BRANDING_FIELDS, (branding) => branding === field)
+/** A logo or favicon field: an https URL or an uploaded image. */
+export const BrandingField = Schema.Literals(BRANDING_FIELDS)
+export type BrandingField = typeof BrandingField.Type
+
+/** The page fields Appearance edits (what visitors see besides the name); the rest are Basic settings. */
+const APPEARANCE_FIELDS: ReadonlyArray<SettingsTextField> = [
+	...BRANDING_FIELDS,
+	"websiteUrl",
+	"privacyUrl",
+	"termsUrl",
+	"supportUrl",
+]
+const isAppearanceField = (field: SettingsTextField): boolean =>
+	Arr.some(APPEARANCE_FIELDS, (appearance) => appearance === field)
 
 /** The theme's colour inputs, as typed; blank means the preset's colour. */
 export const ThemeColorField = Schema.Literals(["accent", "background", "text", "card", "border"])
@@ -580,7 +595,7 @@ const sameTheme = (a: ThemeForm, b: ThemeForm): boolean =>
 	a.radius === b.radius &&
 	a.font === b.font
 /** The service's rule: a URL `URL` can parse, over https. Checked here so Save never sends what it refuses. */
-const httpsIssue = (value: string): string | null => {
+export const httpsIssue = (value: string): string | null => {
 	const url = Str.trim(value)
 	if (url === "") return null
 	if (url.length > STATUS_PAGE_MAX_URL_LENGTH)
@@ -588,6 +603,18 @@ const httpsIssue = (value: string): string | null => {
 	if (!URL.canParse(url)) return "Use a valid URL, like https://acme.example."
 	return new URL(url).protocol === "https:" ? null : "Use an https URL."
 }
+
+/** An upload is checked on read (`imageUploadIssue`); a typed value must be an https URL. */
+const imageIssue = (value: string): string | null =>
+	isStatusPageImageDataUrl(Str.trim(value)) ? null : httpsIssue(value)
+
+/** Why a picked file cannot be a logo or favicon, or `null`: the API's type and size rule. */
+export const imageUploadIssue = (file: { readonly type: string; readonly size: number }): string | null =>
+	!Arr.some(STATUS_PAGE_IMAGE_TYPES, (type) => type === file.type)
+		? "Use a PNG, JPEG, WebP, GIF, SVG or ICO image."
+		: file.size > STATUS_PAGE_MAX_IMAGE_BYTES
+			? `Keep the image under ${STATUS_PAGE_MAX_IMAGE_BYTES / 1024} KB.`
+			: null
 
 /** Each field's problem, or `null`: the API refuses the same values. */
 export const settingsIssues = (form: SettingsForm): Readonly<Record<SettingsTextField, string | null>> => ({
@@ -598,9 +625,9 @@ export const settingsIssues = (form: SettingsForm): Readonly<Record<SettingsText
 	privacyUrl: httpsIssue(form.privacyUrl),
 	termsUrl: httpsIssue(form.termsUrl),
 	supportUrl: httpsIssue(form.supportUrl),
-	logoUrl: httpsIssue(form.logoUrl),
-	logoDarkUrl: httpsIssue(form.logoDarkUrl),
-	faviconUrl: httpsIssue(form.faviconUrl),
+	logoUrl: imageIssue(form.logoUrl),
+	logoDarkUrl: imageIssue(form.logoDarkUrl),
+	faviconUrl: imageIssue(form.faviconUrl),
 	autoIncidents: null,
 })
 
@@ -627,7 +654,7 @@ export const themeContrastOf = (theme: ThemeForm): string | null =>
 const hasFieldIssues = (form: SettingsForm, onAppearanceTab: boolean): boolean =>
 	Arr.some(
 		Rec.toEntries(settingsIssues(form)),
-		([field, issue]) => issue !== null && isBrandingField(field) === onAppearanceTab,
+		([field, issue]) => issue !== null && isAppearanceField(field) === onAppearanceTab,
 	)
 
 /** A problem in the page fields, which the Settings tab shows. */

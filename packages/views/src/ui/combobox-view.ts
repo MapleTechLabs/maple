@@ -16,7 +16,7 @@ import {
 	visibleItems,
 } from "./combobox"
 import { ChevronExpandYIcon, XmarkIcon } from "./control-icons"
-import { iconNode } from "./icon"
+import { iconNode } from "./icon-node"
 import { portalId } from "./overlay/popup-state"
 import { focusGuard, isMounted, SR_ONLY_STYLE, stateAttributes } from "./overlay/transition"
 import { inputControlClassName } from "./input"

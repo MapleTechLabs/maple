@@ -9,6 +9,7 @@ import {
 	branchPopoverId,
 	DeleteGithubRepo,
 	type GithubCardModel,
+	SetAuditLog,
 	SetCiTraces,
 	SetTrackedBranch,
 	SpinGithubRefresh,
@@ -88,6 +89,60 @@ export const ciTracesShown = (model: Model): boolean => {
 	const server = githubStatusOf(model)?.ciTracesEnabled ?? true
 	const card = model.githubCard
 	return card.ciTraces !== null && card.ciTracesServer === server ? card.ciTraces : server
+}
+
+/**
+ * A status read that lands with no save in flight is the server's word: the switches drop their
+ * optimistic values, so a later change made elsewhere shows instead of the old override.
+ */
+export const settledSwitches = (model: Model, succeeded: boolean): Model => {
+	const card = model.githubCard
+	if (!succeeded) return model
+	return withCard(model, {
+		...(card.isSavingCiTraces ? undefined : { ciTraces: null, ciTracesServer: null }),
+		...(card.isSavingAuditLog ? undefined : { auditLog: null, auditLogServer: null }),
+	})
+}
+
+/** The audit log switch's value, read like the CI traces one. */
+export const auditLogShown = (model: Model): boolean => {
+	const server = githubStatusOf(model)?.auditLogEnabled ?? true
+	const card = model.githubCard
+	return card.auditLog !== null && card.auditLogServer === server ? card.auditLog : server
+}
+
+export const toggledAuditLog = (model: Model): Return => {
+	if (model.githubCard.isSavingAuditLog) return { model }
+	const next = !auditLogShown(model)
+	const server = githubStatusOf(model)?.auditLogEnabled ?? true
+	return {
+		model: withCard(model, { auditLog: next, auditLogServer: server, isSavingAuditLog: true }),
+		commands: [SetAuditLog({ enabled: next })],
+	}
+}
+
+export const completedAuditLog = (
+	model: Model,
+	context: PageContext,
+	enabled: boolean,
+	failure: LoadFailure | null,
+): Return => {
+	const settled = withCard(model, { isSavingAuditLog: false })
+	// A lost response can follow a committed write, so a failure re-reads the status too.
+	if (failure !== null)
+		return chain(withCard(settled, { auditLog: !enabled }), [
+			(next) => toast(next, "error", "Couldn't change the audit log.", failure.message),
+			(next) => refresh(next, context),
+		])
+	return chain(settled, [
+		(next) =>
+			toast(
+				next,
+				"success",
+				enabled ? "GitHub changes will show up in the audit log" : "GitHub audit log turned off",
+			),
+		(next) => refresh(next, context),
+	])
 }
 
 export const clickedRefresh = (model: Model, context: PageContext): Return => {

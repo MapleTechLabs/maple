@@ -6,7 +6,7 @@ import { rowsToV2ApiKeys } from "@maple/web-data/collections/api-keys"
 import { Array, Option } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { AppRoute, hrefOf } from "../../route"
-import { type SettingsSearch as SettingsSearchSchema, settingsTabValues } from "../../route/search"
+import type { SettingsSearch as SettingsSearchSchema } from "../../route/search"
 
 type SettingsSearch = typeof SettingsSearchSchema.Type
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
@@ -35,9 +35,7 @@ import { Message as KeysMessageValue } from "./keys/message"
 import type * as KeysModel from "./keys/model"
 import * as Keys from "./keys/update"
 import {
-	type LegacySettingsRedirect,
 	resolveActiveSettingsTab,
-	resolveLegacySettingsTab,
 	type SettingsTab,
 	visibleSections,
 	visibleTabs,
@@ -477,9 +475,7 @@ const syncTab = (model: Model, context: PageContext): Return => {
 		return {
 			model: {
 				...leaveTab(model),
-				deniedTab: Option.getOrNull(
-					Array.findFirst(settingsTabValues, (value) => value === model.search.tab),
-				),
+				deniedTab: model.search.tab,
 			},
 			outMessage: PageOutMessage.RequestedNavigation({
 				url: hrefOf(AppRoute.Settings({ search })),
@@ -504,17 +500,6 @@ const syncTab = (model: Model, context: PageContext): Return => {
 	return { model }
 }
 
-const redirectUrl = (redirect: LegacySettingsRedirect): string => {
-	switch (redirect.kind) {
-		case "integrations":
-			return hrefOf(AppRoute.Integrations({ search: {} }))
-		case "account":
-			return hrefOf(AppRoute.Account({ search: { tab: "email-preferences" } }))
-		case "tab":
-			return hrefOf(AppRoute.Settings({ search: { tab: redirect.tab } }))
-	}
-}
-
 /** The audit filters ride along on a tab switch. */
 const auditLogSearchOf = (search: SettingsSearch): SettingsSearch => ({
 	range: search.range,
@@ -525,18 +510,8 @@ const auditLogSearchOf = (search: SettingsSearch): SettingsSearch => ({
 	outcome: search.outcome,
 })
 
-/** Retired `?tab=` values are replaced by their new home before the page renders. */
-const enter = (model: Model, context: PageContext): Return =>
-	Option.match(resolveLegacySettingsTab(model.search.tab), {
-		onNone: () => syncTab(model, context),
-		onSome: (redirect) => ({
-			model: leaveTab(model),
-			outMessage: PageOutMessage.RequestedNavigation({ url: redirectUrl(redirect), isReplace: true }),
-		}),
-	})
-
 export const init = (route: SettingsRoute, context: PageContext): Return => {
-	const entered = enter(
+	const entered = syncTab(
 		{
 			search: route.search,
 			nowMs: 0,
@@ -566,7 +541,7 @@ export const routeChanged = (model: Model, route: SettingsRoute, context: PageCo
 	withRuleStats(changedRoute(model, route, context))
 
 const changedRoute = (model: Model, route: SettingsRoute, context: PageContext): Return =>
-	enter(
+	syncTab(
 		{
 			...model,
 			search: route.search,

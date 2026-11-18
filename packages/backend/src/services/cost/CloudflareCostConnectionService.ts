@@ -3,7 +3,6 @@
 // clients a billing scope, when the org's Cloudflare connection takes over (docs/cloud-cost-plan.md).
 import {
 	CLOUDFLARE_COST_TOKEN_MAX_LENGTH,
-	CloudCostDisabledError,
 	CostConnectionPersistenceError,
 	CostConnectionValidationError,
 	type OrgId,
@@ -11,7 +10,6 @@ import {
 } from "@maple/domain/http"
 import { Clock, Context, Duration, Effect, Layer, Redacted, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { CostConnectionStore, type CostConnectionStoreError } from "./CostConnectionStore"
 import * as CloudflareBilling from "./providers/cloudflare/cloudflare-billing-api"
 import { readsBeyondBilling } from "./providers/cloudflare/cloudflare-token-probes"
@@ -59,7 +57,7 @@ export interface CloudflareCostConnectionServiceApi {
 		apiToken: string,
 	) => Effect.Effect<
 		{ readonly accountId: string; readonly accountLabel: string },
-		CostConnectionPersistenceError | CostConnectionValidationError | CloudCostDisabledError
+		CostConnectionPersistenceError | CostConnectionValidationError
 	>
 	readonly remove: (orgId: OrgId) => Effect.Effect<void, CostConnectionPersistenceError>
 }
@@ -70,7 +68,6 @@ export class CloudflareCostConnectionService extends Context.Service<
 >()("@maple/backend/services/cost/CloudflareCostConnectionService", {
 	make: Effect.gen(function* () {
 		const connections = yield* CostConnectionStore
-		const featureFlags = yield* OrganizationFeatureFlagsService
 		const httpClient = yield* HttpClient.HttpClient
 
 		const asked = <A>(
@@ -132,12 +129,6 @@ export class CloudflareCostConnectionService extends Context.Service<
 			rawToken: string,
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId })
-			const flags = yield* featureFlags.flags(orgId)
-			if (!flags.cloudCost) {
-				return yield* new CloudCostDisabledError({
-					message: "Cloud cost is not enabled for this organization.",
-				})
-			}
 			const apiToken = Str.trim(rawToken)
 			if (!couldBeToken(apiToken)) {
 				return yield* refused("That is not a Cloudflare API token.")
@@ -174,12 +165,6 @@ export class CloudflareCostConnectionService extends Context.Service<
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(
-			Layer.mergeAll(
-				FetchHttpClient.layer,
-				OrganizationFeatureFlagsService.layer,
-				CostConnectionStore.layer,
-			),
-		),
+		Layer.provide(Layer.mergeAll(FetchHttpClient.layer, CostConnectionStore.layer)),
 	)
 }

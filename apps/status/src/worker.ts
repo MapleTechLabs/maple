@@ -35,7 +35,7 @@ const props = Effect.gen(function* () {
 			...env,
 			...(stack.domains.status === undefined ? undefined : { MAPLE_STATUS_HOST: stack.domains.status }),
 		},
-		// Pages are served at `/s/<slug>`; previews get a domain, prd stays on workers.dev until it has one.
+		// Pages are served at `/s/<slug>`; prd and previews on their status domain, dev stages on workers.dev.
 		domain: stack.domains.status,
 		workersDev: true,
 	}
@@ -52,18 +52,25 @@ export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
 			namespaceId: 2026102801,
 			simple: { limit: 10, period: 60 },
 		})
+		// Password attempts on one page from every address together.
+		const pageLimiter = yield* Cloudflare.RateLimit("STATUS_PAGE_ACCESS_RATE_LIMITER", {
+			namespaceId: 2026111702,
+			simple: { limit: 100, period: 60 },
+		})
 
 		return {
 			fetch: Effect.gen(function* () {
 				const request = yield* HttpServerRequest.HttpServerRequest
 				const web = yield* HttpServerRequest.toWeb(request).pipe(Effect.orDie)
-				const [kvBinding, bucketBinding, limiterBinding] = yield* dischargeRuntimeContext(
-					Effect.all([kv.raw, bucket.raw, limiter.raw]),
-				)
+				const [kvBinding, bucketBinding, limiterBinding, pageLimiterBinding] =
+					yield* dischargeRuntimeContext(
+						Effect.all([kv.raw, bucket.raw, limiter.raw, pageLimiter.raw]),
+					)
 				const storage = nativeStorage({
 					kv: kvBinding,
 					bucket: bucketBinding,
 					limiter: limiterBinding,
+					pageLimiter: pageLimiterBinding,
 					cache: caches.open("status-snapshots"),
 				})
 				const nowMs = yield* Clock.currentTimeMillis

@@ -38,8 +38,7 @@ const PROGRESS_CONCURRENCY = 5
 
 /**
  * What a budget has spent, for the alert evaluator and the budgets API: only the database and
- * the warehouse. It does not ask whether the org is still in the `cloudCost` rollout: an org
- * that left stops syncing, and its budgets go on reading what is stored.
+ * the warehouse.
  */
 export class CostBudgetSource extends Context.Service<CostBudgetSource, CostBudgetSourceApi>()(
 	"@maple/backend/services/cost/CostBudgetSource",

@@ -311,7 +311,10 @@ describe("GoogleOAuthService", () => {
 		return Effect.gen(function* () {
 			yield* connect
 			const service = yield* GoogleOAuthService
-			assert.deepStrictEqual(yield* service.disconnect(orgA), { disconnected: true })
+			assert.deepStrictEqual(yield* service.disconnect(orgA), {
+				disconnected: true,
+				grantRevoked: true,
+			})
 			assert.deepStrictEqual(google.revoked, ["g-refresh"])
 			assert.isNull(yield* service.getConnection(orgA))
 		}).pipe(Effect.provide(makeLayer(testDb, google)))

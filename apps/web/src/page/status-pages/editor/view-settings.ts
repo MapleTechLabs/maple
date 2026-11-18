@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { V2StatusPage } from "@maple/domain/http/v2"
-import { Array as Arr, Option } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 import { absurd } from "effect/Function"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -11,13 +11,20 @@ import { copyableField } from "@maple/views/ui/copyable-field"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { skeleton } from "@maple/views/ui/skeleton"
+import { textLink } from "@maple/views/ui/text-link"
 import { failureMessage } from "@maple/views/data/load-failure"
 import { dangerRow, dangerZone } from "../../kit/danger-zone"
 import { navShell } from "../../kit/nav-shell"
 import { saveBar } from "../../kit/save-bar"
 import { adminOnlyNote, settingsSection, settingsSections } from "../../kit/settings-section"
-import { switchRow } from "../../kit/switch-row"
-import { publicAddress, SETTINGS_SECTIONS, type SettingsSection, statusPageHref } from "../shared/commands"
+import { SLUG_TAKEN_MESSAGE } from "../shared/slug"
+import {
+	publicAddress,
+	publicUrl,
+	SETTINGS_SECTIONS,
+	type SettingsSection,
+	statusPageHref,
+} from "../shared/commands"
 import { selectField, textareaField, textField } from "../shared/fields"
 import {
 	hasAppearanceIssues,
@@ -27,19 +34,21 @@ import {
 	settingsFormOf,
 	settingsIssues,
 } from "../shared/form"
-import { accessSaveBar, accessSection } from "./view-access"
-import { appearanceSection, brandingSection } from "./view-appearance"
+import { accessSaveBar, accessSaveContext, accessSection } from "./view-access"
+import { appearanceSection, brandingSection, linksSection } from "./view-appearance"
 import { customDomainSection } from "./view-domain"
 import { jsonTab } from "./view-json"
 import { monitorsSaveBar, monitorsSection } from "./view-monitors"
 import { settingsPagePreview } from "./view-canvas"
 import { pageUrlOf } from "./update-domain"
+import { PREVIEW_FIELD_TARGETS } from "./command"
 import { Message } from "./message"
 import { canBreakGlass, canManage, type Model } from "./model"
 import { gatedControl } from "../../kit/session-grants"
+import { accessIssue, isAccessDirty } from "./update-access"
 import { isSettingsDirty, settingsOf } from "./update-settings"
+import { PREVIEWED_SECTIONS } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { grid } from "@maple/views/ui/grid"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
 // The Settings tab: a menu of sections beside the open one. Basic settings and Appearance edit one
@@ -51,15 +60,13 @@ const SECTION_LABEL = {
 	basic: "Basic settings",
 	monitors: "Monitors",
 	appearance: "Appearance",
-	access: "Access",
 	advanced: "Advanced",
 } as const satisfies Record<SettingsSection, string>
 
 const SECTION_ICON = {
 	basic: "GearIcon",
 	monitors: "PulseIcon",
-	appearance: "PaletteIcon",
-	access: "LockIcon",
+	appearance: "Palette2Icon",
 	advanced: "CodeIcon",
 } as const satisfies Record<SettingsSection, IconName>
 
@@ -69,7 +76,31 @@ const AUTO_INCIDENT_ENTRIES = [
 	{ value: "publish", label: "Open and publish an incident" },
 ]
 
-const pageSection = (h: H, model: Model, form: SettingsForm): Html => {
+/** The name the public page shows: the typed one, or the saved one while the field is empty. */
+const nameShown = (form: SettingsForm, page: V2StatusPage): string =>
+	Str.trim(form.name) === "" ? page.name : Str.trim(form.name)
+
+/** The address in the Address hint: a link once it serves the saved page, plain text otherwise. */
+const addressText = (h: H, page: V2StatusPage, url: string, isSaved: boolean): Html | string =>
+	isSaved && page.visibility !== "internal" && !page.draft && Str.startsWith("http")(url)
+		? textLink(h, { href: url, attributes: [h.Target("_blank"), h.Rel("noopener")] }, [url])
+		: url
+
+/** The Address hint's first sentence: only a published public or password page is read there. */
+const whereVisitorsRead = (
+	h: H,
+	page: V2StatusPage,
+	url: string,
+	isSaved: boolean,
+): ReadonlyArray<Html | string> => {
+	const address = addressText(h, page, url, isSaved)
+	if (page.visibility === "internal")
+		return ["Its address is ", address, ", but internal pages are not served there."]
+	if (page.draft) return ["Visitors will read the page at ", address, " once it is published."]
+	return ["Visitors read the page at ", address, "."]
+}
+
+const pageSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm): Html => {
 	const issues = settingsIssues(form)
 	const isReadOnly = !canManage(model)
 	return settingsSection(
@@ -78,18 +109,18 @@ const pageSection = (h: H, model: Model, form: SettingsForm): Html => {
 			id: "status-page-settings-page",
 			framed: false,
 			title: "Page",
-			// Basic settings is only this section: the menu already names it, so the title is for
-			// screen readers alone.
+			// It opens Basic settings: the menu already names it, so the title is for screen readers alone.
 			isLead: true,
 		},
 		[
 			vstack(h, { gap: "4" }, [
 				textField(h, {
-					id: "status-page-name",
+					id: PREVIEW_FIELD_TARGETS.name.id,
 					label: "Name",
 					value: form.name,
 					isDisabled: isReadOnly,
 					error: issues.name,
+					hint: `Visitors see it in the browser tab and link previews as "${nameShown(form, page)} status", and in the page header when there is no logo. It also names the page in Maple.`,
 					onInput: (value) => Message.ChangedSetting({ field: "name", value }),
 				}),
 				textField(h, {
@@ -98,61 +129,30 @@ const pageSection = (h: H, model: Model, form: SettingsForm): Html => {
 					value: form.slug,
 					isMono: true,
 					isDisabled: isReadOnly,
-					error: issues.slug,
-					hint: `${publicAddress(form.slug)}. Changing it moves the page; the old address stops working.`,
+					error:
+						model.takenSlug !== null && model.takenSlug === form.slug
+							? SLUG_TAKEN_MESSAGE
+							: issues.slug,
+					hint: [
+						...whereVisitorsRead(
+							h,
+							page,
+							publicUrl(model.publicBaseUrl, form.slug) ?? `/s/${form.slug}`,
+							form.slug === page.slug,
+						),
+						" Each address belongs to one page across Maple; changing it moves the page and the old address stops working. A custom domain, below, serves the page at your own address instead.",
+					],
 					onInput: (value) => Message.ChangedSetting({ field: "slug", value }),
 				}),
 				textareaField(h, {
 					id: "status-page-description",
 					label: "Description",
 					value: form.description,
+					placeholder: "Live status of Acme's API, dashboard and integrations.",
 					isDisabled: isReadOnly,
-					hint: "Shown in search results and the link preview.",
+					hint: "Not shown on the page. Search engines and link previews in Slack, X and the like show it under the name. Left empty, they show the current status instead.",
 					onInput: (value) => Message.ChangedSetting({ field: "description", value }),
 				}),
-				// The links apart from the page's text above, and each row clear of the next.
-				grid(h, { sm: 2, gapX: "4", gapY: "6", className: "mt-2" }, [
-					textField(h, {
-						id: "status-page-website",
-						label: "Website URL",
-						value: form.websiteUrl,
-						placeholder: "https://acme.example",
-						isDisabled: isReadOnly,
-						error: issues.websiteUrl,
-						hint: "Linked in the page header as Visit website.",
-						onInput: (value) => Message.ChangedSetting({ field: "websiteUrl", value }),
-					}),
-					textField(h, {
-						id: "status-page-support",
-						label: "Support URL",
-						value: form.supportUrl,
-						placeholder: "https://acme.example/support",
-						isDisabled: isReadOnly,
-						error: issues.supportUrl,
-						hint: "Linked in the page header as Contact support.",
-						onInput: (value) => Message.ChangedSetting({ field: "supportUrl", value }),
-					}),
-					textField(h, {
-						id: "status-page-privacy",
-						label: "Privacy policy URL",
-						value: form.privacyUrl,
-						placeholder: "https://acme.example/privacy",
-						isDisabled: isReadOnly,
-						error: issues.privacyUrl,
-						hint: "Linked in the page footer.",
-						onInput: (value) => Message.ChangedSetting({ field: "privacyUrl", value }),
-					}),
-					textField(h, {
-						id: "status-page-terms",
-						label: "Terms of service URL",
-						value: form.termsUrl,
-						placeholder: "https://acme.example/terms",
-						isDisabled: isReadOnly,
-						error: issues.termsUrl,
-						hint: "Linked in the page footer.",
-						onInput: (value) => Message.ChangedSetting({ field: "termsUrl", value }),
-					}),
-				]),
 			]),
 		],
 	)
@@ -169,14 +169,6 @@ const behaviourSection = (h: H, model: Model, form: SettingsForm): Html =>
 				isDisabled: !canManage(model),
 				hint: "A draft waits for you under Incidents; a published one shows on the page at once.",
 				onInput: (value) => Message.ChangedSetting({ field: "autoIncidents", value }),
-			}),
-			switchRow(h, {
-				id: "status-page-powered-by",
-				label: "Show powered by Maple",
-				description: "A small credit in the page footer.",
-				isChecked: form.showPoweredBy,
-				isDisabled: !canManage(model),
-				onToggle: Message.ToggledPoweredBy(),
 			}),
 		]),
 	])
@@ -343,17 +335,22 @@ const sectionBody = (
 ): ReadonlyArray<Html> => {
 	switch (section) {
 		case "basic":
-			return [pageSection(h, model, form)]
+			return [
+				pageSection(h, model, page, form),
+				customDomainSection(h, model, page),
+				accessSection(h, model, page, form),
+				behaviourSection(h, model, form),
+			]
 		case "monitors":
 			return [monitorsSection(h, model)]
 		case "appearance":
-			return [brandingSection(h, model, form), appearanceSection(h, model, form)]
-		case "access":
-			return [accessSection(h, model, page, form)]
+			return [
+				brandingSection(h, model, form),
+				appearanceSection(h, model, form),
+				linksSection(h, model, form),
+			]
 		case "advanced":
 			return [
-				customDomainSection(h, model, page),
-				behaviourSection(h, model, form),
 				// Break-glass posts at the public address, which an internal page does not answer on.
 				...(page.visibility === "internal" ? [] : [breakGlassSection(h, model, page)]),
 				jsonSection(h, model),
@@ -384,14 +381,11 @@ const settingsNav = (h: H, page: V2StatusPage, section: SettingsSection): Html =
 		"Settings sections",
 	)
 
-/** The sections whose fields change how the page looks, so the preview sits beside them. */
-const PREVIEWED: ReadonlyArray<SettingsSection> = ["basic", "monitors", "appearance"]
-
 /**
  * Settings below the page's header and tabs: the section menu, the section's form and, for the
  * sections that change how the page looks, the page itself, side by side, each scrolling on its
  * own so the menu and preview stay in place. The preview needs the room of `xl`; below `md` the
- * menu sits above the form.
+ * menu sits above the form and both scroll with the page.
  */
 export const settingsLayout = (
 	h: H,
@@ -400,22 +394,22 @@ export const settingsLayout = (
 	section: SettingsSection,
 	content: Html,
 ): Html => {
-	const hasPreview = PREVIEWED.includes(section)
+	const hasPreview = PREVIEWED_SECTIONS.includes(section)
 	return h.div(
 		[
 			h.Class(
 				cn(
-					"grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] md:grid-cols-[13rem_minmax(0,1fr)] md:grid-rows-1",
+					"grid min-h-0 flex-1 md:grid-cols-[13rem_minmax(0,1fr)] md:grid-rows-1",
 					hasPreview && "xl:grid-cols-[13rem_minmax(0,1fr)_minmax(20rem,0.8fr)]",
 				),
 			),
 		],
 		[
 			h.div(
-				[h.Class("min-h-0 overflow-y-auto border-b px-3 pb-4 md:border-r md:border-b-0")],
+				[h.Class("min-h-0 border-b px-3 pb-4 md:overflow-y-auto md:border-r md:border-b-0")],
 				[settingsNav(h, page, section)],
 			),
-			h.div([h.Class("min-h-0 overflow-y-auto px-(--page-gutter) pb-6")], [content]),
+			h.div([h.Class("min-h-0 px-(--page-gutter) pb-6 md:overflow-y-auto")], [content]),
 			...(hasPreview
 				? [
 						h.aside(
@@ -436,8 +430,23 @@ export const settingsLayout = (
 }
 
 /**
- * One bar at a time: under Monitors a moved order or an open component's edits, and under Access
- * who can view, take it over the page's settings.
+ * Basic settings' fields and Who can view as one bar: Save and Discard act on both, so neither's
+ * edits are left without a way to save them.
+ */
+const basicSaveBar = (h: H, model: Model, page: V2StatusPage, form: SettingsForm): ReadonlyArray<Html> =>
+	saveBar(h, {
+		isDirty: true,
+		isPending: model.isSavingSettings || model.accessAction !== null,
+		context: saveContext(model, form, "basic") ?? accessSaveContext(model, page),
+		onDiscard: Message.ClickedDiscardBasic(),
+		onSave: Message.ClickedSaveBasic(),
+		isSaveDisabled: hasSettingsIssues(form) || model.isApplyingJson || accessIssue(model, page) !== null,
+	})
+
+/**
+ * One bar at a time: under Monitors a moved order or an open component's edits, and under Basic
+ * settings a changed Who can view, take it over the page's settings; Basic settings with both
+ * edited saves both.
  */
 const saveBars = (
 	h: H,
@@ -446,10 +455,12 @@ const saveBars = (
 	form: SettingsForm,
 	section: SettingsSection,
 ): ReadonlyArray<Html> => {
+	if (section === "basic" && isAccessDirty(model) && isSettingsDirty(model))
+		return basicSaveBar(h, model, page, form)
 	const sectionBar =
 		section === "monitors"
 			? monitorsSaveBar(h, model)
-			: section === "access"
+			: section === "basic"
 				? accessSaveBar(h, model, page)
 				: []
 	return sectionBar.length > 0
@@ -468,7 +479,7 @@ export const settingsView = (h: H, model: Model, page: V2StatusPage, section: Se
 	const form = Option.getOrElse(settingsOf(model), () => settingsFormOf(page))
 	return vstack(h, { className: "min-w-0 max-w-3xl" }, [
 		settingsSections(h, [
-			...(canManage(model) || section === "access"
+			...(canManage(model)
 				? []
 				: [
 						adminOnlyNote(h, [

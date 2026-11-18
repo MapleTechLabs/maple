@@ -47,5 +47,17 @@ describe("uptimeChecksQuery", () => {
 		expect(sql).toContain("traces.ResourceAttributes['maple.uptime.monitor_id'] = 'mon_1'")
 		expect(sql).toContain("ORDER BY at DESC")
 		expect(sql).toContain("LIMIT 3000")
+		expect(sql).not.toContain("traces.StatusCode = 'Error'")
+	})
+
+	it("lists only the failed checks when asked", () => {
+		const { sql } = compileUnsafe(uptimeChecksQuery({ limit: 100, failedOnly: true }), {
+			orgId: OrgId.make("org_1"),
+			monitorId: "mon_1",
+			startTime: "2026-10-26 00:00:00",
+			endTime: "2026-10-27 00:00:00",
+		})
+		expect(sql).toContain("traces.StatusCode = 'Error'")
+		expect(sql).toContain("LIMIT 100")
 	})
 })

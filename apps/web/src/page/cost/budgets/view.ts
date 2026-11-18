@@ -39,6 +39,7 @@ import {
 import { budgetById, budgetsOf, notifiesSomeone } from "./derive"
 import { Message, type Model } from "./model"
 import { DELETE_DIALOG_ID } from "./update"
+import { betaNotice } from "../kit/beta-notice"
 
 type H = HtmlBuilder<Message>
 
@@ -310,6 +311,12 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					? newBudgetButton(h, model)
 					: undefined,
 		},
-		[vstack(h, { gap: "3", className: "shrink-0" }, listBody(h, model)), deleteDialog(h, model)],
+		[
+			vstack(h, { gap: "6", className: "shrink-0" }, [
+				betaNotice(h),
+				vstack(h, { gap: "3" }, listBody(h, model)),
+			]),
+			deleteDialog(h, model),
+		],
 	),
 )

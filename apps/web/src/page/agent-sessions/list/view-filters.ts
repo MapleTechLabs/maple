@@ -206,6 +206,26 @@ const loadedRail = (h: H, model: Model, facets: Facets): Html => {
 	return filterSidebarFrame(h, { isWaiting: AsyncData.isRefreshing(model.facets.data) }, [
 		filterSidebarHeader(h, isFiltered ? { onClear: Message.ClickedClearAllFilters() } : {}),
 		...filterSidebarBody(h, "agent-sessions-filters", [
+			singleCheckbox(
+				h,
+				"Hide single-trace sessions",
+				"A framework that reports no session ID gets one session per trace. This hides those; a session with its own ID stays, however many traces it spans.",
+				search.grouped === true,
+				Message.ToggledGrouped(),
+			),
+			facetSection(
+				h,
+				model,
+				{ title: "Environment", facet: "environments", isSearchable: false },
+				facets.environments,
+			),
+			facetSection(
+				h,
+				model,
+				{ title: "Service", facet: "services", isSearchable: true },
+				facets.services,
+				{ colorOf: getServiceColor },
+			),
 			facetSection(
 				h,
 				model,
@@ -227,13 +247,6 @@ const loadedRail = (h: H, model: Model, facets: Facets): Html => {
 					description: "Sessions that called this tool at least once.",
 				},
 				facets.tools,
-			),
-			facetSection(
-				h,
-				model,
-				{ title: "Service", facet: "services", isSearchable: true },
-				facets.services,
-				{ colorOf: getServiceColor },
 			),
 			facetSection(
 				h,
@@ -264,22 +277,8 @@ const loadedRail = (h: H, model: Model, facets: Facets): Html => {
 					getOptionIconColor: (name) => modelVendorColor(detect(name)),
 				},
 			),
-			facetSection(
-				h,
-				model,
-				{ title: "Environment", facet: "environments", isSearchable: false },
-				facets.environments,
-			),
 			filterSidebarDivider(h),
 			...Arr.map(RANGES, (spec) => rangeSection(h, model, distributions, spec)),
-			filterSidebarDivider(h),
-			singleCheckbox(
-				h,
-				"Hide single-trace sessions",
-				"A framework that reports no session ID gets one session per trace. This hides those; a session with its own ID stays, however many traces it spans.",
-				search.grouped === true,
-				Message.ToggledGrouped(),
-			),
 		]),
 	])
 }

@@ -1,4 +1,14 @@
-import { Context, Duration, Effect, Layer, Redacted, Schema, String as Str, Array as Arr } from "effect"
+import {
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Schema,
+	String as Str,
+	Array as Arr,
+} from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import {
 	InternalScrapeTargetList,
@@ -44,6 +54,7 @@ const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 const isRefusal = (status: number | null): boolean => status === 429 || status === 503
 
 const decodeUptimeTarget = Schema.decodeUnknownEffect(UptimeProbeTarget)
+const decodeTargetId = Schema.decodeUnknownOption(Schema.Struct({ id: Schema.String }))
 
 export class ApiClient extends Context.Service<ApiClient, ApiClientApi>()("@maple/scraper/ApiClient", {
 	make: Effect.gen(function* () {
@@ -144,9 +155,16 @@ export class ApiClient extends Context.Service<ApiClient, ApiClientApi>()("@mapl
 				Effect.forEach(rows, (row) =>
 					decodeUptimeTarget(row).pipe(
 						Effect.map((target) => [target]),
-						Effect.catchTag("SchemaError", (error) =>
+						// The id and a fixed reason only: a decode error can quote the row, its headers included.
+						Effect.catchTag("SchemaError", () =>
 							Effect.logWarning("Skipping an uptime monitor this scraper cannot run").pipe(
-								Effect.annotateLogs({ cause: error.message }),
+								Effect.annotateLogs({
+									"maple.uptime.monitor_id": Option.match(decodeTargetId(row), {
+										onNone: () => "unknown",
+										onSome: (target) => target.id,
+									}),
+									reason: "The target does not match the shape or size limits this scraper runs",
+								}),
 								Effect.as([]),
 							),
 						),

@@ -79,7 +79,7 @@ export const signalEmptyState = <M>(h: HtmlBuilder<M>, options: SignalEmptyState
 			source: [setup.source],
 			content: [
 				emptyActions(h, [
-					linkButton(h, { size: "sm", className: "gap-2", href: "/settings?tab=ingestion" }, [
+					linkButton(h, { size: "sm", className: "gap-2", href: "/settings/ingestion" }, [
 						icon(h, "ConnectionIcon"),
 						options.action ?? setup.action,
 					]),

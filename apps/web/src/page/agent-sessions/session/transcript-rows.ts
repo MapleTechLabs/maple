@@ -1,4 +1,10 @@
-import { assembleTranscript, prepareTranscript, spanModel, type TranscriptRow } from "@maple/agent-sessions"
+import {
+	assembleTranscript,
+	type PreparedTranscript,
+	prepareTranscript,
+	spanModel,
+	type TranscriptRow,
+} from "@maple/agent-sessions"
 import { previewOf } from "./clamped-text"
 import type { SessionData } from "./derive"
 import type { Model } from "./model"
@@ -10,20 +16,55 @@ import { codePointAt } from "@maple/strings"
 
 const RENDER_LIMIT_CHARS = 200_000
 
-/** The rows, in reading order, for the toolbar's filter and the reader's collapses. */
-export const transcriptRows = (model: Model, data: SessionData): ReadonlyArray<TranscriptRow> =>
-	assembleTranscript(
-		prepareTranscript({
-			turns: data.turns,
-			toolResults: data.toolResults,
-			query: model.query,
-			showThinking: model.options.showThinking,
-		}),
-		{
-			collapsedTurns: new Set(model.collapsedTurns),
-			hasMore: data.progress !== undefined && !data.progress.agentSpansComplete,
-		},
+type Prepared = Readonly<{
+	toolResults: SessionData["toolResults"]
+	query: string
+	showThinking: boolean
+	prepared: PreparedTranscript
+}>
+type Assembled = Readonly<{
+	collapsedTurns: ReadonlyArray<string>
+	hasMore: boolean
+	rows: ReadonlyArray<TranscriptRow>
+}>
+
+// `sessionData` keeps `turns` stable until a page lands, so the session is read once per filter
+// instead of on every Message (each virtualizer window change asked for it twice).
+const preparedBySession = new WeakMap<SessionData["turns"], Prepared>()
+const assembledByPrepared = new WeakMap<PreparedTranscript, Assembled>()
+
+const preparedOf = (model: Model, data: SessionData): PreparedTranscript => {
+	const query = model.query
+	const showThinking = model.options.showThinking
+	const hit = preparedBySession.get(data.turns)
+	if (
+		hit !== undefined &&
+		hit.toolResults === data.toolResults &&
+		hit.query === query &&
+		hit.showThinking === showThinking
 	)
+		return hit.prepared
+	const prepared = prepareTranscript({
+		turns: data.turns,
+		toolResults: data.toolResults,
+		query,
+		showThinking,
+	})
+	preparedBySession.set(data.turns, { toolResults: data.toolResults, query, showThinking, prepared })
+	return prepared
+}
+
+/** The rows, in reading order, for the toolbar's filter and the reader's collapses. */
+export const transcriptRows = (model: Model, data: SessionData): ReadonlyArray<TranscriptRow> => {
+	const prepared = preparedOf(model, data)
+	const collapsedTurns = model.collapsedTurns
+	const hasMore = data.progress !== undefined && !data.progress.agentSpansComplete
+	const hit = assembledByPrepared.get(prepared)
+	if (hit !== undefined && hit.collapsedTurns === collapsedTurns && hit.hasMore === hasMore) return hit.rows
+	const rows = assembleTranscript(prepared, { collapsedTurns: new Set(collapsedTurns), hasMore })
+	assembledByPrepared.set(prepared, { collapsedTurns, hasMore, rows })
+	return rows
+}
 
 /** Assistant rows that continue the previous speaker: same depth, same model, no failure between. */
 export const continuedKeys = (rows: ReadonlyArray<TranscriptRow>): ReadonlySet<string> => {
@@ -61,6 +102,24 @@ export const shownMarkdown = (model: Model, key: string, text: string): Readonly
 	if (disclosed(model.openRows, `${key}:raw`, false) || messageBody(text).rendered !== "md") return []
 	const shown = disclosed(model.openRows, `${key}:text`, false) ? text : previewOf(text)
 	return shown.length > RENDER_LIMIT_CHARS ? [] : [shown]
+}
+
+type HashedTexts = Readonly<{
+	openRows: Model["openRows"]
+	entries: ReadonlyArray<readonly [hash: string, text: string]>
+}>
+const hashedByRows = new WeakMap<ReadonlyArray<TranscriptRow>, HashedTexts>()
+
+/** `markdownTexts` with each text's `textHash`, hashed once per rows and disclosures, not per Message. */
+export const hashedMarkdownTexts = (
+	model: Model,
+	rows: ReadonlyArray<TranscriptRow>,
+): ReadonlyArray<readonly [hash: string, text: string]> => {
+	const hit = hashedByRows.get(rows)
+	if (hit !== undefined && hit.openRows === model.openRows) return hit.entries
+	const entries = Arr.map(markdownTexts(model, rows), (text) => [textHash(text), text] as const)
+	hashedByRows.set(rows, { openRows: model.openRows, entries })
+	return entries
 }
 
 /** Every markdown text the transcript has on the page. */

@@ -43,3 +43,26 @@ export const cardButton = <M>(
 		],
 		children,
 	)
+
+export type CardLinkOptions<M> = Readonly<{
+	href: string
+	label?: string
+	className?: string
+	attributes?: ReadonlyArray<Attribute<M> | ChildAttribute>
+}>
+
+/** `CardButton`'s look on a link: a card that navigates instead of acting in place. */
+export const cardLink = <M>(
+	h: HtmlBuilder<M>,
+	options: CardLinkOptions<M>,
+	children: ReadonlyArray<Html | string>,
+): Html =>
+	h.a(
+		[
+			h.Href(options.href),
+			h.Class(cardButtonClass(false, options.className)),
+			...(options.label === undefined ? [] : [h.AriaLabel(options.label)]),
+			...(options.attributes ?? []),
+		],
+		children,
+	)

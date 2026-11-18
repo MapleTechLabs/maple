@@ -53,7 +53,7 @@ export const templateMatches = (template: V2DashboardTemplate, query: string): b
 
 /** Where a gated template sends you to fix the gap. */
 export const setupHref = (template: V2DashboardTemplate): string =>
-	template.requirement?.kind === "integration" ? "/sources/new" : "/settings?tab=ingestion"
+	template.requirement?.kind === "integration" ? "/sources/new" : "/settings/ingestion"
 
 const TEMPLATE_ICONS = new Map<string, IconName>([
 	["service-health", "PulseIcon"],

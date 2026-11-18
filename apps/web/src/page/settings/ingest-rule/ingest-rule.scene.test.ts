@@ -144,7 +144,7 @@ describe("ingest rule editor", () => {
 			pageUpdate(saving.model, Message.CompletedSave({ result: Result.succeed(saved) })).outMessage,
 		).toEqual(
 			PageOutMessage.RequestedNavigation({
-				url: "/settings?tab=ingestion",
+				url: "/settings/ingestion",
 				isReplace: false,
 				toast: {
 					type: "success",

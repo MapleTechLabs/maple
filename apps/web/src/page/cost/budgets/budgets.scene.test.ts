@@ -88,6 +88,7 @@ describe("cost budgets", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(only("All cloud spend")),
+			expectView(text("Free during the beta")).toExist(),
 			expectView(within(table, text("Monthly · All spend"))).toExist(),
 			expectView(within(table, text("$4,180.42 of $12,000.00"))).toExist(),
 			expectView(within(table, text("34%"))).toExist(),

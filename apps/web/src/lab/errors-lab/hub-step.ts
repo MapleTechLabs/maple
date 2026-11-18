@@ -3,7 +3,7 @@ import type { ErrorSignal } from "../../page/errors/kit/error-signal"
 import { OrgId } from "@maple/domain"
 import * as Policy from "@maple/domain/policy"
 import { Option, Schema, Array as Arr, String as Str } from "effect"
-import type { Command } from "foldkit"
+import { AsyncData, type Command } from "foldkit"
 import { fromString as urlFromString } from "foldkit/url"
 import type { PageContext } from "../../page/contract"
 import { severityOf, sortOf, sortSignals, viewCovers, viewOf } from "../../page/errors/hub/derive"
@@ -24,8 +24,26 @@ export const LAB_CONTEXT: PageContext = {
 /** The session's grants for the lab's role, as the page's own read would answer. */
 export const grantsOf = (role: LabRole): ReadonlyArray<Policy.Permission> => Policy.grantsOf([`org:${role}`])
 
+/** The filter rail's service counts and environments, from the fixture's issues. */
+const railFacets = (nowMs: number) => {
+	const services = Arr.map(buildErrorsLabFixture(nowMs).signals, (signal) => signal.issue.serviceName)
+	return {
+		serviceCounts: {
+			key: null,
+			data: AsyncData.Success({
+				data: Arr.map(Arr.dedupe(services), (service_name) => ({
+					service_name,
+					open_count: Arr.filter(services, (name) => name === service_name).length,
+				})),
+			}),
+		},
+		environments: { key: null, data: AsyncData.Success({ data: ["production", "staging"] }) },
+	}
+}
+
 export const initHub = (nowMs: number, role: LabRole): HubModel => ({
 	...HubUpdate.init({ search: {} }, LAB_CONTEXT).model,
+	...railFacets(nowMs),
 	nowMs,
 	grants: grantsOf(role),
 })

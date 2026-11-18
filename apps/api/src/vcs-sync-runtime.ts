@@ -26,6 +26,8 @@ import {
 import { CiTraceSinkLive } from "@maple/backend/services/integrations/ci-traces/CiTraceService"
 import { DependencyScanSinkLive } from "@maple/backend/services/dependency-scan/DependencyScanner"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { AuditTrailEventSinkLive } from "@maple/backend/services/audit-trail/AuditTrailService"
+import { AuditEventsLive } from "./audit-events-runtime"
 import type { QueueBatch } from "@maple/backend/platform/queue-batch"
 import type { Message } from "@cloudflare/workers-types"
 import {
@@ -70,6 +72,8 @@ export const VcsSyncLive = VcsSyncService.layer.pipe(
 	Layer.provide(CiTraceSinkLive),
 	// Lockfile scans for known vulnerable dependencies, on pushes and installation syncs.
 	Layer.provide(DependencyScanSinkLive),
+	// Organization, member, repository and protection changes, written to the audit log.
+	Layer.provide(AuditTrailEventSinkLive.pipe(Layer.provide(AuditEventsLive))),
 	// No embedder here: the review's feedback filter runs where the review agent does.
 	Layer.provide(
 		Layer.mergeAll(

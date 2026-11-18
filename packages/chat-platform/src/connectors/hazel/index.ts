@@ -14,7 +14,7 @@ import { hazelOutbound } from "./outbound"
  * Its events arrive over Hazel's bot gateway — a resumable WebSocket — so `ingress` is the socket
  * kind and the host keeps one connection open for it. There is no `identity` half: Hazel has no
  * way yet for a person to prove which Hazel account is theirs to Maple, so anyone in a linked
- * workspace may ask and approve, as the org-level connector identity (see `ChatConnector.identity`).
+ * workspace may ask, about telemetry and alerts only, and nobody approves (see `ChatConnector.identity`).
  * See `README.md` in this directory for the bot setup all of them depend on.
  */
 export const hazel: ChatConnector<HttpClient.HttpClient | ConnectorCredentials> = {

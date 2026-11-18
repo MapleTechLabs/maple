@@ -1,14 +1,8 @@
 import { HttpApiBuilder } from "effect/http-api"
-import {
-	CloudCostDisabledError,
-	CostBudgetForbiddenError,
-	CurrentTenant,
-	MapleInternalApi,
-} from "@maple/domain/http"
+import { CostBudgetForbiddenError, CurrentTenant, MapleInternalApi } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { CostBudgetsService } from "@maple/backend/services/cost/CostBudgetsService"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { Effect } from "effect"
 import { auditDiff } from "@/routes/v2/audit-changes"
 
@@ -19,20 +13,6 @@ const budgetAuditDiff = auditDiff({
 export const HttpCostBudgetsLive = HttpApiBuilder.group(MapleInternalApi, "costBudgets", (handlers) =>
 	Effect.gen(function* () {
 		const budgets = yield* CostBudgetsService
-		const featureFlags = yield* OrganizationFeatureFlagsService
-
-		/** The tenant, once its org is in the `cloudCost` rollout. */
-		const inRollout = Effect.gen(function* () {
-			const tenant = yield* CurrentTenant.Context
-			const flags = yield* featureFlags.flags(tenant.orgId)
-			if (!flags.cloudCost) {
-				return yield* new CloudCostDisabledError({
-					message: "Cloud cost is not enabled for this organization.",
-				})
-			}
-			return tenant
-		})
-
 		// A budget is an alert rule: the role that manages alerts writes it.
 		const managing = (tenant: CurrentTenant.TenantSchema) =>
 			Effect.as(
@@ -43,18 +23,18 @@ export const HttpCostBudgetsLive = HttpApiBuilder.group(MapleInternalApi, "costB
 				),
 				tenant,
 			)
-		const asAlertsManager = Effect.flatMap(inRollout, managing)
+		const asAlertsManager = Effect.flatMap(CurrentTenant.Context, managing)
 
 		return handlers
 			.handle("list", () =>
 				Effect.gen(function* () {
-					const tenant = yield* inRollout
+					const tenant = yield* CurrentTenant.Context
 					return { budgets: yield* budgets.list(tenant) }
 				}).pipe(Effect.withSpan("HttpCostBudgets.list")),
 			)
 			.handle("get", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* inRollout
+					const tenant = yield* CurrentTenant.Context
 					return yield* budgets.get(tenant.orgId, params.id)
 				}).pipe(Effect.withSpan("HttpCostBudgets.get")),
 			)
@@ -84,9 +64,7 @@ export const HttpCostBudgetsLive = HttpApiBuilder.group(MapleInternalApi, "costB
 			)
 			.handle("remove", ({ params }) =>
 				Effect.gen(function* () {
-					// Not behind the rollout: an org that left it must still be able to stop a
-					// budget, which goes on being checked against the cost it has stored.
-					const tenant = yield* Effect.flatMap(CurrentTenant.Context, managing)
+					const tenant = yield* asAlertsManager
 					const id = yield* budgets.remove(tenant.orgId, params.id)
 					yield* recordHttpAudit("alert_rule.deleted", {
 						resourceId: id,

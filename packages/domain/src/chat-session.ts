@@ -485,8 +485,8 @@ export const ChatTurnOrigin = Schema.Union([
 	 *
 	 * `actingUserId` is the Maple user that chat account is linked to, resolved by the host from its
 	 * own database. Present means the turn runs as that user, under the roles they hold in the org
-	 * when it starts. Absent means the connector cannot prove who is asking, and the turn runs as the
-	 * connector (see `ChatConnector.identity`).
+	 * when it starts. Absent means the connector cannot prove who is asking: the turn runs as the
+	 * connector, reads a reduced set and proposes nothing (see `ChatConnector.identity`).
 	 */
 	Schema.Struct({
 		kind: Schema.Literal("connector"),
@@ -515,34 +515,15 @@ export const CONNECTOR_TENANT_USER_ID = Schema.decodeSync(UserId)("chat-connecto
 /**
  * The turn identity a connector Worker hands `beginTurn`, already encoded for the DO hop.
  *
- * No roles: a connector turn proposes mutations rather than performing them, so the only reader of
- * roles — the authorization check inside a mutating tool — is reached by the apply path, under
- * whoever approved the proposal, not by the turn that wrote it. A turn whose origin names an
- * `actingUserId` is widened to that user's tenant on the other side of the hop.
+ * No roles, and there is no connector identity that carries any: a change is only ever applied as
+ * a Maple user. A turn whose origin names an `actingUserId` is widened to that user's tenant on
+ * the other side of the hop; one that names nobody stays here and is offered no mutating tool.
  */
 export const connectorTurnTenant = (orgId: OrgId): ChatTurnTenantEncoded =>
 	encodeChatTurnTenant({
 		orgId,
 		userId: CONNECTOR_TENANT_USER_ID,
 		roles: [],
-		authMode: "self_hosted",
-	})
-
-const ORG_ADMIN_ROLE = Schema.decodeSync(RoleName)("org:admin")
-
-/**
- * The identity an approved proposal runs under **on a connector that cannot say who clicked**.
- * See `ChatConnector.identity` for the three-case approval policy this is half of.
- *
- * The role is granted at apply time only — the turn that WROTE the proposal carried none, which is
- * what makes the approval gate mean anything. Deliberately beside {@link connectorTurnTenant}:
- * the two are one rule read together.
- */
-export const connectorApprovalTenant = (orgId: OrgId): ChatTurnTenantEncoded =>
-	encodeChatTurnTenant({
-		orgId,
-		userId: CONNECTOR_TENANT_USER_ID,
-		roles: [ORG_ADMIN_ROLE],
 		authMode: "self_hosted",
 	})
 
@@ -576,11 +557,10 @@ export type ChatProposalApproval =
 			 * The Maple user the approver's chat account is linked to, resolved by the host from its own
 			 * database — never from anything the click carried.
 			 *
-			 * Present means the change runs as that user, under the roles they hold in the org at that
-			 * moment. Absent means the connector cannot prove who clicked, and the org-level connector
-			 * identity acts instead ({@link connectorApprovalTenant}).
+			 * The change runs as that user, under the roles they hold in the org at that moment.
+			 * Required: a click nobody can attribute to a Maple user applies nothing.
 			 */
-			readonly actingUserId?: UserId
+			readonly actingUserId: UserId
 	  }
 
 /** How a recorded decision names who made it. */

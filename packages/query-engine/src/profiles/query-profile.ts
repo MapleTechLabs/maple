@@ -142,15 +142,21 @@ export const stripTinybirdRestrictedSettings = (
  * nothing to set. Non-finite and undefined values are dropped.
  */
 export const settingsClause = (settings: WarehouseQuerySettings | undefined): string | undefined => {
-	if (!settings) return undefined
-	const parts: string[] = []
+	const parts = Arr.map(Rec.toEntries(clickHouseSettings(settings)), ([name, value]) => `${name}=${value}`)
+	return parts.length === 0 ? undefined : `SETTINGS ${Arr.join(parts, ", ")}`
+}
+
+/** These settings under their ClickHouse names, for a driver that sends them beside the statement. */
+export const clickHouseSettings = (
+	settings: WarehouseQuerySettings | undefined,
+): Readonly<Record<string, number>> => {
+	if (!settings) return {}
+	const named: Record<string, number> = {}
 	for (const key of Rec.keys<string, unknown>(settings) as Array<keyof WarehouseQuerySettings>) {
 		const value = settings[key]
-		if (typeof value === "number" && Number.isFinite(value)) {
-			parts.push(`${settingToCh[key]}=${value}`)
-		}
+		if (typeof value === "number" && Number.isFinite(value)) named[settingToCh[key]] = value
 	}
-	return parts.length === 0 ? undefined : `SETTINGS ${Arr.join(parts, ", ")}`
+	return named
 }
 
 /**

@@ -87,6 +87,7 @@ const githubStatus = Schema.decodeSync(GithubIntegrationStatus)({
 	accountType: "organization",
 	repositorySelection: "selected",
 	ciTracesEnabled: true,
+	auditLogEnabled: true,
 	repositoryDiscovery: null,
 	repositories: [repo(1, "shop", true), repo(2, "api", false), repo(3, "docs", false)],
 })

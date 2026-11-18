@@ -11,9 +11,10 @@ import {
 	UPTIME_MAX_DAYS,
 } from "@maple/status-page"
 import { STATUS_PAGE_WINDOW_DAYS } from "@maple/domain/status-page"
-import { Effect, Option, Schema, String as Str } from "effect"
+import { Effect, Schema, String as Str } from "effect"
 import { accessPage, hasAccess, postAccess } from "./access"
 import { parseForm, postBreakGlassUpdate } from "./break-glass"
+import { clientRateLimitKey } from "./client-key"
 import type { StatusEnv } from "./ports"
 import { asset, html, jsonError, notFound, PUBLIC_CACHE_CONTROL, plain, redirect } from "./responses"
 import { type Lookup, loadView, type PageView, pageIdForHost, pageIdForSlug } from "./snapshot"
@@ -72,8 +73,9 @@ const resolveTarget = (env: StatusEnv, url: URL): Effect.Effect<Lookup<Target>> 
 				value: { pageId: bySlug.value, basePath: `/s/${slug}`, path: match?.[2] ?? "/", slug },
 			}
 		}
-		// Either store being down means the 404 could be wrong, so it must not be cached.
-		return byHost._tag === "unavailable" ? byHost : bySlug
+		// Either store being down means the 404 could be wrong, so it must not be cached. A slug the
+		// publisher took down is a 404 for certain.
+		return byHost._tag === "unavailable" && bySlug._tag !== "gone" ? byHost : bySlug
 	})
 
 const managePage = (
@@ -98,10 +100,11 @@ const NOT_SAVED =
 
 const postManage = (env: StatusEnv, request: Request, view: PageView, target: Target) =>
 	Effect.gen(function* () {
-		const ip = request.headers.get("cf-connecting-ip") ?? "unknown"
+		const client = clientRateLimitKey(request.headers.get("cf-connecting-ip") ?? "unknown")
 		// Fails open: the token carries 256 bits, and this form exists for when things are broken.
+		// No budget across clients either, which would let anyone hold the form shut.
 		const allowed = yield* env.storage
-			.rateLimit(`${ip}:${target.pageId}`)
+			.rateLimit(`${client}:${target.pageId}`)
 			.pipe(Effect.orElseSucceed(() => true))
 		if (!allowed) {
 			return managePage(env, view, target, 429, {
@@ -234,10 +237,12 @@ export const handleRequest = (request: Request, env: StatusEnv): Effect.Effect<R
 			yield* Effect.logWarning("Status page route lookup failed in every store")
 			return plain(UNAVAILABLE, 503)
 		}
-		if (target._tag === "missing") return notFound()
+		if (target._tag !== "found") return notFound()
 		const view = yield* loadView(env, target.value.pageId)
 		yield* Effect.annotateCurrentSpan("maple.status_page.id", target.value.pageId)
-		if (Option.isNone(view)) {
+		// Taken off the edge: every path of the page answers as if it never existed.
+		if (view._tag === "gone") return notFound()
+		if (view._tag !== "found") {
 			yield* Effect.logWarning("Status page snapshot missing from every store")
 			return plain(UNAVAILABLE, 503)
 		}
@@ -247,6 +252,7 @@ export const handleRequest = (request: Request, env: StatusEnv): Effect.Effect<R
 		const visibility = view.value.snapshot.page.visibility
 		// Internal pages are taken off the edge; one still reachable here answers as if it were.
 		if (visibility === "internal") return notFound()
-		if (visibility === "password") return yield* serveProtected(env, request, url, view.value, target.value)
+		if (visibility === "password")
+			return yield* serveProtected(env, request, url, view.value, target.value)
 		return yield* servePage(env, request, url, view.value, target.value)
 	})

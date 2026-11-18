@@ -29,7 +29,7 @@ export type ViewInputs = Readonly<{
 type H = HtmlBuilder<Message>
 
 const mcpEndpoint = `${mcpUrl}/mcp`
-const keysLink = (h: H) => h.a([h.Href("/settings?tab=keys"), h.Class(INLINE_LINK_CLASS)], ["Keys"])
+const keysLink = (h: H) => h.a([h.Href("/settings/keys"), h.Class(INLINE_LINK_CLASS)], ["Keys"])
 
 const snippet = (
 	h: H,

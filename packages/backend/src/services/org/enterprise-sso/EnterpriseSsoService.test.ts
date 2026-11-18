@@ -14,7 +14,7 @@ import {
 import { AutumnClient, type AutumnResult } from "@maple/backend/services/billing/autumn-http"
 import { ClerkRequestError } from "@maple/backend/services/auth/clerk-request"
 import { ClerkSsoGateway, type ClerkSsoConnection, type ClerkSsoDirectory } from "./ClerkSsoGateway"
-import { DnsTxtResolver } from "./DnsTxtResolver"
+import { DnsLookupError, DnsTxtResolver } from "@maple/backend/platform/DnsTxtResolver"
 import { EnterpriseSsoService } from "./EnterpriseSsoService"
 
 const trackedDbs: TestDb[] = []
@@ -43,6 +43,12 @@ interface FakeClerk {
 	nextId: number
 	/** The next `createConnection` fails with this Clerk status and message. */
 	rejectCreate: { status: number; message: string } | null
+	/** Clerk is down for deletes. */
+	failDeletes: boolean
+	/** How often the bypass list was read. */
+	bypassLookups: number
+	/** The IdP settings each connection update carried. */
+	updates: Array<{ certificate?: string; metadataUrl?: string; clientSecret?: string }>
 }
 
 const ROLES = [
@@ -70,10 +76,16 @@ const fakeClerk = (): FakeClerk => ({
 	]),
 	nextId: 1,
 	rejectCreate: null,
+	failDeletes: false,
+	bypassLookups: 0,
+	updates: [],
 })
 
 const notFound = (operation: string) =>
 	new ClerkRequestError({ operation, message: "not found", status: 404, cause: null })
+
+const down = (operation: string) =>
+	new ClerkRequestError({ operation, message: "down", status: 503, cause: null })
 
 const gatewayLayer = (clerk: FakeClerk) =>
 	Layer.succeed(ClerkSsoGateway, {
@@ -131,6 +143,7 @@ const gatewayLayer = (clerk: FakeClerk) =>
 			Effect.suspend(() => {
 				const c = clerk.connections.get(id)
 				if (c === undefined) return Effect.fail(notFound("update"))
+				clerk.updates.push({ ...input.saml, ...input.oidc })
 				const next = {
 					...c,
 					name: input.name ?? c.name,
@@ -142,12 +155,14 @@ const gatewayLayer = (clerk: FakeClerk) =>
 			}),
 		// Like Clerk: deleting a connection drops the bypass entries no remaining connection serves.
 		deleteConnection: (id) =>
-			Effect.sync(() => {
+			Effect.suspend(() => {
+				if (clerk.failDeletes) return Effect.fail(down("deleteConnection"))
 				clerk.connections.delete(id)
 				const served = new Set(Arr.flatMap([...clerk.connections.values()], (c) => c.domains))
 				clerk.bypass = Arr.filter(clerk.bypass, (userId) =>
 					Arr.some(clerk.emailDomains.get(userId) ?? [], (d) => served.has(d)),
 				)
+				return Effect.void
 			}),
 		createDirectory: (connectionId, provider) =>
 			Effect.sync(() => {
@@ -186,7 +201,12 @@ const gatewayLayer = (clerk: FakeClerk) =>
 				const hook = clerk.onRotate
 				return hook === null ? Effect.succeed(next) : Effect.promise(hook).pipe(Effect.as(next))
 			}),
-		deleteDirectory: (id) => Effect.sync(() => void clerk.directories.delete(id)),
+		deleteDirectory: (id) =>
+			Effect.suspend(() => {
+				if (clerk.failDeletes) return Effect.fail(down("deleteDirectory"))
+				clerk.directories.delete(id)
+				return Effect.void
+			}),
 		listRoleMappings: (directoryId) =>
 			Effect.sync(() =>
 				Arr.map(clerk.mappings.get(directoryId) ?? [], (m) => ({
@@ -229,9 +249,10 @@ const gatewayLayer = (clerk: FakeClerk) =>
 		isMember: (_orgId, userId) => Effect.sync(() => clerk.members.has(userId)),
 		verifiedEmailDomains: (userId) => Effect.sync(() => clerk.emailDomains.get(userId) ?? []),
 		listBypassUsers: () =>
-			Effect.sync(() =>
-				Arr.map(clerk.bypass, (userId) => ({ userId, identifier: `${userId}@acme.com` })),
-			),
+			Effect.sync(() => {
+				clerk.bypassLookups++
+				return Arr.map(clerk.bypass, (userId) => ({ userId, identifier: `${userId}@acme.com` }))
+			}),
 		addBypassUser: (userId) => Effect.sync(() => void clerk.bypass.push(userId)),
 		removeBypassUser: (userId) =>
 			Effect.sync(() => void (clerk.bypass = Arr.filter(clerk.bypass, (u) => u !== userId))),
@@ -243,11 +264,20 @@ interface MidRequestHook {
 	current: (() => Promise<void>) | null
 }
 
+/** The resolver cannot be reached while `current` is true. */
+interface DnsOutage {
+	current: boolean
+}
+
 /** Published TXT records by name; `onLookup` runs during the lookup, to change the world mid-request. */
-const dnsLayer = (records: Map<string, Array<string>>, onLookup: MidRequestHook) =>
+const dnsLayer = (records: Map<string, Array<string>>, onLookup: MidRequestHook, outage: DnsOutage) =>
 	Layer.succeed(DnsTxtResolver, {
 		lookupTxt: (name) => {
-			const found = Effect.sync(() => records.get(name) ?? [])
+			const found = Effect.suspend(() =>
+				outage.current
+					? Effect.fail(new DnsLookupError({ recordName: name, message: "SERVFAIL" }))
+					: Effect.succeed(records.get(name) ?? []),
+			)
 			const hook = onLookup.current
 			return hook === null ? found : Effect.promise(hook).pipe(Effect.andThen(found))
 		},
@@ -306,6 +336,7 @@ const run = <A, E>(
 		dns: Map<string, Array<string>>
 		entitled: boolean | "sso-only"
 		onLookup?: MidRequestHook
+		dnsOutage?: DnsOutage
 	},
 	effect: Effect.Effect<A, E, EnterpriseSsoService>,
 ) =>
@@ -318,7 +349,11 @@ const run = <A, E>(
 						EdgeCacheService.layer.pipe(Layer.provide(MemoryCacheBackendLive)),
 						BillingCustomerResolver.standalone,
 						gatewayLayer(world.clerk),
-						dnsLayer(world.dns, world.onLookup ?? { current: null }),
+						dnsLayer(
+							world.dns,
+							world.onLookup ?? { current: null },
+							world.dnsOutage ?? { current: false },
+						),
 					),
 				),
 				Layer.provide(testDb.layer),
@@ -747,6 +782,8 @@ describe("EnterpriseSsoService", () => {
 					.addBypassUser(ORG, Schema.decodeSync(UserId)("user_dual"))
 					.pipe(Effect.flip)
 				assert.strictEqual(dual._tag, "@maple/http/enterprise-sso/EnterpriseSsoInvalidError")
+				// The refusal does not say which other domains the person holds.
+				assert.notMatch(dual.message, /partner\.io/)
 				assert.deepStrictEqual(world.clerk.bypass, [])
 			}),
 		)
@@ -876,6 +913,7 @@ describe("EnterpriseSsoService", () => {
 					.removeBypassUser(ORG, Schema.decodeSync(UserId)("user_dual"))
 					.pipe(Effect.flip)
 				assert.strictEqual(refused._tag, "@maple/http/enterprise-sso/EnterpriseSsoConflictError")
+				assert.notMatch(refused.message, /partner\.io/)
 				yield* sso.deleteConnection(ORG)
 				assert.deepStrictEqual(world.clerk.bypass, ["user_dual"])
 			}),
@@ -994,6 +1032,365 @@ describe("EnterpriseSsoService", () => {
 				assert.strictEqual(scim._tag, "@maple/http/enterprise-sso/EnterpriseSsoNotEntitledError")
 				assert.match(scim.message, /SCIM provisioning is a \$100\/month add-on/)
 				assert.strictEqual(world.clerk.directories.size, 0)
+			}),
+		)
+	})
+
+	it.effect("checks a domain's TXT record again before a connection is created or required", () => {
+		const testDb = createTestDb(trackedDbs)
+		const dnsOutage = { current: false }
+		const world = {
+			clerk: fakeClerk(),
+			dns: new Map<string, Array<string>>(),
+			entitled: true,
+			dnsOutage,
+		}
+		const RECORD = "_maple-challenge.acme.com"
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				const sso = yield* EnterpriseSsoService
+				yield* verifiedDomain(world.dns, "acme.com")
+				const published = world.dns.get(RECORD) ?? []
+				const challenge = published[1] ?? ""
+
+				// The record is taken down after verification: the domain still reads verified.
+				world.dns.delete(RECORD)
+				assert.strictEqual((yield* sso.verifyDomain(ORG, "acme.com")).domains[0]?.status, "verified")
+				const refused = yield* sso
+					.createConnection(ORG, ADMIN, samlRequest(["acme.com"]))
+					.pipe(Effect.flip)
+				if (refused._tag !== "@maple/http/enterprise-sso/EnterpriseSsoDomainProofError") {
+					return assert.fail(`expected a domain proof refusal, got ${refused._tag}`)
+				}
+				// It names the domain and the record to publish, as fields and in its sentence.
+				assert.strictEqual(refused.domain, "acme.com")
+				assert.strictEqual(refused.recordName, RECORD)
+				assert.strictEqual(refused.recordValue, challenge)
+				assert.isTrue(Str.includes(refused.recordValue)(refused.message))
+				assert.strictEqual(world.clerk.connections.size, 0)
+
+				world.dns.set(RECORD, published)
+				yield* sso.createConnection(ORG, ADMIN, samlRequest(["acme.com"]))
+
+				// Gone again by the time SSO is required.
+				world.dns.delete(RECORD)
+				const unproven = yield* sso.setEnforcement(ORG, true).pipe(Effect.flip)
+				assert.strictEqual(unproven._tag, "@maple/http/enterprise-sso/EnterpriseSsoDomainProofError")
+
+				// An unanswered lookup is not a proof either.
+				world.dns.set(RECORD, published)
+				dnsOutage.current = true
+				const unanswered = yield* sso.setEnforcement(ORG, true).pipe(Effect.flip)
+				assert.strictEqual(
+					unanswered._tag,
+					"@maple/http/enterprise-sso/EnterpriseSsoUnavailableError",
+				)
+				assert.match(unanswered.message, /Try again/)
+				dnsOutage.current = false
+				assert.strictEqual((yield* sso.get(ORG)).connection?.enforced, false)
+
+				assert.strictEqual((yield* sso.setEnforcement(ORG, true)).connection?.enforced, true)
+				// Turning it off never waits on DNS.
+				dnsOutage.current = true
+				assert.strictEqual((yield* sso.setEnforcement(ORG, false)).connection?.enforced, false)
+			}),
+		)
+	})
+
+	it.effect(
+		"checks the TXT record of a domain an edit adds to the connection, not of the ones it keeps",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const world = { clerk: fakeClerk(), dns: new Map<string, Array<string>>(), entitled: true }
+			return run(
+				testDb,
+				world,
+				Effect.gen(function* () {
+					const sso = yield* EnterpriseSsoService
+					yield* verifiedDomain(world.dns, "acme.com")
+					yield* verifiedDomain(world.dns, "acme.io")
+					yield* sso.createConnection(ORG, ADMIN, samlRequest(["acme.com"]))
+					world.dns.delete("_maple-challenge.acme.com")
+					world.dns.delete("_maple-challenge.acme.io")
+
+					const added = yield* sso
+						.updateConnection(ORG, samlRequest(["acme.com", "acme.io"]))
+						.pipe(Effect.flip)
+					assert.strictEqual(added._tag, "@maple/http/enterprise-sso/EnterpriseSsoDomainProofError")
+					assert.isTrue(Str.includes("_maple-challenge.acme.io")(added.message))
+					assert.deepStrictEqual((yield* sso.get(ORG)).connection?.domains, ["acme.com"])
+
+					const renamed = yield* sso.updateConnection(
+						ORG,
+						new SsoConnectionRequest({ ...samlRequest(["acme.com"]), name: "Acme SSO" }),
+					)
+					assert.strictEqual(renamed.connection?.name, "Acme SSO")
+				}),
+			)
+		},
+	)
+
+	it.effect(
+		"keeps token rotation and certificate replacement open after the add-on ends, and nothing else",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const world = { clerk: fakeClerk(), dns: new Map<string, Array<string>>(), entitled: true }
+			const manual = (overrides: { name?: string; ssoUrl?: string; certificate?: string }) =>
+				new SsoConnectionRequest({
+					name: overrides.name ?? "Acme IdP",
+					provider: "saml_custom",
+					domains: ["acme.com"],
+					saml: new SsoSamlSettings({
+						ssoUrl: overrides.ssoUrl ?? "https://idp.acme.com/sso",
+						entityId: "https://idp.acme.com",
+						...(overrides.certificate === undefined
+							? undefined
+							: { certificate: overrides.certificate }),
+					}),
+				})
+			return Effect.gen(function* () {
+				const first = yield* run(
+					testDb,
+					world,
+					Effect.gen(function* () {
+						const sso = yield* EnterpriseSsoService
+						yield* verifiedDomain(world.dns, "acme.com")
+						yield* sso.createConnection(ORG, ADMIN, manual({ certificate: "old certificate" }))
+						return yield* sso.createDirectory(ORG)
+					}),
+				)
+				world.entitled = false
+				yield* run(
+					testDb,
+					world,
+					Effect.gen(function* () {
+						const sso = yield* EnterpriseSsoService
+						assert.isFalse((yield* sso.get(ORG)).ssoEntitled)
+
+						const rotated = yield* sso.rotateDirectoryToken(ORG)
+						assert.match(rotated.token, /^scim_/)
+						assert.notStrictEqual(rotated.token, first.token)
+
+						yield* sso.updateConnection(ORG, manual({ certificate: "new certificate" }))
+						assert.strictEqual(world.clerk.updates.at(-1)?.certificate, "new certificate")
+						// The same goes for pointing it at the IdP's metadata again.
+						yield* sso.updateConnection(
+							ORG,
+							new SsoConnectionRequest({
+								name: "Acme IdP",
+								provider: "saml_custom",
+								domains: ["acme.com"],
+								saml: { metadataUrl: "https://idp.acme.com/metadata" },
+							}),
+						)
+						assert.strictEqual(
+							world.clerk.updates.at(-1)?.metadataUrl,
+							"https://idp.acme.com/metadata",
+						)
+
+						const updates = world.clerk.updates.length
+						const refused = yield* Effect.all([
+							Effect.flip(
+								sso.updateConnection(ORG, manual({ name: "Renamed", certificate: "x" })),
+							),
+							Effect.flip(
+								sso.updateConnection(
+									ORG,
+									manual({ ssoUrl: "https://elsewhere.example/sso", certificate: "x" }),
+								),
+							),
+							Effect.flip(sso.addBypassUser(ORG, BREAK_GLASS)),
+							Effect.flip(sso.createDirectory(ORG)),
+						])
+						assert.deepStrictEqual(Arr.dedupe(Arr.map(refused, (error) => error._tag)), [
+							"@maple/http/enterprise-sso/EnterpriseSsoNotEntitledError",
+						])
+						assert.strictEqual(world.clerk.updates.length, updates)
+						assert.deepStrictEqual(world.clerk.bypass, [])
+					}),
+				)
+			})
+		},
+	)
+
+	it.effect("lets an OIDC client secret be replaced after the add-on ends, but not the client", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = { clerk: fakeClerk(), dns: new Map<string, Array<string>>(), entitled: true }
+		const oidc = (clientId: string, clientSecret: string) =>
+			new SsoConnectionRequest({
+				name: "Acme OIDC",
+				provider: "oidc_custom",
+				domains: ["acme.com"],
+				oidc: {
+					discoveryUrl: "https://id.acme.com/.well-known/openid-configuration",
+					clientId,
+					clientSecret,
+				},
+			})
+		return Effect.gen(function* () {
+			yield* run(
+				testDb,
+				world,
+				Effect.gen(function* () {
+					const sso = yield* EnterpriseSsoService
+					yield* verifiedDomain(world.dns, "acme.com")
+					yield* sso.createConnection(ORG, ADMIN, oidc("maple", "old secret"))
+				}),
+			)
+			world.entitled = false
+			yield* run(
+				testDb,
+				world,
+				Effect.gen(function* () {
+					const sso = yield* EnterpriseSsoService
+					yield* sso.updateConnection(ORG, oidc("maple", "new secret"))
+					assert.strictEqual(world.clerk.updates.at(-1)?.clientSecret, "new secret")
+					const refused = yield* sso
+						.updateConnection(ORG, oidc("another-client", "new secret"))
+						.pipe(Effect.flip)
+					assert.strictEqual(
+						refused._tag,
+						"@maple/http/enterprise-sso/EnterpriseSsoNotEntitledError",
+					)
+					assert.strictEqual(world.clerk.updates.length, 1)
+				}),
+			)
+		})
+	})
+
+	it.effect(
+		"summarises the state for a reader who cannot manage SSO, without settings, groups or people",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const world = { clerk: fakeClerk(), dns: new Map<string, Array<string>>(), entitled: true }
+			return run(
+				testDb,
+				world,
+				Effect.gen(function* () {
+					const sso = yield* EnterpriseSsoService
+					yield* verifiedDomain(world.dns, "acme.com")
+					yield* sso.createConnection(ORG, ADMIN, samlRequest(["acme.com"]))
+					yield* sso.setEnforcement(ORG, true)
+					yield* sso.addBypassUser(ORG, BREAK_GLASS)
+					yield* sso.createDirectory(ORG)
+					const directoryId = [...world.clerk.directories.keys()][0] ?? ""
+					yield* sso.applyDirectoryGroup({
+						directoryId,
+						groupId: "grp_admins",
+						displayName: "Maple Admins",
+						updatedAt: 1,
+						deleted: false,
+					})
+					yield* sso.setRoleMappings(ORG, [{ groupId: "grp_admins", role: "org:admin" }])
+
+					world.clerk.bypassLookups = 0
+					const summary = yield* sso.getSummary(ORG)
+					assert.deepStrictEqual(
+						Arr.map(summary.domains, (d) => [d.domain, d.status]),
+						[["acme.com", "verified"]],
+					)
+					assert.strictEqual(summary.connection?.enforced, true)
+					assert.deepStrictEqual(summary.connection?.domains, ["acme.com"])
+					assert.isFalse(summary.directory?.paused ?? true)
+					assert.deepStrictEqual(summary.roleMappings, [])
+					assert.deepStrictEqual(summary.groups, [])
+					assert.deepStrictEqual(summary.bypassUsers, [])
+					// Nothing that names the IdP's endpoints, the SCIM endpoint, a group or a person.
+					const sent = JSON.stringify(summary)
+					for (const secretish of ["clerk.test", "okta.com", "user_breakglass", "Maple Admins"]) {
+						assert.isFalse(Str.includes(secretish)(sent), secretish)
+					}
+					assert.strictEqual(world.clerk.bypassLookups, 0)
+
+					// The admin read is unchanged.
+					const full = yield* sso.get(ORG)
+					assert.match(full.directory?.endpointUrl ?? "", /^https:\/\/scim\.clerk\.test\//)
+					assert.match(full.connection?.acsUrl ?? "", /^https:\/\/clerk\.test\//)
+					assert.strictEqual(full.bypassUsers.length, 1)
+					assert.strictEqual(full.groups.length, 1)
+				}),
+			)
+		},
+	)
+
+	it.effect(
+		"takes a former member off the bypass list, unless they rejoined or another organization needs the entry",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const world = { clerk: fakeClerk(), dns: new Map<string, Array<string>>(), entitled: true }
+			const DUAL = Schema.decodeSync(UserId)("user_dual")
+			return run(
+				testDb,
+				world,
+				Effect.gen(function* () {
+					const sso = yield* EnterpriseSsoService
+					// An organization without a connection has no list.
+					assert.strictEqual(yield* sso.removeFormerMemberBypass(ORG, BREAK_GLASS), "not_listed")
+
+					yield* verifiedDomain(world.dns, "acme.com")
+					yield* sso.createConnection(ORG, ADMIN, samlRequest(["acme.com"]))
+					yield* sso.addBypassUser(ORG, BREAK_GLASS)
+					assert.strictEqual(yield* sso.removeFormerMemberBypass(ORG, ADMIN), "not_listed")
+
+					// A late delivery for someone who has rejoined since.
+					assert.strictEqual(yield* sso.removeFormerMemberBypass(ORG, BREAK_GLASS), "kept")
+					assert.deepStrictEqual(world.clerk.bypass, [BREAK_GLASS])
+
+					world.clerk.members.delete(BREAK_GLASS)
+					assert.strictEqual(yield* sso.removeFormerMemberBypass(ORG, BREAK_GLASS), "removed")
+					assert.deepStrictEqual(world.clerk.bypass, [])
+
+					// Another organization's connection serves this person's second address.
+					world.clerk.bypass.push(DUAL)
+					world.clerk.members.delete(DUAL)
+					world.clerk.connections.set("ent_partner", {
+						id: "ent_partner",
+						name: "Partner IdP",
+						provider: "saml_custom",
+						domains: ["partner.io"],
+						organizationId: OTHER_ORG,
+						active: true,
+						createdAt: 1,
+						saml: null,
+						oidc: null,
+					})
+					assert.strictEqual(yield* sso.removeFormerMemberBypass(ORG, DUAL), "kept")
+					assert.deepStrictEqual(world.clerk.bypass, [DUAL])
+				}),
+			)
+		},
+	)
+
+	it.effect("removes the Clerk connection and directory of an organization that is being deleted", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = { clerk: fakeClerk(), dns: new Map<string, Array<string>>(), entitled: true }
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				const sso = yield* EnterpriseSsoService
+				// Nothing configured is not a failure.
+				yield* sso.removeForDeletedOrganization(OTHER_ORG)
+
+				yield* verifiedDomain(world.dns, "acme.com")
+				yield* sso.createConnection(ORG, ADMIN, samlRequest(["acme.com"]))
+				yield* sso.createDirectory(ORG)
+
+				// Clerk is down: the failure is raised and the row stays, so a retry finds it.
+				world.clerk.failDeletes = true
+				const failed = yield* sso.removeForDeletedOrganization(ORG).pipe(Effect.flip)
+				assert.strictEqual(failed._tag, "@maple/http/enterprise-sso/EnterpriseSsoUnavailableError")
+				assert.isNotNull((yield* sso.get(ORG)).connection)
+
+				world.clerk.failDeletes = false
+				yield* sso.removeForDeletedOrganization(ORG)
+				assert.strictEqual(world.clerk.connections.size, 0)
+				assert.strictEqual(world.clerk.directories.size, 0)
+				assert.isNull((yield* sso.get(ORG)).connection)
+				// A second attempt finds nothing left and succeeds.
+				yield* sso.removeForDeletedOrganization(ORG)
 			}),
 		)
 	})

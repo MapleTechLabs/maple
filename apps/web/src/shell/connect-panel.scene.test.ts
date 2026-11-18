@@ -82,10 +82,7 @@ describe("connect panel scene", () => {
 				FetchOverview({ orgId: ORG, window, request: 1, pinnedNamespace: "prod" }),
 				Message.FailedLoadOverview({ orgId: ORG, request: 1 }),
 			),
-			expect(role("link", { name: "Ingestion settings" })).toHaveAttr(
-				"href",
-				"/settings?tab=ingestion",
-			),
+			expect(role("link", { name: "Ingestion settings" })).toHaveAttr("href", "/settings/ingestion"),
 			// A failed status read makes no claim either way, matching Settings > Ingestion.
 			expect(text("Status unknown")).toExist(),
 			expect(text("Waiting for telemetry")).toBeAbsent(),
@@ -248,7 +245,7 @@ describe("connect panel update", () => {
 				"href",
 				vscodeInstallUrl(`${mcpUrl}/mcp`),
 			),
-			expect(role("link", { name: "All clients" })).toHaveAttr("href", "/settings?tab=mcp"),
+			expect(role("link", { name: "All clients" })).toHaveAttr("href", "/settings/mcp"),
 		)
 	})
 })

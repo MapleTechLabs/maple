@@ -4,7 +4,6 @@
  * The connection is never changed here.
  */
 import {
-	CloudCostDisabledError,
 	IntegrationsConnectionChangedError,
 	IntegrationsNotConnectedError,
 	IntegrationsPersistenceError,
@@ -21,7 +20,6 @@ import { randomUUID } from "node:crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { removePlanetScaleCostSources } from "./planetscale-cost-sources"
 import {
 	planetScaleCanReadInvoices,
@@ -63,9 +61,7 @@ const toAddError = (
 export type PlanetScaleCostStatusInfo = typeof PlanetScaleCostStatus.Encoded
 
 export interface PlanetScaleCostSourceServiceApi {
-	readonly status: (
-		orgId: OrgId,
-	) => Effect.Effect<PlanetScaleCostStatusInfo, IntegrationsPersistenceError | CloudCostDisabledError>
+	readonly status: (orgId: OrgId) => Effect.Effect<PlanetScaleCostStatusInfo, IntegrationsPersistenceError>
 	/**
 	 * Makes the connected organization a cost source, once PlanetScale has let the grant list its
 	 * invoices. `organization` is the one the caller was shown: another one bound since is refused.
@@ -76,7 +72,6 @@ export interface PlanetScaleCostSourceServiceApi {
 		organization: string,
 	) => Effect.Effect<
 		{ readonly organization: string; readonly created: boolean },
-		| CloudCostDisabledError
 		| IntegrationsNotConnectedError
 		| IntegrationsConnectionChangedError
 		| PlanetScaleCostReconnectRequiredError
@@ -94,20 +89,9 @@ export class PlanetScaleCostSourceService extends Context.Service<
 >()("@maple/backend/services/cost/PlanetScaleCostSourceService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
-		const featureFlags = yield* OrganizationFeatureFlagsService
 		const psOAuth = yield* PlanetScaleOAuthService
 		const provider = yield* PlanetScaleCostProvider
 		const dbExecute = makeDbExecute(database, "PlanetScaleCostSourceService", toPersistenceError)
-
-		const requireRollout = (orgId: OrgId) =>
-			Effect.gen(function* () {
-				const flags = yield* featureFlags.flags(orgId)
-				if (!flags.cloudCost) {
-					return yield* new CloudCostDisabledError({
-						message: "Cloud cost is not enabled for this organization.",
-					})
-				}
-			})
 
 		/** The org's connection and whether it is a cost source, read together. */
 		const load = (orgId: OrgId) =>
@@ -142,7 +126,6 @@ export class PlanetScaleCostSourceService extends Context.Service<
 
 		const status = Effect.fn("PlanetScaleCostSourceService.status")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan({ orgId })
-			yield* requireRollout(orgId)
 			const connection = yield* load(orgId)
 			if (connection === null) return { organization: null, invoiceAccess: false, added: false }
 			return {
@@ -157,7 +140,6 @@ export class PlanetScaleCostSourceService extends Context.Service<
 			organization: string,
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId })
-			yield* requireRollout(orgId)
 			const connection = yield* load(orgId)
 			if (connection === null) {
 				return yield* new IntegrationsNotConnectedError({
@@ -229,12 +211,6 @@ export class PlanetScaleCostSourceService extends Context.Service<
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(
-			Layer.mergeAll(
-				PlanetScaleCostProvider.layer,
-				PlanetScaleOAuthService.layer,
-				OrganizationFeatureFlagsService.layer,
-			),
-		),
+		Layer.provide(Layer.mergeAll(PlanetScaleCostProvider.layer, PlanetScaleOAuthService.layer)),
 	)
 }

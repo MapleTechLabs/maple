@@ -35,9 +35,11 @@ interface Props {
 	 * product data, and the pages below it show it verbatim.
 	 */
 	signal?: string;
+	/** Classes for the aside's cell: `hidden lg:block` keeps an aside, and its row gap, off phones. */
+	asideClass?: string;
 }
 
-const { eyebrow, title, lede, breadcrumb, signal, illustration } = Astro.props;
+const { eyebrow, title, lede, breadcrumb, signal, illustration, asideClass } = Astro.props;
 
 // An optional right-hand column (the /compare logo pairing). Without it the
 // hero keeps its single-column measure; with it, the copy and the aside sit
@@ -93,7 +95,7 @@ const hasAside = Astro.slots.has("aside");
 				</a>
 			</div>
 		</div>
-		{hasAside && <div class="min-w-0"><slot name="aside" /></div>}
+		{hasAside && <div class:list={["min-w-0", asideClass]}><slot name="aside" /></div>}
 		</div>
 	</div>
 </section>

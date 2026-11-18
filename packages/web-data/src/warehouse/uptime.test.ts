@@ -42,19 +42,24 @@ const check = (at: string, durationMs: number, ok: boolean, phases: Record<strin
 	durationMs,
 	ok,
 	statusCode: ok ? 200 : null,
+	error: ok ? null : "Connection refused",
 	phases,
 })
 
-/** The internal API, answering `/uptime-checks` and `/uptime-phase-timings` by path; anything else fails. */
-const withApi = (answers: Readonly<Record<string, () => Response>>) => {
-	const fetch: typeof globalThis.fetch = async (input) => {
-		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-		const path = new URL(url, "http://api.test").pathname
+/**
+ * The internal API, answering `/uptime-checks` and `/uptime-phase-timings` by path, given the request
+ * body; anything else fails.
+ */
+const withApi = (answers: Readonly<Record<string, (body: string) => Response>>) => {
+	const fetch: typeof globalThis.fetch = async (input, init) => {
+		const request = new Request(input, init)
+		const path = new URL(request.url, "http://api.test").pathname
+		const body = await request.text()
 		return Option.match(
 			Arr.findFirst(Rec.toEntries(answers), ([suffix]) => Str.endsWith(suffix)(path)),
 			{
 				onNone: () => Promise.reject(new Error(`unmocked ${path}`)),
-				onSome: ([, answer]) => answer(),
+				onSome: ([, answer]) => answer(body),
 			},
 		)
 	}
@@ -164,6 +169,36 @@ describe("getUptimeCheckStats", () => {
 				],
 			)
 			assert.deepStrictEqual([stats.samplesTruncated, stats.samplesFailed], [false, false])
+		}),
+	)
+
+	it.effect("reads the failed checks apart from the capped list, newest first", () =>
+		Effect.gen(function* () {
+			answer([])
+			const failed = [
+				check("2026-02-01T00:40:00.000Z", 10_000, false, null),
+				check("2026-02-01T00:10:00.000Z", 10_000, false, null),
+			]
+			const stats = yield* getUptimeCheckStats({
+				monitorId: MONITOR,
+				startTime: START,
+				endTime: END,
+			}).pipe(
+				withApi({
+					"/uptime-checks": (body) =>
+						Response.json({
+							checks: Str.includes(`"failedOnly":true`)(body) ? failed : [],
+						}),
+				}),
+			)
+			assert.deepStrictEqual(
+				Arr.map(stats.failedSamples, (sample) => [sample.at, sample.error]),
+				[
+					["2026-02-01T00:40:00.000Z", "Connection refused"],
+					["2026-02-01T00:10:00.000Z", "Connection refused"],
+				],
+			)
+			assert.deepStrictEqual([stats.samples, stats.failedSamplesFailed], [[], false])
 		}),
 	)
 

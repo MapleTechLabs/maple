@@ -114,17 +114,29 @@ export const cellsOf = (
 		}))
 	})
 
+/** The series the plot draws: every definition the legend has not hidden, with its own colour. */
+export const visibleSeries = (
+	definitions: ReadonlyArray<Readonly<{ chartKey: string; rawKey: string }>>,
+	colors: Readonly<Record<string, string>>,
+	fallbackColor: string,
+	hidden: ReadonlyArray<string> = [],
+): ReadonlyArray<Series> =>
+	Arr.map(
+		Arr.filter(definitions, (definition) => !hidden.includes(definition.chartKey)),
+		(definition) => ({
+			key: definition.chartKey,
+			label: definition.rawKey,
+			color: colors[definition.chartKey] ?? fallbackColor,
+		}),
+	)
+
 export const buildQueryBuilderBar = (spec: BarSpec): BuiltChart<BarCell, ChartValue, number> => {
 	const { definitions } = seriesDefinitionsOf(spec.data)
 	const unit = spec.unit ?? undefined
 	const keys = Arr.map(definitions, (definition) => definition.chartKey)
 	const normalised = normaliseRows(spec.data, definitions)
 	const rows = scaleRates(normalised, keys, unit, bucketSecondsOf(normalised))
-	const visible: ReadonlyArray<Series> = Arr.map(definitions, (definition) => ({
-		key: definition.chartKey,
-		label: definition.rawKey,
-		color: spec.colors[definition.chartKey] ?? spec.fallbackColor,
-	}))
+	const visible = visibleSeries(definitions, spec.colors, spec.fallbackColor, spec.hidden)
 	const visibleKeys = Arr.map(visible, (entry) => entry.key)
 	const axisContext = axisContextOf(rows, spec.timeZone ?? undefined)
 	const first = findFirstPartialIndex(rows, { now: spec.nowMs })

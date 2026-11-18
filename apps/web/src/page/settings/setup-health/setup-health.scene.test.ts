@@ -61,7 +61,7 @@ describe("setup health", () => {
 		expect(setupHealthAction({ id: "CFG-MAP-01", affected: [] })).toEqual({
 			kind: "link",
 			label: "Open ingestion",
-			href: "/settings?tab=ingestion",
+			href: "/settings/ingestion",
 		})
 		expect(setupHealthAction({ id: "TRC-04", affected: [] })).toMatchObject({
 			kind: "docs",

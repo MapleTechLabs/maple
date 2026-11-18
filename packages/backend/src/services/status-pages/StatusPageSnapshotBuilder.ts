@@ -40,6 +40,7 @@ import {
 	StatusPageSlug,
 	StatusPageTheme,
 	themeContrastIssue,
+	isStatusPageImageSource,
 	type StatusPageSnapshot,
 	type StatusPageIncidentHistoryEntry,
 	type StatusPageSnapshotIncident,
@@ -299,6 +300,9 @@ const DRAFT_PLACEHOLDER_SLUG = "preview"
 const isSlug = Schema.is(StatusPageSlug)
 const isTheme = Schema.is(StatusPageTheme)
 
+const imageOrNull = (value: string | null) =>
+	value !== null && isStatusPageImageSource(value) ? value : null
+
 const httpsOrNull = (value: string | null) =>
 	value !== null && URL.canParse(value) && new URL(value).protocol === "https:" ? value : null
 
@@ -315,9 +319,9 @@ export const toStatusPageDraft = (params: StatusPagePreviewParams): StatusPageDr
 			slug: isSlug(config.slug) ? config.slug : DRAFT_PLACEHOLDER_SLUG,
 			description: config.description,
 			websiteUrl: httpsOrNull(config.website_url),
-			logoUrl: httpsOrNull(config.logo_url),
-			logoDarkUrl: httpsOrNull(config.logo_dark_url),
-			faviconUrl: httpsOrNull(config.favicon_url),
+			logoUrl: imageOrNull(config.logo_url),
+			logoDarkUrl: imageOrNull(config.logo_dark_url),
+			faviconUrl: imageOrNull(config.favicon_url),
 			supportUrl: httpsOrNull(config.support_url),
 			privacyUrl: httpsOrNull(config.privacy_url),
 			termsUrl: httpsOrNull(config.terms_url),
