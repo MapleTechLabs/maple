@@ -11,11 +11,9 @@ import {
 	unlexableSyntaxIssue,
 } from "@maple/domain/raw-sql"
 
-// Static checks for SQL sent to an org's own ClickHouse. The same shape as Maple's raw SQL
-// (`rawSqlIssue`) minus `$__orgFilter` and the system-table ban: the data and the server are the
-// org's, isolated by its credentials. `readonly=1` on every request refuses writes and reader
-// table functions, but the server does not hold a subquery's own `SETTINGS` to it (checked on
-// 26.2), so the `SETTINGS` ban here is part of the boundary, not a courtesy.
+// Static checks for SQL sent to an org's own ClickHouse: Maple's raw SQL rules (`rawSqlIssue`) minus
+// `$__orgFilter` and the system-table ban, since the data and server are the org's. `readonly=1`
+// does not bind a subquery's own `SETTINGS` (checked on 26.2), so refusing the clause is required.
 
 export const CLICKHOUSE_MACROS = [
 	"$__timeFilter",

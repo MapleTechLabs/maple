@@ -141,13 +141,9 @@ export interface WarehouseBackendDialect {
 	 */
 	readonly managedSchema: boolean
 	/**
-	 * Run caller-written SQL in the server's read-only mode, with Maple's limits sent
-	 * beside the statement. The stored account usually can write and call table
-	 * functions that leave the server, so the server refuses those for raw SQL instead
-	 * of the text checks alone. It does not hold a subquery's own `SETTINGS` to that mode
-	 * (checked on 26.2), so `rawSqlIssue` refusing the clause is still required. Tinybird
-	 * restricts the setting and scopes raw SQL with the per-org token; chDB is the user's
-	 * own local data.
+	 * Run caller-written SQL with `readonly=1` and Maple's limits sent beside the statement, so
+	 * the server refuses writes and reader table functions. Not a boundary alone: see
+	 * `docs/self-hosted-clickhouse.md`. Tinybird scopes raw SQL with the per-org token instead.
 	 */
 	readonly readOnlyRawSql: boolean
 }

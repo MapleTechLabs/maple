@@ -199,11 +199,19 @@ const indexFrom = (text: string, search: string, from: number): number =>
  */
 const tokenizeSql = (sql: string): ReadonlyArray<SqlToken> => lexSql(sql).tokens
 
-/** The token stream, and whether a block comment opens another before it closes. */
-function lexSql(sql: string): { readonly tokens: ReadonlyArray<SqlToken>; readonly nestedComment: boolean } {
+interface LexedSql {
+	readonly tokens: ReadonlyArray<SqlToken>
+	/** A block comment opens another before it closes; the server nests them, this lexer does not. */
+	readonly nestedComment: boolean
+	/** A quoted identifier holds a backslash, which the server decodes by rules this lexer only approximates. */
+	readonly escapedIdentifier: boolean
+}
+
+function lexSql(sql: string): LexedSql {
 	const tokens: Array<SqlToken> = []
 	const n = sql.length
 	let nestedComment = false
+	let escapedIdentifier = false
 	let i = 0
 	while (i < n) {
 		const c = charAt(sql, i)
@@ -214,9 +222,8 @@ function lexSql(sql: string): { readonly tokens: ReadonlyArray<SqlToken>; readon
 			i = nl === -1 ? n : nl
 		} else if (c === "/" && charAt(sql, i + 1) === "*") {
 			const end = indexFrom(sql, "*/", i + 2)
-			const close = end === -1 ? n : end
-			// The server nests block comments and this lexer does not, so past an inner
-			// open the two disagree on where the comment ends.
+			// Through the closing `*`: in `/*/*/` the inner open shares it.
+			const close = end === -1 ? n : end + 1
 			if (Str.includes("/*")(Str.slice(i + 2, close)(sql))) nestedComment = true
 			i = end === -1 ? n : end + 2
 		} else if (c === "'") {
@@ -242,6 +249,7 @@ function lexSql(sql: string): { readonly tokens: ReadonlyArray<SqlToken>; readon
 			while (i < n) {
 				const d = charAt(sql, i)
 				if (d === "\\") {
+					escapedIdentifier = true
 					// Decoded as the server does, so `\x73ystem` and `sys\Ntem` both read as `system`.
 					const e = charAt(sql, i + 1)
 					const hex = Str.slice(i + 2, i + 4)(sql)
@@ -276,7 +284,7 @@ function lexSql(sql: string): { readonly tokens: ReadonlyArray<SqlToken>; readon
 			i++
 		}
 	}
-	return { tokens, nestedComment }
+	return { tokens, nestedComment, escapedIdentifier }
 }
 
 // Keywords that end the FROM list, so a later comma no longer introduces a table.
@@ -470,13 +478,8 @@ const systemDatabaseReference = (sql: string): string | null => {
 const NESTED_COMMENT_MESSAGE =
 	"Nested /* */ comments are not supported in raw SQL. Close each comment before opening another."
 
-/**
- * ClickHouse syntax the masker does not lex: `#` / `#!` line comments, `$$` and
- * `$tag$` heredoc strings (the tag may be digits), nested block comments (the masker
- * ends a comment at the first close, leaving the outer one's `*\/` behind), and the
- * non-ASCII characters the server reads as quotes or whitespace. Where these appear
- * the masked text and the server disagree on what is code, so every check is moot.
- */
+// ClickHouse syntax the masker does not lex: `#` comments, `$tag$` heredoc strings (the tag may
+// be digits) and a nested comment's leftover close. Tested on the masked text.
 const UNMASKED_SYNTAX: ReadonlyArray<readonly [RegExp, string]> = [
 	[/#/, "'#' comments are not supported in raw SQL. Use -- or /* */ comments."],
 	[
@@ -484,17 +487,42 @@ const UNMASKED_SYNTAX: ReadonlyArray<readonly [RegExp, string]> = [
 		"Heredoc strings ($$...$$ or $tag$...$tag$) are not supported in raw SQL. Use single-quoted strings.",
 	],
 	[/\*\//, NESTED_COMMENT_MESSAGE],
-	[
-		// Curly quotes are string delimiters to the server, and zero-width or other
-		// Unicode spaces are whitespace; neither is to the lexers here.
-		/[^\t\n\r\x20-\x7E]/,
-		"Only plain ASCII is supported in raw SQL outside quoted strings, quoted identifiers and comments. Remove the non-ASCII or control character (often a curly quote or an invisible space pasted from a document).",
-	],
 ]
 
+// The server reads curly quotes as string delimiters and zero-width or other Unicode spaces as
+// whitespace; the lexers here read neither that way. A no-break space is whitespace to both.
+const NON_ASCII_RE = /[^\t\n\r\x20-\x7E\xA0]/
+
+const nonAsciiIssue = (sql: string, maskedSql: string): string | null =>
+	Option.getOrNull(
+		Option.map(Str.search(NON_ASCII_RE)(maskedSql), (at) => {
+			const before = Str.split("\n")(Str.slice(0, at)(sql))
+			const point = Option.getOrElse(Str.codePointAt(at)(sql), () => 0)
+			const code = Str.padStart(4, "0")(Str.toUpperCase(point.toString(16)))
+			return `Only plain ASCII is supported in raw SQL outside quoted strings, quoted identifiers and comments. Remove the character U+${code} at line ${before.length}, column ${(before.at(-1)?.length ?? 0) + 1} (often a curly quote or an invisible space pasted from a document).`
+		}),
+	)
+
+/** `//` starts a line comment on the server. The second slash is read from the source: the masker blanks a `/*` there. */
+const hasSlashComment = (sql: string, maskedSql: string): boolean =>
+	Arr.some(
+		Arr.fromIterable(Str.matchAll(/\//g)(maskedSql)),
+		(match) => charAt(sql, (match.index ?? 0) + 1) === "/",
+	)
+
+/** Whether every `)` closes an earlier `(` and none is left open, on masked text. */
+const parensBalance = (maskedSql: string): boolean => {
+	let depth = 0
+	for (const c of maskedSql) {
+		if (c === "(") depth++
+		else if (c === ")" && --depth < 0) return false
+	}
+	return depth === 0
+}
+
 /**
- * The first reason the lexers here and the server could disagree on what is code,
- * or null. Every text check depends on that agreement, so each gate runs this first.
+ * The first reason the lexers here and the server could disagree on what is code, or null.
+ * Every text check depends on that agreement, so each gate runs this first.
  */
 export const unlexableSyntaxIssue = (
 	sql: string,
@@ -502,7 +530,18 @@ export const unlexableSyntaxIssue = (
 ): string | null => {
 	const unmasked = Arr.findFirst(UNMASKED_SYNTAX, ([pattern]) => pattern.test(maskedSql))
 	if (Option.isSome(unmasked)) return unmasked.value[1]
-	return lexSql(sql).nestedComment ? NESTED_COMMENT_MESSAGE : null
+	const nonAscii = nonAsciiIssue(sql, maskedSql)
+	if (nonAscii !== null) return nonAscii
+	if (hasSlashComment(sql, maskedSql)) {
+		return "'//' comments are not supported in raw SQL. Use -- or /* */ comments."
+	}
+	const lexed = lexSql(sql)
+	if (lexed.nestedComment) return NESTED_COMMENT_MESSAGE
+	if (lexed.escapedIdentifier) {
+		return "Backslashes are not supported inside quoted identifiers in raw SQL. Write the name without escapes."
+	}
+	// An extra `)` would close the row-cap wrapper early and run what follows outside it.
+	return parensBalance(maskedSql) ? null : "Unbalanced parentheses in raw SQL."
 }
 
 /** Macros the engine expands. Anything else `$__`-shaped is a typo. */

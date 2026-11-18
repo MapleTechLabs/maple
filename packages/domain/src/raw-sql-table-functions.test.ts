@@ -11,6 +11,17 @@ describe("rawSqlIssue table sources", () => {
 		expect(rawSqlIssue(sql)).not.toBeNull()
 	})
 
+	// The server decodes escapes in a quoted identifier by rules of its own, malformed ones included.
+	it.each([
+		"SELECT * FROM `\\x75rl`('http://x/') WHERE $__orgFilter",
+		'SELECT * FROM "fi\\"le"(\'/x\') WHERE $__orgFilter',
+		"SELECT `\\x64ictGet`('d', 'v', 1) AS v FROM traces WHERE $__orgFilter",
+		"SELECT `j\\x7ZinGet`('a', 'b', 1) AS v FROM traces WHERE $__orgFilter",
+		"SELECT count() FROM `inf\\x7Zrmation_schema`.tables WHERE $__orgFilter",
+	])("rejects an escape inside a quoted identifier: %s", (sql) => {
+		expect(rawSqlIssue(sql)?.message).toContain("Backslashes are not supported")
+	})
+
 	it.each([
 		"SELECT * FROM traces WHERE $__orgFilter AND SpanId IN (SELECT * FROM loop('d', 't'))",
 		"SELECT * FROM traces t, loop('d', 't') x WHERE $__orgFilter(t)",
@@ -30,9 +41,7 @@ describe("rawSqlIssue table sources", () => {
 		"SELECT * FROM url/**/('http://x/') WHERE $__orgFilter",
 		"SELECT * FROM url -- c\n('http://x/') WHERE $__orgFilter",
 		"SELECT * FROM url\t\n('http://x/') WHERE $__orgFilter",
-		"SELECT * FROM `\\x75rl`('http://x/') WHERE $__orgFilter",
 		"SELECT * FROM `u``rl`('http://x/') WHERE $__orgFilter",
-		'SELECT * FROM "fi\\"le"(\'/x\') WHERE $__orgFilter',
 		"SELECT * FROM default.url('http://x/') WHERE $__orgFilter",
 	])("rejects a blocked function however it is spelled: %s", (sql) => {
 		expect(rawSqlIssue(sql)?.code).toBe("DisallowedFunction")
@@ -146,7 +155,6 @@ describe("rawSqlIssue table sources", () => {
 		"SELECT DICTGET('d', 'v', 1) AS v FROM traces WHERE $__orgFilter",
 		"SELECT `dictGet`('d', 'v', 1) AS v FROM traces WHERE $__orgFilter",
 		"SELECT \"hasColumnInTable\"('system', 'tables', 'name') AS h FROM traces WHERE $__orgFilter",
-		"SELECT `\\x64ictGet`('d', 'v', 1) AS v FROM traces WHERE $__orgFilter",
 		"SELECT dictGet /* c */ ('d', 'v', 1) AS v FROM traces WHERE $__orgFilter",
 		"SELECT * FROM traces WHERE $__orgFilter AND SpanName = (SELECT getSetting('x'))",
 	])("rejects functions that read outside the query's tables: %s", (sql) => {
