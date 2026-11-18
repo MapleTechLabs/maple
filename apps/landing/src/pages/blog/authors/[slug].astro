@@ -74,12 +74,18 @@ const jsonLd = {
     <section class="pb-20 md:pb-28">
         <div class="shell">
             {/* One row per post, as on the blog index. */}
-            <h2 class="m-0 mb-2 font-display text-xl font-semibold tracking-[-0.015em] text-foreground">
-                {posts.length === 1 ? "1 post" : `${posts.length} posts`}
-            </h2>
-            <div class="border-b border-border">
-                {posts.map((post, i) => <PostCard post={post} variant="row" first={i === 0} />)}
-            </div>
+            {posts.length === 0 ? (
+                <div class="border-t border-border pt-8 font-display text-[15px] text-fg-muted">No published posts yet.</div>
+            ) : (
+                <>
+                    <h2 class="m-0 mb-2 font-display text-xl font-semibold tracking-[-0.015em] text-foreground">
+                        {posts.length === 1 ? "1 post" : `${posts.length} posts`}
+                    </h2>
+                    <div class="border-b border-border">
+                        {posts.map((post, i) => <PostCard post={post} variant="row" first={i === 0} />)}
+                    </div>
+                </>
+            )}
         </div>
     </section>
 
