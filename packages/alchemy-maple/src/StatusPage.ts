@@ -1,0 +1,329 @@
+import { Schema, Array as Arr } from "effect"
+import * as Effect from "effect/Effect"
+import * as Redacted from "effect/Redacted"
+import { deepEqual, isResolved } from "alchemy/Diff"
+import * as Provider from "alchemy/Provider"
+import { Resource } from "alchemy/Resource"
+import { listAll, MapleApi } from "./MapleApi"
+import { MapleErrorTags } from "./errors"
+import type { Providers } from "./Providers"
+
+export type StatusPageComponentStatus =
+	| "operational"
+	| "maintenance"
+	| "degraded"
+	| "partial_outage"
+	| "major_outage"
+
+/** One line on the page. Its place in `components` is its position. */
+export interface StatusPageComponentProps {
+	/** Components are matched to the page's existing ones by name, so a rename recreates one. */
+	name: string
+	description?: string | null
+	/** Heading the component is listed under. */
+	group?: string | null
+	/** The `upm_…` uptime monitor driving its status, e.g. a `Maple.UptimeMonitor`'s `monitorId`. */
+	monitor_id?: string | null
+	/**
+	 * A manual status override. Left unset, the override stays as set in Maple, so responders can
+	 * flip a component during an incident without the next deploy undoing it; `null` clears it.
+	 */
+	manual_status?: StatusPageComponentStatus | null
+	/** Whether the page shows its 90 days of uptime bars. Defaults to `true`. */
+	show_uptime?: boolean
+}
+
+/** Theme fields left unset take the default theme's value. */
+export interface StatusPageThemeProps {
+	preset?: "default" | "maple" | "mono" | "midnight" | "paper"
+	/** `auto` follows the visitor; `light` or `dark` forces one and enables the colour overrides. */
+	appearance?: "auto" | "light" | "dark"
+	/** `#rrggbb`, or `null` for the preset's. */
+	accent?: string | null
+	background?: string | null
+	text?: string | null
+	card?: string | null
+	border?: string | null
+	radius?: "none" | "sm" | "md" | "lg"
+	font?: "sans" | "serif" | "mono"
+}
+
+/**
+ * Status page props: the v2 status page config document (`PUT /v2/status_pages/{id}/config`,
+ * snake_case as documented at `/v2/docs`), plus the page password and custom domain.
+ * Optional fields left unset take their defaults.
+ */
+export interface StatusPageProps {
+	name: string
+	/** The page's address, `<slug>.<status domain>`: 3 to 48 lowercase letters, digits or inner hyphens. */
+	slug: string
+	description?: string | null
+	website_url?: string | null
+	/** An https URL, or an uploaded image as a base64 `data:image/...` URL (at most 128 KB). */
+	logo_url?: string | null
+	logo_dark_url?: string | null
+	favicon_url?: string | null
+	support_url?: string | null
+	privacy_url?: string | null
+	terms_url?: string | null
+	/** Defaults to `true`. */
+	show_powered_by?: boolean
+	/** Whether a linked monitor going down opens a page incident. Defaults to `off`. */
+	auto_incidents?: "off" | "draft" | "publish"
+	/** Left unset, the page keeps its visibility (`public` when created). Changing it needs an org admin key. */
+	visibility?: "public" | "password" | "internal"
+	theme?: StatusPageThemeProps
+	/** Every component, in display order; components left out are deleted. */
+	components?: ReadonlyArray<StatusPageComponentProps>
+	/**
+	 * The password visitors enter for a `password` page, 8 to 128 characters. Write-only: it is
+	 * set when it changes and removed when this prop is removed. Needs an org admin key.
+	 */
+	password?: string | Redacted.Redacted
+	/**
+	 * Serve the page on this hostname too, e.g. `status.acme.com`. Point the DNS records in the
+	 * `customDomain` attribute at Maple. Removing the prop removes the domain.
+	 */
+	custom_domain?: string
+}
+
+export interface StatusPageDnsRecord {
+	type: "CNAME" | "TXT"
+	name: string
+	value: string
+	/** `routing`, `ownership` or `certificate`. */
+	purpose: string
+}
+
+export type StatusPage = Resource<
+	"Maple.StatusPage",
+	StatusPageProps,
+	{
+		/** The `stp_…` public ID. */
+		statusPageId: string
+		name: string
+		slug: string
+		/** The page's components with their `stc_…` IDs, in display order. */
+		components: Array<{ componentId: string; name: string }>
+		/** The custom domain and the DNS records to add for it, or `null` without one. */
+		customDomain: {
+			hostname: string
+			cnameTarget: string | null
+			dnsRecords: Array<StatusPageDnsRecord>
+		} | null
+		/** A tag of the page's config; it changes when the page is edited outside Alchemy. */
+		configVersion: string
+	},
+	never,
+	Providers
+>
+
+/**
+ * A public status page: its settings, theme, components, visibility, password and custom
+ * domain. Incidents stay operational and are not declared here.
+ *
+ * @example
+ * ```typescript
+ * const api = yield* Maple.UptimeMonitor("api", {
+ *   name: "API",
+ *   config: { type: "http", url: "https://api.acme.com/health" },
+ * })
+ * yield* Maple.StatusPage("status", {
+ *   name: "Acme Status",
+ *   slug: "acme-status",
+ *   theme: { preset: "midnight" },
+ *   components: [{ name: "API", monitor_id: api.monitorId }],
+ *   custom_domain: "status.acme.com",
+ * })
+ * ```
+ */
+export const StatusPage = Resource<StatusPage>("Maple.StatusPage")
+
+const WirePage = Schema.Struct({
+	id: Schema.String,
+	name: Schema.String,
+	slug: Schema.String,
+	has_password: Schema.Boolean,
+	draft: Schema.Boolean,
+})
+const decodeWirePage = Schema.decodeUnknownEffect(WirePage)
+
+const WireConfigComponent = Schema.Struct({
+	id: Schema.String,
+	name: Schema.String,
+	manual_status: Schema.NullOr(Schema.String),
+})
+const WireConfig = Schema.Struct({
+	version: Schema.String,
+	name: Schema.String,
+	slug: Schema.String,
+	components: Schema.Array(WireConfigComponent),
+})
+type WireConfig = Schema.Schema.Type<typeof WireConfig>
+const decodeWireConfig = Schema.decodeUnknownEffect(WireConfig)
+
+const WireCustomDomain = Schema.Struct({
+	cname_target: Schema.NullOr(Schema.String),
+	hostname: Schema.NullOr(Schema.String),
+	dns_records: Schema.Array(
+		Schema.Struct({
+			type: Schema.Literals(["CNAME", "TXT"]),
+			name: Schema.String,
+			value: Schema.String,
+			purpose: Schema.String,
+		}),
+	),
+})
+type WireCustomDomain = Schema.Schema.Type<typeof WireCustomDomain>
+const decodeWireCustomDomain = Schema.decodeUnknownEffect(WireCustomDomain)
+
+const unwrap = (value: string | Redacted.Redacted | undefined): string | undefined =>
+	value === undefined ? undefined : Redacted.isRedacted(value) ? Redacted.value(value) : value
+
+/**
+ * The config document to apply. Components keep the IDs of the page's components of the same
+ * name, so incidents and history stay attached to them.
+ */
+const configBody = (props: StatusPageProps, current?: WireConfig) => {
+	const unclaimed = [...(current?.components ?? [])]
+	const { password: _password, custom_domain: _domain, components, ...page } = props
+	return {
+		...page,
+		components: Arr.map(components ?? [], (component) => {
+			const index = unclaimed.findIndex((existing) => existing.name === component.name)
+			const match = index === -1 ? undefined : unclaimed.splice(index, 1)[0]
+			return {
+				...(match === undefined ? undefined : { id: match.id }),
+				...component,
+				manual_status:
+					component.manual_status !== undefined
+						? component.manual_status
+						: (match?.manual_status ?? null),
+			}
+		}),
+	}
+}
+
+const toAttributes = (config: WireConfig, pageId: string, domain: WireCustomDomain) => ({
+	statusPageId: pageId,
+	name: config.name,
+	slug: config.slug,
+	components: Arr.map(config.components, (component) => ({
+		componentId: component.id,
+		name: component.name,
+	})),
+	customDomain:
+		domain.hostname === null
+			? null
+			: {
+					hostname: domain.hostname,
+					cnameTarget: domain.cname_target,
+					dnsRecords: Arr.map(domain.dns_records, (record) => ({ ...record })),
+				},
+	configVersion: config.version,
+})
+
+export const StatusPageProvider = () =>
+	Provider.effect(
+		StatusPage,
+		Effect.gen(function* () {
+			const api = yield* MapleApi
+			const pagePath = (pageId: string) => `/v2/status_pages/${encodeURIComponent(pageId)}`
+			const fetchPage = (pageId: string) =>
+				api.get(pagePath(pageId)).pipe(
+					Effect.catchTag(MapleErrorTags.statusPageNotFound, () => Effect.undefined),
+					Effect.flatMap((fetched) =>
+						fetched === undefined ? Effect.undefined : decodeWirePage(fetched),
+					),
+				)
+			const fetchConfig = (pageId: string) =>
+				api.get(`${pagePath(pageId)}/config`).pipe(Effect.flatMap(decodeWireConfig))
+			const fetchDomain = (pageId: string) =>
+				api.get(`${pagePath(pageId)}/custom_domain`).pipe(Effect.flatMap(decodeWireCustomDomain))
+			const observe = Effect.fn(function* (pageId: string) {
+				const page = yield* fetchPage(pageId)
+				if (page === undefined) return undefined
+				return toAttributes(yield* fetchConfig(page.id), page.id, yield* fetchDomain(page.id))
+			})
+
+			return {
+				stables: ["statusPageId" as const],
+				diff: Effect.fn(function* ({ news, olds }) {
+					if (!isResolved(news)) return undefined
+					if (olds !== undefined && !deepEqual(olds, news, { stripNullish: true })) {
+						return { action: "update", stables: ["statusPageId"] } as const
+					}
+					return undefined
+				}),
+				reconcile: Effect.fn(function* ({ news, olds, output }) {
+					let page = output === undefined ? undefined : yield* fetchPage(output.statusPageId)
+					// Created as a draft so no half-configured page is ever served; published below.
+					if (page === undefined) {
+						page = yield* decodeWirePage(
+							yield* api.post("/v2/status_pages", {
+								name: news.name,
+								slug: news.slug,
+								publish: false,
+							}),
+						)
+					}
+					const path = pagePath(page.id)
+
+					// The password goes first: a page cannot turn `password` without one.
+					const password = unwrap(news.password)
+					if (
+						password !== undefined &&
+						(!page.has_password || password !== unwrap(olds?.password))
+					) {
+						yield* api.put(`${path}/password`, { password })
+					}
+					// A removed domain goes before the config, so the page can turn `internal`.
+					let domain = yield* fetchDomain(page.id)
+					if (
+						news.custom_domain === undefined &&
+						olds?.custom_domain !== undefined &&
+						domain.hostname !== null
+					) {
+						domain = yield* decodeWireCustomDomain(yield* api.delete(`${path}/custom_domain`))
+					}
+
+					const config = yield* decodeWireConfig(
+						yield* api.put(`${path}/config`, configBody(news, yield* fetchConfig(page.id))),
+					)
+
+					if (news.custom_domain !== undefined && domain.hostname !== news.custom_domain) {
+						domain = yield* decodeWireCustomDomain(
+							yield* api.put(`${path}/custom_domain`, {
+								hostname: news.custom_domain,
+							}),
+						)
+					}
+					// Removed last: a `password` page refuses to lose its password.
+					if (password === undefined && olds?.password !== undefined && page.has_password) {
+						yield* api.delete(`${path}/password`)
+					}
+					if (page.draft) yield* api.post(`${path}/publish`)
+
+					return toAttributes(config, page.id, domain)
+				}),
+				delete: Effect.fn(function* ({ output }) {
+					yield* api
+						.delete(pagePath(output.statusPageId))
+						.pipe(Effect.catchTag(MapleErrorTags.statusPageNotFound, () => Effect.void))
+				}),
+				read: Effect.fn(function* ({ output }) {
+					if (output === undefined) return undefined
+					return yield* observe(output.statusPageId)
+				}),
+				list: Effect.fn(function* () {
+					const items = yield* listAll(api, "/v2/status_pages")
+					const pages = yield* Effect.forEach(items, (item) => decodeWirePage(item))
+					const observed = yield* Effect.forEach(pages, (page) => observe(page.id))
+					return Arr.filter(observed, (attributes) => attributes !== undefined)
+				}),
+			}
+		}),
+	)
+
+/** @internal Exposed for the in-repo contract test against `@maple/domain`. */
+export const _statusPageConfigBody = configBody
