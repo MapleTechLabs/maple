@@ -24,8 +24,7 @@ export const COUNT_ATTRIBUTE = "log-stream-count"
 export const LAYOUT_ATTRIBUTE = "log-stream-layout"
 const SCROLL_EVENT = "maple:log-stream-scroll"
 
-/** A compact row's height, the virtualizer's first estimate before it measures. */
-export const ROW_HEIGHT = 30
+const ROW_HEIGHT = 30
 const ROW_HEIGHT_COMFORTABLE = 42
 
 interface Layout {

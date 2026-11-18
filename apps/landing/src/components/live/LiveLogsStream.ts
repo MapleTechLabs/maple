@@ -1,7 +1,7 @@
 import { logTimeFormat, toLogRowView, type LogRowLinks } from "@maple/views/ui/logs/log-row-view"
 import * as LogsStream from "@maple/views/ui/logs/logs-stream"
 import * as LogsStreamView from "@maple/views/ui/logs/logs-stream-view"
-import { ROW_HEIGHT } from "@maple/views/ui/logs/virtualize"
+import { COMPACT_ROW_HEIGHT } from "@maple/views/ui/logs/log-row"
 import { Array as Arr, Option, Schema } from "effect"
 import { makeIsland } from "../../foldkit-island/island"
 import { LOGS_STREAM_ROWS } from "./live-logs-stream-data"
@@ -41,8 +41,8 @@ export const LiveLogsStream = makeIsland({
 	init: () => ({
 		model: {
 			...LogsStream.init("landing-logs", rows),
-			window: Arr.map(rows, (_, index) => ({ index, start: index * ROW_HEIGHT })),
-			totalSize: rows.length * ROW_HEIGHT,
+			window: Arr.map(rows, (_, index) => ({ index, start: index * COMPACT_ROW_HEIGHT })),
+			totalSize: rows.length * COMPACT_ROW_HEIGHT,
 		},
 	}),
 	update,

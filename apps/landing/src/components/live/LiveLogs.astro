@@ -23,9 +23,9 @@ const fill = streamHeight === "fill";
 
 {
 	volume ? (
-		<div class={`flex flex-col gap-3 ${className}`}>
+		<div class={`flex flex-col gap-3 ${fill ? "h-full" : ""} ${className}`}>
 			<LiveLogsVolumeChart client:visible />
-			<div class="flex flex-col" style={`height: ${streamHeight};`}>
+			<div class={`flex flex-col ${fill ? "min-h-0 flex-1" : ""}`} style={fill ? undefined : `height: ${streamHeight};`}>
 				<LiveLogsStream client:visible />
 			</div>
 		</div>
