@@ -88,9 +88,12 @@ const finding = (overrides: Partial<ConstructorParameters<typeof PrReviewFinding
 		...overrides,
 	})
 
+const PRIVATE = { isPrivate: true } as const
+const PUBLIC = { isPrivate: false } as const
+
 describe("telemetryFindings", () => {
 	it("files an alert break as critical and a dashboard break as a warning", () => {
-		const findings = telemetryFindings(telemetry())
+		const findings = telemetryFindings(telemetry(), PRIVATE)
 		assert.deepStrictEqual(
 			Arr.map(findings, (item) => [item.checkId, item.severity, item.title]),
 			[
@@ -114,6 +117,7 @@ describe("telemetryFindings", () => {
 					new PrReviewCostNote({ path: "a.ts", line: 3, kind: "span_name", note: "n" }),
 				],
 			}),
+			PRIVATE,
 		)
 		assert.deepStrictEqual(
 			Arr.map(findings, (item) => [item.checkId, item.severity, item.line]),
@@ -129,18 +133,42 @@ describe("telemetryFindings", () => {
 			{ name: "payment.provider", path: "src/other.ts", line: 4 },
 		])
 		assert.deepStrictEqual(
-			Arr.map(telemetryFindings(proved), (item) => Str.split(",")(item.title)[0]),
+			Arr.map(telemetryFindings(proved, PRIVATE), (item) => Str.split(",")(item.title)[0]),
 			["Removes `Payments.charge`"],
 		)
 		assert.deepStrictEqual(proved.contractBreaks[0]?.dismissed, { path: "src/other.ts", line: 4 })
+	})
+
+	it("names no alert or dashboard on a public repository", () => {
+		const findings = telemetryFindings(telemetry(), PUBLIC)
+		assert.deepStrictEqual(
+			Arr.map(findings, (item) => item.title),
+			[
+				"Removes `payment.provider`, which 1 alert reads",
+				"Removes `Payments.charge`, which 1 dashboard reads",
+			],
+		)
+		const text = Arr.join(
+			Arr.map(findings, (item) => `${item.title} ${item.body}`),
+			" ",
+		)
+		assert.notInclude(text, "Checkout by provider")
+		assert.notInclude(text, "“Payments”")
 	})
 })
 
 describe("weighByTraffic", () => {
 	it("raises an observability note in a busy file to a warning and says why", () => {
-		const [raised] = weighByTraffic([finding()], telemetry())
+		const [raised] = weighByTraffic([finding()], telemetry(), PRIVATE)
 		assert.strictEqual(raised?.severity, "warn")
 		assert.include(raised?.body ?? "", "41k calls a day")
+		assert.include(raised?.body ?? "", "busiest")
+	})
+
+	it("names no span when it raises a note on a public repository", () => {
+		const [raised] = weighByTraffic([finding()], telemetry(), PUBLIC)
+		assert.strictEqual(raised?.severity, "warn")
+		assert.notInclude(raised?.body ?? "", "busiest")
 	})
 
 	it("leaves other lenses, quiet files and existing warnings alone", () => {
@@ -156,7 +184,7 @@ describe("weighByTraffic", () => {
 			finding({ path: "src/quiet.ts" }),
 			finding({ severity: "warn" }),
 		]
-		assert.deepStrictEqual(weighByTraffic(kept, telemetry()), kept)
+		assert.deepStrictEqual(weighByTraffic(kept, telemetry(), PRIVATE), kept)
 	})
 })
 
@@ -411,9 +439,36 @@ describe("post-merge", () => {
 				missing: [],
 				verdict: "clean",
 			}),
+			PRIVATE,
 		)
 		assert.include(body, "<!-- maple-pr-post-merge r-1 -->")
 		assert.include(body, "Shipped clean")
 		assert.include(body, "`abcdef1`")
+		assert.include(body, "`api`")
+	})
+
+	it("names no service on a public repository's follow-up", () => {
+		const body = renderPostMergeComment(
+			"r-1",
+			new PrReviewPostMerge({
+				deploy: {
+					service: "api",
+					environment: "production",
+					commitSha: "abcdef123",
+					firstSeen: DateTime.makeUnsafe(0),
+					exact: true,
+				},
+				windowMinutes: 60,
+				operations: [],
+				newIssues: [],
+				linkedIssues: [],
+				missing: [],
+				verdict: "clean",
+			}),
+			PUBLIC,
+		)
+		assert.include(body, "Shipped clean")
+		assert.notInclude(body, "`api`")
+		assert.notInclude(body, "production")
 	})
 })

@@ -2973,9 +2973,11 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				// The model's findings weighed by production traffic, and the facts the service files
 				// itself. The repository's settings are enforced here, not only stated in the kickoff.
 				const scanned = withoutReviewerOverlap(read?.privacy ?? [], sourced.findings)
+				// A repository Maple cannot read back is treated as public.
+				const visibility = { isPrivate: Option.isSome(repository) && repository.value.isPrivate }
 				const proposed = [
-					...weighByTraffic(sourced.findings, telemetry),
-					...telemetryFindings(telemetry),
+					...weighByTraffic(sourced.findings, telemetry, visibility),
+					...telemetryFindings(telemetry, visibility),
 					...scanned,
 				]
 				const allowed = Arr.filter(

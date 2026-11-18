@@ -32,7 +32,12 @@ const referenceList = (item: PrReviewContractBreak) =>
 
 const hasAlert = (item: PrReviewContractBreak) => Arr.some(item.references, (ref) => ref.kind === "alert")
 
-const readers = (item: PrReviewContractBreak) => {
+/** The alerts and dashboards reading a name, by count only where the review is world-readable. */
+const readerCount = (item: PrReviewContractBreak) =>
+	`${item.references.length} ${item.references.length === 1 ? (hasAlert(item) ? "alert" : "dashboard") : "alerts or dashboards"}`
+
+const readers = (item: PrReviewContractBreak, withText: boolean) => {
+	if (!withText) return `${readerCount(item)} ${item.references.length === 1 ? "reads" : "read"}`
 	const [only] = item.references
 	if (item.references.length === 1 && only !== undefined) return `${only.kind} “${only.name}” reads`
 	const kinds = new Set(Arr.map(item.references, (ref) => ref.kind))
@@ -61,7 +66,7 @@ export const renderTelemetryKickoff = (
 			...Arr.map(
 				breaks,
 				(item) =>
-					`- \`${item.name}\` (${KIND_LABEL[item.kind]}, ~${formatCount(item.perDay ?? 0)}/day) removed at ${item.path}:${item.line}; read by ${referenceList(item)}`,
+					`- \`${item.name}\` (${KIND_LABEL[item.kind]}, ~${formatCount(item.perDay ?? 0)}/day) removed at ${item.path}:${item.line}; read by ${withText ? referenceList(item) : readerCount(item)}`,
 			),
 			"For each, sandbox_grep the head for the name. If code at the head still emits it, pass that location in submit_review's telemetryDismissals as {name, path, line}; Maple reads that line before it accepts the dismissal. Otherwise leave it.",
 			"",
@@ -101,11 +106,16 @@ export const renderTelemetryKickoff = (
 	return lines
 }
 
-/** The facts the service files as findings itself: open contract breaks and costly additions. */
+/**
+ * The facts the service files as findings itself: open contract breaks and costly additions. On a
+ * public repository no alert or dashboard name is posted, only how many read the removed name.
+ */
 export const telemetryFindings = (
 	telemetry: PrReviewTelemetry | undefined,
+	repository: { readonly isPrivate: boolean },
 ): ReadonlyArray<PrReviewFinding> => {
 	if (telemetry === undefined) return []
+	const withText = repository.isPrivate
 	const breaks = Arr.map(
 		openContractBreaks(telemetry),
 		(item) =>
@@ -115,11 +125,11 @@ export const telemetryFindings = (
 				category: "observability",
 				checkId: "TEL-01",
 				severity: hasAlert(item) ? "critical" : "warn",
-				title: `Removes \`${item.name}\`, which ${readers(item)}`,
+				title: `Removes \`${item.name}\`, which ${readers(item, withText)}`,
 				body: Arr.join(
 					[
 						`\`${item.name}\` is a ${KIND_LABEL[item.kind]} production emits about ${formatCount(item.perDay ?? 0)} times a day, and this pull request removes it without adding it back anywhere.`,
-						`Read by ${referenceList(item)}. ${hasAlert(item) ? "An alert that filters on a name that stops arriving goes quiet instead of firing." : "Widgets that read it go empty."}`,
+						`Read by ${withText ? referenceList(item) : readerCount(item)}. ${hasAlert(item) ? "An alert that filters on a name that stops arriving goes quiet instead of firing." : "Widgets that read it go empty."}`,
 						`Keep the name, or update ${item.references.length === 1 ? "it" : "them"} in the same change.`,
 					],
 					"\n\n",
@@ -166,6 +176,7 @@ const RAISED_CATEGORIES = new Set(["observability", "performance"])
 export const weighByTraffic = (
 	findings: ReadonlyArray<PrReviewFinding>,
 	telemetry: PrReviewTelemetry | undefined,
+	repository: { readonly isPrivate: boolean },
 ): ReadonlyArray<PrReviewFinding> => {
 	if (telemetry === undefined || telemetry.hotFiles.length === 0) return findings
 	const traffic = new Map(Arr.map(telemetry.hotFiles, (file) => [file.path, file] as const))
@@ -178,7 +189,8 @@ export const weighByTraffic = (
 			!RAISED_CATEGORIES.has(finding.category)
 		)
 			return finding
-		const busiest = file.operations[0]
+		// A public repository's comment names no span: anyone with the ingest key writes them.
+		const busiest = repository.isPrivate ? file.operations[0] : undefined
 		const severity: PrReviewSeverity = "warn"
 		return new PrReviewFinding({
 			...finding,
