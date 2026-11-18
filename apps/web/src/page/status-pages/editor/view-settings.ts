@@ -142,7 +142,7 @@ const pageSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm)
 								publicPath(model.orgKey, form.slug),
 							form.slug === page.slug,
 						),
-						" Each address belongs to one page across Maple; changing it moves the page and the old address stops working. A custom domain, below, serves the page at your own address instead.",
+						" Each address belongs to one page in your organization; changing it moves the page and the old address stops working. A custom domain, below, serves the page at your own address instead.",
 					],
 					onInput: (value) => Message.ChangedSetting({ field: "slug", value }),
 				}),

@@ -21,8 +21,9 @@ on its Maple address (`/feed.atom`, `/feed.rss`, `/api/v1/status.json`, `/api/v1
    never serves another customer's page. Slugs are unique per org; the org key
    (`statusPageOrgKey`, 12 hex digits of SHA-256 over the org id) keeps two orgs' `status` apart
    without putting the org id in the URL. A bare `/s/<slug>` from before slugs were per org
-   answers 301 to the page's current address while its old `slug:<slug>` key lasts (the page's
-   rename or delete drops it).
+   answers 308 to the page's current address while its old `slug:<slug>` key lasts (the page's
+   rename or delete drops it). Such a slug (`legacy_slug_route`) stays reserved in every org until
+   the page is renamed, so no other org's page ever takes that old link.
 
 ## Ownership proof
 

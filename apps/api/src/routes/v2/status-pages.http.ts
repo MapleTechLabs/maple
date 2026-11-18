@@ -34,6 +34,7 @@ import type {
 import {
 	DEFAULT_STATUS_PAGE_THEME,
 	isActiveIncident,
+	statusPageAddress,
 	toPublicStatusPageSnapshot,
 } from "@maple/domain/status-page"
 import { Clock, Effect, Option, Array as Arr, String as Str } from "effect"
@@ -443,13 +444,20 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 					if (Option.isSome(store)) {
 						// Routes only while they still name this page: slugs and hostnames free up at once.
 						const hostname = domain.domain?.hostname ?? null
+						// The page's address, and the bare-slug key a page published before slugs were per org kept.
+						const dropRoute = (address: string) =>
+							store.value
+								.readSlugRoute(address)
+								.pipe(
+									Effect.flatMap((owner) =>
+										owner === deleted
+											? store.value.deleteRoutes({ address, hostnames: [] })
+											: Effect.void,
+									),
+								)
 						yield* store.value.deletePage(deleted).pipe(
-							Effect.andThen(store.value.readSlugRoute(current.slug)),
-							Effect.flatMap((owner) =>
-								owner === deleted
-									? store.value.deleteRoutes({ slug: current.slug, hostnames: [] })
-									: Effect.void,
-							),
+							Effect.andThen(dropRoute(statusPageAddress(tenant.orgId, current.slug))),
+							Effect.andThen(dropRoute(current.slug)),
 							Effect.andThen(
 								hostname === null
 									? Effect.succeed(null)

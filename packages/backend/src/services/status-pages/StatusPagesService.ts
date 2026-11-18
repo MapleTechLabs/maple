@@ -704,7 +704,11 @@ const findIncident = (db: MapleDb, orgId: OrgId, incidentId: StatusPageIncidentI
 			),
 		)
 
-/** Slugs are unique per org: the hosted address `/s/<org key>/<slug>` carries the org. */
+/**
+ * Slugs are unique per org: the hosted address `/s/<org key>/<slug>` carries the org. A slug a
+ * page still holds at the bare `/s/<slug>` (`legacy_slug_route`) is taken in every org, so no
+ * other org's page can ever be routed at that old link.
+ */
 const ensureSlugFree = Effect.fnUntraced(function* (
 	db: MapleDb,
 	orgId: OrgId,
@@ -715,11 +719,12 @@ const ensureSlugFree = Effect.fnUntraced(function* (
 		PG.from(StatusPages)
 			.select("id")
 			.where(($) => [
-				$.orgId.eq(orgId),
+				PG.or($.orgId.eq(orgId), $.legacySlugRoute.eq(true)),
 				$.slug.eq(slug),
 				exceptPageId === null ? undefined : $.id.neq(exceptPageId),
 			])
-			.limit(1),
+			.limit(1)
+			.crossTenant(),
 	)
 	if (rows.length > 0) return yield* slugTaken(slug)
 })
@@ -1030,6 +1035,10 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 									.set({
 										...(name === undefined ? undefined : { name }),
 										...(slug === undefined ? undefined : { slug }),
+										// The rename queues the bare-slug route's removal, so the old slug frees up.
+										...(slug !== undefined && slug !== current.slug
+											? { legacySlugRoute: false }
+											: undefined),
 										...(description === undefined ? undefined : { description }),
 										...(websiteUrl === undefined ? undefined : { websiteUrl }),
 										...(logoUrl === undefined ? undefined : { logoUrl }),
@@ -1840,6 +1849,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 									.set({
 										name,
 										slug,
+										...(slug !== current.slug ? { legacySlugRoute: false } : undefined),
 										description,
 										websiteUrl,
 										logoUrl,

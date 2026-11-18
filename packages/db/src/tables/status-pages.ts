@@ -37,6 +37,11 @@ export const StatusPages = PG.table("status_pages", {
 		name: PG.text,
 		/** Unique per org: the hosted address is `/s/<org key>/<slug>` (`statusPageAddress`). */
 		slug: PG.text,
+		/**
+		 * The page was published at the bare `/s/<slug>` before slugs were per org, and the edge may
+		 * still route that link to it: its slug stays reserved in every org until it is renamed.
+		 */
+		legacySlugRoute: PG.column(PG.bool, { name: "legacy_slug_route", default: false }),
 		description: PG.nullable(PG.text),
 		websiteUrl: PG.column(PG.nullable(PG.text), { name: "website_url" }),
 		logoUrl: PG.column(PG.nullable(PG.text), { name: "logo_url" }),

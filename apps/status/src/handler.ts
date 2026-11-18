@@ -288,7 +288,9 @@ export const handleRequest = (request: Request, env: StatusEnv): Effect.Effect<R
 		const page = view.value.snapshot.page
 		// An old `/s/<slug>` link moves to the page's address; a snapshot from before org keys serves as it is.
 		if (target.value.legacy && page.orgKey !== "" && page.visibility !== "internal")
-			return movedPermanently(`/s/${page.orgKey}/${page.slug}${target.value.path}${url.search}`)
+			return movedPermanently(
+				`/s/${page.orgKey}/${page.slug}${Str.slice(target.value.basePath.length)(url.pathname)}${url.search}`,
+			)
 		// A renamed page keeps its old `slug:` key until cleanup; only the current slug serves it.
 		if (target.value.slug !== null && page.slug !== target.value.slug) return notFound()
 		const visibility = page.visibility

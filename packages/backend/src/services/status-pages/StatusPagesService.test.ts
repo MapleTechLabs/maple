@@ -239,6 +239,27 @@ describe("StatusPagesService", () => {
 		},
 	)
 
+	it.effect(
+		"keeps a slug still served at the bare /s/<slug> reserved in every org until it is renamed",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const service = yield* StatusPagesService
+				const old = yield* createPage("legacy", OTHER_ORG)
+				yield* Effect.promise(() =>
+					executeSql(testDb, `UPDATE status_pages SET legacy_slug_route = true WHERE id = $1`, [
+						old.id,
+					]),
+				)
+				const reserved = yield* Effect.flip(createPage("legacy"))
+				assert.strictEqual(reserved._tag, "@maple/http/errors/StatusPageSlugTakenError")
+				yield* service.update(OTHER_ORG, old.id, { slug: "legacy-renamed" })
+				const mine = yield* createPage("legacy")
+				assert.strictEqual(mine.slug, "legacy")
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		},
+	)
+
 	it.effect("queues edge cleanup for a renamed slug and a deleted page", () => {
 		const testDb = createTestDb(trackedDbs)
 		const cleanups = Effect.promise(() =>

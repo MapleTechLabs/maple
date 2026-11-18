@@ -153,8 +153,11 @@ describe("serving a page", () => {
 	it("moves a link from before slugs were per org to the page's address", async () => {
 		fake.kv.set(StatusPageKeys.slug("old-acme"), FIXTURE_PAGE_ID)
 		const response = await send(fake, "https://status.maple.workers.dev/s/old-acme/feed.atom?v=1")
-		expect(response.status).toBe(301)
+		expect(response.status).toBe(308)
 		expect(response.headers.get("location")).toBe("/s/a1b2c3d4e5f6/acme/feed.atom?v=1")
+		expect(response.headers.get("access-control-allow-origin")).toBe("*")
+		const bare = await send(fake, "https://status.maple.workers.dev/s/old-acme")
+		expect(bare.headers.get("location")).toBe("/s/a1b2c3d4e5f6/acme")
 	})
 
 	it("serves a bare-slug link as before while the page's snapshot has no org key", async () => {
@@ -168,7 +171,7 @@ describe("serving a page", () => {
 	it("reads a legacy slug that looks like an org key as a slug", async () => {
 		fake.kv.set(StatusPageKeys.slug("abcdef123456"), FIXTURE_PAGE_ID)
 		const response = await send(fake, "https://status.maple.workers.dev/s/abcdef123456/history")
-		expect(response.status).toBe(301)
+		expect(response.status).toBe(308)
 		expect(response.headers.get("location")).toBe("/s/a1b2c3d4e5f6/acme/history")
 	})
 
