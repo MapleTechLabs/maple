@@ -15,7 +15,7 @@ const money = (n: number) => (Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`
 const mapleWidth = `${((mapleTotal / posthogTotal) * 100).toFixed(1)}%`;
 ---
 
-<div role="figure" aria-label="One month on PostHog and on Maple" class="not-prose my-10 rounded-lg border border-border bg-bg-deep p-5 sm:p-7">
+<div role="figure" aria-label="One month on PostHog and on Maple" class="wide not-prose my-10 rounded-lg border border-border bg-bg-deep p-5 sm:p-7">
 	<div class="font-mono text-[11px] uppercase tracking-[0.14em] text-primary">One month, same usage</div>
 	<div class="mt-3 font-display text-3xl font-medium leading-tight tracking-[-0.02em] text-fg sm:text-4xl">
 		About {ratio}× less on Maple
