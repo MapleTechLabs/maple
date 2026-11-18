@@ -7,6 +7,8 @@
 	--home-ink: var(--foreground);
 	--home-muted: var(--muted-foreground);
 	--home-rule: var(--border);
+	/* How far the product plate rises over the hero's lower edge. */
+	--monument-plate-rise: 56px;
 	background: var(--home-paper);
 	color: var(--home-ink);
 	font-family: "Geist Variable", sans-serif;
@@ -93,8 +95,6 @@
 	/* Short of the viewport on purpose: the product plate below overlaps the
 	   hero's base and has to start inside the first screen. */
 	--monument-hero-h: clamp(540px, 72svh, 800px);
-	/* How far the plate rises over the hero. */
-	--monument-plate-rise: 56px;
 	display: flex;
 	flex-direction: column;
 	min-height: var(--monument-hero-h);
@@ -370,26 +370,13 @@
 /* The plate straddles the hero's lower edge: transparent over the monument,
    then the pale floor from the hero's end down. */
 .monument-product {
-	--monument-plate-rise: 56px;
 	position: relative;
 	z-index: 1;
 	margin-top: calc(var(--monument-plate-rise) * -1);
 	padding-bottom: 56px;
 	background: linear-gradient(to bottom, transparent var(--monument-plate-rise), var(--home-pale) 0);
 }
-/* The stage leads and the rail and caption follow it, so the first thing under
-   the headline is the app, not a label for it. */
-.monument-product [data-hero-carousel] {
-	display: flex;
-	flex-direction: column;
-}
-.monument-product .hero-carousel__stage {
-	order: -1;
-	margin-top: 0;
-	margin-bottom: 20px;
-}
 .monument-product .hero-caption {
-	margin-top: 10px;
 	color: var(--home-ink);
 	font-size: 18px;
 	letter-spacing: -0.02em;
@@ -555,8 +542,10 @@ html[lang="ja"] .monument-hero h1 span {
 	.monument-proof__stats {
 		gap: 30px;
 	}
-	.monument-product {
+	.monumental-home {
 		--monument-plate-rise: 32px;
+	}
+	.monument-product {
 		padding-bottom: 40px;
 	}
 	/* A desktop dashboard scaled to a phone is unreadable, so the stage is

@@ -44,10 +44,10 @@ const session = {
 
 		<div class="mt-8 md:mt-10">
 			<div class="grid grid-cols-[minmax(0,1fr)_max-content] items-baseline gap-x-8 gap-y-2 lg:grid-cols-[max-content_minmax(0,1fr)_max-content]">
-					<h2 class="font-display text-2xl leading-tight tracking-[-0.01em] text-fg md:text-[28px]">{trace.title}</h2>
-					<p class="col-span-2 row-start-2 max-w-[62ch] text-[15px] leading-relaxed text-fg-muted lg:col-span-1 lg:col-start-2 lg:row-start-1">{trace.sub}</p>
-					<a href={trace.href} class="col-start-2 row-start-1 whitespace-nowrap text-sm text-fg transition-colors hover:text-primary lg:col-start-3">{trace.link}<span aria-hidden="true"> →</span></a>
-				</div>
+				<h2 class="font-display text-2xl leading-tight tracking-[-0.01em] text-fg md:text-[28px]">{trace.title}</h2>
+				<p class="col-span-2 row-start-2 max-w-[62ch] text-[15px] leading-relaxed text-fg-muted lg:col-span-1 lg:col-start-2 lg:row-start-1">{trace.sub}</p>
+				<a href={trace.href} class="col-start-2 row-start-1 whitespace-nowrap text-sm text-fg transition-colors hover:text-primary lg:col-start-3">{trace.link}<span aria-hidden="true"> →</span></a>
+			</div>
 			<LiveTraceFrame class="mt-6" height="19rem" />
 		</div>
 

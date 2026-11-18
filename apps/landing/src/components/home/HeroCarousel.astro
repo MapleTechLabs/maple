@@ -2,6 +2,9 @@
 /**
  * HeroCarousel — the hero's product plate, as three auto-advancing slides.
  *
+ * The stage leads and the rail and caption follow it, so the first thing under
+ * the headline is the app, not a label for it.
+ *
  * The rail is a row of span bars: the active one widens to carry its label and
  * fills left→right over its dwell (scaleX off a left origin, the construction
  * .roadmap-seg and .span-bar already use), while the others collapse to short
@@ -63,6 +66,31 @@ const slides = [
 	aria-roledescription="carousel"
 	aria-label={m.hero_shots_aria()}
 >
+	<div class="hero-carousel__stage">
+		{
+			slides.map((slide, i) => (
+				<div
+					class="hero-carousel__pane"
+					data-pane={i}
+					data-on={i === 0 ? "" : undefined}
+					id={`hero-pane-${slide.key}`}
+					role="tabpanel"
+					aria-labelledby={`hero-tab-${slide.key}`}
+					aria-hidden={i === 0 ? "false" : "true"}
+				>
+					<MediaFrame
+						label={slide.label}
+						caption={slide.caption}
+						src={slide.src}
+						width={1400}
+						height={720}
+						loading={i === 0 ? "eager" : "lazy"}
+					/>
+				</div>
+			))
+		}
+	</div>
+
 	<div class="hero-rail" role="tablist" aria-label={m.hero_shots_aria()}>
 		{
 			slides.map((slide, i) => (
@@ -97,31 +125,6 @@ const slides = [
 				<span class="hero-caption__item" data-caption={i} data-on={i === 0 ? "" : undefined} aria-hidden={i === 0 ? "false" : "true"}>
 					{slide.line}
 				</span>
-			))
-		}
-	</div>
-
-	<div class="hero-carousel__stage">
-		{
-			slides.map((slide, i) => (
-				<div
-					class="hero-carousel__pane"
-					data-pane={i}
-					data-on={i === 0 ? "" : undefined}
-					id={`hero-pane-${slide.key}`}
-					role="tabpanel"
-					aria-labelledby={`hero-tab-${slide.key}`}
-					aria-hidden={i === 0 ? "false" : "true"}
-				>
-					<MediaFrame
-						label={slide.label}
-						caption={slide.caption}
-						src={slide.src}
-						width={1400}
-						height={720}
-						loading={i === 0 ? "eager" : "lazy"}
-					/>
-				</div>
 			))
 		}
 	</div>
