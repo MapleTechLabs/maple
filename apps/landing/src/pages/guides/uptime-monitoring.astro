@@ -6,7 +6,7 @@ import BottomCTA from "../../components/BottomCTA.astro";
 import Breadcrumb from "../../components/Breadcrumb.astro";
 import FAQ from "../../components/FAQ.astro";
 import SeoHead from "../../components/SeoHead.astro";
-import TableOfContents from "../../components/TableOfContents.astro";
+import GuideBody from "../../components/guides/GuideBody.astro";
 import { CONTRIBUTORS } from "../../lib/changelog-meta";
 
 const pageTitle = "Uptime monitoring with OpenTelemetry: hosted checks, trace alerts and Collector probes";
@@ -98,6 +98,7 @@ const articleJsonLd = {
     <script is:inline type="application/ld+json" set:html={JSON.stringify(articleJsonLd)} />
     <Nav />
     <Breadcrumb
+        class="shell pt-4"
         items={[
             { label: "Home", href: "/" },
             { label: "Guides", href: "/guides" },
@@ -113,7 +114,7 @@ const articleJsonLd = {
                 style="background-image: linear-gradient(to right, oklch(1 0 0 / 4%) 1px, transparent 1px), linear-gradient(to bottom, oklch(1 0 0 / 4%) 1px, transparent 1px); background-size: 60px 60px; mask-image: radial-gradient(ellipse 78% 68% at 22% 26%, black, transparent);"
             >
             </div>
-            <div class="relative mx-auto max-w-6xl px-6 pb-16 pt-20 md:pb-24 md:pt-28">
+            <div class="shell relative pb-16 pt-20 md:pb-24 md:pt-28">
                 <div>
                     <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
                         <span class="border border-primary/40 px-2 py-1 text-primary">Availability</span>
@@ -136,20 +137,7 @@ const articleJsonLd = {
             </div>
         </header>
 
-        <nav aria-label="Guide sections" class="border-b border-border bg-bg-deep">
-            <div class="mx-auto flex max-w-6xl gap-6 overflow-x-auto px-6 py-4 font-mono text-[10px] whitespace-nowrap text-fg-muted">
-                {toc.map(([id, label]) => (
-                    <a href={`#${id}`} class="transition-colors hover:text-primary">{label}</a>
-                ))}
-            </div>
-        </nav>
-
-        <div class="mx-auto grid max-w-6xl gap-12 px-6 py-16 md:py-24 lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-16">
-            <aside class="hidden lg:block">
-                <TableOfContents headings={tocHeadings} class="sticky top-28" />
-            </aside>
-
-            <article class="uptime-guide min-w-0">
+        <GuideBody headings={tocHeadings} class="uptime-guide">
                 <section id="definition" class="scroll-mt-24">
                     <p class="guide-eyebrow"><span>01</span> · Definition</p>
                     <h2>Uptime monitoring probes an endpoint from outside on a schedule</h2>
@@ -438,8 +426,7 @@ const articleJsonLd = {
                         <li><a href="/guides/what-is-apdex">Maple guide: What is Apdex?</a></li>
                     </ul>
                 </section>
-            </article>
-        </div>
+        </GuideBody>
     </main>
 
     <FAQ items={faqs} />
