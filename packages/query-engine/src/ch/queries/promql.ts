@@ -801,23 +801,76 @@ export function promqlMetadataQuery(opts: { readonly limit: number }) {
 	)
 }
 
+/** A stored metric's identity: one name in two units is two metrics. */
+export interface PromqlStoredMetric {
+	readonly metricName: string
+	readonly unit: string
+}
+
+/** The stored metrics a discovery read keeps: listed (name, unit) pairs, or every one in the table. */
+export type PromqlStoredMetrics = ReadonlyArray<PromqlStoredMetric> | "all"
+
 /** Params: `orgId`, epoch ms `startMs`/`endMs` (both inclusive). */
 export interface PromqlSeriesLabelsOpts {
 	readonly table: PromqlMetricTable
-	/** Stored names to read; undefined reads every metric of the table, for a selector without a name. */
-	readonly metricNames: ReadonlyArray<string> | undefined
+	readonly metrics: PromqlStoredMetrics
 	/** Label matchers as WHERE conditions, built from the table's columns. */
 	readonly conditions: ($: PromqlLabelColumns) => ReadonlyArray<CH.Condition | undefined>
+	/** `le` matchers, checked before the limit on the bucket bounds or, for other series, the attributes. */
+	readonly le?: {
+		/** Stored metrics read as `_bucket` series; a row needs one bound passing `boundConditions`. */
+		readonly buckets: PromqlStoredMetrics | undefined
+		/** Stored metrics read as series without a bound; a row must pass `otherConditions`. */
+		readonly others: PromqlStoredMetrics | undefined
+		readonly boundConditions: (le: CH.Expr<number>) => ReadonlyArray<CH.Condition | undefined>
+		readonly otherConditions: ($: PromqlLabelColumns) => ReadonlyArray<CH.Condition | undefined>
+	}
 	readonly limit: number
 }
 
-/**
- * One row per stored metric and label set in the window, for series discovery: no samples and no
- * fan-out per metric. A histogram row lists its bucket bounds (as `toString` prints them), and
- * rows come in a fixed order so a cut at the limit is deterministic.
- */
+interface StoredMetricColumns extends PromqlLabelColumns {
+	readonly MetricName: CH.Expr<string>
+	readonly MetricUnit: CH.Expr<string>
+}
+
+/** Rows of the listed metrics; `undefined` (no restriction) for every metric. */
+const storedMetricsCondition = ($: StoredMetricColumns, metrics: PromqlStoredMetrics) =>
+	metrics === "all"
+		? undefined
+		: CH.and(
+				// The name alone narrows by the primary key; the pair is the identity.
+				CH.inList($.MetricName, Arr.dedupe(Arr.map(metrics, (m) => m.metricName))),
+				sql.cond`(${$.MetricName}, ${$.MetricUnit}) IN (${sql.join(
+					Arr.map(metrics, (m) => sql`(${m.metricName}, ${m.unit})`),
+					", ",
+				)})`,
+			)
+
+/** Rows some target of either kind can keep; `undefined` when every row can. */
+const leFilterCondition = ($: StoredMetricColumns, le: NonNullable<PromqlSeriesLabelsOpts["le"]>) => {
+	const bounds = CH.and(...le.boundConditions(sql(T.float64)`_b`))
+	const sides = [
+		le.buckets === undefined
+			? undefined
+			: {
+					cond: CH.and(
+						storedMetricsCondition($, le.buckets),
+						bounds === undefined
+							? undefined
+							: sql.cond`length(BucketCounts) = length(ExplicitBounds) + 1 AND arrayExists(_b -> ${bounds}, arrayPushBack(ExplicitBounds, inf))`,
+					),
+				},
+		le.others === undefined
+			? undefined
+			: { cond: CH.and(storedMetricsCondition($, le.others), ...le.otherConditions($)) },
+	]
+	const present = Arr.filter(sides, (side) => side !== undefined)
+	// A side with no condition keeps every row, so the filter does too.
+	if (Arr.some(present, (side) => side.cond === undefined)) return undefined
+	return CH.or(...Arr.map(present, (side) => side.cond))
+}
+
 export function promqlSeriesLabelsQuery(opts: PromqlSeriesLabelsOpts) {
-	const names = opts.metricNames
 	return from(metricTable(opts.table))
 		.select(($) => ({
 			metricName: sql(T.string)`concat(${$.MetricName}, ${METRIC_UNIT_SEPARATOR}, ${$.MetricUnit})`,
@@ -834,11 +887,12 @@ export function promqlSeriesLabelsQuery(opts: PromqlSeriesLabelsOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			names === undefined ? undefined : $.MetricName.in_(...names),
+			storedMetricsCondition($, opts.metrics),
 			sql.cond`${$.TimeUnix} >= fromUnixTimestamp64Milli(toInt64(${param.int("startMs")}))`,
 			sql.cond`${$.TimeUnix} <= fromUnixTimestamp64Milli(toInt64(${param.int("endMs")}))`,
 			sql.cond`bitAnd(Flags, 1) = 0`,
 			...opts.conditions($),
+			opts.le === undefined ? undefined : leFilterCondition($, opts.le),
 		])
 		.groupBy("metricName", "labelKey")
 		.orderBy(["metricName", "asc"], ["labelKey", "asc"])
