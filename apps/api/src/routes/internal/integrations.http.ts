@@ -15,6 +15,7 @@ import {
 	GithubDisconnectResponse,
 	GithubIntegrationStatus,
 	GithubSetCiTracesResponse,
+	GithubSetAuditLogResponse,
 	GithubSetPrReviewResponse,
 	GithubPrReviewConfigResponse,
 	GithubPrReviewSettingsResponse,
@@ -252,6 +253,10 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("linearTeams", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
+						// A live read of the workspace, for the alert destination picker: either manager may.
+						if (!Policy.can(tenant.roles, "alerts:manage")) {
+							yield* requirePermission(tenant.roles, "integrations:manage")
+						}
 						const teams = yield* linear.listTeams(tenant.orgId)
 						return new LinearTeamsListResponse({ teams })
 					}),
@@ -286,6 +291,8 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("searchConsoleSites", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
+						// A live read of every property the Google account holds, for the manager's picker.
+						yield* requirePermission(tenant.roles, "integrations:manage")
 						const sites = yield* searchConsole.listAvailableSites(tenant.orgId)
 						return new SearchConsoleAvailableSitesResponse({ sites })
 					}),
@@ -830,6 +837,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 							accountType: status.accountType,
 							repositorySelection: status.repositorySelection,
 							ciTracesEnabled: status.ciTracesEnabled,
+							auditLogEnabled: status.auditLogEnabled,
 							repositoryDiscovery: status.repositoryDiscovery,
 							repositories: status.repositories,
 						})
@@ -897,6 +905,14 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 						yield* requirePermission(tenant.roles, "integrations:manage")
 						const result = yield* github.setCiTracesEnabled(tenant.orgId, payload.enabled)
 						return new GithubSetCiTracesResponse(result)
+					}),
+				)
+				.handle("githubSetAuditLog", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						const result = yield* github.setAuditLogEnabled(tenant.orgId, payload.enabled)
+						return new GithubSetAuditLogResponse(result)
 					}),
 				)
 				.handle("githubSetPrReview", ({ params, payload }) =>

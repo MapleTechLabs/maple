@@ -26,6 +26,15 @@ export const QUERY_LANGUAGE_BY_KIND = {
 	clerk: "resource",
 } as const satisfies Record<DataSourceKind, QueryLanguage>
 
+/**
+ * Whether a kind's catalog marks fields as personal data, for a form that has no source yet. Each
+ * driver answers the same from its own catalog (`marksPersonalData`), and a test holds them equal.
+ */
+export const MARKS_PERSONAL_DATA_BY_KIND = {
+	clickhouse: false,
+	clerk: true,
+} as const satisfies Record<DataSourceKind, boolean>
+
 export const DataSourceEnvironment = Schema.Literals(["production", "staging", "development", "other"])
 export type DataSourceEnvironment = Schema.Schema.Type<typeof DataSourceEnvironment>
 
@@ -327,6 +336,20 @@ export class DataSourceRateLimitedError extends Schema.TaggedError<DataSourceRat
 	{
 		message: Schema.String,
 		retryAfterSeconds: Schema.optionalKey(Schema.Number),
+		/**
+		 * `maple` when Maple refused before calling: its own cap, or a wait the source asked for.
+		 * `source` is the source's own answer (absent reads the same), the only kind that starts a wait.
+		 */
+		limitedBy: Schema.optionalKey(Schema.Literals(["source", "maple"])),
+	},
+) {}
+
+/** The caller's role may not run queries on connected data sources. */
+export class DataSourceForbiddenError extends Schema.TaggedError<DataSourceForbiddenError>()(
+	"@maple/data-sources/Forbidden",
+	{
+		message: Schema.String,
+		permission: Schema.String,
 	},
 ) {}
 
@@ -359,6 +382,8 @@ export const ExternalDataSourceDocument = Schema.Struct({
 	tags: Schema.Array(Schema.String),
 	agentAccess: Schema.Boolean,
 	agentPii: Schema.Boolean,
+	/** Whether this kind of source marks fields as personal data; without it `agentPii` withholds nothing. */
+	supportsPiiRedaction: Schema.Boolean,
 	config: DataSourceConfig,
 	/** Whether a password or key is stored; `secretHint` is null for short secrets even when one is. */
 	hasSecret: Schema.Boolean,

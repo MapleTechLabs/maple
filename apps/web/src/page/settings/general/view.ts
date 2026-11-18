@@ -25,12 +25,17 @@ type H = HtmlBuilder<Message>
 
 const NO_ORG = "Select or create an organization to manage its settings."
 
-/** What deleting an organization does, checked against `OrganizationService.delete`. */
+/** What deleting an organization does, checked against `OrganizationDeletionService.delete`. */
 const DELETION_FACTS = [
 	{
 		key: "Deleted",
 		value: "Dashboards and share links, alert rules and destinations, API and ingest keys, MCP connections, integrations, error issues, scrape targets, code reviews and the data platform connection.",
 		isDestructive: true,
+	},
+	{
+		key: "Vendors",
+		value: "Maple revokes its access where the vendor allows it (chat apps, OAuth connections, log drains and webhooks); the GitHub App stays installed until you remove it in GitHub.",
+		isDestructive: false,
 	},
 	{ key: "Ages out", value: "Telemetry already sent, under its retention.", isDestructive: false },
 	{

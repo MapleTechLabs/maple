@@ -25,6 +25,14 @@
 @source "../../../../packages/views/src/charts/{bar-chart,timeseries-legend}.ts";
 @source "../../../../packages/views/src/ui/{table,segmented-select,toggle,delta,swatch,stat-figure,panel,meter,truncated-text,icon-button,eyebrow,info-hint}.ts";
 @source "../../../../packages/views/src/ui/filters/active-filter-chips.ts";
+/* The logs stream island: its rows, chips, expanded body and attribute panel. */
+@source "../../../../packages/views/src/ui/{logs,attributes}";
+@source "../../../../packages/views/src/ui/{list-row,badge,copy-button,timestamp,collapsible,input-group}.styles.ts";
+@source "../../../../packages/views/src/ui/{timestamp,copy-button,row-focus,search-input,inline-code,input-group}.ts";
+@source "../../../../packages/views/src/lib/display-text.ts";
+/* The funnel and paths charts the product analytics islands render. */
+@source "../../../../packages/views/src/charts/{funnel-chart,funnel-dropoff-chart,paths-chart,paths-tooltip}.ts";
+@source "../../../../packages/views/src/ui/chart-frame.ts";
 
 /* Landing-only tokens — marketing surfaces, not part of the shared system. */
 :root {
@@ -652,81 +660,10 @@
 	background: var(--primary);
 }
 
-/* ──────────────────────────────────────────────────────────────
-   Auto-scrolling log stream.
-   Two copies of the log list stacked vertically; container
-   translates upward by exactly the height of one copy, then
-   the keyframe restarts. Continuous illusion of an infinite feed.
-   ────────────────────────────────────────────────────────────── */
-@keyframes log-scroll {
-	0% {
-		transform: translate3d(0, 0, 0);
-	}
-	100% {
-		transform: translate3d(0, -50%, 0);
-	}
-}
-.log-stream__viewport {
-	position: relative;
-	height: 320px;
-	overflow: hidden;
-}
-.log-stream__viewport::after {
-	content: "";
-	position: absolute;
-	inset: 0;
-	pointer-events: none;
-	background: linear-gradient(
-		to bottom,
-		var(--bg-deep) 0%,
-		transparent 14%,
-		transparent 86%,
-		var(--bg-deep) 100%
-	);
-}
-.log-stream__belt {
-	display: flex;
-	flex-direction: column;
-	animation: log-scroll 32s linear infinite;
-	will-change: transform;
-}
-.log-row {
-	display: grid;
-	grid-template-columns: 9ch 6ch 14ch 1fr 6ch;
-	gap: 12px;
-	padding: 4px 14px;
-	font-size: 11.5px;
-	line-height: 1.55;
-	color: var(--muted-foreground);
-	border-bottom: 1px solid color-mix(in oklab, var(--border) 40%, transparent);
-}
-.log-row__lvl {
-	font-weight: 600;
-}
-.log-row[data-level="info"] .log-row__lvl {
-	color: var(--severity-info);
-}
-.log-row[data-level="warn"] .log-row__lvl {
-	color: var(--severity-warn);
-}
-.log-row[data-level="error"] .log-row__lvl {
-	color: var(--severity-error);
-}
-.log-row[data-level="debug"] .log-row__lvl {
-	color: var(--severity-debug);
-}
-.log-row[data-level="error"] {
-	background: color-mix(in oklab, var(--primary) 6%, transparent);
-}
-.log-row__svc {
-	color: var(--foreground);
-}
-.log-row__msg {
-	color: var(--foreground);
-}
-.log-row__dur {
-	color: var(--muted-foreground);
-	justify-self: end;
+/* A logs stream in a third-width plate keeps time and message: the app's Service column (shown
+   from md) and Level column would leave the message no room. Warn and error keep their row rail. */
+.live-logs--plate :is(.w-40.md\:flex, .w-40.md\:inline-block, .shrink-0.w-11) {
+	display: none;
 }
 
 /* ──────────────────────────────────────────────────────────────
@@ -1196,7 +1133,6 @@
 		filter: none !important;
 	}
 
-	.log-stream__belt,
 	.logo-marquee__belt,
 	.svc-map-flow,
 	.mcp-caret,
@@ -1878,11 +1814,12 @@
    Same specificity as the docs rules — SOURCE ORDER decides, so this
    block must stay below the .docs-content block.
 
-   The page centers one 42rem reading column (about 72 characters a line
-   at 18px), so the measure lives on the column, not on per-element
-   max-widths. Running prose switches to
-   proportional Geist — the reserved long-form voice — while headings'
-   siblings (code, meta, captions, demos) keep the mono terminal voice.
+   Running prose is proportional Geist; code, meta and demos keep mono.
+
+   Three widths, all starting on the column's left edge. Text holds a
+   42rem measure (about 72 characters at 18px). Code, tables and figures
+   run to 54rem. Screenshots, .live-frame cards and anything marked .full
+   take the whole column, which the post page sizes beside its outline rail.
    ────────────────────────────────────────────────────────────── */
 .blog-content p,
 .blog-content ul,
@@ -1907,12 +1844,13 @@
 
 .blog-content h2 {
 	font-family: var(--font-display);
-	@apply text-[27px] tracking-[-0.02em] mt-16 mb-5;
+	@apply text-[27px] leading-[1.2] tracking-[-0.02em] mt-16 mb-5 xl:text-[30px];
+	text-wrap: balance;
 }
 
 .blog-content h3 {
 	font-family: var(--font-display);
-	@apply text-[21px] tracking-[-0.015em] mt-11 mb-4;
+	@apply text-[21px] leading-[1.3] tracking-[-0.015em] mt-11 mb-4;
 }
 
 .blog-content :is(h2, h3) {
@@ -1942,14 +1880,30 @@
 	@apply text-[13.5px] leading-[1.65] p-5 my-7;
 }
 
-/* block + overflow keeps wide markdown tables scrollable instead of
-   stretching the page on small screens */
+/* A table is a framed block: the wrapper scrolls and carries the border. */
+.blog-content .table-wrap {
+	@apply mx-0 my-8 px-0 rounded-lg border border-border;
+}
+
 .blog-content table {
-	@apply block overflow-x-auto text-[14px] my-6;
+	font-family: var(--font-display);
+	@apply text-[15px] leading-[1.5];
+}
+
+.blog-content th {
+	@apply bg-bg-elevated px-4 py-2.5 text-[12px] font-medium normal-case tracking-normal text-fg-muted whitespace-nowrap;
 }
 
 .blog-content td {
-	@apply p-2.5;
+	@apply px-4 py-3 align-top;
+}
+
+.blog-content td:first-child {
+	@apply text-fg;
+}
+
+.blog-content tbody tr:last-child td {
+	@apply border-b-0;
 }
 
 .blog-content figure {
@@ -1957,16 +1911,22 @@
 }
 
 .blog-content figcaption {
-	@apply font-mono text-xs text-fg-muted mt-3;
+	font-family: var(--font-display);
+	@apply text-[13px] leading-[1.5] text-fg-muted mt-3;
 }
 
-/* Interactive demos and code breathe past the prose measure on wide
-   viewports — an editorial rhythm, not a second column. Only top-level
-   blocks break out; anything nested inside a demo stays put. */
-@media (min-width: 80rem) {
-	.blog-content > :is(figure, pre) {
-		margin-inline: -4rem;
-	}
+/* The widths. `div.` outranks the scoped margin and width rules the demo
+   components carry, so a figure cannot opt out by accident. */
+div.docs-content.blog-content > * {
+	max-width: 42rem;
+}
+
+div.docs-content.blog-content > :is(pre, figure, .table-wrap, .lt, .wide) {
+	max-width: 54rem;
+}
+
+div.docs-content.blog-content > :is(figure.shot, .live-frame, .full) {
+	max-width: none;
 }
 
 /* Essay illustrations keep their intrinsic ratio — undo the docs 1280/660 clamp. */
@@ -1995,6 +1955,32 @@
 
 .blog-content pre .line.highlighted {
 	background: color-mix(in oklab, var(--primary) 10%, transparent);
+}
+
+/* ──────────────────────────────────────────────────────────────
+   Guides. Each guide styles its own article; this is the one rule they
+   share (components/guides/GuideBody.astro). Prose holds about 72
+   characters, boxes keep the 51rem they were drawn for, and tables and
+   figures take the full column beside the outline rail.
+   ────────────────────────────────────────────────────────────── */
+.guide-article > :not(section),
+.guide-article > section > * {
+	max-width: 51rem;
+}
+
+.guide-article.guide-article > :is(p, ul, ol),
+.guide-article.guide-article > section > :is(p, ul, ol) {
+	max-width: 38em;
+}
+
+.guide-article.guide-article > :is(figure, table, :has(> table)),
+.guide-article.guide-article > section > :is(figure, table, :has(> table)) {
+	max-width: none;
+}
+
+/* A long inline identifier wraps instead of widening the page on a phone. */
+.guide-article :not(pre) > code {
+	overflow-wrap: anywhere;
 }
 
 /* details/summary toggle arrow for mobile nav */

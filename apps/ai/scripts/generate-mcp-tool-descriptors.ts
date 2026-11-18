@@ -58,7 +58,14 @@ const sourceOf = (name: string, tool: string): ToolModuleSource => {
 	if (entry === undefined || location === undefined) {
 		throw new Error(`No module registers ${tool}`)
 	}
-	return { name, tool, title: entry.title, audience: entry.audience, ...location }
+	return {
+		name,
+		tool,
+		title: entry.title,
+		audience: entry.audience,
+		readOnly: entry.hints.readOnly,
+		...location,
+	}
 }
 
 const outputs = [

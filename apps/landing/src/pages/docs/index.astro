@@ -5,6 +5,7 @@
 import { getCollection } from "astro:content";
 import DocsLayout from "../../layouts/DocsLayout.astro";
 import DocsCategoryIcon from "../../components/docs/DocsCategoryIcon.astro";
+import { LiveTraceWaterfall } from "../../components/live/LiveTraceWaterfall";
 import LanguageLogo from "../../components/docs/LanguageLogo.astro";
 import BrandMarkIcon from "../../components/BrandMarkIcon.astro";
 import { LANGUAGES } from "../../lib/docs-languages";
@@ -93,20 +94,27 @@ const introduction = bySlug("getting-started/introduction");
     mdHref="/docs.md"
     bleed
 >
-    {/* ── Hero: title, lede and the four ways in, over the Roman archive ── */}
     <section class="docs-hero">
         <div class="docs-shell docs-hero__inner">
-            {/* Inside the shell so the artwork tracks the content column on wide screens. */}
-            <img class="docs-hero__art" src="/art/features/log-management.webp" width="1536" height="1024" alt="" decoding="async" />
-            <h1 class="docs-hero__title">Documentation</h1>
-            <p class="docs-hero__lede">
-                Maple is an OpenTelemetry-native observability platform for traces, logs, metrics, errors and sessions. Point any OTel SDK at it and start exploring.
-                {introduction && (
-                    <>
-                        New here? Read the <a href={`/docs/${introduction.id}`} class="docs-inline-link">introduction</a>.
-                    </>
-                )}
-            </p>
+            <div class="docs-hero__overview">
+                <div>
+                    <h1 class="docs-hero__title">Documentation</h1>
+                    <p class="docs-hero__lede">
+                        Maple is an OpenTelemetry-native observability platform for traces, logs, metrics, errors and sessions. Point any OTel SDK at it and start exploring.
+                        {introduction && (
+                            <>
+                                New here? Read the <a href={`/docs/${introduction.id}`} class="docs-inline-link">introduction</a>.
+                            </>
+                        )}
+                    </p>
+                </div>
+                <figure class="docs-hero__trace">
+                    <figcaption>Example checkout trace</figcaption>
+                    <div class="docs-hero__waterfall">
+                        <LiveTraceWaterfall client:visible />
+                    </div>
+                </figure>
+            </div>
 
             <section class="docs-start" aria-labelledby="start-here">
                 <h2 id="start-here" class="docs-eyebrow">Start here</h2>
@@ -155,7 +163,7 @@ const introduction = bySlug("getting-started/introduction");
             ))}
             <a href="/docs/session-replay/browser-sdk" class="docs-cell docs-lang__cell">
                 <span class="docs-lang__logo" aria-hidden="true">
-                    <BrandMarkIcon id="javascript" class="h-[18px] w-[18px]" />
+                    <DocsCategoryIcon name="Frontend" class="h-[18px] w-[18px]" />
                 </span>
                 <span class="docs-lang__name">Browser</span>
             </a>
@@ -224,8 +232,6 @@ const introduction = bySlug("getting-started/introduction");
 </DocsLayout>
 
 <style>
-    /* The docs home speaks the homepage and pricing language: heavy Geist
-       display type, a Roman engraving behind the title, sharp hairline frames. */
     .docs-shell {
         margin-inline: auto;
         max-width: 1344px;
@@ -257,36 +263,20 @@ const introduction = bySlug("getting-started/introduction");
     /* ── Hero ── */
     .docs-hero {
         container-type: inline-size;
-        isolation: isolate;
-        overflow: hidden;
         border-bottom: 1px solid var(--border);
     }
-    .docs-hero__art {
-        position: absolute;
-        top: 0;
-        right: calc(-1 * var(--docs-gutter));
-        z-index: -1;
-        width: 100%;
-        height: 360px;
-        object-fit: cover;
-        object-position: 70% 32%;
-        opacity: 0.22;
-        pointer-events: none;
-        mask-image:
-            linear-gradient(to right, transparent 5%, black 80%),
-            linear-gradient(to bottom, transparent, black 22%, black 55%, transparent);
-        mask-composite: intersect;
-    }
-    /* The space between the centred shell and the hero's right edge. The art
-       reaches across it, so it always runs off the edge of the page. */
     .docs-hero__inner {
-        --docs-gutter: max(0px, (100cqw - 1344px) / 2);
-        position: relative;
         padding-top: 8px;
         padding-bottom: 44px;
     }
+    .docs-hero__overview {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        align-items: center;
+        gap: 24px;
+    }
     .docs-hero__title {
-        font-size: clamp(2.25rem, 5vw, 4rem);
+        font-size: clamp(2.25rem, 4.9cqw, 4rem);
         font-weight: 700;
         line-height: 1.03;
         letter-spacing: -0.04em;
@@ -299,6 +289,20 @@ const introduction = bySlug("getting-started/introduction");
         line-height: 1.65;
         text-wrap: pretty;
         color: var(--foreground);
+    }
+    .docs-hero__trace {
+        width: 100%;
+        min-width: 0;
+        max-width: 44rem;
+    }
+    .docs-hero__waterfall {
+        height: 17rem;
+        font-family: var(--font-mono);
+    }
+    .docs-hero__trace figcaption {
+        margin-bottom: 8px;
+        color: var(--muted-foreground);
+        font-size: 13px;
     }
     .docs-start {
         margin-top: 44px;
@@ -368,7 +372,12 @@ const introduction = bySlug("getting-started/introduction");
         justify-content: space-between;
     }
     .docs-start__icon {
-        display: flex;
+        display: grid;
+        width: 40px;
+        height: 40px;
+        place-items: center;
+        border: 1px solid color-mix(in oklab, var(--primary) 24%, var(--border));
+        background: color-mix(in oklab, var(--primary) 7%, var(--card));
         color: var(--primary);
     }
     .docs-start__title {
@@ -538,8 +547,24 @@ const introduction = bySlug("getting-started/introduction");
         color: var(--primary);
     }
 
+    @media (min-width: 380px) {
+        .docs-start__grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
+    @media (max-width: 639px) {
+        .docs-start {
+            margin-top: 32px;
+        }
+        .docs-start__cell {
+            padding: 16px;
+        }
+        .docs-start__title {
+            margin-top: 16px;
+            font-size: 16px;
+        }
+    }
     @media (min-width: 640px) {
-        .docs-start__grid,
         .docs-tasks__grid {
             grid-template-columns: repeat(2, minmax(0, 1fr));
         }
@@ -560,32 +585,26 @@ const introduction = bySlug("getting-started/introduction");
             justify-content: space-between;
         }
     }
+    @container (min-width: 1120px) {
+        .docs-hero__overview {
+            grid-template-columns: minmax(0, 1fr) minmax(37rem, 1.3fr);
+            gap: 32px;
+        }
+        .docs-hero__trace {
+            justify-self: end;
+        }
+    }
     /* From here the sidebar is docked and the hero opens the page. */
     @media (min-width: 1024px) {
         .docs-hero__inner {
             padding-top: 72px;
             padding-bottom: 56px;
         }
-        .docs-hero__art {
-            width: calc(62% + var(--docs-gutter));
-            height: 420px;
-            opacity: 0.5;
-            mask-image:
-                linear-gradient(to right, transparent 12%, black 88%),
-                linear-gradient(to bottom, transparent, black 18%, black 50%, transparent 94%);
-        }
         .docs-section {
             padding-top: 72px;
         }
     }
     @media (min-width: 1280px) {
-        .docs-hero__art {
-            width: min(calc(72% + var(--docs-gutter)), 1100px);
-            opacity: 0.72;
-            mask-image:
-                linear-gradient(to right, transparent, black 62%),
-                linear-gradient(to bottom, transparent, black 18%, black 50%, transparent 94%);
-        }
         .docs-start__grid,
         .docs-tasks__grid,
         .docs-lang__grid {

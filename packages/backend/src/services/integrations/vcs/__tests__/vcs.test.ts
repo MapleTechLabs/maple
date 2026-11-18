@@ -1,6 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { randomUUID } from "node:crypto"
 import {
+	AuditTrailPersistenceError,
 	type PullRequestEventJob,
 	VcsInstallation,
 	VcsInstallationGoneError,
@@ -53,6 +54,7 @@ import {
 	PullRequestEventSink,
 } from "@maple/backend/services/integrations/vcs/PullRequestEventSink"
 import { WorkflowEventSink } from "@maple/backend/services/integrations/vcs/WorkflowEventSink"
+import { AuditEventSink } from "@maple/backend/services/integrations/vcs/AuditEventSink"
 import { ANY_REPO_SYNC_STATUS, VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import { clampQueueDelaySeconds } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
 import {
@@ -662,6 +664,79 @@ describe("GithubProvider.webhookToJobs", () => {
 		}).pipe(Effect.provide(providerLayer())),
 	)
 
+	it.effect("adds an audit-event job for a delivery the audit log keeps, beside its own jobs", () =>
+		Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const removed = JSON.stringify({
+				action: "deleted",
+				installation: { id: 99, account: { login: "acme" } },
+				sender: { login: "octocat", id: 1, type: "User" },
+			})
+			const jobs = yield* provider.webhookToJobs({
+				headers: {
+					"x-github-event": "installation",
+					"x-github-delivery": "d-1",
+					"x-hub-signature-256": sign(removed),
+				},
+				rawBody: removed,
+			})
+			assert.deepStrictEqual(
+				Arr.map(jobs, (job) => job.kind),
+				["installation-sync", "audit-event"],
+			)
+			const audit = jobs[1]
+			if (audit?.kind !== "audit-event") return assert.fail("no audit job")
+			assert.strictEqual(audit.externalInstallationId, "99")
+			assert.strictEqual(audit.event.action, "installation.deleted")
+			assert.strictEqual(audit.event.providerEventId, "d-1")
+			assert.strictEqual(audit.deliveryId, "d-1")
+
+			// An installation action with no sync still reaches the audit log.
+			const accepted = JSON.stringify({
+				action: "new_permissions_accepted",
+				installation: { id: 99, account: { login: "acme" } },
+				sender: { login: "octocat", id: 1, type: "User" },
+			})
+			const acceptedJobs = yield* provider.webhookToJobs({
+				headers: {
+					"x-github-event": "installation",
+					"x-github-delivery": "d-3",
+					"x-hub-signature-256": sign(accepted),
+				},
+				rawBody: accepted,
+			})
+			assert.deepStrictEqual(
+				Arr.map(acceptedJobs, (job) => job.kind),
+				["audit-event"],
+			)
+
+			// An organization event makes no sync job, only the audit one.
+			const memberAdded = JSON.stringify({
+				action: "member_added",
+				membership: { user: { login: "newhire", id: 22 } },
+				organization: { login: "acme" },
+				installation: { id: 99 },
+				sender: { login: "octocat", id: 1, type: "User" },
+			})
+			const orgJobs = yield* provider.webhookToJobs({
+				headers: {
+					"x-github-event": "organization",
+					"x-github-delivery": "d-2",
+					"x-hub-signature-256": sign(memberAdded),
+				},
+				rawBody: memberAdded,
+			})
+			assert.deepStrictEqual(
+				Arr.map(orgJobs, (job) => job.kind),
+				["audit-event"],
+			)
+			// Every job still fits through the queue's codec.
+			Arr.forEach([...jobs, ...orgJobs], (job) => {
+				Schema.encodeSync(VcsSyncJob)(job)
+			})
+		}).pipe(Effect.provide(providerLayer())),
+	)
+
 	it.effect("maps a branch 'create' event to a branch-event created job", () =>
 		Effect.gen(function* () {
 			const provider = yield* GithubProvider
@@ -1148,6 +1223,7 @@ const BRANCH_INSTALLATION = Schema.decodeSync(VcsInstallation)({
 	status: "active",
 	suspendedAt: null,
 	ciTracesEnabled: true,
+	auditLogEnabled: true,
 	repositoryDiscovery: null,
 	installedByUserId: "user_1",
 	createdAt: 0,
@@ -1958,6 +2034,10 @@ describe("VcsSyncService orchestrator", () => {
 		readonly forwardedPullRequests?: Array<{ orgId: string; job: PullRequestEventJob }>
 		/** CI runs and jobs the sync service forwarded; absent means no workflow sink is bound. */
 		readonly forwardedWorkflows?: Array<{ orgId: string; kind: string; runId: string }>
+		/** Audit events the sync service forwarded; absent means no audit sink is bound. */
+		readonly forwardedAudit?: Array<{ orgId: string; action: string }>
+		/** The audit sink fails every write. */
+		readonly auditWriteFails?: boolean
 		/** CI job logs the sync service forwarded, read to the end. */
 		readonly forwardedLogs?: Array<{ orgId: string; jobId: string; lines: ReadonlyArray<string> }>
 		/** The lines the stubbed provider serves as any job's log. */
@@ -2107,6 +2187,23 @@ describe("VcsSyncService orchestrator", () => {
 								Effect.ignore,
 							),
 					})
+		const audit = opts.forwardedAudit
+		const auditSink =
+			audit === undefined
+				? Layer.empty
+				: Layer.succeed(AuditEventSink, {
+						onAuditEvent: (orgId, event) =>
+							opts.auditWriteFails === true
+								? Effect.fail(
+										new AuditTrailPersistenceError({
+											message: "The audit trail could not be written",
+											cause: "test",
+										}),
+									)
+								: Effect.sync(() => {
+										audit.push({ orgId, action: event.action })
+									}),
+					})
 		const scanRequests = opts.scanRequests
 		const scanSink =
 			scanRequests === undefined
@@ -2122,7 +2219,9 @@ describe("VcsSyncService orchestrator", () => {
 							}),
 					})
 		return Layer.effect(VcsSyncService, VcsSyncService.make).pipe(
-			Layer.provideMerge(Layer.mergeAll(repoLive, registry, queue, sink, workflowSink, scanSink)),
+			Layer.provideMerge(
+				Layer.mergeAll(repoLive, registry, queue, sink, workflowSink, scanSink, auditSink),
+			),
 		)
 	}
 
@@ -2325,6 +2424,101 @@ describe("VcsSyncService orchestrator", () => {
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(workflowJob("42")))
 			assert.strictEqual(forwardedWorkflows.length, 2)
 		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent: [], forwardedWorkflows })))
+	})
+
+	const auditJob = (externalInstallationId: string, action: string): VcsSyncJob => ({
+		kind: "audit-event",
+		provider: "github",
+		externalInstallationId,
+		event: {
+			provider: "github",
+			providerEventId: `delivery-${action}`,
+			account: "octo",
+			occurredAtMs: 1_700_000_000_000,
+			actor: { type: "user", id: "1", name: "octocat" },
+			action,
+			category: "membership",
+			outcome: "success",
+		},
+	})
+
+	it.effect("writes audit events under the installation's org, also once it is disconnected", () => {
+		const testDb = createTestDb(trackedDbs)
+		const forwardedAudit: Array<{ orgId: string; action: string }> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_audit")
+			yield* seedInstallation(repo, orgId)
+			yield* svc.processMessage(
+				Schema.encodeSync(VcsSyncJob)(auditJob("42", "organization.member_added")),
+			)
+			// The removal is itself the event: a disconnected installation still records it.
+			yield* markInstStatusFor(repo, "42", "disconnected")
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(auditJob("42", "installation.deleted")))
+			assert.deepStrictEqual(forwardedAudit, [
+				{ orgId, action: "organization.member_added" },
+				{ orgId, action: "installation.deleted" },
+			])
+
+			// An org that turned the GitHub audit log off gets nothing forwarded. The switch only
+			// writes to an active installation, so it is reconnected first.
+			const installation = yield* repo.resolveInstallation("github", "42")
+			if (Option.isNone(installation)) return assert.fail("installation not seeded")
+			assert.isFalse(yield* repo.setAuditLogEnabled(orgId, installation.value.id, false))
+			yield* markInstStatusFor(repo, "42", "active")
+			assert.isTrue(yield* repo.setAuditLogEnabled(orgId, installation.value.id, false))
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(auditJob("42", "team.created")))
+			assert.strictEqual(forwardedAudit.length, 2)
+		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent: [], forwardedAudit })))
+	})
+
+	it.effect("holds an audit event for an installation a connect has not stored yet, then gives up", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sent: Array<VcsSyncJob> = []
+		const sentDelays: Array<number | undefined> = []
+		const forwardedAudit: Array<{ orgId: string; action: string }> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(auditJob("42", "installation.created")))
+			const requeued = sent[0]
+			if (requeued?.kind !== "audit-event") return assert.fail("not requeued")
+			assert.strictEqual(requeued.installationWaits, 1)
+			assert.deepStrictEqual(sentDelays, [60])
+
+			// Once the connect stores the installation, the held event lands under its org.
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_audit_wait")
+			yield* seedInstallation(repo, orgId)
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(requeued))
+			assert.deepStrictEqual(forwardedAudit, [{ orgId, action: "installation.created" }])
+
+			// An installation that never arrives stops waiting.
+			yield* svc.processMessage(
+				Schema.encodeSync(VcsSyncJob)({
+					...auditJob("nope", "repository.deleted"),
+					installationWaits: 5,
+				}),
+			)
+			assert.strictEqual(sent.length, 1)
+		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent, sentDelays, forwardedAudit })))
+	})
+
+	it.effect("fails an audit event whose write failed, so the queue retries it", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			yield* seedInstallation(repo, asOrgId("org_audit_fail"))
+			const exit = yield* Effect.exit(
+				svc.processMessage(Schema.encodeSync(VcsSyncJob)(auditJob("42", "repository.deleted"))),
+			)
+			assert.ok(Schema.is(AuditTrailPersistenceError)(findError(exit)))
+		}).pipe(
+			Effect.provide(
+				orchestratorLayer(testDb, { sent: [], forwardedAudit: [], auditWriteFails: true }),
+			),
+		)
 	})
 
 	it.effect("forwards a failed CI job with the annotations that say why, a passed one without", () => {
@@ -4432,6 +4626,7 @@ describe("GithubProvider rate-limit handling", () => {
 		status: "active",
 		suspendedAt: null,
 		ciTracesEnabled: true,
+		auditLogEnabled: true,
 		repositoryDiscovery: null,
 		installedByUserId: "user_1",
 		createdAt: 0,

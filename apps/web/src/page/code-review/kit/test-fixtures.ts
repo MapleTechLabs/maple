@@ -50,6 +50,7 @@ export const githubStatusOf = (repositories: ReadonlyArray<{ name: string; revie
 		accountType: "organization",
 		repositorySelection: "selected",
 		ciTracesEnabled: true,
+		auditLogEnabled: true,
 		repositoryDiscovery: null,
 		repositories: Arr.map(repositories, (repo, index) => ({
 			id: `00000c01-0000-4000-8000-00000000000${index + 1}`,

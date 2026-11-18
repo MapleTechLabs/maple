@@ -382,7 +382,7 @@ describe("security audit log", () => {
 		// A value the detection schema has no name for cannot be counted either.
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded(PAGE, { provider: "github" })),
+			given(loaded(PAGE, { provider: "okta" })),
 			expectView(anyAlertLink).toBeAbsent(),
 		)
 	})

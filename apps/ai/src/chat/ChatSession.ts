@@ -218,6 +218,8 @@ const TurnInput = Schema.Struct({
 })
 type TurnInput = typeof TurnInput.Type
 const decodeTurnInput = Schema.decodeUnknownOption(Schema.fromJsonString(TurnInput))
+const decodeTurnOrigin = Schema.decodeUnknownOption(ChatTurnOriginSchema)
+const encodeTurnOrigin = Schema.encodeSync(ChatTurnOriginSchema)
 const encodeTurnInput = Schema.encodeSync(Schema.fromJsonString(TurnInput))
 
 /**
@@ -557,6 +559,10 @@ export class ChatSession {
 		readonly origin: ChatTurnOrigin
 	}): { cursor: number; messageId: string; turnMessageId: string } | undefined {
 		if (!tenantOwnsSession(input)) return undefined
+		// The origin decides what the turn may reach, so it is held to its schema here, whoever
+		// called: one that does not decode starts nothing, and unknown keys do not travel on.
+		const origin = Option.map(decodeTurnOrigin(input.origin), encodeTurnOrigin)
+		if (Option.isNone(origin)) return undefined
 		this.transition({ _tag: "Expire" })
 		const cursor = this.cursor()
 		// The assistant's message needs an id of its OWN. Reusing the user's meant `history()` found
@@ -569,7 +575,7 @@ export class ChatSession {
 			userMessageId: input.messageId,
 			text: input.text,
 			tenant: input.tenant,
-			origin: input.origin,
+			origin: origin.value,
 		}
 		if (!this.transition({ _tag: "Begin", messageId: turnId, input: turn })) return undefined
 		this.append({ type: "user-message", id: input.messageId, text: input.text })
@@ -587,8 +593,8 @@ export class ChatSession {
 	 * land here.
 	 *
 	 * The caller is also who authorized the click and decided whose authority the change runs
-	 * under — the signed-in user's own tenant from the web route, or, from a connector, the linked
-	 * `actingUserId` or the org-level connector identity. Reaching this object at all requires the
+	 * under: the signed-in user's own tenant from the web route, or, from a connector, the linked
+	 * `actingUserId`. There is no third identity. Reaching this object at all requires the
 	 * Durable Object binding, which only Maple's own Workers hold, and that is the same trust
 	 * `beginTurn` already runs on.
 	 */

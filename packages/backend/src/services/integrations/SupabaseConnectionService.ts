@@ -183,9 +183,16 @@ export interface SupabaseConnectionServiceApi {
 		request: SupabaseProjectUpdateRequest,
 	) => Effect.Effect<SupabaseIntegrationStatus, SupabaseProjectUpdateError>
 	/** Delete Maple's log drains (best effort), revoke the grant, then drop the connection, its projects and sources. */
-	readonly disconnect: (
-		orgId: OrgId,
-	) => Effect.Effect<{ readonly disconnected: boolean }, IntegrationsPersistenceError>
+	readonly disconnect: (orgId: OrgId) => Effect.Effect<
+		{
+			readonly disconnected: boolean
+			/** False when a managed log drain could not be deleted at Supabase. */
+			readonly drainsRemoved: boolean
+			/** False when the stored grant was not revoked at Supabase. */
+			readonly grantRevoked: boolean
+		},
+		IntegrationsPersistenceError
+	>
 	readonly discoverOrg: (
 		orgId: OrgId,
 	) => Effect.Effect<SupabaseDiscoverySummary, IntegrationsPersistenceError>
@@ -648,7 +655,10 @@ export class SupabaseConnectionService extends Context.Service<
 			})
 		})
 
-		/** Best effort: delete these projects' managed drains upstream and their sources, and clear the rows. */
+		/**
+		 * Best effort: delete these projects' managed drains upstream and their sources, and clear the
+		 * rows. Answers whether every upstream delete went through.
+		 */
 		const retireDrains = Effect.fn("SupabaseConnectionService.retireDrains")(function* (
 			orgId: OrgId,
 			projects: ReadonlyArray<SupabaseProjectRow>,
@@ -659,21 +669,29 @@ export class SupabaseConnectionService extends Context.Service<
 				(row) => row.logDrainId !== null || row.logDrainSourceId !== null,
 			)
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.supabase.log_drains": drained.length })
-			yield* Effect.forEach(
+			const removed = yield* Effect.forEach(
 				drained,
 				(row) =>
 					Effect.gen(function* () {
 						const drainId = row.logDrainId
 						// A failed delete leaves a marked drain the next enable sweeps up.
-						if (drainId !== null) {
-							yield* deleteUpstreamDrain(orgId, row.projectRef, drainId).pipe(
-								bestEffort("log drain delete", orgId, row.projectRef),
-							)
-						}
+						const deleted =
+							drainId === null
+								? true
+								: yield* deleteUpstreamDrain(orgId, row.projectRef, drainId).pipe(
+										Effect.as(true),
+										bestEffort("log drain delete", orgId, row.projectRef),
+										Effect.map((done) => done === true),
+									)
 						yield* teardownDrain(orgId, row, now, { deleteUpstream: false })
-					}).pipe(bestEffort("log drain retire", orgId, row.projectRef)),
-				{ concurrency: DRAIN_CONCURRENCY, discard: true },
+						return deleted
+					}).pipe(
+						bestEffort("log drain retire", orgId, row.projectRef),
+						Effect.map((done) => done === true),
+					),
+				{ concurrency: DRAIN_CONCURRENCY },
 			)
+			return Arr.every(removed, (done) => done)
 		})
 
 		const getStatus = Effect.fn("SupabaseConnectionService.getStatus")(function* (orgId: OrgId) {
@@ -1165,10 +1183,9 @@ export class SupabaseConnectionService extends Context.Service<
 			const now = yield* Clock.currentTimeMillis
 			// Drains go before the revoke, which ends the access token their deletes need.
 			const existing = yield* loadConnection(orgId)
-			if (existing !== null) {
-				const projects = yield* loadProjects(existing.id)
-				yield* retireDrains(orgId, projects, now)
-			}
+			const projects = existing === null ? [] : yield* loadProjects(existing.id)
+			const drainsRemoved = yield* retireDrains(orgId, projects, now)
+			yield* Effect.annotateCurrentSpan({ "maple.supabase.drains_removed": drainsRemoved })
 			// Revoke next: it needs the stored refresh token.
 			const grant = yield* oauth.disconnect(orgId)
 			// The connection's source goes with it, and its projects through the cascade.
@@ -1215,7 +1232,11 @@ export class SupabaseConnectionService extends Context.Service<
 					}),
 				),
 			)
-			return { disconnected: deleted.length > 0 || grant.disconnected }
+			return {
+				disconnected: deleted.length > 0 || grant.disconnected,
+				drainsRemoved,
+				grantRevoked: grant.grantRevoked,
+			}
 		})
 
 		const discoverAllOrgs = Effect.gen(function* () {

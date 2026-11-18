@@ -1,4 +1,4 @@
-import type { DataSourceKind } from "@maple/domain/data-sources"
+import { type DataSourceKind, MARKS_PERSONAL_DATA_BY_KIND } from "@maple/domain/data-sources"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
@@ -18,7 +18,7 @@ import { type DraftField, Message, type Model } from "./model"
 import { sourceById } from "./state"
 import { connectionFields } from "./view-form-connection"
 import { describedByOf, ids, stateOf, textField } from "./view-field"
-import { ENVIRONMENT_LABEL, kindLabel } from "./view-parts"
+import { AGENTS_READ_EVERY_COLUMN, ENVIRONMENT_LABEL, kindLabel } from "./view-parts"
 
 type H = HtmlBuilder<Message>
 
@@ -101,6 +101,8 @@ const saveErrorAlert = (h: H, model: Model): ReadonlyArray<Html> => {
 export const formView = (h: H, model: Model, kind: DataSourceKind, editing: string | null): Html => {
 	const isEditing = editing !== null
 	const errors = visibleErrors(model, kind, isEditing)
+	// The kind's own answer: a form for a first source has no saved source to read it from.
+	const redactsPii = MARKS_PERSONAL_DATA_BY_KIND[kind]
 	// The saved name, not the draft's: the heading does not follow typing, or go blank with the field.
 	const title = isEditing
 		? Option.match(sourceById(model, editing), {
@@ -140,21 +142,27 @@ export const formView = (h: H, model: Model, kind: DataSourceKind, editing: stri
 					switchRow(h, {
 						id: "data-source-agent-access",
 						label: "Assistants and agents may query this source",
-						description:
-							"Off hides it from the MCP tools and investigations. People in Maple still see it.",
+						description: !redactsPii
+							? AGENTS_READ_EVERY_COLUMN
+							: "Off hides it from the MCP tools and investigations. People in Maple still see it.",
 						isChecked: model.draft.agentAccess,
 						isDisabled: model.isSaving,
 						onToggle: Message.ToggledAgentAccess(),
 					}),
-					switchRow(h, {
-						id: "data-source-agent-pii",
-						label: "Agents may read personal data",
-						description:
-							"Off drops fields marked as personal data (emails, names) from what agents get back.",
-						isChecked: model.draft.agentPii,
-						isDisabled: model.isSaving || !model.draft.agentAccess,
-						onToggle: Message.ToggledAgentPii(),
-					}),
+					// Only where the API says the kind marks personal data: elsewhere it would promise nothing.
+					...(redactsPii
+						? [
+								switchRow(h, {
+									id: "data-source-agent-pii",
+									label: "Agents may read personal data",
+									description:
+										"Off drops fields marked as personal data (emails, names) from what agents get back.",
+									isChecked: model.draft.agentPii,
+									isDisabled: model.isSaving || !model.draft.agentAccess,
+									onToggle: Message.ToggledAgentPii(),
+								}),
+							]
+						: []),
 				]),
 			]),
 		]),

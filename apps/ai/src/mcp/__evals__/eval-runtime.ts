@@ -10,7 +10,7 @@ import { createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { McpToolExecutor } from "../dispatcher"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { EVAL_TENANT, FIXTURES, jsonDepth, MAX_STRUCTURED_OUTPUT_DEPTH } from "./utils"
-import type { TenantContext } from "@maple/domain/http"
+import { RoleName, type TenantContext } from "@maple/domain/http"
 import { SandboxFetcher } from "@maple/backend/platform/bindings"
 import { fakeableWarehouseLayer } from "./fake-warehouse"
 
@@ -98,6 +98,16 @@ export const makeEvalRuntime = (
 		},
 	}
 }
+
+/** A person who may run queries on connected data sources: the role the data source tools are exercised under. */
+export const ENGINEER_CALLER = { roles: [Schema.decodeSync(RoleName)("org:engineer")] }
+
+/** The same runtime, called by someone else. `EVAL_TENANT` alone holds no role and names no starter. */
+export const asCaller = (
+	rt: EvalRuntime,
+	caller: Pick<TenantContext, "roles"> &
+		Partial<Pick<TenantContext, "userId" | "turnOrigin" | "turnStarter" | "scopes">>,
+): EvalRuntime => ({ ...rt, tenant: { ...rt.tenant, ...caller } })
 
 class StructuredOutputTooDeep extends Schema.TaggedError<StructuredOutputTooDeep>()(
 	"@maple/ai/evals/StructuredOutputTooDeep",

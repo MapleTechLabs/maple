@@ -54,4 +54,44 @@ describe("executeRegisteredTool", () => {
 			expect(text).not.toContain("broken")
 		}),
 	)
+
+	it.effect("refuses a newly registered read tool where nobody is named, until it is listed", () =>
+		Effect.gen(function* () {
+			// `echo` is public and read-only, which is everything a new tool declares about itself.
+			const refused = yield* executeRegisteredTool(lookup, "echo", {}, "bot_anonymous").pipe(
+				withoutUnreachedServices,
+				Effect.flip,
+			)
+			expect(refused._tag).toBe("@maple/mcp/ToolNotFoundError")
+
+			// The same registration runs for a named asker and on the public transport.
+			const results = yield* Effect.forEach(["bot", "mcp"] as const, (surface) =>
+				executeRegisteredTool(lookup, "echo", {}, surface).pipe(withoutUnreachedServices),
+			)
+			expect(results.map((result) => result.content[0]?.text.includes("Ran echo"))).toEqual([
+				true,
+				true,
+			])
+		}),
+	)
+
+	it.effect("drops a suggested call to a tool the surface does not list", () =>
+		Effect.gen(function* () {
+			// `list_services` is listed for an unnamed asker; the tools it points at are not.
+			const listed: McpToolLookup = {
+				find: (name) =>
+					name === "list_services"
+						? Effect.succeed(definition("list_services", ["healthy"]))
+						: lookup.find(name),
+				namesFor: lookup.namesFor,
+			}
+			const text = (surface: "bot" | "bot_anonymous") =>
+				executeRegisteredTool(listed, "list_services", {}, surface).pipe(
+					withoutUnreachedServices,
+					Effect.map((result) => result.content.map((block) => block.text).join("\n")),
+				)
+			expect(yield* text("bot")).toContain("healthy")
+			expect(yield* text("bot_anonymous")).not.toContain("healthy")
+		}),
+	)
 })

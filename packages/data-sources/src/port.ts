@@ -47,6 +47,8 @@ export interface QueryRequest {
 	readonly workload: QueryWorkload
 	/** Drop fields the catalog marks PII from the result, and refuse queries that filter or group on them. */
 	readonly redactPii: boolean
+	/** Catalog entries the caller may not read, by name. Empty for people, who see every entry. */
+	readonly hiddenEntries: ReadonlyArray<string>
 }
 
 /** What the service hands a running query: Maple's share of the source's rate limit. */
@@ -81,6 +83,8 @@ export interface ConnectionTest {
 export interface DataSourceDriver<C extends DataSourceConfig = DataSourceConfig> {
 	readonly kind: DataSourceKind
 	readonly queryLanguage: QueryLanguage
+	/** Whether this kind's catalog marks fields as personal data. Without marks there is nothing to redact. */
+	readonly marksPersonalData: boolean
 	/** Form or API input → stored config + secret. `previous` is set on update. */
 	readonly validateConnection: (
 		input: DataSourceConnectionInput,
@@ -127,6 +131,7 @@ export const registerDriver = <K extends DataSourceKind>(
 	return {
 		kind: driver.kind,
 		queryLanguage: driver.queryLanguage,
+		marksPersonalData: driver.marksPersonalData,
 		validateConnection: (input, previous) =>
 			driver.validateConnection(input, previous !== null && owns(previous) ? previous : null),
 		test: (connection, context) => Effect.flatMap(narrow(connection), (c) => driver.test(c, context)),

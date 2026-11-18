@@ -71,12 +71,13 @@ const die = () => Effect.die(new Error("not stubbed in this test"))
 const chatLayer = (
 	listDestinations: ChatWorkspaceServiceApi["listDestinations"],
 	updateWorkspace: ChatWorkspaceServiceApi["updateWorkspace"],
+	beginInstall: ChatWorkspaceServiceApi["beginInstall"],
 ) =>
 	Layer.succeed(
 		ChatWorkspaceService,
 		ChatWorkspaceService.of({
 			list: die,
-			beginInstall: die,
+			beginInstall,
 			completeInstall: die,
 			beginLink: die,
 			completeLink: die,
@@ -136,6 +137,7 @@ const makeHarness = (
 	listDestinations: ChatWorkspaceServiceApi["listDestinations"] = die,
 	recorded: Recorded = {},
 	updateWorkspace: ChatWorkspaceServiceApi["updateWorkspace"] = die,
+	beginInstall: ChatWorkspaceServiceApi["beginInstall"] = die,
 ) => {
 	const testDb = createTestDb(createdDbs)
 	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
@@ -155,7 +157,9 @@ const makeHarness = (
 		Layer.provide(
 			Layer.mergeAll(
 				HttpV2AlertDestinationsLive,
-				HttpV2ChatIntegrationsLive.pipe(Layer.provide(chatLayer(listDestinations, updateWorkspace))),
+				HttpV2ChatIntegrationsLive.pipe(
+					Layer.provide(chatLayer(listDestinations, updateWorkspace, beginInstall)),
+				),
 			),
 		),
 		Layer.provide(V2TransportErrorBoundaryLive),
@@ -182,12 +186,19 @@ const makeHarness = (
 			}),
 		)
 
-	const request = async (method: string, path: string, token: string, body?: unknown) => {
+	const request = async (
+		method: string,
+		path: string,
+		token: string,
+		body?: unknown,
+		forwardedHost?: string,
+	) => {
 		const response = await handler(
 			new Request(`http://${API_HOST}${path}`, {
 				method,
 				headers: {
 					authorization: `Bearer ${token}`,
+					...(forwardedHost === undefined ? undefined : { "x-forwarded-host": forwardedHost }),
 					...(body === undefined ? undefined : { "content-type": "application/json" }),
 				},
 				...(body === undefined ? undefined : { body: JSON.stringify(body) }),
@@ -198,8 +209,18 @@ const makeHarness = (
 		return { status: response.status, body: text.length === 0 ? null : JSON.parse(text) }
 	}
 
+	/** A signed-in person: the self-hosted root session. */
+	const session = () =>
+		runtime.runPromise(
+			Effect.gen(function* () {
+				const service = yield* AuthService
+				return (yield* service.loginSelfHosted("test-root-password")).token
+			}),
+		)
+
 	return {
 		adminKey: () => key(),
+		session,
 		memberKey: () => key({ source: "maple_cli", roles: ["org:member"], deviceName: "laptop" }),
 		request,
 		dispose: async () => {
@@ -444,6 +465,52 @@ describe("v2 chat workspace update over HTTP", () => {
 		expect(status).toBe(403)
 		expect(body.error).toMatchObject({ type: "permission_error" })
 		expect(calls).toEqual([])
+		await harness.dispose()
+	})
+})
+
+describe("v2 chat connector install over HTTP", () => {
+	it("begins an install for a signed-in person only, never for an API key", async () => {
+		const begun: Array<string> = []
+		const harness = makeHarness(die, {}, die, (_orgId, userId, connector) => {
+			begun.push(`${userId}:${connector}`)
+			return Effect.succeed({ url: "https://chat.example/oauth/authorize?state=abc" })
+		})
+		const path = `/v2/integrations/chat_connectors/${TESTCHAT}/install`
+		// The app's own host, so the callback origin check passes for both callers.
+		const appHost = "app.maple.test"
+
+		const key = await harness.adminKey()
+		const refused = await harness.request("POST", path, key.secret, undefined, appHost)
+		expect([refused.status, refused.body.error.code]).toEqual([403, "insufficient_permissions"])
+		expect(begun).toEqual([])
+
+		const started = await harness.request("POST", path, await harness.session(), undefined, appHost)
+		expect(started.status).toBe(200)
+		expect(started.body).toEqual({
+			object: "chat_connector.install",
+			url: "https://chat.example/oauth/authorize?state=abc",
+		})
+		expect(begun).toHaveLength(1)
+		await harness.dispose()
+	})
+
+	it("refuses an API key linking or unlinking a chat account, before the service is asked", async () => {
+		// The chat service's link methods die in this harness, so a 403 means they were never reached.
+		const harness = makeHarness()
+		const key = await harness.adminKey()
+		const identity = `/v2/integrations/chat_connectors/${TESTCHAT}/identity`
+
+		const link = await harness.request(
+			"POST",
+			`${identity}/link`,
+			key.secret,
+			undefined,
+			"app.maple.test",
+		)
+		expect([link.status, link.body.error.code]).toEqual([403, "insufficient_permissions"])
+		const unlink = await harness.request("DELETE", identity, key.secret)
+		expect([unlink.status, unlink.body.error.code]).toEqual([403, "insufficient_permissions"])
 		await harness.dispose()
 	})
 })

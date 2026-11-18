@@ -73,6 +73,7 @@ const sqlDriver = (world: DataSourceWorld) =>
 	registerDriver<"clickhouse">({
 		kind: "clickhouse",
 		queryLanguage: "sql:clickhouse",
+		marksPersonalData: false,
 		validateConnection: (input) =>
 			Effect.succeed({
 				config: {
@@ -126,6 +127,7 @@ const apiDriver = (world: DataSourceWorld) =>
 	registerDriver<"clerk">({
 		kind: "clerk",
 		queryLanguage: "resource",
+		marksPersonalData: true,
 		validateConnection: () =>
 			Effect.succeed({
 				config: { _tag: "clerk", instance: "production" } satisfies ClerkDataSourceConfig,

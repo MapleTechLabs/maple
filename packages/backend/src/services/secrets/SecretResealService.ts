@@ -1,15 +1,16 @@
 /**
  * Brings stored secrets onto the current key and envelope.
  *
- * A value needs resealing when its ciphertext does not start with the primary key's v2 prefix:
- * it was sealed by a key that has since been rotated out of the primary slot
+ * A value needs resealing when its ciphertext does not start with the primary key's prefix in
+ * its slot's current envelope: it was sealed by a key that has since been rotated out of the
+ * primary slot, or in the v2 envelope for a slot that now binds its destination
  * (docs/secret-encryption.md).
  */
 import { Array as Arr, Context, Effect, Layer, Option, Record as Rec } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
-import { currentEnvelopePrefix, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
+import { secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { RESEAL_TARGETS, SecretResealError, type PendingSecret, type ResealTarget } from "./reseal-targets"
 
 interface SecretResealSweep {
@@ -43,7 +44,6 @@ export class SecretResealService extends Context.Service<SecretResealService>()(
 			const env = yield* Env
 			const dbExecute = makeDbExecute(database, "SecretResealService", toPersistenceError)
 			const keyring = yield* secretKeyringFromEnv(env, (message) => new SecretResealError({ message }))
-			const prefix = currentEnvelopePrefix(keyring)
 
 			const resealRow = (target: ResealTarget, row: PendingSecret) =>
 				row.reseal(keyring).pipe(
@@ -71,7 +71,9 @@ export class SecretResealService extends Context.Service<SecretResealService>()(
 				done: SecretResealSweep,
 			): Effect.Effect<SecretResealSweep, SecretResealError> =>
 				Effect.gen(function* () {
-					const rows = yield* dbExecute((db) => target.pending(db, prefix, cursor, PAGE_SIZE))
+					const rows = yield* dbExecute((db) =>
+						target.pending(db, target.currentPrefixes(keyring), cursor, PAGE_SIZE),
+					)
 					const outcomes = yield* Effect.forEach(rows, (row) => resealRow(target, row))
 					const total = Arr.reduce(outcomes, done, addSweeps)
 					const last = Arr.last(rows)
@@ -87,7 +89,9 @@ export class SecretResealService extends Context.Service<SecretResealService>()(
 				yield* Effect.annotateCurrentSpan("maple.secrets.slot", target.slotName)
 				const done = yield* resealPages(target, null, MAX_PAGES_PER_TARGET, emptySweep)
 				// Counted every pass: "nothing remaining" is what a key removal waits for.
-				const remaining = yield* dbExecute((db) => target.countPending(db, prefix))
+				const remaining = yield* dbExecute((db) =>
+					target.countPending(db, target.currentPrefixes(keyring)),
+				)
 				const sweep = { ...done, remaining }
 				yield* Effect.annotateCurrentSpan({
 					"maple.secrets.resealed": sweep.resealed,

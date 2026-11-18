@@ -5,74 +5,97 @@ import PostCover from "./PostCover.astro";
 
 interface Props {
     post: BlogPost;
-    variant?: "card" | "featured";
+    // `featured` is the index lead; `row` is one line of a post list.
+    variant?: "featured" | "row";
+    // The first row of a list sits under its heading, so it draws no top rule.
+    first?: boolean;
 }
 
-const { post, variant = "card" } = Astro.props;
+const { post, variant = "row", first = false } = Astro.props;
 const { title, description, date, category, cover, coverAlt } = post.data;
 const minutes = readingTime(post.body);
 const catLabel = category ? CATEGORY_META[category].label : undefined;
 const href = `/blog/${post.id}`;
-const isF = variant === "featured";
+
+const focus = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
+const meta = "font-mono text-[11px] tabular-nums text-fg-muted";
 ---
 
-<a
-    href={href}
-    data-astro-prefetch
-    class:list={[
-        "group flex flex-col overflow-hidden rounded-lg border border-border bg-card transition-[border-color,transform] duration-200",
-        "hover:-translate-y-0.5 hover:border-primary/45 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring motion-reduce:transition-none motion-reduce:hover:translate-y-0",
-        isF && "lg:grid lg:grid-cols-[minmax(0,58fr)_minmax(0,42fr)] lg:items-stretch",
-    ]}
->
-    <div class:list={["min-w-0 border-b border-border", isF && "lg:border-b-0 lg:border-r"]}>
-        <PostCover
-            title={title}
-            category={category}
-            cover={cover}
-            coverAlt={coverAlt}
-            variant={variant}
-        />
-    </div>
-
-    <div class:list={["flex min-w-0 flex-1 flex-col gap-2.5 p-[18px] pb-5 [overflow-wrap:anywhere]", isF && "md:gap-3.5 md:p-8 lg:justify-center lg:p-9"]}>
-        <div class="flex flex-wrap items-center gap-[7px] font-mono text-[11px] tabular-nums tracking-[0.02em] text-fg-muted">
-            {isF && (
-                <span class="border border-primary/40 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.16em] text-primary">
-                    featured
-                </span>
-            )}
-            <time datetime={isoDate(date)}>{formatDate(date)}</time>
-            {catLabel && (
-                <>
-                    <span aria-hidden="true" class="opacity-50">·</span>
-                    <span class="text-fg/75">{catLabel}</span>
-                </>
-            )}
-            <span aria-hidden="true" class="opacity-50">·</span>
-            <span>{minutes} min read</span>
+{variant === "featured" ? (
+    <a
+        href={href}
+        data-astro-prefetch
+        class:list={[
+            "group flex flex-col overflow-hidden rounded-lg border border-border bg-card hover:border-primary/45 active:border-primary/45",
+            "lg:grid lg:grid-cols-[minmax(0,58fr)_minmax(0,42fr)] lg:items-stretch",
+            focus,
+        ]}
+    >
+        <div class="min-w-0 border-b border-border lg:border-b-0 lg:border-r">
+            <PostCover title={title} category={category} cover={cover} coverAlt={coverAlt} variant="featured" />
         </div>
 
-        <h3
-            class:list={[
-                "font-display font-semibold leading-[1.25] tracking-[-0.015em] text-balance text-foreground transition-colors group-hover:text-primary",
-                "text-[17px]",
-                !isF && "line-clamp-2",
-                isF && "md:text-[clamp(24px,2.4vw,32px)] md:leading-[1.1]",
-            ]}
-        >{title}</h3>
+        <div class="flex min-w-0 flex-1 flex-col gap-3 p-5 [overflow-wrap:anywhere] md:gap-4 md:p-8 lg:justify-center lg:p-10 xl:p-12">
+            <div class:list={["flex flex-wrap items-center gap-2", meta]}>
+                <span class="border border-primary/40 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.16em] text-primary">featured</span>
+                <time datetime={isoDate(date)}>{formatDate(date)}</time>
+                {catLabel && (
+                    <>
+                        <span aria-hidden="true">·</span>
+                        <span>{catLabel}</span>
+                    </>
+                )}
+                <span aria-hidden="true">·</span>
+                <span>{minutes} min read</span>
+            </div>
 
-        <p
-            class:list={[
-                "font-sans text-[13px] leading-[1.6] text-fg-muted",
-                !isF && "line-clamp-3",
-                isF && "md:max-w-[52ch] md:text-sm",
-            ]}
-        >{description}</p>
+            <h2 class="m-0 font-display text-[22px] font-semibold leading-[1.15] tracking-[-0.02em] text-balance text-foreground group-hover:text-primary md:text-[clamp(26px,2.4vw,36px)] md:leading-[1.1]">
+                {title}
+            </h2>
 
-        <span class="mt-auto inline-flex items-center gap-[7px] pt-1.5 font-mono text-xs text-fg/70 transition-colors group-hover:text-primary">
-            read post
-            <span class="transition-transform duration-200 group-hover:translate-x-1 motion-reduce:transition-none" aria-hidden="true">→</span>
-        </span>
-    </div>
-</a>
+            <p class="m-0 font-display text-[15px] leading-[1.6] text-fg-muted md:max-w-[52ch] md:text-base">{description}</p>
+
+            <span class="mt-1 inline-flex items-center gap-1.5 font-display text-[13px] font-medium text-fg group-hover:text-primary">
+                Read post <span aria-hidden="true">→</span>
+            </span>
+        </div>
+    </a>
+) : (
+    <a
+        href={href}
+        data-astro-prefetch
+        class:list={[
+            "group grid gap-x-10 gap-y-5 py-7 sm:grid-cols-[minmax(0,1fr)_12rem] sm:items-start lg:grid-cols-[9rem_minmax(0,1fr)_16rem] lg:py-9 xl:grid-cols-[11rem_minmax(0,1fr)_20rem]",
+            !first && "border-t border-border",
+            focus,
+        ]}
+    >
+        {/* Date column, from `lg`; narrower screens fold it into the line under the title. */}
+        <div class:list={["hidden flex-col gap-1.5 pt-1 lg:flex", meta]}>
+            <time datetime={isoDate(date)}>{formatDate(date)}</time>
+            {catLabel && <span>{catLabel}</span>}
+        </div>
+
+        <div class="min-w-0 [overflow-wrap:anywhere]">
+            <h3 class="m-0 font-display text-[19px] font-semibold leading-[1.25] tracking-[-0.015em] text-balance text-foreground group-hover:text-primary lg:text-[22px]">
+                {title}
+            </h3>
+            <p class="m-0 mt-2.5 max-w-[64ch] font-display text-[15px] leading-[1.6] text-fg-muted">{description}</p>
+            <div class:list={["mt-4 flex flex-wrap items-center gap-2", meta]}>
+                <time datetime={isoDate(date)} class="lg:hidden">{formatDate(date)}</time>
+                <span aria-hidden="true" class="lg:hidden">·</span>
+                {catLabel && (
+                    <>
+                        <span class="lg:hidden">{catLabel}</span>
+                        <span aria-hidden="true" class="lg:hidden">·</span>
+                    </>
+                )}
+                <span>{minutes} min read</span>
+            </div>
+        </div>
+
+        <div class="order-first overflow-hidden rounded-md border border-border sm:order-none">
+            <PostCover title={title} category={category} cover={cover} coverAlt={coverAlt} variant="card" />
+        </div>
+    </a>
+)}

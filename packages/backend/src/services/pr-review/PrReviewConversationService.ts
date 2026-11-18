@@ -596,7 +596,8 @@ export class PrReviewConversationService extends Context.Service<
 					sessionId,
 					messageId: randomUUID(),
 					text: kickoff,
-					origin: { kind: "autonomous" },
+					// The reply answers a comment its author wrote, and no Maple user stands behind them.
+					origin: { kind: "autonomous", startedBy: { kind: "person", roles: [] } },
 					tenant: encodeChatTurnTenant({
 						orgId,
 						userId: internalServiceUserId,

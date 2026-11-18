@@ -48,6 +48,7 @@ const installation = Schema.decodeSync(VcsInstallation)({
 	status: "active",
 	suspendedAt: null,
 	ciTracesEnabled: true,
+	auditLogEnabled: true,
 	repositoryDiscovery: null,
 	installedByUserId: "user_scan",
 	createdAt: 0,

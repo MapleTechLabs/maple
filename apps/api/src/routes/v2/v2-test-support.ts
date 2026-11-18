@@ -118,7 +118,6 @@ export const Phase1ResourceStubsLayer = Layer.mergeAll(
 		create: die,
 		chooseRegion: die,
 		retrieve: die,
-		delete: die,
 	}),
 )
 

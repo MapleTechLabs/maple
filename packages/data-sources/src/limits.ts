@@ -27,6 +27,12 @@ export const DEFAULT_LIMITS = {
 	},
 } as const satisfies Record<QueryWorkload, QueryLimits>
 
+/**
+ * About how many queries Maple sends one SQL source per period (seconds), across every caller.
+ * The counter is per Cloudflare location, so the figure is approximate, not a global ceiling.
+ */
+export const SQL_QUERY_SHARE = { limit: 30, period: 60 } as const
+
 /** Most time buckets one query may ask for; a finer grid is refused before anything is built. */
 export const MAX_TIME_BUCKETS = 10_000
 
