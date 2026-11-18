@@ -30,6 +30,7 @@ export const features: Feature[] = [
 	{
 		slug: "distributed-tracing",
 		illustration: "/art/features/distributed-tracing.webp",
+		illustrationAlt: "Engraving of a Roman aqueduct carrying water down a hillside through a round basin",
 		// The waterfall, not the explorer artifact: its opening flow view is too small beside a headline.
 		heroAside: "trace-waterfall",
 		navLabel: m.nav_distributed_tracing,
@@ -118,6 +119,7 @@ export const features: Feature[] = [
 	{
 		slug: "browser-sessions",
 		illustration: "/art/features/browser-sessions.webp",
+		illustrationAlt: "Engraving of a Roman amphitheatre seen through a stone archway",
 		navLabel: m.nav_browser_sessions,
 		navDesc: m.nav_desc_browser_sessions,
 		seoTitle: m.feat_sessions_seo_title,
@@ -215,6 +217,7 @@ export const features: Feature[] = [
 	{
 		slug: "log-management",
 		illustration: "/art/features/log-management.webp",
+		illustrationAlt: "Engraving of a Roman archive with shelves of scrolls and a reading table",
 		navLabel: m.nav_log_management,
 		navDesc: m.nav_desc_log_management,
 		seoTitle: m.feat_logs_seo_title,
@@ -281,6 +284,7 @@ export const features: Feature[] = [
 	{
 		slug: "metrics-dashboards",
 		illustration: "/art/features/metrics-dashboards.webp",
+		illustrationAlt: "Engraving of a Roman water clock beside a row of columns",
 		// A metric's own chart, where the page's artifact is a log histogram.
 		heroShot: {
 			id: "gallery-metric-latency",
@@ -360,6 +364,7 @@ export const features: Feature[] = [
 	{
 		slug: "service-catalog",
 		illustration: "/art/features/service-catalog.webp",
+		illustrationAlt: "Engraving of a Roman city from above, its districts joined by streets",
 		navLabel: m.nav_service_catalog,
 		navDesc: m.nav_desc_service_catalog,
 		seoTitle: m.feat_catalog_seo_title,
@@ -447,6 +452,7 @@ export const features: Feature[] = [
 	{
 		slug: "error-tracking",
 		illustration: "/art/features/error-tracking.webp",
+		illustrationAlt: "Engraving of a Roman arch with a cracked keystone",
 		heroShot: {
 			id: "gallery-issue-detail",
 			route: "/errors/issues/:id",
@@ -517,6 +523,7 @@ export const features: Feature[] = [
 	{
 		slug: "alerts",
 		illustration: "/art/features/alerts.webp",
+		illustrationAlt: "Engraving of a watchtower with a lit beacon on a rocky coast",
 		navLabel: m.nav_alerts,
 		navDesc: m.nav_desc_alerts,
 		seoTitle: m.feat_alerts_seo_title,
@@ -636,6 +643,7 @@ export const features: Feature[] = [
 	{
 		slug: "status-pages",
 		illustration: "/art/features/status-pages.webp",
+		illustrationAlt: "Engraving of a Roman forum with a speaker's platform in front of a colonnade",
 		navLabel: m.nav_status_pages,
 		navDesc: m.nav_desc_status_pages,
 		seoTitle: m.feat_status_seo_title,
@@ -744,6 +752,7 @@ export const features: Feature[] = [
 	{
 		slug: "ai-mcp-integration",
 		illustration: "/art/features/ai-mcp-integration.webp",
+		illustrationAlt: "Engraving of an armillary sphere on a table inside a small Roman temple",
 		navLabel: m.nav_ai_mcp,
 		navDesc: m.nav_desc_ai_mcp,
 		seoTitle: m.feat_mcp_seo_title,
@@ -803,6 +812,7 @@ export const features: Feature[] = [
 	{
 		slug: "kubernetes-monitoring",
 		illustration: "/art/features/kubernetes-monitoring.webp",
+		illustrationAlt: "Engraving of a Roman harbour with rows of warehouses and a lighthouse",
 		navLabel: m.nav_kubernetes,
 		navDesc: m.nav_desc_kubernetes,
 		seoTitle: m.page_k8s_title,

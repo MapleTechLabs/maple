@@ -107,7 +107,7 @@ const quietLink = "cursor-pointer border-0 bg-transparent p-0 text-left hover:te
                     >
                         <span class="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-bg-elevated">
                             {authorProfile?.avatar ? (
-                                <img src={authorProfile.avatar} alt="" width="36" height="36" class="size-full object-cover" />
+                                <img src={authorProfile.avatar} alt={authorProfile.name} width="36" height="36" class="size-full object-cover" />
                             ) : (
                                 <Icon name="MapleMark" size={18} class="text-primary" aria-hidden="true" />
                             )}

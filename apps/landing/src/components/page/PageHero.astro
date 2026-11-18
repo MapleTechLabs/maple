@@ -15,10 +15,12 @@ interface Props {
 	title: string;
 	lede: string;
 	illustration?: string;
+	/** What the illustration shows. With none, the image stays hidden from assistive tech. */
+	illustrationAlt?: string;
 	breadcrumb: { label: string; href?: string }[];
 }
 
-const { eyebrow, title, lede, breadcrumb, illustration } = Astro.props;
+const { eyebrow, title, lede, breadcrumb, illustration, illustrationAlt } = Astro.props;
 
 // An optional right-hand column (the /compare logo pairing). Without it the
 // hero keeps its single-column measure; with it, the copy and the aside sit
@@ -31,8 +33,8 @@ const hasProduct = Astro.slots.has("product");
 
 <section class:list={["relative overflow-hidden bg-bg", illustration && "page-hero--illustrated"]}>
 	{illustration ? (
-		<div class:list={["page-hero__art", hasProduct && "page-hero__art--behind"]} aria-hidden="true">
-			<img src={illustration} width="1536" height="1024" alt="" loading="eager" decoding="async" />
+		<div class:list={["page-hero__art", hasProduct && "page-hero__art--behind"]} aria-hidden={illustrationAlt ? undefined : "true"}>
+			<img src={illustration} width="1536" height="1024" alt={illustrationAlt ?? ""} loading="eager" decoding="async" />
 		</div>
 	) : <div class="dot-grid-veil" aria-hidden="true"></div>}
 

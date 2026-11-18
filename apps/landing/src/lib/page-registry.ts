@@ -162,6 +162,8 @@ export interface Feature {
 	slug: string
 	/** Decorative Roman engraving, shared by all locale variants. Unset renders a plain hero. */
 	illustration?: string
+	/** What the engraving shows. Literal English, like the captures' alt text. */
+	illustrationAlt?: string
 	/**
 	 * What the hero shows beside the copy: `heroAside`, else `heroShot`, else the
 	 * artifact, which then has no section of its own lower down.
