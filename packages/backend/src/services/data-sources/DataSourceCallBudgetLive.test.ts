@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { ExternalDataSourceId } from "@maple/domain/data-sources"
-import { Array as Arr, ConfigProvider, Effect, Layer, Schema } from "effect"
+import { Array as Arr, ConfigProvider, Effect, Layer, Logger, Schema } from "effect"
 import { DataSourceDevelopmentCallLimit, DataSourceSqlQueryLimit } from "@maple/backend/platform/bindings"
 import { Env } from "@maple/backend/platform/Env"
 import { DataSourceCallBudgetLive } from "./DataSourceCallBudgetLive"
@@ -84,7 +84,12 @@ describe("DataSourceCallBudgetLive", () => {
 			yield* budget.spend(SQL_SOURCE, 1)
 			yield* budget.spend(SQL_SOURCE, 1)
 			const error = yield* Effect.flip(budget.spend(SQL_SOURCE, 1))
-			expect(error).toMatchObject({ _tag: "@maple/data-sources/RateLimited", retryAfterSeconds: 60 })
+			expect(error).toMatchObject({
+				_tag: "@maple/data-sources/RateLimited",
+				retryAfterSeconds: 60,
+				limitedBy: "maple",
+			})
+			expect(error.message).toContain("Maple's own limit")
 			// Another source is not held to the first one's count.
 			yield* budget.spend(OTHER_SQL_SOURCE, 1)
 			expect(seen).toEqual([
@@ -104,6 +109,20 @@ describe("DataSourceCallBudgetLive", () => {
 			expect([unbound._tag, bound._tag]).toEqual(["Success", "Failure"])
 		}),
 	)
+
+	it.effect("warns once that it is failing open when the binding is missing", () => {
+		const warnings: Array<string> = []
+		const captureLogs = Logger.layer([
+			Logger.make(({ message, logLevel }) => {
+				if (logLevel === "Warn") warnings.push(String(message))
+			}),
+		])
+		return Effect.gen(function* () {
+			const budget = yield* DataSourceCallBudget
+			yield* Effect.forEach(Arr.range(1, 4), () => budget.spend(SQL_SOURCE, 2), { discard: true })
+			expect(warnings).toEqual(["Data source call budget unavailable; allowing call"])
+		}).pipe(Effect.provide(Layer.merge(budgetWith(Layer.empty), captureLogs)))
+	})
 
 	it.effect("lets calls through without the binding, where a binding would refuse them", () =>
 		Effect.gen(function* () {

@@ -343,7 +343,10 @@ export class ExternalDataSourceService extends Context.Service<
 		) =>
 			Effect.provideService(effect, HttpClient.HttpClient, httpClient).pipe(
 				Effect.tapError((error) =>
-					Schema.is(DataSourceRateLimitedError)(error) && error.retryAfterSeconds !== undefined
+					// Only the source's own answer starts a wait: a refusal Maple made must not extend one.
+					Schema.is(DataSourceRateLimitedError)(error) &&
+					error.limitedBy !== "maple" &&
+					error.retryAfterSeconds !== undefined
 						? Effect.map(Clock.currentTimeMillis, (now) => {
 								MutableHashMap.set(
 									cooldowns,
@@ -365,6 +368,7 @@ export class ExternalDataSourceService extends Context.Service<
 									message:
 										"The source asked Maple to slow down; waiting for its Retry-After before calling again.",
 									retryAfterSeconds: Math.ceil((until - now) / 1000),
+									limitedBy: "maple",
 								}),
 							)
 						: budget.spend({ id: row.id, config: row.config }, calls)
@@ -1199,7 +1203,7 @@ export class ExternalDataSourceService extends Context.Service<
 	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(FetchHttpClient.layer))
 }
 
-/** The service with this deployment's drivers, and API sources on the rate-limit bindings' budget. */
+/** The service with this deployment's drivers, and every source on the rate-limit bindings' budget. */
 export const ExternalDataSourceServiceLive = ExternalDataSourceService.layer.pipe(
 	Layer.provide(DataSourceDrivers.fromList(DATA_SOURCE_DRIVERS)),
 	Layer.provide(DataSourceCallBudgetLive),

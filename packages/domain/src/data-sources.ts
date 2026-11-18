@@ -327,6 +327,11 @@ export class DataSourceRateLimitedError extends Schema.TaggedError<DataSourceRat
 	{
 		message: Schema.String,
 		retryAfterSeconds: Schema.optionalKey(Schema.Number),
+		/**
+		 * `maple` when Maple refused before calling: its own cap, or a wait the source asked for.
+		 * Absent is the source's own answer, the only kind that starts a wait.
+		 */
+		limitedBy: Schema.optionalKey(Schema.Literals(["source", "maple"])),
 	},
 ) {}
 

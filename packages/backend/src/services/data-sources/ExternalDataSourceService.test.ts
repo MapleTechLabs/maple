@@ -24,6 +24,7 @@ import {
 	String as Str,
 } from "effect"
 import { FetchHttpClient } from "effect/http"
+import { TestClock } from "effect/testing"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
@@ -208,11 +209,15 @@ const config = ConfigProvider.layer(
 	}),
 )
 
-const makeLayer = (world: World, testDb: TestDb = createTestDb(createdDbs)) =>
+const makeLayer = (
+	world: World,
+	testDb: TestDb = createTestDb(createdDbs),
+	budget: Layer.Layer<DataSourceCallBudget> = DataSourceCallBudget.unlimited,
+) =>
 	Layer.mergeAll(
 		ExternalDataSourceService.layer.pipe(
 			Layer.provide(DataSourceDrivers.fromList([sqlDriver(world), apiDriver(world)])),
-			Layer.provide(DataSourceCallBudget.unlimited),
+			Layer.provide(budget),
 			Layer.provide(Env.layer),
 			Layer.provide(config),
 		),
@@ -231,6 +236,14 @@ const shopProd = {
 		password: SECRET,
 	},
 } as const
+
+const clerkProd = {
+	name: "clerk-prod",
+	description: "Production user accounts",
+	environment: "production",
+	connection: { _tag: "clerk", secretKey: SECRET },
+} as const
+const COUNT_USERS = { _tag: "resource", resource: "users", measure: { fn: "count" } } as const
 
 const window = {
 	startMs: Date.UTC(2026, 10, 1),
@@ -543,6 +556,57 @@ describe("ExternalDataSourceService", () => {
 			expect(second).toMatchObject({ _tag: "@maple/data-sources/RateLimited" })
 			expect(world.apiCalls).toBe(1)
 		}).pipe(Effect.provide(makeLayer(world)))
+	})
+
+	it.effect("ends a wait the source asked for on time, however often it is polled meanwhile", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const service = yield* ExternalDataSourceService
+			yield* service.create(ORG, USER, clerkProd)
+			const ask = service
+				.query(ORG, "clerk-prod", COUNT_USERS, window, { agent: true }, ENGINEER)
+				.pipe(Effect.result)
+			world.apiThrottled = true
+			yield* ask
+			world.apiThrottled = false
+			// The source said 30 s. Asking again inside the wait must not push its end back.
+			yield* TestClock.adjust("29500 millis")
+			const early = yield* ask
+			yield* TestClock.adjust("900 millis")
+			const onTime = yield* ask
+			expect([early._tag, onTime._tag]).toEqual(["Failure", "Success"])
+			expect(world.apiCalls).toBe(2)
+		}).pipe(Effect.provide(makeLayer(world)))
+	})
+
+	it.effect("starts no wait when Maple's own limit refuses a call, and says whose limit it was", () => {
+		const world = makeWorld()
+		const refusals = { left: 1 }
+		const budget = Layer.succeed(DataSourceCallBudget, {
+			spend: () =>
+				Effect.suspend(() => {
+					refusals.left -= 1
+					return refusals.left >= 0
+						? Effect.fail(
+								new DataSourceRateLimitedError({
+									message: "Maple's own limit for one data source is reached.",
+									retryAfterSeconds: 60,
+									limitedBy: "maple",
+								}),
+							)
+						: Effect.void
+				}),
+		})
+		return Effect.gen(function* () {
+			const service = yield* ExternalDataSourceService
+			yield* service.create(ORG, USER, clerkProd)
+			const ask = service.query(ORG, "clerk-prod", COUNT_USERS, window, { agent: true }, ENGINEER)
+			const refused = yield* Effect.flip(ask)
+			expect(refused.message).toBe("Maple's own limit for one data source is reached.")
+			// The very next call goes through: the refusal was Maple's, not the source's.
+			yield* ask
+			expect(world.apiCalls).toBe(1)
+		}).pipe(Effect.provide(makeLayer(world, createTestDb(createdDbs), budget)))
 	})
 
 	it.effect("keeps field notes on an entry that drops out of the source and comes back", () => {
