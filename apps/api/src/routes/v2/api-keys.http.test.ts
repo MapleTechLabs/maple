@@ -674,15 +674,81 @@ describe("v2 api_keys over HTTP", () => {
 		await harness.dispose()
 	})
 
-	it("lets an admin's expiring key create a key that never expires", async () => {
+	it("keeps a key minted with an admin's expiring key inside its lifetime and pinned to its roles", async () => {
 		const harness = makeHarness()
-		const admin = await harness.bootstrapKey(undefined, "standard", { expiresInSeconds: 86_400 })
+		const day = 86_400
+		const admin = await harness.bootstrapKey(undefined, "standard", {
+			metadataJson: { source: "maple_cli", roles: ["org:admin"], deviceName: "laptop" },
+			expiresInSeconds: 90 * day,
+		})
+		const create = (expiresInSeconds?: number) =>
+			harness.request("POST", "/v2/api_keys", {
+				token: admin.secret,
+				body: {
+					name: "service",
+					...(expiresInSeconds !== undefined
+						? { expires_in_seconds: expiresInSeconds }
+						: undefined),
+				},
+			})
+
+		for (const lifetime of [undefined, 91 * day]) {
+			const refused = await create(lifetime)
+			expect(refused.status).toBe(403)
+			expect(refused.body.error.code).toBe("insufficient_permissions")
+		}
+		const within = await create(30 * day)
+		expect(within.status).toBe(200)
+		const resolved = await harness.resolveKey(within.body.secret)
+		expect(Option.map(resolved, (key) => key.roles)).toEqual(Option.some(["org:admin"]))
+		await harness.dispose()
+	})
+
+	it("pins the caller's roles on a key minted by a non-expiring API key", async () => {
+		const harness = makeHarness()
+		const admin = await harness.bootstrapKey(undefined, "standard", {
+			metadataJson: { source: "maple_api_key", roles: ["org:admin"] },
+		})
 		const created = await harness.request("POST", "/v2/api_keys", {
 			token: admin.secret,
 			body: { name: "service" },
 		})
 		expect(created.status).toBe(200)
 		expect(created.body.expires_at).toBeNull()
+		const resolved = await harness.resolveKey(created.body.secret)
+		expect(Option.map(resolved, (key) => key.roles)).toEqual(Option.some(["org:admin"]))
+		await harness.dispose()
+	})
+
+	it("lets a signed-in admin session mint an unpinned key that never expires", async () => {
+		const harness = makeHarness()
+		const session = await harness.bootstrapSession()
+		const created = await harness.request("POST", "/v2/api_keys", {
+			token: session,
+			body: { name: "service" },
+		})
+		expect(created.status).toBe(200)
+		expect(created.body.expires_at).toBeNull()
+		const resolved = await harness.resolveKey(created.body.secret)
+		expect(Option.map(resolved, (key) => key.roles)).toEqual(Option.some(null))
+		await harness.dispose()
+	})
+
+	it("refuses an admin's API key a roll of an unpinned key", async () => {
+		const harness = makeHarness()
+		const admin = await harness.bootstrapKey(undefined, "standard", {
+			metadataJson: { source: "maple_api_key", roles: ["org:admin"] },
+		})
+		const unpinned = await harness.bootstrapKey(["traces:read"], "standard")
+		const { encodePublicId } = await import("@maple/domain/http/v2")
+		const refused = await harness.request(
+			"POST",
+			`/v2/api_keys/${encodePublicId("key", unpinned.id)}/roll`,
+			{ token: admin.secret },
+		)
+		expect(refused.status).toBe(403)
+		expect(refused.body.error.code).toBe("insufficient_permissions")
+		expect(Option.isSome(await harness.resolveKey(unpinned.secret))).toBe(true)
 		await harness.dispose()
 	})
 
