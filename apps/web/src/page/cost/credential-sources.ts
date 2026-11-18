@@ -3,6 +3,7 @@ import {
 	CLOUDFLARE_COST_TOKEN_MAX_LENGTH,
 	OPENAI_COST_KEY_MAX_LENGTH,
 	OPENROUTER_KEY_MAX_LENGTH,
+	TINYBIRD_COST_TOKEN_MAX_LENGTH,
 } from "@maple/domain/http"
 import type { Command } from "foldkit"
 import type { Resources } from "../../platform/resources"
@@ -11,10 +12,12 @@ import {
 	RemoveCloudflareCostToken,
 	RemoveOpenAiCostKey,
 	RemoveOpenRouterCostKey,
+	RemoveTinybirdCostToken,
 	SaveAnthropicCostKey,
 	SaveCloudflareCostToken,
 	SaveOpenAiCostKey,
 	SaveOpenRouterCostKey,
+	SaveTinybirdCostToken,
 } from "./command"
 import type { Message } from "./message"
 import type { CredentialProvider } from "./providers"
@@ -45,8 +48,17 @@ export type CredentialSource = Readonly<{
 		maxLength: number
 		/** Shown when the text is longer than `maxLength`, which the request would refuse to carry. */
 		tooLong: string
-		/** The help under the field: `before`, a link to where the credential is made, then `after`. */
-		help: Readonly<{ before: string; link: string; href: string; after: string }>
+		/**
+		 * The help under the field: `before`, a link to where the credential is made, then `after`, and
+		 * a command that makes it, followed by its own text, where there is one.
+		 */
+		help: Readonly<{
+			before: string
+			link: string
+			href: string
+			after: string
+			command?: Readonly<{ code: string; after: string }>
+		}>
 	}>
 	add: Readonly<{ title: string; description: string; toast: string }>
 	replace: Readonly<{
@@ -207,5 +219,46 @@ export const CREDENTIAL_SOURCES = {
 		},
 		save: (apiKey) => SaveOpenAiCostKey({ apiKey }),
 		delete: () => RemoveOpenAiCostKey(),
+	},
+	// Tinybird has no spend API: the token reads the organization's usage tables, priced by Maple.
+	tinybird: {
+		pick: {
+			meta: "Estimated daily cost from usage at list prices",
+			addedMeta: "Replace its token in the Sources panel",
+		},
+		field: {
+			label: "Token",
+			placeholder: "p.eyJ...",
+			maxLength: TINYBIRD_COST_TOKEN_MAX_LENGTH,
+			tooLong: "That is too long to be a Tinybird token.",
+			help: {
+				before: "Create a ",
+				link: "static token",
+				href: "https://www.tinybird.co/docs/forward/administration/tokens/static-tokens",
+				after: " with the WORKSPACE:READ_ALL and ORG_DATASOURCES:READ scopes, under Tokens in Tinybird or with ",
+				command: {
+					code: "tb --cloud token create static maple_cost --scope WORKSPACE:READ_ALL --scope ORG_DATASOURCES:READ",
+					after: ". Tinybird reads its usage tables only with both scopes, and WORKSPACE:READ_ALL can also read the workspace's data: Maple only queries the organization's usage tables with it, and stores it encrypted. Make one just for Maple so you can revoke it on its own.",
+				},
+			},
+		},
+		add: {
+			title: "Add Tinybird",
+			description: `${THREE_MONTHS_ADD} Tinybird has no spend report, so Maple estimates vCPU overage, storage and data transfer at its list prices. The plan's monthly fee, QPS overages and LLM usage are not included.`,
+			toast: "Tinybird added",
+		},
+		replace: {
+			title: "Replace the Tinybird token",
+			description: "The source and its history stay. Use a token from the same Tinybird organization.",
+			label: "Replace token",
+			toast: "Tinybird token replaced",
+		},
+		remove: {
+			title: "Remove the Tinybird source?",
+			description:
+				"Maple deletes the token and stops reading the organization's usage, and its cost leaves this page. Delete the token in Tinybird too if nothing else uses it.",
+		},
+		save: (token) => SaveTinybirdCostToken({ token }),
+		delete: () => RemoveTinybirdCostToken(),
 	},
 } satisfies Record<CredentialProvider, CredentialSource>

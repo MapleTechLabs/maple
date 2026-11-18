@@ -177,6 +177,28 @@ const openAiLine = (
 	drift,
 })
 
+/** The Tinybird organization the lab's source reads. */
+const LAB_TINYBIRD_ORGANIZATION = { id: "7a1b2c3d-0000-4000-8000-00000000b170", name: "Example Analytics" }
+
+/** A day's estimated Tinybird cost of one kind of usage in one workspace, at list prices. */
+const tinybirdLine = (
+	service: string,
+	category: string,
+	workspace: string,
+	daily: number,
+	drift: number,
+): Line => ({
+	cloud_service: service,
+	provider: "tinybird",
+	service_category: category,
+	region: "europe-west3",
+	usage_type: service,
+	resource: workspace,
+	account: LAB_TINYBIRD_ORGANIZATION.id,
+	daily,
+	drift,
+})
+
 /** The PlanetScale organization the lab's source reads. */
 export const LAB_PLANETSCALE_ORGANIZATION = "example-data"
 
@@ -252,6 +274,9 @@ const LINES: ReadonlyArray<Line> = [
 	openAiLine("gpt-5", "gpt-5, output", "proj_ExampleSupport", 14.2, 0.12),
 	openAiLine("gpt-5", "gpt-5, input", "proj_ExampleSupport", 5.3, 0.08),
 	openAiLine("text-embedding-3-large", "text-embedding-3-large, input", "proj_ExampleSearch", 0.9, 0.0),
+	tinybirdLine("Tinybird compute", "Compute", "example_analytics", 3.4, 0.15),
+	tinybirdLine("Tinybird storage", "Storage", "example_analytics", 1.1, 0.04),
+	tinybirdLine("Tinybird data transfer", "Networking", "example_analytics", 0.3, 0.02),
 	productLine("Example Function Duration", "Compute", "iad1", "function-duration", "example-web", 9.4, 0.2),
 	productLine(
 		"Example Function Duration",
@@ -515,12 +540,25 @@ const openAiSource = source({
 	requestsThisMonth: 0,
 })
 
+/** The Tinybird source: the same history as the model vendors', its cost estimated from usage. */
+const tinybirdSource = source({
+	id: "0190f2b3-0000-7000-8000-00000000c068",
+	provider: "tinybird",
+	connectionRef: "0190f2b3-0000-7000-8000-00000000a068",
+	accountId: LAB_TINYBIRD_ORGANIZATION.id,
+	accountName: LAB_TINYBIRD_ORGANIZATION.name,
+	backfillDate: "2026-08-01",
+	lastSyncedAt: LAB_NOW_MS - 55 * 60_000,
+	requestsThisMonth: 0,
+})
+
 /** The source each credential provider's add brings in. */
 const CREDENTIAL_SOURCE_OF = {
 	openrouter: openRouterSource,
 	cloudflare: cloudflareSource,
 	anthropic: anthropicSource,
 	openai: openAiSource,
+	tinybird: tinybirdSource,
 } as const satisfies Record<CredentialProvider, SourceWire>
 
 /** The PlanetScale source: invoices back to the twelfth month before this one, and no billed requests. */
@@ -698,6 +736,7 @@ export const LAB_SOURCES = {
 			planetScaleSource,
 			anthropicSource,
 			openAiSource,
+			tinybirdSource,
 		],
 	}),
 	none: decodeSources({ sources: [] }),

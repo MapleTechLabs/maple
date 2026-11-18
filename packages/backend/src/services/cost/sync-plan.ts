@@ -49,6 +49,11 @@ const VERCEL_HISTORY_MONTHS = 11
  * History stops at the first day of the month this many months back, a conservative start.
  */
 const MODEL_API_HISTORY_MONTHS = 3
+/**
+ * Tinybird's `organization.*` data sources hold usage from about when the organization started.
+ * History stops at the first day of the month this many months back.
+ */
+const TINYBIRD_HISTORY_MONTHS = 3
 /** PlanetScale invoices are read back to the first day of the month this many months before the current one. */
 const PLANETSCALE_HISTORY_MONTHS = 12
 // Through this day of the month the previous month's bill is still open; the first settle after
@@ -107,6 +112,7 @@ const COST_SYNC_PROFILES = {
 	},
 	anthropic: { floor: (today) => monthStart(today, -MODEL_API_HISTORY_MONTHS), lagDays: 0, head: "days" },
 	openai: { floor: (today) => monthStart(today, -MODEL_API_HISTORY_MONTHS), lagDays: 0, head: "days" },
+	tinybird: { floor: (today) => monthStart(today, -TINYBIRD_HISTORY_MONTHS), lagDays: 0, head: "days" },
 } as const satisfies Record<CostProvider, CostSyncProfile>
 
 /** The oldest day the sync pulls from `provider`. */

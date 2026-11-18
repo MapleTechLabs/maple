@@ -29,6 +29,7 @@ import { AwsCostProvider } from "./providers/aws/AwsCostProvider"
 import { AnthropicCostProvider } from "./providers/anthropic/AnthropicCostProvider"
 import { CloudflareCostProvider } from "./providers/cloudflare/CloudflareCostProvider"
 import { OpenAiCostProvider } from "./providers/openai/OpenAiCostProvider"
+import { TinybirdCostProvider } from "./providers/tinybird/TinybirdCostProvider"
 import { insertInstallation } from "./providers/github/fake-github"
 import { GithubCostProvider } from "./providers/github/GithubCostProvider"
 import { OpenRouterCostProvider } from "./providers/openrouter/OpenRouterCostProvider"
@@ -269,6 +270,7 @@ const harness = (options: FakeProviderOptions = {}) => {
 				Layer.succeed(CloudflareCostProvider, adapterOf("cloudflare")),
 				Layer.succeed(AnthropicCostProvider, adapterOf("anthropic")),
 				Layer.succeed(OpenAiCostProvider, adapterOf("openai")),
+				Layer.succeed(TinybirdCostProvider, adapterOf("tinybird")),
 				Layer.succeed(GithubCostProvider, adapterOf("github")),
 				Layer.succeed(VercelCostProvider, vercelAdapter),
 				Layer.succeed(PlanetScaleCostProvider, planetScaleAdapter),

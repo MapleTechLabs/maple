@@ -88,6 +88,7 @@ import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuth
 import { AnthropicCostConnectionService } from "@maple/backend/services/cost/AnthropicCostConnectionService"
 import { CloudflareCostConnectionService } from "@maple/backend/services/cost/CloudflareCostConnectionService"
 import { OpenAiCostConnectionService } from "@maple/backend/services/cost/OpenAiCostConnectionService"
+import { TinybirdCostConnectionService } from "@maple/backend/services/cost/TinybirdCostConnectionService"
 import { GithubCostSourceService } from "@maple/backend/services/cost/GithubCostSourceService"
 import { OpenRouterCostConnectionService } from "@maple/backend/services/cost/OpenRouterCostConnectionService"
 import { CostBudgetsService } from "@maple/backend/services/cost/CostBudgetsService"
@@ -248,6 +249,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	CloudflareCostConnectionService.layer,
 	AnthropicCostConnectionService.layer,
 	OpenAiCostConnectionService.layer,
+	TinybirdCostConnectionService.layer,
 	GithubCostSourceService.layer,
 	PlanetScaleCostSourceService.layer,
 	VercelCostSourceService.layer,

@@ -15,6 +15,7 @@ export const COST_CONNECTION_PROVIDERS = [
 	"cloudflare",
 	"anthropic",
 	"openai",
+	"tinybird",
 ] as const satisfies ReadonlyArray<CostProvider>
 export type CostConnectionProvider = (typeof COST_CONNECTION_PROVIDERS)[number]
 
