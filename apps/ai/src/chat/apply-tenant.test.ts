@@ -85,7 +85,7 @@ const actorsThat = (actor: ActorId | undefined): Layer.Layer<ErrorActorsService>
 	})
 
 const memberships = (verify: OrgMembershipService["Service"]["verify"]): Layer.Layer<OrgMembershipService> =>
-	Layer.succeed(OrgMembershipService, { verify })
+	Layer.succeed(OrgMembershipService, { directory: "clerk", verify })
 
 const proposal = (actingUserId?: UserId) => ({
 	env: {},

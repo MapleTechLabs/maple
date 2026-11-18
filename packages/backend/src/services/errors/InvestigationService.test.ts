@@ -78,10 +78,16 @@ const makeLayer = () => makeHarness().layer
 
 const ORG = Schema.decodeSync(OrgId)("org_investigation_test")
 /** A manual start by a key or session nobody is named for. */
-const NOBODY = { userId: null, roles: [] } as const
+const NOBODY = { userId: null, roles: [], mayReadDataSources: false } as const
 const MEMBER = {
 	userId: Schema.decodeSync(UserId)("user_member"),
 	roles: [Schema.decodeSync(RoleName)("org:member")],
+	mayReadDataSources: true,
+}
+const ENGINEER = {
+	userId: Schema.decodeSync(UserId)("user_engineer"),
+	roles: [Schema.decodeSync(RoleName)("org:engineer")],
+	mayReadDataSources: true,
 }
 const asInvestigationId = Schema.decodeUnknownSync(InvestigationId)
 const asIssueId = Schema.decodeUnknownSync(ErrorIssueId)
@@ -548,7 +554,32 @@ describe("InvestigationService", () => {
 		}).pipe(Effect.provide(harness.layer))
 	})
 
-	it.effect("stamps a manual start and a restart with the person who asked and their roles", () => {
+	it.effect(
+		"stamps a manual start with the person who asked, their roles and what their scopes reach",
+		() => {
+			const chat = chatSessionHarness()
+			const harness = makeHarness(chat.env, chat.chatSessions)
+			return Effect.gen(function* () {
+				const service = yield* InvestigationService
+				yield* service.createAndStartInvestigation(
+					ORG,
+					{ ...ENGINEER, mayReadDataSources: false },
+					freeformRequest("list every row of the payments table"),
+				)
+				assert.deepStrictEqual(chat.beginTurns[0]?.origin, {
+					kind: "autonomous",
+					startedBy: {
+						kind: "person",
+						userId: ENGINEER.userId,
+						roles: ENGINEER.roles,
+						mayReadDataSources: false,
+					},
+				})
+			}).pipe(Effect.provide(harness.layer))
+		},
+	)
+
+	it.effect("keeps the author answering for a restart, held to the restarter's credential", () => {
 		const chat = chatSessionHarness()
 		const harness = makeHarness(chat.env, chat.chatSessions)
 		return Effect.gen(function* () {
@@ -559,18 +590,42 @@ describe("InvestigationService", () => {
 				freeformRequest("list every row of the payments table"),
 			)
 			yield* service.failInvestigation(ORG, started.id, "no_diagnosis: the pass ended in prose")
-			yield* service.restartInvestigation(ORG, started.id, NOBODY)
-			assert.deepStrictEqual(
-				Arr.map(chat.beginTurns, (turn) => turn.origin),
-				[
-					{
-						kind: "autonomous",
-						startedBy: { kind: "person", userId: MEMBER.userId, roles: MEMBER.roles },
-					},
-					// The restart is the restarter's to answer for, not the first starter's.
-					{ kind: "autonomous", startedBy: { kind: "person", roles: [] } },
-				],
+			yield* service.restartInvestigation(ORG, started.id, ENGINEER)
+			// The member wrote the prompt, so the member is who the pass answers for: an engineer's
+			// restart lends them the engineer's credential as a ceiling, never as their role.
+			assert.deepStrictEqual(chat.beginTurns[1]?.origin, {
+				kind: "autonomous",
+				startedBy: {
+					kind: "person",
+					userId: MEMBER.userId,
+					roles: ENGINEER.roles,
+					mayReadDataSources: true,
+				},
+			})
+		}).pipe(Effect.provide(harness.layer))
+	})
+
+	it.effect("has the restarter answer for a pass no person authored", () => {
+		const chat = chatSessionHarness()
+		const harness = makeHarness(chat.env, chat.chatSessions)
+		return Effect.gen(function* () {
+			const service = yield* InvestigationService
+			const started = yield* service.createAndStartInvestigation(
+				ORG,
+				NOBODY,
+				freeformRequest("why is checkout slow"),
 			)
+			yield* service.failInvestigation(ORG, started.id, "no_diagnosis: the pass ended in prose")
+			yield* service.restartInvestigation(ORG, started.id, ENGINEER)
+			assert.deepStrictEqual(chat.beginTurns[1]?.origin, {
+				kind: "autonomous",
+				startedBy: {
+					kind: "person",
+					userId: ENGINEER.userId,
+					roles: ENGINEER.roles,
+					mayReadDataSources: true,
+				},
+			})
 		}).pipe(Effect.provide(harness.layer))
 	})
 

@@ -92,10 +92,12 @@ export interface ListInvestigationsOptions {
 	readonly offset?: number
 }
 
-/** The person or key behind a manual start or restart, with the roles the credential holds. */
+/** The person or key behind a manual start or restart, with what the credential holds. */
 export interface ManualStarter {
 	readonly userId: UserId | null
 	readonly roles: ReadonlyArray<RoleName>
+	/** Whether the credential's scopes reach data sources: a session's do, a scoped key's may not. */
+	readonly mayReadDataSources: boolean
 }
 
 export interface InvestigationServiceApi {
@@ -417,17 +419,20 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				nowMs: number,
 				by: ManualStarter,
 			) {
+				const author = doc.createdBy ?? by.userId
 				const started = yield* starter
 					.startTurn({
 						orgId,
 						investigationId: doc.id,
 						subject: doc.subject,
 						snapshot: doc.snapshot,
-						// A person asked for this pass, and may have written its subject or snapshot.
+						// Whoever wrote the subject and snapshot answers for the pass, held to the credential
+						// that asked for it now: a restart by someone else never lends the author their role.
 						startedBy: {
 							kind: "person",
-							...(by.userId === null ? undefined : { userId: by.userId }),
+							...(author === null ? undefined : { userId: author }),
 							roles: by.roles,
+							mayReadDataSources: by.mayReadDataSources,
 						},
 						nowMs,
 					})

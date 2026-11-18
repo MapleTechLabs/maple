@@ -478,6 +478,8 @@ export const AutonomousTurnStarter = Schema.Union([
 		kind: Schema.Literal("person"),
 		userId: Schema.optionalKey(UserId),
 		roles: Schema.Array(RoleName),
+		/** Whether their credential could read data sources (a scoped key may not). Absent reads as no. */
+		mayReadDataSources: Schema.optionalKey(Schema.Boolean),
 	}),
 ])
 export type AutonomousTurnStarter = (typeof AutonomousTurnStarter)["Encoded"]

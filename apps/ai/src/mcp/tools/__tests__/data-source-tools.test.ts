@@ -311,16 +311,19 @@ describe("an investigation's own pass and query_data_source", () => {
 		const turnStarter = await Effect.runPromise(
 			turnStarterOf(seeded.tenant.orgId, origin).pipe(
 				Effect.provideService(OrgMembershipService, {
+					directory: "clerk",
 					verify: (_userId, orgId) => Effect.succeedSome({ orgId, role: role(holdsNow) }),
 				}),
 			),
 		)
 		return asCaller(seeded, { roles: [], turnOrigin: origin, turnStarter })
 	}
-	const person = (roleName: string): AutonomousTurnStarter => ({
+	/** A start by a credential holding `roleName`; a session or a key that reads data sources unless said. */
+	const person = (roleName: string, mayReadDataSources = true): AutonomousTurnStarter => ({
 		kind: "person",
 		userId: "user_starter",
 		roles: [roleName],
+		mayReadDataSources,
 	})
 	const alert: AutonomousTurnStarter = { kind: "producer", producer: "incident_triage" }
 
@@ -352,6 +355,34 @@ describe("an investigation's own pass and query_data_source", () => {
 			query,
 		)
 		expect(result.failureCategory).toBe("permission")
+	})
+
+	it("is refused when an engineer's key that cannot read data sources started it", async () => {
+		const before = world.runs
+		const result = await runToolDirect(
+			await pass(person("org:engineer", false), "org:engineer"),
+			"query_data_source",
+			query,
+		)
+		expect(result.failureCategory).toBe("permission")
+		expect(world.runs).toBe(before)
+	})
+
+	it("is refused when an engineer restarts what a member wrote, and runs when an engineer wrote it", async () => {
+		// A restart stamps the author with the restarter's roles: the author's role now is what counts.
+		const restartedByEngineer = person("org:engineer")
+		const membersPrompt = await runToolDirect(
+			await pass(restartedByEngineer, "org:member"),
+			"query_data_source",
+			query,
+		)
+		expect(membersPrompt.failureCategory).toBe("permission")
+		const engineersPrompt = await runToolDirect(
+			await pass(restartedByEngineer, "org:engineer"),
+			"query_data_source",
+			query,
+		)
+		expect(decode(QueryDataSourceOutput, engineersPrompt)).toMatchObject({ executed: true })
 	})
 
 	it("runs the query when an alert started it and the source lets agents in", async () => {

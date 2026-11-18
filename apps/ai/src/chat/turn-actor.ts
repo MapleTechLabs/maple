@@ -146,8 +146,8 @@ const NOBODY = { kind: "person", roles: [] } as const satisfies NonNullable<Tena
 
 /**
  * Who answers for an unattended pass. A person does so with the lower of the roles they hold in the
- * org now and the roles their credential held when they started it, so a restricted key stays
- * restricted and a demotion lands. An unreadable membership answers as nobody: the pass still runs.
+ * org now and the roles their credential held when they started it, and with none when that
+ * credential could not read data sources. An unreadable membership answers as nobody.
  */
 export const turnStarterOf = Effect.fn("ChatTurnActor.turnStarterOf")(function* (
 	orgId: OrgId,
@@ -155,10 +155,16 @@ export const turnStarterOf = Effect.fn("ChatTurnActor.turnStarterOf")(function* 
 ) {
 	const startedBy = origin.startedBy
 	if (startedBy?.kind === "producer") return { kind: "producer" } as const
-	const userId = Option.flatMap(Option.fromNullishOr(startedBy?.userId), decodeUserId)
-	const then = Option.flatMap(Option.fromNullishOr(startedBy?.roles), decodeRoles)
-	if (Option.isNone(userId) || Option.isNone(then)) return NOBODY
+	// What the starter's roles gate here is a query on a data source, so a credential whose scopes
+	// did not reach them answers as nobody, whatever role it held.
+	if (startedBy?.mayReadDataSources !== true) return NOBODY
+	const then = decodeRoles(startedBy.roles)
+	if (Option.isNone(then)) return NOBODY
 	const memberships = yield* OrgMembershipService
+	// No directory to ask (self-hosted): the roles the credential held are the only answer there is.
+	if (memberships.directory === "none") return { kind: "person", roles: then.value } as const
+	const userId = Option.flatMap(Option.fromNullishOr(startedBy.userId), decodeUserId)
+	if (Option.isNone(userId)) return NOBODY
 	const membership = yield* memberships
 		.verify(userId.value, orgId)
 		.pipe(

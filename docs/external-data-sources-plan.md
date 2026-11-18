@@ -285,7 +285,11 @@ Design consequences:
 - An unattended pass (a turn whose origin is `autonomous`) answers for whoever caused it, recorded
   on the origin as `startedBy`. A pass a person started or restarted, or whose subject or snapshot
   a person wrote (`POST /v2/investigations`, restart), is checked as that person: the lower of the
-  role they hold now and the roles their credential held then. Only passes raised by Maple's own
+  role they hold now and the roles their credential held then. A restart keeps the author of the
+  subject answering for it, held to the restarter's credential, so restarting someone else's
+  prompt never runs it under the restarter's role. A credential whose scopes did not reach
+  `data_sources:read` answers with no role. A deployment with no membership directory
+  (self-hosted) takes the credential's roles as they were. Only passes raised by Maple's own
   producers (incident triage for alerts, anomalies and errors; fix verification) are admitted by
   the source's `agentAccess` switch alone. No recorded starter, a pull request review and a reply
   to a review comment all answer as a person with no role. A turn that would be refused is not
