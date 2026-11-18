@@ -160,7 +160,10 @@ The write tools here need the org admin or engineer role.
 | -------------------------- | ------ | ----------------------------------------------------------------------------------------------- |
 | `get_status_page`          | read   | Every status page, or one page as visitors see it, with component status and open incidents     |
 | `post_status_page_update`  | write  | Open a public incident or maintenance notice, or post its next update; new ones start as drafts |
+| `create_status_page`       | write  | Create a page as a draft. Org admins and engineers only                                         |
 | `apply_status_page_config` | write  | Replace a page's settings, theme and components in one write. Org admins and engineers only     |
+| `set_status_page_domain`   | write  | Set, check or remove a page's custom domain, with the DNS records to add. Admins and engineers  |
+| `publish_status_page`      | write  | Make a draft page public. Org admins and engineers only                                         |
 
 ### Dashboards
 

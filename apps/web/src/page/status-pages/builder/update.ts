@@ -7,6 +7,7 @@ import type {
 import {
 	customDomainIssue,
 	normalizeCustomDomain,
+	slugFromName,
 	STATUS_PAGE_PRESET_DEFAULTS,
 } from "@maple/domain/status-page"
 import { Option, Result, Array as Arr, String as Str } from "effect"
@@ -37,7 +38,7 @@ import {
 	updatePicker,
 } from "../shared/picker"
 import { historyFrom } from "../shared/preview"
-import { SLUG_TAKEN, SLUG_TAKEN_MESSAGE, slugFromName, slugIssue } from "../shared/slug"
+import { SLUG_TAKEN, SLUG_TAKEN_MESSAGE, slugIssue } from "../shared/slug"
 import {
 	CreateBuilderMonitor,
 	CreateBuilderPage,
