@@ -23,6 +23,7 @@ import type { Model } from "./model"
 import { COST_PROVIDERS, type CostProviderEntry, CredentialProvider } from "./providers"
 import { PLANETSCALE_REMOVE, planetScaleStep } from "./view-add-planetscale"
 import { providerMark, vercelStep } from "./view-add-vercel"
+import { GCP_REMOVE, gcpStep } from "./view-add-gcp"
 
 type H = HtmlBuilder<Message>
 
@@ -79,14 +80,19 @@ const nameList = new Intl.ListFormat("en-GB", { type: "conjunction" })
 /** The providers whose requests cost their customer nothing, as one list: "A, B and C". */
 const FREE_REQUESTS = nameList.format(
 	Arr.map(
-		Arr.filter(CostProvider.literals, (provider) => COST_PROVIDERS[provider].requestUsd === null),
+		// Google Cloud has no request price, but BigQuery bills each sync's query: the step says so.
+		Arr.filter(
+			CostProvider.literals,
+			(provider) => COST_PROVIDERS[provider].requestUsd === null && provider !== "gcp",
+		),
 		(provider) => COST_PROVIDERS[provider].name,
 	),
 )
 
 /**
  * The providers to add: AWS goes to its connect flow, a pasted credential's to its form, GitHub to
- * its organizations, Vercel to its team, PlanetScale to its organization.
+ * its organizations, Vercel to its team, PlanetScale to its organization, Google Cloud to its
+ * connections and export table.
  */
 const providers = (h: H, sources: ReadonlyArray<CostSourceSummary>): Html =>
 	vstack(h, { gap: "3" }, [
@@ -129,6 +135,15 @@ const providers = (h: H, sources: ReadonlyArray<CostSourceSummary>): Html =>
 				meta: "Monthly invoices, spread over each branch's days",
 				addedMeta: "Remove it in the Sources panel",
 				onClick: Message.ClickedAddPlanetScale(),
+				divided: true,
+			}),
+			// An org can add several billing exports, so the row stays open with sources on the page.
+			listRow(h, {
+				onClick: Message.ClickedAddGcp(),
+				leading: providerMark(h, COST_PROVIDERS.gcp),
+				title: COST_PROVIDERS.gcp.name,
+				meta: "Daily cost from the BigQuery billing export",
+				trailing: icon(h, "ChevronRightIcon", { size: 14 }),
 			}),
 		]),
 		typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" }, [
@@ -386,32 +401,34 @@ export const addSourceDialog = (h: H, model: Model, sources: ReadonlyArray<CostS
 			hasDescription: true,
 			toView: ({ portal }) => portal ?? h.empty,
 			toContent: (close) =>
-				step === "vercel"
-					? vercelStep(h, model, id)
-					: step === "planetscale"
-						? planetScaleStep(h, model, id)
-						: step === "github"
-							? githubStep(h, model, id)
-							: step === "pick"
-								? [
-										DialogView.dialogHeader(h, "dialog", [
-											DialogView.dialogTitle(h, "dialog", id, "Add a cost source"),
-											addTrail(h, null),
-											DialogView.dialogDescription(
-												h,
-												"dialog",
-												id,
-												"Maple reads what the source bills each day and keeps it next to your telemetry.",
-											),
-										]),
-										DialogView.dialogPanel(h, "dialog", id, [providers(h, sources)]),
-										DialogView.dialogFooter(h, "dialog", [
-											button(h, { variant: "outline", attributes: [...close] }, [
-												"Close",
+				step === "gcp"
+					? gcpStep(h, model, id)
+					: step === "vercel"
+						? vercelStep(h, model, id)
+						: step === "planetscale"
+							? planetScaleStep(h, model, id)
+							: step === "github"
+								? githubStep(h, model, id)
+								: step === "pick"
+									? [
+											DialogView.dialogHeader(h, "dialog", [
+												DialogView.dialogTitle(h, "dialog", id, "Add a cost source"),
+												addTrail(h, null),
+												DialogView.dialogDescription(
+													h,
+													"dialog",
+													id,
+													"Maple reads what the source bills each day and keeps it next to your telemetry.",
+												),
 											]),
-										]),
-									]
-								: [credentialForm(h, model, step, sources, close)],
+											DialogView.dialogPanel(h, "dialog", id, [providers(h, sources)]),
+											DialogView.dialogFooter(h, "dialog", [
+												button(h, { variant: "outline", attributes: [...close] }, [
+													"Close",
+												]),
+											]),
+										]
+									: [credentialForm(h, model, step, sources, close)],
 		},
 	})
 }
@@ -432,6 +449,8 @@ const removeCopy = (target: CostSourceSummary | null): Readonly<{ title: string;
 			}
 		case "planetscale":
 			return PLANETSCALE_REMOVE
+		case "gcp":
+			return GCP_REMOVE
 		case "openrouter":
 		case "cloudflare":
 		case "anthropic":
