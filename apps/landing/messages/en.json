@@ -1401,7 +1401,6 @@
 	"gh_ci_title": "Every workflow run is a trace",
 	"gh_ci_lede": "Turn on CI traces and each GitHub Actions run lands as a job and step waterfall, runner queue time included. See why CI is red, which workflow keeps failing and whether builds are getting slower.",
 	"gh_ci_trace_title": "The failing step, in the run's trace",
-	"gh_ci_pr_title": "Reviews and CI runs on one pull request",
 	"gh_after_eyebrow": "After merge",
 	"gh_after_title": "The review doesn't end at merge",
 	"gh_after_lede": "An hour after the deploy, Maple compares the hour before with the hour after and comments back on the pull request: shipped clean, or what stopped arriving and which errors are new.",
