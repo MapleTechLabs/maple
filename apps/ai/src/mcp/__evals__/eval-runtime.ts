@@ -16,7 +16,7 @@ import { fakeableWarehouseLayer } from "./fake-warehouse"
 
 const INTERNAL_TOKEN = "eval-internal-token"
 
-const testEnv = (): Record<string, string> => ({
+const testEnv = (extra: Readonly<Record<string, string>>): Record<string, string> => ({
 	PORT: "3472",
 	TINYBIRD_HOST: "https://maple-eval.tinybird.co",
 	TINYBIRD_TOKEN: "eval-token",
@@ -31,6 +31,7 @@ const testEnv = (): Record<string, string> => ({
 	MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "eval-lookup-key",
 	MAPLE_INGEST_PUBLIC_URL: "http://127.0.0.1:3474",
 	MAPLE_APP_BASE_URL: "http://127.0.0.1:3471",
+	...extra,
 })
 
 export interface EvalRuntime {
@@ -58,9 +59,11 @@ export const makeEvalRuntime = (
 	> = OrganizationFeatureFlagsService.layer,
 	/** Fake data source drivers; the runtime then also serves the service, for seeding. */
 	dataSources?: Layer.Layer<ExternalDataSourceService, DataSourcePersistenceError, Database | Env>,
+	/** Config on top of the test defaults, e.g. what turns status page custom domains on. */
+	extraEnv: Readonly<Record<string, string>> = {},
 ): EvalRuntime => {
 	const testDb = createTestDb()
-	const env = testEnv()
+	const env = testEnv(extraEnv)
 
 	const configLive = ConfigProvider.layer(ConfigProvider.fromUnknown(env))
 	const envLive = Env.layer.pipe(Layer.provide(configLive))

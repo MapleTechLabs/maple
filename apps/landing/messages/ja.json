@@ -1447,7 +1447,7 @@
 	"feat_status_cap_7_title": "Mapleが停止していても投稿できる",
 	"feat_status_cap_7_body": "各ページには、ホストされたページ上のフォームに直接つながる緊急用リンクがあります。Mapleのダッシュボードにアクセスできなくても、インシデントの作成や更新の投稿ができます。",
 	"feat_status_cap_8_title": "APIやAIエージェントから操作",
-	"feat_status_cap_8_body": "ページ、コンポーネント、インシデントはすべてAPI v2で扱えます。MCPを使えば、エージェントがapply_status_page_configでページを設定し、post_status_page_updateで更新を投稿します。",
+	"feat_status_cap_8_body": "ページ、コンポーネント、インシデントはすべてAPI v2で扱えます。MCPを使えば、エージェントがcreate_status_pageでページを作成し、apply_status_page_configで設定し、set_status_page_domainで独自ドメインを追加し、publish_status_pageで公開し、post_status_page_updateで更新を投稿します。",
 	"status_feeds_eyebrow": "購読とAPI",
 	"status_feeds_title": "Slack、フィードリーダー、スクリプトから追える",
 	"status_feeds_lede": "すべての公開ページにRSSとAtomのフィード、ステータスバッジ、statuspage.ioのサマリー形式のstatus.jsonがあります。statuspage.ioのページを読めるツールなら、あなたのページも読めます。",

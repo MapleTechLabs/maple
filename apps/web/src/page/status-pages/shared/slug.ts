@@ -1,37 +1,13 @@
 import { StatusPageSlug } from "@maple/domain/status-page"
-import { Schema, String as Str } from "effect"
+import { Schema } from "effect"
 
-// The page address: suggested from the name until typed, checked as the API checks it.
-
-const SLUG_MAX = 48
+// The page address: suggested from the name until typed (`slugFromName`), checked as the API checks it.
 
 /** The API's code for an address another page already has. */
 export const SLUG_TAKEN = "status_page_slug_taken"
 
 /** The field's message for it. */
 export const SLUG_TAKEN_MESSAGE = "That address is taken. Pick another."
-
-/** `Acme Status!` as `acme-status`: lowercase letters and digits, single inner hyphens. */
-export const slugFromName = (name: string): string =>
-	Str.replace(
-		/-+$/u,
-		"",
-	)(
-		Str.slice(
-			0,
-			SLUG_MAX,
-		)(
-			Str.replace(
-				/^-+|-+$/gu,
-				"",
-			)(
-				Str.replace(
-					/[^a-z0-9]+/gu,
-					"-",
-				)(Str.replace(/\p{M}+/gu, "")(Str.normalize("NFKD")(Str.toLowerCase(name)))),
-			),
-		),
-	)
 
 const isSlug = Schema.is(StatusPageSlug)
 
