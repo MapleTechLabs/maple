@@ -8,6 +8,8 @@ import { Dashboard, DashboardProvider } from "./Dashboard"
 import { IngestKeys, IngestKeysProvider } from "./IngestKeys"
 import { MapleApiFromHttpClient } from "./MapleApi"
 import * as MapleEnvironment from "./MapleEnvironment"
+import { StatusPage, StatusPageProvider } from "./StatusPage"
+import { UptimeMonitor, UptimeMonitorProvider } from "./UptimeMonitor"
 
 export class Providers extends Provider.ProviderCollection<Providers>()("Maple") {}
 
@@ -49,7 +51,15 @@ export const providers = () =>
 export const providersWithDependencies = () =>
 	Layer.effect(
 		Providers,
-		Provider.collection([ApiKey, Dashboard, AlertDestination, AlertRule, IngestKeys]),
+		Provider.collection([
+			ApiKey,
+			Dashboard,
+			AlertDestination,
+			AlertRule,
+			IngestKeys,
+			UptimeMonitor,
+			StatusPage,
+		]),
 	).pipe(
 		Layer.provide(
 			Layer.mergeAll(
@@ -58,6 +68,8 @@ export const providersWithDependencies = () =>
 				AlertDestinationProvider(),
 				AlertRuleProvider(),
 				IngestKeysProvider(),
+				UptimeMonitorProvider(),
+				StatusPageProvider(),
 			),
 		),
 		Layer.provide(MapleApiFromHttpClient()),
