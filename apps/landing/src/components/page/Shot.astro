@@ -1,11 +1,7 @@
 ---
 /**
- * Shot: one real capture in a `.live-frame`, whole or as a legible window.
- *
- * MediaFrame's crop always fades its right and bottom edges. A window that ends on
- * the capture's own edge has nothing to fade, so this one fades only the sides
- * that cut through content. On a phone the window tightens from its top-left
- * corner until the text is readable. The lightbox still opens the full capture.
+ * Shot: one real capture in a `.live-frame`, whole or as a legible window. It fades only the
+ * edges that cut through content, and tightens from its top-left corner on a phone.
  */
 import type { Crop } from "../../lib/page-registry";
 
@@ -30,7 +26,7 @@ const aspect = crop?.aspect ?? captureAspect;
 // How much of the capture the window shows, per axis.
 const shownX = crop ? 1 / crop.zoom : 1;
 const shownY = crop ? captureAspect / (aspect * crop.zoom) : 1;
-const fadeRight = crop ? crop.x + shownX < 0.995 : false;
+const fadeRight = crop ? crop.hardRight !== true && crop.x + shownX < 0.995 : false;
 const fadeBottom = crop ? crop.y + shownY < 0.995 : false;
 // A 1440 px screen drawn 2.4 frames wide puts its 13 px text near 8 px on a 390 px phone.
 const PHONE_ZOOM = 2.4;

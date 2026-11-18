@@ -76,6 +76,8 @@ export interface Crop {
 	y: number
 	zoom: number
 	aspect?: number
+	/** The window ends on a content edge inside the capture, so the right side must not fade. */
+	hardRight?: boolean
 }
 
 /** The app's main pane at full height: every 1440 px capture has the same 256 px sidebar. */

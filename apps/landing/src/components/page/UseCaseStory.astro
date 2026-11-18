@@ -1,23 +1,8 @@
 ---
 /**
- * UseCaseStory: the use-case page's hero and its pinned-pane walkthrough as one
- * section, so the story's first screen is in the first viewport beside the
- * headline instead of a full screen below it.
- *
- * The device is ScrollStory's (one constant held in the frame head while the
- * route, the clock and the plate swap) and it reuses that component's
- * `.story-*` classes. It does not reuse its `data-scrollstory` hooks: under
- * reduced motion those hide the pane outright, which would leave this hero with
- * no product at all.
- *
- * From `lg` the pane spans the hero copy, the story heading and the steps, and
- * sticks. Under reduced motion it never swaps: it holds the first plate and
- * stays with the reader through the first step, and each later step shows its
- * own plate beside it. That is why the steps are two lists: the pane's grid area
- * has to end where the second step begins. Below `lg` the pane is hidden, the
- * first plate follows the hero copy as a static frame, and each later step
- * carries its plate. `self-start` on the sticky grid item is mandatory, as in
- * ScrollStory.
+ * UseCaseStory: the use-case hero and its pinned-pane walkthrough as one section, so the story's
+ * first screen sits beside the headline. It reuses ScrollStory's `.story-*` classes but not its
+ * hooks. The steps are two lists because the pane's grid area ends where the second step begins.
  */
 import { buttonVariants } from "@maple/views/ui/button.styles";
 import * as m from "../../paraglide/messages.js";
@@ -249,6 +234,13 @@ const first = steps[0];
 	.uc-steps--rest {
 		margin-top: -2.5rem;
 	}
+	/* Below lg the first step has no top padding, so its rail runs on to the next list's first node. */
+	@media (max-width: 1023px) {
+		.uc-steps--first [data-step]::before,
+		.uc-steps--first [data-step]::after {
+			height: calc(100% + var(--story-step-pad));
+		}
+	}
 
 	@media (min-width: 1024px) {
 		.uc-grid {
@@ -336,10 +328,8 @@ const first = steps[0];
 </style>
 
 <script>
-	// One observer per story. The collapsed rootMargin leaves a 10% band at the
-	// vertical centre, so one step is active at a time. The hero copy and the story
-	// heading are observed too and both mean "step one": without them a jump back
-	// to the top would leave the pane on whichever step it last showed.
+	// One observer per story; the collapsed rootMargin keeps one step active at a time. The hero
+	// copy and the story heading count as step one, so a jump to the top resets the pane.
 	// Reduced motion never swaps the pane, so it never starts.
 	const stories = matchMedia("(prefers-reduced-motion: reduce)").matches
 		? []

@@ -13,11 +13,9 @@
  * `distributed-tracing` takes `hero-traces` (3600 w) over `flow-02-trace`.
  * `flow-04-agent` stays homepage-only: at 1984 w it renders soft on a plate.
  *
- * The hero shows the product: the page's live artifact by default, a `heroShot`
- * where a screen says it better, a `heroAside` where neither fits. Whatever goes
- * there appears nowhere else on the page, so a lifted capture leaves the gallery.
- * Plates and gallery shots carry a `crop`: a capture scaled whole into a column is
- * too small to read.
+ * The hero shows the product: the live artifact by default, else a `heroShot` or a
+ * `heroAside`. Whatever goes there appears nowhere else on the page. Plates and gallery
+ * shots carry a `crop`: a capture scaled whole into a column is too small to read.
  *
  * `related` is hand-picked rather than derived. The old RelatedFeatures did
  * `filter().slice(0, 3)` over one array, which sent every page to the same
@@ -256,14 +254,14 @@ export const features: Feature[] = [
 				route: "/logs",
 				title: "ERROR across every service",
 				alt: "Log search filtered to ERROR, with the volume chart and the lines that explain each failure",
-				crop: { x: 0.355, y: 0.08, zoom: 1.55 },
+				crop: { x: 0.355, y: 0.08, zoom: 1.551 },
 			},
 			{
 				id: "gallery-logs-service",
 				route: "/logs",
 				title: "Warnings before the failures",
 				alt: "WARN lines: payment-svc reporting 20 of 20 pool connections in use, and slow requests upstream",
-				crop: { x: 0.355, y: 0.08, zoom: 1.55 },
+				crop: { x: 0.355, y: 0.08, zoom: 1.551 },
 			},
 		],
 		capTitle: m.feat_logs_cap_title,
@@ -424,7 +422,7 @@ export const features: Feature[] = [
 				route: "/services/:name",
 				title: "Deploy on the chart",
 				alt: "payment-svc latency, Apdex and error rate with the 3.5.0 deploy marked",
-				crop: { x: 0.1785, y: 0.16, zoom: 1.217 },
+				crop: { x: 0.1785, y: 0.16, zoom: 1.218 },
 			},
 		],
 		capTitle: m.feat_catalog_cap_title,
@@ -655,7 +653,7 @@ export const features: Feature[] = [
 				height: 1620,
 				alt: "System status with a 90-day bar per component, the days with failed checks or downtime marked, above the incident calendar",
 				// The page's own column, without the empty margins either side.
-				crop: { x: 0.14, y: 0, zoom: 1.39, aspect: 1.28 },
+				crop: { x: 0.14, y: 0, zoom: 1.39, aspect: 1.28, hardRight: true },
 			},
 			facts: [
 				{
@@ -684,7 +682,8 @@ export const features: Feature[] = [
 				route: "status.acme.com",
 				title: "The same page in the paper theme",
 				alt: "The status page in the light paper theme with a serif font, showing the major outage banner and the open incident",
-				crop: { x: 0, y: 0, zoom: 1 },
+				// The page's own column: a phone window from the capture's corner would be mostly margin.
+				crop: { x: 0.14, y: 0, zoom: 1.39, hardRight: true },
 			},
 		],
 		capTitle: m.feat_status_cap_title,
