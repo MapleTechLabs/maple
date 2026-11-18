@@ -126,6 +126,11 @@ describe("redactSqlLiterals", () => {
 			["WHERE UserId = 0xDEADBEEF OR b = 0b1011", "WHERE UserId = ? OR b = ?"],
 			["SELECT $tag$alice@example.com$tag$, $$x$$", "SELECT ?, ?"],
 			["SELECT `a\\`'b` FROM t WHERE e = 'alice@example.com'", "SELECT `a\\`'b` FROM t WHERE e = ?"],
+			["SELECT 1 // alice@example.com\nFROM t", "SELECT ? //\nFROM t"],
+			["SELECT /* a */ 'b*/ alice@example.com'", "SELECT /* */ ?"],
+			["SELECT $tag$x$TAG$alice@example.com$tag$ AS v", "SELECT ? AS v"],
+			["SELECT 123_456, 1.5e-3, 0x1E-2 FROM traces_v2", "SELECT ?, ?, ?-? FROM traces_v2"],
+			["SELECT a / b FROM t", "SELECT a / b FROM t"],
 		]
 		for (const [sql, redacted] of cases) {
 			expect(redactSqlLiterals(sql)).toBe(redacted)
