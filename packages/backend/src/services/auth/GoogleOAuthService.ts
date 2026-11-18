@@ -132,9 +132,14 @@ export interface GoogleOAuthServiceApi {
 		use: (accessToken: string) => Effect.Effect<A, E | SearchConsoleTokenRejectedError>,
 	) => Effect.Effect<A, Exclude<E, SearchConsoleTokenRejectedError> | GoogleAccessTokenError>
 	/** Revoke the grant at Google (best effort) and drop it with every site row under it. */
-	readonly disconnect: (
-		orgId: OrgId,
-	) => Effect.Effect<{ readonly disconnected: boolean }, IntegrationsPersistenceError>
+	readonly disconnect: (orgId: OrgId) => Effect.Effect<
+		{
+			readonly disconnected: boolean
+			/** False when a stored grant was not revoked at the vendor; the local grant is dropped anyway. */
+			readonly grantRevoked: boolean
+		},
+		IntegrationsPersistenceError
+	>
 }
 
 export class GoogleOAuthService extends Context.Service<GoogleOAuthService, GoogleOAuthServiceApi>()(
@@ -254,11 +259,11 @@ export class GoogleOAuthService extends Context.Service<GoogleOAuthService, Goog
 					Effect.withSpan("GoogleOAuthService.withAccessToken", { attributes: { orgId } }),
 				)
 
-			/** Best effort: the grant is dropped on Maple's side whatever Google answers. */
+			/** Answers whether Google took the revoke. Best effort: a failure is logged, and the grant is dropped either way. */
 			const revokeAtGoogle = Effect.fn("GoogleOAuthService.revokeAtGoogle")(
 				function* (orgId: OrgId) {
 					const row = yield* oauth.loadConnection(orgId)
-					if (row === null) return
+					if (row === null) return true
 					// Revoking the refresh token ends the whole grant, access tokens included.
 					const token = yield* row.refreshTokenCiphertext !== null &&
 					row.refreshTokenIv !== null &&
@@ -273,15 +278,26 @@ export class GoogleOAuthService extends Context.Service<GoogleOAuthService, Goog
 								iv: row.accessTokenIv,
 								tag: row.accessTokenTag,
 							})
-					yield* oauth.postForm(REVOKE_URL, { token })
+					const { status } = yield* oauth.postForm(REVOKE_URL, { token })
+					if (status < 200 || status >= 300) {
+						return yield* toUpstreamError(`Google refused the revoke with HTTP ${status}`, status)
+					}
+					return true
 				},
-				(effect) => Effect.ignore(effect),
+				(effect, orgId) =>
+					Effect.catch(effect, (error) =>
+						Effect.logWarning("Google grant revoke failed; dropping the local grant anyway", {
+							orgId,
+							error: error.message,
+						}).pipe(Effect.as(false)),
+					),
 			)
 
 			const disconnect = Effect.fn("GoogleOAuthService.disconnect")(function* (orgId: OrgId) {
-				yield* Effect.annotateCurrentSpan({ orgId })
-				yield* revokeAtGoogle(orgId)
-				return yield* oauth.deleteConnection(orgId)
+				const grantRevoked = yield* revokeAtGoogle(orgId)
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.google.revoked_upstream": grantRevoked })
+				const deleted = yield* oauth.deleteConnection(orgId)
+				return { ...deleted, grantRevoked }
 			})
 
 			return {

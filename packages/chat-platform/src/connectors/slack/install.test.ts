@@ -1,8 +1,9 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Option, Redacted, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
-import { BOT_SCOPES, CLIENT_ID_CONFIG, CLIENT_SECRET_CONFIG, TOKEN_URL } from "./api"
-import { decodeSlackCredentials } from "./credentials"
+import { WORKSPACE_CREDENTIALS } from "../../outbound"
+import { AUTH_REVOKE_URL, BOT_SCOPES, CLIENT_ID_CONFIG, CLIENT_SECRET_CONFIG, TOKEN_URL } from "./api"
+import { decodeSlackCredentials, encodeSlackCredentials } from "./credentials"
 import { slack } from "./index"
 import { slackAuthorizeUrl } from "./install"
 
@@ -214,6 +215,104 @@ describe("slack install callback", () => {
 				tokenFetch(() => new Response("<html>nope</html>", { status: 200 })),
 			).pipe(Effect.flip)
 			assert.include(body.message, "non-JSON")
+		}),
+	)
+})
+
+interface SeenRequest {
+	readonly url: string
+	readonly method: string
+	readonly authorization: string | null
+}
+
+/** Canned `auth.revoke`; anything else rejects. Records what reached it. */
+const revokeFetch = (respond: () => Response, seen: Array<SeenRequest> = []) =>
+	Layer.succeed(FetchHttpClient.Fetch, ((
+		input: Parameters<typeof globalThis.fetch>[0],
+		init?: RequestInit,
+	) => {
+		const request = new Request(input, init)
+		if (request.url !== AUTH_REVOKE_URL)
+			return Promise.reject(new Error(`unexpected fetch: ${request.url}`))
+		seen.push({
+			url: request.url,
+			method: request.method,
+			authorization: request.headers.get("authorization"),
+		})
+		return Promise.resolve(respond())
+	}) as typeof globalThis.fetch)
+
+const BOT_TOKEN = "xoxb-a-workspaces-own-token"
+
+const revokeWith = (credentials: ReadonlyMap<string, string>, fetchLayer: ReturnType<typeof revokeFetch>) =>
+	(slack.install.revoke ?? (() => Effect.die("the connector has no revoke step")))({
+		externalWorkspaceId: "T9TK3CUKW",
+		credentials,
+	}).pipe(Effect.provide(Layer.provide(FetchHttpClient.layer, fetchLayer)))
+
+const stored = new Map([[WORKSPACE_CREDENTIALS, encodeSlackCredentials({ bot_token: BOT_TOKEN })]])
+
+describe("slack revoke", () => {
+	it.effect("revokes the workspace's own bot token, carried in the header and not the URL", () =>
+		Effect.gen(function* () {
+			const seen: Array<SeenRequest> = []
+			yield* revokeWith(
+				stored,
+				revokeFetch(() => jsonResponse({ ok: true, revoked: true }), seen),
+			)
+			assert.deepStrictEqual(seen, [
+				{ url: AUTH_REVOKE_URL, method: "POST", authorization: `Bearer ${BOT_TOKEN}` },
+			])
+		}),
+	)
+
+	Arr.forEach(["token_revoked", "account_inactive"], (code) =>
+		it.effect(`counts a token Slack already ended (${code}) as revoked`, () =>
+			Effect.gen(function* () {
+				const seen: Array<SeenRequest> = []
+				yield* revokeWith(
+					stored,
+					revokeFetch(() => jsonResponse({ ok: false, error: code }), seen),
+				)
+				assert.strictEqual(seen.length, 1)
+			}),
+		),
+	)
+
+	it.effect("does not read invalid_auth as revoked: the real token may still be live", () =>
+		Effect.gen(function* () {
+			const failure = yield* revokeWith(
+				stored,
+				revokeFetch(() => jsonResponse({ ok: false, error: "invalid_auth" })),
+			).pipe(Effect.flip)
+			assert.strictEqual(failure._tag, "@maple/chat-platform/ChatRevokeFailed")
+			assert.include(failure.message, "invalid_auth")
+		}),
+	)
+
+	it.effect("reports a refusal, an outage and a missing token without the token in the message", () =>
+		Effect.gen(function* () {
+			const refused = yield* revokeWith(
+				stored,
+				revokeFetch(() => jsonResponse({ ok: false, error: "ratelimited" })),
+			).pipe(Effect.flip)
+			assert.strictEqual(refused._tag, "@maple/chat-platform/ChatRevokeFailed")
+			assert.include(refused.message, "ratelimited")
+			const down = yield* revokeWith(
+				stored,
+				revokeFetch(() => jsonResponse({}, 503)),
+			).pipe(Effect.flip)
+			assert.include(down.message, "HTTP 503")
+			assert.notInclude(refused.message + down.message, BOT_TOKEN)
+
+			const seen: Array<SeenRequest> = []
+			const missing = yield* revokeWith(
+				new Map(),
+				revokeFetch(() => jsonResponse({ ok: true }), seen),
+			).pipe(Effect.flip)
+			assert.strictEqual(missing._tag, "@maple/chat-platform/ChatRevokeFailed")
+			// Nothing to revoke with, so nothing was sent.
+			assert.strictEqual(seen.length, 0)
 		}),
 	)
 })
