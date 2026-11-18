@@ -1,3 +1,4 @@
+import { statusPageOrgKey } from "@maple/domain/status-page"
 import type { StatusPageId } from "@maple/domain"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import { Option, Result, Array as Arr } from "effect"
@@ -87,15 +88,20 @@ const liftDeleteDialog = (model: Model, step: ReturnType<typeof Dialog.update>):
 	),
 })
 
-const pickedRowAction = (model: Model, pageId: StatusPageId, value: string): Return =>
+const pickedRowAction = (model: Model, context: PageContext, pageId: StatusPageId, value: string): Return =>
 	Option.match(summaryOf(model, pageId), {
 		onNone: () => ({ model }),
 		onSome: (summary): Return => {
 			switch (value) {
 				case OPEN_PUBLIC_VALUE: {
 					const page = summary.page
-					const link = publicPageLink(page, publicUrl(STATUS_PAGE_BASE_URL, page.slug))
-					return link._tag === "Open" ? { model, commands: [OpenPageInNewTab({ url: link.url })] } : { model }
+					const link = publicPageLink(
+						page,
+						publicUrl(STATUS_PAGE_BASE_URL, statusPageOrgKey(context.orgId), page.slug),
+					)
+					return link._tag === "Open"
+						? { model, commands: [OpenPageInNewTab({ url: link.url })] }
+						: { model }
 				}
 				case OPEN_PREVIEW_VALUE:
 					return navigate(model, statusPageViewHref(pageId))
@@ -114,7 +120,12 @@ const pickedRowAction = (model: Model, pageId: StatusPageId, value: string): Ret
 		},
 	})
 
-const updateRowMenu = (model: Model, pageId: StatusPageId, message: Menu.Message): Return => {
+const updateRowMenu = (
+	model: Model,
+	context: PageContext,
+	pageId: StatusPageId,
+	message: Menu.Message,
+): Return => {
 	const menuId = rowMenuId(pageId)
 	const step = Menu.update(model.rowMenus[menuId] ?? Menu.init(menuId), message)
 	const next = { ...model, rowMenus: { ...model.rowMenus, [menuId]: step.model } }
@@ -122,7 +133,7 @@ const updateRowMenu = (model: Model, pageId: StatusPageId, message: Menu.Message
 		Message.GotRowMenuMessage({ pageId, message: inner }),
 	)
 	if (step.outMessage?._tag !== "SelectedItem") return { model: next, commands }
-	const after = pickedRowAction(next, pageId, step.outMessage.value)
+	const after = pickedRowAction(next, context, pageId, step.outMessage.value)
 	return { ...after, commands: [...commands, ...(after.commands ?? [])] }
 }
 
@@ -171,7 +182,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			commands: [ReadListClock()],
 		}),
 		ClickedRetry: () => request(model, context, "Supersede"),
-		GotRowMenuMessage: ({ pageId, message: child }) => updateRowMenu(model, pageId, child),
+		GotRowMenuMessage: ({ pageId, message: child }) => updateRowMenu(model, context, pageId, child),
 		CompletedOpenPage: () => ({ model }),
 		ClickedConfirmDelete: () => confirmDelete(model),
 		CompletedDelete: ({ result }) => deleted(model, context, result),

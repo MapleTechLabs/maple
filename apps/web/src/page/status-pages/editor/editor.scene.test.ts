@@ -1,3 +1,4 @@
+import { statusPageOrgKey } from "@maple/domain/status-page"
 import * as Animation from "@foldkit/ui/animation"
 import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
@@ -86,6 +87,8 @@ import { canvasDocument } from "./view-canvas"
 import { maintenanceDurationMs } from "./view-incidents"
 import { type Focused, popupOwnsEscape } from "./subscription"
 import { removeComponentCopy, view as pageView } from "./view"
+
+const KEY = statusPageOrgKey(ORG)
 
 const ADMIN = Policy.grantsOf(["org:admin"])
 const MEMBER = Policy.grantsOf(["org:member"])
@@ -939,7 +942,7 @@ describe("components under Settings > Monitors", () => {
 	test("the preview's subscribe dialog carries the Slack command for the page's public address", () => {
 		const withDomain = { ...selected(2), publicBaseUrl: "https://status-pr-7.maple.dev" }
 		expect(canvasDocument(withDomain, statusPage())).toContain(
-			`value="/feed subscribe https://status-pr-7.maple.dev/s/acme-status/feed.rss"`,
+			`value="/feed subscribe https://status-pr-7.maple.dev/s/${KEY}/acme-status/feed.rss"`,
 		)
 		// Slack fetches the feed itself: without a status domain there is no address to give it.
 		expect(canvasDocument({ ...withDomain, publicBaseUrl: "" }, statusPage())).not.toContain(
@@ -2531,7 +2534,7 @@ describe("header", () => {
 		)
 		expect(pick(published, "open-public").commands?.at(-1)).toMatchObject({
 			name: "OpenStatusPublicPage",
-			args: { url: "https://status-pages.maple.dev/s/acme-status" },
+			args: { url: `https://status-pages.maple.dev/s/${KEY}/acme-status` },
 		})
 		const internal = {
 			...loaded({ page: statusPage({ visibility: "internal" }) }),
@@ -2598,7 +2601,9 @@ describe("live screen", () => {
 			expectView(role("heading", { name: "Acme Status is live" })).not.toExist(),
 			// The publisher skips a draft, so its address would not resolve: no link to open.
 			expectView(role("link", { name: "Open" })).not.toExist(),
-			expectView(role("link", { name: "https://status-pr-7.maple.dev/s/acme-status" })).not.toExist(),
+			expectView(
+				role("link", { name: `https://status-pr-7.maple.dev/s/${KEY}/acme-status` }),
+			).not.toExist(),
 		)
 	})
 
@@ -2608,11 +2613,11 @@ describe("live screen", () => {
 			given(live("https://status-pr-7.maple.dev")),
 			expectView(role("heading", { name: "Acme Status is live" })).toExist(),
 			expectView(selector("#status-page-public-url")).toHaveValue(
-				"https://status-pr-7.maple.dev/s/acme-status",
+				`https://status-pr-7.maple.dev/s/${KEY}/acme-status`,
 			),
 			expectView(role("link", { name: "Open public page" })).toHaveAttr(
 				"href",
-				"https://status-pr-7.maple.dev/s/acme-status",
+				`https://status-pr-7.maple.dev/s/${KEY}/acme-status`,
 			),
 			expectView(role("button", { name: "Copy public address" })).toExist(),
 			expectView(role("button", { name: "Get break-glass token" })).toExist(),
@@ -2631,7 +2636,7 @@ describe("live screen", () => {
 			expectView(text("Public address appears once a status domain is configured")).toExist(),
 			expectView(selector("#status-page-public-url")).not.toExist(),
 			expectView(role("link", { name: "Open public page" })).not.toExist(),
-			expectView(role("link", { name: /\/s\/acme-status/u })).not.toExist(),
+			expectView(role("link", { name: /\/s\/[0-9a-f]{12}\/acme-status/u })).not.toExist(),
 			expectView(role("button", { name: "Get break-glass token" })).toExist(),
 		)
 		const draft = {
@@ -2645,10 +2650,9 @@ describe("live screen", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given({ ...loaded(), publicBaseUrl: "https://status-pr-7.maple.dev" }),
-			expectView(role("link", { name: "https://status-pr-7.maple.dev/s/acme-status" })).toHaveAttr(
-				"href",
-				"https://status-pr-7.maple.dev/s/acme-status",
-			),
+			expectView(
+				role("link", { name: `https://status-pr-7.maple.dev/s/${KEY}/acme-status` }),
+			).toHaveAttr("href", `https://status-pr-7.maple.dev/s/${KEY}/acme-status`),
 		)
 		scene(
 			{ update: pageUpdate, view },
@@ -2668,7 +2672,7 @@ describe("live screen", () => {
 			expectView(text("Only members of this organization can read it, in Maple.")).toExist(),
 			expectView(text(/Visitors can read it now/u)).not.toExist(),
 			expectView(selector("#status-page-public-url")).not.toExist(),
-			expectView(role("link", { name: /\/s\/acme-status/u })).not.toExist(),
+			expectView(role("link", { name: /\/s\/[0-9a-f]{12}\/acme-status/u })).not.toExist(),
 			expectView(role("link", { name: "Open dev preview" })).toHaveAttr(
 				"href",
 				`/status-pages/${PUBLIC_ID}/view`,
@@ -3193,7 +3197,9 @@ describe("settings", () => {
 			type(role("textbox", { name: "Address" }), "free-one"),
 			expectView(text("That address is taken. Pick another.")).not.toExist(),
 			expectView(
-				text(/Visitors read the page at https:\/\/status-pages\.maple\.dev\/s\/free-one\./u),
+				text(
+					/Visitors read the page at https:\/\/status-pages\.maple\.dev\/s\/[0-9a-f]{12}\/free-one\./u,
+				),
 			).toExist(),
 		)
 		// Once the address is free and the save goes through, the field no longer calls it taken.
@@ -3219,7 +3225,7 @@ describe("settings", () => {
 
 	test("the Address hint links the saved address of a live page, not an unsaved or unserved one", () => {
 		const live = { ...loaded(ACCESS), publicBaseUrl: "https://status-pages.maple.dev" }
-		const url = "https://status-pages.maple.dev/s/acme-status"
+		const url = `https://status-pages.maple.dev/s/${KEY}/acme-status`
 		scene(
 			{ update: pageUpdate, view },
 			given(live),
@@ -3227,11 +3233,14 @@ describe("settings", () => {
 			expectAll(all.role("link", { name: url })).toHaveCount(2),
 			type(role("textbox", { name: "Address" }), "not-saved"),
 			expectAll(all.role("link", { name: url })).toHaveCount(1),
-			expectView(role("link", { name: /\/s\/not-saved/u })).not.toExist(),
+			expectView(role("link", { name: /\/s\/[0-9a-f]{12}\/not-saved/u })).not.toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
-			given({ ...loaded({ ...ACCESS, page: statusPage({ visibility: "internal" }) }), publicBaseUrl: live.publicBaseUrl }),
+			given({
+				...loaded({ ...ACCESS, page: statusPage({ visibility: "internal" }) }),
+				publicBaseUrl: live.publicBaseUrl,
+			}),
 			expectView(role("link", { name: url })).not.toExist(),
 		)
 	})

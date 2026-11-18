@@ -338,7 +338,10 @@ const componentNotFound = (componentId: StatusPageComponentId) =>
 const incidentNotFound = (incidentId: StatusPageIncidentId) =>
 	new StatusPageIncidentNotFoundError({ incidentId, message: "Status page incident not found" })
 const slugTaken = (slug: string) =>
-	new StatusPageSlugTakenError({ slug, message: `The address '${slug}' is already taken` })
+	new StatusPageSlugTakenError({
+		slug,
+		message: `This organization already has a status page at '${slug}'`,
+	})
 
 const isValidSlug = Schema.is(StatusPageSlug)
 
@@ -701,16 +704,25 @@ const findIncident = (db: MapleDb, orgId: OrgId, incidentId: StatusPageIncidentI
 			),
 		)
 
-/** The slug check is deliberately global: one hosted address per slug across all orgs. */
+/**
+ * Slugs are unique per org: the hosted address `/s/<org key>/<slug>` carries the org. A slug a
+ * page still holds at the bare `/s/<slug>` (`legacy_slug_route`) is taken in every org, so no
+ * other org's page can ever be routed at that old link.
+ */
 const ensureSlugFree = Effect.fnUntraced(function* (
 	db: MapleDb,
+	orgId: OrgId,
 	slug: string,
 	exceptPageId: StatusPageId | null,
 ) {
 	const rows = yield* db.run(
 		PG.from(StatusPages)
 			.select("id")
-			.where(($) => [$.slug.eq(slug), exceptPageId === null ? undefined : $.id.neq(exceptPageId)])
+			.where(($) => [
+				PG.or($.orgId.eq(orgId), $.legacySlugRoute.eq(true)),
+				$.slug.eq(slug),
+				exceptPageId === null ? undefined : $.id.neq(exceptPageId),
+			])
 			.limit(1)
 			.crossTenant(),
 	)
@@ -905,7 +917,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				yield* dbExecuteSlug(slug)((db) =>
 					db.transaction(
 						Effect.gen(function* () {
-							yield* ensureSlugFree(db, slug, null)
+							yield* ensureSlugFree(db, orgId, slug, null)
 							yield* ensureMonitorsInOrg(db, orgId, monitorIds)
 							// A new page starts at revision 1 > published 0, so the publisher picks it up.
 							yield* db.run(
@@ -980,9 +992,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 						? undefined
 						: yield* validateHttpsUrl(patch.websiteUrl, "Website URL")
 				const logoUrl =
-					patch.logoUrl === undefined
-						? undefined
-						: yield* validateImage(patch.logoUrl, "Logo URL")
+					patch.logoUrl === undefined ? undefined : yield* validateImage(patch.logoUrl, "Logo URL")
 				const logoDarkUrl =
 					patch.logoDarkUrl === undefined
 						? undefined
@@ -1016,7 +1026,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 								patch.theme === undefined
 									? undefined
 									: yield* validateTheme({ ...current.theme, ...patch.theme })
-							if (slug !== undefined) yield* ensureSlugFree(db, slug, pageId)
+							if (slug !== undefined) yield* ensureSlugFree(db, orgId, slug, pageId)
 							// The old slug route stays at the edge until the publisher drains this.
 							if (slug !== undefined && slug !== current.slug)
 								yield* queueSlugRemoval(db, orgId, pageId, current.slug)
@@ -1025,6 +1035,10 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 									.set({
 										...(name === undefined ? undefined : { name }),
 										...(slug === undefined ? undefined : { slug }),
+										// The rename queues the bare-slug route's removal, so the old slug frees up.
+										...(slug !== undefined && slug !== current.slug
+											? { legacySlugRoute: false }
+											: undefined),
 										...(description === undefined ? undefined : { description }),
 										...(websiteUrl === undefined ? undefined : { websiteUrl }),
 										...(logoUrl === undefined ? undefined : { logoUrl }),
@@ -1822,7 +1836,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 									`Component ${encodeComponentId(foreign)} is not on this page`,
 								)
 							yield* ensureMonitorsInOrg(db, orgId, monitorIds)
-							yield* ensureSlugFree(db, slug, pageId)
+							yield* ensureSlugFree(db, orgId, slug, pageId)
 							const { fields, created, updated, deleted, reordered } = diffStatusPageConfig(
 								previous,
 								written,
@@ -1835,6 +1849,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 									.set({
 										name,
 										slug,
+										...(slug !== current.slug ? { legacySlugRoute: false } : undefined),
 										description,
 										websiteUrl,
 										logoUrl,

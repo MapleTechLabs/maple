@@ -12,13 +12,14 @@ import {
 import { HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
-import { MapleApiV2, UptimeMonitorPublicId } from "@maple/domain/http/v2"
+import { MapleApiV2, StatusPagePublicId, UptimeMonitorPublicId } from "@maple/domain/http/v2"
 import { UptimeMonitorId, type StatusPageId } from "@maple/primitives"
-import { utcDay } from "@maple/domain/status-page"
+import { StatusPageKeys, statusPageAddress, utcDay } from "@maple/domain/status-page"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { StatusPagePublisher } from "@maple/backend/services/status-pages/StatusPagePublisher"
+import { StatusPageStore } from "@maple/backend/services/status-pages/StatusPageStore"
 import { StatusPagePublishDbError } from "@maple/backend/services/status-pages/publish-errors"
 import { Env } from "@maple/backend/platform/Env"
 import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
@@ -100,6 +101,7 @@ const makeHarness = (
 	publisher?: Layer.Layer<StatusPagePublisher>,
 	featureFlags: Layer.Layer<OrganizationFeatureFlagsService> = OrganizationFeatureFlagsService.allEnabled,
 	customDomains: ReturnType<typeof customDomainsLayer> = customDomainsLayer(),
+	store?: Layer.Layer<StatusPageStore>,
 ) => {
 	const testDb = createTestDb(createdDbs)
 	const audit = makeMemoryAuditLog()
@@ -134,6 +136,7 @@ const makeHarness = (
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
 		Layer.provideMerge(servicesLive),
 		Layer.provideMerge(publisher ?? Layer.empty),
+		Layer.provideMerge(store ?? Layer.empty),
 	)
 	const { handler, dispose: disposeHandler } = HttpRouter.toWebHandler(routes, { disableLogger: true })
 	const runtime = ManagedRuntime.make(servicesLive)
@@ -184,16 +187,47 @@ const withHarness = (
 	publisher?: Layer.Layer<StatusPagePublisher>,
 	featureFlags?: Layer.Layer<OrganizationFeatureFlagsService>,
 	customDomains?: ReturnType<typeof customDomainsLayer>,
+	store?: Layer.Layer<StatusPageStore>,
 ) =>
 	Effect.runPromise(
 		Effect.acquireUseRelease(
-			Effect.sync(() => makeHarness(publisher, featureFlags, customDomains)),
+			Effect.sync(() => makeHarness(publisher, featureFlags, customDomains, store)),
 			(harness) => Effect.promise(() => body(harness)),
 			(harness) => Effect.promise(() => harness.dispose()),
 		),
 	)
 
 describe("v2 status pages", () => {
+	it("takes a deleted page's address and its pre-per-org slug route off the edge", async () => {
+		const memory = await Effect.runPromise(StatusPageStore.makeInMemory)
+		await withHarness(
+			async (harness) => {
+				const { secret: token } = await harness.bootstrapKey()
+				const created = await harness.request("POST", "/v2/status_pages", token, {
+					name: "Acme",
+					slug: "acme-edge",
+				})
+				const pageId = Schema.decodeSync(StatusPagePublicId)(created.body.id)
+				const address = statusPageAddress(ORG, "acme-edge")
+				await Effect.runPromise(
+					Effect.all([
+						memory.api.putRoutes(pageId, { address, hostnames: [] }),
+						memory.api.putRoutes(pageId, { address: "acme-edge", hostnames: [] }),
+					]),
+				)
+				const removed = await harness.request("DELETE", `/v2/status_pages/${created.body.id}`, token)
+				expect(removed.status).toBe(200)
+				const { kv } = await Effect.runPromise(memory.contents)
+				expect(kv.has(StatusPageKeys.slug(address))).toBe(false)
+				expect(kv.has(StatusPageKeys.slug("acme-edge"))).toBe(false)
+			},
+			undefined,
+			undefined,
+			undefined,
+			Layer.succeed(StatusPageStore, memory.api),
+		)
+	})
+
 	it("creates, retrieves, updates and deletes a page", () =>
 		withHarness(async (harness) => {
 			const { secret: token } = await harness.bootstrapKey()

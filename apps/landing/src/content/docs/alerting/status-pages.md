@@ -189,7 +189,7 @@ Writes to a page need the engineer role; the password and break-glass endpoints,
 
 ## Limits
 
-- **Address** (slug): 3 to 48 lowercase letters, digits or inner hyphens, unique across Maple.
+- **Address** (slug): 3 to 48 lowercase letters, digits or inner hyphens, unique within your organization.
 - Components: at most 200 per page.
 - An incident update message: up to 20,000 characters. A break-glass message: up to 5,000 characters, with a title of up to 200.
 - Page links: up to 2,048 characters, `https` only.

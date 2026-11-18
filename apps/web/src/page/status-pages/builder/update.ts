@@ -9,6 +9,7 @@ import {
 	normalizeCustomDomain,
 	slugFromName,
 	STATUS_PAGE_PRESET_DEFAULTS,
+	statusPageOrgKey,
 } from "@maple/domain/status-page"
 import { Option, Result, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
@@ -178,6 +179,7 @@ export const init = (route: BuilderRoute, context: PageContext): Return => {
 		isSeeded: false,
 		name: "",
 		slug: "",
+		orgKey: statusPageOrgKey(context.orgId),
 		customDomain: "",
 		isSlugEdited: false,
 		isNameTouched: false,

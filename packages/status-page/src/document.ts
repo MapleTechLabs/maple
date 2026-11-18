@@ -8,7 +8,7 @@ import { Option, Array as Arr, String as Str } from "effect"
 export interface RenderOptions {
 	/** CSP nonce for the inline style and script; omitted for static copies. */
 	readonly nonce?: string
-	/** Prefix of the page's own links: `""` on its own host, `/s/<slug>` on a shared one. */
+	/** Prefix of the page's own links: `""` on its own host, `/s/<org key>/<slug>` on a shared one. */
 	readonly basePath?: string
 	/** The page's absolute address (origin and base path), for text that must carry one: the Slack command. */
 	readonly publicUrl?: string

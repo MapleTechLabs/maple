@@ -5,11 +5,11 @@ and setting or removing the page password, needs `status_pages:access` (engineer
 audited (`status_page.updated` / `config_applied` with the field, `status_page.password_set`,
 `status_page.password_removed`).
 
-| Visibility | Who reads it | At the edge |
-| --- | --- | --- |
-| `public` | Anyone | Everything, as before |
-| `password` | Visitors who enter the page password | Only the password form until they do |
-| `internal` | Signed-in org members, in Maple | Nothing: 404 on the Maple address and any custom domain |
+| Visibility | Who reads it                         | At the edge                                             |
+| ---------- | ------------------------------------ | ------------------------------------------------------- |
+| `public`   | Anyone                               | Everything, as before                                   |
+| `password` | Visitors who enter the page password | Only the password form until they do                    |
+| `internal` | Signed-in org members, in Maple      | Nothing: 404 on the Maple address and any custom domain |
 
 `visibility` is in `V2StatusPage`, `PATCH /v2/status_pages/{id}` and the config document
 (`PUT …/config`, MCP `apply_status_page_config`). A config without it keeps the page's
@@ -34,7 +34,7 @@ domain cannot be added to an internal page).
 - **Cookie**: `maple_status_access=<expires at ms>.<signature>`, where the signature is
   HMAC-SHA256 keyed by the stored hash over `maple/status-page/access/v1|<page id>|<expires>`.
   `HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`, host-only, `Path` the page's base path
-  (`/` on a custom domain, `/s/<slug>` on Maple's host). A new password has a new salt, so every
+  (`/` on a custom domain, `/s/<org key>/<slug>` on Maple's host). A new password has a new salt, so every
   cookie signed under the old hash stops verifying. A value expiring more than 30 days out is
   refused even with a valid signature.
 - **Gate** (`apps/status/src/access.ts`): `/_access` serves the branded form (GET) and checks a

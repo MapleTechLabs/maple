@@ -30,12 +30,12 @@ const props = Effect.gen(function* () {
 	return {
 		main: import.meta.url,
 		...mapleWorkerProps("status", stack),
-		// The status domain serves `/s/<slug>`; every other host but workers.dev is a custom domain.
+		// The status domain serves `/s/<org key>/<slug>`; every other host but workers.dev is a custom domain.
 		env: {
 			...env,
 			...(stack.domains.status === undefined ? undefined : { MAPLE_STATUS_HOST: stack.domains.status }),
 		},
-		// Pages are served at `/s/<slug>`; prd and previews on their status domain, dev stages on workers.dev.
+		// Pages are served at `/s/<org key>/<slug>`; prd and previews on their status domain, dev stages on workers.dev.
 		domain: stack.domains.status,
 		workersDev: true,
 	}

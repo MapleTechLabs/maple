@@ -51,7 +51,7 @@ export interface MapleDomains {
 	 * every workspace re-approves on change. prd only.
 	 */
 	chat?: string
-	/** The status Worker serving customer pages at `/s/<slug>`. Not `status.maple.dev`: that is Maple's own status page. */
+	/** The status Worker serving customer pages at `/s/<org key>/<slug>`. Not `status.maple.dev`: that is Maple's own status page. */
 	status?: string
 }
 

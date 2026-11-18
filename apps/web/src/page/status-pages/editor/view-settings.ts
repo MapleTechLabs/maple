@@ -24,6 +24,7 @@ import {
 	SETTINGS_SECTIONS,
 	type SettingsSection,
 	statusPageHref,
+	publicPath,
 } from "../shared/commands"
 import { selectField, textareaField, textField } from "../shared/fields"
 import {
@@ -137,10 +138,11 @@ const pageSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm)
 						...whereVisitorsRead(
 							h,
 							page,
-							publicUrl(model.publicBaseUrl, form.slug) ?? `/s/${form.slug}`,
+							publicUrl(model.publicBaseUrl, model.orgKey, form.slug) ??
+								publicPath(model.orgKey, form.slug),
 							form.slug === page.slug,
 						),
-						" Each address belongs to one page across Maple; changing it moves the page and the old address stops working. A custom domain, below, serves the page at your own address instead.",
+						" Each address belongs to one page in your organization; changing it moves the page and the old address stops working. A custom domain, below, serves the page at your own address instead.",
 					],
 					onInput: (value) => Message.ChangedSetting({ field: "slug", value }),
 				}),
@@ -214,7 +216,7 @@ const breakGlassSection = (h: H, model: Model, page: V2StatusPage): Html => {
 				"If Maple itself is down, post updates straight to the page with this token at ",
 				h.code(
 					[h.Class(typographyClass({ size: "xs", mono: true }))],
-					[`${pageUrlOf(model, page) ?? publicAddress(page.slug)}/_manage`],
+					[`${pageUrlOf(model, page) ?? publicAddress(model.orgKey, page.slug)}/_manage`],
 				),
 				". The page keeps serving from edge storage either way.",
 			],
@@ -528,7 +530,7 @@ export const deletePageDialog = (h: H, model: Model, page: V2StatusPage): Html =
 		model: model.deletePageDialog,
 		toParentMessage: (message) => Message.GotDeletePageDialogMessage({ message }),
 		title: `Delete ${page.name}?`,
-		description: `${publicAddress(page.slug)} goes offline and its components and incidents are deleted. This cannot be undone.`,
+		description: `${publicAddress(model.orgKey, page.slug)} goes offline and its components and incidents are deleted. This cannot be undone.`,
 		confirmLabel: "Delete status page",
 		isPending: model.isDeletingPage,
 		onConfirm: Message.ClickedConfirmDeletePage(),

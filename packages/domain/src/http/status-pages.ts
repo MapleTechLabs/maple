@@ -87,7 +87,7 @@ export class StatusPageValidationError extends HttpTaggedError<StatusPageValidat
 	},
 ) {}
 
-/** Slugs are global: the hosted address is `<slug>.<status domain>`. */
+/** Slugs are unique per org: the hosted address is `/s/<org key>/<slug>`. */
 export class StatusPageSlugTakenError extends HttpTaggedError<StatusPageSlugTakenError>()(
 	"@maple/http/errors/StatusPageSlugTakenError",
 	{
