@@ -28,6 +28,13 @@ describe("who may take a personal action", () => {
 		}),
 	)
 
+	it.effect("refuses a device credential, which is a user's but not a session", () =>
+		Effect.gen(function* () {
+			const result = yield* asActor({ type: "user", source: "api", label: "Device credential" })
+			assert.isTrue(result._tag === "Failure")
+		}),
+	)
+
 	it.effect("refuses Maple's own internal token", () =>
 		Effect.gen(function* () {
 			const result = yield* asActor({ type: "system", source: "system" })

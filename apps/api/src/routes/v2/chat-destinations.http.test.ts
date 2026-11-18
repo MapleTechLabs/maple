@@ -494,4 +494,23 @@ describe("v2 chat connector install over HTTP", () => {
 		expect(begun).toHaveLength(1)
 		await harness.dispose()
 	})
+
+	it("refuses an API key linking or unlinking a chat account, before the service is asked", async () => {
+		// The chat service's link methods die in this harness, so a 403 means they were never reached.
+		const harness = makeHarness()
+		const key = await harness.adminKey()
+		const identity = `/v2/integrations/chat_connectors/${TESTCHAT}/identity`
+
+		const link = await harness.request(
+			"POST",
+			`${identity}/link`,
+			key.secret,
+			undefined,
+			"app.maple.test",
+		)
+		expect([link.status, link.body.error.code]).toEqual([403, "insufficient_permissions"])
+		const unlink = await harness.request("DELETE", identity, key.secret)
+		expect([unlink.status, unlink.body.error.code]).toEqual([403, "insufficient_permissions"])
+		await harness.dispose()
+	})
 })
