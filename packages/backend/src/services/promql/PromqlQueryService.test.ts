@@ -299,7 +299,7 @@ const selectorRow = (attributes: Record<string, string>) => ({
 	),
 	...Rec.fromEntries(
 		Arr.map(
-			["sumSquares", "increase", "resets", "changes", "sumT", "sumTT", "sumTV"],
+			["sumSquares", "resetSum", "resets", "changes", "sumT", "sumTT", "sumTV"],
 			(field) => [field, [0]] as const,
 		),
 	),
