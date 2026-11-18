@@ -12,6 +12,7 @@ import {
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Combobox from "@maple/views/ui/combobox"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import { ComponentTextField } from "../shared/form"
 import { PickerMessage } from "../shared/picker"
@@ -25,6 +26,8 @@ export const Message = defineMessageUnion({
 	CompletedFetchSession: SessionGrants,
 	CompletedFetchMonitors: { key: Schema.String, result: LoadOutcome(Schema.Array(V2UptimeMonitor)) },
 	ClickedRetry: {},
+	GotPromptCopyMessage: { message: CopyButton.Message },
+	GotMcpCommandCopyMessage: { message: CopyButton.Message },
 	ChangedName: { value: Schema.String },
 	BlurredName: {},
 	ChangedSlug: { value: Schema.String },
