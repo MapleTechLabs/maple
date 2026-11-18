@@ -1,0 +1,32 @@
+---
+interface Props {
+    caption: string;
+}
+
+const { caption } = Astro.props;
+---
+
+<figure class="docs-figure">
+    <figcaption>{caption}</figcaption>
+    <div class="docs-figure__body"><slot /></div>
+</figure>
+
+<style>
+    .docs-figure {
+        margin-block: 24px;
+        border: 1px solid var(--border);
+        background: var(--card);
+    }
+    figcaption {
+        border-bottom: 1px solid var(--border);
+        padding: 10px 16px;
+        color: var(--foreground);
+        font-size: 13px;
+        font-weight: 550;
+    }
+    .docs-figure__body {
+        padding: 16px;
+        background: var(--background);
+        container-type: inline-size;
+    }
+</style>
