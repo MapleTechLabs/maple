@@ -1,5 +1,7 @@
 // BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
 import {
+	type AuditEventJob,
+	type AuditTrailPersistenceError,
 	type BranchEventJob,
 	type InstallationSyncJob,
 	isInstallationProcessable,
@@ -53,6 +55,7 @@ import { ANY_REPO_SYNC_STATUS, VcsRepository } from "./VcsRepository"
 import { VcsSyncQueue } from "./VcsSyncQueue"
 import { WorkflowEventSink } from "./WorkflowEventSink"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { AuditEventSink } from "./AuditEventSink"
 
 // Vendor-agnostic sync orchestrator. Decodes a queue message, resolves the
 // owning installation (→ orgId + provider auth), then dispatches by job kind:
@@ -95,6 +98,7 @@ type SyncError =
 	| VcsRateLimitedError
 	| VcsQueueError
 	| UnknownVcsProviderError
+	| AuditTrailPersistenceError
 
 export interface VcsSyncServiceApi {
 	readonly processMessage: (raw: unknown) => Effect.Effect<void, SyncError>
@@ -124,6 +128,10 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				Effect.map(Option.getOrUndefined),
 			)
 			const scanSink = yield* Effect.serviceOption(DependencyScanSink).pipe(
+				Effect.map(Option.getOrUndefined),
+			)
+			// Where provider audit events land; a root without it drops them.
+			const auditSink = yield* Effect.serviceOption(AuditEventSink).pipe(
 				Effect.map(Option.getOrUndefined),
 			)
 
@@ -1098,6 +1106,23 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				)
 			})
 
+			// Not behind `ensureProcessable`: an installation that was just suspended or removed is
+			// itself the event, and audit events need no synced data. A failed write fails the job,
+			// so the queue retries it; a retried event writes the same row.
+			const handleAuditEvent = Effect.fn("VcsSyncService.handleAuditEvent")(function* (
+				installation: VcsInstallation,
+				job: AuditEventJob,
+			) {
+				// An org that turned the audit log off for GitHub drops the event here.
+				const forwards = auditSink !== undefined && installation.auditLogEnabled
+				yield* Effect.annotateCurrentSpan({
+					"maple.audit.action": job.event.action,
+					"maple.audit.forwarded": forwards,
+				})
+				if (auditSink !== undefined && installation.auditLogEnabled)
+					yield* auditSink.onAuditEvent(installation.orgId, job.event)
+			})
+
 			const processMessage = Effect.fn("VcsSyncService.processMessage")(function* (raw: unknown) {
 				const jobOpt = yield* decodeJob(raw).pipe(
 					Effect.asSome,
@@ -1194,6 +1219,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					Match.discriminator("kind")("workflow-job", (job) =>
 						handleWorkflowJob(provider, installation, job),
 					),
+					Match.discriminator("kind")("audit-event", (job) => handleAuditEvent(installation, job)),
 					Match.exhaustive,
 				)
 

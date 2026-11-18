@@ -15,6 +15,7 @@ import {
 	GithubDisconnectResponse,
 	GithubIntegrationStatus,
 	GithubSetCiTracesResponse,
+	GithubSetAuditLogResponse,
 	GithubSetPrReviewResponse,
 	GithubPrReviewConfigResponse,
 	GithubPrReviewSettingsResponse,
@@ -830,6 +831,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 							accountType: status.accountType,
 							repositorySelection: status.repositorySelection,
 							ciTracesEnabled: status.ciTracesEnabled,
+							auditLogEnabled: status.auditLogEnabled,
 							repositoryDiscovery: status.repositoryDiscovery,
 							repositories: status.repositories,
 						})
@@ -897,6 +899,14 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 						yield* requirePermission(tenant.roles, "integrations:manage")
 						const result = yield* github.setCiTracesEnabled(tenant.orgId, payload.enabled)
 						return new GithubSetCiTracesResponse(result)
+					}),
+				)
+				.handle("githubSetAuditLog", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						const result = yield* github.setAuditLogEnabled(tenant.orgId, payload.enabled)
+						return new GithubSetAuditLogResponse(result)
 					}),
 				)
 				.handle("githubSetPrReview", ({ params, payload }) =>

@@ -218,7 +218,7 @@ describe("security detection editor", () => {
 	// counts as "Any" and is never sent.
 	test("a prefill value this build does not know is dropped", () => {
 		const odd = fresh({
-			provider: "github",
+			provider: "okta",
 			category: "licensing",
 			outcome: "throttled",
 			template: "nope",

@@ -129,6 +129,7 @@ const rowToInstallation = (row: VcsInstallationRow): VcsInstallation =>
 		status: row.status,
 		suspendedAt: row.suspendedAt,
 		ciTracesEnabled: row.ciTracesEnabled,
+		auditLogEnabled: row.auditLogEnabled,
 		repositoryDiscovery: row.repositoryDiscovery,
 		installedByUserId: row.installedByUserId,
 		createdAt: row.createdAt,
@@ -569,6 +570,22 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 					db.run(
 						PG.update(VcsInstallations)
 							.set({ ciTracesEnabled: enabled, updatedAt: now })
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(installationId)]),
+					),
+				)
+			})
+
+			// Org-scoped, so an installation id from another tenant no-ops.
+			const setAuditLogEnabled = Effect.fn("VcsRepository.setAuditLogEnabled")(function* (
+				orgId: OrgId,
+				installationId: VcsInstallationId,
+				enabled: boolean,
+			) {
+				const now = yield* Clock.currentTimeMillis
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(VcsInstallations)
+							.set({ auditLogEnabled: enabled, updatedAt: now })
 							.where(($) => [$.orgId.eq(orgId), $.id.eq(installationId)]),
 					),
 				)
@@ -1404,6 +1421,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 				finishRepositoryDiscovery,
 				markInstallationStatus,
 				setCiTracesEnabled,
+				setAuditLogEnabled,
 				listRepositoriesByInstallation,
 				listActiveRepositoriesByOrg,
 				resolveRepository,

@@ -91,6 +91,16 @@ export const INTEGRATION_FEATURES = {
 			apply: "instant",
 		}),
 		feature({
+			id: "auditLog",
+			title: "Audit log",
+			summary:
+				"Organization members, teams, repositories and branch protections, as admin-only entries in the Security audit log.",
+			signal: "events",
+			defaultEnabled: true,
+			countsTowardIngest: false,
+			apply: "instant",
+		}),
+		feature({
 			id: "prReview",
 			title: "Pull request reviews",
 			summary:

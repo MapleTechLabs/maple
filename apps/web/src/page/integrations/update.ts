@@ -468,6 +468,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ToggledCiTraces: () => Github.toggledCiTraces(model),
 		CompletedCiTraces: ({ enabled, failure }) =>
 			Github.completedCiTraces(model, context, enabled, failure),
+		ToggledAuditLog: () => Github.toggledAuditLog(model),
+		CompletedAuditLog: ({ enabled, failure }) =>
+			Github.completedAuditLog(model, context, enabled, failure),
 		TickedGithubPoll: () => requestStatus(model, context, "github", "Refresh"),
 		EndedGithubForcePoll: ({ version }) => Github.endedForcePoll(model, version),
 		ClickedRepoDelete: ({ repoId }) => Github.clickedRepoDelete(model, repoId),

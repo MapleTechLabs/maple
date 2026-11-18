@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 
 /** Platforms whose audit events the trail holds. One literal per built adapter; `maple` is Maple's own audit log. */
-export const AuditTrailProvider = Schema.Literals(["maple", "vercel", "gcp", "aws"])
+export const AuditTrailProvider = Schema.Literals(["maple", "vercel", "gcp", "aws", "github"])
 export type AuditTrailProvider = typeof AuditTrailProvider.Type
 
 /**
@@ -77,3 +77,35 @@ export interface AuditTrailEvent {
 	readonly userAgent?: string
 	readonly raw?: Record<string, unknown>
 }
+
+/**
+ * `AuditTrailEvent` as a schema, for an event that travels through a queue before it is written.
+ * `optional`, not `optionalKey`: adapters leave a field they could not read as `undefined`.
+ */
+export const AuditTrailEventSchema = Schema.Struct({
+	provider: AuditTrailProvider,
+	providerEventId: Schema.String,
+	account: Schema.optional(Schema.String),
+	occurredAtMs: Schema.Number,
+	actor: Schema.Struct({
+		type: AuditTrailActorType,
+		id: Schema.optional(Schema.String),
+		name: Schema.optional(Schema.String),
+		email: Schema.optional(Schema.String),
+	}),
+	action: Schema.String,
+	category: AuditTrailCategory,
+	outcome: AuditTrailOutcome,
+	outcomeReason: Schema.optional(Schema.String),
+	target: Schema.optional(
+		Schema.Struct({
+			type: Schema.optional(Schema.String),
+			id: Schema.optional(Schema.String),
+			name: Schema.optional(Schema.String),
+		}),
+	),
+	originIp: Schema.optional(Schema.String),
+	originCountry: Schema.optional(Schema.String),
+	userAgent: Schema.optional(Schema.String),
+	raw: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+})

@@ -428,6 +428,7 @@ describe("buildIntegrationInventory", () => {
 						accountLogin: "acme",
 						status: "active",
 						ciTracesEnabled: false,
+						auditLogEnabled: true,
 						createdAt: NOW,
 					},
 				],
@@ -452,6 +453,26 @@ describe("buildIntegrationInventory", () => {
 			lastError: "Not Found",
 			note: "tracks main, PR review on",
 		})
+		expect(Arr.filter(github?.resources ?? [], (r) => r.kind === "audit log")).toHaveLength(1)
+	})
+
+	it("lists no audit log feed for an installation with the audit log off", () => {
+		const github = providerOf(
+			{
+				vcsInstallations: [
+					{
+						provider: "github",
+						accountLogin: "acme",
+						status: "active",
+						ciTracesEnabled: true,
+						auditLogEnabled: false,
+						createdAt: NOW,
+					},
+				],
+			},
+			"github",
+		)
+		expect(Arr.filter(github?.resources ?? [], (r) => r.kind === "audit log")).toEqual([])
 	})
 })
 

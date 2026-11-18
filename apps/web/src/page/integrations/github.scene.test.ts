@@ -8,7 +8,7 @@ import { PageOutMessage, type PageContext } from "../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
-import { ciTracesShown } from "./update-github"
+import { auditLogShown, ciTracesShown } from "./update-github"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -26,6 +26,7 @@ const status = Schema.decodeSync(GithubIntegrationStatus)({
 	accountType: "organization",
 	repositorySelection: "selected",
 	ciTracesEnabled: true,
+	auditLogEnabled: true,
 	repositoryDiscovery: null,
 	repositories: [
 		{
@@ -173,6 +174,33 @@ describe("github card", () => {
 			expectView(role("switch", { name: "CI traces and logs" })).toHaveAttr("aria-checked", "false"),
 			expectView(role("switch", { name: "CI traces and logs" })).toBeDisabled(),
 		)
+	})
+
+	test("the audit log switch turns GitHub's audit events off, and reverts when the write fails", () => {
+		const model = loaded()
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(role("switch", { name: "Audit log" })).toHaveAttr("aria-checked", "true"),
+		)
+		const toggled = pageUpdate(model, Message.ToggledAuditLog())
+		expect(Arr.map(toggled.commands ?? [], ({ name, args }) => [name, args])).toEqual([
+			["SetGithubAuditLog", { enabled: false }],
+		])
+		expect(names(pageUpdate(toggled.model, Message.ToggledAuditLog()).commands)).toEqual([])
+		scene(
+			{ update: pageUpdate, view },
+			given(toggled.model),
+			expectView(role("switch", { name: "Audit log" })).toHaveAttr("aria-checked", "false"),
+			expectView(role("switch", { name: "Audit log" })).toBeDisabled(),
+			// The other switch stays as it was.
+			expectView(role("switch", { name: "CI traces and logs" })).toHaveAttr("aria-checked", "true"),
+		)
+		const failed = pageUpdate(
+			toggled.model,
+			Message.CompletedAuditLog({ enabled: false, failure: toLoadFailure("x") }),
+		)
+		expect(auditLogShown(failed.model)).toBe(true)
 	})
 
 	test("picking another branch confirms first, then saves and polls the backfill", () => {

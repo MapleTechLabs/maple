@@ -9,6 +9,7 @@ import {
 	branchPopoverId,
 	DeleteGithubRepo,
 	type GithubCardModel,
+	SetAuditLog,
 	SetCiTraces,
 	SetTrackedBranch,
 	SpinGithubRefresh,
@@ -88,6 +89,48 @@ export const ciTracesShown = (model: Model): boolean => {
 	const server = githubStatusOf(model)?.ciTracesEnabled ?? true
 	const card = model.githubCard
 	return card.ciTraces !== null && card.ciTracesServer === server ? card.ciTraces : server
+}
+
+/** The audit log switch's value, read like the CI traces one. */
+export const auditLogShown = (model: Model): boolean => {
+	const server = githubStatusOf(model)?.auditLogEnabled ?? true
+	const card = model.githubCard
+	return card.auditLog !== null && card.auditLogServer === server ? card.auditLog : server
+}
+
+export const toggledAuditLog = (model: Model): Return => {
+	if (model.githubCard.isSavingAuditLog) return { model }
+	const next = !auditLogShown(model)
+	const server = githubStatusOf(model)?.auditLogEnabled ?? true
+	return {
+		model: withCard(model, { auditLog: next, auditLogServer: server, isSavingAuditLog: true }),
+		commands: [SetAuditLog({ enabled: next })],
+	}
+}
+
+export const completedAuditLog = (
+	model: Model,
+	context: PageContext,
+	enabled: boolean,
+	failure: LoadFailure | null,
+): Return => {
+	const settled = withCard(model, { isSavingAuditLog: false })
+	if (failure !== null)
+		return toast(
+			withCard(settled, { auditLog: !enabled }),
+			"error",
+			"Couldn't change the audit log.",
+			failure.message,
+		)
+	return chain(settled, [
+		(next) =>
+			toast(
+				next,
+				"success",
+				enabled ? "GitHub changes will show up in the audit log" : "GitHub audit log turned off",
+			),
+		(next) => refresh(next, context),
+	])
 }
 
 export const clickedRefresh = (model: Model, context: PageContext): Return => {
