@@ -986,6 +986,29 @@ describe("PrReviewService.onPullRequestEvent", () => {
 		return firstDelivery.pipe(Effect.andThen(redelivery))
 	})
 
+	it.effect("a reclaimed row takes the base the new attempt reads against", () => {
+		const testDb = createTestDb(trackedDbs)
+		const begun: Array<Begun> = []
+		const NEW_BASE = sha("dddddddddddddddddddddddddddddddddddddddd")
+		const firstDelivery = Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const first = yield* reviews.onPullRequestEvent(orgId, job())
+			assert.equal(Option.getOrThrow(yield* reviews.getReview(orgId, first.reviewId!)).baseSha, BASE)
+		}).pipe(Effect.provide(layerFor(testDb, { withWorkerEnv: false })))
+		// The same head, after the pull request moved to another base.
+		const redelivery = Effect.gen(function* () {
+			const reviews = yield* PrReviewService
+			const again = yield* reviews.onPullRequestEvent(orgId, job({ baseSha: NEW_BASE }))
+			assert.equal(again.outcome, "started")
+			assert.equal(
+				Option.getOrThrow(yield* reviews.getReview(orgId, again.reviewId!)).baseSha,
+				NEW_BASE,
+			)
+		}).pipe(Effect.provide(layerFor(testDb, { begun })))
+		return firstDelivery.pipe(Effect.andThen(redelivery))
+	})
+
 	it.effect("debounces pushes: only the last head of a burst is reviewed", () => {
 		const testDb = createTestDb(trackedDbs)
 		const begun: Array<Begun> = []

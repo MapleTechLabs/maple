@@ -2012,6 +2012,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				repositoryId: VcsRepositoryId,
 				number: number,
 				headSha: GitCommitSha,
+				/** The base this attempt reads against, which may differ from the earlier attempt's. */
+				baseSha: GitCommitSha | null,
 				nowMs: number,
 				statuses: ReadonlyArray<PrReviewStatus> = ["failed"],
 			) {
@@ -2020,6 +2022,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						PG.update(PrReviews)
 							.set(($) => ({
 								status: "queued",
+								// An approval is asked for the base a review read, so the row follows this attempt's.
+								baseSha,
 								error: null,
 								// A reclaimed skipped or completed row must not carry its old outcome forward.
 								skipReason: null,
@@ -2582,6 +2586,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					repo.id,
 					job.number,
 					headSha,
+					job.baseSha ?? null,
 					nowMs,
 					requested ? ["failed", "completed", "skipped"] : ["failed"],
 				)
