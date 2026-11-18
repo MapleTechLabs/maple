@@ -12,6 +12,11 @@ import {
 	findNextPosition,
 } from "@maple/domain/http"
 import { DASHBOARD_TEMPLATES, getTemplate } from "@maple/backend/dashboard-templates"
+import {
+	convertGrafanaDashboardToPortable,
+	isGrafanaDashboardJson,
+} from "@maple/backend/services/dashboards/grafana-dashboard-import"
+import { convertPersesDashboardToPortable } from "@maple/backend/services/dashboards/perses-dashboard-import"
 import { QUERY_BUILDER_DATA_SOURCES, QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
 import {
 	collectBlockingBuilderWarnings,
@@ -320,6 +325,27 @@ const invalid = (message: string, parameter?: string, example?: string) =>
 		...(example === undefined ? undefined : { example }),
 	})
 
+/** A Grafana or Perses dashboard as a Maple document, with what the conversion changed. */
+const convertImport = Effect.fn("McpTool.createDashboard.convertImport")(
+	function* (input: Readonly<Record<string, unknown>>) {
+		if (isGrafanaDashboardJson(input)) {
+			const converted = yield* convertGrafanaDashboardToPortable(input)
+			return { ...converted, source: "grafana_import" as const }
+		}
+		if (input.kind === "Dashboard") {
+			const converted = yield* convertPersesDashboardToPortable(input)
+			return { ...converted, stats: undefined, source: "perses_import" as const }
+		}
+		return yield* invalid(
+			"import_json is neither a Grafana dashboard (panels or rows, or { dashboard, meta }) nor a Perses Dashboard resource.",
+			"import_json",
+		)
+	},
+	Effect.catchTag("@maple/http/errors/DashboardValidationError", (error) =>
+		Effect.fail(toMcpDashboardError(TOOL)(error)),
+	),
+)
+
 const SIMPLE_WIDGETS_EXAMPLE =
 	'widgets=\'[{"title":"HTTP Duration","visualization":"chart","source":"metrics","metric":"avg","metric_name":"http.server.duration","metric_type":"histogram"}]\''
 
@@ -341,7 +367,7 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 		// modes to use, not a schema reference. The per-parameter descriptions carry
 		// the shapes, and `describe_dashboard_schema` carries the full vocabulary.
 		description:
-			"Create a dashboard one of three ways: a `template`, simplified `widgets` specs, or full `dashboard_json`. " +
+			"Create a dashboard one of four ways: a `template`, simplified `widgets` specs, full `dashboard_json`, or `import_json` (a Grafana or Perses dashboard to convert). " +
 			'Templates (service health, errors, HTTP, runtimes, databases, integrations) are listed by describe_dashboard_schema section "templates".' +
 			"\n\nTemplates chart one service or host at a time. To compare entities in one chart (CPU per host, memory per pod), " +
 			"use `widgets` on source=metrics with group_by `resource.host.name` / `resource.k8s.pod.name`; list_infra names the metrics." +
@@ -373,6 +399,10 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 					'where is a whereClause (describe_dashboard_schema "queries"), e.g. attr.state = "idle" to read one state of a per-state metric like system.cpu.utilization (unscoped it averages to about 1/states). ' +
 					"unit percent expects a 0-1 fraction, percent_100 a 0-100 value.",
 			),
+			import_json: optionalJsonText(
+				Schema.Record(Schema.String, Schema.Unknown),
+				"A Grafana dashboard (bare, the { dashboard, meta } API envelope, or an export for sharing) or a Perses Dashboard resource, as JSON text. Grafana rows become sections, Prometheus targets PromQL widgets, and panels Maple cannot run notes; the result lists every warning. name, description and time_range override the imported ones when given.",
+			),
 			dashboard_json: optionalJsonText(
 				PortableDashboardDocument,
 				"The whole dashboard as JSON text, in the shape get_dashboard returns. Read describe_dashboard_schema first for the data-source kinds, units, aggregations and group-by tokens.",
@@ -389,13 +419,31 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 			}
 
 			const templateName =
-				params.template ??
-				(params.widgets ? undefined : params.dashboard_json ? "custom" : "service-health")
+				params.import_json === undefined
+					? (params.template ??
+						(params.widgets ? undefined : params.dashboard_json ? "custom" : "service-health"))
+					: undefined
 
 			let portable: PortableDashboardDocument
 			let source: typeof CreateDashboardOutput.Type.source
+			let imported:
+				| { warnings: ReadonlyArray<string>; stats: typeof CreateDashboardOutput.Type.importStats }
+				| undefined
 
-			if (templateName === "custom") {
+			if (params.import_json !== undefined) {
+				const converted = yield* convertImport(params.import_json)
+				const name = Str.trim(params.name)
+				portable = new PortableDashboardDocument({
+					...converted.dashboard,
+					...(name === "" ? undefined : { name }),
+					...(params.description ? { description: params.description } : undefined),
+					...(params.time_range
+						? { timeRange: { type: "relative" as const, value: params.time_range } }
+						: undefined),
+				})
+				source = converted.source
+				imported = { warnings: converted.warnings, stats: converted.stats }
+			} else if (templateName === "custom") {
 				if (!params.dashboard_json) {
 					return yield* invalid(
 						"Provide dashboard_json for custom template, or use a different approach:\n\n" +
@@ -541,6 +589,12 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 				...(validation.ran ? { validation } : undefined),
 				source,
 				...(source === "template" && templateName ? { template: templateName } : undefined),
+				...(imported === undefined
+					? undefined
+					: {
+							importWarnings: [...imported.warnings],
+							...(imported.stats === undefined ? undefined : { importStats: imported.stats }),
+						}),
 				// Advisory across every creation path, including `dashboard_json`.
 				renderWarnings: collectDocumentRenderWarnings(dashboard.widgets),
 			}
@@ -561,8 +615,30 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 						["Widgets", output.dashboard.widgetCount],
 						["Created", Str.slice(0, 19)(output.dashboard.createdAt)],
 						["Template", output.template],
-						["Source", output.source === "widgets" ? "simplified widget specs" : undefined],
+						[
+							"Source",
+							output.source === "widgets"
+								? "simplified widget specs"
+								: output.source === "grafana_import"
+									? "Grafana import"
+									: output.source === "perses_import"
+										? "Perses import"
+										: undefined,
+						],
 					]),
+					...(output.importStats === undefined
+						? []
+						: [
+								doc.fields([
+									[
+										"Panels converted",
+										`${output.importStats.converted} of ${output.importStats.panels} (${output.importStats.placeholders} kept as notes)`,
+									],
+								]),
+							]),
+					...(output.importWarnings !== undefined && output.importWarnings.length > 0
+						? [doc.heading("Import warnings"), doc.list(output.importWarnings)]
+						: []),
 					...(output.renderWarnings.length > 0
 						? [doc.heading("Render warnings (saved anyway)"), doc.list(output.renderWarnings)]
 						: []),

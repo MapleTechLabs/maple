@@ -87,6 +87,22 @@ export const isPersesDashboardJson = (value: unknown): value is Record<string, u
 	typeof value.spec === "object" &&
 	value.spec !== null
 
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+	typeof value === "object" && value !== null && !Arr.isArray(value)
+
+const hasGrafanaPanels = (value: Record<string, unknown>) =>
+	Arr.isArray(value.panels) || Arr.isArray(value.rows)
+
+/**
+ * A Grafana dashboard: `panels` or the old `rows` with a `schemaVersion`, or the API's
+ * `{ dashboard, meta }` envelope around one. Maple JSON has `widgets`, Perses `kind`.
+ */
+export const isGrafanaDashboardJson = (value: unknown): value is Record<string, unknown> => {
+	if (!isPlainObject(value)) return false
+	if (isPlainObject(value.dashboard)) return hasGrafanaPanels(value.dashboard)
+	return hasGrafanaPanels(value) && value.schemaVersion !== undefined
+}
+
 const sanitizeFilenameSegment = (value: string): string => {
 	const sanitized = Str.trim(Str.replace(/[^a-zA-Z0-9-_ ]/g, "")(value))
 	return sanitized.length > 0 ? sanitized : "dashboard"

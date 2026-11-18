@@ -2,6 +2,7 @@ import { OrgId } from "@maple/domain"
 import { Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { CreateDashboard, FetchDashboardsFallback } from "./command"
@@ -155,7 +156,13 @@ describe("dashboards list write feedback", () => {
 		const imported = pageUpdate(
 			listed(),
 			Message.CompletedImportDashboard({
-				result: Result.succeed({ id: "dash_new", name: "Perses", isPerses: true, warnings }),
+				result: Result.succeed({
+					id: "dash_new",
+					name: "Perses",
+					importedFrom: "perses",
+					warnings,
+					stats: null,
+				}),
 			}),
 		)
 		const out = imported.outMessage
@@ -164,6 +171,67 @@ describe("dashboards list write feedback", () => {
 			title: "Imported with 4 warnings",
 			description: "a\nb\nc\n+1 more",
 		})
+	})
+
+	test("a Grafana import with warnings stays on the list and reports them in a dialog", () => {
+		const warnings = [
+			'Panel "Error logs" queries Loki, which Maple cannot run; it was imported as a placeholder.',
+		]
+		const imported = pageUpdate(
+			listed(),
+			Message.CompletedImportDashboard({
+				result: Result.succeed({
+					id: "dash_grafana",
+					name: "Node overview",
+					importedFrom: "grafana",
+					warnings,
+					stats: { panels: 7, converted: 6 },
+				}),
+			}),
+		)
+		expect(imported.outMessage).toBeUndefined()
+		scene(
+			{ update: pageUpdate, view },
+			given(imported.model),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(role("alertdialog", { name: "Imported “Node overview”" })).toExist(),
+			expectView(
+				text(
+					"6 of 7 panels converted. 1 panel Maple cannot run yet became a note that keeps its original queries.",
+				),
+			).toExist(),
+			expectView(text(warnings[0] ?? "")).toExist(),
+			expectView(role("button", { name: "Open dashboard" })).toExist(),
+		)
+		const opened = pageUpdate(imported.model, Message.ClickedOpenImportedDashboard())
+		expect(opened.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/dashboards/dash_grafana", isReplace: false }),
+		)
+		// Closing the report forgets it: the warnings were read in the dialog.
+		const closed = pageUpdate(
+			imported.model,
+			Message.GotImportReportDialogMessage({ message: Dialog.Message.ClickedClose() }),
+		)
+		expect(closed.model.importReport).toBeNull()
+	})
+
+	test("a clean Grafana import opens the dashboard with a toast naming Grafana", () => {
+		const imported = pageUpdate(
+			listed(),
+			Message.CompletedImportDashboard({
+				result: Result.succeed({
+					id: "dash_grafana",
+					name: "Node overview",
+					importedFrom: "grafana",
+					warnings: [],
+					stats: { panels: 3, converted: 3 },
+				}),
+			}),
+		)
+		const out = imported.outMessage
+		expect(out?._tag === "RequestedNavigation" && out.toast?.title).toBe(
+			'Dashboard "Node overview" imported from Grafana',
+		)
 	})
 
 	test("a refused write toasts and leaves the list writable", () => {

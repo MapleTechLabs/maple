@@ -130,6 +130,8 @@ export interface WidgetTypeMeta {
 	readonly mcpExposed: boolean
 	/** Perses panel `kind`s that import as this panel type. */
 	readonly persesKinds: ReadonlyArray<string>
+	/** Grafana panel `type`s that import as this panel type; the importer refines charts by draw style. */
+	readonly grafanaTypes: ReadonlyArray<string>
 }
 
 const CHART_LAYOUT = { w: 4, h: 6, minW: 2, minH: 2 } as const
@@ -139,6 +141,7 @@ const chartPanel = (
 	panelType: "line" | "bar" | "area",
 	label: string,
 	persesKinds: ReadonlyArray<string>,
+	grafanaTypes: ReadonlyArray<string> = [],
 ): WidgetTypeMeta => ({
 	panelType,
 	label,
@@ -158,6 +161,7 @@ const chartPanel = (
 	// undocumented `display.chartId`.
 	mcpExposed: true,
 	persesKinds,
+	grafanaTypes,
 })
 
 /**
@@ -170,6 +174,7 @@ const breakdownPanel = (
 		requiresGroupBy: boolean
 		ownedDisplayKeys?: ReadonlyArray<OwnedDisplayKey>
 		persesKinds?: ReadonlyArray<string>
+		grafanaTypes?: ReadonlyArray<string>
 	},
 ): WidgetTypeMeta => ({
 	panelType,
@@ -184,10 +189,11 @@ const breakdownPanel = (
 	requiresGroupBy: options.requiresGroupBy,
 	mcpExposed: true,
 	persesKinds: options.persesKinds ?? [],
+	grafanaTypes: options.grafanaTypes ?? [],
 })
 
 export const WIDGET_TYPES: Record<PanelType, WidgetTypeMeta> = {
-	line: chartPanel("line", "Line", ["TimeSeriesChart"]),
+	line: chartPanel("line", "Line", ["TimeSeriesChart"], ["timeseries", "graph"]),
 	bar: chartPanel("bar", "Bar", ["BarChart"]),
 	area: chartPanel("area", "Area", []),
 
@@ -203,6 +209,7 @@ export const WIDGET_TYPES: Record<PanelType, WidgetTypeMeta> = {
 		requiresGroupBy: false,
 		mcpExposed: true,
 		persesKinds: ["StatChart"],
+		grafanaTypes: ["stat", "singlestat"],
 	},
 
 	gauge: {
@@ -219,6 +226,7 @@ export const WIDGET_TYPES: Record<PanelType, WidgetTypeMeta> = {
 		requiresGroupBy: false,
 		mcpExposed: true,
 		persesKinds: ["GaugeChart"],
+		grafanaTypes: ["gauge", "bargauge"],
 	},
 
 	table: {
@@ -232,6 +240,7 @@ export const WIDGET_TYPES: Record<PanelType, WidgetTypeMeta> = {
 		requiresGroupBy: false,
 		mcpExposed: true,
 		persesKinds: ["Table", "LogsTable", "TimeSeriesTable"],
+		grafanaTypes: ["table", "table-old"],
 	},
 
 	list: {
@@ -249,9 +258,14 @@ export const WIDGET_TYPES: Record<PanelType, WidgetTypeMeta> = {
 		requiresGroupBy: false,
 		mcpExposed: true,
 		persesKinds: [],
+		grafanaTypes: [],
 	},
 
-	pie: breakdownPanel("pie", "Pie", { requiresGroupBy: true, persesKinds: ["PieChart"] }),
+	pie: breakdownPanel("pie", "Pie", {
+		requiresGroupBy: true,
+		persesKinds: ["PieChart"],
+		grafanaTypes: ["piechart", "grafana-piechart-panel"],
+	}),
 	// A histogram is a *distribution*, so it has two legitimate shapes: grouped
 	// (pre-bucketed bars) or raw per-row values the chart bucketizes client-side.
 	// The second is valid without a group-by, so the blanket requirement is off
@@ -259,11 +273,13 @@ export const WIDGET_TYPES: Record<PanelType, WidgetTypeMeta> = {
 	histogram: breakdownPanel("histogram", "Histogram", {
 		requiresGroupBy: false,
 		persesKinds: ["Histogram", "HistogramChart"],
+		grafanaTypes: ["histogram"],
 	}),
 	heatmap: breakdownPanel("heatmap", "Heatmap", {
 		requiresGroupBy: true,
 		ownedDisplayKeys: ["chartId", "heatmap"],
 		persesKinds: ["HeatMap", "HeatMapChart", "Heatmap"],
+		grafanaTypes: ["heatmap"],
 	}),
 	// A funnel implies sequential stages with a monotonic drop-off, and it labels
 	// each bar as a share of the *largest* bar. A ranked "top N by volume"
@@ -286,6 +302,7 @@ export const WIDGET_TYPES: Record<PanelType, WidgetTypeMeta> = {
 		requiresGroupBy: false,
 		mcpExposed: true,
 		persesKinds: [],
+		grafanaTypes: [],
 	},
 	hbar: breakdownPanel("hbar", "Horizontal Bar", {
 		requiresGroupBy: true,
@@ -307,6 +324,7 @@ export const WIDGET_TYPES: Record<PanelType, WidgetTypeMeta> = {
 		requiresGroupBy: false,
 		mcpExposed: true,
 		persesKinds: ["Markdown"],
+		grafanaTypes: ["text"],
 	},
 } satisfies Record<PanelType, WidgetTypeMeta>
 
@@ -347,6 +365,12 @@ export const widgetTypeByPersesKind = (kind: string | undefined): WidgetTypeMeta
 	Option.getOrElse(
 		Arr.findFirst(PANEL_TYPES, (meta) => kind != null && meta.persesKinds.includes(kind)),
 		() => WIDGET_TYPES.line,
+	)
+
+/** The panel type a Grafana panel `type` imports as; `undefined` when Maple has none. */
+export const widgetTypeByGrafanaType = (type: string | undefined): WidgetTypeMeta | undefined =>
+	Option.getOrUndefined(
+		Arr.findFirst(PANEL_TYPES, (meta) => type != null && meta.grafanaTypes.includes(type)),
 	)
 
 /**

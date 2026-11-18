@@ -43,6 +43,7 @@ import { PromqlQueryService } from "@maple/backend/services/promql/PromqlQuerySe
 import { HttpV2DashboardsLive } from "./dashboards.http"
 import { HttpV2SharePublicLive } from "./share.http"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
+import { nodeExporterDashboard } from "@maple/backend/services/dashboards/grafana-dashboard-import.fixtures"
 import { ShareRateLimiter } from "@maple/backend/services/auth/ShareRateLimiter"
 
 const createdDbs: TestDb[] = []
@@ -315,6 +316,40 @@ describe("v2 dashboards over HTTP", () => {
 			type: "not_found_error",
 			code: "dashboard_not_found",
 		})
+		await harness.dispose()
+	})
+
+	it("imports a Grafana dashboard with its sections, PromQL widgets, warnings and stats", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["dashboards:write"])
+
+		const imported = await harness.request("POST", "/v2/dashboards/import/grafana", key.secret, {
+			dashboard: { dashboard: nodeExporterDashboard, meta: {} },
+		})
+		expect(imported.status).toBe(200)
+		expect(imported.body.object).toBe("dashboard_import")
+		expect(imported.body.stats).toEqual({ panels: 7, converted: 7, placeholders: 0 })
+		expect(imported.body.warnings).toContain(
+			'Interval variable "resolution" was not imported; its references now use $__interval in PromQL and $__interval_s (seconds) in ClickHouse SQL.',
+		)
+		expect(imported.body.dashboard.txid).toMatch(/^\d+$/)
+
+		const stored = await harness.request(
+			"GET",
+			`/v2/dashboards/${imported.body.dashboard.id}`,
+			key.secret,
+		)
+		expect(stored.body.name).toBe("Node overview")
+		expect(stored.body.sections).toHaveLength(2)
+		const cpu = stored.body.widgets.find(
+			(widget: { display: { title: string } }) => widget.display.title === "CPU basic",
+		)
+		expect(cpu.data_source).toMatchObject({ kind: "promql", legend_format: "{{mode}}" })
+
+		const refused = await harness.request("POST", "/v2/dashboards/import/grafana", key.secret, {
+			dashboard: { kind: "Dashboard", spec: {} },
+		})
+		expect(refused.status).toBe(400)
 		await harness.dispose()
 	})
 

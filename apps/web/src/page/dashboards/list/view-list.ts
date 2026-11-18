@@ -31,7 +31,7 @@ import * as TagEditor from "../kit/tag-editor"
 import { Message } from "./message"
 import type { ListDashboard, Model, Scope } from "./model"
 import { isReadOnly, rowMenuIdOf } from "./update"
-import { deleteDialog } from "./view-dialogs"
+import { deleteDialog, importReportDialog } from "./view-dialogs"
 import { tagFilterView } from "./view-tag-filter"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -546,6 +546,7 @@ export const listBody = (
 			toParentMessage: (message) => Message.GotTagEditorMessage({ message }),
 		}),
 		deleteDialog(h, model),
+		importReportDialog(h, model),
 	])
 }
 

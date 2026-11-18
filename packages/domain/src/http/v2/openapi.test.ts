@@ -276,6 +276,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"POST /v2/api_keys/{id}/roll",
 			"POST /v2/attribute_mappings",
 			"POST /v2/dashboards",
+			"POST /v2/dashboards/import/grafana",
 			"POST /v2/dashboards/import/perses",
 			"POST /v2/dashboards/templates/{template_id}/instantiate",
 			"POST /v2/dashboards/templates/{template_id}/preview",
@@ -885,6 +886,7 @@ describe("MapleApiV2 OpenAPI", () => {
 		for (const [method, path] of [
 			["delete", "/v2/dashboards/{id}"],
 			["post", "/v2/dashboards"],
+			["post", "/v2/dashboards/import/grafana"],
 			["post", "/v2/dashboards/import/perses"],
 			["post", "/v2/dashboards/templates/{template_id}/instantiate"],
 			["get", "/v2/dashboards/templates"],

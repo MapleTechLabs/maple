@@ -8,14 +8,21 @@ import * as Combobox from "@maple/views/ui/combobox"
 import { ListDashboard, Scope } from "./model"
 import { WriteSync } from "../kit/store"
 
+/** How many source panels an import turned into working widgets. */
+export const ImportStats = Schema.Struct({ panels: Schema.Number, converted: Schema.Number })
+export type ImportStats = typeof ImportStats.Type
+
 /** A created dashboard: its id to open and its name for the toast. */
 const Created = Schema.Struct({
 	id: Schema.String,
 	name: Schema.String,
-	isPerses: Schema.Boolean,
-	/** A Perses import's conversion warnings (unsupported or changed panels). */
+	/** The tool an imported file came from; `null` for Maple JSON and duplicates. */
+	importedFrom: Schema.NullOr(Schema.Literals(["perses", "grafana"])),
+	/** An import's conversion warnings (unsupported or changed panels). */
 	warnings: Schema.Array(Schema.String),
+	stats: Schema.NullOr(ImportStats),
 })
+export type CreatedDashboard = typeof Created.Type
 
 /** A failed write: its message, and whether the API refused this one write. */
 export const WriteFailure = Schema.Struct({ message: Schema.String, isRejected: Schema.Boolean })
@@ -50,6 +57,8 @@ export const Message = defineMessageUnion({
 	CompletedOpenImportPicker: {},
 	ChoseImportFile: { files: Schema.Array(File) },
 	CompletedImportDashboard: { result: Schema.Result(Created, Schema.String) },
+	GotImportReportDialogMessage: { message: Dialog.Message },
+	ClickedOpenImportedDashboard: {},
 	ToggledFavorite: { id: Schema.String },
 	CompletedSavePreferences: {},
 	GotSortMenuMessage: { message: Menu.Message },
