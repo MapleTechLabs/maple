@@ -145,6 +145,7 @@ const WirePage = Schema.Struct({
 	name: Schema.String,
 	slug: Schema.String,
 	has_password: Schema.Boolean,
+	visibility: Schema.String,
 	draft: Schema.Boolean,
 })
 const decodeWirePage = Schema.decodeUnknownEffect(WirePage)
@@ -262,10 +263,14 @@ export const StatusPageProvider = () =>
 				const path = pagePath(page.id)
 				const password = unwrap(news.password)
 				const setPassword = api.put(`${path}/password`, { password })
-				// A first password goes before the config: a page cannot turn `password` without one.
-				// A changed one goes after everything else, so a failed deploy leaves the old one in
+				// Before the config when the page is about to need it: a page cannot turn `password`
+				// without one, and must not open under an old one. A rotation on a page already
+				// `password` goes after everything else, so a failed deploy leaves the old one in
 				// place, matching the props Alchemy still holds.
-				if (password !== undefined && !page.has_password) yield* setPassword
+				const changed =
+					password !== undefined && (!page.has_password || password !== unwrap(olds?.password))
+				const early = changed && (!page.has_password || page.visibility !== "password")
+				if (early) yield* setPassword
 				// A removed domain goes before the config, so the page can turn `internal`.
 				let domain = yield* fetchDomain(page.id)
 				if (
@@ -298,9 +303,7 @@ export const StatusPageProvider = () =>
 						.put(`${path}/custom_domain`, { hostname: news.custom_domain })
 						.pipe(Effect.flatMap(decodeWireCustomDomain))
 				}
-				if (password !== undefined && page.has_password && password !== unwrap(olds?.password)) {
-					yield* setPassword
-				}
+				if (changed && !early) yield* setPassword
 				// Removed last: a `password` page refuses to lose its password.
 				if (password === undefined && olds?.password !== undefined && page.has_password) {
 					yield* api.delete(`${path}/password`)

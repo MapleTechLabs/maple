@@ -170,9 +170,9 @@ Effect.gen(function* () {
 | `config`           | `object`   | Required. `type` is `http`, `tcp`, `dns`, `multistep` or `heartbeat`; the rest as the API documents it |
 | `interval_seconds` | `number`   | 30 to 3600. Unset keeps Maple's                                                                        |
 | `failures_to_down` | `number`   | 1 to 10. Unset keeps Maple's                                                                           |
-| `service_name`     | `string`   | Attach the monitor to a service                                                                        |
+| `service_name`     | `string`   | Attach the monitor to a service. Unset means none                                                      |
 | `enabled`          | `boolean`  | Defaults to `true`                                                                                     |
-| `destination_ids`  | `string[]` | Notified when the monitor goes down or recovers                                                        |
+| `destination_ids`  | `string[]` | Notified when the monitor goes down or recovers. Unset means none                                      |
 
 Outputs: `monitorId` (`upm_…`), `name`, `kind`, `heartbeatUrl` (heartbeats: the URL your job pings), `alertRuleId`. See [Uptime monitoring](/docs/alerting/uptime-monitoring).
 
@@ -269,7 +269,7 @@ Outputs: `publicKey`, `privateKey` (both `Redacted`), `publicRotatedAt`, `privat
 
 ## Drift and sync
 
-- A deploy compares declared props against what the API returns and patches only when they differ. Fields you leave out of props stay unmanaged, so edits to them in the UI are kept. A status page is the exception: it is applied as a whole document, so unset fields take their defaults and a component added in the UI is deleted. Only an unset `manual_status` on a declared component, and an undeclared `visibility`, `password` or `custom_domain`, are left alone.
+- A deploy compares declared props against what the API returns and patches only when they differ. Fields you leave out of props stay unmanaged, so edits to them in the UI are kept. An uptime monitor manages `service_name`, `enabled` and `destination_ids` even when unset (none, `true`, none). A status page is the exception: it is applied as a whole document, so unset fields take their defaults and a component added in the UI is deleted. Only an unset `manual_status` on a declared component, and an undeclared `visibility`, `password` or `custom_domain`, are left alone.
 - `alchemy sync` restores declared dashboard fields, alert rule configuration and status pages to what the stack declares.
 - Alert destination secrets cannot be compared, so drift in them is only caught when you change the prop.
 

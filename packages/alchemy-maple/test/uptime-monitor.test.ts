@@ -129,7 +129,8 @@ describe("UptimeMonitorProvider", () => {
 				config: { type: "http", url: "https://api.example.com/health" },
 			}
 			yield* reconcile(fake, news, { olds: http, output })
-			expect(fake.store.get("/v2/uptime_monitors/upm_1")?.config).not.toHaveProperty("headers")
+			// The API answers an omitted map with an empty one; either way nothing is sent.
+			expect(decodeBody(fake.store.get("/v2/uptime_monitors/upm_1")?.config).headers ?? {}).toEqual({})
 		}),
 	)
 

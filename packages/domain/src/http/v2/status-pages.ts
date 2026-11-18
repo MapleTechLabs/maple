@@ -77,7 +77,7 @@ const autoIncidentsField = StatusPageAutoIncidents.annotate({
 
 const visibilityField = StatusPageVisibility.annotate({
 	description:
-		"Who can read the page: `public` (anyone), `password` (visitors who enter the page password, set with `PUT /v2/status_pages/{id}/password`; no feeds or badge without it) or `internal` (only members of your organization, in Maple; the page is not served at its address or custom domain). Omitted from an update or a config, the page keeps its visibility. Changing it needs an org admin.",
+		"Who can read the page: `public` (anyone), `password` (visitors who enter the page password, set with `PUT /v2/status_pages/{id}/password`; no feeds or badge without it) or `internal` (only members of your organization, in Maple; the page is not served at its address or custom domain). Omitted from an update or a config, the page keeps its visibility.",
 	examples: ["public"],
 })
 

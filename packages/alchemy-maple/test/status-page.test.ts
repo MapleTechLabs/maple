@@ -34,6 +34,7 @@ const makeFake = () => {
 	let revision = 0
 	let afterConfigRead: (() => void) | undefined
 	let refuseConfig = false
+	let password: string | null = null
 	const notFound = () =>
 		makeMapleApiResponseError(404, {
 			_tag: MapleErrorTags.statusPageNotFound,
@@ -143,6 +144,7 @@ const makeFake = () => {
 				return Effect.succeed(configDoc())
 			}
 			case "PUT /password":
+				password = String(decodeBody(body).password)
 				page.has_password = true
 				return Effect.succeed({ ...page })
 			case "DELETE /password":
@@ -174,6 +176,7 @@ const makeFake = () => {
 		api,
 		calls,
 		page: () => page,
+		password: () => password,
 		components: () => components,
 		setManualStatus: (name: string, status: string) => {
 			components = Arr.map(components, (c) => (c.name === name ? { ...c, manual_status: status } : c))
@@ -185,6 +188,9 @@ const makeFake = () => {
 		},
 		refuseConfig: () => {
 			refuseConfig = true
+		},
+		allowConfig: () => {
+			refuseConfig = false
 		},
 	}
 }
@@ -407,11 +413,34 @@ describe("StatusPageProvider", () => {
 			}
 			const output = yield* reconcile(fake, olds)
 			fake.calls.length = 0
-			yield* reconcile(fake, { ...olds, password: "another long secret" }, { olds, output })
+			const rotated = { ...olds, password: "another long secret" }
+			fake.refuseConfig()
+			const failed = yield* Effect.exit(reconcile(fake, rotated, { olds, output }))
+			expect(failed._tag).toBe("Failure")
+			expect(fake.password()).toBe("correct horse battery")
+			fake.allowConfig()
+			yield* reconcile(fake, rotated, { olds, output })
+			expect(fake.password()).toBe("another long secret")
+		}),
+	)
+
+	it.live("sets a new password before an internal page turns password-protected", () =>
+		Effect.gen(function* () {
+			const fake = makeFake()
+			const olds: StatusPageProps = {
+				...base,
+				visibility: "internal",
+				password: "correct horse battery",
+			}
+			const output = yield* reconcile(fake, olds)
+			fake.calls.length = 0
+			const news: StatusPageProps = { ...base, visibility: "password", password: "another long secret" }
+			yield* reconcile(fake, news, { olds, output })
 			expect(Arr.filter(fake.calls, (call) => !Str.startsWith("GET")(call))).toEqual([
-				"PUT /v2/status_pages/stp_1/config",
 				"PUT /v2/status_pages/stp_1/password",
+				"PUT /v2/status_pages/stp_1/config",
 			])
+			expect(fake.password()).toBe("another long secret")
 		}),
 	)
 })

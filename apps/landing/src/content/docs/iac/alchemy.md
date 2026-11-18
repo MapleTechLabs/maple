@@ -230,6 +230,8 @@ The key needs these permissions, depending on which resources the stack declares
 | `Maple.StatusPage`                          | `status_pages:write`    | No            |
 | `Maple.ApiKey`                              | `api_keys:write`        | Yes           |
 
+Uptime monitors and status pages also need a key whose role is engineer or above.
+
 A key with no scopes has full access. See [API keys and scopes](/docs/reference/api#authentication).
 
 ### Custom configuration or transport
