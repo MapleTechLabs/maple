@@ -948,7 +948,7 @@ export class V2PlanetScaleIntegrationsApiGroup extends HttpApiGroup.make("planet
 				identifier: "listPlanetScaleOrganizations",
 				summary: "List reachable PlanetScale organizations",
 				description:
-					"Lists the PlanetScale organizations the stored OAuth grant can access — the candidates for `select_organization`. Requires an org-admin or engineer role and the `integrations:read` scope.",
+					"Lists the PlanetScale organizations the stored OAuth grant can access: the candidates for `select_organization`. Requires an org-admin or engineer role and the `integrations:read` scope.",
 			}),
 		),
 	)
@@ -962,7 +962,7 @@ export class V2PlanetScaleIntegrationsApiGroup extends HttpApiGroup.make("planet
 				identifier: "selectPlanetScaleOrganization",
 				summary: "Bind the connection to a PlanetScale organization",
 				description:
-					"Binds the stored OAuth grant to one PlanetScale organization, probes API permissions, and provisions (or adopts) the managed scrape target. Re-submitting is an upsert — use it to change organization or edit the scrape target's branch filters. Returns the refreshed integration status. Requires an org-admin or engineer role and the `integrations:write` scope.",
+					"Binds the stored OAuth grant to one PlanetScale organization, probes API permissions, and provisions (or adopts) the managed scrape target. Re-submitting is an upsert: use it to change organization or edit the scrape target's branch filters. Returns the refreshed integration status. Requires an org-admin or engineer role and the `integrations:write` scope.",
 			}),
 		),
 	)
@@ -1041,7 +1041,7 @@ export class V2PlanetScaleIntegrationsApiGroup extends HttpApiGroup.make("planet
 				identifier: "getPlanetScaleWebhookConfig",
 				summary: "Retrieve the PlanetScale webhook configuration (deprecated)",
 				description:
-					"Deprecated: Maple now registers a webhook on every database itself and verifies each delivery with the secret PlanetScale generated for it; see `webhooks` on the integration status. The URL and secret returned here no longer verify deliveries. The response contains the stored secret, so this requires an org-admin or engineer role and, for a scoped API key, the `integrations:write` scope. A read that returns the secret is recorded in the audit log.",
+					"Deprecated: Maple now registers a webhook on every database itself and verifies each delivery with the secret PlanetScale generated for it; see `webhooks` on the integration status. The URL and secret returned here no longer verify deliveries. The response contains the stored secret, so this requires an org-admin or engineer role and the `integrations:write` scope, although it is a GET. A read that returns the secret is recorded in the audit log.",
 			}),
 		),
 	)

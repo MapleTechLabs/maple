@@ -22,10 +22,8 @@ import {
 	V2PlanetScaleQueryInsightList,
 	isoTimestamp,
 	isoTimestampOrNull,
-	scopeAllows,
 	V2CallbackHostUnavailable,
 	V2InsufficientPermissions,
-	V2InsufficientScope,
 	V2TimeRangeInvalid,
 } from "@maple/domain/http/v2"
 import { Array as Arr, Effect, Option, String as Str } from "effect"
@@ -412,16 +410,11 @@ export const HttpV2PlanetScaleIntegrationsLive = HttpApiBuilder.group(
 					.handle("webhookConfig", () =>
 						Effect.gen(function* () {
 							const tenant = yield* CurrentTenant.Context
-							// Needs integrations:manage: the response carries the webhook HMAC secret.
+							// The response carries the webhook HMAC secret: integrations:manage here, and
+							// `requiredScopeForRoute` asks a scoped key for write on this GET.
 							yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
 								V2InsufficientPermissions.make(denial.message),
 							)
-							// A GET, so the middleware asks a scoped key for read only: hold it to write here.
-							if (!scopeAllows(tenant.scopes, { family: "integrations", access: "write" })) {
-								return yield* V2InsufficientScope.make(
-									'The webhook configuration contains its signing secret, so this API key needs "integrations:write".',
-								)
-							}
 							const config = yield* planetscale
 								.webhookConfig(tenant.orgId)
 								.pipe(tapHttpErrors("PlanetScale webhook config failed"))

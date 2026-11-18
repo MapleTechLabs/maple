@@ -379,7 +379,7 @@ export class V2AwsIntegrationsApiGroup extends HttpApiGroup.make("awsIntegration
 				identifier: "getAwsConnectionSetup",
 				summary: "Render a connection's setup",
 				description:
-					"Returns the CloudShell script, the CloudFormation template and the Terraform file that set up one connection. With a metric stream set they contain its access key and, with the security module, the events key, so this requires an org-admin or engineer role and, for a scoped API key, the `integrations:write` scope. A read that returns a key is recorded in the audit log, without the key.",
+					"Returns the CloudShell script, the CloudFormation template and the Terraform file that set up one connection. With a metric stream set they contain its access key and, with the security module, the events key, so this requires an org-admin or engineer role and the `integrations:write` scope, although it is a GET. A read that returns a key is recorded in the audit log, without the key.",
 			}),
 		),
 	)
@@ -393,7 +393,7 @@ export class V2AwsIntegrationsApiGroup extends HttpApiGroup.make("awsIntegration
 				identifier: "rotateAwsConnectionEventsKey",
 				summary: "Rotate a connection's events key",
 				description:
-					"Replaces the key the connection's stack sends with its security finding events. The response does not contain the key: fetch `setup` and deploy the stack again. Until then the deployed stack's events are refused, and findings still arrive through the regular poll. Requires an org-admin or engineer role and, for a scoped API key, the `integrations:write` scope.",
+					"Replaces the key the connection's stack sends with its security finding events. The response does not contain the key: fetch `setup` and deploy the stack again. Until then the deployed stack's events are refused, and findings still arrive through the regular poll. Requires an org-admin or engineer role and the `integrations:write` scope.",
 			}),
 		),
 	)
