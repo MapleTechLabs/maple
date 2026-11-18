@@ -1,6 +1,7 @@
 import { logTimeFormat, toLogRowView, type LogRowLinks } from "@maple/views/ui/logs/log-row-view"
 import * as LogsStream from "@maple/views/ui/logs/logs-stream"
 import * as LogsStreamView from "@maple/views/ui/logs/logs-stream-view"
+import { ROW_HEIGHT } from "@maple/views/ui/logs/virtualize"
 import { Array as Arr, Option, Schema } from "effect"
 import { makeIsland } from "../../foldkit-island/island"
 import { LOGS_STREAM_ROWS } from "./live-logs-stream-data"
@@ -12,8 +13,6 @@ import { LOGS_STREAM_ROWS } from "./live-logs-stream-data"
  */
 
 const TIME_ZONE = "UTC"
-/** The compact row height the browser's virtualizer starts from; the static build places rows with it. */
-const ROW_HEIGHT = 30
 
 /** The landing has no trace or log pages to link a row to. */
 const NO_LINKS: LogRowLinks = { trace: () => "", log: Option.none() }
