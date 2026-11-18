@@ -293,7 +293,14 @@ export function registerInspectChartDataTool(server: McpToolRegistrar) {
 			const window = `Time range: ${output.timeRange.startTime} to ${output.timeRange.endTime} (source: ${output.timeRange.source})`
 			const recheck = doc.next(
 				TOOL,
-				{ dashboard_id: output.dashboardId, widget_id: output.widget.id },
+				{
+					dashboard_id: output.dashboardId,
+					widget_id: output.widget.id,
+					// The same selections, so the recheck runs the chart that was just inspected.
+					...(output.variables === undefined
+						? undefined
+						: { variables: stringifyJson(output.variables) }),
+				},
 				"re-verify after fixing it with update_dashboard_widget",
 			)
 

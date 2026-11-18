@@ -61,7 +61,8 @@ import {
 	RAW_SQL_ENDPOINT,
 } from "@maple/widgets/dashboard"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { interpolateWidgetParams } from "@maple/query-engine"
+import { collectVariableRefs, interpolateWidgetParams } from "@maple/query-engine"
+import { stringifyJson } from "./json"
 import type { DashboardVariable } from "@maple/widgets/dashboard"
 import {
 	makeVariableOptionsLister,
@@ -830,13 +831,29 @@ export const inspectWidget = Effect.fn("McpInspectWidget.inspectWidget")(
 		const flagVerdict = verdictFromFlags(allFlags)
 		// A filter on a variable with no value is the inspection's gap, not the widget's:
 		// the notes ask for a `variables` value instead of calling the chart broken.
-		// Only queries that ran and came back empty; a failed query or formula also carries EMPTY.
-		const emptyOnly =
-			Arr.every(queryResults, (query) => query.status !== "error") &&
-			verdictFromFlags(Arr.filter(allFlags, (flag) => flag !== "EMPTY" && flag !== "ALL_NULLS")) !==
-				"broken"
+		// Only the empty results of queries that reference such a variable (and formulas over them),
+		// and only when nothing failed: a failed query or formula also carries EMPTY.
+		const unresolvedQueryIds = Arr.filterMap(querySet.queries, (query) => {
+			const refs = collectVariableRefs(stringifyJson(query) ?? "")
+			return Arr.some(variables.unresolved, (name) => refs.includes(name)) &&
+				typeof query.id === "string"
+				? Result.succeed(query.id)
+				: Result.failVoid
+		})
+		const formulaIds = Arr.map(formulas, (formula) => formula.id)
+		const emptyFromVariable = (query: InspectChartQueryResult): boolean =>
+			unresolvedQueryIds.includes(query.queryId) ||
+			(unresolvedQueryIds.length > 0 && formulaIds.includes(query.queryId))
+		const flagsExplained = Arr.flatMap(queryResults, (query) =>
+			emptyFromVariable(query)
+				? Arr.filter(query.flags, (flag) => flag !== "EMPTY" && flag !== "ALL_NULLS")
+				: query.flags,
+		)
 		const verdict =
-			flagVerdict === "broken" && emptyOnly && variables.unresolved.length > 0
+			flagVerdict === "broken" &&
+			unresolvedQueryIds.length > 0 &&
+			Arr.every(queryResults, (query) => query.status !== "error") &&
+			verdictFromFlags(flagsExplained) !== "broken"
 				? "suspicious"
 				: flagVerdict
 

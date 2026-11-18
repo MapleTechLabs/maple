@@ -18,7 +18,7 @@ import { untrustedText } from "./format"
 export interface WidgetVariables {
 	/** What the interpolator consumes. */
 	readonly values: VariableValues
-	/** Name to the value used, `All` for an All selection; for the output and notes. */
+	/** Name to the value used, `$__all` for an All selection, so it can be passed back as `variables`. */
 	readonly used: Readonly<Record<string, string>>
 	readonly notes: ReadonlyArray<string>
 	/** Referenced variables that came out empty: a chart filtered on them shows nothing. */
@@ -205,7 +205,9 @@ export const resolveWidgetVariables = Effect.fn("McpWidgetVariables.resolve")(fu
 
 	return {
 		values: Rec.fromEntries(Arr.map(resolved, ({ variable, entry }) => [variable.name, entry] as const)),
-		used: Rec.fromEntries(Arr.map(described, ({ name, shown }) => [name, shown] as const)),
+		used: Rec.fromEntries(
+			Arr.map(resolved, ({ variable, entry }) => [variable.name, entry.value] as const),
+		),
 		notes: [
 			`Dashboard variables: ${Arr.join(
 				Arr.map(described, (d) => d.part),

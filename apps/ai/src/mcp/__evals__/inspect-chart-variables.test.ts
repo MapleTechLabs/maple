@@ -106,6 +106,22 @@ const document = {
 			layout: { x: 0, y: 4, w: 4, h: 4 },
 		},
 		{
+			id: "mixed",
+			visualization: "chart",
+			dataSource: makeQueryBuilderTimeseriesDataSource([
+				makeQueryDraft({
+					id: "a",
+					name: "A",
+					dataSource: "traces",
+					aggregation: "count",
+					whereClause: "cloud.region = $region",
+				}),
+				makeQueryDraft({ id: "b", name: "B", dataSource: "traces", aggregation: "count" }),
+			]),
+			display: { title: "mixed" },
+			layout: { x: 4, y: 4, w: 4, h: 4 },
+		},
+		{
 			...rawSqlWidget(
 				"service-pinned",
 				"SELECT count() AS value FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp) AND span.name = $operation",
@@ -166,7 +182,7 @@ describe("inspect_chart_data with dashboard variables", () => {
 			variables: JSON.stringify({ environment: "$__all" }),
 		})
 		expect(Schema.decodeUnknownSync(InspectChartDataOutput)(all.structuredContent).variables).toEqual({
-			environment: "All",
+			environment: "$__all",
 		})
 		expect(lastTracesSql()).toContain("IN ('production','staging')")
 	})
@@ -196,6 +212,21 @@ describe("inspect_chart_data with dashboard variables", () => {
 		expect(Arr.some(output.flags, (flag) => flag === "EMPTY" || flag === "ALL_NULLS")).toBe(true)
 		expect(output.verdict).toBe("suspicious")
 		expect(markdown(result)).toContain('Pass variables={"region":"<value>"}')
+	})
+
+	it("keeps a widget broken when a query that uses no variable is empty too", async () => {
+		const result = await call("inspect_chart_data", { dashboard_id: dashboardId, widget_id: "mixed" })
+		const output = Schema.decodeUnknownSync(InspectChartDataOutput)(result.structuredContent)
+		expect(output.verdict).toBe("broken")
+	})
+
+	it("re-checks with the same variable values it ran with", async () => {
+		const result = await call("inspect_chart_data", {
+			dashboard_id: dashboardId,
+			widget_id: "by-region",
+			variables: { region: "eu-west-1" },
+		})
+		expect(markdown(result)).toContain(String.raw`variables="{\"region\":\"eu-west-1\"}"`)
 	})
 
 	it("lists a query variable's options when nothing else gives it a value", async () => {
