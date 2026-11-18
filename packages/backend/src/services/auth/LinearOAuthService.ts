@@ -32,7 +32,11 @@ import {
 	linearData,
 	linearGraphql,
 } from "@maple/backend/services/integrations/linear/LinearGraphql"
-import { makeOAuthConnectionHelpers, type OAuthTokenEndpointConfig } from "./oauth/connection-helpers"
+import {
+	makeOAuthConnectionHelpers,
+	toUpstreamError,
+	type OAuthTokenEndpointConfig,
+} from "./oauth/connection-helpers"
 import type { OAuthFlowInitiator } from "./oauth/oauth-state"
 import { newOAuthState } from "./oauth/oauth-state"
 
@@ -360,7 +364,7 @@ export class LinearOAuthService extends Context.Service<LinearOAuthService, Line
 				return (yield* linearData(TeamSchema, "team lookup")(result)).team
 			})
 
-			/** Best effort: the grant is dropped on Maple's side whatever Linear answers. */
+			/** Best effort: the grant is dropped on Maple's side whatever Linear answers, and a failure is logged. */
 			const revokeAtLinear = Effect.fn("LinearOAuthService.revokeAtLinear")(
 				function* (orgId: OrgId) {
 					const row = yield* oauth.loadConnection(orgId)
@@ -370,9 +374,21 @@ export class LinearOAuthService extends Context.Service<LinearOAuthService, Line
 						iv: row.accessTokenIv,
 						tag: row.accessTokenTag,
 					})
-					yield* oauth.postForm(REVOKE_URL, { token: accessToken, token_type_hint: "access_token" })
+					const { status } = yield* oauth.postForm(REVOKE_URL, {
+						token: accessToken,
+						token_type_hint: "access_token",
+					})
+					if (status < 200 || status >= 300) {
+						return yield* toUpstreamError(`Linear refused the revoke with HTTP ${status}`, status)
+					}
 				},
-				(effect) => Effect.ignore(effect),
+				(effect, orgId) =>
+					Effect.catch(effect, (error) =>
+						Effect.logWarning("Linear grant revoke failed; dropping the local grant anyway", {
+							orgId,
+							error: error.message,
+						}),
+					),
 			)
 
 			const disconnect = Effect.fn("LinearOAuthService.disconnect")(function* (orgId: OrgId) {

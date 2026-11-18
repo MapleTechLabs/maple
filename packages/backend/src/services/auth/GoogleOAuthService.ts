@@ -254,7 +254,7 @@ export class GoogleOAuthService extends Context.Service<GoogleOAuthService, Goog
 					Effect.withSpan("GoogleOAuthService.withAccessToken", { attributes: { orgId } }),
 				)
 
-			/** Best effort: the grant is dropped on Maple's side whatever Google answers. */
+			/** Best effort: the grant is dropped on Maple's side whatever Google answers, and a failure is logged. */
 			const revokeAtGoogle = Effect.fn("GoogleOAuthService.revokeAtGoogle")(
 				function* (orgId: OrgId) {
 					const row = yield* oauth.loadConnection(orgId)
@@ -273,9 +273,18 @@ export class GoogleOAuthService extends Context.Service<GoogleOAuthService, Goog
 								iv: row.accessTokenIv,
 								tag: row.accessTokenTag,
 							})
-					yield* oauth.postForm(REVOKE_URL, { token })
+					const { status } = yield* oauth.postForm(REVOKE_URL, { token })
+					if (status < 200 || status >= 300) {
+						return yield* toUpstreamError(`Google refused the revoke with HTTP ${status}`, status)
+					}
 				},
-				(effect) => Effect.ignore(effect),
+				(effect, orgId) =>
+					Effect.catch(effect, (error) =>
+						Effect.logWarning("Google grant revoke failed; dropping the local grant anyway", {
+							orgId,
+							error: error.message,
+						}),
+					),
 			)
 
 			const disconnect = Effect.fn("GoogleOAuthService.disconnect")(function* (orgId: OrgId) {

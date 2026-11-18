@@ -20,6 +20,7 @@ import {
 	deriveCodeChallenge,
 	generateCodeVerifier,
 	makeOAuthConnectionHelpers,
+	toUpstreamError,
 } from "./oauth/connection-helpers"
 import type { OAuthFlowInitiator } from "./oauth/oauth-state"
 import { newOAuthState } from "./oauth/oauth-state"
@@ -214,8 +215,8 @@ export class CloudflareOAuthService extends Context.Service<
 			},
 		})
 
-		/** Best-effort token revocation on disconnect: failures are logged, never surfaced. */
-		const revokeToken = (config: ResolvedCloudflareOAuthConfig, token: string) =>
+		/** Revokes one token at Cloudflare; a refusal fails. */
+		const revokeUpstream = (config: ResolvedCloudflareOAuthConfig, token: string) =>
 			oauth
 				.postForm(config.revokeUrl, {
 					token,
@@ -224,7 +225,22 @@ export class CloudflareOAuthService extends Context.Service<
 						? { client_secret: Redacted.value(config.clientSecret) }
 						: undefined),
 				})
-				.pipe(Effect.ignore)
+				.pipe(
+					Effect.flatMap(({ status }) =>
+						status >= 200 && status < 300
+							? Effect.void
+							: Effect.fail(
+									toUpstreamError(
+										`Cloudflare refused the revoke with HTTP ${status}`,
+										status,
+									),
+								),
+					),
+				)
+
+		/** Best-effort revocation of a token a refused connect never stored. */
+		const revokeToken = (config: ResolvedCloudflareOAuthConfig, token: string) =>
+			Effect.ignore(revokeUpstream(config, token))
 
 		const startConnect = Effect.fn("CloudflareOAuthService.startConnect")(function* (
 			orgId: OrgId,
@@ -400,7 +416,14 @@ export class CloudflareOAuthService extends Context.Service<
 					})
 					.pipe(Effect.option)
 				if (Option.isSome(config) && Option.isSome(accessToken)) {
-					yield* revokeToken(config.value, accessToken.value)
+					yield* revokeUpstream(config.value, accessToken.value).pipe(
+						Effect.catch((error) =>
+							Effect.logWarning(
+								"Cloudflare grant revoke failed; dropping the local grant anyway",
+								{ orgId, error: error.message },
+							),
+						),
+					)
 				}
 			}
 			return yield* oauth.deleteConnection(orgId)
