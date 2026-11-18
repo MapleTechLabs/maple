@@ -23,9 +23,9 @@ const SQL_TOKEN =
 
 export const redactSqlLiterals = (s: string): string =>
 	s.replace(SQL_TOKEN, (token) => {
-		if (token.startsWith("--")) return "--"
-		if (token.startsWith("/*")) return "/* */"
-		if (token.startsWith('"') || token.startsWith("`")) return token
+		if (Str.startsWith("--")(token)) return "--"
+		if (Str.startsWith("/*")(token)) return "/* */"
+		if (Str.startsWith('"')(token) || Str.startsWith("`")(token)) return token
 		return "?"
 	})
 
