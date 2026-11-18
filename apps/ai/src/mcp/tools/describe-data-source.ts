@@ -66,7 +66,6 @@ export function registerDescribeDataSourceTool(server: McpToolRegistrar) {
 		}),
 		aliases: { source: "data_source", name: "data_source", tables: "entries", resources: "entries" },
 		hints: { readOnly: true },
-		audience: "identified",
 		scopeFamily: "data_sources",
 		phrases: ["Reading a data source's catalog", "Describing a data source"],
 		handler: Effect.fn("McpTool.describeDataSource")(function* ({ data_source, entries, offset }) {

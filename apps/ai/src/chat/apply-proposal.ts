@@ -15,8 +15,8 @@ import {
 	chatSessionKind,
 	decidedBy,
 	orgIdFromChatSessionId,
+	type ChatConnectorOrigin,
 	type ChatProposalApproval,
-	type ChatTurnOrigin,
 } from "@maple/domain/chat-session"
 import { OrgId, UserId } from "@maple/primitives"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -25,7 +25,15 @@ import { Cause, Effect, Layer, ManagedRuntime, Option, Schema, Array as Arr } fr
 import { chatPlatformLayer, type ChatRuntimeInput, chatTelemetry, releaseChatRuntime } from "./do-runtime"
 import { LinkedUserNotPermitted, linkedUserTenant, toTenantContext } from "./turn-actor"
 
-export type ApplyChatProposalInput = ChatProposalApproval &
+/**
+ * An approval as it arrives over RPC, where nothing decoded it: a connector's acting user is a
+ * claim to check here, not a brand to trust, and a relay build from before the rule sends none.
+ */
+type ReceivedApproval =
+	| Extract<ChatProposalApproval, { readonly tenant: unknown }>
+	| { readonly approver: ChatConnectorOrigin; readonly actingUserId?: string }
+
+export type ApplyChatProposalInput = ReceivedApproval &
 	ChatRuntimeInput & {
 		/** `"<orgId>:<tabId>"` — the org the change is made in. */
 		readonly sessionId: string
@@ -53,6 +61,13 @@ const UNCERTAIN = "Maple couldn't confirm the change went through — check it i
 const decodeOrgId = Schema.decodeUnknownOption(OrgId)
 const decodeUserId = Schema.decodeUnknownOption(UserId)
 
+/** What a clicker nobody can name is told: nothing was applied, and where a change is made. */
+const NOT_LINKED = "Maple could not tell which Maple user approved this. Make the change in the Maple app."
+
+/** The Maple user a connector approval runs as, when the click named one that decodes. */
+const actingUser = (input: Extract<ApplyChatProposalInput, { readonly actingUserId?: string }>) =>
+	decodeUserId(input.actingUserId)
+
 /**
  * Who the change runs as, which the caller decided before the session was ever reached: always a
  * Maple user. A person in the app acts as themselves, and a connector approver as the user their
@@ -64,23 +79,16 @@ export const resolveTenant = Effect.fnUntraced(function* (orgId: OrgId, input: A
 		yield* Effect.annotateCurrentSpan("maple.chat.apply.as", "app")
 		return toTenantContext(input.tenant, input.approver)
 	}
-	// Re-checked because it arrives undecoded over RPC: a click that names no Maple user (an older
-	// relay build included) applies nothing, whatever its type says.
-	const userId = decodeUserId(input.actingUserId)
+	const userId = actingUser(input)
+	// `applyChatProposal` already refused this; held here too so this function cannot be reached
+	// around it with nobody to act as.
 	if (Option.isNone(userId)) {
-		return yield* new LinkedUserNotPermitted({
-			reason: "unavailable",
-			message: "Maple could not tell which Maple user approved this. Make the change in the Maple app.",
-		})
+		return yield* new LinkedUserNotPermitted({ reason: "not_linked", message: NOT_LINKED })
 	}
 	const tenant = yield* linkedUserTenant(orgId, userId.value, input.approver)
 	yield* Effect.annotateCurrentSpan("maple.chat.apply.as", "user")
 	return tenant
 })
-
-/** The origin of the turn that wrote the proposal, as far as its tool surface goes. */
-const proposingOrigin = (input: ApplyChatProposalInput): ChatTurnOrigin =>
-	"tenant" in input ? input.approver : { ...input.approver, actingUserId: input.actingUserId }
 
 /**
  * Apply one approved proposal and answer with what to record.
@@ -107,7 +115,7 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 	// environment, rather than from inside one.
 	// Loaded here, not with this module: the set is derived from the tool registry, which the agent
 	// records (read for the surface below) depend on too.
-	const [{ MUTATING_TOOL_NAMES }, { agentForSession }, { profileForTurn }] = await Promise.all([
+	const [{ MUTATING_TOOL_NAMES }, { agentForSession }, { toolSurfaceForApproval }] = await Promise.all([
 		import("./permissions"),
 		import("./agents"),
 		import("./profiles"),
@@ -115,6 +123,9 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 	if (!MUTATING_TOOL_NAMES.has(input.tool)) {
 		return failure(`"${input.tool}" is not a change Maple applies from an approval.`)
 	}
+	// A change is only ever applied as a Maple user: a click that names none stops here, before a
+	// runtime or a database connection exists.
+	if (!("tenant" in input) && Option.isNone(actingUser(input))) return failure(NOT_LINKED)
 
 	// `ErrorActorsService` is deliberately absent: `./turn-actor` already puts it in this module's
 	// static graph, so deferring it would only re-resolve a module that is loaded anyway.
@@ -138,8 +149,7 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 			tenant,
 			input.tool,
 			input.input,
-			// The surface the turn that proposed it ran on.
-			profileForTurn(agentForSession(input.sessionId), proposingOrigin(input)).toolSurface,
+			toolSurfaceForApproval(agentForSession(input.sessionId), input),
 		)
 		const content = Arr.join(
 			Arr.map(result.content, (entry) => entry.text),

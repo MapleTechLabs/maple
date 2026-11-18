@@ -89,8 +89,8 @@ export class LinkedUserNotPermitted extends Schema.TaggedError<LinkedUserNotPerm
 	"@maple/ai/LinkedUserNotPermitted",
 	{
 		message: Schema.String,
-		/** Which of the two it was. They read the same to the person in the channel, not to an operator. */
-		reason: Schema.Literals(["not_a_member", "unavailable"]),
+		/** Which one it was. They read much the same to the person in the channel, not to an operator. */
+		reason: Schema.Literals(["not_a_member", "unavailable", "not_linked"]),
 		cause: Schema.optionalKey(Schema.Defect()),
 	},
 ) {}

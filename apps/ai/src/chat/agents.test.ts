@@ -3,6 +3,7 @@
  * a turn, which is cheap to assert here and expensive to debug live.
  */
 import {
+	type ChatConnectorOrigin,
 	type ChatTurnOrigin,
 	ChatConnectorId,
 	ChatConversationKey,
@@ -16,13 +17,14 @@ import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { assert, describe, it } from "vitest"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { noRepositoryWarmup } from "../../test/chat/tool-executor"
-import { mapleToolCatalog } from "../mcp/tools/registry"
+import { mapleToolCatalog, mapleToolCatalogFor } from "../mcp/tools/registry"
 import { MUTATING_TOOL_NAMES } from "./permissions"
 import type { TenantContext } from "@maple/domain/http"
+import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { AGENTS, agentForSession, isAutonomousTurn, sessionOf } from "./agents"
-import { profileForRoles, profileForTurn } from "./profiles"
+import { profileForRoles, profileForTurn, toolSurfaceForApproval } from "./profiles"
 import { DASHBOARD_AUTHORING_TOOLS } from "../mcp/tools/types"
-import { CONNECTOR_ANONYMOUS_SYSTEM_PROMPT, CONNECTOR_SYSTEM_PROMPT } from "./prompts"
+import { CONNECTOR_SYSTEM_PROMPT } from "./prompts"
 import { buildChatToolkit } from "./maple-toolkit"
 
 /** A connector id, not a real one: the engine never learns which chat platform it answers in. */
@@ -30,7 +32,7 @@ const CONNECTOR = Schema.decodeSync(ChatConnectorId)("testchat")
 const CONVERSATION = Schema.decodeSync(ChatConversationKey)("c1")
 
 /** Someone the host could not resolve to a Maple user: a connector with no account linking. */
-const ANONYMOUS_ORIGIN: ChatTurnOrigin = {
+const ANONYMOUS_ORIGIN: ChatConnectorOrigin = {
 	kind: "connector",
 	connectorId: CONNECTOR,
 	workspaceId: "w1",
@@ -44,7 +46,7 @@ const CONNECTOR_ORIGIN: ChatTurnOrigin = {
 	actingUserId: Schema.decodeSync(UserId)("user_ada"),
 }
 
-/** What a turn nobody is named on is never offered, beyond every tool that changes data. */
+/** Reads a turn nobody is named on is not offered: connected systems, source, SQL, end users. */
 const WITHHELD_FROM_ANONYMOUS = [
 	"query_data_source",
 	"describe_data_source",
@@ -53,13 +55,13 @@ const WITHHELD_FROM_ANONYMOUS = [
 	"run_sql",
 	"list_users",
 	"inspect_user",
+	"search_sessions",
+	"get_session_transcript",
+	"get_agent_session_transcript",
+	"list_integrations",
 	"list_source_repositories",
 	"search_source_code",
 	"read_source_file",
-	"sandbox_grep",
-	"sandbox_list_files",
-	"sandbox_read_file",
-	"sandbox_exec",
 ]
 
 describe("AGENTS", () => {
@@ -242,20 +244,29 @@ describe("profileForTurn", () => {
 		for (const name of WITHHELD_FROM_ANONYMOUS) assert.property(linked, name)
 	})
 
-	it("still answers that turn from telemetry, billed and traced as the bot", () => {
+	it("still answers that turn from telemetry, ungated", () => {
 		const { profile, tools } = toolsFor(connectorSession, ANONYMOUS_ORIGIN)
 		for (const name of ["find_errors", "search_traces", "list_services", "query_data"]) {
 			assert.property(tools, name)
 			assert.equal(evaluatePermission(profile.ruleset, name), "allow", name)
 		}
-		assert.equal(profile.surface, "bot")
 	})
 
-	it("tells that turn to send changes to the Maple app, and names no data source", () => {
-		const profile = profileForTurn(agentForSession(connectorSession), ANONYMOUS_ORIGIN)
-		assert.equal(profile.prompt, CONNECTOR_ANONYMOUS_SYSTEM_PROMPT)
-		assert.isFalse(profile.namesDataSources)
-		assert.isTrue(profileForTurn(agentForSession(connectorSession), CONNECTOR_ORIGIN).namesDataSources)
+	it("applies an approved change on a surface that admits it only for a named approver", () => {
+		const agent = agentForSession(connectorSession)
+		const admitsChanges = (surface: McpToolSurface) =>
+			Arr.some(mapleToolCatalogFor(surface), (tool) => MUTATING_TOOL_NAMES.has(tool.name))
+		const approver = ANONYMOUS_ORIGIN
+
+		assert.isTrue(
+			admitsChanges(toolSurfaceForApproval(agent, { approver, actingUserId: "user_ada" })),
+			"a linked approver's change was not admitted",
+		)
+		assert.isTrue(
+			admitsChanges(toolSurfaceForApproval(agentForSession(appSession), { approver: { kind: "app" } })),
+		)
+		// Whatever let it through this far, the registry holds nothing for it to run.
+		assert.isFalse(admitsChanges(toolSurfaceForApproval(agent, { approver })))
 	})
 
 	it("denies the autonomous pass its mutations while leaving it the internal tools", () => {

@@ -165,7 +165,8 @@ const CONNECTOR_READ_ONLY_NOTE = `## Changes are made in the Maple app
 You can read and explain here, but you cannot change anything: no dashboards, alert rules,
 issues, policies or comments. When someone asks for a change, say in one sentence that it is
 made in the Maple app, and what to change there. Never say a change was made or is waiting
-for approval.`
+for approval. Some tools named in tool descriptions are not available here: call only the tools
+you are offered, and say what you cannot look up from here instead of guessing.`
 
 /**
  * The connector persona: the same engine and the same tools, answering in someone else's client.

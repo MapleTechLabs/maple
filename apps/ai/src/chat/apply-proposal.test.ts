@@ -23,7 +23,7 @@ const ADA: ChatConnectorOrigin = {
 	displayName: "Ada",
 }
 
-const apply = (overrides: { sessionId?: string; tool?: string }) =>
+const apply = (overrides: { sessionId?: string; tool?: string; actingUserId?: string }) =>
 	applyChatProposal({
 		env: {},
 		sessionId: "org_1:bot-testchat-c1",
@@ -70,6 +70,23 @@ describe("refusing an approved proposal before it runs", () => {
 
 		assert.isTrue(result.isError)
 		assert.include(result.output, "another organization")
+	})
+
+	it("refuses a connector approval that names no Maple user, and says where a change is made", async () => {
+		// `env` is empty: an answer at all means it came back before a runtime or a database was built.
+		const unnamed = await applyChatProposal({
+			env: {},
+			sessionId: "org_1:bot-testchat-c1",
+			approver: ADA,
+			tool: "create_alert_rule",
+			input: {},
+		})
+		const results = [unnamed, await apply({ actingUserId: "" })]
+
+		for (const result of results) {
+			assert.isTrue(result.isError)
+			assert.include(result.output, "Maple app")
+		}
 	})
 
 	it("refuses a conversation whose id names no organization", async () => {

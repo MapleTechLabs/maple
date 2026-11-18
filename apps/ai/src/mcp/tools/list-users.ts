@@ -61,7 +61,6 @@ export function registerListUsersTool(server: McpToolRegistrar) {
 			cursor: P.optionalText("The `nextCursor` from a previous page, to read the next one"),
 		}),
 		hints: { readOnly: true },
-		audience: "identified",
 		scopeFamily: "users",
 		phrases: ["Listing users"],
 		handler: Effect.fn("McpTool.listUsers")(function* (params) {

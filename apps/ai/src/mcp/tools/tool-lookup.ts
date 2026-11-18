@@ -42,7 +42,10 @@ export const makeModuleToolLookup = Effect.gen(function* () {
 		namesFor: (surface: McpToolSurface) =>
 			Arr.map(
 				Arr.filter(registeredModules, (entry) =>
-					surfaceAdmits({ audience: entry.audience, hints: { readOnly: entry.readOnly } }, surface),
+					surfaceAdmits(
+						{ name: entry.tool, audience: entry.audience, hints: { readOnly: entry.readOnly } },
+						surface,
+					),
 				),
 				(entry) => entry.name,
 			),

@@ -42,7 +42,6 @@ export function registerListDataSourcesTool(server: McpToolRegistrar) {
 			offset: P.offset({ max: 10_000 }),
 		}),
 		hints: { readOnly: true },
-		audience: "identified",
 		scopeFamily: "data_sources",
 		phrases: ["Listing data sources", "Checking connected data sources"],
 		handler: Effect.fn("McpTool.listDataSources")(function* ({ offset }) {

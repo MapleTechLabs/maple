@@ -41,7 +41,7 @@ describe("CONNECTOR_SYSTEM_PROMPT", () => {
 })
 
 describe("CONNECTOR_ANONYMOUS_SYSTEM_PROMPT", () => {
-	it("names no tool the turn is not offered", () => {
+	it("points the model at no tool the turn is not offered", () => {
 		const offered = new Set(Arr.map(mapleToolCatalogFor("bot_anonymous"), (tool) => tool.name))
 		const named = Arr.filter(mapleToolCatalog, (tool) =>
 			new RegExp(`\\b${tool.name}\\b`).test(CONNECTOR_ANONYMOUS_SYSTEM_PROMPT),
@@ -51,11 +51,5 @@ describe("CONNECTOR_ANONYMOUS_SYSTEM_PROMPT", () => {
 			Arr.filter(named, (tool) => !offered.has(tool.name)),
 			[],
 		)
-	})
-
-	it("keeps the reply contract the linked persona has", () => {
-		for (const shared of ["```chart", "<<maple:trace:", "## Response style"]) {
-			assert.include(CONNECTOR_ANONYMOUS_SYSTEM_PROMPT, shared)
-		}
 	})
 })

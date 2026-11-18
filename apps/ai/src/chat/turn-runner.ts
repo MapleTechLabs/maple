@@ -54,12 +54,13 @@ import { interruptOnAbort, makeTurnObservability, turnSpanAttributes } from "./t
 import { makeAutonomousOutcome } from "./autonomous-outcome"
 import { type PhaseTurn, runAutonomousPhases } from "./autonomous-phases"
 import { makeUnfinishedSettler, runAutonomousTurn, settleAbandonedTurn, settleRow } from "./autonomous-settle"
-import { AGENTS, isAutonomousTurn, sessionOf } from "./agents"
+import { AGENTS, type AgentDefinition, isAutonomousTurn, sessionOf } from "./agents"
 import { profileForTurn } from "./profiles"
 import type { SessionRepositoryScope } from "./maple-toolkit"
 import { runChatTurn } from "./run"
 import { toTenantContext, turnTenant } from "./turn-actor"
 import { dataSourcesPromptSection } from "../mcp/lib/data-sources"
+import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { creditRefusalError, creditRefusalNotice, turnCreditRefusal } from "./turn-credits"
 import type { AiCreditsExhausted } from "@maple/backend/services/billing/AiCredits"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -212,6 +213,29 @@ export const recordReviewCost = (
 }
 
 /**
+ * The org's data sources, one line each, for the prompt. Never fails the turn: logged and left out.
+ * Not read at all for a turn that is not offered their tools: the names are org data too.
+ */
+export const dataSourcesContext = (
+	agent: AgentDefinition,
+	origin: ChatTurnOrigin,
+	executor: Pick<McpToolExecutorApi, "listDataSources">,
+	tenant: TenantContext,
+	turn: { readonly sessionId: string; readonly turnId: string },
+): Effect.Effect<string | undefined> =>
+	profileForTurn(agent, origin).namesDataSources
+		? executor.listDataSources(tenant).pipe(
+				Effect.map(dataSourcesPromptSection),
+				Effect.catchCause((cause) =>
+					Effect.logWarning("Could not list data sources for the prompt", cause).pipe(
+						Effect.annotateLogs({ orgId: tenant.orgId, ...turn }),
+						Effect.as(undefined),
+					),
+				),
+			)
+		: Effect.undefined
+
+/**
  * Drive one turn to completion.
  *
  * Resolves as a promise because the caller is a Durable Object method, not an Effect. Failures are
@@ -266,7 +290,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 	// `meterTurn` resolves its own because it runs as a finalizer and is separately exported.
 	const { agent, row } = sessionOf(input.sessionId)
 	const autonomous = isAutonomousTurn(row, origin)
-	const { surface, namesDataSources } = profileForTurn(agent, origin)
+	const surface = profileForTurn(agent, origin).surface
 	const observability = makeTurnObservability()
 	// Hoisted out of the program: `submit_diagnosis` reads it mid-run — the tool is invoked mid-run
 	// so there is no later moment to hand it a total — and the metering finalizer reads it after the
@@ -463,23 +487,10 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			if (investigationId !== undefined) {
 				yield* forkRequestScoped(toolExecutor.prepareConnectedRepositories(runTenant))
 			}
-			// The org's data sources, one line each, for the prompt. Never fails the turn: logged and left out.
-			// Not read at all for a turn that is not offered their tools: the names are org data too.
-			const dataSourcesSection = namesDataSources
-				? yield* toolExecutor.listDataSources(runTenant).pipe(
-						Effect.map(dataSourcesPromptSection),
-						Effect.catchCause((cause) =>
-							Effect.logWarning("Could not list data sources for the prompt", cause).pipe(
-								Effect.annotateLogs({
-									orgId: tenant.orgId,
-									sessionId: input.sessionId,
-									turnId: input.messageId,
-								}),
-								Effect.as(undefined),
-							),
-						),
-					)
-				: undefined
+			const dataSourcesSection = yield* dataSourcesContext(agent, origin, toolExecutor, runTenant, {
+				sessionId: input.sessionId,
+				turnId: input.messageId,
+			})
 			const history = input.session.history()
 			const tags = { surface, orgId: tenant.orgId, sessionId: input.sessionId, turnId: input.messageId }
 			const deploySettings = yield* loadLlmSettings

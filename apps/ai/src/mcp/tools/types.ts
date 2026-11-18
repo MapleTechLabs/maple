@@ -151,19 +151,10 @@ export const refusalFor = (
 }
 
 /**
- * Who a tool is for.
- *
- * `public` tools are listed on and callable from every surface, the MCP transport
- * included. `identified` tools are public too, but only for a caller Maple can name: they
- * read what an org shares with its members (its own data sources, raw SQL, its end users),
- * so the bot does not offer them to someone it cannot name. `agent` tools exist for Maple's
- * own agents, the chat-platform bot included when it knows who is asking, and the public
- * transport neither lists nor executes them. `internal` tools are narrower still: the
- * in-product agents only. Declared at registration, so a tool cannot reach a third-party MCP
- * client by the mere fact of being in the registry: until this existed, registering was
- * publishing, and `sandbox_exec` shipped as a public tool.
+ * Who a tool is for: `public` everywhere (the MCP transport included), `agent` Maple's own agents
+ * and the bot, `internal` the in-product agents only. Declared at registration, never inferred.
  */
-export type McpToolAudience = "public" | "identified" | "agent" | "internal"
+export type McpToolAudience = "public" | "agent" | "internal"
 
 /**
  * What a call is doing, in words a chat channel reads while it runs: `Running a query`, never
@@ -190,19 +181,66 @@ const AGENT_SURFACES: ReadonlySet<McpToolSurface> = new Set<McpToolSurface>(["ch
  */
 const INTERNAL_SURFACES: ReadonlySet<McpToolSurface> = new Set<McpToolSurface>(["chat", "workflow"])
 
-/**
- * The bot answering someone Maple cannot name (a connector with no account linking). Absent
- * from the two sets above, so it is offered `public` tools only.
- */
+/** The bot answering someone Maple cannot name: a connector with no account linking. */
 const ANONYMOUS_SURFACE: McpToolSurface = "bot_anonymous"
+
+/**
+ * Everything {@link ANONYMOUS_SURFACE} is offered: the org's telemetry and alerting state. A tool
+ * is absent there until it is named here, so one that reads a connected system, source, SQL,
+ * session records or agent transcripts never arrives by default.
+ */
+const ANONYMOUS_TOOLS: ReadonlySet<string> = new Set([
+	"audit_setup",
+	"compare_log_patterns",
+	"compare_operations",
+	"compare_periods",
+	"db_query_volume",
+	"diagnose_service",
+	"error_detail",
+	"explore_attributes",
+	"find_errors",
+	"find_slow_traces",
+	"get_alert_rule",
+	"get_error_notification_policy",
+	"get_incident_timeline",
+	"get_instrumentation_recommendations",
+	"get_service_top_operations",
+	"get_status_page",
+	"ingest_freshness",
+	"ingest_usage",
+	"inspect_slo",
+	"inspect_span",
+	"inspect_trace",
+	"list_alert_checks",
+	"list_alert_incidents",
+	"list_alert_rules",
+	"list_alert_silences",
+	"list_dashboards",
+	"list_error_incidents",
+	"list_error_issues",
+	"list_escalation_chains",
+	"list_maintenance_windows",
+	"list_metrics",
+	"list_oncall_schedules",
+	"list_services",
+	"list_slos",
+	"list_uptime_monitors",
+	"mine_log_patterns",
+	"profile_hotspots",
+	"query_data",
+	"route_usage",
+	"search_logs",
+	"search_traces",
+	"service_deployments",
+	"service_map",
+	"who_is_on_call",
+] satisfies ReadonlyArray<McpToolName>)
 
 /** Whether a surface may see and call a tool of this audience. */
 const audienceAdmits = (audience: McpToolAudience, surface: McpToolSurface): boolean => {
 	switch (audience) {
 		case "public":
 			return true
-		case "identified":
-			return surface !== ANONYMOUS_SURFACE
 		case "agent":
 			return AGENT_SURFACES.has(surface)
 		case "internal":
@@ -211,13 +249,19 @@ const audienceAdmits = (audience: McpToolAudience, surface: McpToolSurface): boo
 }
 
 /**
- * Whether a surface may see and call this tool: its audience admits the surface, and where
- * nobody is named nothing changes data, because a change is only ever applied as a Maple user.
+ * Whether a surface may see and call this tool. Where nobody is named it must also be listed in
+ * {@link ANONYMOUS_TOOLS} and change nothing: a change is only ever applied as a Maple user.
  */
 export const surfaceAdmits = (
-	tool: { readonly audience: McpToolAudience; readonly hints: Pick<McpToolHints, "readOnly"> },
+	tool: {
+		readonly name: string
+		readonly audience: McpToolAudience
+		readonly hints: Pick<McpToolHints, "readOnly">
+	},
 	surface: McpToolSurface,
-): boolean => audienceAdmits(tool.audience, surface) && (surface !== ANONYMOUS_SURFACE || tool.hints.readOnly)
+): boolean =>
+	audienceAdmits(tool.audience, surface) &&
+	(surface !== ANONYMOUS_SURFACE || (ANONYMOUS_TOOLS.has(tool.name) && tool.hints.readOnly))
 
 /**
  * A tool, declared as data: typed input, typed output, how the output reads to a model, and what

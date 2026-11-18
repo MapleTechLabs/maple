@@ -85,13 +85,14 @@ const actorsThat = (actor: ActorId | undefined): Layer.Layer<ErrorActorsService>
 const memberships = (verify: OrgMembershipService["Service"]["verify"]): Layer.Layer<OrgMembershipService> =>
 	Layer.succeed(OrgMembershipService, { verify })
 
-const proposal = (actingUserId: UserId) => ({
+/** As the session hands it over: the acting user is whatever the relay sent, checked on arrival. */
+const proposal = (actingUserId?: string) => ({
 	env: {},
 	sessionId: `${ORG}:bot-testchat-c1`,
 	approver: APPROVER,
 	tool: "create_alert_rule",
 	input: {},
-	actingUserId,
+	...(actingUserId === undefined ? undefined : { actingUserId }),
 })
 
 describe("whose authority an approval runs under", () => {
@@ -176,28 +177,27 @@ describe("whose authority an approval runs under", () => {
 
 	it.effect("applies nothing for a click that names no Maple user", () =>
 		Effect.gen(function* () {
-			// What a relay build from before this rule could still send over RPC, where nothing
-			// decodes the settlement: an approver, and nobody the change would run as.
-			const { actingUserId: _nobody, ...unnamed } = proposal(ADA)
-			const failure = yield* resolveTenant(ORG, JSON.parse(JSON.stringify(unnamed))).pipe(
-				// Neither lookup is consulted: there is no user to check and no connector identity.
+			// What a relay build from before this rule could still send: an approver, and nobody the
+			// change would run as. Neither lookup is consulted, and there is no connector identity.
+			const failure = yield* resolveTenant(ORG, proposal()).pipe(
 				Effect.provide([memberships(die), noActors]),
 				Effect.flip,
 			)
 
 			assert.strictEqual(failure._tag, "@maple/ai/LinkedUserNotPermitted")
-			assert.include(failure.message, "Maple app")
+			// Its own reason: nobody was named, which is not the same as a lookup that failed.
+			assert.strictEqual(failure.reason, "not_linked")
 		}),
 	)
 
 	it.effect("applies nothing for an acting user id that does not decode", () =>
 		Effect.gen(function* () {
-			const failure = yield* resolveTenant(
-				ORG,
-				JSON.parse(JSON.stringify({ ...proposal(ADA), actingUserId: "" })),
-			).pipe(Effect.provide([memberships(die), noActors]), Effect.flip)
+			const failure = yield* resolveTenant(ORG, proposal("")).pipe(
+				Effect.provide([memberships(die), noActors]),
+				Effect.flip,
+			)
 
-			assert.strictEqual(failure._tag, "@maple/ai/LinkedUserNotPermitted")
+			assert.strictEqual(failure.reason, "not_linked")
 		}),
 	)
 })

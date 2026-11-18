@@ -112,7 +112,6 @@ export function registerInspectUserTool(server: McpToolRegistrar) {
 			namespaces: P.optionalList("Only signals from these service namespaces (`service.namespace`)"),
 		}),
 		hints: { readOnly: true },
-		audience: "identified",
 		scopeFamily: "users",
 		phrases: ["Looking up a user"],
 		handler: Effect.fn("McpTool.inspectUser")(function* (params) {

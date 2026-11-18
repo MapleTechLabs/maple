@@ -5,7 +5,7 @@
  * reader of the second — every consumer takes the resolved profile — so a turn cannot run on one
  * surface and be billed, traced or prompted as another.
  */
-import type { ChatTurnOrigin } from "@maple/domain/chat-session"
+import type { ChatConnectorOrigin, ChatTurnOrigin } from "@maple/domain/chat-session"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { PermissionRule, type PermissionRuleset } from "@maple/domain/permission"
 import * as Policy from "@maple/domain/policy"
@@ -86,3 +86,25 @@ export const profileForTurn = (agent: AgentDefinition, origin: ChatTurnOrigin): 
 			}
 	}
 }
+
+/**
+ * The tool surface an approved change is applied on: the one a turn by the approver would run on.
+ * A connector approver with no acting user lands on the surface that admits no change.
+ */
+export const toolSurfaceForApproval = (
+	agent: AgentDefinition,
+	approval:
+		| { readonly approver: Extract<ChatTurnOrigin, { readonly kind: "app" }> }
+		| { readonly approver: ChatConnectorOrigin; readonly actingUserId?: string },
+): McpToolSurface =>
+	profileForTurn(
+		agent,
+		approval.approver.kind === "app"
+			? approval.approver
+			: {
+					...approval.approver,
+					...("actingUserId" in approval && approval.actingUserId !== undefined
+						? { actingUserId: approval.actingUserId }
+						: undefined),
+				},
+	).toolSurface
