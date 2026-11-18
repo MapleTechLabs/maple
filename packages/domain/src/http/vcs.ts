@@ -770,6 +770,8 @@ export const AuditEventJob = Schema.Struct({
 	provider: VcsProviderId,
 	externalInstallationId: Schema.String,
 	event: AuditTrailEventSchema,
+	/** How many times the job waited for its installation to be stored (a connect still finishing). */
+	installationWaits: Schema.optionalKey(Schema.Number),
 	deliveryId: Schema.optionalKey(Schema.String),
 })
 export type AuditEventJob = Schema.Schema.Type<typeof AuditEventJob>

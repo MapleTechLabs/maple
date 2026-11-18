@@ -73,6 +73,10 @@ export const MAX_BACKFILL_STALL_RETRIES = 10
 
 const decodeJob = Schema.decodeUnknownEffect(VcsSyncJob)
 
+/** An audit event for an installation not stored yet waits this many times, this long each. */
+const AUDIT_INSTALLATION_WAITS = 5
+const AUDIT_INSTALLATION_WAIT_SECONDS = 60
+
 /** CI job conclusions worth asking the provider why about. */
 const WORKFLOW_FAILED_CONCLUSIONS: ReadonlySet<string> = new Set(["failure", "timed_out", "startup_failure"])
 /** How long a CI job waits on its annotations before going out without them. */
@@ -1159,6 +1163,22 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					job.externalInstallationId,
 				)
 				if (Option.isNone(installationOpt)) {
+					// GitHub sends `installation.created` while the connect is still finishing, before
+					// the row exists. The audit event waits for it rather than being lost.
+					if (
+						job.kind === "audit-event" &&
+						(job.installationWaits ?? 0) < AUDIT_INSTALLATION_WAITS
+					) {
+						yield* queue.send(
+							{ ...job, installationWaits: (job.installationWaits ?? 0) + 1 },
+							{ delaySeconds: AUDIT_INSTALLATION_WAIT_SECONDS },
+						)
+						yield* Effect.annotateCurrentSpan({
+							"vcs.process.outcome": "requeued",
+							"vcs.process.reason": "installation_unknown",
+						})
+						return
+					}
 					yield* Effect.annotateCurrentSpan({
 						"vcs.process.outcome": "dropped",
 						"vcs.process.reason": "installation_unknown",

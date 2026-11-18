@@ -2437,8 +2437,6 @@ describe("VcsSyncService orchestrator", () => {
 			// The removal is itself the event: a disconnected installation still records it.
 			yield* markInstStatusFor(repo, "42", "disconnected")
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(auditJob("42", "installation.deleted")))
-			// An installation Maple does not know has no org to write into.
-			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(auditJob("nope", "repository.deleted")))
 			assert.deepStrictEqual(forwardedAudit, [
 				{ orgId, action: "organization.member_added" },
 				{ orgId, action: "installation.deleted" },
@@ -2451,6 +2449,37 @@ describe("VcsSyncService orchestrator", () => {
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(auditJob("42", "team.created")))
 			assert.strictEqual(forwardedAudit.length, 2)
 		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent: [], forwardedAudit })))
+	})
+
+	it.effect("holds an audit event for an installation a connect has not stored yet, then gives up", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sent: Array<VcsSyncJob> = []
+		const sentDelays: Array<number | undefined> = []
+		const forwardedAudit: Array<{ orgId: string; action: string }> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(auditJob("42", "installation.created")))
+			const requeued = sent[0]
+			if (requeued?.kind !== "audit-event") return assert.fail("not requeued")
+			assert.strictEqual(requeued.installationWaits, 1)
+			assert.deepStrictEqual(sentDelays, [60])
+
+			// Once the connect stores the installation, the held event lands under its org.
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_audit_wait")
+			yield* seedInstallation(repo, orgId)
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(requeued))
+			assert.deepStrictEqual(forwardedAudit, [{ orgId, action: "installation.created" }])
+
+			// An installation that never arrives stops waiting.
+			yield* svc.processMessage(
+				Schema.encodeSync(VcsSyncJob)({
+					...auditJob("nope", "repository.deleted"),
+					installationWaits: 5,
+				}),
+			)
+			assert.strictEqual(sent.length, 1)
+		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent, sentDelays, forwardedAudit })))
 	})
 
 	it.effect("fails an audit event whose write failed, so the queue retries it", () => {

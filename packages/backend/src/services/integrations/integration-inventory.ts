@@ -429,7 +429,9 @@ const github = (inputs: IntegrationInventoryInputs, now: number): IntegrationEnt
 		resources: [...resources, ...auditLogs],
 		feeds: Arr.filter(
 			INTEGRATION_FEEDS.github,
-			(feed) => ciTraces || !Str.startsWith("GitHub Actions")(feed),
+			(feed) =>
+				(ciTraces || !Str.startsWith("GitHub Actions")(feed)) &&
+				(auditLogs.length > 0 || !Str.includes("Security audit log")(feed)),
 		),
 	})
 }

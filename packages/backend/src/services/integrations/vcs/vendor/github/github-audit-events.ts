@@ -207,6 +207,22 @@ const accountOf = (payload: Json): string | undefined =>
 	textAt(objectAt(objectAt(payload, "installation"), "account"), "login") ??
 	textAt(objectAt(objectAt(payload, "repository"), "owner"), "login")
 
+const UUID_V1 = /^([0-9a-f]{8})-([0-9a-f]{4})-1([0-9a-f]{3})-[0-9a-f]{4}-[0-9a-f]{12}$/iu
+/** 100 ns intervals between the UUID epoch (1582-10-15) and the Unix epoch. */
+const UUID_EPOCH_OFFSET = 122_192_928_000_000_000n
+/** How far a delivery id's time may sit from receipt before it is not trusted. */
+const DELIVERY_TIME_TOLERANCE_MS = 86_400_000
+
+/** When GitHub sent the delivery, from a v1 delivery id; `receivedAtMs` when the id has no usable time. */
+export const deliveryTimeMs = (deliveryId: string, receivedAtMs: number): number => {
+	const match = UUID_V1.exec(deliveryId)
+	if (match === null) return receivedAtMs
+	const [, low = "", mid = "", high = ""] = match
+	const ticks = BigInt(`0x${high}${mid}${low}`)
+	const ms = Number((ticks - UUID_EPOCH_OFFSET) / 10_000n)
+	return Math.abs(ms - receivedAtMs) <= DELIVERY_TIME_TOLERANCE_MS ? ms : receivedAtMs
+}
+
 /** The most of a payload the trail keeps; a larger one loses the objects the event's fields came from. */
 const RAW_LIMIT_BYTES = 32 * 1024
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
@@ -231,7 +247,8 @@ const rawOf = (payload: Json): Json | undefined => {
 /**
  * A verified webhook as the audit trail stores it. None for events the trail does not keep, and for
  * a delivery without an id: the id is the event's key, so a redelivery of the same delivery collapses.
- * GitHub's payloads carry no event time, so `receivedAtMs` stands in for it.
+ * GitHub's payloads carry no event time. A time-based (v1) delivery id carries when GitHub sent it,
+ * which a redelivery keeps, so the row still collapses; any other id falls back to `receivedAtMs`.
  */
 export const githubAuditEvent = (input: {
 	readonly event: string | undefined
@@ -249,7 +266,7 @@ export const githubAuditEvent = (input: {
 		provider: "github",
 		providerEventId: input.deliveryId,
 		account: accountOf(payload),
-		occurredAtMs: input.receivedAtMs,
+		occurredAtMs: deliveryTimeMs(input.deliveryId, input.receivedAtMs),
 		actor: actorOf(objectAt(payload, "sender")),
 		action: `${input.event}.${action}`,
 		category: webhook.category(action),

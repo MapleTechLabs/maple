@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { Option, String as Str } from "effect"
-import { githubAuditEvent } from "../github-audit-events"
+import { deliveryTimeMs, githubAuditEvent } from "../github-audit-events"
 
 const RECEIVED_AT = 1_763_000_000_000
 
@@ -121,6 +121,17 @@ describe("githubAuditEvent", () => {
 		})
 		expect(event.target?.name).toBe("acme/api")
 		expect(event.raw).toEqual({ action: "edited", changes: { description: { from: "old" } } })
+	})
+
+	it("dates an event by its time-based delivery id, so a redelivery keeps the same time", () => {
+		// A v1 UUID minted at 2025-11-13T02:13:20.000Z.
+		const sentAt = Date.UTC(2025, 10, 13, 2, 13, 20)
+		const id = "52e52000-c036-11f0-8000-4c9367dc0958"
+		expect(deliveryTimeMs(id, sentAt + 5_000)).toBe(sentAt)
+		expect(deliveryTimeMs(id, sentAt + 3_600_000)).toBe(sentAt)
+		// Another id kind, or a time far from receipt, falls back to receipt.
+		expect(deliveryTimeMs("3f1c2a52-8d1e-4b7a-9c2d-0e5f6a7b8c9d", 1_000)).toBe(1_000)
+		expect(deliveryTimeMs(id, sentAt + 3 * 86_400_000)).toBe(sentAt + 3 * 86_400_000)
 	})
 
 	it("leaves out code and CI events, and a delivery without an id", () => {
