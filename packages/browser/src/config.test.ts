@@ -65,11 +65,11 @@ describe("resolveConfig", () => {
 		const { ignoreNetworkFailuresFor } = resolveConfig({
 			ingestKey: "maple_pk_x",
 			serviceName: "s",
-			errors: { ignoreNetworkFailuresFor: ["https://www.google-analytics.com", /\/beacon$/g] },
+			errors: { ignoreNetworkFailuresFor: ["https://beacon.example.com", /\/beacon$/g] },
 		})
 		const ignored = (url: string) => ignoreNetworkFailuresFor.some((re) => re.test(url))
-		expect(ignored("https://www.google-analytics.com/g/collect?v=2")).toBe(true)
-		expect(ignored("https://www.google-analytics.com.evil.io/g/collect")).toBe(false)
+		expect(ignored("https://beacon.example.com/g/collect?v=2")).toBe(true)
+		expect(ignored("https://beacon.example.com.evil.io/g/collect")).toBe(false)
 		// A global RegExp still matches every time, not every other.
 		expect(ignored("https://api.example.com/beacon")).toBe(true)
 		expect(ignored("https://api.example.com/beacon")).toBe(true)
