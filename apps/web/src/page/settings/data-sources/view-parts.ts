@@ -79,9 +79,12 @@ export const agentAccessLabel = (source: V2DataSource): string => {
 		: "Agents can query, personal data redacted"
 }
 
+/** The limit of hiding a table on a SQL source, said wherever hiding is offered. */
+export const HIDING_IS_BY_NAME =
+	"Hiding keeps agents from querying a table by name. For a hard boundary, connect a database account that cannot read it."
+
 /** What the agent switch says on a kind that marks no personal data: there is no finer switch. */
-export const AGENTS_READ_EVERY_COLUMN =
-	"Off hides it from the MCP tools and investigations. On, agents can read every column of the tables they can see: this kind of source does not mark personal data, so hide a table in the catalog to keep it from agents."
+export const AGENTS_READ_EVERY_COLUMN = `Off hides it from the MCP tools and investigations. On, agents can read every column of the tables they can see: this kind of source does not mark personal data. ${HIDING_IS_BY_NAME}`
 
 /** `control(false)` for a viewer who may manage data sources, else `control(true)` locked with the reason. */
 export const gatedSourceControl = <M>(

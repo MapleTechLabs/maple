@@ -26,6 +26,15 @@ export const QUERY_LANGUAGE_BY_KIND = {
 	clerk: "resource",
 } as const satisfies Record<DataSourceKind, QueryLanguage>
 
+/**
+ * Whether a kind's catalog marks fields as personal data, for a form that has no source yet. Each
+ * driver answers the same from its own catalog (`marksPersonalData`), and a test holds them equal.
+ */
+export const MARKS_PERSONAL_DATA_BY_KIND = {
+	clickhouse: false,
+	clerk: true,
+} as const satisfies Record<DataSourceKind, boolean>
+
 export const DataSourceEnvironment = Schema.Literals(["production", "staging", "development", "other"])
 export type DataSourceEnvironment = Schema.Schema.Type<typeof DataSourceEnvironment>
 

@@ -162,6 +162,32 @@ describe("data sources tab", () => {
 			)
 		})
 
+		test("the form for an org's first source already knows what its kind can do", () => {
+			const first = (kind: "clickhouse" | "clerk") =>
+				step(loaded([]), Message.ClickedConnect(), Message.ClickedKind({ kind }))
+			scene(
+				{ update, view },
+				given(first("clickhouse")),
+				expectView(piiSwitch).toBeAbsent(),
+				expectView(text(/agents can read every column of the tables they can see/u)).toExist(),
+			)
+			scene({ update, view }, given(first("clerk")), expectView(piiSwitch).toExist())
+		})
+
+		test("says next to the hide switch that hiding is by name, on a SQL source only", () => {
+			const hiding = text(/Hiding keeps agents from querying a table by name/u)
+			scene(
+				{ update, view },
+				given(step(loaded([source]), Message.ClickedOpen({ id: source.id }))),
+				expectView(hiding).toExist(),
+			)
+			scene(
+				{ update, view },
+				given(step(loaded([clerk]), Message.ClickedOpen({ id: clerk.id }))),
+				expectView(hiding).toBeAbsent(),
+			)
+		})
+
 		test("a kind that marks personal data keeps the switch", () => {
 			scene(
 				{ update, view },
