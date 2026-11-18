@@ -475,7 +475,7 @@ const linkedQuery = (opts: PromqlPushdownOpts, groups: PromqlPushdownGroups) =>
 			min: $.min,
 			max: $.max,
 			sumSquares: $.sumSquares,
-			increase: $.increase,
+			resetSum: $.resetSum,
 			resets: $.resets,
 			changes: $.changes,
 		}
@@ -513,7 +513,7 @@ const expandedQuery = (opts: PromqlPushdownOpts, groups: PromqlPushdownGroups) =
 			min: $.min,
 			max: $.max,
 			sumSquares: $.sumSquares,
-			increase: $.increase,
+			resetSum: $.resetSum,
 			resets: $.resets,
 			changes: $.changes,
 		}
@@ -523,9 +523,7 @@ const expandedQuery = (opts: PromqlPushdownOpts, groups: PromqlPushdownGroups) =
 const windowQuery = (opts: PromqlPushdownOpts, groups: PromqlPushdownGroups) =>
 	fromQuery(expandedQuery(opts, groups), "expanded")
 		.select(($) => {
-			const crossIncrease = sql(
-				T.float64,
-			)`sumIf(if(${$.firstV} < ${$.pLastV}, ${$.firstV}, ${$.firstV} - ${$.pLastV}), ${$.prevIn} = 1)`
+			const crossReset = sql(T.float64)`sumIf(${$.pLastV}, ${$.prevIn} = 1 AND ${$.firstV} < ${$.pLastV})`
 			return {
 				sk: $.sk,
 				j: $.j,
@@ -551,7 +549,8 @@ const windowQuery = (opts: PromqlPushdownOpts, groups: PromqlPushdownGroups) =>
 				min: CH.min_($.min),
 				max: CH.max_($.max),
 				sumSquares: CH.sum($.sumSquares),
-				increase: sql(T.float64)`sum(${$.increase}) + ${crossIncrease}`,
+				// Pre-reset values inside the buckets and across their joins; the window adds last - first.
+				resetSum: sql(T.float64)`sum(${$.resetSum}) + ${crossReset}`,
 				resets: sql(
 					T.float64,
 				)`sum(${$.resets}) + countIf(${$.prevIn} = 1 AND ${$.firstV} < ${$.pLastV})`,
@@ -579,7 +578,7 @@ type WindowRow = {
 	readonly min: CH.Expr<number>
 	readonly max: CH.Expr<number>
 	readonly sumSquares: CH.Expr<number>
-	readonly increase: CH.Expr<number>
+	readonly resetSum: CH.Expr<number>
 	readonly resets: CH.Expr<number>
 	readonly changes: CH.Expr<number>
 }
@@ -588,7 +587,8 @@ type WindowRow = {
 const extrapolated = (opts: PromqlPushdownOpts, $: WindowRow) => {
 	const isCounter = opts.func !== "delta"
 	const stepEnd = sql(T.float64)`(${param.int("originMs")} + ${$.j} * ${opts.stepBuckets * opts.widthMs})`
-	const result = isCounter ? sql(T.float64)`${$.increase}` : sql(T.float64)`(${$.lastV} - ${$.firstV})`
+	const difference = sql(T.float64)`(${$.lastV} - ${$.firstV})`
+	const result = isCounter ? sql(T.float64)`(${difference} + ${$.resetSum})` : difference
 	const sampled = sql(T.float64)`((${$.lastT} - ${$.firstT}) / 1000)`
 	const between = sql(T.float64)`(${sampled} / (${$.n} - 1))`
 	const toStart0 = sql(T.float64)`((${$.firstT} - (${stepEnd} - ${opts.rangeMs})) / 1000)`
