@@ -57,8 +57,8 @@ export const FUNNEL: ReadonlyArray<FunnelStep> = [
 		leavers: [
 			{ name: "dashboard_created", count: 140 },
 			{ name: "query_run", count: 88 },
-			{ name: "docs_opened", count: 38 },
 			{ name: "", count: 61 },
+			{ name: "docs_opened", count: 38 },
 		],
 	},
 ]

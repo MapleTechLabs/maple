@@ -45,13 +45,15 @@ describe("live product data", () => {
 		expect(drop.share).toBeCloseTo(1 - 61 / 388)
 	})
 
-	it("explains every person who dropped at each step", () => {
+	it("explains every person who dropped at each step, largest group first", () => {
 		// The drop-off tooltip shows each leaver as a share of the drop, so they must add up to it.
 		FUNNEL.forEach((step, index) => {
 			const previous = FUNNEL[index - 1]
 			if (previous === undefined) return
 			const leavers = (step.leavers ?? []).reduce((sum, leaver) => sum + leaver.count, 0)
 			expect(leavers, step.name).toBe(previous.value - step.value)
+			const counts = (step.leavers ?? []).map((leaver) => leaver.count)
+			expect(counts, `${step.name} leavers, largest first`).toEqual([...counts].sort((x, y) => y - x))
 		})
 	})
 
