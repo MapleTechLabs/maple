@@ -132,9 +132,15 @@ export const TRACES_NUMERIC_AGGREGATION_FNS = ["avg", "sum", "min", "max", "p50"
 export const TracesNumericAggregationFn = Schema.Literals(TRACES_NUMERIC_AGGREGATION_FNS)
 export type TracesNumericAggregationFn = Schema.Schema.Type<typeof TracesNumericAggregationFn>
 
+export const TRACES_NUMERIC_ATTRIBUTE_KEY_MAX_LENGTH = 256
+
 /** Chart `fn` over a numeric span attribute (`SpanAttributes[key]`) instead of the span count. */
 export const TracesNumericAggregation = Schema.Struct({
-	key: Schema.String.check(Schema.isMinLength(1), Schema.isTrimmed(), Schema.isMaxLength(256)),
+	key: Schema.String.check(
+		Schema.isMinLength(1),
+		Schema.isTrimmed(),
+		Schema.isMaxLength(TRACES_NUMERIC_ATTRIBUTE_KEY_MAX_LENGTH),
+	),
 	fn: TracesNumericAggregationFn,
 })
 export type TracesNumericAggregation = Schema.Schema.Type<typeof TracesNumericAggregation>

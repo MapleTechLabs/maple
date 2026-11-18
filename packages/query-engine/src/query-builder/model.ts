@@ -5,6 +5,7 @@ import {
 	type MetricsMetric,
 	type QuerySpec,
 	TRACES_NUMERIC_AGGREGATION_FNS,
+	TRACES_NUMERIC_ATTRIBUTE_KEY_MAX_LENGTH,
 	type TracesNumericAggregationFn,
 } from "@maple/domain/query-engine"
 import {
@@ -1505,6 +1506,13 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 				query: null,
 				warnings,
 				error: "valueField must reference a span attribute, e.g. attr.result.rowCount",
+			}
+		}
+		if (numericAttributeKey.length > TRACES_NUMERIC_ATTRIBUTE_KEY_MAX_LENGTH) {
+			return {
+				query: null,
+				warnings,
+				error: `valueField attribute key is ${numericAttributeKey.length} characters; the limit is ${TRACES_NUMERIC_ATTRIBUTE_KEY_MAX_LENGTH}`,
 			}
 		}
 
