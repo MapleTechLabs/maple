@@ -13,7 +13,13 @@
 // so the two adapters are not duplicates.
 
 import * as Datasources from "@maple/domain/tinybird/datasources"
-import type { TracesMetric, AttributeFilter, MetricType } from "@maple/domain/query-engine"
+import {
+	TRACES_NUMERIC_AGGREGATION_FNS,
+	type TracesMetric,
+	type AttributeFilter,
+	type MetricType,
+	type TracesNumericAggregation,
+} from "@maple/domain/query-engine"
 import { DEFAULT_ERROR_NAMESPACE_PREFIX, UNEXPECTED_IDENTITY_MARKERS } from "./queries/errors"
 import type { OrgId } from "@maple/domain"
 import {
@@ -984,6 +990,16 @@ function hasErrorFilterParam(raw: string | undefined): boolean | undefined {
 	return raw !== "0" && raw !== "false"
 }
 
+/** `numeric_attribute_key` + `numeric_aggregation`; both must be present and the fn known. */
+function numericAggregationParam(params: PipeParams): TracesNumericAggregation | undefined {
+	const key = Str.trim(paramText(params.numeric_attribute_key) ?? "")
+	const fn = A.findFirst(
+		TRACES_NUMERIC_AGGREGATION_FNS,
+		(candidate) => candidate === paramText(params.numeric_aggregation),
+	)
+	return key === "" || Option.isNone(fn) ? undefined : { key, fn: fn.value }
+}
+
 function pipeParamsToTracesTimeseriesOpts(params: PipeParams): TracesTimeseriesOpts {
 	const str = (key: string) => paramText(params[key])
 	const int = (key: string, def: number) => (params[key] != null ? Number(params[key]) : def)
@@ -1012,6 +1028,7 @@ function pipeParamsToTracesTimeseriesOpts(params: PipeParams): TracesTimeseriesO
 		commitShas: splitCsv(str("commit_shas")),
 		attributeFilters: buildAttributeFiltersFromParams(params, "attribute_filter"),
 		resourceAttributeFilters: buildAttributeFiltersFromParams(params, "resource_filter"),
+		numericAggregation: numericAggregationParam(params),
 	}
 }
 
@@ -1050,5 +1067,6 @@ function pipeParamsToTracesBreakdownOpts(params: PipeParams): TracesBreakdownOpt
 		commitShas: splitCsv(str("commit_shas")),
 		attributeFilters: buildAttributeFiltersFromParams(params, "attribute_filter"),
 		resourceAttributeFilters: buildAttributeFiltersFromParams(params, "resource_filter"),
+		numericAggregation: numericAggregationParam(params),
 	}
 }

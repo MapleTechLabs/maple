@@ -4,6 +4,8 @@ import {
 	METRICS_PERCENTILES,
 	type MetricsMetric,
 	type QuerySpec,
+	TRACES_NUMERIC_AGGREGATION_FNS,
+	type TracesNumericAggregationFn,
 } from "@maple/domain/query-engine"
 import {
 	normalizeKey,
@@ -145,7 +147,7 @@ export const AGGREGATIONS_BY_SOURCE: Record<
  * Exported because the MCP schema doc renders it: documenting from the same
  * array the builder enforces keeps the two from drifting.
  */
-export const TRACES_NUMERIC_AGGREGATIONS = ["avg", "sum", "min", "max", "p50", "p95", "p99"] as const
+export const TRACES_NUMERIC_AGGREGATIONS = TRACES_NUMERIC_AGGREGATION_FNS
 
 /**
  * Enforcement sets, derived from the option lists above rather than retyped.
@@ -1540,7 +1542,7 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 					...specFilters,
 					numericAggregation: {
 						key: numericAttributeKey,
-						fn: query.aggregation as "avg" | "sum" | "min" | "max" | "p50" | "p95" | "p99",
+						fn: query.aggregation as TracesNumericAggregationFn,
 					},
 				}
 			: specFilters
