@@ -315,3 +315,66 @@ describe("a failing ingest", () => {
 		expect(await page.evaluate(() => window.hostErrors)).toEqual([])
 	})
 })
+
+describe("page unload", () => {
+	it("does not report requests a reload cancelled as errors", async () => {
+		const { page } = await openApp(browser, app.url, configFor())
+		await ready(page)
+		// `/slow/*` hangs until the reload's document request drops it, 100ms before that
+		// document is answered: the rejections land before `pagehide`, as they do in the field.
+		const reloaded = page.waitForEvent("load")
+		await page.evaluate(() => {
+			// Fire-and-forget, as an app's calls often are: their rejections go unhandled.
+			for (let i = 0; i < 4; i++) void fetch(`/slow/${i}`)
+			setTimeout(() => location.reload(), 50)
+		})
+		await reloaded
+		await ready(page)
+		const cancelled = await waitFor("the cancelled fetch spans", () => {
+			const spans = spansOf(ingest.requests).filter((span) =>
+				String(span.attributes["url.full"]).includes("/slow/"),
+			)
+			return spans.length === 4 && spans
+		})
+		await shutdown(page)
+		expect(
+			cancelled.map((span) => ({
+				status: span.status.code ?? 0,
+				errorType: span.attributes["error.type"],
+				lost: span.attributes["maple.connection_lost"],
+			})),
+		).toEqual(Array.from({ length: 4 }, () => ({ status: 0, errorType: undefined, lost: "page_unload" })))
+		const rejections = spansOf(ingest.requests).filter(
+			(span) => span.name === "browser.unhandled_rejection",
+		)
+		expect(rejections).toEqual([])
+	})
+
+	it("leaves a request the app ignores failures for out of errors, and still reports the rest", async () => {
+		// Chromium refuses port 1 outright: the request fails at once, as a blocked beacon does.
+		const blocked = "http://127.0.0.1:1"
+		const { page } = await openApp(
+			browser,
+			app.url,
+			configFor({ errors: { ignoreNetworkFailuresFor: [`${blocked}/collect`] } }),
+		)
+		await ready(page)
+		await page.evaluate((origin) => {
+			void fetch(`${origin}/collect?v=1`)
+			void fetch(`${origin}/other`)
+		}, blocked)
+		const ignored = await waitFor("the ignored span", () => spanFor("/collect"))
+		const failed = await waitFor("the failed span", () => spanFor(":1/other"))
+		await page.waitForTimeout(500)
+		await shutdown(page)
+		expect(ignored.status.code ?? 0).toBe(0)
+		expect(ignored.attributes["maple.network_failure_ignored"]).toBe(true)
+		expect(ignored.attributes["error.type"]).toBeUndefined()
+		expect(failed.status.code).toBe(2)
+		// Both rejections went unhandled; only the one not ignored is reported.
+		const rejections = spansOf(ingest.requests).filter(
+			(span) => span.name === "browser.unhandled_rejection",
+		)
+		expect(rejections).toHaveLength(1)
+	})
+})

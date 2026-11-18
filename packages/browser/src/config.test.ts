@@ -61,6 +61,21 @@ describe("resolveConfig", () => {
 		expect(propagates("https://cdn.example.com/v20")).toBe(false)
 	})
 
+	it("matches ignored network failure URLs the way it matches CORS URLs", () => {
+		const { ignoreNetworkFailuresFor } = resolveConfig({
+			ingestKey: "maple_pk_x",
+			serviceName: "s",
+			errors: { ignoreNetworkFailuresFor: ["https://www.google-analytics.com", /\/beacon$/g] },
+		})
+		const ignored = (url: string) => ignoreNetworkFailuresFor.some((re) => re.test(url))
+		expect(ignored("https://www.google-analytics.com/g/collect?v=2")).toBe(true)
+		expect(ignored("https://www.google-analytics.com.evil.io/g/collect")).toBe(false)
+		// A global RegExp still matches every time, not every other.
+		expect(ignored("https://api.example.com/beacon")).toBe(true)
+		expect(ignored("https://api.example.com/beacon")).toBe(true)
+		expect(ignored("https://api.example.com/orders")).toBe(false)
+	})
+
 	it("applies defaults and strips the endpoint's trailing slash", () => {
 		const config = resolveConfig({
 			ingestKey: "maple_pk_x",
