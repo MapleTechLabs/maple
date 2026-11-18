@@ -8,6 +8,9 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { sessionData } from "./derive"
 import { init, update } from "./update"
+import { transcriptRows } from "./transcript-rows"
+import { buildLargeSessionFixture } from "../../../lab/agent-transcript-fixture"
+import { toWire } from "../../../lab/session-lab"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -176,5 +179,29 @@ describe("agent session detail", () => {
 			Message.CompletedFetchFirstPage({ key, result: Result.succeed({ data: [], nextCursor: null }) }),
 		)
 		expect(sessionData(reloaded.model)).not.toBe(sessionData(loaded))
+	})
+
+	test("the transcript rows are read once per filter and collapse, not on every scroll tick", () => {
+		const { model } = entered({ view: "transcript" })
+		const key = model.firstPage.key ?? ""
+		const loaded = pageUpdate(
+			model,
+			Message.CompletedFetchFirstPage({
+				key,
+				result: Result.succeed({
+					data: toWire(buildLargeSessionFixture(3), SESSION),
+					nextCursor: null,
+				}),
+			}),
+		).model
+		const rows = transcriptRows(loaded, sessionData(loaded))
+		expect(rows.length).toBeGreaterThan(0)
+		const window = { items: [{ index: 0, start: 0, end: 40 }], totalSize: 40, scrollMargin: 0 }
+		const scrolled = pageUpdate(loaded, Message.ChangedTranscriptWindow({ window })).model
+		expect(transcriptRows(scrolled, sessionData(scrolled))).toBe(rows)
+		const filtered = { ...scrolled, query: "Bash" }
+		expect(transcriptRows(filtered, sessionData(filtered))).not.toBe(rows)
+		const collapsed = { ...scrolled, collapsedTurns: [rows[0]?.key ?? ""] }
+		expect(transcriptRows(collapsed, sessionData(collapsed))).not.toBe(rows)
 	})
 })
