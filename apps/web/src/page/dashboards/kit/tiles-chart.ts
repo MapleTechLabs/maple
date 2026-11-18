@@ -13,7 +13,7 @@ import * as HeatmapChart from "@maple/views/charts/heatmap-chart"
 import * as HistogramChart from "@maple/views/charts/histogram-chart"
 import * as PathsChart from "@maple/views/charts/paths-chart"
 import * as PieChart from "@maple/views/charts/pie-chart"
-import { hoistedSeries } from "@maple/views/charts/timeseries"
+import { hoistedSeries, type RateBasis } from "@maple/views/charts/timeseries"
 import type { TimeseriesAxisSpec } from "@maple/views/charts/chart-spec"
 import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { validateCssColor } from "@maple/ui/lib/sanitizers"
@@ -95,6 +95,10 @@ const isStepFunnel = (dataSource: unknown): boolean => {
 		: endpoint === PRODUCT_EVENTS_FUNNEL_ENDPOINT
 }
 
+/** PromQL answers rates per second already; every other source's rates are counts per bucket. */
+export const rateBasisOf = (dataSource: unknown): RateBasis =>
+	Predicate.hasProperty(dataSource, "kind") && dataSource.kind === "promql" ? "per_second" : "per_bucket"
+
 const skeletonOf = (category: ChartCategory, widget: Widget): ChartSkeletonVariant =>
 	category === "funnel" && widget.display.funnel?.variant === "dropoff" ? "funnel-dropoff" : category
 
@@ -159,6 +163,7 @@ const chartView = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget, re
 					data: primitiveRows(data),
 					theme,
 					unit: display.unit,
+					rateBasis: rateBasisOf(widget.dataSource),
 					timeZone: ctx.timeZone,
 					nowMs: ctx.nowMs,
 					className,
@@ -185,6 +190,7 @@ const chartView = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget, re
 					data: primitiveRows(data),
 					theme,
 					unit: display.unit,
+					rateBasis: rateBasisOf(widget.dataSource),
 					timeZone: ctx.timeZone,
 					nowMs: ctx.nowMs,
 					stacked: display.stacked === true,

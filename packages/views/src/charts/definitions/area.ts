@@ -75,7 +75,13 @@ export const buildQueryBuilderArea = (spec: AreaSpec): BuiltChart<TimeseriesRow,
 	const unit = spec.unit ?? undefined
 	const keys = Arr.map(definitions, (definition) => definition.chartKey)
 	const normalised = normaliseRows(spec.data, definitions)
-	const rows = scaleRates(normalised, keys, unit, bucketSecondsOf(normalised))
+	const rows = scaleRates(
+		normalised,
+		keys,
+		unit,
+		bucketSecondsOf(normalised),
+		spec.rateBasis ?? "per_bucket",
+	)
 	const visible: ReadonlyArray<Series> = Arr.map(
 		Arr.filter(definitions, (definition) => !spec.hidden.includes(definition.chartKey)),
 		(definition) => ({
