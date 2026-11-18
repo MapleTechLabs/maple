@@ -15,6 +15,7 @@ import {
 	PlanetScaleOAuthClientSecret,
 	SandboxInternalServiceToken,
 	SearchConsoleClientSecret,
+	StatusDomainsApiToken,
 	SupabaseOAuthClientSecret,
 } from "@maple/infra/secrets"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
@@ -35,6 +36,8 @@ const McpToolSecretsLive = Layer.mergeAll(
 	PlanetScaleOAuthClientSecret.layer,
 	SandboxInternalServiceToken.layer,
 	SearchConsoleClientSecret.layer,
+	// Status page custom domains (Cloudflare for SaaS); unset, they read as unavailable.
+	StatusDomainsApiToken.layer,
 	SupabaseOAuthClientSecret.layer,
 )
 

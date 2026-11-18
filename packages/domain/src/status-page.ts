@@ -85,6 +85,34 @@ export const statusPageOrgKey = (orgId: string): string =>
 /** A page's hosted address on Maple's status domain, without the `/s/` prefix: `<org key>/<slug>`. */
 export const statusPageAddress = (orgId: string, slug: string): string => `${statusPageOrgKey(orgId)}/${slug}`
 
+const STATUS_PAGE_SLUG_MAX = 48
+
+/**
+ * A slug suggested from a page name: `Acme Status!` as `acme-status`. Lowercase letters and
+ * digits, accents dropped, single inner hyphens. Not always a valid slug: a name with under three
+ * letters or digits gives a short one.
+ */
+export const slugFromName = (name: string): string =>
+	Str.replace(
+		/-+$/u,
+		"",
+	)(
+		Str.slice(
+			0,
+			STATUS_PAGE_SLUG_MAX,
+		)(
+			Str.replace(
+				/^-+|-+$/gu,
+				"",
+			)(
+				Str.replace(
+					/[^a-z0-9]+/gu,
+					"-",
+				)(Str.replace(/\p{M}+/gu, "")(Str.normalize("NFKD")(Str.toLowerCase(name)))),
+			),
+		),
+	)
+
 /** Longest custom domain hostname Maple stores (DNS caps a name at 253 characters). */
 export const STATUS_PAGE_CUSTOM_DOMAIN_MAX_LENGTH = 253
 

@@ -2,15 +2,16 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 
 // `Heading`: an `h1`-`h4` on the dashboard's heading ramp. `display` is a flow's hero (sign-in,
-// onboarding, connect), `title` a flow step or sheet title, `section` and `subsection` a block's
-// heading, `label` a quiet group label, `code` a literal message as the title (an error's text).
+// onboarding, connect), `title` a flow step or sheet title, `card` a card's title in a grid of
+// choices, `section` and `subsection` a block's heading, `label` a quiet group label, `code` a literal message as the title (an error's text).
 // `className` is for layout (truncate, margins), not type.
 
-export type HeadingVariant = "display" | "title" | "section" | "subsection" | "label" | "code"
+export type HeadingVariant = "display" | "title" | "card" | "section" | "subsection" | "label" | "code"
 
 const VARIANT = {
 	display: "font-display text-3xl font-semibold tracking-tight text-foreground",
 	title: "font-display text-xl font-semibold tracking-tight text-foreground",
+	card: "font-display text-title font-semibold tracking-tight text-foreground",
 	section: "text-sm font-semibold text-foreground",
 	subsection: "text-sm font-medium text-foreground",
 	label: "text-xs font-medium text-muted-foreground",
