@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { AiSessionSpanCursor } from "@maple/domain/http"
-import { Result, Schema, Array as Arr } from "effect"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
@@ -8,6 +8,9 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { sessionData } from "./derive"
 import { init, update } from "./update"
+import { hashedMarkdownTexts, transcriptRows } from "./transcript-rows"
+import { buildLargeSessionFixture } from "../../../lab/agent-transcript-fixture"
+import { toWire } from "../../../lab/session-lab"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -176,5 +179,66 @@ describe("agent session detail", () => {
 			Message.CompletedFetchFirstPage({ key, result: Result.succeed({ data: [], nextCursor: null }) }),
 		)
 		expect(sessionData(reloaded.model)).not.toBe(sessionData(loaded))
+	})
+
+	const transcriptLoaded = (): Model => {
+		const { model } = entered({ view: "transcript" })
+		return pageUpdate(
+			model,
+			Message.CompletedFetchFirstPage({
+				key: model.firstPage.key ?? "",
+				result: Result.succeed({
+					data: toWire(buildLargeSessionFixture(3), SESSION),
+					nextCursor: null,
+				}),
+			}),
+		).model
+	}
+
+	test("the transcript rows are read once per filter and collapse, not on every scroll tick", () => {
+		const loaded = transcriptLoaded()
+		const rows = transcriptRows(loaded, sessionData(loaded))
+		expect(rows.length).toBeGreaterThan(0)
+		const window = { items: [{ index: 0, start: 0, end: 40 }], totalSize: 40, scrollMargin: 0 }
+		const scrolled = pageUpdate(loaded, Message.ChangedTranscriptWindow({ window })).model
+		expect(transcriptRows(scrolled, sessionData(scrolled))).toBe(rows)
+		const filtered = { ...scrolled, query: "Bash" }
+		expect(transcriptRows(filtered, sessionData(filtered))).not.toBe(rows)
+	})
+
+	test("collapsing a turn keeps its header and drops its body from the cached rows", () => {
+		const loaded = transcriptLoaded()
+		const rows = transcriptRows(loaded, sessionData(loaded))
+		const header = Option.getOrUndefined(
+			Arr.findFirst(rows, (row) => (row.kind === "turn" ? Option.some(row) : Option.none())),
+		)
+		const collapsed = { ...loaded, collapsedTurns: [header?.turn.id ?? ""] }
+		const collapsedRows = transcriptRows(collapsed, sessionData(collapsed))
+		expect(Arr.map(collapsedRows, (row) => row.key)).toContain(header?.key)
+		expect(collapsedRows.length).toBeLessThan(rows.length)
+	})
+
+	test("showing a body raw drops its markdown from the parse the transcript asks for", () => {
+		const loaded = transcriptLoaded()
+		const rows = transcriptRows(loaded, sessionData(loaded))
+		const texts = hashedMarkdownTexts(loaded, rows)
+		const shown = Arr.findFirst(
+			rows,
+			(row) =>
+				(row.kind === "user" || row.kind === "assistant" || row.kind === "prompt") &&
+				hashedMarkdownTexts({ ...loaded, openRows: [`${row.key}:raw`] }, rows).length < texts.length,
+		)
+		expect(Option.isSome(shown)).toBe(true)
+		const raw = {
+			...loaded,
+			openRows: [
+				`${Option.getOrElse(
+					Option.map(shown, (row) => row.key),
+					() => "",
+				)}:raw`,
+			],
+		}
+		expect(hashedMarkdownTexts(raw, rows).length).toBe(texts.length - 1)
+		expect(hashedMarkdownTexts(loaded, rows)).toEqual(texts)
 	})
 })

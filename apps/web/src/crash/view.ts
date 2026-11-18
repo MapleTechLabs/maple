@@ -1,7 +1,9 @@
-import { Effect, Option, Predicate, Schema, Stream, Array as Arr } from "effect"
+import { Effect, Option, Predicate, Stream, Array as Arr } from "effect"
 import { Mount } from "foldkit"
+import { defineMessageUnion } from "foldkit/message"
 import type { Document, Html, HtmlBuilder } from "foldkit/html"
 import type { CrashContext } from "foldkit/runtime"
+import type { MountAction } from "foldkit/mount"
 import { writeClipboardText } from "@maple/ui/lib/clipboard"
 import { button, linkButton } from "@maple/views/ui/button"
 import { eyebrow } from "@maple/views/ui/eyebrow"
@@ -49,11 +51,13 @@ export const crashDetails = (
 		"\n",
 	)
 
+const CompletedMountCrashPage = defineMessageUnion({ CompletedMountCrashPage: {} }).CompletedMountCrashPage
+
 // The dispatch loop is gone, so the leaves and the copy button run on plain DOM listeners.
 const MountCrashPage = Mount.defineStream("MountCrashPage", {
-	messages: [Schema.Never],
+	messages: [CompletedMountCrashPage],
 	execute: ({ element }) =>
-		Stream.callback<never>(() =>
+		Stream.callback<typeof CompletedMountCrashPage.Type>(() =>
 			Effect.acquireRelease(
 				Effect.sync(() => {
 					const canvas = element.querySelector("canvas")
@@ -79,6 +83,12 @@ const MountCrashPage = Mount.defineStream("MountCrashPage", {
 				(stop) => Effect.sync(stop),
 			).pipe(Effect.andThen(Effect.never)),
 		),
+})
+
+/** The crash builder takes only Mounts that emit nothing, so drop the declared Message. */
+const drainedMount = <M>(action: MountAction<M>): MountAction<never> => ({
+	...action,
+	f: (element, viewStateChanges) => Stream.drain(action.f(element, viewStateChanges)),
 })
 
 const mapleMark = (h: HtmlBuilder<never>): Html =>
@@ -111,7 +121,7 @@ export const crashView = (context: CrashContext<unknown, unknown>, h: HtmlBuilde
 		title: "Something came loose · Maple",
 		body: h.main(
 			[
-				h.OnMount(MountCrashPage()),
+				h.OnMount(drainedMount(MountCrashPage())),
 				h.DataAttribute("slot", "crash-page"),
 				h.Class(
 					"relative isolate flex min-h-screen w-full overflow-hidden bg-background text-foreground",
