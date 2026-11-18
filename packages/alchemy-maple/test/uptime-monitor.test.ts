@@ -124,6 +124,9 @@ describe("UptimeMonitorProvider", () => {
 		Effect.gen(function* () {
 			const fake = makeFake()
 			const output = yield* reconcile(fake, http)
+			expect(decodeBody(fake.store.get("/v2/uptime_monitors/upm_1")?.config).headers).toEqual({
+				"x-check": "1",
+			})
 			const news: UptimeMonitorProps = {
 				...http,
 				config: { type: "http", url: "https://api.example.com/health" },

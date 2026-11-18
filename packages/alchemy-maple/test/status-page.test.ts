@@ -462,6 +462,41 @@ describe("StatusPageProvider", () => {
 			)
 			expect(failed._tag).toBe("Failure")
 			expect(fake.password()).toBe("correct horse battery")
+			fake.allowConfig()
+			fake.calls.length = 0
+			yield* reconcile(fake, { ...olds, password: "another long secret" }, { olds, output })
+			expect(Arr.filter(fake.calls, (call) => !Str.startsWith("GET")(call))).toEqual([
+				"PUT /v2/status_pages/stp_1/config",
+				"PUT /v2/status_pages/stp_1/password",
+			])
+			expect(fake.password()).toBe("another long secret")
+		}),
+	)
+
+	it.live("sets a first password after the config when the page stays public", () =>
+		Effect.gen(function* () {
+			const fake = makeFake()
+			const output = yield* reconcile(fake, base)
+			fake.refuseConfig()
+			const failed = yield* Effect.exit(
+				reconcile(fake, { ...base, password: "correct horse battery" }, { olds: base, output }),
+			)
+			expect(failed._tag).toBe("Failure")
+			expect(fake.password()).toBeNull()
+		}),
+	)
+
+	it.live("moves the page to a new custom domain", () =>
+		Effect.gen(function* () {
+			const fake = makeFake()
+			const olds: StatusPageProps = { ...base, custom_domain: "status.acme.com" }
+			const output = yield* reconcile(fake, olds)
+			const moved = yield* reconcile(
+				fake,
+				{ ...base, custom_domain: "status.acme.io" },
+				{ olds, output },
+			)
+			expect(moved.customDomain?.hostname).toBe("status.acme.io")
 		}),
 	)
 })
