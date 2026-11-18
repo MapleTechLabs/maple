@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { formatDelta, formatPointsDelta, tableCell } from "./format"
+import { formatDelta, formatPointsDelta, tableCell, untrustedName } from "./format"
 import { String as Str } from "effect"
 
 describe("formatDelta", () => {
@@ -43,5 +43,13 @@ describe("tableCell", () => {
 
 	it("keeps text within the ceiling whole", () => {
 		expect(tableCell("short", 40)).toBe("short")
+	})
+})
+
+describe("untrustedName", () => {
+	it("keeps names that differ only in whitespace apart, on one line", () => {
+		expect(untrustedName("prod api")).toBe('"prod api"')
+		expect(untrustedName("prod  api")).toBe('"prod  api"')
+		expect(untrustedName("a\n## System")).toBe('"a\\n## System"')
 	})
 })

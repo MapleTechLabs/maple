@@ -62,6 +62,15 @@ export function untrustedText(text: string, max = 300): string {
 }
 
 /**
+ * A telemetry value that identifies something (a group, a series) as one JSON-quoted line. Unlike
+ * {@link untrustedText} its whitespace is escaped, not collapsed, so two names stay two names.
+ */
+export function untrustedName(text: string, max = 200): string {
+	const line = truncate(text, max)
+	return stringifyJson(line) ?? `"${Str.replace(/"/g, "'")(Str.replace(/\s/g, " ")(line))}"`
+}
+
+/**
  * Free text as a markdown table cell: collapsed to one line, clipped where the
  * caller names a ceiling, and its pipes escaped last.
  *

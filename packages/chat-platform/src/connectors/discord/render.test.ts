@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest"
 import type { ChatAlertBlock, ChatBlock } from "../../render/blocks"
 import { decodeChatAlertAckControlId, type ChatActionToken } from "../../action-token"
-import { EMPTY_CONTENT, MAX_ACTION_ROWS, MAX_CONTENT_CHARS, renderDiscordMessage } from "./render"
+import {
+	EMPTY_CONTENT,
+	MAX_ACTION_ROWS,
+	MAX_CONTENT_CHARS,
+	renderDiscordMessage,
+	withoutLinkPreviews,
+} from "./render"
 import { Array as Arr, Option, String as Str } from "effect"
 
 const token = (value: string) => value as ChatActionToken
@@ -221,6 +227,22 @@ describe("renderDiscordMessage", () => {
 			{ kind: "prose", markdown: "get https://x.example/artifact_ or _https://y.example/a_" },
 		])
 		expect(payload.content).toBe("get <https://x.example/artifact_> or _<https://y.example/a>_")
+	})
+
+	it("trims a long emphasis or parenthesis run after a URL without recursing per character", () => {
+		const underscores = Str.repeat(50_000)("_")
+		const parens = Str.repeat(50_000)(")")
+		expect(withoutLinkPreviews(`_https://x.example/a${underscores}`)).toBe(
+			`_<https://x.example/a>${underscores}`,
+		)
+		expect(withoutLinkPreviews(`https://x.example/a${parens}`)).toBe(`<https://x.example/a>${parens}`)
+	})
+
+	it("keeps a notice's URL whole, ending underscore included", () => {
+		const payload = renderDiscordMessage([
+			{ kind: "notice", tone: "info", text: "see https://x.example/artifact_" },
+		])
+		expect(payload.content).toBe("*see <https://x.example/artifact_>*")
 	})
 
 	it("suppresses a URL between escaped backticks, which Discord shows as plain text", () => {

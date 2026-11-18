@@ -141,7 +141,8 @@ export const renderDiscordMessage = (blocks: ReadonlyArray<ChatBlock>): DiscordM
 				break
 			}
 			case "notice":
-				lines.push(block.tone === "error" ? `**${block.text}**` : `_${block.text}_`)
+				// Stars, not underscores: a URL may end in `_`, and the link rewrite keeps it.
+				lines.push(block.tone === "error" ? `**${block.text}**` : `*${block.text}*`)
 				break
 			case "alert": {
 				if (block.acknowledge !== undefined && rows.length < MAX_ACTION_ROWS) {
@@ -253,12 +254,17 @@ const count = (text: string, char: string) => Str.split(char)(text).length - 1
  * `~` run only when the same mark opens right before it (emphasis), since both are valid in a URL.
  */
 const urlPart = (url: string, before: string): string => {
-	const trimmed = Str.replace(TRAILING, "")(url)
-	const mark = before === "_" || before === "~" ? before : undefined
-	if (mark !== undefined && Str.endsWith(mark)(trimmed)) return urlPart(Str.slice(0, -1)(trimmed), before)
-	return Str.endsWith(")")(trimmed) && count(trimmed, ")") > count(trimmed, "(")
-		? urlPart(Str.slice(0, -1)(trimmed), before)
-		: trimmed
+	// Fixed passes, never one step per character: a URL can be as long as the message.
+	const suffix = before === "_" ? /[.,;:!?'"*_]+$/ : before === "~" ? /[.,;:!?'"*~]+$/ : TRAILING
+	const trimmed = Str.replace(suffix, "")(url)
+	const closing = Str.length(
+		Str.match(/\)+$/)(trimmed).pipe(
+			Option.map(([run]) => run),
+			Option.getOrElse(() => ""),
+		),
+	)
+	const unopened = Math.min(closing, Math.max(0, count(trimmed, ")") - count(trimmed, "(")))
+	return Str.replace(suffix, "")(Str.slice(0, Str.length(trimmed) - unopened)(trimmed))
 }
 
 const suppressBare = (url: string, before: string): string => {
