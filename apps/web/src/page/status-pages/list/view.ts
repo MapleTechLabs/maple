@@ -37,7 +37,15 @@ import { docsLink } from "../../kit/signal-empty-state"
 import { formatDaysUptime } from "../../kit/uptime/derive"
 import { uptimeDaysStrip } from "../../kit/uptime/view"
 import { emptyActions } from "@maple/views/ui/signal-empty-state"
-import { newStatusPageHref, publicAddress, statusPageHref } from "../shared/commands"
+import {
+	newStatusPageHref,
+	publicAddress,
+	publicPageLink,
+	publicUrl,
+	STATUS_PAGE_BASE_URL,
+	statusPageHref,
+} from "../shared/commands"
+import { openMenuEntries } from "../shared/open-page"
 import {
 	COMPONENT_STATUS_LABEL,
 	COMPONENT_STATUS_TONE,
@@ -48,7 +56,7 @@ import {
 import { windowLine } from "../editor/view-panel"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
-import { openTargetOf, rowMenuId } from "./update"
+import { rowMenuId } from "./update"
 import { gatedControl } from "../../kit/session-grants"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -167,29 +175,15 @@ const lastPublished = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Ht
 	])
 }
 
-/** Edit and Delete for those who may change the page; Open page for everyone, disabled with the reason while it has no address. */
+/** Open public page and Open dev preview for everyone; Edit and Delete for those who may change the page. */
 const pageMenuEntries = (summary: StatusPageSummary, isEditable: boolean): ReadonlyArray<MenuEntry> => {
-	const target = openTargetOf(summary)
-	const open: MenuEntry =
-		target._tag === "Unavailable"
-			? {
-					_tag: "Item",
-					value: "open",
-					label: "Open page",
-					icon: "ExternalLinkIcon",
-					isDisabled: true,
-					tooltip: { content: [target.reason], side: "left" },
-				}
-			: {
-					_tag: "Item",
-					value: "open",
-					label: "Open page",
-					icon: target._tag === "InApp" ? "EyeIcon" : "ExternalLinkIcon",
-				}
-	if (!isEditable) return [open]
+	const page = summary.page
+	const open = openMenuEntries(publicPageLink(page, publicUrl(STATUS_PAGE_BASE_URL, page.slug)))
+	if (!isEditable) return open
 	return [
+		...open,
+		{ _tag: "Separator" },
 		{ _tag: "Item", value: "edit", label: "Edit", icon: "PencilIcon" },
-		open,
 		{ _tag: "Separator" },
 		{ _tag: "Item", value: "delete", label: "Delete", icon: "TrashIcon", variant: "destructive" },
 	]

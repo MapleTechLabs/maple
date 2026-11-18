@@ -51,7 +51,7 @@ export interface MapleDomains {
 	 * every workspace re-approves on change. prd only.
 	 */
 	chat?: string
-	/** The status Worker serving customer pages at `/s/<slug>`. Previews only: prd has no domain yet. */
+	/** The status Worker serving customer pages at `/s/<slug>`. Not `status.maple.dev`: that is Maple's own status page. */
 	status?: string
 }
 
@@ -73,6 +73,7 @@ export const PRD_DOMAINS = {
 	landing: "maple.dev",
 	local: "local.maple.dev",
 	chat: "chat.maple.dev",
+	status: "status-pages.maple.dev",
 } satisfies MapleDomains
 
 /** An app's US prd origin (`https://ingest.maple.dev`). */
@@ -86,6 +87,7 @@ const PRD_DOMAINS_EU: MapleDomains = {
 	sync: "sync.eu.maple.dev",
 	electric: "electric.eu.maple.dev",
 	chat: "chat.eu.maple.dev",
+	status: "status-pages.eu.maple.dev",
 }
 
 const mapleStageResult = (stage: string): Result.Result<MapleStage, MapleStageError> => {

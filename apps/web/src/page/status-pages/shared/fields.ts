@@ -22,7 +22,8 @@ import { Array as Arr } from "effect"
 type Frame = Readonly<{
 	id: string
 	label: string
-	hint?: string
+	/** Text, or text with links in it. */
+	hint?: string | ReadonlyArray<Html | string>
 	/** Replaces the hint, in the error colour. */
 	error?: string | null
 	className?: string

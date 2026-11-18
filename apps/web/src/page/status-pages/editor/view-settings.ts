@@ -11,12 +11,20 @@ import { copyableField } from "@maple/views/ui/copyable-field"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { skeleton } from "@maple/views/ui/skeleton"
+import { textLink } from "@maple/views/ui/text-link"
 import { failureMessage } from "@maple/views/data/load-failure"
 import { dangerRow, dangerZone } from "../../kit/danger-zone"
 import { navShell } from "../../kit/nav-shell"
 import { saveBar } from "../../kit/save-bar"
 import { adminOnlyNote, settingsSection, settingsSections } from "../../kit/settings-section"
-import { publicAddress, SETTINGS_SECTIONS, type SettingsSection, statusPageHref } from "../shared/commands"
+import { SLUG_TAKEN_MESSAGE } from "../shared/slug"
+import {
+	publicAddress,
+	publicUrl,
+	SETTINGS_SECTIONS,
+	type SettingsSection,
+	statusPageHref,
+} from "../shared/commands"
 import { selectField, textareaField, textField } from "../shared/fields"
 import {
 	hasAppearanceIssues,
@@ -72,6 +80,26 @@ const AUTO_INCIDENT_ENTRIES = [
 const nameShown = (form: SettingsForm, page: V2StatusPage): string =>
 	Str.trim(form.name) === "" ? page.name : Str.trim(form.name)
 
+/** The address in the Address hint: a link once it serves the saved page, plain text otherwise. */
+const addressText = (h: H, page: V2StatusPage, url: string, isSaved: boolean): Html | string =>
+	isSaved && page.visibility !== "internal" && !page.draft && Str.startsWith("http")(url)
+		? textLink(h, { href: url, attributes: [h.Target("_blank"), h.Rel("noopener")] }, [url])
+		: url
+
+/** The Address hint's first sentence: only a published public or password page is read there. */
+const whereVisitorsRead = (
+	h: H,
+	page: V2StatusPage,
+	url: string,
+	isSaved: boolean,
+): ReadonlyArray<Html | string> => {
+	const address = addressText(h, page, url, isSaved)
+	if (page.visibility === "internal")
+		return ["Its address is ", address, ", but internal pages are not served there."]
+	if (page.draft) return ["Visitors will read the page at ", address, " once it is published."]
+	return ["Visitors read the page at ", address, "."]
+}
+
 const pageSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm): Html => {
 	const issues = settingsIssues(form)
 	const isReadOnly = !canManage(model)
@@ -101,8 +129,19 @@ const pageSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm)
 					value: form.slug,
 					isMono: true,
 					isDisabled: isReadOnly,
-					error: issues.slug,
-					hint: `The last part of the page's Maple URL: ${publicAddress(form.slug)}. Changing it moves the page and the old URL stops working. A custom domain, below, serves the page at your own address instead.`,
+					error:
+						model.takenSlug !== null && model.takenSlug === form.slug
+							? SLUG_TAKEN_MESSAGE
+							: issues.slug,
+					hint: [
+						...whereVisitorsRead(
+							h,
+							page,
+							publicUrl(model.publicBaseUrl, form.slug) ?? `/s/${form.slug}`,
+							form.slug === page.slug,
+						),
+						" Each address belongs to one page across Maple; changing it moves the page and the old address stops working. A custom domain, below, serves the page at your own address instead.",
+					],
 					onInput: (value) => Message.ChangedSetting({ field: "slug", value }),
 				}),
 				textareaField(h, {

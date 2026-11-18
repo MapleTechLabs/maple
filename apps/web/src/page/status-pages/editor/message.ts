@@ -60,6 +60,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchSession: SessionGrants,
 	ClickedRetry: {},
 	GotPageMenuMessage: { message: Menu.Message },
+	CompletedOpenPublicPage: {},
 	CompletedFocus: {},
 	// Preview and selection
 	ElapsedPreviewDebounce: { generation: Schema.Number },

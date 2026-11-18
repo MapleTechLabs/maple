@@ -2,51 +2,21 @@ import type { V2StatusPage } from "@maple/domain/http/v2"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { apiPublicUrl } from "../../../platform/api-base-url"
 import { button, linkButton } from "@maple/views/ui/button"
-import { copyableField } from "@maple/views/ui/copyable-field"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
 import { panel } from "@maple/views/ui/panel"
 import { heading } from "@maple/views/ui/heading"
-import { statusPageHref, statusPageViewHref } from "../shared/commands"
-import { pageUrlOf } from "./update-domain"
+import { statusPageHref } from "../shared/commands"
+import { addressBlock } from "./view-address"
 import { Message } from "./message"
 import { canBreakGlass, type Model } from "./model"
 import { revealedToken } from "./view-settings"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
-import { textLink } from "@maple/views/ui/text-link"
 
 // Right after Publish: the page is live, where it lives, and the two things worth doing next.
 
 type H = HtmlBuilder<Message>
-
-/** In place of a link that would not resolve: prd has no status domain yet. */
-export const NO_DOMAIN_NOTE = "Public address appears once a status domain is configured"
-
-/** The header's address: a link to the public page, or the note while there is no status domain. */
-export const addressLine = (h: H, model: Model, page: V2StatusPage): Html => {
-	if (page.visibility === "internal")
-		return typography(h, { size: "xs" }, [
-			textLink(h, { href: statusPageViewHref(page.id), tone: "muted" }, [
-				"Internal: only members can read it, in Maple",
-			]),
-		])
-	const url = pageUrlOf(model, page)
-	if (url === null) return typography(h, { size: "xs", tone: "muted" }, [NO_DOMAIN_NOTE])
-	// A draft is never published, so its address does not resolve yet: text, not a link.
-	if (page.draft) return typography(h, { size: "xs", tone: "muted", mono: true }, [url])
-	return textLink(
-		h,
-		{
-			href: url,
-			tone: "muted",
-			isMono: true,
-			className: "text-xs",
-			attributes: [h.Target("_blank"), h.Rel("noopener")],
-		},
-		[url],
-	)
-}
 
 const nextStep = (
 	h: H,
@@ -94,61 +64,6 @@ const breakGlassStep = (h: H, model: Model, page: V2StatusPage): Html =>
 			: [typography(h, { size: "xs", tone: "muted", as: "p" }, ["Ask an org admin to issue one."])],
 		extra: revealedToken(h, model),
 	})
-
-/** Where the page is read: its public address, or for an internal page the in-app viewer. */
-const addressBlock = (h: H, model: Model, page: V2StatusPage): Html => {
-	if (page.visibility === "internal")
-		return hstack(h, { gap: "3", justify: "between", align: "center", wrap: true }, [
-			typography(h, { size: "sm", tone: "muted", as: "p" }, [
-				"It has no public address: members read it in Maple.",
-			]),
-			linkButton(h, { size: "sm", variant: "outline", href: statusPageViewHref(page.id) }, [
-				icon(h, "EyeIcon"),
-				"Open page",
-			]),
-		])
-	const url = pageUrlOf(model, page)
-	if (url === null)
-		return vstack(h, { gap: "1.5" }, [
-			typography(h, { size: "xs", tone: "muted" }, ["Public address"]),
-			h.p(
-				[h.Class("rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground")],
-				[NO_DOMAIN_NOTE],
-			),
-		])
-	return h.div(
-		[h.Class("flex flex-col gap-2 sm:flex-row sm:items-end")],
-		[
-			h.div(
-				[h.Class("min-w-0 flex-1")],
-				[
-					copyableField(h, {
-						id: "status-page-public-url",
-						label: "Public address",
-						value: url,
-						copyLabel: "public address",
-						copy: model.urlCopy,
-						toCopyMessage: (message) => Message.GotUrlCopyMessage({ message }),
-					}),
-				],
-			),
-			...(page.draft
-				? []
-				: [
-						linkButton(
-							h,
-							{
-								size: "sm",
-								variant: "outline",
-								href: url,
-								attributes: [h.Target("_blank"), h.Rel("noopener")],
-							},
-							[icon(h, "ExternalLinkIcon"), "Open"],
-						),
-					]),
-		],
-	)
-}
 
 /** What the page is now, for whoever can read it: visitors, or only members for an internal page. */
 const liveCopy = (page: V2StatusPage): string => {

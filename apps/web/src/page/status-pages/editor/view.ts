@@ -5,7 +5,7 @@ import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
-import { button, linkButton } from "@maple/views/ui/button"
+import { button } from "@maple/views/ui/button"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { badge } from "@maple/views/ui/display"
 import { errorState } from "@maple/views/ui/error-state"
@@ -20,7 +20,9 @@ import { relativeTime } from "../../kit/relative-time"
 import { linkTabStrip } from "../../kit/underline-tabs"
 import type * as Dialog from "@maple/views/ui/dialog"
 import { sidePanelSheet } from "@maple/views/ui/sheet"
-import { statusPageHref, statusPagesHref, statusPageViewHref } from "../shared/commands"
+import { publicPageLink, statusPageHref, statusPagesHref } from "../shared/commands"
+import { openMenuEntries } from "../shared/open-page"
+import { pageUrlOf } from "./update-domain"
 import { statusPageNotFound } from "../shared/not-found"
 import {
 	COMPONENT_STATUS_LABEL,
@@ -35,7 +37,8 @@ import { componentsOf, incidentsOf, monitorsOf, pageOf, statusReadsReady } from 
 import { type EditorTab, PAGE_MENU_ID, resolveView } from "./update"
 import { livePage } from "./view-canvas"
 import { incidentsTab, isEmptyTab, maintenanceTab, openIncidentCount, postButton } from "./view-incidents"
-import { addressLine, liveView } from "./view-live"
+import { addressLine } from "./view-address"
+import { liveView } from "./view-live"
 import { addSheetBody, addSheetFooter, incidentSheetBody, type TimeInputs } from "./view-panel"
 import {
 	breakGlassDialog,
@@ -82,7 +85,10 @@ const stateLine = (h: H, model: Model, page: V2StatusPage, timeZone: string): Ht
 	)
 }
 
-/** An internal page has no public address to post to, so it has no break-glass token. */
+/**
+ * Open the public page or the dev preview, then the page's own actions. An internal page has no
+ * public address to post to, so it has no break-glass token.
+ */
 const menuEntries = (model: Model, page: V2StatusPage): ReadonlyArray<MenuEntry> => {
 	const hasBreakGlass = canBreakGlass(model) && page.visibility !== "internal"
 	const remove: MenuItemEntry = {
@@ -98,6 +104,8 @@ const menuEntries = (model: Model, page: V2StatusPage): ReadonlyArray<MenuEntry>
 		tooltip: { content: [denialReason("status_pages:edit")] },
 	}
 	return [
+		...openMenuEntries(publicPageLink(page, pageUrlOf(model, page))),
+		{ _tag: "Separator" },
 		...(hasBreakGlass
 			? ([{ _tag: "Item", value: "break-glass", label: "Break-glass token", icon: "KeyIcon" }] as const)
 			: []),
@@ -120,13 +128,6 @@ const publishButton = (h: H, model: Model): Html =>
 		),
 	)
 
-/** The page full screen inside Maple, whatever its visibility, domain or draft state. */
-const openPageButton = (h: H, page: V2StatusPage): Html =>
-	linkButton(h, { size: "sm", variant: "outline", href: statusPageViewHref(page.id) }, [
-		icon(h, "EyeIcon"),
-		"Open page",
-	])
-
 /** Incidents and Maintenance lead with posting one; the other tabs with the page itself. */
 const headerActions = (h: H, model: Model, page: V2StatusPage): Html => {
 	const tab = resolveView(model.search).tab
@@ -135,21 +136,15 @@ const headerActions = (h: H, model: Model, page: V2StatusPage): Html => {
 		// An empty tab's own empty state carries the button.
 		return detailActions(h, isEmptyTab(model, kind) ? [] : [postButton(h, model, kind)])
 	}
-	const entries = menuEntries(model, page)
 	return detailActions(h, [
 		...(page.draft ? [publishButton(h, model)] : []),
-		openPageButton(h, page),
-		...(entries.length === 0
-			? []
-			: [
-					rowActionsMenu(h, {
-						slotId: PAGE_MENU_ID,
-						model: model.pageMenu,
-						entries,
-						label: "Page actions",
-						toParentMessage: (message) => Message.GotPageMenuMessage({ message }),
-					}),
-				]),
+		rowActionsMenu(h, {
+			slotId: PAGE_MENU_ID,
+			model: model.pageMenu,
+			entries: menuEntries(model, page),
+			label: "Page actions",
+			toParentMessage: (message) => Message.GotPageMenuMessage({ message }),
+		}),
 	])
 }
 

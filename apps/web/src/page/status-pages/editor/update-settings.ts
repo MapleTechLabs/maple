@@ -11,6 +11,7 @@ import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import { type PageContext, PageOutMessage } from "../../contract"
 import { statusPageHref, statusPagesHref } from "../shared/commands"
+import { SLUG_TAKEN } from "../shared/slug"
 import {
 	DeletePage,
 	PickBrandingImage,
@@ -176,7 +177,7 @@ export const withPage = (model: Model, page: V2StatusPage): Model => ({
 export const savedSettings = (model: Model, result: Result.Result<V2StatusPage, LoadFailure>): Return =>
 	Result.match(result, {
 		onSuccess: (page): Return => {
-			const next = withPage({ ...model, isSavingSettings: false }, page)
+			const next = withPage({ ...model, isSavingSettings: false, takenSlug: null }, page)
 			const isCaughtUp =
 				next.settingsEdits !== null && isSameSettings(next.settingsEdits, settingsFormOf(page))
 			return {
@@ -184,8 +185,12 @@ export const savedSettings = (model: Model, result: Result.Result<V2StatusPage, 
 				outMessage: toast("success", "Settings saved"),
 			}
 		},
+		// A taken address is the field's error, not the form's.
 		onFailure: (settingsFailure): Return => ({
-			model: { ...model, isSavingSettings: false, settingsFailure },
+			model:
+				settingsFailure.code === SLUG_TAKEN && model.settingsEdits !== null
+					? { ...model, isSavingSettings: false, takenSlug: model.settingsEdits.slug }
+					: { ...model, isSavingSettings: false, settingsFailure },
 		}),
 	})
 

@@ -8,7 +8,14 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import type { AppRoute } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import { STATUS_PAGE_BASE_URL, publicUrl, statusPageHref, statusPageViewHref } from "../shared/commands"
+import {
+	publicPageLink,
+	publicUrl,
+	STATUS_PAGE_BASE_URL,
+	statusPageHref,
+	statusPageViewHref,
+} from "../shared/commands"
+import { OPEN_PREVIEW_VALUE, OPEN_PUBLIC_VALUE } from "../shared/open-page"
 import type { StatusPageSummary } from "../shared/derive"
 import {
 	DeleteListedPage,
@@ -57,21 +64,6 @@ export const init = (_route: ListRoute, context: PageContext): Return => {
 
 export const rowMenuId = (pageId: StatusPageId): string => `status-pages-row-menu-${pageId}`
 
-/** Where "Open page" goes: Maple's own view for an internal page, the public address for a published one. */
-export type OpenTarget =
-	| Readonly<{ _tag: "InApp"; url: string }>
-	| Readonly<{ _tag: "External"; url: string }>
-	| Readonly<{ _tag: "Unavailable"; reason: string }>
-
-export const openTargetOf = (summary: StatusPageSummary): OpenTarget => {
-	const page = summary.page
-	if (page.visibility === "internal") return { _tag: "InApp", url: statusPageViewHref(page.id) }
-	const url = publicUrl(STATUS_PAGE_BASE_URL, page.slug)
-	if (url === null) return { _tag: "Unavailable", reason: "No status domain is configured yet" }
-	if (page.draft) return { _tag: "Unavailable", reason: "Publish the page to open it" }
-	return { _tag: "External", url }
-}
-
 const summaryOf = (model: Model, pageId: StatusPageId): Option.Option<StatusPageSummary> =>
 	Arr.findFirst(
 		AsyncData.getOrElse(model.pages.data, () => []),
@@ -100,15 +92,15 @@ const pickedRowAction = (model: Model, pageId: StatusPageId, value: string): Ret
 		onNone: () => ({ model }),
 		onSome: (summary): Return => {
 			switch (value) {
+				case OPEN_PUBLIC_VALUE: {
+					const page = summary.page
+					const link = publicPageLink(page, publicUrl(STATUS_PAGE_BASE_URL, page.slug))
+					return link._tag === "Open" ? { model, commands: [OpenPageInNewTab({ url: link.url })] } : { model }
+				}
+				case OPEN_PREVIEW_VALUE:
+					return navigate(model, statusPageViewHref(pageId))
 				case "edit":
 					return navigate(model, statusPageHref(pageId))
-				case "open": {
-					const target = openTargetOf(summary)
-					if (target._tag === "InApp") return navigate(model, target.url)
-					if (target._tag === "External")
-						return { model, commands: [OpenPageInNewTab({ url: target.url })] }
-					return { model }
-				}
 				case "delete":
 					return canManage(model)
 						? liftDeleteDialog(
