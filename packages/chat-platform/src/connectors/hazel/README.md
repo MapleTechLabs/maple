@@ -94,10 +94,14 @@ its content then says everything.
 ## Who may ask and approve
 
 There is no `identity` half yet: Hazel has no way for a person to prove to Maple which Hazel account
-is theirs. So anyone in a linked workspace may ask, and anyone who can see a proposal may approve
-it, and the change runs as the org-level connector identity — the policy `ChatConnector.identity`
-writes down for a connector without one. Linking the workspace is an admin's decision on both
-sides, which is what this rests on.
+is theirs. So anyone in a linked workspace may ask, and the turn answers from the org's telemetry
+and alerting state only: no session replays or user lookups, connected data sources, source code
+or SQL, and no tool that changes anything. Nobody approves from Hazel: a change is only ever
+applied as a Maple user, so the agent proposes none here and sends people to the Maple app. An
+alert card on Hazel carries no acknowledge button (the one chat action other connectors have), so
+nothing is changed from Hazel at all. This is the policy `ChatConnector.identity` writes down for a
+connector without one. Linking the workspace is an admin's decision on both sides, which is what
+answering anyone in it rests on.
 
 ## The gateway
 
@@ -128,3 +132,6 @@ pays for them; the host decides whether an unaddressed message is still a turn.
   what a tool is doing is a line of the streamed text.
 - **No uninstall event.** Removing the bot in Hazel does not unlink the workspace in Maple; answers
   fail with `auth` until it is unlinked there.
+- **No revoke.** The install has no `revoke` step: this connector knows of no bot API call that
+  removes the bot from a workspace, and its token is the deployment's, not the workspace's.
+  Unlinking in Maple drops the link only; an admin removes the bot in Hazel.

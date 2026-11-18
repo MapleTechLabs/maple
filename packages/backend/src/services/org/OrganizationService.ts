@@ -1,15 +1,9 @@
 import * as Policy from "@maple/domain/policy"
-import { FetchHttpClient, HttpClient } from "effect/http"
-import { UPTIME_MONITORS_FEATURE_ID } from "@maple/domain/billing"
-import { trackFeatureUsage } from "@maple/backend/services/billing/autumn-tracker"
 import { ownBillingCustomer } from "@maple/backend/services/billing/billing-customer"
-import { queueOrgPageRemovals } from "@maple/backend/services/status-pages/outbox"
 import {
 	ChooseOrganizationRegionResponse,
 	CreateOrganizationResponse,
-	DeleteOrganizationResponse,
 	OrganizationForbiddenError,
-	OrganizationPersistenceError,
 	OrganizationProviderError,
 	OrganizationRegionLockedError,
 	OrgId,
@@ -23,25 +17,15 @@ import {
 	organizationRegionMetadata,
 	organizationRegionOpen,
 } from "@maple/domain/organization-regions"
-import * as Orm from "@maple-dev/effect-orm/database"
-import * as PG from "@maple-dev/effect-orm/postgres"
 import * as Tables from "@maple/db/tables"
 import type { ColumnDefs, PgSchemaTable } from "@maple-dev/effect-orm/postgres"
 import { Clock, Context, Effect, Layer, Option, Order, Schema, Array as Arr, Record as Rec } from "effect"
-import { Database } from "@maple/backend/platform/DatabaseLive"
-import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
 import { responseHasPlanHistory } from "@maple/backend/services/billing/autumn-client"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
-import { EnterpriseSsoService } from "@maple/backend/services/org/enterprise-sso/EnterpriseSsoService"
 import { clerkModeClient } from "@maple/auth"
-
-const toPersistenceError = (error: unknown) =>
-	new OrganizationPersistenceError({
-		message: error instanceof Error ? error.message : "Organization persistence failed",
-	})
 
 const toProviderError = (error: unknown) =>
 	new OrganizationProviderError({
@@ -52,8 +36,9 @@ type AnyTable = PgSchemaTable<string, ColumnDefs>
 type TableName = keyof typeof Tables
 
 /**
- * The order `delete` purges tables in; a row another org-scoped row references goes after it.
- * Org-scoped tables not named here are purged after these, so a new one is never left behind.
+ * The order `OrganizationDeletionService.delete` purges tables in; a row another org-scoped row
+ * references goes after it. Org-scoped tables not named here are purged after these, so a new one
+ * is never left behind.
  */
 const PURGE_ORDER: ReadonlyArray<TableName> = [
 	"AgentFeedback",
@@ -217,7 +202,7 @@ const PURGE_ORDER: ReadonlyArray<TableName> = [
 ]
 
 /**
- * Org-scoped tables deliberately left behind by `delete`; every other table with an `org_id` or
+ * Org-scoped tables deliberately left behind by the deletion; every other table with an `org_id` or
  * `approved_org_id` is purged.
  *
  * Every name below has been read against its schema: none holds a token, hash,
@@ -330,76 +315,34 @@ export interface OrganizationServiceApi {
 		OrganizationForbiddenError | OrganizationRegionLockedError | OrganizationProviderError
 	>
 	readonly retrieve: (orgId: OrgId) => Effect.Effect<OrganizationInfo, OrganizationProviderError>
-	readonly delete: (
-		orgId: OrgId,
-		roles: ReadonlyArray<RoleName>,
-	) => Effect.Effect<
-		DeleteOrganizationResponse,
-		OrganizationForbiddenError | OrganizationPersistenceError | OrganizationProviderError
-	>
 }
+
+/** Fails unless the caller administers the organization; `action` completes "Only admins can ...". */
+export const requireOrganizationAdmin = Effect.fn("OrganizationService.requireAdmin")(function* (
+	roles: ReadonlyArray<RoleName>,
+	action: string,
+) {
+	return yield* Policy.check(
+		roles,
+		"organization:manage",
+		(denial) =>
+			new OrganizationForbiddenError({
+				message: `Only ${Policy.holdersPhrase(denial.required)} can ${action}.`,
+			}),
+	)
+})
 
 export class OrganizationService extends Context.Service<OrganizationService, OrganizationServiceApi>()(
 	"@maple/backend/services/OrganizationService",
 	{
 		make: Effect.gen(function* () {
-			const database = yield* Database
-			const dbExecute = makeDbExecute(database, "OrganizationService", toPersistenceError)
 			const env = yield* Env
 
 			const autumn = yield* AutumnClient
 			const regions = yield* OrganizationRegionService
-			const sso = yield* EnterpriseSsoService
-			const httpClient = yield* HttpClient.HttpClient
-
-			const requireAdmin = Effect.fn("OrganizationService.requireAdmin")(function* (
-				roles: ReadonlyArray<RoleName>,
-				action: string,
-			) {
-				return yield* Policy.check(
-					roles,
-					"organization:manage",
-					(denial) =>
-						new OrganizationForbiddenError({
-							message: `Only ${Policy.holdersPhrase(denial.required)} can ${action}.`,
-						}),
-				)
-			})
-
-			const purgeOrgScopedRows = Effect.fn("OrganizationService.purgeOrgScopedRows")(function* (
-				orgId: OrgId,
-			) {
-				// Public pages live on at the edge until the publisher drains these.
-				yield* dbExecute((db) => queueOrgPageRemovals(db, orgId))
-				const purge = (column: "org_id" | "approved_org_id", tables: ReadonlyArray<AnyTable>) =>
-					Effect.forEach(
-						tables,
-						(table) =>
-							dbExecute((db) =>
-								db.run(
-									PG.deleteFrom(table).where(() => [PG.dynamicColumn(column).eq(orgId)]),
-								),
-							),
-						{ discard: true },
-					)
-				yield* purge("org_id", ORG_DELETE_REGISTRY.orgScoped)
-				yield* purge("approved_org_id", ORG_DELETE_REGISTRY.approvedOrgScoped)
-			})
 
 			/** The Clerk backend client, or `None` when not running in Clerk auth mode. */
 			const clerkClient = () => Option.fromUndefinedOr(clerkModeClient(env))
-
-			const deleteClerkOrganization = Effect.fn("OrganizationService.deleteClerkOrganization")(
-				function* (orgId: OrgId) {
-					yield* Effect.annotateCurrentSpan("orgId", orgId)
-					const clerk = clerkClient()
-					if (Option.isNone(clerk)) return
-
-					yield* clerkRequest("Clerk.organizations.deleteOrganization", { orgId }, () =>
-						clerk.value.organizations.deleteOrganization(orgId),
-					).pipe(Effect.mapError((error) => toProviderError(error.cause)))
-				},
-			)
 
 			/**
 			 * The caller's org identity. In Clerk mode it is read from Clerk; in
@@ -467,7 +410,7 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 				region: MapleRegion,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.org_region": region })
-				yield* requireAdmin(roles, "choose the data region")
+				yield* requireOrganizationAdmin(roles, "choose the data region")
 				const clerk = clerkClient()
 				if (Option.isNone(clerk)) {
 					return yield* new OrganizationProviderError({
@@ -536,97 +479,15 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 				})
 			})
 
-			const deleteOrganization = Effect.fn("OrganizationService.delete")(function* (
-				orgId: OrgId,
-				roles: ReadonlyArray<RoleName>,
-			) {
-				yield* Effect.annotateCurrentSpan("orgId", orgId)
-				yield* requireAdmin(roles, "delete the organization")
-				// Under the link lock, like every link write and monitor create or delete: the member
-				// check, the monitor count and the link's removal see one state. Once the link is gone,
-				// monitors made before the purge bill to the org itself.
-				const { link, monitorCount } = yield* dbExecute((db) =>
-					db.transaction(
-						Effect.gen(function* () {
-							yield* db.execute(
-								Orm.sql`select pg_advisory_xact_lock(hashtext('org_billing_links'))`,
-							)
-							// Its members would be left billed to a customer nobody can reach.
-							const members = yield* db.run(
-								PG.from(Tables.OrgBillingLinks)
-									.select(($) => ({ orgId: $.orgId }))
-									.where(($) => [$.billingOrgId.eq(orgId)])
-									.limit(1),
-							)
-							if (members.length > 0) {
-								return yield* new OrganizationForbiddenError({
-									message:
-										"Other organizations are billed through this one. Unlink them in billing settings before deleting it.",
-								})
-							}
-							// A member's monitors count against its billing org; purging them must give the count back.
-							const [current] = yield* db.run(
-								PG.from(Tables.OrgBillingLinks)
-									.select(($) => ({ billingOrgId: $.billingOrgId }))
-									.where(($) => [$.orgId.eq(orgId)])
-									.limit(1),
-							)
-							if (current === undefined) return { link: current, monitorCount: 0 }
-							const [counted] = yield* db.run(
-								PG.from(Tables.UptimeMonitors)
-									.select(() => ({ count: PG.count() }))
-									.where(($) => [$.orgId.eq(orgId)]),
-							)
-							yield* db.run(
-								PG.deleteFrom(Tables.OrgBillingLinks).where(($) => [$.orgId.eq(orgId)]),
-							)
-							return { link: current, monitorCount: Number(counted?.count ?? 0) }
-						}),
-					),
-				)
-				// Before the purge: a failed purge retried finds no link and could not give the count back.
-				if (link !== undefined && monitorCount > 0) {
-					yield* trackFeatureUsage({
-						customerId: ownBillingCustomer(link.billingOrgId),
-						featureId: UPTIME_MONITORS_FEATURE_ID,
-						value: -monitorCount,
-						idempotencyKey: `org_delete:${orgId}:uptime_monitors`,
-					}).pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
-				}
-				// Before the purge, which drops the ids: a connection left in Clerk would keep claiming the
-				// org's domains. A failure stops here, with the rows intact for a retry.
-				yield* sso.removeForDeletedOrganization(orgId).pipe(
-					Effect.mapError(
-						(error) =>
-							new OrganizationProviderError({
-								message: `Could not remove the organization's single sign-on: ${error.message}`,
-							}),
-					),
-				)
-				yield* purgeOrgScopedRows(orgId)
-				yield* deleteClerkOrganization(orgId)
-				// A cached "served here" would outlive the organization by up to an hour.
-				yield* regions.forget(orgId)
-				return new DeleteOrganizationResponse({ deleted: true })
-			})
-
 			return {
 				create,
 				chooseRegion,
 				retrieve,
-				delete: deleteOrganization,
 			} satisfies OrganizationServiceApi
 		}),
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(
-			Layer.mergeAll(
-				AutumnClient.layer,
-				OrganizationRegionService.layer,
-				EnterpriseSsoService.layer,
-				FetchHttpClient.layer,
-			),
-		),
+		Layer.provide(Layer.mergeAll(AutumnClient.layer, OrganizationRegionService.layer)),
 	)
 }

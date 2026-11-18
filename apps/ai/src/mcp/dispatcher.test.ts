@@ -203,6 +203,73 @@ describe("MCP dispatcher", () => {
 				expect(result.content[0]?.text).toContain("Invalid parameters")
 			}),
 		)
+
+		// Reads an unnamed asker is not given: connected systems, SQL, end users, sessions, agents.
+		const WITHHELD_READS = [
+			"query_data_source",
+			"list_data_sources",
+			"run_sql",
+			"list_users",
+			"inspect_user",
+			"search_sessions",
+			"get_session_transcript",
+			"get_agent_session_transcript",
+			"list_integrations",
+			"get_dashboard",
+		]
+
+		it("offers a turn nobody is named on telemetry reads and nothing that changes data", () => {
+			const anonymous = new Set(Arr.map(mapleToolCatalogFor("bot_anonymous"), (d) => d.name))
+			expect(Arr.filter([...WITHHELD_READS, ...INTERNAL_TOOLS], (name) => anonymous.has(name))).toEqual(
+				[],
+			)
+			const changes = Arr.filter(mapleToolCatalog, (d) => !d.hints.readOnly)
+			expect(changes.length).toBeGreaterThan(0)
+			expect(Arr.filter(changes, (d) => anonymous.has(d.name))).toEqual([])
+			expect(anonymous.has("search_traces")).toBe(true)
+			// A linked asker, and a key on the public transport, still get the withheld reads.
+			const bot = new Set(Arr.map(mapleToolCatalogFor("bot"), (d) => d.name))
+			const mcp = new Set(Arr.map(mapleToolCatalogFor("mcp"), (d) => d.name))
+			expect(Arr.filter(WITHHELD_READS, (name) => !bot.has(name) || !mcp.has(name))).toEqual([])
+		})
+
+		it.effect("refuses by name, as an unknown tool, every tool that surface does not list", () =>
+			Effect.gen(function* () {
+				const executor = yield* makeValidationExecutor
+				const listed = new Set(Arr.map(mapleToolCatalogFor("bot_anonymous"), (d) => d.name))
+				const unlisted = Arr.filter(mapleToolCatalog, (d) => !listed.has(d.name))
+				expect(unlisted.length).toBeGreaterThan(listed.size)
+				// Refused before the handler, so this needs none of the services this executor lacks.
+				const answers = yield* Effect.forEach(unlisted, (tool) =>
+					executor.execute(TENANT, tool.name, {}, "bot_anonymous").pipe(
+						Effect.as("ran"),
+						Effect.catchTag("@maple/mcp/ToolNotFoundError", (error) =>
+							Effect.succeed(error.message),
+						),
+					),
+				)
+				expect(Arr.filter(unlisted, (_tool, index) => answers[index] === "ran")).toEqual([])
+				// The names it is told about instead are only ones it may call.
+				const suggested = (message: string | undefined, asked: string) =>
+					Arr.filter(
+						unlisted,
+						(other) =>
+							other.name !== asked && new RegExp(`\\b${other.name}\\b`).test(message ?? ""),
+					)
+				expect(Arr.flatMap(unlisted, (tool, index) => suggested(answers[index], tool.name))).toEqual(
+					[],
+				)
+			}),
+		)
+
+		it.effect("still dispatches a telemetry tool on that surface", () =>
+			Effect.gen(function* () {
+				const executor = yield* makeValidationExecutor
+				// Empty input stops at schema decoding, which is past the surface check.
+				const result = yield* executor.execute(TENANT, "inspect_trace", {}, "bot_anonymous")
+				expect(result.content[0]?.text).toContain("Invalid parameters")
+			}),
+		)
 	})
 
 	it("normalizes an empty Struct root and rejects a non-object root", () => {

@@ -1,0 +1,32 @@
+---
+// The body of every guide: the outline rail beside the article. Below `lg` the
+// rail is hidden, so the sections show as a strip under the hero instead.
+import TableOfContents from "../TableOfContents.astro";
+
+interface Props {
+    headings: Array<{ depth: number; slug: string; text: string }>;
+    // The guide's own article class; its page styles hang off it.
+    class?: string;
+}
+
+const { headings, class: className } = Astro.props;
+const sections = headings.filter((h) => h.depth === 2);
+---
+
+<nav aria-label="Guide sections" class="border-b border-border bg-bg-deep lg:hidden">
+    <div class="shell flex gap-6 overflow-x-auto py-4 font-mono text-[11px] whitespace-nowrap text-fg-muted">
+        {sections.map((h) => (
+            <a href={`#${h.slug}`} class="hover:text-primary active:text-primary">{h.text}</a>
+        ))}
+    </div>
+</nav>
+
+<div class="shell grid gap-12 py-14 md:py-20 lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-14 xl:grid-cols-[14rem_minmax(0,1fr)] xl:gap-16">
+    <aside class="hidden lg:block">
+        <TableOfContents headings={headings} class="sticky top-28 max-h-[calc(100vh-9rem)] overflow-y-auto" />
+    </aside>
+
+    <article class:list={["guide-article min-w-0", className]}>
+        <slot />
+    </article>
+</div>
