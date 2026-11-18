@@ -126,6 +126,8 @@ const RefEventPayload = Schema.Struct({
 const PullRequestPayload = Schema.Struct({
 	action: Schema.String,
 	number: Schema.Number,
+	// On `edited`: what the edit changed. Only whether the base branch is among it is read.
+	changes: Schema.optionalKey(Schema.Struct({ base: Schema.optionalKey(Schema.Unknown) })),
 	pull_request: Schema.Struct({
 		html_url: Schema.String,
 		title: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -279,6 +281,11 @@ const WorkflowJobPayload = Schema.Struct({
 // A job's steps ride in one queue message, so their count and names are bounded to stay under
 // QUEUE_MESSAGE_LIMIT_BYTES whatever the workflow looks like.
 const MAX_WORKFLOW_STEPS = 300
+/**
+ * Reviews a pull request may already have for Maple to approve it. The review list reads 1,000,
+ * so an approval is given only well short of that: it and the reviews after it stay findable.
+ */
+const MAX_REVIEWS_BEFORE_APPROVAL = 900
 const MAX_WORKFLOW_NAME_LENGTH = 200
 const boundName = (name: string) =>
 	name.length > MAX_WORKFLOW_NAME_LENGTH ? `${Str.slice(0, MAX_WORKFLOW_NAME_LENGTH)(name)}...` : name
@@ -805,6 +812,9 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						...(pr.head?.ref === undefined ? undefined : { headRef: pr.head.ref }),
 						...(pr.base?.ref === undefined ? undefined : { baseRef: pr.base.ref }),
 						...(pr.draft === undefined || pr.draft === null ? undefined : { draft: pr.draft }),
+						...(payload.action === "edited"
+							? { baseChanged: payload.changes?.base !== undefined }
+							: undefined),
 						...(pr.head === undefined
 							? undefined
 							: { headRepoFullName: pr.head.repo?.full_name ?? null }),
@@ -1410,8 +1420,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					.listPullRequestFiles(installation.externalInstallationId, repo.owner, repo.name, number)
 					.pipe(
 						Effect.mapBoth({
-							onSuccess: (files) =>
-								Arr.map(files, (file): PullRequestFile => ({
+							onSuccess: ({ files, truncated }) => ({
+								files: Arr.map(files, (file): PullRequestFile => ({
 									path: file.filename,
 									previousPath: file.previous_filename ?? null,
 									status: normalizeFileStatus(file.status),
@@ -1419,6 +1429,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 									deletions: file.deletions,
 									patch: file.patch ?? null,
 								})),
+								truncated,
+							}),
 							onFailure: toVcsError,
 						}),
 					)
@@ -1436,6 +1448,12 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 								Arr.map(threads, (thread): PullRequestReviewThread => ({
 									id: thread.id,
 									isResolved: thread.isResolved,
+									...(thread.resolvedBy == null
+										? undefined
+										: { resolvedBy: thread.resolvedBy.login }),
+									...((thread.comments.totalCount ?? 0) > thread.comments.nodes.length
+										? { commentsTruncated: true }
+										: undefined),
 									comments: Arr.map(thread.comments.nodes, (comment) => {
 										const count = (content: string) =>
 											Arr.findFirst(
@@ -1725,6 +1743,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 			 * safe; the pull request itself is read again here, because only it knows whether the head is
 			 * still the one reviewed and whether its author could push the change themselves. An
 			 * approval for an outside author would let a stranger's diff talk its way to a merge.
+			 * Only a pull request into the default branch is approved: the review read the rules and
+			 * the diff against that branch, and another base merges something else.
 			 */
 			const applyApproval = Effect.fn("GithubProvider.applyApproval")(function* (
 				installation: VcsInstallation,
@@ -1743,10 +1763,30 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				if (pull.state !== "open") return "not_open" as const
 				if (pull.draft === true) return "draft" as const
 				if (pull.head.sha !== publication.headSha) return "head_moved" as const
+				// The review read the diff against one base: retargeted since, the pull request merges
+				// something else. A review that recorded no base vouches for none.
+				if (approval.baseSha === undefined || pull.base.sha !== approval.baseSha) {
+					return "base_moved" as const
+				}
+				// An unknown default branch reads as a different one.
+				const defaultBranch = pull.base.repo?.default_branch
+				if (defaultBranch === undefined || pull.base.ref !== defaultBranch) {
+					return "base_not_default" as const
+				}
 				const author = pull.user?.login
 				if (author === undefined || author === appBotLogin) return "untrusted_author" as const
 				const permission = yield* client.getCollaboratorPermission(id, repo.owner, repo.name, author)
 				if (!pushPermissions.has(permission)) return "untrusted_author" as const
+				// Past the page cap a later withdrawal could not find this approval among the reviews.
+				const reviews = yield* client.listPullRequestReviews(
+					id,
+					repo.owner,
+					repo.name,
+					publication.number,
+				)
+				if (reviews.truncated || reviews.items.length >= MAX_REVIEWS_BEFORE_APPROVAL) {
+					return "too_many_reviews" as const
+				}
 				yield* client.createPullRequestReview(id, repo.owner, repo.name, publication.number, {
 					commitId: publication.headSha,
 					body: approval.body,
@@ -1857,7 +1897,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						)
 						.pipe(
 							Effect.map(
-								(files): ReadonlyMap<string, string | undefined> =>
+								({ files }): ReadonlyMap<string, string | undefined> =>
 									new Map(Arr.map(files, (file) => [file.filename, file.patch])),
 							),
 							Effect.option,

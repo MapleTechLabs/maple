@@ -470,6 +470,36 @@ describe("GithubProvider.webhookToJobs", () => {
 		}).pipe(Effect.provide(providerLayer())),
 	)
 
+	it.effect("says whether an edit moved the pull request to another base branch", () =>
+		Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const baseChangedOn = (overrides: Record<string, unknown>) =>
+				Effect.gen(function* () {
+					const body = pullRequestBody({
+						pull_request: { merged: false, merged_at: null },
+						...overrides,
+					})
+					const jobs = yield* provider.webhookToJobs({
+						headers: { "x-github-event": "pull_request", "x-hub-signature-256": sign(body) },
+						rawBody: body,
+					})
+					const job = jobs[0]
+					if (job?.kind !== "pull-request-event") return assert.fail("expected a pull-request job")
+					return job.baseChanged
+				})
+			assert.strictEqual(
+				yield* baseChangedOn({ action: "edited", changes: { base: { ref: { from: "main" } } } }),
+				true,
+			)
+			assert.strictEqual(
+				yield* baseChangedOn({ action: "edited", changes: { title: { from: "Old title" } } }),
+				false,
+			)
+			// Only an edit says anything about the base.
+			assert.strictEqual(yield* baseChangedOn({ action: "synchronize" }), undefined)
+		}).pipe(Effect.provide(providerLayer())),
+	)
+
 	it.effect("derives a push commit's avatar against its own host (GitHub Enterprise)", () =>
 		Effect.gen(function* () {
 			const provider = yield* GithubProvider

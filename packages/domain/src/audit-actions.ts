@@ -162,6 +162,13 @@ export const AuditResources = {
 	cloudflare_integration: { verbs: ["zones_updated", "features_updated"] },
 	/** Org-singleton connection; the switches it saved ride in `metadata`. */
 	linear_integration: { verbs: ["features_updated"] },
+	/**
+	 * Pull request review setup: a repository switched on or off, its rules, and the organization's
+	 * defaults. `metadata` names the repository and says whether automatic approval is on.
+	 */
+	code_review: {
+		verbs: ["repository_enabled", "repository_disabled", "repository_rules_updated", "settings_updated"],
+	},
 	/** A provider key the org's spend is read with, one per provider; the key is never in `changes`. */
 	cost_source_key: { verbs: ["updated", "deleted"] },
 	/** A cost source that reads through a connection the org already has; which one is in `metadata`. */
@@ -284,6 +291,7 @@ export const AuditResourceLabels = {
 	planetscale_integration: "PlanetScale integration",
 	cloudflare_integration: "Cloudflare integration",
 	linear_integration: "Linear integration",
+	code_review: "Code review",
 	cost_source_key: "Cost source key",
 	cost_source: "Cost source",
 	member: "Member",
@@ -433,6 +441,10 @@ export const AuditActionLabels = {
 	"cloudflare_integration.zones_updated": "Updated Cloudflare zones",
 	"cloudflare_integration.features_updated": "Changed what Cloudflare collects",
 	"linear_integration.features_updated": "Changed what Maple does in Linear",
+	"code_review.repository_enabled": "Turned on code review for a repository",
+	"code_review.repository_disabled": "Turned off code review for a repository",
+	"code_review.repository_rules_updated": "Changed a repository's code review rules",
+	"code_review.settings_updated": "Changed the organization's code review settings",
 	"cost_source_key.updated": "Updated cost source key",
 	"cost_source_key.deleted": "Removed cost source key",
 	"cost_source.created": "Added cost source",

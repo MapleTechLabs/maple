@@ -198,6 +198,10 @@ export interface GithubConnectServiceApi {
 	readonly getPrReviewSettings: (
 		orgId: OrgId,
 	) => Effect.Effect<PrReviewOrgSettings, IntegrationsPersistenceError>
+	/** Whether any repository with review on turns automatic approval on in its own settings. */
+	readonly anyReviewedRepositoryAutoApproves: (
+		orgId: OrgId,
+	) => Effect.Effect<boolean, IntegrationsPersistenceError>
 	readonly setPrReviewSettings: (
 		orgId: OrgId,
 		settings: PrReviewOrgSettings,
@@ -1144,6 +1148,12 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				return yield* asPersistence(repo.getPrReviewSettings(orgId))
 			})
 
+			const anyReviewedRepositoryAutoApproves = Effect.fn(
+				"GithubConnectService.anyReviewedRepositoryAutoApproves",
+			)(function* (orgId: OrgId) {
+				return yield* asPersistence(repo.anyReviewedRepositoryAutoApproves(orgId))
+			})
+
 			const setPrReviewSettings = Effect.fn("GithubConnectService.setPrReviewSettings")(function* (
 				orgId: OrgId,
 				settings: PrReviewOrgSettings,
@@ -1182,6 +1192,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				setPrReviewEnabled,
 				getPrReviewConfig,
 				getPrReviewSettings,
+				anyReviewedRepositoryAutoApproves,
 				setPrReviewSettings,
 				setPrReviewConfig,
 			} satisfies GithubConnectServiceApi

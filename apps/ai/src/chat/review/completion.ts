@@ -294,6 +294,12 @@ const buildReviewCompletion = (
 					inputTokens: usage.input,
 					outputTokens: usage.output,
 					...(partial ? { partial: true } : undefined),
+					submitted: {
+						...(normalized.submittedVerdict === undefined
+							? undefined
+							: { verdict: normalized.submittedVerdict }),
+						droppedFindings,
+					},
 					...(resolved.length > 0 ? { resolved } : undefined),
 					...(dismissed.length > 0 ? { dismissed } : undefined),
 					...(telemetryDismissals.length > 0 ? { telemetryDismissals } : undefined),

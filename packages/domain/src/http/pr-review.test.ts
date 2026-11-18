@@ -62,6 +62,29 @@ describe("normalizePrReviewSubmission", () => {
 		assert.isUndefined(bare.checked)
 	})
 
+	it("reports the verdict the model sent, apart from the one the report settles on", () => {
+		// Nothing sent, or a word that is no verdict: the report reads clean, the submission does not.
+		const silent = normalizePrReviewSubmission({ summary: "x" })
+		assert.equal(silent.report.verdict, "clean")
+		assert.isUndefined(silent.submittedVerdict)
+		assert.isUndefined(normalizePrReviewSubmission({ verdict: "lgtm" }).submittedVerdict)
+		// `issues` with no finding kept is tidied to clean, and still reported as sent.
+		const unanchored = normalizePrReviewSubmission({
+			verdict: "issues",
+			findings: [{ title: "Breaks the retry", severity: "warn" }],
+		})
+		assert.equal(unanchored.report.verdict, "clean")
+		assert.equal(unanchored.submittedVerdict, "issues")
+		assert.equal(unanchored.droppedFindings, 1)
+		assert.equal(normalizePrReviewSubmission({ verdict: "clean" }).submittedVerdict, "clean")
+	})
+
+	it("counts a findings list it could not read as a dropped finding", () => {
+		assert.equal(normalizePrReviewSubmission({ findings: "not json" }).droppedFindings, 1)
+		assert.equal(normalizePrReviewSubmission({ findings: "[]" }).droppedFindings, 0)
+		assert.equal(normalizePrReviewSubmission({}).droppedFindings, 0)
+	})
+
 	it("reads a list the model sent as its JSON text", () => {
 		// glm-5.3-flash sent `findings` as a string in prod; a strict decode ended the review early.
 		const { report } = normalizePrReviewSubmission({

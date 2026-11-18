@@ -56,6 +56,10 @@ export type Model = typeof Model.Type
 export const canManage = (model: Pick<Model, "grants">): boolean =>
 	Policy.has(model.grants, "code_review:configure")
 
+/** The viewer may turn automatic approval on, or change the rules while it is on (`code_review:auto_approve`). */
+export const canAutoApprove = (model: Pick<Model, "grants">): boolean =>
+	Policy.has(model.grants, "code_review:auto_approve")
+
 const result = <S extends Schema.Top>(schema: S) => ({
 	key: Schema.String,
 	result: Schema.Result(schema, LoadFailure),
