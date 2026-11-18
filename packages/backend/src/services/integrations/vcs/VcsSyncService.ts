@@ -1292,6 +1292,25 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						Effect.asSome,
 						Effect.orElseSucceed(() => Option.none<VcsSyncJob>()),
 					)
+					// A GitHub delivery stays redeliverable from the app's Recent Deliveries for a few days:
+					// the log names it, so a lost audit event can be sent again.
+					if (Option.isSome(jobOpt) && jobOpt.value.kind === "audit-event") {
+						yield* Effect.annotateCurrentSpan({
+							"vcs.exhausted.outcome": "handled",
+							"vcs.exhausted.reason": "audit_event_dropped",
+						})
+						yield* Effect.logError(
+							"[VCS] Audit event exhausted retries and was not written",
+						).pipe(
+							Effect.annotateLogs({
+								provider: jobOpt.value.provider,
+								externalInstallationId: jobOpt.value.externalInstallationId,
+								action: jobOpt.value.event.action,
+								deliveryId: jobOpt.value.event.providerEventId,
+							}),
+						)
+						return
+					}
 					if (
 						Option.isNone(jobOpt) ||
 						(jobOpt.value.kind !== "sync-commits" && jobOpt.value.kind !== "installation-sync")

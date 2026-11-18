@@ -111,7 +111,8 @@ On repositories where a Maple admin has switched on the pull request review, Map
 | **Checks**            | **Read and write** (posts the `Maple / observability` check run on the head commit; without it the review is still posted as a comment)                                                     |
 | **Metadata**          | **Read-only** (GitHub pre-selects this and it is mandatory)                                                                                                                                 |
 | **Actions**           | **Read-only** (downloads each finished job's log for CI logs; without it CI traces still arrive but carry no logs)                                                                          |
-| **Administration**    | **Read-only** (delivers branch protection, ruleset, deploy key and code security changes to the Security audit log; without it the audit log still gets members, teams and repositories)    |
+| **Administration**    | **Read-only** (delivers branch protection, ruleset and code security changes to the Security audit log; without it the audit log still gets members, teams and repositories)                |
+| **Deployments**       | **Read-only** (delivers deploy key changes to the Security audit log; optional)                                                                                                             |
 
 > **Upgrading an existing App?** Adding a permission to an App that is already installed makes GitHub ask every installation's admin to accept the new permissions. Until they do, Maple still records each review but cannot post it: the review's row keeps a publish error and nothing appears on the pull request. CI logs behave the same way: until the installation accepts **Actions: Read**, GitHub refuses every job log download with `403 Resource not accessible by integration` and those repositories get traces without logs. To fix it, accept the permission request on GitHub (Settings → Applications → the App → Review request).
 
@@ -142,10 +143,10 @@ On repositories where a Maple admin has switched on the pull request review, Map
 | **Branch protection rule**          | Audit log: branch protection rules changed (needs **Administration**).                                |
 | **Branch protection configuration** | Audit log: branch protection turned on or off for a repository (needs **Administration**).            |
 | **Repository ruleset**              | Audit log: rulesets created, edited or deleted (needs **Administration**).                            |
-| **Deploy key**                      | Audit log: deploy keys added or removed (needs **Administration**).                                   |
+| **Deploy key**                      | Audit log: deploy keys added or removed (needs **Deployments**).                                      |
 | **Security and analysis**           | Audit log: code security settings changed (needs **Administration**).                                 |
 
-> You do **not** need to (and cannot) subscribe to `installation` or `installation_repositories` here. GitHub always delivers those lifecycle events once the app is installed, and Maple handles them, also writing each one to the audit log. The `ping` event GitHub sends on setup, and any other event, is accepted as a no-op.
+> You do **not** need to (and cannot) subscribe to `installation` or `installation_repositories` here. GitHub always delivers those lifecycle events once the app is installed, and Maple handles them. Maple records each one in the audit log when it knows the installation and the **Audit log** switch is on. The `ping` event GitHub sends on setup, and any other event, is accepted as a no-op.
 
 ---
 

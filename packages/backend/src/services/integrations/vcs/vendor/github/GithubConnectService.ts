@@ -1096,7 +1096,11 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 					yield* Effect.annotateCurrentSpan({ orgId, "vcs.set_audit_log.outcome": "not_connected" })
 					return yield* new IntegrationsValidationError({ message: "GitHub is not connected." })
 				}
-				yield* asPersistence(repo.setAuditLogEnabled(orgId, active.id, enabled))
+				const changed = yield* asPersistence(repo.setAuditLogEnabled(orgId, active.id, enabled))
+				if (!changed) {
+					yield* Effect.annotateCurrentSpan({ orgId, "vcs.set_audit_log.outcome": "not_connected" })
+					return yield* new IntegrationsValidationError({ message: "GitHub is not connected." })
+				}
 				yield* Effect.annotateCurrentSpan({
 					orgId,
 					"vcs.set_audit_log.outcome": "changed",

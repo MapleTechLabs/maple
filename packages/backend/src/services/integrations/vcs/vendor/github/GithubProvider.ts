@@ -1104,7 +1104,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 			// Dispatch a verified, parsed event to its mapper. Annotations (outcome /
 			// skip_reason / identifiers) are made by each mapper onto the surrounding
 			// `webhookToJobs` span.
-			const mapEvent = (event: string | undefined, parsed: unknown, now: number) =>
+			const mapEvent = (event: string | undefined, parsed: unknown, now: number, audited: boolean) =>
 				Match.value(event).pipe(
 					Match.when("push", () => mapPush(parsed, now)),
 					Match.when("pull_request", () => mapPullRequest(parsed)),
@@ -1117,11 +1117,15 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					Match.when("workflow_run", () => mapWorkflowRun(parsed)),
 					Match.when("workflow_job", () => mapWorkflowJob(parsed)),
 					Match.orElse(() =>
-						// ping and unhandled events are accepted no-ops.
-						Effect.annotateCurrentSpan({
-							"vcs.webhook.outcome": "skipped",
-							"vcs.webhook.skip_reason": "unhandled_event",
-						}).pipe(Effect.as([])),
+						// ping and unhandled events are accepted no-ops, unless the audit log keeps them.
+						Effect.annotateCurrentSpan(
+							audited
+								? { "vcs.webhook.outcome": "handled", "vcs.webhook.audit_only": true }
+								: {
+										"vcs.webhook.outcome": "skipped",
+										"vcs.webhook.skip_reason": "unhandled_event",
+									},
+						).pipe(Effect.as([])),
 					),
 				)
 
@@ -1173,10 +1177,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					const now = yield* Clock.currentTimeMillis
 					const event = input.headers["x-github-event"]
 					const deliveryId = input.headers["x-github-delivery"]
-					const jobs = [
-						...(yield* mapEvent(event, parsed, now)),
-						...auditJob(event, deliveryId, parsed, now),
-					]
+					const audit = auditJob(event, deliveryId, parsed, now)
+					const jobs = [...(yield* mapEvent(event, parsed, now, audit.length > 0)), ...audit]
 					// Stamp the GitHub delivery id onto every job this webhook produced, so
 					// the queue consumer's processMessage span can be correlated back to this
 					// webhook's receive span (both carry `vcs.webhook.delivery_id`). Every

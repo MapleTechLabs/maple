@@ -85,7 +85,7 @@ Maple writes these GitHub events to **Security → Audit log** under the GitHub 
 | Configuration | A repository made public or private; branch protection rules, rulesets and code security settings changed; the organization renamed                    |
 | Credentials   | Deploy keys added or removed                                                                                                                           |
 
-- **Permissions:** the Maple app's lifecycle and the organization, member, team and repository events need no new permission. Branch protections, rulesets, deploy keys and code security settings need **Administration: Read**: until an owner accepts that request on GitHub (organization **Settings > GitHub Apps > Review request**), those events do not arrive. Maple never changes repository settings.
+- **Permissions:** the Maple app's lifecycle and the organization, member, team and repository events need no new permission. Branch protections, rulesets and code security settings need **Administration: Read**, and deploy keys need **Deployments: Read**: until an owner accepts that request on GitHub (organization **Settings > GitHub Apps > Review request**), those events do not arrive. Maple never changes repository settings.
 - **Time:** GitHub's webhooks carry no event time, so an entry's time is when Maple received it, normally within seconds.
 - **Not covered:** sign-ins, Git operations, Actions settings, and other events GitHub records only in its own audit log, which GitHub offers on Enterprise Cloud.
 

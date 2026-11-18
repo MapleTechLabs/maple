@@ -575,20 +575,23 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 				)
 			})
 
-			// Org-scoped, so an installation id from another tenant no-ops.
+			// Org-scoped and active-only: false when the installation was removed, suspended or
+			// belongs to another tenant since it was read.
 			const setAuditLogEnabled = Effect.fn("VcsRepository.setAuditLogEnabled")(function* (
 				orgId: OrgId,
 				installationId: VcsInstallationId,
 				enabled: boolean,
 			) {
 				const now = yield* Clock.currentTimeMillis
-				yield* dbExecute((db) =>
+				const rows = yield* dbExecute((db) =>
 					db.run(
 						PG.update(VcsInstallations)
 							.set({ auditLogEnabled: enabled, updatedAt: now })
-							.where(($) => [$.orgId.eq(orgId), $.id.eq(installationId)]),
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(installationId), $.status.eq("active")])
+							.returning("id"),
 					),
 				)
+				return rows.length > 0
 			})
 
 			const listRepositoriesByInstallation = Effect.fn("VcsRepository.listRepositoriesByInstallation")(

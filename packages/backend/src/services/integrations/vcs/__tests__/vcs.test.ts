@@ -2442,10 +2442,13 @@ describe("VcsSyncService orchestrator", () => {
 				{ orgId, action: "installation.deleted" },
 			])
 
-			// An org that turned the GitHub audit log off gets nothing forwarded.
+			// An org that turned the GitHub audit log off gets nothing forwarded. The switch only
+			// writes to an active installation, so it is reconnected first.
 			const installation = yield* repo.resolveInstallation("github", "42")
 			if (Option.isNone(installation)) return assert.fail("installation not seeded")
-			yield* repo.setAuditLogEnabled(orgId, installation.value.id, false)
+			assert.isFalse(yield* repo.setAuditLogEnabled(orgId, installation.value.id, false))
+			yield* markInstStatusFor(repo, "42", "active")
+			assert.isTrue(yield* repo.setAuditLogEnabled(orgId, installation.value.id, false))
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(auditJob("42", "team.created")))
 			assert.strictEqual(forwardedAudit.length, 2)
 		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent: [], forwardedAudit })))

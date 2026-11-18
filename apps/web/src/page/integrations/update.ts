@@ -280,7 +280,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				{ isCurrent: s.chat.key === key, previous: s.chat },
 			),
 		CompletedLoadGithub: ({ key, result }) =>
-			accepted(model, { ...s, github: Keyed.accept(s.github, key, result) }),
+			accepted(Github.settledSwitches(model, Result.isSuccess(result)), {
+				...s,
+				github: Keyed.accept(s.github, key, result),
+			}),
 		CompletedLoadSearchConsole: ({ key, result }) =>
 			SEARCH_CONSOLE_PROVIDER.onStatus(
 				accepted(model, { ...s, searchConsole: Keyed.accept(s.searchConsole, key, result) }).model,

@@ -472,6 +472,8 @@ describe("buildIntegrationInventory", () => {
 			},
 			"github",
 		)
+		// The source stays connected, so the audit log Sources panel reads it as off, not missing.
+		expect(github?.status).toBe("healthy")
 		expect(Arr.filter(github?.resources ?? [], (r) => r.kind === "audit log")).toEqual([])
 		expect(Arr.some(github?.feeds ?? [], (feed) => Str.includes("audit log")(feed))).toBe(false)
 	})

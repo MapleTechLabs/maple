@@ -91,6 +91,19 @@ export const ciTracesShown = (model: Model): boolean => {
 	return card.ciTraces !== null && card.ciTracesServer === server ? card.ciTraces : server
 }
 
+/**
+ * A status read that lands with no save in flight is the server's word: the switches drop their
+ * optimistic values, so a later change made elsewhere shows instead of the old override.
+ */
+export const settledSwitches = (model: Model, succeeded: boolean): Model => {
+	const card = model.githubCard
+	if (!succeeded) return model
+	return withCard(model, {
+		...(card.isSavingCiTraces ? undefined : { ciTraces: null, ciTracesServer: null }),
+		...(card.isSavingAuditLog ? undefined : { auditLog: null, auditLogServer: null }),
+	})
+}
+
 /** The audit log switch's value, read like the CI traces one. */
 export const auditLogShown = (model: Model): boolean => {
 	const server = githubStatusOf(model)?.auditLogEnabled ?? true
@@ -115,13 +128,12 @@ export const completedAuditLog = (
 	failure: LoadFailure | null,
 ): Return => {
 	const settled = withCard(model, { isSavingAuditLog: false })
+	// A lost response can follow a committed write, so a failure re-reads the status too.
 	if (failure !== null)
-		return toast(
-			withCard(settled, { auditLog: !enabled }),
-			"error",
-			"Couldn't change the audit log.",
-			failure.message,
-		)
+		return chain(withCard(settled, { auditLog: !enabled }), [
+			(next) => toast(next, "error", "Couldn't change the audit log.", failure.message),
+			(next) => refresh(next, context),
+		])
 	return chain(settled, [
 		(next) =>
 			toast(

@@ -61,7 +61,8 @@ interface AuditedWebhook {
 /**
  * The webhooks the trail keeps. `installation*` arrive with no subscription; `organization`,
  * `member`, `membership` and `team` ride the Members permission the connect flow already needs;
- * `repository` rides Metadata; the protections and deploy keys need Administration: read.
+ * `repository` rides Metadata; the protections, rulesets and code security settings need
+ * Administration: read, and deploy keys need Deployments: read.
  */
 const AUDITED_WEBHOOKS = {
 	installation: {
