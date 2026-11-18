@@ -96,6 +96,9 @@ export const LabState = Schema.Literals([
 	"cloudflare",
 	"by-resource",
 	"add-source",
+	"add-source-added",
+	"add-source-search",
+	"add-source-no-match",
 	"add-openrouter",
 	"key-refused",
 	"replace-key",
@@ -184,6 +187,8 @@ const startsEmpty = (state: LabState): boolean =>
 	state === "onramp" ||
 	state === "member-onramp" ||
 	state === "add-source" ||
+	state === "add-source-search" ||
+	state === "add-source-no-match" ||
 	state === "add-openrouter" ||
 	state === "key-refused" ||
 	state === "add-cloudflare" ||
@@ -212,7 +217,16 @@ const startsEmpty = (state: LabState): boolean =>
 const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
 	switch (state) {
 		case "add-source":
+		case "add-source-added":
 			return [CostMessage.ClickedAddSource()]
+		case "add-source-search":
+		case "add-source-no-match":
+			return [
+				CostMessage.ClickedAddSource(),
+				CostMessage.ChangedProviderSearch({
+					value: state === "add-source-search" ? "api" : "mainframe",
+				}),
+			]
 		case "add-openrouter":
 			return [CostMessage.ClickedAddSource(), CostMessage.PickedProvider({ provider: "openrouter" })]
 		case "key-refused":

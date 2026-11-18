@@ -208,6 +208,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		grants: isClerkAuthEnabled ? null : Policy.allPermissions,
 		addDialog: Dialog.init("cost-add-source", "dialog"),
 		addStep: "pick",
+		providerSearch: "",
 		credentialDraft: Field.init(),
 		credentialError: null,
 		vercel: Keyed.idle(),
@@ -341,7 +342,11 @@ const requestGcpStatus = (model: Model, context: PageContext): Return =>
 const openAdd = (model: Model, addStep: AddStep): Return =>
 	model.sourceWrite !== "Idle"
 		? { model }
-		: liftAddDialog({ ...clearedDialog(model), addStep }, Dialog.open(model.addDialog))
+		: // A dialog opened anew starts with no search; Back from a step keeps it.
+			liftAddDialog(
+				{ ...clearedDialog(model), providerSearch: "", addStep },
+				Dialog.open(model.addDialog),
+			)
 
 /**
  * The sources and the window's reads again, after a write's own step: the reads name the org's
@@ -800,6 +805,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				onSuccess: (): Return =>
 					added(model, "PlanetScale added", "The first sync runs within a few minutes.", context),
 			}),
+		ChangedProviderSearch: ({ value }) => ({ model: { ...model, providerSearch: value } }),
 		ClickedAddGcp: () =>
 			model.sourceWrite !== "Idle"
 				? { model }
