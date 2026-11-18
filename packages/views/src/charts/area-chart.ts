@@ -8,7 +8,7 @@ import { ChartSpec, ChartTooltip, specCache, type TimeseriesAxisSpec } from "./c
 import { bucketTooltipBody } from "./bucket-tooltip"
 import { plotFrame } from "./plot-frame"
 import { resolveColor, type ThemeColors } from "./theme-colors"
-import { SERIES_FALLBACK_COLOR, seriesColorTokens, seriesDefinitionsOf } from "./timeseries"
+import { type RateBasis, SERIES_FALLBACK_COLOR, seriesColorTokens, seriesDefinitionsOf } from "./timeseries"
 import { hiddenChartKeys, timeseriesLegend } from "./timeseries-legend"
 
 // The query-builder area chart with a hidden, bottom or right legend.
@@ -33,6 +33,8 @@ export interface AreaChartInputs {
 	readonly data: ReadonlyArray<Readonly<Record<string, string | number | boolean>>>
 	readonly theme: ThemeColors
 	readonly unit?: string | undefined
+	/** `per_second` for PromQL, whose rates are already per second; absent is the query builder's per bucket. */
+	readonly rateBasis?: RateBasis | undefined
 	readonly timeZone?: string | undefined
 	/** The clock the in-flight tail is judged against. */
 	readonly nowMs: number
@@ -92,6 +94,7 @@ export const view = Submodel.defineView<Model, Message, AreaChartInputs>((model,
 		data: inputs.data,
 		definitions,
 		unit: inputs.unit,
+		rateBasis: inputs.rateBasis ?? "per_bucket",
 		nowMs: inputs.nowMs,
 		legend: inputs.legend,
 		seriesStats: inputs.seriesStats === true,
@@ -112,6 +115,7 @@ export const view = Submodel.defineView<Model, Message, AreaChartInputs>((model,
 						background: resolveColor(inputs.theme, "--background"),
 					},
 					unit: inputs.unit ?? null,
+					...(inputs.rateBasis === undefined ? undefined : { rateBasis: inputs.rateBasis }),
 					timeZone: inputs.timeZone ?? null,
 					nowMs: inputs.nowMs,
 					containerWidth: model.containerWidth,

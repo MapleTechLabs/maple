@@ -156,6 +156,8 @@ export const ChartSpec = defineTaggedUnion({
 		/** `showPoints`: every point, none, or (absent) only isolated ones unless they fit. */
 		showPoints: Schema.optionalKey(Schema.Boolean),
 		axis: Schema.optionalKey(TimeseriesAxisSpec),
+		/** `per_second`: rate values are already per second (PromQL); absent divides by the bucket. */
+		rateBasis: Schema.optionalKey(Schema.Literals(["per_bucket", "per_second"])),
 	},
 	/**
 	 * The query-builder bar chart (threshold-free, linear): the rows as returned, the resolved colour per
@@ -175,6 +177,8 @@ export const ChartSpec = defineTaggedUnion({
 		axis: Schema.optionalKey(TimeseriesAxisSpec),
 		/** Series keys the legend has hidden; they are left out of the plot. */
 		hidden: Schema.optionalKey(Schema.Array(Schema.String)),
+		/** `per_second`: rate values are already per second (PromQL); absent divides by the bucket. */
+		rateBasis: Schema.optionalKey(Schema.Literals(["per_bucket", "per_second"])),
 	},
 	/** An issue's occurrences: bucketed counts as bars. */
 	Occurrences: {
