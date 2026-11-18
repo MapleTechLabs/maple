@@ -300,7 +300,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		CompletedLoadSession: ({ grants, hasDataSources }) => {
 			const next = { ...model, grants, hasDataSources }
-			return hasDataSources ? requestStatus(next, context, "dataSources", "Load") : { model: next }
+			const shown = providerModuleOf(integrationOfSearch(next.search.integration))
+			return chain(next, [
+				(step) =>
+					hasDataSources ? requestStatus(step, context, "dataSources", "Load") : { model: step },
+				(step) => shown?.onSession(step, context) ?? { model: step },
+			])
 		},
 		CompletedLoadDataSources: ({ key, result }) =>
 			accepted(model, { ...s, dataSources: Keyed.accept(s.dataSources, key, result) }),

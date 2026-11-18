@@ -37,6 +37,8 @@ export const SEARCH_CONSOLE: ProviderModule<
 	init: initSearchConsoleCard,
 	update,
 	onEnter: (model, env) => requestSites(model, env, "Load"),
+	// The grants may answer after the status did, and only then is the viewer known to manage.
+	onSession: (model, env) => requestSites(model, env, "Load"),
 	onStatus: statusAnswered,
 	// A reconnect as the same account keeps the grant key, so its property list is re-read outright.
 	onConnected: (model, env) => requestSites(model, env, "Supersede"),

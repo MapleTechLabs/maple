@@ -17,7 +17,7 @@ import { CHAT } from "./chat-provider"
 import { ReadClock, TrackDisconnected } from "./command"
 import type { FlowSpec, FlowStage } from "./flow"
 import { Message } from "./message"
-import type { Model, Statuses } from "./model"
+import { canManage, type Model, type Statuses } from "./model"
 import type { CardStatus, IntegrationOverview } from "./overview"
 import type {
 	HubRequest,
@@ -49,6 +49,7 @@ export type MountedProvider = Readonly<{
 	id: string
 	owns: (id: IntegrationId) => boolean
 	onEnter: (model: Model, context: PageContext) => Return
+	onSession: (model: Model, context: PageContext) => Return
 	onClock: (model: Model, context: PageContext) => Return
 	onConnectStart: (model: Model, context: PageContext) => Return
 	onConnected: (model: Model, context: PageContext) => Return
@@ -136,6 +137,7 @@ const run = <K extends keyof Statuses, S, M, Msg>(
 		status: mount.slot(model.statuses),
 		nowMs: model.nowMs,
 		isShown: isShownIn(model, mount.module),
+		canManage: canManage(model),
 		integration: integrationOfSearch(model.search.integration),
 		context,
 	}
@@ -177,6 +179,7 @@ const mount = <K extends keyof Statuses, S, M, Msg>(
 		update: (model, message, context) =>
 			run(spec, model, context, (sub, env) => module.update(sub, message, env)),
 		onEnter: hook(module.onEnter),
+		onSession: hook(module.onSession),
 		onClock: hook(module.onClock),
 		onConnectStart: hook(module.onConnectStart),
 		onConnected: hook(module.onConnected),
@@ -204,6 +207,7 @@ const mount = <K extends keyof Statuses, S, M, Msg>(
 								status: spec.slot(model.statuses),
 								nowMs: model.nowMs,
 								isShown: isShownIn(model, module),
+								canManage: canManage(model),
 								integration: integrationOfSearch(model.search.integration),
 							}),
 						tick: spec.toHub(subscription.tick),
