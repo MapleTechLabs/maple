@@ -164,6 +164,13 @@ Two things are load-bearing:
 The user token is not requested at all (`user_scope` is absent): the bot is an org-level actor, and
 Maple has no use for an installer identity it never links to a Maple user.
 
+### Unlinking
+
+`revoke` calls `auth.revoke` with the workspace's own bot token in the `Authorization` header, which
+ends that token; Slack documents an app as uninstalled once its last token is revoked. An answer
+of `token_revoked`, `invalid_auth` or `account_inactive` means the token was already dead and
+counts as done. The host runs it best effort before it drops the link.
+
 ### Settings
 
 None. The other connector's one setting names an approver role, and Slack's interaction payload
@@ -298,4 +305,7 @@ confirm, and the cutover doc's smoke checklist is where they get confirmed:
 - that an un-mentioned thread reply arrives with the history scopes above and no others, and that
   `conversations.replies` / `conversations.history` answer for the channel types the bot is in;
 - the display name shown for an author: Slack's message events carry only a user id, so V1 uses the
-  id. A readable name needs `users:read`, on the same terms as the approval facts.
+  id. A readable name needs `users:read`, on the same terms as the approval facts;
+- that `auth.revoke` with the bot token removes the app from the workspace (the documentation says
+  an app is uninstalled when its last token is revoked), and the `ok: false` codes it answers for
+  a token that is already dead.

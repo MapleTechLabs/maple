@@ -128,3 +128,6 @@ pays for them; the host decides whether an unaddressed message is still a turn.
   what a tool is doing is a line of the streamed text.
 - **No uninstall event.** Removing the bot in Hazel does not unlink the workspace in Maple; answers
   fail with `auth` until it is unlinked there.
+- **No revoke.** The install has no `revoke` step: this connector knows of no bot API call that
+  removes the bot from a workspace, and its token is the deployment's, not the workspace's.
+  Unlinking in Maple drops the link only; an admin removes the bot in Hazel.

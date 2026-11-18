@@ -1,5 +1,16 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Duration, Effect, Layer, Option, Schema, Array as Arr, Record as Rec } from "effect"
+import { vi } from "vitest"
+import {
+	ConfigProvider,
+	Duration,
+	Effect,
+	Fiber,
+	Layer,
+	Option,
+	Schema,
+	Array as Arr,
+	Record as Rec,
+} from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { ChatConnectorId, ChatWorkspaceId, OrgId, UserId } from "@maple/domain/http"
@@ -7,9 +18,12 @@ import {
 	chatConnectorConfigNames,
 	ChatConnectorNotConfigured,
 	ChatOutboundError,
+	ChatRevokeFailed,
 	ChatSettingsRejected,
 	socketIngress,
+	WORKSPACE_CREDENTIALS,
 	type ChatConnector,
+	type ChatInstallRevocation,
 	type ChatOutboundTransport,
 	type ChatWorkspaceSettings,
 } from "@maple/chat-platform"
@@ -203,6 +217,36 @@ const unconfiguredListingConnector: ChatConnector = {
 		requiredConfig: [{ name: "MAPLE_TESTCHAT_UNSET_OUTBOUND_KEY", secret: true }],
 	},
 }
+
+/**
+ * The fake connector with a platform that can end a grant: it records what it was asked to revoke,
+ * and answers as `respond` says.
+ */
+const revokingConnector = (
+	calls: Array<ChatInstallRevocation>,
+	respond: (input: ChatInstallRevocation) => Effect.Effect<void, ChatRevokeFailed> = () => Effect.void,
+): ChatConnector => ({
+	...testConnector,
+	install: {
+		...testConnector.install,
+		revoke: (input) => {
+			calls.push(input)
+			return respond(input)
+		},
+	},
+})
+
+const platformDown = () =>
+	Effect.fail(new ChatRevokeFailed({ connector: TEST_CONNECTOR, message: "Test Chat answered 503" }))
+
+const workspaceRows = (testDb: TestDb, orgId: string) =>
+	Effect.promise(() =>
+		queryFirstRow<{ count: number }>(
+			testDb,
+			"select count(*)::int as count from chat_workspaces where org_id = $1",
+			[orgId],
+		),
+	).pipe(Effect.map((row) => row?.count ?? 0))
 
 const makeConfig = (withConnectorConfig: boolean) =>
 	ConfigProvider.layer(
@@ -724,6 +768,93 @@ describe("ChatWorkspaceService", () => {
 				const resolved = yield* chat.resolve(TEST_CONNECTOR, "workspace-3")
 				assert.isTrue(Option.isNone(resolved))
 			}).pipe(Effect.provide(makeLayer(testDb)))
+		}),
+	)
+
+	it.effect("revokes the workspace's own credential at the platform, then drops the link", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			const calls: Array<ChatInstallRevocation> = []
+			yield* Effect.gen(function* () {
+				const chat = yield* ChatWorkspaceService
+				const { url } = yield* chat.beginInstall(ORG, USER, TEST_CONNECTOR, CALLBACK)
+				const params = callback(stateFrom(url), "workspace-revoke", "Acme")
+				params.set("credentials", '{"token":"a-workspaces-own-token"}')
+				yield* chat.completeInstall(TEST_CONNECTOR, params, ME)
+				const linked = yield* chat.resolve(TEST_CONNECTOR, "workspace-revoke")
+				const id = Option.getOrThrow(linked).workspaceId
+
+				yield* chat.uninstall(ORG, id)
+
+				// The connector was handed the workspace it linked and the credential it stored.
+				assert.deepStrictEqual(
+					Arr.map(calls, (call) => ({
+						workspace: call.externalWorkspaceId,
+						credential: call.credentials.get(WORKSPACE_CREDENTIALS),
+					})),
+					[{ workspace: "workspace-revoke", credential: '{"token":"a-workspaces-own-token"}' }],
+				)
+				assert.strictEqual(yield* workspaceRows(testDb, ORG), 0)
+			}).pipe(Effect.provide(makeLayer(testDb, { registry: [revokingConnector(calls)] })))
+		}),
+	)
+
+	it.effect("drops the link when the platform refuses the revoke or never answers", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			const calls: Array<ChatInstallRevocation> = []
+			const down = yield* insertWorkspace(
+				testDb,
+				"55555555-5555-4555-8555-555555555551",
+				ORG,
+				"workspace-down",
+			)
+			const silent = yield* insertWorkspace(
+				testDb,
+				"55555555-5555-4555-8555-555555555552",
+				ORG,
+				"workspace-silent",
+			)
+			const connector = revokingConnector(calls, (input) =>
+				input.externalWorkspaceId === "workspace-silent" ? Effect.never : platformDown(),
+			)
+			yield* Effect.gen(function* () {
+				const chat = yield* ChatWorkspaceService
+				yield* chat.uninstall(ORG, down)
+				assert.strictEqual(yield* workspaceRows(testDb, ORG), 1)
+
+				// A platform that never answers is waited on for a bounded time, then the row goes.
+				const pending = yield* Effect.forkChild(chat.uninstall(ORG, silent))
+				yield* Effect.promise(() => vi.waitFor(() => assert.strictEqual(calls.length, 2)))
+				yield* TestClock.adjust("1 minute")
+				yield* Fiber.join(pending)
+				assert.strictEqual(yield* workspaceRows(testDb, ORG), 0)
+			}).pipe(Effect.provide(makeLayer(testDb, { registry: [connector] })))
+		}),
+	)
+
+	it.effect("unlinks every workspace of an org and leaves another org's alone", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			const calls: Array<ChatInstallRevocation> = []
+			yield* insertWorkspace(testDb, "66666666-6666-4666-8666-666666666661", ORG, "workspace-a")
+			yield* insertWorkspace(testDb, "66666666-6666-4666-8666-666666666662", ORG, "workspace-b")
+			yield* insertWorkspace(testDb, "66666666-6666-4666-8666-666666666663", OTHER_ORG, "workspace-c")
+			// One platform call fails; its row goes with the rest.
+			const connector = revokingConnector(calls, (input) =>
+				input.externalWorkspaceId === "workspace-a" ? platformDown() : Effect.void,
+			)
+			yield* Effect.gen(function* () {
+				const chat = yield* ChatWorkspaceService
+				const result = yield* chat.uninstallAll(ORG)
+				assert.strictEqual(result.uninstalled, 2)
+				assert.sameMembers(
+					Arr.map(calls, (call) => call.externalWorkspaceId),
+					["workspace-a", "workspace-b"],
+				)
+				assert.strictEqual(yield* workspaceRows(testDb, ORG), 0)
+				assert.strictEqual(yield* workspaceRows(testDb, OTHER_ORG), 1)
+			}).pipe(Effect.provide(makeLayer(testDb, { registry: [connector] })))
 		}),
 	)
 
