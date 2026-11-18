@@ -50,22 +50,15 @@ const locale = Astro.currentLocale ?? "en";
 const title = useCase.seoTitle();
 const description = useCase.seoDescription();
 
-// Every use-case plate is a real capture; the pinned pane has no placeholder state.
-const steps = useCase.steps.flatMap((step) =>
-	step.plate.src
-		? [
-				{
-					surface: step.surface,
-					route: step.route,
-					elapsed: step.elapsed,
-					title: step.title(),
-					body: step.body(),
-					shot: step.plate.alt,
-					src: step.plate.src,
-				},
-			]
-		: [],
-);
+const steps = useCase.steps.map((step) => ({
+	surface: step.surface,
+	route: step.route,
+	elapsed: step.elapsed,
+	title: step.title(),
+	body: step.body(),
+	shot: step.plate.alt,
+	src: step.plate.src,
+}));
 
 const crossLinks = [
 	...useCase.related.flatMap((related) => {

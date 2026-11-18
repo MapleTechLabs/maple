@@ -202,7 +202,8 @@ export interface StoryStepSpec {
 	elapsed: string
 	title: Msg
 	body: Msg
-	plate: Plate
+	/** A real capture, always: the story pane has no placeholder state, so `src` is required. */
+	plate: Plate & { src: string }
 }
 
 export interface UseCase {
