@@ -20,8 +20,8 @@ const checkoutTrace: TraceData = {
 	traceStartTime: BASE_TIME,
 }
 
-export const DocsTraceWaterfall = makeIsland({
-	name: "DocsTraceWaterfall",
+export const LiveTraceWaterfall = makeIsland({
+	name: "LiveTraceWaterfall",
 	Props: Schema.Struct({}),
 	Model: Waterfall.Model,
 	init: () => {
