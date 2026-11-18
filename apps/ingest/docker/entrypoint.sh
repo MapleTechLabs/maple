@@ -8,8 +8,12 @@ uid=10001
 dir="${INGEST_QUEUE_DIR:-/var/lib/maple-ingest/wal}"
 
 mkdir -p "$dir"
-if [ "$(stat -c %u "$dir")" != "$uid" ]; then
+# Any entry an older or rolled-back root task wrote, not just the directory itself.
+if [ -n "$(find "$dir" ! -uid "$uid" -print -quit)" ]; then
 	chown -R "$uid:$uid" "$dir"
 fi
 
-exec setpriv --reuid="$uid" --regid="$uid" --clear-groups -- /usr/local/bin/maple-ingest "$@"
+# No capability can come back: an empty bounding and inheritable set, and no_new_privs so a
+# setuid binary cannot raise privileges either.
+exec setpriv --reuid="$uid" --regid="$uid" --clear-groups --inh-caps=-all --bounding-set=-all \
+	--no-new-privs -- /usr/local/bin/maple-ingest "$@"
