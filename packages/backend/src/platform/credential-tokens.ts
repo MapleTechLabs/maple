@@ -82,4 +82,16 @@ export const generateShareToken = (): string =>
  */
 export const hashShareToken = (rawToken: string, hmacKey: string): string => hmacDigest(rawToken, hmacKey)
 
+/** What an opaque lookup value is for; the label keeps one raw value from matching another column. */
+export type LookupTokenPurpose =
+	| "mcp-oauth/request-id"
+	| "mcp-oauth/authorization-code"
+	| "mcp-oauth/refresh-token"
+	| "cli-device/device-code"
+	| "cli-device/user-code"
+
+/** Keyed digest of a short-lived OAuth or device value, so a database writer cannot plant a usable row. */
+export const hashLookupToken = (purpose: LookupTokenPurpose, raw: string, hmacKey: string): string =>
+	hmacDigest(`${purpose}\u0000${raw}`, hmacKey)
+
 export const shareTokenSuffix = (rawToken: string): string => Str.slice(-SHARE_TOKEN_SUFFIX_LENGTH)(rawToken)
