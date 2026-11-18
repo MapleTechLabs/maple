@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { GithubIntegrationStatus, GithubInstallationSelection } from "@maple/domain/http"
 import { Result, Schema, Array as Arr } from "effect"
@@ -201,6 +202,16 @@ describe("github card", () => {
 			Message.CompletedAuditLog({ enabled: false, failure: toLoadFailure("x") }),
 		)
 		expect(auditLogShown(failed.model)).toBe(true)
+	})
+
+	test("a member who cannot manage integrations sees both switches but cannot flip them", () => {
+		const member = { ...loaded(), grants: Policy.grantsOf(["org:member"]) }
+		scene(
+			{ update: pageUpdate, view },
+			given(member),
+			expectView(role("switch", { name: "Audit log" })).toBeDisabled(),
+			expectView(role("switch", { name: "CI traces and logs" })).toBeDisabled(),
+		)
 	})
 
 	test("picking another branch confirms first, then saves and polls the backfill", () => {

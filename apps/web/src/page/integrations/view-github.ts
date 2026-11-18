@@ -16,7 +16,7 @@ import { integrationIconPlate } from "../kit/integration-empty"
 import { integrationNotice } from "./kit/notice"
 import { Message } from "./message"
 import { integrationStatusCard } from "./view-integration-card"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { auditLogShown, ciTracesShown, githubStatusOf } from "./update-github"
 import { disconnectDialog } from "./view-disconnect"
 import { repositoriesPanels, repoDialogs } from "./view-github-repos"
@@ -154,13 +154,13 @@ export const githubFeatures = (h: H, model: Model, status: GithubIntegrationStat
 			{
 				spec: ciTraces,
 				isChecked: ciTracesShown(model),
-				isDisabled: model.githubCard.isSavingCiTraces,
+				isDisabled: model.githubCard.isSavingCiTraces || !canManage(model),
 				onToggle: Message.ToggledCiTraces(),
 			},
 			{
 				spec: auditLog,
 				isChecked: auditLogShown(model),
-				isDisabled: model.githubCard.isSavingAuditLog,
+				isDisabled: model.githubCard.isSavingAuditLog || !canManage(model),
 				onToggle: Message.ToggledAuditLog(),
 			},
 			{
