@@ -564,6 +564,8 @@ export const maybeEnqueueTriage: (
 			investigationId,
 			subject,
 			snapshot,
+			// Raised by an incident opening: the subject and snapshot are built from it here.
+			startedBy: { kind: "producer", producer: "incident_triage" },
 			nowMs,
 		})
 		if (!started.started) {

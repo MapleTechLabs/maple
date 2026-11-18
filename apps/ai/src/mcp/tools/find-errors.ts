@@ -63,6 +63,7 @@ export function registerFindErrorsTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 20, max: 200, noun: "error types" }),
 		}),
 		aliases: P.SERVICE_ALIASES,
+		untrustedOutput: true,
 		hints: { readOnly: true },
 		phrases: ["Looking for errors", "Finding errors"],
 		handler: Effect.fn("McpTool.findErrors")(function* (params) {

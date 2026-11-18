@@ -24,4 +24,3 @@ export const withSource = (model: Model, saved: V2DataSource): Model => ({
 			: Arr.append(sources, saved),
 	),
 })
-

@@ -6,11 +6,11 @@ import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import {
 	AGENT_AUDIENCE,
-	tenantWithDataSources,
+	tenantWithDataSourceCatalog,
 	mapDataSourceError,
 	queryLanguageLabel,
-	untrustedText,
 } from "../lib/data-sources"
+import { untrustedText } from "../lib/format"
 
 const TOOL = "list_data_sources"
 export const DATA_SOURCES_PAGE_SIZE = 50
@@ -45,7 +45,7 @@ export function registerListDataSourcesTool(server: McpToolRegistrar) {
 		scopeFamily: "data_sources",
 		phrases: ["Listing data sources", "Checking connected data sources"],
 		handler: Effect.fn("McpTool.listDataSources")(function* ({ offset }) {
-			const tenant = yield* tenantWithDataSources(TOOL)
+			const tenant = yield* tenantWithDataSourceCatalog(TOOL)
 			const service = yield* ExternalDataSourceService
 			const sources = yield* service.list(tenant.orgId, AGENT_AUDIENCE).pipe(mapDataSourceError(TOOL))
 			if (offset > 0 && offset >= sources.length) {

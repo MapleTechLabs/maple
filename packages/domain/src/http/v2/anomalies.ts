@@ -1,3 +1,4 @@
+import { AuditedRead } from "../audit-log"
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import { UserId } from "@maple/primitives"
@@ -412,14 +413,17 @@ export class V2AnomaliesApiGroup extends HttpApiGroup.make("anomalies")
 			query: V2AnomalyTimeseriesQuery,
 			success: V2AnomalyIncidentTimeseries,
 			error: [anomalyPersistence, anomalyNotFound, ...V2WarehouseReadErrors],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "getAnomalyIncidentTimeseries",
-				summary: "Retrieve incident timeseries",
-				description:
-					"Returns the monitored signal's timeseries around the incident, with baseline and threshold overlays. Requires the `anomalies:read` scope.",
-			}),
-		),
+		})
+			// The signal's series is read from telemetry, so it is audited like other telemetry reads.
+			.annotate(AuditedRead, "telemetry.read")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "getAnomalyIncidentTimeseries",
+					summary: "Retrieve incident timeseries",
+					description:
+						"Returns the monitored signal's timeseries around the incident, with baseline and threshold overlays. Requires the `anomalies:read` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.post("resolveIncident", "/incidents/:id/resolve", {

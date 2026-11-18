@@ -300,6 +300,11 @@ export interface McpToolSpec<
 	 * documents that replace state, where a dropped typo would reset a field to its default.
 	 */
 	readonly rejectUnknownKeys?: true
+	/**
+	 * The result shows text the monitored systems wrote (log bodies, error messages, span names,
+	 * attribute values): every non-empty result then carries the untrusted-data notice.
+	 */
+	readonly untrustedOutput?: true
 	readonly handler: (params: P["Type"]) => Effect.Effect<McpToolOutput<N>["Type"], McpToolError, R>
 	/** The model-facing text, derived from the output alone so the two cannot disagree. */
 	readonly render: (output: McpToolOutput<N>["Type"]) => ToolDoc

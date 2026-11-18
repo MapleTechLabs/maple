@@ -1,8 +1,10 @@
 import { Schema } from "effect"
 import { StatusPageConfig } from "../http/v2/status-pages"
+import { StatusPageCustomDomainDnsRecord } from "../status-page"
 import {
 	StatusPageAutoIncidents,
 	StatusPageComponentStatus,
+	StatusPageCustomDomainStatus,
 	StatusPageIncidentImpact,
 	StatusPageIncidentKind,
 	StatusPageIncidentStatus,
@@ -75,9 +77,24 @@ export const StatusPageFreshnessRow = Schema.Struct({
 	publishPending: Schema.Boolean,
 })
 
+/** A page's custom domain and how far its setup has come. */
+export const StatusPageDomainRow = Schema.Struct({
+	hostname: Schema.String,
+	/** `pending_dns` until the records below are found, `pending_ssl` until the certificate is issued. */
+	status: StatusPageCustomDomainStatus,
+	/** What to add at the domain's DNS provider: the CNAME, and TXT records while they are needed. */
+	dnsRecords: Schema.Array(StatusPageCustomDomainDnsRecord),
+	/** Why the last check did not finish the setup; null when nothing is wrong. */
+	lastError: Schema.NullOr(Schema.String),
+	lastCheckedAt: Schema.NullOr(Schema.String),
+	activatedAt: Schema.NullOr(Schema.String),
+})
+
 /** One page as its visitors see it. */
 export const StatusPageDetail = Schema.Struct({
 	...StatusPageRow.fields,
+	/** The page's own domain (`status.acme.com`); absent when it has none. */
+	customDomain: Schema.optionalKey(StatusPageDomainRow),
 	/** The banner: the worst component status. */
 	overallStatus: StatusPageComponentStatus,
 	components: Schema.Array(StatusPageComponentRow),
@@ -115,4 +132,23 @@ export const ApplyStatusPageConfigOutput = Schema.Struct({
 	page: StatusPageRow,
 	config: StatusPageConfig,
 	changes: StatusPageConfigChangesRow,
+})
+
+export const CreateStatusPageOutput = Schema.Struct({
+	/** Always a draft: private until publish_status_page. */
+	page: StatusPageRow,
+})
+
+export const PublishStatusPageOutput = Schema.Struct({
+	/** `already_public` when the page was not a draft: nothing changed. */
+	action: Schema.Literals(["published", "already_public"]),
+	page: StatusPageRow,
+})
+
+export const SetStatusPageDomainOutput = Schema.Struct({
+	/** `set` a new domain, `checked` the page's current one again, `removed` it, or `unchanged` (none to remove). */
+	action: Schema.Literals(["set", "checked", "removed", "unchanged"]),
+	page: StatusPageRow,
+	/** Null once removed. */
+	domain: Schema.NullOr(StatusPageDomainRow),
 })

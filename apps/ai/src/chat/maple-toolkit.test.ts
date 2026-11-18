@@ -39,6 +39,7 @@ describe("buildChatToolkit", () => {
 			tenantFor(human),
 			PR_REVIEW_RULESET,
 			"chat",
+			"record",
 			undefined,
 			undefined,
 			undefined,
@@ -65,6 +66,7 @@ describe("buildChatToolkit", () => {
 			tenantFor(human),
 			PR_REVIEW_RULESET,
 			"chat",
+			"record",
 			undefined,
 			undefined,
 			undefined,
@@ -92,6 +94,7 @@ describe("buildChatToolkit", () => {
 			tenantFor(human),
 			PR_REVIEW_RULESET,
 			"chat",
+			"record",
 			undefined,
 			undefined,
 			undefined,
@@ -111,6 +114,7 @@ describe("buildChatToolkit", () => {
 			tenantFor(human),
 			PR_REVIEW_RULESET,
 			"chat",
+			"record",
 			undefined,
 			undefined,
 			undefined,
@@ -125,7 +129,7 @@ describe("buildChatToolkit", () => {
 
 	it("does not let a review list the organization's other repositories", () => {
 		const { executor } = recordingExecutor()
-		const { handlers } = buildChatToolkit(executor, tenantFor(human), PR_REVIEW_RULESET, "chat")
+		const { handlers } = buildChatToolkit(executor, tenantFor(human), PR_REVIEW_RULESET, "chat", "record")
 
 		assert.isUndefined(handlers.list_source_repositories)
 	})

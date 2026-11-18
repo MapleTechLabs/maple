@@ -31,7 +31,7 @@ import { monitorKey, PickerMessage } from "../shared/picker"
 import { statusPage } from "../shared/test-pages"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { init, orderedRows, previewDraft as BuilderUpdatePreviewDraft, update } from "./update"
+import { init, orderedRows, previewDraft as BuilderUpdatePreviewDraft, routeChanged, update } from "./update"
 import { view as builderView } from "./view"
 
 const ENGINEER = Policy.grantsOf(["org:engineer"])
@@ -54,8 +54,12 @@ const tcpMonitor = () =>
 		config: { type: "tcp", host: "db.acme.dev", port: 5432, timeout_ms: 10000 },
 	})
 
-const withMonitors = (monitors: ReadonlyArray<V2UptimeMonitor>, canEdit = true): Model => {
-	const start = init({ _tag: "StatusPageNew" }, context).model
+const withMonitors = (
+	monitors: ReadonlyArray<V2UptimeMonitor>,
+	canEdit = true,
+	setup: "agent" | "manual" | null = "manual",
+): Model => {
+	const start = init({ _tag: "StatusPageNew", search: setup === null ? {} : { setup } }, context).model
 	return Arr.reduce(
 		[
 			Message.ReadClock({ nowMs: Date.UTC(2026, 9, 1, 12) }),
@@ -632,6 +636,59 @@ describe("status page builder", () => {
 				expect(srcdoc).toContain("Acme Cloud")
 				expect(srcdoc).toContain("color-scheme:dark;")
 			}),
+		)
+	})
+})
+
+describe("status page setup method", () => {
+	test("a new page starts with the choice between an agent and the dashboard", () => {
+		scene(
+			{ update: builderUpdate, view },
+			given(withMonitors([httpMonitor()], true, null)),
+			expectView(role("link", { name: "Get the prompt" })).toHaveAttr(
+				"href",
+				"/status-pages/new?setup=agent",
+			),
+			expectView(role("link", { name: "Open the builder" })).toHaveAttr(
+				"href",
+				"/status-pages/new?setup=manual",
+			),
+			expectView(role("textbox", { name: "Name" })).not.toExist(),
+		)
+	})
+
+	test("the agent method shows the MCP setup and a prompt that creates the page through it", () => {
+		const model = withMonitors([httpMonitor()], true, "agent")
+		scene(
+			{ update: builderUpdate, view },
+			given(model),
+			expectView(role("button", { name: /Build with your agent/u })).toExist(),
+			expectView(role("link", { name: "Set it up in the dashboard instead" })).toHaveAttr(
+				"href",
+				"/status-pages/new?setup=manual",
+			),
+			expectView(role("textbox", { name: "Name" })).not.toExist(),
+		)
+	})
+
+	test("switching to the dashboard keeps what was typed in the builder", () => {
+		const typed = named(withMonitors([httpMonitor()]), "Acme Status")
+		const back = routeChanged(typed, { _tag: "StatusPageNew", search: {} }).model
+		expect(back.setup).toBeNull()
+		const again = routeChanged(back, { _tag: "StatusPageNew", search: { setup: "manual" } }).model
+		scene(
+			{ update: builderUpdate, view },
+			given(again),
+			expectView(role("textbox", { name: "Name" })).toHaveAttr("value", "Acme Status"),
+		)
+	})
+
+	test("a member gets no choice of method", () => {
+		scene(
+			{ update: builderUpdate, view },
+			given(withMonitors([httpMonitor()], false, null)),
+			expectView(text("Only org admins and engineers can create status pages")).toExist(),
+			expectView(role("link", { name: "Get the prompt" })).not.toExist(),
 		)
 	})
 })

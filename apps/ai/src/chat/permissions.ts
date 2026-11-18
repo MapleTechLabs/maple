@@ -83,10 +83,38 @@ export const PR_REVIEW_TOOLS: ReadonlyArray<string> = [
 ]
 
 /**
+ * What the reviewer may call on a public repository, where its comment is world-readable: the diff,
+ * the sandbox and the source, and no telemetry. Every telemetry tool returns strings anyone holding
+ * the org's ingest key can write (service, span, attribute and error text), so none is offered.
+ */
+export const PR_REVIEW_PUBLIC_TOOLS: ReadonlyArray<string> = [
+	"pr_changed_files",
+	"pr_context",
+	"pr_file_diff",
+	"sandbox_grep",
+	"sandbox_list_files",
+	"sandbox_read_file",
+	"sandbox_exec",
+	"search_source_code",
+	"read_source_file",
+]
+
+const allowOnly = (tools: ReadonlyArray<string>): PermissionRuleset => [
+	new PermissionRule({ tool: "*", action: "deny" }),
+	...Arr.map([...tools].sort(), (tool) => new PermissionRule({ tool, action: "allow" })),
+]
+
+/**
  * The reviewer's tools and nothing else. A reply to a review thread runs under it too: it reads what
  * a review reads, and its only writes are its own completion tools.
  */
-export const PR_REVIEW_RULESET: PermissionRuleset = [
-	new PermissionRule({ tool: "*", action: "deny" }),
-	...Arr.map([...PR_REVIEW_TOOLS].sort(), (tool) => new PermissionRule({ tool, action: "allow" })),
-]
+export const PR_REVIEW_RULESET: PermissionRuleset = allowOnly(PR_REVIEW_TOOLS)
+
+/** The reviewer's and the reply's ruleset on a public repository. */
+export const PR_REVIEW_PUBLIC_RULESET: PermissionRuleset = allowOnly(PR_REVIEW_PUBLIC_TOOLS)
+
+/** The unattended rulesets of an agent that posts to a pull request, by where it posts. */
+export const PR_REVIEW_RULESETS = {
+	public: PR_REVIEW_PUBLIC_RULESET,
+	private: PR_REVIEW_RULESET,
+} as const

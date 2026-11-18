@@ -55,6 +55,7 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 20, max: 200, noun: "traces" }),
 		}),
 		aliases: P.SERVICE_ALIASES,
+		untrustedOutput: true,
 		hints: { readOnly: true },
 		phrases: ["Searching traces", "Looking through traces"],
 		handler: Effect.fn("McpTool.searchTraces")(function* (params) {

@@ -111,6 +111,7 @@ export function registerInspectUserTool(server: McpToolRegistrar) {
 			...WINDOW.fields,
 			namespaces: P.optionalList("Only signals from these service namespaces (`service.namespace`)"),
 		}),
+		untrustedOutput: true,
 		hints: { readOnly: true },
 		scopeFamily: "users",
 		phrases: ["Looking up a user"],

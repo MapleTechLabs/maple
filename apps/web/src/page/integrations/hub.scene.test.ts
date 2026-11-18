@@ -339,6 +339,7 @@ describe("telemetry and data sources", () => {
 			tags: [],
 			agent_access: true,
 			agent_pii: false,
+			supports_pii_redaction: false,
 			connection: {
 				type: "clickhouse",
 				url: "https://ch.example.com:8443",

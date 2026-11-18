@@ -8,6 +8,8 @@ import { testClickHouse } from "./test-connection"
 export const clickHouseDriver = registerDriver<"clickhouse">({
 	kind: "clickhouse",
 	queryLanguage: "sql:clickhouse",
+	// Introspection reports names, types and comments: nothing says which columns are personal.
+	marksPersonalData: false,
 	validateConnection: validateClickHouseConnection,
 	test: (connection) => testClickHouse(connection),
 	catalog: (connection) => clickHouseCatalog(connection),

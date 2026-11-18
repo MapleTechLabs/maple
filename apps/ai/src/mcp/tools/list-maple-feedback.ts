@@ -16,7 +16,7 @@ const iso = (ms: number) => DateTime.formatIso(DateTime.makeUnsafe(ms))
 
 /**
  * The Maple team's triage view of `send_maple_feedback` and `POST /v2/agent_feedback`. Listed on
- * every surface like any public tool, but `AgentFeedbackService.triage` refuses every org except
+ * every surface like any public tool, but `AgentFeedbackService.triage` refuses all but admins of
  * `MAPLE_INTERNAL_ORG_ID`, and this handler refuses any caller but a person or API key on the
  * public `/mcp` transport: Maple's own agents and the bot never carry customer feedback text.
  */
@@ -25,7 +25,7 @@ export function registerListMapleFeedbackTool(server: McpToolRegistrar) {
 		name: TOOL,
 		title: "List Maple Feedback",
 		description:
-			"Maple team only: read the feedback agents sent about Maple (send_maple_feedback, POST /v2/agent_feedback) across every organization, newest first, with the full reason and details. Refused for any other organization.",
+			"Maple team admins only: read the feedback agents sent about Maple (send_maple_feedback, POST /v2/agent_feedback) across every organization, newest first, with the full reason and details. Refused for any other organization.",
 		parameters: Schema.Struct({
 			kind: P.optionalOneOf(AgentFeedbackKind.literals, "Only this kind of feedback"),
 			impact: P.optionalOneOf(AgentFeedbackImpact.literals, "Only this impact"),
@@ -65,7 +65,7 @@ export function registerListMapleFeedbackTool(server: McpToolRegistrar) {
 
 			const service = yield* AgentFeedbackService
 			const reports = yield* service
-				.triage(tenant.orgId, {
+				.triage(tenant, {
 					kind: params.kind,
 					impact: params.impact,
 					sinceMs,

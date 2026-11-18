@@ -8,6 +8,7 @@ import { evaluatePermission, type PermissionRuleset } from "@maple/domain/permis
 import type { TenantContext } from "@maple/domain/http"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
+import type { GenAiContent } from "../platform/genai-spans"
 import { buildMapleToolkit, type ToolUiPayload, type UiSource } from "../mcp/tools/llm-tools"
 
 /** The pull request a review or reply session is about: the one its tools read, whatever the model names. */
@@ -48,6 +49,7 @@ export const buildChatToolkit = (
 	tenant: TenantContext,
 	ruleset: PermissionRuleset,
 	surface: McpToolSurface,
+	content: GenAiContent,
 	sessionAttributes?: Readonly<Record<string, string>>,
 	onAnswer?: (tool: string, answer: string) => void,
 	onUi?: (toolCallId: string, ui: ToolUiPayload, call: UiSource) => void,
@@ -55,6 +57,7 @@ export const buildChatToolkit = (
 ) =>
 	buildMapleToolkit(executor, tenant, {
 		surface,
+		content,
 		...(sessionAttributes === undefined ? undefined : { sessionAttributes }),
 		...(onAnswer === undefined ? undefined : { onAnswer }),
 		...(onUi === undefined ? undefined : { onUi }),

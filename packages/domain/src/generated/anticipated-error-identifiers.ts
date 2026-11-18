@@ -137,6 +137,7 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/errors/ScrapeTargetValidationError",
 	"@maple/http/errors/SelfHostedAuthDisabledError",
 	"@maple/http/errors/SelfHostedInvalidPasswordError",
+	"@maple/http/errors/SelfHostedLoginRateLimitError",
 	"@maple/http/errors/ShareNotFoundError",
 	"@maple/http/errors/ShareRangeInvalidError",
 	"@maple/http/errors/ShareRateLimitedError",

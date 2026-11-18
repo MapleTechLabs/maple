@@ -170,8 +170,17 @@ export const postMergeMarker = (reviewId: string) => `<!-- maple-pr-post-merge $
 
 const pct = (value: number) => `${(value * 100).toFixed(1)}%`
 
-export const renderPostMergeComment = (reviewId: string, postMerge: PrReviewPostMerge): string => {
+/**
+ * The follow-up comment. On a public repository it names no service, span or error (anyone with
+ * the org's ingest key writes those, and the comment is world-readable): counts only.
+ */
+export const renderPostMergeComment = (
+	reviewId: string,
+	postMerge: PrReviewPostMerge,
+	repository: { readonly isPrivate: boolean },
+): string => {
 	const { deploy } = postMerge
+	const withText = repository.isPrivate
 	const when = Str.replace("T", " ")(Str.slice(0, 16)(DateTime.formatIso(deploy.firstSeen)))
 	const lines = [
 		postMergeMarker(reviewId),
@@ -181,7 +190,7 @@ export const renderPostMergeComment = (reviewId: string, postMerge: PrReviewPost
 			? "✅ **Shipped clean.** Nothing this change touches got worse in the hour after it deployed."
 			: "⚠️ **Something changed after this shipped.** Details below.",
 		"",
-		`Deployed to \`${deploy.service}\`${deploy.environment ? ` (${deploy.environment})` : ""} at ${when} UTC as \`${Str.slice(0, 7)(deploy.commitSha)}\`${deploy.exact ? "" : ", the first version after the merge (the merge commit itself never reported)"}. Compared the ${postMerge.windowMinutes} minutes before and after.`,
+		`Deployed${withText ? ` to \`${deploy.service}\`${deploy.environment ? ` (${deploy.environment})` : ""}` : ""} at ${when} UTC as \`${Str.slice(0, 7)(deploy.commitSha)}\`${deploy.exact ? "" : ", the first version after the merge (the merge commit itself never reported)"}. Compared the ${postMerge.windowMinutes} minutes before and after.`,
 		"",
 	]
 	if (postMerge.missing.length > 0) {
@@ -190,6 +199,29 @@ export const renderPostMergeComment = (reviewId: string, postMerge: PrReviewPost
 			...Arr.map(postMerge.missing, (name) => `- \`${name}\``),
 			"",
 		)
+	}
+	if (!withText) {
+		const regressed = Arr.filter(postMerge.operations, (operation) => operation.regressed).length
+		const still = Arr.filter(postMerge.linkedIssues, (issue) => issue.afterPerHour > 0).length
+		lines.push(
+			...Arr.filter(
+				[
+					postMerge.newIssues.length > 0
+						? `- ${postMerge.newIssues.length} new error issues since the deploy`
+						: "",
+					postMerge.linkedIssues.length > 0
+						? `- ${postMerge.linkedIssues.length} error issues in the changed files, ${still} still occurring`
+						: "",
+					postMerge.operations.length > 0
+						? `- ${postMerge.operations.length} operations compared, ${regressed} regressed`
+						: "",
+				],
+				Str.isNonEmpty,
+			),
+			"",
+			"<sub>Details are in Maple. A public repository's comment names no service, operation or error.</sub>",
+		)
+		return Arr.join(lines, "\n")
 	}
 	if (postMerge.newIssues.length > 0) {
 		lines.push(

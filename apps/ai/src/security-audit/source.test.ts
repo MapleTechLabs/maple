@@ -46,7 +46,7 @@ const fake: SourceReaderApi = {
 			return { text, truncated: false }
 		}),
 }
-const { handlers } = auditToolHandlers(fake)
+const { handlers } = auditToolHandlers(fake, "record")
 const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(Effect.result(effect))
 const failureOf = <A, E extends { readonly message: string }>(
 	result: Awaited<ReturnType<typeof run<A, E>>>,
@@ -86,6 +86,7 @@ describe("audit tool handlers", () => {
 				const n = yield* Ref.make(0)
 				const tools = auditToolHandlers(
 					fake,
+					"record",
 					Ref.update(n, (x) => x + 1),
 				).handlers
 				yield* Effect.result(tools.read_file({ path: "src/a.ts" }))

@@ -18,6 +18,7 @@ import {
 	MapleApiV2,
 	missingReadScopes,
 	paginateOffsetQuery,
+	scopeAllows,
 	V2InsufficientScope,
 } from "@maple/domain/http/v2"
 import type {
@@ -28,7 +29,7 @@ import type {
 } from "@maple/domain/http/v2"
 import { Effect, Match, Schema, Array as Arr } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
-import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
+import { InvestigationService, type ManualStarter } from "@maple/backend/services/errors/InvestigationService"
 
 const toWireSubject = Effect.fn("HttpV2Investigations.toWireSubject")(function* (
 	investigationId: InvestigationId,
@@ -197,6 +198,20 @@ const logSubjectDecodeError = (error: InvestigationDataCorruptionError) =>
 const serializeInvestigation = (doc: InvestigationDocument) =>
 	toV2Investigation(doc).pipe(Effect.tapError(logSubjectDecodeError))
 
+/**
+ * Who a manual start or restart answers to. Data sources are outside what a run always reads, so
+ * the pass may query one only when the credential that asked could read them itself.
+ */
+export const manualStarter = (tenant: {
+	readonly userId: ManualStarter["userId"]
+	readonly roles: ManualStarter["roles"]
+	readonly scopes?: ReadonlyArray<string> | undefined
+}): ManualStarter => ({
+	userId: tenant.userId,
+	roles: tenant.roles,
+	mayReadDataSources: scopeAllows(tenant.scopes, { family: "data_sources", access: "read" }),
+})
+
 /** A run reads the whole org as an internal service, so a scoped key must already read it all. */
 const requireInvestigationScopes = (scopes: ReadonlyArray<string> | undefined) => {
 	const missing = missingReadScopes(scopes, INVESTIGATION_READ_FAMILIES)
@@ -259,7 +274,7 @@ export const HttpV2InvestigationsLive = HttpApiBuilder.group(MapleApiV2, "invest
 					yield* requireInvestigationScopes(tenant.scopes)
 					const doc = yield* service.createAndStartInvestigation(
 						tenant.orgId,
-						tenant.userId,
+						manualStarter(tenant),
 						new InvestigationCreateRequest({
 							subject: toInternalSubject(payload.subject),
 							...(payload.snapshot !== undefined
@@ -281,7 +296,11 @@ export const HttpV2InvestigationsLive = HttpApiBuilder.group(MapleApiV2, "invest
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					yield* requireInvestigationScopes(tenant.scopes)
-					const doc = yield* service.restartInvestigation(tenant.orgId, params.id)
+					const doc = yield* service.restartInvestigation(
+						tenant.orgId,
+						params.id,
+						manualStarter(tenant),
+					)
 					yield* recordHttpAudit("investigation.restarted", { resourceId: doc.id })
 
 					return yield* serializeInvestigation(doc)

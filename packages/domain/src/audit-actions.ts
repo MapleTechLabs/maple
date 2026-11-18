@@ -136,7 +136,9 @@ export const AuditResources = {
 	/** Org-singleton public/private pair; which one rolled is in `metadata`. */
 	ingest_key: { verbs: ["rolled"] },
 	/** An MCP client's OAuth grant; the client and the member who approved it are in `metadata`. */
-	mcp_connection: { prefix: PublicIdPrefixes.mcpConnection, verbs: ["revoked"] },
+	mcp_connection: { prefix: PublicIdPrefixes.mcpConnection, verbs: ["granted", "revoked"] },
+	/** A `maple auth login` approved in the dashboard; the device name is in `metadata`. */
+	cli_session: { verbs: ["approved"] },
 	/**
 	 * Every MCP tool invocation, whichever surface drove it (MCP transport, the
 	 * in-app chat, workflows, internal RPC). The tool and its parameters are in
@@ -291,6 +293,7 @@ export const AuditResourceLabels = {
 	aws_connection: "AWS connection",
 	ingest_key: "Ingest key",
 	mcp_connection: "MCP connection",
+	cli_session: "CLI session",
 	mcp_tool: "Tool",
 	investigation: "Investigation",
 	onboarding_reward: "Onboarding reward",
@@ -435,7 +438,9 @@ export const AuditActionLabels = {
 	"source.resumed": "Resumed source",
 	"source.rolled": "Rolled source token",
 	"source.deleted": "Deleted source",
+	"mcp_connection.granted": "Granted MCP connection",
 	"mcp_connection.revoked": "Revoked MCP connection",
+	"cli_session.approved": "Approved CLI login",
 	"mcp_tool.called": "Called tool",
 	"investigation.created": "Started investigation",
 	"investigation.restarted": "Restarted investigation",

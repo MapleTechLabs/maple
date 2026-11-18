@@ -61,6 +61,7 @@ import { runChatTurn } from "./run"
 import { toTenantContext, turnTenant } from "./turn-actor"
 import { dataSourcesPromptSection } from "../mcp/lib/data-sources"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
+import { mayQueryDataSources, queryCallerOf } from "@maple/backend/services/data-sources/query-caller"
 import { creditRefusalError, creditRefusalNotice, turnCreditRefusal } from "./turn-credits"
 import type { AiCreditsExhausted } from "@maple/backend/services/billing/AiCredits"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -225,7 +226,9 @@ export const dataSourcesContext = (
 ): Effect.Effect<string | undefined> =>
 	profileForTurn(agent, origin).namesDataSources
 		? executor.listDataSources(tenant).pipe(
-				Effect.map(dataSourcesPromptSection),
+				Effect.map((sources) =>
+					dataSourcesPromptSection(sources, mayQueryDataSources(queryCallerOf(tenant))),
+				),
 				Effect.catchCause((cause) =>
 					Effect.logWarning("Could not list data sources for the prompt", cause).pipe(
 						Effect.annotateLogs({ orgId: tenant.orgId, ...turn }),
