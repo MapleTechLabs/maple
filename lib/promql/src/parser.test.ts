@@ -496,6 +496,8 @@ describe("fourth-review parser regressions", () => {
 		expect(ok("010.e1")).toEqual({ type: "NumberLiteral", value: 100 })
 		expect(ok("0.")).toEqual({ type: "NumberLiteral", value: 0 })
 		expect(ok("x[010.]")).toMatchObject({ rangeMs: 10_000 })
+		// An error still points where the literal starts.
+		expect(parse("sum(010.)")).toMatchObject({ failure: { position: 4 } })
 	})
 
 	it("parenthesizes a negative-zero base of ^", () => {
