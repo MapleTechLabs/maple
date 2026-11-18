@@ -100,7 +100,7 @@ interface Plate {
 	alt: string
 	/** Placeholder-only: what to capture. */
 	caption?: string
-	/** Feature panels only: show this window of the capture instead of the whole screen. */
+	/** Show this window of the capture instead of the whole screen. A use-case plate uses it below lg. */
 	crop?: Crop
 }
 

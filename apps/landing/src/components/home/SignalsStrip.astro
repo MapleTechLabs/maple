@@ -51,7 +51,8 @@ const session = {
 					<p class="col-span-2 row-start-2 max-w-[62ch] text-[15px] leading-relaxed text-fg-muted">{logs.sub}</p>
 					<a href={logs.href} class="col-start-2 row-start-1 whitespace-nowrap text-sm text-fg transition-colors hover:text-primary">{logs.link}<span aria-hidden="true"> →</span></a>
 				</div>
-				<div class="mt-6 aspect-[16/10] min-h-0 overflow-hidden">
+				{/* Taller on phones, where 16:10 leaves no room for an expanded row. */}
+				<div class="mt-6 aspect-[4/5] min-h-0 overflow-hidden sm:aspect-[16/10]">
 					<LiveLogs volume={false} streamHeight="fill" />
 				</div>
 			</div>

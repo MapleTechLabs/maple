@@ -70,6 +70,8 @@ export const useCases: UseCase[] = [
 					src: "/screenshots/story-api-releases.webp",
 					width: 1280,
 					height: 660,
+					// This capture has the collapsed icon rail, not the full sidebar.
+					crop: { x: 0.043, y: 0, zoom: 1.045 },
 					alt: "Two releases of one endpoint compared on p50, p95, p99 and error rate",
 					caption:
 						"Commit comparison on order-service: abc123 against def456, p50/p95/p99 and error % per row, with the p99 delta called out.",
@@ -144,6 +146,8 @@ export const useCases: UseCase[] = [
 					src: "/screenshots/story-ecommerce-error.webp",
 					width: 992,
 					height: 600,
+					// This capture has the collapsed icon rail, not the full sidebar.
+					crop: { x: 0.043, y: 0, zoom: 1.045 },
 					alt: "The StripeTimeout issue with its affected-order count and the sessions that produced them",
 					caption:
 						"The StripeTimeout error issue: affected order count, retry-exhaustion log lines carrying the same trace id, and the sessions behind them.",

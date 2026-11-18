@@ -642,9 +642,10 @@ html[lang="ja"] .monument-hero h1 span {
 		linear-gradient(to bottom, transparent, black 8%, black 92%, transparent);
 	mask-composite: intersect;
 }
+/* On phones the art rises behind the actions: fade its top so the buttons stay clean. */
 @media (max-width: 767px) {
 	.monument-hero__art {
-		mask-image: linear-gradient(to bottom, transparent, black 12%, black 90%, transparent);
+		mask-image: linear-gradient(to bottom, transparent 12%, black 48%, black 90%, transparent);
 		mask-composite: add;
 	}
 }
