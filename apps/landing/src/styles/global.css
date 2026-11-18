@@ -657,6 +657,12 @@
 	background: var(--primary);
 }
 
+/* A logs stream in a third-width plate: the app shows its Service column from the md
+   breakpoint, which here would leave the message no room. */
+.live-logs--plate :is(.w-40.md\:flex, .w-40.md\:inline-block) {
+	display: none;
+}
+
 /* ──────────────────────────────────────────────────────────────
    Service map.
    Mirrors the in-product service map: rounded-rect cards with health
