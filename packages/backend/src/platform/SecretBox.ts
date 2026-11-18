@@ -173,9 +173,13 @@ const aadParts = <Ref>(
 				...destination(ref),
 			])
 
-/** What every ciphertext sealed by the primary key starts with. */
-export const currentEnvelopePrefix = (keyring: SecretKeyring): string =>
-	`${ENVELOPE_PREFIX}.${keyring.primary.id}.`
+/** The envelope new values of `slot` are sealed in: v3 when it names a destination. */
+const envelopeFor = <Ref>(slot: SecretSlot<Ref>): Envelope["version"] =>
+	slot.destination === undefined ? ENVELOPE_PREFIX : DESTINATION_ENVELOPE_PREFIX
+
+/** What every ciphertext of `slot` sealed by the primary key starts with. */
+export const currentEnvelopePrefix = <Ref>(keyring: SecretKeyring, slot: SecretSlot<Ref>): string =>
+	`${envelopeFor(slot)}.${keyring.primary.id}.`
 
 /** Seals a value for `slot` on the row `ref` names: slot subkey, row-bound, key id recorded. */
 export const sealSecret = <Ref, E>(
@@ -189,11 +193,16 @@ export const sealSecret = <Ref, E>(
 		plaintext,
 		subkeyFor(keyring.primary, slot.name),
 		onError,
-		secretAad(slot.name, slot.binding(ref)),
+		secretAad(
+			slot.name,
+			slot.destination === undefined
+				? slot.binding(ref)
+				: [...slot.binding(ref), ...slot.destination(ref)],
+		),
 	).pipe(
 		Effect.map((sealed) => ({
 			...sealed,
-			ciphertext: `${currentEnvelopePrefix(keyring)}${sealed.ciphertext}`,
+			ciphertext: `${currentEnvelopePrefix(keyring, slot)}${sealed.ciphertext}`,
 		})),
 	)
 

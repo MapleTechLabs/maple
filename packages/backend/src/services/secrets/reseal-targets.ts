@@ -31,6 +31,7 @@ import { StoredUptimeMonitorConfig } from "@maple/domain/uptime"
 import { Array as Arr, Effect, Schema } from "effect"
 import type { EncryptedValue } from "@maple/backend/platform/Crypto"
 import {
+	currentEnvelopePrefix,
 	openSecret,
 	sealSecret,
 	type SecretKeyring,
@@ -60,6 +61,8 @@ export interface PendingSecret {
 
 export interface ResealTarget {
 	readonly slotName: string
+	/** What a value sealed by the current key in the slot's current envelope starts with. */
+	readonly currentPrefix: (keyring: SecretKeyring) => string
 	/** The next `limit` pending rows after `cursor`, in identity order. */
 	readonly pending: (
 		db: MapleDb,
@@ -165,6 +168,7 @@ const tripleTargetWithContext = <T extends TableLike, Keys extends ReadonlyArray
 
 	return {
 		slotName: config.slot.name,
+		currentPrefix: (keyring) => currentEnvelopePrefix(keyring, config.slot),
 		pending: (db, prefix, cursor, limit) =>
 			db
 				.query(

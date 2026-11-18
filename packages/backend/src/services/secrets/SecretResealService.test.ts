@@ -177,7 +177,7 @@ describe("SecretResealService", () => {
 				// The old key is gone from this keyring: everything must open with the new one alone.
 				const ring = yield* keyring(2)
 				const password = yield* clickHousePassword(testDb, "org_a")
-				assert.isTrue(Str.startsWith(`v2.${ring.primary.id}.`)(password.ciphertext))
+				assert.isTrue(Str.startsWith(`v3.${ring.primary.id}.`)(password.ciphertext))
 				assert.strictEqual(
 					yield* openSecret(
 						ring,
@@ -267,6 +267,36 @@ describe("SecretResealService", () => {
 		})
 	})
 
+	it.effect(
+		"moves a destination slot's v2 values onto v3, after which moving the row stops them opening",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const ring = yield* keyring(1)
+				// How writers sealed this column before it named a destination.
+				const v2Slot = { name: clickHousePasswordSlot.name, binding: clickHousePasswordSlot.binding }
+				const v2 = yield* sealSecret(ring, v2Slot, { orgId: "org_a" }, "ch-pass", fail)
+				yield* seedClickHouseSettings(testDb, "org_a", v2)
+				assert.isTrue(Str.startsWith(`v2.${ring.primary.id}.`)(v2.ciphertext))
+
+				assert.deepStrictEqual(yield* sweep(testDb, 1), { resealed: 1, failed: 0, remaining: 0 })
+				const resealed = yield* clickHousePassword(testDb, "org_a")
+				assert.isTrue(Str.startsWith(`v3.${ring.primary.id}.`)(resealed.ciphertext))
+				const ref = { orgId: "org_a", chUrl: CH_URL }
+				assert.strictEqual(
+					yield* openSecret(ring, clickHousePasswordSlot, ref, resealed, fail),
+					"ch-pass",
+				)
+
+				const moved = { ...ref, chUrl: "https://attacker.example" }
+				const outcome = yield* openSecret(ring, clickHousePasswordSlot, moved, resealed, fail).pipe(
+					Effect.flip,
+				)
+				assert.strictEqual(outcome, "Decryption failed")
+			})
+		},
+	)
+
 	it.effect("reseals a value whose ref reads the row's stored config", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
@@ -315,7 +345,7 @@ describe("SecretResealService", () => {
 			yield* seedClickHouseSettings(testDb, "org_a", yield* sealedPassword(1, "org_a", "old-pass"))
 			const database = yield* Database
 			const [row] = yield* database.execute((db) =>
-				target.pending(db, `v2.${ring.primary.id}.`, null, 10),
+				target.pending(db, target.currentPrefix(ring), null, 10),
 			)
 			assert.isDefined(row)
 
