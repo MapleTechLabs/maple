@@ -61,6 +61,9 @@ export function untrustedText(text: string, max = 300): string {
 	return stringifyJson(line) ?? `"${Str.replace(/"/g, "'")(line)}"`
 }
 
+const unicodeEscape = (char: string) =>
+	`\\u${Str.padStart(4, "0")(Option.getOrElse(Str.codePointAt(0)(char), () => 0).toString(16))}`
+
 /**
  * A telemetry value that identifies something (a group, a series) as one JSON-quoted line. Unlike
  * {@link untrustedText} its whitespace is escaped, not collapsed, so two names stay two names, in
@@ -69,8 +72,19 @@ export function untrustedText(text: string, max = 300): string {
 export function untrustedName(text: string, max = 200): string {
 	const line = truncate(text, max)
 	const quoted = stringifyJson(line) ?? `"${Str.replace(/"/g, "'")(Str.replace(/\s/g, " ")(line))}"`
-	// A run of spaces keeps its length as JSON escapes, which table cells do not collapse.
-	return Str.replace(/(?<= ) /g, "\\u0020")(quoted)
+	// Every whitespace but a lone space becomes a JSON escape, which table cells do not collapse.
+	return Arr.join(
+		Arr.map(Str.split("")(quoted), (char, i) =>
+			char === " "
+				? quoted[i - 1] === " "
+					? "\\u0020"
+					: char
+				: /\s/.test(char)
+					? unicodeEscape(char)
+					: char,
+		),
+		"",
+	)
 }
 
 /**
