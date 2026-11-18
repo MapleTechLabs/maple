@@ -892,7 +892,8 @@ export const features: Feature[] = [
 			route: "/code-review/pull-requests",
 			title: "A review, with its outcome and confidence",
 			alt: "A pull request's review sheet: outcome, confidence, quality, summary, key changes and before-merge steps",
-			crop: { x: 0.528, y: 0, zoom: 2.12, aspect: 1.45 },
+			// Starts under the sheet's close button, which would sit in the frame's corner.
+			crop: { x: 0.528, y: 0.055, zoom: 2.12, aspect: 1.45 },
 		},
 		navLabel: m.nav_github,
 		navDesc: m.nav_desc_github,

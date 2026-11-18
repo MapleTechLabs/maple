@@ -4,13 +4,14 @@
  * feature pages. Inactive panes are `hidden`; no pane measures itself at load, so that is safe.
  */
 import * as m from "../../paraglide/messages.js";
+import { featureBySlug } from "../../lib/features";
 import { featurePath } from "../../lib/page-registry";
+import Shot from "../page/Shot.astro";
 import PostMergeComment from "../github/PostMergeComment.astro";
 import PrReviewComment from "../github/PrReviewComment.astro";
 import LiveFunnel from "../live/LiveFunnel.astro";
 import LiveK8sHeatmap from "../live/LiveK8sHeatmap.astro";
 import LiveUptime from "../live/LiveUptime.astro";
-import MediaFrame from "./MediaFrame.astro";
 
 const locale = Astro.currentLocale ?? "en";
 const l = (slug: string) => featurePath(locale, slug);
@@ -31,69 +32,76 @@ interface Surface {
 	link: string;
 	/** A second, quieter link: uptime also owns status pages. */
 	also?: { href: string; link: string };
-	/** `crop` is the window a phone shows: the whole capture is unreadable at that width. */
-	shot?: { src: string; alt: string; width: number; height: number; crop: { x: number; y: number; zoom: number } };
+	/** A capture. `rail` is false for one taken without the app's sidebar. */
+	shot?: { src: string; alt: string; width: number; height: number; rail?: false };
 }
+
+// Every pane's frame is the same box, so switching tabs does not move the page under it.
+const STAGE_ASPECT = 2.3;
+// The app's main pane, without its 256 px sidebar, at the stage's shape.
+const MAIN_PANE = { x: 0.1785, y: 0, zoom: 1.218, aspect: STAGE_ASPECT };
+// A capture taken without the sidebar is drawn at its own 896 px width, as tall as the stage.
+const NATIVE_WIDTH = 896;
+// It starts under the capture's empty header band, which is all a phone window would show.
+const NATIVE = { x: 0, y: 0.1, zoom: 1, aspect: (NATIVE_WIDTH * STAGE_ASPECT) / 1296 };
+// The feature page's own headline, where the pane has no line of its own.
+const headline = (slug: string, fallback: string) => featureBySlug(slug)?.heroTitle() ?? fallback;
 
 const surfaces: Surface[] = [
 	{
 		key: "map",
 		tab: m.platform_map_name(),
-		title: m.platform_map_name(),
+		title: headline("service-catalog", m.platform_map_name()),
 		desc: m.platform_map_desc(),
 		href: l("service-catalog"),
 		link: m.nav_service_catalog(),
 		shot: {
 			src: "/screenshots/surface-map.webp",
 			alt: "A focused service neighborhood showing API, database, and cache dependencies with live request flow",
-			width: 1440,
-			height: 810,
-			crop: { x: 0.2, y: 0.3, zoom: 2 },
+			width: 2880,
+			height: 1620,
 		},
 	},
 	{
 		key: "metrics",
 		tab: m.platform_metrics_name(),
-		title: m.platform_metrics_name(),
+		title: headline("metrics-dashboards", m.platform_metrics_name()),
 		desc: m.platform_metrics_desc(),
 		href: l("metrics-dashboards"),
 		link: m.nav_metrics_dashboards(),
 		shot: {
 			src: "/screenshots/surface-metrics.webp",
 			alt: "The metric explorer listing every metric with its type and cardinality",
-			width: 1440,
-			height: 810,
-			crop: { x: 0.185, y: 0.075, zoom: 2 },
+			width: 2880,
+			height: 1620,
 		},
 	},
 	{
 		key: "errors",
 		tab: m.platform_errors_name(),
-		title: m.platform_errors_name(),
+		title: headline("error-tracking", m.platform_errors_name()),
 		desc: m.platform_errors_desc(),
 		href: l("error-tracking"),
 		link: m.nav_error_tracking(),
 		shot: {
 			src: "/screenshots/surface-errors.webp",
 			alt: "Errors grouped by type with counts, affected services and last-seen times",
-			width: 1440,
-			height: 810,
-			crop: { x: 0.365, y: 0.17, zoom: 2.7 },
+			width: 2880,
+			height: 1620,
 		},
 	},
 	{
 		key: "alerts",
 		tab: m.platform_alerts_name(),
-		title: m.platform_alerts_name(),
+		title: headline("alerts", m.platform_alerts_name()),
 		desc: firstSentence(m.platform_alerts_desc()),
 		href: l("alerts"),
 		link: m.nav_alerts(),
 		shot: {
 			src: "/screenshots/surface-alerts.webp",
 			alt: "Alert rules with severity, signal type and current state",
-			width: 1440,
-			height: 810,
-			crop: { x: 0.19, y: 0.09, zoom: 1.9 },
+			width: 2880,
+			height: 1620,
 		},
 	},
 	{
@@ -114,9 +122,9 @@ const surfaces: Surface[] = [
 		shot: {
 			src: "/screenshots/surface-analytics.webp",
 			alt: "The Web Analytics page: unique visitors, sessions, page views and bounce rate over the last 7 days, with the live visitor badge and the visitors and page views chart",
-			width: 896,
-			height: 696,
-			crop: { x: 0, y: 0.2, zoom: 1.6 },
+			width: 1792,
+			height: 1392,
+			rail: false,
 		},
 	},
 	{
@@ -192,7 +200,7 @@ const githubSteps = [m.home_github_step_1_title(), m.home_github_step_2_title(),
 								<h3 class="font-display text-xl leading-snug tracking-[-0.01em] text-fg md:text-2xl">
 									{surface.title}
 								</h3>
-								<p class="mt-2 max-w-[72ch] text-[15px] leading-relaxed text-fg-muted">{surface.desc}</p>
+								<p class="mt-2 max-w-[92ch] text-[15px] leading-relaxed text-fg-muted">{surface.desc}</p>
 							</div>
 							<div class="flex shrink-0 flex-wrap gap-x-6 gap-y-2 text-sm">
 								<a href={surface.href} class="text-fg transition-colors hover:text-primary">
@@ -207,56 +215,52 @@ const githubSteps = [m.home_github_step_1_title(), m.home_github_step_2_title(),
 							</div>
 						</div>
 
-						{surface.shot && (
-							<div class={surface.key === "analytics" ? "mx-auto hidden max-w-[896px] md:block" : "hidden md:block"}>
-								<MediaFrame
-									label={surface.shot.alt}
-									src={surface.shot.src}
-									width={surface.shot.width}
-									height={surface.shot.height}
-								/>
-							</div>
-						)}
-						{surface.shot && (
-							<div class="md:hidden">
-								<MediaFrame
-									label={surface.shot.alt}
-									src={surface.shot.src}
-									width={surface.shot.width}
-									height={surface.shot.height}
-									crop={surface.shot.crop}
-								/>
-							</div>
-						)}
-						{surface.key === "kubernetes" && <LiveK8sHeatmap />}
-						{surface.key === "events" && <LiveFunnel />}
-						{surface.key === "uptime" && <LiveUptime />}
-						{surface.key === "github" && (
-							<ol class="grid gap-8 lg:grid-cols-3 lg:gap-6">
-								{githubSteps.map((step, index) => (
-									<li class="flex min-w-0 flex-col">
-										<p class="border-b border-border pb-3 text-sm font-medium text-fg">{step}</p>
-										<div class="mt-4">
-											{index === 0 && <PrReviewComment variant="compact" />}
-											{index === 1 && (
-												<div class="overflow-hidden rounded-xl border border-border bg-bg-deep">
-													<div class="ci-crop">
-														<img
-															src="/screenshots/surface-ci.webp"
-															alt="The CI tab's run count, success rate and p50 run time over a chart of runs by result per day"
-															width="2880"
-															height="1620"
-															loading="lazy"
-															decoding="async"
-														/>
+						{surface.shot ? (
+							<Shot
+								src={surface.shot.src}
+								alt={surface.shot.alt}
+								width={surface.shot.width}
+								height={surface.shot.height}
+								crop={surface.shot.rail === false ? NATIVE : MAIN_PANE}
+								class={surface.shot.rail === false ? "surface-shot mx-auto max-w-[896px]" : "surface-shot"}
+							/>
+						) : (
+							<div class="surface-live">
+								{surface.key === "kubernetes" && (
+									<div class="mx-auto w-full max-w-[66rem]">
+										<LiveK8sHeatmap />
+									</div>
+								)}
+							{surface.key === "events" && <LiveFunnel />}
+							{surface.key === "uptime" && <LiveUptime />}
+							{surface.key === "github" && (
+								<ol class="grid gap-8 lg:grid-cols-3 lg:gap-6">
+									{githubSteps.map((step, index) => (
+										<li class="flex min-w-0 flex-col">
+											<p class="border-b border-border pb-3 text-sm font-medium text-fg">{step}</p>
+											<div class="mt-4">
+												{index === 0 && <PrReviewComment variant="compact" />}
+												{index === 1 && (
+													<div class="overflow-hidden rounded-xl border border-border bg-bg-deep">
+														<div class="ci-crop">
+															<img
+																src="/screenshots/surface-ci.webp"
+																alt="The CI tab's run count, success rate and p50 run time over a chart of runs by result per day"
+																width="2880"
+																height="1620"
+																loading="lazy"
+																decoding="async"
+															/>
+														</div>
 													</div>
-												</div>
-											)}
-											{index === 2 && <PostMergeComment variant="compact" />}
-										</div>
-									</li>
-								))}
-							</ol>
+												)}
+												{index === 2 && <PostMergeComment variant="compact" />}
+											</div>
+										</li>
+									))}
+								</ol>
+							)}
+							</div>
 						)}
 					</div>
 				))
@@ -266,6 +270,22 @@ const githubSteps = [m.home_github_step_1_title(), m.home_github_step_2_title(),
 </section>
 
 <style>
+	/* A live pane is centred in the box a capture takes, so every tab is the same height from lg. */
+	@media (min-width: 1024px) {
+		.surface-live {
+			display: flex;
+			min-height: calc((min(100vw, 1400px) - 104px) / 2.3);
+			flex-direction: column;
+			justify-content: center;
+		}
+	}
+	/* The stage's wide shape is a sliver on a phone: captures take a taller window there. */
+	@media (max-width: 639px) {
+		:global(.surface-shot .shot-crop) {
+			aspect-ratio: 16 / 11 !important;
+		}
+	}
+
 	/* The row scrolls sideways on narrow screens. Its hairline is an inset shadow,
 	   so the active tab's border lies on it inside the scroll box, not clipped below. */
 	.surface-tabs {
