@@ -133,7 +133,7 @@ const attributeBlocks = (label: string, attrs: Output["attributes"]): Array<DocB
 	if (entries.length === 0) return []
 	return [
 		doc.heading(`${label} (${entries.length})`),
-		doc.list(Arr.map(entries, ([k, v]) => `\`${k}\`: ${untrustedText(v, 500)}`)),
+		doc.list(Arr.map(entries, ([k, v]) => `${untrustedText(k, 200)}: ${untrustedText(v, 500)}`)),
 	]
 }
 

@@ -233,7 +233,7 @@ const traceBlocks =
 				? []
 				: [
 						`Error span attributes: {${Arr.join(
-							Arr.map(attrs, ([k, v]) => `${k}=${untrustedText(v, 60)}`),
+							Arr.map(attrs, ([k, v]) => `${untrustedText(k, 60)}=${untrustedText(v, 60)}`),
 							", ",
 						)}}`,
 					]),

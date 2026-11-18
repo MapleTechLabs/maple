@@ -162,7 +162,7 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 				const attrs = Arr.join(
 					Arr.map(
 						Rec.toEntries(log.keyAttributes ?? {}),
-						([k, v]) => `\n    ${k}: ${untrustedText(v, 300)}`,
+						([k, v]) => `\n    ${untrustedText(k, 120)}: ${untrustedText(v, 300)}`,
 					),
 					"",
 				)

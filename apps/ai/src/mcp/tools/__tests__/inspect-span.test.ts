@@ -90,8 +90,8 @@ describe("inspect_span", () => {
 		expect(text).toContain("Wall time: 0ms")
 		expect(text).toContain("a 0ms span may still have done CPU work")
 		// The raw maps are still there in full.
-		expect(text).toContain('`cloudflare.ray_id`: "8d2f1a3b4c5d6e7f"')
-		expect(text).toContain('`cloud.platform`: "cloudflare.workers"')
+		expect(text).toContain('"cloudflare.ray_id": "8d2f1a3b4c5d6e7f"')
+		expect(text).toContain('"cloud.platform": "cloudflare.workers"')
 	})
 
 	it("adds nothing for a span whose projected cloudflare.* keys are empty", () => {
