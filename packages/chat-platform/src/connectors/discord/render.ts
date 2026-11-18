@@ -169,7 +169,7 @@ export const renderDiscordMessage = (blocks: ReadonlyArray<ChatBlock>): DiscordM
 	return {
 		// The neutral cut works to an estimate of what a dialect costs, and a body over the limit is
 		// rejected whole — so the estimate is clamped here rather than trusted.
-		content: content === "" && embeds.length === 0 ? EMPTY_CONTENT : clampContent(content),
+		content: content === "" && embeds.length === 0 ? EMPTY_CONTENT : clampSuppressed(content),
 		embeds,
 		components: rows,
 		allowed_mentions: { parse: [] },
@@ -304,6 +304,15 @@ export const withoutLinkPreviews = (content: string): string =>
 		Arr.map(Str.split(CODE)(content), (part, index) => (index % 2 === 1 ? part : suppressInProse(part))),
 		"",
 	)
+
+/**
+ * Content cut to Discord's limit with every URL still suppressed: a cut through a code span leaves
+ * an unclosed backtick, which makes the URLs after it prose, so they are rewritten again.
+ */
+const clampSuppressed = (text: string): string => {
+	const rewritten = withoutLinkPreviews(clampContent(text))
+	return rewritten.length <= MAX_CONTENT_CHARS ? rewritten : clampContent(rewritten)
+}
 
 /** {@link clamp} for content, never leaving a cut URL behind: an unclosed `<url` would preview. */
 const clampContent = (text: string): string =>
