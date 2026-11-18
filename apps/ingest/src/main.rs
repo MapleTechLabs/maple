@@ -603,12 +603,11 @@ impl AppConfig {
         let clickhouse_secret_keyring = match &key_store_backend {
             // The Postgres key store decrypts BYO-ClickHouse credentials from
             // org_clickhouse_settings, so it needs the encryption keys.
-            KeyStoreBackend::Postgres { .. } => {
-                let primary = std::env::var("MAPLE_INGEST_KEY_ENCRYPTION_KEY")
-                    .map_err(|_| "MAPLE_INGEST_KEY_ENCRYPTION_KEY is required".to_owned())?;
-                let decrypt_only = std::env::var("MAPLE_INGEST_KEY_DECRYPTION_KEYS").ok();
-                Some(SecretKeyring::parse(&primary, decrypt_only.as_deref())?)
-            }
+            KeyStoreBackend::Postgres { .. } => Some(SecretKeyring::from_env_values(
+                std::env::var(CH_PASSWORD_SLOT_KEYS_ENV).ok().as_deref(),
+                std::env::var("MAPLE_INGEST_KEY_ENCRYPTION_KEY").ok().as_deref(),
+                std::env::var("MAPLE_INGEST_KEY_DECRYPTION_KEYS").ok().as_deref(),
+            )?),
             KeyStoreBackend::Static { .. } => None,
         };
 
@@ -10939,7 +10938,7 @@ impl ClickHouseTargetProvider for ClickHouseTargetResolver {
         ) {
             (Some(ciphertext), Some(iv), Some(tag)) => {
                 let keyring = self.keyring.as_ref().ok_or_else(|| {
-                    "MAPLE_INGEST_KEY_ENCRYPTION_KEY is required to decrypt ClickHouse credentials".to_owned()
+                    "MAPLE_INGEST_CH_PASSWORD_SLOT_KEYS or MAPLE_INGEST_KEY_ENCRYPTION_KEY is required to decrypt ClickHouse credentials".to_owned()
                 })?;
                 keyring.open_clickhouse_password(org_id, &row.ch_url, ciphertext, iv, tag)?
             }
@@ -12097,6 +12096,9 @@ fn secret_aad(parts: &[&str]) -> Vec<u8> {
 
 /// The slot name of the BYO ClickHouse password: its subkey label and first AAD part.
 const CLICKHOUSE_PASSWORD_SLOT: &str = "org_clickhouse_settings.ch_password";
+/// The ClickHouse password slot's subkeys, `<keyId>:<base64 subkey>` comma-separated, primary
+/// first. Derived at deploy (`packages/infra/src/secret-slot-keys.ts`) so the task holds no master key.
+const CH_PASSWORD_SLOT_KEYS_ENV: &str = "MAPLE_INGEST_CH_PASSWORD_SLOT_KEYS";
 /// Separates row from destination in the v3 AAD, as `DESTINATION_AAD_MARKER` in `SecretBox.ts`.
 const DESTINATION_AAD_MARKER: &str = "destination";
 
@@ -12115,6 +12117,61 @@ struct SecretKeyring {
 }
 
 impl SecretKeyring {
+    /// Slot keys when the deploy set them; else the master keys (self-hosted, local dev,
+    /// and a task definition from before slot keys). Neither set refuses to start.
+    fn from_env_values(
+        slot_keys: Option<&str>,
+        primary: Option<&str>,
+        decrypt_only: Option<&str>,
+    ) -> Result<Self, String> {
+        if let Some(slot_keys) = slot_keys.filter(|raw| !raw.trim().is_empty()) {
+            return Self::parse_slot_keys(slot_keys);
+        }
+        let primary = primary.ok_or_else(|| {
+            format!("{CH_PASSWORD_SLOT_KEYS_ENV} or MAPLE_INGEST_KEY_ENCRYPTION_KEY is required")
+        })?;
+        Self::parse(primary, decrypt_only)
+    }
+
+    /// Parses `MAPLE_INGEST_CH_PASSWORD_SLOT_KEYS`. These keys open the ClickHouse password slot
+    /// only: no other slot's subkey can be derived from them.
+    fn parse_slot_keys(raw: &str) -> Result<Self, String> {
+        let malformed = || {
+            format!(
+                "{CH_PASSWORD_SLOT_KEYS_ENV} must be comma-separated <keyId>:<base64 32-byte key> entries"
+            )
+        };
+        let mut keys: Vec<SecretKey> = Vec::new();
+        for entry in raw.split(',') {
+            let entry = entry.trim();
+            if entry.is_empty() {
+                continue;
+            }
+            let (id, subkey) = entry.split_once(':').ok_or_else(malformed)?;
+            let id_is_valid = URL_SAFE_NO_PAD
+                .decode(id)
+                .is_ok_and(|decoded| decoded.len() == 6);
+            if !id_is_valid {
+                return Err(malformed());
+            }
+            let subkey: [u8; 32] = STANDARD
+                .decode(subkey)
+                .ok()
+                .and_then(|decoded| decoded.try_into().ok())
+                .ok_or_else(malformed)?;
+            if keys.iter().all(|known| known.id != id) {
+                keys.push(SecretKey {
+                    id: id.to_owned(),
+                    clickhouse_password_subkey: subkey,
+                });
+            }
+        }
+        if keys.is_empty() {
+            return Err(malformed());
+        }
+        Ok(Self { keys })
+    }
+
     fn parse(primary: &str, decrypt_only: Option<&str>) -> Result<Self, String> {
         let mut keys = vec![SecretKey::new(parse_base64_aes256_gcm_key(primary)?)?];
         for raw in decrypt_only.unwrap_or_default().split(',') {
@@ -20167,6 +20224,104 @@ mod tests {
             Err("Sealed with a key this deployment does not hold".to_owned())
         );
         assert!(SecretKeyring::parse(FIXTURE_KEY, Some("not-a-key")).is_err());
+    }
+
+    // FIXTURE_KEY's slot keys, as `clickHousePasswordSlotKeys` in packages/infra derives them.
+    // Pinned the same in packages/backend/src/platform/secret-slot-keys-parity.test.ts.
+    const FIXTURE_SLOT_KEYS: &str = "IGjfnBNl:DxboU6BYcIHPRlnXrZyrpik+g9IlCixfjGcrpISh4AU=";
+
+    fn slot_keys_of(master: &str) -> String {
+        let key = SecretKey::new(parse_base64_aes256_gcm_key(master).expect("fixture key"))
+            .expect("fixture derives");
+        format!("{}:{}", key.id, STANDARD.encode(key.clickhouse_password_subkey))
+    }
+
+    #[test]
+    fn secret_keyring_slot_keys_match_the_pinned_derivation() {
+        assert_eq!(slot_keys_of(FIXTURE_KEY), FIXTURE_SLOT_KEYS);
+    }
+
+    #[test]
+    fn secret_keyring_slot_keys_open_the_v2_and_v3_fixtures() {
+        let keyring = SecretKeyring::parse_slot_keys(FIXTURE_SLOT_KEYS).expect("slot keys parse");
+        let v2 = keyring.open_clickhouse_password("org_fixture", CH_URL, V2_CIPHERTEXT, V2_IV, V2_TAG);
+        assert_eq!(v2, Ok("ch-secret-123".to_owned()));
+        let v3 = keyring.open_clickhouse_password("org_fixture", CH_URL, V3_CIPHERTEXT, V3_IV, V3_TAG);
+        assert_eq!(v3, Ok("ch-secret-123".to_owned()));
+        let moved = keyring.open_clickhouse_password(
+            "org_fixture",
+            "https://attacker.example:8443",
+            V3_CIPHERTEXT,
+            V3_IV,
+            V3_TAG,
+        );
+        assert_eq!(moved, Err("Decryption failed".to_owned()));
+        let other_org =
+            keyring.open_clickhouse_password("org_other", CH_URL, V2_CIPHERTEXT, V2_IV, V2_TAG);
+        assert_eq!(other_org, Err("Decryption failed".to_owned()));
+    }
+
+    #[test]
+    fn secret_keyring_slot_keys_open_with_a_decrypt_only_entry_after_rotation() {
+        let rotated = format!(" {} , {FIXTURE_SLOT_KEYS} ,", slot_keys_of(OTHER_KEY));
+        let keyring = SecretKeyring::parse_slot_keys(&rotated).expect("slot keys parse");
+        let v2 = keyring.open_clickhouse_password("org_fixture", CH_URL, V2_CIPHERTEXT, V2_IV, V2_TAG);
+        assert_eq!(v2, Ok("ch-secret-123".to_owned()));
+    }
+
+    #[test]
+    fn secret_keyring_slot_keys_refuse_a_wrong_key_id_or_subkey() {
+        let wrong_id = SecretKeyring::parse_slot_keys(&FIXTURE_SLOT_KEYS.replace("IGjfnBNl", "AAAAAAAA"))
+            .expect("slot keys parse");
+        assert_eq!(
+            wrong_id.open_clickhouse_password("org_fixture", CH_URL, V2_CIPHERTEXT, V2_IV, V2_TAG),
+            Err("Sealed with a key this deployment does not hold".to_owned())
+        );
+        // The fixture's keyId with another master's subkey: a mislabelled key does not open.
+        let other_subkey = slot_keys_of(OTHER_KEY);
+        let (_, subkey) = other_subkey.split_once(':').expect("id:subkey");
+        let mislabelled =
+            SecretKeyring::parse_slot_keys(&format!("IGjfnBNl:{subkey}")).expect("slot keys parse");
+        assert_eq!(
+            mislabelled.open_clickhouse_password("org_fixture", CH_URL, V2_CIPHERTEXT, V2_IV, V2_TAG),
+            Err("Decryption failed".to_owned())
+        );
+    }
+
+    #[test]
+    fn secret_keyring_slot_keys_reject_malformed_values() {
+        for raw in [
+            "",
+            " , ",
+            "IGjfnBNl",
+            "IGjfnBNl:not-base64!",
+            "IGjfnBNl:AAAA",
+            "short:DxboU6BYcIHPRlnXrZyrpik+g9IlCixfjGcrpISh4AU=",
+            "IGjfnBNl:DxboU6BYcIHPRlnXrZyrpik+g9IlCixfjGcrpISh4AU=,garbage",
+            FIXTURE_KEY,
+        ] {
+            let parsed = SecretKeyring::parse_slot_keys(raw);
+            assert!(parsed.is_err(), "{raw:?} should not parse");
+        }
+    }
+
+    #[test]
+    fn secret_keyring_prefers_slot_keys_and_falls_back_to_master_keys() {
+        // Slot keys win: an unusable master beside them is never read.
+        let from_slot_keys =
+            SecretKeyring::from_env_values(Some(FIXTURE_SLOT_KEYS), Some("not-a-key"), None)
+                .expect("slot keys used");
+        assert!(from_slot_keys
+            .open_clickhouse_password("org_fixture", CH_URL, V2_CIPHERTEXT, V2_IV, V2_TAG)
+            .is_ok());
+        // Blank slot keys fall back to the master key, as on a self-hosted deploy.
+        let from_master = SecretKeyring::from_env_values(Some("  "), Some(FIXTURE_KEY), None)
+            .expect("master key used");
+        assert!(from_master
+            .open_clickhouse_password("org_fixture", CH_URL, V2_CIPHERTEXT, V2_IV, V2_TAG)
+            .is_ok());
+        assert!(SecretKeyring::from_env_values(None, None, None).is_err());
+        assert!(SecretKeyring::from_env_values(Some("IGjfnBNl:bad"), Some(FIXTURE_KEY), None).is_err());
     }
 
     #[test]

@@ -31,6 +31,11 @@ interface SecretMeta {
 	readonly issuer: string
 	/** The deployables allowed to bind it. Widening access is a change to this list. */
 	readonly consumers: ReadonlyArray<SecretConsumer>
+	/**
+	 * Deployables that may receive only a value derived from it, read through `resolveDerived`
+	 * (@maple/infra/secret-guard). Never the value itself.
+	 */
+	readonly derivedFor?: ReadonlyArray<SecretConsumer>
 	/** The env name the Worker reads it under, when that differs from the source key. */
 	readonly boundAs?: string
 	/** The environments that may hold it; absent, all of them. A deploy loading it elsewhere fails. */

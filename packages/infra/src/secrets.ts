@@ -81,12 +81,13 @@ export class PreviewSigninKey extends Secret<PreviewSigninKey>()("PREVIEW_SIGNIN
 
 export class IngestKeyEncryptionKey extends Secret<IngestKeyEncryptionKey>()(
 	"MAPLE_INGEST_KEY_ENCRYPTION_KEY",
-	{ issuer: "maple", consumers: ["api", "ai", "alerting", "chat-bot", "ingest"] },
+	// ingest gets only its ClickHouse password slot keys (secret-slot-keys.ts).
+	{ issuer: "maple", consumers: ["api", "ai", "alerting", "chat-bot"], derivedFor: ["ingest"] },
 ) {}
 
 export class IngestKeyDecryptionKeys extends Secret<IngestKeyDecryptionKeys>()(
 	"MAPLE_INGEST_KEY_DECRYPTION_KEYS",
-	{ issuer: "maple", consumers: ["api", "ai", "alerting", "chat-bot", "ingest"] },
+	{ issuer: "maple", consumers: ["api", "ai", "alerting", "chat-bot"], derivedFor: ["ingest"] },
 ) {}
 
 export class IngestKeyLookupHmacKey extends Secret<IngestKeyLookupHmacKey>()(
