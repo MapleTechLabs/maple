@@ -71,7 +71,7 @@ import { AGENTS, type AgentDefinition } from "../src/chat/agents"
 import { makeAutonomousOutcome } from "../src/chat/autonomous-outcome"
 import { type PhaseTurn, runAutonomousPhases } from "../src/chat/autonomous-phases"
 import type { ChatTurnEvent } from "../src/chat/events"
-import { PR_REVIEW_RULESET, PR_REVIEW_TOOLS } from "../src/chat/permissions"
+import { PR_REVIEW_RULESETS, PR_REVIEW_TOOLS } from "../src/chat/permissions"
 import { normalizeArguments, argumentWarnings } from "../src/mcp/lib/decode-issues"
 import { makeChildFindings } from "../src/chat/review/child-findings"
 import { makeReviewCoverage } from "../src/chat/review/coverage"
@@ -1011,6 +1011,8 @@ export const reviewLocally = async (
 			pr.head.repo !== null && Str.toLowerCase(pr.head.repo.full_name) !== Str.toLowerCase(repository),
 		body: pr.body,
 		rules: readRules(clone.dir, pr.base.sha),
+		// A local run posts nothing, so it reads what a private repository's review reads.
+		isPrivate: true,
 	})
 	const { executor, cleanup: removeWorktrees } = makeExecutor({
 		repository,
@@ -1072,6 +1074,7 @@ export const reviewLocally = async (
 		ledger: makeReviewLedger(),
 		childFindings: makeChildFindings(),
 	}
+	const NO_EXEC = new PermissionRule({ tool: "sandbox_exec", action: "deny" })
 	const agent: AgentDefinition = {
 		...AGENTS["pr-review"],
 		...(promptOverride === undefined ? undefined : { prompt: promptOverride }),
@@ -1079,10 +1082,10 @@ export const reviewLocally = async (
 		// trying it spends its consecutive-failure allowance on nothing.
 		...(args.historical === true
 			? {
-					autonomousPermission: [
-						...PR_REVIEW_RULESET,
-						new PermissionRule({ tool: "sandbox_exec", action: "deny" }),
-					],
+					autonomousPermission: {
+						public: [...PR_REVIEW_RULESETS.public, NO_EXEC],
+						private: [...PR_REVIEW_RULESETS.private, NO_EXEC],
+					},
 				}
 			: undefined),
 	}
@@ -1096,7 +1099,7 @@ export const reviewLocally = async (
 			sessionId,
 			messageId,
 			tenant,
-			origin: { kind: "autonomous" },
+			origin: { kind: "autonomous", repository: "private" },
 			toolExecutor: executor,
 			model,
 			...(completion === undefined ? undefined : { completion }),
@@ -1287,6 +1290,8 @@ export const reviewLocally = async (
 		// Each run is its own review, so a posted run gets a comment of its own.
 		reviewId: Schema.decodeSync(PrReviewId)(randomUUID()),
 		repositoryUrl: `https://github.com/${repository}`,
+		// A local run has no warehouse attached, so its report carries no telemetry to hide.
+		isPrivate: true,
 		number: args.number,
 		headSha: pr.head.sha,
 		report,

@@ -713,6 +713,11 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						? "repositories_removed"
 						: null,
 			)
+			// A repository made public or private re-lists the installation's repositories, so the stored
+			// visibility (which decides what a pull request review may read) follows it at once.
+			const mapRepositoryVisibility = mapInstallationEvent("repository", (action) =>
+				action === "publicized" || action === "privatized" ? "repositories_added" : null,
+			)
 
 			// `create`/`delete` (ref_type=branch) → one branch-event job; tags are ignored.
 			// The branch table mutates directly in the orchestrator (no GitHub call).
@@ -1119,6 +1124,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					Match.when("installation_repositories", () =>
 						mapInstallationRepositories(parsed, audited),
 					),
+					Match.when("repository", () => mapRepositoryVisibility(parsed, audited)),
 					Match.when("create", () => mapRefEvent("created")(parsed)),
 					Match.when("delete", () => mapRefEvent("deleted")(parsed)),
 					Match.when("workflow_run", () => mapWorkflowRun(parsed)),

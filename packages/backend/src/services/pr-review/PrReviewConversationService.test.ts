@@ -47,6 +47,8 @@ const orgId = asOrgId("org_reply")
 
 interface Recorded {
 	readonly begun: Array<string>
+	/** Where each begun turn said it posts. */
+	readonly repositories: Array<string | undefined>
 	readonly posted: Array<{ body: string; threadRootId?: string }>
 	readonly commits: Array<{
 		branch: string
@@ -57,7 +59,14 @@ interface Recorded {
 	readonly headLookups: Array<string>
 }
 
-const record = (): Recorded => ({ begun: [], posted: [], commits: [], reactions: [], headLookups: [] })
+const record = (): Recorded => ({
+	begun: [],
+	repositories: [],
+	posted: [],
+	commits: [],
+	reactions: [],
+	headLookups: [],
+})
 
 const head = (overrides: Partial<PullRequestHead> = {}): PullRequestHead => ({
 	number: 612,
@@ -181,8 +190,11 @@ const layerFor = (
 	const workerEnv = Layer.merge(
 		envPorts({}),
 		fakeChatSessionsLayer(() => ({
-			beginTurn: async (input: { text: string }) => {
+			beginTurn: async (input) => {
 				recorded.begun.push(input.text)
+				recorded.repositories.push(
+					input.origin.kind === "autonomous" ? input.origin.repository : undefined,
+				)
 				return { cursor: 0, messageId: "m", turnMessageId: "t" }
 			},
 			abort: async () => undefined,
@@ -358,6 +370,27 @@ describe("PrReviewConversationService CI approvals", () => {
 })
 
 describe("PrReviewConversationService", () => {
+	it.effect.each([
+		["a private", true, "private"],
+		["a public", false, "public"],
+	] as const)(
+		"starts a reply on %s repository with its visibility on the turn",
+		([, isPrivate, expected]) => {
+			const testDb = createTestDb(trackedDbs)
+			const recorded = record()
+			return Effect.gen(function* () {
+				yield* seedRepo(isPrivate)
+				const conversations = yield* PrReviewConversationService
+				const outcome = yield* conversations.onPullRequestComment(
+					orgId,
+					comment({ surface: "review_thread", threadRootId: "800", commentId: "901" }),
+				)
+				assert.equal(outcome.outcome, "started")
+				assert.deepEqual(recorded.repositories, [expected])
+			}).pipe(Effect.provide(layerFor(testDb, recorded)))
+		},
+	)
+
 	it.effect("answers a member's question on the thread it came from", () => {
 		const testDb = createTestDb(trackedDbs)
 		const recorded = record()

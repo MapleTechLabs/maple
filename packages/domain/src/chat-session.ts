@@ -508,6 +508,11 @@ export const ChatTurnOrigin = Schema.Union([
 	Schema.Struct({
 		kind: Schema.Literal("autonomous"),
 		startedBy: Schema.optionalKey(AutonomousTurnStarter),
+		/**
+		 * Where a pull request pass posts: a public repository's comments are world-readable, so its
+		 * pass reads no telemetry. Absent reads as public; set it with {@link pullRequestTurnOrigin}.
+		 */
+		repository: Schema.optionalKey(Schema.Literals(["public", "private"])),
 	}),
 	/**
 	 * Someone addressing Maple from a chat platform. `externalUserId` and `displayName` are the
@@ -556,6 +561,21 @@ export const connectorTurnTenant = (orgId: OrgId): ChatTurnTenantEncoded =>
 		roles: [],
 		authMode: "self_hosted",
 	})
+
+/** Where an unattended pull request pass posts, which decides what it may read. */
+export type PullRequestTurnRepository = "public" | "private"
+
+/**
+ * A pull request review's or reply's unattended turn. The pull request's author or commenter wrote
+ * what it reads, and no Maple user stands behind them.
+ */
+export const pullRequestTurnOrigin = (repository: {
+	readonly isPrivate: boolean
+}): Extract<ChatTurnOrigin, { readonly kind: "autonomous" }> => ({
+	kind: "autonomous",
+	startedBy: { kind: "person", roles: [] },
+	repository: repository.isPrivate ? "private" : "public",
+})
 
 /** Which connector, and who on it — the member of {@link ChatTurnOrigin} an approval carries. */
 export type ChatConnectorOrigin = Extract<ChatTurnOrigin, { readonly kind: "connector" }>
