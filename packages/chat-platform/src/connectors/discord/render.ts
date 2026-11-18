@@ -243,7 +243,7 @@ const clamp = (text: string, max: number): string =>
 const CODE = /((?<!\\)```[\s\S]*?```|(?<!\\)`[^`\n]*`)/
 /** A markdown link's target (balanced parentheses kept), an already-suppressed `<url>`, or a bare URL. */
 const LINK =
-	/(\]\(\s*)<?(https?:\/\/(?:[^\s()<>]|\([^\s()<>]*\))+)>?(?=\s*\))|<https?:\/\/[^\s>]+>|https?:\/\/[^\s<>[\]\\`]+/g
+	/(\]\(\s*)<?(https?:\/\/(?:[^\s()<>]|\([^\s()<>]*\))+)>?(?=\s*\))|<https?:\/\/[^\s>]+>|https?:\/\/[^\s<>[\]\\`]+/gi
 /** Sentence punctuation or bold/italic stars after a URL, which are not part of it. */
 const TRAILING = ".,;:!?'\"*"
 
@@ -327,7 +327,7 @@ const clampSuppressed = (text: string): string => {
 const clampContent = (text: string): string =>
 	text.length <= MAX_CONTENT_CHARS
 		? text
-		: `${Str.replace(/<?https?:\/\/[^\s>]*$/, "")(Str.slice(0, MAX_CONTENT_CHARS - 1)(text))}…`
+		: `${Str.replace(/<?https?:\/\/[^\s>]*$/i, "")(Str.slice(0, MAX_CONTENT_CHARS - 1)(text))}…`
 
 const ENTITY_LABELS = {
 	trace: "Trace",

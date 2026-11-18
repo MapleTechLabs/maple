@@ -238,6 +238,12 @@ describe("renderDiscordMessage", () => {
 		expect(withoutLinkPreviews(`https://x.example/a${parens}`)).toBe(`<https://x.example/a>${parens}`)
 	})
 
+	it("suppresses a URL whatever the case of its scheme", () => {
+		expect(withoutLinkPreviews("see HTTPS://x.example/a and [y](Http://y.example)")).toBe(
+			"see <HTTPS://x.example/a> and [y](<Http://y.example>)",
+		)
+	})
+
 	it("handles a long run inside a URL that does not end it, in linear time", () => {
 		const underscores = Str.repeat(200_000)("_")
 		const parens = Str.repeat(200_000)(")")
