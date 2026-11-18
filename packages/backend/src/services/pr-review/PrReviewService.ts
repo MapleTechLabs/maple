@@ -101,9 +101,13 @@ import { VcsSyncQueue } from "@maple/backend/services/integrations/vcs/VcsSyncQu
 import {
 	applyFeedback,
 	FEEDBACK_EXAMPLE_LIMIT,
+	FEEDBACK_EXAMPLE_PAGE,
 	type FeedbackExample,
 	feedbackLabel,
+	type FeedbackVotes,
 	findingText,
+	NO_FEEDBACK_VOTES,
+	tallyFeedback,
 } from "./feedback"
 import { FindingEmbedder } from "./FindingEmbedder"
 import { isRuntimeSource, lineEmitting } from "./telemetry/diff"
@@ -1060,6 +1064,12 @@ const inlineComment = (finding: PrReviewFinding, key: string | undefined): PullR
 	...(key === undefined ? undefined : { key }),
 })
 
+/** Where the next page of feedback examples starts: the last row read, by creation then id. */
+interface FeedbackExampleCursor {
+	readonly createdAt: number
+	readonly findingId: string
+}
+
 /**
  * A vector as one `float4[]` literal. Bound as a number array, the driver types each element on
  * its own, so a component that is exactly `0` reads as int4 beside float8 and the insert fails.
@@ -1358,13 +1368,15 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						).pipe(Effect.map((rows) => rows.length))
 
 			/**
-			 * Stored findings the team voted on, embedded with `model`, newest first. `repositoryId`
-			 * narrows the pool to one repository; absent, every repository of the org counts.
+			 * One page of the findings the team voted on, embedded with `model`, newest first, after
+			 * `cursor`. `repositoryId` narrows the pool to one repository; absent, the whole org counts.
 			 */
-			const loadFeedbackExamples = (
+			const feedbackExamplePage = (
 				orgId: OrgId,
 				model: string,
 				repositoryId: VcsRepositoryId | undefined,
+				cursor: FeedbackExampleCursor | undefined,
+				limit: number,
 			) =>
 				dbExecute((db) =>
 					db.run(
@@ -1373,6 +1385,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								finding.id.eq(embedding.findingId),
 							)
 							.select(($) => ({
+								findingId: $.findingId,
+								createdAt: $.createdAt,
 								status: $.finding.status,
 								reactionsUp: $.finding.reactionsUp,
 								reactionsDown: $.finding.reactionsDown,
@@ -1388,18 +1402,75 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 									$.finding.reactionsUp.gt(0),
 									$.finding.reactionsDown.gt(0),
 								),
+								cursor === undefined
+									? undefined
+									: PG.or(
+											$.createdAt.lt(cursor.createdAt),
+											PG.and(
+												$.createdAt.eq(cursor.createdAt),
+												$.findingId.lt(cursor.findingId),
+											),
+										),
 							])
-							.orderBy(($) => [[$.createdAt, "desc"]])
-							.limit(FEEDBACK_EXAMPLE_LIMIT),
-					),
-				).pipe(
-					Effect.map((rows) =>
-						Arr.flatMap(rows, (row): ReadonlyArray<FeedbackExample> => {
-							const label = feedbackLabel(row)
-							return label === undefined ? [] : [{ label, embedding: row.embedding }]
-						}),
+							.orderBy(($) => [
+								[$.createdAt, "desc"],
+								[$.findingId, "desc"],
+							])
+							.limit(limit),
 					),
 				)
+
+			/**
+			 * Each finding's votes over the newest {@link FEEDBACK_EXAMPLE_LIMIT} labelled examples, read a
+			 * page at a time: a page is tallied and dropped, so the vectors are never all in memory.
+			 */
+			const tallyFeedbackExamples = (
+				orgId: OrgId,
+				model: string,
+				repositoryId: VcsRepositoryId | undefined,
+				embeddings: ReadonlyArray<ReadonlyArray<number>>,
+			) => {
+				const next = (
+					votes: ReadonlyArray<FeedbackVotes>,
+					read: number,
+					cursor: FeedbackExampleCursor | undefined,
+				): Effect.Effect<
+					{ readonly votes: ReadonlyArray<FeedbackVotes>; readonly examples: number },
+					PrReviewPersistenceError
+				> =>
+					feedbackExamplePage(
+						orgId,
+						model,
+						repositoryId,
+						cursor,
+						Math.min(FEEDBACK_EXAMPLE_PAGE, FEEDBACK_EXAMPLE_LIMIT - read),
+					).pipe(
+						Effect.flatMap((rows) => {
+							const examples = Arr.flatMap(rows, (row): ReadonlyArray<FeedbackExample> => {
+								const label = feedbackLabel(row)
+								return label === undefined ? [] : [{ label, embedding: row.embedding }]
+							})
+							const tallied = Arr.map(votes, (tally, i) =>
+								tallyFeedback(tally, embeddings[i] ?? [], examples),
+							)
+							const last = rows.at(-1)
+							const total = read + rows.length
+							return last === undefined ||
+								rows.length < FEEDBACK_EXAMPLE_PAGE ||
+								total >= FEEDBACK_EXAMPLE_LIMIT
+								? Effect.succeed({ votes: tallied, examples: total })
+								: next(tallied, total, {
+										createdAt: last.createdAt,
+										findingId: last.findingId,
+									})
+						}),
+					)
+				return next(
+					Arr.map(embeddings, () => NO_FEEDBACK_VOTES),
+					0,
+					undefined,
+				)
+			}
 
 			/**
 			 * Drop the findings the team's votes reject, before they are stored or posted. Answers the
@@ -1442,22 +1513,27 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						suppressed: none,
 					})
 				if (scope === "off") return yield* unfiltered("off")
-				const examples = yield* loadFeedbackExamples(
+				const tallied = yield* tallyFeedbackExamples(
 					orgId,
 					embedder.model,
 					scope === "repository" ? repositoryId : undefined,
+					vectors,
 				).pipe(Effect.result)
-				if (Result.isFailure(examples)) {
+				if (Result.isFailure(tallied)) {
 					yield* Effect.logWarning(
 						"[PrReview] could not read feedback examples; posting all findings",
-					).pipe(Effect.annotateLogs({ orgId, error: examples.failure.message }))
+					).pipe(Effect.annotateLogs({ orgId, error: tallied.failure.message }))
 					return yield* unfiltered("read_failed")
 				}
-				const { kept, keptVectors, suppressed } = applyFeedback(findings, vectors, examples.success)
+				const { kept, keptVectors, suppressed } = applyFeedback(
+					findings,
+					vectors,
+					tallied.success.votes,
+				)
 				yield* Effect.annotateCurrentSpan({
 					"maple.pr_review.feedback_filter": "applied",
 					"maple.pr_review.feedback_scope": scope,
-					"maple.pr_review.feedback_examples": examples.success.length,
+					"maple.pr_review.feedback_examples": tallied.success.examples,
 				})
 				return { kept, vectors: keptVectors, suppressed }
 			})
