@@ -1,0 +1,116 @@
+---
+import type { IconName } from "@maple/views/ui/icons.generated";
+import Icon from "../Icon.astro";
+import DocsFigure from "./DocsFigure.astro";
+
+interface Props {
+    local?: boolean;
+}
+
+interface Stage {
+    name: string;
+    detail: string;
+    icon: IconName;
+    sends?: string;
+}
+
+const { local = false } = Astro.props;
+const stages: Stage[] = [
+    { name: "Your application", detail: "OpenTelemetry SDK", icon: "FileCodeIcon", sends: local ? "OTLP/HTTP" : "OTLP" },
+    local
+        ? { name: "maple start", detail: "Ingest and embedded ClickHouse", icon: "SquareTerminalIcon", sends: "Query results" }
+        : { name: "Maple Cloud", detail: "Ingest in your US or EU region", icon: "CloudNodesIcon", sends: "Query results" },
+    local
+        ? { name: "Local query tools", detail: "Dashboard and maple CLI", icon: "MonitorIcon" }
+        : { name: "Maple dashboard", detail: "Traces, logs and metrics", icon: "MonitorIcon" },
+];
+---
+
+<DocsFigure caption={local ? "Telemetry and queries on your machine" : "From your application to Maple"}>
+    <ol class="telemetry-flow" role="list">
+        {stages.map(({ name, detail, icon, sends }) => (
+            <li class="telemetry-flow__stage">
+                <div class="telemetry-flow__node">
+                    <Icon name={icon} size={20} class="shrink-0 text-primary" />
+                    <div>
+                        <strong>{name}</strong>
+                        <div class="telemetry-flow__detail">{detail}</div>
+                    </div>
+                </div>
+                {sends && (
+                    <div class="telemetry-flow__link">
+                        <span>{sends}</span>
+                        <Icon name="ArrowRightIcon" size={18} class="telemetry-flow__arrow" />
+                    </div>
+                )}
+            </li>
+        ))}
+    </ol>
+</DocsFigure>
+
+<style>
+    ol.telemetry-flow {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+    .telemetry-flow__stage {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+    }
+    .telemetry-flow__node {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 12px;
+        border: 1px solid var(--border);
+        background: var(--card);
+        color: var(--foreground);
+        font-size: 13px;
+        line-height: 1.5;
+    }
+    .telemetry-flow__detail {
+        margin-top: 3px;
+        color: var(--muted-foreground);
+        font-size: 12px;
+    }
+    .telemetry-flow__link {
+        display: flex;
+        flex-direction: row-reverse;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 6px;
+        padding-inline: 12px;
+        color: var(--muted-foreground);
+        font-family: var(--font-mono);
+        font-size: 11px;
+        line-height: 1.3;
+    }
+    .telemetry-flow__link .telemetry-flow__arrow {
+        transform: rotate(90deg);
+    }
+    @container (min-width: 33rem) {
+        ol.telemetry-flow {
+            grid-template-columns: repeat(2, minmax(0, 1.55fr)) minmax(0, 1fr);
+        }
+        .telemetry-flow__stage:has(.telemetry-flow__link) {
+            grid-template-columns: minmax(0, 1fr) 4rem;
+        }
+        .telemetry-flow__node {
+            flex-direction: column;
+            gap: 8px;
+        }
+        .telemetry-flow__link {
+            flex-direction: column;
+            justify-content: center;
+            padding: 0;
+            text-align: center;
+        }
+        .telemetry-flow__link .telemetry-flow__arrow {
+            transform: none;
+        }
+    }
+</style>

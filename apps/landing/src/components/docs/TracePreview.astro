@@ -1,0 +1,115 @@
+---
+import Icon from "../Icon.astro";
+
+const duration = 320;
+const spans = [
+    { name: "GET /orders", start: 0, duration, root: true },
+    { name: "auth.verify", start: 12, duration: 36 },
+    { name: "db.query", start: 62, duration: 178 },
+    { name: "cache.set", start: 251, duration: 42 },
+];
+---
+
+<figure class="trace-preview">
+    <figcaption class="trace-preview__caption">
+        <Icon name="PixelNodesIcon" size={16} class="text-primary" />
+        Example trace
+    </figcaption>
+    <div class="trace-preview__chart">
+        <div class="trace-preview__axis" aria-hidden="true">
+            <span>Span</span>
+            <span class="trace-preview__ticks"><span>0 ms</span><span>{duration} ms</span></span>
+            <span>Time</span>
+        </div>
+        <ul role="list">
+            {spans.map((span) => (
+                <li class:list={["trace-preview__span", span.root && "trace-preview__span--root"]}>
+                    <span class="trace-preview__name">{span.name}</span>
+                    <span class="trace-preview__track" aria-hidden="true">
+                        <span class="trace-preview__bar" style={`--start: ${span.start / duration * 100}%; --length: ${span.duration / duration * 100}%`} />
+                    </span>
+                    <span>
+                        <span class="sr-only">{span.root && "Root span. "}Starts at {span.start} ms. Duration </span>
+                        {span.duration} ms
+                    </span>
+                </li>
+            ))}
+        </ul>
+    </div>
+</figure>
+
+<style>
+    .trace-preview {
+        width: 100%;
+        min-width: 0;
+        max-width: 30rem;
+        border: 1px solid var(--border);
+        background: var(--background);
+    }
+    .trace-preview__caption {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        border-bottom: 1px solid var(--border);
+        padding: 10px 14px;
+        background: var(--card);
+        color: var(--foreground);
+        font-size: 13px;
+        font-weight: 550;
+    }
+    .trace-preview__chart {
+        padding: 8px 12px 10px;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+    }
+    .trace-preview__axis,
+    .trace-preview__span {
+        display: grid;
+        grid-template-columns: minmax(6.5rem, 1fr) minmax(0, 2fr) 6ch;
+        column-gap: 9px;
+        align-items: stretch;
+        color: var(--muted-foreground);
+    }
+    .trace-preview__axis {
+        padding-block: 3px 5px;
+        border-bottom: 1px solid var(--border);
+    }
+    .trace-preview__span > span:not(.trace-preview__track) {
+        padding-block: 5px;
+    }
+    .trace-preview__span > :last-child,
+    .trace-preview__axis > :last-child {
+        text-align: right;
+    }
+    .trace-preview__ticks {
+        display: flex;
+        justify-content: space-between;
+        gap: 4px;
+        white-space: nowrap;
+    }
+    .trace-preview__span--root {
+        color: var(--foreground);
+    }
+    .trace-preview__span:not(.trace-preview__span--root) .trace-preview__name {
+        padding-inline-start: 10px;
+        border-inline-start: 1px solid var(--border);
+    }
+    .trace-preview__track {
+        position: relative;
+        background-image: linear-gradient(to right, var(--border) 1px, transparent 1px);
+        background-size: 25% 100%;
+        border-inline-end: 1px solid var(--border);
+    }
+    .trace-preview__bar {
+        position: absolute;
+        inset-block-start: calc(50% - 3px);
+        inset-inline-start: var(--start);
+        width: var(--length);
+        height: 6px;
+        background: color-mix(in oklab, var(--primary) 56%, var(--background));
+    }
+    .trace-preview__span--root .trace-preview__bar {
+        background: var(--primary);
+    }
+</style>
