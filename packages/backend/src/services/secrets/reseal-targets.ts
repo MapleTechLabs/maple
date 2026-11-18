@@ -31,7 +31,7 @@ import { StoredUptimeMonitorConfig } from "@maple/domain/uptime"
 import { Array as Arr, Effect, Schema } from "effect"
 import type { EncryptedValue } from "@maple/backend/platform/Crypto"
 import {
-	currentEnvelopePrefix,
+	currentEnvelopePrefixes,
 	openSecret,
 	sealSecret,
 	type SecretKeyring,
@@ -61,16 +61,19 @@ export interface PendingSecret {
 
 export interface ResealTarget {
 	readonly slotName: string
-	/** What a value sealed by the current key in the slot's current envelope starts with. */
-	readonly currentPrefix: (keyring: SecretKeyring) => string
+	/** What a value sealed by the primary key in a current envelope of this slot starts with. */
+	readonly currentPrefixes: (keyring: SecretKeyring) => ReadonlyArray<string>
 	/** The next `limit` pending rows after `cursor`, in identity order. */
 	readonly pending: (
 		db: MapleDb,
-		prefix: string,
+		prefixes: ReadonlyArray<string>,
 		cursor: ReadonlyArray<string> | null,
 		limit: number,
 	) => Effect.Effect<ReadonlyArray<PendingSecret>, MapleDbError>
-	readonly countPending: (db: MapleDb, prefix: string) => Effect.Effect<number, MapleDbError>
+	readonly countPending: (
+		db: MapleDb,
+		prefixes: ReadonlyArray<string>,
+	) => Effect.Effect<number, MapleDbError>
 }
 
 interface TableLike {
@@ -132,23 +135,35 @@ const tripleTargetWithContext = <T extends TableLike, Keys extends ReadonlyArray
 		: Orm.sql`'null'`
 	const PendingRow = Schema.Struct({
 		keys: Schema.fromJsonString(config.keys),
-		context: Schema.fromJsonString(config.context.schema),
+		// Decoded per row in `reseal`: one row that no longer decodes fails alone, not the page.
+		context: Schema.String,
 		ciphertext: Schema.String,
 		iv: Schema.String,
 		tag: Schema.String,
 	})
-	const isPending = (prefix: string) =>
-		Orm.sql`${ciphertext} is not null and ${iv} is not null and ${tag} is not null and not starts_with(${ciphertext}, ${prefix})`
+	const decodeContext = Schema.decodeEffect(Schema.fromJsonString(config.context.schema))
+	const isPending = (prefixes: ReadonlyArray<string>) =>
+		Orm.sql`${ciphertext} is not null and ${iv} is not null and ${tag} is not null${Orm.sql.join(
+			Arr.map(prefixes, (prefix) => Orm.sql` and not starts_with(${ciphertext}, ${prefix})`),
+			Orm.sql.empty,
+		)}`
 
 	const toPending = (row: typeof PendingRow.Type): PendingSecret => {
-		const ref = config.ref(row.keys, row.context)
 		const stored = { ciphertext: row.ciphertext, iv: row.iv, tag: row.tag }
 		return {
 			keys: row.keys,
 			reseal: (keyring) =>
-				openSecret(keyring, config.slot, ref, stored, resealError).pipe(
-					Effect.flatMap((plaintext) =>
-						sealSecret(keyring, config.slot, ref, plaintext, resealError),
+				decodeContext(row.context).pipe(
+					Effect.mapBoth({
+						onFailure: () => resealError("The row's stored destination does not decode"),
+						onSuccess: (context) => config.ref(row.keys, context),
+					}),
+					Effect.flatMap((ref) =>
+						openSecret(keyring, config.slot, ref, stored, resealError).pipe(
+							Effect.flatMap((plaintext) =>
+								sealSecret(keyring, config.slot, ref, plaintext, resealError),
+							),
+						),
 					),
 				),
 			write: (db, sealed) =>
@@ -168,15 +183,15 @@ const tripleTargetWithContext = <T extends TableLike, Keys extends ReadonlyArray
 
 	return {
 		slotName: config.slot.name,
-		currentPrefix: (keyring) => currentEnvelopePrefix(keyring, config.slot),
-		pending: (db, prefix, cursor, limit) =>
+		currentPrefixes: (keyring) => currentEnvelopePrefixes(keyring, config.slot),
+		pending: (db, prefixes, cursor, limit) =>
 			db
 				.query(
 					Orm.sql`
 						select jsonb_build_array(${identityList})::text as keys, ${contextList} as context,
 							${ciphertext} as ciphertext, ${iv} as iv, ${tag} as tag
 						from ${table}
-						where ${isPending(prefix)}${
+						where ${isPending(prefixes)}${
 							cursor === null
 								? Orm.sql.empty
 								: Orm.sql` and (${identityList}) > (${Orm.sql.join(cursor)})`
@@ -186,10 +201,10 @@ const tripleTargetWithContext = <T extends TableLike, Keys extends ReadonlyArray
 					PendingRow,
 				)
 				.pipe(Effect.map(Arr.map(toPending))),
-		countPending: (db, prefix) =>
+		countPending: (db, prefixes) =>
 			db
 				.query(
-					Orm.sql`select count(*)::text as pending from ${table} where ${isPending(prefix)}`,
+					Orm.sql`select count(*)::text as pending from ${table} where ${isPending(prefixes)}`,
 					PendingCountRow,
 				)
 				.pipe(Effect.map((rows) => rows[0]?.pending ?? 0)),

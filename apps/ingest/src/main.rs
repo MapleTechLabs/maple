@@ -12097,6 +12097,8 @@ fn secret_aad(parts: &[&str]) -> Vec<u8> {
 
 /// The slot name of the BYO ClickHouse password: its subkey label and first AAD part.
 const CLICKHOUSE_PASSWORD_SLOT: &str = "org_clickhouse_settings.ch_password";
+/// Separates row from destination in the v3 AAD, as `DESTINATION_AAD_MARKER` in `SecretBox.ts`.
+const DESTINATION_AAD_MARKER: &str = "destination";
 
 #[derive(Clone)]
 struct SecretKey {
@@ -12150,7 +12152,7 @@ impl SecretKeyring {
         let ["v3", key_id, sealed] = parts.as_slice() else {
             return Err("Stored value is not bound to its destination".to_owned());
         };
-        let aad = secret_aad(&[CLICKHOUSE_PASSWORD_SLOT, org_id, ch_url]);
+        let aad = secret_aad(&[CLICKHOUSE_PASSWORD_SLOT, org_id, DESTINATION_AAD_MARKER, ch_url]);
         let key = self
             .keys
             .iter()
@@ -20099,7 +20101,7 @@ mod tests {
     const CH_URL: &str = "https://ch.example.com:8443";
     const V3_CIPHERTEXT: &str = "v3.IGjfnBNl.xeDTFXH6xa2O+HjUIA==";
     const V3_IV: &str = "AAECAwQFBgcICQoL";
-    const V3_TAG: &str = "cG8TD4fQzD4DFygS8QA5tw==";
+    const V3_TAG: &str = "kDzWdYJ8UBBoQYMWpL9KSg==";
     // The same password in the v2 envelope, bound to the org only.
     const V2_CIPHERTEXT: &str = "v2.IGjfnBNl.1HbzraIYWPNUxiGCnA==";
     const V2_IV: &str = "3gBID0+h49Y9q+SD";

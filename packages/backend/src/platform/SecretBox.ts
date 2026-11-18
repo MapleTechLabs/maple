@@ -20,6 +20,8 @@ import { decryptAes256Gcm, encryptAes256Gcm, type EncryptedValue } from "./Crypt
 const ENVELOPE_PREFIX = "v2"
 /** The v2 envelope with the slot's destination added to the AAD. */
 const DESTINATION_ENVELOPE_PREFIX = "v3"
+/** Separates row from destination in the v3 AAD, so no v3 AAD equals a v2 one. */
+const DESTINATION_AAD_MARKER = "destination"
 const SUBKEY_INFO_PREFIX = "maple/secret-box/v2/slot/"
 const KEY_ID_INFO = "maple/secret-box/v2/key-id"
 
@@ -162,15 +164,23 @@ const parseEnvelope = (stored: string): Option.Option<Envelope> => {
 
 /** The AAD parts after the slot name: the row, then the destination when the slot names one. */
 const aadParts = <Ref>(slot: SecretSlot<Ref>, ref: Ref): ReadonlyArray<string> =>
-	slot.destination === undefined ? slot.binding(ref) : [...slot.binding(ref), ...slot.destination(ref)]
+	slot.destination === undefined
+		? slot.binding(ref)
+		: [...slot.binding(ref), DESTINATION_AAD_MARKER, ...slot.destination(ref)]
 
 /** The envelope new values of `slot` are sealed in: v3 when it names a destination. */
 const envelopeFor = <Ref>(slot: SecretSlot<Ref>): Envelope["version"] =>
 	slot.destination === undefined ? ENVELOPE_PREFIX : DESTINATION_ENVELOPE_PREFIX
 
 /** What every ciphertext of `slot` sealed by the primary key starts with. */
-export const currentEnvelopePrefix = <Ref>(keyring: SecretKeyring, slot: SecretSlot<Ref>): string =>
+const currentEnvelopePrefix = <Ref>(keyring: SecretKeyring, slot: SecretSlot<Ref>): string =>
 	`${envelopeFor(slot)}.${keyring.primary.id}.`
+
+/** The prefixes a current value of `slot` starts with: the primary key in the slot's envelope. */
+export const currentEnvelopePrefixes = <Ref>(
+	keyring: SecretKeyring,
+	slot: SecretSlot<Ref>,
+): ReadonlyArray<string> => [currentEnvelopePrefix(keyring, slot)]
 
 /** Seals a value for `slot` on the row `ref` names: slot subkey, row-bound, key id recorded. */
 export const sealSecret = <Ref, E>(

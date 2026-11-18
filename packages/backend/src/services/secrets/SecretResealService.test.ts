@@ -267,6 +267,38 @@ describe("SecretResealService", () => {
 		})
 	})
 
+	const uptimeConfig: UptimeMonitorConfig = {
+		_tag: "http",
+		url: "https://status.example/health",
+		method: "GET",
+		headers: {},
+		assertions: [],
+		timeoutMs: 5000,
+	}
+
+	const seedUptimeMonitor = (testDb: TestDb, id: string, configJson: string, headers: EncryptedValue) =>
+		Effect.promise(() =>
+			executeSql(
+				testDb,
+				`insert into uptime_monitors
+					(id, org_id, name, kind, config_json, headers_ciphertext, headers_iv, headers_tag,
+					 created_by, created_at, updated_at)
+				 values ($1, 'org_a', 'Health', 'http', $2::jsonb, $3, $4, $5, 'user_1', $6, $6)`,
+				[id, configJson, headers.ciphertext, headers.iv, headers.tag, NOW],
+			),
+		)
+
+	const sealedHeaders = (key: number, id: string) =>
+		Effect.flatMap(keyring(key), (ring) =>
+			sealSecret(
+				ring,
+				uptimeMonitorHeadersSlot,
+				{ orgId: "org_a", id, config: uptimeConfig },
+				'{"v":2,"requests":[]}',
+				fail,
+			),
+		)
+
 	it.effect("counts a destination slot's leftover v2 value as failed and remaining, untouched", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
@@ -284,27 +316,11 @@ describe("SecretResealService", () => {
 	it.effect("reseals a value whose ref reads the row's stored config", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
-			const config: UptimeMonitorConfig = {
-				_tag: "http",
-				url: "https://status.example/health",
-				method: "GET",
-				headers: {},
-				assertions: [],
-				timeoutMs: 5000,
-			}
-			const ref = { orgId: "org_a", id: "mon_1", config }
-			const headers = yield* Effect.flatMap(keyring(1), (ring) =>
-				sealSecret(ring, uptimeMonitorHeadersSlot, ref, '{"v":2,"requests":[]}', fail),
-			)
-			yield* Effect.promise(() =>
-				executeSql(
-					testDb,
-					`insert into uptime_monitors
-						(id, org_id, name, kind, config_json, headers_ciphertext, headers_iv, headers_tag,
-						 created_by, created_at, updated_at)
-					 values ('mon_1', 'org_a', 'Health', 'http', $1::jsonb, $2, $3, $4, 'user_1', $5, $5)`,
-					[JSON.stringify(config), headers.ciphertext, headers.iv, headers.tag, NOW],
-				),
+			yield* seedUptimeMonitor(
+				testDb,
+				"mon_1",
+				JSON.stringify(uptimeConfig),
+				yield* sealedHeaders(1, "mon_1"),
 			)
 
 			assert.deepStrictEqual(yield* sweep(testDb, 2, [1]), { resealed: 1, failed: 0, remaining: 0 })
@@ -314,10 +330,26 @@ describe("SecretResealService", () => {
 				 from uptime_monitors where id = 'mon_1'`,
 				[],
 			)
+			const ref = { orgId: "org_a", id: "mon_1", config: uptimeConfig }
 			const opened = yield* Effect.flatMap(keyring(2), (ring) =>
 				openSecret(ring, uptimeMonitorHeadersSlot, ref, resealed, fail),
 			)
 			assert.strictEqual(opened, '{"v":2,"requests":[]}')
+		})
+	})
+
+	it.effect("fails only the row whose stored config no longer decodes, and reseals the rest", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* seedUptimeMonitor(testDb, "mon_1", '{"_tag":"http"}', yield* sealedHeaders(1, "mon_1"))
+			yield* seedUptimeMonitor(
+				testDb,
+				"mon_2",
+				JSON.stringify(uptimeConfig),
+				yield* sealedHeaders(1, "mon_2"),
+			)
+
+			assert.deepStrictEqual(yield* sweep(testDb, 2, [1]), { resealed: 1, failed: 1, remaining: 1 })
 		})
 	})
 
@@ -329,7 +361,7 @@ describe("SecretResealService", () => {
 			yield* seedClickHouseSettings(testDb, "org_a", yield* sealedPassword(1, "org_a", "old-pass"))
 			const database = yield* Database
 			const [row] = yield* database.execute((db) =>
-				target.pending(db, target.currentPrefix(ring), null, 10),
+				target.pending(db, target.currentPrefixes(ring), null, 10),
 			)
 			assert.isDefined(row)
 

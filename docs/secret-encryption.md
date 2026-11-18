@@ -26,15 +26,15 @@ slot, and bound to the slot, the org and the row.
   through `SecretBox`: nothing reads or writes those three columns.
 - **Destination (v3)**: a slot whose value Maple sends somewhere names a `destination` in
   `secret-slots.ts`, and its values use `v3.<keyId>.<base64>`: the AAD is the slot, the row,
-  then the destination. Write access to the database is then not enough to point a stored
+  the fixed part `destination`, then the destination. Write access to the database is then not enough to point a stored
   credential at another host: the edited row stops opening. The slots and what they bind:
 
-    | Slot                                  | Destination                                       |
-    | ------------------------------------- | ------------------------------------------------- |
-    | `org_clickhouse_settings.ch_password` | `ch_url` exactly as stored (the gateway opens it) |
-    | `scrape_targets.auth_credentials`     | scheme, host and port of `url`                    |
-    | `external_data_sources.secret`        | `secretDestination(config)`                       |
-    | `uptime_monitors.headers`             | scheme, host and port of every request, in order  |
+    | Slot                                  | Destination                                                                                                                           |
+    | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+    | `org_clickhouse_settings.ch_password` | `ch_url` exactly as stored (the gateway opens it)                                                                                     |
+    | `scrape_targets.auth_credentials`     | scheme, host and port of `url`                                                                                                        |
+    | `external_data_sources.secret`        | `secretDestination(config)`                                                                                                           |
+    | `uptime_monitors.headers`             | HTTP: scheme, host and port. Multi-step: every step's URL and extractions, since a later host can be a variable an earlier step fills |
 
     A destination is derived from stored columns only, and never differently: a change to how it
     is derived stops every stored value of that slot opening. Code that changes the destination
@@ -52,7 +52,8 @@ fixture (`secret-slots.test.ts` and the gateway's `secret_keyring_*` tests).
 Readers and writers deploy separately (the ingest gateway apart from the Workers), so v3 goes
 out in three steps:
 
-1. Every reader opens v2 and v3. Writers still seal v2.
+1. Every reader opens v2 and v3. Writers still seal v2, and the reseal pass counts a v3 value
+   as current, so it does not turn step 2's values back into v2 while both run.
 2. Once step 1 runs everywhere, the gateway included: writers seal v3 for destination slots,
    and the hourly reseal pass rewrites their v2 values as v3.
 3. Once `secretsResealRemaining` is 0 on two passes: destination slots stop opening v2. Until
