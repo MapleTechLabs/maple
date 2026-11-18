@@ -44,7 +44,7 @@ export const AppRoute = defineRouteUnion({
 	BillingAiCredits: {},
 	AlertsStatusPage: { pageId: Schema.String, search: Search.AlertsStatusPageSearch },
 	StatusPages: {},
-	StatusPageNew: {},
+	StatusPageNew: { search: Search.StatusPageNewSearch },
 	StatusPage: { pageId: Schema.String, search: Search.StatusPageSearch },
 	StatusPageView: { pageId: Schema.String },
 	Anomaly: { incidentId: AnomalyIncidentId },
