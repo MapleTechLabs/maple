@@ -7,6 +7,7 @@ import type { TenantContext } from "@maple/domain/http"
 import { OrgId, UserId } from "@maple/primitives"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
+import { WarehouseResponseLimitError } from "@maple/query-engine/execution"
 import { PromqlQueryService } from "./PromqlQueryService"
 
 const tenant: TenantContext = {
@@ -119,6 +120,29 @@ describe("PromqlQueryService", () => {
 		}),
 	)
 
+	it.effect("fails cleanly when a selector's buckets would not fit in memory", () =>
+		Effect.gen(function* () {
+			// The catalog knows `up`; every bounded read reports the response ceiling.
+			const warehouse = makeWarehouseServiceStub({
+				compiledQuery: () =>
+					Effect.succeed([{ metricName: "up", metricType: "gauge", unit: "", isMonotonic: 0 }]),
+				compiledQueryBounded: () =>
+					Effect.fail(new WarehouseResponseLimitError({ kind: "bytes", message: "too big" })),
+			})
+			const layer = Layer.effect(PromqlQueryService, PromqlQueryService.make).pipe(
+				Layer.provide(Layer.succeed(WarehouseQueryService, warehouse)),
+			)
+			const error = yield* Effect.gen(function* () {
+				const service = yield* PromqlQueryService
+				return yield* Effect.flip(
+					service.query(tenant, { query: "up", startMs: 0, endMs: 3_600_000, stepMs: 60_000 }),
+				)
+			}).pipe(Effect.provide(layer))
+			expect(error._tag).toBe("@maple/backend/promql/PromqlExecutionError")
+			expect(error.message).toMatch(/too many samples/)
+		}),
+	)
+
 	const withCatalog = (rows: ReadonlyArray<Record<string, unknown>>) =>
 		Layer.effect(PromqlQueryService, PromqlQueryService.make).pipe(
 			Layer.provide(
@@ -173,6 +197,8 @@ describe("PromqlQueryService", () => {
 			const warehouse = makeWarehouseServiceStub({
 				// SAFETY: the service hands the stub plain compiled queries, never a capability compile.
 				compiledQuery: answer as never,
+				// SAFETY: as above; selector reads go through the bounded read.
+				compiledQueryBounded: answer as never,
 			})
 			const result = yield* Effect.gen(function* () {
 				const service = yield* PromqlQueryService
@@ -205,20 +231,23 @@ describe("PromqlQueryService", () => {
 				le: i === 0 ? "0.5" : "1",
 				...Rec.fromEntries(Arr.map(STAT_COLUMNS, (key) => [key, []] as const)),
 			}))
+			const answer = (
+				_tenant: unknown,
+				compiled: CompiledQueryInput<unknown>,
+				opts: { context?: string },
+			) => {
+				const query = compiledQueryOf(compiled)
+				const rows =
+					opts.context === "promqlCatalog"
+						? [{ metricName: "lat", metricType: "histogram", unit: "s", isMonotonic: 0 }]
+						: selectorRows
+				return query.decodeRows(rows).pipe(Effect.orDie)
+			}
 			const warehouse = makeWarehouseServiceStub({
 				// SAFETY: the service hands the stub plain compiled queries, never a capability compile.
-				compiledQuery: ((
-					_tenant: unknown,
-					compiled: CompiledQueryInput<unknown>,
-					opts: { context?: string },
-				) => {
-					const query = compiledQueryOf(compiled)
-					const rows =
-						opts.context === "promqlCatalog"
-							? [{ metricName: "lat", metricType: "histogram", unit: "s", isMonotonic: 0 }]
-							: selectorRows
-					return query.decodeRows(rows).pipe(Effect.orDie)
-				}) as never,
+				compiledQuery: answer as never,
+				// SAFETY: as above; selector reads go through the bounded read.
+				compiledQueryBounded: answer as never,
 			})
 			const error = yield* Effect.gen(function* () {
 				const service = yield* PromqlQueryService

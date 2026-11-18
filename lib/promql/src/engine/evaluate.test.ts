@@ -493,6 +493,41 @@ describe("go-live engine fixes", () => {
 	})
 })
 
+describe("pushed subtrees", () => {
+	const pushedRate = (series: number, steps: number, maxPoints: number) => {
+		const parsed = parse("rate(x[1m])")
+		if (Result.isFailure(parsed)) throw new Error(parsed.failure.message)
+		const stepIndexes = Arr.makeBy(steps, (j) => j)
+		return evaluate({
+			expr: parsed.success,
+			params: { startMs: 0, endMs: (steps - 1) * 60_000, stepMs: 60_000 },
+			data: new Map(),
+			pushed: new Map([
+				[
+					parsed.success,
+					{
+						series: Arr.makeBy(series, (i) => ({
+							labels: { __name__: "x", id: `${i}` },
+							steps: stepIndexes,
+							values: stepIndexes,
+						})),
+					},
+				],
+			]),
+			limits: { maxSeries: 100, maxPoints },
+		})
+	}
+
+	it("refuses a pushed answer with more samples than the point budget", () => {
+		const result = pushedRate(4, 10, 39)
+		expect(Result.isFailure(result) && result.failure.message).toMatch(/too many samples/)
+	})
+
+	it("accepts a pushed answer that fits the budget exactly", () => {
+		expect(Result.isSuccess(pushedRate(4, 10, 40))).toBe(true)
+	})
+})
+
 describe("fourth-review engine regressions", () => {
 	const t0 = 1_700_000_040_000
 	const at = (s: number) => t0 + s * 1000

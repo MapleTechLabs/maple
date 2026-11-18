@@ -2,8 +2,10 @@
 //
 // The engine (`@maple/promql`) parses, plans and evaluates; this service is the
 // Maple source behind it: one catalog read resolves Prometheus names to stored
-// metrics, then every selector's warehouse queries run concurrently and the
-// evaluator recombines their pre-aggregated buckets.
+// metrics. Subtrees ClickHouse can evaluate whole (a range function over a
+// selector, optionally summed by labels) run there and return one value per
+// step; every other selector returns pre-aggregated buckets the evaluator
+// recombines.
 
 import { Context, Effect, Layer, Result, Schema, Array as Arr } from "effect"
 import {
@@ -12,7 +14,11 @@ import {
 	MAX_POINTS_PER_SERIES,
 	type Expr,
 	parse,
+	planPushdowns,
 	planRequests,
+	type PushdownCandidate,
+	type PushdownData,
+	type PushdownRequest,
 	type QueryParams,
 	resolutionError,
 	type QueryResult,
@@ -22,9 +28,12 @@ import {
 } from "@maple/promql"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import {
+	buildPushdownQuery,
 	buildSelectorQueries,
 	catalogFromRows,
 	catalogQuery,
+	type PushdownPlan,
+	toPushdownData,
 	toSelectorData,
 } from "@maple/query-engine/promql"
 import type { CatalogMetric } from "@maple/query-engine/promql"
@@ -51,11 +60,36 @@ const MAX_SELECTORS = 20
 
 const WAREHOUSE_CONCURRENCY = 4
 
+/**
+ * The most one warehouse response may hold. The API runs in a 128 MB isolate;
+ * a selector the source cannot evaluate whole returns its buckets, and past
+ * this the query fails cleanly instead of exhausting memory.
+ */
+const MAX_RESPONSE_BYTES = 24 * 1024 * 1024
+
 /** Stored metrics one selector may read; `{__name__=~".+"}` would otherwise read them all. */
 const MAX_METRICS_PER_SELECTOR = 100
 
 /** Catalog rows read to resolve names; one more comes back when the org has more. */
 const CATALOG_LIMIT = 50_000
+
+/**
+ * The most steps one bucket may feed in a pushdown, which copies each bucket once per step whose
+ * window holds it. Measured ~2.3s at 1000 (300 series x 1000 samples); past this the bucket read
+ * is cheaper, or fails fast on the response cap instead of scanning for minutes.
+ */
+const MAX_PUSHDOWN_FANOUT = 4096
+
+const pushdownFanout = (request: PushdownRequest): number =>
+	request.steps <= 1 ? 1 : Math.min(request.steps, Math.ceil(request.rangeMs / request.stepMs))
+
+const responseLimits = { maxRows: DEFAULT_LIMITS.maxSeries + 1, maxBytes: MAX_RESPONSE_BYTES }
+
+const tooLarge = () =>
+	new PromqlExecutionError({
+		message:
+			"query processing would load too many samples into memory; aggregate with sum by (...), narrow the selector, or increase the step",
+	})
 
 export interface PromqlQuery extends QueryParams {
 	readonly query: string
@@ -117,47 +151,69 @@ const make = Effect.gen(function* () {
 		return catalogFromRows(rows)
 	})
 
-	const readSelector = Effect.fn("PromqlQueryService.readSelector")(function* (
-		tenant: TenantContext,
-		request: SelectorRequest,
-		catalog: ReadonlyArray<CatalogMetric>,
-	) {
-		const plans = buildSelectorQueries(request, catalog, {
-			orgId: tenant.orgId,
-			maxSeries: DEFAULT_LIMITS.maxSeries,
-		})
-		// A histogram's _bucket, _count and _sum are three plans over one stored metric.
-		const metrics = new Set(Arr.flatMap(plans, (plan) => [...plan.promNames.keys()])).size
-		if (metrics > MAX_METRICS_PER_SELECTOR) {
-			return yield* new PromqlExecutionError({
-				message: `a selector matches ${metrics} metrics, at most ${MAX_METRICS_PER_SELECTOR}; narrow its __name__ matcher`,
+	const readSelector = Effect.fn("PromqlQueryService.readSelector")(
+		function* (tenant: TenantContext, request: SelectorRequest, catalog: ReadonlyArray<CatalogMetric>) {
+			const plans = buildSelectorQueries(request, catalog, {
+				orgId: tenant.orgId,
+				maxSeries: DEFAULT_LIMITS.maxSeries,
 			})
-		}
-		yield* Effect.annotateCurrentSpan({
-			"maple.promql.metric": request.metricName ?? "",
-			"maple.promql.bucket_ms": request.widthMs,
-			"maple.promql.queries": plans.length,
-		})
-		const results = yield* Effect.forEach(
-			plans,
-			(plan) =>
-				Effect.map(
-					warehouse.compiledQuery(tenant, plan.compiled, {
-						profile: "aggregation",
-						context: "promqlSelector",
-					}),
-					(rows) => ({ plan, rows }),
-				),
-			{ concurrency: WAREHOUSE_CONCURRENCY },
-		)
-		// A query that hit its LIMIT was cut, maybe before the regex `le` check after it; refuse a partial answer.
-		if (Arr.some(results, ({ rows }) => rows.length > DEFAULT_LIMITS.maxSeries)) {
-			return yield* new PromqlExecutionError({
-				message: `query selects more than ${DEFAULT_LIMITS.maxSeries} series; narrow the selector`,
+			// A histogram's _bucket, _count and _sum are three plans over one stored metric.
+			const metrics = new Set(Arr.flatMap(plans, (plan) => [...plan.promNames.keys()])).size
+			if (metrics > MAX_METRICS_PER_SELECTOR) {
+				return yield* new PromqlExecutionError({
+					message: `a selector matches ${metrics} metrics, at most ${MAX_METRICS_PER_SELECTOR}; narrow its __name__ matcher`,
+				})
+			}
+			yield* Effect.annotateCurrentSpan({
+				"maple.promql.metric": request.metricName ?? "",
+				"maple.promql.bucket_ms": request.widthMs,
+				"maple.promql.queries": plans.length,
 			})
-		}
-		return toSelectorData(request, results)
-	})
+			const results = yield* Effect.forEach(
+				plans,
+				(plan) =>
+					Effect.map(
+						warehouse.compiledQueryBounded(tenant, plan.compiled, {
+							profile: "aggregation",
+							context: "promqlSelector",
+							responseLimits,
+						}),
+						(rows) => ({ plan, rows }),
+					),
+				{ concurrency: WAREHOUSE_CONCURRENCY },
+			)
+			// A query that hit its LIMIT was cut, maybe before the regex `le` check after it; refuse a partial answer.
+			if (Arr.some(results, ({ rows }) => rows.length > DEFAULT_LIMITS.maxSeries)) {
+				return yield* new PromqlExecutionError({
+					message: `query selects more than ${DEFAULT_LIMITS.maxSeries} series; narrow the selector`,
+				})
+			}
+			return toSelectorData(request, results)
+		},
+		Effect.catchTag("@maple/query-engine/execution/WarehouseResponseLimitError", () =>
+			Effect.fail(tooLarge()),
+		),
+	)
+
+	const readPushdown = Effect.fn("PromqlQueryService.readPushdown")(
+		function* (tenant: TenantContext, candidate: PushdownCandidate, plan: PushdownPlan) {
+			yield* Effect.annotateCurrentSpan({
+				"maple.promql.metric": plan.promName,
+				"maple.promql.function": candidate.request.func,
+				"maple.promql.aggregation": candidate.request.aggregation?.op ?? "",
+				"maple.promql.bucket_ms": candidate.request.widthMs,
+			})
+			const rows = yield* warehouse.compiledQueryBounded(tenant, plan.compiled, {
+				profile: "aggregation",
+				context: "promqlPushdown",
+				responseLimits,
+			})
+			return toPushdownData(candidate.request, plan, rows)
+		},
+		Effect.catchTag("@maple/query-engine/execution/WarehouseResponseLimitError", () =>
+			Effect.fail(tooLarge()),
+		),
+	)
 
 	const query = Effect.fn("PromqlQueryService.query")(function* (
 		tenant: TenantContext,
@@ -186,8 +242,25 @@ const make = Effect.gen(function* () {
 			})
 		}
 		const catalog = entries.length === 0 ? [] : yield* readCatalog(tenant, window)
+		const options = { orgId: tenant.orgId, maxSeries: DEFAULT_LIMITS.maxSeries }
+		const pushdowns = Arr.flatMap([...planPushdowns(expr, input)], ([node, candidate]) => {
+			if (pushdownFanout(candidate.request) > MAX_PUSHDOWN_FANOUT) return []
+			const plan = buildPushdownQuery(candidate.request, catalog, options)
+			return plan === undefined ? [] : [{ node, candidate, plan }]
+		})
+		const skipped = new Set(Arr.map(pushdowns, ({ candidate }) => candidate.selector))
+		yield* Effect.annotateCurrentSpan("maple.promql.pushdowns", pushdowns.length)
+		const pushed = yield* Effect.forEach(
+			pushdowns,
+			({ node, candidate, plan }) =>
+				Effect.map(
+					readPushdown(tenant, candidate, plan),
+					(pushdownData): readonly [Expr, PushdownData] => [node, pushdownData],
+				),
+			{ concurrency: WAREHOUSE_CONCURRENCY },
+		)
 		const read = yield* Effect.forEach(
-			entries,
+			Arr.filter(entries, ([selector]) => !skipped.has(selector)),
 			([selector, request]) =>
 				Effect.map(
 					readSelector(tenant, request, catalog),
@@ -195,7 +268,7 @@ const make = Effect.gen(function* () {
 				),
 			{ concurrency: WAREHOUSE_CONCURRENCY },
 		)
-		const result = evaluate({ expr, params: input, data: new Map(read) })
+		const result = evaluate({ expr, params: input, data: new Map(read), pushed: new Map(pushed) })
 		if (Result.isFailure(result))
 			return yield* new PromqlExecutionError({ message: result.failure.message })
 		return result.success satisfies QueryResult

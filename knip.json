@@ -94,6 +94,7 @@
 		},
 		"apps/cli": {
 			"entry": [
+				"scripts/*.ts",
 				"test/probes/*.ts",
 				"test/archive-probe-helpers.ts",
 				"test/merge-injection-probe.ts",

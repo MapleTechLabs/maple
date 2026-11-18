@@ -54,6 +54,8 @@ export const QUERIES: ReadonlyArray<string> = [
 	"quantile(0.5, node_memory_free_bytes)",
 	'count_values("value", http_requests_total > 0)',
 	"group by (job) (http_requests_total)",
+	"sum by (__name__) (rate(http_requests_total[5m]))",
+	"sum by (__name__, job) (last_over_time(node_memory_free_bytes[5m]))",
 	// histograms
 	"histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))",
 	"histogram_quantile(0.5, sum by (le, service) (rate(http_request_duration_seconds_bucket[5m])))",

@@ -381,3 +381,395 @@ export const promqlCatalogRowSchema = Schema.Struct({
 	isMonotonic: CHNumber,
 })
 export type PromqlCatalogRow = typeof promqlCatalogRowSchema.Type
+
+// Pushdown: the source evaluates `func(selector[range])` per (series, step), and optionally
+// `op by (labels)` per (group, step), so one value per step leaves ClickHouse instead of every
+// bucket. The window of step j holds buckets k in (j*s - m, j*s] (s = step/width, m =
+// range/width); each bucket fans out to the steps whose window holds it, and the window is
+// recombined exactly as the evaluator does (lib/promql/src/engine/window.ts).
+
+export type PromqlPushdownFunction =
+	| "rate"
+	| "increase"
+	| "delta"
+	| "irate"
+	| "idelta"
+	| "resets"
+	| "changes"
+	| "avg_over_time"
+	| "sum_over_time"
+	| "count_over_time"
+	| "min_over_time"
+	| "max_over_time"
+	| "last_over_time"
+	| "present_over_time"
+	| "last"
+
+export interface PromqlPushdownOpts extends Omit<PromqlSelectorOpts, "needsValues" | "limit"> {
+	readonly func: PromqlPushdownFunction
+	readonly rangeMs: number
+	/** Evaluation steps; step j is `originMs + j * stepBuckets * widthMs` (offset already applied). */
+	readonly steps: number
+	readonly stepBuckets: number
+	readonly rangeBuckets: number
+	readonly limit: number
+}
+
+/** The steps whose window holds bucket `k`: `[first, last]`, empty when `first > last`. */
+const windowSteps = (opts: PromqlPushdownOpts, k: CH.Expr<number>) => {
+	const s = opts.stepBuckets
+	const m = opts.rangeBuckets
+	return {
+		first: sql(T.int64)`toInt64(greatest(0, ceil(${k} / ${s})))`,
+		last: sql(T.int64)`toInt64(least(${opts.steps - 1}, floor((${k} + ${m - 1}) / ${s})))`,
+	}
+}
+
+/**
+ * A series' label sources ride on its first bucket that some step's window holds (empty
+ * elsewhere), so the fan-out below copies them once per step of that bucket instead of once per
+ * (bucket, step). With a range shorter than the step, the series' very first bucket can fall
+ * between windows, so "first" is counted over the buckets that fan out at all.
+ */
+const linkedQuery = (opts: PromqlPushdownOpts, groups: PromqlPushdownGroups) =>
+	fromQuery(bucketQuery({ ...opts, needsValues: false, limit: opts.limit }), "buckets").select(($) => {
+		const prev = CH.windowSpec({
+			partitionBy: [$.sk],
+			orderBy: [[$.end, "asc"]],
+			frame: CH.rowsBetween(CH.preceding(1), CH.currentRow),
+		})
+		const earlier = CH.windowSpec({
+			partitionBy: [$.sk],
+			orderBy: [[$.end, "asc"]],
+			frame: CH.rowsBetween(CH.unboundedPreceding, CH.preceding(1)),
+		})
+		const k = sql(T.int64)`intDiv(${$.end} - ${param.int("originMs")}, ${opts.widthMs})`
+		const steps = windowSteps(opts, k)
+		const fansOut = sql(T.uint8)`${steps.first} <= ${steps.last}`
+		const later = sql.cond`${CH.over(CH.sum(fansOut), earlier)} > 0`
+		const emptied = (map: CH.Expr<Record<string, string>>) =>
+			sql(stringMap)`if(${later}, mapFilter((_k, _v) -> 0, ${map}), ${map})`
+		return {
+			sk: $.sk,
+			MetricName: sql(T.string)`if(${later}, '', ${$.MetricName})`,
+			ServiceName: sql(T.string)`if(${later}, '', ${$.ServiceName})`,
+			Attributes: emptied($.Attributes),
+			ResourceAttributes: emptied($.ResourceAttributes),
+			le: $.le,
+			groups: groups($),
+			k,
+			pk: sql(
+				T.int64,
+			)`intDiv(${CH.over(CH.lagInFrame($.end, 1, $.end), prev)} - ${param.int("originMs")}, ${opts.widthMs})`,
+			hasPrev: sql(T.uint8)`${CH.over(CH.count(), prev)} = 2`,
+			pLastT: CH.over(CH.lagInFrame($.lastT, 1, $.lastT), prev),
+			pLastV: CH.over(CH.lagInFrame($.lastV, 1, $.lastV), prev),
+			firstT: $.firstT,
+			firstV: $.firstV,
+			lastT: $.lastT,
+			lastV: $.lastV,
+			prevT: $.prevT,
+			prevV: $.prevV,
+			count: $.count,
+			sum: $.sum,
+			min: $.min,
+			max: $.max,
+			sumSquares: $.sumSquares,
+			resetSum: $.resetSum,
+			resets: $.resets,
+			changes: $.changes,
+		}
+	})
+
+/** Each bucket once per step whose window holds it, with whether its predecessor is in that window too. */
+const expandedQuery = (opts: PromqlPushdownOpts, groups: PromqlPushdownGroups) =>
+	fromQuery(linkedQuery(opts, groups), "linked").select(($) => {
+		const s = opts.stepBuckets
+		const m = opts.rangeBuckets
+		const steps = windowSteps(opts, $.k)
+		const j = sql(T.int64)`arrayJoin(range(${steps.first}, ${steps.last} + 1))`
+		return {
+			sk: $.sk,
+			MetricName: $.MetricName,
+			ServiceName: $.ServiceName,
+			Attributes: $.Attributes,
+			ResourceAttributes: $.ResourceAttributes,
+			le: $.le,
+			groups: $.groups,
+			k: $.k,
+			j,
+			// The pair (predecessor's last sample, this bucket's first) is in the window of step j.
+			prevIn: sql(T.uint8)`${$.hasPrev} AND ${$.pk} > ${j} * ${s} - ${m}`,
+			pLastT: $.pLastT,
+			pLastV: $.pLastV,
+			firstT: $.firstT,
+			firstV: $.firstV,
+			lastT: $.lastT,
+			lastV: $.lastV,
+			prevT: $.prevT,
+			prevV: $.prevV,
+			count: $.count,
+			sum: $.sum,
+			min: $.min,
+			max: $.max,
+			sumSquares: $.sumSquares,
+			resetSum: $.resetSum,
+			resets: $.resets,
+			changes: $.changes,
+		}
+	})
+
+/** The window of every (series, step), recombined from its buckets. */
+const windowQuery = (opts: PromqlPushdownOpts, groups: PromqlPushdownGroups) =>
+	fromQuery(expandedQuery(opts, groups), "expanded")
+		.select(($) => {
+			const crossReset = sql(T.float64)`sumIf(${$.pLastV}, ${$.prevIn} = 1 AND ${$.firstV} < ${$.pLastV})`
+			return {
+				sk: $.sk,
+				j: $.j,
+				// The window's earliest bucket: the series' first (with the labels) when it holds it.
+				MetricName: CH.argMin($.MetricName, $.k),
+				ServiceName: CH.argMin($.ServiceName, $.k),
+				Attributes: CH.argMin($.Attributes, $.k),
+				ResourceAttributes: CH.argMin($.ResourceAttributes, $.k),
+				le: CH.any_($.le),
+				groups: CH.any_($.groups),
+				n: sql(T.float64)`sum(${$.count})`,
+				firstT: CH.argMin($.firstT, $.k),
+				firstV: CH.argMin($.firstV, $.k),
+				lastT: CH.argMax($.lastT, $.k),
+				lastV: CH.argMax($.lastV, $.k),
+				lastCount: CH.argMax($.count, $.k),
+				lastPrevT: CH.argMax($.prevT, $.k),
+				lastPrevV: CH.argMax($.prevV, $.k),
+				lastPrevIn: CH.argMax($.prevIn, $.k),
+				lastPLastT: CH.argMax($.pLastT, $.k),
+				lastPLastV: CH.argMax($.pLastV, $.k),
+				sum: CH.sum($.sum),
+				min: CH.min_($.min),
+				max: CH.max_($.max),
+				sumSquares: CH.sum($.sumSquares),
+				// Pre-reset values inside the buckets and across their joins; the window adds last - first.
+				resetSum: sql(T.float64)`sum(${$.resetSum}) + ${crossReset}`,
+				resets: sql(
+					T.float64,
+				)`sum(${$.resets}) + countIf(${$.prevIn} = 1 AND ${$.firstV} < ${$.pLastV})`,
+				changes: sql(
+					T.float64,
+				)`sum(${$.changes}) + countIf(${$.prevIn} = 1 AND ${$.firstV} != ${$.pLastV})`,
+			}
+		})
+		.groupBy("sk", "j")
+
+type WindowRow = {
+	readonly j: CH.Expr<number>
+	readonly n: CH.Expr<number>
+	readonly firstT: CH.Expr<number>
+	readonly firstV: CH.Expr<number>
+	readonly lastT: CH.Expr<number>
+	readonly lastV: CH.Expr<number>
+	readonly lastCount: CH.Expr<number>
+	readonly lastPrevT: CH.Expr<number>
+	readonly lastPrevV: CH.Expr<number>
+	readonly lastPrevIn: CH.Expr<number>
+	readonly lastPLastT: CH.Expr<number>
+	readonly lastPLastV: CH.Expr<number>
+	readonly sum: CH.Expr<number>
+	readonly min: CH.Expr<number>
+	readonly max: CH.Expr<number>
+	readonly sumSquares: CH.Expr<number>
+	readonly resetSum: CH.Expr<number>
+	readonly resets: CH.Expr<number>
+	readonly changes: CH.Expr<number>
+}
+
+/** Prometheus' extrapolatedRate (rate, increase, delta) over the window ending at step j. */
+const extrapolated = (opts: PromqlPushdownOpts, $: WindowRow) => {
+	const isCounter = opts.func !== "delta"
+	const stepEnd = sql(T.float64)`(${param.int("originMs")} + ${$.j} * ${opts.stepBuckets * opts.widthMs})`
+	const difference = sql(T.float64)`(${$.lastV} - ${$.firstV})`
+	const result = isCounter ? sql(T.float64)`(${difference} + ${$.resetSum})` : difference
+	const sampled = sql(T.float64)`((${$.lastT} - ${$.firstT}) / 1000)`
+	const between = sql(T.float64)`(${sampled} / (${$.n} - 1))`
+	const toStart0 = sql(T.float64)`((${$.firstT} - (${stepEnd} - ${opts.rangeMs})) / 1000)`
+	const toStart1 = sql(T.float64)`if(${toStart0} >= ${between} * 1.1, ${between} / 2, ${toStart0})`
+	const toZero = sql(T.float64)`(${sampled} * (${$.firstV} / ${result}))`
+	const toStart = isCounter
+		? sql(
+				T.float64,
+			)`if(${result} > 0 AND ${$.firstV} >= 0 AND ${toZero} < ${toStart1}, ${toZero}, ${toStart1})`
+		: toStart1
+	const toEnd0 = sql(T.float64)`((${stepEnd} - ${$.lastT}) / 1000)`
+	const toEnd = sql(T.float64)`if(${toEnd0} >= ${between} * 1.1, ${between} / 2, ${toEnd0})`
+	const factor = sql(T.float64)`((${sampled} + ${toStart} + ${toEnd}) / ${sampled})`
+	const value =
+		opts.func === "rate"
+			? sql(T.float64)`${result} * ${factor} / ${opts.rangeMs / 1000}`
+			: sql(T.float64)`${result} * ${factor}`
+	return { value, valid: sql(T.uint8)`${$.n} >= 2 AND ${$.lastT} > ${$.firstT}` }
+}
+
+/** irate and idelta: the window's last two samples. */
+const instantPair = (opts: PromqlPushdownOpts, $: WindowRow) => {
+	const pT = sql(T.float64)`if(${$.lastCount} >= 2, ${$.lastPrevT}, ${$.lastPLastT})`
+	const pV = sql(T.float64)`if(${$.lastCount} >= 2, ${$.lastPrevV}, ${$.lastPLastV})`
+	const hasPair = sql(T.uint8)`(${$.lastCount} >= 2 OR ${$.lastPrevIn} = 1)`
+	const value =
+		opts.func === "irate"
+			? sql(
+					T.float64,
+				)`if(${$.lastV} < ${pV}, ${$.lastV}, ${$.lastV} - ${pV}) / ((${$.lastT} - ${pT}) / 1000)`
+			: sql(T.float64)`${$.lastV} - ${pV}`
+	return { value, valid: sql(T.uint8)`${hasPair} AND ${$.lastT} > ${pT}` }
+}
+
+/** The function's value for one (series, step) window, and whether it has one. */
+const windowValue = (opts: PromqlPushdownOpts, $: WindowRow) => {
+	const any = sql(T.uint8)`${$.n} >= 1`
+	switch (opts.func) {
+		case "rate":
+		case "increase":
+		case "delta":
+			return extrapolated(opts, $)
+		case "irate":
+		case "idelta":
+			return instantPair(opts, $)
+		case "resets":
+			return { value: $.resets, valid: any }
+		case "changes":
+			return { value: $.changes, valid: any }
+		case "avg_over_time":
+			return { value: sql(T.float64)`${$.sum} / ${$.n}`, valid: any }
+		case "sum_over_time":
+			return { value: $.sum, valid: any }
+		case "count_over_time":
+			return { value: $.n, valid: any }
+		case "min_over_time":
+			return { value: $.min, valid: any }
+		case "max_over_time":
+			return { value: $.max, valid: any }
+		case "last_over_time":
+		case "last":
+			return { value: $.lastV, valid: any }
+		case "present_over_time":
+			return { value: sql(T.float64)`1`, valid: any }
+	}
+}
+
+const valuedQuery = (opts: PromqlPushdownOpts, groups: PromqlPushdownGroups) =>
+	fromQuery(windowQuery(opts, groups), "windows").select(($) => {
+		const { value, valid } = windowValue(opts, $)
+		return {
+			sk: $.sk,
+			j: $.j,
+			MetricName: $.MetricName,
+			ServiceName: $.ServiceName,
+			Attributes: $.Attributes,
+			ResourceAttributes: $.ResourceAttributes,
+			le: $.le,
+			groups: $.groups,
+			value: sql(T.float64)`toFloat64(${value})`,
+			valid: sql(T.uint8)`${valid}`,
+		}
+	})
+
+/** Per-row group label values, in `by` order; empty for the per-series query. */
+type PromqlPushdownGroups = ($: PromqlLabelColumns) => CH.Expr<ReadonlyArray<string>>
+
+const noGroups: PromqlPushdownGroups = () => sql(T.array(T.string))`emptyArrayString()`
+
+/** One row per series: its labels' sources (from its earliest window) and the steps that have a value. */
+const pushdownSeriesQuery = (opts: PromqlPushdownOpts) =>
+	fromQuery(valuedQuery(opts, noGroups), "valued")
+		.select(($) => ({
+			series: sql(T.string)`toString(${$.sk})`,
+			metricName: CH.argMin($.MetricName, $.j),
+			serviceName: CH.argMin($.ServiceName, $.j),
+			attributes: CH.argMin($.Attributes, $.j),
+			resourceAttributes: CH.argMin($.ResourceAttributes, $.j),
+			le: sql(T.string)`toString(any(${$.le}))`,
+			groups: sql(T.array(T.string))`emptyArrayString()`,
+			steps: sql(T.array(T.float64))`groupArrayIf(toFloat64(${$.j}), ${$.valid} = 1)`,
+			values: sql(T.array(T.float64))`groupArrayIf(${$.value}, ${$.valid} = 1)`,
+		}))
+		.groupBy("series")
+		.having(($) => [sql.cond`countIf(${$.valid} = 1) > 0`])
+		.limit(opts.limit)
+		.format("JSON")
+
+/** Combine the series of each group; `labels` are label expressions in `by` order, `le` the bucket bound. */
+export interface PromqlPushdownAggregation {
+	readonly op: "sum" | "avg" | "min" | "max" | "count" | "group"
+	readonly labels: ($: PromqlLabelColumns) => ReadonlyArray<CH.Expr<string>>
+	readonly byLe: boolean
+}
+
+const aggregate = (op: PromqlPushdownAggregation["op"], value: CH.Expr<number>) => {
+	switch (op) {
+		case "sum":
+			return sql(T.float64)`sum(${value})`
+		case "avg":
+			return sql(T.float64)`avg(${value})`
+		case "min":
+			return sql(T.float64)`min(${value})`
+		case "max":
+			return sql(T.float64)`max(${value})`
+		case "count":
+			return sql(T.float64)`toFloat64(count())`
+		case "group":
+			return sql(T.float64)`1`
+	}
+}
+
+/** One row per group: the group's label values (in `by` order) and its value per step. */
+const pushdownGroupQuery = (opts: PromqlPushdownOpts, aggregation: PromqlPushdownAggregation) => {
+	const groups: PromqlPushdownGroups = ($) => {
+		const labels = aggregation.labels($)
+		return labels.length === 0
+			? sql(T.array(T.string))`emptyArrayString()`
+			: sql(T.array(T.string))`[${sql.join(labels, ", ")}]`
+	}
+	const perStep = fromQuery(valuedQuery(opts, groups), "valued")
+		.select(($) => ({
+			j: $.j,
+			groups: $.groups,
+			gle: aggregation.byLe ? $.le : sql(T.float64)`0`,
+			value: aggregate(aggregation.op, $.value),
+		}))
+		.where(($) => [$.valid.eq(1)])
+		.groupBy("j", "groups", "gle")
+	return fromQuery(perStep, "per_step")
+		.select(($) => ({
+			series: sql(T.string)`''`,
+			metricName: sql(T.string)`''`,
+			serviceName: sql(T.string)`''`,
+			attributes: sql(stringMap)`map()`,
+			resourceAttributes: sql(stringMap)`map()`,
+			le: sql(T.string)`toString(${$.gle})`,
+			groups: $.groups,
+			steps: sql(T.array(T.float64))`groupArray(toFloat64(${$.j}))`,
+			values: sql(T.array(T.float64))`groupArray(${$.value})`,
+		}))
+		.groupBy("groups", "le")
+		.limit(opts.limit)
+		.format("JSON")
+}
+
+/** Per series. Params: `orgId`, epoch ms `startMs`/`endMs` (scan), `originMs` (step 0's window end), `timeOriginMs`. */
+export const promqlPushdownSeriesQuery = pushdownSeriesQuery
+
+/** Per `by` group; same params and row shape as `promqlPushdownSeriesQuery`. */
+export const promqlPushdownGroupQuery = pushdownGroupQuery
+
+export const promqlPushdownRowSchema = Schema.Struct({
+	series: Schema.String,
+	metricName: Schema.String,
+	serviceName: Schema.String,
+	attributes: Schema.Record(Schema.String, Schema.String),
+	resourceAttributes: Schema.Record(Schema.String, Schema.String),
+	le: Schema.String,
+	groups: Schema.Array(Schema.String),
+	steps: numbers,
+	values: numbers,
+})
+export type PromqlPushdownRow = typeof promqlPushdownRowSchema.Type
