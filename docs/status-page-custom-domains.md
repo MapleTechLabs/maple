@@ -77,7 +77,7 @@ Done once per zone, by hand:
    (`declareStatusDomainsOrigin`, `packages/infra/src/cloudflare/status-pages.ts`). The
    fallback origin takes a few minutes to become active.
 
-Every stage whose api, alerting and maple-ai Workers carry both variables offers custom
+Every stage whose api and alerting Workers carry both variables offers custom
 domains; the rest (local dev by default) say "custom domains unavailable". Previews share the
 zone and its fallback origin with prd, and route their hostnames to their own status Worker.
 The zone holds each hostname once, so a hostname used by prd cannot be added on a preview.

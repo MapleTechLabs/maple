@@ -16,6 +16,7 @@ import {
 	optionalPlain,
 	planetScaleOAuthEnv,
 	plainWithDefault,
+	statusDomainsEnv,
 	supabaseOAuthEnv,
 } from "@maple/infra/env"
 import * as Secrets from "@maple/infra/secrets"
@@ -23,6 +24,7 @@ import * as Secrets from "@maple/infra/secrets"
 export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
 	merge(
 		mapleServerEnv(stage, region, domains),
+		statusDomainsEnv(stage, region),
 		devOrgOverrideEnv(stage),
 		// PR previews only: the shared key behind the sign-in page's preview access form.
 		...(stage.kind === "pr" ? [Secrets.PreviewSigninKey.optional] : []),
