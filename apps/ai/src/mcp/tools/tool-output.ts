@@ -184,6 +184,7 @@ const clipBlock = (block: DocBlock, fits: (block: DocBlock) => boolean): Clipped
 		case "fields":
 			return clip(block.entries, "fields", (entries) => ({ ...block, entries }))
 		case "code":
+		case "untrusted":
 		case "text": {
 			const lines = Str.split("\n")(block.text)
 			if (lines.length > 1)

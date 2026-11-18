@@ -83,6 +83,7 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 25, max: 200, noun: "sessions" }),
 		}),
 		aliases: P.SERVICE_ALIASES,
+		untrustedOutput: true,
 		hints: { readOnly: true },
 		phrases: ["Searching sessions"],
 		handler: Effect.fn("McpTool.searchSessions")(function* (params) {

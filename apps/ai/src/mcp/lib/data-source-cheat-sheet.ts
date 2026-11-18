@@ -1,7 +1,8 @@
 import { Array as Arr, Option, String as Str } from "effect"
 import type { CatalogEntryView, CatalogField, ExternalQuery, QueryLanguage } from "@maple/domain/data-sources"
 import { stringifyJson } from "./json"
-import { queryLanguageLabel, untrustedText } from "./data-sources"
+import { queryLanguageLabel } from "./data-sources"
+import { untrustedText } from "./format"
 import { EPOCH_HELP } from "@maple/data-sources/clickhouse"
 
 /** A saved or built query as the model sends it: SQL text, or the resource JSON without its tag. */

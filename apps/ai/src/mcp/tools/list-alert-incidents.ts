@@ -30,6 +30,7 @@ export function registerListAlertIncidentsTool(server: McpToolRegistrar) {
 			),
 			limit: P.limit({ default: 50, max: MAX_LIMIT, noun: "incidents" }),
 		}),
+		untrustedOutput: true,
 		hints: { readOnly: true },
 		phrases: ["Listing alert incidents", "Checking recent alerts"],
 		handler: Effect.fn("McpTool.listAlertIncidents")(function* (params) {
