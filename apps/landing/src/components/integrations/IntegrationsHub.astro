@@ -22,6 +22,7 @@ import Nav from "../Nav.astro";
 import SeoHead from "../SeoHead.astro";
 import PageCta from "../page/PageCta.astro";
 import PageHero from "../page/PageHero.astro";
+import ProductFrame from "../marketing/ProductFrame.astro";
 
 const locale = Astro.currentLocale ?? "en";
 const title = m.intg_seo_title();
@@ -33,22 +34,6 @@ const fillers = (count: number) => {
 	const lg = (3 - (count % 3)) % 3;
 	return [0, 1].map((i) => [i < sm ? "sm:block" : "sm:hidden", i < lg ? "lg:block" : "lg:hidden"].join(" "));
 };
-
-// The hero wall: one mark from every category, static.
-const WALL = [
-	"opentelemetry",
-	"aws",
-	"googlecloud",
-	"cloudflare",
-	"kubernetes",
-	"supabase",
-	"planetscale",
-	"prometheus",
-	"slack",
-	"pagerduty",
-	"github",
-	"claude",
-] as const;
 ---
 
 <Layout title={title} description={description} mdHref={locale === "en" ? "/integrations.md" : undefined}>
@@ -61,25 +46,13 @@ const WALL = [
 		lede={m.intg_lede()}
 		breadcrumb={[{ label: m.breadcrumb_home(), href: "/" }, { label: m.breadcrumb_integrations() }]}
 	>
-		<ul
-			slot="aside"
-			class="hidden grid-cols-4 gap-px overflow-hidden rounded-xl border border-border bg-border lg:grid"
-			aria-hidden="true"
-		>
-			{
-				WALL.map((id) => (
-					<li class="flex flex-col items-center justify-center gap-3 bg-bg px-2 py-7">
-						<BrandMarkIcon id={id} class="h-6 w-6" />
-						<span class="font-mono text-[10.5px] text-fg-muted">{BRAND_MARKS[id].name}</span>
-					</li>
-				))
-			}
-		</ul>
+		{/* What the connections send: a live log stream. Every mark is in the grid below. */}
+		<ProductFrame slot="aside" surface="logs" />
 	</PageHero>
 
 	<section class="border-t border-border bg-bg" data-hub>
 		<div class="shell grid gap-10 py-16 md:py-24 lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-14">
-			<aside class="lg:sticky lg:top-24 lg:self-start">
+			<aside class="min-w-0 lg:sticky lg:top-24 lg:self-start">
 				<label class="relative block">
 					<span class="sr-only">{m.intg_search_label()}</span>
 					<svg

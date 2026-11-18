@@ -20,6 +20,7 @@ import Nav from "../Nav.astro";
 import SeoHead from "../SeoHead.astro";
 import PageCta from "../page/PageCta.astro";
 import PageHero from "../page/PageHero.astro";
+import ProductFrame from "../marketing/ProductFrame.astro";
 
 const locale = Astro.currentLocale ?? "en";
 const title = m.cmp_hub_seo_title();
@@ -53,7 +54,10 @@ const cards = competitors.map((competitor, i) => ({
 		lede={m.cmp_hub_lede()}
 		breadcrumb={[{ label: m.breadcrumb_home(), href: "/" }, { label: m.breadcrumb_compare() }]}
 	>
-		<HubPair slot="aside" />
+		<div slot="aside" class="flex flex-col gap-4">
+			<HubPair />
+			<ProductFrame surface="overview" label={m.cmp_hub_shot()} loading="eager" />
+		</div>
 	</PageHero>
 
 	<section class="border-t border-border bg-bg">

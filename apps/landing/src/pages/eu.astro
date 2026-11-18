@@ -17,6 +17,7 @@ import FAQ from "../components/FAQ.astro";
 import Footer from "../components/Footer.astro";
 import PixelIcon from "../components/icons/PixelIcon.astro";
 import RegionChip from "../components/RegionChip.astro";
+import ProductFrame from "../components/marketing/ProductFrame.astro";
 import { APP_SIGN_UP_URL } from "../lib/app-urls";
 import { getOffer, money } from "../lib/pricing-offer";
 import { DPA_REQUEST_URL } from "../lib/compliance";
@@ -117,6 +118,8 @@ const faqs = euFaqs();
 	<main id="main-content">
 		<section>
 			<div class="mx-auto max-w-6xl px-6 pt-24 pb-20 md:pt-32 md:pb-28">
+				<div class="grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,30rem)] lg:items-center lg:gap-14">
+				<div class="min-w-0">
 				<p class="flex items-center gap-2.5 text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">
 					<PixelIcon name="earth" class="size-3.5 text-primary" />EU hosting
 				</p>
@@ -144,6 +147,13 @@ const faqs = euFaqs();
 					>
 						Read the docs
 					</a>
+				</div>
+				</div>
+				<ProductFrame
+					surface="services"
+					loading="eager"
+					caption={`The EU dashboard at ${host(EU_APP_URL)} is the same app, on its own data.`}
+				/>
 				</div>
 
 				<dl class="mt-16 grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">

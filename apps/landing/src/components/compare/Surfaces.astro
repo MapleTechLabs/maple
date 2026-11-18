@@ -77,10 +77,7 @@ const rows = surfaces.rows.map((row) => ({
 							{/* Copy first in the DOM so it reads first on mobile; the
 							    odd rows move it right of the artifact at lg. */}
 							<div class:list={["min-w-0", i % 2 === 1 && "lg:order-last"]}>
-								<span class="text-[11px] font-medium tabular-nums text-fg-muted">
-									{String(i + 1).padStart(2, "0")}
-								</span>
-								<h3 class="mt-3 font-display text-xl leading-snug tracking-[-0.01em] text-fg md:text-2xl">
+								<h3 class="font-display text-xl leading-snug tracking-[-0.01em] text-fg md:text-2xl">
 									{surface.name()}
 								</h3>
 								<p class="mt-3 max-w-[52ch] text-[13px] leading-relaxed text-fg-muted md:text-sm">
