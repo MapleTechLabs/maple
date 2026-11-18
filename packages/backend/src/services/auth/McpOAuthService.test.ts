@@ -384,18 +384,18 @@ describe("McpOAuthService", () => {
 
 				const pendingRequest = new URL((yield* authorize).consentUrl).searchParams.get("request_id")!
 				expect((yield* oauth.inspect(pendingRequest)).status).toBe("pending")
-				const plantedRequest = "attacker-chosen-request-id"
+				// A well-formed id, so the lookup runs: only the stored hash differs from the keyed one.
 				yield* Effect.promise(() =>
 					executeSql(
 						db,
 						"UPDATE mcp_oauth_authorizations SET request_id_hash = $1 WHERE approved_at IS NULL",
-						[plainSha256(plantedRequest)],
+						[plainSha256(pendingRequest)],
 					),
 				)
 				const approval = yield* oauth
-					.approve(plantedRequest, { orgId, userId, roles: [memberRole], userEmail: null })
-					.pipe(Effect.exit)
-				expect(Exit.isFailure(approval)).toBe(true)
+					.approve(pendingRequest, { orgId, userId, roles: [memberRole], userEmail: null })
+					.pipe(Effect.flip)
+				expect(approval._tag).toBe("@maple/http/errors/McpOAuthAuthorizationNotFoundError")
 			}).pipe(Effect.provide(makeLayer(db)))
 		},
 	)

@@ -90,7 +90,11 @@ export type LookupTokenPurpose =
 	| "cli-device/device-code"
 	| "cli-device/user-code"
 
-/** Keyed digest of a short-lived OAuth or device value, so a database writer cannot plant a usable row. */
+/**
+ * Keyed digest of an OAuth or device lookup value. It binds the purpose and the raw value only:
+ * a database writer without the key cannot compute the digest of a value of their own. It does
+ * not authenticate the rest of the row (org, user, roles).
+ */
 export const hashLookupToken = (purpose: LookupTokenPurpose, raw: string, hmacKey: string): string =>
 	hmacDigest(`${purpose}\u0000${raw}`, hmacKey)
 
