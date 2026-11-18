@@ -32,9 +32,9 @@ const jsonLd = {
     <Nav />
 
     <section class="pt-[19px]">
-        <div class="mx-auto max-w-6xl px-6 pt-24 pb-12 md:pt-28 md:pb-16">
-            <a href="/blog" class="inline-flex items-center gap-1.5 font-mono text-xs text-fg-muted transition-colors hover:text-primary">
-                <span aria-hidden="true">←</span> all posts
+        <div class="shell pt-24 pb-12 md:pt-28 md:pb-16">
+            <a href="/blog" class="inline-flex items-center gap-1.5 font-display text-[13px] text-fg-muted hover:text-fg active:text-fg">
+                <span aria-hidden="true">←</span> Blog
             </a>
 
             <div class="mt-8 flex flex-col gap-6 sm:flex-row sm:items-center sm:gap-8">
@@ -72,12 +72,13 @@ const jsonLd = {
     </section>
 
     <section class="pb-20 md:pb-28">
-        <div class="mx-auto max-w-6xl border-t border-border px-6 pt-10">
-            <h2 class="m-0 font-mono text-[11px] font-normal uppercase tracking-[0.14em] text-fg-muted">
+        <div class="shell">
+            {/* One row per post, as on the blog index. */}
+            <h2 class="m-0 mb-2 font-display text-xl font-semibold tracking-[-0.015em] text-foreground">
                 {posts.length === 1 ? "1 post" : `${posts.length} posts`}
             </h2>
-            <div class="mt-6 grid gap-5 [grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr))]">
-                {posts.map((post) => <PostCard post={post} />)}
+            <div class="border-b border-border">
+                {posts.map((post, i) => <PostCard post={post} variant="row" first={i === 0} />)}
             </div>
         </div>
     </section>
