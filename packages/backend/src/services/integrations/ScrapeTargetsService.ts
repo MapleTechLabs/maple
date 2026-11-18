@@ -48,7 +48,10 @@ import {
 } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { sealSecret, secretKeyringFromEnv, type SecretKeyring } from "@maple/backend/platform/SecretBox"
-import { scrapeTargetCredentialsSlot } from "@maple/backend/platform/secret-slots"
+import {
+	scrapeTargetCredentialsSlot,
+	type ScrapeTargetCredentialsRef,
+} from "@maple/backend/platform/secret-slots"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -323,11 +326,7 @@ const normalizeBranchPatterns = (patterns: ReadonlyArray<string> | undefined): s
 }
 
 /** Seals credentials for the scrape target row that `ref` names. */
-const encryptCredentials = (
-	keyring: SecretKeyring,
-	ref: { readonly orgId: OrgId; readonly id: ScrapeTargetId },
-	plaintext: string,
-) =>
+const encryptCredentials = (keyring: SecretKeyring, ref: ScrapeTargetCredentialsRef, plaintext: string) =>
 	sealSecret(keyring, scrapeTargetCredentialsSlot, ref, plaintext, () =>
 		toEncryptionError("Failed to encrypt credentials"),
 	)
@@ -800,7 +799,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 					yield* validateAuthCredentials(authType, request.authCredentials)
 					const encrypted = yield* encryptCredentials(
 						keyring,
-						{ orgId, id },
+						{ orgId, id, url },
 						request.authCredentials!,
 					)
 					credentialFields = {
@@ -1045,7 +1044,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 						yield* validateAuthCredentials(newAuthType!, request.authCredentials)
 						const encrypted = yield* encryptCredentials(
 							keyring,
-							{ orgId: existing.orgId, id: existing.id },
+							{ orgId: existing.orgId, id: existing.id, url: nextUrl ?? existing.url },
 							request.authCredentials!,
 						)
 						updates.authCredentialsCiphertext = encrypted.ciphertext
@@ -1058,7 +1057,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 						yield* validateAuthCredentials(currentAuthType, request.authCredentials)
 						const encrypted = yield* encryptCredentials(
 							keyring,
-							{ orgId: existing.orgId, id: existing.id },
+							{ orgId: existing.orgId, id: existing.id, url: nextUrl ?? existing.url },
 							request.authCredentials,
 						)
 						updates.authCredentialsCiphertext = encrypted.ciphertext
