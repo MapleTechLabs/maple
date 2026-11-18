@@ -45,6 +45,15 @@ export class MapleRootPassword extends Secret<MapleRootPassword>()("MAPLE_ROOT_P
 	consumers: ["api", "ai", "alerting", "electric-sync"],
 }) {}
 
+/** Optional key self-hosted session tokens are signed from, so a token does not expose the root password. */
+export class MapleSessionSigningSecret extends Secret<MapleSessionSigningSecret>()(
+	"MAPLE_SESSION_SIGNING_SECRET",
+	{
+		issuer: "maple",
+		consumers: ["api", "ai", "alerting", "electric-sync"],
+	},
+) {}
+
 export class ClerkSecretKey extends Secret<ClerkSecretKey>()("CLERK_SECRET_KEY", {
 	issuer: "clerk",
 	consumers: ["api", "ai", "alerting", "electric-sync"],

@@ -82,6 +82,10 @@ export class ShareLinkRateLimit extends Context.Service<ShareLinkRateLimit, Rate
 export class CliAuthRateLimit extends Context.Service<CliAuthRateLimit, RateLimiter>()(
 	"@maple/backend/platform/CliAuthRateLimit",
 ) {}
+/** Self-hosted root-password logins, keyed by client IP. */
+export class SelfHostedLoginRateLimit extends Context.Service<SelfHostedLoginRateLimit, RateLimiter>()(
+	"@maple/backend/platform/SelfHostedLoginRateLimit",
+) {}
 export class McpOAuthRateLimit extends Context.Service<McpOAuthRateLimit, RateLimiter>()(
 	"@maple/backend/platform/McpOAuthRateLimit",
 ) {}

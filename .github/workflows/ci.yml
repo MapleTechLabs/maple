@@ -426,7 +426,7 @@ jobs:
                   MAPLE_INGEST_KEY_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
                   MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
                   MAPLE_SHARE_TOKEN_HMAC_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
-                  MAPLE_ROOT_PASSWORD: placeholder
+                  MAPLE_ROOT_PASSWORD: ci-placeholder-root-password
               run: bun run test:alchemy
 
     # One server version, pinned to docker-compose.development.yml's tag.
