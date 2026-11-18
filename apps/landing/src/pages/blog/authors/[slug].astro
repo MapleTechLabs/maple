@@ -76,7 +76,7 @@ const jsonLd = {
             <h2 class="m-0 font-mono text-[11px] font-normal uppercase tracking-[0.14em] text-fg-muted">
                 {posts.length === 1 ? "1 post" : `${posts.length} posts`}
             </h2>
-            <div class="mt-6 grid gap-5 [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]">
+            <div class="mt-6 grid gap-5 [grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr))]">
                 {posts.map((post) => <PostCard post={post} />)}
             </div>
         </div>

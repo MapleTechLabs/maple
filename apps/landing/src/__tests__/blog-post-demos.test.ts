@@ -18,6 +18,12 @@ const mdxPosts = Arr.map(
 
 const importRe = /^import\s+(\w+)\s+from\s+"(\.[^"]+)"/gm
 
+/** The post's `category`, read from its frontmatter only: quotes and a trailing `# comment` allowed. */
+const categoryOf = (source: string): string | undefined => {
+	const frontmatter = /^---\n([\s\S]*?)\n---/.exec(source)?.[1] ?? ""
+	return /^category:\s*["']?([\w-]+)["']?\s*(?:#.*)?$/m.exec(frontmatter)?.[1]
+}
+
 describe.each(mdxPosts)("blog post $file", ({ path, source }) => {
 	const imports = Arr.map(Array.from(source.matchAll(importRe)), (m) => ({
 		identifier: m[1],
@@ -37,13 +43,10 @@ describe.each(mdxPosts)("blog post $file", ({ path, source }) => {
 	})
 
 	// Engineering deep dives are long-form; product posts and guides can be short on purpose.
-	it.runIf(/^category:\s*["']?engineering["']?\s*$/m.test(source))(
-		"is long-form (body over 1500 words)",
-		() => {
-			const body = Str.replace(importRe, "")(Str.replace(/^---[\s\S]*?---/, "")(source))
-			expect(Arr.filter(Str.split(/\s+/)(body), Boolean).length).toBeGreaterThan(1500)
-		},
-	)
+	it.runIf(categoryOf(source) === "engineering")("is long-form (body over 1500 words)", () => {
+		const body = Str.replace(importRe, "")(Str.replace(/^---[\s\S]*?---/, "")(source))
+		expect(Arr.filter(Str.split(/\s+/)(body), Boolean).length).toBeGreaterThan(1500)
+	})
 
 	it("keeps diagrams in components, not inline SVG", () => {
 		// Inline <svg> in MDX is where literal braces ("GET /users/{id}") turn
