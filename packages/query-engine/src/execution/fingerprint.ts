@@ -1,5 +1,5 @@
 import { splitTerminalClauses } from "@maple-dev/effect-orm/sql"
-import { String as Str } from "effect"
+import { Array as Arr, String as Str } from "effect"
 import { codeUnitAt } from "@maple/strings"
 
 /**
@@ -21,13 +21,27 @@ export const truncateSql = (s: string, maxLen: number) =>
 const SQL_TOKEN =
 	/--[^\n]*|\/\*[\s\S]*?(?:\*\/|$)|'(?:[^'\\]|\\.|'')*(?:'|$)|"(?:[^"\\]|\\.)*"|`[^`]*`|\b\d+(?:\.\d+)?(?:e[+-]?\d+)?\b/gi
 
-export const redactSqlLiterals = (s: string): string =>
-	s.replace(SQL_TOKEN, (token) => {
-		if (Str.startsWith("--")(token)) return "--"
-		if (Str.startsWith("/*")(token)) return "/* */"
-		if (Str.startsWith('"')(token) || Str.startsWith("`")(token)) return token
-		return "?"
-	})
+const redactToken = (token: string): string => {
+	if (Str.startsWith("--")(token)) return "--"
+	if (Str.startsWith("/*")(token)) return "/* */"
+	if (Str.startsWith('"')(token) || Str.startsWith("`")(token)) return token
+	return "?"
+}
+
+export const redactSqlLiterals = (s: string): string => {
+	const rebuilt = Arr.reduce(
+		Arr.fromIterable(Str.matchAll(SQL_TOKEN)(s)),
+		{ text: "", at: 0 },
+		(acc, match) => {
+			const index = match.index ?? acc.at
+			return {
+				text: `${acc.text}${Str.slice(acc.at, index)(s)}${redactToken(match[0])}`,
+				at: index + match[0].length,
+			}
+		},
+	)
+	return `${rebuilt.text}${Str.slice(rebuilt.at)(s)}`
+}
 
 /**
  * Stable 32-bit FNV-1a hash over SQL with literals and numbers normalized. Lets
