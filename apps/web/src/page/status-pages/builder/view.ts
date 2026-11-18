@@ -542,7 +542,7 @@ const METHODS = [
 const methodChoice = (h: H): Html =>
 	vstack(h, { gap: "4", className: "max-w-4xl" }, [
 		typography(h, { size: "sm", tone: "muted", as: "p" }, [
-			"How do you want to set up your status page? Both end with a draft that stays private until you publish it.",
+			"How do you want to set up your status page? Either way, nothing is public until you approve publishing it.",
 		]),
 		grid(
 			h,
@@ -576,7 +576,7 @@ const AGENT_STEPS: ReadonlyArray<string> = [
 	"Connects the Maple MCP if your agent does not have it yet.",
 	"Asks whether to manage the page as code (Terraform or Alchemy, when your repo uses them) or directly through the MCP.",
 	"Finds the endpoints your customers depend on and proposes an uptime monitor for each, and the components the page lists.",
-	"Creates the page as a draft and matches its colors, font and logo to your product.",
+	"Sets up the page, private until you approve it, and matches its colors, font and logo to your product.",
 	"For a page your customers read, sets up your domain and gives you the DNS records to add.",
 	"Publishes only after you approve.",
 ]
