@@ -216,6 +216,13 @@ describe("renderDiscordMessage", () => {
 		expect(Str.endsWith("…")(payload.content)).toBe(true)
 	})
 
+	it("keeps a masked link whose text is itself a URL", () => {
+		const payload = renderDiscordMessage([
+			{ kind: "prose", markdown: "[https://a.example/x](https://b.example/y)" },
+		])
+		expect(payload.content).toBe("[<https://a.example/x>](<https://b.example/y>)")
+	})
+
 	it("leaves emphasis and an unopened parenthesis outside a bare URL", () => {
 		const payload = renderDiscordMessage([
 			{

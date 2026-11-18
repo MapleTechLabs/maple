@@ -242,7 +242,7 @@ const clamp = (text: string, max: number): string =>
 const CODE = /(```[\s\S]*?```|`[^`\n]*`)/
 /** A markdown link's target (balanced parentheses kept), an already-suppressed `<url>`, or a bare URL. */
 const LINK =
-	/(\]\(\s*)<?(https?:\/\/(?:[^\s()<>]|\([^\s()<>]*\))+)>?(?=\s*\))|<https?:\/\/[^\s>]+>|https?:\/\/[^\s<>]+/g
+	/(\]\(\s*)<?(https?:\/\/(?:[^\s()<>]|\([^\s()<>]*\))+)>?(?=\s*\))|<https?:\/\/[^\s>]+>|https?:\/\/[^\s<>[\]]+/g
 /** Sentence punctuation or markdown emphasis after a URL, which is not part of it. */
 const TRAILING = /[.,;:!?'"*_~]+$/
 
