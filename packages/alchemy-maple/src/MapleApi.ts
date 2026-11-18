@@ -37,6 +37,7 @@ export interface MapleApiContract {
 	readonly get: (path: string) => Effect.Effect<unknown, MapleError>
 	readonly post: (path: string, body?: unknown) => Effect.Effect<unknown, MapleError>
 	readonly patch: (path: string, body: unknown) => Effect.Effect<unknown, MapleError>
+	readonly put: (path: string, body: unknown) => Effect.Effect<unknown, MapleError>
 	readonly delete: (path: string) => Effect.Effect<unknown, MapleError>
 }
 
@@ -133,7 +134,7 @@ export const make = Effect.gen(function* () {
 	const { baseUrl, apiKey } = yield* MapleEnvironment
 	const httpClient = yield* HttpClient.HttpClient
 
-	const request = (method: "GET" | "POST" | "PATCH" | "DELETE", path: string, body?: unknown) => {
+	const request = (method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE", path: string, body?: unknown) => {
 		const canAutomaticallyRetry = method === "GET" || method === "DELETE"
 		const execute: (attempt: number) => Effect.Effect<unknown, MapleError> = Effect.fn(
 			"MapleApi.requestAttempt",
@@ -209,6 +210,7 @@ export const make = Effect.gen(function* () {
 		get: (path: string) => request("GET", path),
 		post: (path: string, body?: unknown) => request("POST", path, body),
 		patch: (path: string, body: unknown) => request("PATCH", path, body),
+		put: (path: string, body: unknown) => request("PUT", path, body),
 		delete: (path: string) => request("DELETE", path),
 	}
 })

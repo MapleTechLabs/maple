@@ -9,6 +9,8 @@ import { dataSourceWorldLayer, makeDataSourceWorldState, seedDataSourceWorld } f
 const DAY_MS = 86_400_000
 const orgId = EVAL_TENANT.orgId
 const agent = { agent: true }
+// The world is queried the way Maple's own investigation would: no person, the agent audience.
+const UNATTENDED = { kind: "unattended" } as const
 const now = Date.now()
 // ClickHouse is off here: catalogs and Clerk work without Docker; SQL gets a connection error.
 const state = makeDataSourceWorldState(now, false)
@@ -52,6 +54,7 @@ describe("data source world", () => {
 				{ _tag: "resource", resource: "users", measure: { fn: "count" } },
 				{ startMs: now - 7 * DAY_MS, endMs: now, workload: "interactive" },
 				agent,
+				UNATTENDED,
 			),
 		)
 		expect(result.rows).toEqual([{ count: prodSignupsWithin(7) }])
@@ -67,6 +70,7 @@ describe("data source world", () => {
 					{ _tag: "sql", sql: "SELECT count() FROM shop.payments" },
 					{ startMs: now - DAY_MS, endMs: now, workload: "interactive" },
 					agent,
+					UNATTENDED,
 				),
 			),
 		)

@@ -1440,7 +1440,7 @@ describe("UptimeMonitorsService backing alert rule", () => {
 					),
 				)
 				assert.notInclude(stored?.steps ?? "", "key-123")
-				assert.isTrue(Str.startsWith("v2.")(stored?.sealed ?? ""))
+				assert.isTrue(Str.startsWith("v3.")(stored?.sealed ?? ""))
 				const [target] = yield* service.listProbeTargets
 				assert.deepStrictEqual(
 					target?.config._tag === "multistep"
@@ -1615,7 +1615,7 @@ describe("UptimeMonitorsService backing alert rule", () => {
 
 				const stored = yield* storedHeaders(testDb, monitor.id)
 				assert.strictEqual(stored?.config_headers, "{}")
-				assert.isTrue(Str.startsWith("v2.")(stored?.headers_ciphertext ?? ""))
+				assert.isTrue(Str.startsWith("v3.")(stored?.headers_ciphertext ?? ""))
 				const dump = yield* Effect.promise(() =>
 					queryFirstRow<{ readonly row: string }>(
 						testDb,
@@ -1748,9 +1748,9 @@ describe("UptimeMonitorsService backing alert rule", () => {
 			Effect.gen(function* () {
 				const env = yield* Env
 				const keyring = yield* secretKeyringFromEnv(env, (message) => message)
-				const config = yield* Schema.decodeEffect(
-					Schema.fromJsonString(StoredUptimeMonitorConfig),
-				)(yield* storedConfig(testDb, id))
+				const config = yield* Schema.decodeEffect(Schema.fromJsonString(StoredUptimeMonitorConfig))(
+					yield* storedConfig(testDb, id),
+				)
 				const sealed = yield* sealSecret(
 					keyring,
 					uptimeMonitorHeadersSlot,

@@ -1,0 +1,53 @@
+---
+// One month on PostHog and on Maple, as two bars and the lines behind them. Every element carries
+// its own classes and none is a bare p/table: the article's prose rules would restyle those.
+// Prices: PostHog's published tiers and Maple's Startup plan, checked November 2026.
+
+const rows = [
+	{ label: "5M events from signed-in users", posthog: 560, maple: 20 },
+	{ label: "20k session replays", posthog: 67.5, maple: 30 },
+	{ label: "Base plan", posthog: 0, maple: 39 },
+];
+const posthogTotal = rows.reduce((sum, row) => sum + row.posthog, 0);
+const mapleTotal = rows.reduce((sum, row) => sum + row.maple, 0);
+const ratio = Math.round(posthogTotal / mapleTotal);
+const money = (n: number) => (Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`);
+const mapleWidth = `${((mapleTotal / posthogTotal) * 100).toFixed(1)}%`;
+---
+
+<div role="figure" aria-label="One month on PostHog and on Maple" class="wide not-prose my-10 rounded-lg border border-border bg-bg-deep p-5 sm:p-7">
+	<div class="font-mono text-[11px] uppercase tracking-[0.14em] text-primary">One month, same usage</div>
+	<div class="mt-3 font-display text-3xl font-medium leading-tight tracking-[-0.02em] text-fg sm:text-4xl">
+		About {ratio}× less on Maple
+	</div>
+
+	{/* Both bars share one track column, so their lengths keep the ratio at every width. */}
+	<div class="mt-7 grid grid-cols-[4rem_1fr_auto] items-center gap-x-3 gap-y-3 sm:grid-cols-[5.5rem_1fr_auto] sm:gap-x-4">
+		<span class="text-sm text-fg-muted">PostHog</span>
+		<span class="h-7 w-full rounded-[3px] bg-fg/15"></span>
+		<span class="text-right text-lg font-semibold tabular-nums text-fg-muted sm:text-xl">{money(posthogTotal)}</span>
+		<span class="text-sm text-fg">Maple</span>
+		<span class="h-7 rounded-[3px] bg-primary" style={{ width: mapleWidth }}></span>
+		<span class="text-right text-lg font-semibold tabular-nums text-fg sm:text-xl">{money(mapleTotal)}</span>
+	</div>
+
+	<div class="mt-7 border-t border-border pt-4">
+		<div class="grid grid-cols-[1fr_auto_auto] gap-x-6 gap-y-2 text-sm tabular-nums">
+			<span class="text-[11px] uppercase tracking-wider text-fg-muted"></span>
+			<span class="text-right text-[11px] uppercase tracking-wider text-fg-muted">PostHog</span>
+			<span class="text-right text-[11px] uppercase tracking-wider text-fg-muted">Maple</span>
+			{
+				rows.map((row) => (
+					<>
+						<span class="text-fg-muted">{row.label}</span>
+						<span class="text-right text-fg-muted">{money(row.posthog)}</span>
+						<span class="text-right text-fg">{money(row.maple)}</span>
+					</>
+				))
+			}
+		</div>
+	</div>
+	<div class="mt-4 font-sans text-xs leading-relaxed text-fg-muted">
+		The Maple plan also includes 100 GB each of traces, logs and metrics.
+	</div>
+</div>

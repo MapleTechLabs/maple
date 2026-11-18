@@ -6,6 +6,7 @@ import type { Layer } from "effect"
 import type { Toolkit } from "effect/ai"
 import type { ReviewTurnState } from "./review/completion"
 import type { RunUsage } from "./usage"
+import type { GenAiContent } from "../platform/genai-spans"
 
 export const SUBMIT_DIAGNOSIS = "submit_diagnosis"
 export const SUBMIT_REVIEW = "submit_review"
@@ -22,6 +23,8 @@ export interface CompletionRun {
 	readonly partial: boolean
 	/** The run's agent-session identity, stamped on the tool span like every other tool's. */
 	readonly sessionAttributes: Readonly<Record<string, string>>
+	/** Whether the tool span records the call's arguments and result. */
+	readonly content: GenAiContent
 }
 
 /**

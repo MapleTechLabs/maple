@@ -8,7 +8,9 @@ import {
 	AgentFeedbackSource,
 	AgentFeedbackTriageForbiddenError,
 	AgentType,
+	type RoleName,
 } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import { AgentFeedbackId, type OrgId, type UserId } from "@maple/primitives"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -62,6 +64,11 @@ export interface AgentFeedbackTriageFilter {
 	readonly limit: number
 }
 
+export interface AgentFeedbackTriageCaller {
+	readonly orgId: OrgId
+	readonly roles: ReadonlyArray<RoleName>
+}
+
 export interface AgentFeedbackServiceApi {
 	readonly submit: (
 		orgId: OrgId,
@@ -74,11 +81,11 @@ export interface AgentFeedbackServiceApi {
 		page: { readonly limit: number; readonly offset: number },
 	) => Effect.Effect<ReadonlyArray<AgentFeedback>, AgentFeedbackPersistenceError>
 	/**
-	 * Feedback from every org, newest first. Only `MAPLE_INTERNAL_ORG_ID` may call it; any other
-	 * caller, or any caller while it is unset, is refused before the database is touched.
+	 * Feedback from every org, newest first. Only an admin of `MAPLE_INTERNAL_ORG_ID` may call it;
+	 * anyone else, or anyone while it is unset, is refused before the database is touched.
 	 */
 	readonly triage: (
-		callerOrgId: OrgId,
+		caller: AgentFeedbackTriageCaller,
 		filter: AgentFeedbackTriageFilter,
 	) => Effect.Effect<
 		ReadonlyArray<AgentFeedback>,
@@ -196,18 +203,23 @@ export class AgentFeedbackService extends Context.Service<AgentFeedbackService, 
 			})
 
 			const triage = Effect.fn("AgentFeedbackService.triage")(function* (
-				callerOrgId: OrgId,
+				caller: AgentFeedbackTriageCaller,
 				filter: AgentFeedbackTriageFilter,
 			) {
 				yield* Effect.annotateCurrentSpan({
-					orgId: callerOrgId,
+					orgId: caller.orgId,
 					"maple.feedback.limit": filter.limit,
 				})
-				if (internalOrgId === undefined || callerOrgId !== internalOrgId) {
+				if (internalOrgId === undefined || caller.orgId !== internalOrgId) {
 					return yield* new AgentFeedbackTriageForbiddenError({
 						message: "Reading agent feedback across organizations is limited to the Maple team.",
 					})
 				}
+				yield* Policy.check(
+					caller.roles,
+					"agent_feedback:triage",
+					(denial) => new AgentFeedbackTriageForbiddenError({ message: denial.message }),
+				)
 				const related = nonBlank(filter.relatedTo)
 				const pattern = related === null ? undefined : `%${Str.replace(/[\\%_]/g, "\\$&")(related)}%`
 				const rows = yield* dbExecute((db) =>

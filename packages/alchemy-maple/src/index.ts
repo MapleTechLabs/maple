@@ -1,8 +1,8 @@
 /**
  * Alchemy provider for Maple resources.
  *
- * Declare Maple API keys, ingest keys, dashboards, alert destinations, and
- * alert rules in your `alchemy.run.ts`, authenticated with a `maple_ak_…`
+ * Declare Maple API keys, ingest keys, dashboards, alert destinations, alert
+ * rules, uptime monitors and status pages in your `alchemy.run.ts`, authenticated with a `maple_ak_…`
  * API key against the Maple public v2 API.
  *
  * @example
@@ -75,4 +75,19 @@ export { IngestKeys, IngestKeysProvider, type IngestKeysProps } from "./IngestKe
 export { listAll, MapleApi, MapleApiFromHttpClient, MapleApiLive, type MapleApiContract } from "./MapleApi"
 export { DEFAULT_BASE_URL, fromEnv, MapleEnvironment } from "./MapleEnvironment"
 export { Providers, providers, providersWithDependencies } from "./Providers"
+export {
+	StatusPage,
+	StatusPageProvider,
+	type StatusPageComponentProps,
+	type StatusPageComponentStatus,
+	type StatusPageDnsRecord,
+	type StatusPageProps,
+	type StatusPageThemeProps,
+} from "./StatusPage"
 export { Telemetry, type TelemetryProps, type TelemetrySdkOptions } from "./Telemetry"
+export {
+	UptimeMonitor,
+	UptimeMonitorProvider,
+	type UptimeMonitorKind,
+	type UptimeMonitorProps,
+} from "./UptimeMonitor"

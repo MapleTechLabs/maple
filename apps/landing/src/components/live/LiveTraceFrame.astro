@@ -1,0 +1,26 @@
+---
+/**
+ * A trace's waterfall in a `.live-frame`: the dashboard's Foldkit waterfall on the checkout
+ * fixture, with spans that expand, collapse and select as they do on /traces.
+ */
+import { LiveTraceWaterfall } from "./LiveTraceWaterfall";
+
+interface Props {
+	/** The waterfall's height, or `fill` to take the rest of a sized parent. Rows past it scroll. */
+	height?: string;
+	class?: string;
+}
+
+const { height = "17rem", class: className = "" } = Astro.props;
+const fill = height === "fill";
+---
+
+<div class={`live-frame ${fill ? "flex h-full flex-col overflow-hidden" : ""} ${className}`}>
+	<div class="live-frame__head">
+		<span>POST /checkout</span>
+		<span class="tabular-nums">8 spans · 203ms</span>
+	</div>
+	<div class={`font-mono ${fill ? "min-h-0 flex-1 overflow-hidden" : ""}`} style={fill ? undefined : `height: ${height};`}>
+		<LiveTraceWaterfall client:visible />
+	</div>
+</div>

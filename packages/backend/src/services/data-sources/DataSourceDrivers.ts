@@ -22,8 +22,8 @@ export interface BudgetedSource {
 }
 
 /**
- * Maple's share of a source's own rate limit. Absent means unlimited, which is right for
- * SQL sources (their limits are concurrency, not request rate) and for tests.
+ * What Maple may ask of one source per period: its share of an API's own rate limit, or a cap on
+ * the queries it sends a SQL source. `unlimited` is for tests.
  */
 export class DataSourceCallBudget extends Context.Service<
 	DataSourceCallBudget,

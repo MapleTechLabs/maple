@@ -277,7 +277,44 @@ Design consequences:
 
 ### Security and access
 
-- Create/edit/delete/test: org admins. Query: any member through dashboards/alerts/MCP.
+- Create/edit/delete/test: engineers and admins (`data_sources:manage`).
+- Query: engineers and admins (`data_sources:query`), checked in `ExternalDataSourceService.query`
+  for every caller that is a person or a key (MCP session, MCP OAuth client, API key, a chat turn a
+  person drives). The stored catalog (`list`, `search`, `describe`) stays readable by every role
+  with the `data_sources:read` scope.
+- An unattended pass (a turn whose origin is `autonomous`) answers for whoever caused it, recorded
+  on the origin as `startedBy`. A pass a person started or restarted, or whose subject or snapshot
+  a person wrote (`POST /v2/investigations`, restart), is checked as that person: the lower of the
+  role they hold now and the roles their credential held then. A restart keeps the author of the
+  subject answering for it, held to the restarter's credential, so restarting someone else's
+  prompt never runs it under the restarter's role. A credential whose scopes did not reach
+  `data_sources:read` answers with no role. A deployment with no membership directory
+  (self-hosted) takes the credential's roles as they were. Only passes raised by Maple's own
+  producers (incident triage for alerts, anomalies and errors; fix verification) are admitted by
+  the source's `agentAccess` switch alone. No recorded starter, a pull request review and a reply
+  to a review comment all answer as a person with no role. A turn that would be refused is not
+  offered `query_data_source`.
+- Hidden entries on a SQL source: an agent's SQL is refused when it names a hidden table (as
+  `db.table` anywhere, or as `table` alone when the table is in the connection's own database),
+  reads the `system` or `information_schema` database, runs `EXPLAIN`, `DESCRIBE` or `SHOW` in a
+  subquery, or calls a function that reads a table named by a string (`dictGet`, `joinGet`). The
+  check reads the SQL as it is sent, after macros expand. It matches names, not tables, so a bare
+  column or alias spelled like a hidden table is refused; the message says to qualify it.
+- What hiding does not do. It is by name, from the last catalog refresh. It does not cover a
+  table created or renamed since, a view, materialized view, Distributed or Merge table or
+  dictionary that reads a hidden table, a parameterized view called as a function, or a name that
+  appears in the server's error text. A string value equal to a hidden table's name is refused
+  wherever it stands, because the server reads a string as a table name where a table goes. For a
+  hard boundary, connect a ClickHouse account that cannot read the table. Settings says so next
+  to the switch.
+- Every external ClickHouse query: a string literal where a table goes (`FROM 'orders'`) and a
+  macro joined to a name (`orders_$__interval_s`) are refused.
+- `agentPii` only does something on a kind whose catalog marks personal data (Clerk today). The
+  source says so (`supportsPiiRedaction`, from the driver), the connect form reads the same per
+  kind (`MARKS_PERSONAL_DATA_BY_KIND`), and Settings shows no PII switch where it is false.
+- A ClickHouse source takes about `SQL_QUERY_SHARE` queries per period across all callers (a
+  Cloudflare rate-limit binding keyed by source id). The counter is per Cloudflare location, so the
+  figure is approximate. A refusal by this limit is Maple's own and starts no wait on the source.
 - Secrets never leave the backend; `GET` returns `hasPassword: true`.
 - Public dashboard shares: a widget on an external source executes with the org's credentials
   on behalf of an anonymous viewer. v1 renders these widgets on shares only when the source has

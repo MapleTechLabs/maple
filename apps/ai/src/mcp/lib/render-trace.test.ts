@@ -107,7 +107,7 @@ describe("renderTraceOverview", () => {
 		]
 		const { text } = render({ ...base, spanCount: 2, spans, budget: 100 })
 		expect(text).toContain('span_name="http.server GET", duration not recorded')
-		expect(Arr.fromIterable(Str.matchAll(/service\.version=1\.2\.3/g)(text))).toHaveLength(1)
+		expect(Arr.fromIterable(Str.matchAll(/service\.version="1\.2\.3"/g)(text))).toHaveLength(1)
 		expect(text).toContain("`inspect_span` with a `span=` id lists every attribute")
 	})
 

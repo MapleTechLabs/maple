@@ -179,6 +179,16 @@ export class SelfHostedInvalidPasswordError extends Schema.TaggedError<SelfHoste
 	{ httpApiStatus: 401 },
 ) {}
 
+/** Too many root-password attempts from one client; `retryAfterSeconds` is also sent as Retry-After. */
+export class SelfHostedLoginRateLimitError extends Schema.TaggedError<SelfHostedLoginRateLimitError>()(
+	"@maple/http/errors/SelfHostedLoginRateLimitError",
+	{
+		message: Schema.String,
+		retryAfterSeconds: Schema.Number,
+	},
+	{ httpApiStatus: 429 },
+) {}
+
 export class PreviewSignInStatusResponse extends Schema.Class<PreviewSignInStatusResponse>(
 	"PreviewSignInStatusResponse",
 )({
@@ -217,7 +227,11 @@ export class AuthPublicApiGroup extends HttpApiGroup.make("authPublic")
 		HttpApiEndpoint.post("login", "/login", {
 			payload: SelfHostedLoginRequest,
 			success: SelfHostedLoginResponse,
-			error: [SelfHostedAuthDisabledError, SelfHostedInvalidPasswordError],
+			error: [
+				SelfHostedAuthDisabledError,
+				SelfHostedInvalidPasswordError,
+				SelfHostedLoginRateLimitError,
+			],
 		}),
 	)
 	.add(

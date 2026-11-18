@@ -7,6 +7,8 @@ order: 1
 
 Maple reviews pull requests on GitHub. Each review reads the diff next to the production telemetry behind the changed code: the traffic of the operations it touches, open errors in those files, and the alerts and dashboards that read its spans and metrics. Findings come back on the pull request before you merge, and Maple checks production again after the change ships.
 
+On a public repository anyone can read what the review posts, so it gets no telemetry tools and sees only counts: calls a day per changed file, error occurrences, and how many alerts or dashboards read a name the diff removes. Apart from names the diff itself removes, it names no service, span, error, alert or dashboard.
+
 Reviews run through the [GitHub integration](/docs/integrations/github). Connect GitHub first.
 
 ## Turn reviews on

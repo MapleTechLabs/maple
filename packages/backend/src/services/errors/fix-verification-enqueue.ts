@@ -173,6 +173,8 @@ export const enqueueFixVerification: (
 		investigationId,
 		subject,
 		snapshot,
+		// Raised by the verification tick for a merged fix: no person chose its prompt.
+		startedBy: { kind: "producer", producer: "fix_verification" },
 		nowMs,
 		// The tick reads this outcome back and can answer `no_binding` with a
 		// terminal `verified` verdict that auto-closes the issue. Without the id,

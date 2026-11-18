@@ -53,21 +53,6 @@ export interface SecretSlot<Ref> {
 	readonly destination?: (ref: Ref) => ReadonlyArray<string>
 }
 
-/**
- * The prefixes a current value of `slot` starts with. A destination slot accepts v3 too, so a
- * reseal pass does not turn a later release's v3 values back into v2 (docs/secret-encryption.md).
- */
-export const currentEnvelopePrefixes = <Ref>(
-	keyring: SecretKeyring,
-	slot: SecretSlot<Ref>,
-): ReadonlyArray<string> =>
-	slot.destination !== undefined
-		? [
-				`${ENVELOPE_PREFIX}.${keyring.primary.id}.`,
-				`${DESTINATION_ENVELOPE_PREFIX}.${keyring.primary.id}.`,
-			]
-		: [`${ENVELOPE_PREFIX}.${keyring.primary.id}.`]
-
 /** HKDF-SHA256 (RFC 5869) with an empty salt: the first 32-byte output block. */
 export const hkdfSha256 = (inputKey: Buffer, info: string): Buffer => {
 	const pseudoRandomKey = createHmac("sha256", Buffer.alloc(32)).update(inputKey).digest()
@@ -177,23 +162,25 @@ const parseEnvelope = (stored: string): Option.Option<Envelope> => {
 		: Option.none()
 }
 
-/** The AAD parts after the slot name: the row, then for v3 the destination. */
-const aadParts = <Ref>(
-	slot: SecretSlot<Ref>,
-	ref: Ref,
-	version: Envelope["version"],
-): Option.Option<ReadonlyArray<string>> =>
-	version === ENVELOPE_PREFIX
-		? Option.some(slot.binding(ref))
-		: Option.map(Option.fromUndefinedOr(slot.destination), (destination) => [
-				...slot.binding(ref),
-				DESTINATION_AAD_MARKER,
-				...destination(ref),
-			])
+/** The AAD parts after the slot name: the row, then the destination when the slot names one. */
+const aadParts = <Ref>(slot: SecretSlot<Ref>, ref: Ref): ReadonlyArray<string> =>
+	slot.destination === undefined
+		? slot.binding(ref)
+		: [...slot.binding(ref), DESTINATION_AAD_MARKER, ...slot.destination(ref)]
 
-/** What every ciphertext sealed by the primary key starts with. */
-export const currentEnvelopePrefix = (keyring: SecretKeyring): string =>
-	`${ENVELOPE_PREFIX}.${keyring.primary.id}.`
+/** The envelope new values of `slot` are sealed in: v3 when it names a destination. */
+const envelopeFor = <Ref>(slot: SecretSlot<Ref>): Envelope["version"] =>
+	slot.destination === undefined ? ENVELOPE_PREFIX : DESTINATION_ENVELOPE_PREFIX
+
+/** What every ciphertext of `slot` sealed by the primary key starts with. */
+const currentEnvelopePrefix = <Ref>(keyring: SecretKeyring, slot: SecretSlot<Ref>): string =>
+	`${envelopeFor(slot)}.${keyring.primary.id}.`
+
+/** The prefixes a current value of `slot` starts with: the primary key in the slot's envelope. */
+export const currentEnvelopePrefixes = <Ref>(
+	keyring: SecretKeyring,
+	slot: SecretSlot<Ref>,
+): ReadonlyArray<string> => [currentEnvelopePrefix(keyring, slot)]
 
 /** Seals a value for `slot` on the row `ref` names: slot subkey, row-bound, key id recorded. */
 export const sealSecret = <Ref, E>(
@@ -207,11 +194,11 @@ export const sealSecret = <Ref, E>(
 		plaintext,
 		subkeyFor(keyring.primary, slot.name),
 		onError,
-		secretAad(slot.name, slot.binding(ref)),
+		secretAad(slot.name, aadParts(slot, ref)),
 	).pipe(
 		Effect.map((sealed) => ({
 			...sealed,
-			ciphertext: `${currentEnvelopePrefix(keyring)}${sealed.ciphertext}`,
+			ciphertext: `${currentEnvelopePrefix(keyring, slot)}${sealed.ciphertext}`,
 		})),
 	)
 
@@ -231,17 +218,20 @@ export const openSecret = <Ref, E>(
 				{
 					onNone: () => Effect.fail(onError("Sealed with a key this deployment does not hold")),
 					onSome: (key) =>
-						Option.match(aadParts(slot, ref, envelope.version), {
-							onNone: () =>
-								Effect.fail(onError("Stored value names a destination this slot has not")),
-							onSome: (parts) =>
-								decryptAes256Gcm(
+						envelope.version === envelopeFor(slot)
+							? decryptAes256Gcm(
 									{ ciphertext: envelope.ciphertext, iv: stored.iv, tag: stored.tag },
 									subkeyFor(key, slot.name),
 									onError,
-									secretAad(slot.name, parts),
+									secretAad(slot.name, aadParts(slot, ref)),
+								)
+							: Effect.fail(
+									onError(
+										envelope.version === DESTINATION_ENVELOPE_PREFIX
+											? "Stored value names a destination this slot has not"
+											: "Stored value is not bound to its destination",
+									),
 								),
-						}),
 				},
 			),
 	})

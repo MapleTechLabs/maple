@@ -7,6 +7,7 @@ import {
 	AuditEventsQueueProducer,
 	DataSourceDevelopmentCallLimit,
 	DataSourceProductionCallLimit,
+	DataSourceSqlQueryLimit,
 } from "@maple/backend/platform/bindings"
 import { WorkersAiGateway } from "../platform/WorkersAiHttpClient"
 import { BoundAiClients } from "../worker/bindings"
@@ -21,6 +22,7 @@ class OptionalPorts extends Context.Service<
 	{
 		readonly production: Option.Option<typeof DataSourceProductionCallLimit.Service>
 		readonly development: Option.Option<typeof DataSourceDevelopmentCallLimit.Service>
+		readonly sqlQueries: Option.Option<typeof DataSourceSqlQueryLimit.Service>
 		readonly auditQueue: Option.Option<typeof AuditEventsQueueProducer.Service>
 	}
 >()("@maple/ai/test/OptionalPorts") {
@@ -29,6 +31,7 @@ class OptionalPorts extends Context.Service<
 		Effect.all({
 			production: Effect.serviceOption(DataSourceProductionCallLimit),
 			development: Effect.serviceOption(DataSourceDevelopmentCallLimit),
+			sqlQueries: Effect.serviceOption(DataSourceSqlQueryLimit),
 			auditQueue: Effect.serviceOption(AuditEventsQueueProducer),
 		}),
 	)
@@ -56,6 +59,7 @@ const makeBoundClients = () => {
 		mcpToolsRateLimit: limiter("mcp"),
 		dataSourceProductionCallLimit: limiter("production"),
 		dataSourceDevelopmentCallLimit: limiter("development"),
+		dataSourceSqlQueryLimit: limiter("sql"),
 		auditEvents: {
 			raw: Effect.succeed({
 				sendBatch: (messages: ReadonlyArray<{ readonly body: unknown }>) => {
@@ -226,12 +230,21 @@ describe("the ChatSession Durable Object on alchemy's form", () => {
 				if (bindingPorts === undefined) return
 				// Read as the runtime reads them: by a layer built above the ports, optionally.
 				const outcomes = yield* Effect.gen(function* () {
-					const { production, development } = yield* OptionalPorts
-					if (Option.isNone(production) || Option.isNone(development)) return []
-					return [yield* production.value.limit("src_1"), yield* development.value.limit("src_2")]
+					const { production, development, sqlQueries } = yield* OptionalPorts
+					if (Option.isNone(production) || Option.isNone(development) || Option.isNone(sqlQueries))
+						return []
+					return [
+						yield* production.value.limit("src_1"),
+						yield* development.value.limit("src_2"),
+						yield* sqlQueries.value.limit("src_3"),
+					]
 				}).pipe(Effect.provide(OptionalPorts.layer.pipe(provideSessionPorts(bindingPorts))))
-				assert.deepStrictEqual(outcomes, [{ success: false }, { success: false }])
-				assert.deepStrictEqual(clients.limited, ["production:src_1", "development:src_2"])
+				assert.deepStrictEqual(outcomes, [{ success: false }, { success: false }, { success: false }])
+				assert.deepStrictEqual(clients.limited, [
+					"production:src_1",
+					"development:src_2",
+					"sql:src_3",
+				])
 			}),
 		)
 
@@ -275,12 +288,17 @@ describe("the ChatSession Durable Object on alchemy's form", () => {
 
 		it.effect("a runtime built without ports gets none of them instead of failing", () =>
 			Effect.gen(function* () {
-				const { production, development, auditQueue } = yield* OptionalPorts.pipe(
+				const { production, development, sqlQueries, auditQueue } = yield* OptionalPorts.pipe(
 					Effect.provide(OptionalPorts.layer.pipe(provideSessionPorts(undefined))),
 				)
 				assert.deepStrictEqual(
-					[Option.isNone(production), Option.isNone(development), Option.isNone(auditQueue)],
-					[true, true, true],
+					[
+						Option.isNone(production),
+						Option.isNone(development),
+						Option.isNone(sqlQueries),
+						Option.isNone(auditQueue),
+					],
+					[true, true, true, true],
 				)
 			}),
 		)

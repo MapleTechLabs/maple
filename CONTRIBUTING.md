@@ -92,7 +92,8 @@ CLICKHOUSE_DATABASE=default
 
 # Auth — self-hosted mode (no Clerk account required)
 MAPLE_AUTH_MODE=self_hosted
-MAPLE_ROOT_PASSWORD=change-me
+# At least 16 characters; generate one with `openssl rand -base64 24`
+MAPLE_ROOT_PASSWORD=
 MAPLE_DEFAULT_ORG_ID=default
 
 # Ingest — forward OTLP to the local collector (which writes ClickHouse)

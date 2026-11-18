@@ -34,7 +34,13 @@ import type * as DecisionModel from "effect/ai/DecisionModel"
 import * as LanguageModel from "effect/ai/LanguageModel"
 import * as AiModel from "effect/ai/Model"
 import { FetchHttpClient, HttpBody, HttpClient, HttpClientRequest } from "effect/http"
-import { type ModelCallAttempts, type ModelCallTelemetry, instrumentLanguageModel } from "./genai-spans"
+import {
+	type GenAiContent,
+	type ModelCallAttempts,
+	type ModelCallTelemetry,
+	genAiContentFor,
+	instrumentLanguageModel,
+} from "./genai-spans"
 import * as WorkersAiDecisionModel from "./WorkersAiDecisionModel"
 import { layerWorkersAi, type WorkersAiBinding } from "./WorkersAiHttpClient"
 
@@ -191,6 +197,8 @@ export const llmSettingsConfig = Config.all({
 	OPENROUTER_API_KEY: optionalSecret("OPENROUTER_API_KEY"),
 	/** Decision model id, overriding {@link DEFAULT_DECISION_MODEL}. */
 	MAPLE_DECISION_MODEL: optionalTrimmed("MAPLE_DECISION_MODEL"),
+	/** Maple's own org: the only one whose model and tool spans carry the conversation. */
+	MAPLE_INTERNAL_ORG_ID: optionalTrimmed("MAPLE_INTERNAL_ORG_ID"),
 })
 
 /** The deployment's LLM configuration; any key may be absent, and then its default applies. */
@@ -296,6 +304,8 @@ export interface ResolvedModel {
 	readonly limits: { readonly context: number; readonly output: number }
 	/** The tags the model was resolved with, so a caller can stamp its own span to match. */
 	readonly tags?: LlmCallTags
+	/** Whether this run's model and tool spans carry the conversation; see `GenAiContent`. */
+	readonly content: GenAiContent
 }
 
 const limitsFor = (name: string): { readonly context: number; readonly output: number } =>
@@ -428,6 +438,19 @@ const openRouterProviderOrder = (settings: LlmSettings): ReadonlyArray<string> |
 	return Arr.isArrayNonEmpty(order) ? order : undefined
 }
 
+/**
+ * OpenRouter's per-request provider preferences: every request skips endpoints that may train on or
+ * keep prompts for training (`data_collection: "deny"`); an `order` still keeps fallbacks on.
+ */
+export const openRouterDataPolicy = (order: ReadonlyArray<string> | undefined) => ({
+	data_collection: "deny" as const,
+	...(order === undefined ? undefined : { order, allow_fallbacks: true }),
+})
+
+/** Whether a run for these tags records its conversation on its spans: only Maple's own org does. */
+const genAiContentOf = (settings: LlmSettings, tags: LlmCallTags | undefined): GenAiContent =>
+	genAiContentFor(tags?.orgId, readString(settings, "MAPLE_INTERNAL_ORG_ID"))
+
 interface OpenRouterModelOptions {
 	/** Providers to try first; without any, OpenRouter routes on the model id alone. */
 	readonly providerOrder?: ReadonlyArray<string> | undefined
@@ -435,6 +458,7 @@ interface OpenRouterModelOptions {
 	readonly effort?: ReasoningEffort
 	/** Nobody watches the run stream, so its deltas are joined and long calls retried. */
 	readonly unattended: boolean
+	readonly content: GenAiContent
 }
 
 const openRouterModel = (
@@ -442,7 +466,7 @@ const openRouterModel = (
 	tags: LlmCallTags | undefined,
 	options: OpenRouterModelOptions,
 ): ResolvedModel => {
-	const { effort, unattended, providerOrder } = options
+	const { effort, unattended, providerOrder, content } = options
 	const limits = limitsFor(name)
 	const maxTokens = Math.min(limits.output, MODEL_CALL_OUTPUT_TOKENS)
 	return {
@@ -455,32 +479,38 @@ const openRouterModel = (
 				config: {
 					...openRouterConfig(effort, tags),
 					max_tokens: maxTokens,
-					...(providerOrder === undefined
-						? undefined
-						: { provider: { order: providerOrder, allow_fallbacks: true } }),
+					provider: openRouterDataPolicy(providerOrder),
 				},
 			}),
 			{
 				providerName: genAiProviderName("openrouter"),
 				...(effort === undefined ? undefined : { reasoningLevel: effort }),
 				sessionAttributes: agentSessionSpanAttributes(tags),
+				content,
 			},
 			unattended ? { coalesceDeltas: true, attempts: OPENROUTER_ATTEMPTS } : { coalesceDeltas: false },
 		),
 		limits,
 		tags,
+		content,
 	}
 }
 
-const workersAiModel = (name: string, tags: LlmCallTags | undefined): ResolvedModel => ({
+const workersAiModel = (
+	name: string,
+	tags: LlmCallTags | undefined,
+	content: GenAiContent,
+): ResolvedModel => ({
 	provider: "workers-ai",
 	name,
 	layer: instrumentedModel(name, OpenAiLanguageModel.make({ model: name }), {
 		providerName: genAiProviderName("workers-ai"),
 		sessionAttributes: agentSessionSpanAttributes(tags),
+		content,
 	}),
 	limits: limitsFor(name),
 	tags,
+	content,
 })
 
 /**
@@ -501,6 +531,7 @@ export const resolveTriageModel = (
 		? workersAiModel(
 				readString(settings, "MAPLE_TRIAGE_MODEL_WORKERS_AI") ?? DEFAULT_WORKERS_AI_MODEL,
 				tags,
+				genAiContentOf(settings, tags),
 			)
 		: openRouterModel(
 				readString(settings, "MAPLE_TRIAGE_MODEL_OPENROUTER") ??
@@ -510,7 +541,11 @@ export const resolveTriageModel = (
 				tags,
 				// No effort. This resolver serves chat, AI triage *and* the validator, so a number
 				// picked here would retune three stages with different shapes at once.
-				{ unattended, providerOrder: openRouterProviderOrder(settings) },
+				{
+					unattended,
+					providerOrder: openRouterProviderOrder(settings),
+					content: genAiContentOf(settings, tags),
+				},
 			)
 
 /** The organization's pick, when this region serves it: the EU endpoint 404s a model it lacks. */
@@ -546,7 +581,11 @@ export const resolveReviewModel = (
 							: DEFAULT_REVIEW_MODEL),
 				),
 				tags,
-				{ unattended: true, providerOrder: openRouterProviderOrder(settings) },
+				{
+					unattended: true,
+					providerOrder: openRouterProviderOrder(settings),
+					content: genAiContentOf(settings, tags),
+				},
 			)
 
 /**
@@ -638,6 +677,7 @@ export const resolveSecurityAuditDiscoveryFallback = (
 				effort: "high",
 				unattended: true,
 				providerOrder: openRouterProviderOrder(settings),
+				content: genAiContentOf(settings, tags),
 			})
 }
 
@@ -657,6 +697,7 @@ export const resolveSecurityAuditModel = (
 				effort: "high",
 				unattended: true,
 				providerOrder: openRouterProviderOrder(settings),
+				content: genAiContentOf(settings, tags),
 			})
 
 /**

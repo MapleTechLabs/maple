@@ -152,6 +152,8 @@ export const isReaderName = (name: string): boolean =>
 interface SqlToken {
 	readonly v: string
 	readonly ident: boolean
+	/** Written in quotes, so it is a name wherever it stands and never a keyword. */
+	readonly quoted?: true
 }
 
 const IDENT_START_RE = /[A-Za-z_]/
@@ -199,6 +201,9 @@ const indexFrom = (text: string, search: string, from: number): number =>
  */
 const tokenizeSql = (sql: string): ReadonlyArray<SqlToken> => lexSql(sql).tokens
 
+/** What `markStrings` leaves where a string literal stood: no identifier or operator is spelled this way. */
+const STRING_TOKEN = "'"
+
 interface LexedSql {
 	readonly tokens: ReadonlyArray<SqlToken>
 	/** A block comment opens another before it closes; the server nests them, this lexer does not. */
@@ -207,7 +212,7 @@ interface LexedSql {
 	readonly escapedIdentifier: boolean
 }
 
-function lexSql(sql: string): LexedSql {
+function lexSql(sql: string, markStrings = false): LexedSql {
 	const tokens: Array<SqlToken> = []
 	const n = sql.length
 	let nestedComment = false
@@ -242,6 +247,7 @@ function lexSql(sql: string): LexedSql {
 					i++
 				}
 			}
+			if (markStrings) tokens.push({ v: STRING_TOKEN, ident: false })
 		} else if (QUOTE_CLOSE.has(c)) {
 			const close = QUOTE_CLOSE.get(c) ?? c
 			i++
@@ -273,7 +279,7 @@ function lexSql(sql: string): LexedSql {
 					i++
 				}
 			}
-			tokens.push({ v: Str.toLowerCase(body), ident: true })
+			tokens.push({ v: Str.toLowerCase(body), ident: true, quoted: true })
 		} else if (IDENT_START_RE.test(c)) {
 			let j = i + 1
 			while (j < n && IDENT_PART_RE.test(charAt(sql, j))) j++
@@ -319,7 +325,19 @@ const CLAUSE_BOUNDARY = new Set([
  * expression (inside a call paren), never in a table position.
  */
 export const disallowedTableFunction = (sql: string): string | null => {
-	const tokens = tokenizeSql(sql)
+	const source = disallowedTableSource(tokenizeSql(sql))
+	return source === STRING_TOKEN ? null : source
+}
+
+/**
+ * Whether a string literal stands where a table goes (`FROM 'orders'`, after JOIN or a FROM-list
+ * comma). ClickHouse reads it as a table name, or as a file path where it reads files.
+ */
+export const hasStringTableSource = (sql: string): boolean =>
+	disallowedTableSource(lexSql(sql, true).tokens) === STRING_TOKEN
+
+/** The walk behind both: a disallowed table function's name, or `STRING_TOKEN` for a literal as a table. */
+const disallowedTableSource = (tokens: ReadonlyArray<SqlToken>): string | null => {
 	const parenKind: Array<"call" | "sub" | "group"> = []
 	// The enclosing FROM list survives a paren: a subquery closing must not end it.
 	const outerFromList: Array<number> = []
@@ -330,6 +348,7 @@ export const disallowedTableFunction = (sql: string): string | null => {
 		const t = tokens[i]
 		if (t === undefined) continue
 		if (!t.ident) {
+			if (t.v === STRING_TOKEN && armed) return STRING_TOKEN
 			if (t.v === "(") {
 				const prev = tokens[i - 1]
 				const next = tokens[i + 1]
@@ -347,6 +366,17 @@ export const disallowedTableFunction = (sql: string): string | null => {
 				depth--
 				fromListDepth = outerFromList.pop() ?? -1
 				armed = false
+			} else if (t.v === "[") {
+				// An array literal or subscript: its commas separate values, never tables.
+				parenKind.push("group")
+				depth++
+				outerFromList.push(fromListDepth)
+				armed = false
+			} else if (t.v === "]") {
+				parenKind.pop()
+				depth--
+				fromListDepth = outerFromList.pop() ?? -1
+				armed = false
 			} else if (t.v === "," && depth === fromListDepth) {
 				armed = true
 			} else {
@@ -358,7 +388,11 @@ export const disallowedTableFunction = (sql: string): string | null => {
 		if (after !== undefined && !after.ident && after.v === "(" && isReaderName(t.v)) return t.v
 		// `WITH FILL FROM expr` and `ARRAY JOIN expr` take an expression, not a table.
 		const prev = tokens[i - 1]?.v ?? ""
-		if ((t.v === "from" && prev !== "fill") || (t.v === "join" && prev !== "array")) {
+		// A quoted `from` or `join` is a column or alias, not the keyword.
+		if (
+			t.quoted !== true &&
+			((t.v === "from" && prev !== "fill") || (t.v === "join" && prev !== "array"))
+		) {
 			if (parenKind[parenKind.length - 1] !== "call") {
 				armed = true
 				fromListDepth = depth
@@ -366,7 +400,7 @@ export const disallowedTableFunction = (sql: string): string | null => {
 			continue
 		}
 		// ARRAY JOIN takes array expressions; its commas do not introduce tables.
-		if (t.v === "join" && depth === fromListDepth) {
+		if (t.quoted !== true && t.v === "join" && depth === fromListDepth) {
 			fromListDepth = -1
 			continue
 		}

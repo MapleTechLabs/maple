@@ -11,7 +11,7 @@ import { CodeExecutionLimits, type CodeExecutor } from "@yielded/agent/code-exec
 import * as CodeMode from "@yielded/agent/code-mode"
 import { Duration, Layer, Array as Arr, Record as Rec } from "effect"
 import { type Tool, Toolkit } from "effect/ai"
-import { toolLayerWithContent } from "../platform/genai-spans"
+import { type GenAiContent, toolLayerWithContent } from "../platform/genai-spans"
 import { TOOL_CONCURRENCY } from "./budgets"
 import { PR_REVIEW_TOOLS } from "./permissions"
 
@@ -131,6 +131,7 @@ export const buildCodeMode = <T extends Tool.Any, H, E, R>(
 	tools: Readonly<Record<string, T>>,
 	handlers: Layer.Layer<H, E, R>,
 	executor: Layer.Layer<CodeExecutor>,
+	content: GenAiContent,
 	/** The direct tools are withheld, so the description carries their schemas instead. */
 	only = false,
 ) => {
@@ -148,7 +149,7 @@ export const buildCodeMode = <T extends Tool.Any, H, E, R>(
 		tool: RUN_CODE,
 		toolkit: Toolkit.make(definition.tool),
 		// The engine registers this handler itself, so its span content is recorded here.
-		layer: toolLayerWithContent(definition.tool, definition.handlers, programFailureText).pipe(
+		layer: toolLayerWithContent(definition.tool, definition.handlers, programFailureText, content).pipe(
 			Layer.provide(handlers),
 			Layer.provide(executor),
 		),

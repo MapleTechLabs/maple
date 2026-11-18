@@ -1,8 +1,9 @@
 /**
  * Brings stored secrets onto the current key and envelope.
  *
- * A value needs resealing when its ciphertext does not start with the primary key's v2 prefix:
- * it was sealed by a key that has since been rotated out of the primary slot
+ * A value needs resealing when its ciphertext does not start with the primary key's prefix in
+ * its slot's current envelope: it was sealed by a key that has since been rotated out of the
+ * primary slot, or in the v2 envelope for a slot that now binds its destination
  * (docs/secret-encryption.md).
  */
 import { Array as Arr, Context, Effect, Layer, Option, Record as Rec } from "effect"

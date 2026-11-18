@@ -23,7 +23,10 @@ import { DeleteUptimeMonitorOutput, ListUptimeMonitorsOutput, UptimeMonitorMutat
 import { DeleteSloOutput, InspectSloOutput, ListSlosOutput, SloMutationOutput } from "./slo"
 import {
 	ApplyStatusPageConfigOutput,
+	CreateStatusPageOutput,
 	GetStatusPageOutput,
+	PublishStatusPageOutput,
+	SetStatusPageDomainOutput,
 	StatusPageIncidentMutationOutput,
 } from "./status-pages"
 import {
@@ -256,6 +259,9 @@ export const McpToolOutputs = {
 	get_status_page: GetStatusPageOutput,
 	apply_status_page_config: ApplyStatusPageConfigOutput,
 	post_status_page_update: StatusPageIncidentMutationOutput,
+	create_status_page: CreateStatusPageOutput,
+	publish_status_page: PublishStatusPageOutput,
+	set_status_page_domain: SetStatusPageDomainOutput,
 	list_metrics: ListMetricsOutput,
 	list_product_events: ListProductEventsOutput,
 	list_services: ListServicesOutput,

@@ -42,6 +42,7 @@ const request = {
 	limits: DEFAULT_LIMITS.interactive,
 	workload: "interactive" as const,
 	redactPii: false,
+	hiddenEntries: [],
 }
 const context = { spend: () => Effect.void }
 

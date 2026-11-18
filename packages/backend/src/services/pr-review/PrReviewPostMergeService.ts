@@ -266,11 +266,15 @@ export class PrReviewPostMergeService extends Context.Service<
 				"maple.pr_review.post_merge.new_issues": newIssues.length,
 				"maple.pr_review.post_merge.missing": missing.length,
 			})
-			yield* postComment(orgId, row, renderPostMergeComment(row.id, report))
+			yield* postComment(orgId, row, (repository) => renderPostMergeComment(row.id, report, repository))
 			return "reported" satisfies Outcome
 		})
 
-		const postComment = (orgId: OrgId, row: DueRow, body: string) =>
+		const postComment = (
+			orgId: OrgId,
+			row: DueRow,
+			body: (repository: { readonly isPrivate: boolean }) => string,
+		) =>
 			Effect.gen(function* () {
 				const repository = yield* repositories.getRepositoryById(orgId, row.repositoryId)
 				if (Option.isNone(repository)) return
@@ -284,7 +288,7 @@ export class PrReviewPostMergeService extends Context.Service<
 				yield* provider.postPullRequestReply(
 					installation.value,
 					{ externalRepoId: repo.externalRepoId, owner: repo.owner, name: repo.name },
-					{ number: row.number, body },
+					{ number: row.number, body: body(repo) },
 				)
 			}).pipe(
 				Effect.catchCause((cause) =>

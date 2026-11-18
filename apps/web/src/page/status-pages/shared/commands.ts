@@ -20,6 +20,7 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { readAllPages as readAll } from "../../../platform/read-all-pages"
 import { AppRoute, hrefOf } from "../../../route"
+import type { StatusPageSetupMethod } from "../../../route/search"
 import { summarizePage } from "./derive"
 
 // The status page reads and writes, as Effects the pages' Commands wrap, and their links.
@@ -283,7 +284,8 @@ export const statusPageViewHref = (id: StatusPageId): string =>
 
 export const statusPagesHref = (): string => hrefOf(AppRoute.StatusPages())
 
-export const newStatusPageHref = (): string => hrefOf(AppRoute.StatusPageNew())
+export const newStatusPageHref = (setup?: StatusPageSetupMethod): string =>
+	hrefOf(AppRoute.StatusPageNew({ search: setup === undefined ? {} : { setup } }))
 
 /** The status Worker's origin; empty where the stage has no status domain. */
 export const STATUS_PAGE_BASE_URL: string = Str.replace(

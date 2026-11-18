@@ -161,18 +161,43 @@ const relabel = (stored: { readonly ciphertext: string }, version: string) => ({
 })
 
 describe("v3 envelope", () => {
-	it.effect("still opens a v2 value on a slot that has a destination", () =>
+	it.effect("seals a slot with a destination in v3, which opens only for that destination", () =>
+		Effect.gen(function* () {
+			const ring = yield* keyring(1)
+			const sealed = yield* sealSecret(
+				ring,
+				destinationSlot,
+				{ ...ref, url: "https://a" },
+				"hunter2",
+				fail,
+			)
+			expect(Str.startsWith(`v3.${ring.primary.id}.`)(sealed.ciphertext)).toBe(true)
+			expect(yield* openSecret(ring, destinationSlot, { ...ref, url: "https://a" }, sealed, fail)).toBe(
+				"hunter2",
+			)
+			const moved = yield* openSecret(
+				ring,
+				destinationSlot,
+				{ ...ref, url: "https://attacker" },
+				sealed,
+				fail,
+			).pipe(Effect.flip)
+			expect(moved).toBe("Decryption failed")
+		}),
+	)
+
+	it.effect("refuses a v2 value on a slot that has a destination: it is not bound to one", () =>
 		Effect.gen(function* () {
 			const ring = yield* keyring(1)
 			const sealed = yield* sealSecret(ring, slot, ref, "hunter2", fail)
-			const opened = yield* openSecret(
+			const error = yield* openSecret(
 				ring,
 				destinationSlot,
 				{ ...ref, url: "https://a" },
 				sealed,
 				fail,
-			)
-			expect(opened).toBe("hunter2")
+			).pipe(Effect.flip)
+			expect(error).toBe("Stored value is not bound to its destination")
 		}),
 	)
 
