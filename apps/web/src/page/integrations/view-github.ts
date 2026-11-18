@@ -10,7 +10,7 @@ import { panel } from "@maple/views/ui/panel"
 import { refreshButton } from "@maple/views/ui/refresh-button"
 import { skeleton, skeletonBlock } from "@maple/views/ui/skeleton"
 import { statusDot } from "@maple/views/ui/status-dot"
-import { INTEGRATION_FEATURES } from "@maple/domain/integration-features"
+import { INTEGRATION_FEATURES, type IntegrationFeatureSpec } from "@maple/domain/integration-features"
 import { featureList } from "../kit/feature-list"
 import { integrationIconPlate } from "../kit/integration-empty"
 import { integrationNotice } from "./kit/notice"
@@ -138,7 +138,13 @@ export const githubInstallationPicker = (h: H, model: Model): ReadonlyArray<Html
 
 /** CI traces and the audit log switch here; PR review is per repository, so its row counts them and links there. */
 export const githubFeatures = (h: H, model: Model, status: GithubIntegrationStatus): Html => {
-	const [ciTraces, auditLog, prReview] = INTEGRATION_FEATURES.github
+	// Each position's id is pinned, so a reorder of the catalog fails to compile instead of
+	// binding a switch to another feature's toggle.
+	const [ciTraces, auditLog, prReview]: readonly [
+		IntegrationFeatureSpec<"ciTraces">,
+		IntegrationFeatureSpec<"auditLog">,
+		IntegrationFeatureSpec<"prReview">,
+	] = INTEGRATION_FEATURES.github
 	const active = Arr.filter(status.repositories, (repo) => repo.status === "active")
 	const reviewed = Arr.filter(active, (repo) => repo.prReviewEnabled).length
 	return featureList(h, {
