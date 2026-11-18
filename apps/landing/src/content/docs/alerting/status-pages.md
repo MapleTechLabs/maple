@@ -120,11 +120,12 @@ Set the password first, under **New password** and **Save password**: 8 to 256 c
 A page can answer on a subdomain you control, such as `status.acme.com`, with a certificate Maple issues and renews. You need the engineer or admin role.
 
 1. Open **Settings → Custom domain**, enter the **Hostname** and click **Add domain**.
-2. Add the records from the **DNS records to add** table at your DNS provider:
+2. Add both records from the **DNS records to add** table at your DNS provider:
     - A `CNAME` from your hostname to the target Maple shows. It points the domain at Maple and is always needed.
-    - A `TXT` record that proves you own the domain. It is optional once the CNAME is in place.
-    - `TXT` records for the certificate, only when the table lists them.
-3. Wait for the badge to change from **Waiting for DNS** to **Issuing certificate** and then **Active**. Maple checks every minute for the first hour, then every ten minutes. **Check now** checks at once and retries a failed certificate.
+    - A `TXT` record named `_maple-challenge.<your hostname>`. It proves you own the domain, and Maple sets the domain up only after it finds this record. You can remove it once the domain is active.
+3. Wait for the badge to change from **Waiting for DNS** to **Issuing certificate** and then **Active**. Maple checks every minute for the first hour, then every ten minutes. **Check now** checks at once and retries a failed certificate. While the certificate is issued the table may list more `TXT` records: one marked optional, and records for the certificate, which you add only when they are listed.
+
+The `TXT` value is specific to your organization and this page, so the record works for no one else, and a `CNAME` that points at Maple is not enough for anyone to serve a page on your domain. If Maple says a hostname is held by another status page that has not proved it owns the domain, the message gives the `TXT` record to add: publish it, then add the domain again, and it becomes yours. Domains that were added before this record was required keep working and need no change.
 
 Once the domain is active, the page, its feeds and its JSON answer there, and feed links, the Slack command and the dashboard's links use it. **Needs attention** means the domain stopped; the panel says what went wrong. **Remove** stops serving the page on the domain within a minute; the page stays up at its Maple address.
 

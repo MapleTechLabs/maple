@@ -5,7 +5,7 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
 import * as CopyButton from "@maple/views/ui/copy-button"
-import { CheckStats, UptimeWindow } from "./model"
+import { CheckStats, ChecksFilter, UptimeWindow } from "./model"
 import { LoadOutcome } from "../../kit/load-schemas"
 import { SessionGrants } from "../../kit/session-grants"
 
@@ -22,6 +22,7 @@ export const Message = defineMessageUnion({
 	CompletedCheckNow: { result: LoadOutcome(V2UptimeMonitorTestResult) },
 	GotCopyMessage: { id: Schema.String, message: CopyButton.Message },
 	PickedWindow: { window: UptimeWindow },
+	PickedChecksFilter: { filter: ChecksFilter },
 	HoveredCheck: { index: Schema.NullOr(Schema.Number) },
 	CompletedFetchStats: { key: Schema.String, result: LoadOutcome(CheckStats) },
 	...ChartEnvMessages,

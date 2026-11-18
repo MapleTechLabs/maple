@@ -80,6 +80,7 @@ export const init = (route: MonitorRoute, context: PageContext): Return => {
 		isChecking: false,
 		copies: {},
 		window: "24h",
+		checksFilter: "all",
 		stats: Keyed.idle(),
 		hoveredCheck: null,
 		chart: Chart.init(),
@@ -190,6 +191,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotCopyMessage: ({ id, message: child }) => updateCopy(model, id, child),
 		PickedWindow: ({ window }) =>
 			window === model.window ? { model } : requestStats({ ...model, window }, context, "Load"),
+		PickedChecksFilter: ({ filter }) => ({ model: { ...model, checksFilter: filter } }),
 		CompletedFetchStats: ({ key, result }) => ({
 			model: { ...model, stats: Keyed.accept(model.stats, key, result), hoveredCheck: null },
 		}),

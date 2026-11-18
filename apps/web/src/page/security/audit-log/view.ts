@@ -1,4 +1,4 @@
-import { AuditTrailCategory, AuditTrailProvider } from "@maple/domain/audit-trail"
+import { AuditTrailCategory } from "@maple/domain/audit-trail"
 import type { AuditTrailEntry } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
@@ -23,6 +23,7 @@ import { icon } from "@maple/views/ui/icon"
 import { keyValue, keyValueList } from "@maple/views/ui/key-value"
 import { listFooter } from "@maple/views/ui/list-footer"
 import { nativeOption, nativeSelect } from "@maple/views/ui/native-select"
+import * as SelectView from "@maple/views/ui/select-view"
 import { panel } from "@maple/views/ui/panel"
 import { pressable } from "@maple/views/ui/pressable"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
@@ -48,7 +49,7 @@ import { expandChevron } from "../../kit/expand-chevron"
 import { jsonBlock, prettyJson } from "../../kit/json-block"
 import { refusedBadge } from "../../kit/refused-badge"
 import { relativeTime } from "../../kit/relative-time"
-import { providerName } from "../kit/audit-brands"
+import { providerMark, providerName } from "../kit/audit-brands"
 import { ROOMY_COLUMN, securityLayout, WIDE_COLUMN } from "../kit/layout"
 import { placeholderRows } from "../kit/parts"
 import {
@@ -58,7 +59,6 @@ import {
 	OUTCOME_FILTERS,
 	OUTCOME_LABEL,
 	outcomeLabel,
-	PROVIDER_LABEL,
 	providerLabel,
 } from "../kit/audit-labels"
 import {
@@ -67,13 +67,14 @@ import {
 	actorTypeLabel,
 	alertHref,
 	eventsOf,
+	filterProviders,
 	isFiltered,
 	isForbidden,
 	isMarked,
 	nextCursorOf,
 	targetText,
 } from "./derive"
-import { accessOf, Message, type Model, type SelectFilter } from "./model"
+import { ALL_PROVIDERS, accessOf, Message, type Model, type SelectFilter } from "./model"
 import { sourcesPanel } from "./view-sources"
 import { panelToolbar } from "../../kit/panel-toolbar"
 
@@ -113,6 +114,41 @@ const filterSelect = (
 		],
 	)
 
+/** A platform's mark beside its name, or "All platforms" alone, in the select and its list. */
+const providerChoice = (h: H, value: string): ReadonlyArray<Html | string> =>
+	value === ALL_PROVIDERS
+		? ["All platforms"]
+		: [
+				hstack(h, { gap: "2", align: "center" }, [
+					providerMark(h, value),
+					typography(h, { truncate: true }, [providerLabel(value)]),
+				]),
+			]
+
+/** The platform filter: a Select rather than a native one, so each platform shows its mark. */
+const providerSelect = (h: H, model: Model): Html =>
+	h.submodel({
+		slotId: model.providerSelect.id,
+		model: model.providerSelect,
+		view: SelectView.view,
+		toParentMessage: (message) => Message.GotProviderSelectMessage({ message }),
+		viewInputs: {
+			entries: [
+				{ _tag: "Item", item: { value: ALL_PROVIDERS, label: "All platforms" } },
+				...Arr.map(filterProviders(model), (provider): SelectView.SelectEntry => ({
+					_tag: "Item",
+					item: { value: provider, label: providerLabel(provider) },
+				})),
+			],
+			ariaLabel: "Platform",
+			size: "sm",
+			className: "min-w-0",
+			renderValue: (value) => providerChoice(h, value),
+			renderItem: (option) => providerChoice(h, option.value),
+			toView: (parts) => h.div([h.Class("contents")], parts),
+		},
+	})
+
 /**
  * The filters on screen as a detection. With an actor applied the label says the detection will
  * count everyone: it holds no actor, and must not read as if it did.
@@ -139,15 +175,7 @@ const alertControl = (h: H, model: Model): Html | undefined => {
 
 const toolbar = (h: H, model: Model): Html =>
 	panelToolbar(h, [
-		filterSelect(
-			h,
-			"provider",
-			"Platform",
-			model.search.provider,
-			"All platforms",
-			PROVIDER_LABEL,
-			AuditTrailProvider.literals,
-		),
+		providerSelect(h, model),
 		filterSelect(
 			h,
 			"category",

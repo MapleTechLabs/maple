@@ -1,6 +1,7 @@
 import { Effect, Schema, String as Str } from "effect"
 import { OrgId, UserId } from "@maple/primitives"
 import { PullRequestLinkState } from "./fix-verification"
+import { AuditTrailEventSchema } from "../audit-trail"
 
 import {
 	GitCommitSha,
@@ -70,6 +71,8 @@ export class VcsInstallation extends Schema.Class<VcsInstallation>("VcsInstallat
 	suspendedAt: Schema.NullOr(Schema.Number),
 	/** Whether finished CI workflow runs become traces. On unless the org turned it off. */
 	ciTracesEnabled: Schema.Boolean,
+	/** Whether the installation's audit events go to the Security audit log. On unless the org turned it off. */
+	auditLogEnabled: Schema.Boolean.pipe(Schema.withConstructorDefault(Effect.succeed(true))),
 	repositoryDiscovery: Schema.NullOr(VcsRepositoryDiscovery).pipe(
 		Schema.withConstructorDefault(Effect.succeed(null)),
 	),
@@ -246,6 +249,10 @@ export const PullRequestReviewComment = Schema.Struct({
 export const PullRequestReviewThread = Schema.Struct({
 	id: Schema.String,
 	isResolved: Schema.Boolean,
+	/** Who resolved the thread, when the provider says; only its author or someone who can push may. */
+	resolvedBy: Schema.optionalKey(Schema.String),
+	/** The thread has more comments than were read, so its latest reply is not known. */
+	commentsTruncated: Schema.optionalKey(Schema.Boolean),
 	comments: Schema.Array(
 		Schema.Struct({
 			commentId: Schema.NullOr(Schema.String),
@@ -299,7 +306,12 @@ export const PullRequestReviewPublication = Schema.Struct({
 	 */
 	approval: Schema.optionalKey(
 		Schema.Union([
-			Schema.Struct({ action: Schema.Literal("approve"), body: Schema.String }),
+			Schema.Struct({
+				action: Schema.Literal("approve"),
+				body: Schema.String,
+				/** The base commit the review read the diff against. Absent, the base is not known. */
+				baseSha: Schema.optionalKey(GitCommitSha),
+			}),
 			Schema.Struct({ action: Schema.Literal("withdraw"), reason: Schema.String }),
 		]),
 	),
@@ -316,7 +328,10 @@ export const PullRequestApprovalOutcome = Schema.Literals([
 	"not_open",
 	"draft",
 	"head_moved",
+	"base_moved",
+	"base_not_default",
 	"untrusted_author",
+	"too_many_reviews",
 	"unsupported",
 ])
 export type PullRequestApprovalOutcome = Schema.Schema.Type<typeof PullRequestApprovalOutcome>
@@ -551,6 +566,8 @@ export const PullRequestEventJob = Schema.Struct({
 	draft: Schema.optionalKey(Schema.Boolean),
 	/** The head repository, which differs from `repoFullName` on a fork's pull request. */
 	headRepoFullName: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	/** On `edited`: whether the edit moved the pull request to another base branch. */
+	baseChanged: Schema.optionalKey(Schema.Boolean),
 	/**
 	 * Set on the copy the review trigger re-enqueues with a delay, to start a review once a burst
 	 * of pushes settles. Every other reader of pull request events ignores that copy.
@@ -744,7 +761,23 @@ export const DependencyScanJob = Schema.Struct({
 })
 export type DependencyScanJob = Schema.Schema.Type<typeof DependencyScanJob>
 
+/**
+ * An audit event a provider webhook carried (an org member added, a repository deleted, the app
+ * installed). The provider maps it; `VcsSyncService` resolves the org and writes it to the audit trail.
+ */
+export const AuditEventJob = Schema.Struct({
+	kind: Schema.Literal("audit-event"),
+	provider: VcsProviderId,
+	externalInstallationId: Schema.String,
+	event: AuditTrailEventSchema,
+	/** How many times the job waited for its installation to be stored (a connect still finishing). */
+	installationWaits: Schema.optionalKey(Schema.Number),
+	deliveryId: Schema.optionalKey(Schema.String),
+})
+export type AuditEventJob = Schema.Schema.Type<typeof AuditEventJob>
+
 export const VcsSyncJob = Schema.Union([
+	AuditEventJob,
 	InstallationSyncJob,
 	SyncCommitsJob,
 	PushJob,

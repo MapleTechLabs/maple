@@ -4,6 +4,9 @@ import { StatusPageThemeAppearance, StatusPageThemePreset } from "@maple/domain/
 import { Schema } from "effect"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
+import * as Combobox from "@maple/views/ui/combobox"
+import * as Dialog from "@maple/views/ui/dialog"
+import { ComponentForm } from "../shared/form"
 import { Picker } from "../shared/picker"
 import { PreviewHistory, PreviewScheme } from "../shared/preview"
 
@@ -14,19 +17,33 @@ import { PreviewHistory, PreviewScheme } from "../shared/preview"
 export const SubmitMode = Schema.Literals(["publish", "draft"])
 export type SubmitMode = typeof SubmitMode.Type
 
+/** A component the page will have: its key (for the list and the drag) and its fields. */
+export const DraftRow = Schema.Struct({ key: Schema.String, form: ComponentForm })
+export type DraftRow = typeof DraftRow.Type
+
 export const Model = Schema.Struct({
 	nowMs: Schema.NullOr(Schema.Number),
 	grants: Schema.Array(Policy.PermissionName),
 	isSessionLoaded: Schema.Boolean,
 	monitors: KeyedSchema(Schema.Array(V2UptimeMonitor), LoadFailure),
-	/** The checklist is seeded from the first monitors read, then belongs to the user. */
+	/** The list is seeded from the first monitors read, then belongs to the user. */
 	isSeeded: Schema.Boolean,
 	name: Schema.String,
 	slug: Schema.String,
+	/** An optional custom domain (`status.acme.com`), set right after the page is created. */
+	customDomain: Schema.String,
 	/** The user typed an address; until then it follows the name. */
 	isSlugEdited: Schema.Boolean,
 	isNameTouched: Schema.Boolean,
-	picker: Picker,
+	/** The page's components, in the order they were added or moved. */
+	rows: Schema.Array(DraftRow),
+	nextKey: Schema.Number,
+	/** The row opened in place, its fields under it. */
+	openKey: Schema.NullOr(Schema.String),
+	groupPicker: Combobox.Model,
+	/** Add components: the monitors not on the page yet, a URL to monitor, a component by hand. */
+	addSheet: Dialog.Model,
+	addPicker: Picker,
 	preset: StatusPageThemePreset,
 	appearance: StatusPageThemeAppearance,
 	previewScheme: PreviewScheme,

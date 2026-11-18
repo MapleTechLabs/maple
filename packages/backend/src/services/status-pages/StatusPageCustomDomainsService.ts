@@ -23,18 +23,24 @@ import type { OrgId, StatusPageCustomDomainStatus, StatusPageId } from "@maple/p
 import { Clock, Context, Effect, Layer, Option, Array as Arr } from "effect"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import { DnsTxtResolver } from "@maple/backend/platform/DnsTxtResolver"
 import { postgresSqlState } from "@maple/backend/platform/postgres-errors"
 import {
 	CloudflareCustomHostnames,
 	type CustomHostnameState,
 	type CustomHostnamesError,
 } from "./CloudflareCustomHostnames"
+import {
+	customDomainOwnershipRecord,
+	fitsOwnershipRecord,
+	type CustomDomainClaim,
+} from "./custom-domain-ownership"
 import { bumpPage, queueCustomDomainRemoval } from "./outbox"
 
-// A status page's custom domain through its Cloudflare for SaaS lifecycle: added (row first,
-// Cloudflare second, so an outage only delays it), polled by the alerting tick or "Check now"
-// until active, then routed by the publisher. Removing or replacing it queues the old one's
-// teardown on the cleanup queue the publisher drains.
+// A status page's custom domain through its Cloudflare for SaaS lifecycle: added as a row that
+// waits for its ownership TXT record, created at Cloudflare once that record is found, polled by
+// the alerting tick or "Check now" until active, then routed by the publisher. Removing or
+// replacing it queues the old one's teardown on the cleanup queue the publisher drains.
 
 /** Domains one poll checks at most; the rest wait for the next minute. */
 export const CUSTOM_DOMAIN_POLL_BATCH = 20
@@ -45,10 +51,7 @@ const FRESH_INTERVAL_MS = 60_000
 const PENDING_INTERVAL_MS = 10 * 60_000
 /** Active and failed domains are re-checked a few times a day, to notice a moved or expired one. */
 const SETTLED_INTERVAL_MS = 6 * 60 * 60_000
-/**
- * A domain that never went live is dropped after a week, so a claim nobody verified cannot hold a
- * hostname from its owner.
- */
+/** A domain that never went live is dropped after a week, so stale claims do not pile up. */
 const CLAIM_EXPIRES_MS = 7 * 24 * 60 * 60_000
 const POLL_CONCURRENCY = 4
 
@@ -151,6 +154,23 @@ export interface CustomDomainProgress {
 	readonly error: string | null
 }
 
+/** Where a check leaves a domain: its progress and the Cloudflare pieces it holds. */
+interface CheckedDomain extends CustomDomainProgress {
+	readonly hostnameId: string | null
+	readonly routeId: string | null
+}
+
+/**
+ * True for a claim that has to prove ownership before anything is created for it: nothing at
+ * Cloudflare yet and never live. A domain already there was added before the rule and is left alone.
+ */
+const awaitsOwnership = (domain: Pick<StatusPageCustomDomainRow, "cloudflareHostnameId" | "status">) =>
+	domain.cloudflareHostnameId === null && domain.status !== "active"
+
+const OWNERSHIP_NOT_FOUND =
+	"Maple did not find the ownership TXT record yet. DNS changes can take a few minutes to appear."
+const OWNERSHIP_LOOKUP_FAILED = "Maple could not look up the ownership TXT record. It tries again shortly."
+
 /** The CNAME every domain needs: the hostname, pointing at Maple's custom domain target. */
 const routingRecord = (hostname: string, cnameTarget: string): StatusPageCustomDomainDnsRecord => ({
 	type: "CNAME",
@@ -226,6 +246,7 @@ export class StatusPageCustomDomainsService extends Context.Service<
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const cloudflare = yield* CloudflareCustomHostnames
+		const dns = yield* DnsTxtResolver
 		const dbExecute = makeDbExecute(database, "StatusPageCustomDomainsService", toPersistenceError)
 		const cnameTarget = Option.getOrNull(cloudflare.cnameTarget)
 
@@ -263,7 +284,9 @@ export class StatusPageCustomDomainsService extends Context.Service<
 			Effect.gen(function* () {
 				// The publisher takes it down at Cloudflare and at the edge on its next sweep.
 				yield* queueCustomDomainRemoval(db, domain.orgId, domain.pageId, domain)
-				yield* db.run(PG.deleteFrom(StatusPageCustomDomains).where(($) => [$.pageId.eq(domain.pageId)]))
+				yield* db.run(
+					PG.deleteFrom(StatusPageCustomDomains).where(($) => [$.pageId.eq(domain.pageId)]),
+				)
 				if (domain.status === "active") yield* bumpPage(db, domain.orgId, domain.pageId)
 			})
 
@@ -281,8 +304,34 @@ export class StatusPageCustomDomainsService extends Context.Service<
 			dbExecute((db) => findPage(db, orgId, pageId).pipe(Effect.andThen(readDomain(db, pageId))))
 
 		/**
-		 * Takes over the Cloudflare hostname and route of a removal of this same hostname still queued,
-		 * so removing a domain and adding it back does not race its own teardown.
+		 * Whether the claim's ownership record is published. A failed lookup is not a proof: it is
+		 * reported as the reason, and the next check asks again.
+		 */
+		const lookUpOwnership = (claim: CustomDomainClaim) => {
+			const record = customDomainOwnershipRecord(claim)
+			return dns.lookupTxt(record.name).pipe(
+				Effect.map((values) =>
+					Arr.contains(values, record.value)
+						? { record, proven: true, error: null }
+						: { record, proven: false, error: OWNERSHIP_NOT_FOUND },
+				),
+				Effect.catchTag("@maple/backend/platform/DnsLookupError", (error) =>
+					Effect.logWarning("Custom domain ownership lookup failed").pipe(
+						Effect.annotateLogs({
+							"maple.status_page.id": claim.pageId,
+							"error.type": error._tag,
+							"error.message": error.message,
+						}),
+						Effect.as({ record, proven: false, error: OWNERSHIP_LOOKUP_FAILED }),
+					),
+				),
+			)
+		}
+
+		/**
+		 * Takes over the Cloudflare hostname and route of this organization's own removal of this
+		 * hostname still queued, so removing a domain and adding it back does not race its own
+		 * teardown. Another organization's queued removal is never taken over.
 		 */
 		const adoptQueued = (row: StatusPageCustomDomainRow) =>
 			dbExecute((db) =>
@@ -296,6 +345,7 @@ export class StatusPageCustomDomainsService extends Context.Service<
 									cloudflareRouteId: $.cloudflareRouteId,
 								}))
 								.where(($) => [
+									$.orgId.eq(row.orgId),
 									$.hostname.eq(row.hostname),
 									$.cloudflareHostnameId.isNotNull(),
 								])
@@ -323,13 +373,15 @@ export class StatusPageCustomDomainsService extends Context.Service<
 			)
 
 		/**
-		 * Creates what is missing at Cloudflare, reads the hostname (asking it to validate again when
-		 * `revalidate`), and records where the domain stands. A Cloudflare failure is recorded on the
-		 * row as its last error, never raised: the next check tries again.
+		 * Looks for the ownership record of a claim with nothing at Cloudflare yet (unless
+		 * `ownershipProven` says it was just found), then creates what is missing at Cloudflare, reads
+		 * the hostname (asking it to validate again when `revalidate`), and records where the domain
+		 * stands. A Cloudflare failure is recorded on the row as its last error, never raised: the next
+		 * check tries again.
 		 */
 		const refresh = Effect.fn("StatusPageCustomDomainsService.refresh")(function* (
 			row: StatusPageCustomDomainRow,
-			options: { readonly revalidate: boolean },
+			options: { readonly revalidate: boolean; readonly ownershipProven?: boolean },
 		) {
 			yield* Effect.annotateCurrentSpan({ "maple.status_page.id": row.pageId })
 			const nowMs = yield* Clock.currentTimeMillis
@@ -367,7 +419,27 @@ export class StatusPageCustomDomainsService extends Context.Service<
 						error: "Maple could not reach Cloudflare to check this domain. It tries again shortly.",
 					}),
 				)
+			// Nothing is created at Cloudflare for a claim until its ownership record is published.
+			const proof =
+				awaitsOwnership(current) && options.ownershipProven !== true
+					? yield* lookUpOwnership(current)
+					: null
+			const unproven: CheckedDomain | null =
+				proof === null || proof.proven
+					? null
+					: {
+							hostnameId: null,
+							routeId: current.cloudflareRouteId,
+							status: "pending_dns",
+							dnsRecords: [routingRecord(current.hostname, target), proof.record],
+							// A claim just added has had no time to publish the record: nothing to report yet.
+							error:
+								current.lastCheckedAt === null && proof.error === OWNERSHIP_NOT_FOUND
+									? null
+									: proof.error,
+						}
 			const progress = yield* Effect.gen(function* () {
+				if (unproven !== null) return unproven
 				let hostnameId = current.cloudflareHostnameId
 				let routeId = current.cloudflareRouteId
 				let state: CustomHostnameState | null = null
@@ -537,65 +609,86 @@ export class StatusPageCustomDomainsService extends Context.Service<
 			const hostname = normalizeCustomDomain(raw)
 			const issue = customDomainIssue(hostname)
 			if (issue !== null) return yield* new StatusPageValidationError({ message: issue })
+			if (!fitsOwnershipRecord(hostname))
+				return yield* new StatusPageValidationError({
+					message: "This hostname is too long to verify. Use a shorter one.",
+				})
 			yield* Effect.annotateCurrentSpan({ "maple.status_page.custom_domain": hostname })
 			const nowMs = yield* Clock.currentTimeMillis
+			const ownership = customDomainOwnershipRecord({ orgId, pageId, hostname })
 			const taken = () =>
 				new StatusPageCustomDomainTakenError({
 					hostname,
-					message: `${hostname} is already used by another status page`,
+					message: `${hostname} is already used by another status page.`,
 				})
-			const inserted = yield* makeDbExecute(
-				database,
-				"StatusPageCustomDomainsService",
-				(error: DatabaseError) =>
+			/**
+			 * Claims the hostname for the page. One held by a claim that never proved ownership is
+			 * `contested`: it gives way only when `ownershipProven` says this page's record is published.
+			 */
+			const claim = (ownershipProven: boolean) =>
+				makeDbExecute(database, "StatusPageCustomDomainsService", (error: DatabaseError) =>
 					postgresSqlState(error) === "23505" ? taken() : toPersistenceError(error),
-			)((db) =>
-				db.transaction(
-					Effect.gen(function* () {
-						const page = yield* findPage(db, orgId, pageId)
-						// Locked with the page, so it cannot go internal while the domain is added.
-						if (page.visibility === "internal")
-							return yield* new StatusPageValidationError({
-								message:
-									"An internal page is served on no address, so it cannot have a custom domain. Make it public or password-protected first.",
-							})
-						const existing = yield* readDomain(db, pageId)
-						if (existing?.hostname === hostname) return null
-						const [owner] = yield* db.run(
-							PG.from(StatusPageCustomDomains)
-								.select(($) => ({ pageId: $.pageId }))
-								.where(($) => [$.hostname.eq(hostname)])
-								.limit(1),
-						)
-						if (owner !== undefined) return yield* taken()
-						if (existing !== null) yield* dropDomain(db, existing)
-						const [row] = yield* db.run(
-							PG.insertInto(StatusPageCustomDomains)
-								.values({
-									pageId,
-									orgId,
-									hostname,
-									status: "pending_dns",
-									cloudflareHostnameId: null,
-									cloudflareRouteId: null,
-									dnsRecords: [routingRecord(hostname, cnameTarget)],
-									lastError: null,
-									lastCheckedAt: null,
-									activatedAt: null,
-									createdAt: nowMs,
-									updatedAt: nowMs,
+				)((db) =>
+					db.transaction(
+						Effect.gen(function* () {
+							const page = yield* findPage(db, orgId, pageId)
+							// Locked with the page, so it cannot go internal while the domain is added.
+							if (page.visibility === "internal")
+								return yield* new StatusPageValidationError({
+									message:
+										"An internal page is served on no address, so it cannot have a custom domain. Make it public or password-protected first.",
 								})
-								.returning(),
-						)
-						return row ?? null
-					}),
-				),
-			)
+							const existing = yield* readDomain(db, pageId)
+							if (existing?.hostname === hostname) return { contested: false, row: null }
+							const [holder] = yield* db.run(
+								PG.from(StatusPageCustomDomains)
+									.select()
+									.where(($) => [$.hostname.eq(hostname)])
+									.limit(1)
+									.forUpdate(),
+							)
+							if (holder !== undefined) {
+								if (!awaitsOwnership(holder)) return yield* taken()
+								if (!ownershipProven) return { contested: true, row: null }
+								yield* dropDomain(db, holder)
+							}
+							if (existing !== null) yield* dropDomain(db, existing)
+							const [row] = yield* db.run(
+								PG.insertInto(StatusPageCustomDomains)
+									.values({
+										pageId,
+										orgId,
+										hostname,
+										status: "pending_dns",
+										cloudflareHostnameId: null,
+										cloudflareRouteId: null,
+										dnsRecords: [routingRecord(hostname, cnameTarget), ownership],
+										lastError: null,
+										lastCheckedAt: null,
+										activatedAt: null,
+										createdAt: nowMs,
+										updatedAt: nowMs,
+									})
+									.returning(),
+							)
+							return { contested: false, row: row ?? null }
+						}),
+					),
+				)
+			const first = yield* claim(false)
+			// The lookup runs between the two transactions, so no row stays locked while DNS answers.
+			const proven = first.contested && (yield* lookUpOwnership({ orgId, pageId, hostname })).proven
+			if (first.contested && !proven)
+				return yield* new StatusPageCustomDomainTakenError({
+					hostname,
+					message: `${hostname} is held by another status page that has not proved it owns the domain. To claim it, add a TXT record named ${ownership.name} with the value ${ownership.value} at your DNS provider, then add the domain again.`,
+				})
+			const { row: inserted } = first.contested ? yield* claim(true) : first
 			if (inserted === null) {
 				const current = yield* load(orgId, pageId)
 				return view(pageId, current)
 			}
-			const refreshed = yield* refresh(inserted, { revalidate: false })
+			const refreshed = yield* refresh(inserted, { revalidate: false, ownershipProven: proven })
 			return view(pageId, refreshed.row ?? (yield* load(orgId, pageId)))
 		})
 
@@ -707,7 +800,9 @@ export class StatusPageCustomDomainsService extends Context.Service<
 		return { get, set, remove, check, poll } satisfies StatusPageCustomDomainsServiceApi
 	}),
 }) {
-	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(CloudflareCustomHostnames.layer))
+	static readonly layer = Layer.effect(this, this.make).pipe(
+		Layer.provide(Layer.mergeAll(CloudflareCustomHostnames.layer, DnsTxtResolver.layer)),
+	)
 }
 
 export type { CustomHostnamesError }

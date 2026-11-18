@@ -18,6 +18,9 @@ export const AUTHORIZE_URL = "https://slack.com/oauth/v2/authorize"
 
 export const TOKEN_URL = `${API_BASE}/oauth.v2.access`
 
+/** Revokes the token it is called with. Takes no arguments beyond the `Authorization` header. */
+export const AUTH_REVOKE_URL = `${API_BASE}/auth.revoke`
+
 export const POST_MESSAGE_URL = `${API_BASE}/chat.postMessage`
 
 export const POST_EPHEMERAL_URL = `${API_BASE}/chat.postEphemeral`

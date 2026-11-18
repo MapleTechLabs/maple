@@ -15,6 +15,7 @@ import { Effect, Layer, Option } from "effect"
 import {
 	ApiV2RateLimit,
 	AuditEventsQueueProducer,
+	AwsEventsRateLimit,
 	CancellationReviewQueueProducer,
 	CliAuthRateLimit,
 	DataSourceDevelopmentCallLimit,
@@ -44,6 +45,10 @@ import {
 	API_V2_RATE_LIMIT_PERIOD_SECONDS,
 	API_V2_RATE_LIMIT_REQUESTS,
 } from "@maple/backend/services/auth/ApiV2RateLimiter"
+import {
+	AWS_EVENTS_RATE_LIMIT_PERIOD_SECONDS,
+	AWS_EVENTS_RATE_LIMIT_REQUESTS,
+} from "@maple/backend/services/cloud-security/AwsEventsRateLimiter"
 import {
 	SHARE_LINK_RATE_LIMIT_PERIOD_SECONDS,
 	SHARE_LINK_RATE_LIMIT_REQUESTS,
@@ -88,6 +93,11 @@ export const bindApiClients = Effect.gen(function* () {
 		mcpOAuthRateLimit: yield* Cloudflare.RateLimit("MCP_OAUTH_RATE_LIMITER", {
 			namespaceId: 2026072102,
 			simple: { limit: 60, period: 60 },
+		}),
+		// One AWS connection's finding events, keyed by connection id.
+		awsEventsRateLimit: yield* Cloudflare.RateLimit("AWS_EVENTS_RATE_LIMITER", {
+			namespaceId: 2026111701,
+			simple: { limit: AWS_EVENTS_RATE_LIMIT_REQUESTS, period: AWS_EVENTS_RATE_LIMIT_PERIOD_SECONDS },
 		}),
 		// Maple's share of each connected Clerk instance's API limit, keyed by data source id.
 		// Shared by every worker that queries sources, so the namespace ids must match across them.
@@ -183,6 +193,7 @@ export const apiPorts = (
 		Layer.succeed(ShareLinkRateLimit, limiter(clients.shareLinkRateLimit)),
 		Layer.succeed(CliAuthRateLimit, limiter(clients.cliAuthRateLimit)),
 		Layer.succeed(McpOAuthRateLimit, limiter(clients.mcpOAuthRateLimit)),
+		Layer.succeed(AwsEventsRateLimit, limiter(clients.awsEventsRateLimit)),
 		Layer.succeed(DataSourceProductionCallLimit, limiter(clients.dataSourceProductionCallLimit)),
 		Layer.succeed(DataSourceDevelopmentCallLimit, limiter(clients.dataSourceDevelopmentCallLimit)),
 		Layer.succeed(ReplayBlobBucket, objectStore(clients.replayBlobs)),

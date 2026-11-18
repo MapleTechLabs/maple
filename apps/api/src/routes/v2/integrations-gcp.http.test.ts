@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema, Record as Rec } from "effect"
+import {
+	Array as Arr,
+	ConfigProvider,
+	Context,
+	Effect,
+	Layer,
+	ManagedRuntime,
+	Schema,
+	Record as Rec,
+} from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
@@ -8,7 +17,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
-import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import { AuditLogService, makeMemoryAuditLog } from "@maple/backend/services/audit/AuditLogService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
@@ -52,6 +61,7 @@ const testConfig = (metricsAvailable: boolean) =>
 
 const makeHarness = (options: { readonly metricsAvailable: boolean } = { metricsAvailable: true }) => {
 	const testDb = createTestDb(createdDbs)
+	const auditLog = makeMemoryAuditLog()
 	const envLive = Env.layer.pipe(Layer.provide(testConfig(options.metricsAvailable)))
 	const servicesLive = Layer.mergeAll(
 		ApiKeysService.layer,
@@ -66,7 +76,7 @@ const makeHarness = (options: { readonly metricsAvailable: boolean } = { metrics
 		Layer.provide(HttpV2GcpIntegrationsLive.pipe(Layer.provide(GcpConnectorService.layer))),
 		Layer.provide(V2TransportErrorBoundaryLive),
 		Layer.provideMerge(ApiAuthorizationV2Live),
-		Layer.provideMerge(AuditLogService.layerMemory),
+		Layer.provideMerge(Layer.succeed(AuditLogService, auditLog)),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
 		Layer.provideMerge(servicesLive),
 	)
@@ -109,8 +119,15 @@ const makeHarness = (options: { readonly metricsAvailable: boolean } = { metrics
 		return { status: response.status, body: text.length === 0 ? null : JSON.parse(text) }
 	}
 
+	/** The org's audit entries for one action. */
+	const audited = (action: string) =>
+		Effect.runPromise(auditLog.list(ORG, { action, limit: 50, offset: 0 })).then((entries) =>
+			Arr.map(entries, (entry) => ({ resourceId: entry.resourceId, metadata: entry.metadata })),
+		)
+
 	return {
 		request,
+		audited,
 		adminKey,
 		memberKey,
 		testDb,
@@ -349,6 +366,25 @@ describe("v2 gcp integration over HTTP", () => {
 		expect(status.status).toBe(200)
 		expect(status.body.connectors).toEqual([created.body])
 		expect(JSON.stringify(status.body)).not.toContain("maple_gcp_")
+		await harness.dispose()
+	})
+
+	it("records each render of the setup scripts, without the push secret", async () => {
+		const harness = makeHarness()
+		const admin = await harness.adminKey()
+		const member = await harness.memberKey()
+		const created = await harness.request("POST", CONNECTORS, admin.secret, projectConnector)
+		const path = `${CONNECTORS}/${created.body.id}/setup_scripts`
+
+		const rendered = await harness.request("POST", path, admin.secret, {})
+		expect(rendered.status).toBe(200)
+		expect(rendered.body.setup_script).toContain("?secret=maple_gcp_")
+		// A refused render hands nothing out, so it leaves no entry.
+		expect((await harness.request("POST", path, member.secret, {})).status).toBe(403)
+
+		const reads = await harness.audited("gcp_connector.push_secret_read")
+		expect(Arr.map(reads, (entry) => entry.resourceId)).toEqual([created.body.id])
+		expect(JSON.stringify(reads)).not.toContain("maple_gcp_")
 		await harness.dispose()
 	})
 

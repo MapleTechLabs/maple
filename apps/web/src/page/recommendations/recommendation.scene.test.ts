@@ -67,7 +67,7 @@ describe("recommendation detail", () => {
 			expectView(text("Recommendation not found")).toExist(),
 			expectView(role("link", { name: "Back to recommendations" })).toHaveAttr(
 				"href",
-				"/settings?tab=ingestion",
+				"/settings/ingestion",
 			),
 		)
 	})

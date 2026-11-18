@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
+import { Array as Arr, ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import {
@@ -22,7 +22,7 @@ import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
-import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import { AuditLogService, makeMemoryAuditLog } from "@maple/backend/services/audit/AuditLogService"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import {
 	PLANETSCALE_CALLBACK_PATH,
@@ -130,6 +130,7 @@ const planetscaleServiceLayer = (fakes: PlanetScaleFakes) =>
 
 const makeHarness = (planetscale: PlanetScaleFakes = {}) => {
 	const testDb = createTestDb(createdDbs)
+	const auditLog = makeMemoryAuditLog()
 	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
 	const servicesLive = Layer.mergeAll(
 		ApiKeysService.layer,
@@ -145,7 +146,7 @@ const makeHarness = (planetscale: PlanetScaleFakes = {}) => {
 		Layer.provide(V2TransportErrorBoundaryLive),
 		Layer.provide(planetscaleServiceLayer(planetscale)),
 		Layer.provideMerge(ApiAuthorizationV2Live),
-		Layer.provideMerge(AuditLogService.layerMemory),
+		Layer.provideMerge(Layer.succeed(AuditLogService, auditLog)),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
 		Layer.provideMerge(servicesLive),
 	)
@@ -202,9 +203,24 @@ const makeHarness = (planetscale: PlanetScaleFakes = {}) => {
 		return { status: response.status, body: text.length === 0 ? null : JSON.parse(text) }
 	}
 
+	/** A signed-in person: the self-hosted root session, in the deployment's default org. */
+	const bootstrapSession = () =>
+		runtime.runPromise(
+			Effect.gen(function* () {
+				const service = yield* AuthService
+				return (yield* service.loginSelfHosted("test-root-password")).token
+			}),
+		)
+
+	/** One org's audit entries for one action: the keys' org unless another is named. */
+	const audited = (action: string, orgId: OrgId = ORG) =>
+		Effect.runPromise(auditLog.list(orgId, { action, limit: 50, offset: 0 }))
+
 	return {
 		bootstrapAdminKey,
 		bootstrapMemberKey,
+		bootstrapSession,
+		audited,
 		request,
 		ORG,
 		dispose: async () => {
@@ -550,9 +566,9 @@ describe("v2 planetscale integration over HTTP", () => {
 
 	it("fails a connect closed with 503 when the request origin is not trusted", async () => {
 		const harness = makeHarness({})
-		const key = await harness.bootstrapAdminKey()
+		const session = await harness.bootstrapSession()
 
-		const { status } = await harness.request("POST", "/v2/integrations/planetscale/connect", key.secret, {
+		const { status } = await harness.request("POST", "/v2/integrations/planetscale/connect", session, {
 			forwardedHost: "evil.example.com",
 			body: {},
 		})
@@ -574,12 +590,12 @@ describe("v2 planetscale integration over HTTP", () => {
 				},
 			},
 		})
-		const key = await harness.bootstrapAdminKey()
+		const session = await harness.bootstrapSession()
 
 		const { status, body } = await harness.request(
 			"POST",
 			"/v2/integrations/planetscale/connect",
-			key.secret,
+			session,
 			{ body: { return_to: "/integrations" } },
 		)
 		expect(status).toBe(200)
@@ -594,12 +610,124 @@ describe("v2 planetscale integration over HTTP", () => {
 
 	it("refuses a connect from a sibling host under the same parent domain", async () => {
 		const harness = makeHarness({})
-		const key = await harness.bootstrapAdminKey()
-		const { status } = await harness.request("POST", "/v2/integrations/planetscale/connect", key.secret, {
+		const session = await harness.bootstrapSession()
+		const { status } = await harness.request("POST", "/v2/integrations/planetscale/connect", session, {
 			forwardedHost: "evil.maple.test",
 			body: {},
 		})
 		expect(status).toBe(503)
+		await harness.dispose()
+	})
+
+	it("begins a connect for a signed-in person only, never for an API key", async () => {
+		const started: Array<string> = []
+		const harness = makeHarness({
+			oauth: {
+				startConnect: (_orgId, userId) => {
+					started.push(userId)
+					return Effect.succeed({
+						redirectUrl: "https://app.planetscale.com/oauth/authorize?state=abc",
+						state: "abc",
+					})
+				},
+			},
+		})
+		const path = "/v2/integrations/planetscale/connect"
+
+		// Unscoped and write-scoped alike: the connection would be bound to whoever made the key.
+		const keys = [
+			await harness.bootstrapAdminKey(),
+			await harness.bootstrapAdminKey(["integrations:write"]),
+		]
+		const refusals = await Promise.all(
+			Arr.map(keys, (key) => harness.request("POST", path, key.secret, { body: {} })),
+		)
+		expect(Arr.map(refusals, (refused) => [refused.status, refused.body.error.code])).toEqual([
+			[403, "insufficient_permissions"],
+			[403, "insufficient_permissions"],
+		])
+		expect(started).toEqual([])
+		expect(await harness.audited("planetscale_integration.connect_started")).toEqual([])
+
+		const session = await harness.bootstrapSession()
+		const begun = await harness.request("POST", path, session, { body: {} })
+		expect(begun.status).toBe(200)
+		expect(started).toHaveLength(1)
+		await harness.dispose()
+	})
+
+	it("hands the webhook secret to a write-scoped key only, and records the read without it", async () => {
+		const harness = makeHarness({
+			connection: {
+				webhookConfig: () =>
+					Effect.succeed({
+						configured: true,
+						path: "/api/integrations/planetscale/webhook/abc",
+						secret: "whsec_route_test",
+					}),
+			},
+		})
+		const path = "/v2/integrations/planetscale/webhook_config"
+
+		const reader = await harness.bootstrapAdminKey(["integrations:read"])
+		const refused = await harness.request("GET", path, reader.secret)
+		expect([refused.status, refused.body.error.code]).toEqual([403, "insufficient_scope"])
+		expect(refused.body.error.message).toContain('"integrations:write"')
+		expect(JSON.stringify(refused.body)).not.toContain("whsec_route_test")
+		expect(await harness.audited("planetscale_integration.webhook_secret_read")).toEqual([])
+		// The refusal is recorded like every other scope refusal, against the key that tried.
+		const denied = await harness.audited("api.request")
+		expect(Arr.map(denied, (entry) => [entry.outcome, entry.apiKeyId, entry.metadata])).toEqual([
+			["denied", reader.id, { method: "GET", path }],
+		])
+
+		const writer = await harness.bootstrapAdminKey(["integrations:write"])
+		const read = await harness.request("GET", path, writer.secret)
+		expect(read.status).toBe(200)
+		expect(read.body.secret).toBe("whsec_route_test")
+		const entries = await harness.audited("planetscale_integration.webhook_secret_read")
+		expect(Arr.map(entries, (entry) => entry.apiKeyId)).toEqual([writer.id])
+		expect(JSON.stringify(entries)).not.toContain("whsec_route_test")
+		await harness.dispose()
+	})
+
+	it("hands the webhook secret to a signed-in manager, recorded against the person", async () => {
+		const harness = makeHarness({
+			connection: {
+				webhookConfig: () =>
+					Effect.succeed({
+						configured: true,
+						path: "/api/integrations/planetscale/webhook/abc",
+						secret: "whsec_route_test",
+					}),
+			},
+		})
+		const session = await harness.bootstrapSession()
+		const read = await harness.request("GET", "/v2/integrations/planetscale/webhook_config", session)
+		expect([read.status, read.body.secret]).toEqual([200, "whsec_route_test"])
+
+		// A self-hosted session lives in the deployment's default org.
+		const entries = await harness.audited(
+			"planetscale_integration.webhook_secret_read",
+			Schema.decodeSync(OrgId)("default"),
+		)
+		expect(Arr.map(entries, (entry) => [entry.actorType, entry.apiKeyId, entry.outcome])).toEqual([
+			["user", null, "allowed"],
+		])
+		expect(JSON.stringify(entries)).not.toContain("whsec_route_test")
+		await harness.dispose()
+	})
+
+	it("records no secret read for an org that has no webhook secret", async () => {
+		const harness = makeHarness({
+			connection: {
+				webhookConfig: () => Effect.succeed({ configured: false, path: null, secret: null }),
+			},
+		})
+		const key = await harness.bootstrapAdminKey()
+		const read = await harness.request("GET", "/v2/integrations/planetscale/webhook_config", key.secret)
+		expect([read.status, read.body.secret]).toEqual([200, null])
+		expect(await harness.audited("planetscale_integration.webhook_secret_read")).toEqual([])
 		await harness.dispose()
 	})
 

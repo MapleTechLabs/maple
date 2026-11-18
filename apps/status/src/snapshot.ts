@@ -3,7 +3,9 @@ import {
 	decodeStatusPageHeartbeatJson,
 	decodeStatusPageOverlayEntryJson,
 	decodeStatusPageSnapshotJson,
+	isStatusPageTombstone,
 	pageFreshness,
+	STATUS_PAGE_TOMBSTONE,
 	STATUS_PAGE_OVERLAY_MAX_ENTRIES,
 	type StatusPageFreshness,
 	StatusPageKeys,
@@ -27,14 +29,19 @@ const LIST_LAG_MS = 120_000
 export const cacheKey = (kind: "host" | "slug" | "snapshot" | "overlay", id: string): string =>
 	`https://status-cache.invalid/${kind}/${encodeURIComponent(id)}`
 
-/** `unavailable`: KV and the fallback both errored, so a miss cannot be told apart from an outage. */
+/**
+ * `gone`: the publisher left a tombstone, so the key was taken off the edge for certain.
+ * `unavailable`: KV and the fallback both errored, so a miss cannot be told apart from an outage.
+ */
 export type Lookup<A> =
 	| { readonly _tag: "found"; readonly value: A }
 	| { readonly _tag: "missing" }
+	| { readonly _tag: "gone" }
 	| { readonly _tag: "unavailable" }
 
 const found = <A>(value: A): Lookup<A> => ({ _tag: "found", value })
 const MISSING = { _tag: "missing" } as const
+const GONE = { _tag: "gone" } as const
 const UNAVAILABLE = { _tag: "unavailable" } as const
 
 interface Found<A> {
@@ -54,7 +61,8 @@ const KV_MISS = "missing"
 /**
  * Cache (fresh) -> KV -> R2 -> cache (any age). An undecodable value is a miss, and a value read
  * from KV or R2 refreshes the cache. With `kvMissIsFinal`, a KV `null` ends the search, and with
- * `rememberMiss` that answer is cached for as long as a hit is.
+ * `rememberMiss` that answer is cached for as long as a hit is. A tombstone in R2 ends the search
+ * as `gone` and replaces the cached copy, so no older copy is served in its place.
  */
 const readThrough = <A>(
 	env: StatusEnv,
@@ -94,10 +102,18 @@ const readThrough = <A>(
 		}
 
 		const r2 = input.r2Key === null ? null : yield* Effect.result(storage.r2Get(input.r2Key))
-		const fromR2 =
-			r2 !== null && Result.isSuccess(r2) ? decodeFound(r2.success, input.decode) : Option.none()
+		const r2Raw = r2 !== null && Result.isSuccess(r2) ? r2.success : null
+		if (r2Raw !== null && isStatusPageTombstone(r2Raw)) {
+			// Kept in the cache too, so the old copy cannot come back if R2 fails as well later.
+			yield* storage
+				.cachePut(input.cacheKey, { value: STATUS_PAGE_TOMBSTONE, storedAt: env.nowMs })
+				.pipe(Effect.ignore)
+			return GONE
+		}
+		const fromR2 = decodeFound(r2Raw, input.decode)
 		if (Option.isSome(fromR2)) return yield* remember(fromR2.value)
 		if (Option.isSome(fromCache)) return found(fromCache.value.value)
+		if (cached !== null && isStatusPageTombstone(cached.value)) return GONE
 		const r2Failed = r2 === null || Result.isFailure(r2)
 		return Result.isFailure(kv) && r2Failed ? UNAVAILABLE : MISSING
 	})
@@ -132,11 +148,8 @@ export const pageIdForSlug = (env: StatusEnv, slug: string): Effect.Effect<Looku
 		decode: decodePageId,
 	})
 
-/** The page's last published snapshot, from wherever is still answering. */
-export const loadSnapshot = (
-	env: StatusEnv,
-	pageId: string,
-): Effect.Effect<Option.Option<StatusPageSnapshot>> =>
+/** The page's last published snapshot, from wherever is still answering; `gone` once it was taken down. */
+export const loadSnapshot = (env: StatusEnv, pageId: string): Effect.Effect<Lookup<StatusPageSnapshot>> =>
 	readThrough(env, {
 		cacheKey: cacheKey("snapshot", pageId),
 		kvKey: StatusPageKeys.snapshot(pageId),
@@ -144,7 +157,7 @@ export const loadSnapshot = (
 		kvMissIsFinal: false,
 		rememberMiss: false,
 		decode: decodeStatusPageSnapshotJson,
-	}).pipe(Effect.map((lookup) => (lookup._tag === "found" ? Option.some(lookup.value) : Option.none())))
+	})
 
 const decodeOverlayJson = Schema.decodeUnknownOption(Schema.fromJsonString(StatusPageOverlay))
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
@@ -256,15 +269,15 @@ export interface PageView {
 }
 
 /** The snapshot as visitors see it: break-glass updates applied, freshness judged. */
-export const loadView = (env: StatusEnv, pageId: string): Effect.Effect<Option.Option<PageView>> =>
+export const loadView = (env: StatusEnv, pageId: string): Effect.Effect<Lookup<PageView>> =>
 	Effect.gen(function* () {
 		const [snapshot, overlay, heartbeat] = yield* Effect.all(
 			[loadSnapshot(env, pageId), loadOverlay(env, pageId), loadHeartbeat(env)],
 			{ concurrency: "unbounded" },
 		)
-		if (Option.isNone(snapshot)) return Option.none()
+		if (snapshot._tag !== "found") return snapshot
 		const merged = applyOverlay(snapshot.value, overlay)
-		return Option.some({
+		return found({
 			snapshot: merged,
 			freshness: pageFreshness({ snapshot: merged, heartbeat, nowMs: env.nowMs }),
 		})

@@ -30,6 +30,9 @@ export interface UptimeCheckStatsInput {
 /** Most checks one window lists, past it the newest are kept: 24 hours at a 30s interval fit. */
 export const UPTIME_CHECK_LIST_LIMIT = 3000
 
+/** Most failed checks one window lists, newest kept. */
+export const UPTIME_FAILED_CHECK_LIST_LIMIT = 100
+
 /** One check from its span, with its phases when it recorded them. */
 export type UptimeCheckSample = UptimeCheck
 
@@ -41,6 +44,11 @@ export interface UptimeCheckStats {
 	readonly samplesTruncated: boolean
 	/** The check list failed; the rest of the stats still stand. */
 	readonly samplesFailed: boolean
+	/** The window's failed checks, newest first, up to `UPTIME_FAILED_CHECK_LIST_LIMIT`; read apart from
+	 * `samples` so a failure older than its newest checks still lists. */
+	readonly failedSamples: ReadonlyArray<UptimeCheckSample>
+	/** The failed-check list failed; the rest of the stats still stand. */
+	readonly failedSamplesFailed: boolean
 	readonly windowStartMs: number
 	readonly windowEndMs: number
 	readonly checks: number
@@ -83,24 +91,28 @@ export const getUptimeCheckStats = Effect.fn("QueryEngine.getUptimeCheckStats")(
 			}),
 		).pipe(Effect.map(breakdownValue))
 
-	const checkList = runWarehouseQuery("queryEngine.uptimeChecks", () =>
-		Effect.gen(function* () {
-			const client = yield* MapleInternalHttp
-			return yield* client.queryEngine.uptimeChecks({
-				payload: new UptimeChecksRequest({
-					monitorId: input.monitorId,
-					...window,
-					limit: UPTIME_CHECK_LIST_LIMIT,
-				}),
-			})
-		}),
-	).pipe(
-		Effect.map((response) => ({ checks: response.checks, failed: false })),
-		// Like the phases, the per-check chart is detail the KPIs must not depend on.
-		Effect.catch((error) =>
-			Effect.as(Effect.logWarning("uptime check list failed", error), { checks: [], failed: true }),
-		),
-	)
+	const listChecks = (context: string, limit: number, failedOnly: boolean) =>
+		runWarehouseQuery(context, () =>
+			Effect.gen(function* () {
+				const client = yield* MapleInternalHttp
+				return yield* client.queryEngine.uptimeChecks({
+					payload: new UptimeChecksRequest({
+						monitorId: input.monitorId,
+						...window,
+						limit,
+						failedOnly,
+					}),
+				})
+			}),
+		).pipe(
+			Effect.map((response) => ({ checks: response.checks, failed: false })),
+			// Like the phases, the check lists are detail the KPIs must not depend on.
+			Effect.catch((error) =>
+				Effect.as(Effect.logWarning(`${context} failed`, error), { checks: [], failed: true }),
+			),
+		)
+	const checkList = listChecks("queryEngine.uptimeChecks", UPTIME_CHECK_LIST_LIMIT, false)
+	const failedList = listChecks("queryEngine.uptimeFailedChecks", UPTIME_FAILED_CHECK_LIST_LIMIT, true)
 
 	const phases =
 		input.withPhases === true
@@ -127,7 +139,7 @@ export const getUptimeCheckStats = Effect.fn("QueryEngine.getUptimeCheckStats")(
 				)
 			: Effect.succeed({ points: [], failed: false })
 
-	const [series, p50Ms, p95Ms, p99Ms, list, phasePoints] = yield* Effect.all(
+	const [series, p50Ms, p95Ms, p99Ms, list, failedChecks, phasePoints] = yield* Effect.all(
 		[
 			executeQueryEngine(
 				"queryEngine.uptimeCheckStats.series",
@@ -147,6 +159,7 @@ export const getUptimeCheckStats = Effect.fn("QueryEngine.getUptimeCheckStats")(
 			percentile("p95_duration"),
 			percentile("p99_duration"),
 			checkList,
+			failedList,
 			phases,
 		],
 		{ concurrency: "unbounded" },
@@ -168,6 +181,8 @@ export const getUptimeCheckStats = Effect.fn("QueryEngine.getUptimeCheckStats")(
 		samples,
 		samplesTruncated: list.checks.length >= UPTIME_CHECK_LIST_LIMIT,
 		samplesFailed: list.failed,
+		failedSamples: failedChecks.checks,
+		failedSamplesFailed: failedChecks.failed,
 		windowStartMs: Date.parse(toIsoBucket(input.startTime)),
 		windowEndMs: Date.parse(toIsoBucket(input.endTime)),
 		checks,

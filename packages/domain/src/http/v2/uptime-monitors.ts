@@ -13,7 +13,16 @@ import {
 	type UptimeAssertion,
 	type UptimeHeartbeatSchedule,
 	type UptimeMonitorConfig,
+	UPTIME_MAX_ASSERTIONS,
+	UPTIME_MAX_BODY_LENGTH,
+	UPTIME_MAX_EXTRACTIONS,
+	UPTIME_MAX_HEADER_NAME_LENGTH,
+	UPTIME_MAX_HEADER_VALUE_LENGTH,
+	UPTIME_MAX_HEADERS,
+	UPTIME_MAX_STEP_NAME_LENGTH,
 	UPTIME_MAX_STEPS,
+	UPTIME_MAX_URL_LENGTH,
+	uptimeHeaderNamesWithin,
 	UptimeStepMethod,
 	UptimeVariableName,
 } from "../../uptime"
@@ -98,27 +107,6 @@ export const V2UptimeAssertion = Schema.Union([
 })
 export type V2UptimeAssertion = Schema.Schema.Type<typeof V2UptimeAssertion>
 
-export const V2UptimeHttpConfig = Schema.Struct({
-	type: Schema.Literal("http"),
-	url: NonEmptyString.annotate({
-		description: "The public http(s) URL to request. Private, loopback and metadata hosts are refused.",
-		examples: ["https://api.example.com/health"],
-	}),
-	method: Schema.optionalKey(
-		UptimeHttpMethod.annotate({ description: "Request method. Defaults to `GET`." }),
-	),
-	headers: Schema.optionalKey(
-		Schema.Record(Schema.String, Schema.String).annotate({ description: "Extra request headers." }),
-	),
-	body: Schema.optionalKey(Schema.String.annotate({ description: "Request body, for `POST`." })),
-	assertions: Schema.optionalKey(
-		Schema.Array(V2UptimeAssertion).annotate({
-			description: "Conditions the response must meet. Defaults to a status of `2xx`.",
-		}),
-	),
-	timeout_ms: timeoutField,
-}).annotate({ identifier: "UptimeHttpConfig", title: "HTTP check" })
-
 export const V2UptimeTcpConfig = Schema.Struct({
 	type: Schema.Literal("tcp"),
 	host: NonEmptyString.annotate({
@@ -160,47 +148,111 @@ export const V2UptimeExtraction = Schema.Struct({
 	]),
 }).annotate({ identifier: "UptimeExtraction", title: "Extracted variable" })
 
-export const V2UptimeStep = Schema.Struct({
-	name: NonEmptyString.annotate({ description: "What the step does.", examples: ["Log in"] }),
-	method: Schema.optionalKey(
-		UptimeStepMethod.annotate({ description: "Request method. Defaults to `GET`." }),
-	),
-	url: NonEmptyString.annotate({
-		description:
-			"The public http(s) URL to request. `{{name}}` inserts a variable an earlier step extracted, here and in headers and the body.",
-		examples: ["https://api.example.com/orders/{{order_id}}"],
-	}),
-	headers: Schema.optionalKey(
-		Schema.Record(Schema.String, Schema.String).annotate({ description: "Extra request headers." }),
-	),
-	body: Schema.optionalKey(Schema.String.annotate({ description: "Request body; not for GET or HEAD." })),
-	assertions: Schema.optionalKey(
-		Schema.Array(V2UptimeAssertion).annotate({
-			description: "Conditions the response must meet. Defaults to a status of `2xx`.",
+/**
+ * The wire schemas of what a check sends. `limited` is what a request body must meet (its size
+ * limits are a 400); without it the same shapes carry a monitor saved before the limits existed.
+ */
+const wireRequestSchemas = (limited: boolean) => {
+	// Request and response shapes differ only in their checks, so each gets its own schema name.
+	const named = (name: string) => (limited ? `${name}Input` : name)
+	const text = (maximum: number) =>
+		limited ? Schema.String.check(Schema.isMaxLength(maximum)) : Schema.String
+	const url = limited ? NonEmptyString.check(Schema.isMaxLength(UPTIME_MAX_URL_LENGTH)) : NonEmptyString
+	const headerMap = limited
+		? Schema.Record(Schema.String, text(UPTIME_MAX_HEADER_VALUE_LENGTH)).check(
+				Schema.isMaxProperties(UPTIME_MAX_HEADERS),
+				uptimeHeaderNamesWithin(UPTIME_MAX_HEADER_NAME_LENGTH),
+			)
+		: Schema.Record(Schema.String, Schema.String)
+	const headers = Schema.optionalKey(
+		headerMap.annotate({
+			description: `Extra request headers: at most ${UPTIME_MAX_HEADERS}, each name up to ${UPTIME_MAX_HEADER_NAME_LENGTH} characters and each value up to ${UPTIME_MAX_HEADER_VALUE_LENGTH}.`,
 		}),
-	),
-	extract: Schema.optionalKey(
-		Schema.Array(V2UptimeExtraction).annotate({
-			description: "Values to read from the response for later steps.",
+	)
+	const bodyLimit = `at most ${UPTIME_MAX_BODY_LENGTH} characters`
+	const assertions = Schema.optionalKey(
+		(limited
+			? Schema.Array(V2UptimeAssertion).check(Schema.isMaxLength(UPTIME_MAX_ASSERTIONS))
+			: Schema.Array(V2UptimeAssertion)
+		).annotate({
+			description: `Conditions the response must meet, at most ${UPTIME_MAX_ASSERTIONS}. Defaults to a status of \`2xx\`.`,
 		}),
-	),
-}).annotate({ identifier: "UptimeStep", title: "Multi-step check step" })
+	)
+	const http = Schema.Struct({
+		type: Schema.Literal("http"),
+		url: url.annotate({
+			description: `The public http(s) URL to request, at most ${UPTIME_MAX_URL_LENGTH} characters. Private, loopback and metadata hosts are refused.`,
+			examples: ["https://api.example.com/health"],
+		}),
+		method: Schema.optionalKey(
+			UptimeHttpMethod.annotate({ description: "Request method. Defaults to `GET`." }),
+		),
+		headers,
+		body: Schema.optionalKey(
+			text(UPTIME_MAX_BODY_LENGTH).annotate({
+				description: `Request body, for \`POST\`: ${bodyLimit}.`,
+			}),
+		),
+		assertions,
+		timeout_ms: timeoutField,
+	}).annotate({ identifier: named("UptimeHttpConfig"), title: "HTTP check" })
+	const step = Schema.Struct({
+		name: (limited
+			? NonEmptyString.check(Schema.isMaxLength(UPTIME_MAX_STEP_NAME_LENGTH))
+			: NonEmptyString
+		).annotate({
+			description: `What the step does, at most ${UPTIME_MAX_STEP_NAME_LENGTH} characters.`,
+			examples: ["Log in"],
+		}),
+		method: Schema.optionalKey(
+			UptimeStepMethod.annotate({ description: "Request method. Defaults to `GET`." }),
+		),
+		url: url.annotate({
+			description: `The public http(s) URL to request, at most ${UPTIME_MAX_URL_LENGTH} characters. \`{{name}}\` inserts a variable an earlier step extracted, here and in headers and the body. A variable may follow the host after a \`/\`, \`?\` or \`#\`, or be the whole host, but not a part of it.`,
+			examples: ["https://api.example.com/orders/{{order_id}}"],
+		}),
+		headers,
+		body: Schema.optionalKey(
+			text(UPTIME_MAX_BODY_LENGTH).annotate({
+				description: `Request body; not for GET or HEAD: ${bodyLimit}.`,
+			}),
+		),
+		assertions,
+		extract: Schema.optionalKey(
+			(limited
+				? Schema.Array(V2UptimeExtraction).check(Schema.isMaxLength(UPTIME_MAX_EXTRACTIONS))
+				: Schema.Array(V2UptimeExtraction)
+			).annotate({
+				description: `Values to read from the response for later steps, at most ${UPTIME_MAX_EXTRACTIONS}.`,
+			}),
+		),
+	}).annotate({ identifier: named("UptimeStep"), title: "Multi-step check step" })
+	const multistep = Schema.Struct({
+		type: Schema.Literal("multistep"),
+		steps: Schema.Array(step)
+			.check(Schema.isMinLength(1), Schema.isMaxLength(UPTIME_MAX_STEPS))
+			.annotate({
+				description: `The requests, run in order (1 to ${UPTIME_MAX_STEPS}). A failed step ends the run.`,
+			}),
+		timeout_ms: Schema.optionalKey(
+			Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1000, maximum: 60000 })).annotate(
+				{
+					description:
+						"How long the whole run may take, in milliseconds (1000 to 60000). Defaults to 30000.",
+					examples: [30000],
+				},
+			),
+		),
+	}).annotate({ identifier: named("UptimeMultiStepConfig"), title: "Multi-step API check" })
+	return { http, step, multistep, named }
+}
 
-export const V2UptimeMultiStepConfig = Schema.Struct({
-	type: Schema.Literal("multistep"),
-	steps: Schema.Array(V2UptimeStep)
-		.check(Schema.isMinLength(1), Schema.isMaxLength(UPTIME_MAX_STEPS))
-		.annotate({
-			description: `The requests, run in order (1 to ${UPTIME_MAX_STEPS}). A failed step ends the run.`,
-		}),
-	timeout_ms: Schema.optionalKey(
-		Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1000, maximum: 60000 })).annotate({
-			description:
-				"How long the whole run may take, in milliseconds (1000 to 60000). Defaults to 30000.",
-			examples: [30000],
-		}),
-	),
-}).annotate({ identifier: "UptimeMultiStepConfig", title: "Multi-step API check" })
+const wireRequests = wireRequestSchemas(false)
+const wireRequestInputs = wireRequestSchemas(true)
+
+export const V2UptimeHttpConfig = wireRequests.http
+export const V2UptimeStep = wireRequests.step
+export const V2UptimeMultiStepConfig = wireRequests.multistep
 
 export const V2UptimeHeartbeatSchedule = Schema.Union([
 	Schema.Struct({
@@ -231,18 +283,24 @@ export const V2UptimeHeartbeatConfig = Schema.Struct({
 	}),
 }).annotate({ identifier: "UptimeHeartbeatConfig", title: "Heartbeat" })
 
-export const V2UptimeMonitorConfig = Schema.Union([
-	V2UptimeHttpConfig,
-	V2UptimeTcpConfig,
-	V2UptimeDnsConfig,
-	V2UptimeMultiStepConfig,
-	V2UptimeHeartbeatConfig,
-]).annotate({
-	identifier: "UptimeMonitorConfig",
-	title: "Uptime monitor config",
-	description: "What the monitor checks. `type` always equals the monitor's `kind`.",
-})
+const wireConfig = (requests: ReturnType<typeof wireRequestSchemas>) =>
+	Schema.Union([
+		requests.http,
+		V2UptimeTcpConfig,
+		V2UptimeDnsConfig,
+		requests.multistep,
+		V2UptimeHeartbeatConfig,
+	]).annotate({
+		identifier: requests.named("UptimeMonitorConfig"),
+		title: "Uptime monitor config",
+		description: "What the monitor checks. `type` always equals the monitor's `kind`.",
+	})
+
+/** A monitor's config as a response carries it. */
+export const V2UptimeMonitorConfig = wireConfig(wireRequests)
 export type V2UptimeMonitorConfig = Schema.Schema.Type<typeof V2UptimeMonitorConfig>
+/** A config a request sends: the same shape, held to the size limits. */
+export const V2UptimeMonitorConfigInput = wireConfig(wireRequestInputs)
 
 const DEFAULT_ASSERTIONS: ReadonlyArray<UptimeAssertion> = [{ _tag: "status", op: "is", value: "2xx" }]
 
@@ -574,7 +632,7 @@ export const V2UptimeMonitorCreateParams = Schema.Struct({
 		examples: ["API health"],
 	}),
 	kind: kindField,
-	config: V2UptimeMonitorConfig,
+	config: V2UptimeMonitorConfigInput,
 	interval_seconds: Schema.optionalKey(intervalField),
 	failures_to_down: Schema.optionalKey(failuresToDownField),
 	service_name: Schema.optionalKey(
@@ -602,7 +660,7 @@ export type V2UptimeMonitorCreateParams = Schema.Schema.Type<typeof V2UptimeMoni
 export const V2UptimeMonitorUpdateParams = Schema.Struct({
 	name: Schema.optionalKey(NonEmptyString),
 	config: Schema.optionalKey(
-		V2UptimeMonitorConfig.annotate({
+		V2UptimeMonitorConfigInput.annotate({
 			description: "A new config of the same kind; the kind cannot change.",
 		}),
 	),
@@ -637,7 +695,9 @@ export const V2UptimeMonitorDeleteResponse = Schema.Struct({
 export type V2UptimeMonitorDeleteResponse = Schema.Schema.Type<typeof V2UptimeMonitorDeleteResponse>
 
 export const V2UptimeMonitorTestParams = Schema.Struct({
-	config: V2UptimeMonitorConfig.annotate({ description: "The config to try. Only `http` runs here." }),
+	config: V2UptimeMonitorConfigInput.annotate({
+		description: "The config to try. Only `http` runs here.",
+	}),
 }).annotate({
 	identifier: "UptimeMonitorTestParams",
 	title: "Uptime monitor test parameters",

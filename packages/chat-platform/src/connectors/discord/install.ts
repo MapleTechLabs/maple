@@ -1,14 +1,24 @@
-import { Effect, Record as Rec, Schema } from "effect"
+import { Effect, Record as Rec, Redacted, Schema } from "effect"
+import { HttpClient, HttpClientRequest } from "effect/http"
 import {
 	ChatInstallFailed,
+	ChatRevokeFailed,
 	ChatSettingsRejected,
 	requireConfig,
 	type ChatConnectorInstall,
 	type ChatInstallCallback,
+	type ChatInstallRevocation,
 	type ChatInstallStart,
 	type ChatWorkspaceSettings,
 } from "../../install"
-import { AUTHORIZE_URL, CLIENT_ID_CONFIG, CLIENT_SECRET_CONFIG } from "./api"
+import {
+	API_BASE,
+	API_HOST,
+	AUTHORIZE_URL,
+	BOT_TOKEN_CONFIG,
+	CLIENT_ID_CONFIG,
+	CLIENT_SECRET_CONFIG,
+} from "./api"
 import { exchangeCode } from "./exchange"
 import { DISCORD_CONNECTOR_ID } from "./id"
 
@@ -110,6 +120,59 @@ const complete = Effect.fnUntraced(function* (input: ChatInstallCallback) {
 	return { externalWorkspaceId: guild.id, name: guild.name ?? guild.id }
 })
 
+const revokeFailed = (message: string) => new ChatRevokeFailed({ connector: DISCORD_CONNECTOR_ID, message })
+
+const isSnowflake = Schema.is(Snowflake)
+
+/** `DELETE /users/@me/guilds/{guild.id}` as the bot, as one client span. The token rides the header only. */
+const leaveGuild = Effect.fn("Discord.request", { kind: "client" })(function* (
+	token: Redacted.Redacted,
+	guildId: string,
+) {
+	yield* Effect.annotateCurrentSpan({
+		"peer.service": "discord",
+		"http.request.method": "DELETE",
+		"server.address": API_HOST,
+		"url.template": "/users/@me/guilds/{guild.id}",
+	})
+	const httpClient = yield* HttpClient.HttpClient
+	const response = yield* httpClient
+		.execute(
+			HttpClientRequest.delete(`${API_BASE}/users/@me/guilds/${guildId}`, {
+				headers: { authorization: `Bot ${Redacted.value(token)}` },
+			}),
+		)
+		// The reason only: the request carries the token.
+		.pipe(
+			Effect.mapError((error) =>
+				revokeFailed(`Leaving the Discord server failed: ${error.reason._tag}`),
+			),
+		)
+	yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+	// 404: the bot is in no such server, which is the state this call is for.
+	if (response.status === 404) return
+	if (response.status < 200 || response.status >= 300) {
+		return yield* revokeFailed(`Leaving the Discord server failed with HTTP ${response.status}`)
+	}
+})
+
+/**
+ * Take the bot out of the server. The bot token is deployment-wide and stays valid, so leaving is
+ * what ends this server's grant. A missing token or an id that is not Discord's fails before the
+ * span opens: neither is a call that was made.
+ */
+const revoke = (input: ChatInstallRevocation) => {
+	const token = input.credentials.get(BOT_TOKEN_CONFIG)
+	if (token === undefined) {
+		return Effect.fail(revokeFailed(`Discord is not configured on this deployment (${BOT_TOKEN_CONFIG})`))
+	}
+	// Checked before it reaches a URL path.
+	if (!isSnowflake(input.externalWorkspaceId)) {
+		return Effect.fail(revokeFailed("The stored Discord server id is not a Discord id"))
+	}
+	return leaveGuild(Redacted.make(token), input.externalWorkspaceId)
+}
+
 const decodeSettings = (
 	input: ChatWorkspaceSettings,
 ): Effect.Effect<ChatWorkspaceSettings, ChatSettingsRejected> =>
@@ -136,5 +199,6 @@ export const discordInstall: ChatConnectorInstall = {
 	],
 	authorizeUrl,
 	complete,
+	revoke,
 	decodeSettings,
 }

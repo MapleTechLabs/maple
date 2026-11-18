@@ -46,6 +46,8 @@ const CATEGORY_BY_RESOURCE = {
 	planetscale_integration: "configuration",
 	cloudflare_integration: "configuration",
 	linear_integration: "configuration",
+	// Automatic approval lets the reviewer count toward a merge, so its setup reads as a grant.
+	code_review: "permission",
 	cost_source: "configuration",
 	cost_source_key: "credential",
 	member: "membership",

@@ -8,7 +8,7 @@ import {
 	type StatusPageSnapshotIncident,
 	type StatusPageTheme,
 } from "@maple/domain/status-page"
-import { type PreviewComponent, renderPage } from "@maple/status-page"
+import { type PreviewComponent, previewSnapshot, renderPage } from "@maple/status-page"
 import { cn } from "@maple/ui/lib/utils"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
@@ -17,6 +17,7 @@ import { typography } from "@maple/views/ui/typography"
 import { Option, Schema, Stream, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { toEpochMs } from "@maple/ui/lib/time-format"
+import { previewFrameElement, SCROLL_MESSAGE, SCROLL_NAME_PREFIX } from "./preview-frame-element"
 
 // The live preview: the public renderer's page in a sandboxed frame, with the monitors' real
 // history, and in the editor a click on a component or incident posted back to open it.
@@ -139,6 +140,41 @@ export const simulatePreview = (
 	}
 }
 
+/**
+ * A built snapshot as it would read in `state`, in `scheme` for an Auto page: the in-app viewer's
+ * counterpart of `simulatePreview`, from the components' saved status rather than the editor's reads.
+ */
+export const simulateSnapshot = (
+	snapshot: StatusPagePublicSnapshot,
+	state: PreviewState,
+	scheme: PreviewScheme,
+): StatusPagePublicSnapshot => {
+	const page = { ...snapshot.page, theme: previewTheme(snapshot.page.theme, scheme) }
+	if (state === "live") return { ...snapshot, page }
+	const shown = simulatePreview(state, {
+		components: Arr.map(snapshot.components, (component) => ({
+			id: component.id,
+			name: component.name,
+			description: component.description,
+			group: component.group,
+			monitorStatus: null,
+			manualStatus: component.baseStatus,
+			showUptime: component.showUptime,
+			monitored: component.monitored,
+			days: component.days,
+		})),
+		incidents: snapshot.incidents,
+		nowMs: snapshot.generatedAt,
+	})
+	return previewSnapshot({
+		pageId: snapshot.pageId,
+		page,
+		components: shown.components,
+		incidents: shown.incidents,
+		nowMs: snapshot.generatedAt,
+	})
+}
+
 const msOrNull = (value: string | null): number | null => (value === null ? null : toEpochMs(value))
 
 /** Whether visitors see the incident now, by the publisher's own rule. */
@@ -176,9 +212,12 @@ export const toSnapshotIncident = (incident: V2StatusPageIncident): StatusPageSn
 	})).sort((a, b) => b.at - a.at),
 })
 
-/** What a click in the preview selects. */
+/**
+ * What a click in the preview selects: a component or incident, a group (by its first component),
+ * or a page setting in the header or footer (a `PreviewField`).
+ */
 export const PreviewSelection = Schema.Struct({
-	kind: Schema.Literals(["component", "incident"]),
+	kind: Schema.Literals(["component", "incident", "group", "field"]),
 	id: Schema.String,
 })
 export type PreviewSelection = typeof PreviewSelection.Type
@@ -195,14 +234,14 @@ export const selectionOf = (data: unknown): Option.Option<PreviewSelection> =>
 	Option.map(decodeSelect(data), ({ kind, id }) => ({ kind, id }))
 
 /** Inert in the frame: it only posts what was clicked; the frame has no same-origin access. */
-const SELECT_SCRIPT = `(function(){var q="[data-component-id],[data-incident-id]";document.addEventListener("click",function(e){var t=e.target&&e.target.closest?e.target.closest(q):null;if(!t)return;e.preventDefault();var c=t.getAttribute("data-component-id");parent.postMessage(c?{type:"select",kind:"component",id:c}:{type:"select",kind:"incident",id:t.getAttribute("data-incident-id")},"*")})})();`
+const SELECT_SCRIPT = `(function(){var k=["component","incident","group","field"],q=k.map(function(n){return"[data-"+n+"-id]"}).join(",");document.addEventListener("click",function(e){var t=e.target&&e.target.closest?e.target.closest(q):null;if(!t)return;e.preventDefault();for(var i=0;i<k.length;i++){var v=t.getAttribute("data-"+k[i]+"-id");if(v){parent.postMessage({type:"select",kind:k[i],id:v},"*");return}}})})();`
 
-const SELECTABLE_STYLES = `[data-component-id],[data-incident-id]{cursor:pointer;border-radius:6px}[data-component-id]:hover,[data-incident-id]:hover{outline:1px dashed color-mix(in srgb,currentColor 35%,transparent);outline-offset:3px}`
+const SELECTABLE_STYLES = `[data-component-id],[data-incident-id],[data-group-id],[data-field-id]{cursor:pointer;border-radius:6px}[data-component-id]:hover,[data-incident-id]:hover,[data-group-id]:hover,[data-field-id]:hover{outline:1px dashed color-mix(in srgb,currentColor 35%,transparent);outline-offset:3px}`
 
 export type PreviewDocumentOptions = Readonly<{
 	snapshot: StatusPagePublicSnapshot
 	nowMs: number
-	/** The editor's preview: components and incidents can be clicked. */
+	/** The editor's preview: what it edits can be clicked, the header and footer included. */
 	isSelectable: boolean
 	/** Where visitors read the page, for its Slack command; `null` while no status domain is configured. */
 	publicUrl: string | null
@@ -222,10 +261,10 @@ const stayInFrameScript = (opensLinks: boolean): string =>
 	`(function(){var o=${opensLinks};document.addEventListener("click",function(e){if(e.defaultPrevented)return;var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(!a)return;var h=a.getAttribute("href");if(o&&h&&/^https?:/i.test(h)){a.target="_blank";a.rel="noopener noreferrer";return}e.preventDefault();if(h&&h.charAt(0)==="#"){var t=document.getElementById(decodeURIComponent(h.slice(1)));if(t)t.scrollIntoView({block:"start"})}});document.addEventListener("submit",function(e){e.preventDefault()})})();`
 
 /**
- * Each edit rebuilds the document, and a new `srcdoc` reloads the frame at the top. The frame's
- * `window.name` survives that reload, so the scroll is kept there and put back before paint.
+ * Each edit loads a new document in a new frame (`<maple-preview-frame>`), named with the shown
+ * frame's scroll, which this puts back before paint. Scrolling reports itself to that element.
  */
-const KEEP_SCROLL_SCRIPT = `(function(){var k="maple-preview-scroll:";var y=window.name.indexOf(k)===0?Number(window.name.slice(k.length)):0;var to=function(){window.scrollTo({top:y,behavior:"instant"})};if(y>0){to();addEventListener("load",to)}addEventListener("scroll",function(){window.name=k+Math.round(window.scrollY)},{passive:true})})();`
+const KEEP_SCROLL_SCRIPT = `(function(){var k="${SCROLL_NAME_PREFIX}";var y=window.name.indexOf(k)===0?Number(window.name.slice(k.length)):0;var to=function(){window.scrollTo({top:y,behavior:"instant"})};if(y>0){to();addEventListener("load",to)}addEventListener("scroll",function(){parent.postMessage({type:"${SCROLL_MESSAGE}",y:Math.round(window.scrollY)},"*")},{passive:true})})();`
 
 /** The public page as the renderer draws it, plus, when selectable, the selection script. */
 export const previewDocument = (options: PreviewDocumentOptions): string => {
@@ -238,7 +277,8 @@ export const previewDocument = (options: PreviewDocumentOptions): string => {
 			? { preview, inDashboard: true }
 			: { preview, inDashboard: true, publicUrl: options.publicUrl },
 	)
-	const stay = `<script>${stayInFrameScript(options.opensLinks === true)}</script><script>${KEEP_SCROLL_SCRIPT}</script>`
+	// No rubber-band at the frame's edges: it bounced the page and chained the scroll to Maple's.
+	const stay = `<style>html,body{overscroll-behavior:none}</style><script>${stayInFrameScript(options.opensLinks === true)}</script><script>${KEEP_SCROLL_SCRIPT}</script>`
 	if (!options.isSelectable) return Str.replace("</body>", `${stay}</body>`)(html)
 	const extra = `<style>${SELECTABLE_STYLES}</style><script>${SELECT_SCRIPT}</script>${stay}`
 	return Str.replace("</body>", `${extra}</body>`)(html)
@@ -347,29 +387,26 @@ export const previewFrame = <M>(
 		width?: PreviewWidth
 	}>,
 ): Html =>
-	h.iframe(
-		[
-			...(options.isSelectable === true ? [h.Id(PREVIEW_FRAME_ID)] : []),
-			h.Title(options.title),
-			h.Sandbox(
-				options.opensLinks === true
-					? "allow-scripts allow-popups allow-popups-to-escape-sandbox"
-					: "allow-scripts",
+	previewFrameElement.withMessage(h)([
+		...(options.isSelectable === true ? [h.Attribute("frame-id", PREVIEW_FRAME_ID)] : []),
+		h.Attribute("frame-title", options.title),
+		h.Sandbox(
+			options.opensLinks === true
+				? "allow-scripts allow-popups allow-popups-to-escape-sandbox"
+				: "allow-scripts",
+		),
+		// The Slack command's Copy button; without it the button selects the command instead.
+		h.Allow("clipboard-write"),
+		h.Srcdoc(options.document),
+		h.DataAttribute("width", options.width ?? "desktop"),
+		h.Class(
+			cn(
+				"relative block w-full overflow-hidden rounded-lg border bg-background",
+				options.width === "mobile" && "mx-auto max-w-sm",
+				options.className,
 			),
-			// The Slack command's Copy button; without it the button selects the command instead.
-			h.Allow("clipboard-write"),
-			h.Srcdoc(options.document),
-			h.DataAttribute("width", options.width ?? "desktop"),
-			h.Class(
-				cn(
-					"block w-full rounded-lg border bg-background",
-					options.width === "mobile" && "mx-auto max-w-sm",
-					options.className,
-				),
-			),
-		],
-		[],
-	)
+		),
+	])
 
 /**
  * A small inert frame (the access gate as visitors meet it): fully sandboxed, no scripts, and it

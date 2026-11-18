@@ -17,6 +17,8 @@ const decodeOperation = Schema.decodeUnknownSync(
 interface MockOptions {
 	/** Bearer tokens the GraphQL API rejects as unauthenticated. */
 	readonly rejectedTokens?: ReadonlyArray<string>
+	/** What the revoke endpoint answers; 200 unless a test has Linear refuse. */
+	readonly revokeStatus?: number
 }
 
 interface MockLinear {
@@ -61,7 +63,7 @@ const mockLinear = (options: MockOptions = {}): MockLinear => {
 				path: "/oauth/revoke",
 				respond: (request) => {
 					revoked.push(new URLSearchParams(request.body).get("token") ?? "")
-					return VendorFake.empty(200)
+					return VendorFake.empty(options.revokeStatus ?? 200)
 				},
 			},
 			{
@@ -271,15 +273,49 @@ describe("LinearOAuthService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, linear)))
 	})
 
-	it.effect("revokes the token at Linear and drops the connection on disconnect", () => {
+	it.effect(
+		"revokes the refresh token, then the access token, and drops the connection on disconnect",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const linear = mockLinear()
+			return Effect.gen(function* () {
+				yield* connect
+				const service = yield* LinearOAuthService
+				assert.deepStrictEqual(yield* service.disconnect(orgA), {
+					disconnected: true,
+					grantRevoked: true,
+				})
+				// The refresh token is the live credential of an idle org, so it goes first.
+				assert.deepStrictEqual(linear.revoked, ["lin-refresh", "lin-access"])
+				assert.deepStrictEqual(yield* service.getStatus(orgA), { connected: false })
+			}).pipe(Effect.provide(makeLayer(testDb, linear)))
+		},
+	)
+
+	it.effect("drops the connection and says so when Linear refuses the revoke", () => {
 		const testDb = createTestDb(trackedDbs)
-		const linear = mockLinear()
+		const linear = mockLinear({ revokeStatus: 503 })
 		return Effect.gen(function* () {
 			yield* connect
 			const service = yield* LinearOAuthService
-			assert.deepStrictEqual(yield* service.disconnect(orgA), { disconnected: true })
-			assert.deepStrictEqual(linear.revoked, ["lin-access"])
+			assert.deepStrictEqual(yield* service.disconnect(orgA), {
+				disconnected: true,
+				grantRevoked: false,
+			})
 			assert.deepStrictEqual(yield* service.getStatus(orgA), { connected: false })
+		}).pipe(Effect.provide(makeLayer(testDb, linear)))
+	})
+
+	it.effect("an org that never connected has no grant left behind", () => {
+		const testDb = createTestDb(trackedDbs)
+		const linear = mockLinear()
+		return Effect.gen(function* () {
+			const service = yield* LinearOAuthService
+			assert.deepStrictEqual(yield* service.disconnect(orgA), {
+				disconnected: false,
+				grantRevoked: true,
+			})
+			assert.deepStrictEqual(linear.revoked, [])
 		}).pipe(Effect.provide(makeLayer(testDb, linear)))
 	})
 })

@@ -129,6 +129,7 @@ const rowToInstallation = (row: VcsInstallationRow): VcsInstallation =>
 		status: row.status,
 		suspendedAt: row.suspendedAt,
 		ciTracesEnabled: row.ciTracesEnabled,
+		auditLogEnabled: row.auditLogEnabled,
 		repositoryDiscovery: row.repositoryDiscovery,
 		installedByUserId: row.installedByUserId,
 		createdAt: row.createdAt,
@@ -572,6 +573,25 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 							.where(($) => [$.orgId.eq(orgId), $.id.eq(installationId)]),
 					),
 				)
+			})
+
+			// Org-scoped and active-only: false when the installation was removed, suspended or
+			// belongs to another tenant since it was read.
+			const setAuditLogEnabled = Effect.fn("VcsRepository.setAuditLogEnabled")(function* (
+				orgId: OrgId,
+				installationId: VcsInstallationId,
+				enabled: boolean,
+			) {
+				const now = yield* Clock.currentTimeMillis
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.update(VcsInstallations)
+							.set({ auditLogEnabled: enabled, updatedAt: now })
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(installationId), $.status.eq("active")])
+							.returning("id"),
+					),
+				)
+				return rows.length > 0
 			})
 
 			const listRepositoriesByInstallation = Effect.fn("VcsRepository.listRepositoriesByInstallation")(
@@ -1223,6 +1243,25 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 				})
 			})
 
+			// Whether a repository that is reviewed turns automatic approval on in its own settings.
+			const anyReviewedRepositoryAutoApproves = Effect.fn(
+				"VcsRepository.anyReviewedRepositoryAutoApproves",
+			)(function* (orgId: OrgId) {
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(VcsRepositories)
+							.select(($) => ({ config: PG.undecoded($.prReviewConfig) }))
+							.where(($) => [$.orgId.eq(orgId), $.prReviewEnabled.eq(true)]),
+					),
+				)
+				return Arr.some(rows, (row) =>
+					Option.exists(
+						decodePrReviewConfig(row.config ?? {}),
+						(config) => config.autoApprove === true,
+					),
+				)
+			})
+
 			// What a review of the repository runs with: its own settings over the organization's.
 			const getEffectivePrReviewConfig = Effect.fn("VcsRepository.getEffectivePrReviewConfig")(
 				function* (orgId: OrgId, repositoryId: VcsRepositoryId) {
@@ -1385,6 +1424,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 				finishRepositoryDiscovery,
 				markInstallationStatus,
 				setCiTracesEnabled,
+				setAuditLogEnabled,
 				listRepositoriesByInstallation,
 				listActiveRepositoriesByOrg,
 				resolveRepository,
@@ -1407,6 +1447,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 				getPrReviewConfig,
 				setPrReviewConfig,
 				getEffectivePrReviewConfig,
+				anyReviewedRepositoryAutoApproves,
 				getPrReviewSettings,
 				setPrReviewSettings,
 				reconcileBranchDeletions,

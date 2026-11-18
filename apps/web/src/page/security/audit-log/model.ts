@@ -7,6 +7,7 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import { SecurityAuditLogSearch } from "../../../route/search"
 import { laterPagesFields } from "../../kit/infinite-pages"
 import { SessionGrants } from "../../kit/session-grants"
+import * as Select from "@maple/views/ui/select"
 
 // `/security/audit-log`: audit events from every connected platform and Maple itself, newest
 // first. The filters live in the URL; only org admins (`audit_log:read`) read the list.
@@ -28,6 +29,9 @@ export const LaterPages = Schema.Struct({
 })
 export type LaterPages = typeof LaterPages.Type
 
+/** Base UI selects need a real value for "all platforms"; it never reaches the URL. */
+export const ALL_PROVIDERS = "__all__"
+
 /** The filters a select sets; the actor is typed and applied on Enter. */
 export const SelectFilter = Schema.Literals(["provider", "category", "outcome"])
 export type SelectFilter = typeof SelectFilter.Type
@@ -45,6 +49,8 @@ export const Model = Schema.Struct({
 	expanded: Schema.Array(Schema.String),
 	/** The actor field as typed; the URL holds what was applied. */
 	actorText: Schema.String,
+	/** The platform filter, a Select so each platform shows its mark; its value follows the URL. */
+	providerSelect: Select.Model,
 })
 export type Model = typeof Model.Type
 
@@ -70,5 +76,6 @@ export const Message = defineMessageUnion({
 	ClearedActor: {},
 	ClickedClearFilters: {},
 	ToggledEvent: { id: Schema.String },
+	GotProviderSelectMessage: { message: Select.Message },
 })
 export type Message = typeof Message.Type

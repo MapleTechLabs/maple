@@ -1,7 +1,7 @@
 # Status page visibility
 
 A status page is `public`, `password` or `internal` (`status_pages.visibility`). Changing it,
-and setting or removing the page password, needs `status_pages:access` (org admins) and is
+and setting or removing the page password, needs `status_pages:access` (engineers and admins) and is
 audited (`status_page.updated` / `config_applied` with the field, `status_page.password_set`,
 `status_page.password_removed`).
 
@@ -38,8 +38,10 @@ domain cannot be added to an internal page).
   cookie signed under the old hash stops verifying. A value expiring more than 30 days out is
   refused even with a valid signature.
 - **Gate** (`apps/status/src/access.ts`): `/_access` serves the branded form (GET) and checks a
-  posted password (POST), rate-limited per `access:<ip>:<page>` on the break-glass limiter
-  (10 a minute) and failing closed. Every other path, `/_manage` and the feeds included, needs
+  posted password (POST). Two limits, both failing closed: 10 a minute per client and page
+  (`access:<client>:<page>` on the break-glass limiter, where an IPv6 client is its /64), then
+  100 a minute per page across every client (`access:<page>` on
+  `STATUS_PAGE_ACCESS_RATE_LIMITER`). Every other path, `/_manage` and the feeds included, needs
   the cookie: `/` answers 401 with the form, anything else 401 text. Every response of a
   password page is `cache-control: private, no-store` and `x-robots-tag: noindex`.
 - **Page**: no subscribe link or dialog, no feed links, `noindex` (the same for an internal
@@ -48,9 +50,15 @@ domain cannot be added to an internal page).
 ## Internal pages
 
 - The publisher takes an internal page off the edge on its next publish: the slug route (while
-  it still names the page) and the snapshot in KV and R2. Break-glass entries stay for the
-  reconciler. `published_hash` is cleared, so making the page public again writes it even if
-  nothing else changed. Internal pages are left out of the 15-minute stale republish.
+  it still names the page) and the snapshot. Each KV key is deleted and its R2 object becomes a
+  tombstone (`STATUS_PAGE_TOMBSTONE`, `{"gone":true}`), written before the KV delete. Break-glass
+  entries stay for the reconciler. `published_hash` is cleared, so making the page public again
+  writes it even if nothing else changed, over the tombstones. Deleting the page removes them.
+  Internal pages are left out of the 15-minute stale republish.
+- The status Worker reads a tombstone in R2 as "not found" for certain: 404 on every route,
+  and the tombstone replaces the colo's cached copy, so it never falls back to a snapshot cached
+  while the page was public. A missing R2 object still falls back to the cache, because that is
+  what an outage looks like.
 - The status Worker also answers 404 for any snapshot it still finds that says `internal`.
 - Members read the page at `/status-pages/<id>/view`: `GET /v2/status_pages/{id}/view`
   (`status_pages:read`) builds the snapshot from Postgres now, credentials stripped, and the
@@ -60,5 +68,7 @@ domain cannot be added to an internal page).
 
 - A colo serves a snapshot from its cache for up to 30 seconds, so a password change or an
   unpublish takes that long to reach every visitor; a colo whose KV and R2 both fail serves
-  its last cached copy.
+  its last cached copy, unless it already read the page's tombstone.
+- A deleted page leaves no tombstone (its edge data is removed outright), so a colo that cached
+  it can still serve that copy while KV fails, for as long as the cache keeps it (7 days).
 - The form shows the page's name, logo, theme and description.

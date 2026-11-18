@@ -4,6 +4,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
 import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { columnHead, dataTable, dataTableEmpty, skeletonRows, ROW_LINK_CLASS } from "../../../kit/data-table"
 import { type Sort, sortRowsByField } from "../../../kit/table-sort"
@@ -35,15 +36,21 @@ interface DatabaseRow {
 	readonly replicaLagMaxSeconds: number
 }
 
+const META_WIDTH = "w-24"
+const META_HIDDEN = "hidden xl:flex"
+
 const COLUMNS: ReadonlyArray<{
 	label: string
-	key: SortKey
+	/** `null` for a column that does not sort. */
+	key: SortKey | null
 	width: string
 	align?: "right"
 	hidden?: string
 	metric?: boolean
 }> = [
-	{ label: "Database", key: "name", width: columnClass({ min: "56" }) },
+	{ label: "Database", key: "name", width: columnClass({ min: "48" }) },
+	{ label: "Region", key: null, width: META_WIDTH, hidden: META_HIDDEN },
+	{ label: "Plan", key: null, width: META_WIDTH, hidden: META_HIDDEN },
 	{ label: "Branches", key: "branchCount", width: "w-20", align: "right", hidden: "hidden md:flex" },
 	{ label: "Connections", key: "connectionsAvg", width: "w-24", align: "right", metric: true },
 	{ label: "CPU (max)", key: "cpuMaxPercent", width: "w-24", align: "right", metric: true },
@@ -70,7 +77,7 @@ const headerCells = (h: H, sort: Sort<SortKey> | undefined, metricsPaused: boole
 				align: column.align,
 				hidden: column.hidden,
 				sort:
-					sort === undefined
+					sort === undefined || column.key === null
 						? undefined
 						: {
 								onSort: Message.ClickedSort({ key: column.key }),
@@ -86,7 +93,9 @@ export const databaseTableLoading = (h: H): Html =>
 		{ ariaLabel: "Databases" },
 		headerCells(h, undefined, false),
 		skeletonRows(h, 3, () => [
-			column(h, { min: "56" }, [skeleton(h, "h-4 w-44")]),
+			column(h, { min: "48" }, [skeleton(h, "h-4 w-44")]),
+			skeleton(h, "hidden h-3 w-24 xl:block"),
+			skeleton(h, "hidden h-3 w-24 xl:block"),
 			skeleton(h, "hidden h-3 w-20 md:block"),
 			skeleton(h, "h-3 w-24"),
 			skeleton(h, "h-3 w-24"),
@@ -117,11 +126,30 @@ const toRow = (db: V2PlanetScaleDatabase, statsByName: ReadonlyMap<string, Datab
 
 const CELL = "text-right font-mono text-xs tabular-nums text-foreground-soft"
 
-const metaChip = (h: H, text: string): Html =>
-	h.span(
-		[h.Class("hidden shrink-0 xl:inline-flex")],
-		[typography(h, { size: "3xs", tone: "subtle", mono: true }, [text])],
+const metaCell = (h: H, text: string | null): Html =>
+	typography(
+		h,
+		{
+			as: "div",
+			size: "xs",
+			tone: "subtle",
+			mono: true,
+			truncate: true,
+			className: cn("hidden", META_WIDTH, "xl:block"),
+		},
+		[text ?? EMPTY_VALUE],
 	)
+
+/** The database engine's logo, named for screen readers and on hover. */
+const engineIcon = (h: H, kind: string): Html => {
+	const label = kind === "postgresql" ? "Postgres" : "MySQL / Vitess"
+	return hstack(h, { as: "span", inline: true, shrink: false, attributes: [h.Title(label)] }, [
+		icon(h, kind === "postgresql" ? "PostgresIcon" : "VitessIcon", {
+			size: 14,
+			attributes: [h.Role("img"), h.AriaLabel(label)],
+		}),
+	])
+}
 
 const metricCells = (h: H, row: DatabaseRow): ReadonlyArray<Html> => [
 	h.div([h.Class(cn("w-24", CELL))], [row.hasStats ? formatNumber(row.connectionsAvg) : EMPTY_VALUE]),
@@ -159,7 +187,8 @@ const databaseRow = (h: H, row: DatabaseRow, metricsPaused: boolean): Html => {
 			h.Href(hrefOf(AppRoute.InfraPlanetscaleDatabase({ dbName: row.name, search: {} }))),
 		],
 		[
-			hstack(h, { gap: "2", align: "center", grow: true, className: "w-0 min-w-56 overflow-hidden" }, [
+			hstack(h, { gap: "2", align: "center", grow: true, className: "w-0 min-w-48 overflow-hidden" }, [
+				engineIcon(h, row.kind),
 				h.span(
 					[
 						h.Class(
@@ -169,13 +198,10 @@ const databaseRow = (h: H, row: DatabaseRow, metricsPaused: boolean): Html => {
 					],
 					[row.name],
 				),
-				badge(h, { variant: "outline", className: "shrink-0" }, [
-					row.kind === "postgresql" ? "Postgres" : "MySQL",
-				]),
 				...(state === null ? [] : [badge(h, { variant: "warn", className: "shrink-0" }, [state])]),
-				...(row.region ? [metaChip(h, row.region)] : []),
-				...(row.plan ? [metaChip(h, row.plan)] : []),
 			]),
+			metaCell(h, row.region),
+			metaCell(h, row.plan),
 			h.div([h.Class(cn("hidden w-20", CELL, "md:block"))], [String(row.branchCount)]),
 			...(metricsPaused ? [] : metricCells(h, row)),
 		],

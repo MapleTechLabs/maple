@@ -104,7 +104,7 @@ Keep the `auth` list your project already uses. A public channel sends its messa
 
 ## Verify
 
-1. Copy the public ingest key (`maple_pk_…`) from **Settings → Ingestion** ([US](https://app.maple.dev/settings?tab=ingestion) or [EU](https://app.eu.maple.dev/settings?tab=ingestion)) and add it to `.env.local` in your project:
+1. Copy the public ingest key (`maple_pk_…`) from **Settings → Ingestion** ([US](https://app.maple.dev/settings/ingestion) or [EU](https://app.eu.maple.dev/settings/ingestion)) and add it to `.env.local` in your project:
 
     ```env
     MAPLE_INGEST_KEY=maple_pk_...

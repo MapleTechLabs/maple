@@ -256,45 +256,21 @@ describe("GithubCostSourceService", () => {
 		},
 	)
 
-	it.effect("asks GitHub nothing for an org outside the rollout, neither to list nor to add", () => {
+	it.effect("removes only the org's own source, and says whether one was there", () => {
 		const testDb = createTestDb(trackedDbs)
-		const world = makeFakeGithub({ cloudCost: false })
+		const world = makeFakeGithub()
 		return run(
 			testDb,
 			world,
 			Effect.gen(function* () {
-				assert.strictEqual(
-					(yield* Effect.flip(list()))._tag,
-					"@maple/http/errors/CloudCostDisabledError",
-				)
-				assert.strictEqual(
-					(yield* Effect.flip(add(ORGANIZATION)))._tag,
-					"@maple/http/errors/CloudCostDisabledError",
-				)
-				assert.deepStrictEqual([world.paths, yield* sources(testDb)], [[], []])
+				yield* add(ORGANIZATION)
+				// Another org naming this installation removes nothing.
+				assert.deepStrictEqual(yield* remove(ORGANIZATION, OTHER_ORG), { accountLogin: null })
+				assert.lengthOf(yield* sources(testDb), 1)
+				assert.deepStrictEqual(yield* remove(ORGANIZATION), { accountLogin: "example-org" })
+				assert.deepStrictEqual(yield* sources(testDb), [])
+				assert.deepStrictEqual(yield* remove(ORGANIZATION), { accountLogin: null })
 			}),
 		)
 	})
-
-	it.effect(
-		"removes only the org's own source, without needing the rollout, and says whether one was there",
-		() => {
-			const testDb = createTestDb(trackedDbs)
-			const world = makeFakeGithub()
-			return run(
-				testDb,
-				world,
-				Effect.gen(function* () {
-					yield* add(ORGANIZATION)
-					world.cloudCost = false
-					// Another org naming this installation removes nothing.
-					assert.deepStrictEqual(yield* remove(ORGANIZATION, OTHER_ORG), { accountLogin: null })
-					assert.lengthOf(yield* sources(testDb), 1)
-					assert.deepStrictEqual(yield* remove(ORGANIZATION), { accountLogin: "example-org" })
-					assert.deepStrictEqual(yield* sources(testDb), [])
-					assert.deepStrictEqual(yield* remove(ORGANIZATION), { accountLogin: null })
-				}),
-			)
-		},
-	)
 })

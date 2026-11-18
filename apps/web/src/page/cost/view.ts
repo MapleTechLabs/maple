@@ -48,6 +48,7 @@ import { filtersRail } from "./view-filters"
 import { figuresRow } from "./view-figures"
 import { sourcesSection } from "./view-sources"
 import { breakdownTable } from "./view-table"
+import { betaNotice } from "./kit/beta-notice"
 
 const DAY_SECONDS = 24 * 60 * 60
 
@@ -82,7 +83,7 @@ const onRamp = (
 					emptyMedia(h, { variant: "icon" }, [icon(h, "CircleDollarIcon")]),
 					emptyTitle(h, ["No cost source yet"]),
 					emptyDescription(h, [
-						"Add a source and Maple reads what it bills each day: an AWS account by service, region and account, an OpenRouter account by model, a GitHub organization by product and repository, a Vercel team by product and project, a Cloudflare account by product, a PlanetScale organization by database and branch, an Anthropic or OpenAI organization by model and workspace or project.",
+						"Add a source and Maple reads what it bills each day: an AWS account by service, region and account, an OpenRouter account by model, a GitHub organization by product and repository, a Vercel team by product and project, a Cloudflare account by product, a PlanetScale organization by database and branch, an Anthropic or OpenAI organization by model and workspace or project, a Google Cloud billing account by project, service and resource.",
 					]),
 					// A member's save would be refused: say who can, and offer no form.
 					...(!options.cannotManage
@@ -138,6 +139,10 @@ const FIRST_SYNC = {
 	openai: {
 		alone: "It brings in this month and the last, then the two months before.",
 		named: "OpenAI brings in this month and the last, then the two months before.",
+	},
+	gcp: {
+		alone: "It brings in this month and the last, and older months the export holds fill in after that.",
+		named: "Google Cloud brings in this month and the last, and older months the export holds fill in after that.",
 	},
 } as const satisfies Record<CostProvider, Readonly<{ alone: string; named: string }>>
 
@@ -375,7 +380,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
-					title: "Cost",
+					title: "Cloud cost",
 					// The rail filters the window's reads: it shows once there is cost to read.
 					filters: showsData(model) ? filtersRail(h, model) : undefined,
 					actions: headerActions(h, model),
@@ -383,11 +388,10 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				// A grid, not the scroll column's own flex: there a panel (it clips) is squeezed by a
 				// growing sibling such as the error state.
 				[
-					grid(
-						h,
-						{ cols: 1, gap: "6", className: "shrink-0" },
-						body(h, model, inputs.context.timeZone),
-					),
+					grid(h, { cols: 1, gap: "6", className: "shrink-0" }, [
+						betaNotice(h),
+						...body(h, model, inputs.context.timeZone),
+					]),
 					addSourceDialog(h, model, sourcesOf(model)),
 					removeSourceDialog(h, model),
 				],

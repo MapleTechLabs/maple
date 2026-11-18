@@ -7,25 +7,33 @@
  *
  * The one way an approved mutation runs, whether the click came from the web app
  * (`POST /internal/chat/apply`) or a chat platform: refuse a tool that is not approval-gated, run it
- * under a resolved tenant, and hand back what it said. See `ChatConnector.identity` for the
- * connector half of the approval policy; a connector approver's chat account rides along as
- * forensic context on the audit entry.
+ * as a Maple user, and hand back what it said. See `ChatConnector.identity` for the connector half
+ * of the approval policy; a connector approver's chat account rides along as forensic context on
+ * the audit entry.
  */
 import {
 	chatSessionKind,
-	connectorApprovalTenant,
 	decidedBy,
 	orgIdFromChatSessionId,
+	type ChatConnectorOrigin,
 	type ChatProposalApproval,
 } from "@maple/domain/chat-session"
-import { OrgId } from "@maple/primitives"
+import { OrgId, UserId } from "@maple/primitives"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
 import { Cause, Effect, Layer, ManagedRuntime, Option, Schema, Array as Arr } from "effect"
 import { chatPlatformLayer, type ChatRuntimeInput, chatTelemetry, releaseChatRuntime } from "./do-runtime"
-import { linkedUserTenant, toTenantContext, withConnectorActor } from "./turn-actor"
+import { LinkedUserNotPermitted, linkedUserTenant, toTenantContext } from "./turn-actor"
 
-export type ApplyChatProposalInput = ChatProposalApproval &
+/**
+ * An approval as it arrives over RPC, where nothing decoded it: a connector's acting user is a
+ * claim to check here, not a brand to trust, and a relay build from before the rule sends none.
+ */
+type ReceivedApproval =
+	| Extract<ChatProposalApproval, { readonly tenant: unknown }>
+	| { readonly approver: ChatConnectorOrigin; readonly actingUserId?: string }
+
+export type ApplyChatProposalInput = ReceivedApproval &
 	ChatRuntimeInput & {
 		/** `"<orgId>:<tabId>"` — the org the change is made in. */
 		readonly sessionId: string
@@ -51,10 +59,19 @@ const failure = (output: string): AppliedProposal => ({ output, isError: true })
 const UNCERTAIN = "Maple couldn't confirm the change went through — check it in Maple."
 
 const decodeOrgId = Schema.decodeUnknownOption(OrgId)
+const decodeUserId = Schema.decodeUnknownOption(UserId)
+
+/** What a clicker nobody can name is told: nothing was applied, and where a change is made. */
+const NOT_LINKED = "Maple could not tell which Maple user approved this. Make the change in the Maple app."
+
+/** The Maple user a connector approval runs as, when the click named one that decodes. */
+const actingUser = (input: Extract<ApplyChatProposalInput, { readonly actingUserId?: string }>) =>
+	decodeUserId(input.actingUserId)
 
 /**
- * Who the change runs as — which the caller decided before the session was ever reached. A person
- * in the app acts as themselves; see `ChatConnector.identity` for the connector cases.
+ * Who the change runs as, which the caller decided before the session was ever reached: always a
+ * Maple user. A person in the app acts as themselves, and a connector approver as the user their
+ * chat account is linked to (see `ChatConnector.identity`).
  */
 export const resolveTenant = Effect.fnUntraced(function* (orgId: OrgId, input: ApplyChatProposalInput) {
 	// The route authenticated them and resolved their roles; the audit entry names them.
@@ -62,17 +79,13 @@ export const resolveTenant = Effect.fnUntraced(function* (orgId: OrgId, input: A
 		yield* Effect.annotateCurrentSpan("maple.chat.apply.as", "app")
 		return toTenantContext(input.tenant, input.approver)
 	}
-	if (input.actingUserId === undefined) {
-		// What attributes the audit entry: the actor is the connector's agent, and the approver's
-		// platform identity is the forensic context an auditor asks for.
-		const tenant = toTenantContext(connectorApprovalTenant(orgId), input.approver)
-		yield* Effect.annotateCurrentSpan("maple.chat.apply.as", "connector")
-		// The same pinned agent actor a connector TURN runs as, so the change and the conversation
-		// that proposed it are attributed to one identity.
-		return yield* withConnectorActor(tenant, input.approver)
+	const userId = actingUser(input)
+	// `applyChatProposal` already refused this; held here too so this function cannot be reached
+	// around it with nobody to act as.
+	if (Option.isNone(userId)) {
+		return yield* new LinkedUserNotPermitted({ reason: "not_linked", message: NOT_LINKED })
 	}
-
-	const tenant = yield* linkedUserTenant(orgId, input.actingUserId, input.approver)
+	const tenant = yield* linkedUserTenant(orgId, userId.value, input.approver)
 	yield* Effect.annotateCurrentSpan("maple.chat.apply.as", "user")
 	return tenant
 })
@@ -98,13 +111,11 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 	}
 
 	// Defense in depth: only an approval-gated mutation is applicable here, whatever the log happens
-	// to hold. `connectorApprovalTenant` below grants `org:admin`, so this is the last thing between
-	// an entry in a session's own log and an org-admin execution — which is why it answers here,
-	// ahead of a runtime whose layers can die on a misconfigured environment, rather than from
-	// inside one.
+	// to hold. It answers here, ahead of a runtime whose layers can die on a misconfigured
+	// environment, rather than from inside one.
 	// Loaded here, not with this module: the set is derived from the tool registry, which the agent
 	// records (read for the surface below) depend on too.
-	const [{ MUTATING_TOOL_NAMES }, { agentForSession }, { profileForTurn }] = await Promise.all([
+	const [{ MUTATING_TOOL_NAMES }, { agentForSession }, { toolSurfaceForApproval }] = await Promise.all([
 		import("./permissions"),
 		import("./agents"),
 		import("./profiles"),
@@ -112,6 +123,9 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 	if (!MUTATING_TOOL_NAMES.has(input.tool)) {
 		return failure(`"${input.tool}" is not a change Maple applies from an approval.`)
 	}
+	// A change is only ever applied as a Maple user: a click that names none stops here, before a
+	// runtime or a database connection exists.
+	if (!("tenant" in input) && Option.isNone(actingUser(input))) return failure(NOT_LINKED)
 
 	// `ErrorActorsService` is deliberately absent: `./turn-actor` already puts it in this module's
 	// static graph, so deferring it would only re-resolve a module that is loaded anyway.
@@ -135,8 +149,7 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 			tenant,
 			input.tool,
 			input.input,
-			// The surface the turn that proposed it ran on.
-			profileForTurn(agentForSession(input.sessionId), approver).surface,
+			toolSurfaceForApproval(agentForSession(input.sessionId), input),
 		)
 		const content = Arr.join(
 			Arr.map(result.content, (entry) => entry.text),

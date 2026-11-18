@@ -87,8 +87,7 @@ export const AWS_MODULE_SPECS = {
 		title: "Cost",
 		summary:
 			"Daily spend by service, region and usage type. AWS bills USD 0.01 per Cost Explorer request.",
-		available: false,
-		rolloutFlag: "cloudCost",
+		available: true,
 		managedPolicies: [],
 		// Every cost read Maple plans to make: adding one later means each customer updates the stack.
 		actions: [

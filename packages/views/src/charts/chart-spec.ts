@@ -173,6 +173,8 @@ export const ChartSpec = defineTaggedUnion({
 		stacked: Schema.Boolean,
 		showTooltip: Schema.Boolean,
 		axis: Schema.optionalKey(TimeseriesAxisSpec),
+		/** Series keys the legend has hidden; they are left out of the plot. */
+		hidden: Schema.optionalKey(Schema.Array(Schema.String)),
 	},
 	/** An issue's occurrences: bucketed counts as bars. */
 	Occurrences: {

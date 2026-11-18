@@ -2,6 +2,7 @@ import { Array as Arr } from "effect"
 import type { Command } from "foldkit"
 import * as Animation from "@foldkit/ui/animation"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
+import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import * as Popover from "@maple/views/ui/popover"
@@ -14,6 +15,7 @@ const LOCAL_COMMANDS: ReadonlySet<string> = new Set([
 	LoadChartRuntime.name,
 	Animation.WaitForPaint.name,
 	Animation.WaitForAnimationSettled.name,
+	Combobox.WaitForComboboxExit.name,
 	Dialog.WaitForDialogTransition.name,
 	Menu.FocusMenuItem.name,
 	Menu.WaitSubmenuDelay.name,

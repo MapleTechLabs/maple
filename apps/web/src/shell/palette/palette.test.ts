@@ -189,29 +189,22 @@ describe("command palette", () => {
 	test("a flagged-off row is not shown", () => {
 		const titles = (visibleFlagged: ReadonlyArray<string>) =>
 			Arr.map(shownEntries(open().model, context, visibleFlagged).entries, (entry) => entry.title)
-		expect(titles(["/cost", "/security"])).toEqual(expect.arrayContaining(["Cost", "Security"]))
-		expect(titles(["/security"])).not.toContain("Cost")
-		expect(titles(["/cost"])).not.toContain("Security")
+		expect(titles(["/status-pages", "/security"])).toEqual(
+			expect.arrayContaining(["Status pages", "Security"]),
+		)
+		expect(titles(["/security"])).not.toContain("Status pages")
+		expect(titles(["/status-pages"])).not.toContain("Security")
+		expect(titles([])).toContain("Cloud cost")
 	})
 
-	test("a flagged-off section takes its children with it", () => {
-		const found = (visibleFlagged: ReadonlyArray<string>) =>
-			Arr.map(
-				shownEntries(typed(open().model, "budgets").model, context, visibleFlagged).entries,
-				(entry) => entry.title,
-			)
-		expect(found(["/cost"])).toContain("Cost budgets")
-		expect(found(ALL_FLAGGED)).not.toContain("Cost budgets")
-	})
-
-	// "Cost budgets" is the one title with a word starting "budgets". Hidden, it must not be what
+	// "Status pages" is the one title with a word starting "pages". Hidden, it must not be what
 	// decides that the looser matches drop out.
 	test("a hidden row's better match does not push out what the viewer can open", () => {
-		const model = typed(loadedWith(["budgeting"]), "budgets").model
+		const model = typed(loadedWith(["page-store"]), "pages").model
 		const ids = (visibleFlagged: ReadonlyArray<string>) =>
 			Arr.map(shownEntries(model, context, visibleFlagged).entries, (entry) => entry.id)
 
-		expect(ids(ALL_FLAGGED)).toContain("service:budgeting")
-		expect(ids(["/cost"])).not.toContain("service:budgeting")
+		expect(ids(ALL_FLAGGED)).toContain("service:page-store")
+		expect(ids(["/status-pages"])).not.toContain("service:page-store")
 	})
 })

@@ -34,5 +34,25 @@ export const makeIsland = <Model, Message extends { readonly _tag: string }, Pro
 	config: IslandConfig<Model, Message, Props>,
 ): Island => ({ kind: ISLAND_KIND, name: config.name, use: (f) => f(config) })
 
+/** The one Message of an island that never updates. */
+export type StaticMessage = Readonly<{ _tag: "Static" }>
+
+/** An island with nothing to click: its props are its model. Use it without a `client:*` directive. */
+export const makeStaticIsland = <Props>(
+	config: Readonly<{
+		name: string
+		Props: Schema.Decoder<Props> & Schema.Codec<Props, unknown, unknown, unknown>
+		view: (props: Props, h: HtmlBuilder<StaticMessage>) => Html
+	}>,
+): Island =>
+	makeIsland<Props, StaticMessage, Props>({
+		name: config.name,
+		Props: config.Props,
+		Model: config.Props,
+		init: (props) => ({ model: props }),
+		update: (model) => ({ model }),
+		view: config.view,
+	})
+
 export const isIsland = (value: unknown): value is Island =>
 	Predicate.hasProperty(value, "kind") && value.kind === ISLAND_KIND && Predicate.hasProperty(value, "use")

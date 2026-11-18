@@ -83,7 +83,7 @@ export const V2ScrapeTarget = Schema.Struct({
 	}),
 	url: Schema.String.annotate({
 		description:
-			"The endpoint being scraped. For `planetscale` targets this is derived server-side from the organization.",
+			"The endpoint being scraped. For `planetscale` targets this is derived server-side from the organization. A caller who cannot manage scrape targets reads it without its userinfo and with each query value as `[redacted]`; the path is shown to every reader, so a token belongs in the query or in `auth_credentials`, not in the path. A URL carrying `[redacted]` is refused on create and update.",
 		examples: ["https://payments.internal:9090/metrics"],
 	}),
 	target_type: targetTypeField,

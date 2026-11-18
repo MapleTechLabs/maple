@@ -419,6 +419,33 @@ describe("CloudSecurityStore", () => {
 		}).pipe(Effect.provide(world.layer))
 	})
 
+	it.effect("knows a region once the poller recorded a state there, for that connection only", () => {
+		const world = makeWorld()
+		const elsewhere = Schema.decodeSync(AwsRegion)("eu-west-1")
+		return Effect.gen(function* () {
+			const store = yield* CloudSecurityStore
+			const first = yield* connect(orgId, "111111111111")
+			const second = yield* connect(orgId, "333333333333")
+			assert.isFalse(yield* store.knowsRegion(orgId, first.id, region))
+			// A service found off still counts: the poller reads the region.
+			yield* store.recordServiceState({
+				orgId,
+				connectionId: first.id,
+				region,
+				source: "securityhub",
+				state: "not_enabled",
+				cursorAt: null,
+				windowMs: null,
+				lastError: null,
+				checkedAt: 1,
+			})
+			assert.isTrue(yield* store.knowsRegion(orgId, first.id, region))
+			assert.isFalse(yield* store.knowsRegion(orgId, first.id, elsewhere))
+			assert.isFalse(yield* store.knowsRegion(orgId, second.id, region))
+			assert.isFalse(yield* store.knowsRegion(otherOrgId, first.id, region))
+		}).pipe(Effect.provide(world.layer))
+	})
+
 	it.effect("keeps a finding first seen closed out, and resolves the ones a read no longer names", () => {
 		const world = makeWorld()
 		return Effect.gen(function* () {

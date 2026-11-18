@@ -28,6 +28,7 @@ const SECTIONS: ReadonlyArray<
 		defaultOpen: boolean
 	}>
 > = [
+	{ title: "Pod", facet: "podNames", options: "pods", isSearchable: true, defaultOpen: true },
 	{
 		title: "Namespace",
 		facet: "namespaces",
@@ -35,9 +36,8 @@ const SECTIONS: ReadonlyArray<
 		isSearchable: false,
 		defaultOpen: true,
 	},
-	{ title: "Pod", facet: "podNames", options: "pods", isSearchable: true, defaultOpen: false },
-	{ title: "Node", facet: "nodeNames", options: "nodes", isSearchable: true, defaultOpen: false },
 	{ title: "Cluster", facet: "clusters", options: "clusters", isSearchable: false, defaultOpen: false },
+	{ title: "Node", facet: "nodeNames", options: "nodes", isSearchable: true, defaultOpen: false },
 	{
 		title: "Deployment",
 		facet: "deployments",

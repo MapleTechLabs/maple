@@ -1,5 +1,8 @@
 import * as Policy from "@maple/domain/policy"
+import { StatusPageId } from "@maple/domain"
 import { Schema } from "effect"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Menu from "@maple/views/ui/menu"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { StatusPageSummary } from "../shared/derive"
@@ -11,6 +14,12 @@ export const Model = Schema.Struct({
 	pages: KeyedSchema(Schema.Array(StatusPageSummary), LoadFailure),
 	nowMs: Schema.NullOr(Schema.Number),
 	grants: Schema.Array(Policy.PermissionName),
+	/** Each row's "..." menu, by page id, created on first use. */
+	rowMenus: Schema.Record(Schema.String, Menu.Model),
+	/** The page the delete dialog asks about. */
+	deletingPageId: Schema.NullOr(StatusPageId),
+	deleteDialog: Dialog.Model,
+	isDeleting: Schema.Boolean,
 })
 export type Model = typeof Model.Type
 
