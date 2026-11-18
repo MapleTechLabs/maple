@@ -41,6 +41,6 @@ export const RULES_COPY = {
 	autoApprove: {
 		label: "Approve low-risk pull requests",
 		description:
-			"Approves on GitHub when a review of the whole diff rates the risk low, finds nothing to fix and scores 9 or more, and the author can push to the repository. A new push or a later review that disagrees withdraws it. Never counts as a code owner's review.",
+			"Approves on GitHub when a review of a small diff rates the risk low and finds nothing to fix. The approval counts toward the reviews a branch requires, on the author's own pull request too, but never as a code owner's. Only admins can turn it on.",
 	},
 } as const

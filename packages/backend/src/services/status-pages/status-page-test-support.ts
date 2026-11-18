@@ -1,7 +1,8 @@
 // Seeds status pages, monitors and incidents for the status-pages tests.
-import { Effect, Schema } from "effect"
+import { Effect, Ref, Schema, Array as Arr } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { OrgId, StatusPageId } from "@maple/primitives"
+import { DnsLookupError, type DnsTxtResolverApi } from "@maple/backend/platform/DnsTxtResolver"
 import { executeSql, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import type { CloudflareCustomHostnames } from "./CloudflareCustomHostnames"
 
@@ -9,6 +10,34 @@ import type { CloudflareCustomHostnames } from "./CloudflareCustomHostnames"
 export type InMemoryCustomHostnames = Effect.Success<
 	ReturnType<typeof CloudflareCustomHostnames.makeInMemory>
 >
+
+/** A DNS double: the TXT records published by name, and whether lookups fail. */
+export const makeInMemoryDns = Effect.gen(function* () {
+	const records = yield* Ref.make<ReadonlyMap<string, ReadonlyArray<string>>>(new Map())
+	const failing = yield* Ref.make(false)
+	const api: DnsTxtResolverApi = {
+		lookupTxt: (name) =>
+			Effect.gen(function* () {
+				if (yield* Ref.get(failing))
+					return yield* new DnsLookupError({ recordName: name, message: "DNS lookup timed out" })
+				return (yield* Ref.get(records)).get(name) ?? []
+			}),
+	}
+	return {
+		api,
+		/** Adds a TXT value at the record's name, beside any already there. */
+		publish: (record: { readonly name: string; readonly value: string }) =>
+			Ref.update(
+				records,
+				(map) => new Map([...map, [record.name, [...(map.get(record.name) ?? []), record.value]]]),
+			),
+		/** Removes every TXT value at `name`. */
+		unpublish: (name: string) =>
+			Ref.update(records, (map) => new Map(Arr.filter([...map], ([key]) => key !== name))),
+		setFailing: (value: boolean) => Ref.set(failing, value),
+	}
+})
+export type InMemoryDns = Effect.Success<typeof makeInMemoryDns>
 
 export const ORG = Schema.decodeSync(OrgId)("org_status_pages")
 export const USER = "user_status_pages"

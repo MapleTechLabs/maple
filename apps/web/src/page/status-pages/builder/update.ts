@@ -1,11 +1,17 @@
 import type {
+	StatusPageDraftComponent,
 	StatusPagePreviewParams,
 	V2StatusPageCreateParams,
 	V2UptimeMonitor,
 } from "@maple/domain/http/v2"
-import { STATUS_PAGE_PRESET_DEFAULTS } from "@maple/domain/status-page"
-import { Option, Result, String as Str } from "effect"
-import { AsyncData } from "foldkit"
+import {
+	customDomainIssue,
+	normalizeCustomDomain,
+	STATUS_PAGE_PRESET_DEFAULTS,
+} from "@maple/domain/status-page"
+import { Option, Result, Array as Arr, String as Str } from "effect"
+import { AsyncData, Command as FoldkitCommand } from "foldkit"
+import * as Dialog from "@maple/views/ui/dialog"
 import * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
@@ -13,17 +19,24 @@ import type { AppRoute } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { UPTIME_LIST_LIMIT } from "../../kit/uptime/commands"
 import { statusPageHref } from "../shared/commands"
+import { groupedOrder, groupIndexOf, groupOrder, moved, movedGroup } from "../shared/component-order"
+import { componentPayload, type ComponentForm, emptyComponentForm, orNull } from "../shared/form"
+import type * as Combobox from "@maple/views/ui/combobox"
+import { initGroupPicker, updateGroupPicker } from "../shared/group-picker"
 import {
 	draftComponents,
 	emptyPicker,
 	hasRowIssues,
 	monitorCreated,
 	monitorFailed,
+	monitorKey,
+	PRECHECK_MAX_MONITORS,
+	type PickerMessage,
 	seedPicker,
 	updatePicker,
 } from "../shared/picker"
 import { historyFrom } from "../shared/preview"
-import { slugFromName, slugIssue } from "../shared/slug"
+import { SLUG_TAKEN, SLUG_TAKEN_MESSAGE, slugFromName, slugIssue } from "../shared/slug"
 import {
 	CreateBuilderMonitor,
 	CreateBuilderPage,
@@ -31,13 +44,14 @@ import {
 	FetchBuilderPreview,
 	FetchBuilderSession,
 	FocusBuilderField,
+	SetBuilderCustomDomain,
 	ReadBuilderClock,
 	TrackMonitorCreated,
 	TrackPageCreated,
 	WaitBuilderPreview,
 } from "./command"
 import { Message } from "./message"
-import { canManage, type Model, type SubmitMode } from "./model"
+import { canManage, type DraftRow, type Model, type SubmitMode } from "./model"
 import { acceptGrants } from "../../kit/session-grants"
 
 export type Return = PageReturn<Model, Message>
@@ -45,10 +59,11 @@ export type Return = PageReturn<Model, Message>
 type BuilderRoute = Extract<AppRoute, { readonly _tag: "StatusPageNew" }>
 
 export const PICKER_ID = "status-page-builder"
+export const ADD_PICKER_ID = "status-page-builder-add"
+export const FIELDS_ID = "status-page-builder-component"
 export const NAME_ID = "status-page-builder-name"
 export const SLUG_ID = "status-page-builder-slug"
-
-const SLUG_TAKEN = "status_page_slug_taken"
+export const DOMAIN_ID = "status-page-builder-domain-input"
 
 const monitorsKey = (context: PageContext) =>
 	requestKey(context.orgId, "uptimeMonitors.list", { query: { limit: UPTIME_LIST_LIMIT } })
@@ -64,26 +79,55 @@ const readMonitors = (model: Model, context: PageContext, mode: Keyed.ReadMode):
 
 export const monitorsOf = (model: Model) => AsyncData.getOrElse(model.monitors.data, () => [])
 
+const hasCustomDomain = (model: Model): boolean => Str.trim(model.customDomain) !== ""
+
+/** Why the typed custom domain cannot be set; nothing while the field is empty (it is optional). */
+export const customDomainError = (model: Model): string | null =>
+	hasCustomDomain(model) ? customDomainIssue(normalizeCustomDomain(model.customDomain)) : null
+
 export const nameIssue = (model: Model): string | null =>
 	model.isNameTouched && Str.trim(model.name) === "" ? "Add a name." : null
 
 /** The address's problem: the server's "taken", or what the API would refuse. */
 export const slugError = (model: Model): string | null =>
 	model.takenSlug !== null && model.takenSlug === model.slug
-		? "That address is taken. Pick another."
+		? SLUG_TAKEN_MESSAGE
 		: model.slug === "" && !model.isNameTouched
 			? null
 			: slugIssue(model.slug)
+
+const safeKey = (key: string) => Str.replace(":", "-")(key)
+
+/** A row's head in the list: the button that opens and closes it. */
+export const rowIdOf = (key: string): string => `${PICKER_ID}-row-${safeKey(key)}`
+
+/** A row's drag grip in the list. */
+export const gripIdOf = (key: string): string => `${PICKER_ID}-grip-${safeKey(key)}`
+
+/** A group's drag grip in the list. */
+export const groupGripIdOf = (group: string | null): string =>
+	`${PICKER_ID}-group-grip-${group === null ? "none" : encodeURIComponent(group)}`
+
+/** The rows as the order helpers take them: the key as the id, a blank group as none. */
+const placed = (rows: ReadonlyArray<DraftRow>) =>
+	Arr.map(rows, (row) => ({ id: row.key, group: orNull(row.form.group), row }))
+
+/** The rows as the page lists them: each group where its first member is, members in order. */
+export const orderedRows = (model: Model): ReadonlyArray<DraftRow> =>
+	Arr.map(groupedOrder(placed(model.rows)), (item) => item.row)
+
+const isNamed = (row: DraftRow) => Str.trim(row.form.name) !== ""
 
 /** Every check a create must pass, so neither button sends a page the API would refuse. */
 export const canSubmit = (model: Model): boolean =>
 	canManage(model) &&
 	model.submitting === null &&
-	!model.picker.isCreatingMonitor &&
+	!model.addPicker.isCreatingMonitor &&
 	Str.trim(model.name) !== "" &&
 	slugIssue(model.slug) === null &&
 	model.takenSlug !== model.slug &&
-	!hasRowIssues(model.picker)
+	Arr.every(model.rows, isNamed) &&
+	customDomainError(model) === null
 
 /** The preset carries its own font and corners; the builder offers no other choice of either. */
 const themeOf = (model: Model) => ({
@@ -92,19 +136,22 @@ const themeOf = (model: Model) => ({
 	...STATUS_PAGE_PRESET_DEFAULTS[model.preset],
 })
 
-/** What the preview reads; `draftComponents` leaves out rows not named yet, which the API refuses. */
+/** The page's components in page order; rows not named yet are left out, which the API refuses. */
+const componentsOf = (model: Model): ReadonlyArray<StatusPageDraftComponent> =>
+	Arr.map(Arr.filter(orderedRows(model), isNamed), (row) => componentPayload(row.form))
+
 export const previewDraft = (model: Model): StatusPagePreviewParams => ({
 	name: Str.trim(model.name),
 	slug: model.slug,
 	theme: themeOf(model),
-	components: draftComponents(model.picker),
+	components: componentsOf(model),
 })
 
 export const createPayload = (model: Model, mode: SubmitMode): V2StatusPageCreateParams => ({
 	name: Str.trim(model.name),
 	slug: model.slug,
 	theme: themeOf(model),
-	components: draftComponents(model.picker),
+	components: componentsOf(model),
 	publish: mode === "publish",
 })
 
@@ -126,9 +173,15 @@ export const init = (_route: BuilderRoute, context: PageContext): Return => {
 		isSeeded: false,
 		name: "",
 		slug: "",
+		customDomain: "",
 		isSlugEdited: false,
 		isNameTouched: false,
-		picker: emptyPicker,
+		rows: [],
+		nextKey: 1,
+		openKey: null,
+		groupPicker: initGroupPicker("status-page-builder-group"),
+		addSheet: Dialog.init("status-page-builder-add", "sheet"),
+		addPicker: emptyPicker,
 		preset: "default",
 		appearance: "auto",
 		previewScheme: "light",
@@ -152,7 +205,23 @@ export const init = (_route: BuilderRoute, context: PageContext): Return => {
 	}
 }
 
-/** The first monitors read fills the checklist; later reads (a retry) leave the user's picks. */
+const monitorForm = (monitor: V2UptimeMonitor): ComponentForm => ({
+	...emptyComponentForm,
+	name: monitor.name,
+	monitorId: monitor.id,
+})
+
+/** A small org's page starts with every monitor on it but heartbeats; past that, the user adds them. */
+const seedRows = (monitors: ReadonlyArray<V2UptimeMonitor>): ReadonlyArray<DraftRow> =>
+	monitors.length > PRECHECK_MAX_MONITORS
+		? []
+		: Arr.flatMap(monitors, (monitor) =>
+				monitor.kind === "heartbeat"
+					? []
+					: [{ key: monitorKey(monitor.id), form: monitorForm(monitor) }],
+			)
+
+/** The first monitors read fills the list; later reads (a retry) leave the user's rows.*/
 const acceptMonitors = (
 	model: Model,
 	key: string,
@@ -164,25 +233,139 @@ const acceptMonitors = (
 	return edited({
 		...next,
 		isSeeded: true,
-		picker: seedPicker(
-			AsyncData.getOrElse(monitors.data, () => []),
-			true,
-		),
+		rows: seedRows(AsyncData.getOrElse(monitors.data, () => [])),
 	})
 }
 
-const pickerStep = (model: Model, message: Parameters<typeof updatePicker>[1]): Return => {
-	const step = updatePicker(model.picker, message)
-	const next = edited({ ...model, picker: step.picker })
+/** The open row's fields, changed by `change`; an edit, so the preview follows. */
+const editOpen = (model: Model, change: (form: ComponentForm) => ComponentForm): Return =>
+	model.openKey === null
+		? { model }
+		: edited({
+				...model,
+				rows: Arr.map(model.rows, (row) =>
+					row.key === model.openKey ? { ...row, form: change(row.form) } : row,
+				),
+			})
+
+const groupPickerStep = (model: Model, message: Combobox.Message): Return => {
+	const step = updateGroupPicker(model.groupPicker, message)
+	const withState = { ...model, groupPicker: step.picker }
+	const next = Option.match(step.picked, {
+		onNone: (): Return => ({ model: withState }),
+		onSome: (group) => editOpen(withState, (form) => ({ ...form, group })),
+	})
 	return {
-		model: next.model,
+		...next,
 		commands: [
 			...(next.commands ?? []),
-			...Option.match(step.createMonitor, {
-				onNone: () => [],
-				onSome: (url) => [CreateBuilderMonitor({ url })],
-			}),
+			...FoldkitCommand.mapMessages(step.commands, (child) =>
+				Message.GotGroupPickerMessage({ message: child }),
+			),
 		],
+	}
+}
+
+/** The row at `index` among its group's rows; nothing when it is already there. */
+const moveRow = (model: Model, key: string, index: number): Model | null => {
+	const next = moved(placed(model.rows), key, index)
+	return next === null ? null : { ...model, rows: Arr.map(next, (item) => item.row) }
+}
+
+/** An arrow key on the grip: one slot up (-1) or down (1), focus kept on the moved row's grip. */
+const nudgeRow = (model: Model, key: string, offset: number): Return => {
+	const from = groupIndexOf(placed(model.rows), key)
+	const next = from === null ? null : moveRow(model, key, from + offset)
+	if (next === null) return { model }
+	const step = edited(next)
+	return { ...step, commands: [...(step.commands ?? []), FocusBuilderField({ id: gripIdOf(key) })] }
+}
+
+/** The group's rows, together, at the `index`th place among the groups. */
+const moveGroupTo = (model: Model, group: string | null, index: number): Model | null => {
+	const next = movedGroup(placed(model.rows), group, index)
+	return next === null ? null : { ...model, rows: Arr.map(next, (item) => item.row) }
+}
+
+const nudgeGroup = (model: Model, group: string | null, offset: number): Return => {
+	const from = groupOrder(placed(model.rows)).indexOf(group)
+	const next = from === -1 ? null : moveGroupTo(model, group, from + offset)
+	if (next === null) return { model }
+	const step = edited(next)
+	return {
+		...step,
+		commands: [...(step.commands ?? []), FocusBuilderField({ id: groupGripIdOf(group) })],
+	}
+}
+
+const removeRow = (model: Model, key: string): Return =>
+	edited({
+		...model,
+		rows: Arr.filter(model.rows, (row) => row.key !== key),
+		openKey: model.openKey === key ? null : model.openKey,
+	})
+
+const sheetCommands = (step: ReturnType<typeof Dialog.update>) =>
+	FoldkitCommand.mapMessages(step.commands ?? [], (message) => Message.GotAddSheetMessage({ message }))
+
+/** Add components: the monitors not on the page yet, none picked; a URL or a component by hand join them. */
+const openAdd = (model: Model): Return => {
+	const used = new Set(
+		Arr.flatMap(model.rows, (row) => (row.form.monitorId === "" ? [] : [row.form.monitorId])),
+	)
+	const step = Dialog.open(model.addSheet)
+	return {
+		model: {
+			...model,
+			addSheet: step.model,
+			addPicker: seedPicker(
+				Arr.filter(monitorsOf(model), (monitor) => !used.has(monitor.id)),
+				false,
+			),
+		},
+		commands: sheetCommands(step),
+	}
+}
+
+const formOf = (component: StatusPageDraftComponent): ComponentForm => ({
+	...emptyComponentForm,
+	name: component.name,
+	group: component.group ?? "",
+	monitorId: component.monitor_id ?? "",
+	manualStatus: component.manual_status ?? "",
+	showUptime: component.show_uptime ?? true,
+})
+
+/** What is ticked joins the page at the end, and the sheet closes. */
+const submitAdd = (model: Model): Return => {
+	const components = draftComponents(model.addPicker)
+	if (components.length === 0 || hasRowIssues(model.addPicker) || model.addPicker.isCreatingMonitor)
+		return { model }
+	const added = Arr.map(components, (component, index): DraftRow => ({
+		key:
+			component.monitor_id === null || component.monitor_id === undefined
+				? `c:${model.nextKey + index}`
+				: monitorKey(component.monitor_id),
+		form: formOf(component),
+	}))
+	const step = Dialog.close(model.addSheet)
+	const next = edited({
+		...model,
+		rows: [...model.rows, ...added],
+		nextKey: model.nextKey + added.length,
+		addSheet: step.model,
+	})
+	return { ...next, commands: [...(next.commands ?? []), ...sheetCommands(step)] }
+}
+
+const addPickerStep = (model: Model, message: PickerMessage): Return => {
+	const step = updatePicker(model.addPicker, message)
+	return {
+		model: { ...model, addPicker: step.picker },
+		commands: Option.match(step.createMonitor, {
+			onNone: () => [],
+			onSome: (url) => [CreateBuilderMonitor({ url })],
+		}),
 	}
 }
 
@@ -214,17 +397,39 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				isSlugEdited: slug !== "",
 			})
 		},
-		GotPickerMessage: ({ message: child }) => pickerStep(model, child),
+		ClickedRow: ({ key }) => ({ model: { ...model, openKey: model.openKey === key ? null : key } }),
+		ChangedRowField: ({ field, value }) => editOpen(model, (form) => ({ ...form, [field]: value })),
+		ToggledRowUptime: () => editOpen(model, (form) => ({ ...form, showUptime: !form.showUptime })),
+		GotGroupPickerMessage: ({ message: child }) => groupPickerStep(model, child),
+		ClickedRemoveRow: ({ key }) => removeRow(model, key),
+		DroppedRow: ({ key, index }) => {
+			const next = moveRow(model, key, index)
+			return next === null ? { model } : edited(next)
+		},
+		PressedMoveRow: ({ key, offset }) => nudgeRow(model, key, offset),
+		DroppedGroup: ({ group, index }) => {
+			const next = moveGroupTo(model, group, index)
+			return next === null ? { model } : edited(next)
+		},
+		PressedMoveGroup: ({ group, offset }) => nudgeGroup(model, group, offset),
+		ClickedAddComponents: () => openAdd(model),
+		GotAddSheetMessage: ({ message: child }) => {
+			const step = Dialog.update(model.addSheet, child)
+			return { model: { ...model, addSheet: step.model }, commands: sheetCommands(step) }
+		},
+		GotAddPickerMessage: ({ message: child }) => addPickerStep(model, child),
+		ClickedSubmitAdd: () => submitAdd(model),
+		// A monitored URL goes straight onto the page, with any rows already ticked beside it.
 		CompletedCreateMonitor: ({ result }) =>
 			Result.match(result, {
 				onSuccess: (monitor): Return => {
-					const next = edited({
+					const next = submitAdd({
 						...model,
 						monitors: {
 							...model.monitors,
 							data: AsyncData.map(model.monitors.data, (monitors) => [...monitors, monitor]),
 						},
-						picker: monitorCreated(model.picker, monitor),
+						addPicker: monitorCreated(model.addPicker, monitor),
 					})
 					return {
 						...next,
@@ -232,7 +437,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					}
 				},
 				onFailure: (failure): Return => ({
-					model: { ...model, picker: monitorFailed(model.picker, failure.message) },
+					model: { ...model, addPicker: monitorFailed(model.addPicker, failure.message) },
 				}),
 			}),
 		CompletedFocus: () => ({ model }),
@@ -272,23 +477,36 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedSubmit: ({ mode }) => submit(model, mode),
 		CompletedCreate: ({ mode, result }) =>
 			Result.match(result, {
-				onSuccess: (page): Return => ({
-					model: { ...model, submitting: null },
-					commands: [TrackPageCreated()],
-					outMessage: PageOutMessage.RequestedNavigation({
-						url: statusPageHref(page.id, mode === "publish" ? "live" : undefined),
-						isReplace: true,
-						...(mode === "draft"
-							? {
-									toast: {
-										type: "success",
-										title: "Saved as a draft",
-										description: page.name,
-									},
-								}
-							: undefined),
-					}),
-				}),
+				// With a custom domain the buttons keep spinning until it is set too.
+				onSuccess: (page): Return =>
+					hasCustomDomain(model)
+						? {
+								model,
+								commands: [
+									TrackPageCreated(),
+									SetBuilderCustomDomain({
+										page,
+										hostname: normalizeCustomDomain(model.customDomain),
+									}),
+								],
+							}
+						: {
+								model: { ...model, submitting: null },
+								commands: [TrackPageCreated()],
+								outMessage: PageOutMessage.RequestedNavigation({
+									url: statusPageHref(page.id, mode === "publish" ? "live" : undefined),
+									isReplace: true,
+									...(mode === "draft"
+										? {
+												toast: {
+													type: "success",
+													title: "Saved as a draft",
+													description: page.name,
+												},
+											}
+										: undefined),
+								}),
+							},
 				onFailure: (failure): Return =>
 					failure.code === SLUG_TAKEN
 						? {
@@ -297,5 +515,26 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 							}
 						: { model: { ...model, submitting: null, createFailure: failure } },
 			}),
+		// Either way the page exists: it opens on its Custom domain, with the DNS records to add.
+		CompletedSetCustomDomain: ({ page, result }) => ({
+			model: { ...model, submitting: null },
+			outMessage: PageOutMessage.RequestedNavigation({
+				url: statusPageHref(page.id, "settings", "basic"),
+				isReplace: true,
+				toast: Result.match(result, {
+					onSuccess: (domain) => ({
+						type: "success" as const,
+						title: `${page.name} created`,
+						description: `Add the DNS records shown for ${domain.hostname ?? "your domain"} to finish.`,
+					}),
+					onFailure: (failure) => ({
+						type: "error" as const,
+						title: `${page.name} created, but its custom domain wasn't set`,
+						description: failure.message,
+					}),
+				}),
+			}),
+		}),
+		ChangedCustomDomain: ({ value }) => ({ model: { ...model, customDomain: value } }),
 		CompletedTrackProduct: () => ({ model }),
 	})

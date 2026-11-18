@@ -4,19 +4,18 @@ import type { V2StatusPage } from "@maple/domain/http/v2"
 import { Option, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
-import { linkButton } from "@maple/views/ui/button"
 import { choiceCard } from "@maple/views/ui/choice-card"
 import { icon, type IconName } from "@maple/views/ui/icon"
-import { hstack, vstack } from "@maple/views/ui/stack"
+import { vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { failureMessage } from "@maple/views/data/load-failure"
 import { saveBar } from "../../kit/save-bar"
 import { denialReason } from "../../kit/session-grants"
 import { adminOnlyNote, settingsSection } from "../../kit/settings-section"
-import { statusPageViewHref } from "../shared/commands"
 import { textField } from "../shared/fields"
 import type { SettingsForm } from "../shared/form"
 import { fragmentFrame, onYourPage } from "../shared/preview"
+import { addressBlock } from "./view-address"
 import { draftSnapshot } from "./view-canvas"
 import { renderAccessPage } from "@maple/status-page"
 import { Message } from "./message"
@@ -30,7 +29,7 @@ import {
 	removesPassword,
 } from "./update-access"
 
-// Settings > Access: public, behind a password, or members only, and the password form visitors
+// Basic settings > Who can view: public, behind a password, or members only, and the password form visitors
 // meet. A pick and a typed password wait for the save bar.
 
 type H = HtmlBuilder<Message>
@@ -105,7 +104,7 @@ const passwordField = (h: H, model: Model, page: V2StatusPage): Html =>
 	})
 
 /** What Save changes, or why it cannot. */
-const saveContext = (model: Model, page: V2StatusPage): string => {
+export const accessSaveContext = (model: Model, page: V2StatusPage): string => {
 	const issue = accessIssue(model, page)
 	if (issue !== null) return issue
 	const picked = Arr.findFirst(VISIBILITIES, (option) => option.value === model.visibilityDraft)
@@ -123,7 +122,7 @@ export const accessSaveBar = (h: H, model: Model, page: V2StatusPage): ReadonlyA
 	saveBar(h, {
 		isDirty: isAccessDirty(model),
 		isPending: model.accessAction !== null,
-		context: saveContext(model, page),
+		context: accessSaveContext(model, page),
 		onDiscard: Message.ClickedDiscardAccess(),
 		onSave: Message.ClickedSaveAccess(),
 		isSaveDisabled: accessIssue(model, page) !== null || model.accessAction !== null,
@@ -148,20 +147,7 @@ export const accessSection = (h: H, model: Model, page: V2StatusPage, form: Sett
 				...(canChangeAccess(model) && draftVisibility(model, page) === "password"
 					? [passwordField(h, model, page)]
 					: []),
-				...(page.visibility === "internal"
-					? [
-							hstack(h, { gap: "3", justify: "between", wrap: true }, [
-								typography(h, { size: "xs", tone: "muted", as: "p" }, [
-									"Members read the page inside Maple.",
-								]),
-								linkButton(
-									h,
-									{ size: "sm", variant: "outline", href: statusPageViewHref(page.id) },
-									[icon(h, "EyeIcon"), "Open page"],
-								),
-							]),
-						]
-					: []),
+				addressBlock(h, model, page),
 				...(model.accessFailure === null
 					? []
 					: [

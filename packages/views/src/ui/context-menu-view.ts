@@ -22,7 +22,7 @@ import {
 	subPopupId,
 } from "./context-menu"
 import { ChevronRightIcon } from "./control-icons"
-import { iconNode } from "./icon"
+import { iconNode } from "./icon-node"
 import { popupId, portalId } from "./overlay/popup-state"
 import { focusGuard, isMounted, stateAttributes } from "./overlay/transition"
 

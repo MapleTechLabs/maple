@@ -57,10 +57,10 @@ import {
 } from "@maple/backend/services/status-pages/StatusPageCustomDomainsService"
 import { StatusPageStore } from "@maple/backend/services/status-pages/StatusPageStore"
 
-// Page settings and components need an engineer: they change what the public sees about the
-// whole org. The break-glass token is a credential, so it stays admin-only, as do the page
-// password and visibility: they decide who can read the page. Incidents stay open to any writer,
-// so responders can post.
+// Page settings and components need `status_pages:edit`: they change what the public sees about
+// the whole org. The page password and visibility decide who can read the page, so they need
+// `status_pages:access` as well; engineers hold both. The break-glass token is a credential and
+// stays admin-only. Incidents stay open to any writer, so responders can post.
 
 /** The caller's tenant, once its org is in the `statusPages` rollout. */
 const tenantInRollout = (featureFlags: OrganizationFeatureFlagsServiceApi) =>
@@ -211,7 +211,7 @@ const parseTimestamp = (value: string | null | undefined) =>
 const publishFailed = (error: { readonly message: string }) =>
 	new StatusPagePersistenceError({ message: error.message, cause: error })
 
-/** Changing who can read a page is an admin's call, whichever endpoint carries it. */
+/** Changing who can read a page needs `status_pages:access`, whichever endpoint carries it. */
 const checkVisibilityChange = (
 	roles: ReadonlyArray<string>,
 	current: StatusPageVisibility,

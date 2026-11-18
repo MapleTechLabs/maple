@@ -26,7 +26,7 @@ Pick the region in this order: an ingest endpoint in the prompt (use it verbatim
 
 - **Public key in the prompt:** inline it in every bootstrap file.
 - **Private key in the prompt:** server bootstrap files only. Put `MAPLE_TEST` in browser and mobile code and tell the user to swap in the public key there (it also works on servers, so one key can cover the repo).
-- **No key:** inline the sentinel `MAPLE_TEST`. Both regions return 200 for it and store nothing, so the bootstrap runs end to end. Tell the user briefly up front: "I'm using `MAPLE_TEST` as a placeholder so the bootstrap can run. Copy your public ingest key from Settings → Ingestion (<dashboard>/settings?tab=ingestion), or create an account at <dashboard>/sign-up first, and search-replace `MAPLE_TEST` in the files I write." Then keep going. Don't block on signup.
+- **No key:** inline the sentinel `MAPLE_TEST`. Both regions return 200 for it and store nothing, so the bootstrap runs end to end. Tell the user briefly up front: "I'm using `MAPLE_TEST` as a placeholder so the bootstrap can run. Copy your public ingest key from Settings → Ingestion (<dashboard>/settings/ingestion), or create an account at <dashboard>/sign-up first, and search-replace `MAPLE_TEST` in the files I write." Then keep going. Don't block on signup.
 
 ## Step 1: Map every service
 
@@ -74,7 +74,7 @@ A bootstrap that loads but never exports is not done.
 ## Step 5: Hand-off
 
 - **What changed:** 3 to 7 short bullets: packages, files, business spans and metrics, vendors you left in place. If you added `@maple-dev/browser`, say session replay is on with inputs masked (`replay: { enabled: false }` turns it off) and that it keeps a visitor id in localStorage and a cookie (`privacy: { persistVisitorId: false }` turns it off).
-- **Placeholder:** if `MAPLE_TEST` is still inline, tell the user: "The bootstrap uses `MAPLE_TEST` as a placeholder so the install could complete end to end. Copy your public ingest key from Settings → Ingestion (<dashboard>/settings?tab=ingestion); if you don't have a Maple account yet, create one at <dashboard>/sign-up first. Then search-replace `MAPLE_TEST` in the files I wrote and redeploy. If your organization is in the EU region (app.eu.maple.dev), also replace `ingest.maple.dev` with `ingest.eu.maple.dev`, or set `region: "eu"` in the Maple SDKs." Leave out the EU sentence if you used the EU endpoint.
+- **Placeholder:** if `MAPLE_TEST` is still inline, tell the user: "The bootstrap uses `MAPLE_TEST` as a placeholder so the install could complete end to end. Copy your public ingest key from Settings → Ingestion (<dashboard>/settings/ingestion); if you don't have a Maple account yet, create one at <dashboard>/sign-up first. Then search-replace `MAPLE_TEST` in the files I wrote and redeploy. If your organization is in the EU region (app.eu.maple.dev), also replace `ingest.maple.dev` with `ingest.eu.maple.dev`, or set `region: "eu"` in the Maple SDKs." Leave out the EU sentence if you used the EU endpoint.
 - **Deploy:** as they normally do. There is nothing to configure: the key is in the source.
 
 ## Step 6: Maple MCP

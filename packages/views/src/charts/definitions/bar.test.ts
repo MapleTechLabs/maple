@@ -1,7 +1,7 @@
 import { Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import type { TimeseriesRow } from "../timeseries-rows"
-import { cellsOf } from "./bar"
+import { cellsOf, visibleSeries } from "./bar"
 
 const SERIES = [
 	{ key: "s1", label: "api", color: "red" },
@@ -23,6 +23,36 @@ const topsOf = (rows: ReadonlyArray<TimeseriesRow>): ReadonlyArray<ReadonlyArray
 			(cell) => cell.key,
 		),
 	)
+
+describe("visibleSeries", () => {
+	const definitions = [
+		{ chartKey: "s1", rawKey: "api" },
+		{ chartKey: "s2", rawKey: "web" },
+		{ chartKey: "s3", rawKey: "worker" },
+	]
+	const colors = { s1: "red", s2: "green", s3: "blue" }
+
+	test("a series the legend hid is left out, and the rest keep their keys and colours", () => {
+		expect(visibleSeries(definitions, colors, "grey", ["s2"])).toEqual([
+			{ key: "s1", label: "api", color: "red" },
+			{ key: "s3", label: "worker", color: "blue" },
+		])
+	})
+
+	test("a hidden series adds nothing to its column's stack", () => {
+		const cells = cellsOf(
+			[row(0, { s1: 5, s2: 3, s3: 2 })],
+			visibleSeries(definitions, colors, "grey", ["s2"]),
+			-1,
+			true,
+		)
+
+		expect(Arr.map(cells, (cell) => [cell.key, cell.base, cell.value])).toEqual([
+			["s1", 0, 5],
+			["s3", 5, 2],
+		])
+	})
+})
 
 describe("cellsOf", () => {
 	test("the top of a stack is its last series with a value, not the last series", () => {

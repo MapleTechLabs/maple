@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema, Array as Arr } from "effect"
+import {
+	ConfigProvider,
+	Context,
+	Effect,
+	Layer,
+	ManagedRuntime,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
@@ -18,6 +27,11 @@ import { limitReached, UptimeMonitorAllowance } from "@maple/backend/services/up
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import { ApiV2RateLimiterAllowAllLayer } from "./v2-test-support"
+import {
+	UPTIME_MAX_BODY_LENGTH,
+	UPTIME_MAX_HEADER_VALUE_LENGTH,
+	UPTIME_MAX_URL_LENGTH,
+} from "@maple/domain/uptime"
 import { HttpV2UptimeMonitorsLive } from "./uptime-monitors.http"
 
 /** `/v2/uptime_monitors` over an embedded PGlite with the real service. */
@@ -27,6 +41,8 @@ afterEach(() => cleanupTestDbs(createdDbs))
 
 const ORG = Schema.decodeSync(OrgId)("org_uptime_e2e")
 const USER = Schema.decodeSync(UserId)("user_uptime_e2e")
+
+const repeat = (text: string, count: number) => Str.repeat(count)(text)
 
 const testConfig = () =>
 	ConfigProvider.layer(
@@ -345,6 +361,163 @@ describe("v2 uptime monitors", () => {
 			expect(orphan.status).toBe(400)
 			const after = await harness.request("GET", `/v2/uptime_monitors/${id}`, admin)
 			expect(after.body.config.headers).toEqual({ Authorization: "Bearer s3cret", "X-Env": "staging" })
+		}))
+
+	it("hides a request body and URL credentials from readers, on retrieve and on list", () =>
+		withHarness(async (harness) => {
+			const { secret: admin } = await harness.bootstrapKey()
+			const { secret: member } = await harness.bootstrapKey({
+				source: "maple_cli",
+				roles: ["org:member"],
+				deviceName: "laptop",
+			})
+			const httpConfig = {
+				type: "http",
+				url: "https://api.example.com/login?api_key=s3cret-key&page=2",
+				method: "POST",
+				body: '{"password":"hunter2"}',
+			}
+			const stepsConfig = {
+				type: "multistep",
+				steps: [
+					{
+						name: "Log in",
+						method: "POST",
+						url: "https://api.example.com/login?client_secret=s3cret-key",
+						headers: { "X-Api-Key": "key-123" },
+						body: '{"password":"hunter2"}',
+						extract: [{ name: "order", from: { type: "json_path", path: "order" } }],
+					},
+					{ name: "Order", url: "https://api.example.com/orders/{{order}}" },
+				],
+			}
+			const http = await harness.request("POST", "/v2/uptime_monitors", admin, {
+				name: "Login",
+				kind: "http",
+				config: httpConfig,
+			})
+			const flow = await harness.request("POST", "/v2/uptime_monitors", admin, {
+				name: "Login flow",
+				kind: "multistep",
+				config: stepsConfig,
+			})
+			expect([http.status, flow.status]).toEqual([200, 200])
+
+			// A writer sees what was saved.
+			const adminHttp = await harness.request("GET", `/v2/uptime_monitors/${http.body.id}`, admin)
+			expect(adminHttp.body.config).toMatchObject({ url: httpConfig.url, body: httpConfig.body })
+			const adminFlow = await harness.request("GET", `/v2/uptime_monitors/${flow.body.id}`, admin)
+			expect(adminFlow.body.config.steps[0]).toMatchObject({
+				url: stepsConfig.steps[0]?.url,
+				body: '{"password":"hunter2"}',
+				headers: { "X-Api-Key": "key-123" },
+			})
+
+			const readableHttp = {
+				url: "https://api.example.com/login?api_key=[redacted]&page=[redacted]",
+				body: "[redacted]",
+			}
+			const readableSteps = [
+				{
+					url: "https://api.example.com/login?client_secret=[redacted]",
+					body: "[redacted]",
+					headers: { "X-Api-Key": "[redacted]" },
+				},
+				{ url: "https://api.example.com/orders/{{order}}" },
+			]
+			const memberHttp = await harness.request("GET", `/v2/uptime_monitors/${http.body.id}`, member)
+			expect(memberHttp.body.config).toMatchObject(readableHttp)
+			const memberFlow = await harness.request("GET", `/v2/uptime_monitors/${flow.body.id}`, member)
+			expect(memberFlow.body.config.steps).toMatchObject(readableSteps)
+			expect(memberFlow.body.config.steps[1].body).toBeUndefined()
+
+			const memberList = await harness.request("GET", "/v2/uptime_monitors", member)
+			expect(memberList.status).toBe(200)
+			const listed = JSON.stringify(memberList.body)
+			expect(listed).not.toContain("hunter2")
+			expect(listed).not.toContain("s3cret-key")
+			expect(listed).not.toContain("key-123")
+			const adminList = await harness.request("GET", "/v2/uptime_monitors", admin)
+			expect(JSON.stringify(adminList.body)).toContain("hunter2")
+
+			// A hidden body sent back keeps the stored one, alongside a real change.
+			const updated = await harness.request("PATCH", `/v2/uptime_monitors/${flow.body.id}`, admin, {
+				config: {
+					...stepsConfig,
+					steps: [
+						{
+							...stepsConfig.steps[0],
+							body: "[redacted]",
+							headers: { "X-Api-Key": "[redacted]" },
+						},
+						{ name: "Order", url: "https://api.example.com/v2/orders/{{order}}" },
+					],
+				},
+			})
+			expect(updated.status).toBe(200)
+			expect(updated.body.config.steps[0]).toMatchObject({
+				body: '{"password":"hunter2"}',
+				headers: { "X-Api-Key": "key-123" },
+			})
+			expect(updated.body.config.steps[1].url).toBe("https://api.example.com/v2/orders/{{order}}")
+
+			// A URL as a reader was sent it is refused, not saved with the marker as its value.
+			const reused = await harness.request("PATCH", `/v2/uptime_monitors/${http.body.id}`, admin, {
+				config: { ...httpConfig, url: memberHttp.body.config.url },
+			})
+			expect(reused.status).toBe(400)
+			const reusedStep = await harness.request("PATCH", `/v2/uptime_monitors/${flow.body.id}`, admin, {
+				config: {
+					...stepsConfig,
+					steps: [{ ...stepsConfig.steps[0], url: memberFlow.body.config.steps[0].url }],
+				},
+			})
+			expect(reusedStep.status).toBe(400)
+			const kept = await harness.request("GET", `/v2/uptime_monitors/${http.body.id}`, admin)
+			expect(kept.body.config.url).toBe(httpConfig.url)
+		}))
+
+	it("answers an oversized config with a 400 that does not echo it", () =>
+		withHarness(async (harness) => {
+			const { secret: token } = await harness.bootstrapKey()
+			const monitor = (config: Record<string, unknown>) => ({ name: "Big", kind: "http", config })
+			const responses = [
+				await harness.request(
+					"POST",
+					"/v2/uptime_monitors",
+					token,
+					monitor({
+						type: "http",
+						url: "https://api.example.com/",
+						method: "POST",
+						body: repeat("b", UPTIME_MAX_BODY_LENGTH + 1),
+					}),
+				),
+				await harness.request(
+					"POST",
+					"/v2/uptime_monitors",
+					token,
+					monitor({
+						type: "http",
+						url: `https://api.example.com/${repeat("p", UPTIME_MAX_URL_LENGTH)}`,
+					}),
+				),
+				await harness.request(
+					"POST",
+					"/v2/uptime_monitors",
+					token,
+					monitor({
+						type: "http",
+						url: "https://api.example.com/",
+						headers: { "x-token": repeat("v", UPTIME_MAX_HEADER_VALUE_LENGTH + 1) },
+					}),
+				),
+			]
+			expect(Arr.map(responses, (response) => response.status)).toEqual([400, 400, 400])
+			expect(Arr.every(responses, (response) => JSON.stringify(response.body).length < 2_000)).toBe(
+				true,
+			)
+			expect((await harness.request("GET", "/v2/uptime_monitors", token)).body.data).toEqual([])
 		}))
 
 	it("enforces the uptime_monitors read and write scopes derived from the route", () =>

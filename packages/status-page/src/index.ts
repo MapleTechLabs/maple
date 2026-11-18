@@ -1,6 +1,6 @@
 export { ACCESS_FIELD, ACCESS_PATH, renderAccessPage } from "./access"
 export { renderBadgeSvg } from "./badge"
-export type { RenderOptions } from "./document"
+export { PREVIEW_FIELDS, type PreviewField, type RenderOptions } from "./document"
 export { escapeXml } from "./escape"
 export { INCIDENT_STATUS_LABEL, pageTitle } from "./format"
 export { renderAtomFeed, renderRssFeed } from "./feed"

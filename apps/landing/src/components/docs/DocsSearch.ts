@@ -14,7 +14,7 @@ import {
 import * as Dialog from "@maple/views/ui/dialog"
 import { view as dialogView } from "@maple/views/ui/dialog-view"
 import { MagnifierIcon } from "@maple/views/ui/control-icons"
-import { iconNode } from "@maple/views/ui/icon"
+import { iconNode } from "@maple/views/ui/icon-node"
 import {
 	Array as Arr,
 	Effect,

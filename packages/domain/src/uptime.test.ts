@@ -1,12 +1,27 @@
-import { Exit, Option, Result, Schema, Array as Arr } from "effect"
+import { Exit, Option, Record as Rec, Result, Schema, String as Str, Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 import {
 	appendRecentCheck,
 	applyUptimeCheck,
 	describeCertificateExpiry,
 	extractVariables,
+	filledUrlKeepsHost,
 	interpolate,
+	interpolateWithin,
 	multiStepConfigProblem,
+	stepUrlHost,
+	StoredUptimeMonitorConfig,
+	UPTIME_MAX_ASSERTIONS,
+	UPTIME_MAX_BODY_LENGTH,
+	UPTIME_MAX_ERROR_LENGTH,
+	UPTIME_MAX_EXTRACTIONS,
+	UPTIME_MAX_HEADER_NAME_LENGTH,
+	UPTIME_MAX_HEADER_VALUE_LENGTH,
+	UPTIME_MAX_HEADERS,
+	UPTIME_MAX_STEP_NAME_LENGTH,
+	UPTIME_MAX_URL_LENGTH,
+	UPTIME_MAX_VARIABLE_LENGTH,
+	UptimeMonitorConfig,
 	UptimeMultiStepConfig,
 	describeStaleProbe,
 	effectiveAssertions,
@@ -19,6 +34,8 @@ import {
 	type UptimeHttpObservation,
 	uptimeHttpRequest,
 } from "./uptime"
+
+const repeat = (text: string, count: number) => Str.repeat(count)(text)
 
 const observed = (overrides: Partial<UptimeHttpObservation> = {}): UptimeHttpObservation => ({
 	statusCode: 200,
@@ -81,6 +98,27 @@ describe("firstFailedAssertion", () => {
 				observed({ body: "<html>" }),
 			),
 		).toBe("JSON path status not found")
+	})
+
+	it("quotes only the start of a long value the target sent, and keeps the sentence bounded", () => {
+		const secret = `${repeat("a", 100)}-tail-the-target-sent`
+		const header = firstFailedAssertion(
+			[{ _tag: "header", name: "X-Token", op: "equals", value: "expected" }],
+			observed({ headers: { "x-token": secret } }),
+		)
+		expect(header).toBe(`Header X-Token is "${repeat("a", 100)}...", expected equals "expected"`)
+		const json = firstFailedAssertion(
+			[{ _tag: "json_path", path: "token", op: "equals", value: "expected" }],
+			observed({ body: JSON.stringify({ token: secret }) }),
+		)
+		expect(json).toBe(`JSON path token is ${repeat("a", 100)}..., expected expected`)
+		// A long configured value cannot stretch the sentence past what a report keeps.
+		const long = firstFailedAssertion(
+			[{ _tag: "body", op: "contains", value: repeat("x", UPTIME_MAX_ERROR_LENGTH * 2) }],
+			observed(),
+		)
+		expect(long).toHaveLength(UPTIME_MAX_ERROR_LENGTH)
+		expect(Str.endsWith("...")(long ?? "")).toBe(true)
 	})
 
 	it("treats a missing header as a failure", () => {
@@ -357,5 +395,200 @@ describe("multi-step checks", () => {
 		expect(
 			extractVariables([{ name: "user", from: { _tag: "json_path", path: "session.user" } }], response),
 		).toEqual(Result.fail("JSON path session.user not found, so user could not be set"))
+	})
+})
+
+describe("request size limits", () => {
+	const decode = Schema.decodeUnknownExit(UptimeMonitorConfig)
+	const decodeStored = Schema.decodeUnknownExit(StoredUptimeMonitorConfig)
+	const http = (overrides: Record<string, unknown>) => ({
+		_tag: "http",
+		url: "https://api.example.com/health",
+		method: "POST",
+		headers: {},
+		assertions: [],
+		timeoutMs: 10_000,
+		...overrides,
+	})
+	const multistep = (overrides: Record<string, unknown>) => ({
+		_tag: "multistep",
+		timeoutMs: 30_000,
+		steps: [
+			{
+				name: "Log in",
+				method: "POST",
+				url: "https://api.example.com/login",
+				headers: {},
+				assertions: [],
+				extract: [],
+				...overrides,
+			},
+		],
+	})
+	const status = { _tag: "status", op: "is", value: "2xx" }
+	const manyHeaders = (count: number) =>
+		Rec.fromEntries(Arr.makeBy(count, (index): [string, string] => [`x-header-${index}`, "v"]))
+	const oversized: ReadonlyArray<readonly [string, Record<string, unknown>]> = [
+		["a body past the limit", { body: repeat("b", UPTIME_MAX_BODY_LENGTH + 1) }],
+		["a URL past the limit", { url: `https://api.example.com/${repeat("p", UPTIME_MAX_URL_LENGTH)}` }],
+		["too many headers", { headers: manyHeaders(UPTIME_MAX_HEADERS + 1) }],
+		[
+			"a header name past the limit",
+			{ headers: { [repeat("n", UPTIME_MAX_HEADER_NAME_LENGTH + 1)]: "v" } },
+		],
+		[
+			"a header value past the limit",
+			{ headers: { "x-token": repeat("v", UPTIME_MAX_HEADER_VALUE_LENGTH + 1) } },
+		],
+		[
+			"too many assertions",
+			{ assertions: Array.from({ length: UPTIME_MAX_ASSERTIONS + 1 }, () => status) },
+		],
+	]
+
+	it.each(oversized)("refuses %s on an HTTP check and on a step", (_label, overrides) => {
+		expect(Exit.isFailure(decode(http(overrides)))).toBe(true)
+		expect(Exit.isFailure(decode(multistep(overrides)))).toBe(true)
+	})
+
+	it("refuses a step name past the limit and too many extractions", () => {
+		expect(
+			Exit.isFailure(decode(multistep({ name: repeat("n", UPTIME_MAX_STEP_NAME_LENGTH + 1) }))),
+		).toBe(true)
+		const extract = Array.from({ length: UPTIME_MAX_EXTRACTIONS + 1 }, (_, index) => ({
+			name: `v${index}`,
+			from: { _tag: "header", name: "X" },
+		}))
+		expect(Exit.isFailure(decode(multistep({ extract })))).toBe(true)
+	})
+
+	it("accepts a request exactly at every limit", () => {
+		const atLimit = {
+			body: repeat("b", UPTIME_MAX_BODY_LENGTH),
+			url: `https://a.dev/${repeat("p", UPTIME_MAX_URL_LENGTH - "https://a.dev/".length)}`,
+			headers: {
+				...manyHeaders(UPTIME_MAX_HEADERS - 1),
+				[repeat("n", UPTIME_MAX_HEADER_NAME_LENGTH)]: repeat("v", UPTIME_MAX_HEADER_VALUE_LENGTH),
+			},
+			assertions: Array.from({ length: UPTIME_MAX_ASSERTIONS }, () => status),
+		}
+		expect(Exit.isSuccess(decode(http(atLimit)))).toBe(true)
+		expect(
+			Exit.isSuccess(decode(multistep({ ...atLimit, name: repeat("n", UPTIME_MAX_STEP_NAME_LENGTH) }))),
+		).toBe(true)
+	})
+
+	it.each(oversized)("still reads a stored row with %s", (_label, overrides) => {
+		expect(Exit.isSuccess(decodeStored(http(overrides)))).toBe(true)
+		expect(Exit.isSuccess(decodeStored(multistep(overrides)))).toBe(true)
+	})
+})
+
+describe("filling a template within a length", () => {
+	it("fills a template that fits and names a variable without a value", () => {
+		expect(interpolateWithin("/orders/{{id}}", { id: "42" }, 20)).toEqual(Result.succeed("/orders/42"))
+		expect(interpolateWithin("/orders/{{id}}", {}, 20)).toEqual(
+			Result.fail({ _tag: "missing", name: "id" }),
+		)
+	})
+
+	it("refuses a result past the length, counting each use of a variable", () => {
+		expect(interpolateWithin("{{a}}", { a: repeat("x", 11) }, 10)).toEqual(
+			Result.fail({ _tag: "too_long" }),
+		)
+		expect(interpolateWithin("{{a}}{{a}}", { a: repeat("x", 6) }, 10)).toEqual(
+			Result.fail({ _tag: "too_long" }),
+		)
+		expect(interpolateWithin("{{a}}{{a}}", { a: repeat("x", 5) }, 10)).toEqual(
+			Result.succeed(repeat("x", 10)),
+		)
+	})
+
+	it("refuses an extracted value longer than a variable holds, without quoting it", () => {
+		const long = repeat("t", UPTIME_MAX_VARIABLE_LENGTH + 1)
+		const extracted = extractVariables(
+			[{ name: "token", from: { _tag: "header", name: "X-Token" } }],
+			observed({ headers: { "x-token": long } }),
+		)
+		expect(Result.isFailure(extracted)).toBe(true)
+		expect(Result.isFailure(extracted) ? extracted.failure : "").toMatch(/^token is longer than/u)
+		expect(
+			extractVariables(
+				[{ name: "token", from: { _tag: "header", name: "X-Token" } }],
+				observed({ headers: { "x-token": repeat("t", UPTIME_MAX_VARIABLE_LENGTH) } }),
+			),
+		).toEqual(Result.succeed({ token: repeat("t", UPTIME_MAX_VARIABLE_LENGTH) }))
+	})
+})
+
+describe("who chooses a step URL's host", () => {
+	it("reads a literal host, a host that is one variable, and a variable touching the host", () => {
+		expect(stepUrlHost("https://api.example.com/orders/{{id}}")).toEqual({
+			_tag: "literal",
+			origin: "https://api.example.com",
+		})
+		expect(stepUrlHost("https://api.example.com?cursor={{next}}")).toEqual({
+			_tag: "literal",
+			origin: "https://api.example.com",
+		})
+		expect(stepUrlHost("https://{{host}}/orders")).toEqual({ _tag: "variable" })
+		expect(stepUrlHost("https://{{host}}:8443/orders")).toEqual({ _tag: "variable" })
+		expect(stepUrlHost("{{next_url}}")).toEqual({ _tag: "variable" })
+		expect(stepUrlHost("https://api.example.com{{next}}")).toEqual({
+			_tag: "mixed",
+			origin: "https://api.example.com",
+		})
+		expect(stepUrlHost("https://{{tenant}}.example.com/")._tag).toBe("mixed")
+		expect(stepUrlHost("https://user:{{password}}@api.example.com/")._tag).toBe("mixed")
+		expect(stepUrlHost("https:{{rest}}")._tag).toBe("mixed")
+	})
+
+	it("refuses to save a template whose host a variable could extend", () => {
+		const decode = Schema.decodeUnknownSync(UptimeMultiStepConfig)
+		const config = (url: string) =>
+			decode({
+				_tag: "multistep",
+				timeoutMs: 30_000,
+				steps: [
+					{
+						name: "First",
+						method: "GET",
+						url: "https://api.example.com/start",
+						headers: {},
+						assertions: [],
+						extract: [
+							{ name: "next", from: { _tag: "json_path", path: "next" } },
+							{ name: "host", from: { _tag: "json_path", path: "host" } },
+						],
+					},
+					{ name: "Second", method: "GET", url, headers: {}, assertions: [], extract: [] },
+				],
+			})
+		expect(multiStepConfigProblem(config("https://api.example.com{{next}}"))).toMatch(
+			/^Step 2 \(Second\): a variable can't be part of the URL's host/u,
+		)
+		expect(multiStepConfigProblem(config("https://{{host}}.example.com/x"))).toMatch(
+			/a variable can't be part of the URL's host/u,
+		)
+		expect(multiStepConfigProblem(config("https:///{{next}}"))).toMatch(/needs a valid http\(s\) host/u)
+		expect(multiStepConfigProblem(config("https://api.example.com/{{next}}"))).toBeNull()
+		expect(multiStepConfigProblem(config("https://api.example.com?page={{next}}"))).toBeNull()
+		expect(multiStepConfigProblem(config("https://{{host}}/x"))).toBeNull()
+		expect(multiStepConfigProblem(config("{{next}}"))).toBeNull()
+	})
+
+	it("holds a filled URL to the origin its template names", () => {
+		const template = "https://api.example.com/orders/{{id}}"
+		expect(filledUrlKeepsHost(template, "https://api.example.com/orders/42")).toBe(true)
+		expect(filledUrlKeepsHost(template, "https://api.example.com/orders/..%2f@evil.test/")).toBe(true)
+		expect(filledUrlKeepsHost(template, "https://evil.test/orders/42")).toBe(false)
+		expect(filledUrlKeepsHost(template, "http://api.example.com/orders/42")).toBe(false)
+		// A template saved before the save-time rule runs only while its value leaves the host alone.
+		const legacy = "https://api.example.com{{path}}"
+		expect(filledUrlKeepsHost(legacy, "https://api.example.com/orders/42")).toBe(true)
+		expect(filledUrlKeepsHost(legacy, "https://api.example.com.evil.test/")).toBe(false)
+		expect(filledUrlKeepsHost(legacy, "https://api.example.com@evil.test/")).toBe(false)
+		// A host that is one variable was chosen as one: nothing to compare it to.
+		expect(filledUrlKeepsHost("https://{{host}}/x", "https://other.example.com/x")).toBe(true)
 	})
 })

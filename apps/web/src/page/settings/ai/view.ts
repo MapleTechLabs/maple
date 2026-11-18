@@ -609,7 +609,7 @@ const escalationCard = (h: H): Html =>
 			]),
 			linkButton(
 				h,
-				{ variant: "outline", size: "sm", className: "shrink-0", href: "/settings?tab=automation" },
+				{ variant: "outline", size: "sm", className: "shrink-0", href: "/settings/automation" },
 				["Open automation"],
 			),
 		],

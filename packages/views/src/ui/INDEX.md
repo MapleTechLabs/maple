@@ -25,7 +25,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/button.ts` `button`, `linkButton`: The Button: variant and size classes, attributes and a loading spinner.
 - `packages/views/src/ui/calendar-view.ts` `view`: react-day-picker's DOM for `<Calendar mode="single">` (en-US): rdp-* classes, Maple's `calendarClassNames`, the same ARIA labels.
 - `packages/views/src/ui/calendar.ts` `isoDay`, `gridWeeks`, `tabbableDay` (stateful: Model, init, update): Single mode: react-day-picker's state as a Submodel.
-- `packages/views/src/ui/card-button.ts` `cardButtonClass`, `cardButton`: `CardButton`: a whole card as one click target (template tiles, source and destination pickers, metric cards).
+- `packages/views/src/ui/card-button.ts` `cardButtonClass`, `cardButton`, `cardLink`: `CardButton`: a whole card as one click target (template tiles, source and destination pickers, metric cards).
 - `packages/views/src/ui/card.ts` `card`, `cardHeader`, `cardTitle`, `cardDescription`, `cardPanel`, `cardFooter`, `cardAction`: The Card surface (styles in ./card.styles.ts): rounded-md, and its parts.
 - `packages/views/src/ui/chart-frame.ts` `chartFrameClass`, `chartNoData`: The classes of a chart's box: `fill` is the className a host gives a chart to fill its tile instead of keeping an aspect ratio, `plot` a chart's own root, `centered` its message...
 - `packages/views/src/ui/chart-skeleton-shapes.ts` `heatmapGhost`, `hbarGhost`, `funnelGhost`, `pathsGhost`, `pieGhost`, `gaugeGhost`, `statGhost`, `dropoffGhost`: The heatmap, hbar, funnel, drop-off, paths, pie, gauge and stat ghosts of `ChartSkeleton`, markup and numbers as there.
@@ -35,7 +35,8 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/choice-card.ts` `choiceCheckClass`, `choiceCard`: `ChoiceCard`: a whole card that picks an option, over a visually hidden native radio or checkbox (the onboarding and connect pickers).
 - `packages/views/src/ui/choice.ts` `labelIdOf`, `toggleKey`, `hiddenInput`: Shared by checkbox, radio, switch, select and combobox: the parts Base UI renders the same way.
 - `packages/views/src/ui/collapsible.ts` `collapsible`, `collapsibleTrigger`: `Collapsible` whose open state lives in the owner's Model: the trigger button and, while open, its panel (closed, Base UI renders no panel).
-- `packages/views/src/ui/color-input.ts` `colorInput`: `ColorInput`: a native colour picker drawn as a small bordered swatch, reporting the picked hex colour.
+- `packages/views/src/ui/color-hsv.ts` `normalizeHex`, `hsvToHex`, `hexToHsv`: HSV and `#rrggbb` for the colour picker: hue in degrees 0 to 360, saturation and value 0 to 1.
+- `packages/views/src/ui/color-picker.ts` `colorPicker`: `ColorPicker`: a swatch that opens a picker for a `#rrggbb` colour.
 - `packages/views/src/ui/column.ts` `columnClass`, `column`: `Column`: a cell's width in a row of flex cells (a div table's head and rows): a flexible column that takes the free width over a floor (`min`), or a fixed lane (`width`).
 - `packages/views/src/ui/combobox-picker.ts` `triggerIdOf`, `comboboxPicker`: `ComboboxPicker`: a button showing the current pick that opens a searchable list, the search input on top (a `<ComboboxTrigger>` with `<ComboboxContent>`).
 - `packages/views/src/ui/combobox-view.ts` `dismissButton`, `inputAttributes`, `chipsInput`, `hiddenInput`, `comboboxCheckIcon`, `listPopup`, `chipsView`, `inputField`, `view`: Base UI's visually hidden "Dismiss" button for screen readers, beside the input and the list.
@@ -80,7 +81,8 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/hover-card.ts` `view` (stateful: Model, init, update): Base UI `PreviewCard` (`@maple/ui/hover-card`): opens after the pointer rests on the trigger (600 ms, or the trigger's `delay`), closes after it leaves trigger and card (300 ms)...
 - `packages/views/src/ui/http-span-label.ts` `httpSpanLabel`: An HTTP span's method and route as one label.
 - `packages/views/src/ui/icon-button.ts` `iconButton`: An icon-only Button that always carries a name and, by default, a tooltip.
-- `packages/views/src/ui/icon.ts` `icon`, `iconNode`, `rowIcon`, `iconColor`: A generated icon with its size, class, style and attributes.
+- `packages/views/src/ui/icon-node.ts` `iconNode`: One icon tree drawn as an `<svg>`, with no import of the icon registry: a bundle that draws a few named trees (the landing nav, a button's spinner) never carries every icon.
+- `packages/views/src/ui/icon.ts` `icon`, `rowIcon`, `iconColor`: A generated icon with its size, class, style and attributes.
 - `packages/views/src/ui/identity-label.ts` `identityLabel`: `IdentityLabel`: the name-over-detail text beside an avatar in an account or org trigger, a grid of truncating lines that fills the rest of the row.
 - `packages/views/src/ui/info-hint.ts` `infoHint`: `InfoHint`: a small question mark beside a label that explains it in the app's tooltip, on hover or keyboard focus.
 - `packages/views/src/ui/inline-code.ts` `inlineCodeClassName`, `inlineCode`: `InlineCode`: inline monospace for identifiers and commands inside prose.
@@ -169,7 +171,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/swatch.ts` `swatch`: A small square colour key beside a legend, tooltip or table label; `dashed` draws an outline in `color` instead of a fill, `round` a dot for a series that is a share, not a line.
 - `packages/views/src/ui/switch.ts` `switchControl`, `labelId`, `view` (stateful: Model, init, update): Base UI `Switch`: on or off, with a thumb and a visually hidden checkbox.
 - `packages/views/src/ui/table-skeleton.ts` `tableSkeleton`: The loading placeholder for row tables.
-- `packages/views/src/ui/table.ts` `table`, `tableHeader`, `tableBody`, `tableRow`, `tableGroupRow`, `clickableRowClass`, `tableHead`, `tableCell`, `divTableHead`, `truncatedTableCell`, `numericTableCell`, `laneTableCell`, `rowLink`, `rowNameLink`, `ariaSort`, `sortButton`: The Table and its parts.
+- `packages/views/src/ui/table.ts` `table`, `tableHeader`, `tableBody`, `tableRow`, `tableGroupRow`, `clickableRowClass`, `tableHead`, `tableCell`, `divTableHead`, `truncatedTableCell`, `wrappingTableCell`, `numericTableCell`, `laneTableCell`, `rowLink`, `rowNameLink`, `ariaSort`, `sortButton`: The Table and its parts.
 - `packages/views/src/ui/tabs-view.ts` `view`: Base UI's Tabs DOM: the same data attributes, roles, roving tabindex and `useId` ids.
 - `packages/views/src/ui/tabs.ts` `tabId`, `panelId` (stateful: Model, init, update): Base UI Tabs, horizontal, manual activation: arrow keys and Home/End move the focused tab (Base UI's highlight), click/Enter/Space select it.
 - `packages/views/src/ui/text-link.ts` `textLinkClass`, `textLink`: `TextLink`: an inline action that reads as a link inside running text or a card footer, with no button box.
@@ -239,6 +241,8 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/grid-list-row.ts` `gridListRow`: One `<li>` of a bordered grid list (the alerts inbox, rules and resolved lists), padded, tinted on hover and press, positioned so a stretched row link covers it.
 - `apps/web/src/page/kit/guided-setup.ts` `keyFor`, `setupBlocks`, `serverKey`, `promptKey`, `frameworkIconStrip`, `frameworkPicker`, `setupAgentPrompt`, `agentPromptButton`, `connectInstructions`: The SDK setup guide: the stack picker, then the Install / Instrument / coding-agent tabs filled in with the org's ingest keys.
 - `apps/web/src/page/kit/health-gap-notice.ts` `healthGapOf`, `healthGapText`, `healthGapNotice`: Service health is the overview joined with firing alerts and baseline anomalies.
+- `apps/web/src/page/kit/image-dropzone.ts` `checkImage`, `clickFileInput`, `imageDropzone`, `typeToConfirmField`: An image picker with a drop target and a preview.
+- `apps/web/src/page/kit/image-source-field.ts` `imageSourceInputId`, `imageSourceField`, `imageSourceDialog`: An image a user uploads or links (a logo, a favicon).
 - `apps/web/src/page/kit/infinite-pages.ts` `laterPagesFields`, `freshLaterPages`, `fetchingNext`, `appendedPage`, `pagedRows`: An infinite list's pages after the first: owned by one first page (`generation`), one fetch in flight at a time, paused by a failed page until a retry.
 - `apps/web/src/page/kit/infra-correlation/command.ts` `operationOf`: The four `*InfraTimeseries` reads the panel's charts make, through the read cache under the atom key (`requestKey(org, "<function>", { data })`), so a reopened panel reuses them.
 - `apps/web/src/page/kit/infra-correlation/correlations.ts` `getActiveInfraCorrelations`: Declarative trace/log -> infrastructure correlation config.
@@ -270,6 +274,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/peek-keys.ts` `peekStepFor`: The list peeks' step keys: down/J forward, up/K back, except in a text field or with a modifier.
 - `apps/web/src/page/kit/pick-chips.ts` `pickChips`: `PickList` for a sentence, where the picks sit inline on the sentence's own line.
 - `apps/web/src/page/kit/pick-list.ts` `pickList`: What a form has picked (destinations, people, schedules), each removable and, in an ordered list, movable, then an "Add" menu of the rest.
+- `apps/web/src/page/kit/picker-card.ts` `pickerCard`: A provider in a picker grid (`/sources/new`, the Cost page's add dialog): its tile, name and what it brings in, as one card that acts in place or navigates.
 - `apps/web/src/page/kit/pinned-namespace-notice.ts` `pinnedNamespaceNotice`: Replaces a rail's Namespace section while the org-global pin is on.
 - `apps/web/src/page/kit/providers.ts` `providerBrand`: The integration providers: each one's name, mark, accent, docs and infra page, read by the integrations catalog, the sidebar, the infra overview, Sources and the provider pages.
 - `apps/web/src/page/kit/query-builder/change.ts` `withRootOnly`, `switchDataSource`, `applyQueryChange`: One edit a `QueryPanel` makes to its draft, as data the host applies.
@@ -346,11 +351,11 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/tools/toolbar.ts` `initFacetSelect`, `facetValue`, `facetSelectStep`, `facetSelect`, `toolFilterToolbar`: The tool filter toolbar and its facet selects.
 - `apps/web/src/page/kit/underline-tabs.ts` `underlineTabStrip`, `underlineTabClass`, `linkTabStrip`: A row of tabs with an underlined active tab.
 - `apps/web/src/page/kit/uptime/commands.ts` `listMonitors`, `retrieveMonitor`, `setMonitorEnabled`, `deleteMonitor`, `testMonitorConfig`, `saveMonitor`, `monitorIdFromUrl`, `monitorHref`, `newMonitorHref`, `editMonitorHref`, `uptimeTabHref`, `uptimeTracesHref`, `traceHref`: The uptime monitor reads and writes, as Effects the pages' Commands wrap, and their links.
-- `apps/web/src/page/kit/uptime/derive.ts` `displayStatus`, `formatEvery`, `statusLabel`, `bareUrl`, `heartbeatScheduleLabel`, `stepsLine`, `targetLine`, `requestLine`, `uptimeShare`, `formatShare`, `latencyPercentiles`, `checkHealth`, `formatMs`, `matchesStatus`, `matchesQuery`, `summarize`, `certificateSummary`: Pure reads of an uptime monitor shared by the Uptime tab, the monitor page and the service card.
+- `apps/web/src/page/kit/uptime/derive.ts` `displayStatus`, `formatEvery`, `statusLabel`, `bareUrl`, `heartbeatScheduleLabel`, `stepsLine`, `targetLine`, `requestLine`, `uptimeShare`, `formatDaysUptime`, `formatShare`, `latencyPercentiles`, `checkHealth`, `formatMs`, `matchesStatus`, `matchesQuery`, `summarize`, `certificateSummary`: Pure reads of an uptime monitor shared by the Uptime tab, the monitor page and the service card.
 - `apps/web/src/page/kit/uptime/form-derive.ts` `nameFromUrl`, `defaultName`, `isPrivateHost`, `everySeconds`, `graceSeconds`, `formIssues`, `parseHeaders`, `wireConfig`, `wirePayload`, `formFromMonitor`: The form's checks, its wire payload, and the form an existing monitor opens as.
 - `apps/web/src/page/kit/uptime/form.ts` `emptyForm`: The uptime form's draft: every field as the inputs hold it, strings until the payload is built.
 - `apps/web/src/page/kit/uptime/test-monitors.ts` `monitorId`, `recentChecks`, `httpMonitor`, `downMonitor`, `pausedMonitor`, `heartbeatMonitor`: Uptime monitors as `uptimeMonitors.list` decodes them, for the scene tests.
-- `apps/web/src/page/kit/uptime/view.ts` `uptimeStatusChip`, `uptimeStatusSquare`, `recentChecksStrip`, `uptimePanelBody`: The uptime marks: the status chip, the status square and the recent-checks strip.
+- `apps/web/src/page/kit/uptime/view.ts` `uptimeStatusChip`, `uptimeStatusSquare`, `recentChecksStrip`, `uptimePanelBody`, `uptimeDaysStrip`: The uptime marks: the status chip, the status square, the recent-checks strip and the daily strip.
 - `apps/web/src/page/kit/view-tabs.ts` `viewTabStrip`, `pickTimeSearch`, `hostsViewTabs`, `kubernetesViewTabs`, `kubernetesBreadcrumbs`: The infra pages' view tabs (hosts, Kubernetes) on the kit's `linkTabStrip`, carrying the time window.
 - `apps/web/src/page/kit/where-autocomplete-view.ts` `suggestionListbox`, `whereKeyHandler`: The where editor's suggestion list and key handling, generic over the owner's Message.
 - `apps/web/src/page/kit/where-autocomplete.ts` `caretEvents`, `keepFocusEvents`, `listboxEvents`, `placeCaret`, `initWhereCaret`, `isOpenOf`, `activeKeysAt`, `syncedCaret`, `applied`, `listboxStyle`: The where clause autocomplete and its suggestion list, shared by every where editor (see query-builder/where-clause-autocomplete.ts).

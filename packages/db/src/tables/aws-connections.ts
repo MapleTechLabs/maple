@@ -45,6 +45,9 @@ export const AwsConnections = PG.table("aws_connections", {
 			name: "stream_last_received_at",
 		}),
 		streamLastError: PG.column(PG.nullable(PG.text), { name: "stream_last_error" }),
+		// Mixed into the events key, so a new salt is a new key. Null: a connection made before
+		// salts, whose key comes from its id alone.
+		eventsKeySalt: PG.column(PG.nullable(PG.text), { name: "events_key_salt" }),
 		createdBy: PG.column(PG.text, { name: "created_by" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),

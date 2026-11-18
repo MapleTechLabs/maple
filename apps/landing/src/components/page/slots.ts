@@ -14,7 +14,8 @@
  * script from the static import at the call site — a component resolved out of
  * this map has no import path and cannot take a `client:*` directive.
  */
-import type { ArtifactId, SectionId } from "../../lib/page-registry"
+import type { ArtifactId, HeroAsideId, SectionId } from "../../lib/page-registry"
+import { LiveCostStatement } from "../live/LiveCostStatement"
 import LiveAlertFiring from "../live/LiveAlertFiring.astro"
 import LiveAnomaly from "../live/LiveAnomaly.astro"
 import LiveBrowserSessions from "../live/LiveBrowserSessions.astro"
@@ -32,6 +33,9 @@ import K8sConsole from "./sections/K8sConsole.astro"
 import K8sCorrelation from "./sections/K8sCorrelation.astro"
 import K8sInstall from "./sections/K8sInstall.astro"
 import K8sViews from "./sections/K8sViews.astro"
+import CostBudgets from "./sections/CostBudgets.astro"
+import CostExplorer from "./sections/CostExplorer.astro"
+import CostSources from "./sections/CostSources.astro"
 import GitHubAfterMerge from "./sections/GitHubAfterMerge.astro"
 import GitHubCi from "./sections/GitHubCi.astro"
 import ProductEventsSources from "./sections/ProductEventsSources.astro"
@@ -72,4 +76,12 @@ export const EXTRA_SECTIONS = {
 	"uptime-check-trace": UptimeCheckTrace,
 	"uptime-setup": UptimeSetup,
 	"status-page-feeds": StatusPageFeeds,
+	"cost-explorer": CostExplorer,
+	"cost-sources": CostSources,
+	"cost-budgets": CostBudgets,
 } satisfies Record<SectionId, unknown>
+
+/** Server-rendered islands, so none needs a `client:*` directive or a wrapper. */
+export const HERO_ASIDES = {
+	"cost-statement": LiveCostStatement,
+} satisfies Record<HeroAsideId, unknown>

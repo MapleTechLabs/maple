@@ -1,7 +1,7 @@
 import { ChatConnectorId } from "./connector"
 import { Effect, Redacted, Schema } from "effect"
 import type { HttpClient } from "effect/http"
-import type { ConnectorConfigKey } from "./ingress"
+import type { ConnectorConfig, ConnectorConfigKey } from "./ingress"
 
 /**
  * The install half of the {@link ChatConnector} contract: everything needed to
@@ -52,6 +52,15 @@ export class ChatConnectorNotConfigured extends Schema.TaggedError<ChatConnector
  */
 export class ChatInstallFailed extends Schema.TaggedError<ChatInstallFailed>()(
 	"@maple/chat-platform/ChatInstallFailed",
+	{ connector: ChatConnectorId, message: Schema.String },
+) {}
+
+/**
+ * The platform did not end the workspace's grant: it refused, or could not be reached.
+ * Message-only for the reason {@link ChatInstallFailed} is: the request carries the token.
+ */
+export class ChatRevokeFailed extends Schema.TaggedError<ChatRevokeFailed>()(
+	"@maple/chat-platform/ChatRevokeFailed",
 	{ connector: ChatConnectorId, message: Schema.String },
 ) {}
 
@@ -126,6 +135,16 @@ export interface ChatInstallResult {
 	readonly credentials?: string | undefined
 }
 
+/** One linked workspace whose grant is to be ended at the platform. */
+export interface ChatInstallRevocation {
+	readonly externalWorkspaceId: string
+	/**
+	 * The map the outbound half reads from `ConnectorCredentials`: the deployment's outbound
+	 * config, and the workspace's own credential under `WORKSPACE_CREDENTIALS` when it has one.
+	 */
+	readonly credentials: ConnectorConfig
+}
+
 export interface ChatConnectorInstall {
 	/**
 	 * Config the host must supply for this connector to be installable, in the
@@ -153,6 +172,13 @@ export interface ChatConnectorInstall {
 		ChatConnectorNotConfigured | ChatInstallFailed,
 		HttpClient.HttpClient
 	>
+	/**
+	 * End the platform's side of one install (revoke its token, or take the bot out), absent where
+	 * the platform has no call for it. Best effort for the host: an already-gone grant succeeds.
+	 */
+	readonly revoke?: (
+		input: ChatInstallRevocation,
+	) => Effect.Effect<void, ChatRevokeFailed, HttpClient.HttpClient>
 	/** Validate and normalize posted settings into the record to store. */
 	readonly decodeSettings: (
 		input: ChatWorkspaceSettings,

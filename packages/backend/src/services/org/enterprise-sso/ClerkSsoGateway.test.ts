@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Array as Arr, Effect } from "effect"
 import { ClerkRequestError } from "@maple/backend/services/auth/clerk-request"
-import { disambiguatedName, isNameTaken, scanClaimedDomains } from "./ClerkSsoGateway"
+import { disambiguatedName, isNameTaken, scanClaimedDomains, updateParams } from "./ClerkSsoGateway"
 
 /** `total` connections, the last one serving `partner.io`; pages of 100 like Clerk's. */
 const connections = (total: number) => (offset: number) =>
@@ -81,6 +81,23 @@ describe("scanClaimedDomains", () => {
 			assert.strictEqual(error._tag, "@maple/backend/services/auth/ClerkRequestError")
 		}),
 	)
+})
+
+describe("connection update body", () => {
+	it("closes other sign-in methods when SSO is required, and never reopens them", () => {
+		assert.deepStrictEqual(updateParams({ active: true }), {
+			active: true,
+			disableAdditionalIdentifications: true,
+		})
+		assert.deepStrictEqual(updateParams({ active: false }), { active: false })
+	})
+
+	it("leaves sign-in methods as they are on an edit that does not touch enforcement", () => {
+		assert.deepStrictEqual(updateParams({ name: "Okta", domains: ["acme.com"] }), {
+			name: "Okta",
+			domains: ["acme.com"],
+		})
+	})
 })
 
 describe("connection name collisions", () => {

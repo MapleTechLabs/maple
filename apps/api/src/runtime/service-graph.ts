@@ -93,6 +93,7 @@ import { OpenRouterCostConnectionService } from "@maple/backend/services/cost/Op
 import { CostBudgetsService } from "@maple/backend/services/cost/CostBudgetsService"
 import { PlanetScaleCostSourceService } from "@maple/backend/services/cost/PlanetScaleCostSourceService"
 import { VercelCostSourceService } from "@maple/backend/services/cost/VercelCostSourceService"
+import { GcpCostSourceService } from "@maple/backend/services/cost/GcpCostSourceService"
 import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRouterKeyService"
 import { EnterpriseSsoService } from "@maple/backend/services/org/enterprise-sso/EnterpriseSsoService"
 import { ServiceMapWorldService } from "@maple/backend/services/service-map/ServiceMapWorldService"
@@ -120,6 +121,7 @@ import { SourcesService } from "@maple/backend/services/org/SourcesService"
 import { SourceRemovalService } from "@maple/backend/services/integrations/SourceRemovalService"
 import { SourceUsageService } from "@maple/backend/services/org/SourceUsageService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
+import { OrganizationDeletionService } from "@maple/backend/services/org/OrganizationDeletionService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
@@ -138,6 +140,7 @@ import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { AuditTrailService } from "@maple/backend/services/audit-trail/AuditTrailService"
 import { CloudSecurityReadService } from "@maple/backend/services/cloud-security/CloudSecurityReadService"
 import { CloudSecurityEventsService } from "@maple/backend/services/cloud-security/CloudSecurityEventsService"
+import { AwsEventsRateLimiter } from "@maple/backend/services/cloud-security/AwsEventsRateLimiter"
 import { AuditDetectionsService } from "@maple/backend/services/audit-trail/AuditDetectionsService"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -201,6 +204,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	SourceUsageService.layer,
 	OrgClickHouseSettingsService.layer,
 	OrganizationService.layer,
+	OrganizationDeletionService.layer,
 	MobileDevicesService.layer,
 	AgentFeedbackService.layer,
 	SavedViewsService.layer,
@@ -251,12 +255,14 @@ export const HttpServicesLive = Layer.mergeAll(
 	GithubCostSourceService.layer,
 	PlanetScaleCostSourceService.layer,
 	VercelCostSourceService.layer,
+	GcpCostSourceService.layer,
 	CostBudgetsService.layer,
 	ServiceMapWorldService.layer,
 	AuditLogService.layer,
 	AuditTrailService.layer,
 	CloudSecurityReadService.layer,
 	CloudSecurityEventsService.layer,
+	AwsEventsRateLimiter.layer,
 	AuditDetectionsService.layer,
 	IntegrationInventoryService.layer,
 	WarehouseQueryService.layer,

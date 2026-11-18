@@ -4,7 +4,6 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { cardButton } from "@maple/views/ui/card-button"
 import { badge } from "@maple/views/ui/display"
 import { eyebrow } from "@maple/views/ui/eyebrow"
-import { revealIcon } from "@maple/views/ui/reveal-icon"
 import { searchInput } from "@maple/views/ui/search-input"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { vstack } from "@maple/views/ui/stack"
@@ -12,6 +11,7 @@ import { statusDot } from "@maple/views/ui/status-dot"
 import { typography } from "@maple/views/ui/typography"
 import { type DataIntegration, HEALTH_TONE, overviewOf } from "../../integrations/embed"
 import { PLATFORMS, type PlatformMeta, platformTile } from "../kit/platforms"
+import { pickerCard } from "../../kit/picker-card"
 import { Message } from "./message"
 import type { Model } from "./model"
 
@@ -118,25 +118,14 @@ const compactCard = (h: H, pick: SourcePick): Html =>
 const card = (h: H, model: Model, pick: SourcePick): Html => {
 	const meta = metaOf(pick)
 	const connected = connectedBadge(h, model, pick)
-	return cardButton(
-		h,
-		{
-			onClick: selectOf(pick),
-			className: "flex items-center gap-3 px-3 py-3",
-			attributes: [h.Key(pick)],
-		},
-		[
-			platformTile(h, meta),
-			vstack(h, { gap: "0.5", shrink: true, grow: true, as: "span" }, [
-				typography(h, { size: "sm", weight: "medium", truncate: true }, [meta.label]),
-				typography(h, { size: "xs", tone: "muted", truncate: true, className: "font-prose" }, [
-					meta.description,
-				]),
-			]),
-			...(connected === null ? [] : [connected]),
-			revealIcon(h, "ChevronRightIcon"),
-		],
-	)
+	return pickerCard(h, {
+		key: pick,
+		leading: platformTile(h, meta),
+		title: meta.label,
+		description: meta.description,
+		trailing: connected,
+		action: { onClick: selectOf(pick) },
+	})
 }
 
 const GRID = {

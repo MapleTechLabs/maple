@@ -11,12 +11,36 @@ import { Route } from "foldkit"
 import { query, schemaSegment, slash } from "foldkit/route"
 import { AppRoute } from "./app-route"
 import * as Search from "./search"
-import { boundedRestSegments, boundedSegment, path, restSegments, segment } from "./segment"
+import {
+	boundedRestSegments,
+	boundedSegment,
+	mapBiparser,
+	optionalLiteralSegment,
+	path,
+	restSegments,
+	segment,
+} from "./segment"
 import { tanstackSearch } from "./tanstack-search"
 
 const search = <A, I>(schema: Schema.Codec<A, I>) => query(tanstackSearch(schema))
 
 const WorkloadKind = Search.InfraKubernetesWorkloadParams.fields.kind
+
+/**
+ * `/settings/<tab>`, the tab a path segment. An old `?tab=` link parses into `legacyTab`, and
+ * `routeRedirect` moves it to its path.
+ */
+const settingsUrl = mapBiparser(
+	pipe(
+		path("settings"),
+		slash(optionalLiteralSegment(Search.settingsTabValues)),
+		search(Search.SettingsQuery),
+	),
+	({ segment, search: { tab, ...rest } }): { readonly search: typeof Search.SettingsSearch.Type } => ({
+		search: { ...rest, tab: segment, legacyTab: tab },
+	}),
+	({ search: { tab, legacyTab, ...rest } }) => ({ segment: tab, search: { ...rest, tab: legacyTab } }),
+)
 
 /** One biparser per route tag: parses URLs and prints them back (`hrefOf`). */
 const routers = {
@@ -44,7 +68,7 @@ const routers = {
 	QuickStart: pipe(path("quick-start"), search(Search.QuickStartSearch), Route.mapTo(AppRoute.QuickStart)),
 	SelectPlan: pipe(path("select-plan"), search(Search.SelectPlanSearch), Route.mapTo(AppRoute.SelectPlan)),
 	ServiceMap: pipe(path("service-map"), search(Search.ServiceMapSearch), Route.mapTo(AppRoute.ServiceMap)),
-	Settings: pipe(path("settings"), search(Search.SettingsSearch), Route.mapTo(AppRoute.Settings)),
+	Settings: pipe(settingsUrl, Route.mapTo(AppRoute.Settings)),
 	Sources: pipe(path("sources"), Route.mapTo(AppRoute.Sources)),
 	SourcesNew: pipe(
 		path("sources", "new"),

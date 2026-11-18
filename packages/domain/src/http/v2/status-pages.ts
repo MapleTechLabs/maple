@@ -194,12 +194,15 @@ export const V2StatusPage = Schema.Struct({
 	slug: slugField,
 	description: Schema.NullOr(Schema.String).annotate({ description: "Text under the title, or `null`." }),
 	website_url: Schema.NullOr(Schema.String).annotate({ description: "Your site, linked from the page." }),
-	logo_url: Schema.NullOr(Schema.String).annotate({ description: "An https logo URL, or `null`." }),
+	logo_url: Schema.NullOr(Schema.String).annotate({
+		description:
+			"An https logo URL or an uploaded image as a base64 `data:image/...` URL (at most 128 KB), or `null`.",
+	}),
 	logo_dark_url: Schema.NullOr(Schema.String).annotate({
-		description: "An https logo URL shown in dark mode instead of `logo_url`, or `null`.",
+		description: "A logo shown in dark mode instead of `logo_url`, as `logo_url` takes it, or `null`.",
 	}),
 	favicon_url: Schema.NullOr(Schema.String).annotate({
-		description: "An https URL of the page's browser tab icon, or `null`.",
+		description: "The page's browser tab icon, as `logo_url` takes it, or `null`.",
 	}),
 	support_url: Schema.NullOr(Schema.String).annotate({
 		description: "An https link to your support or contact page, shown in the page header, or `null`.",
@@ -347,7 +350,7 @@ export const V2StatusPageCustomDomainDnsRecord = Schema.Struct({
 	value: Schema.String,
 	purpose: StatusPageCustomDomainRecordPurpose.annotate({
 		description:
-			"`routing` sends the hostname to Maple (always needed), `ownership` proves you own it before the CNAME is live, `certificate` lets the certificate be issued.",
+			"`routing` sends the hostname to Maple (always needed), `ownership` proves you own the domain (the `_maple-challenge` record is needed before Maple sets a new domain up), `certificate` lets the certificate be issued.",
 	}),
 }).annotate({
 	identifier: "StatusPageCustomDomainDnsRecord",
@@ -400,6 +403,12 @@ export const V2StatusPageCustomDomain = Schema.Struct({
 					name: "status.acme.com",
 					value: "status-domains.maple.dev",
 					purpose: "routing",
+				},
+				{
+					type: "TXT",
+					name: "_maple-challenge.status.acme.com",
+					value: "maple-status-page=1c2ba8fdad86fbbe9cdd85449b0e85c6",
+					purpose: "ownership",
 				},
 			],
 			last_error: null,
@@ -1373,7 +1382,7 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 			OpenApi.annotations({
 				identifier: "setStatusPageCustomDomain",
 				summary: "Set a status page's custom domain",
-				description: `Serves the page on a subdomain you control, like \`status.acme.com\`, replacing a different one it has; the same hostname again changes nothing. Add the returned DNS records; the page goes live there once the certificate is issued. ${adminNote}`,
+				description: `Serves the page on a subdomain you control, like \`status.acme.com\`, replacing a different one it has; the same hostname again changes nothing. Add the returned DNS records: Maple sets a new domain up once it finds the ownership TXT record, and the page goes live there once the certificate is issued. A hostname held by a page that never proved it owns the domain answers 409 with the record that claims it. ${adminNote}`,
 			}),
 		),
 	)

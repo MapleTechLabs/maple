@@ -127,9 +127,14 @@ export interface SupabaseOAuthServiceApi {
 	/** Whether a grant is stored and not stamped revoked, i.e. discovery may use it. */
 	readonly isGrantUsable: (orgId: OrgId) => Effect.Effect<boolean, IntegrationsPersistenceError>
 	/** Revoke the grant at Supabase (best effort, logged) and drop the stored tokens. */
-	readonly disconnect: (
-		orgId: OrgId,
-	) => Effect.Effect<{ readonly disconnected: boolean }, IntegrationsPersistenceError>
+	readonly disconnect: (orgId: OrgId) => Effect.Effect<
+		{
+			readonly disconnected: boolean
+			/** False when a stored grant was not revoked at the vendor; the local grant is dropped anyway. */
+			readonly grantRevoked: boolean
+		},
+		IntegrationsPersistenceError
+	>
 }
 
 export class SupabaseOAuthService extends Context.Service<SupabaseOAuthService, SupabaseOAuthServiceApi>()(
@@ -308,12 +313,13 @@ export class SupabaseOAuthService extends Context.Service<SupabaseOAuthService, 
 				return row !== null && row.revokedAt === null
 			})
 
-			/** Best effort: a failed revoke still drops the local grant, and is logged. */
+			/** Answers whether a stored grant was revoked. Best effort: a failed revoke still drops the local grant, and is logged. */
 			const revokeUpstream = Effect.fn("SupabaseOAuthService.revokeUpstream")(function* (orgId: OrgId) {
-				const config = yield* resolveConfig(env, clientSecret)
 				const row = yield* oauth.loadConnection(orgId)
+				// Nothing stored: there is no grant to leave behind.
+				if (row === null) return true
+				const config = yield* resolveConfig(env, clientSecret)
 				if (
-					row === null ||
 					row.refreshTokenCiphertext === null ||
 					row.refreshTokenIv === null ||
 					row.refreshTokenTag === null
@@ -340,7 +346,8 @@ export class SupabaseOAuthService extends Context.Service<SupabaseOAuthService, 
 					),
 				)
 				yield* Effect.annotateCurrentSpan("maple.supabase.revoked_upstream", revoked)
-				return yield* oauth.deleteConnection(orgId)
+				const deleted = yield* oauth.deleteConnection(orgId)
+				return { ...deleted, grantRevoked: revoked }
 			})
 
 			return {

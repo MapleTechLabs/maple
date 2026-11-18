@@ -5,15 +5,27 @@ import type {
 	V2StatusPagePublishResult,
 } from "@maple/domain/http/v2"
 import { Option, Result, Schema, String as Str } from "effect"
-import { AsyncData, Command as FoldkitCommand } from "foldkit"
+import { AsyncData, Command as FoldkitCommand, File } from "foldkit"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import { type PageContext, PageOutMessage } from "../../contract"
 import { statusPageHref, statusPagesHref } from "../shared/commands"
-import { DeletePage, PublishPage, RevokeToken, RotateToken, SaveSettings } from "./command"
+import { SLUG_TAKEN } from "../shared/slug"
 import {
+	DeletePage,
+	PickBrandingImage,
+	PublishPage,
+	ReadBrandingImage,
+	RevokeToken,
+	RotateToken,
+	SaveSettings,
+} from "./command"
+import {
+	type BrandingField,
 	hasSettingsIssues,
+	httpsIssue,
+	imageUploadIssue,
 	isSameSettings,
 	type SettingsForm,
 	type SettingsTextField,
@@ -66,6 +78,81 @@ export const changeTheme = (model: Model, change: Partial<ThemeForm>): Return =>
 export const togglePoweredBy = (model: Model): Return =>
 	withSettings(model, (form) => ({ ...form, showPoweredBy: !form.showPoweredBy }))
 
+export const pickBrandingImage = (model: Model, field: BrandingField): Return =>
+	canManage(model) ? { model, commands: [PickBrandingImage({ field })] } : { model }
+
+/** A dropped or picked logo or favicon: read into the form when the API would take it. */
+export const takeBrandingImage = (
+	model: Model,
+	field: BrandingField,
+	files: ReadonlyArray<File.File>,
+): Return => {
+	const settled = { ...model, brandingDrag: null }
+	const file = files[0]
+	if (file === undefined || !canManage(model)) return { model: settled }
+	const issue = imageUploadIssue({ type: File.mimeType(file), size: File.size(file) })
+	const read = model.brandingRead + 1
+	return issue === null
+		? { model: { ...settled, brandingRead: read }, commands: [ReadBrandingImage({ field, read, file })] }
+		: { model: settled, outMessage: toast("error", "Couldn't use that image", issue) }
+}
+
+export const brandingDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return =>
+	liftDialog(
+		model,
+		step,
+		(next, brandingDialog) => ({ ...next, brandingDialog }),
+		(message) => Message.GotBrandingDialogMessage({ message }),
+	)
+
+/** Opens the upload-or-link dialog on the image, its link prefilled when it is one. */
+export const editBrandingImage = (model: Model, field: BrandingField): Return => {
+	if (!canManage(model)) return { model }
+	const current = Option.match(settingsOf(model), { onNone: () => "", onSome: (form) => Str.trim(form[field]) })
+	const link = Str.startsWith("https://")(current) ? current : ""
+	return brandingDialog(
+		{
+			...model,
+			brandingDialogField: field,
+			brandingLink: link,
+			brandingDrag: null,
+			brandingRead: model.brandingRead + 1,
+		},
+		Dialog.open(model.brandingDialog),
+	)
+}
+
+/** The image takes the value, and the dialog closes if it was open. */
+const applyBrandingImage = (model: Model, field: BrandingField, value: string): Return => {
+	const changed = changeSetting(model, field, value)
+	return changed.model.brandingDialog.isOpen
+		? brandingDialog(changed.model, Dialog.close(changed.model.brandingDialog))
+		: changed
+}
+
+/** A finished file read; one superseded by a later upload, link, removal or discard is dropped. */
+export const readBrandingImage = (
+	model: Model,
+	field: BrandingField,
+	read: number,
+	dataUrl: string | null,
+): Return =>
+	read !== model.brandingRead
+		? { model }
+		: dataUrl === null
+			? { model, outMessage: toast("error", "Couldn't read that image") }
+			: applyBrandingImage(model, field, dataUrl)
+
+export const removeBrandingImage = (model: Model, field: BrandingField): Return =>
+	changeSetting({ ...model, brandingRead: model.brandingRead + 1 }, field, "")
+
+export const submitBrandingLink = (model: Model): Return => {
+	const link = Str.trim(model.brandingLink)
+	return link === "" || httpsIssue(link) !== null
+		? { model }
+		: applyBrandingImage({ ...model, brandingRead: model.brandingRead + 1 }, model.brandingDialogField, link)
+}
+
 export const saveSettings = (model: Model): Return => {
 	const edits = model.settingsEdits
 	return model.pageId === null ||
@@ -90,7 +177,7 @@ export const withPage = (model: Model, page: V2StatusPage): Model => ({
 export const savedSettings = (model: Model, result: Result.Result<V2StatusPage, LoadFailure>): Return =>
 	Result.match(result, {
 		onSuccess: (page): Return => {
-			const next = withPage({ ...model, isSavingSettings: false }, page)
+			const next = withPage({ ...model, isSavingSettings: false, takenSlug: null }, page)
 			const isCaughtUp =
 				next.settingsEdits !== null && isSameSettings(next.settingsEdits, settingsFormOf(page))
 			return {
@@ -98,8 +185,12 @@ export const savedSettings = (model: Model, result: Result.Result<V2StatusPage, 
 				outMessage: toast("success", "Settings saved"),
 			}
 		},
+		// A taken address is the field's error, not the form's.
 		onFailure: (settingsFailure): Return => ({
-			model: { ...model, isSavingSettings: false, settingsFailure },
+			model:
+				settingsFailure.code === SLUG_TAKEN && model.settingsEdits !== null
+					? { ...model, isSavingSettings: false, takenSlug: model.settingsEdits.slug }
+					: { ...model, isSavingSettings: false, settingsFailure },
 		}),
 	})
 

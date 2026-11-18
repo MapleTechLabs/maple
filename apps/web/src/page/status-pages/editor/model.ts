@@ -18,9 +18,17 @@ import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { StatusPageSearch } from "../../../route/search"
 import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
-import { ComponentForm, IncidentEditForm, IncidentForm, SettingsForm, UpdateForm } from "../shared/form"
+import {
+	BrandingField,
+	ComponentForm,
+	IncidentEditForm,
+	IncidentForm,
+	SettingsForm,
+	UpdateForm,
+} from "../shared/form"
 import { Picker } from "../shared/picker"
 import { PreviewHistory, PreviewScheme, PreviewState, PreviewWidth } from "../shared/preview"
 
@@ -116,6 +124,8 @@ export const Model = Schema.Struct({
 	 * expanded in the list stays where it was clicked.
 	 */
 	revealComponentId: Schema.NullOr(StatusPageComponentId),
+	/** The field a header or footer click in the preview asked for, revealed once its section opens. */
+	revealFieldId: Schema.NullOr(Schema.String),
 	/** The side sheet an incident or Add monitors opens in; open while `panel` is one of those. */
 	panelSheet: Dialog.Model,
 	/** What the sheet shows: the last incident or Add `panel` held, kept while the sheet closes. */
@@ -137,7 +147,8 @@ export const Model = Schema.Struct({
 	 */
 	componentForm: ComponentForm,
 	componentSave: Schema.NullOr(ComponentSave),
-	/** The open component's Group list: the page's groups, "No group" and a typed new one. */
+	/** The open component's Group dropdown: the page's groups, "No group" and a typed new one. */
+	groupPicker: Combobox.Model,
 	/** The leave waiting on the discard confirm; kept while the dialog fades out, so its title holds. */
 	pendingLeave: Schema.NullOr(PendingLeave),
 	discardComponentDialog: Dialog.Model,
@@ -180,8 +191,20 @@ export const Model = Schema.Struct({
 	// Settings
 	/** Edits over the saved page; `null` while the form shows the page as saved. */
 	settingsEdits: Schema.NullOr(SettingsForm),
+	/** The logo or favicon drop target a file is dragged over. */
+	brandingDrag: Schema.NullOr(BrandingField),
+	/** The upload-or-link dialog, the image it changes and its link as typed. */
+	brandingDialog: Dialog.Model,
+	brandingDialogField: BrandingField,
+	brandingLink: Schema.String,
+	/** Bumped by each upload, link, removal and discard: a file read that finishes later is dropped. */
+	brandingRead: Schema.Number,
 	isSavingSettings: Schema.Boolean,
+	/** Basic settings' Save: Who can view saves once the fields have, so neither reply overwrites the other's page. */
+	savesAccessNext: Schema.Boolean,
 	settingsFailure: Schema.NullOr(LoadFailure),
+	/** The address the last save was refused for, another page having it; shown on the field while it is typed. */
+	takenSlug: Schema.NullOr(Schema.String),
 	isPublishing: Schema.Boolean,
 	breakGlassDialog: Dialog.Model,
 	breakGlassAction: Schema.NullOr(BreakGlassAction),

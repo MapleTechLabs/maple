@@ -14,7 +14,7 @@ export const page = definePage(
 		update,
 		view,
 		breadcrumbs: () => [
-			{ label: "Cost", href: "/cost" },
+			{ label: "Cloud cost", href: "/cost" },
 			{ label: "Budgets", isPageHeading: true },
 		],
 	},
