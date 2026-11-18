@@ -7,7 +7,7 @@ import { doc } from "../lib/tool-doc"
 import { truncate } from "../lib/format"
 import {
 	AGENT_AUDIENCE,
-	tenantWithDataSources,
+	tenantWithDataSourceCatalog,
 	mapDataSourceError,
 	queryLanguageLabel,
 } from "../lib/data-sources"
@@ -52,7 +52,7 @@ export function registerSearchDataSourcesTool(server: McpToolRegistrar) {
 					parameter: "query",
 				})
 			}
-			const tenant = yield* tenantWithDataSources(TOOL)
+			const tenant = yield* tenantWithDataSourceCatalog(TOOL)
 			const service = yield* ExternalDataSourceService
 			const hits = yield* service
 				.search(tenant.orgId, trimmed, AGENT_AUDIENCE, limit)

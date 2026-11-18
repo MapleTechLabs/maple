@@ -1,9 +1,10 @@
 import { McpServer } from "effect/ai"
 import { Array as Arr, Effect, Layer } from "effect"
 import type { ExternalDataSourceDocument } from "@maple/domain/data-sources"
+import type { TenantContext } from "@maple/domain/http"
 import { McpToolExecutorLoader } from "../executor-loader"
 import { CurrentMcpRequestTenant } from "../tenant"
-import { dataSourceLine } from "../lib/data-sources"
+import { dataSourceLine, mayReadDataSources } from "../lib/data-sources"
 
 /** More than this and the resource points at search instead of listing every source. */
 const MAX_RESOURCE_SOURCES = 200
@@ -26,6 +27,20 @@ export const dataSourcesResourceText = (sources: ReadonlyArray<ExternalDataSourc
 	)
 }
 
+/** What a scoped key without the scope reads: the same answer `list_data_sources` gives it. */
+export const DATA_SOURCES_SCOPE_MISSING =
+	"This API key lacks the `data_sources:read` scope, so it cannot read the organization's data sources. Add the scope to the key, or use a full-access key."
+
+/** What the resource answers one caller. Without the scope nothing is listed, and nothing is loaded. */
+export const readDataSourcesResource = <E, R>(
+	tenant: TenantContext | undefined,
+	list: (tenant: TenantContext) => Effect.Effect<ReadonlyArray<ExternalDataSourceDocument>, E, R>,
+): Effect.Effect<string, E, R> => {
+	if (tenant === undefined) return Effect.succeed("The authenticated organization is unavailable.")
+	if (!mayReadDataSources(tenant)) return Effect.succeed(DATA_SOURCES_SCOPE_MISSING)
+	return Effect.map(list(tenant), dataSourcesResourceText)
+}
+
 /** The org's agent-visible data sources, one line each. Org-scoped: read with the request's tenant. */
 export const DataSourcesResource = Layer.unwrap(
 	Effect.gen(function* () {
@@ -39,10 +54,9 @@ export const DataSourcesResource = Layer.unwrap(
 			priority: 0.5,
 			content: Effect.gen(function* () {
 				const tenant = yield* CurrentMcpRequestTenant
-				if (tenant === undefined) return "The authenticated organization is unavailable."
-				const executor = yield* loader.load
-				const sources = yield* executor.listDataSources(tenant)
-				return dataSourcesResourceText(sources)
+				return yield* readDataSourcesResource(tenant, (reader) =>
+					Effect.flatMap(loader.load, (executor) => executor.listDataSources(reader)),
+				)
 			}).pipe(
 				Effect.catch((error) =>
 					Effect.logWarning("Could not list data sources for the MCP resource").pipe(

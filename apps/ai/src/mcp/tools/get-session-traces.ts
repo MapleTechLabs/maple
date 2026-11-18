@@ -18,6 +18,7 @@ export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 			session_id: P.text("The session id to read (from search_sessions)"),
 			limit: P.limit({ default: 50, max: 100, noun: "traces" }),
 		}),
+		untrustedOutput: true,
 		hints: { readOnly: true },
 		phrases: ["Loading session traces"],
 		handler: Effect.fn("McpTool.getSessionTraces")(function* ({ session_id, limit }) {

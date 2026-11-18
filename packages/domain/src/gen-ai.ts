@@ -130,6 +130,11 @@ export const MAPLE_GENAI_INPUT_MESSAGES_DROPPED_ATTR = "maple_ai.input_messages_
  * or the gateway's namespace strip drops it.
  */
 export const MAPLE_GENAI_MODEL_DURATION_MS_ATTR = "maple_ai.model_duration_ms"
+/**
+ * `true` on a Maple agent span whose prompts, completions and tool payloads were left out because
+ * the run served a customer org. Outside `maple_ai.`, so the gateway's namespace strip keeps it.
+ */
+export const MAPLE_GENAI_CONTENT_REDACTED_ATTR = "maple.genai.content_redacted"
 
 /**
  * Every fact Agent Sessions aggregates or filters on, as the ingest gateway

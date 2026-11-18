@@ -39,6 +39,7 @@ const makeStub = (
 			get: (path) => dispatch("GET", path),
 			post: (path, body) => dispatch("POST", path, body),
 			patch: (path, body) => dispatch("PATCH", path, body),
+			put: (path, body) => dispatch("PUT", path, body),
 			delete: (path) => dispatch("DELETE", path),
 		},
 	}

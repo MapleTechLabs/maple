@@ -38,6 +38,7 @@ export function registerRouteUsageTool(server: McpToolRegistrar) {
 			offset: P.offset({ max: MAX_OFFSET }),
 		}),
 		aliases: P.SERVICE_ALIASES,
+		untrustedOutput: true,
 		hints: { readOnly: true },
 		phrases: ["Checking route usage", "Finding unused routes"],
 		handler: Effect.fn("McpTool.routeUsage")(function* (params) {

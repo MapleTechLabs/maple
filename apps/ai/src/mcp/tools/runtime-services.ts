@@ -34,6 +34,7 @@ import { SlosService } from "@maple/backend/services/slos/SlosService"
 import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
 import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
 import { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
+import { StatusPageCustomDomainsService } from "@maple/backend/services/status-pages/StatusPageCustomDomainsService"
 import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
@@ -92,6 +93,7 @@ export const McpRuntimeServicesLive = Layer.mergeAll(
 	SecurityAuditStore.layer,
 	SetupAuditService.layer,
 	SlosService.layer,
+	StatusPageCustomDomainsService.layer,
 	StatusPageSnapshotBuilder.layer,
 	StatusPagesService.layer,
 	UptimeMonitorsService.layer,

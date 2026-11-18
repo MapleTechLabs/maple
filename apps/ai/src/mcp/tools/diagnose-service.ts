@@ -43,6 +43,7 @@ export function registerDiagnoseServiceTool(server: McpToolRegistrar) {
 			environment: P.environment(),
 		}),
 		aliases: P.SERVICE_ALIASES,
+		untrustedOutput: true,
 		hints: { readOnly: true },
 		phrases: ["Diagnosing a service", "Checking a service's health"],
 		handler: Effect.fn("McpTool.diagnoseService")(function* (params) {

@@ -2,7 +2,7 @@ import type { McpToolRegistrar } from "./types"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import { CurrentMcpTenant } from "../tenant"
 import { MCP_SEARCH_MAX_HOURS } from "../lib/time"
-import { truncate, formatNumber, toSecondTimestamp } from "../lib/format"
+import { formatNumber, toSecondTimestamp, untrustedText } from "../lib/format"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
@@ -68,6 +68,7 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 30, max: 200, noun: "logs" }),
 		}),
 		aliases: { ...P.SERVICE_ALIASES, query: "search" },
+		untrustedOutput: true,
 		hints: { readOnly: true },
 		phrases: ["Searching logs", "Reading through logs"],
 		handler: Effect.fn("McpTool.searchLogs")(function* (params) {
@@ -161,11 +162,11 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 				const attrs = Arr.join(
 					Arr.map(
 						Rec.toEntries(log.keyAttributes ?? {}),
-						([k, v]) => `\n    ${k}: ${truncate(v, 300)}`,
+						([k, v]) => `\n    ${untrustedText(k, 120)}: ${untrustedText(v, 300)}`,
 					),
 					"",
 				)
-				return `${marker} ${time} [${Str.padEnd(5)(log.severityText)}] ${log.serviceName}: ${truncate(log.body, 120)}${ref}${attrs}`
+				return `${marker} ${time} [${Str.padEnd(5)(log.severityText)}] ${log.serviceName}: ${untrustedText(log.body, 120)}${ref}${attrs}`
 			})
 			const pagination = output.pagination
 			const nextOffset = pagination?.nextOffset
@@ -182,7 +183,7 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 						? `Logs (at least ${formatNumber(output.totalCount)}; the exact count did not finish)`
 						: `Logs (${formatNumber(output.totalCount)} total)`,
 				scope,
-				blocks: [doc.text(Arr.join(lines, "\n"))],
+				blocks: [doc.untrusted(Arr.join(lines, "\n"))],
 				...(nextOffset === undefined
 					? undefined
 					: {

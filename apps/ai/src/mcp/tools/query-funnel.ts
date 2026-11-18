@@ -78,6 +78,7 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 			),
 			browser: P.optionalText("Only persons with a session in this browser (e.g. Chrome)."),
 		}),
+		untrustedOutput: true,
 		hints: { readOnly: true },
 		phrases: ["Computing a funnel", "Querying a funnel"],
 		handler: Effect.fn("McpTool.queryFunnel")(function* (params) {

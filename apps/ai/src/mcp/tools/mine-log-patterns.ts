@@ -35,6 +35,7 @@ export function registerMineLogPatternsTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 50, max: 200, noun: "patterns" }),
 		}),
 		aliases: P.SERVICE_ALIASES,
+		untrustedOutput: true,
 		hints: { readOnly: true },
 		phrases: ["Grouping log patterns", "Finding common log patterns"],
 		handler: Effect.fn("McpTool.mineLogPatterns")(function* (params) {

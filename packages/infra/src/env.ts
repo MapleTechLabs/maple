@@ -111,6 +111,7 @@ export const authEnv: Config.Config<WorkerEnv> = merge(
 	derived("CLERK_TELEMETRY_DISABLED", "1"),
 	plainWithDefault("MAPLE_DEFAULT_ORG_ID", "default"),
 	Secrets.MapleRootPassword.optional,
+	Secrets.MapleSessionSigningSecret.optional,
 	Secrets.ClerkSecretKey.optional,
 	optionalPlain("CLERK_PUBLISHABLE_KEY"),
 	Secrets.ClerkJwtKey.optional,

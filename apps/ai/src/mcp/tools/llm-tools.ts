@@ -29,7 +29,7 @@ import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { inputSchemaOf, mapleToolCatalogFor } from "./registry"
 import { truncateToolOutput } from "./tool-output"
 import { MAX_FAILURE_MESSAGE_CHARS } from "../expected-failures"
-import { toolHandlersWithContent } from "../../platform/genai-spans"
+import { type GenAiContent, toolHandlersWithContent } from "../../platform/genai-spans"
 import type { TenantContext } from "@maple/domain/http"
 import { TOOL_UI_MARKER } from "@maple/domain/mcp-outputs"
 
@@ -106,6 +106,8 @@ export interface BuildMapleToolsOptions {
 	 * `sandbox_exec` among them — by omission.
 	 */
 	readonly surface: McpToolSurface
+	/** Whether every tool span records its arguments and result; see `GenAiContent`. */
+	readonly content: GenAiContent
 	/** The agent-session identity of the run, stamped on every tool span — see `withToolCallContent`. */
 	readonly sessionAttributes?: Readonly<Record<string, string>>
 	/** Sees every successful answer this build dispatches; a review pass tracks what it read here. */
@@ -306,5 +308,8 @@ export const buildMapleToolkit = (
 	// `handlers` is exposed alongside the layer because a caller that merges this toolkit with one
 	// of its own must build a single handler map: two partial layers would each be missing the
 	// other's tools. It is the wrapped map for the same reason.
-	return { toolkit, ...toolHandlersWithContent(toolkit, handlers, options.sessionAttributes) }
+	return {
+		toolkit,
+		...toolHandlersWithContent(toolkit, handlers, options.content, options.sessionAttributes),
+	}
 }

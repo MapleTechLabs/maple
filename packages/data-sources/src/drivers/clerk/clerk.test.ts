@@ -112,7 +112,11 @@ describe("Clerk budgets and failures", () => {
 		Effect.gen(function* () {
 			const fake = makeFakeClerk({ secretKey: SECRET, users: [], throttleAfter: 0 })
 			const error = yield* Effect.flip(run(fake, SIGNUPS_PER_DAY))
-			expect(error).toMatchObject({ _tag: "@maple/data-sources/RateLimited", retryAfterSeconds: 7 })
+			expect(error).toMatchObject({
+				_tag: "@maple/data-sources/RateLimited",
+				retryAfterSeconds: 7,
+				limitedBy: "source",
+			})
 		}),
 	)
 

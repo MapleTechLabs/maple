@@ -1,4 +1,4 @@
-import type { AuthEnv } from "@maple/auth"
+import { type AuthEnv, rootPasswordProblem } from "@maple/auth"
 import { optionalRedacted, optionalString, stringWithDefault } from "@maple/infra/config-helpers"
 import { Config, Context, Effect, Layer, Option, Redacted, Schema, String as Str } from "effect"
 
@@ -38,6 +38,7 @@ const syncConfig = Config.all({
 	// Same default as @maple/api's Env; deploys derive it from the stage.
 	MAPLE_ENVIRONMENT: stringWithDefault("MAPLE_ENVIRONMENT", "development"),
 	MAPLE_ROOT_PASSWORD: optionalRedacted("MAPLE_ROOT_PASSWORD"),
+	MAPLE_SESSION_SIGNING_SECRET: optionalRedacted("MAPLE_SESSION_SIGNING_SECRET"),
 	CLERK_SECRET_KEY: optionalRedacted("CLERK_SECRET_KEY"),
 	CLERK_PUBLISHABLE_KEY: optionalString("CLERK_PUBLISHABLE_KEY"),
 	CLERK_JWT_KEY: optionalRedacted("CLERK_JWT_KEY"),
@@ -61,6 +62,20 @@ const makeSyncConfig = Effect.gen(function* () {
 		return yield* new SyncConfigInvalidError({
 			variable: "MAPLE_ROOT_PASSWORD",
 			message: "MAPLE_ROOT_PASSWORD is required when MAPLE_AUTH_MODE=self_hosted",
+		})
+	}
+
+	const rootPasswordIssue =
+		authMode === "clerk"
+			? undefined
+			: Option.match(config.MAPLE_ROOT_PASSWORD, {
+					onNone: () => undefined,
+					onSome: (password) => rootPasswordProblem(Redacted.value(password)),
+				})
+	if (rootPasswordIssue !== undefined) {
+		return yield* new SyncConfigInvalidError({
+			variable: "MAPLE_ROOT_PASSWORD",
+			message: rootPasswordIssue,
 		})
 	}
 

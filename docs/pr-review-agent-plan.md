@@ -48,14 +48,16 @@ superseded row is dropped.
 - **Mode.** `pr-review` is a `ChatMode` with tab prefix `pr-`. Its `AGENTS` entry carries
   `PR_REVIEW_SYSTEM_PROMPT`, `PR_REVIEW_BUDGET` (`apps/ai/src/chat/budgets.ts`: 500 tool calls,
   10 minutes, 64M tokens, 48k completion reserve, sized as runaway guards since #1053) and
-  `autonomousPermission: PR_REVIEW_RULESET`, which `profileForTurn` uses for the unattended pass
-  only.
+  `autonomousPermission: PR_REVIEW_RULESETS`, which `profileForTurn` uses for the unattended pass
+  only, picked by the turn origin's `repository` (`pullRequestTurnOrigin`).
 - **Tools.** `PR_REVIEW_RULESET` denies everything and allows the names in `PR_REVIEW_TOOLS`:
   `pr_changed_files`, `pr_context`, `pr_file_diff`, the four `sandbox_*` tools, `list_source_repositories`,
   `search_source_code`, `read_source_file`, and the read-only telemetry tools `list_services`,
   `get_service_top_operations`, `explore_attributes`, `search_traces`, `service_map`,
   `list_metrics`, `audit_setup` and `get_instrumentation_recommendations`. `permissions.test.ts`
-  pins that every name is registered and none mutates.
+  pins that every name is registered and none mutates. On a public repository (and when the origin
+  does not say) the pass runs under `PR_REVIEW_PUBLIC_RULESET` instead: the code tools only, and a
+  kickoff that carries telemetry counts but no service, span or error text.
 - **Diff tools.** `pr_changed_files` and `pr_file_diff` are internal tools
   (`apps/ai/src/mcp/tools/pull-request.ts`) over GitHub's pull request files endpoint, so they work
   locally, on previews and for fork PRs, where the prd-only sandbox does not. `pr_changed_files`

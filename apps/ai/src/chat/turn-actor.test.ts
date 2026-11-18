@@ -12,7 +12,11 @@ import { ErrorPersistenceError, type TenantContext } from "@maple/domain/http"
 import { ActorId, OrgId, UserId } from "@maple/primitives"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
-import { withConnectorActor } from "./turn-actor"
+import { AuthorizationUnavailableError } from "@maple/domain/http"
+import { RoleName } from "@maple/primitives"
+import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
+import { Logger, Option } from "effect"
+import { turnStarterOf, turnTenant, withConnectorActor } from "./turn-actor"
 
 const ORG = Schema.decodeSync(OrgId)("org_turn_actor_test")
 const PLACEHOLDER_USER = Schema.decodeSync(UserId)("chat-connector")
@@ -99,5 +103,161 @@ describe("withConnectorActor", () => {
 			const agents = yield* actors.listAgents(ORG)
 			assert.strictEqual(agents.actors.length, 0)
 		}).pipe(Effect.provide(makeLayer())),
+	)
+})
+
+const role = Schema.decodeSync(RoleName)
+const STARTER = Schema.decodeSync(UserId)("user_starter")
+
+/** A directory where the starter holds the role `now`, has left (`gone`) or cannot be read (`unavailable`). */
+const memberships = (now: string, directory: "clerk" | "none" = "clerk") =>
+	Layer.succeed(OrgMembershipService, {
+		directory,
+		verify: (_userId, orgId) =>
+			now === "unavailable"
+				? Effect.fail(new AuthorizationUnavailableError({ message: "directory down" }))
+				: Effect.succeed(now === "gone" ? Option.none() : Option.some({ orgId, role: role(now) })),
+	})
+
+const startedBy = (
+	roles: ReadonlyArray<string>,
+	named: "named" | "unnamed" = "named",
+	scopes: "reads data sources" | "cannot read data sources" = "reads data sources",
+) =>
+	({
+		kind: "autonomous",
+		startedBy: {
+			kind: "person",
+			...(named === "named" ? { userId: STARTER } : undefined),
+			roles,
+			mayReadDataSources: scopes === "reads data sources",
+		},
+	}) satisfies ChatTurnOrigin
+
+describe("turnStarterOf", () => {
+	it.effect("answers for a producer's pass as the producer, without reading any membership", () =>
+		Effect.gen(function* () {
+			const starter = yield* turnStarterOf(ORG, {
+				kind: "autonomous",
+				startedBy: { kind: "producer", producer: "incident_triage" },
+			})
+			assert.deepStrictEqual(starter, { kind: "producer" })
+		}).pipe(Effect.provide(memberships("unavailable"))),
+	)
+
+	it.effect("gives a person the roles they hold now, not the ones they started with", () =>
+		Effect.gen(function* () {
+			const demoted = yield* turnStarterOf(ORG, startedBy(["org:admin"]))
+			assert.deepStrictEqual(demoted, { kind: "person", roles: [role("org:member")] })
+		}).pipe(Effect.provide(memberships("org:member"))),
+	)
+
+	it.effect("keeps a credential that was held below its owner's role where it was", () =>
+		Effect.gen(function* () {
+			const pinned = yield* turnStarterOf(ORG, startedBy(["org:member"]))
+			assert.deepStrictEqual(pinned, { kind: "person", roles: [role("org:member")] })
+		}).pipe(Effect.provide(memberships("org:admin"))),
+	)
+
+	it.effect("answers as a person with no role when nobody is recorded, named or still a member", () =>
+		Effect.gen(function* () {
+			const nobody = { kind: "person", roles: [] } as const
+			assert.deepStrictEqual(yield* turnStarterOf(ORG, { kind: "autonomous" }), nobody)
+			assert.deepStrictEqual(yield* turnStarterOf(ORG, startedBy(["org:admin"], "unnamed")), nobody)
+		}).pipe(Effect.provide(memberships("org:admin"))),
+	)
+
+	it.effect("answers as a person with no role when the starter left or cannot be looked up", () =>
+		Effect.gen(function* () {
+			const left = yield* turnStarterOf(ORG, startedBy(["org:admin"])).pipe(
+				Effect.provide(memberships("gone")),
+			)
+			const unreadable = yield* turnStarterOf(ORG, startedBy(["org:admin"])).pipe(
+				Effect.provide(memberships("unavailable")),
+			)
+			assert.deepStrictEqual(
+				[left, unreadable],
+				[
+					{ kind: "person", roles: [] },
+					{ kind: "person", roles: [] },
+				],
+			)
+		}),
+	)
+})
+
+describe("turnStarterOf and what the starter's credential could reach", () => {
+	it.effect("answers as nobody for a credential whose scopes did not reach data sources", () =>
+		Effect.gen(function* () {
+			const nobody = { kind: "person", roles: [] } as const
+			const scoped = yield* turnStarterOf(
+				ORG,
+				startedBy(["org:engineer"], "named", "cannot read data sources"),
+			)
+			// A start recorded before the flag existed carries none, and reads the same.
+			const unrecorded = yield* turnStarterOf(ORG, {
+				kind: "autonomous",
+				startedBy: { kind: "person", userId: STARTER, roles: ["org:engineer"] },
+			})
+			assert.deepStrictEqual([scoped, unrecorded], [nobody, nobody])
+		}).pipe(Effect.provide(memberships("org:engineer"))),
+	)
+})
+
+describe("turnStarterOf on a deployment with no membership directory", () => {
+	const captured = () => {
+		const warnings: Array<string> = []
+		const layer = Logger.layer([
+			Logger.make(({ message, logLevel }) => {
+				if (logLevel === "Warn") warnings.push(String(message))
+			}),
+		])
+		return { warnings, layer }
+	}
+
+	it.effect("takes the roles the credential held as they are, and warns about nothing", () => {
+		const logs = captured()
+		return Effect.gen(function* () {
+			const starter = yield* turnStarterOf(ORG, startedBy(["org:engineer"]))
+			const unnamed = yield* turnStarterOf(ORG, startedBy(["org:admin"], "unnamed"))
+			assert.deepStrictEqual(
+				[starter, unnamed],
+				[
+					{ kind: "person", roles: [role("org:engineer")] },
+					{ kind: "person", roles: [role("org:admin")] },
+				],
+			)
+			assert.deepStrictEqual(logs.warnings, [])
+		}).pipe(Effect.provide(Layer.merge(memberships("unavailable", "none"), logs.layer)))
+	})
+
+	it.effect("still holds the scope flag there", () =>
+		Effect.gen(function* () {
+			const scoped = yield* turnStarterOf(
+				ORG,
+				startedBy(["org:engineer"], "named", "cannot read data sources"),
+			)
+			assert.deepStrictEqual(scoped, { kind: "person", roles: [] })
+		}).pipe(Effect.provide(memberships("unavailable", "none"))),
+	)
+
+	it.effect("answers as nobody, with a warning, when a directory exists and the lookup fails", () => {
+		const logs = captured()
+		return Effect.gen(function* () {
+			const starter = yield* turnStarterOf(ORG, startedBy(["org:engineer"]))
+			assert.deepStrictEqual(starter, { kind: "person", roles: [] })
+			assert.lengthOf(logs.warnings, 1)
+		}).pipe(Effect.provide(Layer.merge(memberships("unavailable", "clerk"), logs.layer)))
+	})
+})
+
+describe("turnTenant for an unattended pass", () => {
+	it.effect("carries who answers for it, and leaves the pass's own identity alone", () =>
+		Effect.gen(function* () {
+			const pass: TenantContext = { ...tenant, turnOrigin: startedBy(["org:engineer"]) }
+			const resolved = yield* turnTenant(pass, startedBy(["org:engineer"]))
+			assert.deepStrictEqual(resolved.turnStarter, { kind: "person", roles: [role("org:engineer")] })
+			assert.deepStrictEqual([resolved.userId, resolved.roles], [pass.userId, []])
+		}).pipe(Effect.provide(Layer.merge(memberships("org:engineer"), unavailableActors))),
 	)
 })

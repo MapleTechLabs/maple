@@ -201,7 +201,7 @@ describe("product events", () => {
 	})
 
 	test("a created status page is status_page_created; a failed create is not", () => {
-		const model = Builder.init({ _tag: "StatusPageNew" }, context).model
+		const model = Builder.init({ _tag: "StatusPageNew", search: { setup: "manual" } }, context).model
 		const created = (result: Parameters<typeof BuilderMessage.CompletedCreate>[0]["result"]) =>
 			Builder.update(model, BuilderMessage.CompletedCreate({ mode: "draft", result }), context)
 		expect(names(created(Result.succeed(statusPage())))).toContain("TrackStatusPageCreated")

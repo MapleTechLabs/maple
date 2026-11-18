@@ -10,7 +10,7 @@ const build = (env: Record<string, string>) =>
 		Effect.exit,
 	)
 
-const SELF_HOSTED = { MAPLE_ROOT_PASSWORD: "root-password" }
+const SELF_HOSTED = { MAPLE_ROOT_PASSWORD: "test-root-password" }
 
 describe("SyncConfig", () => {
 	it.effect("reads the Electric upstream and defaults the auth mode to self-hosted", () =>

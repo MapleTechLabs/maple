@@ -38,6 +38,8 @@ export const permissions = {
 	"ingest_keys:roll": { min: "engineer", action: "roll ingest keys" },
 	"status_pages:access": { min: "engineer", action: "change who can view status pages" },
 	"data_sources:manage": { min: "engineer", action: "connect and manage data sources" },
+	// A query runs on the org's own database, so it takes the role that may connect one.
+	"data_sources:query": { min: "engineer", action: "query connected data sources" },
 	// Pinned to the creator's role, and only for the scopes they could use themselves.
 	"api_keys:create_restricted": { min: "engineer", action: "create restricted API keys" },
 
@@ -53,6 +55,8 @@ export const permissions = {
 	"llm_keys:manage": { min: "admin", action: "manage the organization's model provider keys" },
 	"sso:manage": { min: "admin", action: "manage single sign-on and SCIM provisioning" },
 	"mcp_connections:view_all": { min: "admin", action: "see every member's MCP connections" },
+	// Only in Maple's own org: feedback from every organization, free text included.
+	"agent_feedback:triage": { min: "admin", action: "read agent feedback from every organization" },
 	// An approval counts toward a branch's required reviews, so who may give Maple that say is
 	// an admin's call, and so are the rules a review runs under while it has it.
 	"code_review:auto_approve": {

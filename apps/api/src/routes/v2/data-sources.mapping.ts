@@ -41,6 +41,7 @@ export const toV2DataSource = (source: ExternalDataSourceDocument): V2DataSource
 	tags: source.tags,
 	agent_access: source.agentAccess,
 	agent_pii: source.agentPii,
+	supports_pii_redaction: source.supportsPiiRedaction,
 	connection:
 		source.config._tag === "clickhouse"
 			? {
