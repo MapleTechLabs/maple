@@ -70,14 +70,15 @@ export interface StatusPageProps {
 	show_powered_by?: boolean
 	/** Whether a linked monitor going down opens a page incident. Defaults to `off`. */
 	auto_incidents?: "off" | "draft" | "publish"
-	/** Left unset, the page keeps its visibility (`public` when created). Changing it needs an org admin key. */
+	/** Left unset, the page keeps its visibility (`public` when created). */
 	visibility?: "public" | "password" | "internal"
 	theme?: StatusPageThemeProps
 	/** Every component, in display order; components left out are deleted. */
 	components?: ReadonlyArray<StatusPageComponentProps>
 	/**
 	 * The password visitors enter for a `password` page, 8 to 128 characters. Write-only: it is
-	 * set when it changes and removed when this prop is removed. Needs an org admin key.
+	 * set when it changes and removed when this prop is removed. Alchemy state keeps it, even
+	 * as `Redacted`: protect the state as a credential.
 	 */
 	password?: string | Redacted.Redacted
 	/**
@@ -242,13 +243,16 @@ export const StatusPageProvider = () =>
 				api.get(`${pagePath(pageId)}/config`).pipe(Effect.flatMap(decodeWireConfig))
 			const fetchDomain = (pageId: string) =>
 				api.get(`${pagePath(pageId)}/custom_domain`).pipe(Effect.flatMap(decodeWireCustomDomain))
-			const observe = Effect.fn(function* (pageId: string) {
-				const page = yield* fetchPage(pageId)
-				if (page === undefined) return undefined
-				const config = yield* fetchConfig(page.id)
-				const domain = yield* fetchDomain(page.id)
-				return toAttributes(config, page.id, domain)
-			})
+			const observe = Effect.fn(
+				function* (pageId: string) {
+					const page = yield* fetchPage(pageId)
+					if (page === undefined) return undefined
+					const config = yield* fetchConfig(page.id)
+					const domain = yield* fetchDomain(page.id)
+					return toAttributes(config, page.id, domain)
+				},
+				Effect.catchTag(MapleErrorTags.statusPageNotFound, () => Effect.undefined),
+			)
 
 			const configure = Effect.fn(function* (
 				page: Schema.Schema.Type<typeof WirePage>,
@@ -256,11 +260,12 @@ export const StatusPageProvider = () =>
 				olds: StatusPageProps | undefined,
 			) {
 				const path = pagePath(page.id)
-				// The password goes first: a page cannot turn `password` without one.
 				const password = unwrap(news.password)
-				if (password !== undefined && (!page.has_password || password !== unwrap(olds?.password))) {
-					yield* api.put(`${path}/password`, { password })
-				}
+				const setPassword = api.put(`${path}/password`, { password })
+				// A first password goes before the config: a page cannot turn `password` without one.
+				// A changed one goes after everything else, so a failed deploy leaves the old one in
+				// place, matching the props Alchemy still holds.
+				if (password !== undefined && !page.has_password) yield* setPassword
 				// A removed domain goes before the config, so the page can turn `internal`.
 				let domain = yield* fetchDomain(page.id)
 				if (
@@ -292,6 +297,9 @@ export const StatusPageProvider = () =>
 					domain = yield* api
 						.put(`${path}/custom_domain`, { hostname: news.custom_domain })
 						.pipe(Effect.flatMap(decodeWireCustomDomain))
+				}
+				if (password !== undefined && page.has_password && password !== unwrap(olds?.password)) {
+					yield* setPassword
 				}
 				// Removed last: a `password` page refuses to lose its password.
 				if (password === undefined && olds?.password !== undefined && page.has_password) {

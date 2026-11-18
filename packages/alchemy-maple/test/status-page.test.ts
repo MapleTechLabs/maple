@@ -80,7 +80,7 @@ const makeFake = () => {
 		if (method === "POST" && path === "/v2/status_pages") {
 			const input = decodeBody(body)
 			page = {
-				id: "stp_1",
+				id: `stp_${++sequence}`,
 				name: String(input.name),
 				slug: String(input.slug),
 				has_password: false,
@@ -331,7 +331,8 @@ describe("StatusPageProvider", () => {
 				Effect.provide(StatusPageProvider().pipe(Layer.provide(Layer.succeed(MapleApi, fake.api)))),
 			)
 			const recreated = yield* reconcile(fake, base, { olds: base, output })
-			expect(recreated.statusPageId).toBe("stp_1")
+			expect(recreated.statusPageId).not.toBe(output.statusPageId)
+			expect(fake.page()?.id).toBe(recreated.statusPageId)
 			expect(fake.page()?.draft).toBe(false)
 		}),
 	)
@@ -394,5 +395,23 @@ describe("StatusPageProvider", () => {
 		}).pipe(
 			Effect.provide(StatusPageProvider().pipe(Layer.provide(Layer.succeed(MapleApi, makeFake().api)))),
 		),
+	)
+
+	it.live("rotates a password after the config, so a failed deploy keeps the old one", () =>
+		Effect.gen(function* () {
+			const fake = makeFake()
+			const olds: StatusPageProps = {
+				...base,
+				visibility: "password",
+				password: "correct horse battery",
+			}
+			const output = yield* reconcile(fake, olds)
+			fake.calls.length = 0
+			yield* reconcile(fake, { ...olds, password: "another long secret" }, { olds, output })
+			expect(Arr.filter(fake.calls, (call) => !Str.startsWith("GET")(call))).toEqual([
+				"PUT /v2/status_pages/stp_1/config",
+				"PUT /v2/status_pages/stp_1/password",
+			])
+		}),
 	)
 })

@@ -159,6 +159,7 @@ resource "maple_status_page" "acme" {
   custom_domain = "status.acme.example"
 
   components = [
+    # Any monitor you declare, e.g. an http maple_uptime_monitor named "api".
     { name = "API", monitor_id = maple_uptime_monitor.api.id },
     { name = "Docs", group = "Websites", show_uptime = false },
   ]
@@ -172,10 +173,10 @@ resource "maple_status_page" "acme" {
 | `logo_url`, `logo_dark_url`, `favicon_url`                              | string       | An https URL, or a base64 `data:image/...` URL of at most 128 KB                                                                |
 | `show_powered_by`                                                       | bool         | **default** `true`                                                                                                              |
 | `auto_incidents`                                                        | string       | **default** `off`. Also `draft`, `publish`                                                                                      |
-| `visibility`                                                            | string       | **default** `public`. Also `password`, `internal`. Org admin only                                                               |
+| `visibility`                                                            | string       | **default** `public`. Also `password`, `internal`                                                                               |
 | `theme`                                                                 | object       | `preset`, `appearance`, `accent`, `background`, `text`, `card`, `border`, `radius`, `font`. Unset fields take the default theme |
 | `components`                                                            | list(object) | In display order: `name`, `description`, `group`, `monitor_id`, `manual_status`, `show_uptime` (**default** `true`)             |
-| `password`                                                              | string       | Sensitive, write-only. Needed for `visibility = "password"`. Org admin only                                                     |
+| `password`                                                              | string       | Sensitive, write-only. Needed for `visibility = "password"`                                                                     |
 | `custom_domain`                                                         | string       | Also serve the page on this hostname. Not allowed on an `internal` page                                                         |
 
 - Components are matched to the page's existing ones by name, so their IDs, incidents and uptime history survive reordering and edits. Renaming a component recreates it; leaving one out deletes it.

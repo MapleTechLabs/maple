@@ -174,12 +174,16 @@ Effect.gen(function* () {
 | `enabled`          | `boolean`  | Defaults to `true`                                                                                     |
 | `destination_ids`  | `string[]` | Notified when the monitor goes down or recovers                                                        |
 
-Outputs: `monitorId` (`upm_…`), `name`, `kind`, `heartbeatUrl` (heartbeats: the URL your job pings), `alertRuleId`. Needs an org admin key. See [Uptime monitoring](/docs/alerting/uptime-monitoring).
+Outputs: `monitorId` (`upm_…`), `name`, `kind`, `heartbeatUrl` (heartbeats: the URL your job pings), `alertRuleId`. See [Uptime monitoring](/docs/alerting/uptime-monitoring).
 
 ## Maple.StatusPage
 
 ```typescript
 Effect.gen(function* () {
+	const api = yield* Maple.UptimeMonitor("api", {
+		name: "API health",
+		config: { type: "http", url: "https://api.example.com/health" },
+	})
 	const page = yield* Maple.StatusPage("status", {
 		name: "Acme Status",
 		slug: "acme-status",
@@ -204,10 +208,10 @@ The props are the page's [config document](https://api.maple.dev/v2/docs) (`PUT 
 | `logo_url`, `logo_dark_url`, `favicon_url`                              | `string \| null`                       | An https URL, or a base64 `data:image/...` URL of at most 128 KB                                                                |
 | `show_powered_by`                                                       | `boolean`                              | Defaults to `true`                                                                                                              |
 | `auto_incidents`                                                        | `"off" \| "draft" \| "publish"`        | Defaults to `off`                                                                                                               |
-| `visibility`                                                            | `"public" \| "password" \| "internal"` | Unset keeps the page's (`public` for a new page). Org admin key only                                                            |
+| `visibility`                                                            | `"public" \| "password" \| "internal"` | Unset keeps the page's (`public` for a new page)                                                                                |
 | `theme`                                                                 | `object`                               | `preset`, `appearance`, `accent`, `background`, `text`, `card`, `border`, `radius`, `font`. Unset fields take the default theme |
 | `components`                                                            | `object[]`                             | In display order: `name`, `description`, `group`, `monitor_id`, `manual_status`, `show_uptime`                                  |
-| `password`                                                              | `string \| Redacted`                   | Needed for `visibility: "password"`. Write-only. Org admin key only                                                             |
+| `password`                                                              | `string \| Redacted`                   | Needed for `visibility: "password"`. Write-only to Maple, but kept in Alchemy state: protect the state as a credential          |
 | `custom_domain`                                                         | `string`                               | Also serve the page on this hostname. Not allowed on an `internal` page                                                         |
 
 - Components are matched to the page's existing ones by name, so their IDs, incidents and uptime history survive reordering and edits. Renaming a component recreates it; leaving one out deletes it.
@@ -265,7 +269,7 @@ Outputs: `publicKey`, `privateKey` (both `Redacted`), `publicRotatedAt`, `privat
 
 ## Drift and sync
 
-- A deploy compares declared props against what the API returns and patches only when they differ. Fields you leave out of props stay unmanaged, so edits to them in the UI are kept.
+- A deploy compares declared props against what the API returns and patches only when they differ. Fields you leave out of props stay unmanaged, so edits to them in the UI are kept. A status page is the exception: it is applied as a whole document, so unset fields take their defaults and a component added in the UI is deleted. Only an unset `manual_status` on a declared component, and an undeclared `visibility`, `password` or `custom_domain`, are left alone.
 - `alchemy sync` restores declared dashboard fields, alert rule configuration and status pages to what the stack declares.
 - Alert destination secrets cannot be compared, so drift in them is only caught when you change the prop.
 

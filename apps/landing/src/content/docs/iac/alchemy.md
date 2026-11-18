@@ -221,14 +221,14 @@ Every prop and output is in [Alchemy resources](/docs/iac/alchemy-resources).
 
 The key needs these permissions, depending on which resources the stack declares:
 
-| Resource                                    | Scope                   | Org admin key                   |
-| ------------------------------------------- | ----------------------- | ------------------------------- |
-| `Maple.IngestKeys` (used by `Telemetry`)    | `ingest_keys:read`      | Yes                             |
-| `Maple.Dashboard`                           | `dashboards:write`      | No                              |
-| `Maple.AlertRule`, `Maple.AlertDestination` | `alerts:write`          | Yes                             |
-| `Maple.UptimeMonitor`                       | `uptime_monitors:write` | Yes                             |
-| `Maple.StatusPage`                          | `status_pages:write`    | For `visibility` and `password` |
-| `Maple.ApiKey`                              | `api_keys:write`        | Yes                             |
+| Resource                                    | Scope                   | Org admin key |
+| ------------------------------------------- | ----------------------- | ------------- |
+| `Maple.IngestKeys` (used by `Telemetry`)    | `ingest_keys:read`      | Yes           |
+| `Maple.Dashboard`                           | `dashboards:write`      | No            |
+| `Maple.AlertRule`, `Maple.AlertDestination` | `alerts:write`          | Yes           |
+| `Maple.UptimeMonitor`                       | `uptime_monitors:write` | No            |
+| `Maple.StatusPage`                          | `status_pages:write`    | No            |
+| `Maple.ApiKey`                              | `api_keys:write`        | Yes           |
 
 A key with no scopes has full access. See [API keys and scopes](/docs/reference/api#authentication).
 
