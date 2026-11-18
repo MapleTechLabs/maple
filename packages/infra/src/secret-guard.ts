@@ -12,6 +12,7 @@ import {
 } from "effect"
 import type { SecretConsumer, SecretEnvironment } from "./secret.ts"
 import * as Catalog from "./secrets.ts"
+import { type DerivedSecret, isDerivedSecret } from "./secret-slot-keys.ts"
 
 const secrets = Rec.values(Catalog)
 const bySourceKey = new Map<string, (typeof secrets)[number]>(
@@ -119,11 +120,23 @@ export const resolveAs = <A>(consumer: SecretConsumer, config: Config.Config<A>)
  * `derive(value)` of `config` resolved as `consumer`, for a secret that lists it in `derivedFor`:
  * the deployable is handed what `derive` returns, never the secret itself.
  */
-export const resolveDerived = <A, B, E, R>(
+export const resolveDerived = <A, E, R>(
 	consumer: SecretConsumer,
 	config: Config.Config<A>,
-	derive: (value: A) => Effect.Effect<B, E, R>,
-) => resolveAs(consumer, config).pipe(Effect.provideService(CurrentDerivedRead, true), Effect.flatMap(derive))
+	derive: (value: A) => Effect.Effect<DerivedSecret, E, R>,
+) =>
+	resolveAs(consumer, config).pipe(
+		Effect.provideService(CurrentDerivedRead, true),
+		Effect.flatMap(derive),
+		// The type already demands a minted value; this also stops one forced past it.
+		Effect.filterOrFail(
+			(derived): derived is DerivedSecret => isDerivedSecret(derived),
+			() =>
+				new Config.ConfigError(
+					refusal(`resolveDerived for ${consumer} was handed a value no derivation minted`),
+				),
+		),
+	)
 
 /**
  * A Worker's config-sourced env, resolved as `consumer`. Also refuses a catalog secret read as a

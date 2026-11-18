@@ -294,7 +294,7 @@ export const createMapleIngest = ({ stage, region, hostname, profile, dbLogin }:
 					new Config.ConfigError(new ConfigProvider.SourceError({ message: error.message })),
 				),
 			),
-			Effect.flatMap((value) => secret("ingest-ch-password-slot-keys", value)),
+			Effect.flatMap((derived) => secret("ingest-ch-password-slot-keys", derived.value)),
 		)
 		const keyLookupHmacKey = yield* secret("ingest-key-lookup-hmac-key", secrets.keyLookupHmacKey)
 		const autumnSecret = Option.isSome(secrets.autumnSecretKey)

@@ -9,9 +9,11 @@ import {
 	Record as Rec,
 	Redacted,
 	Schema,
+	String as Str,
 } from "effect"
 import { assert, describe, expect, it } from "vitest"
 import { resolveAs, resolveDerived, resolveWorkerEnv, withSecretGuard } from "./secret-guard.ts"
+import { clickHousePasswordSlotKeys, isDerivedSecret } from "./secret-slot-keys.ts"
 import * as Catalog from "./secrets.ts"
 import {
 	IngestKeyDecryptionKeys,
@@ -146,18 +148,31 @@ describe("the catalog as a default-deny guard", () => {
 })
 
 describe("a value derived from a secret", () => {
-	const MASTER = { MAPLE_INGEST_KEY_ENCRYPTION_KEY: "master-1", MAPLE_INGEST_KEY_DECRYPTION_KEYS: "old-1" }
+	const key = (fill: number) => Buffer.alloc(32, fill).toString("base64")
+	const MASTER = { MAPLE_INGEST_KEY_ENCRYPTION_KEY: key(5), MAPLE_INGEST_KEY_DECRYPTION_KEYS: key(6) }
 	const masters = Config.all({
 		primary: IngestKeyEncryptionKey.requiredValue,
 		decryptOnly: IngestKeyDecryptionKeys.optionalValue,
 	})
-	const derive = (value: { primary: Redacted.Redacted; decryptOnly: Option.Option<Redacted.Redacted> }) =>
-		Effect.succeed(`derived(${Redacted.value(value.primary)})`)
+	const derive = clickHousePasswordSlotKeys
 
-	it("hands a derivedFor deployable what derive returns", () => {
+	it("hands a derivedFor deployable only what the derivation mints", () => {
 		const exit = run(withSecretGuard(resolveDerived("ingest", masters, derive)), MASTER)
 		assert(Exit.isSuccess(exit))
-		expect(exit.value).toBe("derived(master-1)")
+		expect(isDerivedSecret(exit.value)).toBe(true)
+		const value = Redacted.value(exit.value.value)
+		expect(Str.startsWith("IGjfnBNl:")(value)).toBe(true)
+		expect(value).not.toContain(key(5))
+		expect(value).not.toContain(key(6))
+	})
+
+	it("refuses a derive that hands the secret back instead of a derivation", () => {
+		const leak = (value: { primary: Redacted.Redacted; decryptOnly: Option.Option<Redacted.Redacted> }) =>
+			Effect.succeed(value)
+		// @ts-expect-error resolveDerived accepts only a value a derivation minted
+		const exit = run(withSecretGuard(resolveDerived("ingest", masters, leak)), MASTER)
+		assert(Exit.isFailure(exit))
+		expect(String(exit.cause)).toContain("was handed a value no derivation minted")
 	})
 
 	it("refuses that deployable the raw value, however it is read", () => {
@@ -174,11 +189,12 @@ describe("a value derived from a secret", () => {
 	})
 
 	it("refuses a derived read by a deployable the secret does not list in derivedFor", () => {
-		expect(failure(resolveDerived("landing", masters, derive), MASTER).message).toContain(
+		expect(failure(resolveDerived("landing", masters, () => Effect.die("unreached")), MASTER).message).toContain(
 			"landing may not read MAPLE_INGEST_KEY_ENCRYPTION_KEY",
 		)
 		expect(
-			failure(resolveDerived("ingest", StripeSecretKey.required, Effect.succeed), STRIPE).message,
+			failure(resolveDerived("ingest", StripeSecretKey.required, () => Effect.die("unreached")), STRIPE)
+				.message,
 		).toContain("ingest may not read STRIPE_SECRET_KEY")
 	})
 })

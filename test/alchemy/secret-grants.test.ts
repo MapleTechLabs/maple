@@ -113,8 +113,11 @@ test.each(Rec.toEntries(DEPLOYABLES))(
 const derivedFrom = (consumer: SecretConsumer): ReadonlyArray<Config.Config<unknown>> =>
 	consumer === "ingest" ? [ingestSlotKeyMasters] : []
 
+// Only the reads are under test: every key answers "1", so the derivation itself stops here.
 const readDerived = (consumer: SecretConsumer, config: Config.Config<unknown>) =>
-	resolveDerived(consumer, config, Effect.succeed)
+	resolveDerived(consumer, config, () => Effect.die("derivation is not under test")).pipe(
+		Effect.catchDefect(() => Effect.void),
+	)
 
 test.each(Rec.keys(DEPLOYABLES))(
 	"%s derives from exactly the secrets the catalog lists it in derivedFor",

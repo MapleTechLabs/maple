@@ -40,6 +40,24 @@ const parseMaster = (raw: string, envKey: string) => {
 			)
 }
 
+/**
+ * A value derived from a secret, the only thing `resolveDerived` hands out. The class is not
+ * exported and its private field makes the type nominal, so only this module mints one: a `derive`
+ * that returns its input does not type-check, and `isDerivedSecret` refuses it at run time too.
+ */
+class Derived {
+	readonly #minted = true
+	constructor(readonly value: Redacted.Redacted) {}
+	static is(value: unknown): value is Derived {
+		return value instanceof Derived && value.#minted
+	}
+}
+
+export type DerivedSecret = Derived
+
+/** Whether `value` came out of this module's derivations, not out of the secret itself. */
+export const isDerivedSecret = (value: unknown): value is DerivedSecret => Derived.is(value)
+
 interface SlotKey {
 	readonly id: string
 	readonly subkey: string
@@ -78,12 +96,14 @@ export const slotKeysFor = (slot: string, masters: SlotKeyMasters) =>
 			})),
 			(a: SlotKey, b: SlotKey) => a.id === b.id,
 		)
-		return Redacted.make(
-			Arr.join(
-				Arr.map(entries, (entry) => `${entry.id}:${entry.subkey}`),
-				",",
+		return new Derived(
+			Redacted.make(
+				Arr.join(
+					Arr.map(entries, (entry) => `${entry.id}:${entry.subkey}`),
+					",",
+				),
+				{ label: CH_PASSWORD_SLOT_KEYS_ENV },
 			),
-			{ label: CH_PASSWORD_SLOT_KEYS_ENV },
 		)
 	})
 

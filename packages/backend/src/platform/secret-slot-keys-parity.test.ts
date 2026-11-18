@@ -72,7 +72,7 @@ describe("infra's slot key derivation", () => {
 				decryptOnly: Option.none(),
 			})
 			// FIXTURE_SLOT_KEYS in apps/ingest/src/main.rs, which opens secret-slots.test.ts's fixtures.
-			expect(Redacted.value(slotKeys)).toBe("IGjfnBNl:DxboU6BYcIHPRlnXrZyrpik+g9IlCixfjGcrpISh4AU=")
+			expect(Redacted.value(slotKeys.value)).toBe("IGjfnBNl:DxboU6BYcIHPRlnXrZyrpik+g9IlCixfjGcrpISh4AU=")
 		}),
 	)
 })

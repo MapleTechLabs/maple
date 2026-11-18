@@ -15,7 +15,7 @@ describe("clickHousePasswordSlotKeys", () => {
 	it("derives `<keyId>:<subkey>` for the fixture master the gateway's tests open", () => {
 		const exit = derive(master(5), Option.none())
 		assert(Exit.isSuccess(exit))
-		expect(Redacted.value(exit.value)).toBe(FIXTURE_SLOT_KEYS)
+		expect(Redacted.value(exit.value.value)).toBe(FIXTURE_SLOT_KEYS)
 	})
 
 	it("lists the primary first, then each decrypt-only key once", () => {
@@ -24,7 +24,7 @@ describe("clickHousePasswordSlotKeys", () => {
 			Option.some(Redacted.make(` ${Redacted.value(master(5))} ,, ${Redacted.value(master(6))}`)),
 		)
 		assert(Exit.isSuccess(exit))
-		expect(Redacted.value(exit.value)).toBe(`${OTHER_SLOT_KEYS},${FIXTURE_SLOT_KEYS}`)
+		expect(Redacted.value(exit.value.value)).toBe(`${OTHER_SLOT_KEYS},${FIXTURE_SLOT_KEYS}`)
 	})
 
 	it("fails on a master that is not 32 base64 bytes, without echoing it", () => {
