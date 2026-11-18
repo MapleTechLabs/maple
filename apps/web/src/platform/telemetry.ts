@@ -4,6 +4,7 @@ import { selfIngestUrl } from "./ingest-url"
 import { Option } from "effect"
 import { fromString } from "foldkit/url"
 import { urlToAppRoute } from "../route"
+import { sanitizeSelfTelemetryUrl } from "./telemetry-url"
 
 /** `navigate ServiceDetail`, not one span name per service, trace or dashboard id. */
 const routeName = (pathname: string): string =>
@@ -50,6 +51,8 @@ const maple = MapleFoldkit.make({
 		maskAllText: true,
 	},
 	privacy: {
+		// Page, network and replay URLs carry filters and ids from customer telemetry.
+		sanitizeUrl: sanitizeSelfTelemetryUrl,
 		...(import.meta.env.VITE_MAPLE_COOKIE_DOMAIN
 			? { cookieDomain: import.meta.env.VITE_MAPLE_COOKIE_DOMAIN }
 			: undefined),
