@@ -76,7 +76,7 @@ export interface StatusPageProps {
 	/** Every component, in display order; components left out are deleted. */
 	components?: ReadonlyArray<StatusPageComponentProps>
 	/**
-	 * The password visitors enter for a `password` page, 8 to 128 characters. Write-only: it is
+	 * The password visitors enter for a `password` page, 8 to 256 characters. Write-only: it is
 	 * set when it changes and removed when this prop is removed. Alchemy state keeps it, even
 	 * as `Redacted`: protect the state as a credential.
 	 */
