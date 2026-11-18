@@ -164,7 +164,7 @@ const bucketsOf = (row: PromqlSelectorRow, needsValues: boolean): ReadonlyArray<
 			min: at(row.min, i),
 			max: at(row.max, i),
 			sumSquares: at(row.sumSquares, i),
-			increase: at(row.increase, i),
+			resetSum: at(row.resetSum, i),
 			resets: at(row.resets, i),
 			changes: at(row.changes, i),
 			sumT: at(row.sumT, i),

@@ -252,7 +252,7 @@ const reference = (samples: ReadonlyArray<Sample>, req: Request): ReadonlyArray<
 			min: Math.min(...values),
 			max: Math.max(...values),
 			sumSquares: total(Arr.map(values, (v) => v * v)),
-			increase: total(Arr.map(pairs, ([p, v]) => (v < p ? v : v - p))),
+			resetSum: total(Arr.map(Arr.filter(pairs, ([p, v]) => v < p), ([p]) => p)),
 			resets: Arr.filter(pairs, ([p, v]) => v < p).length,
 			changes: Arr.filter(pairs, ([p, v]) => v !== p).length,
 			sumT: total(xs),
@@ -305,7 +305,7 @@ const statsOf = (b: SampleBucket): BucketStats => ({
 	min: b.min,
 	max: b.max,
 	sumSquares: b.sumSquares,
-	increase: b.increase,
+	resetSum: b.resetSum,
 	resets: b.resets,
 	changes: b.changes,
 	sumT: b.sumT,
@@ -441,14 +441,14 @@ describeWithChdb("PromQL selector source", () => {
 		const routeA = Arr.filter(data.series, (s) => s.labels.route === "/a")
 		expect(
 			Arr.flatMap(routeA, (s) =>
-				Arr.map(s.buckets, (b) => [b.end - BASE_MS, b.count, b.resets, b.increase]),
+				Arr.map(s.buckets, (b) => [b.end - BASE_MS, b.count, b.resets, b.resetSum]),
 			),
 		).toEqual([
-			[MINUTE_MS, 4, 0, 30],
-			[2 * MINUTE_MS, 4, 1, 10 + 1 + 4],
-			[3 * MINUTE_MS, 4, 0, 12],
-			[4 * MINUTE_MS, 4, 0, 12],
-			[5 * MINUTE_MS, 4, 0, 12],
+			[MINUTE_MS, 4, 0, 0],
+			[2 * MINUTE_MS, 4, 1, 80],
+			[3 * MINUTE_MS, 4, 0, 0],
+			[4 * MINUTE_MS, 4, 0, 0],
+			[5 * MINUTE_MS, 4, 0, 0],
 		])
 	})
 
