@@ -176,3 +176,19 @@ describe("vectorVectorBinary", () => {
 		).toBe("multiple matches for labels: grouping labels must ensure unique matches")
 	})
 })
+
+describe("bool comparisons with group_left(__name__)", () => {
+	it("drop the metric name after copying the group labels, as Prometheus' VectorBinop", () => {
+		const lhs = [s({ __name__: "a", job: "x", i: "1" }, 2)]
+		const rhs = [s({ __name__: "b", job: "x" }, 1)]
+		const matching = on(["job"], { card: "many-to-one", include: ["__name__"] })
+		expect(ok(vectorVectorBinary(">", lhs, rhs, matching, true, T))).toEqual([
+			{ labels: { job: "x", i: "1" }, value: 1, t: T },
+		])
+		expect(ok(vectorVectorBinary("+", lhs, rhs, matching, false, T))[0]?.labels).toEqual({
+			__name__: "b",
+			job: "x",
+			i: "1",
+		})
+	})
+})
