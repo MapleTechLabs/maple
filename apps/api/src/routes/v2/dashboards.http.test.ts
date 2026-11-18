@@ -330,7 +330,7 @@ describe("v2 dashboards over HTTP", () => {
 		expect(imported.body.object).toBe("dashboard_import")
 		expect(imported.body.stats).toEqual({ panels: 7, converted: 7, placeholders: 0 })
 		expect(imported.body.warnings).toContain(
-			'Interval variable "resolution" was not imported; its references now use $__interval.',
+			'Interval variable "resolution" was not imported; its references now use $__interval in PromQL and $__interval_s (seconds) in ClickHouse SQL.',
 		)
 		expect(imported.body.dashboard.txid).toMatch(/^\d+$/)
 

@@ -129,7 +129,7 @@ const dashboardImportReport = (): DashboardListModel.Model => {
 				'Panel "Error logs" queries Loki, which Maple cannot run; it was imported as a placeholder.',
 				'Logs panel "Recent logs" was imported as a placeholder.',
 				'Variable "host-name" was renamed to "host_name"; queries that use it were rewritten.',
-				'Interval variable "resolution" was not imported; its references now use $__interval.',
+				'Interval variable "resolution" was not imported; its references now use $__interval in PromQL and $__interval_s (seconds) in ClickHouse SQL.',
 				'Panel "Traffic" uses the Grafana unit "bps", which Maple has no match for; it shows plain numbers.',
 			],
 		},

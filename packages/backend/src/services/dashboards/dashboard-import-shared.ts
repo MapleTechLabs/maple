@@ -1,7 +1,7 @@
 // Pure helpers the Perses and Grafana importers share: lenient readers over
 // untrusted JSON, widget ids, placeholder notes and ClickHouse SQL scoping.
 import { dashboardTimeBoundIssue } from "@maple/domain/raw-sql"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 import {
 	type DashboardWidgetSchema,
 	type RawSqlDisplayType,
@@ -42,32 +42,39 @@ export function uniqueWidgetId(prefix: string, key: string, existing: Set<string
 	return candidate
 }
 
-function hasOrgScope(sql: string): boolean {
-	return Str.includes("$__orgFilter")(sql) || /\bOrgId\b/.test(sql)
-}
-
 /**
- * Where `keyword` first appears at the top level of `sql`: outside parentheses, quotes and comments.
- * A clause inside a subquery or a string literal is not the outer query's.
+ * `sql` with the text of its comments and quoted spans blanked to spaces, delimiters kept and
+ * length unchanged, so a scan of it sees only code and its indices are the original's.
  */
-function topLevelIndex(sql: string, keyword: RegExp): number | undefined {
-	const sticky = new RegExp(`(?<![A-Za-z0-9_])(?:${keyword.source})(?![A-Za-z0-9_])`, "iy")
-	let depth = 0
+function codeOnly(sql: string): string {
+	// UTF-16 units, as `sql[i]` indexes them (an iterator would split astral characters differently).
+	const out = Str.split("")(sql)
+	const blank = (from: number, to: number) => {
+		for (let k = from; k < to; k++) if (out[k] !== "\n") out[k] = " "
+	}
 	let quote: string | undefined
+	let quoteStart = 0
 	for (let i = 0; i < sql.length; i++) {
 		const ch = sql[i] ?? ""
 		if (quote !== undefined) {
 			if (ch === "\\") i += 1
-			else if (ch === quote) quote = undefined
+			else if (ch === quote) {
+				blank(quoteStart, i)
+				quote = undefined
+			}
 			continue
 		}
-		if (ch === "'" || ch === '"' || ch === "`") quote = ch
-		else if (ch === "-" && sql[i + 1] === "-") {
-			// A line comment runs to the newline; its quotes and parentheses do not count.
+		if (ch === "'" || ch === '"' || ch === "`") {
+			quote = ch
+			quoteStart = i + 1
+		} else if (ch === "-" && sql[i + 1] === "-") {
+			// A line comment runs to the newline.
+			const from = i + 2
 			while (i < sql.length && sql[i] !== "\n") i += 1
+			blank(from, i)
 		} else if (ch === "/" && sql[i + 1] === "*") {
-			// A block comment runs to its matching close (ClickHouse nests them); a clause named inside it
-			// is not the query's.
+			// A block comment runs to its matching close; ClickHouse nests them.
+			const from = i + 2
 			let comments = 1
 			i += 2
 			while (i < sql.length && comments > 0) {
@@ -79,19 +86,55 @@ function topLevelIndex(sql: string, keyword: RegExp): number | undefined {
 					i += 2
 				} else i += 1
 			}
+			blank(from, comments === 0 ? i - 2 : i)
 			i -= 1
-		} else if (ch === "(") depth += 1
-		else if (ch === ")") depth -= 1
-		else if (depth === 0) {
-			sticky.lastIndex = i
-			if (sticky.test(sql)) return i
 		}
 	}
-	return undefined
+	if (quote !== undefined) blank(quoteStart, sql.length)
+	return Arr.join(out, "")
 }
+
+const hasOrgFilter = (code: string) => Str.includes("$__orgFilter")(code)
+
+/**
+ * Every place `keyword` appears at the top level of `code` (from `codeOnly`), outside parentheses,
+ * from index `from` on, as `[start, end]`. A clause inside a subquery is not the outer query's.
+ */
+function topLevelMatches(code: string, keyword: RegExp, from = 0): Array<readonly [number, number]> {
+	const sticky = new RegExp(`(?<![A-Za-z0-9_$])(?:${keyword.source})(?![A-Za-z0-9_])`, "iy")
+	const found: Array<readonly [number, number]> = []
+	let depth = 0
+	for (let i = 0; i < code.length; i++) {
+		const ch = code[i]
+		if (ch === "(") depth += 1
+		else if (ch === ")") depth -= 1
+		else if (depth === 0 && i >= from) {
+			sticky.lastIndex = i
+			const match = sticky.exec(code)
+			if (match !== null) found.push([i, i + match[0].length])
+		}
+	}
+	return found
+}
+
+const topLevelIndex = (code: string, keyword: RegExp, from = 0): number | undefined =>
+	topLevelMatches(code, keyword, from)[0]?.[0]
 
 // Every clause ClickHouse allows after WHERE; the org filter goes before the first of them.
 const TRAILING_CLAUSE = /GROUP\s+BY|HAVING|WINDOW|QUALIFY|ORDER\s+BY|LIMIT|OFFSET|FORMAT|SETTINGS/
+
+// What follows a column named like a clause (`format = 'json'`, `limit IN (1)`), never a clause.
+const COLUMN_FOLLOWER = /^\s*(?:[=<>!,)+\-*/%.:|]|(?:IN|IS|NOT|LIKE|ILIKE|BETWEEN|AND|OR|AS|GLOBAL)(?![A-Za-z0-9_]))/i
+
+/** The outer query's first trailing clause: after its FROM, and not a column that shares the name. */
+function trailingClauseIndex(code: string): number | undefined {
+	const fromAt = topLevelIndex(code, /FROM/) ?? 0
+	const clause = Arr.findFirst(
+		topLevelMatches(code, TRAILING_CLAUSE, fromAt),
+		([, end]) => !COLUMN_FOLLOWER.test(Str.slice(end)(code)),
+	)
+	return Option.getOrUndefined(Option.map(clause, ([start]) => start))
+}
 
 /**
  * The outer query with `$__orgFilter` ANDed onto its WHERE (or a WHERE added), before its first
@@ -100,62 +143,73 @@ const TRAILING_CLAUSE = /GROUP\s+BY|HAVING|WINDOW|QUALIFY|ORDER\s+BY|LIMIT|OFFSE
  */
 function withOrgFilter(sql: string): string {
 	const statement = Str.replace(/;\s*$/, "")(Str.trimEnd(sql))
-	const trailingAt = topLevelIndex(statement, TRAILING_CLAUSE)
-	const head = trailingAt === undefined ? statement : Str.trimEnd(Str.slice(0, trailingAt)(statement))
+	const code = codeOnly(statement)
+	const trailingAt = trailingClauseIndex(code)
+	const headEnd = trailingAt ?? statement.length
+	const head = Str.trimEnd(Str.slice(0, headEnd)(statement))
 	const tail = trailingAt === undefined ? "" : ` ${Str.trimStart(Str.slice(trailingAt)(statement))}`
-	const whereAt = topLevelIndex(head, /WHERE/)
+	const whereAt = topLevelIndex(Str.slice(0, head.length)(code), /WHERE/)
 	// A `--` comment runs to the end of its line, so text placed after one starts a new line.
-	const endsInComment = (text: string) => Str.includes("--")(text)
+	const endsInComment = (from: number) => Str.includes("--")(Str.slice(from, head.length)(code))
 	if (whereAt === undefined) {
-		return `${head}${endsInComment(head) ? "\n" : " "}WHERE $__orgFilter${tail}`
+		return `${head}${endsInComment(0) ? "\n" : " "}WHERE $__orgFilter${tail}`
 	}
 	const predicateAt = whereAt + "WHERE".length
 	const predicate = Str.trim(Str.slice(predicateAt)(head))
-	const close = endsInComment(predicate) ? "\n)" : ")"
+	const close = endsInComment(predicateAt) ? "\n)" : ")"
 	return `${Str.slice(0, predicateAt)(head)} (${predicate}${close} AND $__orgFilter${tail}`
+}
+
+// A UNION, INTERSECT or EXCEPT joins statements that each need their own scope. `SELECT * EXCEPT (col)`
+// is ClickHouse's column exclusion, not a set operation, so EXCEPT counts only before a SELECT.
+const SET_OPERATION = /UNION|INTERSECT|EXCEPT(?=\s+(?:ALL\s+|DISTINCT\s+)?\(?\s*SELECT)/
+
+/** The SELECTs a top-level set operation combines, as slices of `code`; one when there is none. */
+const combinedSelects = (code: string): string[] => {
+	const bounds = topLevelMatches(code, SET_OPERATION)
+	const starts = [0, ...Arr.map(bounds, ([, end]) => end)]
+	return Arr.map(starts, (start, i) => Str.slice(start, bounds[i]?.[0] ?? code.length)(code))
 }
 
 export type NormalizedSql = { readonly sql: string } | { readonly placeholderReason: string }
 
 /** Org-scopes an imported ClickHouse query, or explains why it must stay a placeholder. */
 export function normalizeClickHouseSql(sql: string, warnings: string[], panelTitle: string): NormalizedSql {
-	if (!hasOrgScope(sql)) {
+	// Comments and literals cannot scope a query: `-- $__orgFilter` filters nothing.
+	const code = codeOnly(sql)
+	if (!hasOrgFilter(code) && !/\bOrgId\b/.test(code)) {
 		warnings.push(
 			`Panel "${panelTitle}" was imported as a placeholder because its ClickHouse query does not include $__orgFilter or an OrgId predicate.`,
 		)
 		return { placeholderReason: "This ClickHouse query needs Maple org scoping before it can run." }
 	}
 
-	const fromAt = topLevelIndex(sql, /FROM/)
-	// The outer query reads a subquery: its rows may have no OrgId column to filter, so the scope
-	// has to be written inside it by hand.
-	const readsSubquery = fromAt !== undefined && /^FROM\s*\(/i.test(Str.slice(fromAt)(sql))
-	// A UNION, INTERSECT or EXCEPT joins statements that each need their own scope. `SELECT * EXCEPT (col)`
-	// is ClickHouse's column exclusion, not a set operation, so EXCEPT counts only before a SELECT.
-	const combinesQueries =
-		topLevelIndex(sql, /UNION|INTERSECT|EXCEPT\s+(?:ALL\s+|DISTINCT\s+)?\(?\s*SELECT/) !== undefined
-	if (!Str.includes("$__orgFilter")(sql) && combinesQueries) {
+	const selects = combinedSelects(code)
+	if (selects.length > 1 && !Arr.every(selects, hasOrgFilter)) {
 		warnings.push(
 			`Panel "${panelTitle}" was imported as a placeholder because its ClickHouse query combines several SELECTs; add $__orgFilter to each.`,
 		)
 		return {
-			placeholderReason:
-				"This ClickHouse query needs $__orgFilter in each of its SELECTs before it can run.",
+			placeholderReason: "This ClickHouse query needs $__orgFilter in each of its SELECTs before it can run.",
 		}
 	}
-	if (!Str.includes("$__orgFilter")(sql) && readsSubquery) {
+
+	const fromAt = topLevelIndex(code, /FROM/)
+	// The outer query reads a subquery: its rows may have no OrgId column to filter, so the scope
+	// has to be written inside it by hand.
+	const readsSubquery = fromAt !== undefined && /^FROM\s*\(/i.test(Str.slice(fromAt)(code))
+	if (!hasOrgFilter(code) && readsSubquery) {
 		warnings.push(
 			`Panel "${panelTitle}" was imported as a placeholder because its ClickHouse query reads a subquery; add $__orgFilter inside it.`,
 		)
 		return {
-			placeholderReason:
-				"This ClickHouse query needs $__orgFilter inside its subquery before it can run.",
+			placeholderReason: "This ClickHouse query needs $__orgFilter inside its subquery before it can run.",
 		}
 	}
 
-	const normalized = Str.includes("$__orgFilter")(sql) ? sql : withOrgFilter(sql)
+	const normalized = hasOrgFilter(code) ? sql : withOrgFilter(sql)
 
-	if (!Str.includes("$__orgFilter")(sql)) {
+	if (!hasOrgFilter(code)) {
 		warnings.push(
 			`Panel "${panelTitle}" had an explicit OrgId reference; Maple added $__orgFilter so the widget stays tenant-scoped.`,
 		)

@@ -199,7 +199,9 @@ export function convertGrafanaVariables(
 		const type = asString(record.type)
 		if (type === "datasource") continue
 		if (type === "interval") {
-			warnings.push(`Interval variable "${name}" was not imported; its references now use $__interval.`)
+			warnings.push(
+				`Interval variable "${name}" was not imported; its references now use $__interval in PromQL and $__interval_s (seconds) in ClickHouse SQL.`,
+			)
 			continue
 		}
 		if (type === "adhoc") {
@@ -244,8 +246,15 @@ const renamedReference = (match: string, to: string, format: string | undefined)
 	return `$${to}`
 }
 
-/** A query with renamed variables renamed and interval variables replaced by `$__interval`. */
-export function rewriteVariableRefs(query: string, conversion: GrafanaVariableConversion): string {
+/**
+ * A query with renamed variables renamed and interval variables replaced by `interval`: `$__interval`
+ * for PromQL, `$__interval_s` for ClickHouse SQL, the only interval macro raw SQL expands.
+ */
+export function rewriteVariableRefs(
+	query: string,
+	conversion: GrafanaVariableConversion,
+	interval: "$__interval" | "$__interval_s",
+): string {
 	const names = [...conversion.intervalNames, ...conversion.renames.keys()]
 	if (names.length === 0) return query
 	// One pass over the original: a rename's output is never renamed again.
@@ -260,7 +269,7 @@ export function rewriteVariableRefs(query: string, conversion: GrafanaVariableCo
 			bare: string | undefined,
 		) => {
 			const name = braced ?? bracketed ?? bare ?? ""
-			if (conversion.intervalNames.has(name)) return "$__interval"
+			if (conversion.intervalNames.has(name)) return interval
 			const to = conversion.renames.get(name)
 			return to === undefined ? match : renamedReference(match, to, format)
 		},

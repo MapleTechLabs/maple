@@ -247,7 +247,7 @@ function convertQueryPanel(args: {
 	let dataSource: DashboardWidget["dataSource"]
 	if (query.kind === "clickhouse") {
 		const normalized = normalizeClickHouseSql(
-			rewriteVariableRefs(query.sql, context.variables),
+			rewriteVariableRefs(query.sql, context.variables, "$__interval_s"),
 			context.warnings,
 			title,
 		)
@@ -276,7 +276,7 @@ function convertQueryPanel(args: {
 		const minStepSeconds = intervalSeconds(first.interval) ?? intervalSeconds(panel.interval)
 		const transform = grafanaScalarTransform(panel, visualization, displayType, title, context.warnings)
 		dataSource = makePromqlDataSource({
-			query: rewriteVariableRefs(query.expr, context.variables),
+			query: rewriteVariableRefs(query.expr, context.variables, "$__interval"),
 			...(legendFormat === undefined || legendFormat === "__auto" ? undefined : { legendFormat }),
 			...(minStepSeconds === undefined ? undefined : { minStepSeconds }),
 			displayType,

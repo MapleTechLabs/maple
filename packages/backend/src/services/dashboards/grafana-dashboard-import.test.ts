@@ -198,7 +198,7 @@ describe("convertGrafanaDashboardToPortable on a Node Exporter style board", () 
 			)
 			expect(converted.warnings).toEqual(
 				expect.arrayContaining([
-					'Interval variable "resolution" was not imported; its references now use $__interval.',
+					'Interval variable "resolution" was not imported; its references now use $__interval in PromQL and $__interval_s (seconds) in ClickHouse SQL.',
 					'Variable "node" lists every instance of node_uname_info; the label filters in "node_uname_info{job="$job"}" were not imported.',
 				]),
 			)
@@ -598,6 +598,80 @@ describe("assumed PromQL", () => {
 				panels: [bare(1), bare(2)],
 			})
 			expect(Arr.filter(warnings, Str.includes("were read as PromQL"))).toHaveLength(1)
+		}),
+	)
+})
+
+describe("ClickHouse org scoping reads code, not comments or literals", () => {
+	const ch = { type: "grafana-clickhouse-datasource", uid: "ch" }
+	const importSql = (rawSql: string, variables: ReadonlyArray<unknown> = []) =>
+		Effect.map(
+			convertGrafanaDashboardToPortable({
+				title: "ClickHouse",
+				schemaVersion: 39,
+				panels: [
+					{
+						type: "table",
+						title: "Panel",
+						datasource: ch,
+						gridPos: { x: 0, y: 0, w: 6, h: 4 },
+						targets: [{ refId: "A", rawSql }],
+					},
+				],
+				templating: { list: variables },
+			}),
+			(converted) => dataSourceRawSql(converted.dashboard.widgets[0]?.dataSource)?.sql ?? null,
+		)
+
+	it.effect("does not take $__orgFilter in a comment or a literal as the scope", () =>
+		Effect.gen(function* () {
+			expect(
+				yield* importSql("SELECT count() AS value FROM logs WHERE $__timeFilter(Timestamp) -- add $__orgFilter"),
+			).toBeNull()
+			expect(
+				yield* importSql(
+					"SELECT count() AS value FROM logs WHERE Body = '$__orgFilter' AND $__timeFilter(Timestamp)",
+				),
+			).toBeNull()
+			// An OrgId in a comment does not count as the predicate either.
+			expect(
+				yield* importSql("SELECT count() AS value FROM logs WHERE $__timeFilter(Timestamp) /* OrgId */"),
+			).toBeNull()
+		}),
+	)
+
+	it.effect("needs $__orgFilter in every SELECT of a UNION, not just one", () =>
+		Effect.gen(function* () {
+			const scoped = "SELECT count() FROM a WHERE $__timeFilter(ts) AND $__orgFilter"
+			expect(yield* importSql(`${scoped} UNION ALL SELECT count() FROM b WHERE $__timeFilter(ts)`)).toBeNull()
+			expect(yield* importSql(`${scoped} UNION ALL ${scoped}`)).toBe(`${scoped} UNION ALL ${scoped}`)
+		}),
+	)
+
+	it.effect("does not read a column named like a clause as that clause", () =>
+		Effect.gen(function* () {
+			expect(
+				yield* importSql("SELECT format, count() FROM logs WHERE OrgId = 1 AND $__timeFilter(Timestamp)"),
+			).toBe("SELECT format, count() FROM logs WHERE (OrgId = 1 AND $__timeFilter(Timestamp)) AND $__orgFilter")
+			expect(
+				yield* importSql(
+					"SELECT count() FROM logs WHERE OrgId = 1 AND limit IN (1, 2) AND $__timeFilter(Timestamp) LIMIT 5",
+				),
+			).toBe(
+				"SELECT count() FROM logs WHERE (OrgId = 1 AND limit IN (1, 2) AND $__timeFilter(Timestamp)) AND $__orgFilter LIMIT 5",
+			)
+		}),
+	)
+
+	it.effect("rewrites an interval variable to the macro raw SQL expands", () =>
+		Effect.gen(function* () {
+			const sql = yield* importSql(
+				"SELECT toStartOfInterval(Timestamp, INTERVAL $resolution SECOND) AS t, count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp) GROUP BY t",
+				[{ name: "resolution", type: "interval", query: "1m,5m" }],
+			)
+			expect(sql).toBe(
+				"SELECT toStartOfInterval(Timestamp, INTERVAL $__interval_s SECOND) AS t, count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp) GROUP BY t",
+			)
 		}),
 	)
 })
