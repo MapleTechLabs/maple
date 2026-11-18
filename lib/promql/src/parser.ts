@@ -724,7 +724,10 @@ const normalizeTrailingDots = (query: string): string => {
 		TRAILING_DOT.lastIndex = i
 		const match = /[\w:.]/.test(query[i - 1] ?? "") ? null : TRAILING_DOT.exec(query)
 		if (match !== null) {
-			out += `${match[1] ?? ""}${match[2] ?? ""} `
+			// With its dot `010.` is a float (10), but `010` alone reads as octal, so leading zeros become spaces.
+			const integer = match[1] ?? ""
+			const decimal = integer.replace(/^[0_]+(?=\d)/, "")
+			out += `${" ".repeat(integer.length - decimal.length)}${decimal}${match[2] ?? ""} `
 			i += match[0].length
 			continue
 		}
