@@ -131,15 +131,18 @@ const checkRange = (startMs: number, endMs: number) =>
 			)
 		: Effect.void
 
+/** Prometheus reads an empty optional time parameter as absent. */
+const present = (text: string | undefined): string | undefined => (text === "" ? undefined : text)
+
 /** `[start, end]` of a discovery call; missing bounds mean the last `defaultMs` up to now. */
 const discoveryWindow = (params: Params, defaultMs: number) =>
 	Effect.gen(function* () {
 		const now = yield* Clock.currentTimeMillis
-		const endMs = params.end === undefined ? now : yield* parseTime("end", params.end)
+		const end = present(params.end)
+		const start = present(params.start)
+		const endMs = end === undefined ? now : yield* parseTime("end", end)
 		const startMs =
-			params.start === undefined
-				? Math.max(endMs - defaultMs, -MAX_DATE_MS)
-				: yield* parseTime("start", params.start)
+			start === undefined ? Math.max(endMs - defaultMs, -MAX_DATE_MS) : yield* parseTime("start", start)
 		yield* checkRange(startMs, endMs)
 		return { startMs, endMs }
 	})
@@ -152,7 +155,8 @@ export const HttpV2PrometheusLive = HttpApiBuilder.group(MapleApiV2, "prometheus
 			const tenant = yield* CurrentTenant.Context
 			const now = yield* Clock.currentTimeMillis
 			const query = yield* parseQuery(params.query)
-			const timeMs = params.time === undefined ? now : yield* parseTime("time", params.time)
+			const time = present(params.time)
+			const timeMs = time === undefined ? now : yield* parseTime("time", time)
 			const limit = yield* parseLimit(params.limit)
 			const answer = yield* promql.query(tenant, {
 				query,

@@ -115,7 +115,9 @@ const operand = (child: Expr, parentOp: string, side: "lhs" | "rhs"): string => 
 		return regroups ? `(${print(child)})` : print(child)
 	}
 	// `-a ^ b` and `-2 ^ b` are `-(a ^ b)`, so a negated base needs its parentheses.
-	const negated = child.type === "Unary" || (child.type === "NumberLiteral" && child.value < 0)
+	const negated =
+		child.type === "Unary" ||
+		(child.type === "NumberLiteral" && (child.value < 0 || Object.is(child.value, -0)))
 	if (negated && parentOp === "^" && side === "lhs") return `(${print(child)})`
 	return print(child)
 }

@@ -252,7 +252,7 @@ const reference = (samples: ReadonlyArray<Sample>, req: Request): ReadonlyArray<
 			min: Math.min(...values),
 			max: Math.max(...values),
 			sumSquares: total(Arr.map(values, (v) => v * v)),
-			increase: total(Arr.map(pairs, ([p, v]) => (v < p ? v : v - p))),
+			resetSum: total(Arr.map(Arr.filter(pairs, ([p, v]) => v < p), ([p]) => p)),
 			resets: Arr.filter(pairs, ([p, v]) => v < p).length,
 			changes: Arr.filter(pairs, ([p, v]) => v !== p).length,
 			sumT: total(xs),
@@ -305,7 +305,7 @@ const statsOf = (b: SampleBucket): BucketStats => ({
 	min: b.min,
 	max: b.max,
 	sumSquares: b.sumSquares,
-	increase: b.increase,
+	resetSum: b.resetSum,
 	resets: b.resets,
 	changes: b.changes,
 	sumT: b.sumT,
@@ -369,6 +369,37 @@ const selected = (db: Chdb, org: string, req: Request) => normalized(asStats(sel
 
 const HOUR_MS = 60 * MINUTE_MS
 
+/** Series discovery as the service runs it: every plan's rows through `toSeriesLabels`, sorted. */
+const discoverSeries = (
+	db: Chdb,
+	matchers: ReadonlyArray<Matcher>,
+	options: { readonly limit: number; readonly maxNameFilter: number; readonly maxNameReads?: number },
+) => {
+	const window = { startMs: BASE_MS - HOUR_MS, endMs: BASE_MS + HOUR_MS }
+	const plans = buildSeriesLabelsQueries(matchers, window, catalogOf(db, ORG_A), {
+		orgId: OrgId.make(ORG_A),
+		limit: options.limit,
+		maxNameFilter: options.maxNameFilter,
+		maxNameReads: options.maxNameReads ?? 100,
+	})
+	const found = toSeriesLabels(
+		matchers,
+		Arr.map(plans, (plan) => ({
+			plan,
+			rows: decodeSeriesLabels(
+				db.query(normalizeSqlForClickHouseClient(Effect.runSync(plan.compiled).sql)),
+			),
+		})),
+	)
+	return {
+		reads: plans.length,
+		series: Arr.sort(
+			Arr.map(found, (l) => JSON.stringify(l)),
+			Order.String,
+		),
+	}
+}
+
 const labels = (name: string, extra: Readonly<Record<string, string>>) => ({
 	__name__: name,
 	job: "api",
@@ -410,14 +441,14 @@ describeWithChdb("PromQL selector source", () => {
 		const routeA = Arr.filter(data.series, (s) => s.labels.route === "/a")
 		expect(
 			Arr.flatMap(routeA, (s) =>
-				Arr.map(s.buckets, (b) => [b.end - BASE_MS, b.count, b.resets, b.increase]),
+				Arr.map(s.buckets, (b) => [b.end - BASE_MS, b.count, b.resets, b.resetSum]),
 			),
 		).toEqual([
-			[MINUTE_MS, 4, 0, 30],
-			[2 * MINUTE_MS, 4, 1, 10 + 1 + 4],
-			[3 * MINUTE_MS, 4, 0, 12],
-			[4 * MINUTE_MS, 4, 0, 12],
-			[5 * MINUTE_MS, 4, 0, 12],
+			[MINUTE_MS, 4, 0, 0],
+			[2 * MINUTE_MS, 4, 1, 80],
+			[3 * MINUTE_MS, 4, 0, 0],
+			[4 * MINUTE_MS, 4, 0, 0],
+			[5 * MINUTE_MS, 4, 0, 0],
 		])
 	})
 
@@ -675,6 +706,7 @@ describeWithChdb("PromQL selector source", () => {
 				orgId: OrgId.make(ORG_A),
 				limit: 1000,
 				maxNameFilter: 1,
+				maxNameReads: 100,
 			})
 			const sorted = (found: ReadonlyArray<Record<string, string>>) =>
 				Arr.sort(
@@ -764,5 +796,80 @@ describeWithChdb("PromQL selector source", () => {
 		expect(total(Arr.map(fetchRows(db, ORG_A, unformatted), (r) => r.rows.length))).toBe(0)
 		const formatted = request("capped_duration_seconds_bucket", [{ name: "le", op: "=", value: "1.0" }])
 		expect(total(Arr.map(fetchRows(db, ORG_A, formatted), (r) => r.rows.length))).toBe(routes.length)
+	})
+
+	test("discovery drops histogram rows no le matcher can match before the limit", () => {
+		const at = Arr.map(every(15 * SECOND_MS, MINUTE_MS, 15 * SECOND_MS), (atMs, i) => ({
+			atMs,
+			counts: [i, i, i],
+			sum: i,
+		}))
+		// Two bounds each, so three bucket counts per export.
+		const timed = (metric: string, bounds: readonly [number, number]): HistogramSeries => ({
+			...histogram,
+			metric,
+			bounds,
+			exports: at,
+		})
+		// Names sort first in SQL; aaa's bounds never name 0.25, so its row alone would fill a limit of 1.
+		insertHistogram(db, timed("aaa.le", [0.1, 0.5]))
+		insertHistogram(db, timed("zzz.le", [0.25, 2]))
+		const name = { name: "__name__", op: "=~", value: "(aaa|zzz)_le_seconds_bucket" } as const
+		const found = discoverSeries(db, [name, { name: "le", op: "=", value: "0.25" }], {
+			limit: 1,
+			maxNameFilter: 10,
+		})
+		expect(Arr.map(found.series, (s) => JSON.parse(s).__name__)).toEqual(["zzz_le_seconds_bucket"])
+		// `_count` has no `le`: an empty-le matcher keeps it, a bound matcher drops it.
+		const counts = { name: "__name__", op: "=", value: "aaa_le_seconds_count" } as const
+		const options = { limit: 10, maxNameFilter: 10 }
+		expect(discoverSeries(db, [counts, { name: "le", op: "=", value: "" }], options).series).toHaveLength(
+			1,
+		)
+		expect(discoverSeries(db, [counts, { name: "le", op: "=", value: "0.1" }], options).series).toEqual(
+			[],
+		)
+	})
+
+	test("discovery filters on name and unit before the limit", () => {
+		const exports = Arr.map(every(15 * SECOND_MS, MINUTE_MS, 15 * SECOND_MS), (t): Sample => [t, 1])
+		const unitGauge = (unit: string): SumSeries => ({
+			...gauge,
+			metric: "dual.unit",
+			unit,
+			attributes: { unit },
+			samples: exports,
+		})
+		// `ms` sorts before `s`: a name-only filter fills a limit of 1 with the millisecond row.
+		insertValues(db, unitGauge("ms"))
+		insertValues(db, unitGauge("s"))
+		const found = discoverSeries(db, [{ name: "__name__", op: "=", value: "dual_unit_seconds" }], {
+			limit: 1,
+			maxNameFilter: 10,
+		})
+		expect(Arr.map(found.series, (s) => JSON.parse(s).unit)).toEqual(["s"])
+	})
+
+	test("discovery past maxNameFilter names reads them in batches, still filtered by name", () => {
+		const exports = Arr.map(every(15 * SECOND_MS, MINUTE_MS, 15 * SECOND_MS), (t): Sample => [t, 1])
+		for (const metric of ["zz.batch.one", "zz.batch.two", "zz.batch.three"]) {
+			insertValues(db, { ...gauge, metric, attributes: {}, samples: exports })
+		}
+		const name = [{ name: "__name__", op: "=~", value: "zz_batch_.*" }] as const
+		// Gauges named before zz.batch fill a limit of 1 when the name filter is dropped.
+		const found = discoverSeries(db, name, { limit: 1, maxNameFilter: 1 })
+		expect(Arr.map(found.series, (s) => JSON.parse(s).__name__)).toEqual([
+			"zz_batch_one",
+			"zz_batch_three",
+			"zz_batch_two",
+		])
+		expect(found.reads).toBe(3)
+		// The reads per table are capped: the first names in order, every one a real match.
+		const capped = discoverSeries(db, name, { limit: 1, maxNameFilter: 1, maxNameReads: 2 })
+		expect(capped.reads).toBe(2)
+		expect(Arr.map(capped.series, (s) => JSON.parse(s).__name__)).toEqual([
+			"zz_batch_one",
+			"zz_batch_three",
+		])
 	})
 })
