@@ -159,6 +159,17 @@ describeWithChdb("traces numeric-attribute aggregation on chDB", () => {
 		expect(await timeseries("gen_ai.usage.cost", "max")).toEqual([{ "llm-api": 2, batch: 10 }])
 	})
 
+	test("percentiles interpolate over numeric values only, and a group without any reads zero", async () => {
+		const [p50] = await timeseries("gen_ai.usage.cost", "p50")
+		expect(p50?.["llm-api"]).toBeCloseTo(1.5, 9)
+		const [p95] = await timeseries("gen_ai.usage.cost", "p95")
+		expect(p95?.["llm-api"]).toBeCloseTo(1.95, 9)
+		expect(p95?.batch).toBeCloseTo(10, 9)
+		const [p99] = await timeseries("gen_ai.usage.output_tokens", "p99")
+		expect(p99?.["llm-api"]).toBeCloseTo(298, 9)
+		expect(p99?.batch).toBe(0)
+	})
+
 	test("a key no span carries reads zero", async () => {
 		expect(await timeseries("gen_ai.usage.missing", "sum")).toEqual([{ "llm-api": 0, batch: 0 }])
 	})
