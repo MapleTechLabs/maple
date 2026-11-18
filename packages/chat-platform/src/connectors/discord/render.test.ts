@@ -216,6 +216,20 @@ describe("renderDiscordMessage", () => {
 		expect(Str.endsWith("…")(payload.content)).toBe(true)
 	})
 
+	it("keeps a URL's own trailing underscore, and drops one only when it closes emphasis", () => {
+		const payload = renderDiscordMessage([
+			{ kind: "prose", markdown: "get https://x.example/artifact_ or _https://y.example/a_" },
+		])
+		expect(payload.content).toBe("get <https://x.example/artifact_> or _<https://y.example/a>_")
+	})
+
+	it("suppresses a URL between escaped backticks, which Discord shows as plain text", () => {
+		const payload = renderDiscordMessage([
+			{ kind: "prose", markdown: "see \\`https://x.example/a\\` and `https://code.example`" },
+		])
+		expect(payload.content).toBe("see \\`<https://x.example/a>\\` and `https://code.example`")
+	})
+
 	it("keeps a masked link whose text is itself a URL", () => {
 		const payload = renderDiscordMessage([
 			{ kind: "prose", markdown: "[https://a.example/x](https://b.example/y)" },

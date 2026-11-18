@@ -15,7 +15,7 @@ import {
 	PARTIAL_BUCKET_NOTE,
 } from "../lib/format-query-result"
 import { warehouseReadToMcpHandlers } from "../lib/map-warehouse-error"
-import { formatNumber } from "../lib/format"
+import { formatNumber, untrustedText } from "../lib/format"
 import * as P from "../lib/params"
 import { LOG_SEVERITIES } from "./search-logs"
 import { doc, type NextCall, type ToolDoc } from "../lib/tool-doc"
@@ -410,7 +410,7 @@ export const renderQueryData = (output: Output): ToolDoc => {
 				...decisions,
 				doc.text(`Data points: ${formatNumber(points.length)}`),
 				doc.table(
-					["Bucket", ...seriesKeys],
+					["Bucket", ...Arr.map(seriesKeys, (key) => untrustedText(key, 120))],
 					Arr.map(points, (point, i) => [
 						labels[i] ?? point.bucket,
 						...Arr.map(seriesKeys, (key) => cell(point.series[key])),
@@ -435,7 +435,10 @@ export const renderQueryData = (output: Output): ToolDoc => {
 			...decisions,
 			doc.table(
 				["Name", isWeightedCount(output) ? "count (estimated)" : output.metric],
-				Arr.map(items, (item) => [item.name, formatMetricValue(output.metric, item.value)]),
+				Arr.map(items, (item) => [
+					untrustedText(item.name, 200),
+					formatMetricValue(output.metric, item.value),
+				]),
 			),
 			...notes,
 		],

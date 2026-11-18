@@ -288,7 +288,9 @@ export const toolDocOf = <O>(
 	output: O,
 ): ToolDoc => {
 	const doc = spec.render(output)
-	return spec.untrustedOutput === true && doc.empty === undefined ? { ...doc, untrusted: true } : doc
+	// An empty result's hints can name values read from the warehouse ("did you mean"), so they count too.
+	const carries = doc.empty === undefined || (doc.empty.hints?.length ?? 0) > 0
+	return spec.untrustedOutput === true && carries ? { ...doc, untrusted: true } : doc
 }
 
 /**

@@ -96,12 +96,12 @@ describe("telemetry text in tool output", () => {
 		expect(fenced).toContain('"error.message": "```` escape"')
 	})
 
-	it("shows no notice on an empty result", () => {
+	it("keeps the notice on an empty result, whose hints can name values read from the warehouse", () => {
 		const text = renderSearchLogs({
 			timeRange: { start: "2026-11-18 00:00:00", end: "2026-11-18 01:00:00" },
 			totalCount: 0,
 			logs: [],
 		})
-		expect(text).not.toContain(UNTRUSTED_TELEMETRY_NOTICE)
+		expect(text).toContain(UNTRUSTED_TELEMETRY_NOTICE)
 	})
 })

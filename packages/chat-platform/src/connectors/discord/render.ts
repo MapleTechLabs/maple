@@ -238,33 +238,38 @@ export const EMPTY_CONTENT = "—"
 const clamp = (text: string, max: number): string =>
 	text.length <= max ? text : `${Str.slice(0, max - 1)(text)}…`
 
-/** Code spans and fences, where Discord neither links nor previews a URL. */
-const CODE = /(```[\s\S]*?```|`[^`\n]*`)/
+/** Code spans and fences, where Discord neither links nor previews a URL; an escaped backtick opens none. */
+const CODE = /((?<!\\)```[\s\S]*?```|(?<!\\)`[^`\n]*`)/
 /** A markdown link's target (balanced parentheses kept), an already-suppressed `<url>`, or a bare URL. */
 const LINK =
-	/(\]\(\s*)<?(https?:\/\/(?:[^\s()<>]|\([^\s()<>]*\))+)>?(?=\s*\))|<https?:\/\/[^\s>]+>|https?:\/\/[^\s<>[\]]+/g
-/** Sentence punctuation or markdown emphasis after a URL, which is not part of it. */
-const TRAILING = /[.,;:!?'"*_~]+$/
+	/(\]\(\s*)<?(https?:\/\/(?:[^\s()<>]|\([^\s()<>]*\))+)>?(?=\s*\))|<https?:\/\/[^\s>]+>|https?:\/\/[^\s<>[\]\\`]+/g
+/** Sentence punctuation or bold/italic stars after a URL, which are not part of it. */
+const TRAILING = /[.,;:!?'"*]+$/
 
 const count = (text: string, char: string) => Str.split(char)(text).length - 1
 
-/** The URL without what follows it in prose: trailing punctuation, and `)` it never opened. */
-const urlPart = (url: string): string => {
+/**
+ * The URL without what follows it in prose: trailing punctuation, `)` it never opened, and a `_` or
+ * `~` run only when the same mark opens right before it (emphasis), since both are valid in a URL.
+ */
+const urlPart = (url: string, before: string): string => {
 	const trimmed = Str.replace(TRAILING, "")(url)
+	const mark = before === "_" || before === "~" ? before : undefined
+	if (mark !== undefined && Str.endsWith(mark)(trimmed)) return urlPart(Str.slice(0, -1)(trimmed), before)
 	return Str.endsWith(")")(trimmed) && count(trimmed, ")") > count(trimmed, "(")
-		? urlPart(Str.slice(0, -1)(trimmed))
+		? urlPart(Str.slice(0, -1)(trimmed), before)
 		: trimmed
 }
 
-const suppressBare = (url: string): string => {
-	const tail = urlPart(url)
+const suppressBare = (url: string, before: string): string => {
+	const tail = urlPart(url, before)
 	return `<${tail}>${Str.slice(tail.length)(url)}`
 }
 
-const suppressMatch = (match: RegExpMatchArray): string => {
+const suppressMatch = (match: RegExpMatchArray, before: string): string => {
 	const [whole, open, target] = match
 	if (open !== undefined && target !== undefined) return `${open}<${target}>`
-	return Str.startsWith("<")(whole) ? whole : suppressBare(whole)
+	return Str.startsWith("<")(whole) ? whole : suppressBare(whole, before)
 }
 
 /** One stretch of prose outside code, with each URL rewritten in place. */
@@ -275,7 +280,7 @@ const suppressInProse = (prose: string): string => {
 		(acc, match) => {
 			const index = match.index ?? acc.at
 			return {
-				text: `${acc.text}${Str.slice(acc.at, index)(prose)}${suppressMatch(match)}`,
+				text: `${acc.text}${Str.slice(acc.at, index)(prose)}${suppressMatch(match, Str.slice(index - 1, index)(prose))}`,
 				at: index + match[0].length,
 			}
 		},
