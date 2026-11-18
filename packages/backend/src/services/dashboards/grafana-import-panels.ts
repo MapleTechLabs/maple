@@ -58,6 +58,9 @@ type Query =
 const ASSUMED_PROMQL =
 	"Queries that name no datasource type (the default datasource, or a bare uid) were read as PromQL; check any that are not Prometheus."
 
+const ASSUMED_CLICKHOUSE =
+	"SQL queries that name no datasource type (the default datasource, or a bare uid) were read as ClickHouse; check any that are not."
+
 /** What a target queries; an unknown datasource with an `expr` is the default Prometheus. */
 function classifyTarget(target: UnknownRecord, panel: UnknownRecord, context: PanelContext): Query {
 	const type = datasourceType(target.datasource ?? panel.datasource, context.variables.datasourceTypes)
@@ -71,8 +74,11 @@ function classifyTarget(target: UnknownRecord, panel: UnknownRecord, context: Pa
 	}
 	if (type !== undefined && CLICKHOUSE_TYPES.has(type) && sql !== undefined)
 		return { kind: "clickhouse", sql }
-	if (type === undefined && asString(target.rawSql) !== undefined) {
-		return { kind: "clickhouse", sql: asString(target.rawSql) ?? "" }
+	const rawSql = asString(target.rawSql)
+	if (type === undefined && rawSql !== undefined) {
+		// Read as ClickHouse, the only SQL Maple runs; said once, like the PromQL guess.
+		if (!Arr.contains(context.warnings, ASSUMED_CLICKHOUSE)) context.warnings.push(ASSUMED_CLICKHOUSE)
+		return { kind: "clickhouse", sql: rawSql }
 	}
 	return {
 		kind: "unsupported",

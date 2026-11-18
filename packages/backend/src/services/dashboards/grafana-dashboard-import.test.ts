@@ -581,6 +581,53 @@ describe("review regressions", () => {
 	)
 })
 
+describe("guesses the importer says out loud", () => {
+	const board = (panels: ReadonlyArray<unknown>, variables: ReadonlyArray<unknown> = []) => ({
+		title: "Board",
+		schemaVersion: 39,
+		panels,
+		templating: { list: variables },
+	})
+
+	it.effect("warns when SQL with no datasource type is read as ClickHouse", () =>
+		Effect.gen(function* () {
+			const { dashboard, warnings } = yield* convertGrafanaDashboardToPortable(
+				board([
+					{
+						id: 1,
+						type: "table",
+						title: "Rows",
+						gridPos: { x: 0, y: 0, w: 12, h: 8 },
+						datasource: "some-uid",
+						targets: [
+							{
+								refId: "A",
+								rawSql: "SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+							},
+						],
+					},
+				]),
+			)
+			expect(dataSourceRawSql(dashboard.widgets[0]?.dataSource)?.sql).toContain("$__orgFilter")
+			expect(Arr.some(warnings, Str.includes("were read as ClickHouse"))).toBe(true)
+		}),
+	)
+
+	it.effect("warns when a job variable's selector is replaced by the service list", () =>
+		Effect.gen(function* () {
+			const note = { id: 1, type: "text", title: "Note", gridPos: { x: 0, y: 0, w: 12, h: 4 } }
+			const { warnings } = yield* convertGrafanaDashboardToPortable(
+				board([note], [{ name: "job", type: "query", query: 'label_values(up{env="prod"}, job)' }]),
+			)
+			expect(Arr.some(warnings, Str.includes('its selector "up{env="prod"}" was not imported'))).toBe(true)
+			const bare = yield* convertGrafanaDashboardToPortable(
+				board([note], [{ name: "job", type: "query", query: "label_values(job)" }]),
+			)
+			expect(Arr.some(bare.warnings, Str.includes("lists every service"))).toBe(false)
+		}),
+	)
+})
+
 describe("assumed PromQL", () => {
 	it.effect("says once that queries without a datasource type were read as PromQL", () =>
 		Effect.gen(function* () {
