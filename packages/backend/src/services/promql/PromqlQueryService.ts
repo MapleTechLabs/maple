@@ -227,8 +227,13 @@ const parseMatch = (text: string): Effect.Effect<VectorSelector, PromqlBadQueryE
 	return Effect.succeed(expr)
 }
 
-/** Past this many stored names in a table, a discovery read scans the table unfiltered by name. */
+/** Stored metrics one discovery read filters on; a selector keeping more splits them over reads. */
 const DISCOVERY_NAME_FILTER_LIMIT = 500
+/**
+ * Reads per table per selector, so a call makes at most 4 tables x 4 x MAX_SELECTORS reads; past
+ * 2,000 stored metrics in a table, the rest (in name order) are left out, as rows past the limit are.
+ */
+const DISCOVERY_NAME_READS = 4
 
 /**
  * The window `job` and `instance` values are read over. No rollup keeps them, so the read scans
@@ -419,7 +424,7 @@ const make = Effect.gen(function* () {
 		const selectors = yield* Effect.forEach(input.matches, parseMatch)
 		const catalog = yield* readCatalog(tenant, window)
 		// Not the query path's per-metric reads: `{job="api"}` resolves to every metric, which a
-		// discovery call must still answer. One label-set read per table instead, cut at the limit.
+		// discovery call must still answer. A few label-set reads per table instead, cut at the limit.
 		const read = yield* Effect.forEach(
 			Arr.flatMap(selectors, (selector) =>
 				Arr.map(
@@ -427,6 +432,7 @@ const make = Effect.gen(function* () {
 						orgId: tenant.orgId,
 						limit: DISCOVERY_LIMIT,
 						maxNameFilter: DISCOVERY_NAME_FILTER_LIMIT,
+						maxNameReads: DISCOVERY_NAME_READS,
 					}),
 					(plan) => ({ selector, plan }),
 				),

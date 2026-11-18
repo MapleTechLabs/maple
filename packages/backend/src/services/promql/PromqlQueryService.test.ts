@@ -41,7 +41,7 @@ const STAT_COLUMNS = [
 	"sum",
 	"min",
 	"max",
-].concat(["sumSquares", "increase", "resets", "changes", "sumT", "sumTT", "sumTV", "values"])
+].concat(["sumSquares", "resetSum", "resets", "changes", "sumT", "sumTT", "sumTV", "values"])
 
 describe("PromqlQueryService", () => {
 	it.effect("refuses a widget window that ends before it starts", () =>
@@ -138,7 +138,8 @@ describe("PromqlQueryService", () => {
 			expect(infiniteStep._tag).toBe("@maple/backend/promql/PromqlBadQueryError")
 			const pinned = yield* failureOf({ query: "up @ 1e14", startMs: 0, endMs: 0, stepMs: 0 })
 			expect(pinned._tag).toBe("@maple/backend/promql/PromqlBadQueryError")
-			expect(pinned.message).toMatch(/outside the supported time range/)
+			// The parser refuses it first, with Prometheus' own message.
+			expect(pinned.message).toMatch(/timestamp out of bounds for @ modifier/)
 		}),
 	)
 
@@ -328,7 +329,7 @@ const selectorRow = (attributes: Record<string, string>) => ({
 	),
 	...Rec.fromEntries(
 		Arr.map(
-			["sumSquares", "increase", "resets", "changes", "sumT", "sumTT", "sumTV"],
+			["sumSquares", "resetSum", "resets", "changes", "sumT", "sumTT", "sumTV"],
 			(field) => [field, [0]] as const,
 		),
 	),

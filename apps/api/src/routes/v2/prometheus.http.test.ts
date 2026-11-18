@@ -373,6 +373,23 @@ describe("v2 Prometheus discovery API", () => {
 		await harness.dispose()
 	})
 
+	it("reads an empty time, start or end as absent, as Prometheus does", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["metrics:read"])
+		const instant = await harness.send(key.secret, "/query?query=vector(1)&time=")
+		expect(instant.body).toMatchObject({ status: "success", data: { resultType: "vector" } })
+		expect((await harness.send(key.secret, "/labels?start=&end=")).body).toMatchObject({
+			status: "success",
+		})
+		const form = new URLSearchParams([
+			["match[]", "http_requests_total"],
+			["start", ""],
+			["end", ""],
+		])
+		expect((await harness.send(key.secret, "/series", form)).body).toMatchObject({ status: "success" })
+		await harness.dispose()
+	})
+
 	it("reads repeated match[] parameters and refuses a series call without one", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["metrics:read"])

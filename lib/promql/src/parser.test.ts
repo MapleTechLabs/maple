@@ -4,6 +4,7 @@ import type { Expr } from "./ast"
 import { formatDuration, parseDurationMs } from "./literals"
 import { parse } from "./parser"
 import { print } from "./print"
+import { checkTypes } from "./types"
 
 const ok = (query: string): Expr => {
 	const result = parse(query)
@@ -443,5 +444,77 @@ describe("go-live parser fixes", () => {
 		}
 		expect(print(ok("-2 ^ 2"))).toBe("-2 ^ 2")
 		expect(print(ok("x * -1"))).toBe("x * -1")
+	})
+})
+
+describe("fourth-review parser regressions", () => {
+	it("rejects a number literal that overflows float64", () => {
+		expect(errorOf("1e309")).toMatch(/error parsing number/)
+		expect(errorOf("-1e309")).toMatch(/error parsing number/)
+		expect(ok("Inf")).toEqual({ type: "NumberLiteral", value: Number.POSITIVE_INFINITY })
+	})
+
+	it("checks the int64 nanosecond limit before truncating a duration to ms", () => {
+		expect(parseDurationMs("9223372036.8549")).toBeUndefined()
+		expect(parseDurationMs("9223372036.854")).toBe(9_223_372_036_854)
+		expect(parseDurationMs("1.0006")).toBe(1000)
+	})
+
+	it("refuses limitk and limit_ratio as Prometheus does without experimental functions", () => {
+		const message =
+			"limitk() and limit_ratio() are experimental and must be enabled with --enable-feature=promql-experimental-functions"
+		expect(errorOf("limitk(1, up)")).toBe(message)
+		expect(errorOf("limit_ratio(0.5, up)")).toBe(message)
+	})
+
+	it("skips a comment between @ and its timestamp", () => {
+		expect(ok("up @ # pin\n10")).toMatchObject({ at: { kind: "time", timeMs: 10_000 } })
+	})
+
+	it("rejects an @ timestamp outside the int64 range", () => {
+		expect(errorOf("up @ 1e306")).toMatch(/timestamp out of bounds for @ modifier/)
+		expect(errorOf("max_over_time(up[5m:1m] @ 1e300)")).toMatch(/timestamp out of bounds/)
+		expect(ok("up @ 1700000000.5")).toMatchObject({ at: { kind: "time", timeMs: 1_700_000_000_500 } })
+	})
+
+	it("accepts a trailing decimal point in numbers and durations", () => {
+		expect(ok("1.")).toEqual({ type: "NumberLiteral", value: 1 })
+		expect(ok("1.e2")).toEqual({ type: "NumberLiteral", value: 100 })
+		expect(ok("x[2.]")).toMatchObject({ rangeMs: 2000 })
+		expect(ok('x{a="1."} + 3.')).toMatchObject({
+			lhs: { matchers: [{}, { value: "1." }] },
+			rhs: { value: 3 },
+		})
+		expect(errorOf(".")).not.toBe("parsed")
+		expect(errorOf("1..")).not.toBe("parsed")
+	})
+
+	it("parenthesizes a negative-zero base of ^", () => {
+		const expr: Expr = {
+			type: "Binary",
+			op: "^",
+			lhs: { type: "NumberLiteral", value: -0 },
+			rhs: { type: "NumberLiteral", value: 2 },
+			returnBool: false,
+			matching: undefined,
+		}
+		expect(print(expr)).toBe("(-0) ^ 2")
+		expect(print({ ...expr, lhs: { type: "NumberLiteral", value: 0 } })).toBe("0 ^ 2")
+	})
+
+	it("checks aggregation arity in checkTypes", () => {
+		const up = ok("up")
+		const agg = (op: "topk" | "sum", param: Expr | undefined): Expr => ({
+			type: "Aggregate",
+			op,
+			expr: up,
+			param,
+			grouping: [],
+			without: false,
+		})
+		expect(checkTypes(agg("topk", undefined))?.message).toMatch(/wrong number of arguments/)
+		expect(checkTypes(agg("sum", ok("1")))?.message).toMatch(/wrong number of arguments/)
+		expect(checkTypes(agg("topk", ok("3")))).toBeUndefined()
+		expect(checkTypes(agg("sum", undefined))).toBeUndefined()
 	})
 })

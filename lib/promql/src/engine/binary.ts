@@ -149,7 +149,7 @@ const resultMetric = (
 ): Labels => {
 	const names = new Set(matching.labels)
 	const out = new Map(Object.entries(many))
-	if (returnBool || !isComparison(op)) out.delete(METRIC_NAME)
+	if (!isComparison(op)) out.delete(METRIC_NAME)
 	if (matching.card === "one-to-one") {
 		for (const name of out.keys()) {
 			if (names.has(name) !== matching.on) out.delete(name)
@@ -160,6 +160,8 @@ const resultMetric = (
 		if (value === undefined || value === "") out.delete(name)
 		else out.set(name, value)
 	}
+	// VectorBinop drops the name for `bool` after resultMetric, so a copied __name__ goes too.
+	if (returnBool) out.delete(METRIC_NAME)
 	return makeLabels(out)
 }
 

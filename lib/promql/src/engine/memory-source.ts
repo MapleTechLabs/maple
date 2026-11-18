@@ -42,7 +42,7 @@ interface Acc {
 	min: number
 	max: number
 	sumSquares: number
-	increase: number
+	resetSum: number
 	resets: number
 	changes: number
 	sumT: number
@@ -67,8 +67,10 @@ export const bucketSamples = (
 		const x = (t - request.startMs) / 1000
 		if (current !== undefined && current.end === end && request.widthMs !== 0) {
 			const prev = current.lastV
-			current.increase += v < prev ? v : v - prev
-			if (v < prev) current.resets += 1
+			if (v < prev) {
+				current.resetSum += prev
+				current.resets += 1
+			}
 			if (v !== prev && !(Number.isNaN(v) && Number.isNaN(prev))) current.changes += 1
 			current.prevT = current.lastT
 			current.prevV = prev
@@ -99,7 +101,7 @@ export const bucketSamples = (
 			min: v,
 			max: v,
 			sumSquares: v * v,
-			increase: 0,
+			resetSum: 0,
 			resets: 0,
 			changes: 0,
 			sumT: x,
@@ -110,10 +112,7 @@ export const bucketSamples = (
 		out.push(current)
 	}
 	// A bucket's sum is Kahan-compensated, as Prometheus sums raw samples.
-	return out.map(({ values, sum, sumC, ...rest }) => {
-		const bucket = { ...rest, sum: sum === Infinity || sum === -Infinity ? sum : sum + sumC }
-		return request.needsValues ? { ...bucket, values } : bucket
-	})
+	return out.map(({ values, ...bucket }) => (request.needsValues ? { ...bucket, values } : bucket))
 }
 
 /** A source over in-memory series, for tests and compliance runs. */

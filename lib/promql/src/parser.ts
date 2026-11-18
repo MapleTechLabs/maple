@@ -1,15 +1,16 @@
 import type { SyntaxNode } from "@lezer/common"
 import { parser } from "@prometheus-io/lezer-promql"
 import { Option, Result } from "effect"
-import type {
-	AggregateOp,
-	AtModifier,
-	BinaryOp,
-	Expr,
-	LabelMatcher,
-	MatchOp,
-	VectorMatching,
-	VectorSelector,
+import {
+	type AggregateOp,
+	type AtModifier,
+	type BinaryOp,
+	type Expr,
+	type LabelMatcher,
+	type MatchOp,
+	PARAM_AGGREGATES,
+	type VectorMatching,
+	type VectorSelector,
 } from "./ast"
 import { functionSignature } from "./functions"
 import { lookup } from "./lookup"
@@ -47,15 +48,6 @@ const AGGREGATE_OPS = {
 	LimitK: "limitk",
 	LimitRatio: "limit_ratio",
 } satisfies Record<string, AggregateOp>
-
-const PARAM_AGGREGATES: ReadonlySet<AggregateOp> = new Set([
-	"topk",
-	"bottomk",
-	"quantile",
-	"count_values",
-	"limitk",
-	"limit_ratio",
-])
 
 const BINARY_OPS = {
 	Add: "+",
@@ -294,7 +286,9 @@ class Converter {
 	at(node: SyntaxNode): R<AtModifier> {
 		return Result.gen(this, function* () {
 			const atNode = yield* required(node.getChild("At"), node, "missing @")
-			const value = yield* required(atNode.nextSibling, node, "missing @ value")
+			let next = atNode.nextSibling
+			while (next?.name === "LineComment") next = next.nextSibling
+			const value = yield* required(next, node, "missing @ value")
 			if (value.name === "AtModifierPreprocessors") {
 				const which = value.firstChild?.name
 				if (which === "AtStart") return { kind: "start" } as const
@@ -314,10 +308,11 @@ class Converter {
 					(value.name === "UnaryExpr" && this.text(value).trim().startsWith("-")) !==
 					(signed && text.startsWith("-"))
 				// timestamp.FromFloatSeconds: whole milliseconds, halves away from zero.
-				return {
-					kind: "time",
-					timeMs: roundHalfAway((negative ? -seconds : seconds) * 1000),
-				} as const
+				const timeMs = roundHalfAway((negative ? -seconds : seconds) * 1000)
+				// Prometheus refuses seconds outside int64; ms past 2^53 would also stall grid stepping.
+				if (!Number.isSafeInteger(timeMs))
+					return yield* fail(value, `timestamp out of bounds for @ modifier: ${this.text(value)}`)
+				return { kind: "time", timeMs } as const
 			}
 			return yield* fail(value, `invalid @ modifier ${this.text(value)}`)
 		})
@@ -347,7 +342,7 @@ class Converter {
 					const value = yield* required(
 						parseNumber(this.text(node)),
 						node,
-						`invalid number ${this.text(node)}`,
+						`error parsing number: ${this.text(node)}`,
 					)
 					return { type: "NumberLiteral", value }
 				}
@@ -436,6 +431,12 @@ class Converter {
 				opNode,
 				`unknown aggregation ${this.text(opNode)}`,
 			)
+			// Prometheus gates these behind --enable-feature=promql-experimental-functions, off by default.
+			if (op === "limitk" || op === "limit_ratio")
+				return yield* fail(
+					node,
+					"limitk() and limit_ratio() are experimental and must be enabled with --enable-feature=promql-experimental-functions",
+				)
 			const body = yield* required(node.getChild("FunctionCallBody"), node, "missing aggregation body")
 			const args = yield* Result.all(exprChildren(body).map((c) => this.expr(c)))
 			const modifier = node.getChild("AggregateModifier")
@@ -569,7 +570,7 @@ class Converter {
 					const value = yield* required(
 						parseNumber(token.text),
 						token.node,
-						`invalid number ${token.text}`,
+						`error parsing number: ${token.text}`,
 					)
 					const literal: Expr = { type: "NumberLiteral", value }
 					this.positions.set(literal, token.node.from)
@@ -695,16 +696,55 @@ const firstError = (root: SyntaxNode): SyntaxNode | null => {
 	return found
 }
 
+const TRAILING_DOT = /(\d[\d_]*)\.(?![\d_.])([eE][+-]?\d[\d_]*)?/y
+
+/**
+ * Prometheus' lexer reads `1.` and `1.e2` as numbers; the lezer grammar wants a digit after
+ * the dot. Drop that dot and pad with a space, so every offset stays where it was.
+ */
+const normalizeTrailingDots = (query: string): string => {
+	let out = ""
+	let i = 0
+	while (i < query.length) {
+		const ch = query[i] ?? ""
+		if (ch === '"' || ch === "'" || ch === "`") {
+			let end = i + 1
+			while (end < query.length && query[end] !== ch) end += ch !== "`" && query[end] === "\\" ? 2 : 1
+			out += query.slice(i, end + 1)
+			i = end + 1
+			continue
+		}
+		if (ch === "#") {
+			const newline = query.indexOf("\n", i)
+			const end = newline === -1 ? query.length : newline
+			out += query.slice(i, end)
+			i = end
+			continue
+		}
+		TRAILING_DOT.lastIndex = i
+		const match = /[\w:.]/.test(query[i - 1] ?? "") ? null : TRAILING_DOT.exec(query)
+		if (match !== null) {
+			out += `${match[1] ?? ""}${match[2] ?? ""} `
+			i += match[0].length
+			continue
+		}
+		out += ch
+		i += 1
+	}
+	return out
+}
+
 /** Parse and type-check a PromQL query. */
 export const parse = (query: string): R<Expr> => {
 	if (query.trim().length === 0) return fail(0, "empty query")
-	const tree = parser.parse(query)
+	const source = normalizeTrailingDots(query)
+	const tree = parser.parse(source)
 	const error = firstError(tree.topNode)
 	if (error !== null) {
 		const near = query.slice(error.from, Math.max(error.to, error.from + 1)).trim()
 		return fail(error.from, near.length > 0 ? `syntax error near "${near}"` : "unexpected end of input")
 	}
-	const converter = new Converter(query)
+	const converter = new Converter(source)
 	return Result.flatMap(converter.expr(tree.topNode), (expr) => {
 		const typeError = checkTypes(expr)
 		return typeError === undefined

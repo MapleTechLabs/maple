@@ -156,7 +156,7 @@ const pointsToBuckets = (points: ReadonlyArray<Point>, originMs: number): Sample
 			min: v,
 			max: v,
 			sumSquares: v * v,
-			increase: 0,
+			resetSum: 0,
 			resets: 0,
 			changes: 0,
 			sumT: x,
