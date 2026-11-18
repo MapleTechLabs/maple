@@ -225,7 +225,7 @@ const slides = [
 				// A lightbox opened without a focus event does not pause the reel, so a
 				// dwell can end while one is up. Hold the plate; sync() replays the dwell.
 				if (!running()) {
-					awaitLightboxClose();
+					if (lightboxOpen()) awaitLightboxClose();
 					return;
 				}
 				show((index + 1) % panes.length);
@@ -234,10 +234,16 @@ const slides = [
 		}
 
 		// Closing a lightbox only reaches sync() if focus comes back into the reel,
-		// which it need not. After a dwell held by one, look until it is gone.
+		// which it need not. Whenever one holds the reel, look until it is gone.
+		let lightboxWatch = 0;
 		function awaitLightboxClose() {
-			if (lightboxOpen()) window.setTimeout(awaitLightboxClose, 500);
-			else sync();
+			if (lightboxWatch !== 0) return;
+			lightboxWatch = window.setInterval(() => {
+				if (lightboxOpen()) return;
+				window.clearInterval(lightboxWatch);
+				lightboxWatch = 0;
+				sync();
+			}, 500);
 		}
 
 		function sync() {
@@ -246,6 +252,7 @@ const slides = [
 				else tick();
 			} else {
 				anim?.pause();
+				if (lightboxOpen()) awaitLightboxClose();
 			}
 		}
 
