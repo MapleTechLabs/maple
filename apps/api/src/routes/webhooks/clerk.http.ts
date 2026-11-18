@@ -39,6 +39,8 @@ import { receiveSvixWebhook, webhookText } from "./svix-receiver"
  *   without it the membership cache and every user-bound credential keep
  *   answering yes indefinitely.
  *
+ * - membership removal also takes the member off the organization's SSO bypass list.
+ *
  * - SCIM: `directoryGroup.*` keeps the org's IdP groups for the role mapping picker (home region
  *   only), and `user.updated` with `deprovisioned` runs the user sweep in every region. A member
  *   whose membership predates directory sync keeps it after deactivation, so this is what ends
@@ -155,6 +157,20 @@ const handler = Effect.gen(function* () {
 		}
 		if (event === "organizationMembership.deleted") {
 			const response = yield* revoke(revocation.revokeMembership(orgId.value, userId.value))
+			if (response.status === 200) {
+				// A former member must not keep a way past the org's SSO. Only the home region holds the
+				// connection, so every other region finds nothing; a failure is retried like the sweep.
+				const bypass = yield* sso
+					.removeFormerMemberBypass(orgId.value, userId.value)
+					.pipe(Effect.option)
+				if (Option.isNone(bypass)) {
+					yield* Effect.annotateCurrentSpan({
+						"http.response.status_code": 500,
+						"maple.webhook.outcome": "bypass_removal_failed",
+					})
+					return webhookText("SSO bypass removal failed", 500)
+				}
+			}
 			// Swept first, so an unanswered lookup never leaves credentials standing while it retries.
 			if (home === "unknown" && response.status === 200) return yield* regionUnknown
 			// Only once the sweep succeeded: a 500 is retried by Clerk and would emit it twice.

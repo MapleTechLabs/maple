@@ -301,7 +301,7 @@ const pendingRecord = (h: H, model: Model, domain: SsoDomainDocument, isEntitled
 					: []),
 			]),
 			typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" }, [
-				"Add this TXT record at your DNS provider. DNS changes can take a few minutes to show.",
+				"Add this TXT record at your DNS provider and keep it there: it is checked again when you connect an identity provider or require SSO. DNS changes can take a few minutes to show.",
 			]),
 			keyValueList(h, { layout: "stacked" }, [
 				copyValue(h, model, `record-name-${domain.domain}`, "Name", domain.recordName),
@@ -416,26 +416,19 @@ const connectionPanel = (
 						: badge(h, { variant: "muted" }, ["Off"]),
 				]),
 				hstack(h, { gap: "2" }, [
-					...(document.ssoEntitled
-						? [
-								ssoControl(h, model, (isLocked) =>
-									button(
-										h,
-										{
-											variant: "outline",
-											size: "sm",
-											isDisabled: isLocked || isBusy(model),
-											attributes: clickUnless(
-												h,
-												isLocked,
-												Message.ClickedEditConnection(),
-											),
-										},
-										["Edit"],
-									),
-								),
-							]
-						: []),
+					// Stays without the plan: a certificate or client secret can still be replaced.
+					ssoControl(h, model, (isLocked) =>
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "sm",
+								isDisabled: isLocked || isBusy(model),
+								attributes: clickUnless(h, isLocked, Message.ClickedEditConnection()),
+							},
+							["Edit"],
+						),
+					),
 					ssoControl(h, model, (isLocked) =>
 						button(
 							h,
@@ -617,7 +610,7 @@ const directoryPanel = (
 	directory: ScimDirectoryDocument,
 ): ReadonlyArray<Html> => {
 	const isEntitled = document.scimEntitled
-	// Pausing and removing stay open without the plan; resuming and rotating need it.
+	// Pausing, removing and rotating the token stay open without the plan; resuming needs it.
 	const showsPauseToggle = directory.paused ? isEntitled : true
 	return [
 		vstack(h, { gap: "4", align: "stretch" }, [
@@ -651,26 +644,18 @@ const directoryPanel = (
 								),
 							]
 						: []),
-					...(isEntitled
-						? [
-								ssoControl(h, model, (isLocked) =>
-									button(
-										h,
-										{
-											variant: "outline",
-											size: "sm",
-											isDisabled: isLocked || isBusy(model),
-											attributes: clickUnless(
-												h,
-												isLocked,
-												Message.ClickedRotateToken(),
-											),
-										},
-										["Rotate token"],
-									),
-								),
-							]
-						: []),
+					ssoControl(h, model, (isLocked) =>
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "sm",
+								isDisabled: isLocked || isBusy(model),
+								attributes: clickUnless(h, isLocked, Message.ClickedRotateToken()),
+							},
+							["Rotate token"],
+						),
+					),
 					ssoControl(h, model, (isLocked) =>
 						button(
 							h,
@@ -685,9 +670,14 @@ const directoryPanel = (
 					),
 				]),
 			]),
-			keyValueList(h, { layout: "stacked" }, [
-				copyValue(h, model, "scim-endpoint", "Endpoint URL", directory.endpointUrl),
-			]),
+			// Absent for a viewer who cannot manage SSO.
+			...(directory.endpointUrl === undefined
+				? []
+				: [
+						keyValueList(h, { layout: "stacked" }, [
+							copyValue(h, model, "scim-endpoint", "Endpoint URL", directory.endpointUrl),
+						]),
+					]),
 			typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" }, [
 				directory.paused
 					? "Your identity provider's pushes are refused while provisioning is paused."
@@ -1119,7 +1109,9 @@ const connectionDialog = (h: H, model: Model, document: EnterpriseSsoDocument | 
 		toParentMessage: (message) => Message.GotConnectionDialogMessage({ message }),
 		title: isEdit ? "Edit identity provider" : "Connect identity provider",
 		description:
-			"Nobody signs in through it until you require SSO. Then everyone on the chosen domains must.",
+			isEdit && document !== null && !document.ssoEntitled
+				? "Without the single sign-on add-on you can replace the certificate, the IdP metadata or the client secret. Other changes need the add-on."
+				: "Nobody signs in through it until you require SSO. Then everyone on the chosen domains must.",
 		onSubmit: Message.SubmittedConnection(),
 		submitLabel: isEdit ? "Save" : "Connect",
 		isPending: model.pending === "createConnection" || model.pending === "updateConnection",
@@ -1383,12 +1375,15 @@ const loaded = (
 			: [adminOnlyNote(h, ["Only admins can change SSO and SCIM settings."])]),
 		domainsSection(h, model, document),
 		connectionSection(h, model, document),
-		bypassSection(h, model, document),
+		// The API sends the bypass list and the IdP groups to managers only: no empty lists for others.
+		...(model.canManage ? [bypassSection(h, model, document)] : []),
 		...(document.connection === null
 			? []
 			: [
 					scimSection(h, model, document),
-					...(document.directory === null ? [] : [mappingsSection(h, model, document)]),
+					...(document.directory === null || !model.canManage
+						? []
+						: [mappingsSection(h, model, document)]),
 				]),
 	]
 }
