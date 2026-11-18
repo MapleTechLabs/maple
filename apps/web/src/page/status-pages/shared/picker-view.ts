@@ -348,6 +348,19 @@ const urlField = <M>(h: HtmlBuilder<M>, options: PickerViewOptions<M>): Html => 
 	)
 }
 
+/** One way to add a component: its control, and under it, level with its label, what it does. */
+const addOption = <M>(h: HtmlBuilder<M>, options: Readonly<{ control: Html; hint: string | null }>): Html =>
+	vstack(h, { gap: "0.5", align: "start", className: "w-full" }, [
+		options.control,
+		...(options.hint === null
+			? []
+			: [
+					typography(h, { size: "xs", tone: "muted", as: "p", className: "max-w-md pl-2.5" }, [
+						options.hint,
+					]),
+				]),
+	])
+
 export const pickerView = <M>(h: HtmlBuilder<M>, options: PickerViewOptions<M>): Html => {
 	const picker = options.picker
 	const checked = checkedRows(picker)
@@ -360,7 +373,7 @@ export const pickerView = <M>(h: HtmlBuilder<M>, options: PickerViewOptions<M>):
 		...(isEmpty
 			? [
 					typography(h, { size: "sm", tone: "muted", as: "p" }, [
-						"Paste a URL to monitor, or add a component you'll update by hand.",
+						"No other monitors to add. Add a URL for Maple to check, or a component you update yourself.",
 					]),
 				]
 			: [
@@ -385,23 +398,32 @@ export const pickerView = <M>(h: HtmlBuilder<M>, options: PickerViewOptions<M>):
 						),
 					),
 				]),
-		vstack(h, { gap: "2", align: "start" }, [
-			urlField(h, options),
-			button(
-				h,
-				{
-					size: "sm",
-					variant: "ghost",
-					isDisabled: options.isDisabled,
-					className: "h-auto max-w-full self-start text-left whitespace-normal",
-					attributes: [
-						h.OnClick(options.toMessage(PickerMessage.ClickedAddManual())),
-						// Keys typed before the new row mounts reach the button; they belong to the row.
-						h.OnKeyDown((key) => options.toMessage(PickerMessage.PressedKeyOnAdd({ key }))),
-					],
-				},
-				[icon(h, "PlusIcon"), "Add a component without a monitor"],
-			),
+		vstack(h, { gap: "3", align: "start", className: "border-t pt-3" }, [
+			typography(h, { size: "xs", weight: "medium", tone: "muted", as: "p" }, ["Not in the list?"]),
+			addOption(h, {
+				control: urlField(h, options),
+				hint: picker.isUrlOpen
+					? null
+					: "Maple creates an uptime monitor that checks the URL every minute. The component follows it: down when the check fails, with its uptime bars.",
+			}),
+			addOption(h, {
+				control: button(
+					h,
+					{
+						size: "sm",
+						variant: "ghost",
+						isDisabled: options.isDisabled,
+						className: "h-auto max-w-full self-start text-left whitespace-normal",
+						attributes: [
+							h.OnClick(options.toMessage(PickerMessage.ClickedAddManual())),
+							// Keys typed before the new row mounts reach the button; they belong to the row.
+							h.OnKeyDown((key) => options.toMessage(PickerMessage.PressedKeyOnAdd({ key }))),
+						],
+					},
+					[icon(h, "PlusIcon"), "Add a component without a monitor"],
+				),
+				hint: "For what Maple can't check, like a vendor or your support desk. You set its status yourself, and incidents you post change it.",
+			}),
 		]),
 	])
 }

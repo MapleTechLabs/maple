@@ -40,8 +40,10 @@ import {
 import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
 import * as Dialog from "@maple/views/ui/dialog"
+import { ColorPickerMessage, MountColorPicker } from "@maple/views/ui/color-picker"
 import { MountDialog } from "@maple/views/ui/dialog"
 import { toLoadFailure } from "@maple/views/data/load-failure"
+import { StatusPageSlugTakenError } from "@maple/domain/http"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { statusPageHref, statusPagesHref } from "../shared/commands"
 import { selectionOf } from "../shared/preview"
@@ -56,6 +58,8 @@ import {
 	statusPage,
 	statusPageConfig,
 } from "../shared/test-pages"
+import * as Combobox from "@maple/views/ui/combobox"
+import { groupPickerValue } from "../shared/group-picker"
 import { PickerMessage } from "../shared/picker"
 import {
 	CheckCustomDomain,
@@ -75,7 +79,8 @@ import {
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
-import { componentGripId, groupedOrder } from "./update-components"
+import { groupedOrder } from "../shared/component-order"
+import { componentGripId, groupGripId } from "./update-components"
 import { customDomainOf } from "./update-domain"
 import { canvasDocument } from "./view-canvas"
 import { maintenanceDurationMs } from "./view-incidents"
@@ -138,6 +143,22 @@ const pendingDomain = customDomain({
 		},
 	],
 	last_error: "custom hostname does not CNAME to this zone.",
+	created_at: "2026-10-01T12:00:00.000Z",
+})
+
+/** A new claim: nothing is set up until its ownership record is found. */
+const unprovenDomain = customDomain({
+	hostname: "status.acme.com",
+	status: "pending_dns",
+	dns_records: [
+		{ type: "CNAME", name: "status.acme.com", value: "status-domains.maple.dev", purpose: "routing" },
+		{
+			type: "TXT",
+			name: "_maple-challenge.status.acme.com",
+			value: "maple-status-page=1c2ba8fdad86fbbe9cdd85449b0e85c6",
+			purpose: "ownership",
+		},
+	],
 	created_at: "2026-10-01T12:00:00.000Z",
 })
 
@@ -292,10 +313,14 @@ const MONITORS = { tab: "settings", section: "monitors" } as const
 const srcdocOf =
 	(title: string) =>
 	(html: Parameters<ReturnType<typeof find>>[0]): string =>
-		Option.getOrElse(Option.flatMap(find(`iframe[title="${title}"]`)(html), attr("srcdoc")), () => "")
+		Option.getOrElse(
+			Option.flatMap(find(`maple-preview-frame[frame-title="${title}"]`)(html), attr("srcdoc")),
+			() => "",
+		)
 const APPEARANCE = { tab: "settings", section: "appearance" } as const
-const ACCESS = { tab: "settings", section: "access" } as const
+const ACCESS = { tab: "settings", section: "basic" } as const
 const ADVANCED = { tab: "settings", section: "advanced" } as const
+const BASIC = { tab: "settings", section: "basic" } as const
 
 /** Settings > Monitors with one component open. */
 const selected = (componentNumber: number, fixture: Fixture = {}) =>
@@ -630,7 +655,7 @@ describe("components under Settings > Monitors", () => {
 			Mount.expectNone(),
 			expectView(role("button", { name: /^API/u })).toHaveAttr("aria-expanded", "true"),
 			expectView(role("textbox", { name: "Shown as" })).toHaveValue("API"),
-			expectView(role("textbox", { name: "Group" })).toHaveValue("Core"),
+			expectView(role("combobox", { name: "Group: Core" })).toExist(),
 			expectView(text("Degraded, set under Override status.")).toExist(),
 			click(role("button", { name: /^API/u })),
 			Command.resolve(FocusEditorElement, Message.CompletedFocus()),
@@ -692,6 +717,39 @@ describe("components under Settings > Monitors", () => {
 		])
 	})
 
+	test("a group moves with its components, by its grip or the arrow keys, and waits for Save", () => {
+		const rows = [
+			component(1, { group: "Core" }),
+			component(2, { group: "Edge" }),
+			component(3, { group: "Core" }),
+			component(4),
+		]
+		const model = loaded({ ...MONITORS, components: rows })
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(role("button", { name: "Reorder group Core" })).toExist(),
+			expectView(role("button", { name: "Reorder group No group" })).toExist(),
+		)
+		const dropped = steps(model, [Message.DroppedGroup({ group: "Edge", index: 0 })])
+		expect(pageUpdate(dropped, Message.ClickedSaveMonitors()).commands).toMatchObject([
+			{
+				name: "ReorderStatusPageComponents",
+				args: { componentIds: [componentId(2), componentId(1), componentId(3), componentId(4)] },
+			},
+		])
+		const nudged = pageUpdate(model, Message.PressedMoveGroup({ group: null, offset: -1 }))
+		expect(nudged.commands).toMatchObject([
+			{ name: "FocusStatusPageEditorElement", args: { id: groupGripId(null) } },
+		])
+		expect(pageUpdate(nudged.model, Message.ClickedSaveMonitors()).commands).toMatchObject([
+			{
+				name: "ReorderStatusPageComponents",
+				args: { componentIds: [componentId(1), componentId(3), componentId(4), componentId(2)] },
+			},
+		])
+	})
+
 	test("the page preview follows the open component as typed, with no preview of its own", () => {
 		const editing = pageUpdate(
 			selected(2, { components: [component(1, { group: "Core" }), component(2, { group: "Core" })] }),
@@ -701,7 +759,9 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(editing),
-			expectView(selector('iframe[title="Component 2 as visitors see it"]')).not.toExist(),
+			expectView(
+				selector('maple-preview-frame[frame-title="Component 2 as visitors see it"]'),
+			).not.toExist(),
 			tap(({ html }) => {
 				expect(page(html)).toContain("Payments")
 				expect(page(html)).toContain("Core")
@@ -753,6 +813,79 @@ describe("components under Settings > Monitors", () => {
 		).toBeNull()
 	})
 
+	test("a click in a Settings preview opens the component under Monitors, in place when already there, and the incident under its tab", () => {
+		const onAppearance = loaded({ tab: "settings", section: "appearance" })
+		const picked = pageUpdate(
+			onAppearance,
+			Message.ReceivedPreviewSelection({ kind: "component", id: componentId(2) }),
+		)
+		expect(picked.model.panel).toEqual({ _tag: "Component", componentId: componentId(2) })
+		expect(picked.outMessage).toMatchObject({
+			_tag: "RequestedNavigation",
+			url: statusPageHref(statusPage().id, "settings", "monitors"),
+		})
+		const onMonitors = loaded({ tab: "settings", section: "monitors" })
+		const inPlace = pageUpdate(
+			onMonitors,
+			Message.ReceivedPreviewSelection({ kind: "component", id: componentId(2) }),
+		)
+		expect(inPlace.model.panel).toEqual({ _tag: "Component", componentId: componentId(2) })
+		expect(inPlace.outMessage).toBeUndefined()
+		expect(
+			pageUpdate(
+				loaded({ tab: "settings", section: "monitors", incidents: [incident(1)] }),
+				Message.ReceivedPreviewSelection({ kind: "incident", id: incidentId(1) }),
+			).outMessage,
+		).toMatchObject({ url: statusPageHref(statusPage().id, "incidents") })
+	})
+
+	test("a click on the header or footer opens the section that edits it, then reveals the field", () => {
+		const clicked = pageUpdate(
+			loaded(),
+			Message.ReceivedPreviewSelection({ kind: "field", id: "supportUrl" }),
+		)
+		expect(clicked.outMessage).toMatchObject({
+			url: statusPageHref(statusPage().id, "settings", "appearance"),
+		})
+		const landed = routeChanged(
+			clicked.model,
+			{ _tag: "StatusPage", pageId: PUBLIC_ID, search: { view: "settings", section: "appearance" } },
+			context,
+		)
+		expect(landed.commands).toContainEqual(
+			expect.objectContaining({
+				name: "RevealStatusPageEditorField",
+				args: { id: "status-page-support" },
+			}),
+		)
+		expect(landed.model.revealFieldId).toBeNull()
+		const inPlace = pageUpdate(
+			loaded({ tab: "settings", section: "appearance" }),
+			Message.ReceivedPreviewSelection({ kind: "field", id: "showPoweredBy" }),
+		)
+		expect(inPlace.outMessage).toBeUndefined()
+		expect(inPlace.commands).toMatchObject([
+			{ name: "RevealStatusPageEditorField", args: { id: "status-page-powered-by" } },
+		])
+		expect(
+			pageUpdate(loaded(), Message.ReceivedPreviewSelection({ kind: "field", id: "name" })).outMessage,
+		).toMatchObject({ url: statusPageHref(statusPage().id, "settings", "basic") })
+		expect(
+			pageUpdate(loaded(), Message.ReceivedPreviewSelection({ kind: "field", id: "slug" })).outMessage,
+		).toBeUndefined()
+	})
+
+	test("a click on a group name opens its first component under Monitors", () => {
+		const picked = pageUpdate(
+			loaded(),
+			Message.ReceivedPreviewSelection({ kind: "group", id: componentId(2) }),
+		)
+		expect(picked.model.panel).toEqual({ _tag: "Component", componentId: componentId(2) })
+		expect(picked.outMessage).toMatchObject({
+			url: statusPageHref(statusPage().id, "settings", "monitors"),
+		})
+	})
+
 	test("switching to a tab that does not show the open component closes it, keeping unsaved edits for Monitors", () => {
 		const away = { _tag: "StatusPage", pageId: PUBLIC_ID, search: {} } as const
 		expect(routeChanged(selected(1), away, context).model.panel).toBeNull()
@@ -796,7 +929,7 @@ describe("components under Settings > Monitors", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
-			expectView(selector("iframe")).toHaveAttr("sandbox", "allow-scripts"),
+			expectView(selector("maple-preview-frame")).toHaveAttr("sandbox", "allow-scripts"),
 		)
 		const document = canvasDocument(model, statusPage())
 		expect(document).toContain(`data-incident-id="${incidentId(1)}"`)
@@ -901,23 +1034,57 @@ describe("components under Settings > Monitors", () => {
 		)
 	})
 
-	test("Group is typed, a new one included, and waits for Save", () => {
+	test("Group is a dropdown: pick one of the page's groups, or type a name and create it; it waits for Save", () => {
 		const rows = [component(1, { group: "Core" }), component(2, { group: "Edge" }), component(3)]
+		const picker = (message: Combobox.Message) => Message.GotGroupPickerMessage({ message })
+		const opened = steps(selected(3, { components: rows }), [
+			picker(Combobox.Message.ClickedTriggerOf({ items: [] })),
+		])
 		scene(
 			{ update: pageUpdate, view },
-			given(selected(3, { components: rows })),
-			type(role("textbox", { name: "Group" }), "Payments"),
-			expectView(text("Unsaved changes")).toExist(),
+			given(opened),
+			comboMounted,
+			expectView(role("option", { name: "No group" })).toExist(),
+			expectView(role("option", { name: "Core" })).toExist(),
+			expectView(role("option", { name: "Edge" })).toExist(),
 		)
-		const typed = steps(selected(3, { components: rows }), [
-			Message.ChangedComponentField({ field: "group", value: "Edge" }),
+		scene(
+			{ update: pageUpdate, view },
+			given(steps(opened, [picker(Combobox.Message.ChangedInput({ value: "Pay" }))])),
+			comboMounted,
+			expectView(role("option", { name: 'Create "Pay"' })).toExist(),
+			expectView(role("option", { name: "Core" })).not.toExist(),
+		)
+		const picked = steps(opened, [
+			picker(Combobox.Message.ClickedItem({ value: groupPickerValue.group("Edge") })),
 		])
-		expect(pageUpdate(typed, Message.ClickedSaveMonitors()).commands).toMatchObject([
+		expect(picked.groupPicker.isOpen).toBe(false)
+		expect(pageUpdate(picked, Message.ClickedSaveMonitors()).commands).toMatchObject([
 			{
 				name: "SaveStatusPageComponent",
 				args: { componentId: componentId(3), payload: { group: "Edge" } },
 			},
 		])
+		const created = steps(opened, [
+			picker(Combobox.Message.ChangedInput({ value: " Payments " })),
+			picker(Combobox.Message.ClickedItem({ value: groupPickerValue.create("Payments") })),
+		])
+		// The pick leaves the field on the group, with nothing typed in its search.
+		expect(created.groupPicker.inputValue).toBe("")
+		scene(
+			{ update: pageUpdate, view },
+			given(steps(created, [picker(Combobox.Message.ClickedTriggerOf({ items: [] }))])),
+			comboMounted,
+			expectView(role("option", { name: "Payments" })).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(created),
+			// Still mounted while it fades out.
+			comboMounted,
+			expectView(role("combobox", { name: "Group: Payments" })).toExist(),
+			expectView(text("Unsaved changes")).toExist(),
+		)
 	})
 
 	test("a failed save keeps the edits and says so in the panel, and Save tries again", () => {
@@ -1175,6 +1342,16 @@ const steps = (model: Model, messages: ReadonlyArray<Message>, ctx: PageContext 
 	Arr.reduce(messages, model, (current, message) => update(current, message, ctx).model)
 
 const mounted = Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog())
+const comboMounted = Mount.resolve(Combobox.MountCombobox, Combobox.Message.CompletedMountCombobox())
+
+/** The Appearance section's colour pickers, mounted: the accent alone in Auto, all five in Light or Dark. */
+const pickersMounted = (count: number) =>
+	Mount.resolveAll(
+		...Arr.makeBy(
+			count,
+			() => [MountColorPicker, ColorPickerMessage.CompletedMountColorPicker()] as const,
+		),
+	)
 
 /** The reviewed message as the public page's markup renders it; the incident's sheet is a dialog too. */
 const updateBodyOf = find('[role="dialog"]:not(#status-page-panel-popup) [data-slot="update-body"]')
@@ -2128,13 +2305,43 @@ describe("header", () => {
 			{ update: pageUpdate, view },
 			given(loaded({ tab: "maintenance" })),
 			expectView(role("button", { name: "Schedule maintenance" })).toExist(),
-			expectView(text("No maintenance scheduled.")).toExist(),
+			expectView(text("No maintenance yet")).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded()),
 			expectView(role("button", { name: "Declare incident" })).not.toExist(),
 			expectView(role("link", { name: "Live page" })).toHaveAttr("aria-current", "page"),
+		)
+	})
+
+	test("an empty Incidents or Maintenance tab explains it, links the docs and offers one button to post", () => {
+		for (const [tab, title, action, kind] of [
+			["incidents", "No incidents yet", "Declare incident", "incident"],
+			["maintenance", "No maintenance yet", "Schedule maintenance", "maintenance"],
+		] as const) {
+			scene(
+				{ update: pageUpdate, view },
+				given(
+					loaded({
+						tab,
+						incidents: [incident(1, { kind: kind === "incident" ? "maintenance" : "incident" })],
+					}),
+				),
+				expectView(text(title)).toExist(),
+				expectView(role("link", { name: "Read the docs" })).toHaveAttr(
+					"href",
+					"https://maple.dev/docs/alerting/status-pages#incidents-and-maintenance-notices",
+				),
+				expectView(role("button", { name: action })).toExist(),
+				expectView(role("table")).not.toExist(),
+			)
+		}
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ tab: "incidents", incidents: [incident(1)] })),
+			expectView(text("No incidents yet")).not.toExist(),
+			expectView(role("button", { name: "Declare incident" })).toExist(),
 		)
 	})
 
@@ -2296,6 +2503,7 @@ describe("header", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ tab: "appearance" })),
+			pickersMounted(1),
 			expectView(role("link", { name: "Settings" })).toHaveAttr("aria-current", "page"),
 			expectView(role("link", { name: "Appearance" })).toHaveAttr("aria-current", "page"),
 		)
@@ -2306,37 +2514,42 @@ describe("header", () => {
 		).toContain("FetchStatusPageConfig")
 	})
 
-	test("Open page opens the published page in a new tab", () => {
+	test("the header has no open button: the menu opens the public page or the dev preview", () => {
+		const pick = (model: Model, value: string) =>
+			pageUpdate(
+				model,
+				Message.GotPageMenuMessage({
+					message: { _tag: "ClickedItem", index: 0, item: { kind: "Item", value } },
+				}),
+			)
+		const published = { ...loaded(), publicBaseUrl: "https://status-pages.maple.dev" }
 		scene(
 			{ update: pageUpdate, view },
-			given({ ...loaded({ tab: "settings" }), publicBaseUrl: "https://status-pr-7.maple.dev" }),
-			expectView(role("link", { name: "Open page" })).toHaveAttr(
-				"href",
-				"https://status-pr-7.maple.dev/s/acme-status",
-			),
-			expectView(role("link", { name: "Open page" })).toHaveAttr("target", "_blank"),
-			expectView(role("link", { name: "Open page" })).toHaveAttr("rel", "noopener"),
-		)
-	})
-
-	test("Open page is disabled, with the reason, while the page has no public address", () => {
-		scene(
-			{ update: pageUpdate, view },
-			given({
-				...loaded({ page: statusPage({ draft: true, published_at: null }) }),
-				publicBaseUrl: "https://status-pr-7.maple.dev",
-			}),
+			given(published),
 			expectView(role("link", { name: "Open page" })).not.toExist(),
-			expectView(role("button", { name: "Open page" })).toBeDisabled(),
-			expectView(selector('[data-tooltip="Publish the page to open it"]')).toExist(),
+			expectView(role("link", { name: "Open public page" })).not.toExist(),
 		)
-		scene(
-			{ update: pageUpdate, view },
-			given({ ...loaded(), publicBaseUrl: "" }),
-			expectView(role("link", { name: "Open page" })).not.toExist(),
-			expectView(role("button", { name: "Open page" })).toBeDisabled(),
-			expectView(selector('[data-tooltip="No status domain is configured yet"]')).toExist(),
-		)
+		expect(pick(published, "open-public").commands?.at(-1)).toMatchObject({
+			name: "OpenStatusPublicPage",
+			args: { url: "https://status-pages.maple.dev/s/acme-status" },
+		})
+		const internal = {
+			...loaded({ page: statusPage({ visibility: "internal" }) }),
+			publicBaseUrl: "https://status-pages.maple.dev",
+		}
+		expect(names(pick(internal, "open-public").commands)).not.toContain("OpenStatusPublicPage")
+		const draft = {
+			...loaded({ page: statusPage({ draft: true, published_at: null }) }),
+			publicBaseUrl: "https://status-pages.maple.dev",
+		}
+		expect(names(pick(draft, "open-public").commands)).not.toContain("OpenStatusPublicPage")
+		for (const model of [published, internal, draft])
+			expect(pick(model, "open-preview").outMessage).toEqual(
+				PageOutMessage.RequestedNavigation({
+					url: `/status-pages/${PUBLIC_ID}/view`,
+					isReplace: false,
+				}),
+			)
 	})
 })
 
@@ -2397,7 +2610,7 @@ describe("live screen", () => {
 			expectView(selector("#status-page-public-url")).toHaveValue(
 				"https://status-pr-7.maple.dev/s/acme-status",
 			),
-			expectView(role("link", { name: "Open" })).toHaveAttr(
+			expectView(role("link", { name: "Open public page" })).toHaveAttr(
 				"href",
 				"https://status-pr-7.maple.dev/s/acme-status",
 			),
@@ -2417,7 +2630,7 @@ describe("live screen", () => {
 			given(model),
 			expectView(text("Public address appears once a status domain is configured")).toExist(),
 			expectView(selector("#status-page-public-url")).not.toExist(),
-			expectView(role("link", { name: "Open" })).not.toExist(),
+			expectView(role("link", { name: "Open public page" })).not.toExist(),
 			expectView(role("link", { name: /\/s\/acme-status/u })).not.toExist(),
 			expectView(role("button", { name: "Get break-glass token" })).toExist(),
 		)
@@ -2456,8 +2669,7 @@ describe("live screen", () => {
 			expectView(text(/Visitors can read it now/u)).not.toExist(),
 			expectView(selector("#status-page-public-url")).not.toExist(),
 			expectView(role("link", { name: /\/s\/acme-status/u })).not.toExist(),
-			expectAll(all.role("link", { name: "Open page" })).toHaveCount(2),
-			expectView(role("link", { name: "Open page" })).toHaveAttr(
+			expectView(role("link", { name: "Open dev preview" })).toHaveAttr(
 				"href",
 				`/status-pages/${PUBLIC_ID}/view`,
 			),
@@ -2489,6 +2701,7 @@ describe("settings", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(APPEARANCE)),
+			pickersMounted(1),
 			expectView(text("Unsaved changes")).not.toExist(),
 			type(role("textbox", { name: "Accent" }), "teal"),
 			expectView(text("Unsaved changes")).toExist(),
@@ -2500,25 +2713,22 @@ describe("settings", () => {
 	test("a bad field in Basic settings blocks the save on Appearance too, and the bar names its section", () => {
 		const edited = pageUpdate(
 			loaded({ tab: "settings" }),
-			Message.ChangedSetting({ field: "termsUrl", value: "http://acme.example/terms" }),
+			Message.ChangedSetting({ field: "name", value: " " }),
 		).model
 		scene(
 			{ update: pageUpdate, view },
 			given({ ...edited, search: { view: "settings", section: "appearance" } }),
+			pickersMounted(1),
 			expectView(text("Fix the fields marked in Basic settings.")).toExist(),
 			expectView(role("button", { name: "Save" })).toBeDisabled(),
-		)
-		scene(
-			{ update: pageUpdate, view },
-			given({ ...edited, search: { view: "settings", section: "access" } }),
-			expectView(text("Fix the fields marked in Basic settings.")).toExist(),
 		)
 	})
 
 	test("a footer link must use https before the settings save", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ tab: "settings" })),
+			given(loaded({ tab: "settings", section: "appearance" })),
+			pickersMounted(1),
 			type(role("textbox", { name: "Terms of service URL" }), "http://acme.example/terms"),
 			expectView(text("Use an https URL.")).toExist(),
 			expectView(role("button", { name: "Save" })).toBeDisabled(),
@@ -2584,10 +2794,12 @@ describe("settings", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(APPEARANCE)),
+			pickersMounted(1),
 			expectView(role("textbox", { name: "Background" })).toBeDisabled(),
 			expectView(role("textbox", { name: "Text" })).toBeDisabled(),
 			expectView(role("textbox", { name: "Accent" })).toBeEnabled(),
 			inside(role("group", { name: "Mode" }), click(role("button", { name: "Dark" }))),
+			pickersMounted(4),
 			expectView(role("textbox", { name: "Background" })).toBeEnabled(),
 		)
 	})
@@ -2596,7 +2808,9 @@ describe("settings", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(APPEARANCE)),
+			pickersMounted(1),
 			inside(role("group", { name: "Mode" }), click(role("button", { name: "Light" }))),
+			pickersMounted(4),
 			type(role("textbox", { name: "Text" }), "#757575"),
 			expectView(
 				text("Text on the background has a contrast of 4.49:1; it needs at least 4.5:1."),
@@ -2610,34 +2824,112 @@ describe("settings", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(APPEARANCE)),
-			expectView(selector('iframe[title="Acme Status with these settings"]')).toHaveAttr(
-				"sandbox",
-				"allow-scripts",
-			),
+			pickersMounted(1),
+			expectView(
+				selector('maple-preview-frame[frame-title="Acme Status with these settings"]'),
+			).toHaveAttr("sandbox", "allow-scripts"),
 			tap(({ html }) => {
 				expect(theme(html)).toContain("Component 1")
 				expect(theme(html)).toContain("color-scheme:light;")
 			}),
 			inside(role("group", { name: "Mode" }), click(role("button", { name: "Dark" }))),
+			pickersMounted(4),
 			tap(({ html }) => expect(theme(html)).toContain("color-scheme:dark;")),
 			type(role("textbox", { name: "Accent" }), "#ff0066"),
 			tap(({ html }) => expect(theme(html)).toContain("--link:#ff0066")),
 		)
 	})
 
-	test("the branding links preview at once: the logo in the header, the favicon in the tab", () => {
-		const header = srcdocOf("Acme Status with these settings")
+	test("an uploaded favicon is read into the form; a file the API would refuse is not", () => {
+		const page = loaded(APPEARANCE)
+		const pdf = pageUpdate(
+			page,
+			Message.PickedBrandingImage({
+				field: "faviconUrl",
+				files: [new File(["%PDF"], "icon.pdf", { type: "application/pdf" })],
+			}),
+		)
+		expect(pdf.commands ?? []).toEqual([])
+		expect(pdf.outMessage).toMatchObject({ _tag: "RequestedToast", title: "Couldn't use that image" })
+
+		const png = pageUpdate(
+			page,
+			Message.PickedBrandingImage({
+				field: "faviconUrl",
+				files: [new File(["png"], "icon.png", { type: "image/png" })],
+			}),
+		)
+		expect(names(png.commands)).toEqual(["ReadStatusPageBrandingImage"])
+		const done = Message.CompletedReadBrandingImage({
+			field: "faviconUrl",
+			read: png.model.brandingRead,
+			dataUrl: "data:image/png;base64,cG5n",
+		})
+		const read = pageUpdate(png.model, done).model
+		expect(read.settingsEdits?.faviconUrl).toBe("data:image/png;base64,cG5n")
+		// Removed while the file was still being read: the late read does not bring it back.
+		const removed = pageUpdate(
+			png.model,
+			Message.ClickedRemoveBrandingImage({ field: "faviconUrl" }),
+		).model
+		expect(pageUpdate(removed, done).model.settingsEdits?.faviconUrl).toBe("")
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded(APPEARANCE)),
-			type(role("textbox", { name: "Logo URL" }), "https://acme.example/logo.svg"),
-			type(role("textbox", { name: "Dark mode logo URL" }), "https://acme.example/logo-dark.svg"),
-			type(role("textbox", { name: "Favicon URL" }), "https://acme.example/favicon.png"),
+			given(read),
+			pickersMounted(1),
+			expectView(role("button", { name: "Change favicon" })).toExist(),
+			expectView(role("button", { name: "Save" })).toBeEnabled(),
+		)
+	})
+
+	test("an image is added from its dialog: a link applies on Use link, a bad one waits", () => {
+		const opened = pageUpdate(
+			loaded(APPEARANCE),
+			Message.ClickedEditBrandingImage({ field: "logoUrl" }),
+		).model
+		expect(opened.brandingDialog.isOpen).toBe(true)
+		scene(
+			{ update: pageUpdate, view },
+			given(opened),
+			mounted,
+			pickersMounted(1),
+			expectView(role("dialog", { name: "Logo" })).toExist(),
+			expectView(role("button", { name: "Upload an image" })).toExist(),
+			type(role("textbox", { name: "Link to an image" }), "http://acme.example/logo.svg"),
+			expectView(text("Use an https URL.")).toExist(),
+			expectView(role("button", { name: "Use link" })).toBeDisabled(),
+		)
+		const typed = pageUpdate(
+			opened,
+			Message.ChangedBrandingLink({ value: " https://acme.example/logo.svg " }),
+		)
+		const applied = pageUpdate(typed.model, Message.SubmittedBrandingLink()).model
+		expect(applied.settingsEdits?.logoUrl).toBe("https://acme.example/logo.svg")
+		expect(applied.brandingDialog.isOpen).toBe(false)
+		// Reopened on a linked image, the dialog starts from its link.
+		expect(
+			pageUpdate(applied, Message.ClickedEditBrandingImage({ field: "logoUrl" })).model.brandingLink,
+		).toBe("https://acme.example/logo.svg")
+	})
+
+	test("the branding images preview at once: the logo in the header, the favicon in the tab", () => {
+		const header = srcdocOf("Acme Status with these settings")
+		const branded = steps(loaded(APPEARANCE), [
+			Message.ChangedSetting({ field: "logoUrl", value: "https://acme.example/logo.svg" }),
+			Message.ChangedSetting({ field: "logoDarkUrl", value: "https://acme.example/logo-dark.svg" }),
+			Message.ChangedSetting({ field: "faviconUrl", value: "https://acme.example/favicon.png" }),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(branded),
+			pickersMounted(1),
+			expectView(role("button", { name: "Change logo" })).toExist(),
 			tap(({ html }) => {
 				expect(header(html)).toContain(`<img src="https://acme.example/logo.svg"`)
 				expect(header(html)).toContain(`<link rel="icon" href="https://acme.example/favicon.png">`)
 			}),
 			inside(role("group", { name: "Mode" }), click(role("button", { name: "Dark" }))),
+			pickersMounted(4),
 			tap(({ html }) =>
 				expect(header(html)).toContain(`<img src="https://acme.example/logo-dark.svg"`),
 			),
@@ -2646,12 +2938,21 @@ describe("settings", () => {
 
 	test("the sections that shape the page show it beside them, as the unsaved settings render it", () => {
 		const page = srcdocOf("Globex with these settings")
+		const named = Arr.reduce(
+			[
+				Message.ChangedSetting({ field: "name", value: "Globex" }),
+				Message.ChangedSetting({ field: "description", value: "Live status of Globex" }),
+			],
+			loaded(BASIC),
+			(model, message) => pageUpdate(model, message).model,
+		)
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ tab: "settings" })),
-			type(role("textbox", { name: "Name" }), "Globex"),
+			given({ ...named, search: { view: "settings", section: "appearance" } }),
+			pickersMounted(1),
 			tap(({ html }) => {
-				expect(page(html)).toContain("Globex")
+				expect(page(html)).toContain("<title>Globex status</title>")
+				expect(page(html)).toContain("Live status of Globex")
 				expect(page(html)).toContain("Component 1")
 			}),
 		)
@@ -2662,43 +2963,48 @@ describe("settings", () => {
 		)
 	})
 
-	test("Basic settings show the page as typed in the preview beside them", () => {
-		const page = srcdocOf("Globex with these settings")
+	test("Basic settings show no preview, and say where visitors meet the name as typed", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ tab: "settings" })),
+			given(loaded(BASIC)),
+			expectView(role("region", { name: "Page preview" })).not.toExist(),
 			type(role("textbox", { name: "Name" }), "Globex"),
-			type(role("textbox", { name: "Description" }), "Live status of Globex"),
-			tap(({ html }) => {
-				expect(page(html)).toContain("<title>Globex status</title>")
-				expect(page(html)).toContain("Live status of Globex")
-			}),
+			expectView(text(/"Globex status"/u)).toExist(),
 		)
 	})
 
-	test("Advanced holds the page's behaviour: the powered-by credit leaves the page as toggled", () => {
+	test("Appearance holds the powered-by credit: it leaves the page as toggled", () => {
 		const page = srcdocOf("Acme Status with these settings")
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded(ADVANCED)),
+			given(loaded(APPEARANCE)),
+			pickersMounted(1),
 			click(role("switch", { name: "Show powered by Maple" })),
 			expectView(text("Unsaved changes")).toExist(),
 		)
-		const basic = { tab: "settings", section: "basic" } as const
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded(basic)),
+			given(loaded(APPEARANCE)),
+			pickersMounted(1),
 			tap(({ html }) => expect(page(html)).toContain("Powered by")),
 		)
 		scene(
 			{ update: pageUpdate, view },
-			given(pageUpdate(loaded(basic), Message.ToggledPoweredBy()).model),
+			given(pageUpdate(loaded(APPEARANCE), Message.ToggledPoweredBy()).model),
+			pickersMounted(1),
 			tap(({ html }) => expect(page(html)).not.toContain("Powered by")),
 		)
 	})
 
 	test("a password-protected page, saved or picked, previews the password form visitors meet", () => {
-		const gate = srcdocOf("The password form visitors see first")
+		const gate = (html: Parameters<ReturnType<typeof srcdocOf>>[0]): string =>
+			Option.getOrElse(
+				Option.flatMap(
+					find('iframe[title="The password form visitors see first"]')(html),
+					attr("srcdoc"),
+				),
+				() => "",
+			)
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ ...ACCESS, page: statusPage({ visibility: "password", has_password: true }) })),
@@ -2737,7 +3043,12 @@ describe("settings", () => {
 			loaded(APPEARANCE),
 			Message.ChangedSetting({ field: "faviconUrl", value: "http://acme.example/favicon.png" }),
 		).model
-		scene({ update: pageUpdate, view }, given(edited), expectView(text("Use an https URL.")).toExist())
+		scene(
+			{ update: pageUpdate, view },
+			given(edited),
+			pickersMounted(1),
+			expectView(text("Use an https URL.")).toExist(),
+		)
 		scene(
 			{ update: pageUpdate, view },
 			given({ ...edited, search: { view: "settings" } }),
@@ -2747,7 +3058,7 @@ describe("settings", () => {
 	})
 
 	test("the live page can show a state the page is not in, and says it is an example", () => {
-		const iframeOf = find("iframe")
+		const iframeOf = find("maple-preview-frame")
 		const srcdoc = (html: Parameters<typeof iframeOf>[0]): string =>
 			Option.getOrElse(Option.flatMap(iframeOf(html), attr("srcdoc")), () => "")
 		const note = text("Showing an example state. Visitors still see the live page.")
@@ -2782,27 +3093,28 @@ describe("settings", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded()),
-			expectView(selector("iframe")).toHaveAttr("data-width", "desktop"),
+			expectView(selector("maple-preview-frame")).toHaveAttr("data-width", "desktop"),
 			pick("Mobile"),
-			expectView(selector("iframe")).toHaveAttr("data-width", "mobile"),
+			expectView(selector("maple-preview-frame")).toHaveAttr("data-width", "mobile"),
 			expectView(text("Unsaved changes")).not.toExist(),
 			pick("Desktop"),
-			expectView(selector("iframe")).toHaveAttr("data-width", "desktop"),
+			expectView(selector("maple-preview-frame")).toHaveAttr("data-width", "desktop"),
 		)
 	})
 
 	test("each color has a picker that opens on the color in effect", () => {
-		const accent = selector('[aria-label="Accent color"]')
+		const accent = selector('[data-slot="color-picker-popup"][aria-label="Accent color"]')
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(APPEARANCE)),
+			pickersMounted(1),
 			// Empty field: the preset's own colour, the one the placeholder names.
-			expectView(accent).toHaveValue("#000000"),
+			expectView(accent).toHaveAttr("data-value", "#000000"),
 			type(role("textbox", { name: "Accent" }), "#FF0066"),
-			expectView(accent).toHaveValue("#ff0066"),
-			// A colour input cannot hold something that is not a hex colour.
+			expectView(accent).toHaveAttr("data-value", "#ff0066"),
+			// Not a hex colour yet: the picker stays on the preset's.
 			type(role("textbox", { name: "Accent" }), "teal"),
-			expectView(accent).not.toExist(),
+			expectView(accent).toHaveAttr("data-value", "#000000"),
 			// Auto takes the overrides from the preset, so they have nothing to pick.
 			expectView(selector('[aria-label="Background color"]')).not.toExist(),
 		)
@@ -2859,6 +3171,96 @@ describe("settings", () => {
 			expectView(role("textbox", { name: "Password" })).not.toExist(),
 			expectView(text("Unsaved changes")).not.toExist(),
 		)
+	})
+
+	test("a taken address shows on the field; the hint gives the full link", () => {
+		const typed = pageUpdate(
+			{ ...loaded(ACCESS), publicBaseUrl: "https://status-pages.maple.dev" },
+			Message.ChangedSetting({ field: "slug", value: "taken" }),
+		).model
+		const refused = pageUpdate(
+			pageUpdate(typed, Message.ClickedSaveSettings()).model,
+			Message.CompletedSaveSettings({
+				result: Result.fail(
+					toLoadFailure(new StatusPageSlugTakenError({ slug: "taken", message: "taken" })),
+				),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(refused),
+			expectView(text("That address is taken. Pick another.")).toExist(),
+			type(role("textbox", { name: "Address" }), "free-one"),
+			expectView(text("That address is taken. Pick another.")).not.toExist(),
+			expectView(
+				text(/Visitors read the page at https:\/\/status-pages\.maple\.dev\/s\/free-one\./u),
+			).toExist(),
+		)
+		// Once the address is free and the save goes through, the field no longer calls it taken.
+		const saved = pageUpdate(
+			pageUpdate(refused, Message.ClickedSaveSettings()).model,
+			Message.CompletedSaveSettings({ result: Result.succeed(statusPage({ slug: "taken" })) }),
+		).model
+		expect(saved.takenSlug).toBeNull()
+	})
+
+	test("the Address hint does not tell an internal or draft page's admin that visitors read it", () => {
+		for (const [page, expected] of [
+			[statusPage({ visibility: "internal" }), /internal pages are not served there/u],
+			[statusPage({ draft: true, published_at: null }), /once it is published/u],
+		] as const)
+			scene(
+				{ update: pageUpdate, view },
+				given({ ...loaded({ ...ACCESS, page }), publicBaseUrl: "https://status-pages.maple.dev" }),
+				expectView(text(expected)).toExist(),
+				expectView(text(/Visitors read the page at/u)).not.toExist(),
+			)
+	})
+
+	test("the Address hint links the saved address of a live page, not an unsaved or unserved one", () => {
+		const live = { ...loaded(ACCESS), publicBaseUrl: "https://status-pages.maple.dev" }
+		const url = "https://status-pages.maple.dev/s/acme-status"
+		scene(
+			{ update: pageUpdate, view },
+			given(live),
+			// The header's address line and the hint.
+			expectAll(all.role("link", { name: url })).toHaveCount(2),
+			type(role("textbox", { name: "Address" }), "not-saved"),
+			expectAll(all.role("link", { name: url })).toHaveCount(1),
+			expectView(role("link", { name: /\/s\/not-saved/u })).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given({ ...loaded({ ...ACCESS, page: statusPage({ visibility: "internal" }) }), publicBaseUrl: live.publicBaseUrl }),
+			expectView(role("link", { name: url })).not.toExist(),
+		)
+	})
+
+	test("with the fields and Who can view both edited, one bar saves the fields, then who can view", () => {
+		const edited = Arr.reduce(
+			[
+				Message.ChangedSetting({ field: "name", value: "Acme Cloud" }),
+				Message.PickedVisibility({ visibility: "internal" }),
+			],
+			loaded(ACCESS),
+			(model, message) => pageUpdate(model, message).model,
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(edited),
+			expectAll(all.role("button", { name: "Save" })).toHaveCount(1),
+		)
+		const saving = pageUpdate(edited, Message.ClickedSaveBasic())
+		expect(names(saving.commands)).toEqual(["SaveStatusPageSettings"])
+		const saved = pageUpdate(
+			saving.model,
+			Message.CompletedSaveSettings({ result: Result.succeed(statusPage({ name: "Acme Cloud" })) }),
+		)
+		expect(names(saved.commands)).toEqual(["SaveStatusPageVisibility"])
+		expect(saved.model.visibilityDraft).toBe("internal")
+		const discarded = pageUpdate(edited, Message.ClickedDiscardBasic()).model
+		expect(discarded.settingsEdits).toBeNull()
+		expect(discarded.visibilityDraft).toBeNull()
 	})
 
 	test("Save sends the password before the visibility, and the password never rides a command's args", () => {
@@ -3011,7 +3413,7 @@ describe("custom domain", () => {
 	test("adding a domain sends the hostname as typed, normalized, then shows the DNS records to add", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded(ADVANCED)),
+			given(loaded(BASIC)),
 			expectView(role("button", { name: "Add domain" })).toBeDisabled(),
 			type(role("textbox", { name: "Hostname" }), " Status.Acme.com "),
 			submit(role("form", { name: "Custom domain" })),
@@ -3029,11 +3431,57 @@ describe("custom domain", () => {
 		)
 	})
 
+	test("a new domain asks for the CNAME and the ownership record, both copyable", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ ...BASIC, customDomain: unprovenDomain })),
+			expectView(text("Waiting for DNS")).toExist(),
+			expectView(text(/Add both records below/u)).toExist(),
+			expectView(text(/remove the TXT record once the domain is active/u)).toExist(),
+			expectView(text("_maple-challenge.status.acme.com")).toExist(),
+			expectView(text("maple-status-page=1c2ba8fdad86fbbe9cdd85449b0e85c6")).toExist(),
+			expectView(text("Proves you own the domain (needed until it is active)")).toExist(),
+			expectView(role("button", { name: "Copy routing CNAME value" })).toExist(),
+			expectView(role("button", { name: "Copy ownership TXT name" })).toExist(),
+			expectView(role("button", { name: "Copy ownership TXT value" })).toExist(),
+		)
+		// Once the record is found, the hostname's own optional record keeps its label.
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ ...BASIC, customDomain: pendingDomain })),
+			expectView(text(/Add both records below/u)).not.toExist(),
+			expectView(text("Proves you own it (optional with the CNAME in place)")).toExist(),
+		)
+	})
+
+	test("a hostname held by a claim nobody proved shows the record that claims it", () => {
+		const message =
+			"status.acme.com is held by another status page that has not proved it owns the domain. To claim it, add a TXT record named _maple-challenge.status.acme.com with the value maple-status-page=1c2ba8fdad86fbbe9cdd85449b0e85c6 at your DNS provider, then add the domain again."
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(BASIC)),
+			type(role("textbox", { name: "Hostname" }), "status.acme.com"),
+			submit(role("form", { name: "Custom domain" })),
+			Command.resolve(
+				SetCustomDomain,
+				Message.CompletedSetCustomDomain({
+					result: Result.fail({
+						...toLoadFailure(new Error(message)),
+						message,
+						retryable: false,
+					}),
+				}),
+			),
+			expectView(text(message)).toExist(),
+			expectView(role("textbox", { name: "Hostname" })).toHaveAttr("aria-invalid", "true"),
+		)
+	})
+
 	test("an apex, an IP or a Maple hostname is refused before it is sent", () => {
 		for (const hostname of ["acme.com", "10.0.0.1", "status.maple.dev"])
 			scene(
 				{ update: pageUpdate, view },
-				given(loaded(ADVANCED)),
+				given(loaded(BASIC)),
 				type(role("textbox", { name: "Hostname" }), hostname),
 				expectView(role("button", { name: "Add domain" })).toBeDisabled(),
 				expectView(role("textbox", { name: "Hostname" })).toHaveAttr("aria-invalid", "true"),
@@ -3042,7 +3490,7 @@ describe("custom domain", () => {
 
 	test("Check now asks Cloudflare again and an active domain becomes the page's address", () => {
 		const checking = pageUpdate(
-			loaded({ ...ADVANCED, customDomain: pendingDomain }),
+			loaded({ ...BASIC, customDomain: pendingDomain }),
 			Message.ClickedCheckCustomDomain(),
 		)
 		expect(checking.commands).toMatchObject([
@@ -3073,7 +3521,7 @@ describe("custom domain", () => {
 			{ update: pageUpdate, view },
 			given(
 				loaded({
-					...ADVANCED,
+					...BASIC,
 					customDomain: customDomain({
 						hostname: "status.acme.com",
 						status: "failed",
@@ -3088,7 +3536,7 @@ describe("custom domain", () => {
 
 	test("removing the domain asks first, then removes it once", () => {
 		const asking = pageUpdate(
-			loaded({ ...ADVANCED, customDomain: pendingDomain }),
+			loaded({ ...BASIC, customDomain: pendingDomain }),
 			Message.ClickedRemoveCustomDomain(),
 		)
 		expect(asking.model.removeCustomDomainDialog.isOpen).toBe(true)
@@ -3125,12 +3573,16 @@ describe("custom domain", () => {
 	test("an internal page takes no custom domain, and has no break-glass token to issue", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ ...ADVANCED, page: statusPage({ visibility: "internal" }) })),
+			given(loaded({ ...BASIC, page: statusPage({ visibility: "internal" }) })),
 			expectView(role("textbox", { name: "Hostname" })).toBeDisabled(),
 			expectView(role("button", { name: "Add domain" })).toBeDisabled(),
 			expectView(
 				text("An internal page has no public address. Make it public or password-protected first."),
 			).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ ...ADVANCED, page: statusPage({ visibility: "internal" }) })),
 			expectView(role("region", { name: "Break-glass token" })).not.toExist(),
 			expectView(role("button", { name: "Issue token" })).not.toExist(),
 		)
@@ -3139,7 +3591,7 @@ describe("custom domain", () => {
 	test("members see the domain and its records with its controls locked", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ ...ADVANCED, grants: MEMBER, customDomain: pendingDomain })),
+			given(loaded({ ...BASIC, grants: MEMBER, customDomain: pendingDomain })),
 			expectView(text("_cf-custom-hostname.status.acme.com")).toExist(),
 			expectView(role("textbox", { name: "Hostname" })).toBeDisabled(),
 			expectView(role("button", { name: "Check now" })).toBeDisabled(),
@@ -3152,7 +3604,7 @@ describe("custom domain", () => {
 			{ update: pageUpdate, view },
 			given(
 				loaded({
-					...ADVANCED,
+					...BASIC,
 					customDomain: customDomain({ available: false, cname_target: null }),
 				}),
 			),
@@ -3747,13 +4199,18 @@ describe("the sheet, the previews and the reads they wait on", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(withPage),
-			expectView(selector('iframe[title="Acme Status with these settings"]')).not.toExist(),
+			expectView(
+				selector('maple-preview-frame[frame-title="Acme Status with these settings"]'),
+			).not.toExist(),
 			expectView(role("region", { name: "Page preview" })).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ ...APPEARANCE, monitorsFail: true })),
-			expectView(selector('iframe[title="Acme Status with these settings"]')).not.toExist(),
+			pickersMounted(1),
+			expectView(
+				selector('maple-preview-frame[frame-title="Acme Status with these settings"]'),
+			).not.toExist(),
 			expectView(text("No preview: the page's components didn't load.")).toExist(),
 		)
 	})
@@ -3835,9 +4292,9 @@ describe("the sheet, the previews and the reads they wait on", () => {
 		expect(maintenanceDurationMs({ ...done, updates: [] })).toBe(60 * 60_000)
 	})
 
-	test("a failed custom domain read can be retried, and Access does not offer Internal until it is known", () => {
+	test("a failed custom domain read can be retried, and Who can view does not offer Internal until it is known", () => {
 		const failed = {
-			...loaded(ADVANCED),
+			...loaded(BASIC),
 			customDomain: {
 				key: "custom-domain",
 				data: AsyncData.Failure({ error: toLoadFailure(new Error("unreachable")) }),
@@ -3851,9 +4308,9 @@ describe("the sheet, the previews and the reads they wait on", () => {
 		)
 		scene(
 			{ update: pageUpdate, view },
-			given({ ...failed, search: { view: "settings", section: "access" } }),
+			given({ ...failed, search: { view: "settings", section: "basic" } }),
 			expectView(role("radio", { name: "Internal" })).toBeDisabled(),
-			expectView(text("Couldn't check for a custom domain. Try again under Advanced.")).toExist(),
+			expectView(text("Couldn't check for a custom domain. Try again above.")).toExist(),
 		)
 	})
 })

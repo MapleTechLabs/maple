@@ -4,7 +4,7 @@ import { spinnerStyles } from "./spinner.styles"
 import type { VariantProps } from "class-variance-authority"
 import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { LoaderIcon } from "./control-icons"
-import { iconNode } from "./icon"
+import { iconNode } from "./icon-node"
 
 export type ButtonOptions<Message> = VariantProps<typeof buttonVariants> &
 	Readonly<{

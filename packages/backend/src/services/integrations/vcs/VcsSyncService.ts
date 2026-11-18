@@ -1,5 +1,7 @@
 // BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
 import {
+	type AuditEventJob,
+	type AuditTrailPersistenceError,
 	type BranchEventJob,
 	type InstallationSyncJob,
 	isInstallationProcessable,
@@ -53,6 +55,7 @@ import { ANY_REPO_SYNC_STATUS, VcsRepository } from "./VcsRepository"
 import { VcsSyncQueue } from "./VcsSyncQueue"
 import { WorkflowEventSink } from "./WorkflowEventSink"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { AuditEventSink } from "./AuditEventSink"
 
 // Vendor-agnostic sync orchestrator. Decodes a queue message, resolves the
 // owning installation (→ orgId + provider auth), then dispatches by job kind:
@@ -69,6 +72,10 @@ export const BACKFILL_WINDOW_MS = 90 * 86_400_000
 export const MAX_BACKFILL_STALL_RETRIES = 10
 
 const decodeJob = Schema.decodeUnknownEffect(VcsSyncJob)
+
+/** An audit event for an installation not stored yet waits this many times, this long each. */
+const AUDIT_INSTALLATION_WAITS = 5
+const AUDIT_INSTALLATION_WAIT_SECONDS = 60
 
 /** CI job conclusions worth asking the provider why about. */
 const WORKFLOW_FAILED_CONCLUSIONS: ReadonlySet<string> = new Set(["failure", "timed_out", "startup_failure"])
@@ -95,6 +102,7 @@ type SyncError =
 	| VcsRateLimitedError
 	| VcsQueueError
 	| UnknownVcsProviderError
+	| AuditTrailPersistenceError
 
 export interface VcsSyncServiceApi {
 	readonly processMessage: (raw: unknown) => Effect.Effect<void, SyncError>
@@ -124,6 +132,10 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				Effect.map(Option.getOrUndefined),
 			)
 			const scanSink = yield* Effect.serviceOption(DependencyScanSink).pipe(
+				Effect.map(Option.getOrUndefined),
+			)
+			// Where provider audit events land; a root without it drops them.
+			const auditSink = yield* Effect.serviceOption(AuditEventSink).pipe(
 				Effect.map(Option.getOrUndefined),
 			)
 
@@ -1098,6 +1110,23 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				)
 			})
 
+			// Not behind `ensureProcessable`: an installation that was just suspended or removed is
+			// itself the event, and audit events need no synced data. A failed write fails the job,
+			// so the queue retries it; a retried event writes the same row.
+			const handleAuditEvent = Effect.fn("VcsSyncService.handleAuditEvent")(function* (
+				installation: VcsInstallation,
+				job: AuditEventJob,
+			) {
+				// An org that turned the audit log off for GitHub drops the event here.
+				const forwards = auditSink !== undefined && installation.auditLogEnabled
+				yield* Effect.annotateCurrentSpan({
+					"maple.audit.action": job.event.action,
+					"maple.audit.forwarded": forwards,
+				})
+				if (auditSink !== undefined && installation.auditLogEnabled)
+					yield* auditSink.onAuditEvent(installation.orgId, job.event)
+			})
+
 			const processMessage = Effect.fn("VcsSyncService.processMessage")(function* (raw: unknown) {
 				const jobOpt = yield* decodeJob(raw).pipe(
 					Effect.asSome,
@@ -1134,15 +1163,38 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					job.externalInstallationId,
 				)
 				if (Option.isNone(installationOpt)) {
+					// GitHub sends `installation.created` while the connect is still finishing, before
+					// the row exists. The audit event waits for it rather than being lost.
+					if (
+						job.kind === "audit-event" &&
+						(job.installationWaits ?? 0) < AUDIT_INSTALLATION_WAITS
+					) {
+						yield* queue.send(
+							{ ...job, installationWaits: (job.installationWaits ?? 0) + 1 },
+							{ delaySeconds: AUDIT_INSTALLATION_WAIT_SECONDS },
+						)
+						yield* Effect.annotateCurrentSpan({
+							"vcs.process.outcome": "requeued",
+							"vcs.process.reason": "installation_unknown",
+						})
+						return
+					}
 					yield* Effect.annotateCurrentSpan({
 						"vcs.process.outcome": "dropped",
 						"vcs.process.reason": "installation_unknown",
 					})
-					yield* Effect.logInfo("[VCS] Dropping VCS job for unknown installation").pipe(
+					// A lost audit event is a gap in the record: an error naming the delivery, so it can be
+					// redelivered from the app's Recent Deliveries.
+					yield* (job.kind === "audit-event" ? Effect.logError : Effect.logInfo)(
+						"[VCS] Dropping VCS job for unknown installation",
+					).pipe(
 						Effect.annotateLogs({
 							provider: job.provider,
 							externalInstallationId: job.externalInstallationId,
 							kind: job.kind,
+							...(job.kind === "audit-event"
+								? { deliveryId: job.event.providerEventId }
+								: undefined),
 						}),
 					)
 					return
@@ -1194,6 +1246,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					Match.discriminator("kind")("workflow-job", (job) =>
 						handleWorkflowJob(provider, installation, job),
 					),
+					Match.discriminator("kind")("audit-event", (job) => handleAuditEvent(installation, job)),
 					Match.exhaustive,
 				)
 
@@ -1246,6 +1299,25 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						Effect.asSome,
 						Effect.orElseSucceed(() => Option.none<VcsSyncJob>()),
 					)
+					// A GitHub delivery stays redeliverable from the app's Recent Deliveries for a few days:
+					// the log names it, so a lost audit event can be sent again.
+					if (Option.isSome(jobOpt) && jobOpt.value.kind === "audit-event") {
+						yield* Effect.annotateCurrentSpan({
+							"vcs.exhausted.outcome": "handled",
+							"vcs.exhausted.reason": "audit_event_dropped",
+						})
+						yield* Effect.logError(
+							"[VCS] Audit event exhausted retries and was not written",
+						).pipe(
+							Effect.annotateLogs({
+								provider: jobOpt.value.provider,
+								externalInstallationId: jobOpt.value.externalInstallationId,
+								action: jobOpt.value.event.action,
+								deliveryId: jobOpt.value.event.providerEventId,
+							}),
+						)
+						return
+					}
 					if (
 						Option.isNone(jobOpt) ||
 						(jobOpt.value.kind !== "sync-commits" && jobOpt.value.kind !== "installation-sync")

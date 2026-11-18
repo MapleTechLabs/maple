@@ -52,6 +52,7 @@ const GcpApi = Schema.Literals([
 	"IAM Credentials",
 	"Cloud Monitoring",
 	"Cloud Asset Inventory",
+	"BigQuery",
 ])
 
 export class GcpApiError extends Schema.TaggedError<GcpApiError>()("@maple/api/integrations/GcpApiError", {
@@ -110,6 +111,25 @@ const decodeErrorInfo = Schema.decodeUnknownOption(
 	}),
 )
 
+// BigQuery names why it refused a call in the older `error.errors[].reason` (`rateLimitExceeded`,
+// `quotaExceeded`, `billingNotEnabled`), on a 403 that otherwise reads like a missing role.
+const decodeLegacyReasons = Schema.decodeUnknownOption(
+	Schema.Struct({
+		error: Schema.Struct({ errors: Schema.Array(Schema.Struct({ reason: Schema.String })) }),
+	}),
+)
+
+const legacyReason = (body: unknown): string => {
+	const reasons = Arr.map(
+		Arr.flatMap(Option.toArray(decodeLegacyReasons(body)), (decoded) => decoded.error.errors),
+		(error) => error.reason,
+	)
+	if (Arr.contains(reasons, "rateLimitExceeded") || Arr.contains(reasons, "quotaExceeded")) {
+		return "RATE_LIMIT_EXCEEDED"
+	}
+	return Arr.contains(reasons, "billingNotEnabled") ? "BILLING_DISABLED" : ""
+}
+
 const decodeErrorMessage = Schema.decodeUnknownOption(
 	Schema.Struct({ error: Schema.Struct({ message: Schema.String }) }),
 )
@@ -120,6 +140,8 @@ const reasonFromMessage = (body: unknown): string => {
 	const message = Option.getOrUndefined(decodeErrorMessage(body))?.error.message
 	if (message === undefined) return ""
 	if (Str.includes("requires billing")(message)) return "BILLING_DISABLED"
+	// BigQuery refuses a query over `maximumBytesBilled` with a bare 400.
+	if (Str.includes("exceeded limit for bytes billed")(message)) return "BYTES_BILLED_LIMIT_EXCEEDED"
 	return Str.includes("has not been used")(message) || Str.includes("is disabled")(message)
 		? "SERVICE_DISABLED"
 		: ""
@@ -137,7 +159,8 @@ const errorInfoReason = (body: unknown): string =>
  */
 const googleDetail = (body: string) => {
 	const parsed = Option.getOrNull(decodeJsonBody(body))
-	return `${errorCode(parsed)}|${errorInfoReason(parsed)}|${reasonFromMessage(parsed)}`
+	const fromMessage = reasonFromMessage(parsed)
+	return `${errorCode(parsed)}|${errorInfoReason(parsed)}|${fromMessage === "" ? legacyReason(parsed) : fromMessage}`
 }
 
 /** A failed call as the poller sees it: Google's status, code and reason, never the body. */
@@ -158,7 +181,8 @@ const toGcpApiError =
 		const reason =
 			infoReason !== ""
 				? infoReason
-				: kind === "denied" && messageReason !== ""
+				: (kind === "denied" || messageReason === "BYTES_BILLED_LIMIT_EXCEEDED") &&
+					  messageReason !== ""
 					? messageReason
 					: undefined
 		return new GcpApiError({
@@ -173,7 +197,7 @@ const toGcpApiError =
  * One Google API. A failed GET is tried once more at once; a 429 is never waited out, since the
  * tick's call budget is better spent on other connectors.
  */
-const google = (
+export const google = (
 	httpClient: HttpClient.HttpClient,
 	api: GcpApiError["api"],
 	baseUrl: string,
@@ -281,7 +305,7 @@ export interface GcpReader {
 	readonly quotaProject: GcpProjectId
 }
 
-const asReader =
+export const asReader =
 	(reader: GcpReader): VendorHttp.VendorAuth =>
 	(request) =>
 		request.pipe(

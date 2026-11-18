@@ -6,6 +6,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { dashboardPage } from "../../page/kit/dashboard-page"
 import { listBody } from "../../page/errors/hub/view-list"
 import { toolbar } from "../../page/errors/hub/view-toolbar"
+import { filtersRail } from "../../page/errors/hub/view-filters"
 import type { Message as HubMessage } from "../../page/errors/hub/message"
 import type { Model as HubModel } from "../../page/errors/hub/model"
 import { eyebrow } from "@maple/views/ui/eyebrow"
@@ -124,6 +125,9 @@ const toolbarView = Submodel.defineView<HubModel, HubMessage, HubInputs>((hub, i
 	return toolbar(h, hub, count, "pb-0")
 })
 
+/** The hub's filter rail, as the page shows it. */
+const railView = Submodel.defineView<HubModel, HubMessage>((hub, h) => filtersRail(h, hub))
+
 /** The lab's width cap, shared by the pinned toolbar and the hub column. */
 const widthCapped = (h: HtmlBuilder<Message>, width: number | null, child: Html): Html =>
 	h.div(
@@ -161,6 +165,12 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
 					),
 				],
 			),
+			filters: h.submodel({
+				slotId: "errors-lab-filters",
+				model: model.hub,
+				view: railView,
+				toParentMessage: (message) => Message.GotHubMessage({ message }),
+			}),
 			sticky: widthCapped(
 				h,
 				model.width,

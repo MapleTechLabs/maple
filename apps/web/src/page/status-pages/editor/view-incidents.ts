@@ -7,7 +7,18 @@ import { Option, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
-import { emptyMessage } from "@maple/views/ui/empty"
+import { docsLink } from "@maple/views/ui/docs-link"
+import {
+	empty,
+	emptyDescription,
+	emptyFrameClass,
+	emptyHeader,
+	emptyMedia,
+	emptyMessage,
+	emptyTitle,
+} from "@maple/views/ui/empty"
+import { icon } from "@maple/views/ui/icon"
+import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import { panel } from "@maple/views/ui/panel"
 import { pressable } from "@maple/views/ui/pressable"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -24,17 +35,18 @@ import {
 } from "@maple/views/ui/table"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { typography } from "@maple/views/ui/typography"
+import { docsUrl } from "../../kit/docs"
 import { relativeTime } from "../../kit/relative-time"
 import { sectionHeading } from "../../kit/section-heading"
 import { IMPACT_LABEL, IMPACT_TONE, isOpenIncident } from "../shared/derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { gatedControl } from "../../kit/session-grants"
-import { componentsOf, incidentsOf } from "./reads"
+import { componentsOf, incidentsOf, statusReadsReady } from "./reads"
 import { type TimeInputs, windowLine } from "./view-panel"
 
 // The Incidents and Maintenance tabs: what is open or coming, then what is over. A row opens the
-// incident in the side sheet.
+// incident in the side sheet. A tab with nothing ever posted explains itself instead.
 
 type H = HtmlBuilder<Message>
 
@@ -156,8 +168,63 @@ const incidentTable = (
 const ofKind = (model: Model, kind: StatusPageIncidentKind) =>
 	Arr.filter(incidentsOf(model), (incident) => incident.kind === kind)
 
+/** Declare incident or Schedule maintenance, locked without the post grant. */
+export const postButton = (h: H, model: Model, kind: StatusPageIncidentKind): Html =>
+	gatedControl(h, model, "status_page_incidents:post", (isDisabled) =>
+		button(
+			h,
+			{
+				size: "sm",
+				isDisabled,
+				attributes: isDisabled ? [] : [h.OnClick(Message.ClickedNewIncident({ kind }))],
+			},
+			kind === "incident"
+				? [icon(h, "PlusIcon"), "Declare incident"]
+				: [icon(h, "CalendarIcon"), "Schedule maintenance"],
+		),
+	)
+
+/** The reads are in and nothing of this kind was ever posted: the tab shows its empty state. */
+export const isEmptyTab = (model: Model, kind: StatusPageIncidentKind): boolean =>
+	statusReadsReady(model) && ofKind(model, kind).length === 0
+
+const EMPTY_COPY = {
+	incident: {
+		icon: "CircleWarningIcon",
+		title: "No incidents yet",
+		description:
+			"An incident tells visitors something is broken: which components are affected, how badly, and what you are doing about it. Post updates until it is resolved; it then stays in the page's history. Under Settings, a linked monitor can open one for you when it goes down.",
+	},
+	maintenance: {
+		icon: "CalendarIcon",
+		title: "No maintenance yet",
+		description:
+			"Scheduled maintenance tells visitors ahead of time when components will be down or degraded for planned work. It shows as upcoming on the page, starts at its window's start and can complete on its own when the window ends.",
+	},
+} as const
+
+const emptyTab = (h: H, model: Model, kind: StatusPageIncidentKind): Html => {
+	const copy = EMPTY_COPY[kind]
+	return empty(
+		h,
+		[
+			emptyHeader(h, [
+				emptyMedia(h, { variant: "icon" }, [icon(h, copy.icon)]),
+				emptyTitle(h, [copy.title]),
+				emptyDescription(h, [copy.description]),
+			]),
+			emptyActions(h, [
+				postButton(h, model, kind),
+				docsLink(h, docsUrl("statusPages", "incidents-and-maintenance-notices")),
+			]),
+		],
+		emptyFrameClass("solid"),
+	)
+}
+
 export const incidentsTab = (h: H, model: Model, time: TimeInputs): Html => {
 	const incidents = ofKind(model, "incident")
+	if (incidents.length === 0) return emptyTab(h, model, "incident")
 	const components = (incident: V2StatusPageIncident) => [componentNames(model, incident)]
 	return vstack(h, { gap: "8" }, [
 		incidentTable(h, {
@@ -270,6 +337,7 @@ const completedBy = (incident: V2StatusPageIncident): string =>
 
 export const maintenanceTab = (h: H, model: Model, time: TimeInputs): Html => {
 	const maintenance = ofKind(model, "maintenance")
+	if (maintenance.length === 0) return emptyTab(h, model, "maintenance")
 	const components = (incident: V2StatusPageIncident) => [componentNames(model, incident)]
 	const window = (incident: V2StatusPageIncident) => windowLine(h, incident, time.timeZone) ?? ["Not set"]
 	const inProgress = Arr.filter(maintenance, (incident) => incident.status === "in_progress")

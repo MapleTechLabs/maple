@@ -19,6 +19,7 @@ import { COST_PROVIDERS, type CostProviderEntry } from "./providers"
 import { PLANETSCALE_INTEGRATION_HREF } from "./view-add-planetscale"
 import { AWS_INTEGRATION_HREF } from "./view-add-source"
 import { VERCEL_INTEGRATION_HREF } from "./view-add-vercel"
+import { GCP_INTEGRATION_HREF } from "./view-add-gcp"
 
 type H = HtmlBuilder<Message>
 
@@ -128,6 +129,8 @@ const actions = (
 			return [manage(VERCEL_INTEGRATION_HREF), remove]
 		case "planetscale":
 			return [manage(PLANETSCALE_INTEGRATION_HREF), remove]
+		case "gcp":
+			return [manage(GCP_INTEGRATION_HREF), remove]
 		case "aws":
 			return [manage(AWS_INTEGRATION_HREF)]
 	}

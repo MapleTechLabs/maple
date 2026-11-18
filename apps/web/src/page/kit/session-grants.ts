@@ -13,7 +13,7 @@ import { readGrants } from "../../data/session-tenant"
 export const SessionGrants = { orgId: Schema.String, grants: Schema.Array(Policy.PermissionName) }
 export type SessionGrants = Readonly<{ orgId: string; grants: ReadonlyArray<Policy.Permission> }>
 
-type Grants = Readonly<{ grants: ReadonlyArray<Policy.Permission> }>
+export type Grants = Readonly<{ grants: ReadonlyArray<Policy.Permission> }>
 
 /** A page's own grants read, tagged with the org it was asked for. */
 export const fetchSessionGrants = <const Name extends string, const Tag extends string>(

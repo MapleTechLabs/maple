@@ -98,6 +98,7 @@ const railContent = (h: H, model: Model): Html => {
 					isChecked: search.regressed === true,
 					onToggle: Message.ToggledFilterOption({ param: "regressed", name: "regressed" }),
 				}),
+				section(h, model, "Environment", "env", environments, search.env, { showCounts: false }),
 				section(h, model, "Service", "service", services, search.service, {
 					// The map covers the facet's services only: a selected unknown one has no swatch.
 					colorOf: (name) =>
@@ -105,7 +106,6 @@ const railContent = (h: H, model: Model): Html => {
 							? getServiceColor(name)
 							: undefined,
 				}),
-				section(h, model, "Environment", "env", environments, search.env, { showCounts: false }),
 				section(
 					h,
 					model,

@@ -15,6 +15,6 @@ export const page = definePage(
 		routeChanged,
 		contextChanged,
 		view,
-		breadcrumbs: () => [{ label: "Cost", isPageHeading: true }],
+		breadcrumbs: () => [{ label: "Cloud cost", isPageHeading: true }],
 	},
 )

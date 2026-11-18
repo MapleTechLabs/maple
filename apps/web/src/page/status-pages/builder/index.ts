@@ -2,6 +2,7 @@ import { definePage } from "../../contract"
 import { statusPagesHref } from "../shared/commands"
 import { Message } from "./message"
 import { Model } from "./model"
+import { subscriptions } from "./subscription"
 import { init, update } from "./update"
 import { view } from "./view"
 
@@ -14,6 +15,7 @@ export const page = definePage(
 		init,
 		update,
 		view,
+		subscriptions,
 		breadcrumbs: () => [
 			{ label: "Status pages", href: statusPagesHref() },
 			{ label: "New", isPageHeading: true },

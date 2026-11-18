@@ -1,6 +1,6 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
-import { colorInput } from "@maple/views/ui/color-input"
+import { colorPicker } from "@maple/views/ui/color-picker"
 import { field, fieldGroupLabel, type FieldState } from "@maple/views/ui/field"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
@@ -31,12 +31,14 @@ export const thresholds = (h: H, state: EditorState): Html =>
 		vstack(h, { gap: "1.5" }, [
 			...Arr.map(state.thresholds, (threshold, index) =>
 				hstack(h, { gap: "1.5" }, [
-					colorInput(h, {
+					colorPicker(h, {
+						id: `widget-editor-threshold-${index}-color`,
 						value: Str.startsWith("#")(threshold.color)
 							? threshold.color
 							: DEFAULT_THRESHOLD_COLOR,
 						label: "Threshold color",
 						onInput: (color) => Message.ChangedThresholdColor({ index, color }),
+						onMount: Message.CompletedMountColorPicker(),
 					}),
 					input(h, {
 						id: `widget-editor-threshold-${index}`,

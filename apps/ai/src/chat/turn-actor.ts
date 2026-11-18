@@ -83,14 +83,14 @@ export const withConnectorActor = Effect.fn("ChatTurnActor.withConnectorActor")(
  * The linked Maple user may not act in this org, or nobody can find out whether they may.
  *
  * Fail closed on purpose: a Clerk blip must not silently fall back to the connector identity,
- * which on an approval carries `org:admin`.
+ * which is a turn for nobody in particular and never one a change is applied as.
  */
 export class LinkedUserNotPermitted extends Schema.TaggedError<LinkedUserNotPermitted>()(
 	"@maple/ai/LinkedUserNotPermitted",
 	{
 		message: Schema.String,
-		/** Which of the two it was. They read the same to the person in the channel, not to an operator. */
-		reason: Schema.Literals(["not_a_member", "unavailable"]),
+		/** Which one it was. They read much the same to the person in the channel, not to an operator. */
+		reason: Schema.Literals(["not_a_member", "unavailable", "not_linked"]),
 		cause: Schema.optionalKey(Schema.Defect()),
 	},
 ) {}

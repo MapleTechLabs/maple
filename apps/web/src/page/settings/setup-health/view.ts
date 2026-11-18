@@ -249,7 +249,7 @@ const noTelemetry = (h: H): Html =>
 					]),
 				]),
 				emptyActions(h, [
-					linkButton(h, { variant: "outline", size: "sm", href: "/settings?tab=ingestion" }, [
+					linkButton(h, { variant: "outline", size: "sm", href: "/settings/ingestion" }, [
 						"Go to Ingestion",
 					]),
 					docsLink(h, "quickstart"),

@@ -1,7 +1,7 @@
 import {
 	searchConsoleSiteLabel,
 	type SearchConsoleIntegrationStatus,
-	type SearchConsoleSiteChoice,
+	SearchConsoleSiteChoice,
 	type SearchConsoleSiteStatus,
 } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
@@ -151,6 +151,30 @@ const unavailableNote = (h: H, siteUrls: ReadonlyArray<string>): Html =>
 		)}.`,
 	])
 
+/**
+ * What a viewer who cannot manage sees: the imported properties, from the status, or that there
+ * are none yet. Google's own list is a manager's read.
+ */
+const importedList = (
+	h: H,
+	status: SearchConsoleIntegrationStatus,
+	list: (sites: ReadonlyArray<SearchConsoleSiteChoice>) => Html,
+): Html => {
+	const imported = Arr.map(
+		Arr.filter(status.sites, (site) => site.enabled),
+		(site) =>
+			new SearchConsoleSiteChoice({
+				siteUrl: site.siteUrl,
+				permissionLevel: site.permissionLevel,
+				selectable: true,
+				enabled: true,
+			}),
+	)
+	return imported.length === 0
+		? typography(h, { size: "xs", tone: "muted", as: "p" }, ["No properties are imported yet."])
+		: list(imported)
+}
+
 const sitePicker = (h: H, model: Model, status: SearchConsoleIntegrationStatus): Html => {
 	const card = model.searchConsoleCard
 	const selection = selectionOf(card, status)
@@ -178,19 +202,21 @@ const sitePicker = (h: H, model: Model, status: SearchConsoleIntegrationStatus):
 		])
 	return vstack(h, { gap: "3" }, [
 		heading(h, { level: 4, variant: "subsection" }, ["Properties to import"]),
-		AsyncData.match(card.sites.data, {
-			onIdle: () => skeletonBlock(h, { height: "32" }),
-			onLoading: () => skeletonBlock(h, { height: "32" }),
-			onFailure: (failure) =>
-				errorState(h, {
-					failure,
-					title: "Couldn't load your Search Console properties",
-					onRetry: toHub(SearchConsoleMessage.ClickedRetrySites()),
-				}),
-			onStale: ({ data }) => list(data.sites),
-			onRefreshing: (data) => list(data.sites),
-			onSuccess: (data) => list(data.sites),
-		}),
+		canManage(model)
+			? AsyncData.match(card.sites.data, {
+					onIdle: () => skeletonBlock(h, { height: "32" }),
+					onLoading: () => skeletonBlock(h, { height: "32" }),
+					onFailure: (failure) =>
+						errorState(h, {
+							failure,
+							title: "Couldn't load your Search Console properties",
+							onRetry: toHub(SearchConsoleMessage.ClickedRetrySites()),
+						}),
+					onStale: ({ data }) => list(data.sites),
+					onRefreshing: (data) => list(data.sites),
+					onSuccess: (data) => list(data.sites),
+				})
+			: importedList(h, status, list),
 		hstack(h, { gap: "2" }, [
 			gatedControl(h, model, "integrations:manage", (isLocked) =>
 				button(

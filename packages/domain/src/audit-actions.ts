@@ -111,15 +111,22 @@ export const AuditResources = {
 		prefix: PublicIdPrefixes.oncallOverride,
 		verbs: ["created", "deleted"],
 	},
-	/** One connected Google Cloud scope; the scope and what it collects are in `metadata`. */
+	/**
+	 * One connected Google Cloud scope; the scope and what it collects are in `metadata`.
+	 * `push_secret_read` is a render of its scripts, which carry the push secret; the secret is never recorded.
+	 */
 	gcp_connector: {
 		prefix: PublicIdPrefixes.gcpConnector,
-		verbs: ["created", "updated", "removal_confirmed", "deleted"],
+		verbs: ["created", "updated", "removal_confirmed", "deleted", "push_secret_read"],
 	},
-	/** One connected AWS account; the account and its modules are in `metadata`. */
+	/**
+	 * One connected AWS account; the account and its modules are in `metadata`. `stream_key_read` and
+	 * `events_key_read` are a setup that carried the metric stream's access key or the key its
+	 * findings arrive with; the keys themselves are never recorded.
+	 */
 	aws_connection: {
 		prefix: PublicIdPrefixes.awsConnection,
-		verbs: ["created", "updated", "deleted"],
+		verbs: ["created", "updated", "deleted", "stream_key_read", "events_key_read", "events_key_rotated"],
 	},
 	/** Anything that sends data; a token source's secret is never in `changes`. */
 	source: {
@@ -144,7 +151,8 @@ export const AuditResources = {
 	onboarding_reward: { verbs: ["claimed"] },
 	/**
 	 * Org-singleton connections. `*_started` is the admin action Maple sees; the
-	 * OAuth round trip completes at the provider's callback.
+	 * OAuth round trip completes at the provider's callback. `webhook_secret_read` is a
+	 * read of the webhook configuration that returned its signing secret, never the secret.
 	 */
 	planetscale_integration: {
 		verbs: [
@@ -153,12 +161,20 @@ export const AuditResources = {
 			"metrics_token_set",
 			"features_updated",
 			"disconnected",
+			"webhook_secret_read",
 		],
 	},
 	/** Org-singleton connection; per-account zone choices ride in `metadata`. */
 	cloudflare_integration: { verbs: ["zones_updated", "features_updated"] },
 	/** Org-singleton connection; the switches it saved ride in `metadata`. */
 	linear_integration: { verbs: ["features_updated"] },
+	/**
+	 * Pull request review setup: a repository switched on or off, its rules, and the organization's
+	 * defaults. `metadata` names the repository and says whether automatic approval is on.
+	 */
+	code_review: {
+		verbs: ["repository_enabled", "repository_disabled", "repository_rules_updated", "settings_updated"],
+	},
 	/** A provider key the org's spend is read with, one per provider; the key is never in `changes`. */
 	cost_source_key: { verbs: ["updated", "deleted"] },
 	/** A cost source that reads through a connection the org already has; which one is in `metadata`. */
@@ -281,6 +297,7 @@ export const AuditResourceLabels = {
 	planetscale_integration: "PlanetScale integration",
 	cloudflare_integration: "Cloudflare integration",
 	linear_integration: "Linear integration",
+	code_review: "Code review",
 	cost_source_key: "Cost source key",
 	cost_source: "Cost source",
 	member: "Member",
@@ -404,9 +421,13 @@ export const AuditActionLabels = {
 	"gcp_connector.updated": "Updated Google Cloud connector",
 	"gcp_connector.removal_confirmed": "Confirmed Google Cloud resources removed",
 	"gcp_connector.deleted": "Removed Google Cloud connector",
+	"gcp_connector.push_secret_read": "Read Google Cloud push secret",
 	"aws_connection.created": "Connected AWS",
 	"aws_connection.updated": "Updated AWS connection",
 	"aws_connection.deleted": "Removed AWS connection",
+	"aws_connection.stream_key_read": "Read AWS stream access key",
+	"aws_connection.events_key_read": "Read AWS events key",
+	"aws_connection.events_key_rotated": "Rotated AWS events key",
 	"ingest_key.rolled": "Rolled ingest key",
 	"source.created": "Created source",
 	"source.updated": "Updated source",
@@ -425,9 +446,14 @@ export const AuditActionLabels = {
 	"planetscale_integration.metrics_token_set": "Set PlanetScale metrics token",
 	"planetscale_integration.features_updated": "Changed what PlanetScale collects",
 	"planetscale_integration.disconnected": "Disconnected PlanetScale",
+	"planetscale_integration.webhook_secret_read": "Read PlanetScale webhook secret",
 	"cloudflare_integration.zones_updated": "Updated Cloudflare zones",
 	"cloudflare_integration.features_updated": "Changed what Cloudflare collects",
 	"linear_integration.features_updated": "Changed what Maple does in Linear",
+	"code_review.repository_enabled": "Turned on code review for a repository",
+	"code_review.repository_disabled": "Turned off code review for a repository",
+	"code_review.repository_rules_updated": "Changed a repository's code review rules",
+	"code_review.settings_updated": "Changed the organization's code review settings",
 	"cost_source_key.updated": "Updated cost source key",
 	"cost_source_key.deleted": "Removed cost source key",
 	"cost_source.created": "Added cost source",
@@ -499,7 +525,15 @@ const isAuditResourceType = (type: string): type is AuditResourceType =>
  * and API requests. A heavy agent user writes hundreds of these a day. The
  * server filters by them and the web mutes them, so both read this one list.
  */
-export const AUDIT_ACCESS_ACTION_SUFFIXES = [".read", ".called", ".sql_executed", ".request"] as const
+export const AUDIT_ACCESS_ACTION_SUFFIXES = [
+	".read",
+	".called",
+	".sql_executed",
+	".request",
+	// Reading a setup or a configuration that carries a key or a secret changes nothing.
+	"_key_read",
+	"_secret_read",
+] as const
 
 /** True for an access action (see {@link AUDIT_ACCESS_ACTION_SUFFIXES}). */
 export const isAuditAccessAction = (action: string): boolean =>
@@ -529,7 +563,7 @@ export const mapleAgentLabel = (agent: string): string | null => MAPLE_AGENT_LAB
 
 export const auditToolCallerLabel = (surface: string | null, agent: string | null): string => {
 	if (surface === null || surface === "mcp") return "MCP tool"
-	if (surface === "bot") return "Maple bot"
+	if (surface === "bot" || surface === "bot_anonymous") return "Maple bot"
 	return (agent !== null ? mapleAgentLabel(agent) : null) ?? "Maple agent"
 }
 
@@ -537,6 +571,7 @@ const SURFACE_LABELS = new Map<string, string>([
 	["mcp", "MCP client"],
 	["chat", "Maple agent"],
 	["bot", "Maple bot"],
+	["bot_anonymous", "Maple bot"],
 	["workflow", "Maple agent"],
 	["rpc", "Maple internal"],
 ])

@@ -39,7 +39,6 @@ const member: ClerkOrganization = {
 	isRegionOpen: false,
 	flags: {
 		aiAutoTriage: false,
-		cloudCost: false,
 		cloudSecurity: false,
 		dataSources: false,
 		productAnalytics: false,

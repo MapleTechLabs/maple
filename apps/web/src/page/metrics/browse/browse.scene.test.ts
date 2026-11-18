@@ -203,10 +203,7 @@ describe("metrics explorer", () => {
 			given(withPresence(loaded([]), "absent")),
 			themeResolved(),
 			expectView(text("No metrics yet")).toExist(),
-			expectView(role("link", { name: "Set up metrics" })).toHaveAttr(
-				"href",
-				"/settings?tab=ingestion",
-			),
+			expectView(role("link", { name: "Set up metrics" })).toHaveAttr("href", "/settings/ingestion"),
 		)
 	})
 })

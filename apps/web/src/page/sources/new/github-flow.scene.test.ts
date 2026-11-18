@@ -73,6 +73,7 @@ const status = (overrides: Record<string, unknown> = {}) =>
 		accountType: "organization",
 		repositorySelection: "selected",
 		ciTracesEnabled: true,
+		auditLogEnabled: true,
 		repositoryDiscovery: null,
 		repositories: [repo("1", "web", "ready"), repo("2", "api", "backfilling")],
 		...overrides,

@@ -1,19 +1,30 @@
-import { Effect, Array as Arr, Record as Rec } from "effect"
+import { Effect, Array as Arr, Option, Record as Rec, Redacted } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import {
 	ChatInstallFailed,
+	ChatRevokeFailed,
 	ChatSettingsRejected,
 	requireConfig,
 	type ChatConnectorInstall,
 	type ChatInstallCallback,
 	type ChatInstallResult,
+	type ChatInstallRevocation,
 	type ChatInstallStart,
 	type ChatWorkspaceSettings,
 } from "../../install"
-import { API_HOST, AUTHORIZE_URL, BOT_SCOPES, CLIENT_ID_CONFIG, CLIENT_SECRET_CONFIG, TOKEN_URL } from "./api"
-import { encodeSlackCredentials } from "./credentials"
+import { WORKSPACE_CREDENTIALS } from "../../outbound"
+import {
+	API_HOST,
+	AUTH_REVOKE_URL,
+	AUTHORIZE_URL,
+	BOT_SCOPES,
+	CLIENT_ID_CONFIG,
+	CLIENT_SECRET_CONFIG,
+	TOKEN_URL,
+} from "./api"
+import { decodeSlackCredentials, encodeSlackCredentials } from "./credentials"
 import { SLACK_CONNECTOR_ID } from "./id"
-import { decodeTokenResponse } from "./payloads"
+import { decodeApiResult, decodeTokenResponse } from "./payloads"
 
 /**
  * The consent screen. `scope` is the BOT scopes, comma separated; `user_scope` is deliberately
@@ -131,6 +142,58 @@ const complete = Effect.fnUntraced(function* (input: ChatInstallCallback) {
 	} satisfies ChatInstallResult
 })
 
+const revokeFailed = (message: string) => new ChatRevokeFailed({ connector: SLACK_CONNECTOR_ID, message })
+
+/**
+ * `ok: false` answers that say the token is already dead. Not `invalid_auth`: Slack also answers
+ * it for a mangled token or a disallowed IP, where the real token is still live.
+ */
+const ALREADY_REVOKED: ReadonlySet<string> = new Set(["token_revoked", "account_inactive"])
+
+/** `auth.revoke` with the workspace's own bot token, as one client span. The token rides the header only. */
+const revokeToken = Effect.fn("Slack.request", { kind: "client" })(function* (token: Redacted.Redacted) {
+	yield* Effect.annotateCurrentSpan({
+		"peer.service": "slack",
+		"http.request.method": "POST",
+		"server.address": API_HOST,
+		"url.template": "/api/auth.revoke",
+	})
+	const httpClient = yield* HttpClient.HttpClient
+	const response = yield* httpClient
+		.execute(
+			HttpClientRequest.post(AUTH_REVOKE_URL, {
+				headers: { accept: "application/json", authorization: `Bearer ${Redacted.value(token)}` },
+			}),
+		)
+		// The reason only: the request carries the token.
+		.pipe(Effect.mapError((error) => revokeFailed(`Slack token revoke failed: ${error.reason._tag}`)))
+	yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+	if (response.status < 200 || response.status >= 300) {
+		return yield* revokeFailed(`Slack token revoke failed with HTTP ${response.status}`)
+	}
+	const json = yield* response.json.pipe(
+		Effect.mapError(() => revokeFailed("Slack returned a non-JSON revoke response")),
+	)
+	const result = yield* decodeApiResult(json).pipe(
+		Effect.mapError(() => revokeFailed("Slack returned an unexpected revoke response")),
+	)
+	// Slack reports a refusal as HTTP 200 with `ok: false`, so the status said nothing.
+	if (result.ok) return
+	const error = result.error ?? "unknown"
+	yield* Effect.annotateCurrentSpan({ "error.type": error })
+	if (!ALREADY_REVOKED.has(error)) return yield* revokeFailed(`Slack refused the token revoke: ${error}`)
+})
+
+/**
+ * Revoke the bot token the install minted. A workspace with no readable token fails before the
+ * span opens: that is Maple's state, and a call that was never made is no edge on the service map.
+ */
+const revoke = (input: ChatInstallRevocation) =>
+	Option.match(decodeSlackCredentials(input.credentials.get(WORKSPACE_CREDENTIALS)), {
+		onNone: () => Effect.fail(revokeFailed("This Slack workspace holds no bot token to revoke")),
+		onSome: (credentials) => revokeToken(Redacted.make(credentials.bot_token)),
+	})
+
 /**
  * No settings. Slack's interaction payload carries no membership facts, so there is no approver
  * role to check against; an empty record is stored and a posted key is reported rather than
@@ -156,5 +219,6 @@ export const slackInstall: ChatConnectorInstall = {
 	],
 	authorizeUrl,
 	complete,
+	revoke,
 	decodeSettings,
 }

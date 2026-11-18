@@ -7,9 +7,13 @@ import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../../contract"
 import { NOW, ORG } from "../../kit/alert-test-rows"
-import { newStatusPageHref, statusPageHref } from "../shared/commands"
-import type { StatusPageSummary } from "../shared/derive"
-import { pageId, statusPage } from "../shared/test-pages"
+import { makeComponent, makeSnapshot } from "@maple/status-page/fixtures"
+import type { V2StatusPage, V2StatusPageIncident } from "@maple/domain/http/v2"
+import { docsUrl } from "../../kit/docs"
+import { newStatusPageHref, statusPageHref, statusPageViewHref } from "../shared/commands"
+import { PageOutMessage } from "../../contract"
+import { type StatusPageSummary, summarizePage } from "../shared/derive"
+import { incident, pageId, statusPage } from "../shared/test-pages"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
@@ -37,6 +41,12 @@ const entered = (canEdit = true): Model => {
 	)
 }
 
+const summaryOf = (
+	page: V2StatusPage,
+	snapshot: Parameters<typeof makeSnapshot>[0] = {},
+	incidents: ReadonlyArray<V2StatusPageIncident> = [],
+): StatusPageSummary => summarizePage({ page, snapshot: makeSnapshot(snapshot), incidents })
+
 const withPages = (pages: ReadonlyArray<StatusPageSummary>, canEdit = true): Model => {
 	const model = entered(canEdit)
 	return listUpdate(
@@ -61,6 +71,10 @@ describe("status pages list", () => {
 				"href",
 				newStatusPageHref(),
 			),
+			expectView(role("link", { name: "How status pages work" })).toHaveAttr(
+				"href",
+				docsUrl("statusPages"),
+			),
 		)
 		scene(
 			{ update: listUpdate, view },
@@ -73,19 +87,13 @@ describe("status pages list", () => {
 		)
 	})
 
-	test("each row says who can view the page; an internal one has no public address", () => {
-		const row = (page: ReturnType<typeof statusPage>): StatusPageSummary => ({
-			page,
-			overall: "operational",
-			componentCount: 1,
-			openIncidents: 0,
-		})
+	test("each card says who can view the page; an internal one has no public address", () => {
 		scene(
 			{ update: listUpdate, view },
 			given(
 				withPages([
-					row(statusPage({ visibility: "password", has_password: true })),
-					row(statusPage({ id: pageId(2), slug: "acme-internal", visibility: "internal" })),
+					summaryOf(statusPage({ visibility: "password", has_password: true })),
+					summaryOf(statusPage({ id: pageId(2), slug: "acme-internal", visibility: "internal" })),
 				]),
 			),
 			expectView(text("Password")).toExist(),
@@ -95,44 +103,78 @@ describe("status pages list", () => {
 		)
 	})
 
-	test("a row shows the name, address, status, open incidents and publish state; drafts say so", () => {
-		const live: StatusPageSummary = {
-			page: statusPage({ published_at: null }),
-			overall: "partial_outage",
-			componentCount: 3,
-			openIncidents: 2,
-		}
-		const draft: StatusPageSummary = {
-			page: statusPage({ name: "Internal", slug: "acme-internal", draft: true, published_at: null }),
-			overall: "operational",
-			componentCount: 1,
-			openIncidents: 0,
-		}
+	test("a card shows the page's status, each component's status and uptime, and links into the editor", () => {
+		const page = statusPage({ published_at: null })
+		const live = summaryOf(page, {
+			components: [
+				makeComponent(0, { name: "API", group: "Platform", status: "partial_outage" }),
+				makeComponent(1, { name: "Docs", monitored: false, days: [] }),
+			],
+		})
 		scene(
 			{ update: listUpdate, view },
-			given(withPages([live, draft])),
-			expectView(role("link", { name: "Acme Status" })).toHaveAttr(
-				"href",
-				statusPageHref(live.page.id),
-			),
+			given(withPages([live, summaryOf(statusPage({ id: pageId(2), name: "Internal", draft: true }))])),
+			expectView(role("link", { name: "Acme Status" })).toHaveAttr("href", statusPageHref(page.id)),
 			expectView(text("/s/acme-status")).toExist(),
 			expectView(text("Partial outage")).toExist(),
-			expectView(text("2")).toExist(),
+			expectView(text("Platform")).toExist(),
+			expectView(role("img", { name: "API: 100.00% over the last 90 days" })).toExist(),
+			expectView(text("No monitor: set by hand")).toExist(),
 			expectView(text("Not published")).toExist(),
 			expectView(text("Draft")).toExist(),
 			expectView(role("link", { name: "New status page" })).toHaveAttr("href", newStatusPageHref()),
+			expectView(role("button", { name: "Actions for Acme Status" })).toExist(),
+		)
+	})
+
+	test("open incidents and the next maintenance link to their tabs; a draft says so", () => {
+		const at = (hours: number) => new Date(NOW + hours * 3_600_000).toISOString()
+		const summary = summaryOf(statusPage(), {}, [
+			incident(1, { title: "Elevated API errors" }),
+			incident(2, { title: "Slow search", published: false }),
+			incident(3, {
+				kind: "maintenance",
+				status: "scheduled",
+				title: "Database upgrade",
+				scheduled_start: at(24),
+				scheduled_end: at(26),
+				published: false,
+			}),
+		])
+		scene(
+			{ update: listUpdate, view },
+			given(withPages([summary])),
+			expectView(role("link", { name: "Elevated API errors" })).toHaveAttr(
+				"href",
+				statusPageHref(summary.page.id, "incidents"),
+			),
+			expectView(text("+1 more incident")).toExist(),
+			expectView(text("Next maintenance")).toExist(),
+			expectView(role("link", { name: "Database upgrade" })).toHaveAttr(
+				"href",
+				statusPageHref(summary.page.id, "maintenance"),
+			),
+			expectView(text("Draft")).toExist(),
+		)
+	})
+
+	test("a page without components points to where they are added", () => {
+		const summary = summaryOf(statusPage(), { components: [] })
+		scene(
+			{ update: listUpdate, view },
+			given(withPages([summary])),
+			expectView(text("No components yet")).toExist(),
+			expectView(role("link", { name: "Add components" })).toHaveAttr(
+				"href",
+				statusPageHref(summary.page.id, "settings", "monitors"),
+			),
 		)
 	})
 
 	test("members get no New status page button", () => {
 		scene(
 			{ update: listUpdate, view },
-			given(
-				withPages(
-					[{ page: statusPage(), overall: "operational", componentCount: 1, openIncidents: 0 }],
-					false,
-				),
-			),
+			given(withPages([summaryOf(statusPage())], false)),
 			expectView(role("link", { name: "New status page" })).not.toExist(),
 		)
 	})
@@ -180,5 +222,71 @@ describe("status pages list", () => {
 			expectView(role("button", { name: "Try again" })).not.toExist(),
 			expectView(role("link", { name: "Create a status page" })).not.toExist(),
 		)
+	})
+})
+
+describe("status page card menu", () => {
+	const pick = (model: Model, id: ReturnType<typeof pageId>, value: string) =>
+		listUpdate(
+			model,
+			Message.GotRowMenuMessage({
+				pageId: id,
+				message: { _tag: "ClickedItem", index: 0, item: { kind: "Item", value } },
+			}),
+		)
+
+	test("Edit opens the editor", () => {
+		const model = withPages([summaryOf(statusPage())])
+		expect(pick(model, pageId(1), "edit").outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: statusPageHref(pageId(1)), isReplace: false }),
+		)
+	})
+
+	test("the menu opens the dev preview; an internal or draft page has no public page to open", () => {
+		for (const page of [statusPage({ visibility: "internal" }), statusPage({ draft: true, published_at: null })]) {
+			const model = withPages([summaryOf(page)])
+			expect(names(pick(model, pageId(1), "open-public").commands)).not.toContain(
+				"OpenStatusPageInNewTab",
+			)
+			expect(pick(model, pageId(1), "open-preview").outMessage).toEqual(
+				PageOutMessage.RequestedNavigation({ url: statusPageViewHref(pageId(1)), isReplace: false }),
+			)
+		}
+	})
+
+	test("the card has no open buttons; a member still gets the menu to open the page", () => {
+		scene(
+			{ update: listUpdate, view },
+			given(withPages([summaryOf(statusPage({ visibility: "internal" }))], false)),
+			expectView(role("link", { name: /Open dev preview/u })).not.toExist(),
+			expectView(role("button", { name: /Open public page/u })).not.toExist(),
+			expectView(role("button", { name: "Actions for Acme Status" })).toExist(),
+		)
+	})
+
+	test("Delete asks first, then deletes, toasts and reads the list again", () => {
+		const asked = pick(withPages([summaryOf(statusPage())]), pageId(1), "delete")
+		expect(names(asked.commands)).not.toContain("DeleteListedStatusPage")
+		expect(asked.model.deletingPageId).toBe(pageId(1))
+		const confirming = listUpdate(asked.model, Message.ClickedConfirmDelete())
+		expect(confirming.commands?.[0]).toMatchObject({
+			name: "DeleteListedStatusPage",
+			args: { pageId: pageId(1) },
+		})
+		const done = listUpdate(
+			confirming.model,
+			Message.CompletedDelete({ result: Result.succeed(undefined) }),
+		)
+		expect(done.outMessage).toEqual(
+			PageOutMessage.RequestedToast({ type: "success", title: "Status page deleted", description: "" }),
+		)
+		expect(names(done.commands)).toContain("FetchStatusPageSummaries")
+		expect(done.model.isDeleting).toBe(false)
+	})
+
+	test("members cannot delete from the menu", () => {
+		const asked = pick(withPages([summaryOf(statusPage())], false), pageId(1), "delete")
+		expect(asked.model.deletingPageId).toBeNull()
+		expect(names(asked.commands)).not.toContain("DeleteListedStatusPage")
 	})
 })

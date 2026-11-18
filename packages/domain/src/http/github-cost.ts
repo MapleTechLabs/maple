@@ -3,7 +3,6 @@ import { Schema } from "effect"
 import { VcsInstallationId } from "../vcs"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
-import { CloudCostDisabledError } from "./query-engine"
 
 /**
  * Whether a GitHub installation can supply cost. `user_account`: GitHub has a billing report for
@@ -118,7 +117,7 @@ export class GithubCostApiGroup extends HttpApiGroup.make("githubCost")
 	.add(
 		HttpApiEndpoint.get("list", "/", {
 			success: GithubCostInstallations,
-			error: [GithubCostUnavailableError, CloudCostDisabledError],
+			error: [GithubCostUnavailableError],
 		}),
 	)
 	.add(
@@ -131,7 +130,6 @@ export class GithubCostApiGroup extends HttpApiGroup.make("githubCost")
 				GithubCostInstallationNotFoundError,
 				GithubCostNotReadyError,
 				GithubCostPermissionMissingError,
-				CloudCostDisabledError,
 			],
 		}),
 	)

@@ -489,7 +489,7 @@ describe("telemetry and data sources", () => {
 			pageUpdate(hub(), Message.ClickedDataSource({ source: SOURCE_UUID, connect: null })).outMessage,
 		).toEqual(
 			PageOutMessage.RequestedNavigation({
-				url: `/settings?tab=data-sources&source=${SOURCE_UUID}`,
+				url: `/settings/data-sources?source=${SOURCE_UUID}`,
 				isReplace: false,
 			}),
 		)
@@ -497,7 +497,7 @@ describe("telemetry and data sources", () => {
 			pageUpdate(hub(), Message.ClickedDataSource({ source: null, connect: "clerk" })).outMessage,
 		).toEqual(
 			PageOutMessage.RequestedNavigation({
-				url: "/settings?tab=data-sources&connect=clerk",
+				url: "/settings/data-sources?connect=clerk",
 				isReplace: false,
 			}),
 		)

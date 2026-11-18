@@ -21,6 +21,8 @@ const stats = (counts: ReadonlyArray<number>): CheckStats => ({
 	samples: [],
 	samplesTruncated: false,
 	samplesFailed: false,
+	failedSamples: [],
+	failedSamplesFailed: false,
 	windowStartMs: START,
 	windowEndMs: START + counts.length * MINUTE,
 	checks: Arr.reduce(counts, 0, (sum, count) => sum + count),

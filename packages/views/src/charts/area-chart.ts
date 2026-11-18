@@ -9,7 +9,7 @@ import { bucketTooltipBody } from "./bucket-tooltip"
 import { plotFrame } from "./plot-frame"
 import { resolveColor, type ThemeColors } from "./theme-colors"
 import { SERIES_FALLBACK_COLOR, seriesColorTokens, seriesDefinitionsOf } from "./timeseries"
-import { timeseriesLegend } from "./timeseries-legend"
+import { hiddenChartKeys, timeseriesLegend } from "./timeseries-legend"
 
 // The query-builder area chart with a hidden, bottom or right legend.
 // TODO(legend): the hoisted header legend is not ported.
@@ -105,7 +105,7 @@ export const view = Submodel.defineView<Model, Message, AreaChartInputs>((model,
 				ariaLabel: "Time series",
 				spec: areaSpec(inputs.data, {
 					colors,
-					hidden: model.hiddenKeys,
+					hidden: hiddenChartKeys(model.hiddenKeys, definitions),
 					fallbackColor: SERIES_FALLBACK_COLOR,
 					chrome: {
 						border: resolveColor(inputs.theme, "--border"),

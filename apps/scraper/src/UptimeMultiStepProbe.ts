@@ -13,10 +13,14 @@ import {
 import {
 	effectiveAssertions,
 	extractVariables,
+	filledUrlKeepsHost,
 	headersProblem,
-	interpolate,
+	interpolateWithin,
 	type UptimeMultiStepConfig,
 	type UptimeStep,
+	UPTIME_MAX_BODY_LENGTH,
+	UPTIME_MAX_HEADER_VALUE_LENGTH,
+	UPTIME_MAX_URL_LENGTH,
 	UPTIME_USER_AGENT,
 } from "@maple/domain/uptime"
 import { UptimeHttpProbe } from "./UptimeHttpProbe"
@@ -41,13 +45,28 @@ export interface UptimeMultiStepProbeApi {
 
 const newSpanId = Effect.sync(() => randomBytes(8).toString("hex"))
 
-/** Every template of a step filled in, or the first variable it names that has no value. */
-const interpolateStep = (step: UptimeStep, variables: Readonly<Record<string, string>>) =>
-	Result.all({
-		url: interpolate(step.url, variables),
-		headers: Result.all(Rec.map(step.headers, (value) => interpolate(value, variables))),
-		body: step.body === undefined ? Result.succeed(undefined) : interpolate(step.body, variables),
+/**
+ * Every template of a step filled in, or why not as a sentence: a variable with no value, or a
+ * part that would pass the size a saved config may have. The sentence never holds a value.
+ */
+const interpolateStep = (step: UptimeStep, variables: Readonly<Record<string, string>>) => {
+	const fill = (template: string, maximum: number, part: string) =>
+		Result.mapError(interpolateWithin(template, variables, maximum), (failure) =>
+			failure._tag === "missing"
+				? `Variable {{${failure.name}}} has no value`
+				: `${part} is too long once its variables are filled in`,
+		)
+	return Result.all({
+		url: fill(step.url, UPTIME_MAX_URL_LENGTH, "The URL"),
+		headers: Result.all(
+			Rec.map(step.headers, (value) => fill(value, UPTIME_MAX_HEADER_VALUE_LENGTH, "A header value")),
+		),
+		body:
+			step.body === undefined
+				? Result.succeed(undefined)
+				: fill(step.body, UPTIME_MAX_BODY_LENGTH, "The body"),
 	})
+}
 
 const contentTypeOf = (headers: Readonly<Record<string, string>>): string | undefined =>
 	Option.getOrUndefined(
@@ -104,11 +123,22 @@ export class UptimeMultiStepProbe extends Context.Service<UptimeMultiStepProbe, 
 							},
 							extracted,
 						}))
-					if (Result.isFailure(filled))
-						return yield* finish(
-							failed(0, "assertion", `Variable {{${filled.failure}}} has no value`),
-						)
+					if (Result.isFailure(filled)) return yield* finish(failed(0, "assertion", filled.failure))
 					const { url, headers, body } = filled.success
+					// Checked here so a refusal names the step and never quotes the filled URL.
+					if (!URL.canParse(url))
+						return yield* finish(
+							failed(0, "assertion", "The URL is not valid once its variables are filled in"),
+						)
+					// A value read from a response fills the path or query, never the host the step names.
+					if (!filledUrlKeepsHost(step.url, url))
+						return yield* finish(
+							failed(
+								0,
+								"assertion",
+								"The filled URL requests a different host than the step's URL names",
+							),
+						)
 					// A value read from a response may hold what no header can carry; the step fails, the run goes on reporting.
 					const unsendable = headersProblem(headers)
 					if (unsendable !== null) return yield* finish(failed(0, "assertion", unsendable))

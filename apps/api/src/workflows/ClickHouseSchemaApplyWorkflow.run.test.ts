@@ -137,7 +137,7 @@ describe("runClickHouseSchemaApply failure bookkeeping", () => {
 			const sealed = yield* sealSecret(
 				keyring,
 				clickHousePasswordSlot,
-				{ orgId },
+				{ orgId, chUrl: "http://127.0.0.1:9" },
 				"stored-password",
 				(message) => message,
 			)

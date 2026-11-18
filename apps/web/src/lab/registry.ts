@@ -199,7 +199,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 	},
 	{
 		path: "/lab/cost",
-		title: "Cost",
+		title: "Cloud cost",
 		description:
 			"The cost page over synthetic cost: populated, filtered, every source status, the on-ramp, the first-sync wait, an empty window, failing and loading (`?state=`).",
 		kind: "lab",
@@ -207,7 +207,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 	},
 	{
 		path: "/lab/cost-budgets",
-		title: "Cost budgets",
+		title: "Cloud cost budgets",
 		description:
 			"The Budgets list and the budget editor over fixture budgets: on track, over, off, empty, failing, a viewer's read-only list, the delete dialog and each state of the form (`?state=`).",
 		kind: "lab",
@@ -242,6 +242,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Google Search Console",
 		description:
 			"The Google Search Console card from connect to revoked, the connecting states included, over fixtures, no API needed.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/planetscale",
+		title: "PlanetScale",
+		description:
+			"The PlanetScale databases table over fixtures: Postgres and MySQL engines, hot metrics and a sleeping database.",
 		kind: "lab",
 		session: "none",
 	},
@@ -452,6 +460,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/code-review-rules",
+		title: "Code review rules",
+		description:
+			"The default review rules as an engineer (`?as=engineer`, automatic approval locked while off) and an admin (`?as=admin`) see them; `&approval=on` starts with it on.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/code-review-team",
 		title: "Code review team",
 		description:
@@ -567,7 +583,15 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/status-pages",
 		title: "Status pages",
 		description:
-			"The status pages list, the look picker and the form fields (hint and error) over fixture pages, or a page's editor open on an incident (`?page=list|editor`). As an admin, a member or an analyst, who gets no control that posts, edits or deletes an incident (`?role=member|analyst`).",
+			"The status pages list, the look picker and the form fields (hint and error) over fixture pages, or a page's editor open on an incident (`?page=list|editor`). As an admin, a member or an analyst, who gets no control that posts, edits or deletes an incident (`?role=member|analyst`). The live and internal pages have uploaded favicons.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/status-page-settings",
+		title: "Status page settings",
+		description:
+			"The status page editor's Basic settings with Who can view under the custom domain, and its Appearance tab with logo and favicon uploads and colour pickers (`?state=public|password|set-password|internal|member|appearance|appearance-dark|appearance-empty`).",
 		kind: "lab",
 		session: "none",
 	},

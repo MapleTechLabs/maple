@@ -64,7 +64,7 @@ const props = Effect.gen(function* () {
 			...(stage.kind === "pr" && !profile.deploys.electric
 				? { VITE_ELECTRIC_SYNC_DISABLED: "1" }
 				: undefined),
-			// The status Worker's origin for public page links; empty hides them (prd has no domain yet).
+			// The status Worker's origin for public page links; empty hides them (a stage without a status domain).
 			VITE_STATUS_PAGE_BASE_URL: urls.status,
 			// Orgs living in another region are redirected to that region's app.
 			VITE_MAPLE_REGION: region,

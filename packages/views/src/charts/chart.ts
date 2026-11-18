@@ -36,7 +36,7 @@ export const Model = Schema.Struct({
 	containerWidth: Schema.Number,
 	/** `useContainerSize(containerRef).height`: a side legend's height cap; 0 before measured. */
 	containerHeight: Schema.Number,
-	/** Series keys a time-series legend has hidden. */
+	/** Series a time-series legend has hidden, by name: a regroup renumbers the chart keys. */
 	hiddenKeys: Schema.Array(Schema.String),
 	/** A grouped DOM chart's hovered group (a funnel breakdown), beside the hovered row. */
 	activeGroup: Schema.Option(Schema.String),
@@ -73,15 +73,34 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
-/** Unhide, or hide unless it is the last series left. */
+/**
+ * The remembered names that hide a series of this data. When they would hide every series (the
+ * data changed to only hidden ones), none is hidden: a plot is never left empty by an old choice.
+ */
+export const hiddenNamesIn = (
+	hiddenNames: ReadonlyArray<string>,
+	names: ReadonlyArray<string>,
+): ReadonlyArray<string> => {
+	const present = Arr.filter(names, (name) => hiddenNames.includes(name))
+	return present.length === names.length ? [] : present
+}
+
+/**
+ * Unhide, or hide unless it is the last series left. The click acts on what this data shows
+ * (`hiddenNamesIn`), not on the stored names; names of other data are kept for when it returns.
+ */
 const toggledHidden = (
 	hidden: ReadonlyArray<string>,
 	key: string,
 	keys: ReadonlyArray<string>,
 ): ReadonlyArray<string> => {
-	if (hidden.includes(key)) return Arr.filter(hidden, (candidate) => candidate !== key)
-	const remaining = Arr.filter(keys, (candidate) => candidate !== key && !hidden.includes(candidate)).length
-	return remaining === 0 ? hidden : [...hidden, key]
+	const shown = hiddenNamesIn(hidden, keys)
+	const elsewhere = Arr.filter(hidden, (name) => !keys.includes(name))
+	if (shown.includes(key)) {
+		return [...elsewhere, ...Arr.filter(shown, (candidate) => candidate !== key)]
+	}
+	const remaining = Arr.filter(keys, (candidate) => candidate !== key && !shown.includes(candidate)).length
+	return remaining === 0 ? [...elsewhere, ...shown] : [...elsewhere, ...shown, key]
 }
 
 const toggled = (current: Option.Option<string>, key: string): Option.Option<string> =>
