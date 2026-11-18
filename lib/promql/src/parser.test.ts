@@ -489,6 +489,15 @@ describe("fourth-review parser regressions", () => {
 		expect(errorOf("1..")).not.toBe("parsed")
 	})
 
+	it("reads a leading-zero number with a trailing dot as decimal, not octal", () => {
+		// Go's ParseFloat reads `010.` as 10; only a dotless `010` is octal.
+		expect(ok("010.")).toEqual({ type: "NumberLiteral", value: 10 })
+		expect(ok("010")).toEqual({ type: "NumberLiteral", value: 8 })
+		expect(ok("010.e1")).toEqual({ type: "NumberLiteral", value: 100 })
+		expect(ok("0.")).toEqual({ type: "NumberLiteral", value: 0 })
+		expect(ok("x[010.]")).toMatchObject({ rangeMs: 10_000 })
+	})
+
 	it("parenthesizes a negative-zero base of ^", () => {
 		const expr: Expr = {
 			type: "Binary",
