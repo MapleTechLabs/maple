@@ -62,6 +62,7 @@ const document = {
 		},
 		{ name: "region", type: "textbox" },
 		{ name: "service", type: "query", source: { kind: "facet", facet: "service" } },
+		{ name: "operation", type: "query", source: { kind: "facet", facet: "span_name" } },
 	],
 	widgets: [
 		rawSqlWidget(
@@ -103,6 +104,14 @@ const document = {
 			]),
 			display: { title: "builder" },
 			layout: { x: 0, y: 4, w: 4, h: 4 },
+		},
+		{
+			...rawSqlWidget(
+				"service-pinned",
+				"SELECT count() AS value FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp) AND span.name = $operation",
+				8,
+			),
+			timeRange: { type: "relative", value: "30m" },
 		},
 		rawSqlWidget(
 			"service",
@@ -197,6 +206,22 @@ describe("inspect_chart_data with dashboard variables", () => {
 		expect(statements.length).toBeGreaterThan(1)
 		expect(lastTracesSql()).toContain("service.name = ''")
 		expect(markdown(result)).toContain("no default and no options in this window")
+	})
+
+	it("lists a pinned tile's variable options over the board's window, as the board does", async () => {
+		statements.length = 0
+		await call("inspect_chart_data", { dashboard_id: dashboardId, widget_id: "service-pinned" })
+		const facetRead = Option.getOrElse(
+			Arr.findFirst(statements, (sql) => Str.includes("facetType")(sql)),
+			() => "",
+		)
+		const times = Arr.map(
+			Array.from(Str.matchAll(/'(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})'/g)(facetRead)),
+			(m) => Date.parse(`${m[1]}T${m[2]}Z`),
+		)
+		expect(times.length).toBeGreaterThan(1)
+		// The board covers 6h; the tile pins 30m. (Its own variable, so no earlier listing is cached.)
+		expect((Math.max(...times) - Math.min(...times)) / 3_600_000).toBeGreaterThan(5)
 	})
 
 	it("refuses a variable the dashboard does not declare", async () => {

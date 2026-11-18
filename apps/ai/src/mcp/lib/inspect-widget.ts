@@ -413,6 +413,8 @@ export interface InspectWidgetInput {
 	variableOverrides?: Readonly<Record<string, string>> | undefined
 	/** Shared across the widgets of one board so a variable's options are listed once. */
 	listVariableOptions?: VariableOptionsLister | undefined
+	/** The board's window: variable options are listed over it, as on the board, even for a pinned tile. */
+	variablesTimeRange?: { readonly startTime: string; readonly endTime: string } | undefined
 }
 
 /**
@@ -510,7 +512,7 @@ export const inspectWidget = Effect.fn("McpInspectWidget.inspectWidget")(
 				variables: input.variables,
 				widget,
 				overrides: input.variableOverrides ?? {},
-				timeRange,
+				timeRange: input.variablesTimeRange ?? timeRange,
 				listOptions,
 			})
 		})
@@ -828,9 +830,11 @@ export const inspectWidget = Effect.fn("McpInspectWidget.inspectWidget")(
 		const flagVerdict = verdictFromFlags(allFlags)
 		// A filter on a variable with no value is the inspection's gap, not the widget's:
 		// the notes ask for a `variables` value instead of calling the chart broken.
+		// Only queries that ran and came back empty; a failed query or formula also carries EMPTY.
 		const emptyOnly =
+			Arr.every(queryResults, (query) => query.status !== "error") &&
 			verdictFromFlags(Arr.filter(allFlags, (flag) => flag !== "EMPTY" && flag !== "ALL_NULLS")) !==
-			"broken"
+				"broken"
 		const verdict =
 			flagVerdict === "broken" && emptyOnly && variables.unresolved.length > 0
 				? "suspicious"
@@ -1093,6 +1097,7 @@ export const inspectWidgetsAfterMutation = Effect.fn("McpInspectWidget.inspectWi
 					timeRange: timeRangeFor(widget),
 					variables: dashboard.variables,
 					listVariableOptions,
+					variablesTimeRange: timeRange,
 				}),
 			{ concurrency: maxConcurrent },
 		)

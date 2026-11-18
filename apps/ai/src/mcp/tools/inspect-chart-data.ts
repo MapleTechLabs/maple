@@ -155,6 +155,16 @@ export function registerInspectChartDataTool(server: McpToolRegistrar) {
 				}
 			}
 
+			// Variable options come from the board's window (or the override), not a pinned tile's.
+			const boardWindow = Option.getOrElse(
+				Option.fromNullishOr(
+					timeRange.source === "override"
+						? timeRange
+						: resolveDashboardTimeRange(dashboard.timeRange),
+				),
+				() => timeRange,
+			)
+
 			const declared = Arr.map(dashboard.variables ?? [], (variable) => variable.name)
 			const unknown = Arr.filter(Rec.keys(variables ?? {}), (name) => !declared.includes(name))
 			if (unknown.length > 0) {
@@ -171,6 +181,7 @@ export function registerInspectChartDataTool(server: McpToolRegistrar) {
 				timeRange,
 				variables: dashboard.variables,
 				variableOverrides: variables,
+				variablesTimeRange: boardWindow,
 			})
 
 			const used =
