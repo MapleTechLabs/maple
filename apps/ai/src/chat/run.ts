@@ -173,6 +173,7 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		modelName: input.model.name,
 		partial: input.closeOut === true,
 		sessionAttributes,
+		content: input.model.content,
 	})
 	// A review's turn state is fed by the Maple handlers the review_files children share, so a
 	// group a child read counts as read, and `submit_review` checks the children's answers.
@@ -186,6 +187,7 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		input.tenant,
 		profile.ruleset,
 		profile.toolSurface,
+		input.model.content,
 		sessionAttributes,
 		review?.coverage.observe,
 		(toolCallId, ui, call) =>
@@ -207,7 +209,13 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 	)
 	const codeMode =
 		agent.codeMode === true && input.codeExecutor !== undefined
-			? buildCodeMode(codeTools, maple.layer, input.codeExecutor, input.codeOnly === true)
+			? buildCodeMode(
+					codeTools,
+					maple.layer,
+					input.codeExecutor,
+					input.model.content,
+					input.codeOnly === true,
+				)
 			: undefined
 	// What the model is offered directly; the handlers still serve every Maple tool to programs.
 	const direct =

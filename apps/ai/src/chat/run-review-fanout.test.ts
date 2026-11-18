@@ -58,6 +58,7 @@ const scriptedModel = (script: ReadonlyArray<ReadonlyArray<Response.StreamPartEn
 	return {
 		provider: "openrouter",
 		name: "scripted",
+		content: "record",
 		limits: { context: 100_000, output: 4_000 },
 		tags: { surface: "chat", orgId: TENANT.orgId, sessionId: REVIEW_SESSION, turnId: "turn-1" },
 		layer: AiModel.make(

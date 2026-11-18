@@ -74,8 +74,13 @@ describe("run_in_sandbox", () => {
 			),
 		)
 		const promoted: Array<string> = []
-		const { handlers } = executionToolHandlers(source, execution, "hunter-2", Effect.void, (paths) =>
-			Effect.sync(() => void promoted.push(...paths)),
+		const { handlers } = executionToolHandlers(
+			source,
+			execution,
+			"hunter-2",
+			"record",
+			Effect.void,
+			(paths) => Effect.sync(() => void promoted.push(...paths)),
 		)
 		const result = await run(
 			handlers.run_in_sandbox({ command: "node poc.js", promote: [{ path: "poc/out.txt" }] }),
@@ -121,7 +126,7 @@ describe("run_in_sandbox", () => {
 				}),
 			),
 		)
-		const { handlers } = executionToolHandlers(source, execution, "hunter-2")
+		const { handlers } = executionToolHandlers(source, execution, "hunter-2", "record")
 		const result = await run(handlers.run_in_sandbox({ command: "cat fixture.bin" }))
 		const text = result._tag === "Success" ? result.success : ""
 		expect(text).toContain(`--- stdout (${shown * 2} bytes, first 32 KiB shown) ---`)
@@ -130,7 +135,7 @@ describe("run_in_sandbox", () => {
 
 	it("clamps the wall clock and promotion limits to the sandbox's own", async () => {
 		const { execution, asked } = recording(Effect.succeed(exited()))
-		const { handlers } = executionToolHandlers(source, execution, "verifier-1")
+		const { handlers } = executionToolHandlers(source, execution, "verifier-1", "record")
 		await run(
 			handlers.run_in_sandbox({
 				command: "npm test",
@@ -146,7 +151,7 @@ describe("run_in_sandbox", () => {
 
 	it("refuses promote paths outside scratch before anything runs", async () => {
 		const { execution, asked } = recording(Effect.succeed(exited()))
-		const { handlers } = executionToolHandlers(source, execution, "hunter-1")
+		const { handlers } = executionToolHandlers(source, execution, "hunter-1", "record")
 		for (const path of ["../../etc/passwd", "/etc/passwd", "a//b", "./x"]) {
 			const result = await run(handlers.run_in_sandbox({ command: "true", promote: [{ path }] }))
 			expect(result._tag === "Failure" ? result.failure.message : "ran").toContain("scratch-relative")
@@ -158,7 +163,7 @@ describe("run_in_sandbox", () => {
 		const { execution } = recording(
 			Effect.fail(new AuditExecutionError({ message: "the execution sandbox did not answer in time" })),
 		)
-		const { handlers } = executionToolHandlers(source, execution, "hunter-1")
+		const { handlers } = executionToolHandlers(source, execution, "hunter-1", "record")
 		const result = await run(handlers.run_in_sandbox({ command: "sleep 1" }))
 		expect(result._tag === "Failure" ? result.failure.message : "").toBe(
 			"the execution sandbox did not answer in time",

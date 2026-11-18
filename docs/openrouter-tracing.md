@@ -83,8 +83,15 @@ https://<your-ingest-host>/v1/traces
 6. Use OpenRouter's Test Connection action, then send a Maple chat message.
 
 OpenRouter only emits Broadcast traces for traffic under the OpenRouter account or workspace where
-Broadcast is enabled. Maple has no BYOK path: every org's traffic runs on Maple's own
-`OPENROUTER_API_KEY`, so Broadcast is configured once, on Maple's OpenRouter account.
+Broadcast is enabled. Most orgs run on Maple's own `OPENROUTER_API_KEY`, so Broadcast is configured
+once, on Maple's OpenRouter account. An org admin can also connect the org's own OpenRouter key
+(`withOrgOpenRouterKey`); that org's traffic is traced only if the org enables Broadcast on its own
+account.
+
+Every request carries the provider preferences `data_collection: "deny"` and `zdr: true`
+(`openRouterDataPolicy` in `apps/ai/src/platform/Llm.ts`), so OpenRouter routes only to endpoints
+that neither retain nor train on prompts. A configured provider order keeps fallbacks on, within
+those endpoints.
 
 ## Querying In Maple
 

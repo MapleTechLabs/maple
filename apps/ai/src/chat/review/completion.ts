@@ -203,7 +203,7 @@ export const reviewCompletion = (
 }
 
 const buildReviewCompletion = (
-	{ usage, modelName, partial, sessionAttributes }: CompletionRun,
+	{ usage, modelName, partial, sessionAttributes, content }: CompletionRun,
 	review: ReviewTurnState,
 	submitReview: SubmitReview,
 ) => {
@@ -377,6 +377,7 @@ const buildReviewCompletion = (
 		...toolHandlersWithContent(
 			toolkit,
 			{ [SUBMIT_REVIEW]: record, [RECORD_FINDING]: save },
+			content,
 			sessionAttributes,
 		),
 		submitted: () => submitted,

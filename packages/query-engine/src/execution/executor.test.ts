@@ -239,6 +239,28 @@ describe("makeWarehouseExecutor span instrumentation", () => {
 		}),
 	)
 
+	it.effect("records the statement with its literals replaced, and the real statement's length", () =>
+		Effect.gen(function* () {
+			const { spans, tracer } = makeRecordingTracer()
+			const executor = makeWarehouseExecutor(makeDeps([]))
+			const sql =
+				"SELECT Body FROM logs WHERE OrgId = 'org_test' AND Body LIKE '%alice@example.com%' AND UserId = 4242"
+
+			yield* executor
+				.compiledQuery(tenant, scoped(sql), { profile: "list", context: "literals" })
+				.pipe(Effect.withTracer(tracer))
+
+			const span = Option.getOrThrow(
+				Arr.findFirst(spans, (candidate) => candidate.name === "WarehouseQueryService.executeSql"),
+			)
+			const text = String(span.attributes.get("db.query.text"))
+			assert.include(text, "WHERE OrgId = ? AND Body LIKE ? AND UserId = ?")
+			assert.notInclude(text, "alice@example.com")
+			assert.notInclude(text, "4242")
+			assert.isAbove(Number(span.attributes.get("db.query.length")), text.length)
+		}),
+	)
+
 	it.effect("names the table and records the database's own failure code on the span", () =>
 		Effect.gen(function* () {
 			const { spans, tracer } = makeRecordingTracer()

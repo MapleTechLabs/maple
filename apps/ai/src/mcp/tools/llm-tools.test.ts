@@ -56,7 +56,7 @@ const inRun = (runId: string) =>
 	)
 
 const handlerFor = (executor: McpToolExecutorApi, name: string) => {
-	const built = buildMapleToolkit(executor, TENANT, { surface: "chat" })
+	const built = buildMapleToolkit(executor, TENANT, { surface: "chat", content: "record" })
 	const handler = built.handlers[name]
 	assert.isDefined(handler, `no handler for ${name}`)
 	return handler
@@ -65,10 +65,13 @@ const handlerFor = (executor: McpToolExecutorApi, name: string) => {
 describe("buildMapleToolkit", () => {
 	it("offers agent tools to the agents and the bot, internal tools to the agents only", () => {
 		const { executor } = countingExecutor()
-		const chat = buildMapleToolkit(executor, TENANT, { surface: "chat" }).handlers
-		const workflow = buildMapleToolkit(executor, TENANT, { surface: "workflow" }).handlers
-		const bot = buildMapleToolkit(executor, TENANT, { surface: "bot" }).handlers
-		const mcp = buildMapleToolkit(executor, TENANT, { surface: "mcp" }).handlers
+		const chat = buildMapleToolkit(executor, TENANT, { surface: "chat", content: "record" }).handlers
+		const workflow = buildMapleToolkit(executor, TENANT, {
+			surface: "workflow",
+			content: "record",
+		}).handlers
+		const bot = buildMapleToolkit(executor, TENANT, { surface: "bot", content: "record" }).handlers
+		const mcp = buildMapleToolkit(executor, TENANT, { surface: "mcp", content: "record" }).handlers
 		assert.isDefined(chat.sandbox_exec)
 		assert.isDefined(workflow.sandbox_exec)
 		assert.isDefined(bot.sandbox_exec)
@@ -77,8 +80,8 @@ describe("buildMapleToolkit", () => {
 		assert.isUndefined(bot.pr_file_diff)
 		// A ruleset allowing everything does not widen a build past its audience.
 		assert.isUndefined(
-			buildMapleToolkit(executor, TENANT, { surface: "mcp", include: () => true }).handlers
-				.sandbox_exec,
+			buildMapleToolkit(executor, TENANT, { surface: "mcp", content: "record", include: () => true })
+				.handlers.sandbox_exec,
 		)
 	})
 
@@ -90,6 +93,7 @@ describe("buildMapleToolkit", () => {
 		const { executor } = countingExecutor()
 		const { toolkit } = buildMapleToolkit(executor, TENANT, {
 			surface: "chat",
+			content: "record",
 			include: (name) => name === "list_services" || name === "create_dashboard",
 			gate: (name) => name === "create_dashboard",
 		})
@@ -111,6 +115,7 @@ describe("buildMapleToolkit", () => {
 		}
 		const { handlers } = buildMapleToolkit(executor, TENANT, {
 			surface: "chat",
+			content: "record",
 			onAnswer: (tool, answer) => seen.push(`${tool}: ${answer}`),
 		})
 		assert.isDefined(handlers.list_services)
@@ -132,6 +137,7 @@ describe("buildMapleToolkit", () => {
 		const uis: Array<readonly [string, ToolUiPayload]> = []
 		const { handlers } = buildMapleToolkit(executor, TENANT, {
 			surface: "chat",
+			content: "record",
 			onUi: (callId, ui) => uis.push([callId, ui]),
 		})
 		assert.isDefined(handlers.list_services)
@@ -177,8 +183,11 @@ describe("buildMapleToolkit", () => {
 
 	it("records a gated tool's description on its span as the model saw it", async () => {
 		const { executor } = countingExecutor()
-		const handler = buildMapleToolkit(executor, TENANT, { surface: "chat", gate: () => true }).handlers
-			.list_services
+		const handler = buildMapleToolkit(executor, TENANT, {
+			surface: "chat",
+			content: "record",
+			gate: () => true,
+		}).handlers.list_services
 		assert.isDefined(handler, "no handler for list_services")
 		const { spans, tracer } = makeRecordingTracer()
 

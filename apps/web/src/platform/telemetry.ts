@@ -45,8 +45,9 @@ const maple = MapleFoldkit.make({
 	// A developer turns self-recording off with VITE_MAPLE_REPLAY=off (see .env.example).
 	replay: {
 		enabled: import.meta.env.VITE_MAPLE_REPLAY !== "off",
-		// Dashboard charts draw to <canvas>, which replays leave blank without this.
-		canvasFps: 1,
+		// Every page shows customer telemetry, so replays keep layout and clicks, never text. No
+		// canvas capture: chart pixels carry the same data as text.
+		maskAllText: true,
 	},
 	privacy: {
 		...(import.meta.env.VITE_MAPLE_COOKIE_DOMAIN

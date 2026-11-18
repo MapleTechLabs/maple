@@ -343,15 +343,30 @@ describe("OpenRouter provider order", () => {
 				resolveReviewModel,
 			)
 
-			expect(captured.body.provider).toEqual({ order: ["morph", "deepinfra"], allow_fallbacks: true })
+			expect(captured.body.provider).toEqual({
+				data_collection: "deny",
+				zdr: true,
+				order: ["morph", "deepinfra"],
+				allow_fallbacks: true,
+			})
 		}),
 	)
 
-	it.live("leaves routing to OpenRouter when no order is set", () =>
+	it.live("asks for providers that neither retain nor train on prompts when no order is set", () =>
 		Effect.gen(function* () {
 			const captured = yield* captureRequest(openRouterEnv, tags)
 
-			expect(captured.body).not.toHaveProperty("provider")
+			expect(captured.body.provider).toEqual({ data_collection: "deny", zdr: true })
+		}),
+	)
+
+	it.live("keeps the data policy on a security audit's requests", () =>
+		Effect.gen(function* () {
+			const captured = yield* captureRequest(openRouterEnv, tags, (env, callTags) =>
+				resolveSecurityAuditModel(env, "discovery", callTags),
+			)
+
+			expect(captured.body.provider).toEqual({ data_collection: "deny", zdr: true })
 		}),
 	)
 })

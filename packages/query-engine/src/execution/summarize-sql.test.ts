@@ -1,6 +1,6 @@
 import { DB_QUERY_LABEL_SQL } from "@maple/domain/tinybird/db-query-shape-sql"
 import { describe, expect, it } from "vitest"
-import { SQL_TABLE_RE, SQL_VERB_RE, summarizeSql } from "./fingerprint"
+import { SQL_TABLE_RE, SQL_VERB_RE, redactSqlLiterals, summarizeSql } from "./fingerprint"
 import { String as Str } from "effect"
 
 /**
@@ -94,5 +94,15 @@ describe("summarizeSql / ClickHouse parity", () => {
 
 	it("uses the same table pattern as derivedStatementSummarySql", () => {
 		expect(DB_QUERY_LABEL_SQL).toContain(`(?i)${asClickHouseLiteral(SQL_TABLE_RE)}`)
+	})
+})
+
+describe("redactSqlLiterals", () => {
+	it("replaces strings, escaped quotes included, and numbers, and keeps identifiers", () => {
+		expect(
+			redactSqlLiterals(
+				"SELECT count() FROM traces_v2 WHERE Name = 'O\\'Brien' AND Note = 'it''s' AND Ms > 1.5e3 AND Id IN (7, 8)",
+			),
+		).toBe("SELECT count() FROM traces_v2 WHERE Name = ? AND Note = ? AND Ms > ? AND Id IN (?, ?)")
 	})
 })

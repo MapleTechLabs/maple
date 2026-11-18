@@ -14,6 +14,14 @@ export const truncateSql = (s: string, maxLen: number) =>
 	s.length > maxLen ? Str.slice(0, maxLen)(s) + "...[truncated]" : s
 
 /**
+ * SQL with every string and numeric literal replaced by `?`, for traces and logs: the values are
+ * customer data (search text, ids, emails). Quoted strings honour `\'` and `''` escapes, so an
+ * escaped quote never ends one early. Identifiers and keywords stay.
+ */
+export const redactSqlLiterals = (s: string): string =>
+	Str.replace(/\b\d+(?:\.\d+)?(?:e[+-]?\d+)?\b/gi, "?")(Str.replace(/'(?:[^'\\]|\\.|'')*'/g, "?")(s))
+
+/**
  * Stable 32-bit FNV-1a hash over SQL with literals and numbers normalized. Lets
  * the same query with different params group together in trace search.
  */
