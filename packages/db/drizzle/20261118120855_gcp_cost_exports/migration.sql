@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS "gcp_cost_exports" (
 CREATE INDEX IF NOT EXISTS "gcp_cost_exports_connector_idx" ON "gcp_cost_exports" USING btree ("connector_id");
 --> statement-breakpoint
 -- metadata
-CREATE UNIQUE INDEX IF NOT EXISTS "gcp_cost_exports_org_table_idx" ON "gcp_cost_exports" USING btree ("org_id", "table_ref");
+CREATE UNIQUE INDEX IF NOT EXISTS "gcp_cost_exports_org_account_idx" ON "gcp_cost_exports" USING btree ("org_id", "billing_account_id");
 --> statement-breakpoint
 -- metadata
 ALTER TABLE "gcp_cost_exports" ADD CONSTRAINT "gcp_cost_exports_connector_id_gcp_connectors_id_fk" FOREIGN KEY ("connector_id") REFERENCES "gcp_connectors" ("id") ON DELETE CASCADE;

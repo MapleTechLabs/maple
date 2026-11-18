@@ -1,7 +1,7 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "0021d31e1a345cf55ef8c7839306ec088a118f1de9378944d609cd90d513b202",
+	"id": "284545cdbb79a848161610863d239ad85405229a365401d8d5b0c32775b816bb",
 	"prevIds": [
 		"648296577f8cd0bd4a3b0390b8489f5172e3dd7f18ba9db6fe05aa2478a09242"
 	],
@@ -22101,12 +22101,12 @@
 		{
 			"kind": "index",
 			"table": "gcp_cost_exports",
-			"name": "gcp_cost_exports_org_table_idx",
+			"name": "gcp_cost_exports_org_account_idx",
 			"unique": true,
 			"method": "btree",
 			"columns": [
 				"\"org_id\"",
-				"\"table_ref\""
+				"\"billing_account_id\""
 			],
 			"where": null
 		},

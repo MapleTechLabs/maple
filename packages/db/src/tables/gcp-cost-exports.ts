@@ -3,7 +3,8 @@ import { GcpConnectorId, OrgId, UserId } from "@maple/primitives"
 import { GcpConnectors } from "./gcp-connectors"
 
 // A Cloud Billing export to BigQuery an org reads its Google Cloud spend from, through the reader
-// account of one of its GCP connectors. `cost_sources.connection_ref` holds `id`. Deleting the
+// account of one of its GCP connectors. One per billing account: a standard and a detailed export
+// of one account hold the same spend twice. `cost_sources.connection_ref` holds `id`. Deleting the
 // connector deletes the row, and the cost sync then removes its source.
 export const GcpCostExports = PG.table("gcp_cost_exports", {
 	columns: {
@@ -20,7 +21,7 @@ export const GcpCostExports = PG.table("gcp_cost_exports", {
 	},
 	primaryKey: ["id"],
 	indexes: [
-		PG.uniqueIndex("gcp_cost_exports_org_table_idx", ["orgId", "tableRef"]),
+		PG.uniqueIndex("gcp_cost_exports_org_account_idx", ["orgId", "billingAccountId"]),
 		PG.index("gcp_cost_exports_connector_idx", ["connectorId"]),
 	],
 	foreignKeys: [

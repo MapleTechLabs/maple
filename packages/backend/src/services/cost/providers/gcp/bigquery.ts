@@ -154,7 +154,8 @@ export const costQuery = (table: GcpExportTable, layout: GcpExportLayout): strin
   GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9
 ),
 ranked AS (
-  SELECT *, DENSE_RANK() OVER (ORDER BY resource_cost DESC, resource) AS resource_rank
+  -- Unnamed charges rank last, so they never take a named resource's place.
+  SELECT *, DENSE_RANK() OVER (ORDER BY resource = '', resource_cost DESC, resource) AS resource_rank
   FROM (SELECT *, SUM(ABS(cost)) OVER (PARTITION BY resource) AS resource_cost FROM grouped)
 )
 SELECT

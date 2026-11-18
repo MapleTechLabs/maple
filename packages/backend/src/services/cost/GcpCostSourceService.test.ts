@@ -92,6 +92,27 @@ describe("GcpCostSourceService", () => {
 		})
 	})
 
+	it.effect("refuses a second export of one billing account, which would count its spend twice", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* insertConnector(testDb)
+			yield* run(
+				testDb,
+				service.use((s) => s.add(ORG, USER, CONNECTOR, TABLE)),
+			)
+			const standard = "billing-proj.exports.gcp_billing_export_v1_01ABCD_234567_89ABCD"
+			const error = yield* Effect.flip(
+				run(
+					testDb,
+					service.use((s) => s.add(ORG, USER, CONNECTOR, standard)),
+				),
+			)
+			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
+			assert.include(error.message, `from ${TABLE}`)
+			assert.lengthOf(yield* costSources(testDb), 1)
+		})
+	})
+
 	it.effect("refuses a table that is not a billing export, and a connector without a reader", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {

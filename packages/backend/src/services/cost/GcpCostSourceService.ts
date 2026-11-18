@@ -164,16 +164,22 @@ export class GcpCostSourceService extends Context.Service<GcpCostSourceService, 
 									.onConflictDoNothing()
 									.returning(($) => ({ id: $.id })),
 							)
+							// One export per billing account: a second table of it would count its spend twice.
 							if (inserted.length === 0) {
 								const [existing] = yield* db.run(
 									PG.from(GcpCostExports)
 										.select("id", "connectorId", "tableRef", "billingAccountId")
-										.where(($) => [$.orgId.eq(orgId), $.tableRef.eq(table.value.ref)])
+										.where(($) => [
+											$.orgId.eq(orgId),
+											$.billingAccountId.eq(table.value.billingAccountId),
+										])
 										.limit(1),
 								)
 								return existing === undefined
 									? ({ kind: "no_connector" } as const)
-									: ({ kind: "exists", row: existing } as const)
+									: existing.tableRef === table.value.ref
+										? ({ kind: "exists", row: existing } as const)
+										: ({ kind: "other_table", tableRef: existing.tableRef } as const)
 							}
 							yield* db.run(
 								PG.insertInto(CostSources).values({
@@ -208,6 +214,10 @@ export class GcpCostSourceService extends Context.Service<GcpCostSourceService, 
 						return yield* new IntegrationsValidationError({
 							message:
 								"Turn on Metrics and resources for that GCP connection first: Maple reads the export as its reader account.",
+						})
+					case "other_table":
+						return yield* new IntegrationsValidationError({
+							message: `Maple already reads billing account ${table.value.billingAccountId} from ${result.tableRef}. Remove that source first to read it from another table.`,
 						})
 					case "exists":
 						return { export: exportOf(result.row), created: false }

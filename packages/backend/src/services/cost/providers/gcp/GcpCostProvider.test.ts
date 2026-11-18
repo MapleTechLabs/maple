@@ -228,6 +228,8 @@ describe("GcpCostProvider", () => {
 				// The table is scanned once: the resource ranking runs over the grouped rows.
 				assert.lengthOf(body.query.split(TABLE), 2)
 				assert.isString(body.requestId)
+			// Unnamed charges rank after every named resource.
+			assert.include(body.query, "ORDER BY resource = '', resource_cost DESC")
 				assert.strictEqual(body.maximumBytesBilled, String(MAX_BYTES_BILLED))
 				assert.deepStrictEqual(
 					Arr.map(

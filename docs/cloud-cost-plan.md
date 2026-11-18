@@ -397,7 +397,8 @@ against a fake server that answers what the spec describes.
   overprovisioned, Cloud Run cost, commitments. Negative cost is the saving.
 - Until the export exists, Maple can still show the recommender's savings and its own rules.
 - Built 2026-11-18. An export is a `gcp_cost_exports` row (table id, billing account, the GCP
-  connector it is read through); its `cost_sources` row points at it. The sync reads it as the
+  connector it is read through), one per billing account, since a standard and a detailed export
+  of one account hold the same spend; its `cost_sources` row points at it. The sync reads it as the
   connector's reader account (so Metrics and resources must be on), which the org grants BigQuery
   Data Viewer on the export table alone and Job User on the connector's host project, where the
   query runs and is billed. One aggregating `jobs.query` per window, grouped by day, project,
