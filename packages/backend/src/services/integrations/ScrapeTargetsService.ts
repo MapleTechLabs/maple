@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto"
 import {
 	IsoDateTimeString,
 	OrgId,
+	SCRAPE_TARGET_REDACTED_VALUE,
 	ScrapeAuthType,
 	ScrapeIntervalSeconds,
 	ScrapeTargetDeleteResponse,
@@ -22,6 +23,7 @@ import {
 	type ScrapeResultReport,
 	type UpdateScrapeTargetRequest,
 } from "@maple/domain/http"
+import { urlHoldsRedaction } from "@maple/domain/url-redaction"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
@@ -498,6 +500,14 @@ const isReservedLabelKey = (key: string): boolean => {
 
 const validateUrl = (url: string) => {
 	const trimmed = Str.trim(url)
+	// A URL read back from a response that hid its query values would save the marker as the value.
+	if (urlHoldsRedaction(trimmed, SCRAPE_TARGET_REDACTED_VALUE)) {
+		return Effect.fail(
+			new ScrapeTargetValidationError({
+				message: `The URL holds a hidden value (${SCRAPE_TARGET_REDACTED_VALUE}). Send the real URL, or leave url out of the update.`,
+			}),
+		)
+	}
 	return validateExternalUrl(trimmed).pipe(
 		Effect.as(trimmed),
 		Effect.mapError(

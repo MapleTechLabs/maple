@@ -36,6 +36,9 @@ export const redactUrlCredentials = (raw: string, marker: string): string => {
 	return `${scheme}${host}${path}${pairs.length === 0 ? "" : `?${Arr.join(pairs, "&")}`}`
 }
 
+/** A percent-encoded query part decoded; none when its encoding is malformed. */
+const decodeUrlPart = Option.liftThrowable(decodeURIComponent)
+
 /**
  * Whether a URL (or URL template) carries `marker` where {@link redactUrlCredentials} writes it:
  * as a query value, plain or percent-encoded. Such a URL was read back from a redacted response,
@@ -44,14 +47,13 @@ export const redactUrlCredentials = (raw: string, marker: string): string => {
 export const urlHoldsRedaction = (raw: string, marker: string): boolean => {
 	const [, , , , query] = URL_TEMPLATE_PARTS.exec(Str.trim(raw)) ?? []
 	if (query === undefined) return false
-	const markers = [marker, encodeURIComponent(marker)]
-	return Arr.some(
-		Str.split(Str.slice(1)(query), "&"),
-		(pair) =>
-			Arr.contains(markers, pair) ||
-			Option.match(Str.indexOf("=")(pair), {
-				onNone: () => false,
-				onSome: (equals) => Arr.contains(markers, Str.slice(equals + 1)(pair)),
-			}),
+	// Compared decoded and without case: `%5bredacted%5d` is the marker as much as `%5Bredacted%5D`.
+	const isMarker = (value: string) =>
+		Str.toLowerCase(Option.getOrElse(decodeUrlPart(value), () => value)) === Str.toLowerCase(marker)
+	return Arr.some(Str.split(Str.slice(1)(query), "&"), (pair) =>
+		Option.match(Str.indexOf("=")(pair), {
+			onNone: () => isMarker(pair),
+			onSome: (equals) => isMarker(Str.slice(equals + 1)(pair)),
+		}),
 	)
 }

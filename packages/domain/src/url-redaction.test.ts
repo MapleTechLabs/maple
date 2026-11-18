@@ -35,6 +35,10 @@ describe("urlHoldsRedaction", () => {
 			true,
 		)
 		expect(holds("https://api.example.com/health?token=%5Bredacted%5D&page=2")).toBe(true)
+		// However the marker is encoded, it is still the marker and not a token.
+		expect(holds("https://api.example.com/health?token=%5bredacted%5d")).toBe(true)
+		expect(holds("https://api.example.com/health?token=%5Bredacte%64%5D")).toBe(true)
+		expect(holds("https://api.example.com/health?page=2&%5bredacted%5d")).toBe(true)
 		expect(holds("https://{{host}}/items?key=[redacted]")).toBe(true)
 	})
 
@@ -42,5 +46,7 @@ describe("urlHoldsRedaction", () => {
 		expect(holds("https://api.example.com/health?token=abc")).toBe(false)
 		expect(holds("https://api.example.com/[redacted]/health")).toBe(false)
 		expect(holds("https://api.example.com/health")).toBe(false)
+		// A value whose percent-encoding is malformed is compared as written.
+		expect(holds("https://api.example.com/health?token=%E0%A4%A")).toBe(false)
 	})
 })
