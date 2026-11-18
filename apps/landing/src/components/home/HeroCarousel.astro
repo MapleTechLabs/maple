@@ -2,9 +2,6 @@
 /**
  * HeroCarousel — the hero's product plate, as three auto-advancing slides.
  *
- * The stage leads and the rail and caption follow it, so the first thing under
- * the headline is the app, not a label for it.
- *
  * The rail is a row of span bars: the active one widens to carry its label and
  * fills left→right over its dwell (scaleX off a left origin, the construction
  * .roadmap-seg and .span-bar already use), while the others collapse to short
@@ -66,32 +63,6 @@ const slides = [
 	aria-roledescription="carousel"
 	aria-label={m.hero_shots_aria()}
 >
-	<div class="hero-carousel__stage">
-		{
-			slides.map((slide, i) => (
-				<div
-					class="hero-carousel__pane"
-					data-pane={i}
-					data-on={i === 0 ? "" : undefined}
-					id={`hero-pane-${slide.key}`}
-					role="tabpanel"
-					aria-labelledby={`hero-tab-${slide.key}`}
-					aria-hidden={i === 0 ? "false" : "true"}
-					inert={i !== 0}
-				>
-					<MediaFrame
-						label={slide.label}
-						caption={slide.caption}
-						src={slide.src}
-						width={1400}
-						height={720}
-						loading={i === 0 ? "eager" : "lazy"}
-					/>
-				</div>
-			))
-		}
-	</div>
-
 	<div class="hero-rail" role="tablist" aria-label={m.hero_shots_aria()}>
 		{
 			slides.map((slide, i) => (
@@ -118,14 +89,39 @@ const slides = [
 		}
 	</div>
 
-	{/* One grid cell, three lines stacked in it: the box sizes itself to the
-	    tallest, so a longer line in ja/ko never moves what follows. */}
+	{/* One grid cell, three lines stacked in it — the box sizes itself to the
+	    tallest, so a longer line in ja/ko never shifts the plate. */}
 	<div class="hero-caption">
 		{
 			slides.map((slide, i) => (
 				<span class="hero-caption__item" data-caption={i} data-on={i === 0 ? "" : undefined} aria-hidden={i === 0 ? "false" : "true"}>
 					{slide.line}
 				</span>
+			))
+		}
+	</div>
+
+	<div class="hero-carousel__stage">
+		{
+			slides.map((slide, i) => (
+				<div
+					class="hero-carousel__pane"
+					data-pane={i}
+					data-on={i === 0 ? "" : undefined}
+					id={`hero-pane-${slide.key}`}
+					role="tabpanel"
+					aria-labelledby={`hero-tab-${slide.key}`}
+					aria-hidden={i === 0 ? "false" : "true"}
+				>
+					<MediaFrame
+						label={slide.label}
+						caption={slide.caption}
+						src={slide.src}
+						width={1400}
+						height={720}
+						loading={i === 0 ? "eager" : "lazy"}
+					/>
+				</div>
 			))
 		}
 	</div>
@@ -147,8 +143,8 @@ const slides = [
 		let anim: Animation | null = null;
 		let resumeTimer = 0;
 
-		// Five independent reasons to be stopped, resolved by one predicate rather
-		// than five competing play/pause calls. Otherwise "tab returns to the
+		// Four independent reasons to be stopped, resolved by one predicate rather
+		// than four competing play/pause calls — otherwise "tab returns to the
 		// foreground while scrolled away" resumes a timer nobody can see.
 		// `auto` is the standing capability (reduced motion turns it off for good);
 		// `manual` is the temporary hold a hand-picked slide takes out.
@@ -156,10 +152,7 @@ const slides = [
 		let manual = false;
 		let onscreen = true;
 		let focused = false;
-		// An open lightbox holds the reel: advancing would make its opener's plate
-		// inert, and focus could not return there when it closes.
-		const lightboxOpen = () => document.querySelector("[data-lightbox-content]") !== null;
-		const running = () => auto && !manual && onscreen && !focused && !document.hidden && !lightboxOpen();
+		const running = () => auto && !manual && onscreen && !focused && !document.hidden;
 
 		// Fetch the plate after this one ahead of its turn. Slides 2-3 ship
 		// `loading="lazy"` so they never compete with the LCP image, but an
@@ -179,10 +172,8 @@ const slides = [
 			warm((next + 1) % panes.length);
 			panes.forEach((pane, i) => {
 				pane.toggleAttribute("data-on", i === index);
-				// One image alt reaches the screen reader, not three, and the two
-				// faded-out plates take no focus stop for their lightbox.
+				// One image alt reaches the screen reader, not three.
 				pane.setAttribute("aria-hidden", i === index ? "false" : "true");
-				pane.inert = i !== index;
 			});
 			captions.forEach((caption, i) => {
 				caption.toggleAttribute("data-on", i === index);
@@ -222,28 +213,9 @@ const slides = [
 				fill: "forwards",
 			});
 			anim.onfinish = () => {
-				// A lightbox opened without a focus event does not pause the reel, so a
-				// dwell can end while one is up. Hold the plate; sync() replays the dwell.
-				if (!running()) {
-					if (lightboxOpen()) awaitLightboxClose();
-					return;
-				}
 				show((index + 1) % panes.length);
 				tick();
 			};
-		}
-
-		// Closing a lightbox only reaches sync() if focus comes back into the reel,
-		// which it need not. Whenever one holds the reel, look until it is gone.
-		let lightboxWatch = 0;
-		function awaitLightboxClose() {
-			if (lightboxWatch !== 0) return;
-			lightboxWatch = window.setInterval(() => {
-				if (lightboxOpen()) return;
-				window.clearInterval(lightboxWatch);
-				lightboxWatch = 0;
-				sync();
-			}, 500);
 		}
 
 		function sync() {
@@ -252,7 +224,6 @@ const slides = [
 				else tick();
 			} else {
 				anim?.pause();
-				if (lightboxOpen()) awaitLightboxClose();
 			}
 		}
 
@@ -314,9 +285,7 @@ const slides = [
 				for (const entry of entries) onscreen = entry.isIntersecting;
 				sync();
 			},
-			// Low, because the plate starts at the foot of the first viewport and
-			// the reel should already run while only its top edge is in view.
-			{ threshold: 0.1 },
+			{ threshold: 0.25 },
 		).observe(root);
 
 		// Chain slide 2 off slide 1's load rather than starting both at once: the

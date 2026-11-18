@@ -14,7 +14,7 @@ Geist Variable is the heavy, tightly set monumental display face: 700 weight, -0
 
 ## Layout
 
-A wide poster opening: announcement, oversized three-line title, architectural art on the right, descriptive copy and two CTAs on the left. The hero stops at about 72% of the viewport and the product plate overlaps its lower edge, so the top of the app is inside the first viewport on desktop and on phones, with the monument's base running behind it. The plate's rail and caption sit under the stage, not above it. The stats and customer logos follow the plate as a plain rail, then the four objections. Below, the product is shown large and the copy stays short: one line of copy per plate, and no column of sub-points beside a frame. The agent section is the exception: its three points are what the transcript beside it proves. Two saturated color breaks remain.
+A wide poster opening: announcement, oversized three-line title, architectural art occupying the right and lower field, descriptive copy and two CTAs on the left. A compact proof rail leads into the working product. Below, the product is shown large and the copy stays short: one line of copy per plate, and no column of sub-points beside a frame. The agent section is the exception: its three points are what the transcript beside it proves. Two saturated color breaks remain. The stats and customer proof rail are visible in the opening viewport. At mobile widths the rail follows the copy and actions over the artwork, with a dark backdrop that keeps labels readable.
 
 The home page has four product moments. The plate (three captures). Signals: the live trace waterfall across the full shell, with the live logs stream and a session replay capture at half the shell under it. The incident walkthrough. The platform explorer: one frame the width of the shell with a tab per surface (service map, metrics, errors, alerting, Kubernetes, web analytics, product events, uptime, GitHub), which is also the link hub to the feature pages. A surface that needs more than a heading, one sentence and a link belongs on its feature page.
 
@@ -30,7 +30,7 @@ Original shared rounded buttons, sharp frames, thin shared border rules. Dither 
 
 Existing navigation, authentication-aware CTAs, carousel, walkthrough, calculator, pricing and FAQs retain their behavior. Buttons have visible hover and keyboard focus. The hero image is eager; lower imagery is lazy. The page is usable without animation and respects reduced motion.
 
-A capture in a narrow column is a crop, not the whole screen scaled down: `MediaFrame` takes `crop` (top-left corner and zoom), the right and bottom edges fade out, and the lightbox still opens the full capture. The session plate uses it, and so does every capture in the platform explorer below `md`, where a whole screen would be unreadable. The hero plate crops to the capture's top left corner on phones for the same reason. Pick a window that starts on a layout edge and holds nothing you would not print at full size. Section ledes are 15px (16px from `md`), row titles 15px, row copy and links 14px.
+A capture in a narrow column is a crop, not the whole screen scaled down: `MediaFrame` takes `crop` (top-left corner and zoom), the right and bottom edges fade out, and the lightbox still opens the full capture. The session plate uses it, and so does every capture in the platform explorer below `md`, where a whole screen would be unreadable. Pick a window that starts on a layout edge and holds nothing you would not print at full size. Section ledes are 15px (16px from `md`), row titles 15px, row copy and links 14px.
 
 ## Do's and Don'ts
 
@@ -38,7 +38,7 @@ Keep localized content and real commercial facts. Use the generated monument at 
 
 Homepage buttons use the original shared `buttonVariants` (hero size `xl`, primary and outline variants). Preserve their radius, shadows, focus rings, hover and pressed states; homepage surface overrides exclude buttons and links.
 
-The stats and customer logos sit under the product plate on its floor, with no gradient or text shadow. The GitHub count uses the existing PixelStar icon. The opening viewport belongs to the headline, the actions and the product; the star count is also in the nav.
+The stats and customer logos overlay the lower hero artwork with a soft charcoal gradient and text shadow for contrast. There is no divider or separate strip. The GitHub count uses the existing PixelStar icon. Keep the proof visible in the opening viewport.
 
 The Roman hero uses medium-fine dithering in stone and shadows, with crisp architectural edges. Avoid large checkerboard blocks or overly smooth engraving.
 

@@ -282,7 +282,13 @@
 }
 .hero-carousel__stage {
 	position: relative;
+	margin-top: 32px;
 	aspect-ratio: 1400 / 720;
+}
+@media (min-width: 768px) {
+	.hero-carousel__stage {
+		margin-top: 40px;
+	}
 }
 .hero-carousel__pane {
 	position: absolute;
@@ -331,7 +337,6 @@
 	justify-content: center;
 	align-items: center;
 	gap: 12px;
-	margin-top: 20px;
 }
 /* Fixed row height, so the track thickening on hover grows about its own
    centre instead of nudging the caption. 24px also keeps the bare bar a legal
@@ -375,14 +380,14 @@
 	background: var(--primary);
 }
 /* Caption. All three lines share one grid cell, so the box is as tall as the
-   tallest line and a longer ja/ko string never moves what follows it.
+   tallest line and a longer ja/ko string never shifts the plate below it.
    The swap is a blur-and-fade rather than a slide: the outgoing line dissolves
    in place, which reads as the same sentence resolving into a new one instead
    of two labels racing past each other. */
 .hero-caption {
 	display: grid;
 	justify-items: center;
-	margin-top: 10px;
+	margin-top: 20px;
 	text-align: center;
 }
 .hero-caption__item {

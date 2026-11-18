@@ -47,14 +47,19 @@ const homeFaqs = [
     <main id="main-content">
         <HomeHero />
 
-        <!-- The product plate rises over the hero's base, so the app is in the
-             first viewport. The proof rail sits under it. -->
-        <HomeProductPlate />
+        <!-- 00 — self-hosting, OpenTelemetry and the trial terms, stated before
+             the page asks for anything. These are the three rows visitors open
+             once they reach /pricing, and 83% of them never get that far.
 
-        <!-- Self-hosting, OpenTelemetry, region and the trial terms: the four rows
-             visitors open once they reach /pricing, stated before the page asks
-             for anything. One scroll from the hero CTA, right under the product. -->
+             It sits between the headline and the product plate deliberately.
+             Below the plate it lands two screens down, and the median homepage
+             visit is fourteen seconds — far enough that the visitors this is
+             aimed at would never reach it. Here it is the first thing after the
+             fold, one scroll from the hero CTA. -->
         <HomeObjections />
+
+        <!-- The hero's product screenshots, as their own section. -->
+        <HomeProductPlate />
 
         <!-- 01 — the three surfaces you actually look at. -->
         <SignalsStrip />

@@ -7,8 +7,6 @@
 	--home-ink: var(--foreground);
 	--home-muted: var(--muted-foreground);
 	--home-rule: var(--border);
-	/* How far the product plate rises over the hero's lower edge. */
-	--monument-plate-rise: 56px;
 	background: var(--home-paper);
 	color: var(--home-ink);
 	font-family: "Geist Variable", sans-serif;
@@ -92,9 +90,9 @@
 }
 
 .monument-hero {
-	/* Short of the viewport on purpose: the product plate below overlaps the
-	   hero's base and has to start inside the first screen. */
-	--monument-hero-h: clamp(540px, 72svh, 800px);
+	/* One viewport tall, but never a 1440px wall: past the cap the next section
+	   peeks in instead of the copy floating in empty space. */
+	--monument-hero-h: min(100svh, 1080px);
 	display: flex;
 	flex-direction: column;
 	min-height: var(--monument-hero-h);
@@ -112,7 +110,7 @@
 	flex: 1;
 	width: 100%;
 	padding-top: 24px;
-	padding-bottom: calc(var(--monument-plate-rise) + 32px);
+	padding-bottom: 0;
 }
 /* A bare 12px text link is a 12px-tall target: replay showed visitors aiming
    at this row and landing on the field behind it. The padding (cancelled by an
@@ -232,14 +230,21 @@
 	letter-spacing: 0.06em;
 }
 .monument-proof {
-	margin-top: 40px;
+	position: relative;
+	isolation: isolate;
+	z-index: 2;
+	text-shadow: 0 2px 12px var(--background);
+	margin-top: auto;
+	padding-top: 28px;
 	color: var(--home-ink);
 }
 .monument-proof__inner {
+	min-height: 120px;
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
 	gap: 42px;
+	padding-block: 24px;
 }
 .monument-proof__stats {
 	display: flex;
@@ -284,6 +289,7 @@
 	background: color-mix(in oklab, var(--background) 72%, transparent);
 	font-size: 12px;
 	line-height: 1.3;
+	text-shadow: none;
 	transition:
 		border-color 150ms ease,
 		background-color 150ms ease;
@@ -366,14 +372,9 @@
 		transition: none;
 	}
 }
-/* The plate straddles the hero's lower edge: transparent over the monument,
-   then the pale floor from the hero's end down. */
 .monument-product {
-	position: relative;
-	z-index: 1;
-	margin-top: calc(var(--monument-plate-rise) * -1);
-	padding-bottom: 56px;
-	background: linear-gradient(to bottom, transparent var(--monument-plate-rise), var(--home-pale) 0);
+	padding-block: 75px 90px;
+	background: var(--home-pale);
 }
 .monument-product .hero-caption {
 	color: var(--home-ink);
@@ -399,7 +400,7 @@ html:not([lang="en"]) .monument-hero h1 {
 html[lang="ja"] .monument-hero h1 span {
 	word-break: auto-phrase;
 }
-/* Large monitors: fixed-pixel type and the proof rail read as miniature on
+/* Large monitors: fixed-pixel type and a 120px proof rail read as miniature on
    a 2560px canvas, so the whole composition steps up together. */
 @media (min-width: 1800px) {
 	.monument-hero__field {
@@ -437,10 +438,12 @@ html[lang="ja"] .monument-hero h1 span {
 		font-size: 17px;
 	}
 	.monument-proof {
-		margin-top: 56px;
+		padding-top: 40px;
 	}
 	.monument-proof__inner {
+		min-height: 168px;
 		gap: 56px;
+		padding-block: 40px;
 	}
 	.monument-proof__stats {
 		gap: 56px;
@@ -490,11 +493,10 @@ html[lang="ja"] .monument-hero h1 span {
 		min-height: 0;
 		padding-top: 64px;
 	}
-	/* Room under the actions for the monument, which the plate then overlaps. */
 	.monument-hero__field {
 		min-height: auto;
 		padding-top: 25px;
-		padding-bottom: 34vw;
+		padding-bottom: 0;
 	}
 	.monument-announce {
 		font-size: 10px;
@@ -538,19 +540,14 @@ html[lang="ja"] .monument-hero h1 span {
 	.monument-hero__colophon span:last-child {
 		display: none;
 	}
+	.monument-proof__inner {
+		padding-block: 27px;
+	}
 	.monument-proof__stats {
 		gap: 30px;
 	}
-	.monumental-home {
-		--monument-plate-rise: 32px;
-	}
 	.monument-product {
-		padding-bottom: 40px;
-	}
-	/* A desktop dashboard scaled to a phone is unreadable, so the stage is
-	   taller here and the capture is cropped to its top left corner. */
-	.monument-product .hero-carousel__stage {
-		aspect-ratio: 1 / 0.86;
+		padding-block: 40px;
 	}
 	.monument-product .hero-caption {
 		font-size: 17px;
@@ -642,10 +639,9 @@ html[lang="ja"] .monument-hero h1 span {
 		linear-gradient(to bottom, transparent, black 8%, black 92%, transparent);
 	mask-composite: intersect;
 }
-/* On phones the art rises behind the actions: fade its top so the buttons stay clean. */
 @media (max-width: 767px) {
 	.monument-hero__art {
-		mask-image: linear-gradient(to bottom, transparent 12%, black 48%, black 90%, transparent);
+		mask-image: linear-gradient(to bottom, transparent, black 12%, black 90%, transparent);
 		mask-composite: add;
 	}
 }
@@ -710,8 +706,11 @@ html[lang="ja"] .monument-hero h1 span {
 	background-color: var(--home-orange);
 }
 
-/* Shorter desktop screens: tighten the copy so the plate still starts inside the viewport. */
+/* Fit the proof rail in the opening viewport on shorter desktop screens. */
 @media (min-width: 768px) and (max-height: 820px) {
+	.monument-hero__field {
+		padding-bottom: 0;
+	}
 	.monument-hero h1 {
 		margin-top: 20px;
 	}
@@ -731,11 +730,9 @@ html[lang="ja"] .monument-hero h1 span {
 	}
 }
 @media (max-width: 767px) {
-	.monument-proof {
-		margin-top: 32px;
-	}
 	.monument-proof__inner {
 		gap: 18px;
+		padding-block: 20px;
 	}
 }
 @media (max-width: 767px) and (max-height: 740px) {
@@ -745,6 +742,29 @@ html[lang="ja"] .monument-hero h1 span {
 	.monument-hero__copy {
 		margin-top: 20px;
 	}
+	.monument-hero__field {
+		padding-bottom: 0;
+	}
+}
+@media (max-width: 767px) and (max-height: 740px) {
+	.monument-proof {
+		padding-top: 24px;
+	}
+}
+
+.monument-proof::before {
+	content: "";
+	position: absolute;
+	/* Span the viewport even when the centered shell reaches its max width. */
+	inset: -32px calc(50% - 50vw) 0;
+	z-index: -1;
+	pointer-events: none;
+	background: linear-gradient(
+		to bottom,
+		transparent,
+		color-mix(in oklab, var(--background) 72%, transparent) 42%,
+		color-mix(in oklab, var(--background) 94%, transparent)
+	);
 }
 .monument-proof__github {
 	display: inline-flex;
@@ -764,11 +784,7 @@ html[lang="ja"] .monument-hero h1 span {
 		height: calc(var(--monument-hero-h) - 76px);
 		object-fit: cover;
 		object-position: right bottom;
-		/* The shorter hero shows the panorama's left hills, which would run
-		   behind the copy and the actions: fade them out under the text. */
-		mask-image:
-			linear-gradient(to right, transparent 30%, black 58%),
-			linear-gradient(to bottom, transparent, black 8%, black 85%, transparent);
-		mask-composite: intersect;
+		mask-image: linear-gradient(to bottom, transparent, black 8%, black 85%, transparent);
+		mask-composite: add;
 	}
 }
