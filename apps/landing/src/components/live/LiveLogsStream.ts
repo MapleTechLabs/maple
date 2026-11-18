@@ -20,10 +20,14 @@ const NO_LINKS: LogRowLinks = { trace: () => "", log: Option.none() }
 
 const rows = Arr.map(LOGS_STREAM_ROWS, (log) => toLogRowView(log, [], logTimeFormat(TIME_ZONE), NO_LINKS))
 
-/** The stream's own update, except that the landing has no detail sheet: opening a row expands it. */
+/**
+ * The stream's own update, except that the landing has no detail sheet: opening a row expands it,
+ * and an expanded row's Details button, which would only fold the row it sits in, does nothing.
+ */
 export const update = (model: LogsStream.Model, message: LogsStream.Message) => {
 	const next = LogsStream.update(model, message)
-	if (next.outMessage?._tag !== "OpenedLog") return { model: next.model, commands: next.commands }
+	if (next.outMessage?._tag !== "OpenedLog" || message._tag === "ClickedDetails")
+		return { model: next.model, commands: next.commands }
 	const expanded = LogsStream.update(
 		next.model,
 		LogsStream.Message.ClickedExpand({ index: next.outMessage.index }),

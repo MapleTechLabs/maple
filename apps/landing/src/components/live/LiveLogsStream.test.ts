@@ -21,4 +21,11 @@ describe("Logs stream island", () => {
 		expect(opened.expandedRows).toEqual([3])
 		expect(closed.expandedRows).toEqual([])
 	})
+
+	it("keeps an expanded row open when its Details button is clicked", () => {
+		const opened = update(LogsStream.init("test", []), LogsStream.Message.ClickedRow({ index: 3 })).model
+		const details = update(opened, LogsStream.Message.ClickedDetails({ index: 3 })).model
+
+		expect(details.expandedRows).toEqual([3])
+	})
 })
