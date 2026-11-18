@@ -25,7 +25,7 @@ import {
 	type SubmitDiagnosisRequest,
 	type UserId,
 } from "@maple/domain/http"
-import { AnomalyIncidentId, ErrorIssueId, InvestigationId } from "@maple/primitives"
+import { AnomalyIncidentId, ErrorIssueId, InvestigationId, type RoleName } from "@maple/primitives"
 import { productEventSpanAttributes } from "@maple/domain/tinybird/product-event-attributes"
 
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -92,6 +92,14 @@ export interface ListInvestigationsOptions {
 	readonly offset?: number
 }
 
+/** The person or key behind a manual start or restart, with what the credential holds. */
+export interface ManualStarter {
+	readonly userId: UserId | null
+	readonly roles: ReadonlyArray<RoleName>
+	/** Whether the credential's scopes reach data sources: a session's do, a scoped key's may not. */
+	readonly mayReadDataSources: boolean
+}
+
 export interface InvestigationServiceApi {
 	readonly listInvestigations: (
 		orgId: OrgId,
@@ -117,7 +125,7 @@ export interface InvestigationServiceApi {
 	>
 	readonly createAndStartInvestigation: (
 		orgId: OrgId,
-		userId: UserId | null,
+		by: ManualStarter,
 		request: InvestigationCreateRequest,
 	) => Effect.Effect<
 		InvestigationDocument,
@@ -129,6 +137,7 @@ export interface InvestigationServiceApi {
 	readonly restartInvestigation: (
 		orgId: OrgId,
 		id: InvestigationId,
+		by: ManualStarter,
 	) => Effect.Effect<
 		InvestigationDocument,
 		| InvestigationPersistenceError
@@ -408,13 +417,23 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				orgId: OrgId,
 				doc: InvestigationDocument,
 				nowMs: number,
+				by: ManualStarter,
 			) {
+				const author = doc.createdBy ?? by.userId
 				const started = yield* starter
 					.startTurn({
 						orgId,
 						investigationId: doc.id,
 						subject: doc.subject,
 						snapshot: doc.snapshot,
+						// Whoever wrote the subject and snapshot answers for the pass, held to the credential
+						// that asked for it now: a restart by someone else never lends the author their role.
+						startedBy: {
+							kind: "person",
+							...(author === null ? undefined : { userId: author }),
+							roles: by.roles,
+							mayReadDataSources: by.mayReadDataSources,
+						},
 						nowMs,
 					})
 					.pipe(Effect.mapError(makePersistenceError))
@@ -554,77 +573,76 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 			})
 
 			const createAndStartInvestigation: InvestigationServiceApi["createAndStartInvestigation"] =
-				Effect.fn("InvestigationService.createAndStartInvestigation")(
-					function* (orgId, userId, request) {
-						yield* Effect.annotateCurrentSpan({
+				Effect.fn("InvestigationService.createAndStartInvestigation")(function* (orgId, by, request) {
+					const userId = by.userId
+					yield* Effect.annotateCurrentSpan({
+						orgId,
+						"maple.investigation.subject_type": request.subject.type,
+						"maple.investigation.creation_source": "manual",
+					})
+					const nowMs = yield* Clock.currentTimeMillis
+					yield* failStaleInvestigations(orgId, nowMs)
+					if (request.subject.type === "incident") {
+						const existing = yield* loadIncidentRow(
 							orgId,
-							"maple.investigation.subject_type": request.subject.type,
-							"maple.investigation.creation_source": "manual",
-						})
-						const nowMs = yield* Clock.currentTimeMillis
-						yield* failStaleInvestigations(orgId, nowMs)
-						if (request.subject.type === "incident") {
-							const existing = yield* loadIncidentRow(
-								orgId,
-								request.subject.incidentKind,
-								request.subject.incidentId,
-							)
-							if (
-								existing &&
-								(existing.status !== "investigating" || existing.startedAt !== null)
-							) {
-								return yield* documentFor(orgId, existing)
-							}
+							request.subject.incidentKind,
+							request.subject.incidentId,
+						)
+						if (
+							existing &&
+							(existing.status !== "investigating" || existing.startedAt !== null)
+						) {
+							return yield* documentFor(orgId, existing)
 						}
-						const doc = yield* createInvestigation(orgId, userId, request)
-						// A manual start spends the day's budget but is never refused by it.
-						const claimed = yield* dbExecute((db) =>
-							admitManualStart(
-								db,
-								orgId,
-								db.run(
-									PG.update(Investigations)
-										.set(($) => ({
-											startedAt: nowMs,
-											autonomousTurns: $.autonomousTurns.add(1),
-											updatedAt: nowMs,
-										}))
-										.where(($) => [
-											$.orgId.eq(orgId),
-											$.id.eq(doc.id),
-											$.status.eq("investigating"),
-											$.startedAt.isNull(),
-										])
-										.returning("id"),
-								),
+					}
+					const doc = yield* createInvestigation(orgId, userId, request)
+					// A manual start spends the day's budget but is never refused by it.
+					const claimed = yield* dbExecute((db) =>
+						admitManualStart(
+							db,
+							orgId,
+							db.run(
+								PG.update(Investigations)
+									.set(($) => ({
+										startedAt: nowMs,
+										autonomousTurns: $.autonomousTurns.add(1),
+										updatedAt: nowMs,
+									}))
+									.where(($) => [
+										$.orgId.eq(orgId),
+										$.id.eq(doc.id),
+										$.status.eq("investigating"),
+										$.startedAt.isNull(),
+									])
+									.returning("id"),
 							),
-						)
-						if (claimed.length === 0) return doc
-						// Maple's own `investigation_started` product event, projected from this span.
-						yield* Effect.annotateCurrentSpan(
-							productEventSpanAttributes({
-								name: "investigation_started",
-								userId: userId ?? "",
-								groupId: orgId,
-								props: { subject_type: request.subject.type },
-							}),
-						)
-						yield* sendAutonomousTurn(orgId, doc, nowMs)
-						return yield* getInvestigation(orgId, doc.id).pipe(
-							Effect.catchTag("@maple/http/investigations/InvestigationNotFoundError", () =>
-								Effect.fail(
-									new InvestigationPersistenceError({
-										message: "Investigation row disappeared after autonomous start",
-									}),
-								),
+						),
+					)
+					if (claimed.length === 0) return doc
+					// Maple's own `investigation_started` product event, projected from this span.
+					yield* Effect.annotateCurrentSpan(
+						productEventSpanAttributes({
+							name: "investigation_started",
+							userId: userId ?? "",
+							groupId: orgId,
+							props: { subject_type: request.subject.type },
+						}),
+					)
+					yield* sendAutonomousTurn(orgId, doc, nowMs, by)
+					return yield* getInvestigation(orgId, doc.id).pipe(
+						Effect.catchTag("@maple/http/investigations/InvestigationNotFoundError", () =>
+							Effect.fail(
+								new InvestigationPersistenceError({
+									message: "Investigation row disappeared after autonomous start",
+								}),
 							),
-						)
-					},
-				)
+						),
+					)
+				})
 
 			const restartInvestigation: InvestigationServiceApi["restartInvestigation"] = Effect.fn(
 				"InvestigationService.restartInvestigation",
-			)(function* (orgId, id) {
+			)(function* (orgId, id, by) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.investigation.id": id })
 				const nowMs = yield* Clock.currentTimeMillis
 				const existing = yield* getInvestigation(orgId, id)
@@ -687,7 +705,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 					error: null,
 					updatedAt: decodeIsoSync(DateTime.formatIso(DateTime.makeUnsafe(nowMs))),
 				})
-				yield* sendAutonomousTurn(orgId, restarting, nowMs)
+				yield* sendAutonomousTurn(orgId, restarting, nowMs, by)
 				return yield* getInvestigation(orgId, id)
 			})
 

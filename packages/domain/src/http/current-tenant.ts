@@ -125,6 +125,13 @@ export interface TenantContext {
 	readonly mcpClientName?: string
 	/** Who drove the chat-engine turn this invocation belongs to; audit attribution keys on it. */
 	readonly turnOrigin?: ChatTurnOrigin
+	/**
+	 * For an unattended turn, who answers for it, settled when it starts: one of Maple's own
+	 * producers, or a person with the roles they hold now. Absent reads as a person with none.
+	 */
+	readonly turnStarter?:
+		| { readonly kind: "producer" }
+		| { readonly kind: "person"; readonly roles: ReadonlyArray<RoleName> }
 	/** Which Maple agent ran the chat-engine turn (investigation, code review, ...), so the audit log can name it. */
 	readonly chatMode?: ChatMode
 }

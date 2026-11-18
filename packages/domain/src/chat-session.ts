@@ -461,6 +461,30 @@ export const encodeChatTurnTenant = Schema.encodeSync(ChatTurnTenant)
 export const decodeChatTurnTenant = Schema.decodeSync(ChatTurnTenant)
 
 /**
+ * Who caused an unattended pass. Unattended says nobody reads it, not that nobody chose it: a
+ * person can start one and write its prompt, so what it may reach is theirs to answer for.
+ */
+export const AutonomousTurnStarter = Schema.Union([
+	/** One of Maple's own producers raised it from an event. Nobody wrote its prompt. */
+	Schema.Struct({
+		kind: Schema.Literal("producer"),
+		producer: Schema.Literals(["incident_triage", "fix_verification"]),
+	}),
+	/**
+	 * A person started or restarted it, or wrote what it reads. `userId` is absent when nobody can
+	 * name them (a pull request's author). `roles` are what their credential held at that moment.
+	 */
+	Schema.Struct({
+		kind: Schema.Literal("person"),
+		userId: Schema.optionalKey(UserId),
+		roles: Schema.Array(RoleName),
+		/** Whether their credential could read data sources (a scoped key may not). Absent reads as no. */
+		mayReadDataSources: Schema.optionalKey(Schema.Boolean),
+	}),
+])
+export type AutonomousTurnStarter = (typeof AutonomousTurnStarter)["Encoded"]
+
+/**
  * Who drives this turn, stated rather than inferred.
  *
  * The second axis of a turn, beside {@link ChatMode}: the mode says what the conversation is, the
@@ -477,8 +501,14 @@ export const decodeChatTurnTenant = Schema.decodeSync(ChatTurnTenant)
 export const ChatTurnOrigin = Schema.Union([
 	/** A signed-in person in the Maple app. */
 	Schema.Struct({ kind: Schema.Literal("app") }),
-	/** An investigation's own unattended pass, which has no reader at all. */
-	Schema.Struct({ kind: Schema.Literal("autonomous") }),
+	/**
+	 * An investigation's own unattended pass, which has no reader at all. `startedBy` absent (a turn
+	 * recorded before the field, a caller that did not say) reads as a person nobody can name.
+	 */
+	Schema.Struct({
+		kind: Schema.Literal("autonomous"),
+		startedBy: Schema.optionalKey(AutonomousTurnStarter),
+	}),
 	/**
 	 * Someone addressing Maple from a chat platform. `externalUserId` and `displayName` are the
 	 * platform's; the rest of the audit model attributes a turn by them.

@@ -7,7 +7,7 @@ import { doc, type DocBlock } from "../lib/tool-doc"
 import { closestMatches } from "../lib/filter-suggestions"
 import {
 	AGENT_AUDIENCE,
-	tenantWithDataSources,
+	tenantWithDataSourceCatalog,
 	mapDataSourceError,
 	queryLanguageLabel,
 	untrustedText,
@@ -69,7 +69,7 @@ export function registerDescribeDataSourceTool(server: McpToolRegistrar) {
 		scopeFamily: "data_sources",
 		phrases: ["Reading a data source's catalog", "Describing a data source"],
 		handler: Effect.fn("McpTool.describeDataSource")(function* ({ data_source, entries, offset }) {
-			const tenant = yield* tenantWithDataSources(TOOL)
+			const tenant = yield* tenantWithDataSourceCatalog(TOOL)
 			const service = yield* ExternalDataSourceService
 			const catalog = yield* service
 				.catalog(tenant.orgId, data_source, AGENT_AUDIENCE)

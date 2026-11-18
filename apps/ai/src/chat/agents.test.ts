@@ -12,7 +12,7 @@ import {
 	makeChatSessionId,
 } from "@maple/domain/chat-session"
 import { evaluatePermission } from "@maple/domain/permission"
-import { ExternalUserId, OrgId, UserId } from "@maple/primitives"
+import { ExternalUserId, OrgId, RoleName, UserId } from "@maple/primitives"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { assert, describe, it } from "vitest"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
@@ -22,7 +22,7 @@ import { MUTATING_TOOL_NAMES } from "./permissions"
 import type { TenantContext } from "@maple/domain/http"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { AGENTS, agentForSession, isAutonomousTurn, sessionOf } from "./agents"
-import { profileForRoles, profileForTurn, toolSurfaceForApproval } from "./profiles"
+import { profileForRoles, profileForTenant, profileForTurn, toolSurfaceForApproval } from "./profiles"
 import { DASHBOARD_AUTHORING_TOOLS } from "../mcp/tools/types"
 import { CONNECTOR_SYSTEM_PROMPT } from "./prompts"
 import { buildChatToolkit } from "./maple-toolkit"
@@ -186,6 +186,51 @@ describe("profileForTurn", () => {
 		for (const name of MUTATING_TOOL_NAMES) {
 			assert.equal(evaluatePermission(member.ruleset, name), "ask", name)
 		}
+	})
+
+	it("offers query_data_source only to a turn whose query the service would run", () => {
+		const offered = (caller: Pick<TenantContext, "roles" | "turnOrigin" | "turnStarter">) => {
+			const origin = caller.turnOrigin ?? { kind: "app" }
+			const session = origin.kind === "connector" ? connectorSession : appSession
+			const profile = profileForTenant(profileForTurn(agentForSession(session), origin), caller)
+			return evaluatePermission(profile.ruleset, "query_data_source") !== "deny"
+		}
+		const roles = (name: string) => [Schema.decodeSync(RoleName)(name)]
+		const autonomous = { kind: "autonomous" } as const
+		assert.deepStrictEqual(
+			{
+				analyst: offered({ roles: roles("org:analyst") }),
+				member: offered({ roles: roles("org:member") }),
+				engineer: offered({ roles: roles("org:engineer") }),
+				unlinkedConnector: offered({ roles: [], turnOrigin: CONNECTOR_ORIGIN }),
+				producerPass: offered({
+					roles: [],
+					turnOrigin: autonomous,
+					turnStarter: { kind: "producer" },
+				}),
+				memberStartedPass: offered({
+					roles: [],
+					turnOrigin: autonomous,
+					turnStarter: { kind: "person", roles: roles("org:member") },
+				}),
+				engineerStartedPass: offered({
+					roles: [],
+					turnOrigin: autonomous,
+					turnStarter: { kind: "person", roles: roles("org:engineer") },
+				}),
+				passNobodyStarted: offered({ roles: [], turnOrigin: autonomous }),
+			},
+			{
+				analyst: false,
+				member: false,
+				engineer: true,
+				unlinkedConnector: false,
+				producerPass: true,
+				memberStartedPass: false,
+				engineerStartedPass: true,
+				passNobodyStarted: false,
+			},
+		)
 	})
 
 	it("offers a connector the repository sandbox but no internal-audience tool", () => {

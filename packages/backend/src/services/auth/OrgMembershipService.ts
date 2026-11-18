@@ -1,12 +1,17 @@
 import { EdgeCacheService } from "@maple/cache"
 import type { VerifiedOrgMembership } from "@maple/auth"
 import { AuthorizationUnavailableError, OrgId, RoleName, type UserId } from "@maple/domain/http"
-import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema, Stream } from "effect"
+import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema, Stream, String as Str } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
 import { clerkModeClient } from "@maple/auth"
 
 export interface OrgMembershipServiceApi {
+	/**
+	 * Whether this deployment has a membership directory at all. `none` is self-hosted mode, where
+	 * `verify` can never answer: a caller must not read that as a lookup that failed.
+	 */
+	readonly directory: "clerk" | "none"
 	/**
 	 * Is `userId` a member of `orgId`, and with what role?
 	 *
@@ -233,7 +238,10 @@ const make = Effect.gen(function* () {
 		return yield* verifyPair(userId, orgId)
 	})
 
-	return { verify } satisfies OrgMembershipServiceApi
+	// The auth mode decides it, as `clerkModeClient` does: Clerk mode missing its keys is a broken
+	// directory, not an absent one.
+	const directory = Str.toLowerCase(env.MAPLE_AUTH_MODE) === "clerk" ? "clerk" : "none"
+	return { directory, verify } satisfies OrgMembershipServiceApi
 })
 
 export class OrgMembershipService extends Context.Service<OrgMembershipService, OrgMembershipServiceApi>()(
