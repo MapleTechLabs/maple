@@ -12,7 +12,7 @@ import {
 	type UserId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { generateApiKey, hashApiKey } from "../../platform/credential-tokens"
+import { generateApiKey, hashApiKey, hashLookupToken } from "../../platform/credential-tokens"
 import { ApiKeys, McpOAuthAuthorizations, McpOAuthClients, McpOAuthRefreshTokens } from "@maple/db/tables"
 import { REFRESH_FAMILY_ABSOLUTE_TTL_MS, revokeRefreshFamily } from "./mcp-oauth-family"
 import {
@@ -113,7 +113,6 @@ export interface McpOAuthRefreshInput {
 	readonly scope?: string
 }
 
-const hashOpaqueToken = (value: string) => createHash("sha256").update(value).digest("hex")
 const makeOpaqueToken = (prefix: string) => `${prefix}${randomBytes(32).toString("base64url")}`
 const decodeApiKeyId = Schema.decodeUnknownSync(ApiKeyId)
 
@@ -469,7 +468,7 @@ export class McpOAuthService extends Context.Service<
 				yield* dbExecute((db) =>
 					db.run(
 						PG.insertInto(McpOAuthAuthorizations).values({
-							requestIdHash: hashOpaqueToken(requestId),
+							requestIdHash: hashLookupToken("mcp-oauth/request-id", requestId, apiKeyHmacKey),
 							clientId: client.clientId,
 							clientName: client.clientName,
 							redirectUri: input.redirectUri,
@@ -500,7 +499,11 @@ export class McpOAuthService extends Context.Service<
 				db.run(
 					PG.from(McpOAuthAuthorizations)
 						.select()
-						.where(($) => [$.requestIdHash.eq(hashOpaqueToken(requestId))])
+						.where(($) => [
+							$.requestIdHash.eq(
+								hashLookupToken("mcp-oauth/request-id", requestId, apiKeyHmacKey),
+							),
+						])
 						.limit(1),
 				),
 			)
@@ -561,7 +564,11 @@ export class McpOAuthService extends Context.Service<
 				db.run(
 					PG.update(McpOAuthAuthorizations)
 						.set({
-							authorizationCodeHash: hashOpaqueToken(code),
+							authorizationCodeHash: hashLookupToken(
+								"mcp-oauth/authorization-code",
+								code,
+								apiKeyHmacKey,
+							),
 							approvedOrgId: identity.orgId,
 							approvedUserId: identity.userId,
 							approvedRoles: [...identity.roles],
@@ -657,7 +664,15 @@ export class McpOAuthService extends Context.Service<
 					db.run(
 						PG.from(McpOAuthAuthorizations)
 							.select()
-							.where(($) => [$.authorizationCodeHash.eq(hashOpaqueToken(input.code))])
+							.where(($) => [
+								$.authorizationCodeHash.eq(
+									hashLookupToken(
+										"mcp-oauth/authorization-code",
+										input.code,
+										apiKeyHmacKey,
+									),
+								),
+							])
 							.limit(1),
 					),
 				)
@@ -727,7 +742,11 @@ export class McpOAuthService extends Context.Service<
 							yield* db.run(
 								PG.insertInto(McpOAuthRefreshTokens).values({
 									id: values.refreshId,
-									tokenHash: hashOpaqueToken(values.refreshToken),
+									tokenHash: hashLookupToken(
+										"mcp-oauth/refresh-token",
+										values.refreshToken,
+										apiKeyHmacKey,
+									),
 									familyId: values.familyId,
 									clientId: row.clientId,
 									resource: row.resource,
@@ -759,7 +778,15 @@ export class McpOAuthService extends Context.Service<
 					db.run(
 						PG.from(McpOAuthRefreshTokens)
 							.select()
-							.where(($) => [$.tokenHash.eq(hashOpaqueToken(input.refreshToken))])
+							.where(($) => [
+								$.tokenHash.eq(
+									hashLookupToken(
+										"mcp-oauth/refresh-token",
+										input.refreshToken,
+										apiKeyHmacKey,
+									),
+								),
+							])
 							.limit(1),
 					),
 				)
@@ -869,7 +896,11 @@ export class McpOAuthService extends Context.Service<
 							yield* db.run(
 								PG.insertInto(McpOAuthRefreshTokens).values({
 									id: values.refreshId,
-									tokenHash: hashOpaqueToken(values.refreshToken),
+									tokenHash: hashLookupToken(
+										"mcp-oauth/refresh-token",
+										values.refreshToken,
+										apiKeyHmacKey,
+									),
 									familyId: row.familyId,
 									clientId: row.clientId,
 									resource: row.resource,
@@ -907,7 +938,11 @@ export class McpOAuthService extends Context.Service<
 					db.run(
 						PG.from(McpOAuthRefreshTokens)
 							.select()
-							.where(($) => [$.tokenHash.eq(hashOpaqueToken(token))])
+							.where(($) => [
+								$.tokenHash.eq(
+									hashLookupToken("mcp-oauth/refresh-token", token, apiKeyHmacKey),
+								),
+							])
 							.limit(1),
 					),
 				)
