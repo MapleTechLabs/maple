@@ -216,6 +216,19 @@ describe("renderDiscordMessage", () => {
 		expect(Str.endsWith("…")(payload.content)).toBe(true)
 	})
 
+	it("leaves emphasis and an unopened parenthesis outside a bare URL", () => {
+		const payload = renderDiscordMessage([
+			{
+				kind: "prose",
+				markdown:
+					"**https://x.example/slow** and (see https://w.org/wiki/Foo_(bar)), or https://a.example).",
+			},
+		])
+		expect(payload.content).toBe(
+			"**<https://x.example/slow>** and (see <https://w.org/wiki/Foo_(bar)>), or <https://a.example>).",
+		)
+	})
+
 	it("keeps a link target's balanced parentheses when it suppresses the preview", () => {
 		const payload = renderDiscordMessage([
 			{ kind: "prose", markdown: "[docs](https://x.example/wiki/Foo_(bar)) here" },

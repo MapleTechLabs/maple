@@ -243,13 +243,21 @@ const CODE = /(```[\s\S]*?```|`[^`\n]*`)/
 /** A markdown link's target (balanced parentheses kept), an already-suppressed `<url>`, or a bare URL. */
 const LINK =
 	/(\]\(\s*)<?(https?:\/\/(?:[^\s()<>]|\([^\s()<>]*\))+)>?(?=\s*\))|<https?:\/\/[^\s>]+>|https?:\/\/[^\s<>]+/g
-/** Punctuation that ends a sentence rather than the URL before it. */
-const TRAILING = /[.,;:!?'"]+$|\)+$/
+/** Sentence punctuation or markdown emphasis after a URL, which is not part of it. */
+const TRAILING = /[.,;:!?'"*_~]+$/
+
+const count = (text: string, char: string) => Str.split(char)(text).length - 1
+
+/** The URL without what follows it in prose: trailing punctuation, and `)` it never opened. */
+const urlPart = (url: string): string => {
+	const trimmed = Str.replace(TRAILING, "")(url)
+	return Str.endsWith(")")(trimmed) && count(trimmed, ")") > count(trimmed, "(")
+		? urlPart(Str.slice(0, -1)(trimmed))
+		: trimmed
+}
 
 const suppressBare = (url: string): string => {
-	const tail = Str.includes("(")(url)
-		? Str.replace(/[.,;:!?'"]+$/, "")(url)
-		: Str.replace(TRAILING, "")(url)
+	const tail = urlPart(url)
 	return `<${tail}>${Str.slice(tail.length)(url)}`
 }
 
