@@ -117,3 +117,8 @@ The pre-v2 envelope was read, and rewritten by the hourly pass, only by the rele
 the one that introduced v2 and the one that stopped reading it. A deployment that skips those
 releases keeps values nothing can open any more, the ingest keys among them. Run one of them
 until `secretsResealRemaining` is 0 before upgrading further.
+
+The same holds for the v3 envelope: a release that seals v3 but still opens v2 has to run
+until `secretsResealRemaining` is 0 before one that refuses v2 for destination slots. Skipping
+it leaves BYO ClickHouse passwords, scrape credentials, data source secrets and uptime headers
+that no longer open, and they have to be entered again.

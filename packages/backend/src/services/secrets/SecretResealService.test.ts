@@ -267,35 +267,19 @@ describe("SecretResealService", () => {
 		})
 	})
 
-	it.effect(
-		"moves a destination slot's v2 values onto v3, after which moving the row stops them opening",
-		() => {
-			const testDb = createTestDb(trackedDbs)
-			return Effect.gen(function* () {
-				const ring = yield* keyring(1)
-				// How writers sealed this column before it named a destination.
-				const v2Slot = { name: clickHousePasswordSlot.name, binding: clickHousePasswordSlot.binding }
-				const v2 = yield* sealSecret(ring, v2Slot, { orgId: "org_a" }, "ch-pass", fail)
-				yield* seedClickHouseSettings(testDb, "org_a", v2)
-				assert.isTrue(Str.startsWith(`v2.${ring.primary.id}.`)(v2.ciphertext))
+	it.effect("counts a destination slot's leftover v2 value as failed and remaining, untouched", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const ring = yield* keyring(1)
+			// How writers sealed this column before it named a destination.
+			const v2Slot = { name: clickHousePasswordSlot.name, binding: clickHousePasswordSlot.binding }
+			const v2 = yield* sealSecret(ring, v2Slot, { orgId: "org_a" }, "ch-pass", fail)
+			yield* seedClickHouseSettings(testDb, "org_a", v2)
 
-				assert.deepStrictEqual(yield* sweep(testDb, 1), { resealed: 1, failed: 0, remaining: 0 })
-				const resealed = yield* clickHousePassword(testDb, "org_a")
-				assert.isTrue(Str.startsWith(`v3.${ring.primary.id}.`)(resealed.ciphertext))
-				const ref = { orgId: "org_a", chUrl: CH_URL }
-				assert.strictEqual(
-					yield* openSecret(ring, clickHousePasswordSlot, ref, resealed, fail),
-					"ch-pass",
-				)
-
-				const moved = { ...ref, chUrl: "https://attacker.example" }
-				const outcome = yield* openSecret(ring, clickHousePasswordSlot, moved, resealed, fail).pipe(
-					Effect.flip,
-				)
-				assert.strictEqual(outcome, "Decryption failed")
-			})
-		},
-	)
+			assert.deepStrictEqual(yield* sweep(testDb, 1), { resealed: 0, failed: 1, remaining: 1 })
+			assert.deepStrictEqual(yield* clickHousePassword(testDb, "org_a"), v2)
+		})
+	})
 
 	it.effect("reseals a value whose ref reads the row's stored config", () => {
 		const testDb = createTestDb(trackedDbs)

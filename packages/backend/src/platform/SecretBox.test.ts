@@ -186,18 +186,18 @@ describe("v3 envelope", () => {
 		}),
 	)
 
-	it.effect("still opens a v2 value on a slot that has a destination", () =>
+	it.effect("refuses a v2 value on a slot that has a destination: it is not bound to one", () =>
 		Effect.gen(function* () {
 			const ring = yield* keyring(1)
 			const sealed = yield* sealSecret(ring, slot, ref, "hunter2", fail)
-			const opened = yield* openSecret(
+			const error = yield* openSecret(
 				ring,
 				destinationSlot,
 				{ ...ref, url: "https://a" },
 				sealed,
 				fail,
-			)
-			expect(opened).toBe("hunter2")
+			).pipe(Effect.flip)
+			expect(error).toBe("Stored value is not bound to its destination")
 		}),
 	)
 

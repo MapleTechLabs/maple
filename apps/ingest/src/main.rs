@@ -12135,9 +12135,9 @@ impl SecretKeyring {
         Ok(Self { keys })
     }
 
-    /// Opens `org_clickhouse_settings.ch_password_*` for `org_id`. `v2.<keyId>.<base64>` is
-    /// bound to the org; `v3` also to `ch_url` exactly as stored, so a row pointed at another
-    /// host does not open.
+    /// Opens `org_clickhouse_settings.ch_password_*` for `org_id`. Only `v3.<keyId>.<base64>`,
+    /// bound to the org and to `ch_url` exactly as stored, is accepted: a row pointed at
+    /// another host does not open.
     fn open_clickhouse_password(
         &self,
         org_id: &str,
@@ -12147,23 +12147,14 @@ impl SecretKeyring {
         tag: &str,
     ) -> Result<String, String> {
         let parts: Vec<&str> = ciphertext.split('.').collect();
-        let (aad, key_id, sealed) = match parts.as_slice() {
-            ["v2", key_id, sealed] => (
-                secret_aad(&[CLICKHOUSE_PASSWORD_SLOT, org_id]),
-                *key_id,
-                *sealed,
-            ),
-            ["v3", key_id, sealed] => (
-                secret_aad(&[CLICKHOUSE_PASSWORD_SLOT, org_id, ch_url]),
-                *key_id,
-                *sealed,
-            ),
-            _ => return Err("Stored value is not in the v2 or v3 envelope".to_owned()),
+        let ["v3", key_id, sealed] = parts.as_slice() else {
+            return Err("Stored value is not bound to its destination".to_owned());
         };
+        let aad = secret_aad(&[CLICKHOUSE_PASSWORD_SLOT, org_id, ch_url]);
         let key = self
             .keys
             .iter()
-            .find(|key| key.id == key_id)
+            .find(|key| key.id == *key_id)
             .ok_or_else(|| "Sealed with a key this deployment does not hold".to_owned())?;
         decrypt_aes256_gcm(
             sealed,
@@ -20103,58 +20094,16 @@ mod tests {
 
     const FIXTURE_KEY: &str = "BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=";
     const OTHER_KEY: &str = "BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY=";
-    // A v2 envelope sealed by SecretBox.ts for org "org_fixture" under FIXTURE_KEY.
-    // The same triple is opened in packages/backend/src/platform/secret-slots.test.ts.
-    const V2_CIPHERTEXT: &str = "v2.IGjfnBNl.1HbzraIYWPNUxiGCnA==";
-    const V2_IV: &str = "3gBID0+h49Y9q+SD";
-    const V2_TAG: &str = "s2cyY7uChmyKqIcJzE8m7Q==";
-    // The v3 envelope of the same password, also bound to `ch_url` = CH_URL.
+    // A v3 envelope sealed by SecretBox.ts for org "org_fixture" and `ch_url` = CH_URL under
+    // FIXTURE_KEY. The same triple is opened in packages/backend/src/platform/secret-slots.test.ts.
     const CH_URL: &str = "https://ch.example.com:8443";
     const V3_CIPHERTEXT: &str = "v3.IGjfnBNl.xeDTFXH6xa2O+HjUIA==";
     const V3_IV: &str = "AAECAwQFBgcICQoL";
     const V3_TAG: &str = "cG8TD4fQzD4DFygS8QA5tw==";
-
-    #[test]
-    fn secret_keyring_opens_a_v2_password_sealed_by_the_api() {
-        let keyring = SecretKeyring::parse(FIXTURE_KEY, None).expect("keyring parses");
-        let plaintext = keyring
-            .open_clickhouse_password("org_fixture", CH_URL, V2_CIPHERTEXT, V2_IV, V2_TAG)
-            .expect("v2 fixture opens");
-        assert_eq!(plaintext, "ch-secret-123");
-    }
-
-    #[test]
-    fn secret_keyring_refuses_a_v2_password_moved_to_another_org() {
-        let keyring = SecretKeyring::parse(FIXTURE_KEY, None).expect("keyring parses");
-        let moved =
-            keyring.open_clickhouse_password("org_other", CH_URL, V2_CIPHERTEXT, V2_IV, V2_TAG);
-        assert_eq!(moved, Err("Decryption failed".to_owned()));
-    }
-
-    #[test]
-    fn secret_keyring_opens_with_a_decrypt_only_key_after_rotation() {
-        let rotated = SecretKeyring::parse(OTHER_KEY, Some(&format!(" {FIXTURE_KEY} ,")))
-            .expect("keyring parses");
-        let v2 =
-            rotated.open_clickhouse_password("org_fixture", CH_URL, V2_CIPHERTEXT, V2_IV, V2_TAG);
-        assert_eq!(v2, Ok("ch-secret-123".to_owned()));
-    }
-
-    #[test]
-    fn secret_keyring_refuses_a_password_from_before_the_v2_envelope() {
-        let keyring = SecretKeyring::parse(FIXTURE_KEY, None).expect("keyring parses");
-        let old = keyring.open_clickhouse_password(
-            "org_fixture",
-            CH_URL,
-            "vDjK0A+Vv5bHlJ2a3A==",
-            "AQIDBAUGBwgJCgsM",
-            "b7D1umrvI8557NFvR9nJ/A==",
-        );
-        assert_eq!(
-            old,
-            Err("Stored value is not in the v2 or v3 envelope".to_owned())
-        );
-    }
+    // The same password in the v2 envelope, bound to the org only.
+    const V2_CIPHERTEXT: &str = "v2.IGjfnBNl.1HbzraIYWPNUxiGCnA==";
+    const V2_IV: &str = "3gBID0+h49Y9q+SD";
+    const V2_TAG: &str = "s2cyY7uChmyKqIcJzE8m7Q==";
 
     #[test]
     fn secret_keyring_opens_a_v3_password_only_at_the_url_it_was_sealed_for() {
@@ -20173,10 +20122,44 @@ mod tests {
     }
 
     #[test]
+    fn secret_keyring_refuses_a_v3_password_moved_to_another_org() {
+        let keyring = SecretKeyring::parse(FIXTURE_KEY, None).expect("keyring parses");
+        let moved =
+            keyring.open_clickhouse_password("org_other", CH_URL, V3_CIPHERTEXT, V3_IV, V3_TAG);
+        assert_eq!(moved, Err("Decryption failed".to_owned()));
+    }
+
+    #[test]
+    fn secret_keyring_opens_with_a_decrypt_only_key_after_rotation() {
+        let rotated = SecretKeyring::parse(OTHER_KEY, Some(&format!(" {FIXTURE_KEY} ,")))
+            .expect("keyring parses");
+        let v3 =
+            rotated.open_clickhouse_password("org_fixture", CH_URL, V3_CIPHERTEXT, V3_IV, V3_TAG);
+        assert_eq!(v3, Ok("ch-secret-123".to_owned()));
+    }
+
+    #[test]
+    fn secret_keyring_refuses_a_password_not_bound_to_its_url() {
+        let keyring = SecretKeyring::parse(FIXTURE_KEY, None).expect("keyring parses");
+        let v2 =
+            keyring.open_clickhouse_password("org_fixture", CH_URL, V2_CIPHERTEXT, V2_IV, V2_TAG);
+        let old = keyring.open_clickhouse_password(
+            "org_fixture",
+            CH_URL,
+            "vDjK0A+Vv5bHlJ2a3A==",
+            "AQIDBAUGBwgJCgsM",
+            "b7D1umrvI8557NFvR9nJ/A==",
+        );
+        let unbound = Err("Stored value is not bound to its destination".to_owned());
+        assert_eq!(v2, unbound);
+        assert_eq!(old, unbound);
+    }
+
+    #[test]
     fn secret_keyring_names_a_missing_key_and_rejects_a_malformed_one() {
         let other = SecretKeyring::parse(OTHER_KEY, None).expect("keyring parses");
         let missing =
-            other.open_clickhouse_password("org_fixture", CH_URL, V2_CIPHERTEXT, V2_IV, V2_TAG);
+            other.open_clickhouse_password("org_fixture", CH_URL, V3_CIPHERTEXT, V3_IV, V3_TAG);
         assert_eq!(
             missing,
             Err("Sealed with a key this deployment does not hold".to_owned())

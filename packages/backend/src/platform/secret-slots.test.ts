@@ -29,9 +29,10 @@ const open = (chUrl: string, stored: typeof v2Fixture) =>
 	)
 
 describe("clickHousePasswordSlot", () => {
-	it.effect("opens the v2 fixture the ingest gateway's tests open", () =>
+	it.effect("refuses the v2 fixture: it is not bound to ch_url", () =>
 		Effect.gen(function* () {
-			expect(yield* open("https://ch.example.com:8443", v2Fixture)).toBe("ch-secret-123")
+			const error = yield* open("https://ch.example.com:8443", v2Fixture).pipe(Effect.flip)
+			expect(error).toBe("Stored value is not bound to its destination")
 		}),
 	)
 
