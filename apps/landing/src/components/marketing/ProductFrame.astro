@@ -47,7 +47,7 @@ const CAPTURES = {
 		aside: { crop: { x: 0.183, y: 0.158, zoom: 2.5 }, phoneZoom: 3.5, width: 480, height: 372 },
 		wide: { crop: { x: 0.183, y: 0.158, zoom: 1.224 }, phoneZoom: 3.5, width: 1296, height: 600 },
 	},
-	// The same capture, opened on the totals row: the volumes the plan meters.
+	// The same capture, opened on the totals row: volumes the plan meters, over request volume.
 	usage: {
 		src: "/screenshots/hero-dashboard.webp",
 		label: "The Maple overview page: the logs, traces and metrics received, over request volume and latency",
@@ -57,8 +57,9 @@ const CAPTURES = {
 	services: {
 		src: "/screenshots/hero-services.webp",
 		label: "The Maple services page: latency percentiles, error rate and throughput per service",
-		aside: { crop: { x: 0.362, y: 0.215, zoom: 2.4 }, phoneZoom: 3.36, width: 480, height: 372 },
-		wide: { crop: { x: 0.362, y: 0.215, zoom: 1.567 }, phoneZoom: 3.36, width: 1296, height: 600 },
+		// The phone window stays wide enough to reach the latency columns, past the names.
+		aside: { crop: { x: 0.362, y: 0.215, zoom: 2.4 }, phoneZoom: 2.8, width: 480, height: 372 },
+		wide: { crop: { x: 0.362, y: 0.215, zoom: 1.568 }, phoneZoom: 2.8, width: 1296, height: 600 },
 	},
 	issue: {
 		src: "/screenshots/gallery-issue-detail.webp",
@@ -68,6 +69,13 @@ const CAPTURES = {
 	},
 } as const;
 
+// The live map's labels are about 3px tall on a phone, so a phone gets a window of the capture instead.
+const MAP_PHONE = {
+	src: "/screenshots/surface-map.webp",
+	label: "The Maple service map: services, their dependencies and the request flow between them",
+	crop: { x: 0.2, y: 0.3, zoom: 2 },
+};
+
 const capture =
 	surface === "overview" || surface === "usage" || surface === "services" || surface === "issue"
 		? CAPTURES[surface]
@@ -76,7 +84,11 @@ const shot = capture ? capture[wide ? "wide" : "aside"] : null;
 // Logs render as the stream alone: the volume chart's frame is labelled LIVE, which a scripted frame may not be.
 ---
 
-<figure class:list={["product-frame m-0 min-w-0", className]} style={shot ? `--phone-zoom: ${shot.phoneZoom};` : undefined}>
+{/* An aside capture keeps its 30rem width between the phone and the two-column layout, where a full column would blow it up. */}
+<figure
+	class:list={["product-frame m-0 min-w-0", shot && !wide && "max-w-[30rem]", className]}
+	style={shot ? `--phone-zoom: ${shot.phoneZoom};` : surface === "service-map" ? `--phone-zoom: ${MAP_PHONE.crop.zoom};` : undefined}
+>
 	{
 		capture && shot ? (
 			<MediaFrame
@@ -92,7 +104,14 @@ const shot = capture ? capture[wide ? "wide" : "aside"] : null;
 		) : surface === "logs" ? (
 			<LiveLogs volume={false} streamHeight={height ?? (wide ? "19rem" : "21rem")} />
 		) : surface === "service-map" ? (
-			<LiveServiceMap />
+			<Fragment>
+				<div class="hidden sm:block">
+					<LiveServiceMap />
+				</div>
+				<div class="sm:hidden">
+					<MediaFrame label={MAP_PHONE.label} src={MAP_PHONE.src} width={1440} height={810} crop={MAP_PHONE.crop} />
+				</div>
+			</Fragment>
 		) : (
 			<LiveMcpTranscript />
 		)

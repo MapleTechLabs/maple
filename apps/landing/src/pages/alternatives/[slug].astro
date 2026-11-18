@@ -209,7 +209,7 @@ const crossLinks = page.alternatives.flatMap((alt) => {
 
 							{alt.ours && (
 								<div class="mt-8 grid grid-cols-1 gap-4 lg:grid-cols-2">
-									<ProductFrame surface="logs" height="31rem" caption="The log stream in Maple." />
+									<ProductFrame surface="logs" height="min(31rem, 100vw)" caption="The log stream in Maple." />
 									<ProductFrame surface="agent" caption="An agent session over Maple's MCP server." />
 								</div>
 							)}
