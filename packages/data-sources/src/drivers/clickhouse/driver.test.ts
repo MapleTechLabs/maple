@@ -131,6 +131,9 @@ describe("ClickHouse driver over HTTP", () => {
 					"SELECT count() AS n FROM shop.`ref\\x75nds`",
 					"SELECT count() AS n FROM 'refunds'",
 					"SELECT * FROM (EXPLAIN SELECT * FROM shop.payments)",
+					// Both pass the general gate: the walk of the FROM list ends at the alias.
+					"SELECT n FROM numbers(1) select, 'refunds'",
+					"SELECT n FROM numbers(1) `limit`, 'ref\\x75nds'",
 				]
 				const failures = yield* Effect.forEach(refused, (sql) =>
 					Effect.exit(fake.provide(asAgent(sql))),

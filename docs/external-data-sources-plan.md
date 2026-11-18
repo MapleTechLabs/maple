@@ -298,7 +298,9 @@ Design consequences:
   column or alias spelled like a hidden table is refused; the message says to qualify it.
 - What hiding does not do. It is by name, from the last catalog refresh. It does not cover a
   table created or renamed since, a view, materialized view, Distributed or Merge table or
-  dictionary that reads a hidden table, or a name that appears in the server's error text. For a
+  dictionary that reads a hidden table, a parameterized view called as a function, or a name that
+  appears in the server's error text. A string value equal to a hidden table's name is refused
+  wherever it stands, because the server reads a string as a table name where a table goes. For a
   hard boundary, connect a ClickHouse account that cannot read the table. Settings says so next
   to the switch.
 - Every external ClickHouse query: a string literal where a table goes (`FROM 'orders'`) and a

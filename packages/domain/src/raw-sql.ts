@@ -152,6 +152,8 @@ export const isReaderName = (name: string): boolean =>
 interface SqlToken {
 	readonly v: string
 	readonly ident: boolean
+	/** Written in quotes, so it is a name wherever it stands and never a keyword. */
+	readonly quoted?: true
 }
 
 const IDENT_START_RE = /[A-Za-z_]/
@@ -277,7 +279,7 @@ function lexSql(sql: string, markStrings = false): LexedSql {
 					i++
 				}
 			}
-			tokens.push({ v: Str.toLowerCase(body), ident: true })
+			tokens.push({ v: Str.toLowerCase(body), ident: true, quoted: true })
 		} else if (IDENT_START_RE.test(c)) {
 			let j = i + 1
 			while (j < n && IDENT_PART_RE.test(charAt(sql, j))) j++
@@ -364,6 +366,17 @@ const disallowedTableSource = (tokens: ReadonlyArray<SqlToken>): string | null =
 				depth--
 				fromListDepth = outerFromList.pop() ?? -1
 				armed = false
+			} else if (t.v === "[") {
+				// An array literal or subscript: its commas separate values, never tables.
+				parenKind.push("group")
+				depth++
+				outerFromList.push(fromListDepth)
+				armed = false
+			} else if (t.v === "]") {
+				parenKind.pop()
+				depth--
+				fromListDepth = outerFromList.pop() ?? -1
+				armed = false
 			} else if (t.v === "," && depth === fromListDepth) {
 				armed = true
 			} else {
@@ -375,7 +388,11 @@ const disallowedTableSource = (tokens: ReadonlyArray<SqlToken>): string | null =
 		if (after !== undefined && !after.ident && after.v === "(" && isReaderName(t.v)) return t.v
 		// `WITH FILL FROM expr` and `ARRAY JOIN expr` take an expression, not a table.
 		const prev = tokens[i - 1]?.v ?? ""
-		if ((t.v === "from" && prev !== "fill") || (t.v === "join" && prev !== "array")) {
+		// A quoted `from` or `join` is a column or alias, not the keyword.
+		if (
+			t.quoted !== true &&
+			((t.v === "from" && prev !== "fill") || (t.v === "join" && prev !== "array"))
+		) {
 			if (parenKind[parenKind.length - 1] !== "call") {
 				armed = true
 				fromListDepth = depth
@@ -383,7 +400,7 @@ const disallowedTableSource = (tokens: ReadonlyArray<SqlToken>): string | null =
 			continue
 		}
 		// ARRAY JOIN takes array expressions; its commas do not introduce tables.
-		if (t.v === "join" && depth === fromListDepth) {
+		if (t.quoted !== true && t.v === "join" && depth === fromListDepth) {
 			fromListDepth = -1
 			continue
 		}

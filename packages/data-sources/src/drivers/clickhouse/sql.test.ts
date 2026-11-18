@@ -66,6 +66,30 @@ describe("clickHouseSqlIssue", () => {
 		).toBeNull()
 	})
 
+	it("takes a string in an array or beside a quoted name that spells a keyword", () => {
+		expect(
+			clickHouseSqlIssue(
+				"SELECT a.id FROM shop.orders AS a JOIN shop.kinds AS b ON a.id = b.id AND a.name IN ['x', 'o']",
+			),
+		).toBeNull()
+		expect(clickHouseSqlIssue("SELECT `from`, 'x' FROM (SELECT 1 AS `from`)")).toBeNull()
+		expect(clickHouseSqlIssue("SELECT `join`, 'x' FROM (SELECT 1 AS `join`)")).toBeNull()
+	})
+
+	it("still refuses a string as a table after an array or a quoted keyword name", () => {
+		expect(
+			clickHouseSqlIssue(
+				"SELECT 1 FROM shop.orders AS o WHERE o.k IN ['a'] UNION ALL SELECT 1 FROM 'x'",
+			),
+		).toContain("A string literal cannot")
+		expect(clickHouseSqlIssue("SELECT `from` FROM shop.orders AS `join`, 'x'")).toContain(
+			"A string literal cannot",
+		)
+		expect(clickHouseSqlIssue("SELECT 1 FROM shop.orders AS `join`, foo(1)")).toContain(
+			"Table function 'foo",
+		)
+	})
+
 	it("ignores keywords inside literals and comments", () => {
 		expect(clickHouseSqlIssue("SELECT 'DROP TABLE x' AS s -- DELETE everything")).toBeNull()
 	})

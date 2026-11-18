@@ -1,15 +1,64 @@
 import { Array as Arr, Option, String as Str } from "effect"
 
-// What an agent may not name on a ClickHouse source with entries an admin hid from agents. The
-// SQL is read as words (comments and string literals dropped, quoted identifiers unquoted), so
-// quoting, casing or a comment between the parts spells the same name. Runs after
-// `clickHouseSqlIssue`, which refuses what this lexer and the server would read differently.
+// What an agent may not name on a ClickHouse source with hidden entries. The SQL is read as words
+// (comments dropped, quoted names unquoted, strings decoded), so no quoting or casing hides a name.
+// Runs after `clickHouseSqlIssue`, which refuses what this lexer and the server read differently.
 
 interface Word {
 	/** Lowercased name or keyword; the character itself for punctuation. */
 	readonly text: string
 	readonly kind: "name" | "number" | "punctuation" | "literal"
 	readonly quoted: boolean
+	/** A string literal's value as the server may read it, lowercased; `null` when no reading is certain. */
+	readonly values?: ReadonlyArray<string> | null
+}
+
+// The escapes the server decodes in a string. Any other `\c` keeps its backslash on current
+// servers and was documented to drop it, so both readings are kept.
+const STRING_ESCAPES: ReadonlyMap<string, string> = new Map([
+	["\\", "\\"],
+	["'", "'"],
+	['"', '"'],
+	["`", "`"],
+	["/", "/"],
+	["=", "="],
+	["b", "\b"],
+	["f", "\f"],
+	["n", "\n"],
+	["r", "\r"],
+	["t", "\t"],
+	["0", "\0"],
+	["a", "\x07"],
+	["v", "\v"],
+	["e", "\x1b"],
+	["N", ""],
+])
+
+// A doubled quote, or a backslash with what it takes: two hex digits after `x`, else one character.
+const STRING_ESCAPE_RE = /''|\\(x[0-9A-Fa-f]{2}|[\s\S]|$)/g
+
+/** What a string literal's body may mean to the server, or `null` when an escape has no certain reading. */
+const stringValues = (body: string): ReadonlyArray<string> | null => {
+	if (!Str.includes("\\")(body) && !Str.includes("''")(body)) return [Str.toLowerCase(body)]
+	const escapes = Arr.fromIterable(Str.matchAll(STRING_ESCAPE_RE)(body))
+	// `\x` without two hex digits reads two arbitrary bytes, and a lone trailing backslash ends nothing.
+	if (Arr.some(escapes, (match) => match[1] === "x" || match[1] === "")) return null
+	// Spliced by position, as macro expansion is: the text between escapes is copied as written.
+	const decode = (unknown: (escape: string) => string) => {
+		const { out, at } = Arr.reduce(escapes, { out: "", at: 0 }, (acc, match) => {
+			const start = match.index ?? 0
+			const escaped = match[1]
+			const piece =
+				escaped === undefined
+					? "'"
+					: escaped.length === 3
+						? String.fromCharCode(Number.parseInt(Str.slice(1)(escaped), 16))
+						: (STRING_ESCAPES.get(escaped) ?? unknown(match[0]))
+			return { out: acc.out + Str.slice(acc.at, start)(body) + piece, at: start + match[0].length }
+		})
+		return Str.toLowerCase(out + Str.slice(at)(body))
+	}
+	return [decode((whole) => whole), decode((whole) => Str.slice(1)(whole))]
 }
 
 // One alternative per lexeme, comments and literals first so their bodies are never read as names.
@@ -25,7 +74,11 @@ const unquote = (lexeme: string): string => {
 
 const toWord = (lexeme: string): Word | null => {
 	if (Str.startsWith("--")(lexeme) || Str.startsWith("/*")(lexeme)) return null
-	if (Str.startsWith("'")(lexeme)) return { text: "", kind: "literal", quoted: false }
+	if (Str.startsWith("'")(lexeme)) {
+		const closed = lexeme.length > 1 && Str.endsWith("'")(lexeme)
+		const values = stringValues(Str.slice(1, closed ? -1 : undefined)(lexeme))
+		return { text: "", kind: "literal", quoted: false, values }
+	}
 	if (Str.startsWith("`")(lexeme) || Str.startsWith('"')(lexeme)) {
 		return { text: Str.toLowerCase(unquote(lexeme)), kind: "name", quoted: true }
 	}
@@ -149,8 +202,8 @@ const hiddenNameIn = (chain: Chain, names: HiddenNames): Option.Option<Match> =>
 
 /**
  * The first reason an agent's SQL may not run on a source with hidden entries, or null. It
- * matches names, not tables: a column or alias spelled like a hidden table in the connection's
- * database is refused too, and a view over a hidden table is not.
+ * matches names, not tables: a column, alias or string value spelled like a hidden table in the
+ * connection's database is refused too, and a view over a hidden table is not.
  */
 export const hiddenEntryIssue = (
 	sql: string,
@@ -174,6 +227,19 @@ export const hiddenEntryIssue = (
 		return bare
 			? `\`${spelling}\` names a table an admin hid from agents on this source. If you mean a column or a table in another database, qualify it (\`alias.${spelling}\`, \`other_db.${spelling}\`); otherwise leave it out, or ask an admin to show it to agents.`
 			: `\`${spelling}\` names a table an admin hid from agents on this source, so this query cannot run. Leave it out, or ask an admin to show it to agents.`
+	}
+	// The server takes a string where a table goes, in more positions than any walk of the FROM list
+	// can be trusted to find, so a string that spells a hidden table is refused wherever it stands.
+	const literal = Arr.findFirst(
+		words,
+		(word) =>
+			word.kind === "literal" &&
+			(word.values === null || Arr.some(word.values ?? [], (value) => names.bare.has(value))),
+	)
+	if (Option.isSome(literal)) {
+		return literal.value.values === null
+			? "A string in this query holds a backslash escape with no certain reading (`\\x` needs two hex digits, and a backslash cannot end a string), so it cannot be checked against the tables hidden from agents on this source. Write the value without that escape."
+			: "A string value in this query equals the name of a table an admin hid from agents on this source. The server reads a string as a table name where a table goes, so the query cannot run with that value in it, even as a plain value in a filter. Leave it out, or ask an admin to show the table to agents."
 	}
 	const introspection = Arr.findFirst(words, (word, index) => {
 		const after = words[index + 1]

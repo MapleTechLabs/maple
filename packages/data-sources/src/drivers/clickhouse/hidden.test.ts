@@ -94,6 +94,62 @@ describe("hiddenEntryIssue", () => {
 		expect(issue("SELECT `show` FROM shop.orders ORDER BY (id) DESC")).toBeNull()
 	})
 
+	it.each([
+		["after a clause word used as an alias", "SELECT card FROM numbers(1) select, 'payments'"],
+		["after a quoted clause word", "SELECT card FROM numbers(1) `limit`, 'payments'"],
+		[
+			"after a join condition naming a clause word",
+			"SELECT card FROM orders AS a JOIN kw AS b ON a.id = b.id AND limit = 0, 'payments'",
+		],
+		["after SAMPLE and OFFSET", "SELECT card FROM s SAMPLE 1 OFFSET 0, 'payments'"],
+		["spelled with a hex escape", "SELECT card FROM numbers(1) select, 'pay\\x6dents'"],
+		["in another case", "SELECT card FROM numbers(1) select, 'PAYMENTS'"],
+		[
+			"with a doubled quote in a neighbour",
+			"SELECT 'it''s' AS s, card FROM numbers(1) select, 'payments'",
+		],
+	])("refuses a string that spells a hidden table %s", (_where, sql) => {
+		expect(issue(sql)).toContain("equals the name of a table an admin hid from agents")
+	})
+
+	it("refuses that string as a plain value too, and says it is the value that matches", () => {
+		expect(issue("SELECT count() FROM orders WHERE name = 'payments'")).toContain(
+			"even as a plain value in a filter",
+		)
+	})
+
+	it.each([
+		["a visible table's name", "SELECT count() FROM orders WHERE name = 'orders'"],
+		[
+			"a longer value that contains the hidden name",
+			"SELECT count() FROM orders WHERE name = 'payments_2026'",
+		],
+		[
+			"a LIKE pattern with escaped wildcards",
+			"SELECT count() FROM orders WHERE name LIKE '100\\%\\_off'",
+		],
+		[
+			"the hidden table's full name, which a string never resolves",
+			"SELECT 'shop.payments' AS label FROM orders",
+		],
+	])("runs a query whose string is %s", (_what, sql) => {
+		expect(issue(sql)).toBeNull()
+	})
+
+	it("reads a string against the connection's own database only", () => {
+		expect(issue("SELECT card FROM numbers(1) select, 'payments'", HIDDEN, "analytics")).toBeNull()
+	})
+
+	it.each([
+		["\\x without two hex digits", "SELECT count() FROM orders WHERE name = 'pay\\x6gents'"],
+		[
+			"a backslash before an unknown letter, read either way",
+			"SELECT card FROM numbers(1) select, 'pay\\ments'",
+		],
+	])("refuses a string holding %s", (_what, sql) => {
+		expect(issue(sql)).not.toBeNull()
+	})
+
 	it("leaves a backslash in a string literal alone", () => {
 		expect(issue("SELECT count() FROM shop.orders WHERE note = 'a\\'b' AND kind = 'x\\\\y'")).toBeNull()
 	})
