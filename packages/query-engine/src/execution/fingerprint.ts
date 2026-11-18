@@ -16,13 +16,32 @@ export const truncateSql = (s: string, maxLen: number) =>
 /**
  * SQL with every string and numeric literal replaced by `?`, for traces and logs: the values are
  * customer data (search text, ids, emails). One left-to-right scan, so a quote inside a comment or a
- * quoted identifier never starts a string; comments are dropped and an unclosed string runs to the end.
+ * quoted identifier never starts a string. Comments (`--`, `#`, and block comments through the last
+ * close, which covers nesting) are dropped; heredocs, hex and binary numbers count as literals; an unclosed
+ * string or comment runs to the end.
  */
-const SQL_TOKEN =
-	/--[^\n]*|\/\*[\s\S]*?(?:\*\/|$)|'(?:[^'\\]|\\.|'')*(?:'|$)|"(?:[^"\\]|\\.)*"|`[^`]*`|\b\d+(?:\.\d+)?(?:e[+-]?\d+)?\b/gi
+const SQL_TOKEN = new RegExp(
+	Arr.join(
+		[
+			"--[^\\n]*",
+			"#[^\\n]*",
+			"\\/\\*(?:[\\s\\S]*\\*\\/|[\\s\\S]*$)",
+			"\\$([A-Za-z0-9_]*)\\$[\\s\\S]*?(?:\\$\\1\\$|$)",
+			"'(?:[^'\\\\]|\\\\[\\s\\S]?|'')*(?:'|$)",
+			'"(?:[^"\\\\]|\\\\[\\s\\S]?)*"',
+			"`(?:[^`\\\\]|\\\\[\\s\\S]?)*`",
+			"\\b0x[0-9a-f]+\\b",
+			"\\b0b[01]+\\b",
+			"\\b\\d+(?:\\.\\d+)?(?:e[+-]?\\d+)?\\b",
+		],
+		"|",
+	),
+	"gi",
+)
 
 const redactToken = (token: string): string => {
 	if (Str.startsWith("--")(token)) return "--"
+	if (Str.startsWith("#")(token)) return "#"
 	if (Str.startsWith("/*")(token)) return "/* */"
 	if (Str.startsWith('"')(token) || Str.startsWith("`")(token)) return token
 	return "?"

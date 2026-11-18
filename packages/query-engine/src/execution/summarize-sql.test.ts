@@ -114,7 +114,21 @@ describe("redactSqlLiterals", () => {
 		).toBe("SELECT ? --\nFROM t /* */ WHERE \"it's\" = ? AND `x'y` = ?")
 	})
 
-	it("redacts an unclosed string to the end", () => {
+	it("redacts an unclosed string to the end, a trailing backslash included", () => {
 		expect(redactSqlLiterals("WHERE e = 'a@b.c")).toBe("WHERE e = ?")
+		expect(redactSqlLiterals("WHERE e = 'a@b.c\\")).toBe("WHERE e = ?")
+	})
+
+	it("leaves no value behind in the other comment, string and number forms the server reads", () => {
+		const cases: ReadonlyArray<readonly [string, string]> = [
+			["SELECT 1 # alice@example.com", "SELECT ? #"],
+			["SELECT 1 /* outer /* inner */ alice@example.com */ FROM t", "SELECT ? /* */ FROM t"],
+			["WHERE UserId = 0xDEADBEEF OR b = 0b1011", "WHERE UserId = ? OR b = ?"],
+			["SELECT $tag$alice@example.com$tag$, $$x$$", "SELECT ?, ?"],
+			["SELECT `a\\`'b` FROM t WHERE e = 'alice@example.com'", "SELECT `a\\`'b` FROM t WHERE e = ?"],
+		]
+		for (const [sql, redacted] of cases) {
+			expect(redactSqlLiterals(sql)).toBe(redacted)
+		}
 	})
 })
