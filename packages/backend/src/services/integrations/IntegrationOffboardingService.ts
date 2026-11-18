@@ -1,5 +1,5 @@
 import type { OrgId } from "@maple/domain/http"
-import { Array as Arr, Context, Duration, Effect, Layer, Option, Schema } from "effect"
+import { Array as Arr, Context, Duration, Effect, Layer, Option } from "effect"
 import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
 import { GoogleOAuthService } from "@maple/backend/services/auth/GoogleOAuthService"
 import { LinearOAuthService } from "@maple/backend/services/auth/LinearOAuthService"
@@ -7,19 +7,12 @@ import { ChatWorkspaceService } from "./ChatWorkspaceService"
 import { PlanetScaleConnectionService } from "./PlanetScaleConnectionService"
 import { SupabaseConnectionService } from "./SupabaseConnectionService"
 import { VercelIntegrationService } from "./VercelIntegrationService"
-import { VcsInstallationRemovalService } from "./vcs/VcsInstallationRemovalService"
 
 /** How long one provider's teardown may take before the deletion goes on without it. */
 const STEP_TIMEOUT = Duration.seconds(15)
 
 /** Providers torn down at a time. */
 const STEP_CONCURRENCY = 4
-
-/** A teardown that ran and left something registered at the vendor. */
-export class IntegrationTeardownIncompleteError extends Schema.TaggedError<IntegrationTeardownIncompleteError>()(
-	"@maple/backend/IntegrationTeardownIncompleteError",
-	{ provider: Schema.String, message: Schema.String },
-) {}
 
 export type IntegrationTeardownOutcome = "ok" | "failed" | "timed_out"
 
@@ -28,17 +21,20 @@ export interface IntegrationTeardownResult {
 	readonly outcome: IntegrationTeardownOutcome
 }
 
-/** One integration's vendor-side removal for an org. A no-op for an org that never connected it. */
+/**
+ * One integration's vendor-side removal for an org, answering what it left at the vendor (`null`
+ * when its side is ended). A no-op for an org that never connected it.
+ */
 interface TeardownStep {
 	readonly provider: string
-	readonly teardown: (orgId: OrgId) => Effect.Effect<unknown, { readonly message: string }>
+	readonly teardown: (orgId: OrgId) => Effect.Effect<string | null, { readonly message: string }>
 }
 
 export interface IntegrationOffboardingServiceApi {
 	/**
-	 * Ends what the org granted Maple at each vendor (tokens, drains, webhooks, App installations,
-	 * chat bots) before its rows are purged. Best effort: a vendor that fails or stalls is logged
-	 * and reported in the result, and never fails the caller.
+	 * Ends what the org granted Maple at each vendor (tokens, drains, webhooks, chat bots) before
+	 * its rows are purged. Best effort: a vendor that fails or stalls is logged and reported in the
+	 * result, and never fails the caller.
 	 */
 	readonly teardown: (orgId: OrgId) => Effect.Effect<ReadonlyArray<IntegrationTeardownResult>>
 }
@@ -58,37 +54,56 @@ export class IntegrationOffboardingService extends Context.Service<
 		const supabase = yield* SupabaseConnectionService
 		const vercel = yield* VercelIntegrationService
 		const planetscale = yield* PlanetScaleConnectionService
-		const vcs = yield* VcsInstallationRemovalService
 		const chat = yield* ChatWorkspaceService
 
+		/** A disconnect that revokes one OAuth grant and reports whether the vendor took it. */
+		const grant =
+			<E extends { readonly message: string }>(
+				disconnect: (orgId: OrgId) => Effect.Effect<{ readonly grantRevoked: boolean }, E>,
+			) =>
+			(orgId: OrgId) =>
+				Effect.map(disconnect(orgId), (result) =>
+					result.grantRevoked ? null : "the grant was not revoked at the vendor",
+				)
+
 		const steps: ReadonlyArray<TeardownStep> = [
-			// OAuth grants: each disconnect revokes the token at the vendor, then drops the row.
-			{ provider: "linear", teardown: linear.disconnect },
-			{ provider: "search_console", teardown: google.disconnect },
-			{ provider: "cloudflare", teardown: cloudflare.disconnect },
-			// Log drains first, then the grant they were made with.
-			{ provider: "supabase", teardown: supabase.disconnect },
+			// OAuth grants: each disconnect revokes the stored tokens at the vendor, then drops the row.
+			{ provider: "linear", teardown: grant(linear.disconnect) },
+			{ provider: "search_console", teardown: grant(google.disconnect) },
+			{ provider: "cloudflare", teardown: grant(cloudflare.disconnect) },
+			{
+				provider: "supabase",
+				// Log drains first, then the grant they were made with.
+				teardown: (orgId) =>
+					Effect.map(supabase.disconnect(orgId), (result) => {
+						if (!result.drainsRemoved) return "log drains were not all removed"
+						return result.grantRevoked ? null : "the grant was not revoked at the vendor"
+					}),
+			},
 			{
 				provider: "vercel",
-				// Its disconnect reports drains it could not delete instead of failing.
 				teardown: (orgId) =>
-					Effect.flatMap(vercel.disconnect(orgId), (result) =>
-						result.drainsRemoved
-							? Effect.void
-							: Effect.fail(
-									new IntegrationTeardownIncompleteError({
-										provider: "vercel",
-										message: "Vercel drains were not all removed",
-									}),
-								),
+					Effect.map(vercel.disconnect(orgId), (result) =>
+						result.drainsRemoved ? null : "drains were not all removed",
 					),
 			},
-			// Webhooks on each database; PlanetScale has no revoke for the grant itself.
-			{ provider: "planetscale", teardown: planetscale.disconnect },
-			// Uninstalls the GitHub App, which a disconnect in a living org leaves installed.
-			{ provider: "github", teardown: vcs.uninstallForDeletedOrganization },
-			// Every linked chat workspace, through its connector's own revoke.
-			{ provider: "chat", teardown: chat.uninstallAll },
+			{
+				provider: "planetscale",
+				// Webhooks on each database; PlanetScale has no revoke for the grant itself.
+				teardown: (orgId) =>
+					Effect.map(planetscale.disconnect(orgId), (result) =>
+						result.webhooksRemoved ? null : "webhooks were not all removed",
+					),
+			},
+			{
+				provider: "chat",
+				// Every linked chat workspace, through its connector's own revoke.
+				teardown: (orgId) =>
+					Effect.map(chat.uninstallAll(orgId), (result) => {
+						if (result.revokeFailures > 0) return "a workspace's grant was not revoked"
+						return result.unlinkFailures > 0 ? "a workspace could not be unlinked" : null
+					}),
+			},
 		]
 
 		const runStep = Effect.fn("IntegrationOffboardingService.step")(function* (
@@ -99,7 +114,13 @@ export class IntegrationOffboardingService extends Context.Service<
 			const report = (outcome: IntegrationTeardownOutcome, error: string | null) => ({ outcome, error })
 			const { outcome, error } = yield* step.teardown(orgId).pipe(
 				Effect.timeoutOption(STEP_TIMEOUT),
-				Effect.map((done) => report(Option.isSome(done) ? "ok" : "timed_out", null)),
+				Effect.map(
+					Option.match({
+						onNone: () => report("timed_out", null),
+						// A teardown that ran and left something behind is a failure of the step.
+						onSome: (left) => (left === null ? report("ok", null) : report("failed", left)),
+					}),
+				),
 				Effect.catch((failure) => Effect.succeed(report("failed", failure.message))),
 				// A defect's text is not logged: nothing vouches for what it carries.
 				Effect.catchDefect(() => Effect.succeed(report("failed", "the teardown died"))),
@@ -144,7 +165,6 @@ export class IntegrationOffboardingService extends Context.Service<
 				SupabaseConnectionService.layer,
 				VercelIntegrationService.layer,
 				PlanetScaleConnectionService.layer,
-				VcsInstallationRemovalService.layer,
 				ChatWorkspaceService.layer,
 			),
 		),

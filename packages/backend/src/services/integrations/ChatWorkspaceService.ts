@@ -18,7 +18,6 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import { ChatWorkspaces, type ChatWorkspaceRow } from "@maple/db/tables"
 import {
 	isConnectorConfigured,
-	WORKSPACE_CREDENTIALS,
 	type ChatConnector,
 	type ChatDestination,
 	type ChatWorkspaceSettings,
@@ -57,7 +56,9 @@ import {
 	resolveChatWorkspace,
 	type ChatWorkspaceResolution,
 } from "@maple/backend/services/integrations/chat-workspace-rows"
+import { chatAppRevokeDecision } from "@maple/backend/services/integrations/chat-app-ownership"
 import {
+	chatConnectorCredentials,
 	ChatConnectorRegistry,
 	chatOutboundTransport,
 	loadOwnedChatWorkspace,
@@ -106,8 +107,21 @@ const REVOKE_TIMEOUT = Duration.seconds(10)
 /** Workspaces of one org unlinked at a time when the org itself is going. */
 const UNINSTALL_CONCURRENCY = 4
 
-/** What the platform's side of an unlink came to; `unsupported` is a connector with no revoke. */
-export type ChatRevokeOutcome = "revoked" | "unsupported" | "failed" | "timed_out"
+/**
+ * What the platform's side of an unlink came to. `unsupported` is a connector with no revoke;
+ * `skipped` is a deployment that does not own its chat app (`chat-app-ownership.ts`).
+ */
+export type ChatRevokeOutcome = "revoked" | "unsupported" | "skipped" | "failed" | "timed_out"
+
+/** What unlinking every workspace of an org came to. */
+export interface ChatUninstallAllResult {
+	/** Links dropped. */
+	readonly uninstalled: number
+	/** Workspaces whose grant the platform did not end: it refused, or never answered. */
+	readonly revokeFailures: number
+	/** Links that could not be dropped. */
+	readonly unlinkFailures: number
+}
 
 /** The row id is a UUID we mint, so the brand is a decode that cannot fail. */
 const newWorkspaceId = () => Schema.decodeSync(ChatWorkspaceId)(randomUUID())
@@ -241,7 +255,7 @@ export interface ChatWorkspaceServiceApi {
 	/** The same for every workspace the org linked, for an org that is being deleted. */
 	readonly uninstallAll: (
 		orgId: OrgId,
-	) => Effect.Effect<{ readonly uninstalled: number }, IntegrationsPersistenceError>
+	) => Effect.Effect<ChatUninstallAllResult, IntegrationsPersistenceError>
 	/**
 	 * The channels in one of the org's workspaces an alert can be posted to, read live from the
 	 * platform. A grant the platform refuses is `NotConnected`: only reinstalling fixes it.
@@ -682,56 +696,74 @@ const make: Effect.Effect<
 		return toSummary(stored)
 	})
 
+	/** Decided once: a preview or local stack never ends a grant its chat app may share. */
+	const revokeDecision = chatAppRevokeDecision(env.MAPLE_ENVIRONMENT)
+
+	/** The connector's own `revoke` for the row, bounded in time. A refusal fails. */
+	const callConnectorRevoke = Effect.fnUntraced(function* (row: ChatWorkspaceRow) {
+		const connector = Arr.findFirst(registry, (candidate) => candidate.id === row.connector)
+		const revoke = Option.getOrUndefined(connector)?.install.revoke
+		if (revoke === undefined) return "unsupported" satisfies ChatRevokeOutcome
+		const sealed = storedCredentials(row)
+		// Only a workspace that stored a credential needs the key to open it.
+		const keyring = sealed === null ? null : yield* credentialKeyring
+		const own =
+			sealed === null || keyring === null
+				? undefined
+				: yield* openChatWorkspaceCredentials(
+						sealed,
+						keyring,
+						{
+							orgId: row.orgId,
+							connector: row.connector,
+							externalWorkspaceId: row.externalWorkspaceId,
+						},
+						// The message never carries the cause: everything below it is key material.
+						(message) =>
+							new IntegrationsConfigurationError({
+								message: `Stored chat workspace credential is unreadable: ${message}`,
+							}),
+					)
+		const revoked = yield* revoke({
+			externalWorkspaceId: row.externalWorkspaceId,
+			credentials: chatConnectorCredentials(env.CHAT_CONNECTOR_OUTBOUND_CONFIG, own),
+		}).pipe(
+			Effect.provideService(HttpClient.HttpClient, httpClient),
+			Effect.timeoutOption(REVOKE_TIMEOUT),
+		)
+		return (Option.isSome(revoked) ? "revoked" : "timed_out") satisfies ChatRevokeOutcome
+	})
+
 	/**
-	 * Ends the platform's side of a link through the connector's own `revoke`, with the map its
-	 * outbound half reads. Best effort: the outcome goes on the span, and a failure is logged.
+	 * Ends the platform's side of a link where this deployment owns its chat app. Best effort: the
+	 * outcome goes on the span, and a refusal, a timeout or a defect is logged and never fails.
 	 */
 	const revokeAtPlatform = Effect.fn("ChatWorkspaceService.revokeAtPlatform")(function* (
 		row: ChatWorkspaceRow,
 	) {
-		yield* Effect.annotateCurrentSpan({ orgId: row.orgId, "maple.chat.connector": row.connector })
-		const outcome = yield* Effect.gen(function* () {
-			const connector = Arr.findFirst(registry, (candidate) => candidate.id === row.connector)
-			const revoke = Option.getOrUndefined(connector)?.install.revoke
-			if (revoke === undefined) return "unsupported" satisfies ChatRevokeOutcome
-			const sealed = storedCredentials(row)
-			// Only a workspace that stored a credential needs the key to open it.
-			const keyring = sealed === null ? null : yield* credentialKeyring
-			const own =
-				sealed === null || keyring === null
-					? undefined
-					: yield* openChatWorkspaceCredentials(
-							sealed,
-							keyring,
-							{
-								orgId: row.orgId,
-								connector: row.connector,
-								externalWorkspaceId: row.externalWorkspaceId,
-							},
-							// The message never carries the cause: everything below it is key material.
-							(message) =>
-								new IntegrationsConfigurationError({
-									message: `Stored chat workspace credential is unreadable: ${message}`,
-								}),
-						)
-			const outbound = env.CHAT_CONNECTOR_OUTBOUND_CONFIG
-			const revoked = yield* revoke({
-				externalWorkspaceId: row.externalWorkspaceId,
-				credentials: own === undefined ? outbound : new Map(outbound).set(WORKSPACE_CREDENTIALS, own),
-			}).pipe(
-				Effect.provideService(HttpClient.HttpClient, httpClient),
-				Effect.timeoutOption(REVOKE_TIMEOUT),
-			)
-			return (Option.isSome(revoked) ? "revoked" : "timed_out") satisfies ChatRevokeOutcome
-		}).pipe(
+		yield* Effect.annotateCurrentSpan({
+			orgId: row.orgId,
+			"maple.chat.connector": row.connector,
+			"maple.chat.revoke_attempted": revokeDecision.revoke,
+		})
+		if (!revokeDecision.revoke) {
+			yield* Effect.annotateCurrentSpan({
+				"maple.chat.revoke_outcome": "skipped" satisfies ChatRevokeOutcome,
+				"maple.chat.revoke_skip_reason": revokeDecision.reason,
+			})
+			return "skipped" satisfies ChatRevokeOutcome
+		}
+		const notRevoked = (error: string) =>
 			// The connector's message names no credential; the token rides request headers only.
-			Effect.catch((error) =>
-				Effect.logWarning("Chat workspace grant was not revoked at the platform", {
-					orgId: row.orgId,
-					connector: row.connector,
-					error: error.message,
-				}).pipe(Effect.as("failed" satisfies ChatRevokeOutcome)),
-			),
+			Effect.logWarning("Chat workspace grant was not revoked at the platform", {
+				orgId: row.orgId,
+				connector: row.connector,
+				error,
+			}).pipe(Effect.as("failed" satisfies ChatRevokeOutcome))
+		const outcome = yield* callConnectorRevoke(row).pipe(
+			Effect.catch((error) => notRevoked(error.message)),
+			// A defect's text is not logged: nothing vouches for what it carries.
+			Effect.catchDefect(() => notRevoked("the connector's revoke died")),
 		)
 		yield* Effect.annotateCurrentSpan({ "maple.chat.revoke_outcome": outcome })
 		if (outcome === "timed_out") {
@@ -745,7 +777,7 @@ const make: Effect.Effect<
 
 	/** Revokes at the platform, then drops the row whatever the platform answered. */
 	const unlinkRow = Effect.fn("ChatWorkspaceService.unlinkRow")(function* (row: ChatWorkspaceRow) {
-		yield* revokeAtPlatform(row)
+		const revoke = yield* revokeAtPlatform(row)
 		const deleted = yield* dbExecute((db) =>
 			db.run(
 				PG.deleteFrom(ChatWorkspaces)
@@ -753,9 +785,10 @@ const make: Effect.Effect<
 					.returning("id"),
 			),
 		)
-		if (deleted.length === 0) return false
-		yield* Effect.logInfo("Chat workspace unlinked", { orgId: row.orgId, connector: row.connector })
-		return true
+		if (deleted.length > 0) {
+			yield* Effect.logInfo("Chat workspace unlinked", { orgId: row.orgId, connector: row.connector })
+		}
+		return { revoke, unlinked: deleted.length > 0 }
 	})
 
 	const uninstall = Effect.fn("ChatWorkspaceService.uninstall")(function* (
@@ -772,10 +805,10 @@ const make: Effect.Effect<
 			),
 		)
 		const row = rows[0]
-		// The second check is a lost race with another unlink of the same workspace.
-		if (row === undefined || !(yield* unlinkRow(row))) {
-			return yield* notFound("No chat workspace with this id")
-		}
+		if (row === undefined) return yield* notFound("No chat workspace with this id")
+		const { unlinked } = yield* unlinkRow(row)
+		// Lost a race with another unlink of the same workspace.
+		if (!unlinked) return yield* notFound("No chat workspace with this id")
 	})
 
 	const uninstallAll = Effect.fn("ChatWorkspaceService.uninstallAll")(function* (orgId: OrgId) {
@@ -787,8 +820,35 @@ const make: Effect.Effect<
 					.where(($) => [$.orgId.eq(orgId)]),
 			),
 		)
-		yield* Effect.forEach(rows, unlinkRow, { concurrency: UNINSTALL_CONCURRENCY, discard: true })
-		return { uninstalled: rows.length }
+		// Each row on its own: one that cannot be dropped must not stop the others' revokes.
+		const results = yield* Effect.forEach(
+			rows,
+			(row) =>
+				unlinkRow(row).pipe(
+					Effect.map((result) => ({ ...result, failed: false })),
+					Effect.catch((error) =>
+						Effect.logWarning("Chat workspace could not be unlinked", {
+							orgId,
+							connector: row.connector,
+							error: error.message,
+						}).pipe(Effect.as({ revoke: null, unlinked: false, failed: true })),
+					),
+				),
+			{ concurrency: UNINSTALL_CONCURRENCY },
+		)
+		const count = (matches: (result: (typeof results)[number]) => boolean) =>
+			Arr.filter(results, matches).length
+		const result = {
+			uninstalled: count((row) => row.unlinked),
+			revokeFailures: count((row) => row.revoke === "failed" || row.revoke === "timed_out"),
+			unlinkFailures: count((row) => row.failed),
+		} satisfies ChatUninstallAllResult
+		yield* Effect.annotateCurrentSpan({
+			"maple.chat.uninstalled": result.uninstalled,
+			"maple.chat.revoke_failures": result.revokeFailures,
+			"maple.chat.unlink_failures": result.unlinkFailures,
+		})
+		return result
 	})
 
 	const listDestinations = Effect.fn("ChatWorkspaceService.listDestinations")(function* (

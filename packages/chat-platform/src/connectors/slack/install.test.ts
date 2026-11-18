@@ -266,14 +266,27 @@ describe("slack revoke", () => {
 		}),
 	)
 
-	it.effect("counts a token Slack already ended as revoked", () =>
+	Arr.forEach(["token_revoked", "account_inactive"], (code) =>
+		it.effect(`counts a token Slack already ended (${code}) as revoked`, () =>
+			Effect.gen(function* () {
+				const seen: Array<SeenRequest> = []
+				yield* revokeWith(
+					stored,
+					revokeFetch(() => jsonResponse({ ok: false, error: code }), seen),
+				)
+				assert.strictEqual(seen.length, 1)
+			}),
+		),
+	)
+
+	it.effect("does not read invalid_auth as revoked: the real token may still be live", () =>
 		Effect.gen(function* () {
-			const seen: Array<SeenRequest> = []
-			yield* revokeWith(
+			const failure = yield* revokeWith(
 				stored,
-				revokeFetch(() => jsonResponse({ ok: false, error: "token_revoked" }), seen),
-			)
-			assert.strictEqual(seen.length, 1)
+				revokeFetch(() => jsonResponse({ ok: false, error: "invalid_auth" })),
+			).pipe(Effect.flip)
+			assert.strictEqual(failure._tag, "@maple/chat-platform/ChatRevokeFailed")
+			assert.include(failure.message, "invalid_auth")
 		}),
 	)
 

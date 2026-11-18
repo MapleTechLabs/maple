@@ -623,21 +623,6 @@ export interface VcsProviderClient {
 		VcsProviderError | VcsInstallationGoneError | VcsRateLimitedError
 	>
 
-	/**
-	 * Removes the provider's app from the installation's account, so no token can be minted for it
-	 * again. For an organization that is being deleted; one the provider no longer has succeeds.
-	 */
-	readonly uninstallInstallation: (
-		installation: Pick<VcsInstallation, "externalInstallationId">,
-	) => Effect.Effect<
-		void,
-		| VcsProviderError
-		| VcsInstallationGoneError
-		| VcsRepoUnavailableError
-		| VcsRepositoryBlockedError
-		| VcsRateLimitedError
-	>
-
 	/** Where the installation's account accepts the permissions the provider's app asks for. */
 	readonly installationSettingsUrl: (
 		installation: Pick<VcsInstallation, "externalInstallationId" | "accountLogin" | "accountType">,

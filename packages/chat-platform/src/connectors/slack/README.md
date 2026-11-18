@@ -168,8 +168,10 @@ Maple has no use for an installer identity it never links to a Maple user.
 
 `revoke` calls `auth.revoke` with the workspace's own bot token in the `Authorization` header, which
 ends that token; Slack documents an app as uninstalled once its last token is revoked. An answer
-of `token_revoked`, `invalid_auth` or `account_inactive` means the token was already dead and
-counts as done. The host runs it best effort before it drops the link.
+of `token_revoked` or `account_inactive` means the token was already dead and counts as done;
+`invalid_auth` does not, because Slack also answers it while the real token is still live. The
+host runs it best effort before it drops the link, and only on a deployment that owns its chat
+app: a preview or a local stack never calls it.
 
 ### Settings
 

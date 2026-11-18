@@ -15,8 +15,11 @@ export const HttpOrganizationsLive = HttpApiBuilder.group(MapleInternalApi, "org
 				const deleted = yield* organizationDeletion.delete(tenant.orgId, tenant.roles)
 				// Recorded after the fact so a refused delete cannot leave an entry
 				// claiming the org is gone. The entry outlives the org: the audit
-				// log is never cascaded, which is the point of a trail.
-				yield* recordHttpAudit("organization.deleted")
+				// log is never cascaded, which is the point of a trail. It names the
+				// integrations whose access could not be ended at the vendor.
+				yield* recordHttpAudit("organization.deleted", {
+					metadata: { incompleteTeardowns: deleted.incompleteTeardowns ?? [] },
+				})
 				return deleted
 			}),
 		)

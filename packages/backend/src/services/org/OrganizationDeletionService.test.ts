@@ -20,6 +20,7 @@ import {
 	EnterpriseSsoUnavailableError,
 	IntegrationsPersistenceError,
 	OrganizationForbiddenError,
+	OrganizationPersistenceError,
 	OrganizationProviderError,
 	OrgId,
 	RoleName,
@@ -241,12 +242,14 @@ describe("OrganizationDeletionService.delete", () => {
 		const testDb = createTestDb(trackedDbs)
 		const started: Array<OffboardedProvider> = []
 		const offboarding = offboardingOver({
+			// Chat's own teardown completes, with one workspace's revoke refused by its platform.
+			refusedBy: ["chat"],
 			teardown: (provider) =>
 				Effect.andThen(
 					Effect.sync(() => void started.push(provider)),
 					provider === "linear"
 						? Effect.fail(new IntegrationsPersistenceError({ message: "Linear is down" }))
-						: provider === "github"
+						: provider === "supabase"
 							? Effect.never
 							: Effect.void,
 				),
@@ -256,12 +259,54 @@ describe("OrganizationDeletionService.delete", () => {
 			const organizations = yield* OrganizationDeletionService
 			const pending = yield* Effect.forkChild(organizations.delete(ORG_A, [role("org:admin")]))
 			// The stalled vendor is waited on for a bounded time; the deletion then goes on.
-			yield* Effect.promise(() => vi.waitFor(() => assert.include(started, "github")))
+			yield* Effect.promise(() => vi.waitFor(() => assert.include(started, "supabase")))
 			yield* TestClock.adjust("1 minute")
 			const deleted = yield* Fiber.join(pending)
 
 			assert.isTrue(deleted.deleted)
+			// The caller is told which vendors may still hold access.
+			assert.sameMembers(deleted.incompleteTeardowns ?? [], ["linear", "supabase", "chat"])
 			assert.sameMembers(started, [...OFFBOARDED_PROVIDERS])
+			assert.deepStrictEqual(yield* countsFor(testDb, ORG_A), everyTableAt(0))
+			assert.deepStrictEqual(yield* countsFor(testDb, ORG_B), everyTableAt(1))
+		}).pipe(Effect.provide(makeLayer(testDb, undefined, offboarding)))
+	})
+
+	it.effect("names no vendor when every teardown ended", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* seedBothOrgs(testDb)
+			const organizations = yield* OrganizationDeletionService
+			const deleted = yield* organizations.delete(ORG_A, [role("org:admin")])
+			assert.isUndefined(deleted.incompleteTeardowns)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("a deletion retried after a failed purge finishes the job", () => {
+		const testDb = createTestDb(trackedDbs)
+		const teardowns = { count: 0 }
+		const offboarding = offboardingOver({
+			teardown: (provider) =>
+				provider === "linear" ? Effect.sync(() => void (teardowns.count += 1)) : Effect.void,
+		})
+		// The table the purge reaches last: renamed away, its delete fails after every other ran.
+		const last = Arr.lastNonEmpty(ORG_DELETE_REGISTRY.approvedOrgScoped).ddl.table.name
+		const rename = (from: string, to: string) =>
+			Effect.promise(() => executeSql(testDb, `alter table "${from}" rename to "${to}"`))
+		return Effect.gen(function* () {
+			yield* seedBothOrgs(testDb)
+			const organizations = yield* OrganizationDeletionService
+			yield* rename(last, `${last}_away`)
+			const exit = yield* Effect.exit(organizations.delete(ORG_A, [role("org:admin")]))
+			assert.instanceOf(Option.getOrUndefined(Exit.findErrorOption(exit)), OrganizationPersistenceError)
+
+			yield* rename(`${last}_away`, last)
+			const deleted = yield* organizations.delete(ORG_A, [role("org:admin")])
+
+			assert.isTrue(deleted.deleted)
+			// The teardown ran again on the retry and found nothing it could not handle.
+			assert.strictEqual(teardowns.count, 2)
+			assert.isUndefined(deleted.incompleteTeardowns)
 			assert.deepStrictEqual(yield* countsFor(testDb, ORG_A), everyTableAt(0))
 			assert.deepStrictEqual(yield* countsFor(testDb, ORG_B), everyTableAt(1))
 		}).pipe(Effect.provide(makeLayer(testDb, undefined, offboarding)))

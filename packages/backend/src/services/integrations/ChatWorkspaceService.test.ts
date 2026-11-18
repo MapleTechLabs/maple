@@ -248,10 +248,11 @@ const workspaceRows = (testDb: TestDb, orgId: string) =>
 		),
 	).pipe(Effect.map((row) => row?.count ?? 0))
 
-const makeConfig = (withConnectorConfig: boolean) =>
+const makeConfig = (withConnectorConfig: boolean, environment: string | undefined) =>
 	ConfigProvider.layer(
 		ConfigProvider.fromUnknown({
 			PORT: "3472",
+			...(environment === undefined ? undefined : { MAPLE_ENVIRONMENT: environment }),
 			TINYBIRD_HOST: "https://api.tinybird.co",
 			TINYBIRD_TOKEN: "test-token",
 			MAPLE_AUTH_MODE: "self_hosted",
@@ -270,7 +271,12 @@ const makeConfig = (withConnectorConfig: boolean) =>
 
 const makeLayer = (
 	testDb: TestDb,
-	options?: { readonly configured?: boolean; readonly registry?: ReadonlyArray<RegisteredChatConnector> },
+	options?: {
+		readonly configured?: boolean
+		readonly registry?: ReadonlyArray<RegisteredChatConnector>
+		/** `MAPLE_ENVIRONMENT`; unset is what a deployment that does not say reads as. */
+		readonly environment?: string
+	},
 ) =>
 	Layer.effect(ChatWorkspaceService, ChatWorkspaceService.make).pipe(
 		Layer.provide(FetchHttpClient.layer),
@@ -279,7 +285,7 @@ const makeLayer = (
 		Layer.provide(Layer.succeed(ChatConnectorRegistry, options?.registry ?? [testConnector])),
 		Layer.provide(testDb.layer),
 		Layer.provide(Env.layer),
-		Layer.provide(makeConfig(options?.configured ?? true)),
+		Layer.provide(makeConfig(options?.configured ?? true, options?.environment)),
 	)
 
 /** Link a workspace directly, for the paths that start from one already linked. */
@@ -795,7 +801,11 @@ describe("ChatWorkspaceService", () => {
 					[{ workspace: "workspace-revoke", credential: '{"token":"a-workspaces-own-token"}' }],
 				)
 				assert.strictEqual(yield* workspaceRows(testDb, ORG), 0)
-			}).pipe(Effect.provide(makeLayer(testDb, { registry: [revokingConnector(calls)] })))
+			}).pipe(
+				Effect.provide(
+					makeLayer(testDb, { registry: [revokingConnector(calls)], environment: "production" }),
+				),
+			)
 		}),
 	)
 
@@ -829,7 +839,102 @@ describe("ChatWorkspaceService", () => {
 				yield* TestClock.adjust("1 minute")
 				yield* Fiber.join(pending)
 				assert.strictEqual(yield* workspaceRows(testDb, ORG), 0)
-			}).pipe(Effect.provide(makeLayer(testDb, { registry: [connector] })))
+			}).pipe(Effect.provide(makeLayer(testDb, { registry: [connector], environment: "production" })))
+		}),
+	)
+
+	it.effect("a connector whose revoke dies still loses its link", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			const calls: Array<ChatInstallRevocation> = []
+			const id = yield* insertWorkspace(
+				testDb,
+				"55555555-5555-4555-8555-555555555553",
+				ORG,
+				"workspace-buggy",
+			)
+			const connector = revokingConnector(calls, () => Effect.die("a bug in the connector"))
+			yield* Effect.gen(function* () {
+				const chat = yield* ChatWorkspaceService
+				yield* chat.uninstall(ORG, id)
+				assert.lengthOf(calls, 1)
+				assert.strictEqual(yield* workspaceRows(testDb, ORG), 0)
+			}).pipe(Effect.provide(makeLayer(testDb, { registry: [connector], environment: "production" })))
+		}),
+	)
+
+	// A preview or a local stack may hold the chat app production runs: it must never end a grant.
+	Arr.forEach(["pr-2710", "development", undefined, "staging"], (environment) =>
+		it.effect(`drops the link without asking the platform when the deployment is ${environment}`, () =>
+			Effect.gen(function* () {
+				const testDb = createTestDb(trackedDbs)
+				const calls: Array<ChatInstallRevocation> = []
+				const one = yield* insertWorkspace(
+					testDb,
+					"77777777-7777-4777-8777-777777777771",
+					ORG,
+					"workspace-shared-1",
+				)
+				yield* insertWorkspace(
+					testDb,
+					"77777777-7777-4777-8777-777777777772",
+					ORG,
+					"workspace-shared-2",
+				)
+				yield* Effect.gen(function* () {
+					const chat = yield* ChatWorkspaceService
+					yield* chat.uninstall(ORG, one)
+					const result = yield* chat.uninstallAll(ORG)
+					assert.deepStrictEqual(result, { uninstalled: 1, revokeFailures: 0, unlinkFailures: 0 })
+					assert.lengthOf(calls, 0)
+					assert.strictEqual(yield* workspaceRows(testDb, ORG), 0)
+				}).pipe(
+					Effect.provide(
+						makeLayer(testDb, {
+							registry: [revokingConnector(calls)],
+							...(environment === undefined ? undefined : { environment }),
+						}),
+					),
+				)
+			}),
+		),
+	)
+
+	it.effect("a link that cannot be dropped does not stop the other workspaces' revokes", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			const calls: Array<ChatInstallRevocation> = []
+			const held = yield* insertWorkspace(
+				testDb,
+				"88888888-8888-4888-8888-888888888881",
+				ORG,
+				"workspace-held",
+			)
+			yield* insertWorkspace(testDb, "88888888-8888-4888-8888-888888888882", ORG, "workspace-free")
+			// A row something still references: its delete fails in the database.
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					"create table chat_workspace_holds (workspace_id text references chat_workspaces(id))",
+				),
+			)
+			yield* Effect.promise(() =>
+				executeSql(testDb, "insert into chat_workspace_holds (workspace_id) values ($1)", [held]),
+			)
+			yield* Effect.gen(function* () {
+				const chat = yield* ChatWorkspaceService
+				const result = yield* chat.uninstallAll(ORG)
+				assert.deepStrictEqual(result, { uninstalled: 1, revokeFailures: 0, unlinkFailures: 1 })
+				assert.sameMembers(
+					Arr.map(calls, (call) => call.externalWorkspaceId),
+					["workspace-held", "workspace-free"],
+				)
+				assert.strictEqual(yield* workspaceRows(testDb, ORG), 1)
+			}).pipe(
+				Effect.provide(
+					makeLayer(testDb, { registry: [revokingConnector(calls)], environment: "production" }),
+				),
+			)
 		}),
 	)
 
@@ -847,14 +952,15 @@ describe("ChatWorkspaceService", () => {
 			yield* Effect.gen(function* () {
 				const chat = yield* ChatWorkspaceService
 				const result = yield* chat.uninstallAll(ORG)
-				assert.strictEqual(result.uninstalled, 2)
+				// Both links go, and the platform's refusal is reported rather than read as done.
+				assert.deepStrictEqual(result, { uninstalled: 2, revokeFailures: 1, unlinkFailures: 0 })
 				assert.sameMembers(
 					Arr.map(calls, (call) => call.externalWorkspaceId),
 					["workspace-a", "workspace-b"],
 				)
 				assert.strictEqual(yield* workspaceRows(testDb, ORG), 0)
 				assert.strictEqual(yield* workspaceRows(testDb, OTHER_ORG), 1)
-			}).pipe(Effect.provide(makeLayer(testDb, { registry: [connector] })))
+			}).pipe(Effect.provide(makeLayer(testDb, { registry: [connector], environment: "production" })))
 		}),
 	)
 

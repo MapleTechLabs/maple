@@ -173,10 +173,8 @@ export interface ChatConnectorInstall {
 		HttpClient.HttpClient
 	>
 	/**
-	 * End the platform's side of one install: revoke the workspace's token, or take the bot out of
-	 * it. Absent where the platform offers no call for it. The host runs it best effort when a
-	 * workspace is unlinked: a grant that is already gone is a success, and a failure never keeps
-	 * the link.
+	 * End the platform's side of one install (revoke its token, or take the bot out), absent where
+	 * the platform has no call for it. Best effort for the host: an already-gone grant succeeds.
 	 */
 	readonly revoke?: (
 		input: ChatInstallRevocation,

@@ -54,7 +54,7 @@ describe("IntegrationOffboardingService.teardown", () => {
 		Effect.gen(function* () {
 			const offboarding = yield* IntegrationOffboardingService
 			const results = yield* offboarding.teardown(ORG_A)
-			assert.sameMembers(withOutcome(results, "failed"), ["linear", "github"])
+			assert.sameMembers(withOutcome(results, "failed"), ["linear", "vercel"])
 			assert.lengthOf(withOutcome(results, "ok"), OFFBOARDED_PROVIDERS.length - 2)
 		}).pipe(
 			Effect.provide(
@@ -62,7 +62,7 @@ describe("IntegrationOffboardingService.teardown", () => {
 					teardown: (provider) =>
 						provider === "linear"
 							? vendorDown(provider)
-							: provider === "github"
+							: provider === "vercel"
 								? Effect.die("a bug in the teardown")
 								: Effect.void,
 				}),
@@ -93,11 +93,14 @@ describe("IntegrationOffboardingService.teardown", () => {
 		)
 	})
 
-	it.effect("reports Vercel drains its disconnect could not remove", () =>
+	it.effect("reports a vendor that refused while its disconnect completed", () =>
 		Effect.gen(function* () {
 			const offboarding = yield* IntegrationOffboardingService
 			const results = yield* offboarding.teardown(ORG_A)
-			assert.deepStrictEqual(withOutcome(results, "failed"), ["vercel"])
-		}).pipe(Effect.provide(offboardingOver({ teardown: () => Effect.void, vercelDrainsRemoved: false }))),
+			// Every integration's own disconnect succeeded; each vendor refused its side.
+			assert.sameMembers(withOutcome(results, "failed"), [...OFFBOARDED_PROVIDERS])
+		}).pipe(
+			Effect.provide(offboardingOver({ teardown: () => Effect.void, refusedBy: OFFBOARDED_PROVIDERS })),
+		),
 	)
 })

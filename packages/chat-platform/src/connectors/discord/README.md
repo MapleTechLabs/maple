@@ -162,7 +162,8 @@ Two rules the flow rests on:
 `revoke` takes the bot out of the server: `DELETE /users/@me/guilds/{guild.id}` with the bot token,
 which is the deployment's and stays valid, so leaving is what ends this server's grant. A 404 means
 the bot is no longer there and counts as done. The server id is checked to be a snowflake before it
-reaches the path. The host runs it best effort before it drops the link.
+reaches the path. The host runs it best effort before it drops the link, and only on a
+deployment that owns its chat app: a preview or a local stack never calls it.
 
 ## What ingress delivers
 

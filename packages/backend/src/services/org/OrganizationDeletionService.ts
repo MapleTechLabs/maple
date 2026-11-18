@@ -14,7 +14,7 @@ import {
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import * as Tables from "@maple/db/tables"
-import { Context, Effect, Layer, Option } from "effect"
+import { Array as Arr, Context, Effect, Layer, Option } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
@@ -166,12 +166,19 @@ export class OrganizationDeletionService extends Context.Service<
 			)
 			// Before the purge, which drops the tokens and ids each vendor is asked with. Best effort:
 			// a vendor that is down keeps its grant, and never keeps the organization.
-			yield* offboarding.teardown(orgId)
+			const teardowns = yield* offboarding.teardown(orgId)
+			const incompleteTeardowns = Arr.map(
+				Arr.filter(teardowns, (teardown) => teardown.outcome !== "ok"),
+				(teardown) => teardown.provider,
+			)
 			yield* purgeOrgScopedRows(orgId)
 			yield* deleteClerkOrganization(orgId)
 			// A cached "served here" would outlive the organization by up to an hour.
 			yield* regions.forget(orgId)
-			return new DeleteOrganizationResponse({ deleted: true })
+			return new DeleteOrganizationResponse({
+				deleted: true,
+				...(incompleteTeardowns.length === 0 ? undefined : { incompleteTeardowns }),
+			})
 		})
 
 		return { delete: deleteOrganization } satisfies OrganizationDeletionServiceApi

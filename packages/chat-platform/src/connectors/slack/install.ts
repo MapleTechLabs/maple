@@ -144,8 +144,11 @@ const complete = Effect.fnUntraced(function* (input: ChatInstallCallback) {
 
 const revokeFailed = (message: string) => new ChatRevokeFailed({ connector: SLACK_CONNECTOR_ID, message })
 
-/** `ok: false` answers that say the token is already dead, so there is nothing left to revoke. */
-const ALREADY_REVOKED: ReadonlySet<string> = new Set(["token_revoked", "invalid_auth", "account_inactive"])
+/**
+ * `ok: false` answers that say the token is already dead. Not `invalid_auth`: Slack also answers
+ * it for a mangled token or a disallowed IP, where the real token is still live.
+ */
+const ALREADY_REVOKED: ReadonlySet<string> = new Set(["token_revoked", "account_inactive"])
 
 /** `auth.revoke` with the workspace's own bot token, as one client span. The token rides the header only. */
 const revokeToken = Effect.fn("Slack.request", { kind: "client" })(function* (token: Redacted.Redacted) {

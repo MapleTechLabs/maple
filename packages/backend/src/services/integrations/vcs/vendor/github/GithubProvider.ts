@@ -1653,11 +1653,6 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					)
 					.pipe(Effect.mapError(toVcsError))
 
-			const uninstallInstallation: VcsProviderClient["uninstallInstallation"] = (installation) =>
-				client
-					.deleteInstallation(installation.externalInstallationId)
-					.pipe(Effect.asVoid, Effect.mapError(toVcsError))
-
 			const commitFiles: VcsProviderClient["commitFiles"] = (installation, repo, input) =>
 				client
 					.commitFiles(installation.externalInstallationId, repo.owner, repo.name, input)
@@ -2173,7 +2168,6 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				streamWorkflowJobLog,
 				canReadWorkflowLogs,
 				fetchBillingUsage,
-				uninstallInstallation,
 				installationSettingsUrl,
 			} satisfies VcsProviderClient
 		}),
