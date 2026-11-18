@@ -9,6 +9,7 @@ import {
 	VercelCostSourceAdded,
 	VercelCostSourceRemoved,
 	VercelCostStatus,
+	GcpCostStatus,
 } from "@maple/domain/http"
 import { VcsInstallationId } from "@maple/domain/vcs"
 import * as Policy from "@maple/domain/policy"
@@ -23,6 +24,8 @@ import {
 	AddGithubCostSource,
 	AddPlanetScaleCostSource,
 	AddVercelCostSource,
+	AddGcpCostSource,
+	FetchGcpCostStatus,
 	BreakdownInput,
 	FacetsInput,
 	FetchCostBreakdown,
@@ -93,6 +96,9 @@ export const LabState = Schema.Literals([
 	"cloudflare",
 	"by-resource",
 	"add-source",
+	"add-source-added",
+	"add-source-search",
+	"add-source-no-match",
 	"add-openrouter",
 	"key-refused",
 	"replace-key",
@@ -120,6 +126,11 @@ export const LabState = Schema.Literals([
 	"planetscale-reconnect",
 	"planetscale-not-connected",
 	"planetscale-refused",
+	"add-gcp",
+	"gcp-filled",
+	"gcp-pick",
+	"gcp-not-connected",
+	"gcp-refused",
 	"remove-planetscale",
 	"member",
 	"member-onramp",
@@ -176,6 +187,8 @@ const startsEmpty = (state: LabState): boolean =>
 	state === "onramp" ||
 	state === "member-onramp" ||
 	state === "add-source" ||
+	state === "add-source-search" ||
+	state === "add-source-no-match" ||
 	state === "add-openrouter" ||
 	state === "key-refused" ||
 	state === "add-cloudflare" ||
@@ -193,13 +206,27 @@ const startsEmpty = (state: LabState): boolean =>
 	state === "add-planetscale" ||
 	state === "planetscale-reconnect" ||
 	state === "planetscale-not-connected" ||
-	state === "planetscale-refused"
+	state === "planetscale-refused" ||
+	state === "add-gcp" ||
+	state === "gcp-filled" ||
+	state === "gcp-pick" ||
+	state === "gcp-not-connected" ||
+	state === "gcp-refused"
 
 /** What the reader did before the state's screenshot: the clicks that open its dialog. */
 const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
 	switch (state) {
 		case "add-source":
+		case "add-source-added":
 			return [CostMessage.ClickedAddSource()]
+		case "add-source-search":
+		case "add-source-no-match":
+			return [
+				CostMessage.ClickedAddSource(),
+				CostMessage.ChangedProviderSearch({
+					value: state === "add-source-search" ? "api" : "mainframe",
+				}),
+			]
 		case "add-openrouter":
 			return [CostMessage.ClickedAddSource(), CostMessage.PickedProvider({ provider: "openrouter" })]
 		case "key-refused":
@@ -265,6 +292,22 @@ const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
 			]
 		case "remove-planetscale":
 			return removalOf("planetscale")
+		case "add-gcp":
+		case "gcp-pick":
+		case "gcp-not-connected":
+			return [CostMessage.ClickedAddSource(), CostMessage.ClickedAddGcp()]
+		case "gcp-filled":
+		case "gcp-refused":
+			return [
+				CostMessage.ClickedAddSource(),
+				CostMessage.ClickedAddGcp(),
+				CostMessage.GotGcpTableDraftMessage({
+					message: Field.Message.ChangedValue({
+						value: state === "gcp-refused" ? "acme-billing.billing_export.costs" : LAB_GCP_TABLE,
+					}),
+				}),
+				...(state === "gcp-refused" ? [CostMessage.SubmittedGcpExport()] : []),
+			]
 		// Without Clerk the page starts with every permission: the member states take them away.
 		case "member":
 		case "member-onramp":
@@ -390,6 +433,38 @@ const failure = toLoadFailure("The warehouse did not answer in time")
 
 const argsOf = <A, I>(input: Schema.Codec<A, I>) =>
 	Schema.decodeUnknownOption(Schema.Struct({ key: Schema.String, input }))
+/** A detailed export table, as BigQuery's console copies its id. */
+const LAB_GCP_TABLE = "acme-billing.billing_export.gcp_billing_export_resource_v1_01A2B3_C4D5E6_F7A8B9"
+
+const labGcpConnector = (
+	scopeId: string,
+	number: string,
+	metricsEnabled = true,
+): (typeof GcpCostStatus.Encoded)["connectors"][number] => ({
+	id: `0${number}8f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8`,
+	scopeType: "project",
+	scopeId,
+	projectId: scopeId,
+	metricsEnabled,
+	readerEmail: `maple-0${number}8f2b3c4d5e4f708192a3b4@${scopeId}.iam.gserviceaccount.com`,
+})
+
+/** The org's GCP connections as the state has them: none, one, or several to pick from. */
+const gcpStatusOf = (state: LabState): GcpCostStatus =>
+	Schema.decodeSync(GcpCostStatus)({
+		connectors:
+			state === "gcp-not-connected"
+				? []
+				: state === "gcp-pick"
+					? [
+							labGcpConnector("acme-prod", "1"),
+							labGcpConnector("acme-staging", "2", false),
+							labGcpConnector("acme-data", "3"),
+						]
+					: [labGcpConnector("acme-prod", "1")],
+		exports: [],
+	})
+
 const keyArgs = Schema.decodeUnknownOption(Schema.Struct({ key: Schema.String }))
 const windowArgs = argsOf(WindowInput)
 const timeseriesArgs = argsOf(TimeseriesInput)
@@ -605,6 +680,20 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 			return Option.some(
 				CostMessage.CompletedRemovePlanetScale({
 					result: Result.succeed(new PlanetScaleCostSourceRemoved({ removed: true })),
+				}),
+			)
+		case FetchGcpCostStatus.name:
+			return Option.map(keyArgs(command.args), ({ key }) =>
+				CostMessage.CompletedLoadGcpStatus({ key, result: Result.succeed(gcpStatusOf(state)) }),
+			)
+		case AddGcpCostSource.name:
+			return Option.some(
+				CostMessage.CompletedAddGcp({
+					result: Result.fail({
+						...toLoadFailure("refused"),
+						message:
+							"That is not a Cloud Billing export table. Copy its id from BigQuery: project.dataset.gcp_billing_export_v1_XXXXXX_XXXXXX_XXXXXX.",
+					}),
 				}),
 			)
 		case RemoveVercelCostSource.name:
