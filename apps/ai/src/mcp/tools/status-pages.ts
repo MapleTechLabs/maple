@@ -1042,6 +1042,9 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 			}
 			const page = yield* resolvePage(tool, tenant.orgId, params.page)
 			const customDomains = yield* StatusPageCustomDomainsService
+			// A domain going live or away bumps the page's revision: report the page as it is after.
+			const pages = yield* StatusPagesService
+			const reread = () => pages.get(tenant.orgId, page.id).pipe(Effect.mapError(toMcpError(tool)))
 			const before = yield* customDomains
 				.get(tenant.orgId, page.id)
 				.pipe(Effect.mapError(toMcpError(tool)))
@@ -1051,7 +1054,8 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 					return { action: "unchanged" as const, page: toPageRow(page), domain: null }
 				yield* customDomains.remove(tenant.orgId, page.id).pipe(Effect.mapError(toMcpError(tool)))
 				yield* auditPage("status_page.custom_domain_removed", page.id, { hostname: previous })
-				return { action: "removed" as const, page: toPageRow(page), domain: null }
+				const after = yield* reread()
+				return { action: "removed" as const, page: toPageRow(after), domain: null }
 			}
 			const hostname = normalizeCustomDomain(requested)
 			// The same domain again is a check, as the dashboard's Check now: `set` would only re-read it.
@@ -1073,9 +1077,10 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 					previous_hostname: previous,
 				})
 			}
+			const after = yield* reread()
 			return {
 				action: same ? ("checked" as const) : ("set" as const),
-				page: toPageRow(page),
+				page: toPageRow(after),
 				domain: view.domain === null ? null : toDomainRow(view.domain),
 			}
 		}),

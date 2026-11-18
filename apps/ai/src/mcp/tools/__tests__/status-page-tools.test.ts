@@ -709,6 +709,7 @@ describe("setting a status page up", () => {
 	})
 
 	it("names `domain` or `remove` for a domain it cannot set", async () => {
+		await runToolDirect(admin(), "create_status_page", { name: "Invalid Domain Page" })
 		await runToolDirect(admin(), "create_status_page", { name: "Hidden Page" })
 		await runToolDirect(admin(), "apply_status_page_config", {
 			page: "hidden-page",
@@ -718,9 +719,9 @@ describe("setting a status page up", () => {
 			},
 		})
 		const cases: ReadonlyArray<readonly [Record<string, unknown>, string]> = [
-			[{ page: "domain-page" }, "Pass `domain`"],
-			[{ page: "domain-page", domain: "status.acme.com", remove: true }, "not both"],
-			[{ page: "domain-page", domain: "acme.com" }, "subdomain"],
+			[{ page: "invalid-domain-page" }, "Pass `domain`"],
+			[{ page: "invalid-domain-page", domain: "status.acme.com", remove: true }, "not both"],
+			[{ page: "invalid-domain-page", domain: "acme.com" }, "subdomain"],
 			[{ page: "hidden-page", domain: "status.hidden-page.com" }, "internal page"],
 		]
 		for (const [params, expected] of cases) {
