@@ -8,7 +8,6 @@ import {
 	CostConnectionValidationError,
 } from "./cost-connections"
 import { SessionAuthorization } from "./current-tenant"
-import { CloudCostDisabledError } from "./query-engine"
 
 /** Far above any Cloudflare token (about 40 to 60 characters): it only bounds what the request carries. */
 export const CLOUDFLARE_COST_TOKEN_MAX_LENGTH = 256
@@ -29,7 +28,6 @@ export class CloudflareCostApiGroup extends HttpApiGroup.make("cloudflareCost")
 				CostConnectionPersistenceError,
 				CostConnectionForbiddenError,
 				CostConnectionValidationError,
-				CloudCostDisabledError,
 			],
 		}),
 	)

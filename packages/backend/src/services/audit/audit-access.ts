@@ -1,9 +1,19 @@
-import { Context, Effect, Option, Schema, String as Str } from "effect"
+import {
+	Array as Arr,
+	Context,
+	Effect,
+	Option,
+	Predicate,
+	Record as Rec,
+	Schema,
+	String as Str,
+} from "effect"
 import type { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { AuditedRead, type AuditLogSource, type TenantContext } from "@maple/domain/http"
 import { CONNECTOR_TENANT_USER_ID, type ChatMode, type ChatTurnOrigin } from "@maple/domain/chat-session"
 import { mapleAgentLabel } from "@maple/domain/audit-actions"
+import { redactWholeUrlSecrets } from "@maple/domain/url-redaction"
 import { chatConnectorAgentName } from "@maple/domain/system-agents"
 import type { ActorId, OrgId, UserId } from "@maple/primitives"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
@@ -37,6 +47,24 @@ const encodeJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
 export const snapshot = (value: unknown): string => {
 	const text = typeof value === "string" ? value : Option.getOrElse(encodeJson(value), () => "null")
 	return text.length > MAX_SNAPSHOT_CHARS ? `${Str.slice(0, MAX_SNAPSHOT_CHARS)(text)}…` : text
+}
+
+/** Nesting kept of a tool call's parameters; a value below it is stored as {@link TOO_DEEP}. */
+const MAX_PARAMS_DEPTH = 32
+const TOO_DEEP = "<nested too deep>"
+
+/**
+ * A tool call's parameters as the JSON kept on record. A tool is handed scrape and check URLs, so
+ * a string that is a URL with a token is cut to scheme, host and path. The depth is bounded:
+ * the caller chooses the input, and it must leave an entry whatever its shape.
+ */
+const recordableParams = (value: unknown, depth: number): Schema.Json => {
+	if (depth > MAX_PARAMS_DEPTH) return TOO_DEEP
+	if (typeof value === "string") return redactWholeUrlSecrets(value)
+	if (typeof value === "number" || typeof value === "boolean" || value === null) return value
+	if (Arr.isArray(value)) return Arr.map(value, (item) => recordableParams(item, depth + 1))
+	if (!Predicate.isObject(value)) return null
+	return Rec.map(Rec.filter(value, Predicate.isNotUndefined), (item) => recordableParams(item, depth + 1))
 }
 
 export interface AuditAttribution {
@@ -224,7 +252,7 @@ export const recordMcpToolAudit = (input: McpToolAuditInput) =>
 				// Which Maple agent ran it (investigation, code review, ...); absent for a public MCP call.
 				...(input.tenant.chatMode !== undefined ? { agent: input.tenant.chatMode } : undefined),
 				is_error: input.isError,
-				params: snapshot(input.input),
+				params: snapshot(recordableParams(input.input, 0)),
 				...originMetadata(input.tenant.turnOrigin),
 			},
 			...forensics,

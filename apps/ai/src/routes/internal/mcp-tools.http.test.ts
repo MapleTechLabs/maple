@@ -14,7 +14,10 @@ describe("publicMcpToolCatalog", () => {
 
 	it("leaves out tools meant only for Maple's own agents", () => {
 		const listed = new Set(Arr.map(tools, (tool) => tool.name))
-		const agentOnly = Arr.filter(mapleToolCatalog, (tool) => tool.audience !== "public")
+		const agentOnly = Arr.filter(
+			mapleToolCatalog,
+			(tool) => tool.audience === "agent" || tool.audience === "internal",
+		)
 		expect(agentOnly.length).toBeGreaterThan(0)
 		for (const tool of agentOnly) expect(listed.has(tool.name)).toBe(false)
 	})

@@ -65,6 +65,7 @@ export interface ToolModuleSource {
 	readonly tool: string
 	readonly title: string
 	readonly audience: string
+	readonly readOnly: boolean
 	/** The module under `src/mcp/tools`, without extension (`run-sql`). */
 	readonly module: string
 	/** Its registration function (`registerRunSqlTool`). */
@@ -83,7 +84,7 @@ export const renderToolModulesModule = (sources: ReadonlyArray<ToolModuleSource>
 			...Arr.map(
 				sources,
 				(source) =>
-					`\t{ name: ${asciiJson(source.name)}, tool: ${asciiJson(source.tool)}, title: ${asciiJson(source.title)}, audience: ${asciiJson(source.audience)}, load: () => import(${asciiJson(`./tools/${source.module}`)}).then((module) => module.${source.register}) },`,
+					`\t{ name: ${asciiJson(source.name)}, tool: ${asciiJson(source.tool)}, title: ${asciiJson(source.title)}, audience: ${asciiJson(source.audience)}, readOnly: ${source.readOnly ? "true" : "false"}, load: () => import(${asciiJson(`./tools/${source.module}`)}).then((module) => module.${source.register}) },`,
 			),
 			"]",
 			"",

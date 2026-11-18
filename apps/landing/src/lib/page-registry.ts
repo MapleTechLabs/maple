@@ -58,6 +58,12 @@ export type SectionId =
 	| "uptime-check-trace"
 	| "uptime-setup"
 	| "status-page-feeds"
+	| "cost-explorer"
+	| "cost-sources"
+	| "cost-budgets"
+
+/** A live piece in the hero's right-hand column, in place of an engraving. */
+export type HeroAsideId = "cost-statement"
 
 /**
  * A plate. `src` unset renders MediaFrame's placeholder, which prints the
@@ -125,6 +131,8 @@ export interface Feature {
 	slug: string
 	/** Decorative Roman engraving, shared by all locale variants. Unset renders a plain hero. */
 	illustration?: string
+	/** A live piece beside the hero copy from `lg` up, for a page that has no engraving. */
+	heroAside?: HeroAsideId
 	navLabel: Msg
 	navDesc: Msg
 	seoTitle: Msg
@@ -142,6 +150,10 @@ export interface Feature {
 	capabilities: Capability[]
 	/** Price, retention and setup doc: the facts agents and buyers ask for first. */
 	plan: FeaturePlan
+	/** The closing call to action, for a page whose first step is not sending telemetry. */
+	cta?: { title: Msg; lede: Msg }
+	/** Questions a searcher asks about the feature, answered on the page and in FAQPage data. */
+	faq?: { question: Msg; answer: Msg }[]
 	/** Hand-picked, so no slug ends up with zero inbound links. */
 	related: string[]
 	relatedUseCases: string[]

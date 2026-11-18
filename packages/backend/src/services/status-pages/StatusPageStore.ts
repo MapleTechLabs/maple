@@ -1,6 +1,7 @@
 import { StatusPageId } from "@maple/primitives"
 import {
 	decodeStatusPageOverlayEntryJson,
+	STATUS_PAGE_TOMBSTONE,
 	StatusPageKeys,
 	type StatusPageOverlayEntry,
 	type StatusPagePublisherHeartbeat,
@@ -74,13 +75,18 @@ export interface StatusPageStoreApi {
 	readonly readSlugRoute: (slug: string) => Effect.Effect<string | null, StatusPageStoreError>
 	/** The page id a custom hostname's KV route points at, or null. */
 	readonly readHostRoute: (hostname: string) => Effect.Effect<string | null, StatusPageStoreError>
-	/** Removes the routes from KV and R2. */
+	/** Removes the routes from KV and R2, a tombstone included. */
 	readonly deleteRoutes: (routes: StatusPageRoutes) => Effect.Effect<void, StatusPageStoreError>
 	/** Removes one custom hostname's route from KV and R2. */
 	readonly deleteHostRoute: (hostname: string) => Effect.Effect<void, StatusPageStoreError>
-	/** Removes the snapshot from KV and R2; break-glass entries stay for the reconciler to import. */
-	readonly deleteSnapshot: (pageId: StatusPageId) => Effect.Effect<void, StatusPageStoreError>
-	/** Removes the snapshot (KV and R2) and every break-glass entry of the page. */
+	/**
+	 * Takes a page that still exists off the edge: a tombstone replaces its R2 snapshot, then the
+	 * KV copy goes. Break-glass entries stay for the reconciler to import.
+	 */
+	readonly retireSnapshot: (pageId: StatusPageId) => Effect.Effect<void, StatusPageStoreError>
+	/** Takes a slug route off the edge the same way: a tombstone in R2, nothing in KV. */
+	readonly retireSlugRoute: (slug: string) => Effect.Effect<void, StatusPageStoreError>
+	/** Removes the snapshot (KV and R2, a tombstone included) and every break-glass entry of the page. */
 	readonly deletePage: (pageId: StatusPageId) => Effect.Effect<void, StatusPageStoreError>
 	readonly putHeartbeat: (
 		heartbeat: StatusPagePublisherHeartbeat,
@@ -198,14 +204,15 @@ const makeApi = (backend: StoreBackend): StatusPageStoreApi => ({
 			],
 			{ concurrency: 4, discard: true },
 		),
-	deleteSnapshot: (pageId) =>
-		Effect.all(
-			[
-				backend.kvDelete(StatusPageKeys.snapshot(pageId)),
-				backend.objectDelete(StatusPageKeys.snapshotObject(pageId)),
-			],
-			{ concurrency: 2, discard: true },
-		),
+	// The tombstone lands first, so R2 never holds the old copy once KV has stopped answering for it.
+	retireSnapshot: (pageId) =>
+		backend
+			.objectPut(StatusPageKeys.snapshotObject(pageId), STATUS_PAGE_TOMBSTONE)
+			.pipe(Effect.andThen(backend.kvDelete(StatusPageKeys.snapshot(pageId)))),
+	retireSlugRoute: (slug) =>
+		backend
+			.objectPut(StatusPageKeys.slugObject(slug), STATUS_PAGE_TOMBSTONE)
+			.pipe(Effect.andThen(backend.kvDelete(StatusPageKeys.slug(slug)))),
 	deletePage: (pageId) =>
 		Effect.all(
 			[

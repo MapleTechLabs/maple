@@ -1,8 +1,21 @@
 import { OrgId } from "@maple/domain"
 import { StatusPagePublicId } from "@maple/domain/http/v2"
 import { makeSnapshot } from "@maple/status-page/fixtures"
-import { Result, Schema, Array as Arr } from "effect"
-import { expect as expectView, given, role, scene, selector, text, withViewInputs } from "foldkit/scene"
+import { Option, Result, Schema, Array as Arr } from "effect"
+import {
+	attr,
+	click,
+	expect as expectView,
+	find,
+	given,
+	inside,
+	role,
+	scene,
+	selector,
+	tap,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../../contract"
@@ -38,10 +51,55 @@ describe("status page viewer", () => {
 			{ update: viewerUpdate, view },
 			given(loaded),
 			expectView(text("Only members of this organization can read this page.")).toExist(),
-			expectView(selector('iframe[title="Acme status"]')).toHaveAttr(
+			expectView(selector('maple-preview-frame[frame-title="Acme status"]')).toHaveAttr(
 				"sandbox",
 				"allow-scripts allow-popups allow-popups-to-escape-sandbox",
 			),
+			expectView(role("link", { name: "Close preview" })).toHaveAttr(
+				"href",
+				`/status-pages/${Schema.encodeSync(StatusPagePublicId)(pageId(1))}`,
+			),
+		)
+	})
+
+	test("the preview switches between example states, a phone width and, for an Auto page, light and dark", () => {
+		const start = entered()
+		const snapshot = makeSnapshot()
+		const loadedWith = (appearance: "auto" | "light") =>
+			viewerUpdate(
+				start.model,
+				Message.CompletedFetchView({
+					key: start.model.snapshot.key ?? "",
+					result: Result.succeed({
+						...snapshot,
+						page: { ...snapshot.page, theme: { ...snapshot.page.theme, appearance } },
+					}),
+				}),
+			).model
+		const iframeOf = find("maple-preview-frame")
+		const srcdoc = (html: Parameters<typeof iframeOf>[0]): string =>
+			Option.getOrElse(Option.flatMap(iframeOf(html), attr("srcdoc")), () => "")
+		const pick = (group: string, name: string) =>
+			inside(role("group", { name: group }), click(role("button", { name })))
+		const note = text("Showing an example state. Visitors still see the live page.")
+		scene(
+			{ update: viewerUpdate, view },
+			given(loadedWith("auto")),
+			expectView(note).not.toExist(),
+			tap(({ html }) => expect(srcdoc(html)).not.toContain("Example incident")),
+			pick("Preview state", "Outage"),
+			tap(({ html }) => expect(srcdoc(html)).toContain("Example incident")),
+			expectView(note).toExist(),
+			pick("Preview state", "Maintenance"),
+			tap(({ html }) => expect(srcdoc(html)).toContain("Example maintenance")),
+			pick("Preview width", "Mobile"),
+			expectView(selector("maple-preview-frame")).toHaveAttr("data-width", "mobile"),
+			expectView(role("group", { name: "Preview mode" })).toExist(),
+		)
+		scene(
+			{ update: viewerUpdate, view },
+			given(loadedWith("light")),
+			expectView(role("group", { name: "Preview mode" })).not.toExist(),
 		)
 	})
 

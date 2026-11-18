@@ -78,6 +78,7 @@ export const Message = defineMessageUnion({
 	ClickedAddThreshold: {},
 	ChangedThresholdValue: { index: Schema.Number, value: Schema.String },
 	ChangedThresholdColor: { index: Schema.Number, color: Schema.String },
+	CompletedMountColorPicker: {},
 	ClickedRemoveThreshold: { index: Schema.Number },
 	ToggledPercentChange: {},
 	ChangedUnit: { unit: Schema.String },

@@ -3,6 +3,7 @@ import { Array as Arr, Record as Rec } from "effect"
 import { describe, expect, test } from "vitest"
 import { bucketBarSeries } from "./bar-chart"
 import { seriesDefinitionsOf } from "./timeseries"
+import { hiddenChartKeys } from "./timeseries-legend"
 
 type Row = Readonly<Record<string, string | number | boolean>>
 
@@ -36,6 +37,25 @@ describe("bucketBarSeries", () => {
 		const rows = rowsOf(MAX_BAR_SERIES)
 
 		expect(bucketBarSeries(rows)).toBe(rows)
+	})
+})
+
+describe("hiddenChartKeys", () => {
+	const definitions = [
+		{ rawKey: "api", chartKey: "s1" },
+		{ rawKey: "web", chartKey: "s2" },
+	]
+
+	test("a hidden name maps to the key it has in this data", () => {
+		expect(hiddenChartKeys(["web"], definitions)).toEqual(["s2"])
+	})
+
+	test("a name the data no longer has hides nothing", () => {
+		expect(hiddenChartKeys(["worker"], definitions)).toEqual([])
+	})
+
+	test("names that would hide every series of the data hide none", () => {
+		expect(hiddenChartKeys(["api", "web", "worker"], definitions)).toEqual([])
 	})
 })
 

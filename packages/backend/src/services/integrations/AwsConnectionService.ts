@@ -55,7 +55,7 @@ import { reconcileAwsCostSources } from "../cost/aws-cost-sources"
 import { AwsApiError, checkRole } from "./aws/api"
 import { type AwsOidcSigner, makeAwsOidcSigner } from "./aws/oidc"
 import { renderAwsCleanupScript, renderAwsSetup } from "./aws/setup"
-import { awsEventsKey, awsEventsPath } from "../cloud-security/events-key"
+import { awsEventsKey, awsEventsPath, mintAwsEventsKeySalt } from "../cloud-security/events-key"
 
 export interface AwsConnection {
 	readonly id: AwsConnectionId
@@ -100,6 +100,10 @@ export interface AwsSetup {
 	/** The metric stream's stack, deployed to each of its regions. Null without a stream. */
 	readonly metricsStackName: string | null
 	readonly metricsCloudformationTemplate: string | null
+	/** Whether the scripts carry the events key: true with the security module on. */
+	readonly containsEventsKey: boolean
+	/** Whether the scripts carry the stream access key: true with a metric stream set. */
+	readonly containsStreamKey: boolean
 }
 
 export interface AwsCheckSweep {
@@ -153,6 +157,14 @@ export interface AwsConnectionServiceApi {
 		AwsSetup,
 		IntegrationsNotFoundError | AwsIntegrationUnavailableError | IntegrationsPersistenceError
 	>
+	/**
+	 * Replaces the events key. The deployed stack sends the old one, which is refused from now on,
+	 * until the stack from `setup` is deployed again.
+	 */
+	readonly rotateEventsKey: (
+		orgId: OrgId,
+		connectionId: AwsConnectionId,
+	) => Effect.Effect<AwsConnection, IntegrationsNotFoundError | IntegrationsPersistenceError>
 	/** Assumes the role now. A failed check is recorded on the connection, not failed with. */
 	readonly check: (
 		orgId: OrgId,
@@ -469,6 +481,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 										metricStreamChangedAt:
 											(input.metricStream ?? null) === null ? null : now,
 										...streamSecret,
+										eventsKeySalt: mintAwsEventsKeySalt(),
 										createdBy: userId,
 										createdAt: now,
 										updatedAt: now,
@@ -519,6 +532,10 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 						streamSecretTag: null,
 						streamSecretHash: null,
 					}),
+					// The security module turned off: the key its stack sends is replaced, so turning
+					// it back on hands the next setup a new one.
+					...(modules !== undefined &&
+						!Arr.contains(modules, "security") && { eventsKeySalt: mintAwsEventsKeySalt() }),
 				}
 				// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.keys would need a cast
 				if (Object.keys(changes).length === 0) {
@@ -606,10 +623,29 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 				const events = Arr.contains(row.modules, "security")
 					? {
 							endpoint: new URL(awsEventsPath(row.id), env.MAPLE_API_BASE_URL).toString(),
-							key: awsEventsKey(lookupHmacKey, row.id),
+							key: awsEventsKey(lookupHmacKey, row.id, row.eventsKeySalt),
 						}
 					: null
-				return yield* renderAwsSetup(row.id, row.accountId, plan, stream, events)
+				const rendered = yield* renderAwsSetup(row.id, row.accountId, plan, stream, events)
+				return { ...rendered, containsEventsKey: events !== null, containsStreamKey: stream !== null }
+			})
+
+			const rotateEventsKey = Effect.fn("AwsConnectionService.rotateEventsKey")(function* (
+				orgId: OrgId,
+				connectionId: AwsConnectionId,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.aws.connection_id": connectionId })
+				const updatedAt = yield* Clock.currentTimeMillis
+				const [row] = yield* dbExecute((db) =>
+					db.run(
+						PG.update(AwsConnections)
+							.set({ eventsKeySalt: mintAwsEventsKeySalt(), updatedAt })
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(connectionId)])
+							.returning(),
+					),
+				)
+				if (row === undefined) return yield* notFound()
+				return connectionOf(row)
 			})
 
 			/** Assumes the row's role and writes what it found, on the row and on its source. */
@@ -835,6 +871,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 				create,
 				update,
 				setup,
+				rotateEventsKey,
 				check,
 				checkDue,
 				delete: deleteConnection,

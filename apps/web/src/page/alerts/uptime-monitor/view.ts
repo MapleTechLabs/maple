@@ -210,7 +210,7 @@ const body = (
 					...Arr.flatMap([checksScatterPanel(h, model, timeZone)], (panel) =>
 						panel === null ? [] : [panel],
 					),
-					checksPanel(h, monitor, timeZone),
+					checksPanel(h, model, monitor, timeZone),
 				]),
 				vstack(h, { gap: "4" }, [
 					lastCheckPanel(h, monitor, nowMs),

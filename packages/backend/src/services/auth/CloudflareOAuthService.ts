@@ -176,9 +176,14 @@ export interface CloudflareOAuthServiceApi {
 		| IntegrationsPersistenceError
 		| IntegrationsValidationError
 	>
-	readonly disconnect: (
-		orgId: OrgId,
-	) => Effect.Effect<{ readonly disconnected: boolean }, IntegrationsPersistenceError>
+	readonly disconnect: (orgId: OrgId) => Effect.Effect<
+		{
+			readonly disconnected: boolean
+			/** False when a stored grant was not revoked at the vendor; the local grant is dropped anyway. */
+			readonly grantRevoked: boolean
+		},
+		IntegrationsPersistenceError
+	>
 	/**
 	 * Stamp the org's grant as revoked so pollers stop retrying it every tick;
 	 * cleared automatically on reconnect. Best-effort. The grant is one token, so
@@ -214,17 +219,17 @@ export class CloudflareOAuthService extends Context.Service<
 			},
 		})
 
-		/** Best-effort token revocation on disconnect: failures are logged, never surfaced. */
+		/** One revoke call at Cloudflare, answering its status. */
+		const postRevoke = (config: ResolvedCloudflareOAuthConfig, token: string) =>
+			oauth.postForm(config.revokeUrl, {
+				token,
+				client_id: config.clientId,
+				...(config.clientSecret ? { client_secret: Redacted.value(config.clientSecret) } : undefined),
+			})
+
+		/** Best-effort revocation of a token a refused connect never stored. */
 		const revokeToken = (config: ResolvedCloudflareOAuthConfig, token: string) =>
-			oauth
-				.postForm(config.revokeUrl, {
-					token,
-					client_id: config.clientId,
-					...(config.clientSecret
-						? { client_secret: Redacted.value(config.clientSecret) }
-						: undefined),
-				})
-				.pipe(Effect.ignore)
+			Effect.ignore(postRevoke(config, token))
 
 		const startConnect = Effect.fn("CloudflareOAuthService.startConnect")(function* (
 			orgId: OrgId,
@@ -387,23 +392,24 @@ export class CloudflareOAuthService extends Context.Service<
 
 		const disconnect = Effect.fn("CloudflareOAuthService.disconnect")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan({ orgId })
-			// Best-effort upstream token revocation before we drop the row. Never let a revoke
-			// failure block the disconnect: the deleted row is the real backstop.
-			const row = yield* oauth.loadConnection(orgId)
-			if (row != null) {
-				const config = yield* resolveConfig(env, clientSecret).pipe(Effect.option)
-				const accessToken = yield* oauth
-					.openAccessToken(row.orgId, {
-						ciphertext: row.accessTokenCiphertext,
-						iv: row.accessTokenIv,
-						tag: row.accessTokenTag,
-					})
-					.pipe(Effect.option)
-				if (Option.isSome(config) && Option.isSome(accessToken)) {
-					yield* revokeToken(config.value, accessToken.value)
-				}
-			}
-			return yield* oauth.deleteConnection(orgId)
+			// Best-effort revocation of the stored refresh and access tokens before the row goes. A
+			// failure never blocks the disconnect: the deleted row is the real backstop.
+			const grantRevoked = yield* resolveConfig(env, clientSecret).pipe(
+				Effect.flatMap((config) =>
+					oauth.revokeStoredTokens(orgId, (token) => postRevoke(config, token)),
+				),
+				Effect.as(true),
+				Effect.catch((error) =>
+					Effect.logWarning("Cloudflare grant revoke failed; dropping the local grant anyway", {
+						orgId,
+						error: error.message,
+					}).pipe(Effect.as(false)),
+				),
+			)
+			yield* Effect.annotateCurrentSpan({ "maple.cloudflare.revoked_upstream": grantRevoked })
+			const deleted = yield* oauth.deleteConnection(orgId)
+			// An org that never connected has no grant, whatever this deployment is configured with.
+			return { ...deleted, grantRevoked: grantRevoked || !deleted.disconnected }
 		})
 
 		const markConnectionRevoked = Effect.fn("CloudflareOAuthService.markConnectionRevoked")(function* (

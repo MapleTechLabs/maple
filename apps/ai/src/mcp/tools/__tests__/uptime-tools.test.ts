@@ -236,6 +236,27 @@ describe("list_uptime_monitors", () => {
 			await runToolDirect(admin, "list_uptime_monitors", {}),
 		).monitors.find((row) => row.id === created.monitor.id)
 		expect(adminRow?.heartbeatUrl).toBe(pingUrl)
+
+		// An admin's credential that cannot write monitors does not get the ping URL either.
+		const readOnlyKey: EvalRuntime = { ...admin, tenant: { ...admin.tenant, readOnly: true } }
+		const withoutWriteScope: EvalRuntime = {
+			...admin,
+			tenant: { ...admin.tenant, scopes: ["uptime_monitors:read", "alerts:write"] },
+		}
+		const withWriteScope: EvalRuntime = {
+			...admin,
+			tenant: { ...admin.tenant, scopes: ["uptime_monitors:write"] },
+		}
+		const urlSeenBy = async (runtime: EvalRuntime) => {
+			const result = await runToolDirect(runtime, "list_uptime_monitors", {})
+			const row = decode(ListUptimeMonitorsOutput, result).monitors.find(
+				(each) => each.id === created.monitor.id,
+			)
+			return { url: row?.heartbeatUrl, anywhere: JSON.stringify(result).includes("/hb/") }
+		}
+		expect(await urlSeenBy(readOnlyKey)).toEqual({ url: null, anywhere: false })
+		expect(await urlSeenBy(withoutWriteScope)).toEqual({ url: null, anywhere: false })
+		expect(await urlSeenBy(withWriteScope)).toEqual({ url: pingUrl, anywhere: true })
 	})
 
 	it("filters by service", async () => {

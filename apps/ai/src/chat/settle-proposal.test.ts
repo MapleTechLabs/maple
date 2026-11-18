@@ -12,9 +12,10 @@
  */
 import { assert, beforeEach, describe, it } from "vitest"
 import type { ChatConnectorOrigin } from "@maple/domain/chat-session"
+import { UserId } from "@maple/primitives"
 import { ChatSession, type ProposalApplier } from "./ChatSession"
 import { makeFakeDurableObjectState } from "../../test/chat/fake-do-state"
-import { Array as Arr, Option } from "effect"
+import { Array as Arr, Option, Schema } from "effect"
 
 /** Everything the applier was handed — the settlement as it arrived, plus what the log supplied. */
 const applied: Array<unknown> = []
@@ -35,6 +36,9 @@ const ADA: ChatConnectorOrigin = {
 	externalUserId: "author-1",
 	displayName: "Ada",
 }
+
+/** The Maple user the host resolved Ada's chat account to: who an approved change runs as. */
+const ADA_USER = Schema.decodeSync(UserId)("user_ada")
 
 const makeSession = () => new ChatSession(makeFakeDurableObjectState(), {}, applier)
 
@@ -63,7 +67,13 @@ const settledCall = (session: ChatSession, callId = "call_9") =>
 	)
 
 const settle = (session: ChatSession, decision: "approve" | "deny", callId = "call_9") =>
-	session.settleProposal({ sessionId: SESSION_ID, toolCallId: callId, decision, approver: ADA })
+	session.settleProposal({
+		sessionId: SESSION_ID,
+		toolCallId: callId,
+		decision,
+		approver: ADA,
+		actingUserId: ADA_USER,
+	})
 
 beforeEach(() => {
 	applied.length = 0
@@ -85,6 +95,7 @@ describe("settling a proposal", () => {
 			toolCallId: "call_9",
 			decision: "approve",
 			approver: ADA,
+			actingUserId: ADA_USER,
 		})
 		const call = settledCall(session)
 		assert.equal(call?.output, "Created alert rule ar_1.")

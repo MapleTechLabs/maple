@@ -85,6 +85,12 @@ export const GET: APIRoute = async ({ props, site }) => {
 			...Arr.map(feature.extraSections, (id) => sectionMarkdown(id, site)),
 			`## ${feature.capTitle()}`,
 			...Arr.map(feature.capabilities, (cap) => `### ${cap.op}: ${cap.title()}\n\n${cap.body()}`),
+			...(feature.faq === undefined || feature.faq.length === 0
+				? []
+				: [
+						`## ${m.faq_heading()}`,
+						...Arr.map(feature.faq, (item) => `### ${item.question()}\n\n${item.answer()}`),
+					]),
 			related,
 		),
 	)

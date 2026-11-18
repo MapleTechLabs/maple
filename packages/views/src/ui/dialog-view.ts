@@ -24,7 +24,7 @@ import {
 } from "./dialog"
 import { button } from "./button"
 import { XmarkIcon } from "./control-icons"
-import { iconNode } from "./icon"
+import { iconNode } from "./icon-node"
 import { scrollArea } from "./scroll-area"
 import { focusGuard, isMounted, stateAttributes } from "./overlay/transition"
 

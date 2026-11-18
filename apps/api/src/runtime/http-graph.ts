@@ -22,6 +22,7 @@ import { HttpEnterpriseSsoLive } from "@/routes/internal/enterprise-sso.http"
 import { HttpPlanetScaleCostLive } from "@/routes/internal/planetscale-cost.http"
 import { HttpServiceMapWorldLive } from "@/routes/internal/service-map-world.http"
 import { HttpVercelCostLive } from "@/routes/internal/vercel-cost.http"
+import { HttpGcpCostLive } from "@/routes/internal/gcp-cost.http"
 import { HttpAuthLive, HttpAuthPublicLive, HttpAuthSessionLive } from "@/routes/auth.http"
 import { HttpBillingLive } from "@/routes/internal/billing.http"
 import { HttpBillingPublicLive } from "@/routes/billing-public.http"
@@ -194,6 +195,7 @@ const ApiInternalRoutes = HttpApiBuilder.layer(MapleInternalApi).pipe(
 			HttpEnterpriseSsoLive,
 			HttpServiceMapWorldLive,
 			HttpVercelCostLive,
+			HttpGcpCostLive,
 		),
 	),
 	Layer.provide(

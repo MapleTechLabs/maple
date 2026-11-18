@@ -164,6 +164,34 @@ describe("routes", () => {
 		expect(routeRedirect(parse("/releases"))).toEqual(Option.some({ url: "/services", isReplace: true }))
 	})
 
+	test("a settings tab is a path segment that round-trips with its search", () => {
+		const route = parse("/settings/audit-log?outcome=denied")
+		expect(route).toMatchObject({ _tag: "Settings", search: { tab: "audit-log", outcome: "denied" } })
+		expect(hrefOf(route)).toBe("/settings/audit-log?outcome=denied")
+		expect(hrefOf(AppRoute.Settings({ search: {} }))).toBe("/settings")
+		expect(parse("/settings")).toEqual(AppRoute.Settings({ search: {} }))
+		expect(parse("/settings/nope")._tag).toBe("NotFound")
+		expect(parse("/settings/billing/ai-credits")._tag).toBe("BillingAiCredits")
+		expect(parse("/settings/ingestion/rules/new")._tag).toBe("IngestRuleNew")
+	})
+
+	test("an old settings `?tab=` link moves to the tab's path; a retired tab to its new home", () => {
+		const redirectOf = (url: string) => Option.map(routeRedirect(parse(url)), (to) => to.url)
+		expect(routeRedirect(parse("/settings?tab=keys"))).toEqual(
+			Option.some({ url: "/settings/keys", isReplace: true }),
+		)
+		expect(redirectOf("/settings?tab=audit-log&outcome=denied")).toEqual(
+			Option.some("/settings/audit-log?outcome=denied"),
+		)
+		expect(redirectOf("/settings?tab=api-keys")).toEqual(Option.some("/settings/keys"))
+		expect(redirectOf("/settings?tab=connectors")).toEqual(Option.some("/integrations"))
+		expect(redirectOf("/settings?tab=notifications")).toEqual(
+			Option.some("/account?tab=email-preferences"),
+		)
+		expect(redirectOf("/settings?tab=bogus")).toEqual(Option.some("/settings"))
+		expect(routeRedirect(parse("/settings/keys"))).toEqual(Option.none())
+	})
+
 	test("an old `?tab=` link replaces itself with its section's path and keeps its other params", () => {
 		const redirectOf = (url: string) => Option.map(routeRedirect(parse(url)), (to) => to.url)
 		expect(redirectOf("/alerts?tab=rules&status=firing")).toEqual(
@@ -252,7 +280,6 @@ describe("routes", () => {
 			expect(
 				flaggedRouteRedirect(parse(path), {
 					statusPages: false,
-					cloudCost: true,
 					productAnalytics: true,
 					cloudSecurity: true,
 				}),
@@ -260,7 +287,6 @@ describe("routes", () => {
 			expect(
 				flaggedRouteRedirect(parse(path), {
 					statusPages: true,
-					cloudCost: false,
 					productAnalytics: true,
 					cloudSecurity: true,
 				}),
@@ -269,7 +295,6 @@ describe("routes", () => {
 		expect(
 			flaggedRouteRedirect(parse("/services"), {
 				statusPages: false,
-				cloudCost: false,
 				productAnalytics: false,
 				cloudSecurity: false,
 			}),
@@ -277,7 +302,7 @@ describe("routes", () => {
 	})
 
 	test("an org outside the productAnalytics rollout is sent home from /product-analytics", () => {
-		const flags = { statusPages: true, cloudCost: true, cloudSecurity: true }
+		const flags = { statusPages: true, cloudSecurity: true }
 		for (const path of ["/product-analytics", "/product-analytics?tab=funnels&timePreset=7d"]) {
 			expect(flaggedRouteRedirect(parse(path), { ...flags, productAnalytics: false })).toEqual(
 				Option.some({ url: "/", isReplace: true }),
@@ -298,34 +323,15 @@ describe("routes", () => {
 		})
 	})
 
-	test("an org outside the cloudCost rollout is sent home from /cost, filters and all", () => {
-		for (const path of [
-			"/cost",
-			"/cost?groupBy=region&region=%5B%22eu-west-1%22%5D",
-			"/cost/budgets",
-			"/cost/budgets/new",
-		]) {
-			expect(
-				flaggedRouteRedirect(parse(path), {
-					statusPages: true,
-					cloudCost: false,
-					productAnalytics: true,
-					cloudSecurity: true,
-				}),
-			).toEqual(Option.some({ url: "/", isReplace: true }))
-			expect(
-				flaggedRouteRedirect(parse(path), {
-					statusPages: false,
-					cloudCost: true,
-					productAnalytics: true,
-					cloudSecurity: true,
-				}),
-			).toEqual(Option.none())
+	test("every org opens the cost pages, with no rollout flag on", () => {
+		const off = { statusPages: false, productAnalytics: false, cloudSecurity: false }
+		for (const path of ["/cost", "/cost?groupBy=region", "/cost/budgets", "/cost/budgets/new"]) {
+			expect(flaggedRouteRedirect(parse(path), off)).toEqual(Option.none())
 		}
 	})
 
 	test("an org outside the cloudSecurity rollout is sent home from the Cloud findings and their detail", () => {
-		const flags = { statusPages: true, cloudCost: true, productAnalytics: true }
+		const flags = { statusPages: true, productAnalytics: true }
 		for (const path of ["/security/cloud?severity=critical", "/security/cloud/finding?id=f-1"]) {
 			expect(flaggedRouteRedirect(parse(path), { ...flags, cloudSecurity: false })).toEqual(
 				Option.some({ url: "/", isReplace: true }),
@@ -399,7 +405,7 @@ describe("routes", () => {
 
 	test("legacy beforeLoad redirects", () => {
 		expect(routeRedirect(parse("/developer?tab=ingestion"))).toEqual(
-			Option.some({ url: "/settings?tab=ingestion", isReplace: true }),
+			Option.some({ url: "/settings/ingestion", isReplace: true }),
 		)
 		expect(routeRedirect(parse("/errors/issues?workflowState=done&severity=all"))).toEqual(
 			Option.some({ url: "/errors?view=closed", isReplace: true }),
@@ -414,7 +420,7 @@ describe("routes", () => {
 			Option.some({ url: "/alerts", isReplace: true }),
 		)
 		expect(routeRedirect(parse("/recommendations"))).toEqual(
-			Option.some({ url: "/settings?tab=ingestion", isReplace: true }),
+			Option.some({ url: "/settings/ingestion", isReplace: true }),
 		)
 		expect(parse("/alerts/incidents/inc_1")._tag).toBe("AlertIncident")
 		expect(parse("/recommendations/rec_1")._tag).toBe("Recommendation")

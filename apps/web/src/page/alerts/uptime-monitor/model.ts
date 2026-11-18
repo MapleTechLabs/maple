@@ -41,6 +41,7 @@ export const CheckSample = Schema.Struct({
 	durationMs: Schema.Number,
 	ok: Schema.Boolean,
 	statusCode: Schema.NullOr(Schema.Number),
+	error: Schema.NullOr(Schema.String),
 	traceId: Schema.String,
 	phases: Schema.NullOr(CheckPhases),
 })
@@ -65,6 +66,9 @@ export const CheckStats = Schema.Struct({
 	samples: Schema.Array(CheckSample),
 	samplesTruncated: Schema.Boolean,
 	samplesFailed: Schema.Boolean,
+	/** The window's failed checks, newest first, capped at `UPTIME_FAILED_CHECK_LIST_LIMIT`. */
+	failedSamples: Schema.Array(CheckSample),
+	failedSamplesFailed: Schema.Boolean,
 	windowStartMs: Schema.Number,
 	windowEndMs: Schema.Number,
 	checks: Schema.Number,
@@ -76,6 +80,10 @@ export const CheckStats = Schema.Struct({
 	phasesFailed: Schema.Boolean,
 })
 export type CheckStats = typeof CheckStats.Type
+
+/** The Checks table: the monitor's recent checks, or the window's failed ones. */
+export const ChecksFilter = Schema.Literals(["all", "failed"])
+export type ChecksFilter = typeof ChecksFilter.Type
 
 export const Model = Schema.Struct({
 	/** The URL segment as written; `monitorId` is `null` when it is not a monitor id. */
@@ -92,6 +100,7 @@ export const Model = Schema.Struct({
 	/** The heartbeat's copy buttons, by snippet id. */
 	copies: Schema.Record(Schema.String, CopyButton.Model),
 	window: UptimeWindow,
+	checksFilter: ChecksFilter,
 	stats: KeyedSchema(CheckStats, LoadFailure),
 	/** The scatter's hovered check, by its index in `samples`. */
 	hoveredCheck: Schema.NullOr(Schema.Number),

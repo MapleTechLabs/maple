@@ -10,10 +10,11 @@ import {
 	scopeAllows,
 } from "@maple/domain/http/v2"
 import type { V2ApiKey, V2ApiKeyMutationResponse, V2ApiKeyWithSecret } from "@maple/domain/http/v2"
-import { Effect, Option, Array as Arr, String as Str } from "effect"
+import { Clock, Effect, Option, Array as Arr, String as Str } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
+import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import * as Policy from "@maple/domain/policy"
 
 const beyondCallerScopes = () =>
@@ -90,6 +91,28 @@ export const HttpV2ApiKeysLive = HttpApiBuilder.group(MapleApiV2, "apiKeys", (ha
 		const apiKeysService = yield* ApiKeysService
 		const auth = yield* AuthService
 
+		/**
+		 * When the request came from a non-admin's API key that expires: that expiry, which no key
+		 * it mints or rolls may pass, or signing out of a device would leave its access behind.
+		 * Null for sessions, admins (they manage lifetimes as they see fit) and keys with no expiry.
+		 */
+		const callerExpiry = Effect.fnUntraced(function* (tenant: CurrentTenant.TenantContext) {
+			const actor = yield* CurrentAuditActor
+			if (Policy.can(tenant.roles, "api_keys:manage")) return null
+			if (actor?.type !== "api_key" || actor.apiKeyId === undefined) return null
+			// Gone since it authenticated this request: it was revoked, so it mints nothing.
+			const caller = yield* apiKeysService
+				.get(tenant.orgId, actor.apiKeyId)
+				.pipe(
+					Effect.catchTag("@maple/http/errors/ApiKeyNotFoundError", () =>
+						Effect.fail(
+							V2InsufficientPermissions.make("The calling API key is no longer valid."),
+						),
+					),
+				)
+			return caller.expiresAt
+		})
+
 		return handlers
 			.handle("list", ({ query }) =>
 				Effect.gen(function* () {
@@ -133,12 +156,25 @@ export const HttpV2ApiKeysLive = HttpApiBuilder.group(MapleApiV2, "apiKeys", (ha
 					) {
 						return yield* beyondCallerScopes()
 					}
+					const ceiling = yield* callerExpiry(tenant)
+					if (ceiling !== null) {
+						const now = yield* Clock.currentTimeMillis
+						if (
+							payload.expires_in_seconds === undefined ||
+							now + payload.expires_in_seconds * 1000 > ceiling
+						) {
+							return yield* V2InsufficientPermissions.make(
+								"A key created with an expiring API key cannot outlive it. Set expires_in_seconds within the calling key's remaining lifetime, or create the key from a signed-in session.",
+							)
+						}
+					}
 					const pinnedSource = isMcpKey ? "maple_mcp" : canManageKeys ? null : "maple_api_key"
 					const createdByEmail = yield* auth.getUserEmail(tenant.userId)
 					const created = yield* apiKeysService.create(tenant.orgId, tenant.userId, {
 						name: payload.name,
 						description: payload.description,
 						expiresInSeconds: payload.expires_in_seconds,
+						...(ceiling !== null ? { expiresAtCeiling: ceiling } : undefined),
 						kind: payload.kind,
 						scopes: payload.scopes,
 						createdByEmail,
@@ -187,6 +223,13 @@ export const HttpV2ApiKeysLive = HttpApiBuilder.group(MapleApiV2, "apiKeys", (ha
 					}
 					if (!withinCallerScopes(tenant.scopes, existing.scopes)) {
 						return yield* beyondCallerScopes()
+					}
+					// The successor keeps the rolled key's expiry, and its secret goes to the caller.
+					const ceiling = yield* callerExpiry(tenant)
+					if (ceiling !== null && (existing.expiresAt === null || existing.expiresAt > ceiling)) {
+						return yield* V2InsufficientPermissions.make(
+							"An expiring API key cannot roll a key that outlives it. Roll it from a signed-in session.",
+						)
 					}
 					const createdByEmail = yield* auth.getUserEmail(tenant.userId)
 					const rolled = yield* apiKeysService.roll(tenant.orgId, tenant.userId, params.id, {

@@ -72,6 +72,7 @@ export interface IntegrationInventoryInputs {
 		readonly accountLogin: string
 		readonly status: string
 		readonly ciTracesEnabled: boolean
+		readonly auditLogEnabled: boolean
 		readonly createdAt: number
 	}>
 	readonly vcsRepositories: ReadonlyArray<{
@@ -251,6 +252,7 @@ export const INTEGRATION_FEEDS = {
 		"source code for Maple's investigations and pull request review",
 		"commit metadata for deploys (service_deployments)",
 		"GitHub Actions runs as traces under service.name=github-actions, with job logs as logs on their step spans",
+		"organization, member, team, repository and branch protection changes in the Security audit log",
 	],
 	cloudflare: [
 		"zone HTTP traffic and Worker invocations as metrics",
@@ -394,6 +396,19 @@ const github = (inputs: IntegrationInventoryInputs, now: number): IntegrationEnt
 			}
 		},
 	)
+	// An active installation feeds the audit log unless the org turned it off: its own lifecycle
+	// needs no permission, and the organization events ride the permissions the app already holds.
+	const auditLogs = Arr.map(
+		Arr.filter(active, (i) => i.auditLogEnabled),
+		(i): IntegrationResource => ({
+			kind: "audit log",
+			name: i.accountLogin,
+			status: "healthy",
+			lastSuccessAt: null,
+			lastError: null,
+			note: null,
+		}),
+	)
 	const ciTraces = Arr.some(active, (i) => i.ciTracesEnabled)
 	return entry("github", now, {
 		account: Arr.join(
@@ -411,10 +426,12 @@ const github = (inputs: IntegrationInventoryInputs, now: number): IntegrationEnt
 						)}; reinstall it in Sources.`,
 					}
 				: undefined,
-		resources,
+		resources: [...resources, ...auditLogs],
 		feeds: Arr.filter(
 			INTEGRATION_FEEDS.github,
-			(feed) => ciTraces || !Str.startsWith("GitHub Actions")(feed),
+			(feed) =>
+				(ciTraces || !Str.startsWith("GitHub Actions")(feed)) &&
+				(auditLogs.length > 0 || !Str.includes("Security audit log")(feed)),
 		),
 	})
 }

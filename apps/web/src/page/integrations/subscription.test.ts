@@ -218,6 +218,7 @@ describe("GitHub repository discovery", () => {
 			accountType: "organization",
 			repositorySelection: "selected",
 			ciTracesEnabled: true,
+			auditLogEnabled: true,
 			repositories: [],
 			repositoryDiscovery: { _tag: "Pending", requestId: "discovery-1" },
 		})

@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { OrgId, PLANETSCALE_COST_RECONNECT_CODE } from "@maple/domain/http"
-import { DateTime, Duration, Effect, Fiber, Layer, Schema, Array as Arr } from "effect"
+import { DateTime, Duration, Effect, Fiber, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import {
 	cleanupTestDbs,
@@ -338,31 +338,6 @@ describe("PlanetScaleCostSourceService", () => {
 			)
 		},
 	)
-
-	it.effect("sends nothing for an org outside the rollout, which may still remove its source", () => {
-		const testDb = createTestDb(trackedDbs)
-		const world = invoiced()
-		return run(
-			testDb,
-			world,
-			Effect.gen(function* () {
-				yield* connect(testDb, world)
-				yield* add()
-				world.urls.length = 0
-				world.cloudCost = false
-				const refusals = yield* Effect.forEach([status, add()], (call) =>
-					Effect.map(Effect.flip(call), (error) => error._tag),
-				)
-				assert.deepStrictEqual(
-					refusals,
-					Arr.replicate("@maple/http/errors/CloudCostDisabledError", 2),
-				)
-				assert.deepStrictEqual(world.urls, [])
-				assert.deepStrictEqual(yield* remove, { removed: true })
-				assert.isUndefined(yield* source(testDb))
-			}),
-		)
-	})
 
 	it.effect("removes the source and leaves the connection and its grant alone", () => {
 		const testDb = createTestDb(trackedDbs)

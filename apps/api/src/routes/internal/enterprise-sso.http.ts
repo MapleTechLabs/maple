@@ -18,7 +18,8 @@ const requireSsoAdmin = Effect.gen(function* () {
 	return tenant
 })
 
-// Reads are open to every member (the page says who to ask); every write is admin-only and audited.
+// Every member can read the state (the page says who to ask), but only a manager reads the settings,
+// groups and bypass list. Every write is admin-only and audited.
 // Audit metadata names what changed, never a secret: no client secret, certificate or SCIM token.
 export const HttpEnterpriseSsoLive = HttpApiBuilder.group(MapleInternalApi, "enterpriseSso", (handlers) =>
 	Effect.gen(function* () {
@@ -27,7 +28,11 @@ export const HttpEnterpriseSsoLive = HttpApiBuilder.group(MapleInternalApi, "ent
 		return handlers
 			.handle("get", () =>
 				CurrentTenant.Context.pipe(
-					Effect.flatMap((tenant) => sso.get(tenant.orgId)),
+					Effect.flatMap((tenant) =>
+						Policy.can(tenant.roles, "sso:manage")
+							? sso.get(tenant.orgId)
+							: sso.getSummary(tenant.orgId),
+					),
 					Effect.withSpan("HttpEnterpriseSso.get"),
 				),
 			)

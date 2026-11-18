@@ -8,7 +8,6 @@ import {
 	IntegrationsNotConnectedError,
 	IntegrationsPersistenceError,
 } from "./integrations"
-import { CloudCostDisabledError } from "./query-engine"
 
 /** What the Cost page needs to offer PlanetScale: the connected organization, if any, and whether it is a source. */
 export class PlanetScaleCostStatus extends Schema.Class<PlanetScaleCostStatus>("PlanetScaleCostStatus")({
@@ -82,7 +81,7 @@ export class PlanetScaleCostApiGroup extends HttpApiGroup.make("planetScaleCost"
 	.add(
 		HttpApiEndpoint.get("status", "/", {
 			success: PlanetScaleCostStatus,
-			error: [IntegrationsPersistenceError, CloudCostDisabledError],
+			error: [IntegrationsPersistenceError],
 		}),
 	)
 	.add(
@@ -96,7 +95,6 @@ export class PlanetScaleCostApiGroup extends HttpApiGroup.make("planetScaleCost"
 				IntegrationsConnectionChangedError,
 				PlanetScaleCostReconnectRequiredError,
 				PlanetScaleCostUnavailableError,
-				CloudCostDisabledError,
 			],
 		}),
 	)

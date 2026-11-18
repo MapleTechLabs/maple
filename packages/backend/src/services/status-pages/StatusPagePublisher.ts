@@ -41,7 +41,7 @@ export type StatusPagePublishError = StatusPageGoneError | StatusPagePublishDbEr
 export interface StatusPagePublisherApi {
 	/**
 	 * A draft page is a no-op: nothing reaches the edge until it is made public. An internal page
-	 * is taken off the edge instead: its slug route and snapshot go.
+	 * is taken off the edge instead: its slug route and snapshot go, each leaving an R2 tombstone.
 	 */
 	readonly publish: (pageId: StatusPageId) => Effect.Effect<StatusPagePublishResult, StatusPagePublishError>
 	/**
@@ -248,14 +248,19 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 				return { pageId, revision, written }
 			})
 
-			/** Takes an internal page off the edge: its slug route while it still names the page, and its snapshot. */
+			/**
+			 * Takes an internal page off the edge: its slug route while it still names the page, and its
+			 * snapshot. Both leave a tombstone in R2, so the status Worker answers "not found" from R2
+			 * when KV fails instead of serving a copy it cached while the page was public. The next
+			 * publish or the page's delete replaces or removes them.
+			 */
 			const unpublish = Effect.fn("StatusPagePublisher.unpublish")(function* (
 				pageId: StatusPageId,
 				slug: string,
 			) {
 				const routedTo = yield* store.readSlugRoute(slug)
-				if (routedTo === pageId) yield* store.deleteRoutes({ slug, hostnames: [] })
-				yield* store.deleteSnapshot(pageId)
+				if (routedTo === pageId) yield* store.retireSlugRoute(slug)
+				yield* store.retireSnapshot(pageId)
 			})
 
 			/**

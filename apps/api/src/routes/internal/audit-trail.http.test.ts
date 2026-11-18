@@ -561,6 +561,7 @@ describe("GET /internal/audit-trail/sources", () => {
 					["vercel", "receiving", 3],
 					["gcp", "not_connected", 0],
 					["aws", "not_connected", 0],
+					["github", "not_connected", 0],
 				],
 			)
 			expect(body.sources[1]?.account).toBe("Acme (2 projects)")
@@ -577,6 +578,7 @@ describe("GET /internal/audit-trail/sources", () => {
 			expect(Arr.map(asSources(response.body).sources, (source) => source.state)).toEqual([
 				"built_in",
 				"receiving",
+				"waiting",
 				"waiting",
 				"waiting",
 			])

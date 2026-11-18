@@ -1,8 +1,8 @@
 # Cloud cost: plan
 
-Status: **phase 1 built, 2026-11-11, behind the `cloudCost` org flag.** AWS spend is synced daily
+Status: **phase 1 built 2026-11-11; open to every org, free during the beta, since 2026-11-17 (the `cloudCost` flag is gone).** AWS spend is synced daily
 into `cost_daily` and shown on `/cost`. OpenRouter, GitHub, Vercel and Cloudflare followed on
-2026-11-12, PlanetScale, Anthropic and OpenAI on 2026-11-13.
+2026-11-12, PlanetScale, Anthropic and OpenAI on 2026-11-13, Google Cloud on 2026-11-18.
 Phase 0 checked the provider APIs against docs, public schemas and one real AWS account.
 Budgets, the first piece of phase 4, were built on 2026-11-15.
 Recommendations (phase 2) and the other providers are not built.
@@ -33,7 +33,7 @@ Non-goals for v1:
 | Provider-polled daily table   | `search_console_daily` and `SearchConsoleImportService`                  | model for `cost_daily`           |
 | Finding lifecycle             | `security_audit_findings` (fingerprint, open, fixed, dismissed, reopen)  | model for `cost_recommendations` |
 | Notifications                 | `NotificationDispatcher`, managed alert signal types                     | budgets and anomalies            |
-| Org rollout flags             | `packages/domain/src/organization-feature-flags.ts`                      | a `cloudCost` flag               |
+| Org rollout flags             | `packages/domain/src/organization-feature-flags.ts`                      | none: cost is on for every org   |
 | Utilization metrics           | `aws.*`, `gcp.*`, `railway.*`, `planetscale_*`, Supabase `pg_*`/`node_*` | evidence for Maple's own rules   |
 
 An earlier standalone prototype (the `maple-cost` repo) has a FOCUS-based cost line model, decimal
@@ -144,8 +144,7 @@ What bounds the provider's bill for requests:
   20), and detail for the 12 largest regions at most.
 - Per source and month: past 500 requests history waits for the next month, past 1,500 the source
   stops until then.
-- A pull too large to read or to store is held a day. A source whose org left the rollout is not
-  pulled, and is asked about again within the hour.
+- A pull too large to read or to store is held a day.
 - A source resuming after a gap starts at the month before its watermark's, so days pulled while
   their month was still open get their final amounts.
 
@@ -179,8 +178,7 @@ the alerting ones and nothing is built twice. The generic rule APIs refuse it.
   replaced as soon as a sync writes.
 - A new period starts at zero, which resolves an open incident.
 - A budget that is spent opens no error issue and starts no investigation.
-- Writes need `alerts:manage`; everyone in the org can read. At most 50 budgets per org. An org
-  that leaves the rollout can still delete its budgets, which go on being checked.
+- Writes need `alerts:manage`; everyone in the org can read. At most 50 budgets per org.
 - A budget's checks are served by the public rule API, like an SLO's: they say no more than
   its incidents.
 
@@ -189,7 +187,7 @@ that only shows then is not alerted on, because a check reads the current period
 
 ### Surfaces
 
-- Web: `/cost` behind the `cloudCost` flag. One page: the window against the period before, a
+- Web: `/cost` (sidebar row "Cloud cost", Beta). One page: the window against the period before, a
   daily chart, a breakdown by service, provider, category, region, resource or account, a filter
   rail with a section per dimension, and each source's sync state. A row click narrows to the
   row and regroups by the next dimension (a service under a region goes on to its resources).
@@ -199,7 +197,9 @@ that only shows then is not alerted on, because a check reads the current period
   Cloudflare by pasting an API token and Anthropic and OpenAI by pasting an Admin API key, which
   the page can also replace or remove, GitHub by picking
   one of the organizations the GitHub App is installed on, and Vercel and PlanetScale by adding
-  the team or organization the org has connected, all three of which the page can remove again.
+  the team or organization the org has connected, all three of which the page can remove again,
+  and Google Cloud by picking a GCP connection whose Metrics and resources is on and pasting its
+  billing export table's id, with the grants to run shown beside it.
   The pasted-credential step is one form described by data (`credential-sources.ts`).
   Recommendations (list and detail with the evidence chart) come with phase 2.
 - Web: `/cost/budgets` lists the org's budgets in one table: what each covers, what is spent of
@@ -216,7 +216,8 @@ that only shows then is not alerted on, because a check reads the current period
   pasted credentials, `GET /internal/cost/github` with `PUT` /
   `DELETE /internal/cost/github/{installationId}` for GitHub sources, and `GET` / `PUT` /
   `DELETE` on `/internal/cost/vercel` and `/internal/cost/planetscale` for the Vercel and
-  PlanetScale sources, and `GET` / `POST` on `/internal/cost/budgets` with `GET` / `PATCH` /
+  PlanetScale sources, `GET` / `PUT` on `/internal/cost/gcp` with `DELETE
+  /internal/cost/gcp/{exportId}` for Google Cloud billing exports, and `GET` / `POST` on `/internal/cost/budgets` with `GET` / `PATCH` /
   `DELETE` on `/internal/cost/budgets/{id}` for budgets. A public `/v2/cost/*` is not built.
 - MCP: `cost_overview`, `cost_breakdown`, `compare_cost_periods`, `list_cost_recommendations`,
   `inspect_cost_recommendation`.
@@ -395,6 +396,19 @@ against a fake server that answers what the spec describes.
   recommender is listed separately. Idle VM, disk, address and image, Cloud SQL idle and
   overprovisioned, Cloud Run cost, commitments. Negative cost is the saving.
 - Until the export exists, Maple can still show the recommender's savings and its own rules.
+- Built 2026-11-18. An export is a `gcp_cost_exports` row (table id, billing account, the GCP
+  connector it is read through), one per billing account, since a standard and a detailed export
+  of one account hold the same spend; its `cost_sources` row points at it. The sync reads it as the
+  connector's reader account (so Metrics and resources must be on), which the org grants BigQuery
+  Data Viewer on the export table alone and Job User on the connector's host project, where the
+  query runs and is billed. One aggregating `jobs.query` per window, grouped by day, project,
+  service, SKU, region, resource, cost type, currency and unit, credits summed apart and stored as
+  `credit` rows. The table is read once, and only the 500 costliest resources of a window keep
+  their name. The scan is bounded by the table's partition column from the day before the window
+  to 45 days after it, capped at 100 GB billed, and a result over 100,000 rows fails as too large.
+  BigQuery holds each call 10 seconds for the job, and the pull waits up to about three minutes. A day stays estimated until the month's invoice
+  closes on the tenth of the next. The API holds no Google identity, so an add checks only the
+  table id and the connector; the first sync, minutes later, reports a missing grant on the row.
 
 ### Cloudflare (billed, pay-as-you-go accounts)
 
@@ -656,7 +670,7 @@ Each phase is one PR stack.
 
 1. **Core and AWS spend.** Domain model, `cost_daily`, `cost_sources`, the sync lane, the Cost
    Explorer adapter, the AWS module turned on, `/v2/cost`, and the Overview, Explorer and Sources
-   pages behind `cloudCost`.
+   pages (behind a `cloudCost` flag until 2026-11-17).
 2. **Recommendations.** Table, lifecycle, API, list and detail pages, MCP tools. Hub and Savings
    Plan imports. First Maple rules, each backed by a metric already ingested: load balancers with
    no requests, databases with idle connections and low CPU, container services reserving far more

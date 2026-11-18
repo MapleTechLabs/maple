@@ -16,6 +16,7 @@ const BRANDS = {
 	vercel: PROVIDERS.vercel,
 	gcp: PROVIDERS.gcp,
 	aws: PROVIDERS.aws,
+	github: PROVIDERS.github,
 } satisfies Record<AuditTrailProvider, IntegrationBrand>
 
 /** A platform a newer writer added gets a neutral history mark. */

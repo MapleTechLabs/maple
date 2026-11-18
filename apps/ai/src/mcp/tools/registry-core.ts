@@ -16,7 +16,7 @@ import {
 } from "effect"
 import { CurrentMcpTenant } from "../tenant"
 import {
-	audienceAdmits,
+	surfaceAdmits,
 	McpAuthInvalidError,
 	type McpToolAudience,
 	type McpToolError,
@@ -341,6 +341,8 @@ export interface McpToolModule {
 	readonly tool: string
 	readonly title: string
 	readonly audience: McpToolAudience
+	/** `hints.readOnly`, so a surface's names can be listed without loading every module. */
+	readonly readOnly: boolean
 	readonly load: () => Promise<McpToolRegister>
 }
 
@@ -425,7 +427,7 @@ const checkNextCall = Effect.fnUntraced(function* (
 ) {
 	const target = yield* lookup.find(call.tool)
 	if (target === undefined) return { call, valid: false, hidden: false }
-	if (!audienceAdmits(target.audience, surface)) return { call, valid: false, hidden: true }
+	if (!surfaceAdmits(target, surface)) return { call, valid: false, hidden: true }
 	const normalized = normalizeFor(target, call.args)
 	const valid =
 		normalized.unknown.length === 0 &&
@@ -495,7 +497,7 @@ export const executeRegisteredTool = Effect.fn("McpToolRegistry.execute")(functi
 	surface: McpToolSurface,
 ) {
 	const definition = yield* lookup.find(name)
-	if (!definition || !audienceAdmits(definition.audience, surface)) {
+	if (!definition || !surfaceAdmits(definition, surface)) {
 		if (definition) {
 			yield* Effect.logWarning("MCP tool is not exposed on this surface").pipe(
 				Effect.annotateLogs({ "maple.mcp.tool": name, "maple.mcp.surface": surface }),

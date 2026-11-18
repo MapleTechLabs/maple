@@ -1,6 +1,7 @@
 import {
 	GithubInstallationSelection,
 	GithubSelectInstallationRequest,
+	GithubSetAuditLogRequest,
 	GithubSetCiTracesRequest,
 	GithubSetTrackedBranchRequest,
 	VcsRepositoryId,
@@ -24,6 +25,10 @@ export const GithubCardModel = Schema.Struct({
 	/** The server value the optimistic one was set against; a new server value wins. */
 	ciTracesServer: Schema.NullOr(Schema.Boolean),
 	isSavingCiTraces: Schema.Boolean,
+	/** The audit log switch, the same way. */
+	auditLog: Schema.NullOr(Schema.Boolean),
+	auditLogServer: Schema.NullOr(Schema.Boolean),
+	isSavingAuditLog: Schema.Boolean,
 	/** Re-read every 3 s for 10 s after a branch change queues a backfill. */
 	isForcePolling: Schema.Boolean,
 	forcePollVersion: Schema.Number,
@@ -52,6 +57,9 @@ export const initGithubCard = (): GithubCardModel => ({
 	ciTraces: null,
 	ciTracesServer: null,
 	isSavingCiTraces: false,
+	auditLog: null,
+	auditLogServer: null,
+	isSavingAuditLog: false,
 	isForcePolling: false,
 	forcePollVersion: 0,
 	repoToDelete: null,
@@ -110,6 +118,23 @@ export const SetCiTraces = Command.define("SetGithubCiTraces", {
 			Effect.match({
 				onFailure: (error) => Message.CompletedCiTraces({ enabled, failure: failureOf(error) }),
 				onSuccess: () => Message.CompletedCiTraces({ enabled, failure: null }),
+			}),
+		),
+})
+
+export const SetAuditLog = Command.define("SetGithubAuditLog", {
+	args: { enabled: Schema.Boolean },
+	messages: [Message.CompletedAuditLog],
+	execute: ({ enabled }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalApiClient
+			yield* client.integrations.githubSetAuditLog({
+				payload: new GithubSetAuditLogRequest({ enabled }),
+			})
+		}).pipe(
+			Effect.match({
+				onFailure: (error) => Message.CompletedAuditLog({ enabled, failure: failureOf(error) }),
+				onSuccess: () => Message.CompletedAuditLog({ enabled, failure: null }),
 			}),
 		),
 })

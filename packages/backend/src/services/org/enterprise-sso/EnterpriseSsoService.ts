@@ -2,6 +2,7 @@ import { customerHasFlag, ENTERPRISE_SCIM_FEATURE_ID, ENTERPRISE_SSO_FEATURE_ID 
 import {
 	EnterpriseSsoConflictError,
 	EnterpriseSsoDocument,
+	EnterpriseSsoDomainProofError,
 	EnterpriseSsoInvalidError,
 	EnterpriseSsoNotEntitledError,
 	EnterpriseSsoNotFoundError,
@@ -59,7 +60,7 @@ import {
 	type ClerkSsoConnectionInput,
 	type ClerkSsoDirectory,
 } from "./ClerkSsoGateway"
-import { DnsTxtResolver } from "./DnsTxtResolver"
+import { DnsTxtResolver } from "@maple/backend/platform/DnsTxtResolver"
 
 type Entitlement = "entitled" | "not_entitled" | "unknown"
 /** Which add-on a write needs. */
@@ -80,6 +81,7 @@ export type SsoWriteError =
 	| EnterpriseSsoNotEntitledError
 	| EnterpriseSsoInvalidError
 	| EnterpriseSsoConflictError
+	| EnterpriseSsoDomainProofError
 	| EnterpriseSsoNotFoundError
 
 const decodeIso = Schema.decodeUnknownSync(IsoDateTimeString)
@@ -151,6 +153,27 @@ const unavailable = (error: ClerkRequestError) =>
 const directoryProviderFor = (provider: string): "okta" | "entra" | "custom" =>
 	provider === "saml_okta" ? "okta" : provider === "saml_microsoft" ? "entra" : "custom"
 
+/**
+ * True when an edit changes nothing but the SAML certificate or IdP metadata, or the OIDC client
+ * secret: the one edit an organization can still make after its add-on ended.
+ */
+const replacesCredentialsOnly = (current: ClerkSsoConnection, request: SsoConnectionRequest): boolean => {
+	const domains = Arr.dedupe(Arr.map(request.domains, normalizeDomain))
+	const sameDomains =
+		domains.length === current.domains.length &&
+		Arr.every(domains, (d) => Arr.contains(current.domains, d))
+	if (Str.trim(request.name) !== current.name || !sameDomains) return false
+	const { saml, oidc } = request
+	const samlKept =
+		saml === undefined ||
+		((saml.ssoUrl === undefined || saml.ssoUrl === current.saml?.idpSsoUrl) &&
+			(saml.entityId === undefined || saml.entityId === current.saml?.idpEntityId))
+	const oidcKept =
+		oidc === undefined ||
+		(oidc.discoveryUrl === current.oidc?.discoveryUrl && oidc.clientId === current.oidc?.clientId)
+	return samlKept && oidcKept
+}
+
 export interface DirectoryGroupEvent {
 	readonly directoryId: string
 	readonly groupId: string
@@ -161,6 +184,11 @@ export interface DirectoryGroupEvent {
 
 export interface EnterpriseSsoServiceApi {
 	readonly get: (orgId: OrgId) => Effect.Effect<EnterpriseSsoDocument, EnterpriseSsoUnavailableError>
+	/**
+	 * The state a reader without `sso:manage` may see: the domains, whether an IdP is connected and
+	 * required, and whether SCIM runs. No IdP or service provider values, endpoint, groups or people.
+	 */
+	readonly getSummary: (orgId: OrgId) => Effect.Effect<EnterpriseSsoDocument, EnterpriseSsoUnavailableError>
 	readonly addDomain: (
 		orgId: OrgId,
 		userId: UserId,
@@ -188,6 +216,11 @@ export interface EnterpriseSsoServiceApi {
 		enforced: boolean,
 	) => Effect.Effect<EnterpriseSsoDocument, SsoWriteError>
 	readonly deleteConnection: (orgId: OrgId) => Effect.Effect<EnterpriseSsoDocument, SsoWriteError>
+	/**
+	 * Deletes the Clerk connection and SCIM directory of an organization that is being deleted, so
+	 * nothing keeps claiming its domains. Nothing configured is success; a Clerk failure is raised.
+	 */
+	readonly removeForDeletedOrganization: (orgId: OrgId) => Effect.Effect<void, SsoWriteError>
 	readonly createDirectory: (orgId: OrgId) => Effect.Effect<ScimTokenIssued, SsoWriteError>
 	readonly rotateDirectoryToken: (orgId: OrgId) => Effect.Effect<ScimTokenIssued, SsoWriteError>
 	readonly setDirectoryState: (
@@ -207,6 +240,14 @@ export interface EnterpriseSsoServiceApi {
 		orgId: OrgId,
 		userId: UserId,
 	) => Effect.Effect<EnterpriseSsoDocument, SsoWriteError>
+	/**
+	 * Takes someone who left the organization off its bypass list. Not listed is success, and an
+	 * entry another organization's connection also serves stays, as in `removeBypassUser`.
+	 */
+	readonly removeFormerMemberBypass: (
+		orgId: OrgId,
+		userId: UserId,
+	) => Effect.Effect<"removed" | "not_listed" | "kept", EnterpriseSsoUnavailableError>
 	/**
 	 * Applies a `directoryGroup.*` webhook. `not_here` when no org in this region owns the directory:
 	 * each region receives every event and only the home region holds the row.
@@ -267,18 +308,22 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				)
 			}
 
-			/** Every write starts here: Clerk mode, and the org holds the add-on the write needs. */
+			const requireClerk = clerk.available
+				? Effect.void
+				: Effect.fail(
+						new EnterpriseSsoInvalidError({
+							message:
+								"Single sign-on needs Maple's hosted sign-in; this deployment runs without it.",
+						}),
+					)
+
+			/** Every set-up write starts here: Clerk mode, and the org holds the add-on the write needs. */
 			const requireEntitled = Effect.fn("EnterpriseSsoService.requireEntitled")(function* (
 				orgId: OrgId,
 				addOn: AddOn,
 			) {
 				yield* Effect.annotateCurrentSpan({ "maple.sso.add_on": addOn })
-				if (!clerk.available) {
-					return yield* new EnterpriseSsoInvalidError({
-						message:
-							"Single sign-on needs Maple's hosted sign-in; this deployment runs without it.",
-					})
-				}
+				yield* requireClerk
 				const state = (yield* entitlements(orgId))[addOn]
 				if (state === "not_entitled") {
 					return yield* new EnterpriseSsoNotEntitledError({ message: ADD_ON_REFUSALS[addOn] })
@@ -365,6 +410,22 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				})
 			}
 
+			/** The connection's state alone: its name, domains and whether it is required. */
+			const toConnectionSummary = (c: ClerkSsoConnection) =>
+				new SsoConnectionDocument({
+					...toConnectionDocument(c),
+					acsUrl: null,
+					spEntityId: null,
+					spMetadataUrl: null,
+					idpMetadataUrl: null,
+					idpSsoUrl: null,
+					idpEntityId: null,
+					idpCertificateExpiresAt: null,
+					oidcDiscoveryUrl: null,
+					oidcClientId: null,
+					oidcRedirectUri: null,
+				})
+
 			const toDirectoryDocument = (d: ClerkSsoDirectory) =>
 				new ScimDirectoryDocument({
 					endpointUrl: d.endpoint_url,
@@ -373,8 +434,20 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 					createdAt: iso(d.created_at),
 				})
 
-			const get = Effect.fn("EnterpriseSsoService.get")(function* (orgId: OrgId) {
-				yield* Effect.annotateCurrentSpan({ orgId })
+			const toDirectorySummary = (d: ClerkSsoDirectory) =>
+				new ScimDirectoryDocument({
+					enabled: d.enabled,
+					paused: d.paused,
+					createdAt: iso(d.created_at),
+				})
+
+			// A summary never asks Clerk or the database for mappings, groups or the bypass list.
+			const read = Effect.fn("EnterpriseSsoService.read")(function* (
+				orgId: OrgId,
+				scope: "full" | "summary",
+			) {
+				const full = scope === "full"
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.sso.read_scope": scope })
 				const [domains, row, entitled] = yield* Effect.all(
 					[loadDomains(orgId), loadConnectionRow(orgId), entitlements(orgId)],
 					{ concurrency: "unbounded" },
@@ -396,11 +469,13 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 									clerkDirectoryId === null
 										? Effect.succeed(Option.none<ClerkSsoDirectory>())
 										: orMissing(clerk.getDirectory(clerkDirectoryId)),
-									clerkDirectoryId === null
+									clerkDirectoryId === null || !full
 										? Effect.succeed([])
 										: clerk.listRoleMappings(clerkDirectoryId).pipe(orEmpty),
-									clerk.listBypassUsers(clerkConnectionId).pipe(orEmpty),
-									clerkDirectoryId === null
+									full
+										? clerk.listBypassUsers(clerkConnectionId).pipe(orEmpty)
+										: Effect.succeed([]),
+									clerkDirectoryId === null || !full
 										? Effect.succeed([])
 										: dbExecute((db) =>
 												db.run(
@@ -424,10 +499,12 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 							if (Option.isNone(connection)) return empty
 							const names = new Map(Arr.map(groups, (g) => [g.groupId, g.displayName] as const))
 							return {
-								connection: toConnectionDocument(connection.value),
+								connection: full
+									? toConnectionDocument(connection.value)
+									: toConnectionSummary(connection.value),
 								directory: Option.match(directory, {
 									onNone: () => null,
-									onSome: toDirectoryDocument,
+									onSome: full ? toDirectoryDocument : toDirectorySummary,
 								}),
 								roleMappings: Arr.flatMap(mappings, (m) =>
 									isMappedRole(m.roleKey)
@@ -470,6 +547,9 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 					...side,
 				})
 			})
+
+			const get = (orgId: OrgId) => read(orgId, "full")
+			const getSummary = (orgId: OrgId) => read(orgId, "summary")
 
 			const addDomain = Effect.fn("EnterpriseSsoService.addDomain")(function* (
 				orgId: OrgId,
@@ -587,13 +667,63 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 						})
 					}
 				}
-				// The Clerk organization domain stays: the Domains tab owns it and may use it for invitations.
 				yield* dbExecute((db) =>
 					db.run(
 						PG.deleteFrom(OrgSsoDomains).where(($) => [$.orgId.eq(orgId), $.domain.eq(domain)]),
 					),
 				)
 				return yield* get(orgId)
+			})
+
+			/**
+			 * Reads each domain's ownership record again. A domain proven once can change hands, so the
+			 * proof is checked whenever a connection starts to route the domain's sign-ins.
+			 */
+			const requireDomainProof = Effect.fn("EnterpriseSsoService.requireDomainProof")(function* (
+				orgId: OrgId,
+				domains: ReadonlyArray<string>,
+			) {
+				yield* Effect.annotateCurrentSpan({ "maple.sso.domains_rechecked": domains.length })
+				if (domains.length === 0) return
+				const rows = yield* loadDomains(orgId)
+				yield* Effect.forEach(
+					Arr.dedupe(Arr.map(domains, normalizeDomain)),
+					(domain): Effect.Effect<void, SsoWriteError> => {
+						const row = Arr.findFirst(rows, (r) => r.domain === domain && r.status === "verified")
+						if (Option.isNone(row)) {
+							return Effect.fail(
+								new EnterpriseSsoInvalidError({
+									message: `Verify ${domain} before using it for SSO.`,
+								}),
+							)
+						}
+						const recordName = challengeRecordName(domain)
+						const recordValue = row.value.challenge
+						return dns.lookupTxt(recordName).pipe(
+							// Fails closed: an unanswered lookup is not a proof.
+							Effect.mapError(
+								(error) =>
+									new EnterpriseSsoUnavailableError({
+										message: `Could not check the DNS record for ${domain}. Try again in a few seconds.`,
+										cause: error.message,
+									}),
+							),
+							Effect.flatMap((values) =>
+								values.includes(recordValue)
+									? Effect.void
+									: Effect.fail(
+											new EnterpriseSsoDomainProofError({
+												message: `The DNS record that proves ${domain} is yours is no longer published. Add a TXT record named ${recordName} with the value ${recordValue}, then try again.`,
+												domain,
+												recordName,
+												recordValue,
+											}),
+										),
+							),
+						)
+					},
+					{ concurrency: 5, discard: true },
+				)
 			})
 
 			/** The request's domains, all verified by this org, and the IdP settings its protocol needs. */
@@ -665,6 +795,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 					})
 				}
 				const input = yield* connectionInput(orgId, request, request.provider, "create")
+				yield* requireDomainProof(orgId, input.domains)
 				// Uninterruptible so a dropped request cannot strand a Clerk connection Maple never saved:
 				// one Maple cannot find again would claim the domains forever.
 				yield* Effect.uninterruptible(
@@ -696,13 +827,22 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				orgId: OrgId,
 				request: SsoConnectionRequest,
 			) {
-				yield* requireEntitled(orgId, "sso")
+				yield* requireClerk
 				const row = yield* requireConnectionRow(orgId)
 				const current = yield* clerk
 					.getConnection(row.clerkConnectionId)
 					.pipe(Effect.mapError(fromClerk))
+				// Replacing a compromised certificate or client secret stays open after the add-on ends.
+				const credentialsOnly = replacesCredentialsOnly(current, request)
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.sso.credentials_only": credentialsOnly })
+				if (!credentialsOnly) yield* requireEntitled(orgId, "sso")
 				const provider = isProvider(current.provider) ? current.provider : request.provider
 				const input = yield* connectionInput(orgId, request, provider, "update")
+				// A domain the connection did not route before starts to matter here.
+				yield* requireDomainProof(
+					orgId,
+					Arr.filter(input.domains, (d) => !Arr.contains(current.domains, d)),
+				)
 				yield* clerk.updateConnection(row.clerkConnectionId, input).pipe(Effect.mapError(fromClerk))
 				yield* touch(orgId)
 				return yield* get(orgId)
@@ -729,6 +869,12 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				if (enforced) yield* requireEntitled(orgId, "sso")
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.sso.enforced": enforced })
 				const row = yield* requireConnectionRow(orgId)
+				if (enforced) {
+					const connection = yield* clerk
+						.getConnection(row.clerkConnectionId)
+						.pipe(Effect.mapError(fromClerk))
+					yield* requireDomainProof(orgId, connection.domains)
+				}
 				yield* clerk
 					.updateConnection(row.clerkConnectionId, { active: enforced })
 					.pipe(Effect.mapError(fromClerk))
@@ -819,11 +965,11 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 					),
 				)
 
-			const deleteConnection = Effect.fn("EnterpriseSsoService.deleteConnection")(function* (
+			/** The directory, then the connection, then the row; each step tolerates one already gone. */
+			const dropConnection = Effect.fn("EnterpriseSsoService.dropConnection")(function* (
 				orgId: OrgId,
+				row: OrgSsoConnectionRow,
 			) {
-				yield* Effect.annotateCurrentSpan({ orgId })
-				const row = yield* requireConnectionRow(orgId)
 				// Clerk removes the connection's bypass entries itself when the connection is deleted.
 				if (row.clerkDirectoryId !== null) yield* dropDirectory(orgId, row.clerkDirectoryId)
 				yield* clerk.deleteConnection(row.clerkConnectionId).pipe(
@@ -841,7 +987,38 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 						]),
 					),
 				)
+			})
+
+			const deleteConnection = Effect.fn("EnterpriseSsoService.deleteConnection")(function* (
+				orgId: OrgId,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId })
+				const row = yield* requireConnectionRow(orgId)
+				yield* dropConnection(orgId, row)
 				return yield* get(orgId)
+			})
+
+			const removeForDeletedOrganization = Effect.fn(
+				"EnterpriseSsoService.removeForDeletedOrganization",
+			)(function* (orgId: OrgId) {
+				yield* Effect.annotateCurrentSpan({ orgId })
+				const row = yield* loadConnectionRow(orgId)
+				yield* Effect.annotateCurrentSpan({ "maple.sso.configured": Option.isSome(row) })
+				if (Option.isNone(row)) return
+				// Without Clerk configured its side cannot be reached, and refusing would block the
+				// deletion for good: the ids are logged so what is left there can be removed by hand.
+				if (!clerk.available) {
+					return yield* Effect.logWarning(
+						"Organization deleted with an SSO connection the identity service could not be asked to remove",
+					).pipe(
+						Effect.annotateLogs({
+							orgId,
+							"maple.sso.connection_id": row.value.clerkConnectionId,
+							"maple.sso.directory_id": row.value.clerkDirectoryId ?? "none",
+						}),
+					)
+				}
+				yield* dropConnection(orgId, row.value)
 			})
 
 			const issued = (orgId: OrgId, directory: ClerkSsoDirectory) =>
@@ -954,7 +1131,8 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 			const rotateDirectoryToken = Effect.fn("EnterpriseSsoService.rotateDirectoryToken")(function* (
 				orgId: OrgId,
 			) {
-				yield* requireEntitled(orgId, "scim")
+				// No add-on check: a leaked token must be replaceable after the plan ends.
+				yield* requireClerk
 				yield* Effect.annotateCurrentSpan({ orgId })
 				const directoryId = yield* requireConnectionRow(orgId).pipe(
 					Effect.flatMap(requireDirectoryId),
@@ -1091,7 +1269,8 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 					.pipe(Effect.mapError(fromClerk))
 				if (elsewhere.length > 0) {
 					return yield* new EnterpriseSsoInvalidError({
-						message: `This person also has an email on ${Arr.join(elsewhere, ", ")}, which another organization's SSO covers, so they cannot bypass SSO from here.`,
+						message:
+							"This person is also covered by another organization's single sign-on, so they cannot bypass SSO from here.",
 					})
 				}
 				yield* clerk.addBypassUser(userId).pipe(Effect.mapError(fromClerk))
@@ -1123,12 +1302,50 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				).pipe(Effect.mapError(fromClerk))
 				if (elsewhere.length > 0) {
 					return yield* new EnterpriseSsoConflictError({
-						message: `This person also has an email on ${Arr.join(elsewhere, ", ")}, which another organization's SSO covers. Removing them here would remove that organization's break-glass access too; contact support.`,
+						message:
+							"This person is also covered by another organization's single sign-on. Removing them here would remove that organization's break-glass access too; contact support.",
 					})
 				}
 				yield* clerk.removeBypassUser(userId).pipe(Effect.mapError(fromClerk))
 				return yield* get(orgId)
 			})
+
+			const removeFormerMemberBypass = Effect.fn("EnterpriseSsoService.removeFormerMemberBypass")(
+				function* (orgId: OrgId, userId: UserId) {
+					yield* Effect.annotateCurrentSpan({ orgId, "maple.sso.bypass_user": userId })
+					const row = yield* loadConnectionRow(orgId)
+					// No row in this region, or no Clerk: there is no list here to take them off.
+					if (Option.isNone(row) || !clerk.available) return "not_listed" as const
+					const { clerkConnectionId } = row.value
+					const outcome = yield* Effect.gen(function* () {
+						const listed = yield* clerk.listBypassUsers(clerkConnectionId).pipe(orEmpty)
+						if (!Arr.some(listed, (u) => u.userId === userId)) return "not_listed" as const
+						// Deliveries are unordered: someone who rejoined since keeps the entry they hold now.
+						if (yield* clerk.isMember(orgId, userId)) return "kept" as const
+						const connection = yield* orMissing(clerk.getConnection(clerkConnectionId))
+						// Clerk drops a deleted connection's entries itself.
+						if (Option.isNone(connection)) return "not_listed" as const
+						const elsewhere = yield* coveredElsewhere(
+							userId,
+							clerkConnectionId,
+							connection.value.domains,
+						)
+						// The entry is per user across the instance: another organization still needs it.
+						if (elsewhere.length > 0) return "kept" as const
+						yield* clerk.removeBypassUser(userId)
+						return "removed" as const
+					}).pipe(
+						// The user or the entry went away meanwhile: nothing left to remove.
+						Effect.catchIf(
+							(e) => e.status === 404,
+							() => Effect.succeed("not_listed" as const),
+						),
+						Effect.mapError(unavailable),
+					)
+					yield* Effect.annotateCurrentSpan({ "maple.sso.bypass_outcome": outcome })
+					return outcome
+				},
+			)
 
 			const applyDirectoryGroup = Effect.fn("EnterpriseSsoService.applyDirectoryGroup")(function* (
 				event: DirectoryGroupEvent,
@@ -1196,6 +1413,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 			return {
 				confirmDeprovisioned,
 				get,
+				getSummary,
 				addDomain,
 				verifyDomain,
 				removeDomain,
@@ -1203,6 +1421,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				updateConnection,
 				setEnforcement,
 				deleteConnection,
+				removeForDeletedOrganization,
 				createDirectory,
 				rotateDirectoryToken,
 				setDirectoryState,
@@ -1210,6 +1429,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 				setRoleMappings,
 				addBypassUser,
 				removeBypassUser,
+				removeFormerMemberBypass,
 				applyDirectoryGroup,
 			} satisfies EnterpriseSsoServiceApi
 		}),
@@ -1226,16 +1446,19 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 		),
 	)
 
-	/** Serves only the webhook's directory-group path, for route tests; settings calls fail. */
+	/** Serves only the webhook's paths, for route tests; settings calls fail. */
 	static readonly webhookOnly = (
 		apply: EnterpriseSsoServiceApi["applyDirectoryGroup"],
 		confirmDeprovisioned: EnterpriseSsoServiceApi["confirmDeprovisioned"] = () => Effect.succeed(true),
+		removeFormerMemberBypass: EnterpriseSsoServiceApi["removeFormerMemberBypass"] = () =>
+			Effect.succeed("not_listed"),
 	) => {
 		const unserved = Effect.fail(
 			new EnterpriseSsoUnavailableError({ message: "webhookOnly serves webhooks only" }),
 		)
 		return Layer.succeed(this, {
 			get: () => unserved,
+			getSummary: () => unserved,
 			addDomain: () => unserved,
 			verifyDomain: () => unserved,
 			removeDomain: () => unserved,
@@ -1243,6 +1466,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 			updateConnection: () => unserved,
 			setEnforcement: () => unserved,
 			deleteConnection: () => unserved,
+			removeForDeletedOrganization: () => unserved,
 			createDirectory: () => unserved,
 			rotateDirectoryToken: () => unserved,
 			setDirectoryState: () => unserved,
@@ -1250,6 +1474,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 			setRoleMappings: () => unserved,
 			addBypassUser: () => unserved,
 			removeBypassUser: () => unserved,
+			removeFormerMemberBypass,
 			applyDirectoryGroup: apply,
 			confirmDeprovisioned,
 		})

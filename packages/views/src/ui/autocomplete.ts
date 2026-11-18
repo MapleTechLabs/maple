@@ -11,7 +11,7 @@ import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { inputId, Message, type Model } from "./combobox"
 import { dismissButton, hiddenInput, inputAttributes, listPopup } from "./combobox-view"
 import { MagnifierIcon, XmarkIcon } from "./control-icons"
-import { iconNode } from "./icon"
+import { iconNode } from "./icon-node"
 import { isMounted } from "./overlay/transition"
 
 /**

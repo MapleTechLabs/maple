@@ -1,6 +1,7 @@
+import { createHash } from "node:crypto"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
-import { ConfigProvider, Effect, Layer, Option, Schema, String as Str, DateTime } from "effect"
+import { ConfigProvider, Effect, Exit, Layer, Option, Schema, String as Str, DateTime } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	cleanupTestDbs,
@@ -118,6 +119,33 @@ describe("CliDeviceAuthService", () => {
 				executeSql(db, "UPDATE cli_device_authorizations SET expires_at = '1969-01-01T00:00:00Z'"),
 			)
 			expect((yield* auth.poll(expired.deviceCode)).status).toBe("expired")
+		}).pipe(Effect.provide(makeLayer(db)))
+	})
+	it.effect("refuses device and user codes planted in the database without the lookup key", () => {
+		const db = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			const auth = yield* CliDeviceAuthService
+			const started = yield* auth.start("Maple CLI", "127.0.0.1")
+			expect((yield* auth.poll(started.deviceCode)).status).toBe("pending")
+
+			const plainSha256 = (value: string) => createHash("sha256").update(value).digest("hex")
+			const plantedDevice = "attacker-chosen-device-code"
+			const plantedUser = "ABCDEFGH"
+			yield* Effect.promise(() =>
+				executeSql(
+					db,
+					"UPDATE cli_device_authorizations SET device_code_hash = $1, user_code_hash = $2",
+					[plainSha256(plantedDevice), plainSha256(plantedUser)],
+				),
+			)
+			expect((yield* auth.poll(plantedDevice)).status).toBe("expired")
+			expect(
+				Exit.isFailure(
+					yield* auth
+						.approve(plantedUser, { orgId, userId, roles: [memberRole], userEmail: null })
+						.pipe(Effect.exit),
+				),
+			).toBe(true)
 		}).pipe(Effect.provide(makeLayer(db)))
 	})
 })
