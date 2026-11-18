@@ -49,16 +49,16 @@ The bot has no slash commands.
 
 ### What the bot can do
 
-The bot reads your Maple data the same way the [MCP server](/docs/reference/mcp) does: traces, logs, metrics, services, errors, dashboards, and alerts. When a request would change something, such as creating a dashboard, editing an alert rule, or updating an error issue, the bot does not make the change on its own. It posts an **Approve** prompt naming the change, and the change runs only after someone approves it.
+The bot reads your Maple telemetry: traces, logs, metrics, services, errors, dashboards, and alerts. It does not read connected data sources, raw SQL, your end users, or source code from Slack, and it makes no changes. When a request would change something, such as creating a dashboard, editing an alert rule, or updating an error issue, the bot tells you to make the change in the Maple app.
 
 ### Identity
 
 The workspace is linked to the organization, not to individual people. No Slack account is tied to a Maple user. As a result:
 
-- Anyone in a channel with the bot can ask about the linked organization's data.
-- Anyone who can see a proposed change can approve it, and the approved change runs with organization-level permissions.
+- Anyone in a channel with the bot can ask about the linked organization's telemetry.
+- Nobody can change anything from Slack. A change is always made by a Maple user, in the Maple app or from a chat platform with account linking, such as [Discord](/docs/integrations/discord).
 
-Invite the bot only to channels whose members should see your data and be able to make these changes.
+Invite the bot only to channels whose members should see your data.
 
 ## Slack as an alert destination
 
