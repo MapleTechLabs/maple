@@ -85,7 +85,7 @@ A push starts a review unless one of these applies:
 
 - The pull request is a draft. Turn on **Draft pull requests** to review drafts too.
 - The author is a bot.
-- The author is not an owner, member or collaborator of the repository. The review runs once a maintainer approves the pull request's CI; re-running it does not count.
+- The author is not an owner, member or collaborator of the repository. The review runs once a maintainer approves the pull request's CI.
 - The repository reached its **Daily limit** for the UTC day.
 - The pull request reached its **Reviews per pull request** limit. Later pushes wait for `@maple review`.
 

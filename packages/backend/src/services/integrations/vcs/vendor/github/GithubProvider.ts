@@ -961,9 +961,9 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				}).pipe(Effect.as<ReadonlyArray<VcsSyncJob>>([]))
 
 			/**
-			 * A pull request's run that someone other than its author let go: approving a fork's held
-			 * run starts its first attempt with the approver as `triggering_actor`. A re-run is a later
-			 * attempt and vouches for nothing, and a run held for approval completes as `action_required`.
+			 * A pull request's run that someone other than its author let go: approving a fork's
+			 * workflows re-attempts the held run with the approver as `triggering_actor`, and a re-run
+			 * does the same. A run held for approval completes as `action_required` and is no approval.
 			 */
 			const ciApproval = (payload: typeof WorkflowRunPayload.Type): ReadonlyArray<VcsSyncJob> => {
 				const run = payload.workflow_run
@@ -974,7 +974,6 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				const headSha = Option.getOrUndefined(decodeGitShaOption(run.head_sha))
 				const headRepoFullName = run.head_repository?.full_name
 				if (
-					run.run_attempt !== 1 ||
 					approver?.login === undefined ||
 					approver.type === "Bot" ||
 					author === undefined ||

@@ -1118,14 +1118,13 @@ describe("GithubProvider.webhookToJobs", () => {
 		}).pipe(Effect.provide(providerLayer())),
 	)
 
-	// Approving a fork's held run starts its first attempt with the approver as `triggering_actor`;
-	// GitHub sends `in_progress`, then `completed`, and no pull request number for a fork.
+	// Approving a fork's held run re-attempts it with the approver as `triggering_actor`; GitHub
+	// sends `in_progress`, then `completed`, and no pull request number for a fork.
 	const approvedForkRun = (action: string, overrides: Record<string, unknown> = {}) =>
 		JSON.stringify({
 			...JSON.parse(
 				workflowRunBody({
 					conclusion: action === "completed" ? "success" : null,
-					run_attempt: 1,
 					triggering_actor: { login: "maintainer", type: "User" },
 					head_repository: { full_name: "octocat/repo" },
 					pull_requests: [],
@@ -1179,24 +1178,6 @@ describe("GithubProvider.webhookToJobs", () => {
 				[],
 			)
 			assert.deepStrictEqual(yield* kinds(approvedForkRun("in_progress", { event: "push" })), [])
-		}).pipe(Effect.provide(providerLayer())),
-	)
-
-	it.effect("finds no approval in a maintainer's re-run of a fork's run", () =>
-		Effect.gen(function* () {
-			const rerun = yield* mapWorkflow(
-				"workflow_run",
-				approvedForkRun("in_progress", { run_attempt: 2 }),
-			)
-			assert.deepStrictEqual(rerun, [])
-			const finished = yield* mapWorkflow(
-				"workflow_run",
-				approvedForkRun("completed", { run_attempt: 2 }),
-			)
-			assert.deepStrictEqual(
-				Arr.map(finished, (job) => job.kind),
-				["workflow-run"],
-			)
 		}).pipe(Effect.provide(providerLayer())),
 	)
 
