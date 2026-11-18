@@ -37,10 +37,13 @@ describe.each(mdxPosts)("blog post $file", ({ path, source }) => {
 	})
 
 	// Engineering deep dives are long-form; product posts and guides can be short on purpose.
-	it.skipIf(!/^category:\s*"engineering"/m.test(source))("is long-form (body over 1500 words)", () => {
-		const body = Str.replace(importRe, "")(Str.replace(/^---[\s\S]*?---/, "")(source))
-		expect(Arr.filter(Str.split(/\s+/)(body), Boolean).length).toBeGreaterThan(1500)
-	})
+	it.runIf(/^category:\s*["']?engineering["']?\s*$/m.test(source))(
+		"is long-form (body over 1500 words)",
+		() => {
+			const body = Str.replace(importRe, "")(Str.replace(/^---[\s\S]*?---/, "")(source))
+			expect(Arr.filter(Str.split(/\s+/)(body), Boolean).length).toBeGreaterThan(1500)
+		},
+	)
 
 	it("keeps diagrams in components, not inline SVG", () => {
 		// Inline <svg> in MDX is where literal braces ("GET /users/{id}") turn

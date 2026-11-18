@@ -45,6 +45,16 @@ describe("live product data", () => {
 		expect(drop.share).toBeCloseTo(1 - 61 / 388)
 	})
 
+	it("explains every person who dropped at each step", () => {
+		// The drop-off tooltip shows each leaver as a share of the drop, so they must add up to it.
+		FUNNEL.forEach((step, index) => {
+			const previous = FUNNEL[index - 1]
+			if (previous === undefined) return
+			const leavers = (step.leavers ?? []).reduce((sum, leaver) => sum + leaver.count, 0)
+			expect(leavers, step.name).toBe(previous.value - step.value)
+		})
+	})
+
 	it("has no biggest drop for a single step", () => {
 		expect(Option.isNone(biggestDrop(FUNNEL.slice(0, 1)))).toBe(true)
 	})
