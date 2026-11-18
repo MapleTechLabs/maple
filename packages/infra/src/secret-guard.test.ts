@@ -11,9 +11,15 @@ import {
 	Schema,
 } from "effect"
 import { assert, describe, expect, it } from "vitest"
-import { resolveAs, resolveWorkerEnv, withSecretGuard } from "./secret-guard.ts"
+import { resolveAs, resolveDerived, resolveWorkerEnv, withSecretGuard } from "./secret-guard.ts"
 import * as Catalog from "./secrets.ts"
-import { OpenRouterApiKey, OtelIngestKey, StripeSecretKey } from "./secrets.ts"
+import {
+	IngestKeyDecryptionKeys,
+	IngestKeyEncryptionKey,
+	OpenRouterApiKey,
+	OtelIngestKey,
+	StripeSecretKey,
+} from "./secrets.ts"
 
 type Env = Record<string, string>
 
@@ -136,6 +142,44 @@ describe("the catalog as a default-deny guard", () => {
 		const exit = run(withSecretGuard(plain), { MAPLE_LLM_PROVIDER: "openrouter" })
 		assert(Exit.isSuccess(exit))
 		expect(exit.value).toEqual({ provider: "openrouter" })
+	})
+})
+
+describe("a value derived from a secret", () => {
+	const MASTER = { MAPLE_INGEST_KEY_ENCRYPTION_KEY: "master-1", MAPLE_INGEST_KEY_DECRYPTION_KEYS: "old-1" }
+	const masters = Config.all({
+		primary: IngestKeyEncryptionKey.requiredValue,
+		decryptOnly: IngestKeyDecryptionKeys.optionalValue,
+	})
+	const derive = (value: { primary: Redacted.Redacted; decryptOnly: Option.Option<Redacted.Redacted> }) =>
+		Effect.succeed(`derived(${Redacted.value(value.primary)})`)
+
+	it("hands a derivedFor deployable what derive returns", () => {
+		const exit = run(withSecretGuard(resolveDerived("ingest", masters, derive)), MASTER)
+		assert(Exit.isSuccess(exit))
+		expect(exit.value).toBe("derived(master-1)")
+	})
+
+	it("refuses that deployable the raw value, however it is read", () => {
+		const derivedOnly = "ingest may receive only a value derived from MAPLE_INGEST_KEY_ENCRYPTION_KEY"
+		expect(failure(resolveAs("ingest", IngestKeyEncryptionKey.requiredValue), MASTER).message).toContain(
+			derivedOnly,
+		)
+		expect(
+			failure(resolveAs("ingest", Config.String("MAPLE_INGEST_KEY_ENCRYPTION_KEY")), MASTER).message,
+		).toContain(derivedOnly)
+		expect(failure(resolveAs("ingest", IngestKeyDecryptionKeys.optionalValue), MASTER).message).toContain(
+			"ingest may receive only a value derived from MAPLE_INGEST_KEY_DECRYPTION_KEYS",
+		)
+	})
+
+	it("refuses a derived read by a deployable the secret does not list in derivedFor", () => {
+		expect(failure(resolveDerived("landing", masters, derive), MASTER).message).toContain(
+			"landing may not read MAPLE_INGEST_KEY_ENCRYPTION_KEY",
+		)
+		expect(
+			failure(resolveDerived("ingest", StripeSecretKey.required, Effect.succeed), STRIPE).message,
+		).toContain("ingest may not read STRIPE_SECRET_KEY")
 	})
 })
 

@@ -16,6 +16,7 @@
 		"./r2-credentials": "./src/cloudflare/r2-credentials.ts",
 		"./secret": "./src/secret.ts",
 		"./secret-guard": "./src/secret-guard.ts",
+		"./secret-slot-keys": "./src/secret-slot-keys.ts",
 		"./secrets": "./src/secrets.ts",
 		"./security-baseline": "./src/aws/security-baseline.ts",
 		"./worker-build": "./src/cloudflare/worker-build.ts",

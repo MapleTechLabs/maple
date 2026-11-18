@@ -66,8 +66,22 @@ out in three steps:
 | `MAPLE_INGEST_KEY_ENCRYPTION_KEY`  | The primary master key. Seals every new value. Base64, 32 bytes.  |
 | `MAPLE_INGEST_KEY_DECRYPTION_KEYS` | Optional, comma-separated. Master keys accepted for opening only. |
 
-Every deployable that opens secrets reads both: the API, AI, alerting and chat-bot Workers,
-the schema-apply workflow and the ingest gateway.
+Every deployable that opens secrets reads both: the API, AI, alerting and chat-bot Workers and
+the schema-apply workflow.
+
+The ingest gateway does not receive the master keys. Its deploy derives the subkeys of the one
+slot it opens (`packages/infra/src/secret-slot-keys.ts`, read through `resolveDerived` in
+`@maple/infra/secret-guard`) and hands it only those:
+
+| Variable                             | Purpose                                                                                                                     |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `MAPLE_INGEST_CH_PASSWORD_SLOT_KEYS` | `<keyId>:<base64 subkey>` per master key, comma-separated, primary first. Opens `org_clickhouse_settings.ch_password` only. |
+
+The gateway prefers it and falls back to the two master-key variables when it is unset, which a
+self-hosted or local deploy still sets. It refuses to start with neither. A key rotation needs no
+gateway step of its own: each deploy derives the slot keys from the masters it loads.
+`secret-slot-keys-parity.test.ts` holds the infra derivation equal to SecretBox's, and the
+fixture master's slot keys are pinned there and in the gateway's tests.
 
 ## Adding a secret column
 
