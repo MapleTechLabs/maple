@@ -37,16 +37,28 @@ export const authorBySlug = (slug: string): Option.Option<Author> =>
 
 export const authorHref = (author: Author): string => `/blog/authors/${author.slug}`
 
+/** schema.org `Person`, as the blog's JSON-LD writes it. */
+export interface PersonLd {
+	"@type": "Person"
+	name: string
+	jobTitle: string
+	url: string
+	image?: string
+	sameAs: ReadonlyArray<string>
+	worksFor: { "@type": "Organization"; name: string; url: string }
+}
+
 /** The schema.org `Person` for an author, with absolute URLs on `site`. */
-export const authorPerson = (author: Author, site: URL | undefined) => {
+export const authorPerson = (author: Author, site: URL | undefined): PersonLd => {
 	const absolute = (path: string) => (site === undefined ? path : new URL(path, site).toString())
-	return {
+	const person: PersonLd = {
 		"@type": "Person",
 		name: author.name,
 		jobTitle: author.role,
 		url: absolute(authorHref(author)),
-		...(author.avatar === undefined ? {} : { image: absolute(author.avatar) }),
 		sameAs: Arr.map(author.sameAs, (link) => link.url),
 		worksFor: { "@type": "Organization", name: "Maple", url: "https://maple.dev" },
 	}
+	if (author.avatar !== undefined) person.image = absolute(author.avatar)
+	return person
 }
