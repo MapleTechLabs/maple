@@ -198,10 +198,7 @@ export const oauthPointer = (h: H): Html =>
 		[h.Class("w-full rounded-md border border-dashed p-4 font-prose text-sm text-muted-foreground")],
 		[
 			"Clients signed in with OAuth don't use keys. See and revoke them in the ",
-			h.a(
-				[h.Href("/settings?tab=mcp"), h.Class(INLINE_LINK_CLASS)],
-				["Connected clients section of MCP"],
-			),
+			h.a([h.Href("/settings/mcp"), h.Class(INLINE_LINK_CLASS)], ["Connected clients section of MCP"]),
 			".",
 		],
 	)

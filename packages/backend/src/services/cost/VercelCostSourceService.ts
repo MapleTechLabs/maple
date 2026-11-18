@@ -3,7 +3,6 @@
  * so the `cost_sources` row is all there is to add or remove. The connection is never changed here.
  */
 import {
-	CloudCostDisabledError,
 	IntegrationsConnectionChangedError,
 	IntegrationsNotConnectedError,
 	IntegrationsPersistenceError,
@@ -20,7 +19,6 @@ import { Clock, Context, Effect, Layer } from "effect"
 import { randomUUID } from "node:crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { VercelCostProvider, type VercelCostReadError } from "./providers/vercel/VercelCostProvider"
 import { addDays, utcToday } from "./sync-plan"
 import { removeVercelCostSources } from "./vercel-cost-sources"
@@ -57,9 +55,7 @@ const toAddError = (
 export type VercelCostStatusInfo = typeof VercelCostStatus.Encoded
 
 export interface VercelCostSourceServiceApi {
-	readonly status: (
-		orgId: OrgId,
-	) => Effect.Effect<VercelCostStatusInfo, IntegrationsPersistenceError | CloudCostDisabledError>
+	readonly status: (orgId: OrgId) => Effect.Effect<VercelCostStatusInfo, IntegrationsPersistenceError>
 	/**
 	 * Makes the connected team a cost source, once Vercel has let its token read the billing.
 	 * `teamId` is the team the caller was shown: another one connected since is refused.
@@ -70,7 +66,6 @@ export interface VercelCostSourceServiceApi {
 		teamId: string,
 	) => Effect.Effect<
 		{ readonly team: VercelCostTeam; readonly created: boolean },
-		| CloudCostDisabledError
 		| IntegrationsNotConnectedError
 		| IntegrationsConnectionChangedError
 		| IntegrationsValidationError
@@ -88,19 +83,8 @@ export class VercelCostSourceService extends Context.Service<
 >()("@maple/backend/services/cost/VercelCostSourceService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
-		const featureFlags = yield* OrganizationFeatureFlagsService
 		const provider = yield* VercelCostProvider
 		const dbExecute = makeDbExecute(database, "VercelCostSourceService", toPersistenceError)
-
-		const requireRollout = (orgId: OrgId) =>
-			Effect.gen(function* () {
-				const flags = yield* featureFlags.flags(orgId)
-				if (!flags.cloudCost) {
-					return yield* new CloudCostDisabledError({
-						message: "Cloud cost is not enabled for this organization.",
-					})
-				}
-			})
 
 		/** The org's connection and whether it is a cost source, read together. */
 		const load = (orgId: OrgId) =>
@@ -129,7 +113,6 @@ export class VercelCostSourceService extends Context.Service<
 
 		const status = Effect.fn("VercelCostSourceService.status")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan({ orgId })
-			yield* requireRollout(orgId)
 			const connection = yield* load(orgId)
 			return connection === null
 				? { team: null, authFailed: false, added: false }
@@ -142,7 +125,6 @@ export class VercelCostSourceService extends Context.Service<
 
 		const add = Effect.fn("VercelCostSourceService.add")(function* (orgId: OrgId, teamId: string) {
 			yield* Effect.annotateCurrentSpan({ orgId })
-			yield* requireRollout(orgId)
 			const connection = yield* load(orgId)
 			if (connection === null) {
 				return yield* new IntegrationsNotConnectedError({
@@ -220,7 +202,5 @@ export class VercelCostSourceService extends Context.Service<
 		return { status, add, remove } satisfies VercelCostSourceServiceApi
 	}),
 }) {
-	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(VercelCostProvider.layer, OrganizationFeatureFlagsService.layer)),
-	)
+	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(VercelCostProvider.layer))
 }

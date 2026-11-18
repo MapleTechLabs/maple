@@ -55,6 +55,8 @@ export type DashboardPageOptions = Readonly<{
 	fill?: boolean
 	/** A scroller below has left the top: the sticky area raises its shadow. */
 	isScrolled?: boolean
+	/** Below `md` the header and tabs scroll away with the body, for a header too tall to pin on a phone. */
+	unpinHeaderOnMobile?: boolean
 }>
 
 export const pageBody = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
@@ -85,12 +87,13 @@ export const pageContent = <M>(
 	h: HtmlBuilder<M>,
 	children: ReadonlyArray<Html>,
 	attributes: ReadonlyArray<Attribute<M>> = [],
+	className?: string,
 ): Html =>
 	h.main(
 		[
 			h.Id("main-content"),
 			h.DataAttribute("slot", "page-content"),
-			h.Class(pageContentStyles),
+			h.Class(cn(pageContentStyles, className)),
 			...attributes,
 		],
 		children,
@@ -126,8 +129,10 @@ const stickyArea = <M>(
 			: [h.div([h.Class(cn("w-full space-y-4", PAGE_WIDTH[width]))], children)],
 	)
 
-const fillArea = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
-	h.div([h.DataAttribute("slot", "page-fill"), h.Class(pageFillStyles)], children)
+const UNPINNED_BODY = "max-md:flex-none max-md:overflow-visible"
+
+const fillArea = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>, className?: string): Html =>
+	h.div([h.DataAttribute("slot", "page-fill"), h.Class(cn(pageFillStyles, className))], children)
 
 // Every capped width is left-aligned on the page gutter, so the header, body and top bar share one edge.
 const PAGE_WIDTH = {
@@ -197,6 +202,8 @@ export const dashboardPage = <M>(
 	// A page that owns its scrolling is a canvas: its header spans the full width with it.
 	const width = options.width ?? (options.fill === true ? "full" : "wide")
 	const header = options.header ?? (hasHeader ? pageHeader(h, titleContent, options.actions) : undefined)
+	// The column scrolls as a whole below `md`; the body grows to its content inside it.
+	const unpin = options.unpinHeaderOnMobile === true
 	const sticky = [
 		...(header === undefined ? [] : [header]),
 		...(options.tabs === undefined
@@ -208,12 +215,23 @@ export const dashboardPage = <M>(
 		...(options.filters === undefined
 			? []
 			: [filterRail(h, options.filters, options.filtersWidth, options.filtersLabel)]),
-		pageContent(h, [
-			...(sticky.length > 0 ? [stickyArea(h, sticky, options.isScrolled ?? false, width)] : []),
-			options.fill === true
-				? fillArea(h, children)
-				: scrollArea(h, children, options.scrollClassName, width, options.gap),
-		]),
+		pageContent(
+			h,
+			[
+				...(sticky.length > 0 ? [stickyArea(h, sticky, options.isScrolled ?? false, width)] : []),
+				options.fill === true
+					? fillArea(h, children, unpin ? UNPINNED_BODY : undefined)
+					: scrollArea(
+							h,
+							children,
+							cn(options.scrollClassName, unpin && UNPINNED_BODY),
+							width,
+							options.gap,
+						),
+			],
+			[],
+			unpin ? "max-md:overflow-y-auto" : undefined,
+		),
 		...(options.rightPanel === undefined
 			? []
 			: [

@@ -129,7 +129,7 @@ Keep whatever the hook already does (logging, other vendors, fallback UI). `init
 
 - `fetch` spans for 4xx responses are marked `Error` (OpenTelemetry's rule for client spans). Maple doesn't open error issues for 4xx spans without exception data, so an expected 404 doesn't create an issue.
 - Session replay is on, with all inputs masked (`replay: { enabled: false }` turns it off), and the SDK keeps a persistent visitor id in localStorage and a cookie (`privacy: { persistVisitorId: false }` turns it off). Both matter for their privacy and cookie notices.
-- If `MAPLE_TEST` is inline: copy the public key from Settings → Ingestion (`<dashboard>/settings?tab=ingestion`) and search-replace `MAPLE_TEST`.
+- If `MAPLE_TEST` is inline: copy the public key from Settings → Ingestion (`<dashboard>/settings/ingestion`) and search-replace `MAPLE_TEST`.
 
 ## Hard rules
 

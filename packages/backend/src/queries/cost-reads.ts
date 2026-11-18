@@ -3,7 +3,6 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { CostConnections, CostSources, type CostSourceRow, VercelConnections } from "@maple/db/tables"
 import {
-	CloudCostDisabledError,
 	CloudCostPersistenceError,
 	COST_BREAKDOWN_DEFAULT_LIMIT,
 	COST_MAX_WINDOW_DAYS,
@@ -40,11 +39,9 @@ import {
 	utcToday,
 } from "@maple/backend/services/cost/sync-plan"
 import { isCostConnectionProvider } from "@maple/backend/services/cost/cost-connection-sources"
-import type { OrganizationFeatureFlagsServiceApi } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 
 export interface CostReadsDeps extends QueryRunnerDeps {
 	readonly database: DatabaseApi
-	readonly featureFlags: OrganizationFeatureFlagsServiceApi
 }
 
 type CostWindowRequest = CostTotalsRequest | CostTimeseriesRequest | CostBreakdownRequest
@@ -158,16 +155,10 @@ export const makeCostReads = (deps: CostReadsDeps) => {
 	const { runQuery, runQueryFirst } = makeQueryRunners(deps)
 	const dbExecute = makeDbExecute(deps.database, "CostReads", toPersistenceError)
 
-	/** The org's cost sources, once the org is in the `cloudCost` rollout. */
-	const sourcesInRollout = (orgId: OrgId) =>
+	/** The org's cost sources, oldest first. */
+	const orgSources = (orgId: OrgId) =>
 		Effect.gen(function* () {
 			yield* Effect.annotateCurrentSpan({ orgId })
-			const flags = yield* deps.featureFlags.flags(orgId)
-			if (!flags.cloudCost) {
-				return yield* new CloudCostDisabledError({
-					message: "Cloud cost is not enabled for this organization.",
-				})
-			}
 			return yield* dbExecute((db) =>
 				db.run(
 					PG.from(CostSources)
@@ -184,7 +175,7 @@ export const makeCostReads = (deps: CostReadsDeps) => {
 	 */
 	const windowOf = (tenant: TenantContext, payload: CostWindowRequest) =>
 		Effect.gen(function* () {
-			const sources = yield* sourcesInRollout(tenant.orgId)
+			const sources = yield* orgSources(tenant.orgId)
 			// Flooring moves a reversed window's end up to its start day: it would read as that one day.
 			if (parseWarehouseDateTime(payload.startTime) > parseWarehouseDateTime(payload.endTime)) {
 				return yield* new QueryEngineValidationError({
@@ -317,7 +308,7 @@ export const makeCostReads = (deps: CostReadsDeps) => {
 
 	/** Each connected source and how far its sync is. Postgres only. */
 	const sources = Effect.fn("CostReads.sources")(function* (tenant: TenantContext) {
-		const rows = yield* sourcesInRollout(tenant.orgId)
+		const rows = yield* orgSources(tenant.orgId)
 		const nowMs = yield* Clock.currentTimeMillis
 		// A Vercel source's account is its team's id, which is stable; the team's slug names it.
 		const teams = Arr.some(rows, (row) => row.provider === "vercel")

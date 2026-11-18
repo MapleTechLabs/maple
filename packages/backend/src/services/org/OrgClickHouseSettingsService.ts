@@ -64,7 +64,7 @@ import {
 	secretKeyringFromEnv,
 	type SecretKeyring,
 } from "@maple/backend/platform/SecretBox"
-import { clickHousePasswordSlot } from "@maple/backend/platform/secret-slots"
+import { clickHousePasswordSlot, type ClickHousePasswordRef } from "@maple/backend/platform/secret-slots"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
 import { readTextWithin, validateExternalUrl } from "@maple/safe-fetch"
 
@@ -423,19 +423,19 @@ const toEncryptionError = (message: string) => new OrgClickHouseSettingsEncrypti
 
 const encryptToken = (
 	keyring: SecretKeyring,
-	orgId: OrgId,
+	ref: ClickHousePasswordRef,
 	plaintext: string,
 ): Effect.Effect<EncryptedValue, OrgClickHouseSettingsEncryptionError> =>
-	sealSecret(keyring, clickHousePasswordSlot, { orgId }, plaintext, () =>
+	sealSecret(keyring, clickHousePasswordSlot, ref, plaintext, () =>
 		toEncryptionError("Failed to encrypt ClickHouse password"),
 	)
 
 const decryptToken = (
 	keyring: SecretKeyring,
-	orgId: OrgId,
+	ref: ClickHousePasswordRef,
 	encrypted: EncryptedValue,
 ): Effect.Effect<string, OrgClickHouseSettingsEncryptionError> =>
-	openSecret(keyring, clickHousePasswordSlot, { orgId }, encrypted, () =>
+	openSecret(keyring, clickHousePasswordSlot, ref, encrypted, () =>
 		toEncryptionError("Failed to decrypt ClickHouse password"),
 	)
 
@@ -1031,14 +1031,18 @@ export class OrgClickHouseSettingsService extends Context.Service<
 		// `orgId` is the org the row (or its cache entry) was looked up by.
 		const decryptStoredPassword = (
 			orgId: OrgId,
-			row: Pick<ActiveRow, "chPasswordCiphertext" | "chPasswordIv" | "chPasswordTag">,
+			row: Pick<ActiveRow, "chUrl" | "chPasswordCiphertext" | "chPasswordIv" | "chPasswordTag">,
 		): Effect.Effect<string, OrgClickHouseSettingsEncryptionError> =>
 			row.chPasswordCiphertext !== null && row.chPasswordIv !== null && row.chPasswordTag !== null
-				? decryptToken(keyring, orgId, {
-						ciphertext: row.chPasswordCiphertext,
-						iv: row.chPasswordIv,
-						tag: row.chPasswordTag,
-					})
+				? decryptToken(
+						keyring,
+						{ orgId, chUrl: row.chUrl },
+						{
+							ciphertext: row.chPasswordCiphertext,
+							iv: row.chPasswordIv,
+							tag: row.chPasswordTag,
+						},
+					)
 				: Effect.succeed("")
 
 		const toResponse = (row: ActiveRow | null | undefined): OrgClickHouseSettingsResponse =>
@@ -1119,7 +1123,9 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			)
 
 			const encryptedPassword =
-				plainPassword.length > 0 ? yield* encryptToken(keyring, orgId, plainPassword) : null
+				plainPassword.length > 0
+					? yield* encryptToken(keyring, { orgId, chUrl: url }, plainPassword)
+					: null
 
 			const now = yield* Clock.currentTimeMillis
 			yield* dbExecute((db) =>

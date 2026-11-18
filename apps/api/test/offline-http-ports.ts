@@ -6,6 +6,7 @@ import { envPorts } from "@maple/backend/platform/env-ports"
 import {
 	ApiV2RateLimit,
 	AuditEventsQueueProducer,
+	AwsEventsRateLimit,
 	CancellationReviewQueueProducer,
 	CliAuthRateLimit,
 	DataSourceDevelopmentCallLimit,
@@ -33,6 +34,7 @@ export const offlinePorts = Layer.mergeAll(
 	Layer.succeed(ShareLinkRateLimit, limiter),
 	Layer.succeed(CliAuthRateLimit, limiter),
 	Layer.succeed(McpOAuthRateLimit, limiter),
+	Layer.succeed(AwsEventsRateLimit, limiter),
 	Layer.succeed(DataSourceProductionCallLimit, limiter),
 	Layer.succeed(DataSourceDevelopmentCallLimit, limiter),
 	Layer.succeed(ReplayBlobBucket, { getBytes: rejectIO }),

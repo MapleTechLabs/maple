@@ -5,6 +5,12 @@ import { Schema, String as Str } from "effect"
 
 const SLUG_MAX = 48
 
+/** The API's code for an address another page already has. */
+export const SLUG_TAKEN = "status_page_slug_taken"
+
+/** The field's message for it. */
+export const SLUG_TAKEN_MESSAGE = "That address is taken. Pick another."
+
 /** `Acme Status!` as `acme-status`: lowercase letters and digits, single inner hyphens. */
 export const slugFromName = (name: string): string =>
 	Str.replace(

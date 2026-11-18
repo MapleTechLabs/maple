@@ -52,6 +52,8 @@ export interface NavItem {
 	readonly badge?: string
 	/** Routes with no row of their own that this row stands in for (`/anomalies` under Alerts). */
 	readonly alsoActive?: ReadonlyArray<string>
+	/** Sets the row apart from the ones above it with a small gap, no heading. */
+	readonly startsGroup?: boolean
 }
 
 export interface NavGroup {
@@ -111,14 +113,14 @@ const infrastructureItem: NavItem = {
 }
 
 const costItem: NavItem = {
-	title: "Cost",
+	title: "Cloud cost",
 	href: "/cost",
 	icon: "CircleDollarIcon",
 	badge: "Beta",
 	subItems: [
 		// Not "Explorer": the palette finds the Explore pages by that word.
-		{ title: "Spend", href: "/cost", icon: "ChartBarHorizontalIcon", paletteTitle: "Cost" },
-		{ title: "Budgets", href: "/cost/budgets", icon: "GaugeIcon", paletteTitle: "Cost budgets" },
+		{ title: "Spend", href: "/cost", icon: "ChartBarHorizontalIcon", paletteTitle: "Cloud cost" },
+		{ title: "Budgets", href: "/cost/budgets", icon: "GaugeIcon", paletteTitle: "Cloud cost budgets" },
 	],
 }
 
@@ -233,7 +235,6 @@ export type NavAudience = typeof NavAudience.Type
 
 /** The org rollout flags that gate a nav row each. */
 export type NavFlags = Readonly<{
-	cloudCost: boolean
 	/** Cloud security findings live in the Security hub, so they show its row too. */
 	cloudSecurity: boolean
 	productAnalytics: boolean
@@ -262,7 +263,7 @@ const analystNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 			{ title: "Users", href: "/users", icon: "UsersIcon" },
 			{ title: "Replays", href: "/replays", icon: "PlayRotateClockwiseIcon" },
 			{ title: "Dashboards", href: "/dashboards", icon: "GridSquareCirclePlusIcon" },
-			...(flags.cloudCost ? [costItem] : []),
+			costItem,
 		],
 	},
 ]
@@ -278,7 +279,7 @@ const operatorNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 				alsoActive: flags.statusPages ? [] : ["/status-pages"],
 			},
 			infrastructureItem,
-			...(flags.cloudCost ? [costItem] : []),
+			costItem,
 		],
 	},
 	{
@@ -307,14 +308,21 @@ const operatorNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 				? [{ title: "Security", href: "/security", icon: "ShieldCheckIcon", badge: "Beta" } as const]
 				: []),
 			...(flags.statusPages
-				? [{ title: "Status pages", href: "/status-pages", icon: "WindowChartLineIcon" } as const]
+				? [
+						{
+							title: "Status pages",
+							href: "/status-pages",
+							icon: "WindowChartLineIcon",
+							startsGroup: true,
+						} as const,
+					]
 				: []),
 		],
 	},
 ]
 
 /**
- * `navGroups(flags, audience)`; `cloudCost`, `productAnalytics`, `releases`, `securityAudit` (or
+ * `navGroups(flags, audience)`; `productAnalytics`, `releases`, `securityAudit` (or
  * `cloudSecurity`) and `statusPages` gate a row each, and an analyst gets {@link analystNavGroups}.
  */
 export const navGroups = (flags: NavFlags, audience: NavAudience = "operator"): ReadonlyArray<NavGroup> =>

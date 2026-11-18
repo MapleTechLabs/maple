@@ -1,3 +1,4 @@
+import { isStatusPageImageDataUrl } from "@maple/domain/status-page"
 import { escapeHtml } from "@maple/strings"
 import { String as Str } from "effect"
 
@@ -12,6 +13,10 @@ export const safeUrl = (value: string | null, protocols: ReadonlyArray<string>):
 	const url = new URL(value)
 	return protocols.includes(url.protocol) ? url.toString() : null
 }
+
+/** A logo or favicon source: an https URL, or an uploaded image's base64 `data:` URL. */
+export const safeImageUrl = (value: string | null): string | null =>
+	value !== null && isStatusPageImageDataUrl(value) ? value : safeUrl(value, ["https:"])
 
 /** Only plain hex colours reach the stylesheet. */
 export const safeColor = (value: string | null): string | null =>

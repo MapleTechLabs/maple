@@ -1,4 +1,5 @@
 import { MAPLE_SERVICES_NAMESPACE } from "@maple/domain/uptime"
+import { UPTIME_FAILED_CHECK_LIST_LIMIT } from "@maple/web-data/warehouse/uptime"
 import { bucketTimeScale } from "@maple/views/charts/plot/plot-scales"
 import { countLabel, formatBucketLabel, formatNumber } from "@maple/ui/lib/format"
 import { TONE_COLOR, TONE_TEXT } from "@maple/ui/lib/tone"
@@ -19,6 +20,7 @@ import { stackedBreakdown } from "@maple/views/charts/stacked-breakdown-chart"
 import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { chartSkeleton } from "@maple/views/ui/chart-skeleton"
 import { emptyMessage } from "@maple/views/ui/empty"
+import { listFooter } from "@maple/views/ui/list-footer"
 import { errorState } from "@maple/views/ui/error-state"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { relativeTime } from "../../kit/relative-time"
@@ -1007,29 +1009,94 @@ const checkRows = (monitor: UptimeMonitor): ReadonlyArray<CheckRow> => {
 	)
 }
 
-const CHECK_GRID = "grid grid-cols-[90px_64px_90px_minmax(0,1fr)_80px] items-center gap-3"
+const CHECK_GRID = "grid grid-cols-[130px_64px_90px_minmax(0,1fr)_80px] items-center gap-3"
 
-export const checksPanel = (h: H, monitor: UptimeMonitor, timeZone: string): Html => {
-	const rows = checkRows(monitor)
-	return panel(h, {}, [
+/** The window's failed checks, newest first, from their spans. */
+const failedRows = (stats: CheckStats): ReadonlyArray<CheckRow> =>
+	Arr.map(stats.failedSamples, (sample): CheckRow => ({
+		at: sample.at,
+		ok: false,
+		statusCode: sample.statusCode,
+		durationMs: sample.durationMs,
+		result: sample.error ?? "",
+		traceId: sample.traceId,
+	}))
+
+const CHECKS_FILTERS = [
+	{ value: "all", label: "All" },
+	{ value: "failed", label: "Failed" },
+] as const
+
+type ChecksBody =
+	| Readonly<{
+			rows: ReadonlyArray<CheckRow>
+			timeOf: (iso: string) => string
+			/** Under the rows, e.g. that the list stops at its cap. */
+			note: string | null
+	  }>
+	| Readonly<{ message: string }>
+
+const checksBody = (model: Model, monitor: UptimeMonitor, timeZone: string): ChecksBody => {
+	if (model.checksFilter === "all") {
+		const rows = checkRows(monitor)
+		return rows.length === 0
+			? { message: "No checks yet" }
+			: { rows, timeOf: (iso) => formatAlertTime(iso, timeZone), note: null }
+	}
+	const data = model.stats.data
+	if (AsyncData.isFailure(data)) return { message: "The failed checks couldn't load." }
+	return Option.match(statsOf(model), {
+		onNone: () => ({ message: "Loading failed checks…" }),
+		onSome: (stats): ChecksBody => {
+			if (stats.failedSamplesFailed) return { message: "The failed checks couldn't load." }
+			const rows = failedRows(stats)
+			return rows.length === 0
+				? { message: `No failed checks in the ${WINDOW_LABEL[stats.window]}` }
+				: {
+						rows,
+						timeOf: (iso) => timeLabel(stats.window, iso, timeZone),
+						// Names the window the rows are from: a switched window keeps them until its own land.
+						note: `${rows.length >= UPTIME_FAILED_CHECK_LIST_LIMIT ? "Newest " : ""}${countLabel(rows.length, "failed check")} in the ${WINDOW_LABEL[stats.window]}`,
+					}
+		},
+	})
+}
+
+export const checksPanel = (h: H, model: Model, monitor: UptimeMonitor, timeZone: string): Html => {
+	const body = checksBody(model, monitor, timeZone)
+	// Heartbeats record no check spans, so only the recent pings list.
+	const filter =
+		monitor.kind === "heartbeat"
+			? []
+			: [
+					segmentedSelect(h, {
+						ariaLabel: "Show checks",
+						size: "xs",
+						value: model.checksFilter,
+						onChange: (filter) => Message.PickedChecksFilter({ filter }),
+						options: CHECKS_FILTERS,
+					}),
+				]
+	const tracesLink = h.a(
+		[
+			h.Href(uptimeTracesHref()),
+			h.Title(
+				`Each check is a span in the ${UPTIME_SERVICE} service, namespace ${MAPLE_SERVICES_NAMESPACE}.`,
+			),
+			h.Class(
+				typographyClass({
+					size: "xs",
+					tone: "primary",
+					className: "hover:underline active:underline",
+				}),
+			),
+		],
+		["View all checks in Traces"],
+	)
+	return panel(h, { attributes: [h.AriaLabel("Checks")] }, [
 		panelHeader(h, {
 			title: "Checks",
-			action: h.a(
-				[
-					h.Href(uptimeTracesHref()),
-					h.Title(
-						`Each check is a span in the ${UPTIME_SERVICE} service, namespace ${MAPLE_SERVICES_NAMESPACE}.`,
-					),
-					h.Class(
-						typographyClass({
-							size: "xs",
-							tone: "primary",
-							className: "hover:underline active:underline",
-						}),
-					),
-				],
-				["View all checks in Traces"],
-			),
+			action: hstack(h, { gap: "3", align: "center" }, [tracesLink, ...filter]),
 		}),
 		h.div(
 			[h.Class(cn(CHECK_GRID, "border-y px-4 py-2"))],
@@ -1041,66 +1108,92 @@ export const checksPanel = (h: H, monitor: UptimeMonitor, timeZone: string): Htm
 				eyebrow(h, { className: "text-right" }, ["Trace"]),
 			],
 		),
-		rows.length === 0
-			? emptyMessage(h, {}, ["No checks yet"])
-			: dividedList(
-					h,
-					{ as: "ul", bordered: false },
-					Arr.map(rows, (row, index) =>
-						h.li(
-							[h.Key(`${row.at}-${index}`), h.Class(cn(CHECK_GRID, "px-4 py-2 text-sm"))],
-							[
-								typography(h, { size: "xs", tone: "muted", mono: true }, [
-									formatAlertTime(row.at, timeZone),
-								]),
-								h.span(
-									[
-										h.Class(
-											cn(
-												typographyClass({ size: "xs", mono: true }),
-												row.ok ? TONE_TEXT.info : TONE_TEXT.crit,
-											),
-										),
-									],
-									[
-										row.statusCode === null
-											? row.ok
-												? "Pass"
-												: "Fail"
-											: String(row.statusCode),
-									],
-								),
-								typography(h, { size: "xs", mono: true, numeric: true }, [
-									formatMs(row.durationMs),
-								]),
-								h.span(
-									[
-										h.Class(
-											cn(
-												typographyClass({ size: "xs", truncate: true }),
-												TONE_TEXT.crit,
-											),
-										),
-										h.Title(row.result),
-									],
-									[row.result],
-								),
-								row.traceId === null
-									? typography(h, { size: "xs", tone: "muted", className: "text-right" }, [
-											"–",
-										])
-									: textLink(
-											h,
-											{
-												href: traceHref(row.traceId),
-												isMono: true,
-												className: "text-right text-xs font-normal",
-											},
-											[`${Str.slice(0, 4)(row.traceId)}…${Str.slice(-4)(row.traceId)}`],
-										),
-							],
+		"message" in body
+			? emptyMessage(h, {}, [body.message])
+			: h.div(
+					[
+						// A switched window keeps the previous failures until its own land, dimmed meanwhile.
+						h.Class(
+							model.checksFilter === "failed" ? refreshingClass(isStatsRefreshing(model)) : "",
 						),
-					),
+					],
+					[
+						dividedList(
+							h,
+							{ as: "ul", bordered: false },
+							Arr.map(body.rows, (row, index) =>
+								h.li(
+									[
+										h.Key(`${row.at}-${index}`),
+										h.Class(cn(CHECK_GRID, "px-4 py-2 text-sm")),
+									],
+									[
+										typography(h, { size: "xs", tone: "muted", mono: true }, [
+											body.timeOf(row.at),
+										]),
+										h.span(
+											[
+												h.Class(
+													cn(
+														typographyClass({ size: "xs", mono: true }),
+														row.ok ? TONE_TEXT.info : TONE_TEXT.crit,
+													),
+												),
+											],
+											[
+												row.statusCode === null
+													? row.ok
+														? "Pass"
+														: "Fail"
+													: String(row.statusCode),
+											],
+										),
+										typography(h, { size: "xs", mono: true, numeric: true }, [
+											formatMs(row.durationMs),
+										]),
+										h.span(
+											[
+												h.Class(
+													cn(
+														typographyClass({ size: "xs", truncate: true }),
+														TONE_TEXT.crit,
+													),
+												),
+												h.Title(row.result),
+											],
+											[row.result],
+										),
+										row.traceId === null
+											? typography(
+													h,
+													{ size: "xs", tone: "muted", className: "text-right" },
+													["–"],
+												)
+											: textLink(
+													h,
+													{
+														href: traceHref(row.traceId),
+														isMono: true,
+														className: "text-right text-xs font-normal",
+													},
+													[
+														`${Str.slice(0, 4)(row.traceId)}…${Str.slice(-4)(row.traceId)}`,
+													],
+												),
+									],
+								),
+							),
+						),
+						...(body.note === null
+							? []
+							: [
+									listFooter(h, {
+										align: "start",
+										className: "border-t",
+										children: [h.span([], [body.note])],
+									}),
+								]),
+					],
 				),
 	])
 }

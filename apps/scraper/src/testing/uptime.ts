@@ -20,6 +20,7 @@ export const httpConfig = (overrides: Record<string, unknown> = {}) => ({
 export const mkUptimeTarget = (
 	options: {
 		readonly id?: string
+		readonly orgId?: string
 		readonly intervalSeconds?: number
 		readonly serviceName?: string | null
 		readonly ingestKey?: string
@@ -30,7 +31,7 @@ export const mkUptimeTarget = (
 ): UptimeProbeTarget =>
 	decodeTarget({
 		id: options.id ?? MONITOR_A,
-		orgId: "org_test",
+		orgId: options.orgId ?? "org_test",
 		name: options.name ?? "Checkout health",
 		serviceName: options.serviceName === undefined ? "checkout" : options.serviceName,
 		intervalSeconds: options.intervalSeconds ?? 30,

@@ -36,6 +36,7 @@ const status = Schema.decodeUnknownSync(GithubIntegrationStatus)({
 	accountType: "organization",
 	repositorySelection: "selected",
 	ciTracesEnabled: true,
+	auditLogEnabled: true,
 	repositoryDiscovery: null,
 	repositories: [repository("acme-shop/shop", 1), repository("acme-shop/storefront", 2)],
 })

@@ -1,12 +1,11 @@
 import * as Policy from "@maple/domain/policy"
 import { Array, Option } from "effect"
 import type { NavShellRow, NavShellSection } from "../kit/nav-shell"
-import { legacySettingsTabValues, settingsTabValues } from "../../route/search"
+import type { settingsTabValues } from "../../route/search"
 
-// The tab set, labels, retired-tab redirects, nav groups and their visibility.
+// The tab set, labels, nav groups and their visibility.
 
 export type SettingsTab = (typeof settingsTabValues)[number]
-export type LegacySettingsTab = (typeof legacySettingsTabValues)[number]
 
 export const settingsTabLabels = {
 	general: "General",
@@ -24,30 +23,6 @@ export const settingsTabLabels = {
 	"setup-health": "Setup health",
 	automation: "Automation",
 } as const satisfies { readonly [Tab in SettingsTab]: string }
-
-export type LegacySettingsRedirect =
-	| { readonly kind: "tab"; readonly tab: SettingsTab }
-	| { readonly kind: "integrations" }
-	| { readonly kind: "account" }
-
-const legacyRedirects = {
-	organization: { kind: "tab", tab: "general" },
-	"api-keys": { kind: "tab", tab: "keys" },
-	"ai-provider": { kind: "tab", tab: "ai" },
-	"setup-audit": { kind: "tab", tab: "setup-health" },
-	notifications: { kind: "account" },
-	connectors: { kind: "integrations" },
-	integrations: { kind: "integrations" },
-	escalations: { kind: "tab", tab: "automation" },
-	developer: { kind: "tab", tab: "keys" },
-} as const satisfies { readonly [Tab in LegacySettingsTab]: LegacySettingsRedirect }
-
-/** Where a retired `?tab=` value now lives. */
-export const resolveLegacySettingsTab = (tab: string | undefined): Option.Option<LegacySettingsRedirect> =>
-	Option.map(
-		Array.findFirst(legacySettingsTabValues, (value) => value === tab),
-		(legacy) => legacyRedirects[legacy],
-	)
 
 const tab = (id: SettingsTab, icon: NavShellRow<SettingsTab>["icon"]): NavShellRow<SettingsTab> => ({
 	kind: "tab",

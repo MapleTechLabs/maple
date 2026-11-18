@@ -238,7 +238,6 @@ export const ClerkOrganization = Schema.Struct({
 	isRegionOpen: Schema.Boolean,
 	flags: Schema.Struct({
 		aiAutoTriage: Schema.Boolean,
-		cloudCost: Schema.Boolean,
 		cloudSecurity: Schema.Boolean,
 		dataSources: Schema.Boolean,
 		productAnalytics: Schema.Boolean,

@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { GithubIntegrationStatus, GithubInstallationSelection } from "@maple/domain/http"
 import { Result, Schema, Array as Arr } from "effect"
@@ -8,7 +9,7 @@ import { PageOutMessage, type PageContext } from "../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
-import { ciTracesShown } from "./update-github"
+import { auditLogShown, ciTracesShown } from "./update-github"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -26,6 +27,7 @@ const status = Schema.decodeSync(GithubIntegrationStatus)({
 	accountType: "organization",
 	repositorySelection: "selected",
 	ciTracesEnabled: true,
+	auditLogEnabled: true,
 	repositoryDiscovery: null,
 	repositories: [
 		{
@@ -171,6 +173,64 @@ describe("github card", () => {
 			{ update: pageUpdate, view },
 			given(toggled.model),
 			expectView(role("switch", { name: "CI traces and logs" })).toHaveAttr("aria-checked", "false"),
+			expectView(role("switch", { name: "CI traces and logs" })).toBeDisabled(),
+		)
+	})
+
+	test("the audit log switch turns GitHub's audit events off, and reverts when the write fails", () => {
+		const model = loaded()
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(role("switch", { name: "Audit log" })).toHaveAttr("aria-checked", "true"),
+		)
+		const toggled = pageUpdate(model, Message.ToggledAuditLog())
+		expect(Arr.map(toggled.commands ?? [], ({ name, args }) => [name, args])).toEqual([
+			["SetGithubAuditLog", { enabled: false }],
+		])
+		expect(names(pageUpdate(toggled.model, Message.ToggledAuditLog()).commands)).toEqual([])
+		scene(
+			{ update: pageUpdate, view },
+			given(toggled.model),
+			expectView(role("switch", { name: "Audit log" })).toHaveAttr("aria-checked", "false"),
+			expectView(role("switch", { name: "Audit log" })).toBeDisabled(),
+			// The other switch stays as it was.
+			expectView(role("switch", { name: "CI traces and logs" })).toHaveAttr("aria-checked", "true"),
+		)
+		const failed = pageUpdate(
+			toggled.model,
+			Message.CompletedAuditLog({ enabled: false, failure: toLoadFailure("x") }),
+		)
+		expect(auditLogShown(failed.model)).toBe(true)
+	})
+
+	test("a superseded status answer leaves the saved audit log value standing; the current one settles it", () => {
+		const toggled = pageUpdate(loaded(), Message.ToggledAuditLog())
+		const saved = pageUpdate(toggled.model, Message.CompletedAuditLog({ enabled: false, failure: null }))
+		// An older read lands after the save, still saying on: the switch keeps showing off.
+		const stale = pageUpdate(
+			saved.model,
+			Message.CompletedLoadGithub({ key: "superseded", result: Result.succeed(status) }),
+		)
+		expect(auditLogShown(stale.model)).toBe(false)
+		// The current read says off: the server's value takes over.
+		const current = pageUpdate(
+			stale.model,
+			Message.CompletedLoadGithub({
+				key: stale.model.statuses.github.key ?? "",
+				result: Result.succeed(new GithubIntegrationStatus({ ...status, auditLogEnabled: false })),
+			}),
+		)
+		expect(current.model.githubCard.auditLog).toBe(null)
+		expect(auditLogShown(current.model)).toBe(false)
+	})
+
+	test("a member who cannot manage integrations sees both switches but cannot flip them", () => {
+		const member = { ...loaded(), grants: Policy.grantsOf(["org:member"]) }
+		scene(
+			{ update: pageUpdate, view },
+			given(member),
+			expectView(role("switch", { name: "Audit log" })).toBeDisabled(),
 			expectView(role("switch", { name: "CI traces and logs" })).toBeDisabled(),
 		)
 	})

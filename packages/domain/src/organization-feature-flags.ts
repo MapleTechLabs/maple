@@ -20,8 +20,6 @@ const DisabledByDefaultFeatureFlag = Schema.Unknown.pipe(
  */
 export const OrganizationFeatureFlags = Schema.Struct({
 	aiAutoTriage: DisabledByDefaultFeatureFlag,
-	/** Gates cloud cost: the cost reads and the AWS connection's `cost` module. */
-	cloudCost: DisabledByDefaultFeatureFlag,
 	/** Gates cloud security findings: the AWS connection's `security` module and the Cloud findings tab. */
 	cloudSecurity: DisabledByDefaultFeatureFlag,
 	/**
@@ -46,7 +44,6 @@ export const OrganizationFeatureFlags = Schema.Struct({
 }).pipe(
 	Schema.encodeKeys({
 		aiAutoTriage: "aiautotriage",
-		cloudCost: "cloudcost",
 		cloudSecurity: "cloudsecurity",
 		dataSources: "datasources",
 		productAnalytics: "productanalytics",
@@ -63,7 +60,6 @@ const decodeOrganizationFeatureFlags = Schema.decodeUnknownOption(OrganizationFe
 /** Every rollout off: the value for malformed metadata, and for the pre-load window. */
 export const DISABLED_ORGANIZATION_FEATURE_FLAGS: OrganizationFeatureFlags = {
 	aiAutoTriage: false,
-	cloudCost: false,
 	cloudSecurity: false,
 	dataSources: false,
 	productAnalytics: false,
@@ -79,7 +75,6 @@ export const DISABLED_ORGANIZATION_FEATURE_FLAGS: OrganizationFeatureFlags = {
  */
 export const ENABLED_ORGANIZATION_FEATURE_FLAGS: OrganizationFeatureFlags = {
 	aiAutoTriage: true,
-	cloudCost: true,
 	cloudSecurity: true,
 	dataSources: true,
 	productAnalytics: true,

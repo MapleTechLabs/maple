@@ -1,10 +1,8 @@
 // A fake Anthropic Admin API for tests: the organization and cost report calls answered from a
 // mutable world, with every call recorded. The cost report pages its buckets by `limit`.
-import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
-import { Effect, Layer, Array as Arr, String as Str } from "effect"
+import { Layer, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import type { TestDb } from "@maple/backend/testing/test-pglite"
 import { CostConnectionStore } from "../../CostConnectionStore"
 import { addDays } from "../../sync-plan"
@@ -26,8 +24,6 @@ export interface FakeAnthropic {
 	endless: boolean
 	/** A report whose next page is the one just asked for. */
 	repeatCursor: boolean
-	/** Whether the org is in the `cloudCost` rollout. */
-	cloudCost: boolean
 	readonly urls: Array<string>
 	/** The `x-api-key` and `anthropic-version` of each call. */
 	readonly headers: Array<readonly [string | null, string | null]>
@@ -42,7 +38,6 @@ export const makeFakeAnthropic = (overrides: Partial<FakeAnthropic> = {}): FakeA
 	buckets: [],
 	endless: false,
 	repeatCursor: false,
-	cloudCost: true,
 	urls: [],
 	headers: [],
 	...overrides,
@@ -118,20 +113,7 @@ const fetchStub =
 /** Everything the Anthropic cost services need, over the fake and a test database. */
 export const fakeAnthropicDeps = (testDb: TestDb, world: FakeAnthropic) =>
 	Layer.effect(CostConnectionStore, CostConnectionStore.make).pipe(
-		Layer.provideMerge(
-			Layer.mergeAll(
-				FetchHttpClient.layer,
-				Layer.succeed(OrganizationFeatureFlagsService, {
-					flags: () =>
-						Effect.sync(() => ({
-							...DISABLED_ORGANIZATION_FEATURE_FLAGS,
-							cloudCost: world.cloudCost,
-						})),
-				}),
-				testDb.layer,
-				Env.layer,
-			),
-		),
+		Layer.provideMerge(Layer.mergeAll(FetchHttpClient.layer, testDb.layer, Env.layer)),
 		Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchStub(world))),
 		Layer.provide(fakeCostEnvConfig()),
 	)

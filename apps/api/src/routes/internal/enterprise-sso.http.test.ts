@@ -55,6 +55,7 @@ const recordingService = (calls: Array<string>) => {
 		Effect.sync(() => (calls.push(name), new ScimTokenIssued({ document, token: SCIM_TOKEN })))
 	const api: EnterpriseSsoServiceApi = {
 		get: ok("get"),
+		getSummary: ok("getSummary"),
 		addDomain: ok("addDomain"),
 		verifyDomain: ok("verifyDomain"),
 		removeDomain: ok("removeDomain"),
@@ -62,6 +63,7 @@ const recordingService = (calls: Array<string>) => {
 		updateConnection: ok("updateConnection"),
 		setEnforcement: ok("setEnforcement"),
 		deleteConnection: ok("deleteConnection"),
+		removeForDeletedOrganization: () => Effect.void,
 		createDirectory: issued("createDirectory"),
 		rotateDirectoryToken: issued("rotateDirectoryToken"),
 		setDirectoryState: ok("setDirectoryState"),
@@ -69,6 +71,7 @@ const recordingService = (calls: Array<string>) => {
 		setRoleMappings: ok("setRoleMappings"),
 		addBypassUser: ok("addBypassUser"),
 		removeBypassUser: ok("removeBypassUser"),
+		removeFormerMemberBypass: () => Effect.succeed("not_listed" as const),
 		applyDirectoryGroup: () => Effect.fail(new EnterpriseSsoUnavailableError({ message: "unused" })),
 		confirmDeprovisioned: () => Effect.succeed(true),
 	}
@@ -123,6 +126,17 @@ const makeHarness = (role: string) => {
 }
 
 describe("/internal/enterprise-sso", () => {
+	it("gives a reader without the manage permission the summary, and a manager the full settings", async () => {
+		for (const role of ["org:member", "org:analyst", "org:engineer"]) {
+			const harness = makeHarness(role)
+			expect((await harness.send("GET", "/")).status, role).toBe(200)
+			expect(harness.calls, role).toEqual(["getSummary"])
+		}
+		const admin = makeHarness("org:admin")
+		expect((await admin.send("GET", "/")).status).toBe(200)
+		expect(admin.calls).toEqual(["get"])
+	})
+
 	it("lets a member read, but refuses every write before it reaches the service or the audit log", async () => {
 		const harness = makeHarness("org:member")
 		expect((await harness.send("GET", "/")).status).toBe(200)
@@ -137,7 +151,7 @@ describe("/internal/enterprise-sso", () => {
 			const response = await harness.send(method, path, body)
 			expect(response.status, `${method} ${path}`).toBe(403)
 		}
-		expect(harness.calls).toEqual(["get"])
+		expect(harness.calls).toEqual(["getSummary"])
 		expect(harness.audited).toEqual([])
 	})
 

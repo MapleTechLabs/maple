@@ -337,7 +337,7 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 				})
 				const { installation, repository } = yield* resolveRepository(orgId, repositoryName)
 				const provider = yield* asUpstream(providers.resolve(repository.provider))
-				const files = yield* asUpstream(
+				const { files } = yield* asUpstream(
 					provider.fetchPullRequestFiles(
 						installation,
 						{

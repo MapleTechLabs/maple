@@ -1,6 +1,7 @@
 ---
-// Nucleo Pixel glyphs for the docs groups (sidebar headings + index cards). Converted from the licensed "Nucleo Pixel" set (24-grid): strokes
-// remapped to currentColor, square caps + stroke-width 2 preserve the pixel look.
+// The group glyphs use the Nucleo Pixel set; MCP uses its protocol mark.
+import { brandMark } from "../../lib/brand-marks";
+
 interface Props {
 	name: string;
 	class?: string;
@@ -252,15 +253,8 @@ const base = {
 )}
 
 {name === "MCP" && (
-	<svg class={className} {...base}>
-		<path d="M16 2V7" />
-		<path d="M8 2V7" />
-		<path d="M18 15.01V15" />
-		<path d="M6 15.01V15" />
-		<path d="M4 13V7H20V13" />
-		<path d="M10 21H14" />
-		<path d="M16 19V17" />
-		<path d="M8 19V17" />
+	<svg class={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+		<path d={brandMark("mcp").path} />
 	</svg>
 )}
 

@@ -45,7 +45,7 @@ export interface MapleUrls {
 	readonly api: string
 	readonly ingest: string
 	readonly electricSync: string
-	/** The status Worker's origin; empty where it has no domain (prd until one is bought). */
+	/** The status Worker's origin; empty where the stage has no status domain. */
 	readonly status: string
 }
 

@@ -7,7 +7,7 @@ import { makeModuleToolLookup, mcpToolTitle } from "./tool-lookup"
 import { canonicalToolName, TOOL_NAME_ALIASES } from "./tool-name-aliases"
 import type { McpToolRegistrar } from "./types"
 
-const SURFACES: ReadonlyArray<McpToolSurface> = ["mcp", "chat", "bot", "workflow", "rpc"]
+const SURFACES: ReadonlyArray<McpToolSurface> = ["mcp", "chat", "bot", "bot_anonymous", "workflow", "rpc"]
 
 const definedBy = (entry: (typeof MCP_TOOL_MODULES)[number]) =>
 	Effect.promise(entry.load).pipe(
@@ -29,10 +29,14 @@ describe("MCP_TOOL_MODULES", () => {
 		for (const entry of MCP_TOOL_MODULES) {
 			const tool = canonicalToolName(entry.name)
 			const registered = mapleToolCatalog.find((candidate) => candidate.name === tool)
-			expect({ tool: entry.tool, title: entry.title, audience: entry.audience }, entry.name).toEqual({
+			expect(
+				{ tool: entry.tool, title: entry.title, audience: entry.audience, readOnly: entry.readOnly },
+				entry.name,
+			).toEqual({
 				tool,
 				title: registered?.title,
 				audience: registered?.audience,
+				readOnly: registered?.hints.readOnly,
 			})
 		}
 	})

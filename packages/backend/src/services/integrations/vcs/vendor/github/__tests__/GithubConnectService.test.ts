@@ -1275,6 +1275,31 @@ describe("GithubConnectService", () => {
 		}).pipe(Effect.provide(connectLayer(testDb, scriptedHttp(connectResponders()), sent)))
 	})
 
+	it.effect("says whether a reviewed repository approves on its own settings", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* GithubConnectService
+			const repo = yield* VcsRepository
+			const { orgId, repository } = yield* connectedRepo(svc, repo)
+			yield* svc.setPrReviewConfig(
+				orgId,
+				repository.id,
+				new PrReviewRepositoryConfig({ autoApprove: true }),
+			)
+			// Review is off for it, so it approves nothing yet.
+			assert.isFalse(yield* svc.anyReviewedRepositoryAutoApproves(orgId))
+			yield* svc.setPrReviewEnabled(orgId, repository.id, true)
+			assert.isTrue(yield* svc.anyReviewedRepositoryAutoApproves(orgId))
+			yield* svc.setPrReviewConfig(
+				orgId,
+				repository.id,
+				new PrReviewRepositoryConfig({ autoApprove: false }),
+			)
+			assert.isFalse(yield* svc.anyReviewedRepositoryAutoApproves(orgId))
+		}).pipe(Effect.provide(connectLayer(testDb, scriptedHttp(connectResponders()), sent)))
+	})
+
 	it.effect("stores the organization's review model and clears it back to the default", () => {
 		const testDb = createTestDb(trackedDbs)
 		const sent: Array<VcsSyncJob> = []

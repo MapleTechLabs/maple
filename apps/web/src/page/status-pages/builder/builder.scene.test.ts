@@ -15,6 +15,7 @@ import {
 	tap,
 	text,
 	withViewInputs,
+	within,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -22,12 +23,15 @@ import { PageOutMessage, type PageContext } from "../../contract"
 import { ORG } from "../../kit/alert-test-rows"
 import { downMonitor, heartbeatMonitor, httpMonitor, monitorId } from "../../kit/uptime/test-monitors"
 import { statusPageHref } from "../shared/commands"
+import * as Dialog from "@maple/views/ui/dialog"
+import { MountDialog } from "@maple/views/ui/dialog"
+import * as Combobox from "@maple/views/ui/combobox"
+import { groupPickerValue } from "../shared/group-picker"
 import { monitorKey, PickerMessage } from "../shared/picker"
 import { statusPage } from "../shared/test-pages"
-import { FocusNewRow } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { init, previewDraft as BuilderUpdatePreviewDraft, update } from "./update"
+import { init, orderedRows, previewDraft as BuilderUpdatePreviewDraft, update } from "./update"
 import { view as builderView } from "./view"
 
 const ENGINEER = Policy.grantsOf(["org:engineer"])
@@ -39,7 +43,8 @@ const builderUpdate = (model: Model, message: Message) => update(model, message,
 const view = withViewInputs(builderView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	Arr.map(commands ?? [], ({ name }) => name)
-const picker = (message: PickerMessage) => Message.GotPickerMessage({ message })
+const addPicker = (message: PickerMessage) => Message.GotAddPickerMessage({ message })
+const group = (message: Combobox.Message) => Message.GotGroupPickerMessage({ message })
 
 const tcpMonitor = () =>
 	httpMonitor({
@@ -71,29 +76,56 @@ const named = (model: Model, name = "Acme Status") =>
 describe("status page builder", () => {
 	test("a small org starts with every monitor on the page except heartbeats", () => {
 		const model = withMonitors([httpMonitor(), downMonitor(), tcpMonitor(), heartbeatMonitor()])
-		expect(Arr.map(model.picker.rows, (row) => [row.name, row.isChecked])).toEqual([
-			["checkout-api", true],
-			["payments-api", true],
-			["postgres", true],
-			["nightly-billing-export", false],
+		expect(Arr.map(model.rows, (row) => row.form.name)).toEqual([
+			"checkout-api",
+			"payments-api",
+			"postgres",
 		])
 		scene(
 			{ update: builderUpdate, view },
 			given(model),
-			expectView(text("api.acme.dev/checkout/health")).toExist(),
-			expectView(text("db.acme.dev:5432")).toExist(),
-			expectView(text("heartbeat")).toExist(),
-			expectView(
-				role("checkbox", { name: "Show nightly-billing-export on the page" }),
-			).not.toBeChecked(),
+			expectView(role("button", { name: /^checkout-api/u })).toHaveAttr("aria-expanded", "false"),
+			expectView(text("Monitor: postgres")).toExist(),
+			expectView(text("nightly-billing-export")).not.toExist(),
 		)
 	})
 
-	test("past eight monitors nothing starts checked", () => {
+	test("past eight monitors the page starts empty, and the monitors are added from the sheet", () => {
 		const many = Array.from({ length: 9 }, (_, index) =>
 			httpMonitor({ id: monitorId(index), name: `m${index}` }),
 		)
-		expect(Arr.some(withMonitors(many).picker.rows, (row) => row.isChecked)).toBe(false)
+		const model = withMonitors(many)
+		expect(model.rows).toEqual([])
+		scene(
+			{ update: builderUpdate, view },
+			given(model),
+			expectView(
+				text(
+					"Nothing yet. Add your monitors, a URL for Maple to check, or a component you update yourself.",
+				),
+			).toExist(),
+		)
+		const opened = builderUpdate(model, Message.ClickedAddComponents()).model
+		expect(opened.addSheet.isOpen).toBe(true)
+		expect(Arr.some(opened.addPicker.rows, (row) => row.isChecked)).toBe(false)
+		const added = Arr.reduce(
+			[
+				addPicker(PickerMessage.ToggledRow({ key: monitorKey(monitorId(2)) })),
+				Message.ClickedSubmitAdd(),
+			],
+			opened,
+			(current, message) => builderUpdate(current, message).model,
+		)
+		expect(Arr.map(added.rows, (row) => row.form.name)).toEqual(["m2"])
+		expect(added.addSheet.isOpen).toBe(false)
+	})
+
+	test("the sheet offers only the monitors not on the page yet", () => {
+		const opened = builderUpdate(
+			withMonitors([httpMonitor(), downMonitor(), heartbeatMonitor()]),
+			Message.ClickedAddComponents(),
+		).model
+		expect(Arr.map(opened.addPicker.rows, (row) => row.name)).toEqual(["nightly-billing-export"])
 	})
 
 	test("the address follows the name until it is typed", () => {
@@ -115,39 +147,126 @@ describe("status page builder", () => {
 		)
 	})
 
-	test("a checked row renames inline and moves among the checked rows", () => {
+	test("a row opens in place with its fields, renames, and moves within its group", () => {
 		const model = withMonitors([httpMonitor(), downMonitor(), tcpMonitor()])
+		const key = monitorKey(downMonitor().id)
+		const opened = builderUpdate(model, Message.ClickedRow({ key })).model
 		const renamed = builderUpdate(
-			model,
-			picker(PickerMessage.ChangedRowName({ key: monitorKey(downMonitor().id), value: "Payments" })),
+			opened,
+			Message.ChangedRowField({ field: "name", value: "Payments" }),
 		).model
-		const movedUp = builderUpdate(
-			renamed,
-			picker(PickerMessage.ClickedMoveRow({ key: monitorKey(downMonitor().id), offset: -1 })),
-		).model
-		expect(Arr.map(movedUp.picker.rows, (row) => row.name)).toEqual([
+		const movedUp = builderUpdate(renamed, Message.PressedMoveRow({ key, offset: -1 }))
+		expect(names(movedUp.commands)).toContain("FocusStatusPageBuilderField")
+		expect(Arr.map(movedUp.model.rows, (row) => row.form.name)).toEqual([
 			"Payments",
 			"checkout-api",
 			"postgres",
 		])
 		scene(
 			{ update: builderUpdate, view },
-			given(movedUp),
-			expectView(role("button", { name: "Move Payments up" })).toBeDisabled(),
-			expectView(role("button", { name: "Move postgres down" })).toBeDisabled(),
-			expectView(role("textbox", { name: "Shown as, payments-api" })).toHaveValue("Payments"),
+			given(movedUp.model),
+			expectView(role("button", { name: /^Payments/u })).toHaveAttr("aria-expanded", "true"),
+			expectView(role("textbox", { name: "Shown as" })).toHaveValue("Payments"),
+			expectView(role("button", { name: "Reorder Payments" })).toExist(),
 		)
+		const dropped = builderUpdate(
+			movedUp.model,
+			Message.DroppedRow({ key: monitorKey(tcpMonitor().id), index: 0 }),
+		).model
+		expect(Arr.map(dropped.rows, (row) => row.form.name)).toEqual([
+			"postgres",
+			"Payments",
+			"checkout-api",
+		])
 	})
 
-	test("a pasted URL becomes an HTTP monitor, then a checked component", () => {
-		const opened = builderUpdate(
-			withMonitors([httpMonitor()]),
-			picker(PickerMessage.ClickedOpenUrl()),
+	test("Group is created from the dropdown or picked from the page's groups, and the page lists each group together", () => {
+		const model = named(withMonitors([httpMonitor(), downMonitor(), tcpMonitor()]))
+		const grouped = Arr.reduce(
+			[
+				Message.ClickedRow({ key: monitorKey(httpMonitor().id) }),
+				group(Combobox.Message.ClickedTriggerOf({ items: [] })),
+				group(Combobox.Message.ChangedInput({ value: " Core " })),
+				group(Combobox.Message.ClickedItem({ value: groupPickerValue.create("Core") })),
+				Message.ClickedRow({ key: monitorKey(tcpMonitor().id) }),
+				group(Combobox.Message.ClickedTriggerOf({ items: [] })),
+			],
+			model,
+			(current, message) => builderUpdate(current, message).model,
+		)
+		scene(
+			{ update: builderUpdate, view },
+			given(grouped),
+			Mount.resolve(Combobox.MountCombobox, Combobox.Message.CompletedMountCombobox()),
+			expectView(role("option", { name: "Core" })).toExist(),
+			expectView(role("option", { name: "No group" })).toExist(),
+		)
+		const picked = builderUpdate(
+			grouped,
+			group(Combobox.Message.ClickedItem({ value: groupPickerValue.group("Core") })),
 		).model
-		const typed = builderUpdate(opened, picker(PickerMessage.ChangedUrl({ value: "api.acme.com" }))).model
-		const creating = builderUpdate(typed, picker(PickerMessage.SubmittedUrl()))
+		expect(picked.groupPicker.isOpen).toBe(false)
+		expect(builderUpdate(picked, Message.ClickedSubmit({ mode: "publish" })).commands).toMatchObject([
+			{
+				name: "CreateStatusPage",
+				args: {
+					payload: {
+						components: [
+							{ name: "checkout-api", group: "Core" },
+							{ name: "postgres", group: "Core" },
+							{ name: "payments-api", group: null },
+						],
+					},
+				},
+			},
+		])
+	})
+
+	test("a group moves with its rows among the groups, and the page lists them in that order", () => {
+		const grouped = Arr.reduce(
+			[
+				Message.ClickedRow({ key: monitorKey(downMonitor().id) }),
+				group(Combobox.Message.ClickedItem({ value: groupPickerValue.create("Payments") })),
+				Message.DroppedGroup({ group: "Payments", index: 0 }),
+			],
+			named(withMonitors([httpMonitor(), downMonitor(), tcpMonitor()])),
+			(current, message) => builderUpdate(current, message).model,
+		)
+		expect(Arr.map(orderedRows(grouped), (row) => row.form.name)).toEqual([
+			"payments-api",
+			"checkout-api",
+			"postgres",
+		])
+		const nudged = builderUpdate(grouped, Message.PressedMoveGroup({ group: "Payments", offset: 1 }))
+		expect(names(nudged.commands)).toContain("FocusStatusPageBuilderField")
+		expect(Arr.map(orderedRows(nudged.model), (row) => row.form.name)).toEqual([
+			"checkout-api",
+			"postgres",
+			"payments-api",
+		])
+	})
+
+	test("Remove from page takes the row off", () => {
+		const model = withMonitors([httpMonitor(), downMonitor()])
+		const removed = builderUpdate(
+			model,
+			Message.ClickedRemoveRow({ key: monitorKey(httpMonitor().id) }),
+		).model
+		expect(Arr.map(removed.rows, (row) => row.form.name)).toEqual(["payments-api"])
+	})
+
+	test("a pasted URL becomes an HTTP monitor, then a component on the page", () => {
+		const opened = Arr.reduce(
+			[Message.ClickedAddComponents(), addPicker(PickerMessage.ClickedOpenUrl())],
+			withMonitors([httpMonitor()]),
+			(current, message) => builderUpdate(current, message).model,
+		)
+		const typed = builderUpdate(
+			opened,
+			addPicker(PickerMessage.ChangedUrl({ value: "api.acme.com" })),
+		).model
+		const creating = builderUpdate(typed, addPicker(PickerMessage.SubmittedUrl()))
 		expect(creating.commands).toMatchObject([
-			{ name: "WaitStatusPageBuilderPreview" },
 			{ name: "CreateStatusPageMonitor", args: { url: "https://api.acme.com" } },
 		])
 		const monitor = httpMonitor({ id: monitorId(8), name: "api.acme.com" })
@@ -155,49 +274,66 @@ describe("status page builder", () => {
 			creating.model,
 			Message.CompletedCreateMonitor({ result: Result.succeed(monitor) }),
 		)
-		const created = answered.model
-		expect(created.picker.rows.at(-1)).toMatchObject({ monitorId: monitor.id, isChecked: true })
-		expect(created.picker.url).toBe("")
+		expect(answered.model.rows.at(-1)?.form).toMatchObject({
+			name: "api.acme.com",
+			monitorId: monitor.id,
+		})
+		expect(answered.model.addSheet.isOpen).toBe(false)
 		expect(answered.commands).toContainEqual(
 			expect.objectContaining({ name: "TrackStatusPageMonitorCreated", args: { kind: "http" } }),
 		)
 	})
 
 	test("a URL the uptime form would refuse is refused here, without a create", () => {
-		const opened = builderUpdate(
+		const typed = Arr.reduce(
+			[
+				Message.ClickedAddComponents(),
+				addPicker(PickerMessage.ClickedOpenUrl()),
+				addPicker(PickerMessage.ChangedUrl({ value: "http://localhost:3000" })),
+			],
 			withMonitors([httpMonitor()]),
-			picker(PickerMessage.ClickedOpenUrl()),
-		).model
-		const typed = builderUpdate(
-			opened,
-			picker(PickerMessage.ChangedUrl({ value: "http://localhost:3000" })),
-		).model
-		const refused = builderUpdate(typed, picker(PickerMessage.SubmittedUrl()))
+			(current, message) => builderUpdate(current, message).model,
+		)
+		const refused = builderUpdate(typed, addPicker(PickerMessage.SubmittedUrl()))
 		expect(names(refused.commands)).not.toContain("CreateStatusPageMonitor")
-		expect(refused.model.picker.urlIssue).not.toBeNull()
+		expect(refused.model.addPicker.urlIssue).not.toBeNull()
 	})
 
-	test("with no monitors, the URL field and the add-by-hand row are the way in", () => {
+	test("with no monitors, the sheet opens on the URL field and says what each way of adding does", () => {
+		const model = withMonitors([])
 		scene(
 			{ update: builderUpdate, view },
-			given(withMonitors([])),
-			expectView(text("Paste a URL to monitor, or add a component you'll update by hand.")).toExist(),
+			given(model),
+			expectView(
+				text("Nothing yet. Add a URL for Maple to check, or a component you update yourself."),
+			).toExist(),
+		)
+		scene(
+			{ update: builderUpdate, view },
+			given(builderUpdate(model, Message.ClickedAddComponents()).model),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
 			expectView(role("textbox", { name: "URL to monitor" })).toExist(),
 			expectView(role("button", { name: "Add a component without a monitor" })).toExist(),
+			expectView(text(/^For what Maple can't check/u)).toExist(),
 		)
 	})
 
 	test("a component without a monitor gets a name and a manual status, and its name field focus", () => {
-		const adding = builderUpdate(withMonitors([]), picker(PickerMessage.ClickedAddManual()))
-		const row = adding.model.picker.rows[0]
-		expect(adding.model.picker.autofocusKey).toBe(row?.key)
+		const adding = Arr.reduce(
+			[Message.ClickedAddComponents(), addPicker(PickerMessage.ClickedAddManual())],
+			named(withMonitors([])),
+			(current, message) => builderUpdate(current, message).model,
+		)
+		const key = adding.addPicker.autofocusKey ?? ""
+		expect(key).not.toBe("")
 		const filled = Arr.reduce(
 			[
-				picker(PickerMessage.ChangedRowName({ key: row?.key ?? "", value: "Docs" })),
-				picker(PickerMessage.PickedRowStatus({ key: row?.key ?? "", value: "degraded" })),
+				addPicker(PickerMessage.ChangedRowName({ key, value: "Docs" })),
+				addPicker(PickerMessage.PickedRowStatus({ key, value: "degraded" })),
+				Message.ClickedSubmitAdd(),
 			],
-			named(adding.model),
-			(model, message) => builderUpdate(model, message).model,
+			adding,
+			(current, message) => builderUpdate(current, message).model,
 		)
 		expect(builderUpdate(filled, Message.ClickedSubmit({ mode: "publish" })).commands).toMatchObject([
 			{
@@ -214,50 +350,52 @@ describe("status page builder", () => {
 	})
 
 	test("an unnamed component never reaches a request: the preview leaves it out and Publish waits", () => {
-		const added = builderUpdate(
-			named(withMonitors([httpMonitor()])),
-			picker(PickerMessage.ClickedAddManual()),
+		const cleared = Arr.reduce(
+			[
+				Message.ClickedRow({ key: monitorKey(downMonitor().id) }),
+				Message.ChangedRowField({ field: "name", value: " " }),
+			],
+			named(withMonitors([httpMonitor(), downMonitor()])),
+			(current, message) => builderUpdate(current, message).model,
 		)
-		const generation = added.model.previewGeneration
-		const fetching = builderUpdate(added.model, Message.ElapsedPreviewDebounce({ generation }))
-		const [command] = fetching.commands ?? []
-		expect(command).toMatchObject({ name: "FetchStatusPagePreview" })
-		const draft = BuilderUpdatePreviewDraft(added.model)
+		const draft = BuilderUpdatePreviewDraft(cleared)
 		expect(Arr.map(draft.components, (component) => component.monitor_id)).toEqual([httpMonitor().id])
 		// The args must encode: a blank name would fail the schema and crash the app.
 		expect(Schema.encodeSync(StatusPagePreviewParams)(draft).components).toHaveLength(1)
 		scene(
 			{ update: builderUpdate, view },
-			given(added.model),
-			Mount.resolve(FocusNewRow, Message.CompletedFocus()),
-			expectView(text("Name this component")).toExist(),
+			given(cleared),
+			expectView(text("Add a name.")).toExist(),
 			expectView(role("button", { name: "Publish page" })).toBeDisabled(),
 		)
 	})
 
 	test("keys pressed before the new row's input takes focus land in that row, not nowhere", () => {
-		const added = builderUpdate(withMonitors([]), picker(PickerMessage.ClickedAddManual())).model
-		const key = added.picker.autofocusKey ?? ""
+		const added = Arr.reduce(
+			[Message.ClickedAddComponents(), addPicker(PickerMessage.ClickedAddManual())],
+			withMonitors([]),
+			(current, message) => builderUpdate(current, message).model,
+		)
+		const key = added.addPicker.autofocusKey ?? ""
 		const typed = Arr.reduce(
 			[
-				picker(PickerMessage.PressedKeyOnAdd({ key: "W" })),
-				picker(PickerMessage.PressedKeyOnAdd({ key: "Enter" })),
-				picker(PickerMessage.ChangedRowName({ key, value: "Website" })),
-				picker(PickerMessage.PressedKeyOnAdd({ key: "x" })),
+				addPicker(PickerMessage.PressedKeyOnAdd({ key: "W" })),
+				addPicker(PickerMessage.PressedKeyOnAdd({ key: "Enter" })),
+				addPicker(PickerMessage.ChangedRowName({ key, value: "Website" })),
+				addPicker(PickerMessage.PressedKeyOnAdd({ key: "x" })),
 			],
 			added,
 			(model, message) => builderUpdate(model, message).model,
 		)
-		expect(Arr.map(typed.picker.rows, (row) => row.name)).toEqual(["Website"])
-		const routed = builderUpdate(added, picker(PickerMessage.PressedKeyOnAdd({ key: "W" }))).model
-		expect(routed.picker.rows[0]?.name).toBe("W")
+		expect(Arr.map(typed.addPicker.rows, (row) => row.name)).toEqual(["Website"])
 	})
 
 	test("a plan or URL error clears once a component is added another way", () => {
-		const opened = builderUpdate(
+		const opened = Arr.reduce(
+			[Message.ClickedAddComponents(), addPicker(PickerMessage.ClickedOpenUrl())],
 			withMonitors([httpMonitor()]),
-			picker(PickerMessage.ClickedOpenUrl()),
-		).model
+			(current, message) => builderUpdate(current, message).model,
+		)
 		const failed = builderUpdate(
 			opened,
 			Message.CompletedCreateMonitor({
@@ -266,10 +404,94 @@ describe("status page builder", () => {
 				),
 			}),
 		).model
-		expect(failed.picker.urlIssue).not.toBeNull()
+		expect(failed.addPicker.urlIssue).not.toBeNull()
 		expect(
-			builderUpdate(failed, picker(PickerMessage.ClickedAddManual())).model.picker.urlIssue,
+			builderUpdate(failed, addPicker(PickerMessage.ClickedAddManual())).model.addPicker.urlIssue,
 		).toBeNull()
+	})
+
+	test("a custom domain is optional, checked as typed, and blocks the create while it is invalid", () => {
+		const model = named(withMonitors([httpMonitor()]))
+		scene(
+			{ update: builderUpdate, view },
+			given(model),
+			expectView(role("textbox", { name: "Domain" })).toHaveValue(""),
+			expectView(text(/^Pick a subdomain you own/u)).toExist(),
+			expectView(role("button", { name: "Publish page" })).toBeEnabled(),
+		)
+		const apex = builderUpdate(model, Message.ChangedCustomDomain({ value: "acme.com" })).model
+		scene(
+			{ update: builderUpdate, view },
+			given(apex),
+			expectView(
+				text("Use a subdomain, like status.acme.com: an apex domain cannot point at Maple."),
+			).toExist(),
+			expectView(role("button", { name: "Publish page" })).toBeDisabled(),
+		)
+	})
+
+	test("with a custom domain, the page is created, the domain set, and the page opens on its DNS records", () => {
+		const model = builderUpdate(
+			named(withMonitors([httpMonitor()])),
+			Message.ChangedCustomDomain({ value: " Status.Acme.com " }),
+		).model
+		const page = statusPage()
+		const created = builderUpdate(
+			builderUpdate(model, Message.ClickedSubmit({ mode: "publish" })).model,
+			Message.CompletedCreate({ mode: "publish", result: Result.succeed(page) }),
+		)
+		expect(created.outMessage).toBeUndefined()
+		expect(created.model.submitting).toBe("publish")
+		expect(created.commands).toMatchObject([
+			{ name: "TrackStatusPageCreated" },
+			{ name: "SetStatusPageBuilderCustomDomain", args: { hostname: "status.acme.com" } },
+		])
+		const domain = {
+			object: "status_page_custom_domain" as const,
+			page_id: page.id,
+			available: true,
+			cname_target: "status-domains.maple.dev",
+			hostname: "status.acme.com",
+			status: "pending_dns" as const,
+			dns_records: [],
+			last_error: null,
+			last_checked_at: null,
+			activated_at: null,
+			created_at: null,
+		}
+		expect(
+			builderUpdate(
+				created.model,
+				Message.CompletedSetCustomDomain({ page, result: Result.succeed(domain) }),
+			).outMessage,
+		).toMatchObject({
+			_tag: "RequestedNavigation",
+			url: statusPageHref(page.id, "settings", "basic"),
+			toast: { type: "success" },
+		})
+		expect(
+			builderUpdate(
+				created.model,
+				Message.CompletedSetCustomDomain({
+					page,
+					result: Result.fail(toLoadFailure(new Error("Custom domains are unavailable"))),
+				}),
+			).outMessage,
+		).toMatchObject({
+			_tag: "RequestedNavigation",
+			url: statusPageHref(page.id, "settings", "basic"),
+			toast: { type: "error", title: "Acme Status created, but its custom domain wasn't set" },
+		})
+	})
+
+	test("Cancel sits in the publish bar beside the two ways to save, back to the list", () => {
+		scene(
+			{ update: builderUpdate, view },
+			given(named(withMonitors([httpMonitor()]))),
+			expectView(
+				within(role("region", { name: "Publish" }), role("link", { name: "Cancel" })),
+			).toHaveAttr("href", "/status-pages"),
+		)
 	})
 
 	test("a taken address shows next to the field and blocks publishing until it changes", () => {
@@ -401,10 +623,10 @@ describe("status page builder", () => {
 		scene(
 			{ update: builderUpdate, view },
 			given(dark.model),
-			expectView(selector("iframe")).toHaveAttr("sandbox", "allow-scripts"),
+			expectView(selector("maple-preview-frame")).toHaveAttr("sandbox", "allow-scripts"),
 			tap(({ html }) => {
 				const srcdoc = Option.getOrElse(
-					Option.flatMap(find("iframe")(html), attr("srcdoc")),
+					Option.flatMap(find("maple-preview-frame")(html), attr("srcdoc")),
 					() => "",
 				)
 				expect(srcdoc).toContain("Acme Cloud")

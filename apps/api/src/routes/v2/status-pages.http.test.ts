@@ -36,8 +36,12 @@ import { StatusPagesService } from "@maple/backend/services/status-pages/StatusP
 import { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
 import { CloudflareCustomHostnames } from "@maple/backend/services/status-pages/CloudflareCustomHostnames"
 import { StatusPageCustomDomainsService } from "@maple/backend/services/status-pages/StatusPageCustomDomainsService"
+import { DnsTxtResolver } from "@maple/backend/platform/DnsTxtResolver"
 
-/** Custom domains over the Cloudflare test double; `cnameTarget: null` is a deployment without them. */
+/**
+ * Custom domains over the Cloudflare test double, with no ownership record published in DNS;
+ * `cnameTarget: null` is a deployment without them.
+ */
 const customDomainsLayer = (cnameTarget: string | null = "status-domains.maple.test") =>
 	Layer.effect(StatusPageCustomDomainsService, StatusPageCustomDomainsService.make).pipe(
 		Layer.provide(
@@ -48,6 +52,7 @@ const customDomainsLayer = (cnameTarget: string | null = "status-domains.maple.t
 				),
 			),
 		),
+		Layer.provide(Layer.succeed(DnsTxtResolver, { lookupTxt: () => Effect.succeed([]) })),
 	)
 
 /** `/v2/status_pages` and `/v2/status_page_incidents` over an embedded PGlite with the real service. */
@@ -1061,6 +1066,12 @@ describe("v2 status pages", () => {
 					value: "status-domains.maple.test",
 					purpose: "routing",
 				})
+				expect(set.body.dns_records[1]).toMatchObject({
+					type: "TXT",
+					name: "_maple-challenge.status.acme.com",
+					purpose: "ownership",
+				})
+				expect(set.body.dns_records[1].value).toMatch(/^maple-status-page=[0-9a-f]{32}$/)
 				const read = await harness.request("GET", `/v2/status_pages/${id}/custom_domain`, token)
 				expect(read.body).toEqual(set.body)
 
@@ -1126,6 +1137,8 @@ describe("v2 status pages", () => {
 				)
 				expect(taken.status).toBe(409)
 				expect(taken.body.error.code).toBe("status_page_custom_domain_taken")
+				// The first page never proved the hostname, so the answer names the record that claims it.
+				expect(taken.body.error.message).toContain("_maple-challenge.status.acme.com")
 			}))
 
 		it("lets members read the domain but not change it", () =>

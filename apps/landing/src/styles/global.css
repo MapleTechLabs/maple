@@ -21,6 +21,10 @@
 @source "../../../../packages/views/src/service-map/{trace-flow,xyflow}";
 @source "../../../../packages/views/src/traces";
 @source "../../../../packages/views/src/ui/{tooltip,button,display,empty,middle-truncate,pressable,tone-box}.ts";
+/* The kit pieces and the bar chart the cost explorer islands render. */
+@source "../../../../packages/views/src/charts/{bar-chart,timeseries-legend}.ts";
+@source "../../../../packages/views/src/ui/{table,segmented-select,toggle,delta,swatch,stat-figure,panel,meter,truncated-text,icon-button,eyebrow,info-hint}.ts";
+@source "../../../../packages/views/src/ui/filters/active-filter-chips.ts";
 
 /* Landing-only tokens — marketing surfaces, not part of the shared system. */
 :root {

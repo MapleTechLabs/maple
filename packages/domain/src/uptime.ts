@@ -28,14 +28,6 @@ export const UptimeAssertion = Schema.Union([
 ])
 export type UptimeAssertion = Schema.Schema.Type<typeof UptimeAssertion>
 
-export const UptimeHttpConfig = Schema.TaggedStruct("http", {
-	url: NonEmpty,
-	method: UptimeHttpMethod,
-	headers: Schema.Record(Schema.String, Schema.String),
-	body: Schema.optionalKey(Schema.String),
-	assertions: Schema.Array(UptimeAssertion),
-	timeoutMs: TimeoutMs,
-})
 export const UptimeTcpConfig = Schema.TaggedStruct("tcp", {
 	host: NonEmpty,
 	port: Port,
@@ -66,18 +58,6 @@ export const UptimeExtraction = Schema.Struct({
 })
 export type UptimeExtraction = Schema.Schema.Type<typeof UptimeExtraction>
 
-export const UptimeStep = Schema.Struct({
-	name: NonEmpty,
-	method: UptimeStepMethod,
-	/** May use `{{name}}` for a variable an earlier step extracted, in the URL, headers and body. */
-	url: NonEmpty,
-	headers: Schema.Record(Schema.String, Schema.String),
-	body: Schema.optionalKey(Schema.String),
-	assertions: Schema.Array(UptimeAssertion),
-	extract: Schema.Array(UptimeExtraction),
-})
-export type UptimeStep = Schema.Schema.Type<typeof UptimeStep>
-
 /** Most steps one multi-step check runs. */
 export const UPTIME_MAX_STEPS = 10
 /** The whole run's budget: every step shares it. */
@@ -86,10 +66,85 @@ const MultiStepTimeoutMs = Schema.Number.check(
 	Schema.isBetween({ minimum: 1000, maximum: 60000 }),
 )
 
-export const UptimeMultiStepConfig = Schema.TaggedStruct("multistep", {
-	steps: Schema.Array(UptimeStep).check(Schema.isMinLength(1), Schema.isMaxLength(UPTIME_MAX_STEPS)),
-	timeoutMs: MultiStepTimeoutMs,
-})
+/** Largest request body a check sends, in characters (64 KB). */
+export const UPTIME_MAX_BODY_LENGTH = 64 * 1024
+/** Longest URL a check requests, in characters. */
+export const UPTIME_MAX_URL_LENGTH = 2048
+/** Most request headers one request carries. */
+export const UPTIME_MAX_HEADERS = 50
+export const UPTIME_MAX_HEADER_NAME_LENGTH = 256
+/** Longest header value, in characters (8 KB). */
+export const UPTIME_MAX_HEADER_VALUE_LENGTH = 8 * 1024
+/** Most assertions one request is judged by. */
+export const UPTIME_MAX_ASSERTIONS = 20
+/** Most variables one step extracts. */
+export const UPTIME_MAX_EXTRACTIONS = 20
+export const UPTIME_MAX_STEP_NAME_LENGTH = 200
+/** Longest value a step may extract into a variable, in characters (4 KB). */
+export const UPTIME_MAX_VARIABLE_LENGTH = 4 * 1024
+/** Longest failure sentence a check reports. */
+export const UPTIME_MAX_ERROR_LENGTH = 500
+
+/** A record schema's check that no key is longer than `maximum`: a key schema's own checks are not run. */
+export const uptimeHeaderNamesWithin = (maximum: number) =>
+	Schema.makeFilter(
+		(headers: Readonly<Record<string, string>>) =>
+			Arr.every(Rec.keys(headers), (name) => name.length <= maximum),
+		{ expected: `header names of at most ${maximum} characters` },
+	)
+
+/**
+ * The schemas of what a check sends. `limited` adds the size limits new input must meet; without
+ * them the same shapes read rows stored before the limits existed.
+ */
+const requestSchemas = (limited: boolean) => {
+	const text = (maximum: number) =>
+		limited ? Schema.String.check(Schema.isMaxLength(maximum)) : Schema.String
+	const url = limited ? NonEmpty.check(Schema.isMaxLength(UPTIME_MAX_URL_LENGTH)) : NonEmpty
+	const headers = limited
+		? Schema.Record(Schema.String, text(UPTIME_MAX_HEADER_VALUE_LENGTH)).check(
+				Schema.isMaxProperties(UPTIME_MAX_HEADERS),
+				uptimeHeaderNamesWithin(UPTIME_MAX_HEADER_NAME_LENGTH),
+			)
+		: Schema.Record(Schema.String, Schema.String)
+	const body = Schema.optionalKey(text(UPTIME_MAX_BODY_LENGTH))
+	const assertions = limited
+		? Schema.Array(UptimeAssertion).check(Schema.isMaxLength(UPTIME_MAX_ASSERTIONS))
+		: Schema.Array(UptimeAssertion)
+	const http = Schema.TaggedStruct("http", {
+		url,
+		method: UptimeHttpMethod,
+		headers,
+		body,
+		assertions,
+		timeoutMs: TimeoutMs,
+	})
+	const step = Schema.Struct({
+		name: limited ? NonEmpty.check(Schema.isMaxLength(UPTIME_MAX_STEP_NAME_LENGTH)) : NonEmpty,
+		method: UptimeStepMethod,
+		/** May use `{{name}}` for a variable an earlier step extracted, in the URL, headers and body. */
+		url,
+		headers,
+		body,
+		assertions,
+		extract: limited
+			? Schema.Array(UptimeExtraction).check(Schema.isMaxLength(UPTIME_MAX_EXTRACTIONS))
+			: Schema.Array(UptimeExtraction),
+	})
+	const multistep = Schema.TaggedStruct("multistep", {
+		steps: Schema.Array(step).check(Schema.isMinLength(1), Schema.isMaxLength(UPTIME_MAX_STEPS)),
+		timeoutMs: MultiStepTimeoutMs,
+	})
+	return { http, step, multistep }
+}
+
+const limitedRequests = requestSchemas(true)
+const storedRequests = requestSchemas(false)
+
+export const UptimeHttpConfig = limitedRequests.http
+export const UptimeStep = limitedRequests.step
+export type UptimeStep = Schema.Schema.Type<typeof UptimeStep>
+export const UptimeMultiStepConfig = limitedRequests.multistep
 export type UptimeMultiStepConfig = Schema.Schema.Type<typeof UptimeMultiStepConfig>
 
 export const UptimeHeartbeatSchedule = Schema.Union([
@@ -105,8 +160,9 @@ export const UptimeHeartbeatConfig = Schema.TaggedStruct("heartbeat", {
 })
 
 /**
- * What a caller without write access sees in place of an HTTP check's header value. Sent back
- * on update, it keeps the stored value, so a round-tripped redacted config wipes nothing.
+ * What a caller without write access sees in place of a check's header value, request body or
+ * URL query value. A header value or body sent back as this on update keeps the stored one, so
+ * a round-tripped redacted config wipes nothing.
  */
 export const UPTIME_REDACTED_HEADER_VALUE = "[redacted]"
 
@@ -119,6 +175,17 @@ export const UptimeMonitorConfig = Schema.Union([
 	UptimeHeartbeatConfig,
 ])
 export type UptimeMonitorConfig = Schema.Schema.Type<typeof UptimeMonitorConfig>
+/**
+ * The config as a row holds it: the same shapes without the size limits, so a monitor saved
+ * before them still reads. New input is checked against `UptimeMonitorConfig`.
+ */
+export const StoredUptimeMonitorConfig = Schema.Union([
+	storedRequests.http,
+	UptimeTcpConfig,
+	UptimeDnsConfig,
+	storedRequests.multistep,
+	UptimeHeartbeatConfig,
+])
 export type UptimeProbeConfig = Exclude<UptimeMonitorConfig, { readonly _tag: "heartbeat" }>
 
 /** One check in the per-monitor recent ring (newest last). */
@@ -267,6 +334,15 @@ const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 const jsonText = (value: unknown): string => (typeof value === "string" ? value : encodeJson(value))
 
+/** What a failure sentence quotes of a value the target sent: its start, never all of a long one. */
+const QUOTED_VALUE_LENGTH = 100
+const quoted = (value: string): string =>
+	value.length <= QUOTED_VALUE_LENGTH ? value : `${Str.slice(0, QUOTED_VALUE_LENGTH)(value)}...`
+
+/** A check's failure sentence at the length a report and the monitor's state keep. */
+export const capCheckError = (error: string): string =>
+	error.length <= UPTIME_MAX_ERROR_LENGTH ? error : `${Str.slice(0, UPTIME_MAX_ERROR_LENGTH - 3)(error)}...`
+
 const parseJson = (body: string | null): Option.Option<unknown> =>
 	body === null ? Option.none() : Option.liftThrowable(JSON.parse)(body)
 
@@ -307,7 +383,7 @@ export const firstFailedAssertion = (
 				const actual = jsonText(read.value)
 				return actual === assertion.value
 					? []
-					: [`JSON path ${assertion.path} is ${actual}, expected ${assertion.value}`]
+					: [`JSON path ${assertion.path} is ${quoted(actual)}, expected ${assertion.value}`]
 			}
 			case "header": {
 				const actual = observed.headers[Str.toLowerCase(assertion.name)]
@@ -317,11 +393,14 @@ export const firstFailedAssertion = (
 				const ok = assertion.op === "equals" ? actual === expected : Str.includes(expected)(actual)
 				return ok
 					? []
-					: [`Header ${assertion.name} is "${actual}", expected ${assertion.op} "${expected}"`]
+					: [
+							`Header ${assertion.name} is "${quoted(actual)}", expected ${assertion.op} "${expected}"`,
+						]
 			}
 		}
 	})
-	return failures[0] ?? null
+	const first = failures[0]
+	return first === undefined ? null : capCheckError(first)
 }
 
 /** `service.name` of the spans the scraper exports per check; the service map drops it. */
@@ -497,6 +576,91 @@ export const interpolate = (
 	)
 }
 
+/** Why a template could not be filled: a variable with no value, or a result past the length allowed. */
+export type InterpolationFailure =
+	| { readonly _tag: "missing"; readonly name: string }
+	| { readonly _tag: "too_long" }
+
+/**
+ * `interpolate`, refusing a result longer than `maximum`. The length is summed from the parts
+ * first, so an oversized result is never built.
+ */
+export const interpolateWithin = (
+	template: string,
+	variables: Readonly<Record<string, string>>,
+	maximum: number,
+): Result.Result<string, InterpolationFailure> => {
+	const missing = Arr.findFirst(variablesIn(template), (name) => !Rec.has(variables, name))
+	if (Option.isSome(missing)) return Result.fail({ _tag: "missing", name: missing.value })
+	const parts = Arr.map(Str.split(template, VARIABLE_PART), (part, index) =>
+		index % 2 === 1 ? (variables[part] ?? "") : part,
+	)
+	const length = Arr.reduce(parts, 0, (total, part) => total + part.length)
+	return length > maximum ? Result.fail({ _tag: "too_long" }) : Result.succeed(Arr.join(parts, ""))
+}
+
+const URL_SCHEME_AND_AUTHORITY = /^[A-Za-z][A-Za-z0-9+.-]*:\/\/([^/?#]*)/u
+/** An authority that is one variable, with or without a literal port. */
+const VARIABLE_AUTHORITY = /^\{\{\s*[A-Za-z_][A-Za-z0-9_]*\s*\}\}(:\d+)?$/u
+const STARTS_WITH_VARIABLE = /^\{\{\s*[A-Za-z_][A-Za-z0-9_]*\s*\}\}/u
+
+/**
+ * Who chooses the host a step URL template requests:
+ * - `literal`: the template does, and `origin` is it (null when its host does not parse).
+ * - `variable`: one variable is the whole host, or the template starts with a variable.
+ * - `mixed`: a variable sits inside the host or directly after it with no `/`, `?` or `#` between,
+ *   so a value could extend the host. `origin` is what the text before that variable names.
+ */
+export type StepUrlHost =
+	| { readonly _tag: "literal"; readonly origin: string | null }
+	| { readonly _tag: "variable" }
+	| { readonly _tag: "mixed"; readonly origin: string | null }
+
+/** The origin of an http(s) URL with a host; null for anything else. */
+const originOrNull = (url: string): string | null => {
+	if (!URL.canParse(url)) return null
+	const parsed = new URL(url)
+	return parsed.host === "" || parsed.origin === "null" ? null : parsed.origin
+}
+
+/** The one rule for a step URL's host, read by the save-time check and by the probe. */
+export const stepUrlHost = (template: string): StepUrlHost => {
+	const trimmed = Str.trim(template)
+	const match = URL_SCHEME_AND_AUTHORITY.exec(trimmed)
+	if (match === null) {
+		if (STARTS_WITH_VARIABLE.test(trimmed)) return { _tag: "variable" }
+		// No `scheme://`: only a template with no variable is left for the URL check to judge.
+		return !Str.includes("{{")(trimmed)
+			? { _tag: "literal", origin: originOrNull(trimmed) }
+			: { _tag: "mixed", origin: null }
+	}
+	const authority = match[1] ?? ""
+	const prefix = match[0]
+	if (!Str.includes("{{")(authority)) return { _tag: "literal", origin: originOrNull(prefix) }
+	if (VARIABLE_AUTHORITY.test(authority)) return { _tag: "variable" }
+	return { _tag: "mixed", origin: originOrNull(Str.split(prefix, "{{")[0]) }
+}
+
+/** Why a step URL template cannot be saved, or null: a variable may not be part of its host. */
+export const stepUrlTemplateProblem = (template: string): string | null => {
+	const host = stepUrlHost(template)
+	if (host._tag === "mixed")
+		return "a variable can't be part of the URL's host: end the host with a / before the variable, or make the whole host one variable"
+	return host._tag === "literal" && host.origin === null && Str.includes("{{")(template)
+		? "the URL needs a valid http(s) host before its first variable"
+		: null
+}
+
+/**
+ * Whether a filled step URL still requests the host its template names. A template whose host is
+ * one variable has none to keep; any other must fill to the origin of its literal part.
+ */
+export const filledUrlKeepsHost = (template: string, filled: string): boolean => {
+	const host = stepUrlHost(template)
+	if (host._tag === "variable") return true
+	return host.origin !== null && originOrNull(Str.trim(filled)) === host.origin
+}
+
 /** Every template a step sends: its URL, header values and body. */
 const stepTemplates = (step: UptimeStep): ReadonlyArray<string> => [
 	step.url,
@@ -529,6 +693,8 @@ export const multiStepConfigProblem = (config: UptimeMultiStepConfig): string | 
 		)
 		if (Option.isSome(agent))
 			return { ...acc, problem: `${label}: the User-Agent header can't use a variable` }
+		const hostProblem = stepUrlTemplateProblem(step.url)
+		if (hostProblem !== null) return { ...acc, problem: `${label}: ${hostProblem}` }
 		const unknown = Arr.findFirst(
 			Arr.flatMap(stepTemplates(step), variablesIn),
 			(name) => !acc.known.has(name),
@@ -578,7 +744,12 @@ export const extractVariables = (
 					: `JSON path ${source.path} not found, so ${extraction.name} could not be set`
 			return Option.match(value, {
 				onNone: () => Result.fail(missing),
-				onSome: (found) => Result.succeed({ ...values, [extraction.name]: found }),
+				onSome: (found) =>
+					found.length > UPTIME_MAX_VARIABLE_LENGTH
+						? Result.fail(
+								`${extraction.name} is longer than ${UPTIME_MAX_VARIABLE_LENGTH / 1024} KB, more than a variable holds`,
+							)
+						: Result.succeed({ ...values, [extraction.name]: found }),
 			})
 		}),
 	)

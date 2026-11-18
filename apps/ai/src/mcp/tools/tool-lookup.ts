@@ -2,7 +2,7 @@ import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { cachedRecoverable } from "@maple/infra/cached-recoverable"
 import { Effect, Array as Arr } from "effect"
 import { MCP_TOOL_MODULES } from "../tool-modules.generated"
-import { audienceAdmits } from "./types"
+import { surfaceAdmits } from "./types"
 import { collectToolDefinitions, type McpToolLookup, type McpToolModule } from "./registry-core"
 
 const modulesByName: ReadonlyMap<string, McpToolModule> = new Map(
@@ -41,7 +41,12 @@ export const makeModuleToolLookup = Effect.gen(function* () {
 		},
 		namesFor: (surface: McpToolSurface) =>
 			Arr.map(
-				Arr.filter(registeredModules, (entry) => audienceAdmits(entry.audience, surface)),
+				Arr.filter(registeredModules, (entry) =>
+					surfaceAdmits(
+						{ name: entry.tool, audience: entry.audience, hints: { readOnly: entry.readOnly } },
+						surface,
+					),
+				),
 				(entry) => entry.name,
 			),
 	}

@@ -3,7 +3,6 @@
 // reads, so any Admin API key is accepted and the Cost page warns about its reach.
 import {
 	ANTHROPIC_COST_KEY_MAX_LENGTH,
-	CloudCostDisabledError,
 	CostConnectionPersistenceError,
 	CostConnectionValidationError,
 	type OrgId,
@@ -11,7 +10,6 @@ import {
 } from "@maple/domain/http"
 import { Clock, Context, Duration, Effect, Layer, Redacted, String as Str } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { CostConnectionStore, type CostConnectionStoreError } from "./CostConnectionStore"
 import * as AnthropicCost from "./providers/anthropic/anthropic-cost-api"
 import { addDays, utcToday } from "./sync-plan"
@@ -55,7 +53,7 @@ export interface AnthropicCostConnectionServiceApi {
 		apiKey: string,
 	) => Effect.Effect<
 		{ readonly accountId: string; readonly accountLabel: string },
-		CostConnectionPersistenceError | CostConnectionValidationError | CloudCostDisabledError
+		CostConnectionPersistenceError | CostConnectionValidationError
 	>
 	readonly remove: (orgId: OrgId) => Effect.Effect<void, CostConnectionPersistenceError>
 }
@@ -66,7 +64,6 @@ export class AnthropicCostConnectionService extends Context.Service<
 >()("@maple/backend/services/cost/AnthropicCostConnectionService", {
 	make: Effect.gen(function* () {
 		const connections = yield* CostConnectionStore
-		const featureFlags = yield* OrganizationFeatureFlagsService
 		const httpClient = yield* HttpClient.HttpClient
 
 		/** The key's organization, once the key has proved it reads that organization's cost report. */
@@ -91,12 +88,6 @@ export class AnthropicCostConnectionService extends Context.Service<
 			rawKey: string,
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId })
-			const flags = yield* featureFlags.flags(orgId)
-			if (!flags.cloudCost) {
-				return yield* new CloudCostDisabledError({
-					message: "Cloud cost is not enabled for this organization.",
-				})
-			}
 			const apiKey = Str.trim(rawKey)
 			if (!couldBeAdminKey(apiKey)) {
 				return yield* refused("That is not an Anthropic Admin API key. They start with sk-ant-admin.")
@@ -133,12 +124,6 @@ export class AnthropicCostConnectionService extends Context.Service<
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(
-			Layer.mergeAll(
-				FetchHttpClient.layer,
-				OrganizationFeatureFlagsService.layer,
-				CostConnectionStore.layer,
-			),
-		),
+		Layer.provide(Layer.mergeAll(FetchHttpClient.layer, CostConnectionStore.layer)),
 	)
 }

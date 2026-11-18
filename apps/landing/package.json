@@ -39,14 +39,14 @@
 		"astro": "^7.4.12",
 		"autumn-js": "1.5.58",
 		"effect": "catalog:effect",
-		"foldkit": "0.170.0",
+		"foldkit": "0.171.0",
 		"fuse.js": "^7.5.0",
 		"tailwindcss": "catalog:tailwind",
 		"tw-animate-css": "catalog:tailwind"
 	},
 	"devDependencies": {
 		"@effect/platform-node": "catalog:effect",
-		"@foldkit/vite-plugin": "0.29.0",
+		"@foldkit/vite-plugin": "0.29.1",
 		"@inlang/paraglide-js": "^3.2.2",
 		"happy-dom": "^21.0.4",
 		"playwright": "catalog:",

@@ -2,7 +2,6 @@
 // every call recorded, and a connected team written the way the integration stores one.
 import { VercelConnections } from "@maple/db/tables"
 import type { OrgId } from "@maple/domain/http"
-import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ConfigProvider, Effect, Layer, Schema, Array as Arr } from "effect"
 import { FetchHttpClient } from "effect/http"
@@ -11,7 +10,6 @@ import { Env } from "@maple/backend/platform/Env"
 import { sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { vercelTokenSlot } from "@maple/backend/platform/secret-slots"
 import { createIntegrationSource } from "@maple/backend/services/integrations/integration-sources"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import type { TestDb } from "@maple/backend/testing/test-pglite"
 import * as VendorFake from "@maple/backend/testing/vendor-fake"
 import { CostProviderError } from "../../CostProvider"
@@ -21,8 +19,6 @@ export interface FakeVercel {
 	chargesStatus: number
 	/** The body: charges, served one JSON object per line, raw text for anything else, or null for no body. */
 	charges: ReadonlyArray<Readonly<Record<string, unknown>>> | string | null
-	/** Whether the org is in the `cloudCost` rollout. */
-	cloudCost: boolean
 	/** Runs when a request arrives, before it is answered: what changes while a read is in flight. */
 	onRequest: () => Promise<void>
 	readonly urls: Array<string>
@@ -32,7 +28,6 @@ export interface FakeVercel {
 export const makeFakeVercel = (overrides: Partial<FakeVercel> = {}): FakeVercel => ({
 	chargesStatus: 200,
 	charges: [],
-	cloudCost: true,
 	onRequest: () => Promise.resolve(),
 	urls: [],
 	authorizations: [],
@@ -101,15 +96,10 @@ export const fakeVercelDeps = (
 	/** `MAPLE_INGEST_KEY_ENCRYPTION_KEY`, for a deployment whose secret key is unusable. */
 	encryptionKey = ENCRYPTION_KEY,
 ) =>
-	Layer.mergeAll(
-		FetchHttpClient.layer,
-		Layer.succeed(OrganizationFeatureFlagsService, {
-			flags: () =>
-				Effect.sync(() => ({ ...DISABLED_ORGANIZATION_FEATURE_FLAGS, cloudCost: world.cloudCost })),
-		}),
-		testDb.layer,
-		Env.layer,
-	).pipe(Layer.provide(fakeVercelApi(world).layer), Layer.provide(config(encryptionKey)))
+	Layer.mergeAll(FetchHttpClient.layer, testDb.layer, Env.layer).pipe(
+		Layer.provide(fakeVercelApi(world).layer),
+		Layer.provide(config(encryptionKey)),
+	)
 
 export interface FakeVercelConnection {
 	readonly orgId: OrgId

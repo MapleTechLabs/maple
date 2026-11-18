@@ -254,10 +254,7 @@ describe("services list", () => {
 			themeResolved(),
 			Mount.resolve(MountTable, Message.PaintedTable()),
 			expectView(text("No services yet")).toExist(),
-			expectView(role("link", { name: "Set up tracing" })).toHaveAttr(
-				"href",
-				"/settings?tab=ingestion",
-			),
+			expectView(role("link", { name: "Set up tracing" })).toHaveAttr("href", "/settings/ingestion"),
 		)
 	})
 

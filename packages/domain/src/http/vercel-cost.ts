@@ -9,7 +9,6 @@ import {
 	IntegrationsUpstreamError,
 	IntegrationsValidationError,
 } from "./integrations"
-import { CloudCostDisabledError } from "./query-engine"
 
 /** The Vercel team the org's connection reads: its id at Vercel, and how the Cost page names it. */
 export const VercelCostTeam = Schema.Struct({ id: Schema.String, name: Schema.String, slug: Schema.String })
@@ -46,7 +45,7 @@ export class VercelCostApiGroup extends HttpApiGroup.make("vercelCost")
 	.add(
 		HttpApiEndpoint.get("status", "/", {
 			success: VercelCostStatus,
-			error: [IntegrationsPersistenceError, CloudCostDisabledError],
+			error: [IntegrationsPersistenceError],
 		}),
 	)
 	.add(
@@ -60,7 +59,6 @@ export class VercelCostApiGroup extends HttpApiGroup.make("vercelCost")
 				IntegrationsConnectionChangedError,
 				IntegrationsValidationError,
 				IntegrationsUpstreamError,
-				CloudCostDisabledError,
 			],
 		}),
 	)

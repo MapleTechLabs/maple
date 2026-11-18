@@ -649,7 +649,6 @@ const makeHarness = (
 					slug: "acme",
 					createdAtMs: Date.parse("2026-01-15T12:00:00.000Z"),
 				}),
-			delete: die,
 		}),
 		Layer.succeed(WarehouseQueryService, warehouseService),
 	)

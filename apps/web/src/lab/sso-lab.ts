@@ -170,9 +170,28 @@ const documentOf = (state: LabState): EnterpriseSsoDocument => {
 				connection: oidcConnection,
 				bypassUsers: bypass,
 			})
+		// What a reader without `sso:manage` is sent: the state, with no URLs, endpoint, groups,
+		// role mappings or bypass list.
+		case "member":
+			return new EnterpriseSsoDocument({
+				...base,
+				domains: [verifiedDomain],
+				connection: new SsoConnectionDocument({
+					...connection(true),
+					acsUrl: null,
+					spEntityId: null,
+					spMetadataUrl: null,
+					idpMetadataUrl: null,
+					idpCertificateExpiresAt: null,
+				}),
+				directory: new ScimDirectoryDocument({
+					enabled: true,
+					paused: false,
+					createdAt: iso("2026-11-14T09:30:00.000Z"),
+				}),
+			})
 		case "configured":
 		case "token":
-		case "member":
 			return new EnterpriseSsoDocument({
 				...base,
 				domains: [verifiedDomain],

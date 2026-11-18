@@ -1,4 +1,5 @@
 import {
+	Array as Arr,
 	Clock,
 	Context,
 	Duration,
@@ -49,6 +50,25 @@ export class UptimeScheduler extends Context.Service<UptimeScheduler, UptimeSche
 			const startJitter = yield* StartJitter
 
 			const semaphore = yield* Semaphore.make(env.UPTIME_CONCURRENCY)
+			// One org's share of the permits above. Entries follow the monitor list: `reconcile` drops
+			// an org once its last monitor is gone, so the map never outgrows the orgs being checked.
+			const orgSemaphores = new Map<string, Semaphore.Semaphore>()
+			const orgSemaphore = (orgId: string) =>
+				Effect.sync(() => {
+					const existing = orgSemaphores.get(orgId)
+					if (existing !== undefined) return existing
+					const created = Semaphore.makeUnsafe(env.UPTIME_ORG_CONCURRENCY)
+					orgSemaphores.set(orgId, created)
+					return created
+				})
+			const forgetOrgsWithout = (targets: ReadonlyMap<string, UptimeProbeTarget>) =>
+				Effect.sync(() => {
+					const active = new Set(Array.from(targets.values(), (target): string => target.orgId))
+					Arr.forEach(
+						Arr.filter(Arr.fromIterable(orgSemaphores.keys()), (orgId) => !active.has(orgId)),
+						(orgId) => orgSemaphores.delete(orgId),
+					)
+				})
 			const startedAt = yield* Clock.currentTimeMillis
 			const activeLoops = yield* Ref.make(0)
 
@@ -59,7 +79,11 @@ export class UptimeScheduler extends Context.Service<UptimeScheduler, UptimeSche
 					if (Option.isNone(latest)) return false
 					const target = latest.value
 					const loopStart = yield* Clock.currentTimeMillis
-					const report = yield* semaphore.withPermits(1)(prober.check(target))
+					// The org's permit first: an org past its share waits there, holding no shared permit.
+					const orgPermits = yield* orgSemaphore(target.orgId)
+					const report = yield* orgPermits.withPermits(1)(
+						semaphore.withPermits(1)(prober.check(target)),
+					)
 					yield* reporter.record(report)
 					const elapsedMs = (yield* Clock.currentTimeMillis) - loopStart
 					yield* Effect.sleep(
@@ -99,6 +123,7 @@ export class UptimeScheduler extends Context.Service<UptimeScheduler, UptimeSche
 							),
 						{ discard: true },
 					)
+					yield* forgetOrgsWithout(desired)
 					const running = yield* FiberMap.size(loops)
 					yield* Ref.set(activeLoops, running)
 					yield* Metric.update(activeMonitors, running)

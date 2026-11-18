@@ -197,7 +197,7 @@ const planetscaleFilterSearchFields = {
 	branchContains: StringParam,
 }
 
-// Tab sets of the account, settings (plus retired settings tabs), issue and investigation navs
+// Tab sets of the account, settings, issue and investigation navs
 export const accountTabValues = [
 	"profile",
 	"emails",
@@ -224,17 +224,6 @@ export const settingsTabValues = [
 	"data-sources",
 	"setup-health",
 	"automation",
-] as const
-export const legacySettingsTabValues = [
-	"organization",
-	"api-keys",
-	"ai-provider",
-	"setup-audit",
-	"notifications",
-	"connectors",
-	"integrations",
-	"escalations",
-	"developer",
 ] as const
 
 export const ISSUE_TABS = ["overview", "occurrences", "activity"] as const
@@ -309,8 +298,7 @@ export const ServiceMapSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-export const SettingsSearch = Schema.Struct({
-	tab: Schema.optional(Schema.Literals([...settingsTabValues, ...legacySettingsTabValues])),
+const settingsSearchFields = {
 	checkout: Schema.optional(Schema.Literal("complete")),
 	range: StringParam,
 	since: StringParam,
@@ -328,7 +316,22 @@ export const SettingsSearch = Schema.Struct({
 	// Data sources deep links from `/integrations`: one source, or the connect form of a kind.
 	source: StringParam,
 	connect: Schema.optional(Schema.Literals(DATA_SOURCE_KINDS)),
+}
+
+export const SettingsTab = Schema.Literals(settingsTabValues)
+
+/**
+ * `/settings/<tab>`: `tab` is the path segment; `legacyTab` is a retired `?tab=` link, which
+ * `routeRedirect` moves to its path.
+ */
+export const SettingsSearch = Schema.Struct({
+	tab: Schema.optional(SettingsTab),
+	legacyTab: StringParam,
+	...settingsSearchFields,
 })
+
+/** The query string of `/settings`: `tab` here is only ever an old link's. */
+export const SettingsQuery = Schema.Struct({ tab: StringParam, ...settingsSearchFields })
 
 export const SignInSearch = Schema.Struct({
 	redirect_url: StringParam,

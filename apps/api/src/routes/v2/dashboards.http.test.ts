@@ -98,7 +98,6 @@ const SharePublicLive = HttpV2SharePublicLive.pipe(
 				Effect.succeed({ id: orgId, name: null, slug: null, imageUrl: null, createdAtMs: null }),
 			create: () => Effect.die("organization creation is not exercised by this harness"),
 			chooseRegion: () => Effect.die("organization regions are not exercised by this harness"),
-			delete: () => Effect.die("organization deletion is not exercised by this harness"),
 		}),
 	),
 	Layer.provide(Layer.succeed(ShareRateLimiter, { check: () => Effect.succeed("allowed" as const) })),

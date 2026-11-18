@@ -67,6 +67,8 @@ export const VcsInstallations = PG.table("vcs_installations", {
 		suspendedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "suspended_at" }),
 		/** Opt-out: finished CI workflow runs become traces unless the org turns this off. */
 		ciTracesEnabled: PG.column(PG.bool, { name: "ci_traces_enabled", default: true }),
+		/** Opt-out: organization, member and repository changes go to the Security audit log. */
+		auditLogEnabled: PG.column(PG.bool, { name: "audit_log_enabled", default: true }),
 		repositoryDiscovery: PG.column(PG.nullable(PG.jsonb(VcsRepositoryDiscovery)), {
 			name: "repository_discovery",
 		}),

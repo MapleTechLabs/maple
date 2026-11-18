@@ -233,34 +233,20 @@ describe("VercelCostSourceService", () => {
 		})
 	})
 
-	it.effect(
-		"refuses an org with no Vercel connection, and one outside the rollout, before any read",
-		() => {
-			const testDb = createTestDb(trackedDbs)
-			const world = makeFakeVercel()
-			return run(
-				testDb,
-				world,
-				Effect.gen(function* () {
-					const notConnected = yield* Effect.flip(add)
-					assert.strictEqual(notConnected._tag, "@maple/http/errors/IntegrationsNotConnectedError")
-
-					yield* connectFakeVercel({ orgId: ORG })
-					world.cloudCost = false
-					assert.strictEqual(
-						(yield* Effect.flip(add))._tag,
-						"@maple/http/errors/CloudCostDisabledError",
-					)
-					assert.strictEqual(
-						(yield* Effect.flip(status))._tag,
-						"@maple/http/errors/CloudCostDisabledError",
-					)
-					assert.deepStrictEqual(world.urls, [])
-					assert.isUndefined(yield* source(testDb))
-				}),
-			)
-		},
-	)
+	it.effect("refuses an org with no Vercel connection before any read", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeFakeVercel()
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				const notConnected = yield* Effect.flip(add)
+				assert.strictEqual(notConnected._tag, "@maple/http/errors/IntegrationsNotConnectedError")
+				assert.deepStrictEqual(world.urls, [])
+				assert.isUndefined(yield* source(testDb))
+			}),
+		)
+	})
 
 	it.effect("makes no source for a connection that moved to another team during the check", () => {
 		const testDb = createTestDb(trackedDbs)
@@ -343,7 +329,7 @@ describe("VercelCostSourceService", () => {
 		)
 	})
 
-	it.effect("removes the source and leaves the connection, without needing the rollout", () => {
+	it.effect("removes the source and leaves the connection", () => {
 		const testDb = createTestDb(trackedDbs)
 		const world = makeFakeVercel()
 		return run(
@@ -352,7 +338,6 @@ describe("VercelCostSourceService", () => {
 			Effect.gen(function* () {
 				yield* connectFakeVercel({ orgId: ORG })
 				yield* add
-				world.cloudCost = false
 				assert.deepStrictEqual(yield* remove, { removed: true })
 				assert.isUndefined(yield* source(testDb))
 				// Nothing left to remove: said, not failed.
