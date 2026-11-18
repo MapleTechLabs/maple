@@ -35,6 +35,7 @@ export const MapleErrorTags = {
 	alertDestinationNotFound: "@maple/http/errors/AlertDestinationNotFoundError",
 	uptimeMonitorNotFound: "@maple/http/errors/UptimeMonitorNotFoundError",
 	statusPageNotFound: "@maple/http/errors/StatusPageNotFoundError",
+	statusPageConflict: "@maple/http/errors/StatusPageConflictError",
 } as const satisfies Record<string, MapleHttpErrorTag>
 
 /** Published mirror of Maple's canonical v2 error body. Kept honest by contract tests. */

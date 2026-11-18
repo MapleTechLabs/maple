@@ -31,6 +31,9 @@ const makeFake = () => {
 	const config = new Map<string, unknown>()
 	let hostname: string | null = null
 	let sequence = 0
+	let revision = 0
+	let afterConfigRead: (() => void) | undefined
+	let refuseConfig = false
 	const notFound = () =>
 		makeMapleApiResponseError(404, {
 			_tag: MapleErrorTags.statusPageNotFound,
@@ -53,7 +56,7 @@ const makeFake = () => {
 		})
 	const configDoc = () => ({
 		...Object.fromEntries(config),
-		version: `v${sequence}`,
+		version: `v${revision}`,
 		components: structuredClone(components),
 	})
 	const domainDoc = () => ({
@@ -73,7 +76,7 @@ const makeFake = () => {
 					],
 	})
 	const route = (method: string, path: string, body?: unknown): Effect.Effect<unknown, MapleError> => {
-		calls.push(`${method} ${path}`)
+		calls.push(`${method} ${path.split("?")[0]}`)
 		if (method === "POST" && path === "/v2/status_pages") {
 			const input = decodeBody(body)
 			page = {
@@ -89,16 +92,35 @@ const makeFake = () => {
 			return Effect.succeed({ ...page })
 		}
 		if (page === null || !path.startsWith(`/v2/status_pages/${page.id}`)) return Effect.fail(notFound())
-		const rest = path.slice(`/v2/status_pages/${page.id}`.length)
+		const [rest = "", query = ""] = path.slice(`/v2/status_pages/${page.id}`.length).split("?")
+		const ifVersion = new URLSearchParams(query).get("if_version")
 		switch (`${method} ${rest}`) {
 			case "GET ":
 				return Effect.succeed({ ...page })
 			case "DELETE ":
 				page = null
 				return Effect.succeed({ deleted: true })
-			case "GET /config":
-				return Effect.succeed(configDoc())
+			case "GET /config": {
+				const doc = configDoc()
+				afterConfigRead?.()
+				afterConfigRead = undefined
+				return Effect.succeed(doc)
+			}
 			case "PUT /config": {
+				if (refuseConfig) return Effect.fail(invalid("Theme contrast too low"))
+				if (ifVersion !== null && ifVersion !== `v${revision}`)
+					return Effect.fail(
+						makeMapleApiResponseError(409, {
+							_tag: MapleErrorTags.statusPageConflict,
+							type: "conflict_error",
+							code: "status_page_conflict",
+							title: "Conflict",
+							message: "The page's config changed since it was read",
+							retryable: false,
+							recovery: "refresh",
+						}),
+					)
+				revision++
 				const input = decodeBody(body)
 				const visibility = (input.visibility as string | undefined) ?? page.visibility
 				if (visibility === "password" && !page.has_password)
@@ -109,7 +131,7 @@ const makeFake = () => {
 				components = listed.map((component) => ({
 					...component,
 					id: (component.id as string | undefined) ?? `stc_${++sequence}`,
-					name: String(component.name),
+					name: String(component.name).trim(),
 					manual_status: (component.manual_status as string | null | undefined) ?? null,
 				}))
 				const { components: _components, ...rest } = input
@@ -154,6 +176,14 @@ const makeFake = () => {
 		components: () => components,
 		setManualStatus: (name: string, status: string) => {
 			components = components.map((c) => (c.name === name ? { ...c, manual_status: status } : c))
+			revision++
+		},
+		/** Runs `edit` right after the next config read, as a responder racing a deploy. */
+		afterNextConfigRead: (edit: () => void) => {
+			afterConfigRead = edit
+		},
+		refuseConfig: () => {
+			refuseConfig = true
 		},
 	}
 }
@@ -300,5 +330,62 @@ describe("StatusPageProvider", () => {
 			expect(recreated.statusPageId).toBe("stp_1")
 			expect(fake.page()?.draft).toBe(false)
 		}),
+	)
+
+	it.live("re-reads the config when a responder changes a status mid-deploy", () =>
+		Effect.gen(function* () {
+			const fake = makeFake()
+			const output = yield* reconcile(fake, base)
+			fake.afterNextConfigRead(() => fake.setManualStatus("API", "major_outage"))
+			const next = { ...base, description: "Live status" }
+			yield* reconcile(fake, next, { olds: base, output })
+			expect(fake.components().find((c) => c.name === "API")?.manual_status).toBe("major_outage")
+		}),
+	)
+
+	it.live("deletes a page it created but could not configure, so a retry can reuse the slug", () =>
+		Effect.gen(function* () {
+			const fake = makeFake()
+			fake.refuseConfig()
+			const exit = yield* Effect.exit(reconcile(fake, base))
+			expect(exit._tag).toBe("Failure")
+			expect(fake.page()).toBeNull()
+			expect(fake.calls).toContain("DELETE /v2/status_pages/stp_1")
+		}),
+	)
+
+	it.live("matches a component written with surrounding spaces to its stored, trimmed name", () =>
+		Effect.gen(function* () {
+			const fake = makeFake()
+			const props: StatusPageProps = { ...base, components: [{ name: " API " }] }
+			const first = yield* reconcile(fake, props)
+			const second = yield* reconcile(
+				fake,
+				{ ...props, description: "x" },
+				{ olds: props, output: first },
+			)
+			expect(second.components[0]?.componentId).toBe(first.components[0]?.componentId)
+		}),
+	)
+
+	it.live("plans an update when a manual status goes from unset to null", () =>
+		Effect.gen(function* () {
+			const provider = yield* StatusPage.Provider
+			const olds: StatusPageProps = { ...base, components: [{ name: "API" }] }
+			const news: StatusPageProps = { ...base, components: [{ name: "API", manual_status: null }] }
+			const result = yield* provider.diff!({
+				id: "status",
+				fqn: "test/status",
+				instanceId: "i-1",
+				olds,
+				news,
+				output: undefined,
+				oldBindings: [],
+				newBindings: [],
+			})
+			expect(result?.action).toBe("update")
+		}).pipe(
+			Effect.provide(StatusPageProvider().pipe(Layer.provide(Layer.succeed(MapleApi, makeFake().api)))),
+		),
 	)
 })
