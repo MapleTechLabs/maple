@@ -23,9 +23,6 @@
  * natural height by ~90px, and `h-full` turned the overshoot into a visible
  * hole inside the frame. Moving it balances the two columns instead.
  *
- * KubernetesSection directly above is also copy-left / media-right on `bg-bg`,
- * which is why this one runs a wider media track and carries no <pre>.
- *
  * Surface is `bg-bg`, not `bg-bg-deep`: `.live-frame` is itself `--bg-deep`,
  * so a deep floor would flatten the transcript into the page.
  */
@@ -50,7 +47,7 @@ const points = [
 ---
 
 <section id="agents" class="border-t border-border bg-bg">
-	<div class="shell py-16 md:py-32">
+	<div class="shell py-16 md:py-24">
 		<div class="grid gap-12 lg:grid-cols-[0.78fr_1.22fr] lg:gap-20">
 			<!-- min-w-0: a grid item defaults to `min-width: auto`, so the mono
 			     index would otherwise push the track wider than the viewport. -->

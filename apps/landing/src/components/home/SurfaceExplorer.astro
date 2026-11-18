@@ -1,0 +1,369 @@
+---
+/**
+ * Platform: one large frame that switches surface, and the page's link hub to
+ * the feature pages (SEO load-bearing, so every pane's link is in the markup).
+ *
+ * It replaces the six-cell contact sheet and the five sections that followed
+ * it (Kubernetes, web analytics, product events, uptime, GitHub). Those showed
+ * each surface small, beside a column of copy; here each one gets the full
+ * shell and a single line. The feature pages carry the detail.
+ *
+ * Inactive panes are `hidden`, so the section is as tall as the surface on
+ * show. No pane measures itself at load, which is what makes that safe.
+ */
+import * as m from "../../paraglide/messages.js";
+import { featurePath } from "../../lib/page-registry";
+import PostMergeComment from "../github/PostMergeComment.astro";
+import PrReviewComment from "../github/PrReviewComment.astro";
+import LiveFunnel from "../live/LiveFunnel.astro";
+import LiveK8sHeatmap from "../live/LiveK8sHeatmap.astro";
+import LiveUptime from "../live/LiveUptime.astro";
+import MediaFrame from "./MediaFrame.astro";
+
+const locale = Astro.currentLocale ?? "en";
+const l = (slug: string) => featurePath(locale, slug);
+
+// Sentence one of a longer description: the pane takes a line, not a paragraph.
+const firstSentence = (text: string) => {
+	const end = text.search(/[.。](\s|$)/);
+	return end === -1 ? text : text.slice(0, end + 1);
+};
+
+interface Surface {
+	key: string;
+	tab: string;
+	title: string;
+	desc: string;
+	href: string;
+	link: string;
+	/** A second, quieter link: uptime also owns status pages. */
+	also?: { href: string; link: string };
+	/** `crop` is the window a phone shows: the whole capture is unreadable at that width. */
+	shot?: { src: string; alt: string; width: number; height: number; crop: { x: number; y: number; zoom: number } };
+}
+
+const surfaces: Surface[] = [
+	{
+		key: "map",
+		tab: m.platform_map_name(),
+		title: m.platform_map_name(),
+		desc: m.platform_map_desc(),
+		href: l("service-catalog"),
+		link: m.nav_service_catalog(),
+		shot: {
+			src: "/screenshots/surface-map.webp",
+			alt: "A focused service neighborhood showing API, database, and cache dependencies with live request flow",
+			width: 1440,
+			height: 810,
+			crop: { x: 0.2, y: 0.3, zoom: 2 },
+		},
+	},
+	{
+		key: "metrics",
+		tab: m.platform_metrics_name(),
+		title: m.platform_metrics_name(),
+		desc: m.platform_metrics_desc(),
+		href: l("metrics-dashboards"),
+		link: m.nav_metrics_dashboards(),
+		shot: {
+			src: "/screenshots/surface-metrics.webp",
+			alt: "The metric explorer listing every metric with its type and cardinality",
+			width: 1440,
+			height: 810,
+			crop: { x: 0.185, y: 0.075, zoom: 2 },
+		},
+	},
+	{
+		key: "errors",
+		tab: m.platform_errors_name(),
+		title: m.platform_errors_name(),
+		desc: m.platform_errors_desc(),
+		href: l("error-tracking"),
+		link: m.nav_error_tracking(),
+		shot: {
+			src: "/screenshots/surface-errors.webp",
+			alt: "Errors grouped by type with counts, affected services and last-seen times",
+			width: 1440,
+			height: 810,
+			crop: { x: 0.365, y: 0.17, zoom: 2.7 },
+		},
+	},
+	{
+		key: "alerts",
+		tab: m.platform_alerts_name(),
+		title: m.platform_alerts_name(),
+		desc: firstSentence(m.platform_alerts_desc()),
+		href: l("alerts"),
+		link: m.nav_alerts(),
+		shot: {
+			src: "/screenshots/surface-alerts.webp",
+			alt: "Alert rules with severity, signal type and current state",
+			width: 1440,
+			height: 810,
+			crop: { x: 0.19, y: 0.09, zoom: 1.9 },
+		},
+	},
+	{
+		key: "kubernetes",
+		tab: m.k8s_eyebrow(),
+		title: m.k8s_title(),
+		desc: firstSentence(m.k8s_lede()),
+		href: l("kubernetes-monitoring"),
+		link: m.nav_kubernetes(),
+	},
+	{
+		key: "analytics",
+		tab: m.analytics_eyebrow(),
+		title: m.analytics_title(),
+		desc: m.analytics_lede(),
+		href: l("browser-sessions"),
+		link: m.nav_browser_sessions(),
+		shot: {
+			src: "/screenshots/surface-analytics.webp",
+			alt: "The Web Analytics page: unique visitors, sessions, page views and bounce rate over the last 7 days, with the live visitor badge and the visitors and page views chart",
+			width: 896,
+			height: 696,
+			crop: { x: 0, y: 0.2, zoom: 1.6 },
+		},
+	},
+	{
+		key: "events",
+		tab: m.pe_eyebrow(),
+		title: m.pe_title(),
+		desc: firstSentence(m.pe_lede()),
+		href: l("product-events"),
+		link: m.pe_eyebrow(),
+	},
+	{
+		key: "uptime",
+		tab: m.uptime_eyebrow(),
+		title: m.uptime_title(),
+		desc: firstSentence(m.uptime_lede()),
+		href: l("uptime-monitoring"),
+		link: m.uptime_eyebrow(),
+		also: { href: l("status-pages"), link: m.uptime_link_status_pages() },
+	},
+	{
+		key: "github",
+		tab: m.home_github_eyebrow(),
+		title: m.home_github_title(),
+		desc: m.home_github_lede(),
+		href: l("github"),
+		link: m.home_github_link(),
+	},
+];
+
+const githubSteps = [m.home_github_step_1_title(), m.home_github_step_2_title(), m.home_github_step_3_title()];
+---
+
+<section id="features" class="border-t border-border bg-bg">
+	<div class="shell py-16 md:py-24">
+		<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{m.platform_eyebrow()}</p>
+		<h2
+			class="mt-4 max-w-[20ch] font-display text-3xl font-medium leading-[1.05] tracking-[-0.02em] text-fg md:text-[40px] lg:text-[54px]"
+		>
+			{m.platform_title()}
+		</h2>
+
+		<div data-surface-explorer class="mt-10 md:mt-12">
+			<div role="tablist" aria-label={m.platform_eyebrow()} class="surface-tabs">
+				{
+					surfaces.map((surface, i) => (
+						<button
+							type="button"
+							role="tab"
+							id={`surface-tab-${surface.key}`}
+							aria-controls={`surface-pane-${surface.key}`}
+							aria-selected={i === 0 ? "true" : "false"}
+							tabindex={i === 0 ? 0 : -1}
+							data-on={i === 0 ? "" : undefined}
+							class="surface-tab"
+						>
+							{surface.tab}
+						</button>
+					))
+				}
+			</div>
+
+			{
+				surfaces.map((surface, i) => (
+					<div
+						role="tabpanel"
+						id={`surface-pane-${surface.key}`}
+						aria-labelledby={`surface-tab-${surface.key}`}
+						data-pane={i}
+						hidden={i !== 0}
+						class="surface-pane"
+					>
+						<div class="flex flex-col gap-x-10 gap-y-3 py-6 md:flex-row md:items-end md:justify-between md:py-8">
+							<div class="min-w-0">
+								<h3 class="font-display text-xl leading-snug tracking-[-0.01em] text-fg md:text-2xl">
+									{surface.title}
+								</h3>
+								<p class="mt-2 max-w-[72ch] text-[15px] leading-relaxed text-fg-muted">{surface.desc}</p>
+							</div>
+							<div class="flex shrink-0 flex-wrap gap-x-6 gap-y-2 text-sm">
+								<a href={surface.href} class="text-fg transition-colors hover:text-primary">
+									{surface.link}
+									<span aria-hidden="true"> →</span>
+								</a>
+								{surface.also && (
+									<a href={surface.also.href} class="text-fg-muted transition-colors hover:text-fg">
+										{surface.also.link}
+									</a>
+								)}
+							</div>
+						</div>
+
+						{surface.shot && (
+							<div class={surface.key === "analytics" ? "mx-auto hidden max-w-[896px] md:block" : "hidden md:block"}>
+								<MediaFrame
+									label={surface.shot.alt}
+									src={surface.shot.src}
+									width={surface.shot.width}
+									height={surface.shot.height}
+								/>
+							</div>
+						)}
+						{surface.shot && (
+							<div class="md:hidden">
+								<MediaFrame
+									label={surface.shot.alt}
+									src={surface.shot.src}
+									width={surface.shot.width}
+									height={surface.shot.height}
+									crop={surface.shot.crop}
+								/>
+							</div>
+						)}
+						{surface.key === "kubernetes" && <LiveK8sHeatmap />}
+						{surface.key === "events" && <LiveFunnel />}
+						{surface.key === "uptime" && <LiveUptime />}
+						{surface.key === "github" && (
+							<ol class="grid gap-8 lg:grid-cols-3 lg:gap-6">
+								{githubSteps.map((step, index) => (
+									<li class="flex min-w-0 flex-col">
+										<p class="border-b border-border pb-3 text-sm font-medium text-fg">{step}</p>
+										<div class="mt-4">
+											{index === 0 && <PrReviewComment variant="compact" />}
+											{index === 1 && (
+												<div class="overflow-hidden rounded-xl border border-border bg-bg-deep">
+													<div class="ci-crop">
+														<img
+															src="/screenshots/surface-ci.webp"
+															alt="The CI tab's run count, success rate and p50 run time over a chart of runs by result per day"
+															width="2880"
+															height="1620"
+															loading="lazy"
+															decoding="async"
+														/>
+													</div>
+												</div>
+											)}
+											{index === 2 && <PostMergeComment variant="compact" />}
+										</div>
+									</li>
+								))}
+							</ol>
+						)}
+					</div>
+				))
+			}
+		</div>
+	</div>
+</section>
+
+<style>
+	/* One hairline under the row, and the active tab draws over it. The row
+	   scrolls sideways on narrow screens instead of wrapping to three lines. */
+	.surface-tabs {
+		display: flex;
+		gap: 0 1.75rem;
+		overflow-x: auto;
+		border-bottom: 1px solid var(--border);
+		scrollbar-width: none;
+	}
+	.surface-tabs::-webkit-scrollbar {
+		display: none;
+	}
+	.surface-tab {
+		flex: none;
+		margin-bottom: -1px;
+		padding: 0.75rem 0;
+		border-bottom: 1px solid transparent;
+		font-size: 0.875rem;
+		white-space: nowrap;
+		color: var(--muted-foreground);
+		cursor: pointer;
+		transition:
+			color 150ms ease,
+			border-color 150ms ease;
+	}
+	.surface-tab:hover {
+		color: var(--foreground);
+	}
+	.surface-tab[data-on] {
+		border-bottom-color: var(--primary);
+		color: var(--foreground);
+	}
+	.surface-tab:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: -2px;
+	}
+
+	/* The 1140 × 885 region of the 2880 × 1620 capture at (545, 385): stat cards and the runs chart. */
+	.ci-crop {
+		aspect-ratio: 1140 / 885;
+		overflow: hidden;
+	}
+	.ci-crop img {
+		display: block;
+		max-width: none;
+		width: calc(2880 / 1140 * 100%);
+		height: auto;
+		margin-left: calc(-545 / 1140 * 100%);
+		margin-top: calc(-385 / 1140 * 100%);
+	}
+</style>
+
+<script>
+	const root = document.querySelector<HTMLElement>("[data-surface-explorer]");
+
+	if (root) {
+		const tablist = root.querySelector<HTMLElement>('[role="tablist"]');
+		const tabs = [...root.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+		const panes = [...root.querySelectorAll<HTMLElement>("[data-pane]")];
+		let index = 0;
+
+		const show = (next: number) => {
+			index = next;
+			panes.forEach((pane, i) => {
+				pane.hidden = i !== index;
+			});
+			tabs.forEach((tab, i) => {
+				tab.toggleAttribute("data-on", i === index);
+				tab.setAttribute("aria-selected", i === index ? "true" : "false");
+				tab.tabIndex = i === index ? 0 : -1;
+			});
+			// Keeps the chosen tab in view where the row scrolls sideways.
+			tabs[index]?.scrollIntoView({ block: "nearest", inline: "nearest" });
+		};
+
+		tabs.forEach((tab, i) => {
+			tab.addEventListener("click", () => show(i));
+		});
+
+		tablist?.addEventListener("keydown", (event) => {
+			const last = tabs.length - 1;
+			let next: number | null = null;
+			if (event.key === "ArrowRight") next = index === last ? 0 : index + 1;
+			else if (event.key === "ArrowLeft") next = index === 0 ? last : index - 1;
+			else if (event.key === "Home") next = 0;
+			else if (event.key === "End") next = last;
+			if (next === null) return;
+			event.preventDefault();
+			show(next);
+			tabs[next]?.focus();
+		});
+	}
+</script>

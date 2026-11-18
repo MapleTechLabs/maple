@@ -1,77 +1,83 @@
 ---
 /**
- * 01 · Signals — the three-up strip directly under the hero.
+ * Signals: the trace across the full shell, logs and session replay under it.
  *
- * Three parallel imperatives over three plates. Not the three OTel signals:
- * metrics is the least differentiated surface Maple has and the least legible
- * at plate size, while session replay joined to a trace id is a real
- * differentiator. Metrics gets a named slot in §03 instead.
- *
- * Columns are separated by the grid gap, not by rules — vertical rules here
- * would turn a strip into a table.
+ * Not the three OTel signals: metrics is the least legible surface at plate
+ * size, while a replay joined to a trace id is a real differentiator. Metrics
+ * has its own tab in the surface explorer further down.
  *
  * The trace and logs plates are the dashboard's own waterfall and logs stream
- * on example data. The session plate is still a capture, cropped to the part
- * of the screen the heading is about. All three share the capture's 16:9 box.
+ * on example data, drawn large enough to read and use. The session plate is a
+ * capture, cropped to the part of the screen the heading is about.
  */
 import * as m from "../../paraglide/messages.js";
+import { featurePath } from "../../lib/page-registry";
 import LiveLogs from "../live/LiveLogs.astro";
 import LiveTraceFrame from "../live/LiveTraceFrame.astro";
 import MediaFrame from "./MediaFrame.astro";
 
-const columns = [
-	{ title: m.signals_trace_title(), sub: m.signals_trace_sub(), plate: "trace" },
-	{ title: m.signals_logs_title(), sub: m.signals_logs_sub(), plate: "logs" },
-	{
-		plate: "session",
-		title: m.signals_session_title(),
-		sub: m.signals_session_sub(),
-		shot: "A browser session replay showing the recorded page and captured network requests",
-		src: "/screenshots/strip-session.webp",
-		width: 1440,
-		height: 810,
-		crop: { x: 0.185, y: 0.075, zoom: 1.6 },
-	},
-] as const;
+const locale = Astro.currentLocale ?? "en";
+
+const trace = {
+	title: m.signals_trace_title(),
+	sub: m.signals_trace_sub(),
+	href: featurePath(locale, "distributed-tracing"),
+	link: m.nav_distributed_tracing(),
+};
+const logs = {
+	title: m.signals_logs_title(),
+	sub: m.signals_logs_sub(),
+	href: featurePath(locale, "log-management"),
+	link: m.nav_log_management(),
+};
+const session = {
+	title: m.signals_session_title(),
+	sub: m.signals_session_sub(),
+	href: featurePath(locale, "browser-sessions"),
+	link: m.nav_browser_sessions(),
+};
 ---
 
 <section class="bg-bg-deep">
-	<div class="shell py-16 md:py-32">
-		<p class="mb-10 text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted md:mb-14">
-			{m.signals_eyebrow()}
-		</p>
+	<div class="shell py-16 md:py-24">
+		<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{m.signals_eyebrow()}</p>
 
-		<div class="grid gap-12 lg:grid-cols-3 lg:gap-8">
-			{
-				columns.map((col) => (
-					<div class="flex flex-col gap-5">
-						{/* flex-1 so the three plates share a top edge whatever the copy wraps to. */}
-						<div class="flex-1">
-							<h2 class="font-display text-[22px] leading-tight tracking-[-0.01em] text-fg md:text-2xl lg:text-[26px]">
-								{col.title}
-							</h2>
-							<p class="mt-3 max-w-[38ch] text-[15px] leading-relaxed text-fg-muted">{col.sub}</p>
-						</div>
-						{col.plate === "trace" ? (
-							<div class="aspect-[16/9] min-h-0 overflow-hidden">
-								<LiveTraceFrame height="fill" />
-							</div>
-						) : col.plate === "logs" ? (
-							<div class="aspect-[16/9] min-h-0 overflow-hidden">
-								<LiveLogs volume={false} streamHeight="fill" />
-							</div>
-						) : (
-							<MediaFrame
-								label={col.shot}
-								src={col.src}
-								width={col.width}
-								height={col.height}
-								crop={col.crop}
-							/>
-						)}
-					</div>
-				))
-			}
+		<div class="mt-8 md:mt-10">
+			<div class="grid grid-cols-[minmax(0,1fr)_max-content] items-baseline gap-x-8 gap-y-2 lg:grid-cols-[max-content_minmax(0,1fr)_max-content]">
+					<h2 class="font-display text-2xl leading-tight tracking-[-0.01em] text-fg md:text-[28px]">{trace.title}</h2>
+					<p class="col-span-2 row-start-2 max-w-[62ch] text-[15px] leading-relaxed text-fg-muted lg:col-span-1 lg:col-start-2 lg:row-start-1">{trace.sub}</p>
+					<a href={trace.href} class="col-start-2 row-start-1 whitespace-nowrap text-sm text-fg transition-colors hover:text-primary lg:col-start-3">{trace.link}<span aria-hidden="true"> →</span></a>
+				</div>
+			<LiveTraceFrame class="mt-6" height="19rem" />
+		</div>
+
+		<div class="mt-12 grid gap-12 md:mt-16 lg:grid-cols-2 lg:gap-8">
+			<div class="flex min-w-0 flex-col">
+				<div class="grid grid-cols-[minmax(0,1fr)_max-content] items-baseline gap-x-8 gap-y-2">
+					<h2 class="font-display text-2xl leading-tight tracking-[-0.01em] text-fg md:text-[28px]">{logs.title}</h2>
+					<p class="col-span-2 row-start-2 max-w-[62ch] text-[15px] leading-relaxed text-fg-muted">{logs.sub}</p>
+					<a href={logs.href} class="col-start-2 row-start-1 whitespace-nowrap text-sm text-fg transition-colors hover:text-primary">{logs.link}<span aria-hidden="true"> →</span></a>
+				</div>
+				<div class="mt-6 aspect-[16/10] min-h-0 overflow-hidden">
+					<LiveLogs volume={false} streamHeight="fill" />
+				</div>
+			</div>
+			<div class="flex min-w-0 flex-col">
+				<div class="grid grid-cols-[minmax(0,1fr)_max-content] items-baseline gap-x-8 gap-y-2">
+					<h2 class="font-display text-2xl leading-tight tracking-[-0.01em] text-fg md:text-[28px]">{session.title}</h2>
+					<p class="col-span-2 row-start-2 max-w-[62ch] text-[15px] leading-relaxed text-fg-muted">{session.sub}</p>
+					<a href={session.href} class="col-start-2 row-start-1 whitespace-nowrap text-sm text-fg transition-colors hover:text-primary">{session.link}<span aria-hidden="true"> →</span></a>
+				</div>
+				<div class="mt-6">
+					<MediaFrame
+						label="A browser session replay showing the recorded page and captured network requests"
+						src="/screenshots/strip-session.webp"
+						width={1440}
+						height={900}
+						crop={{ x: 0.185, y: 0.075, zoom: 1.25 }}
+					/>
+				</div>
+			</div>
 		</div>
 	</div>
 </section>

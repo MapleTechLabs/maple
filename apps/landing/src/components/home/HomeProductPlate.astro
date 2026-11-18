@@ -1,14 +1,17 @@
 ---
 /**
- * The hero's product plate, as its own section.
+ * The product plate and the proof rail under it.
  *
- * Split out of `HomeHero` so the page can put something between the headline
- * and the screenshots. It was never coupled to the hero in CSS — both are plain
- * `main > section` children — so this is a move, not a rewrite.
+ * The plate overlaps the hero's lower edge, so the top of the app is inside the
+ * first viewport and the monument's base runs behind it.
  */
 import HeroCarousel from "./HeroCarousel.astro";
+import HomeProof from "./HomeProof.astro";
 ---
 
 <section class="monument-product">
-    <div class="shell"><HeroCarousel /></div>
+	<div class="shell">
+		<HeroCarousel />
+		<HomeProof />
+	</div>
 </section>
