@@ -64,7 +64,7 @@ import {
 	type VcsRepositoryId,
 } from "@maple/domain/http"
 import { wrapChatContext } from "@maple/domain/chat-preamble"
-import { encodeChatTurnTenant, prReviewSessionId } from "@maple/domain/chat-session"
+import { encodeChatTurnTenant, prReviewSessionId, pullRequestTurnOrigin } from "@maple/domain/chat-session"
 import { UserId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
@@ -364,6 +364,8 @@ export const buildReviewKickoff = (input: {
 	readonly rules?: ReadonlyArray<RepositoryRuleFile>
 	/** What production telemetry says about the diff; absent when it could not be read. */
 	readonly telemetry?: PrReviewTelemetry
+	/** A public repository's review is world-readable: it reads no telemetry text and no tools. */
+	readonly isPrivate: boolean
 }): string => {
 	const body = Str.trim(input.body ?? "")
 	const quoted =
@@ -388,7 +390,13 @@ export const buildReviewKickoff = (input: {
 		"",
 		...renderConfigRules(input.config),
 		...(input.followUp === undefined || input.followUp.length === 0 ? [] : [...input.followUp, ""]),
-		...renderTelemetryKickoff(input.telemetry),
+		...renderTelemetryKickoff(input.telemetry, input),
+		...(input.isPrivate
+			? []
+			: [
+					"This repository is public, so its review is world-readable: no telemetry tools are offered. Review from the diff and the code.",
+					"",
+				]),
 		"Start with pr_changed_files. Read every hunk that adds code with pr_file_diff before you decide anything. Finish with submit_review.",
 	]
 	return wrapChatContext(Arr.join(lines, "\n"), "")
@@ -2147,6 +2155,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					...(followUp === undefined ? undefined : { followUp }),
 					...(rules === undefined ? undefined : { rules }),
 					...(telemetry === undefined ? undefined : { telemetry }),
+					isPrivate: repo.isPrivate,
 				})
 				// Before the turn, so a fast turn's finished summary is never overwritten by this notice.
 				yield* postReviewStatus(orgId, reviewId, repo, job.number, { kind: "reviewing", headSha })
@@ -2155,8 +2164,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						sessionId,
 						messageId: randomUUID(),
 						text,
-						// The review reads a pull request its author wrote, and no Maple user stands behind them.
-						origin: { kind: "autonomous", startedBy: { kind: "person", roles: [] } },
+						origin: pullRequestTurnOrigin(repo),
 						tenant: encodeChatTurnTenant({
 							orgId,
 							userId: internalServiceUserId,
@@ -2390,10 +2398,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					yield* annotate("skipped", { "maple.pr_review.skip_reason": "bot_author" })
 					return skip("bot_author")
 				}
-				// The automatic review reads org telemetry and posts to the pull request, so on a public
-				// repository it runs only for a trusted author. GitHub reports private org members as
-				// CONTRIBUTOR in webhooks, and only people with access can open a pull request on a private one.
-				// Webhooks also report them as CONTRIBUTOR on public repositories, so their push access is asked.
+				// The automatic review spends the org's quota, so on a public repository it runs only for a
+				// trusted author. Webhooks report org members as CONTRIBUTOR, so their push access is asked;
+				// only people with access can open a pull request on a private one.
 				const outsideAuthor =
 					mode === "automatic" &&
 					!repo.isPrivate &&

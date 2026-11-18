@@ -5,6 +5,7 @@
  * The provider is a fake at the `VcsProviderRegistry` seam and the Durable Object is a fake at
  * the `ChatSessions` seam, so the test sees exactly what each would have been asked to do.
  */
+import type { ChatTurnOrigin } from "@maple/domain/chat-session"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import {
 	GitCommitSha,
@@ -88,6 +89,7 @@ const UNKNOWN_REVIEW = Schema.decodeSync(PrReviewId)("00000000-0000-0000-0000-00
 interface Begun {
 	readonly sessionId: string
 	readonly text: string
+	readonly origin?: ChatTurnOrigin
 }
 
 /** The `ChatSession` namespace as the service sees it off the Worker env. */
@@ -95,7 +97,7 @@ const chatSessionsFake = (begun: Array<Begun>, aborted: Array<string>, options: 
 	fakeChatSessionsLayer((sessionId) => ({
 		beginTurn: async (input) => {
 			if (options.busy) return undefined
-			begun.push({ sessionId: input.sessionId, text: input.text })
+			begun.push({ sessionId: input.sessionId, text: input.text, origin: input.origin })
 			return { cursor: 0, messageId: "m", turnMessageId: "t" }
 		},
 		abort: async (reason) => {
@@ -823,6 +825,48 @@ describe("PrReviewService.onPullRequestEvent", () => {
 				const again = yield* reviews.onCiApproved(orgId, job({ authorAssociation: "CONTRIBUTOR" }))
 				assert.equal(again.skipReason, "duplicate")
 				assert.equal(begun.length, 1)
+			}).pipe(Effect.provide(layerFor(testDb, { begun })))
+		},
+	)
+
+	it.effect.each([
+		["a private", true, "private"],
+		["a public", false, "public"],
+	] as const)(
+		"starts every review mode on %s repository with the repository's visibility on the turn",
+		([, isPrivate, expected]) => {
+			const testDb = createTestDb(trackedDbs)
+			const begun: Array<Begun> = []
+			return Effect.gen(function* () {
+				yield* seed(true, isPrivate)
+				const reviews = yield* PrReviewService
+				const automatic = yield* reviews.onPullRequestEvent(
+					orgId,
+					job({ authorAssociation: "MEMBER" }),
+				)
+				const requested = yield* reviews.reviewNow(
+					orgId,
+					job({ number: 613, authorAssociation: "NONE" }),
+				)
+				const approved = yield* reviews.onCiApproved(
+					orgId,
+					job({ number: 614, authorAssociation: "NONE" }),
+				)
+				assert.deepEqual(
+					Arr.map([automatic, requested, approved], (outcome) => outcome.outcome),
+					["started", "started", "started"],
+				)
+				assert.deepEqual(
+					Arr.map(begun, (turn) =>
+						turn.origin?.kind === "autonomous" ? turn.origin.repository : undefined,
+					),
+					[expected, expected, expected],
+				)
+				// A public repository's kickoff tells the agent why it has no telemetry tools.
+				assert.equal(
+					Arr.every(begun, (turn) => Str.includes("This repository is public")(turn.text)),
+					!isPrivate,
+				)
 			}).pipe(Effect.provide(layerFor(testDb, { begun })))
 		},
 	)
@@ -2241,6 +2285,7 @@ describe("buildReviewKickoff", () => {
 			baseSha: undefined,
 			fork: false,
 			body: "Retries GETs.",
+			isPrivate: true,
 			...overrides,
 		})
 	const rules = [

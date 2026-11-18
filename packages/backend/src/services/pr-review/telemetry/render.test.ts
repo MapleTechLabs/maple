@@ -204,10 +204,34 @@ describe("fixedContractBreaks", () => {
 
 describe("rendering", () => {
 	it("states the breaks and traffic in the kickoff", () => {
-		const text = Arr.join(renderTelemetryKickoff(telemetry()), "\n")
+		const text = Arr.join(renderTelemetryKickoff(telemetry(), { isPrivate: true }), "\n")
 		assert.include(text, "`payment.provider` (attribute, ~1.0k/day) removed at src/pay.ts:12")
 		assert.include(text, "telemetryDismissals")
 		assert.include(text, "src/checkout.ts: ~41k calls/day")
+		assert.include(text, "POST /checkout")
+	})
+
+	it("gives a public repository's kickoff counts, and no span or error text", () => {
+		const facts = telemetry({
+			linkedIssues: [
+				new PrReviewLinkedIssue({
+					issueId: "i-1",
+					fingerprintHash: "fp-1",
+					title: "TypeError: secret@example.com",
+					service: "billing",
+					path: "src/checkout.ts",
+					topFrame: "src/checkout.ts:9",
+					occurrences: 40,
+					lastSeenAt: 0,
+				}),
+			],
+		})
+		const text = Arr.join(renderTelemetryKickoff(facts, { isPrivate: false }), "\n")
+		assert.include(text, "src/checkout.ts: ~41k calls/day")
+		assert.include(text, "An issue with 40 occurrences → src/checkout.ts")
+		for (const leaked of ["POST /checkout", "secret@example.com", "billing", "src/checkout.ts:9"]) {
+			assert.notInclude(text, leaked)
+		}
 	})
 
 	it("says the check blocks only when the repository asked", () => {

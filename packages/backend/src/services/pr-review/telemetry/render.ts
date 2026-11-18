@@ -43,10 +43,17 @@ const readers = (item: PrReviewContractBreak) => {
 /**
  * The block the agent reads after the pull request's description. Facts with a job attached: the
  * service files the breaks and costs itself, so the agent only verifies and weighs.
+ *
+ * On a public repository the review is world-readable and anyone with the ingest key writes the
+ * org's telemetry, so only counts reach it: no service, span or error text.
  */
-export const renderTelemetryKickoff = (telemetry: PrReviewTelemetry | undefined): ReadonlyArray<string> => {
+export const renderTelemetryKickoff = (
+	telemetry: PrReviewTelemetry | undefined,
+	repository: { readonly isPrivate: boolean },
+): ReadonlyArray<string> => {
 	if (telemetry === undefined) return []
 	const lines: Array<string> = []
+	const withText = repository.isPrivate
 	const breaks = openContractBreaks(telemetry)
 	if (breaks.length > 0) {
 		lines.push(
@@ -63,17 +70,17 @@ export const renderTelemetryKickoff = (telemetry: PrReviewTelemetry | undefined)
 	if (telemetry.hotFiles.length > 0) {
 		lines.push(
 			`Production traffic of the operations the changed files name, last ${telemetry.windowDays} days:`,
-			...Arr.map(
-				telemetry.hotFiles,
-				(file) =>
-					`- ${file.path}: ~${formatCount(file.perDay)} calls/day (${Arr.join(
-						Arr.map(
-							file.operations.slice(0, 3),
-							(operation) =>
-								`${operation.service} \`${operation.spanName}\` ${formatCount(operation.perDay)}/day, ${(operation.errorRate * 100).toFixed(1)}% errors, p95 ${operation.p95Ms} ms`,
-						),
-						"; ",
-					)})`,
+			...Arr.map(telemetry.hotFiles, (file) =>
+				withText
+					? `- ${file.path}: ~${formatCount(file.perDay)} calls/day (${Arr.join(
+							Arr.map(
+								file.operations.slice(0, 3),
+								(operation) =>
+									`${operation.service} \`${operation.spanName}\` ${formatCount(operation.perDay)}/day, ${(operation.errorRate * 100).toFixed(1)}% errors, p95 ${operation.p95Ms} ms`,
+							),
+							"; ",
+						)})`
+					: `- ${file.path}: ~${formatCount(file.perDay)} calls/day`,
 			),
 			`Weigh findings by this traffic: a gap on a path that serves thousands of calls a day matters more than one on a path with none. Maple raises observability and performance notes in files above ${formatCount(HOT_PER_DAY)} calls/day to warnings.`,
 			"",
@@ -82,10 +89,10 @@ export const renderTelemetryKickoff = (telemetry: PrReviewTelemetry | undefined)
 	if (telemetry.linkedIssues.length > 0) {
 		lines.push(
 			"Open error issues whose top stack frame is in a changed file:",
-			...Arr.map(
-				telemetry.linkedIssues,
-				(issue) =>
-					`- ${issue.title} (${issue.service}, ${formatCount(issue.occurrences)} occurrences) at ${issue.topFrame} → ${issue.path}`,
+			...Arr.map(telemetry.linkedIssues, (issue) =>
+				withText
+					? `- ${issue.title} (${issue.service}, ${formatCount(issue.occurrences)} occurrences) at ${issue.topFrame} → ${issue.path}`
+					: `- An issue with ${formatCount(issue.occurrences)} occurrences → ${issue.path}`,
 			),
 			"Say in the summary whether this change addresses each one, and only claim a fix the diff shows.",
 			"",

@@ -76,11 +76,15 @@ export const profileForTurn = (agent: AgentDefinition, origin: ChatTurnOrigin): 
 		case "autonomous":
 			// Nobody can approve an unattended pass, so a gated tool is a wasted call and a
 			// repeated-failure slot. Denial is the only thing that works here.
-			// An agent with its own unattended allowlist (the reviewer) runs under that instead.
+			// An agent with its own unattended allowlists (the reviewer) runs under the one for where it
+			// posts; a turn that does not say is treated as public, the narrower one.
 			return {
 				surface: "chat",
 				toolSurface: "chat",
-				ruleset: agent.autonomousPermission ?? READ_ONLY_RULESET,
+				ruleset:
+					agent.autonomousPermission === undefined
+						? READ_ONLY_RULESET
+						: agent.autonomousPermission[origin.repository ?? "public"],
 				prompt: agent.prompt,
 				namesDataSources: true,
 			}

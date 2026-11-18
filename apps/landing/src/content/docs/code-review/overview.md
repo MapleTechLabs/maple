@@ -7,6 +7,8 @@ order: 1
 
 Maple reviews pull requests on GitHub. Each review reads the diff next to the production telemetry behind the changed code: the traffic of the operations it touches, open errors in those files, and the alerts and dashboards that read its spans and metrics. Findings come back on the pull request before you merge, and Maple checks production again after the change ships.
 
+On a public repository the review and its replies read only the code and traffic counts, never your telemetry's text, since anyone can read what they post.
+
 Reviews run through the [GitHub integration](/docs/integrations/github). Connect GitHub first.
 
 ## Turn reviews on
@@ -83,7 +85,7 @@ A push starts a review unless one of these applies:
 
 - The pull request is a draft. Turn on **Draft pull requests** to review drafts too.
 - The author is a bot.
-- The author is not an owner, member or collaborator of the repository. The review runs once a maintainer approves the pull request's CI.
+- The author is not an owner, member or collaborator of the repository. The review runs once a maintainer approves the pull request's CI; re-running it does not count.
 - The repository reached its **Daily limit** for the UTC day.
 - The pull request reached its **Reviews per pull request** limit. Later pushes wait for `@maple review`.
 
