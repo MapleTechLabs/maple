@@ -439,13 +439,11 @@ const openRouterProviderOrder = (settings: LlmSettings): ReadonlyArray<string> |
 }
 
 /**
- * OpenRouter's per-request provider preferences. Every request routes only to endpoints that do
- * not retain or train on prompts (`data_collection: "deny"`, `zdr: true`); an `order` still keeps
- * fallbacks on, within those endpoints.
+ * OpenRouter's per-request provider preferences: every request skips endpoints that may train on or
+ * keep prompts for training (`data_collection: "deny"`); an `order` still keeps fallbacks on.
  */
 export const openRouterDataPolicy = (order: ReadonlyArray<string> | undefined) => ({
 	data_collection: "deny" as const,
-	zdr: true,
 	...(order === undefined ? undefined : { order, allow_fallbacks: true }),
 })
 

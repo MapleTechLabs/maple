@@ -88,10 +88,10 @@ once, on Maple's OpenRouter account. An org admin can also connect the org's own
 (`withOrgOpenRouterKey`); that org's traffic is traced only if the org enables Broadcast on its own
 account.
 
-Every request carries the provider preferences `data_collection: "deny"` and `zdr: true`
-(`openRouterDataPolicy` in `apps/ai/src/platform/Llm.ts`), so OpenRouter routes only to endpoints
-that neither retain nor train on prompts. A configured provider order keeps fallbacks on, within
-those endpoints.
+Every request carries the provider preference `data_collection: "deny"` (`openRouterDataPolicy`
+in `apps/ai/src/platform/Llm.ts`), so OpenRouter skips endpoints that may train on prompts. A
+configured provider order keeps fallbacks on. Zero data retention (`zdr: true`) is not set: it
+narrows several models to one provider and bypasses a BYOK key's provider.
 
 ## Querying In Maple
 

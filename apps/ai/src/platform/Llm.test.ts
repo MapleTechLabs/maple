@@ -345,7 +345,6 @@ describe("OpenRouter provider order", () => {
 
 			expect(captured.body.provider).toEqual({
 				data_collection: "deny",
-				zdr: true,
 				order: ["morph", "deepinfra"],
 				allow_fallbacks: true,
 			})
@@ -356,7 +355,7 @@ describe("OpenRouter provider order", () => {
 		Effect.gen(function* () {
 			const captured = yield* captureRequest(openRouterEnv, tags)
 
-			expect(captured.body.provider).toEqual({ data_collection: "deny", zdr: true })
+			expect(captured.body.provider).toEqual({ data_collection: "deny" })
 		}),
 	)
 
@@ -366,7 +365,7 @@ describe("OpenRouter provider order", () => {
 				resolveSecurityAuditModel(env, "discovery", callTags),
 			)
 
-			expect(captured.body.provider).toEqual({ data_collection: "deny", zdr: true })
+			expect(captured.body.provider).toEqual({ data_collection: "deny" })
 		}),
 	)
 })
