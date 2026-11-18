@@ -67,7 +67,7 @@ describe("renderDiscordMessage", () => {
 			Arr.join(
 				[
 					"Checkout is slow.",
-					"> **Service** [checkout](https://app.maple.dev/services/checkout)\n> p95 1.20s",
+					"> **Service** [checkout](<https://app.maple.dev/services/checkout>)\n> p95 1.20s",
 					"Looking for errors…",
 				],
 				"\n\n",
@@ -140,7 +140,7 @@ describe("renderDiscordMessage", () => {
 		// as spent.
 		expect(payload.components).toEqual([])
 		expect(payload.content).toBe(
-			'I created the alert rule "checkout p95". [Open in Maple](https://app.maple.dev/alerts/ar_1)\n-# Approved by Ada.',
+			'I created the alert rule "checkout p95". [Open in Maple](<https://app.maple.dev/alerts/ar_1>)\n-# Approved by Ada.',
 		)
 	})
 
@@ -214,6 +214,35 @@ describe("renderDiscordMessage", () => {
 		])
 		expect(payload.content).toHaveLength(MAX_CONTENT_CHARS)
 		expect(Str.endsWith("…")(payload.content)).toBe(true)
+	})
+
+	it("posts every URL in the body in Discord's no-preview form, and keeps chart embeds", () => {
+		const payload = renderDiscordMessage([
+			{
+				kind: "prose",
+				markdown:
+					"see https://x.example/a?d=1. Or [x](https://x.example), already <https://y.example>, `https://code.example`",
+			},
+			chart("https://img.maple.dev/a1/0.png"),
+		])
+		expect(payload.content).toBe(
+			"see <https://x.example/a?d=1>. Or [x](<https://x.example>), already <https://y.example>, `https://code.example`",
+		)
+		expect(payload.embeds).toEqual([
+			{
+				title: "Errors by service",
+				description: "1 item, highest checkout (4)",
+				image: { url: "https://img.maple.dev/a1/0.png" },
+			},
+		])
+	})
+
+	it("does not leave a cut URL at the end of a clamped body", () => {
+		const prefix = Str.repeat(MAX_CONTENT_CHARS - 20)("x")
+		const payload = renderDiscordMessage([
+			{ kind: "prose", markdown: `${prefix} https://x.example/${Str.repeat(60)("d")}` },
+		])
+		expect(payload.content).toBe(`${prefix} …`)
 	})
 
 	it("renders an alert as a coloured embed, with the links as a field", () => {

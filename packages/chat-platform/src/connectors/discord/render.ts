@@ -164,11 +164,11 @@ export const renderDiscordMessage = (blocks: ReadonlyArray<ChatBlock>): DiscordM
 		}
 	}
 
-	const content = Arr.join(lines, "\n\n")
+	const content = withoutLinkPreviews(Arr.join(lines, "\n\n"))
 	return {
 		// The neutral cut works to an estimate of what a dialect costs, and a body over the limit is
 		// rejected whole — so the estimate is clamped here rather than trusted.
-		content: content === "" && embeds.length === 0 ? EMPTY_CONTENT : clamp(content, MAX_CONTENT_CHARS),
+		content: content === "" && embeds.length === 0 ? EMPTY_CONTENT : clampContent(content),
 		embeds,
 		components: rows,
 		allowed_mentions: { parse: [] },
@@ -237,6 +237,59 @@ export const EMPTY_CONTENT = "—"
 
 const clamp = (text: string, max: number): string =>
 	text.length <= max ? text : `${Str.slice(0, max - 1)(text)}…`
+
+/** Code spans and fences, where Discord neither links nor previews a URL. */
+const CODE = /(```[\s\S]*?```|`[^`\n]*`)/
+/** A markdown link's target, an already-suppressed `<url>`, or a bare URL. */
+const LINK = /(\]\(\s*)<?(https?:\/\/[^\s)>]+)>?(?=\s*\))|<https?:\/\/[^\s>]+>|https?:\/\/[^\s<>]+/g
+/** Punctuation that ends a sentence rather than the URL before it. */
+const TRAILING = /[.,;:!?'"]+$|\)+$/
+
+const suppressBare = (url: string): string => {
+	const tail = Str.includes("(")(url)
+		? Str.replace(/[.,;:!?'"]+$/, "")(url)
+		: Str.replace(TRAILING, "")(url)
+	return `<${tail}>${Str.slice(tail.length)(url)}`
+}
+
+const suppressMatch = (match: RegExpMatchArray): string => {
+	const [whole, open, target] = match
+	if (open !== undefined && target !== undefined) return `${open}<${target}>`
+	return Str.startsWith("<")(whole) ? whole : suppressBare(whole)
+}
+
+/** One stretch of prose outside code, with each URL rewritten in place. */
+const suppressInProse = (prose: string): string => {
+	const rebuilt = Arr.reduce(
+		Arr.fromIterable(Str.matchAll(LINK)(prose)),
+		{ text: "", at: 0 },
+		(acc, match) => {
+			const index = match.index ?? acc.at
+			return {
+				text: `${acc.text}${Str.slice(acc.at, index)(prose)}${suppressMatch(match)}`,
+				at: index + match[0].length,
+			}
+		},
+	)
+	return `${rebuilt.text}${Str.slice(rebuilt.at)(prose)}`
+}
+
+/**
+ * Every URL in `content` as Discord's no-preview form: `<url>`, and `[text](<url>)` for a link.
+ * Discord fetches a preview of a posted URL itself, with no click, so a model-written URL carrying
+ * data would be requested as soon as it is posted. Embeds the bot builds are left alone.
+ */
+export const withoutLinkPreviews = (content: string): string =>
+	Arr.join(
+		Arr.map(Str.split(CODE)(content), (part, index) => (index % 2 === 1 ? part : suppressInProse(part))),
+		"",
+	)
+
+/** {@link clamp} for content, never leaving a cut URL behind: an unclosed `<url` would preview. */
+const clampContent = (text: string): string =>
+	text.length <= MAX_CONTENT_CHARS
+		? text
+		: `${Str.replace(/<?https?:\/\/[^\s>]*$/, "")(Str.slice(0, MAX_CONTENT_CHARS - 1)(text))}…`
 
 const ENTITY_LABELS = {
 	trace: "Trace",

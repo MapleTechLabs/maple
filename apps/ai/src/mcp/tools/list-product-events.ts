@@ -42,6 +42,7 @@ export function registerListProductEventsTool(server: McpToolRegistrar) {
 			utm_campaign: P.optionalText("Only events from sessions carrying this utm_campaign."),
 			limit: P.limit({ default: 50, max: QUERY_MAX, noun: "event names" }),
 		}),
+		untrustedOutput: true,
 		hints: { readOnly: true },
 		phrases: ["Listing product events"],
 		handler: Effect.fn("McpTool.listProductEvents")(function* (params) {

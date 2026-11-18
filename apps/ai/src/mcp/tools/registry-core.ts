@@ -282,6 +282,15 @@ export const toInputSchema = (schema: Schema.Top): Record<string, unknown> => {
 /** A tool module's registration function, as `registry.ts` and the generated module map import it. */
 export type McpToolRegister = (registrar: McpToolRegistrar) => void
 
+/** A tool's rendered doc, marked when it shows telemetry text (see `untrustedOutput`). */
+export const toolDocOf = <O>(
+	spec: { readonly render: (output: O) => ToolDoc; readonly untrustedOutput?: true },
+	output: O,
+): ToolDoc => {
+	const doc = spec.render(output)
+	return spec.untrustedOutput === true && doc.empty === undefined ? { ...doc, untrusted: true } : doc
+}
+
 /**
  * Runs registration functions and keeps the tools `keep` accepts. One module can register
  * several tools; the per-tool lookup defines only the one a call asked for.
@@ -325,7 +334,7 @@ export const collectToolDefinitions = (
 							),
 						),
 					)
-					return { doc: spec.render(output), structured }
+					return { doc: toolDocOf(spec, output), structured }
 				}),
 		})
 	}

@@ -1,4 +1,5 @@
 import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
+import { stringifyJson } from "./json"
 export function formatDurationFromMs(ms: number): string {
 	if (ms < 1) return `${(ms * 1000).toFixed(0)}us`
 	if (ms < 1000) return `${ms.toFixed(1)}ms`
@@ -49,6 +50,15 @@ export function formatTable(headers: string[], rows: string[][]): string {
 export function truncate(str: string, maxLen = 80): string {
 	if (str.length <= maxLen) return str
 	return Str.slice(0, maxLen - 3)(str) + "..."
+}
+
+/**
+ * Text someone outside Maple wrote (a description, a telemetry value) as one JSON-quoted line: it
+ * cannot end its quote, start a new section or read as the tool's own text.
+ */
+export function untrustedText(text: string, max = 300): string {
+	const line = truncate(Str.replace(/\s+/g, " ")(text), max)
+	return stringifyJson(line) ?? `"${Str.replace(/"/g, "'")(line)}"`
 }
 
 /**
