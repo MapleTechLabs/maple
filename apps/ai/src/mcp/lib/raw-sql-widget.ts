@@ -1,7 +1,12 @@
 import { rawSqlIssue } from "@maple/domain/raw-sql"
 import { rawSqlDisplayTypeFor, widgetTypeByVisualization } from "@maple/domain/http"
 import type { RawSqlDisplayType, WidgetDataSourceSchema } from "@maple/domain/http"
-import { dataSourceQuerySet, dataSourceTransform, makeRawSqlDataSource } from "@maple/widgets/dashboard"
+import {
+	dataSourcePromql,
+	dataSourceQuerySet,
+	dataSourceTransform,
+	makeRawSqlDataSource,
+} from "@maple/widgets/dashboard"
 
 // MCP-side mirror of the web's raw-SQL widget builder so agents can create
 // raw-SQL widgets without hand-crafting the dataSource JSON. The display type
@@ -48,11 +53,21 @@ export function buildRawSqlDataSource(args: {
  */
 export function withScalarReduction(dataSource: WidgetDataSource, isScalar: boolean): WidgetDataSource {
 	if (!isScalar) return dataSource
+	// A PromQL scalar needs its rows newest first, which only a stat or gauge display type gives;
+	// any other (absent, or a line chart's) is oldest first, and `first` would read the oldest.
+	if (
+		"kind" in dataSource &&
+		dataSource.kind === "promql" &&
+		dataSource.displayType !== "stat" &&
+		dataSource.displayType !== "gauge"
+	) {
+		return withScalarReduction({ ...dataSource, displayType: "stat" }, isScalar)
+	}
 	if (dataSourceTransform(dataSource)?.reduceToValue !== undefined) return dataSource
 	const querySet = dataSourceQuerySet(dataSource)
-	// Only the query arm: a route source owns its own response shape, and a
+	// Only the query and PromQL arms: a route source owns its own response shape, and a
 	// static source has no response at all.
-	if (querySet === null) return dataSource
+	if (querySet === null && dataSourcePromql(dataSource) === null) return dataSource
 
 	const existing = dataSourceTransform(dataSource)
 	return {

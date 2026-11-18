@@ -684,6 +684,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/promql-widget",
+		title: "PromQL widget",
+		description:
+			"The widget editor over a PromQL line chart with fixture series; ?state=error shows the parser's message.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/query-builder",
 		title: "Query builder",
 		description: "MVP query builder against real warehouse data for the signed-in org.",

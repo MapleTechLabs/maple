@@ -9,7 +9,7 @@ import { input } from "@maple/views/ui/input"
 import { toSeriesFieldOptions } from "./drafts"
 import { ROW_LIMIT_MAX, statValueFieldOf } from "./lowering"
 import { SQL_VALUE_FIELD, sqlValueFieldOf } from "./raw-sql"
-import { isSqlSource, widgetOf } from "./update"
+import { isPromqlSource, isSqlSource, widgetOf } from "./update"
 import type { EditorState } from "./editor-state"
 import { Message } from "./message"
 import { ProductEdit } from "./product-edit"
@@ -53,7 +53,7 @@ const scalarReduction = (h: H, model: Model, state: EditorState): ReadonlyArray<
 	// A fixed endpoint reduces its own field, which the stand-in queries cannot name.
 	const valueField = isSqlSource(model)
 		? [sqlValueField(h, state)]
-		: state.keepsStoredSource
+		: state.keepsStoredSource || isPromqlSource(model)
 			? []
 			: [
 					pageSelect(

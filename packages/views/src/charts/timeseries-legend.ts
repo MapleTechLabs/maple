@@ -12,7 +12,13 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { pressable } from "../ui/pressable"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../ui/table"
 import { hiddenNamesIn, Message, type Model } from "./chart"
-import { bucketSecondsOf, normaliseRows, scaleRates, type SeriesDefinition } from "./timeseries"
+import {
+	bucketSecondsOf,
+	normaliseRows,
+	type RateBasis,
+	scaleRates,
+	type SeriesDefinition,
+} from "./timeseries"
 import { hstack } from "../ui/stack"
 import { swatch } from "../ui/swatch"
 import { Array as Arr } from "effect"
@@ -229,6 +235,7 @@ export type TimeseriesLegendInputs = Readonly<{
 	data: ReadonlyArray<Readonly<Record<string, unknown>>>
 	definitions: ReadonlyArray<SeriesDefinition>
 	unit: string | undefined
+	rateBasis: RateBasis
 	nowMs: number
 	legend: "hidden" | "visible" | "right" | undefined
 	seriesStats: boolean
@@ -245,7 +252,7 @@ export const timeseriesLegend = (
 	// Stats over the closed buckets only, so all-zero series sink to the bottom.
 	const keys = Arr.map(series, (entry) => entry.key)
 	const normalised = normaliseRows(inputs.data, inputs.definitions)
-	const rows = scaleRates(normalised, keys, inputs.unit, bucketSecondsOf(normalised))
+	const rows = scaleRates(normalised, keys, inputs.unit, bucketSecondsOf(normalised), inputs.rateBasis)
 	const first = findFirstPartialIndex(rows, { now: inputs.nowMs })
 	const stats = computeSeriesStats(first <= 0 ? rows : rows.slice(0, first), keys)
 	const sorted = sortZeroSeriesLast(series, stats)

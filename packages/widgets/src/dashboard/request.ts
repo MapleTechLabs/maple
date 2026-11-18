@@ -1,8 +1,10 @@
 import {
 	dataSourceEndpoint,
+	dataSourcePromql,
 	dataSourceQuerySet,
 	dataSourceRawSql,
 	dataSourceRouteParams,
+	PROMQL_ENDPOINT,
 	QUERY_RESULT_ENDPOINTS,
 	RAW_SQL_ENDPOINT,
 } from "./access"
@@ -50,6 +52,22 @@ export function toWidgetRequest(dataSource: unknown): WidgetRequest | null {
 							granularitySeconds: rawSql.granularitySeconds,
 						}
 					: undefined),
+			},
+		}
+	}
+
+	// The query sits under `promql`, the key the planner's variable pass formats as PromQL.
+	const promql = dataSourcePromql(dataSource)
+	if (promql !== null) {
+		return {
+			endpoint: PROMQL_ENDPOINT,
+			params: {
+				promql: promql.query,
+				...(promql.legendFormat === undefined ? undefined : { legendFormat: promql.legendFormat }),
+				...(promql.minStepSeconds === undefined
+					? undefined
+					: { minStepSeconds: promql.minStepSeconds }),
+				...(promql.displayType === undefined ? undefined : { displayType: promql.displayType }),
 			},
 		}
 	}

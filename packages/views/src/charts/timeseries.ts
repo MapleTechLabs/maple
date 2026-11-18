@@ -73,14 +73,27 @@ export const normaliseRows = (
 		return [next]
 	})
 
-/** Rates are stored per bucket and displayed per second. */
+/**
+ * What a `requests_per_sec` value is: a count per bucket (the query builder's rates, shown per second)
+ * or already a per-second rate (PromQL), which must not be divided again.
+ */
+export type RateBasis = "per_bucket" | "per_second"
+
+/** Rates stored per bucket are displayed per second; per-second rates pass through. */
 export const scaleRates = (
 	rows: Array<TimeseriesRow>,
 	keys: ReadonlyArray<string>,
 	unit: string | undefined,
 	bucketSeconds: number | undefined,
+	basis: RateBasis,
 ): Array<TimeseriesRow> => {
-	if (unit !== "requests_per_sec" || bucketSeconds === undefined || bucketSeconds <= 0) return rows
+	if (
+		unit !== "requests_per_sec" ||
+		basis === "per_second" ||
+		bucketSeconds === undefined ||
+		bucketSeconds <= 0
+	)
+		return rows
 	return Arr.map(rows, (row) => {
 		const next: TimeseriesRow = { bucket: row.bucket, date: row.date }
 		if (row.partial) next.partial = true

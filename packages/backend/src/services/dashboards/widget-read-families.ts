@@ -8,6 +8,7 @@ import { TELEMETRY_READ_FAMILIES } from "@maple/domain/http/v2"
 import {
 	dataSourceQuerySet,
 	MARKDOWN_STATIC_ENDPOINT,
+	PROMQL_ENDPOINT,
 	QUERY_RESULT_ENDPOINTS,
 	RAW_SQL_ENDPOINT,
 	toWidgetRequest,
@@ -35,6 +36,7 @@ export type WidgetReadPath =
 	| { readonly _tag: "Static" }
 	| { readonly _tag: "QuerySet"; readonly request: WidgetRequest; readonly querySet: WidgetQuerySet }
 	| { readonly _tag: "RawSql"; readonly request: WidgetRequest }
+	| { readonly _tag: "Promql"; readonly request: WidgetRequest }
 	| { readonly _tag: "Route"; readonly request: WidgetRequest; readonly plan: RouteEndpointPlan }
 	| { readonly _tag: "Unservable"; readonly request: WidgetRequest }
 
@@ -46,6 +48,7 @@ export const widgetReadPath = (dataSource: WidgetDataSource | undefined): Widget
 	const request = dataSource === undefined ? null : toWidgetRequest(dataSource)
 	if (request === null || request.endpoint === MARKDOWN_STATIC_ENDPOINT) return { _tag: "Static" }
 	if (request.endpoint === RAW_SQL_ENDPOINT) return { _tag: "RawSql", request }
+	if (request.endpoint === PROMQL_ENDPOINT) return { _tag: "Promql", request }
 	const querySet = dataSourceQuerySet(dataSource)
 	if (querySet !== null && request.endpoint === QUERY_RESULT_ENDPOINTS[querySet.resultShape]) {
 		return { _tag: "QuerySet", request, querySet }
@@ -62,6 +65,9 @@ export const readPathFamilies = (path: WidgetReadPath): ReadonlyArray<TelemetryR
 			return []
 		case "RawSql":
 			return ALL_FAMILIES
+		// PromQL reads only the metric tables, like a metrics query set.
+		case "Promql":
+			return ["metrics"]
 		case "QuerySet":
 			return Arr.dedupe(
 				Arr.flatMap(path.querySet.queries, (query) => sourceReadFamilies(query.dataSource)),

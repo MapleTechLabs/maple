@@ -18,6 +18,7 @@ import { getQueryBuilderTimeseries } from "./query-builder-timeseries"
 import { getQueryBuilderBreakdown } from "./query-builder-breakdown"
 import { getQueryBuilderList } from "./query-builder-list"
 import { getRawSqlChart } from "./raw-sql-chart"
+import { getPromqlChart } from "./promql-chart"
 import { getProductEventsFunnelWidget, getProductEventsPathsWidget } from "./product-events"
 
 /**
@@ -68,6 +69,7 @@ export const widgetServerFunctions = {
 	custom_query_builder_breakdown: getQueryBuilderBreakdown,
 	custom_query_builder_list: getQueryBuilderList,
 	raw_sql_chart: getRawSqlChart,
+	promql_chart: getPromqlChart,
 	product_events_funnel: getProductEventsFunnelWidget,
 	product_events_paths: getProductEventsPathsWidget,
 	markdown_static: markdownStaticServerFn,

@@ -14,12 +14,7 @@
  * screenshot.
  */
 import { describe, expect, it } from "@effect/vitest"
-import {
-	DashboardDocument,
-	DashboardVariableSchema,
-	IsoDateTimeString,
-	OrgId,
-} from "@maple/domain/http"
+import { DashboardDocument, DashboardVariableSchema, IsoDateTimeString, OrgId } from "@maple/domain/http"
 import type { RawSqlValidationError } from "@maple/domain/http"
 import {
 	MAX_LIST_RANGE_SECONDS,
@@ -45,6 +40,7 @@ import {
 } from "./DashboardWidgetDataService"
 import { makeServerQuerySetExecutor } from "./server-query-set-executor"
 import { compiledQueryOf, type CompiledQueryInput } from "@maple/query-engine/execution"
+import { PromqlQueryService } from "@maple/backend/services/promql/PromqlQueryService"
 
 const asIsoDateTimeString = Schema.decodeUnknownSync(IsoDateTimeString)
 const asOrgId = Schema.decodeUnknownSync(OrgId)
@@ -150,7 +146,13 @@ const makeHarness = () => {
 	} as any)
 	const runtime = ManagedRuntime.make(
 		Layer.effect(DashboardWidgetDataService, DashboardWidgetDataService.make).pipe(
-			Layer.provide(Layer.mergeAll(queryEngine, warehouse)),
+			Layer.provide(
+				Layer.mergeAll(
+					queryEngine,
+					warehouse,
+					Layer.effect(PromqlQueryService, PromqlQueryService.make).pipe(Layer.provide(warehouse)),
+				),
+			),
 		),
 	)
 	return { runtime, captured, queryEngineLayer: queryEngine, warehouseLayer: warehouse }

@@ -135,7 +135,13 @@ export const buildQueryBuilderBar = (spec: BarSpec): BuiltChart<BarCell, ChartVa
 	const unit = spec.unit ?? undefined
 	const keys = Arr.map(definitions, (definition) => definition.chartKey)
 	const normalised = normaliseRows(spec.data, definitions)
-	const rows = scaleRates(normalised, keys, unit, bucketSecondsOf(normalised))
+	const rows = scaleRates(
+		normalised,
+		keys,
+		unit,
+		bucketSecondsOf(normalised),
+		spec.rateBasis ?? "per_bucket",
+	)
 	const visible = visibleSeries(definitions, spec.colors, spec.fallbackColor, spec.hidden)
 	const visibleKeys = Arr.map(visible, (entry) => entry.key)
 	const axisContext = axisContextOf(rows, spec.timeZone ?? undefined)

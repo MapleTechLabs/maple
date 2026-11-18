@@ -44,6 +44,36 @@ const STAT_COLUMNS = [
 ].concat(["sumSquares", "resetSum", "resets", "changes", "sumT", "sumTT", "sumTV", "values"])
 
 describe("PromqlQueryService", () => {
+	it.effect("refuses a widget window that ends before it starts", () =>
+		Effect.gen(function* () {
+			const service = yield* PromqlQueryService
+			const error = yield* Effect.flip(
+				service.widget(tenant, {
+					query: "vector(1)",
+					startTime: "2026-01-02 00:00:00",
+					endTime: "2026-01-01 00:00:00",
+				}),
+			)
+			expect(error._tag).toBe("@maple/backend/promql/PromqlBadQueryError")
+		}).pipe(Effect.provide(TestLayer)),
+	)
+
+	it.effect("runs a widget query on a step picked from the window", () =>
+		Effect.gen(function* () {
+			const service = yield* PromqlQueryService
+			const result = yield* service.widget(tenant, {
+				query: "vector($__range_s)",
+				startTime: "2026-01-01 00:00:00",
+				endTime: "2026-01-02 00:00:00",
+				maxDataPoints: 100,
+				displayType: "stat",
+			})
+			// A day at 100 points rounds up to a 15 minute step; a stat reads newest first.
+			expect(result.stepSeconds).toBe(900)
+			expect(result.resultType).toBe("matrix")
+			expect(result.rows[0]).toEqual({ bucket: "2026-01-02T00:00:00.000Z", value: 86_400 })
+		}).pipe(Effect.provide(TestLayer)),
+	)
 	it.effect("answers a query without selectors without reading the warehouse", () =>
 		Effect.gen(function* () {
 			const service = yield* PromqlQueryService

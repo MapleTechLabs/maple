@@ -28,7 +28,15 @@ import {
 	valueTypeOf,
 	type VectorSelector,
 } from "@maple/promql"
-import { CH, formatWarehouseDateTime } from "@maple/query-engine"
+import {
+	CH,
+	formatWarehouseDateTime,
+	interpolatePromqlBuiltins,
+	parseWarehouseDateTime,
+	promqlRowsForDisplay,
+	promqlStepSeconds,
+	type PromqlRow,
+} from "@maple/query-engine"
 import {
 	buildPushdownQuery,
 	buildSelectorQueries,
@@ -106,6 +114,24 @@ const tooLarge = () =>
 
 export interface PromqlQuery extends QueryParams {
 	readonly query: string
+}
+
+/** A dashboard widget's PromQL over a warehouse window; the service picks the step. */
+export interface PromqlWidgetInput {
+	readonly query: string
+	readonly startTime: string
+	readonly endTime: string
+	readonly legendFormat?: string
+	readonly minStepSeconds?: number
+	readonly maxDataPoints?: number
+	readonly displayType?: string
+}
+
+export interface PromqlWidgetResult {
+	readonly rows: ReadonlyArray<PromqlRow>
+	readonly resultType: QueryResult["resultType"]
+	readonly seriesCount: number
+	readonly stepSeconds: number
 }
 
 /** The epoch ms a JavaScript Date can hold, and so the warehouse time formatting. */
@@ -316,7 +342,7 @@ const make = Effect.gen(function* () {
 		),
 	)
 
-	const query = Effect.fn("PromqlQueryService.query")(function* (
+	const query_ = Effect.fn("PromqlQueryService.query")(function* (
 		tenant: TenantContext,
 		input: PromqlQuery,
 	) {
@@ -598,7 +624,49 @@ const make = Effect.gen(function* () {
 		)
 	})
 
-	return { query, series, labelNames, labelValues, metadata }
+	const widget = Effect.fn("PromqlQueryService.widget")(function* (
+		tenant: TenantContext,
+		input: PromqlWidgetInput,
+	) {
+		const startMs = parseWarehouseDateTime(input.startTime)
+		const endMs = parseWarehouseDateTime(input.endTime)
+		// Checked before alignment, which would turn a reversed window into a valid instant.
+		if (!(endMs >= startMs)) {
+			return yield* new PromqlBadQueryError({ message: "end timestamp must not be before start time" })
+		}
+		const stepSeconds = promqlStepSeconds({
+			startMs,
+			endMs,
+			...(input.maxDataPoints === undefined ? undefined : { maxDataPoints: input.maxDataPoints }),
+			...(input.minStepSeconds === undefined ? undefined : { minStepSeconds: input.minStepSeconds }),
+		})
+		const stepMs = stepSeconds * 1000
+		// Steps land on multiples of the step, so neighbouring refreshes share their points.
+		const alignedStart = Math.floor(startMs / stepMs) * stepMs
+		const alignedEnd = Math.max(alignedStart, Math.floor(endMs / stepMs) * stepMs)
+		const query = interpolatePromqlBuiltins(input.query, { startMs, endMs, stepMs })
+		// Range mode even for a one-step window: a chart always wants a matrix.
+		const result = yield* query_(tenant, {
+			query,
+			startMs: alignedStart,
+			endMs: alignedEnd,
+			stepMs,
+			instant: false,
+		})
+		const rows = promqlRowsForDisplay(result, {
+			...(input.displayType === undefined ? undefined : { displayType: input.displayType }),
+			...(input.legendFormat === undefined ? undefined : { legendFormat: input.legendFormat }),
+		})
+		return {
+			rows,
+			resultType: result.resultType,
+			seriesCount:
+				result.resultType === "matrix" || result.resultType === "vector" ? result.result.length : 1,
+			stepSeconds,
+		} satisfies PromqlWidgetResult
+	})
+
+	return { query: query_, series, labelNames, labelValues, metadata, widget }
 })
 
 export class PromqlQueryService extends Context.Service<PromqlQueryService>()(
