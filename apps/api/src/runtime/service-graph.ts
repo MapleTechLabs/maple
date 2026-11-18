@@ -147,6 +147,7 @@ import { IntegrationInventoryService } from "@maple/backend/services/integration
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { TelemetryReadService } from "@maple/backend/services/warehouse/TelemetryReadService"
+import { PromqlQueryService } from "@maple/backend/services/promql/PromqlQueryService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { CiAnalyticsService } from "@maple/backend/services/pr-review/CiAnalyticsService"
@@ -272,6 +273,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	RuntimeAdvisoryCatalog.layer,
 	DependencyScanService.layer,
 	TelemetryReadService.layer,
+	PromqlQueryService.layer,
 	DashboardWidgetDataService.layer,
 	AlertDestinationsService.layer,
 	AlertReadModelsService.layer,

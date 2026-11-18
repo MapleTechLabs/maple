@@ -65,8 +65,11 @@ export const ApiObservabilityLive = Layer.mergeAll(
 	// Query values the tracer writes as `<redacted>` in `url.full` and `url.query`. A custom
 	// list replaces Effect's, so its defaults are kept. `actor` is an audit filter: an admin
 	// types a member's email into it, and a span is read by more people than the audit log is.
+	// `query` and `match[]` are PromQL text, whose matcher values can name a user or customer.
 	Layer.succeed(UrlParams.CurrentRedactedNames, [
 		...UrlParams.CurrentRedactedNames.defaultValue(),
 		"actor",
+		"query",
+		"match[]",
 	]),
 )

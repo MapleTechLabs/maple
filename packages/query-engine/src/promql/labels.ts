@@ -127,6 +127,9 @@ export const EXCLUDED_KEY = sql.raw(
 
 /** The exact key first; only a missing key pays for normalizing every key of the map. */
 const mapLookupExpr = (map: CH.Expr<Record<string, string>>, name: string, filterExcluded: boolean) => {
+	// Normalizing writes `_` for every change, so a name without one (job, instance) comes only from
+	// that exact key, never an excluded one: skip the per-row regex over every key.
+	if (!Str.includes("_")(name)) return sql(chString)`${map}[${name}]`
 	const fallback = filterExcluded
 		? sql(
 				chString,
@@ -146,6 +149,11 @@ export const labelValueExpr = ($: LabelColumns, name: string): CH.Expr<string> |
 	if (name === "__name__" || name === "le") return undefined
 	if (name === "job") return jobExpr($)
 	if (name === "instance") return instanceExpr($)
+	return attributeLabelExpr($, name)
+}
+
+/** A label read from the datapoint attributes, else the resource ones. */
+const attributeLabelExpr = ($: LabelColumns, name: string): CH.Expr<string> => {
 	const datapoint = mapLookupExpr($.Attributes, name, false)
 	const fromResource = mapLookupExpr($.ResourceAttributes, name, true)
 	return sql(chString)`if(${datapoint} != '', ${datapoint}, ${fromResource})`
@@ -201,7 +209,14 @@ export const labelSetExpr = ($: LabelColumns, bucket: boolean) => {
 /** A matcher as a WHERE condition, Prometheus semantics; `undefined` when it cannot be pushed down. */
 export const matcherCondition = ($: LabelColumns, matcher: LabelMatcher): CH.Condition | undefined => {
 	const value = labelValueExpr($, matcher.name)
-	if (value === undefined) return undefined
+	return value === undefined ? undefined : valueCondition(value, matcher)
+}
+
+/** An `le` matcher on a series without a bucket bound, whose `le` is an attribute like any label. */
+export const attributeLeCondition = ($: LabelColumns, matcher: LabelMatcher): CH.Condition =>
+	valueCondition(attributeLabelExpr($, "le"), matcher)
+
+const valueCondition = (value: CH.Expr<string>, matcher: LabelMatcher): CH.Condition => {
 	// The anchoring Prometheus uses; ClickHouse's `match` is RE2 like Prometheus'.
 	const pattern = `^(?s:${matcher.value})$`
 	switch (matcher.op) {

@@ -18,14 +18,26 @@ import {
 	METRIC_UNIT_SEPARATOR,
 	type PromqlCatalogRow,
 	type PromqlSelectorRow,
+	type PromqlSeriesLabelsRow,
+	type PromqlStoredMetric,
+	type PromqlStoredMetrics,
 	type PromqlPushdownRow,
 	promqlCatalogQuery,
 	type PromqlPushdownOpts,
 	promqlPushdownGroupQuery,
 	promqlPushdownSeriesQuery,
 	promqlSelectorQuery,
+	promqlSeriesLabelsQuery,
 } from "../ch/queries/promql"
-import { formatLe, labelValueExpr, leCondition, matchesAll, matcherCondition, seriesLabels } from "./labels"
+import {
+	attributeLeCondition,
+	formatLe,
+	labelValueExpr,
+	leCondition,
+	matchesAll,
+	matcherCondition,
+	seriesLabels,
+} from "./labels"
 import {
 	type CatalogMetric,
 	type MetricComponent,
@@ -342,3 +354,148 @@ export const toPushdownData = (
 		}),
 	}
 }
+
+export interface SeriesLabelsPlan {
+	readonly table: MetricTable
+	/** Stored identity (name and unit) to the targets its rows become. */
+	readonly targets: ReadonlyMap<string, ReadonlyArray<PromNameTarget>>
+	readonly compiled: ReturnType<typeof compileSeriesLabels>
+}
+
+export interface SeriesLabelsOptions {
+	readonly orgId: OrgId
+	/** Rows one table read returns at most. */
+	readonly limit: number
+	/** Stored metrics one read filters on; more are split over several reads. */
+	readonly maxNameFilter: number
+	/** Reads per table at most; metrics past them (in name order) are left out, like rows past the limit. */
+	readonly maxNameReads: number
+}
+
+const storedMetrics = (targets: ReadonlyArray<PromNameTarget>): ReadonlyArray<PromqlStoredMetric> =>
+	Arr.dedupeWith(
+		Arr.map(targets, (t) => ({ metricName: t.metricName, unit: t.unit })),
+		(a, b) => targetKey(a) === targetKey(b),
+	)
+
+/** Every stored metric when the read is unfiltered, else the listed ones; `undefined` for none. */
+const metricsOf = (targets: ReadonlyArray<PromNameTarget>, all: boolean): PromqlStoredMetrics | undefined => {
+	if (targets.length === 0) return undefined
+	return all ? "all" : storedMetrics(targets)
+}
+
+const compileSeriesLabels = (
+	table: MetricTable,
+	targets: ReadonlyArray<PromNameTarget>,
+	all: boolean,
+	matchers: ReadonlyArray<LabelMatcher>,
+	window: { readonly startMs: number; readonly endMs: number },
+	options: SeriesLabelsOptions,
+) => {
+	const labelMatchers = Arr.filter(matchers, (m) => m.name !== "__name__")
+	const leMatchers = Arr.filter(labelMatchers, (m) => m.name === "le")
+	const buckets = Arr.filter(targets, (t) => t.component === "bucket")
+	const others = Arr.filter(targets, (t) => t.component !== "bucket")
+	return compile(
+		promqlSeriesLabelsQuery({
+			table,
+			metrics: all ? "all" : storedMetrics(targets),
+			conditions: ($) => Arr.map(labelMatchers, (m) => matcherCondition($, m)),
+			le:
+				leMatchers.length === 0
+					? undefined
+					: {
+							buckets: metricsOf(buckets, all),
+							others: metricsOf(others, all),
+							boundConditions: (le) => Arr.map(leMatchers, (m) => leCondition(le, m)),
+							otherConditions: ($) => Arr.map(leMatchers, (m) => attributeLeCondition($, m)),
+						},
+			limit: options.limit,
+		}),
+		{ orgId: options.orgId, startMs: window.startMs, endMs: window.endMs },
+	)
+}
+
+const byTargetKey = (
+	targets: ReadonlyArray<PromNameTarget>,
+): ReadonlyMap<string, ReadonlyArray<PromNameTarget>> => {
+	const byKey = new Map<string, Array<PromNameTarget>>()
+	for (const target of targets) {
+		const key = targetKey(target)
+		byKey.set(key, [...(byKey.get(key) ?? []), target])
+	}
+	return byKey
+}
+
+/**
+ * Series discovery for one selector: per table, one unfiltered read when it keeps every metric, else
+ * up to `maxNameReads` reads of `maxNameFilter` (name, unit) pairs. All but a regex on a bucket's
+ * `le` run in SQL, and every matcher is checked again on the rows (`toSeriesLabels`).
+ */
+export const buildSeriesLabelsQueries = (
+	matchers: ReadonlyArray<LabelMatcher>,
+	window: { readonly startMs: number; readonly endMs: number },
+	catalog: ReadonlyArray<CatalogMetric>,
+	options: SeriesLabelsOptions,
+): ReadonlyArray<SeriesLabelsPlan> => {
+	const resolved = resolveSelectorName(
+		Arr.filter(matchers, (m) => m.name === "__name__"),
+		catalog,
+	)
+	// Each stored metric and component resolves at most once, so equal counts mean every one.
+	const everything = resolveSelectorName([], catalog)
+	const tables = Arr.dedupe(Arr.map(resolved, (target) => target.table))
+	return Arr.flatMap(tables, (table): ReadonlyArray<SeriesLabelsPlan> => {
+		const targets = Arr.filter(resolved, (target) => target.table === table)
+		const all = targets.length === Arr.filter(everything, (target) => target.table === table).length
+		if (all) {
+			return [
+				{
+					table,
+					targets: byTargetKey(targets),
+					compiled: compileSeriesLabels(table, targets, true, matchers, window, options),
+				},
+			]
+		}
+		const keys = Arr.sort(Arr.dedupe(Arr.map(targets, targetKey)), Order.String)
+		const batches = Arr.take(Arr.chunksOf(keys, Math.max(1, options.maxNameFilter)), options.maxNameReads)
+		return Arr.map(batches, (batch) => {
+			const inBatch = new Set(batch)
+			const batchTargets = Arr.filter(targets, (t) => inBatch.has(targetKey(t)))
+			return {
+				table,
+				targets: byTargetKey(batchTargets),
+				compiled: compileSeriesLabels(table, batchTargets, false, matchers, window, options),
+			}
+		})
+	})
+}
+
+/** The label sets of a selector's discovery rows: every target of each row, one per bucket bound. */
+export const toSeriesLabels = (
+	matchers: ReadonlyArray<LabelMatcher>,
+	results: ReadonlyArray<{
+		readonly plan: SeriesLabelsPlan
+		readonly rows: ReadonlyArray<PromqlSeriesLabelsRow>
+	}>,
+): ReadonlyArray<Readonly<Record<string, string>>> =>
+	Arr.flatMap(results, ({ plan, rows }) =>
+		Arr.flatMap(rows, (row) =>
+			Arr.flatMap(plan.targets.get(row.metricName) ?? [], (target) => {
+				const bounds: ReadonlyArray<number | undefined> =
+					target.component === "bucket" ? Arr.map(row.bounds, parseLe) : [undefined]
+				return Arr.filter(
+					Arr.map(bounds, (le) =>
+						seriesLabels({
+							promName: target.promName,
+							serviceName: row.serviceName,
+							attributes: row.attributes,
+							resourceAttributes: row.resourceAttributes,
+							le,
+						}),
+					),
+					(labels) => matchesAll(labels, matchers),
+				)
+			}),
+		),
+	)

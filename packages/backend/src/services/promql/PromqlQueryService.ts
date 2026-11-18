@@ -7,10 +7,11 @@
 // step; every other selector returns pre-aggregated buckets the evaluator
 // recombines.
 
-import { Context, Effect, Layer, Result, Schema, Array as Arr } from "effect"
+import { Context, Effect, Layer, Option, Order, Result, Schema, Array as Arr, Record as Rec } from "effect"
 import {
 	DEFAULT_LIMITS,
 	evaluate,
+	isInstant,
 	MAX_POINTS_PER_SERIES,
 	type Expr,
 	parse,
@@ -24,17 +25,29 @@ import {
 	type QueryResult,
 	type SelectorData,
 	type SelectorRequest,
+	valueTypeOf,
 	type VectorSelector,
 } from "@maple/promql"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import {
 	buildPushdownQuery,
 	buildSelectorQueries,
+	buildSeriesLabelsQueries,
+	canonicalPromNames,
 	catalogFromRows,
 	catalogQuery,
+	keysForLabel,
+	labelNamesFrom,
+	matchesValue,
+	prometheusMetadata,
+	promqlAttributeValuesQuery,
+	resourceKeysForLabel,
+	promqlMetadataQuery,
+	promqlIdentityValuesQuery,
 	type PushdownPlan,
 	toPushdownData,
 	toSelectorData,
+	toSeriesLabels,
 } from "@maple/query-engine/promql"
 import type { CatalogMetric } from "@maple/query-engine/promql"
 import type { TenantContext } from "@maple/domain/http"
@@ -118,8 +131,96 @@ const validate = (query: PromqlQuery): Effect.Effect<Expr, PromqlBadQueryError> 
 				position: parsed.failure.position,
 			})
 		}
+		// Prometheus refuses these before evaluating, as bad_data.
+		const type = valueTypeOf(parsed.success)
+		if (!isInstant(query) && (type === "matrix" || type === "string")) {
+			return yield* new PromqlBadQueryError({
+				message: `invalid expression type "${type === "matrix" ? "range vector" : "string"}" for range query, must be Scalar or instant Vector`,
+			})
+		}
 		return parsed.success
 	})
+
+/** A discovery call (series, labels, label values, metadata) over `[startMs, endMs]`. */
+export interface DiscoveryWindow {
+	readonly startMs: number
+	readonly endMs: number
+}
+
+export interface DiscoveryQuery extends DiscoveryWindow {
+	/** `match[]` series selectors; empty reads the catalog and rollups instead. */
+	readonly matches: ReadonlyArray<string>
+	readonly limit?: number
+}
+
+/** Names and values one discovery call returns at most. */
+export const DISCOVERY_LIMIT = 10_000
+const ATTRIBUTE_KEY_LIMIT = 1_000
+
+type AttributeScope = "metric" | "resource"
+
+const PROMQL_METRIC_TABLES = [
+	"metrics_sum",
+	"metrics_gauge",
+	"metrics_histogram",
+	"metrics_exponential_histogram",
+] as const
+const LABEL_NAME = /^[a-zA-Z_][a-zA-Z0-9_]*$/
+
+const validateWindow = (window: DiscoveryWindow): Effect.Effect<DiscoveryWindow, PromqlBadQueryError> =>
+	!Number.isFinite(window.startMs) || !Number.isFinite(window.endMs) || window.endMs < window.startMs
+		? Effect.fail(new PromqlBadQueryError({ message: "end timestamp must not be before start time" }))
+		: Effect.succeed(window)
+
+/** One `match[]` value: a plain vector selector with at least one matcher that rejects "". */
+const parseMatch = (text: string): Effect.Effect<VectorSelector, PromqlBadQueryError> => {
+	const parsed = parse(text)
+	if (Result.isFailure(parsed)) {
+		return Effect.fail(
+			new PromqlBadQueryError({
+				message: `invalid parameter "match[]": ${parsed.failure.message}`,
+				position: parsed.failure.position,
+			}),
+		)
+	}
+	const expr = parsed.success
+	if (expr.type !== "VectorSelector") {
+		return Effect.fail(
+			new PromqlBadQueryError({
+				message: `invalid parameter "match[]": ${text} is not a series selector`,
+			}),
+		)
+	}
+	if (!Arr.some(expr.matchers, (m) => !matchesValue(m, ""))) {
+		return Effect.fail(
+			new PromqlBadQueryError({
+				message: "match[] must contain at least one non-empty matcher",
+			}),
+		)
+	}
+	return Effect.succeed(expr)
+}
+
+/** Stored metrics one discovery read filters on; a selector keeping more splits them over reads. */
+const DISCOVERY_NAME_FILTER_LIMIT = 500
+/**
+ * Reads per table per selector, so a call makes at most 4 tables x 4 x MAX_SELECTORS reads; past
+ * 2,000 stored metrics in a table, the rest (in name order) are left out, as rows past the limit are.
+ */
+const DISCOVERY_NAME_READS = 4
+
+/**
+ * The window `job` and `instance` values are read over. No rollup keeps them, so the read scans
+ * raw tables; values only seen before the last day of a longer range are left out.
+ */
+const IDENTITY_WINDOW_MS = 24 * 3_600_000
+
+/** A label set as one string, NUL-separated: label names never hold NUL, and values practically never do. */
+const seriesKey = (labels: Readonly<Record<string, string>>): string =>
+	Arr.join(
+		Arr.map(Rec.toEntries(labels), ([name, value]) => `${name}\u0000${value}`),
+		"\u0000",
+	)
 
 const span = (requests: ReadonlyArray<SelectorRequest>) => ({
 	startMs: Math.min(...Arr.map(requests, (r) => r.startMs)),
@@ -274,7 +375,230 @@ const make = Effect.gen(function* () {
 		return result.success satisfies QueryResult
 	})
 
-	return { query }
+	const windowParams = (tenant: TenantContext, window: DiscoveryWindow) => ({
+		orgId: tenant.orgId,
+		startTime: formatWarehouseDateTime(window.startMs),
+		endTime: formatWarehouseDateTime(window.endMs),
+	})
+
+	const series = Effect.fn("PromqlQueryService.series")(function* (
+		tenant: TenantContext,
+		input: DiscoveryQuery,
+	) {
+		const window = yield* validateWindow(input)
+		if (input.matches.length === 0) {
+			return yield* new PromqlBadQueryError({ message: "no match[] parameter provided" })
+		}
+		// Each match[] is at least one warehouse read, like a selector in a query.
+		if (input.matches.length > MAX_SELECTORS) {
+			return yield* new PromqlBadQueryError({
+				message: `match[] reads more than ${MAX_SELECTORS} selectors`,
+			})
+		}
+		const selectors = yield* Effect.forEach(input.matches, parseMatch)
+		const catalog = yield* readCatalog(tenant, window)
+		// Not the query path's per-metric reads: `{job="api"}` resolves to every metric, which a
+		// discovery call must still answer. A few label-set reads per table instead, cut at the limit.
+		const read = yield* Effect.forEach(
+			Arr.flatMap(selectors, (selector) =>
+				Arr.map(
+					buildSeriesLabelsQueries(selector.matchers, window, catalog, {
+						orgId: tenant.orgId,
+						limit: DISCOVERY_LIMIT,
+						maxNameFilter: DISCOVERY_NAME_FILTER_LIMIT,
+						maxNameReads: DISCOVERY_NAME_READS,
+					}),
+					(plan) => ({ selector, plan }),
+				),
+			),
+			({ selector, plan }) =>
+				Effect.map(
+					warehouse.compiledQuery(tenant, plan.compiled, {
+						profile: "discovery",
+						context: "promqlSeries",
+					}),
+					(rows) => toSeriesLabels(selector.matchers, [{ plan, rows }]),
+				),
+			{ concurrency: WAREHOUSE_CONCURRENCY },
+		)
+		// seriesLabels sorts its keys, so the joined pairs are a stable identity.
+		const unique = new Map(
+			Arr.flatMap(read, (found) => Arr.map(found, (labels) => [seriesKey(labels), labels] as const)),
+		)
+		const limit = Math.min(input.limit ?? DISCOVERY_LIMIT, DISCOVERY_LIMIT)
+		yield* Effect.annotateCurrentSpan({
+			"maple.promql.matches": input.matches.length,
+			"maple.promql.range_ms": window.endMs - window.startMs,
+			"maple.promql.series": unique.size,
+		})
+		return Arr.take([...unique.values()], limit)
+	})
+
+	const attributeKeys = Effect.fn("PromqlQueryService.attributeKeys")(function* (
+		tenant: TenantContext,
+		window: DiscoveryWindow,
+		scope: AttributeScope,
+	) {
+		const compiled = CH.compile(
+			CH.attributeKeysQuery({ scope, limit: ATTRIBUTE_KEY_LIMIT }),
+			windowParams(tenant, window),
+		)
+		const rows = yield* warehouse.compiledQuery(tenant, compiled, {
+			profile: "discovery",
+			context: "promqlLabelNames",
+		})
+		return Arr.map(rows, (row) => row.attributeKey)
+	})
+
+	/** Datapoint keys and resource keys, read concurrently. */
+	const bothAttributeKeys = (tenant: TenantContext, window: DiscoveryWindow) =>
+		Effect.all([attributeKeys(tenant, window, "metric"), attributeKeys(tenant, window, "resource")], {
+			concurrency: 2,
+		})
+
+	const sortedUnique = (values: ReadonlyArray<string>) =>
+		Arr.take(Arr.sort(Arr.dedupe(values), Order.String), DISCOVERY_LIMIT)
+
+	/** The caller's `limit` counts distinct names or values, so it applies after deduplication. */
+	const limited = (values: ReadonlyArray<string>, limit: number | undefined) =>
+		Arr.take(values, Math.min(limit ?? DISCOVERY_LIMIT, DISCOVERY_LIMIT))
+
+	const labelNames = Effect.fn("PromqlQueryService.labelNames")(function* (
+		tenant: TenantContext,
+		input: DiscoveryQuery,
+	) {
+		const window = yield* validateWindow(input)
+		if (input.matches.length > 0) {
+			const found = yield* series(tenant, { ...input, limit: undefined })
+			return limited(sortedUnique(Arr.flatMap(found, (labels) => Rec.keys(labels))), input.limit)
+		}
+		const [catalog, keys] = yield* Effect.all(
+			[readCatalog(tenant, window), bothAttributeKeys(tenant, window)],
+			{ concurrency: 2 },
+		)
+		return limited(labelNamesFrom(catalog, ...keys), input.limit)
+	})
+
+	const attributeValues = Effect.fn("PromqlQueryService.attributeValues")(function* (
+		tenant: TenantContext,
+		window: DiscoveryWindow,
+		name: string,
+	) {
+		const [metricKeys, resourceKeys] = yield* bothAttributeKeys(tenant, window)
+		const candidates: ReadonlyArray<{ scope: AttributeScope; keys: ReadonlyArray<string> }> = [
+			{ scope: "metric", keys: keysForLabel(metricKeys, name) },
+			{ scope: "resource", keys: resourceKeysForLabel(resourceKeys, name) },
+		]
+		const reads = Arr.filter(candidates, (read) => read.keys.length > 0)
+		const values = yield* Effect.forEach(
+			reads,
+			(read) =>
+				Effect.map(
+					warehouse.compiledQuery(
+						tenant,
+						CH.compile(
+							promqlAttributeValuesQuery({ ...read, limit: DISCOVERY_LIMIT }),
+							windowParams(tenant, window),
+						),
+						{ profile: "discovery", context: "promqlLabelValues" },
+					),
+					(rows) => Arr.map(rows, (row) => row.attributeValue),
+				),
+			{ concurrency: 2 },
+		)
+		return Arr.flatten(values)
+	})
+
+	/** `job` or `instance` values as series carry them: one bounded read per metric table. */
+	const identityValues = Effect.fn("PromqlQueryService.identityValues")(function* (
+		tenant: TenantContext,
+		window: DiscoveryWindow,
+		label: "job" | "instance",
+	) {
+		const startMs = Math.max(window.startMs, window.endMs - IDENTITY_WINDOW_MS)
+		const perTable = yield* Effect.forEach(
+			PROMQL_METRIC_TABLES,
+			(table) =>
+				warehouse.compiledQuery(
+					tenant,
+					CH.compile(promqlIdentityValuesQuery({ table, label, limit: DISCOVERY_LIMIT }), {
+						orgId: tenant.orgId,
+						startMs,
+						endMs: window.endMs,
+					}),
+					{ profile: "discovery", context: label === "job" ? "promqlJobs" : "promqlInstances" },
+				),
+			{ concurrency: "unbounded" },
+		)
+		return Arr.flatMap(perTable, (rows) => Arr.map(rows, (row) => row.value))
+	})
+
+	const labelValues = Effect.fn("PromqlQueryService.labelValues")(function* (
+		tenant: TenantContext,
+		input: DiscoveryQuery & { readonly name: string },
+	) {
+		if (!LABEL_NAME.test(input.name)) {
+			return yield* new PromqlBadQueryError({ message: `invalid label name: "${input.name}"` })
+		}
+		const window = yield* validateWindow(input)
+		yield* Effect.annotateCurrentSpan({ "maple.promql.label": input.name })
+		if (input.matches.length > 0) {
+			const found = yield* series(tenant, { ...input, limit: undefined })
+			return limited(
+				sortedUnique(Arr.flatMap(found, (labels) => Option.toArray(Rec.get(labels, input.name)))),
+				input.limit,
+			)
+		}
+		switch (input.name) {
+			case "__name__":
+				return yield* Effect.map(readCatalog(tenant, window), (catalog) =>
+					limited(sortedUnique(canonicalPromNames(catalog)), input.limit),
+				)
+			case "job":
+				return yield* Effect.map(identityValues(tenant, window, "job"), (names) =>
+					limited(sortedUnique(names), input.limit),
+				)
+			case "instance":
+				return yield* Effect.map(identityValues(tenant, window, "instance"), (values) =>
+					limited(sortedUnique(values), input.limit),
+				)
+			default:
+				return yield* Effect.map(attributeValues(tenant, window, input.name), (values) =>
+					limited(sortedUnique(values), input.limit),
+				)
+		}
+	})
+
+	const metadata = Effect.fn("PromqlQueryService.metadata")(function* (
+		tenant: TenantContext,
+		input: DiscoveryWindow & { readonly metric?: string; readonly limit?: number },
+	) {
+		const window = yield* validateWindow(input)
+		const compiled = CH.compile(promqlMetadataQuery({ limit: 50_000 }), windowParams(tenant, window))
+		const rows = yield* warehouse.compiledQuery(tenant, compiled, {
+			profile: "discovery",
+			context: "promqlMetadata",
+		})
+		const entries = Arr.filter(
+			[...prometheusMetadata(rows)],
+			([name]) => input.metric === undefined || input.metric === name,
+		)
+		const limit = Math.min(
+			input.limit !== undefined && input.limit > 0 ? input.limit : DISCOVERY_LIMIT,
+			DISCOVERY_LIMIT,
+		)
+		return new Map(
+			Arr.take(
+				Arr.sort(
+					entries,
+					Order.mapInput(Order.String, (entry: readonly [string, unknown]) => entry[0]),
+				),
+				limit,
+			),
+		)
+	})
+
+	return { query, series, labelNames, labelValues, metadata }
 })
 
 export class PromqlQueryService extends Context.Service<PromqlQueryService>()(

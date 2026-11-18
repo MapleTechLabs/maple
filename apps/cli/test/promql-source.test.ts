@@ -8,7 +8,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Array as Arr, Effect, Order, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Effect, Order, Record as Rec, Schema, String as Str } from "effect"
 import schemaSql from "@maple/local-server/schema/local-schema.sql" with { type: "text" }
 import { Chdb } from "@maple/local-server/chdb"
 import { decodeJsonEachRow } from "@maple/local-server/chdb-rows"
@@ -16,11 +16,18 @@ import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
 import * as CH from "@maple/query-engine/ch"
 import {
 	buildSelectorQueries,
+	buildSeriesLabelsQueries,
 	catalogFromRows,
 	catalogQuery,
 	promqlCatalogRowSchema,
+	promqlIdentityValuesQuery,
+	promqlMetadataQuery,
+	promqlMetadataRowSchema,
+	prometheusMetadata,
 	promqlSelectorRowSchema,
+	promqlSeriesLabelsRowSchema,
 	toSelectorData,
+	toSeriesLabels,
 	type CatalogMetric,
 } from "@maple/query-engine/promql"
 import type { SampleBucket, SeriesData } from "@maple/promql"
@@ -332,6 +339,9 @@ const expected = (req: Request, series: ReadonlyArray<ExpectedSeries>) =>
 
 const decodeRows = decodeJsonEachRow(promqlSelectorRowSchema)
 const decodeCatalog = decodeJsonEachRow(promqlCatalogRowSchema)
+const decodeMetadata = decodeJsonEachRow(promqlMetadataRowSchema)
+const decodeValues = decodeJsonEachRow(Schema.Struct({ value: Schema.String }))
+const decodeSeriesLabels = decodeJsonEachRow(promqlSeriesLabelsRowSchema)
 
 const catalogOf = (db: Chdb, org: string): ReadonlyArray<CatalogMetric> => {
 	const compiled = CH.compileUnsafe(catalogQuery(), {
@@ -358,6 +368,37 @@ const sqlSeriesCount = (db: Chdb, org: string, req: Request) =>
 const selected = (db: Chdb, org: string, req: Request) => normalized(asStats(select(db, org, req).series))
 
 const HOUR_MS = 60 * MINUTE_MS
+
+/** Series discovery as the service runs it: every plan's rows through `toSeriesLabels`, sorted. */
+const discoverSeries = (
+	db: Chdb,
+	matchers: ReadonlyArray<Matcher>,
+	options: { readonly limit: number; readonly maxNameFilter: number; readonly maxNameReads?: number },
+) => {
+	const window = { startMs: BASE_MS - HOUR_MS, endMs: BASE_MS + HOUR_MS }
+	const plans = buildSeriesLabelsQueries(matchers, window, catalogOf(db, ORG_A), {
+		orgId: OrgId.make(ORG_A),
+		limit: options.limit,
+		maxNameFilter: options.maxNameFilter,
+		maxNameReads: options.maxNameReads ?? 100,
+	})
+	const found = toSeriesLabels(
+		matchers,
+		Arr.map(plans, (plan) => ({
+			plan,
+			rows: decodeSeriesLabels(
+				db.query(normalizeSqlForClickHouseClient(Effect.runSync(plan.compiled).sql)),
+			),
+		})),
+	)
+	return {
+		reads: plans.length,
+		series: Arr.sort(
+			Arr.map(found, (l) => JSON.stringify(l)),
+			Order.String,
+		),
+	}
+}
 
 const labels = (name: string, extra: Readonly<Record<string, string>>) => ({
 	__name__: name,
@@ -564,6 +605,23 @@ describeWithChdb("PromQL selector source", () => {
 		const millis = select(db, ORG_A, request("request_duration_milliseconds")).series
 		expect(Arr.map(seconds, (s) => s.labels.job)).toEqual(["seconds-svc"])
 		expect(Arr.map(millis, (s) => s.labels.job)).toEqual(["millis-svc"])
+		const metadata = prometheusMetadata(
+			decodeMetadata(
+				db.query(
+					normalizeSqlForClickHouseClient(
+						CH.compileUnsafe(promqlMetadataQuery({ limit: 1000 }), {
+							orgId: OrgId.make(ORG_A),
+							startTime: Str.slice(0, 19)(chTime(-HOUR_MS)),
+							endTime: Str.slice(0, 19)(chTime(HOUR_MS)),
+						}).sql,
+					),
+				),
+			),
+		)
+		expect([
+			metadata.has("request_duration_seconds"),
+			metadata.has("request_duration_milliseconds"),
+		]).toEqual([true, true])
 	})
 
 	test("attribute order does not split a series", () => {
@@ -592,6 +650,102 @@ describeWithChdb("PromQL selector source", () => {
 			),
 		)
 		expect(select(db, ORG_A, request("ordered_total")).series).toHaveLength(1)
+	})
+
+	test("job and instance values are built like series labels, within the millisecond window", () => {
+		const identity = (
+			org: string,
+			table: "metrics_sum" | "metrics_gauge",
+			label: "job" | "instance",
+			endOffsetMs = HOUR_MS,
+		) =>
+			Arr.map(
+				decodeValues(
+					db.query(
+						normalizeSqlForClickHouseClient(
+							CH.compileUnsafe(promqlIdentityValuesQuery({ table, label, limit: 100 }), {
+								orgId: OrgId.make(org),
+								startMs: BASE_MS - HOUR_MS,
+								endMs: BASE_MS + endOffsetMs,
+							}).sql,
+						),
+					),
+				),
+				(row) => row.value,
+			)
+		expect(identity(ORG_A, "metrics_sum", "instance")).toEqual(["i1"])
+		expect(identity("org_promql_none", "metrics_sum", "instance")).toEqual([])
+
+		insertValues(db, {
+			...gauge,
+			metric: "namespaced.probe",
+			attributes: {},
+			resource: { ...RESOURCE, "service.name": "cart", "service.namespace": "shop" },
+		})
+		const seriesJobs = Arr.map(select(db, ORG_A, request("namespaced_probe")).series, (s) => s.labels.job)
+		expect(seriesJobs).toEqual(["shop/cart"])
+		expect(Arr.contains(identity(ORG_A, "metrics_gauge", "job"), "shop/cart")).toBe(true)
+		expect(Arr.contains(identity(ORG_A, "metrics_gauge", "job"), "cart")).toBe(false)
+
+		// Datapoint labels win over the resource, as in series labels; the one sample sits 750ms past
+		// a whole second, so a seconds-floored end would miss it.
+		insertValues(db, {
+			...gauge,
+			metric: "scraped.probe",
+			attributes: { job: "scrape-job", instance: "host:9090" },
+			samples: [[2 * HOUR_MS + 750, 1]],
+		})
+		expect(identity(ORG_A, "metrics_gauge", "job", 2 * HOUR_MS + 750)).toContain("scrape-job")
+		expect(identity(ORG_A, "metrics_gauge", "instance", 2 * HOUR_MS + 750)).toContain("host:9090")
+	})
+
+	test("series discovery reads the label sets the selector source returns, in one query per table", () => {
+		const window = { startMs: BASE_MS - HOUR_MS, endMs: BASE_MS + HOUR_MS }
+		const discover = (matchers: ReadonlyArray<Matcher>) => {
+			const plans = buildSeriesLabelsQueries(matchers, window, catalogOf(db, ORG_A), {
+				orgId: OrgId.make(ORG_A),
+				limit: 1000,
+				maxNameFilter: 1,
+				maxNameReads: 100,
+			})
+			const sorted = (found: ReadonlyArray<Record<string, string>>) =>
+				Arr.sort(
+					Arr.map(found, (labels) => JSON.stringify(labels)),
+					Order.String,
+				)
+			return {
+				tables: Arr.map(plans, (plan) => plan.table),
+				series: sorted(
+					toSeriesLabels(
+						matchers,
+						Arr.map(plans, (plan) => ({
+							plan,
+							rows: decodeSeriesLabels(
+								db.query(normalizeSqlForClickHouseClient(Effect.runSync(plan.compiled).sql)),
+							),
+						})),
+					),
+				),
+				sorted,
+			}
+		}
+		const viaSelector = (name: string) =>
+			Arr.map(
+				select(db, ORG_A, request(name, [], { startMs: window.startMs, endMs: window.endMs })).series,
+				(s) => s.labels,
+			)
+		const histogramName = "http_server_request_duration_seconds_bucket"
+		const buckets = discover([{ name: "__name__", op: "=", value: histogramName }])
+		expect(buckets.tables).toEqual(["metrics_histogram"])
+		expect(buckets.series).toEqual(buckets.sorted(viaSelector(histogramName)))
+		// No name: every metric of the org, one read per table, each label set once.
+		const everything = discover([{ name: "job", op: "=", value: "api" }])
+		expect(new Set(everything.tables).size).toBe(everything.tables.length)
+		expect(everything.series).toEqual(expect.arrayContaining(buckets.series))
+		expect(everything.series).toEqual(
+			expect.arrayContaining(buckets.sorted(viaSelector("requests_total"))),
+		)
+		expect(Arr.some(everything.series, (s) => Str.includes('"route":"/b"')(s))).toBe(true)
 	})
 
 	test("rows whose labels resolve the same are one series", () => {
@@ -642,5 +796,80 @@ describeWithChdb("PromQL selector source", () => {
 		expect(total(Arr.map(fetchRows(db, ORG_A, unformatted), (r) => r.rows.length))).toBe(0)
 		const formatted = request("capped_duration_seconds_bucket", [{ name: "le", op: "=", value: "1.0" }])
 		expect(total(Arr.map(fetchRows(db, ORG_A, formatted), (r) => r.rows.length))).toBe(routes.length)
+	})
+
+	test("discovery drops histogram rows no le matcher can match before the limit", () => {
+		const at = Arr.map(every(15 * SECOND_MS, MINUTE_MS, 15 * SECOND_MS), (atMs, i) => ({
+			atMs,
+			counts: [i, i, i],
+			sum: i,
+		}))
+		// Two bounds each, so three bucket counts per export.
+		const timed = (metric: string, bounds: readonly [number, number]): HistogramSeries => ({
+			...histogram,
+			metric,
+			bounds,
+			exports: at,
+		})
+		// Names sort first in SQL; aaa's bounds never name 0.25, so its row alone would fill a limit of 1.
+		insertHistogram(db, timed("aaa.le", [0.1, 0.5]))
+		insertHistogram(db, timed("zzz.le", [0.25, 2]))
+		const name = { name: "__name__", op: "=~", value: "(aaa|zzz)_le_seconds_bucket" } as const
+		const found = discoverSeries(db, [name, { name: "le", op: "=", value: "0.25" }], {
+			limit: 1,
+			maxNameFilter: 10,
+		})
+		expect(Arr.map(found.series, (s) => JSON.parse(s).__name__)).toEqual(["zzz_le_seconds_bucket"])
+		// `_count` has no `le`: an empty-le matcher keeps it, a bound matcher drops it.
+		const counts = { name: "__name__", op: "=", value: "aaa_le_seconds_count" } as const
+		const options = { limit: 10, maxNameFilter: 10 }
+		expect(discoverSeries(db, [counts, { name: "le", op: "=", value: "" }], options).series).toHaveLength(
+			1,
+		)
+		expect(discoverSeries(db, [counts, { name: "le", op: "=", value: "0.1" }], options).series).toEqual(
+			[],
+		)
+	})
+
+	test("discovery filters on name and unit before the limit", () => {
+		const exports = Arr.map(every(15 * SECOND_MS, MINUTE_MS, 15 * SECOND_MS), (t): Sample => [t, 1])
+		const unitGauge = (unit: string): SumSeries => ({
+			...gauge,
+			metric: "dual.unit",
+			unit,
+			attributes: { unit },
+			samples: exports,
+		})
+		// `ms` sorts before `s`: a name-only filter fills a limit of 1 with the millisecond row.
+		insertValues(db, unitGauge("ms"))
+		insertValues(db, unitGauge("s"))
+		const found = discoverSeries(db, [{ name: "__name__", op: "=", value: "dual_unit_seconds" }], {
+			limit: 1,
+			maxNameFilter: 10,
+		})
+		expect(Arr.map(found.series, (s) => JSON.parse(s).unit)).toEqual(["s"])
+	})
+
+	test("discovery past maxNameFilter names reads them in batches, still filtered by name", () => {
+		const exports = Arr.map(every(15 * SECOND_MS, MINUTE_MS, 15 * SECOND_MS), (t): Sample => [t, 1])
+		for (const metric of ["zz.batch.one", "zz.batch.two", "zz.batch.three"]) {
+			insertValues(db, { ...gauge, metric, attributes: {}, samples: exports })
+		}
+		const name = [{ name: "__name__", op: "=~", value: "zz_batch_.*" }] as const
+		// Gauges named before zz.batch fill a limit of 1 when the name filter is dropped.
+		const found = discoverSeries(db, name, { limit: 1, maxNameFilter: 1 })
+		expect(Arr.map(found.series, (s) => JSON.parse(s).__name__)).toEqual([
+			"zz_batch_one",
+			"zz_batch_three",
+			"zz_batch_two",
+		])
+		expect(found.reads).toBe(3)
+		// The reads per table are capped: the first names in order, every one a real match.
+		const capped = discoverSeries(db, name, { limit: 1, maxNameFilter: 1, maxNameReads: 2 })
+		expect(capped.reads).toBe(2)
+		expect(Arr.map(capped.series, (s) => JSON.parse(s).__name__)).toEqual([
+			"zz_batch_one",
+			"zz_batch_three",
+		])
 	})
 })

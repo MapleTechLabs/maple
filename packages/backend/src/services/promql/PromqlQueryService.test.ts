@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Array as Arr, Effect, Layer, Record as Rec, Schema } from "effect"
+import { Effect, Layer, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { DEFAULT_LIMITS } from "@maple/promql"
 import { METRIC_UNIT_SEPARATOR } from "@maple/query-engine/ch"
 import { compiledQueryOf, type CompiledQueryInput } from "@maple/query-engine/execution"
@@ -110,6 +110,16 @@ describe("PromqlQueryService", () => {
 			expect(pinned._tag).toBe("@maple/backend/promql/PromqlBadQueryError")
 			// The parser refuses it first, with Prometheus' own message.
 			expect(pinned.message).toMatch(/timestamp out of bounds for @ modifier/)
+		}),
+	)
+
+	it.effect("refuses a range query over a range vector or string as a bad query, as Prometheus does", () =>
+		Effect.gen(function* () {
+			const matrix = yield* failureOf({ query: "up[5m]", startMs: 0, endMs: 60_000, stepMs: 15_000 })
+			expect(matrix._tag).toBe("@maple/backend/promql/PromqlBadQueryError")
+			expect(matrix.message).toMatch(/invalid expression type "range vector" for range query/)
+			const text = yield* failureOf({ query: '"x"', startMs: 0, endMs: 60_000, stepMs: 15_000 })
+			expect(text._tag).toBe("@maple/backend/promql/PromqlBadQueryError")
 		}),
 	)
 
@@ -268,5 +278,342 @@ describe("PromqlQueryService", () => {
 			)
 			expect(error.message).toMatch(/selects more than 10000 series/)
 		}),
+	)
+})
+
+const T0 = Date.UTC(2026, 6, 15, 12)
+
+const selectorRow = (attributes: Record<string, string>) => ({
+	series: JSON.stringify(attributes),
+	// A selector row names its metric with the stored unit after U+001F; this one has none.
+	metricName: "http.requests\u001f",
+	serviceName: "api",
+	attributes,
+	resourceAttributes: { "service.name": "api" },
+	le: "0",
+	...Rec.fromEntries(
+		Arr.map(
+			["firstT", "firstV", "lastT", "lastV", "prevT", "prevV", "count", "sum", "min", "max"],
+			(field) => [field, [1]] as const,
+		),
+	),
+	...Rec.fromEntries(
+		Arr.map(
+			["sumSquares", "resetSum", "resets", "changes", "sumT", "sumTT", "sumTV"],
+			(field) => [field, [0]] as const,
+		),
+	),
+	end: [T0],
+	values: [[]],
+})
+
+/** A series discovery row: one stored metric's label set. */
+const labelsRow = (metricName: string, attributes: Record<string, string>) => ({
+	metricName: `${metricName}\u001f`,
+	labelKey: JSON.stringify([metricName, attributes]),
+	serviceName: "api",
+	attributes,
+	resourceAttributes: { "service.name": "api" },
+	bounds: [],
+})
+
+/** Answers each warehouse read by the table it reads, recording the SQL that ran. */
+const recordingWarehouse = (catalog?: ReadonlyArray<Record<string, unknown>>) => {
+	const statements: Array<string> = []
+	const rowsFor = (sql: string): ReadonlyArray<Record<string, unknown>> => {
+		if (Str.includes("AS labelKey")(sql)) {
+			if (!Str.includes("FROM metrics_sum")(sql) && !Str.includes("FROM metrics_gauge")(sql)) return []
+			return catalog === undefined
+				? [
+						labelsRow("http.requests", { "http.route": "/checkout" }),
+						labelsRow("http.requests", { "http.route": "/cart" }),
+					]
+				: [
+						labelsRow("m_7", { "http.route": "/checkout" }),
+						labelsRow("m_140", { "http.route": "/cart" }),
+					]
+		}
+		if (Str.includes("HAVING (value != '')")(sql) && Str.includes("service.namespace")(sql)) {
+			return [{ value: "api" }, { value: "worker" }]
+		}
+		if (Str.includes("HAVING (value != '')")(sql)) {
+			return Str.includes("FROM metrics_gauge")(sql) ? [{ value: "pod-2" }] : [{ value: "pod-1" }]
+		}
+		if (Str.includes("FROM metrics_sum")(sql)) {
+			return [selectorRow({ "http.route": "/checkout" }), selectorRow({ "http.route": "/cart" })]
+		}
+		if (Str.includes("MetricDescription")(sql)) {
+			return [
+				{
+					metricName: "http.requests",
+					metricType: "sum",
+					unit: "1",
+					description: "Requests",
+					isMonotonic: 1,
+				},
+				{
+					metricName: "http.duration",
+					metricType: "histogram",
+					unit: "s",
+					description: "Latency",
+					isMonotonic: 0,
+				},
+			]
+		}
+		if (Str.includes("FROM metric_catalog")(sql)) {
+			return catalog ?? [{ metricName: "http.requests", metricType: "sum", unit: "", isMonotonic: 1 }]
+		}
+		if (
+			Str.includes("FROM attribute_keys_hourly")(sql) &&
+			Str.includes("AttributeScope = 'resource'")(sql)
+		) {
+			return [
+				{ attributeKey: "host.name", usageCount: 5 },
+				{ attributeKey: "service.version", usageCount: 5 },
+			]
+		}
+		if (Str.includes("FROM attribute_keys_hourly")(sql)) {
+			return [
+				{ attributeKey: "http.route", usageCount: 10 },
+				{ attributeKey: "http_route", usageCount: 1 },
+			]
+		}
+		if (Str.includes("FROM attribute_values_hourly")(sql)) return [{ attributeValue: "/checkout" }]
+		return []
+	}
+	const warehouse = makeWarehouseServiceStub({
+		compiledQuery: (_tenant, compiled) => {
+			const query = compiledQueryOf(compiled)
+			statements.push(query.sql)
+			// The real executor refuses any read that is not single-tenant; so does this stub.
+			if (query.tenantScope !== "single-tenant")
+				return Effect.die(`refused ${query.tenantScope} read: ${query.sql}`)
+			return query.decodeRows(rowsFor(query.sql))
+		},
+		// Selector reads are size-bounded; record them the same way.
+		compiledQueryBounded: (_tenant, compiled) => {
+			const query = compiledQueryOf(compiled)
+			statements.push(query.sql)
+			// The real executor refuses any read that is not single-tenant; so does this stub.
+			if (query.tenantScope !== "single-tenant")
+				return Effect.die(`refused ${query.tenantScope} read: ${query.sql}`)
+			return query.decodeRows(rowsFor(query.sql))
+		},
+	})
+	const layer = Layer.effect(PromqlQueryService, PromqlQueryService.make).pipe(
+		Layer.provide(Layer.succeed(WarehouseQueryService, warehouse)),
+	)
+	return { statements, layer }
+}
+
+const window = { startMs: T0 - 3_600_000, endMs: T0 }
+
+const ORG_FILTER = /OrgId = 'org_promql'/
+
+describe("PromqlQueryService discovery", () => {
+	it.effect("refuses more match[] selectors than a query may read", () => {
+		const { statements, layer } = recordingWarehouse()
+		return Effect.gen(function* () {
+			const service = yield* PromqlQueryService
+			const matches = Array.from({ length: 21 }, (_, i) => `up{i="${i}"}`)
+			const error = yield* Effect.flip(service.series(tenant, { ...window, matches }))
+			expect(error.message).toMatch(/more than 20 selectors/)
+			expect(statements).toHaveLength(0)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("returns the label sets a match[] selector selects, read through org-scoped queries", () => {
+		const { statements, layer } = recordingWarehouse()
+		return Effect.gen(function* () {
+			const service = yield* PromqlQueryService
+			const series = yield* service.series(tenant, {
+				...window,
+				matches: ['http_requests_total{http_route=~"/c.*"}'],
+			})
+			expect(series).toEqual([
+				{ __name__: "http_requests_total", http_route: "/checkout", job: "api" },
+				{ __name__: "http_requests_total", http_route: "/cart", job: "api" },
+			])
+			expect(statements.length).toBe(2)
+			for (const sql of statements) expect(sql).toMatch(ORG_FILTER)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect(
+		"answers a match[] without a metric name for an org with more metrics than a query may read",
+		() => {
+			const catalog = Arr.makeBy(150, (i) => ({
+				metricName: `m_${i}`,
+				metricType: "gauge",
+				unit: "",
+				isMonotonic: 0,
+			}))
+			const { statements, layer } = recordingWarehouse(catalog)
+			return Effect.gen(function* () {
+				const service = yield* PromqlQueryService
+				const input = { ...window, matches: ['{job="api"}'] }
+				const series = yield* service.series(tenant, input)
+				expect(series).toEqual([
+					{ __name__: "m_7", http_route: "/checkout", job: "api" },
+					{ __name__: "m_140", http_route: "/cart", job: "api" },
+				])
+				const names = yield* service.labelNames(tenant, input)
+				expect(names).toEqual(["__name__", "http_route", "job"])
+				const routes = yield* service.labelValues(tenant, { ...input, name: "http_route" })
+				expect(routes).toEqual(["/cart", "/checkout"])
+				// One read per metric table the catalog resolves to, not one per metric.
+				const reads = Arr.filter(statements, (sql) => Str.includes("AS labelKey")(sql))
+				expect(reads).toHaveLength(3)
+				for (const sql of reads) expect(sql).toMatch(ORG_FILTER)
+			}).pipe(Effect.provide(layer))
+		},
+	)
+
+	it.effect("still refuses a query whose selector matches more than 100 metrics", () => {
+		const catalog = Arr.makeBy(150, (i) => ({
+			metricName: `m_${i}`,
+			metricType: "gauge",
+			unit: "",
+			isMonotonic: 0,
+		}))
+		const { layer } = recordingWarehouse(catalog)
+		return Effect.gen(function* () {
+			const service = yield* PromqlQueryService
+			const error = yield* Effect.flip(
+				service.query(tenant, { query: '{job="api"}', startMs: T0, endMs: T0, stepMs: 0 }),
+			)
+			expect(error.message).toMatch(/matches 150 metrics, at most 100/)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("reads job and instance values over at most the last day of the range", () => {
+		const { statements, layer } = recordingWarehouse()
+		return Effect.gen(function* () {
+			const service = yield* PromqlQueryService
+			const endMs = T0
+			yield* service.labelValues(tenant, {
+				startMs: endMs - 30 * 86_400_000,
+				endMs,
+				matches: [],
+				name: "job",
+			})
+			const reads = Arr.filter(statements, (sql) => Str.includes("HAVING (value != '')")(sql))
+			expect(reads).toHaveLength(4)
+			for (const sql of reads) {
+				expect(sql).toContain(`toInt64((${endMs - 86_400_000}))`)
+				// `job` is one exact key: no regex over every attribute key of every row.
+				expect(sql).not.toMatch(/replaceRegexpAll/)
+			}
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("refuses a match[] that is not a selector or matches everything", () =>
+		Effect.gen(function* () {
+			const service = yield* PromqlQueryService
+			const notSelector = yield* Effect.flip(
+				service.series(tenant, { ...window, matches: ["sum(up)"] }),
+			)
+			expect(notSelector.message).toMatch(/not a series selector/)
+			const empty = yield* Effect.flip(service.series(tenant, { ...window, matches: ['{job=~".*"}'] }))
+			expect(empty.message).toMatch(/at least one non-empty matcher/)
+		}).pipe(Effect.provide(TestLayer)),
+	)
+
+	it.effect("lists label names from the catalog and the attribute rollup without a selector", () => {
+		const { statements, layer } = recordingWarehouse()
+		return Effect.gen(function* () {
+			const service = yield* PromqlQueryService
+			const names = yield* service.labelNames(tenant, { ...window, matches: [] })
+			expect(names).toEqual(["__name__", "host_name", "http_route", "instance", "job"])
+			expect(Arr.some(statements, (sql) => Str.includes("metrics_sum")(sql))).toBe(false)
+			for (const sql of statements) expect(sql).toMatch(ORG_FILTER)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("reads label values from the rollup for every raw key the label normalizes from", () => {
+		const { statements, layer } = recordingWarehouse()
+		return Effect.gen(function* () {
+			const service = yield* PromqlQueryService
+			const values = yield* service.labelValues(tenant, { ...window, matches: [], name: "http_route" })
+			expect(values).toEqual(["/checkout"])
+			const valuesSql = Arr.findFirst(statements, (sql) => Str.includes("attribute_values_hourly")(sql))
+			expect(Option.getOrThrow(valuesSql)).toMatch(/AttributeKey IN \('http\.route', 'http_route'\)/)
+			expect(Option.getOrThrow(valuesSql)).toMatch(ORG_FILTER)
+			expect(Option.getOrThrow(valuesSql)).toMatch(/AttributeScope = 'metric'/)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("reads instance values from the metric tables, which no rollup keeps", () => {
+		const { statements, layer } = recordingWarehouse()
+		return Effect.gen(function* () {
+			const service = yield* PromqlQueryService
+			const values = yield* service.labelValues(tenant, { ...window, matches: [], name: "instance" })
+			expect(values).toEqual(["pod-1", "pod-2"])
+			const reads = Arr.filter(
+				statements,
+				(sql) =>
+					Str.includes("service.instance.id")(sql) && Str.includes("HAVING (value != '')")(sql),
+			)
+			expect(reads).toHaveLength(4)
+			for (const sql of reads) expect(sql).toMatch(ORG_FILTER)
+			expect(Arr.some(statements, (sql) => Str.includes("attribute_values_hourly")(sql))).toBe(false)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("answers no values for a label named like an Object member", () => {
+		const { layer } = recordingWarehouse()
+		return Effect.gen(function* () {
+			const service = yield* PromqlQueryService
+			const values = yield* service.labelValues(tenant, {
+				...window,
+				matches: ['http_requests_total{http_route=~"/c.*"}'],
+				name: "constructor",
+			})
+			expect(values).toEqual([])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("lists metric names from the catalog and jobs from the metric tables", () => {
+		const { layer } = recordingWarehouse()
+		return Effect.gen(function* () {
+			const service = yield* PromqlQueryService
+			const names = yield* service.labelValues(tenant, { ...window, matches: [], name: "__name__" })
+			expect(names).toEqual(["http_requests_total"])
+			const jobs = yield* service.labelValues(tenant, { ...window, matches: [], name: "job" })
+			expect(jobs).toEqual(["api", "worker"])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("answers metadata keyed by metric family", () => {
+		const { layer } = recordingWarehouse()
+		return Effect.gen(function* () {
+			const service = yield* PromqlQueryService
+			const metadata = yield* service.metadata(tenant, window)
+			expect(Rec.fromEntries(metadata)).toEqual({
+				http_duration_seconds: [{ type: "histogram", help: "Latency", unit: "seconds" }],
+				http_requests_total: [{ type: "counter", help: "Requests", unit: "" }],
+			})
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("honors a discovery limit on metadata and label values", () => {
+		const { layer } = recordingWarehouse()
+		return Effect.gen(function* () {
+			const service = yield* PromqlQueryService
+			const metadata = yield* service.metadata(tenant, { ...window, limit: 1 })
+			expect([...metadata.keys()]).toEqual(["http_duration_seconds"])
+			const filtered = yield* service.metadata(tenant, { ...window, metric: "http_requests_total" })
+			expect([...filtered.keys()]).toEqual(["http_requests_total"])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("refuses an invalid label name", () =>
+		Effect.gen(function* () {
+			const service = yield* PromqlQueryService
+			const error = yield* Effect.flip(
+				service.labelValues(tenant, { ...window, matches: [], name: "bad-name" }),
+			)
+			expect(error.message).toMatch(/invalid label name/)
+		}).pipe(Effect.provide(TestLayer)),
 	)
 })
