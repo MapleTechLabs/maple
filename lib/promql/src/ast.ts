@@ -133,3 +133,13 @@ export type Expr =
 
 export const COMPARISON_OPS: ReadonlySet<string> = new Set(["==", "!=", ">", "<", ">=", "<="])
 export const SET_OPS: ReadonlySet<string> = new Set(["and", "or", "unless"])
+
+/** Aggregations that take a parameter before the vector. */
+export const PARAM_AGGREGATES: ReadonlySet<AggregateOp> = new Set([
+	"topk",
+	"bottomk",
+	"quantile",
+	"count_values",
+	"limitk",
+	"limit_ratio",
+])

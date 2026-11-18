@@ -11,7 +11,7 @@ export type Labels = Readonly<Record<string, string>>
  * computed exactly from the buckets it covers. In raw mode each bucket holds one
  * sample (`count` 1, `first*` = `last*`).
  *
- * Times are epoch ms. `increase`, `resets` and `changes` count consecutive sample
+ * Times are epoch ms. `resetSum`, `resets` and `changes` count consecutive sample
  * pairs that are both inside this bucket; the evaluator adds the pairs that cross
  * between buckets of the same window.
  */
@@ -27,11 +27,13 @@ export interface SampleBucket {
 	readonly prevV: number
 	readonly count: number
 	readonly sum: number
+	/** Kahan compensation of `sum`; absent (0) when the source sums without one. */
+	readonly sumC?: number
 	readonly min: number
 	readonly max: number
 	readonly sumSquares: number
-	/** Counter increase over the pairs inside the bucket: `v - prev`, or `v` after a reset. */
-	readonly increase: number
+	/** Sum of `prev` over the pairs inside the bucket where `v < prev` (a counter reset). */
+	readonly resetSum: number
 	readonly resets: number
 	readonly changes: number
 	/** Regression sums, with t in seconds relative to `SelectorData.timeOriginMs`. */
