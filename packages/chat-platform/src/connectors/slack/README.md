@@ -113,8 +113,9 @@ slow?`. It answers in a thread on that message and edits one message there as th
    answers anyway — and it reads the messages above the reply for context. In a channel it was
    merely invited to, an un-addressed message is not a turn.
 
-One limit worth knowing before reporting a bug: a write the agent proposes renders as an approval
-card that **cannot be approved yet**.
+One limit worth knowing before reporting a bug: from Slack the agent only reads, and only the
+org's telemetry and alerting state. It proposes no change and posts no approval card, and it tells
+whoever asks to make the change in the Maple app. See "Who may approve" below.
 
 ## The bot token
 
@@ -163,6 +164,15 @@ Two things are load-bearing:
 
 The user token is not requested at all (`user_scope` is absent): the bot is an org-level actor, and
 Maple has no use for an installer identity it never links to a Maple user.
+
+### Unlinking
+
+`revoke` calls `auth.revoke` with the workspace's own bot token in the `Authorization` header, which
+ends that token; Slack documents an app as uninstalled once its last token is revoked. An answer
+of `token_revoked` or `account_inactive` means the token was already dead and counts as done;
+`invalid_auth` does not, because Slack also answers it while the real token is still live. The
+host runs it best effort before it drops the link, and only on a deployment that owns its chat
+app: a preview or a local stack never calls it.
 
 ### Settings
 
@@ -216,9 +226,16 @@ does not have.
 
 ### Who may approve
 
-**This connector declares no `identity`**, which is a policy rather than a gap: anyone who can see
-the conversation may approve, and the change runs as the org-level connector identity. See
-`ChatConnector.identity` for the three cases.
+Nobody, from Slack. **This connector declares no `identity`**, so Maple cannot tell which Maple user
+asked or clicked, and a change is only ever applied as a Maple user. Anyone in the conversation may
+ask, and the turn answers from the org's telemetry and alerting state only: no session replays or
+user lookups, connected data sources, source code or SQL, and no tool that changes anything, so no
+approval is posted. A click on an approval card from an older conversation changes nothing and
+tells the clicker to make the change in the Maple app. See `ChatConnector.identity` for the three
+cases.
+
+The one action in chat is acknowledging an alert from its card. Anyone in the channel may, and the
+acknowledgement is recorded under their Slack name.
 
 Slack _can_ answer who clicked — "Sign in with Slack", its OpenID Connect flow — and implementing
 it is mechanically small: the same OAuth application, the same client credentials, the same
@@ -229,8 +246,8 @@ It is not implemented because one fact it rests on **cannot be confirmed from Sl
 documentation**: that the `sub` / `https://slack.com/user_id` claim returned by `userInfo` is the
 same `U…` id that arrives as `user.id` on a `block_actions` payload. Everything about this is
 plausible — Slack user ids are one namespace — but the link is keyed on that id, and the failure if
-it is wrong is silent and total: `identity` present with nothing linked means every approval is
-**refused**, which is worse than the weaker rule this connector ships with. Two other things are
+it is wrong is silent and total: `identity` present with nothing linked means every question is
+**refused** too, which is worse than the read-only bot this connector ships with. Two other things are
 also undocumented: whether the `openid` scopes must be declared in the app manifest, and whether
 adding them forces workspaces that already installed the bot to re-authorize.
 
@@ -298,4 +315,7 @@ confirm, and the cutover doc's smoke checklist is where they get confirmed:
 - that an un-mentioned thread reply arrives with the history scopes above and no others, and that
   `conversations.replies` / `conversations.history` answer for the channel types the bot is in;
 - the display name shown for an author: Slack's message events carry only a user id, so V1 uses the
-  id. A readable name needs `users:read`, on the same terms as the approval facts.
+  id. A readable name needs `users:read`, on the same terms as the approval facts;
+- that `auth.revoke` with the bot token removes the app from the workspace (the documentation says
+  an app is uninstalled when its last token is revoked), and the `ok: false` codes it answers for
+  a token that is already dead.

@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 
 /** Platforms whose audit events the trail holds. One literal per built adapter; `maple` is Maple's own audit log. */
-export const AuditTrailProvider = Schema.Literals(["maple", "vercel", "gcp", "aws"])
+export const AuditTrailProvider = Schema.Literals(["maple", "vercel", "gcp", "aws", "github"])
 export type AuditTrailProvider = typeof AuditTrailProvider.Type
 
 /**
@@ -45,35 +45,39 @@ export const AuditDetectionFilters = Schema.Struct({
 export type AuditDetectionFilters = typeof AuditDetectionFilters.Type
 
 /**
- * One audit event as a provider adapter hands it over. `provider`, `account` and
- * `providerEventId` make the stored row's key: a redelivery collapses only when it also
- * carries the same `occurredAtMs`. `raw` is the platform's payload, kept for the detail view.
+ * One audit event as a provider adapter hands it over, and as it travels through a queue.
+ * `provider`, `account` and `providerEventId` make the stored row's key: a redelivery collapses
+ * only when it also carries the same `occurredAtMs`. `raw` is the platform's payload, kept for the
+ * detail view. `optional`, not `optionalKey`: adapters leave a field they could not read as `undefined`.
  */
-export interface AuditTrailEvent {
-	readonly provider: AuditTrailProvider
-	readonly providerEventId: string
+export const AuditTrailEventSchema = Schema.Struct({
+	provider: AuditTrailProvider,
+	providerEventId: Schema.String,
 	/** The platform account, organization, team or project the event belongs to. */
-	readonly account?: string
-	readonly occurredAtMs: number
-	readonly actor: {
-		readonly type: AuditTrailActorType
-		readonly id?: string
-		readonly name?: string
-		readonly email?: string
-	}
+	account: Schema.optional(Schema.String),
+	occurredAtMs: Schema.Number,
+	actor: Schema.Struct({
+		type: AuditTrailActorType,
+		id: Schema.optional(Schema.String),
+		name: Schema.optional(Schema.String),
+		email: Schema.optional(Schema.String),
+	}),
 	/** The platform's own action name, unchanged (`org.add_member`, `alert_rule.deleted`). */
-	readonly action: string
-	readonly category: AuditTrailCategory
-	readonly outcome: AuditTrailOutcome
+	action: Schema.String,
+	category: AuditTrailCategory,
+	outcome: AuditTrailOutcome,
 	/** Why it failed or was refused, in the platform's words. */
-	readonly outcomeReason?: string
-	readonly target?: {
-		readonly type?: string
-		readonly id?: string
-		readonly name?: string
-	}
-	readonly originIp?: string
-	readonly originCountry?: string
-	readonly userAgent?: string
-	readonly raw?: Record<string, unknown>
-}
+	outcomeReason: Schema.optional(Schema.String),
+	target: Schema.optional(
+		Schema.Struct({
+			type: Schema.optional(Schema.String),
+			id: Schema.optional(Schema.String),
+			name: Schema.optional(Schema.String),
+		}),
+	),
+	originIp: Schema.optional(Schema.String),
+	originCountry: Schema.optional(Schema.String),
+	userAgent: Schema.optional(Schema.String),
+	raw: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+})
+export type AuditTrailEvent = typeof AuditTrailEventSchema.Type

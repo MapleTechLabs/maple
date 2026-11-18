@@ -49,7 +49,7 @@ import {
 } from "./span-popover-update"
 import * as Tooltip from "@maple/views/ui/tooltip"
 import { disclosed } from "./payload-view"
-import { markdownTexts, textHash, transcriptRows } from "./transcript-rows"
+import { hashedMarkdownTexts, textHash, transcriptRows } from "./transcript-rows"
 
 type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
@@ -312,20 +312,13 @@ const drain = (result: Return): Return => ({
 const followMarkdown = (result: Return): Return => {
 	const { model } = result
 	if (!AsyncData.hasData(model.firstPage.data)) return result
-	const texts = [
+	const entries = [
 		...(viewOf(model.search.view) === "transcript"
-			? markdownTexts(model, transcriptRows(model, sessionData(model)))
+			? hashedMarkdownTexts(model, transcriptRows(model, sessionData(model)))
 			: []),
-		...popoverMarkdownTexts(model),
+		...Arr.map(popoverMarkdownTexts(model), (text) => [textHash(text), text] as const),
 	]
-	const missing = [
-		...new Map(
-			Arr.filter(
-				Arr.map(texts, (text) => [textHash(text), text] as const),
-				([hash]) => !(hash in model.markdown),
-			),
-		),
-	]
+	const missing = [...new Map(Arr.filter(entries, ([hash]) => !(hash in model.markdown)))]
 	if (missing.length === 0) return result
 	return {
 		...result,

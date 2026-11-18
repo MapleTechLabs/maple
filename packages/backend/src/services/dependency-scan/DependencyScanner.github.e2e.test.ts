@@ -122,6 +122,7 @@ const scanAndCompare = (fullName: string) =>
 			status: "active",
 			suspendedAt: null,
 			ciTracesEnabled: false,
+			auditLogEnabled: true,
 			installedByUserId: "user_harness",
 			createdAt: 0,
 			updatedAt: 0,

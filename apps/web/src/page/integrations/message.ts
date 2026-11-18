@@ -160,6 +160,8 @@ export const Message = defineMessageUnion({
 	CompletedGithubRefreshSpin: { version: Schema.Number },
 	ToggledCiTraces: {},
 	CompletedCiTraces: { enabled: Schema.Boolean, failure: Schema.NullOr(LoadFailure) },
+	ToggledAuditLog: {},
+	CompletedAuditLog: { enabled: Schema.Boolean, failure: Schema.NullOr(LoadFailure) },
 	/** The 3 s status poll while the popup is out, a branch change settles or a repo syncs. */
 	TickedGithubPoll: {},
 	EndedGithubForcePoll: { version: Schema.Number },

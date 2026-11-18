@@ -110,6 +110,8 @@ export const HttpV2GcpIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "gcpIn
 					const scripts = yield* gcp.scripts(tenant.orgId, params.id, {
 						applicationLogs: payload.application_logs ?? null,
 					})
+					// Both scripts carry the push secret; the entry records the read, never the secret.
+					yield* recordHttpAudit("gcp_connector.push_secret_read", { resourceId: params.id })
 					return {
 						object: "gcp_connector.setup_scripts" as const,
 						setup_script: scripts.setupScript,

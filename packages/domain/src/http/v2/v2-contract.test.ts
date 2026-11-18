@@ -895,6 +895,25 @@ describe("scopes", () => {
 		expect(scopeAllows([], required)).toBe(false)
 	})
 
+	// A GET that hands out a stored secret is held to write, by its route template.
+	it("asks for write on the GETs that return a stored secret, and read on their neighbours", () => {
+		// Read off the declared endpoints, so a renamed route cannot quietly fall back to read.
+		const planetscale = MapleApiV2.groups.planetscaleIntegration.endpoints
+		const aws = MapleApiV2.groups.awsIntegration.endpoints
+		for (const endpoint of [planetscale.webhookConfig, aws.setup]) {
+			expect(
+				[endpoint.method, requiredScopeForRoute(endpoint.method, endpoint.path)],
+				endpoint.path,
+			).toEqual(["GET", { family: "integrations", access: "write" }])
+		}
+		for (const endpoint of [planetscale.databases, aws.ingest]) {
+			expect(requiredScopeForRoute(endpoint.method, endpoint.path), endpoint.path).toEqual({
+				family: "integrations",
+				access: "read",
+			})
+		}
+	})
+
 	it("treats alert preview as a read-only POST", () => {
 		expect(requiredScopeForRoute("POST", "/v2/alerts/rules/preview")).toEqual({
 			family: "alerts",

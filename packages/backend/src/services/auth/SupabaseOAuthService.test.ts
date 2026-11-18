@@ -265,7 +265,10 @@ describe("SupabaseOAuthService", () => {
 		return Effect.gen(function* () {
 			yield* connect(fake)
 			const service = yield* SupabaseOAuthService
-			assert.deepStrictEqual(yield* service.disconnect(ORG), { disconnected: true })
+			assert.deepStrictEqual(yield* service.disconnect(ORG), {
+				disconnected: true,
+				grantRevoked: true,
+			})
 			const revoke = Option.getOrUndefined(
 				Arr.findFirst(fake.state.calls, (call) => call.path === "/v1/oauth/revoke"),
 			)

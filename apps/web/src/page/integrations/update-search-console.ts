@@ -39,12 +39,14 @@ const resetOnGrantChange = (
 }
 
 /**
- * The property list is read live from Google, so only on this card and only with a usable grant.
+ * The property list is read live from Google, so only on this card, only with a usable grant and
+ * only for a viewer who manages integrations: the API refuses it to everyone else.
  * `Supersede` after a connect: the same account may have granted or dropped properties since.
  */
 export const requestSites = (model: SearchConsoleCardModel, env: Env, mode: Keyed.ReadMode): Return => {
 	const status = statusOf(env.status)
-	if (!env.isShown || status === null || !status.connected || status.revoked) return { model }
+	if (!env.isShown || !env.canManage || status === null || !status.connected || status.revoked)
+		return { model }
 	// Keyed by grant too, so a list still in flight for the previous account is never accepted.
 	const key = requestKey(env.context.orgId, "integrations.searchConsoleSites", { grant: grantOf(status) })
 	return Option.match(Keyed.requestFor(model.sites, key, mode), {

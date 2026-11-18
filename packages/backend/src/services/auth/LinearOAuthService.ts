@@ -157,9 +157,14 @@ export interface LinearOAuthServiceApi {
 	readonly listTeams: (orgId: OrgId) => Effect.Effect<ReadonlyArray<LinearTeam>, LinearAccessError>
 	/** One team by id, or null when the workspace has no such team the app can see. */
 	readonly getTeam: (orgId: OrgId, teamId: string) => Effect.Effect<LinearTeam | null, LinearAccessError>
-	readonly disconnect: (
-		orgId: OrgId,
-	) => Effect.Effect<{ readonly disconnected: boolean }, IntegrationsPersistenceError>
+	readonly disconnect: (orgId: OrgId) => Effect.Effect<
+		{
+			readonly disconnected: boolean
+			/** False when a stored grant was not revoked at the vendor; the local grant is dropped anyway. */
+			readonly grantRevoked: boolean
+		},
+		IntegrationsPersistenceError
+	>
 }
 
 export class LinearOAuthService extends Context.Service<LinearOAuthService, LinearOAuthServiceApi>()(
@@ -360,24 +365,31 @@ export class LinearOAuthService extends Context.Service<LinearOAuthService, Line
 				return (yield* linearData(TeamSchema, "team lookup")(result)).team
 			})
 
-			/** Best effort: the grant is dropped on Maple's side whatever Linear answers. */
+			/**
+			 * Revokes the stored refresh and access tokens at Linear and answers whether Linear took it.
+			 * Best effort: a failure is logged, and the grant is dropped on Maple's side either way.
+			 */
 			const revokeAtLinear = Effect.fn("LinearOAuthService.revokeAtLinear")(
-				function* (orgId: OrgId) {
-					const row = yield* oauth.loadConnection(orgId)
-					if (row === null) return
-					const accessToken = yield* oauth.openAccessToken(row.orgId, {
-						ciphertext: row.accessTokenCiphertext,
-						iv: row.accessTokenIv,
-						tag: row.accessTokenTag,
-					})
-					yield* oauth.postForm(REVOKE_URL, { token: accessToken, token_type_hint: "access_token" })
-				},
-				(effect) => Effect.ignore(effect),
+				(orgId: OrgId) =>
+					oauth
+						.revokeStoredTokens(orgId, (token, kind) =>
+							oauth.postForm(REVOKE_URL, { token, token_type_hint: kind }),
+						)
+						.pipe(Effect.as(true)),
+				(effect, orgId) =>
+					Effect.catch(effect, (error) =>
+						Effect.logWarning("Linear grant revoke failed; dropping the local grant anyway", {
+							orgId,
+							error: error.message,
+						}).pipe(Effect.as(false)),
+					),
 			)
 
 			const disconnect = Effect.fn("LinearOAuthService.disconnect")(function* (orgId: OrgId) {
-				yield* revokeAtLinear(orgId)
-				return yield* oauth.deleteConnection(orgId)
+				const grantRevoked = yield* revokeAtLinear(orgId)
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.linear.revoked_upstream": grantRevoked })
+				const deleted = yield* oauth.deleteConnection(orgId)
+				return { ...deleted, grantRevoked }
 			})
 
 			return {
