@@ -101,6 +101,7 @@ const makeFake = () => {
 				return Effect.succeed({ ...page })
 			case "DELETE ":
 				page = null
+				password = null
 				return Effect.succeed({ deleted: true })
 			case "GET /config": {
 				const doc = configDoc()
@@ -150,6 +151,7 @@ const makeFake = () => {
 			case "DELETE /password":
 				if (page.visibility === "password") return Effect.fail(invalid("Make the page public first"))
 				page.has_password = false
+				password = null
 				return Effect.succeed({ ...page })
 			case "GET /custom_domain":
 				return Effect.succeed(domainDoc())
@@ -305,6 +307,7 @@ describe("StatusPageProvider", () => {
 				visibility: "internal",
 				has_password: false,
 			})
+			expect(fake.password()).toBeNull()
 			expect(internal.customDomain).toBeNull()
 		}),
 	)
@@ -441,6 +444,24 @@ describe("StatusPageProvider", () => {
 				"PUT /v2/status_pages/stp_1/config",
 			])
 			expect(fake.password()).toBe("another long secret")
+		}),
+	)
+
+	it.live("rotates the password of a page that stays internal after the config", () =>
+		Effect.gen(function* () {
+			const fake = makeFake()
+			const olds: StatusPageProps = {
+				...base,
+				visibility: "internal",
+				password: "correct horse battery",
+			}
+			const output = yield* reconcile(fake, olds)
+			fake.refuseConfig()
+			const failed = yield* Effect.exit(
+				reconcile(fake, { ...olds, password: "another long secret" }, { olds, output }),
+			)
+			expect(failed._tag).toBe("Failure")
+			expect(fake.password()).toBe("correct horse battery")
 		}),
 	)
 })

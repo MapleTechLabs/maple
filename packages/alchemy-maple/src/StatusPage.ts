@@ -264,12 +264,14 @@ export const StatusPageProvider = () =>
 				const password = unwrap(news.password)
 				const setPassword = api.put(`${path}/password`, { password })
 				// Before the config when the page is about to need it: a page cannot turn `password`
-				// without one, and must not open under an old one. A rotation on a page already
-				// `password` goes after everything else, so a failed deploy leaves the old one in
+				// without one, and must not open under an old one. Any other rotation goes after
+				// everything else, so a failed deploy leaves the old one in
 				// place, matching the props Alchemy still holds.
 				const changed =
 					password !== undefined && (!page.has_password || password !== unwrap(olds?.password))
-				const early = changed && (!page.has_password || page.visibility !== "password")
+				const early =
+					changed &&
+					(!page.has_password || (news.visibility === "password" && page.visibility !== "password"))
 				if (early) yield* setPassword
 				// A removed domain goes before the config, so the page can turn `internal`.
 				let domain = yield* fetchDomain(page.id)

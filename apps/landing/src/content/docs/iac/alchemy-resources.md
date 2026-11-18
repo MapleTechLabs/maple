@@ -269,7 +269,7 @@ Outputs: `publicKey`, `privateKey` (both `Redacted`), `publicRotatedAt`, `privat
 
 ## Drift and sync
 
-- A deploy compares declared props against what the API returns and patches only when they differ. Fields you leave out of props stay unmanaged, so edits to them in the UI are kept. An uptime monitor manages `service_name`, `enabled` and `destination_ids` even when unset (none, `true`, none). A status page is the exception: it is applied as a whole document, so unset fields take their defaults and a component added in the UI is deleted. Only an unset `manual_status` on a declared component, and an undeclared `visibility`, `password` or `custom_domain`, are left alone.
+- A deploy compares declared props against what the API returns and patches only when they differ. Fields you leave out of props stay unmanaged, so edits to them in the UI are kept. An uptime monitor manages `service_name`, `enabled` and `destination_ids` even when unset (none, `true`, none). A status page is the exception: it is applied as a whole document, so unset fields take their defaults and a component added in the UI is deleted. Only an unset `manual_status` on a declared component, a `visibility` left unset, and a `password` or `custom_domain` the stack never declared, are left alone; removing a declared `password` or `custom_domain` removes it.
 - `alchemy sync` restores declared dashboard fields, alert rule configuration and status pages to what the stack declares.
 - Alert destination secrets cannot be compared, so drift in them is only caught when you change the prop.
 
