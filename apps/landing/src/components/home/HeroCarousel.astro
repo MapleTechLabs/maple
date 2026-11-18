@@ -222,6 +222,9 @@ const slides = [
 				fill: "forwards",
 			});
 			anim.onfinish = () => {
+				// A lightbox opened without a focus event does not pause the reel, so a
+				// dwell can end while one is up. Hold the plate; sync() replays the dwell.
+				if (!running()) return;
 				show((index + 1) % panes.length);
 				tick();
 			};

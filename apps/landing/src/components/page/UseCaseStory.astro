@@ -330,11 +330,8 @@ const first = steps[0];
 <script>
 	// One observer per story; the collapsed rootMargin keeps one step active at a time. The hero
 	// copy and the story heading count as step one, so a jump to the top resets the pane.
-	// Reduced motion never swaps the pane, so it never starts.
-	const stories = matchMedia("(prefers-reduced-motion: reduce)").matches
-		? []
-		: document.querySelectorAll<HTMLElement>("[data-usecase-story]");
-	for (const root of stories) {
+	const reduce = matchMedia("(prefers-reduced-motion: reduce)");
+	for (const root of document.querySelectorAll<HTMLElement>("[data-usecase-story]")) {
 		const steps = [...root.querySelectorAll<HTMLElement>("[data-step]")];
 		if (steps.length === 0) continue;
 
@@ -364,6 +361,17 @@ const first = steps[0];
 			},
 			{ rootMargin: "-45% 0px -45% 0px", threshold: 0 },
 		);
-		for (const el of [...leads, ...steps]) observer.observe(el);
+		// Reduced motion never swaps the pane. The preference can change while the page is
+		// open: stop observing then, and go back to the first plate if a swap had happened.
+		const apply = () => {
+			if (!reduce.matches) {
+				for (const el of [...leads, ...steps]) observer.observe(el);
+				return;
+			}
+			observer.disconnect();
+			if (root.dataset.active !== undefined) activate(0);
+		};
+		reduce.addEventListener("change", apply);
+		apply();
 	}
 </script>
