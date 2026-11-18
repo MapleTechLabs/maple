@@ -213,7 +213,7 @@ export class SupabaseOAuthClientSecret extends Secret<SupabaseOAuthClientSecret>
 
 export class StatusDomainsApiToken extends Secret<StatusDomainsApiToken>()("MAPLE_STATUS_DOMAINS_API_TOKEN", {
 	issuer: "cloudflare",
-	consumers: ["api", "ai", "alerting"],
+	consumers: ["api", "alerting"],
 	environments: PRD_ONLY,
 }) {}
 

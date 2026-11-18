@@ -13,6 +13,7 @@ import {
 	merge,
 	optionalPlain,
 	planetScaleOAuthEnv,
+	statusDomainsEnv,
 	supabaseOAuthEnv,
 } from "@maple/infra/env"
 import * as Secrets from "@maple/infra/secrets"
@@ -20,6 +21,8 @@ import * as Secrets from "@maple/infra/secrets"
 export const alertingConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
 	merge(
 		mapleServerEnv(stage, region, domains),
+		// Custom domain checks in the status pages tick.
+		statusDomainsEnv(stage, region),
 		// "1" runs crons on a non-prod stage (which otherwise skips them).
 		optionalPlain("MAPLE_ALERTING_ALLOW_NONPROD"),
 		linearOAuthEnv,
