@@ -185,7 +185,9 @@
 				"lib/ai-model-catalog/**",
 				"lib/oxlint-config/**",
 				"lib/grid-engine/**",
-				"lib/prometheus-otlp/**"
+				"lib/prometheus-otlp/**",
+				// Uses Effect only for Result; the evaluator's per-sample loops stay on native arrays.
+				"lib/promql/**"
 			],
 			"rules": {
 				// Bench suites and probes load untyped modules and run them as-is.
