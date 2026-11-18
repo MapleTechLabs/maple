@@ -229,6 +229,10 @@ export const createMapleIngest = ({ stage, region, hostname, profile, dbLogin }:
 			securityGroupIds: [instanceSecurityGroup.groupId],
 			instanceProfileName: instanceProfile.instanceProfileName,
 			associatePublicIpAddress: true,
+			// IMDSv2 only: a forged request from inside the gateway (SSRF) cannot read the instance
+			// role, and hop limit 1 keeps it off any bridge-networked container. The gateway's own
+			// host lookup already uses the token flow (src/host_identity.rs).
+			metadataOptions: { httpTokens: "required", httpPutResponseHopLimit: 1, httpEndpoint: "enabled" },
 			userData: ec2UserData(clusterName, WAL_STORAGE[instanceType].disk),
 			tags,
 		})
