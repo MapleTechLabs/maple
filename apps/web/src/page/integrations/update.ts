@@ -280,7 +280,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				{ isCurrent: s.chat.key === key, previous: s.chat },
 			),
 		CompletedLoadGithub: ({ key, result }) =>
-			accepted(model, { ...s, github: Keyed.accept(s.github, key, result) }),
+			// Only the current read settles the switches; a superseded answer is dropped below too.
+			accepted(Github.settledSwitches(model, s.github.key === key && Result.isSuccess(result)), {
+				...s,
+				github: Keyed.accept(s.github, key, result),
+			}),
 		CompletedLoadSearchConsole: ({ key, result }) =>
 			SEARCH_CONSOLE_PROVIDER.onStatus(
 				accepted(model, { ...s, searchConsole: Keyed.accept(s.searchConsole, key, result) }).model,
@@ -473,6 +477,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ToggledCiTraces: () => Github.toggledCiTraces(model),
 		CompletedCiTraces: ({ enabled, failure }) =>
 			Github.completedCiTraces(model, context, enabled, failure),
+		ToggledAuditLog: () => Github.toggledAuditLog(model),
+		CompletedAuditLog: ({ enabled, failure }) =>
+			Github.completedAuditLog(model, context, enabled, failure),
 		TickedGithubPoll: () => requestStatus(model, context, "github", "Refresh"),
 		EndedGithubForcePoll: ({ version }) => Github.endedForcePoll(model, version),
 		ClickedRepoDelete: ({ repoId }) => Github.clickedRepoDelete(model, repoId),

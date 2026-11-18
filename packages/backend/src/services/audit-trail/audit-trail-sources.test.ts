@@ -43,6 +43,42 @@ describe("auditTrailSources", () => {
 		})
 	})
 
+	it("reads a GitHub installation as feeding the audit log, and a removed one as failing", () => {
+		const github = (overrides: Partial<IntegrationEntry>) =>
+			entry({
+				provider: "github",
+				account: "acme",
+				resources: [resource({ kind: "repository", name: "acme/api" })],
+				...overrides,
+			})
+		const connected = github({
+			resources: [
+				resource({ kind: "repository", name: "acme/api" }),
+				resource({ kind: "audit log", name: "acme" }),
+			],
+		})
+		const stats = [{ provider: "github", events: 3, lastEventAt: 10 }]
+		expect(
+			sourceOf(auditTrailSources(stats, { integrations: [connected], available: [] }), "github"),
+		).toEqual({
+			provider: "github",
+			state: "receiving",
+			account: "acme",
+			problem: null,
+			events: 3,
+			lastEventAt: 10,
+		})
+		expect(
+			stateOf(
+				auditTrailSources([], {
+					integrations: [github({ status: "disconnected", problem: "reinstall" })],
+					available: [],
+				}),
+				"github",
+			),
+		).toBe("failing")
+	})
+
 	it("reads a connected Vercel team without the audit drain as off", () => {
 		const sources = auditTrailSources([], {
 			integrations: [entry({ resources: [resource({ name: "logs" })] })],

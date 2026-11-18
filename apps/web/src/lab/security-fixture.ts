@@ -1221,6 +1221,7 @@ export const githubStatusOf = (connected = true) =>
 		accountType: connected ? "organization" : null,
 		repositorySelection: connected ? "selected" : null,
 		ciTracesEnabled: true,
+		auditLogEnabled: true,
 		repositoryDiscovery: null,
 		repositories: connected
 			? Arr.map(["payments-api", "api-gateway", "web-dashboard", "billing-service"], (name, index) => ({
