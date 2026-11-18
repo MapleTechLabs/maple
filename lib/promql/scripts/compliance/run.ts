@@ -223,7 +223,9 @@ const main = async (): Promise<void> => {
 					: Result.isFailure(result)
 						? `we failed: ${result.failure.message}`
 						: diff(expected, ours(result.success))
-		if (problem !== undefined && LATER_UPSTREAM_FIXES.has(c.query)) {
+		// A later upstream fix explains a different value, never an error on either side.
+		const valuesDiffer = typeof expected !== "string" && !wantsError && Result.isSuccess(result)
+		if (problem !== undefined && valuesDiffer && LATER_UPSTREAM_FIXES.has(c.query)) {
 			upstreamFixed += 1
 			console.log(`DIFF ${c.query}  [${c.name}] (follows a later Prometheus fix)\n     ${problem}`)
 		} else if (problem !== undefined) {
