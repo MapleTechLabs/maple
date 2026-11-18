@@ -131,7 +131,9 @@ describe("githubAuditEvent", () => {
 		expect(deliveryTimeMs(id, sentAt + 3_600_000)).toBe(sentAt)
 		// Another id kind, or a time far from receipt, falls back to receipt.
 		expect(deliveryTimeMs("3f1c2a52-8d1e-4b7a-9c2d-0e5f6a7b8c9d", 1_000)).toBe(1_000)
-		expect(deliveryTimeMs(id, sentAt + 3 * 86_400_000)).toBe(sentAt + 3 * 86_400_000)
+		// GitHub keeps deliveries three days for redelivery: one redelivered on the last day keeps its time.
+		expect(deliveryTimeMs(id, sentAt + 3 * 86_400_000)).toBe(sentAt)
+		expect(deliveryTimeMs(id, sentAt + 10 * 86_400_000)).toBe(sentAt + 10 * 86_400_000)
 	})
 
 	it("leaves out code and CI events, and a delivery without an id", () => {

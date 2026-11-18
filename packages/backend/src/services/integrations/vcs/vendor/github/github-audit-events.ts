@@ -211,8 +211,11 @@ const accountOf = (payload: Json): string | undefined =>
 const UUID_V1 = /^([0-9a-f]{8})-([0-9a-f]{4})-1([0-9a-f]{3})-[0-9a-f]{4}-[0-9a-f]{12}$/iu
 /** 100 ns intervals between the UUID epoch (1582-10-15) and the Unix epoch. */
 const UUID_EPOCH_OFFSET = 122_192_928_000_000_000n
-/** How far a delivery id's time may sit from receipt before it is not trusted. */
-const DELIVERY_TIME_TOLERANCE_MS = 86_400_000
+/**
+ * How far a delivery id's time may sit from receipt before it is not trusted. Wider than the three
+ * days GitHub keeps deliveries for redelivery, so every redelivery keeps the original time.
+ */
+const DELIVERY_TIME_TOLERANCE_MS = 7 * 86_400_000
 
 /** When GitHub sent the delivery, from a v1 delivery id; `receivedAtMs` when the id has no usable time. */
 export const deliveryTimeMs = (deliveryId: string, receivedAtMs: number): number => {

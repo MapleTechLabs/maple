@@ -674,7 +674,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 
 			const mapInstallationEvent =
 				(event: string, reasonFor: (action: string) => VcsInstallationSyncReason | null) =>
-				(raw: unknown) =>
+				(raw: unknown, audited: boolean) =>
 					Effect.gen(function* () {
 						const payload = yield* parsePayload(event, decodeInstallationEvent(raw))
 						const externalInstallationId = String(payload.installation.id)
@@ -684,10 +684,15 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						})
 						const reason = reasonFor(payload.action)
 						if (!reason) {
-							yield* Effect.annotateCurrentSpan({
-								"vcs.webhook.outcome": "skipped",
-								"vcs.webhook.skip_reason": "unhandled_action",
-							})
+							// No sync for this action, but the audit log may still keep it.
+							yield* Effect.annotateCurrentSpan(
+								audited
+									? { "vcs.webhook.outcome": "handled", "vcs.webhook.audit_only": true }
+									: {
+											"vcs.webhook.outcome": "skipped",
+											"vcs.webhook.skip_reason": "unhandled_action",
+										},
+							)
 							return []
 						}
 						yield* Effect.annotateCurrentSpan({ "vcs.webhook.outcome": "handled" })
@@ -1110,8 +1115,10 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					Match.when("pull_request", () => mapPullRequest(parsed)),
 					Match.when("issue_comment", () => mapIssueComment(parsed)),
 					Match.when("pull_request_review_comment", () => mapReviewComment(parsed)),
-					Match.when("installation", () => mapInstallation(parsed)),
-					Match.when("installation_repositories", () => mapInstallationRepositories(parsed)),
+					Match.when("installation", () => mapInstallation(parsed, audited)),
+					Match.when("installation_repositories", () =>
+						mapInstallationRepositories(parsed, audited),
+					),
 					Match.when("create", () => mapRefEvent("created")(parsed)),
 					Match.when("delete", () => mapRefEvent("deleted")(parsed)),
 					Match.when("workflow_run", () => mapWorkflowRun(parsed)),

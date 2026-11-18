@@ -691,6 +691,25 @@ describe("GithubProvider.webhookToJobs", () => {
 			assert.strictEqual(audit.event.providerEventId, "d-1")
 			assert.strictEqual(audit.deliveryId, "d-1")
 
+			// An installation action with no sync still reaches the audit log.
+			const accepted = JSON.stringify({
+				action: "new_permissions_accepted",
+				installation: { id: 99, account: { login: "acme" } },
+				sender: { login: "octocat", id: 1, type: "User" },
+			})
+			const acceptedJobs = yield* provider.webhookToJobs({
+				headers: {
+					"x-github-event": "installation",
+					"x-github-delivery": "d-3",
+					"x-hub-signature-256": sign(accepted),
+				},
+				rawBody: accepted,
+			})
+			assert.deepStrictEqual(
+				Arr.map(acceptedJobs, (job) => job.kind),
+				["audit-event"],
+			)
+
 			// An organization event makes no sync job, only the audit one.
 			const memberAdded = JSON.stringify({
 				action: "member_added",

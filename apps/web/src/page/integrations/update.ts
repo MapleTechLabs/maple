@@ -280,7 +280,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				{ isCurrent: s.chat.key === key, previous: s.chat },
 			),
 		CompletedLoadGithub: ({ key, result }) =>
-			accepted(Github.settledSwitches(model, Result.isSuccess(result)), {
+			// Only the current read settles the switches; a superseded answer is dropped below too.
+			accepted(Github.settledSwitches(model, s.github.key === key && Result.isSuccess(result)), {
 				...s,
 				github: Keyed.accept(s.github, key, result),
 			}),
