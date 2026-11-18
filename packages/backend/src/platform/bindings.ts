@@ -102,6 +102,10 @@ export class DataSourceDevelopmentCallLimit extends Context.Service<
 	DataSourceDevelopmentCallLimit,
 	RateLimiter
 >()("@maple/backend/platform/DataSourceDevelopmentCallLimit") {}
+/** Queries Maple sends one SQL data source (an org's own ClickHouse), keyed by data source id. */
+export class DataSourceSqlQueryLimit extends Context.Service<DataSourceSqlQueryLimit, RateLimiter>()(
+	"@maple/backend/platform/DataSourceSqlQueryLimit",
+) {}
 
 export class ObjectStoreError extends Schema.TaggedError<ObjectStoreError>()(
 	"@maple/backend/platform/ObjectStoreError",

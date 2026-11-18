@@ -90,6 +90,10 @@ const invalidKey = () =>
 export const clerkDriver = registerDriver<"clerk">({
 	kind: "clerk",
 	queryLanguage: "resource",
+	// Read off the declared fields, so the claim holds only while one of them carries the mark.
+	marksPersonalData: Arr.some(DECLARED, (resource) =>
+		Arr.some(catalogEntryOf(resource).fields, (field) => field.pii === true),
+	),
 	validateConnection: (input, previous) => {
 		if (input._tag !== "clerk")
 			return Effect.fail(new DataSourceValidationError({ message: "Expected a Clerk connection" }))

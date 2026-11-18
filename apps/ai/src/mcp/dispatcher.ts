@@ -15,6 +15,7 @@ import { FEEDBACK_TOOL, type McpToolResult } from "./tools/types"
 import { McpRuntimeServicesLive, type McpToolRuntimeRequirements } from "./tools/runtime-services"
 import { CurrentMcpRequestTenant, CurrentMcpTenant } from "./tenant"
 import { recordExpectedMcpFailure, spanFailureMessage } from "./expected-failures"
+import { mayReadDataSources } from "./lib/data-sources"
 import { executeRegisteredTool, type McpToolLookup } from "./tools/registry-core"
 import { makeModuleToolLookup, mcpToolTitle } from "./tools/tool-lookup"
 import { recordMcpToolAudit } from "@maple/backend/services/audit/audit-access"
@@ -299,9 +300,11 @@ export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExe
 			)
 
 			// An org outside the `dataSources` rollout has none, so prompts and resources never mention them.
+			// Nor does a scoped key without `data_sources:read`, or a pass started by one: the tools refuse both.
 			const listDataSources = Effect.fn("McpToolExecutor.listDataSources")(function* (
 				tenant: TenantContext,
 			) {
+				if (!mayReadDataSources(tenant)) return []
 				const flags = yield* featureFlags.flags(tenant.orgId)
 				if (!flags.dataSources) return []
 				return yield* dataSources.list(tenant.orgId, { agent: true })

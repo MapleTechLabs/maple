@@ -115,6 +115,8 @@ describe("Maple provider layers", () => {
 				"Maple.ApiKey",
 				"Maple.Dashboard",
 				"Maple.IngestKeys",
+				"Maple.StatusPage",
+				"Maple.UptimeMonitor",
 			])
 		}),
 	)

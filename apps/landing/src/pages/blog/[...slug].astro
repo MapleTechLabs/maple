@@ -11,6 +11,8 @@ import ArticleEnhancements from "../../components/blog/ArticleEnhancements.astro
 import TableOfContents from "../../components/TableOfContents.astro";
 import { CATEGORY_META, formatDate, isoDate, readingTime, getSortedPosts } from "../../lib/blog";
 import Icon from "../../components/Icon.astro";
+import { authorByName, authorHref, authorPerson } from "../../lib/authors";
+import { Option } from "effect";
 
 export async function getStaticPaths() {
     const posts = await getCollection("blog", ({ data }) => !data.draft || import.meta.env.DEV);
@@ -32,6 +34,8 @@ const hasToc = headings.some((h) => h.depth === 2);
 const all = await getSortedPosts();
 const readNext = all.filter((p) => p.id !== post.id).slice(0, 3);
 
+const authorProfile = Option.getOrUndefined(authorByName(author));
+
 const pageTitle = `${title} — Maple Blog`;
 const canonicalUrl = Astro.site ? new URL(Astro.url.pathname, Astro.site).toString() : undefined;
 const absoluteCover = cover && Astro.site ? new URL(cover, Astro.site).toString() : undefined;
@@ -43,7 +47,9 @@ const jsonLd = {
     description,
     datePublished: isoDate(date),
     dateModified: isoDate(date),
-    author: { "@type": "Person", name: author, ...(authorRole ? { jobTitle: authorRole } : undefined) },
+    author: authorProfile
+        ? authorPerson(authorProfile, Astro.site)
+        : { "@type": "Person", name: author, ...(authorRole ? { jobTitle: authorRole } : undefined) },
     publisher: {
         "@type": "Organization",
         name: "Maple",
@@ -93,15 +99,24 @@ const quietLink = "cursor-pointer border-0 bg-transparent p-0 text-left hover:te
                     <p class="mt-5 max-w-[58ch] font-display text-[17px] leading-[1.6] text-pretty text-fg-muted lg:text-lg">{description}</p>
 
                     {/* Byline: the round slot takes an author photo when there is one. */}
-                    <div class="mt-8 flex items-center gap-3">
+                    {/* A known author links to their page; the slot shows their photo when there is one. */}
+                    <a
+                        href={authorProfile ? authorHref(authorProfile) : undefined}
+                        rel={authorProfile ? "author" : undefined}
+                        class="group mt-8 flex w-fit items-center gap-3"
+                    >
                         <span class="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-bg-elevated">
-                            <Icon name="MapleMark" size={18} class="text-primary" aria-hidden="true" />
+                            {authorProfile?.avatar ? (
+                                <img src={authorProfile.avatar} alt="" width="36" height="36" class="size-full object-cover" />
+                            ) : (
+                                <Icon name="MapleMark" size={18} class="text-primary" aria-hidden="true" />
+                            )}
                         </span>
                         <span class="flex min-w-0 flex-col font-display leading-tight">
-                            <span class="text-sm font-medium text-fg">{author}</span>
-                            {authorRole && <span class="mt-0.5 text-[13px] text-fg-muted">{authorRole}</span>}
+                            <span class:list={["text-sm font-medium text-fg", authorProfile && "transition-colors group-hover:text-primary"]}>{authorProfile?.name ?? author}</span>
+                            {(authorProfile?.role ?? authorRole) && <span class="mt-0.5 text-[13px] text-fg-muted">{authorProfile?.role ?? authorRole}</span>}
                         </span>
-                    </div>
+                    </a>
                 </div>
 
                 <div class="overflow-hidden rounded-lg border border-border">

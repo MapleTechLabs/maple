@@ -1,13 +1,13 @@
 ---
 title: "Terraform"
-description: "Declare Maple dashboards, alert rules, notification destinations, uptime monitors, scrape targets and API keys in Terraform, next to the infrastructure they watch."
+description: "Declare Maple dashboards, alert rules, notification destinations, uptime monitors, status pages, scrape targets and API keys in Terraform, next to the infrastructure they watch."
 group: "Infrastructure as Code"
 order: 3
 icon: "terraform"
 navLabel: "Terraform"
 ---
 
-The Maple provider for [Terraform](https://developer.hashicorp.com/terraform) manages Maple configuration as code: dashboards, alert rules and their destinations, uptime monitors, scrape targets and API keys. It talks to the public [v2 API](/docs/reference/api), so anything you can do there with a key you can review in a plan first. The same provider is available for [Pulumi](/docs/iac/pulumi).
+The Maple provider for [Terraform](https://developer.hashicorp.com/terraform) manages Maple configuration as code: dashboards, alert rules and their destinations, uptime monitors, status pages, scrape targets and API keys. It talks to the public [v2 API](/docs/reference/api), so anything you can do there with a key you can review in a plan first. The same provider is available for [Pulumi](/docs/iac/pulumi).
 
 |                    |                                                                                                     |
 | ------------------ | --------------------------------------------------------------------------------------------------- |

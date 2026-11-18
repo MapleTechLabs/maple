@@ -20,6 +20,7 @@ import {
 	CliAuthRateLimit,
 	DataSourceDevelopmentCallLimit,
 	DataSourceProductionCallLimit,
+	DataSourceSqlQueryLimit,
 	EmailSender,
 	McpOAuthRateLimit,
 	type ObjectStore,
@@ -40,7 +41,10 @@ import { bindEmailSender } from "@maple/backend/platform/email-sender"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { queueProducer } from "@maple/backend/platform/queue-producer"
 import { layerMapleDbConnection } from "@maple/backend/platform/pg-connection-source"
-import { DATA_SOURCE_CALL_LIMITS } from "@maple/backend/services/data-sources/DataSourceCallBudgetLive"
+import {
+	DATA_SOURCE_CALL_LIMITS,
+	DATA_SOURCE_SQL_QUERY_LIMIT,
+} from "@maple/backend/services/data-sources/DataSourceCallBudgetLive"
 import {
 	API_V2_RATE_LIMIT_PERIOD_SECONDS,
 	API_V2_RATE_LIMIT_REQUESTS,
@@ -108,6 +112,11 @@ export const bindApiClients = Effect.gen(function* () {
 		dataSourceDevelopmentCallLimit: yield* Cloudflare.RateLimit("DATA_SOURCE_DEVELOPMENT_CALL_LIMITER", {
 			namespaceId: 2026110802,
 			simple: DATA_SOURCE_CALL_LIMITS.development,
+		}),
+		// Queries Maple sends one connected ClickHouse, keyed by data source id. Shared the same way.
+		dataSourceSqlQueryLimit: yield* Cloudflare.RateLimit("DATA_SOURCE_SQL_QUERY_LIMITER", {
+			namespaceId: 2026111801,
+			simple: DATA_SOURCE_SQL_QUERY_LIMIT,
 		}),
 		// `send_email`, prd only.
 		email: yield* bindEmailSender,
@@ -196,6 +205,7 @@ export const apiPorts = (
 		Layer.succeed(AwsEventsRateLimit, limiter(clients.awsEventsRateLimit)),
 		Layer.succeed(DataSourceProductionCallLimit, limiter(clients.dataSourceProductionCallLimit)),
 		Layer.succeed(DataSourceDevelopmentCallLimit, limiter(clients.dataSourceDevelopmentCallLimit)),
+		Layer.succeed(DataSourceSqlQueryLimit, limiter(clients.dataSourceSqlQueryLimit)),
 		Layer.succeed(ReplayBlobBucket, objectStore(clients.replayBlobs)),
 		Layer.unwrap(
 			dischargeRuntimeContext(Effect.all([clients.statusKv.raw, clients.statusBucket.raw])).pipe(

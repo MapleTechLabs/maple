@@ -11,6 +11,7 @@ import {
 import { maskLiteralsAndComments } from "@maple/domain/raw-sql"
 import type { DriverConnection, PreparedQuery, QueryRequest } from "../../port"
 import { mapClickHouseError } from "./errors"
+import { hiddenEntryIssue } from "./hidden"
 import { runtimeHint, validationHints } from "./hints"
 import { expandMacros } from "./macros"
 import { openSession, readOnlySettings } from "./session"
@@ -134,9 +135,6 @@ export const prepareClickHouse = (
 		) {
 			return yield* refuse("Alert queries must bound their reads with $__timeFilter(col).")
 		}
-		const pii = request.redactPii ? piiFieldNames(catalog) : new Set<string>()
-		const personal = piiIssue(query.sql, pii)
-		if (personal !== null) return yield* refuse(personal)
 		const { granularitySeconds, startMs, endMs } = request.window
 		if (
 			!Number.isFinite(granularitySeconds) ||
@@ -149,6 +147,12 @@ export const prepareClickHouse = (
 			)
 		}
 		const sql = expandMacros(stripTerminal(query.sql), request.window)
+		// Read off the SQL as it is sent, so no name is spelled by what a macro expands to.
+		const pii = request.redactPii ? piiFieldNames(catalog) : new Set<string>()
+		const personal = piiIssue(sql, pii)
+		if (personal !== null) return yield* refuse(personal)
+		const hidden = hiddenEntryIssue(sql, request.hiddenEntries, connection.config.database)
+		if (hidden !== null) return yield* refuse(hidden)
 		const { limits } = request
 		const run = Effect.gen(function* () {
 			const session = yield* openSession(connection, limits.timeoutMs)
@@ -196,5 +200,6 @@ export const prepareClickHouse = (
 				},
 			}),
 		)
-		return { summary: { _tag: "sql", sql }, run: () => run }
+		// One unit of the source's query budget per run, taken before anything reaches the cluster.
+		return { summary: { _tag: "sql", sql }, run: (context) => Effect.andThen(context.spend(1), run) }
 	})

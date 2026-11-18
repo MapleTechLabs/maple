@@ -9,7 +9,7 @@ import {
 	type ClickHouseDataSourceConfig,
 	type SourceCatalog,
 } from "@maple/domain/data-sources"
-import { OrgId, UserId } from "@maple/primitives"
+import { OrgId, RoleName, UserId } from "@maple/primitives"
 import { ExternalDataSources } from "@maple/db/tables"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
@@ -24,11 +24,17 @@ import {
 	String as Str,
 } from "effect"
 import { FetchHttpClient } from "effect/http"
+import { TestClock } from "effect/testing"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { DataSourceCallBudget, DataSourceDrivers } from "./DataSourceDrivers"
-import { ExternalDataSourceService, MAX_CATALOG_ENTRIES } from "./ExternalDataSourceService"
+import {
+	ExternalDataSourceService,
+	MAX_CATALOG_ENTRIES,
+	queryCallerOf,
+	type QueryCaller,
+} from "./ExternalDataSourceService"
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
@@ -37,6 +43,14 @@ const ORG = Schema.decodeSync(OrgId)("org_sources")
 const OTHER_ORG = Schema.decodeSync(OrgId)("org_other")
 const USER = Schema.decodeSync(UserId)("user_admin")
 const SECRET = "sk_test_supersecretvalue1234"
+const roles = (...names: ReadonlyArray<string>) => Arr.map(names, (name) => Schema.decodeSync(RoleName)(name))
+const ROLES = {
+	analyst: roles("org:analyst"),
+	member: roles("org:member"),
+	engineer: roles("org:engineer"),
+}
+/** A person or key that may run queries. */
+const ENGINEER: QueryCaller = { kind: "principal", roles: ["org:engineer"] }
 
 /** What the fake drivers answer, and what they saw. */
 interface World {
@@ -91,6 +105,7 @@ const sqlDriver = (world: World) =>
 	registerDriver<"clickhouse">({
 		kind: "clickhouse",
 		queryLanguage: "sql:clickhouse",
+		marksPersonalData: false,
 		validateConnection: (input, previous) =>
 			input._tag !== "clickhouse"
 				? Effect.fail(new DataSourceValidationError({ message: "wrong kind" }))
@@ -137,6 +152,7 @@ const apiDriver = (world: World) =>
 	registerDriver<"clerk">({
 		kind: "clerk",
 		queryLanguage: "resource",
+		marksPersonalData: true,
 		validateConnection: () =>
 			Effect.succeed({
 				config: { _tag: "clerk", instance: "development" } satisfies ClerkDataSourceConfig,
@@ -197,11 +213,15 @@ const config = ConfigProvider.layer(
 	}),
 )
 
-const makeLayer = (world: World, testDb: TestDb = createTestDb(createdDbs)) =>
+const makeLayer = (
+	world: World,
+	testDb: TestDb = createTestDb(createdDbs),
+	budget: Layer.Layer<DataSourceCallBudget> = DataSourceCallBudget.unlimited,
+) =>
 	Layer.mergeAll(
 		ExternalDataSourceService.layer.pipe(
 			Layer.provide(DataSourceDrivers.fromList([sqlDriver(world), apiDriver(world)])),
-			Layer.provide(DataSourceCallBudget.unlimited),
+			Layer.provide(budget),
 			Layer.provide(Env.layer),
 			Layer.provide(config),
 		),
@@ -220,6 +240,14 @@ const shopProd = {
 		password: SECRET,
 	},
 } as const
+
+const clerkProd = {
+	name: "clerk-prod",
+	description: "Production user accounts",
+	environment: "production",
+	connection: { _tag: "clerk", secretKey: SECRET },
+} as const
+const COUNT_USERS = { _tag: "resource", resource: "users", measure: { fn: "count" } } as const
 
 const window = {
 	startMs: Date.UTC(2026, 10, 1),
@@ -257,9 +285,16 @@ describe("ExternalDataSourceService", () => {
 			expect(row?.secretCiphertext).not.toContain(SECRET)
 			expect(JSON.stringify(row)).not.toContain(SECRET)
 
-			const result = yield* service.query(ORG, "shop-prod", { _tag: "sql", sql: "SELECT 1" }, window, {
-				agent: false,
-			})
+			const result = yield* service.query(
+				ORG,
+				"shop-prod",
+				{ _tag: "sql", sql: "SELECT 1" },
+				window,
+				{
+					agent: false,
+				},
+				ENGINEER,
+			)
 			expect(result).toMatchObject({ rows: [{ n: 3 }], executed: true, language: "sql:clickhouse" })
 			expect(world.seenSecrets).toEqual([SECRET, SECRET])
 			expect(yield* service.list(OTHER_ORG, { agent: false })).toEqual([])
@@ -274,7 +309,14 @@ describe("ExternalDataSourceService", () => {
 			yield* service.update(ORG, USER, created.id, {
 				connection: { ...shopProd.connection, password: "sk_replaced_later" },
 			})
-			yield* service.query(ORG, "shop-prod", { _tag: "sql", sql: "SELECT 1" }, window, { agent: false })
+			yield* service.query(
+				ORG,
+				"shop-prod",
+				{ _tag: "sql", sql: "SELECT 1" },
+				window,
+				{ agent: false },
+				ENGINEER,
+			)
 			expect(world.seenSecrets.at(-1)).toBe("sk_replaced_later")
 		}).pipe(Effect.provide(makeLayer(world)))
 	})
@@ -298,7 +340,7 @@ describe("ExternalDataSourceService", () => {
 			)
 			const runsBefore = world.runs
 			const error = yield* service
-				.query(ORG, "shop-prod", { _tag: "sql", sql: "SELECT 1" }, window, { agent: false })
+				.query(ORG, "shop-prod", { _tag: "sql", sql: "SELECT 1" }, window, { agent: false }, ENGINEER)
 				.pipe(Effect.flip)
 			expect(error._tag).toBe("@maple/data-sources/Persistence")
 			expect(world.runs).toBe(runsBefore)
@@ -367,7 +409,14 @@ describe("ExternalDataSourceService", () => {
 				["shop.payments", true],
 			])
 
-			yield* service.query(ORG, "shop-prod", { _tag: "sql", sql: "SELECT 1" }, window, { agent: true })
+			yield* service.query(
+				ORG,
+				"shop-prod",
+				{ _tag: "sql", sql: "SELECT 1" },
+				window,
+				{ agent: true },
+				ENGINEER,
+			)
 			expect(world.prepared.at(-1)?.request.redactPii).toBe(true)
 		}).pipe(Effect.provide(makeLayer(world)))
 	})
@@ -385,14 +434,21 @@ describe("ExternalDataSourceService", () => {
 			})
 
 			const sqlToApi = yield* service
-				.query(ORG, "clerk-prod", { _tag: "sql", sql: "SELECT count(*) FROM users" }, window, {
-					agent: true,
-				})
+				.query(
+					ORG,
+					"clerk-prod",
+					{ _tag: "sql", sql: "SELECT count(*) FROM users" },
+					window,
+					{
+						agent: true,
+					},
+					ENGINEER,
+				)
 				.pipe(Effect.flip)
 			expect(sqlToApi.message).toContain("takes a resource query, not SQL")
 
 			const missing = yield* service
-				.query(ORG, "shop-prd", { _tag: "sql", sql: "SELECT 1" }, window, { agent: true })
+				.query(ORG, "shop-prd", { _tag: "sql", sql: "SELECT 1" }, window, { agent: true }, ENGINEER)
 				.pipe(Effect.flip)
 			expect(missing._tag === "@maple/data-sources/NotFound" ? missing.suggestions : []).toContain(
 				"shop-prod",
@@ -404,6 +460,7 @@ describe("ExternalDataSourceService", () => {
 				{ _tag: "sql", sql: "SELECT 1" },
 				{ ...window, explain: true },
 				{ agent: true },
+				ENGINEER,
 			)
 			expect(explained).toMatchObject({ executed: false, plan: { _tag: "sql", sql: "SELECT 1" } })
 			expect(world.runs).toBe(0)
@@ -437,9 +494,9 @@ describe("ExternalDataSourceService", () => {
 			const created = yield* service.create(ORG, USER, shopProd)
 			yield* service.updateCatalogEntry(ORG, created.id, "shop.orders", { exposed: false })
 			const sql = { _tag: "sql", sql: "SELECT 1" } as const
-			yield* service.query(ORG, "shop-prod", sql, window, { agent: true })
+			yield* service.query(ORG, "shop-prod", sql, window, { agent: true }, ENGINEER)
 			expect(world.prepared.at(-1)?.entries).toEqual(["shop.payments"])
-			yield* service.query(ORG, "shop-prod", sql, window, { agent: false })
+			yield* service.query(ORG, "shop-prod", sql, window, { agent: false }, ENGINEER)
 			expect(Arr.sort(world.prepared.at(-1)?.entries ?? [], Order.String)).toEqual([
 				"shop.orders",
 				"shop.payments",
@@ -472,6 +529,7 @@ describe("ExternalDataSourceService", () => {
 					{ _tag: "sql", sql: "SELECT 1" },
 					{ ...window, granularitySeconds: 1 },
 					{ agent: true },
+					ENGINEER,
 				)
 				.pipe(Effect.flip)
 			expect(error._tag).toBe("@maple/data-sources/Validation")
@@ -491,15 +549,68 @@ describe("ExternalDataSourceService", () => {
 			})
 			const count = { _tag: "resource", resource: "users", measure: { fn: "count" } } as const
 			world.apiThrottled = true
-			yield* service.query(ORG, "clerk-prod", count, window, { agent: true }).pipe(Effect.flip)
+			yield* service
+				.query(ORG, "clerk-prod", count, window, { agent: true }, ENGINEER)
+				.pipe(Effect.flip)
 			expect(world.apiCalls).toBe(1)
 			world.apiThrottled = false
 			const second = yield* service
-				.query(ORG, "clerk-prod", count, window, { agent: true })
+				.query(ORG, "clerk-prod", count, window, { agent: true }, ENGINEER)
 				.pipe(Effect.flip)
 			expect(second).toMatchObject({ _tag: "@maple/data-sources/RateLimited" })
 			expect(world.apiCalls).toBe(1)
 		}).pipe(Effect.provide(makeLayer(world)))
+	})
+
+	it.effect("ends a wait the source asked for on time, however often it is polled meanwhile", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const service = yield* ExternalDataSourceService
+			yield* service.create(ORG, USER, clerkProd)
+			const ask = service
+				.query(ORG, "clerk-prod", COUNT_USERS, window, { agent: true }, ENGINEER)
+				.pipe(Effect.result)
+			world.apiThrottled = true
+			yield* ask
+			world.apiThrottled = false
+			// The source said 30 s. Asking again inside the wait must not push its end back.
+			yield* TestClock.adjust("29500 millis")
+			const early = yield* ask
+			yield* TestClock.adjust("900 millis")
+			const onTime = yield* ask
+			expect([early._tag, onTime._tag]).toEqual(["Failure", "Success"])
+			expect(world.apiCalls).toBe(2)
+		}).pipe(Effect.provide(makeLayer(world)))
+	})
+
+	it.effect("starts no wait when Maple's own limit refuses a call, and says whose limit it was", () => {
+		const world = makeWorld()
+		const refusals = { left: 1 }
+		const budget = Layer.succeed(DataSourceCallBudget, {
+			spend: () =>
+				Effect.suspend(() => {
+					refusals.left -= 1
+					return refusals.left >= 0
+						? Effect.fail(
+								new DataSourceRateLimitedError({
+									message: "Maple's own limit for one data source is reached.",
+									retryAfterSeconds: 60,
+									limitedBy: "maple",
+								}),
+							)
+						: Effect.void
+				}),
+		})
+		return Effect.gen(function* () {
+			const service = yield* ExternalDataSourceService
+			yield* service.create(ORG, USER, clerkProd)
+			const ask = service.query(ORG, "clerk-prod", COUNT_USERS, window, { agent: true }, ENGINEER)
+			const refused = yield* Effect.flip(ask)
+			expect(refused.message).toBe("Maple's own limit for one data source is reached.")
+			// The very next call goes through: the refusal was Maple's, not the source's.
+			yield* ask
+			expect(world.apiCalls).toBe(1)
+		}).pipe(Effect.provide(makeLayer(world, createTestDb(createdDbs), budget)))
 	})
 
 	it.effect("keeps field notes on an entry that drops out of the source and comes back", () => {
@@ -539,7 +650,14 @@ describe("ExternalDataSourceService", () => {
 			yield* service.create(ORG, USER, shopProd)
 			world.wideCell = Str.repeat(6_000_000)("x")
 			const error = yield* service
-				.query(ORG, "shop-prod", { _tag: "sql", sql: "SELECT s FROM t" }, window, { agent: false })
+				.query(
+					ORG,
+					"shop-prod",
+					{ _tag: "sql", sql: "SELECT s FROM t" },
+					window,
+					{ agent: false },
+					ENGINEER,
+				)
 				.pipe(Effect.flip)
 			expect(error._tag).toBe("@maple/data-sources/Limit")
 		}).pipe(Effect.provide(makeLayer(world)))
@@ -577,7 +695,14 @@ describe("ExternalDataSourceService", () => {
 				description: "Storefront, read replica",
 				connection: { ...withoutPassword, user: "reader2" },
 			})
-			yield* service.query(ORG, "shop-prod", { _tag: "sql", sql: "SELECT 1" }, window, { agent: false })
+			yield* service.query(
+				ORG,
+				"shop-prod",
+				{ _tag: "sql", sql: "SELECT 1" },
+				window,
+				{ agent: false },
+				ENGINEER,
+			)
 			expect(world.seenSecrets.at(-1)).toBe(SECRET)
 			const kindChange = yield* service
 				.update(ORG, USER, created.id, { connection: { _tag: "clerk", secretKey: SECRET } })
@@ -645,10 +770,155 @@ describe("ExternalDataSourceService", () => {
 		return Effect.gen(function* () {
 			const service = yield* ExternalDataSourceService
 			yield* service.create(ORG, USER, shopProd)
-			yield* service.query(ORG, "shop-prod", { _tag: "sql", sql: "SELECT 1" }, window, { agent: true })
+			yield* service.query(
+				ORG,
+				"shop-prod",
+				{ _tag: "sql", sql: "SELECT 1" },
+				window,
+				{ agent: true },
+				ENGINEER,
+			)
 			expect(JSON.stringify(world.planned.at(-1))).not.toContain("ada@example.com")
-			yield* service.query(ORG, "shop-prod", { _tag: "sql", sql: "SELECT 1" }, window, { agent: false })
+			yield* service.query(
+				ORG,
+				"shop-prod",
+				{ _tag: "sql", sql: "SELECT 1" },
+				window,
+				{ agent: false },
+				ENGINEER,
+			)
 			expect(JSON.stringify(world.planned.at(-1))).toContain("ada@example.com")
+		}).pipe(Effect.provide(makeLayer(world)))
+	})
+
+	it.effect("runs a query for engineers and admins, and refuses every role below them", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const service = yield* ExternalDataSourceService
+			yield* service.create(ORG, USER, shopProd)
+			const ask = (roles: ReadonlyArray<string>) =>
+				service
+					.query(
+						ORG,
+						"shop-prod",
+						{ _tag: "sql", sql: "SELECT 1" },
+						window,
+						{ agent: true },
+						{
+							kind: "principal",
+							roles,
+						},
+					)
+					.pipe(Effect.result)
+			const refused = yield* Effect.forEach([["org:analyst"], ["org:member"], []], ask)
+			expect(
+				Arr.map(refused, (result) => (result._tag === "Failure" ? result.failure._tag : "ran")),
+			).toEqual(Arr.replicate("@maple/data-sources/Forbidden", 3))
+			expect(world.runs).toBe(0)
+			const allowed = yield* Effect.forEach([["org:engineer"], ["org:admin"], ["root"]], ask)
+			expect(Arr.map(allowed, (result) => result._tag)).toEqual(Arr.replicate("Success", 3))
+			expect(world.runs).toBe(3)
+		}).pipe(Effect.provide(makeLayer(world)))
+	})
+
+	it.effect("admits an unattended pass by who started it, never by its missing roles", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const service = yield* ExternalDataSourceService
+			yield* service.create(ORG, USER, shopProd)
+			const ask = (tenant: Parameters<typeof queryCallerOf>[0]) =>
+				service
+					.query(
+						ORG,
+						"shop-prod",
+						{ _tag: "sql", sql: "SELECT 1" },
+						window,
+						{ agent: true },
+						queryCallerOf(tenant),
+					)
+					.pipe(
+						Effect.as("ran"),
+						Effect.catchTag("@maple/data-sources/Forbidden", () => Effect.succeed("refused")),
+					)
+			const pass = { roles: [], turnOrigin: { kind: "autonomous" } } as const
+			const verdicts = {
+				producer: yield* ask({ ...pass, turnStarter: { kind: "producer" } }),
+				engineerStarted: yield* ask({
+					...pass,
+					turnStarter: { kind: "person", roles: ROLES.engineer },
+				}),
+				memberStarted: yield* ask({ ...pass, turnStarter: { kind: "person", roles: ROLES.member } }),
+				// Recorded before starters were, or by a caller that named none.
+				nobodyRecorded: yield* ask(pass),
+				withoutRoles: yield* ask({ roles: [] }),
+				analystInApp: yield* ask({ roles: ROLES.analyst, turnOrigin: { kind: "app" } }),
+				engineerInApp: yield* ask({ roles: ROLES.engineer, turnOrigin: { kind: "app" } }),
+			}
+			expect(verdicts).toEqual({
+				producer: "ran",
+				engineerStarted: "ran",
+				memberStarted: "refused",
+				nobodyRecorded: "refused",
+				withoutRoles: "refused",
+				analystInApp: "refused",
+				engineerInApp: "ran",
+			})
+		}).pipe(Effect.provide(makeLayer(world)))
+	})
+
+	it.effect("admits an unattended run only to a source whose agent access is on", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const service = yield* ExternalDataSourceService
+			yield* service.create(ORG, USER, { ...shopProd, agentAccess: false })
+			// Asked as a person: an unattended run still reads as an agent.
+			const error = yield* service
+				.query(
+					ORG,
+					"shop-prod",
+					{ _tag: "sql", sql: "SELECT 1" },
+					window,
+					{ agent: false },
+					{
+						kind: "unattended",
+					},
+				)
+				.pipe(Effect.flip)
+			expect(error._tag).toBe("@maple/data-sources/NotFound")
+			expect(world.runs).toBe(0)
+		}).pipe(Effect.provide(makeLayer(world)))
+	})
+
+	it.effect("names the entries hidden from agents to the driver, and none for people", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const service = yield* ExternalDataSourceService
+			const created = yield* service.create(ORG, USER, shopProd)
+			yield* service.updateCatalogEntry(ORG, created.id, "shop.orders", { exposed: false })
+			const sql = { _tag: "sql", sql: "SELECT 1" } as const
+			yield* service.query(ORG, "shop-prod", sql, window, { agent: true }, ENGINEER)
+			expect(world.prepared.at(-1)?.request.hiddenEntries).toEqual(["shop.orders"])
+			yield* service.query(ORG, "shop-prod", sql, window, { agent: false }, ENGINEER)
+			expect(world.prepared.at(-1)?.request.hiddenEntries).toEqual([])
+		}).pipe(Effect.provide(makeLayer(world)))
+	})
+
+	it.effect("says whether a source's kind can redact personal data at all", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const service = yield* ExternalDataSourceService
+			yield* service.create(ORG, USER, shopProd)
+			yield* service.create(ORG, USER, {
+				name: "clerk-prod",
+				description: "Production user accounts",
+				environment: "production",
+				connection: { _tag: "clerk", secretKey: SECRET },
+			})
+			const sources = yield* service.list(ORG, { agent: false })
+			expect(Arr.map(sources, (source) => [source.name, source.supportsPiiRedaction])).toEqual([
+				["clerk-prod", true],
+				["shop-prod", false],
+			])
 		}).pipe(Effect.provide(makeLayer(world)))
 	})
 

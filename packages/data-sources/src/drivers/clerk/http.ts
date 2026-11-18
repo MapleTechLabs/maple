@@ -102,10 +102,12 @@ const failFor = (
 							? {
 									message:
 										"Clerk's rate limit for this instance is reached; Maple stops calling it",
+									limitedBy: "source",
 								}
 							: {
 									message: `Clerk's rate limit for this instance is reached; Maple stops calling it for ${retryAfterSeconds} s`,
 									retryAfterSeconds,
+									limitedBy: "source",
 								},
 					),
 				)

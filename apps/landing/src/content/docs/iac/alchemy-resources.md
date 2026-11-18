@@ -1,6 +1,6 @@
 ---
 title: "Alchemy resources"
-description: "Every Maple resource the Alchemy provider manages: props, outputs and lifecycle for dashboards, alert rules, alert destinations, API keys and ingest keys."
+description: "Every Maple resource the Alchemy provider manages: props, outputs and lifecycle for dashboards, alert rules, alert destinations, uptime monitors, status pages, API keys and ingest keys."
 group: "Infrastructure as Code"
 order: 2
 icon: "alchemy"
@@ -9,13 +9,15 @@ navLabel: "Alchemy resources"
 
 The resources `@maple-dev/alchemy` manages. New here? Start with the [Alchemy quick start](/docs/iac/alchemy).
 
-| Resource                                           | Lifecycle                                                    | Main output     |
-| -------------------------------------------------- | ------------------------------------------------------------ | --------------- |
-| [`Maple.Dashboard`](#mapledashboard)               | Create, update in place, delete                              | `dashboardId`   |
-| [`Maple.AlertDestination`](#maplealertdestination) | Create, update in place, delete. Changing `type` replaces it | `destinationId` |
-| [`Maple.AlertRule`](#maplealertrule)               | Create, update in place, delete. Ownership-tagged per stack  | `ruleId`        |
-| [`Maple.ApiKey`](#mapleapikey)                     | Create, roll, revoke. Any other prop change replaces the key | `secret`        |
-| [`Maple.IngestKeys`](#mapleingestkeys)             | Read-only singleton                                          | `privateKey`    |
+| Resource                                           | Lifecycle                                                           | Main output     |
+| -------------------------------------------------- | ------------------------------------------------------------------- | --------------- |
+| [`Maple.Dashboard`](#mapledashboard)               | Create, update in place, delete                                     | `dashboardId`   |
+| [`Maple.AlertDestination`](#maplealertdestination) | Create, update in place, delete. Changing `type` replaces it        | `destinationId` |
+| [`Maple.AlertRule`](#maplealertrule)               | Create, update in place, delete. Ownership-tagged per stack         | `ruleId`        |
+| [`Maple.UptimeMonitor`](#mapleuptimemonitor)       | Create, update in place, delete. Changing `config.type` replaces it | `monitorId`     |
+| [`Maple.StatusPage`](#maplestatuspage)             | Create, update in place, delete                                     | `statusPageId`  |
+| [`Maple.ApiKey`](#mapleapikey)                     | Create, roll, revoke. Any other prop change replaces the key        | `secret`        |
+| [`Maple.IngestKeys`](#mapleingestkeys)             | Read-only singleton                                                 | `privateKey`    |
 
 Props use the API's `snake_case` wire shape, exactly as the [interactive API reference](https://api.maple.dev/v2/docs) documents the matching create endpoint. Outputs use `camelCase`.
 
@@ -149,6 +151,76 @@ Each rule carries one `alchemy:<hash>` tag that identifies the stack, stage and 
 
 Keep the ownership tag intact, and use distinct rule names for different stages that share one Maple organization.
 
+## Maple.UptimeMonitor
+
+```typescript
+Effect.gen(function* () {
+	const api = yield* Maple.UptimeMonitor("api", {
+		name: "API health",
+		config: { type: "http", url: "https://api.example.com/health" },
+		interval_seconds: 60,
+		destination_ids: [oncall.destinationId],
+	})
+})
+```
+
+| Prop               | Type       | Notes                                                                                                  |
+| ------------------ | ---------- | ------------------------------------------------------------------------------------------------------ |
+| `name`             | `string`   | Required                                                                                               |
+| `config`           | `object`   | Required. `type` is `http`, `tcp`, `dns`, `multistep` or `heartbeat`; the rest as the API documents it |
+| `interval_seconds` | `number`   | 30 to 3600. Unset keeps Maple's                                                                        |
+| `failures_to_down` | `number`   | 1 to 10. Unset keeps Maple's                                                                           |
+| `service_name`     | `string`   | Attach the monitor to a service. Unset means none                                                      |
+| `enabled`          | `boolean`  | Defaults to `true`                                                                                     |
+| `destination_ids`  | `string[]` | Notified when the monitor goes down or recovers. Unset means none                                      |
+
+Outputs: `monitorId` (`upm_…`), `name`, `kind`, `heartbeatUrl` (heartbeats: the URL your job pings), `alertRuleId`. See [Uptime monitoring](/docs/alerting/uptime-monitoring).
+
+## Maple.StatusPage
+
+```typescript
+Effect.gen(function* () {
+	const api = yield* Maple.UptimeMonitor("api", {
+		name: "API health",
+		config: { type: "http", url: "https://api.example.com/health" },
+	})
+	const page = yield* Maple.StatusPage("status", {
+		name: "Acme Status",
+		slug: "acme-status",
+		support_url: "https://acme.example/support",
+		theme: { preset: "midnight", accent: "#a5b4fc" },
+		components: [
+			{ name: "API", monitor_id: api.monitorId },
+			{ name: "Docs", group: "Websites", show_uptime: false },
+		],
+		custom_domain: "status.acme.example",
+	})
+	// page.customDomain.dnsRecords: the records to create at your DNS provider
+})
+```
+
+The props are the page's [config document](https://api.maple.dev/v2/docs) (`PUT /v2/status_pages/{id}/config`), plus `password` and `custom_domain`:
+
+| Prop                                                                    | Type                                   | Notes                                                                                                                           |
+| ----------------------------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `name`, `slug`                                                          | `string`                               | Required. The page is served at `<slug>.<status domain>`                                                                        |
+| `description`, `website_url`, `support_url`, `privacy_url`, `terms_url` | `string \| null`                       | Page text and links                                                                                                             |
+| `logo_url`, `logo_dark_url`, `favicon_url`                              | `string \| null`                       | An https URL, or a base64 `data:image/...` URL of at most 128 KB                                                                |
+| `show_powered_by`                                                       | `boolean`                              | Defaults to `true`                                                                                                              |
+| `auto_incidents`                                                        | `"off" \| "draft" \| "publish"`        | Defaults to `off`                                                                                                               |
+| `visibility`                                                            | `"public" \| "password" \| "internal"` | Unset keeps the page's (`public` for a new page)                                                                                |
+| `theme`                                                                 | `object`                               | `preset`, `appearance`, `accent`, `background`, `text`, `card`, `border`, `radius`, `font`. Unset fields take the default theme |
+| `components`                                                            | `object[]`                             | In display order: `name`, `description`, `group`, `monitor_id`, `manual_status`, `show_uptime`                                  |
+| `password`                                                              | `string \| Redacted`                   | Needed for `visibility: "password"`. Write-only to Maple, but kept in Alchemy state: protect the state as a credential          |
+| `custom_domain`                                                         | `string`                               | Also serve the page on this hostname. Not allowed on an `internal` page                                                         |
+
+- Components are matched to the page's existing ones by name, so their IDs, incidents and uptime history survive reordering and edits. Renaming a component recreates it; leaving one out deletes it.
+- Leave `manual_status` unset and an override a responder sets during an incident stays; a deploy does not undo it. `null` clears it.
+- `password` and `custom_domain` are only managed once declared: removing the prop removes the password or domain.
+- A new page is published once it is fully configured, so a half-made page is never served.
+
+Outputs: `statusPageId` (`stp_…`), `name`, `slug`, `components` (`{ componentId, name }[]`, for incidents posted through the API), `customDomain` (`{ hostname, cnameTarget, dnsRecords }` or `null`), `configVersion`. Incidents are operational and are not declared here. See [Status pages](/docs/alerting/status-pages).
+
 ## Maple.ApiKey
 
 ```typescript
@@ -197,8 +269,8 @@ Outputs: `publicKey`, `privateKey` (both `Redacted`), `publicRotatedAt`, `privat
 
 ## Drift and sync
 
-- A deploy compares declared props against what the API returns and patches only when they differ. Fields you leave out of props stay unmanaged, so edits to them in the UI are kept.
-- `alchemy sync` restores declared dashboard fields and alert rule configuration to what the stack declares.
+- A deploy compares declared props against what the API returns and patches only when they differ. Fields you leave out of props stay unmanaged, so edits to them in the UI are kept. An uptime monitor manages `service_name`, `enabled` and `destination_ids` even when unset (none, `true`, none). A status page is the exception: it is applied as a whole document, so unset fields take their defaults and a component added in the UI is deleted. Only an unset `manual_status` on a declared component, a `visibility` left unset, and a `password` or `custom_domain` the stack never declared, are left alone; removing a declared `password` or `custom_domain` removes it.
+- `alchemy sync` restores declared dashboard fields, alert rule configuration and status pages to what the stack declares.
 - Alert destination secrets cannot be compared, so drift in them is only caught when you change the prop.
 
 ## Errors and retries

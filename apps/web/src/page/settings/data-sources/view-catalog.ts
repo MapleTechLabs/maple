@@ -18,7 +18,7 @@ import { typography } from "@maple/views/ui/typography"
 import { sectionNote, settingsSection } from "../../kit/settings-section"
 import { isSavingEntry, Message, type Model } from "./model"
 import { entryEditor } from "./view-catalog-entry"
-import { gatedSourceControl, type Inputs } from "./view-parts"
+import { gatedSourceControl, HIDING_IS_BY_NAME, type Inputs } from "./view-parts"
 
 type H = HtmlBuilder<Message>
 
@@ -123,6 +123,8 @@ export const catalogSection = (h: H, model: Model, source: V2DataSource, inputs:
 			title: "Catalog",
 			description: [
 				"The tables and resources Maple found on this source. Notes and time fields help assistants write correct queries; hidden entries are not shown to agents.",
+				// An API source serves only its listed resources, so hiding one there is complete.
+				...(source.query_language === "resource" ? [] : [` ${HIDING_IS_BY_NAME}`]),
 			],
 			framed: false,
 			actions: gatedSourceControl(h, inputs.canManage, (isLocked) =>
