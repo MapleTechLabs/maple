@@ -1183,11 +1183,18 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						"vcs.process.outcome": "dropped",
 						"vcs.process.reason": "installation_unknown",
 					})
-					yield* Effect.logInfo("[VCS] Dropping VCS job for unknown installation").pipe(
+					// A lost audit event is a gap in the record: an error naming the delivery, so it can be
+					// redelivered from the app's Recent Deliveries.
+					yield* (job.kind === "audit-event" ? Effect.logError : Effect.logInfo)(
+						"[VCS] Dropping VCS job for unknown installation",
+					).pipe(
 						Effect.annotateLogs({
 							provider: job.provider,
 							externalInstallationId: job.externalInstallationId,
 							kind: job.kind,
+							...(job.kind === "audit-event"
+								? { deliveryId: job.event.providerEventId }
+								: undefined),
 						}),
 					)
 					return
