@@ -264,18 +264,20 @@ After setting the variables, **restart the Maple API** so they take effect. Mapl
 
 ### Permissions
 
-| Permission                 | Access                                           |
-| -------------------------- | ------------------------------------------------ |
-| Repository → Contents      | Read-only (Read and write to allow `@maple fix`) |
-| Repository → Pull requests | Read and write                                   |
-| Repository → Checks        | Read and write                                   |
-| Repository → Metadata      | Read-only (mandatory)                            |
-| Repository → Actions       | Read-only (CI job logs)                          |
-| Organization → Members     | Read-only (connect-time admin check)             |
+| Permission                  | Access                                                                |
+| --------------------------- | --------------------------------------------------------------------- |
+| Repository → Contents       | Read-only (Read and write to allow `@maple fix`)                      |
+| Repository → Pull requests  | Read and write                                                        |
+| Repository → Checks         | Read and write                                                        |
+| Repository → Metadata       | Read-only (mandatory)                                                 |
+| Repository → Actions        | Read-only (CI job logs)                                               |
+| Repository → Administration | Read-only, optional (audit log: protections, rulesets, code security) |
+| Repository → Deployments    | Read-only, optional (audit log: deploy keys)                          |
+| Organization → Members      | Read-only (connect-time admin check, audit log: members and teams)    |
 
 ### Subscribed webhook events
 
-`Create`, `Delete`, `Push`, `Pull request`, `Issue comment`, `Pull request review comment`, `Workflow run`, `Workflow job`. (`installation` and `installation_repositories` are delivered automatically and need no subscription.)
+`Create`, `Delete`, `Push`, `Pull request`, `Issue comment`, `Pull request review comment`, `Workflow run`, `Workflow job`, and for the audit log `Organization`, `Member`, `Membership`, `Team`, `Repository`, plus with the optional permissions `Branch protection rule`, `Branch protection configuration`, `Repository ruleset`, `Security and analysis` (Administration) and `Deploy key` (Deployments). (`installation` and `installation_repositories` are delivered automatically and need no subscription.)
 
 ---
 
