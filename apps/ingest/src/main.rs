@@ -20230,11 +20230,12 @@ mod tests {
         store.insert_clickhouse_target(
             "org_fixture",
             ClickHouseTargetRow {
-                ch_url: "https://clickhouse.example/".to_owned(),
+                ch_url: format!("{CH_URL}/"),
                 ch_user: "ingest".to_owned(),
-                ch_password_ciphertext: Some(V2_CIPHERTEXT.to_owned()),
-                ch_password_iv: Some(V2_IV.to_owned()),
-                ch_password_tag: Some(V2_TAG.to_owned()),
+                // The fixture password in v3 for this exact `ch_url`, trailing slash included.
+                ch_password_ciphertext: Some(V3_CIPHERTEXT.to_owned()),
+                ch_password_iv: Some(V3_IV.to_owned()),
+                ch_password_tag: Some("jkCOg5e0Y+nPj6FCPR0IPA==".to_owned()),
                 ch_database: "maple".to_owned(),
                 schema_version: CLICKHOUSE_SCHEMA_VERSION.to_owned(),
             },
@@ -20253,7 +20254,7 @@ mod tests {
             .await
             .expect("target lookup should not fail")
             .expect("target should resolve");
-        assert_eq!(target.endpoint, "https://clickhouse.example");
+        assert_eq!(target.endpoint, CH_URL);
         assert_eq!(target.user, "ingest");
         assert_eq!(target.password, "ch-secret-123");
         assert_eq!(target.database, "maple");
@@ -20267,9 +20268,10 @@ mod tests {
             ClickHouseTargetRow {
                 ch_url: "http://clickhouse.example/".to_owned(),
                 ch_user: "ingest".to_owned(),
-                ch_password_ciphertext: Some(V2_CIPHERTEXT.to_owned()),
-                ch_password_iv: Some(V2_IV.to_owned()),
-                ch_password_tag: Some(V2_TAG.to_owned()),
+                // The fixture password sealed in v3 for this exact `ch_url`.
+                ch_password_ciphertext: Some(V3_CIPHERTEXT.to_owned()),
+                ch_password_iv: Some(V3_IV.to_owned()),
+                ch_password_tag: Some("5P0wvEF8hm5nYU3du07Jtg==".to_owned()),
                 ch_database: "maple".to_owned(),
                 schema_version: CLICKHOUSE_SCHEMA_VERSION.to_owned(),
             },
