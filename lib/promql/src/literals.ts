@@ -33,6 +33,7 @@ export const roundHalfAway = (value: number): number => Math.sign(value) * Math.
 
 /** Go's time.Duration is int64 nanoseconds; longer durations are "out of range" in Prometheus. */
 const MAX_DURATION_MS = 9_223_372_036_854
+const INT64_LIMIT = 2 ** 63
 
 const inDurationRange = (ms: number): number | undefined =>
 	Number.isFinite(ms) && Math.abs(ms) <= MAX_DURATION_MS ? ms : undefined
@@ -41,10 +42,11 @@ const inDurationRange = (ms: number): number | undefined =>
 export const parseDurationMs = (text: string): number | undefined => {
 	const seconds = parsePlainNumber(text)
 	// As Prometheus: seconds round to nanoseconds, then truncate to the milliseconds samples use.
-	if (seconds !== undefined)
-		return Number.isFinite(seconds)
-			? inDurationRange(Math.trunc(roundHalfAway(seconds * 1e9) / 1e6))
-			: undefined
+	if (seconds !== undefined) {
+		// The int64 limit applies to the rounded nanoseconds, before truncating.
+		const ns = roundHalfAway(seconds * 1e9)
+		return Number.isFinite(ns) && Math.abs(ns) < INT64_LIMIT ? Math.trunc(ns / 1e6) : undefined
+	}
 	if (!/^(\d+(ms|y|w|d|h|m|s))+$/.test(text)) return undefined
 	let total = 0
 	let lastUnit = -1
@@ -83,7 +85,8 @@ export const parseNumber = (text: string): number | undefined => {
 	if (lower === "-inf") return Number.NEGATIVE_INFINITY
 	if (lower === "nan") return Number.NaN
 	const plain = parsePlainNumber(lower)
-	if (plain !== undefined) return plain
+	// Go's ParseFloat fails on overflow (`1e309`); only the spelled-out Inf is infinite.
+	if (plain !== undefined) return Number.isFinite(plain) ? plain : undefined
 	const duration = parseDurationMs(text)
 	return duration === undefined ? undefined : duration / 1000
 }

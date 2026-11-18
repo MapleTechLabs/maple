@@ -9,6 +9,7 @@ import {
 	type QueryParams,
 	type QueryResult,
 	runQuery,
+	type SelectorData,
 	type SelectorRequest,
 } from "./index"
 
@@ -524,5 +525,63 @@ describe("pushed subtrees", () => {
 
 	it("accepts a pushed answer that fits the budget exactly", () => {
 		expect(Result.isSuccess(pushedRate(4, 10, 40))).toBe(true)
+	})
+})
+
+describe("fourth-review engine regressions", () => {
+	const t0 = 1_700_000_040_000
+	const at = (s: number) => t0 + s * 1000
+	const both = (src: ReturnType<typeof memorySource>) => [
+		src,
+		(request: SelectorRequest) => src({ ...request, widthMs: 0, needsValues: true }),
+	]
+	const first = (query: string, params: QueryParams, src: (r: SelectorRequest) => SelectorData) =>
+		flatten(run(query, params, src))[0]?.[2]
+
+	it("computes a counter increase from the endpoints and reset corrections", () => {
+		const src = memorySource([
+			{
+				labels: { __name__: "x" },
+				samples: [
+					[at(1), 10],
+					[at(2), Number.NaN],
+					[at(3), 20],
+				],
+			},
+		])
+		for (const source of both(src)) {
+			expect(first("increase(x[3s])", { startMs: at(3), endMs: at(3), stepMs: 0 }, source)).toBe(15)
+		}
+	})
+
+	it("keeps each bucket's Kahan compensation when merging bucket sums", () => {
+		const src = memorySource([
+			{
+				labels: { __name__: "g" },
+				samples: [
+					[at(5), 1e16],
+					[at(6), 1],
+					[at(15), -1e16],
+				],
+			},
+		])
+		const params = { startMs: at(60), endMs: at(70), stepMs: 10_000 }
+		for (const source of both(src)) expect(first("sum_over_time(g[1m])", params, source)).toBe(1)
+	})
+
+	it("fits a regression on one-sample buckets relative to the intercept, not the window start", () => {
+		const week = 604_800_000
+		const src = memorySource([
+			{
+				labels: { __name__: "d" },
+				samples: [
+					[t0 + week - 2, 0],
+					[t0 + week - 1, 1],
+				],
+			},
+		])
+		const raw = (request: SelectorRequest) => src({ ...request, widthMs: 0, needsValues: true })
+		const params = { startMs: t0 + week, endMs: t0 + week, stepMs: 0 }
+		expect(first("deriv(d[1w])", params, raw)).toBeCloseTo(1000, 6)
 	})
 })

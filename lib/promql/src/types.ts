@@ -1,4 +1,4 @@
-import { COMPARISON_OPS, type Expr, SET_OPS, type ValueType } from "./ast"
+import { COMPARISON_OPS, type Expr, PARAM_AGGREGATES, SET_OPS, type ValueType } from "./ast"
 import { functionSignature } from "./functions"
 
 /** The value type an expression evaluates to. Assumes the expression type-checks. */
@@ -75,6 +75,12 @@ export const checkTypes = (expr: Expr): PromqlTypeError | undefined => {
 				: { message: `subquery is only allowed on instant vector, got ${got} instead`, at: expr.expr }
 		}
 		case "Aggregate": {
+			const expected = PARAM_AGGREGATES.has(expr.op) ? 2 : 1
+			const got = expr.param === undefined ? 1 : 2
+			if (got !== expected)
+				return error(
+					`wrong number of arguments for aggregate expression provided, expected ${expected}, got ${got}`,
+				)
 			const inner = expect(expr.expr, ["vector"], `aggregation "${expr.op}"`)
 			if (inner !== undefined || expr.param === undefined) return inner
 			const wanted = expr.op === "count_values" ? "string" : "scalar"
