@@ -106,6 +106,11 @@ const makeHarness = () => {
 				documents.set(path, structuredClone(next))
 				return Effect.succeed(structuredClone(next))
 			}),
+		put: (path, body) =>
+			Effect.suspend(() => {
+				calls.push({ method: "PUT", path, body })
+				return Effect.fail(missing(path))
+			}),
 		delete: (path) =>
 			Effect.suspend(() => {
 				calls.push({ method: "DELETE", path })

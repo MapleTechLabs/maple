@@ -1,6 +1,6 @@
 # @maple-dev/alchemy
 
-[Alchemy](https://alchemy.run) provider for [Maple](https://maple.dev) resources. Declare Maple API keys, ingest keys, dashboards, alert destinations, and alert rules in your `alchemy.run.ts` — right next to the infrastructure they observe.
+[Alchemy](https://alchemy.run) provider for [Maple](https://maple.dev) resources. Declare Maple API keys, ingest keys, dashboards, alert destinations, alert rules, uptime monitors and status pages in your `alchemy.run.ts` — right next to the infrastructure they observe.
 
 ```bash
 npm install @maple-dev/alchemy alchemy effect
@@ -69,6 +69,8 @@ Set `MAPLE_API_KEY` to a Maple API key (create one in the Maple dashboard, or wi
 
 - **Dashboards** need the `dashboards:write` scope.
 - **Alert rules & destinations** need `alerts:write` **and** an org-admin key.
+- **Uptime monitors** need `uptime_monitors:write`.
+- **Status pages** need `status_pages:write`.
 - **API keys & ingest keys** need `api_keys:write` / `ingest_keys:read` **and** an org-admin key.
 
 `MAPLE_API_URL` overrides the API base URL (defaults to `https://api.maple.dev`).
@@ -105,6 +107,8 @@ seam when constructing the API client without the Alchemy provider collection.
 | `Maple.AlertDestination` | Full CRUD for declaratively provisionable types (PagerDuty, incident.io, webhook, Discord, Telegram, Google Chat, Microsoft Teams, email, Linear). Channel secrets are write-only and accept `Redacted` values. Chat-connector destinations use workspaces linked in Maple. Changing `type` replaces the destination. |
 | `Maple.AlertRule`        | Full CRUD. `destination_ids` accepts outputs from `Maple.AlertDestination`. Lost state is recovered only when the rule's ownership tag matches the stack, stage, and logical resource. Other rules require explicit adoption.                                                                                         |
 | `Maple.ApiKey`           | Create / roll / revoke (the API has no key update). Changing props replaces the key; bumping the `rotate` prop rolls it in place (same name/scopes, new secret). `secret` is captured once and preserved in Alchemy state; it can never be re-read from the API.                                                      |
+| `Maple.UptimeMonitor`    | Create / update / delete. Props are the `POST /v2/uptime_monitors` body; the kind is `config.type`, and changing it replaces the monitor. Outputs `monitorId`, `heartbeatUrl`.                                                                                                                                        |
+| `Maple.StatusPage`       | Create / update / delete through the page's config document, plus `password` and `custom_domain`. Components keep their IDs by name; an unset `manual_status` leaves a responder's override alone. Outputs `statusPageId`, `components`, `customDomain.dnsRecords`.                                                   |
 | `Maple.IngestKeys`       | Read-only per-org singleton. Surfaces `publicKey` / `privateKey` as `Redacted` outputs; delete only stops tracking it.                                                                                                                                                                                                |
 
 ## Typed dashboard data
