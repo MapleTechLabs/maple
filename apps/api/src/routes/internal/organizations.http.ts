@@ -2,16 +2,17 @@ import { HttpApiBuilder } from "effect/http-api"
 import { CurrentTenant, MapleInternalApi } from "@maple/domain/http"
 import { Effect } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
+import { OrganizationDeletionService } from "@maple/backend/services/org/OrganizationDeletionService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 
 export const HttpOrganizationsLive = HttpApiBuilder.group(MapleInternalApi, "organizations", (handlers) =>
 	Effect.gen(function* () {
-		const organizationService = yield* OrganizationService
+		const organizationDeletion = yield* OrganizationDeletionService
 
 		return handlers.handle("delete", () =>
 			Effect.gen(function* () {
 				const tenant = yield* CurrentTenant.Context
-				const deleted = yield* organizationService.delete(tenant.orgId, tenant.roles)
+				const deleted = yield* organizationDeletion.delete(tenant.orgId, tenant.roles)
 				// Recorded after the fact so a refused delete cannot leave an entry
 				// claiming the org is gone. The entry outlives the org: the audit
 				// log is never cascaded, which is the point of a trail.

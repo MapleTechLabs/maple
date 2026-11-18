@@ -25,7 +25,7 @@ type H = HtmlBuilder<Message>
 
 const NO_ORG = "Select or create an organization to manage its settings."
 
-/** What deleting an organization does, checked against `OrganizationService.delete`. */
+/** What deleting an organization does, checked against `OrganizationDeletionService.delete`. */
 const DELETION_FACTS = [
 	{
 		key: "Deleted",

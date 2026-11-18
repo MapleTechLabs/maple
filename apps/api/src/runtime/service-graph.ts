@@ -120,6 +120,7 @@ import { SourcesService } from "@maple/backend/services/org/SourcesService"
 import { SourceRemovalService } from "@maple/backend/services/integrations/SourceRemovalService"
 import { SourceUsageService } from "@maple/backend/services/org/SourceUsageService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
+import { OrganizationDeletionService } from "@maple/backend/services/org/OrganizationDeletionService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
@@ -201,6 +202,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	SourceUsageService.layer,
 	OrgClickHouseSettingsService.layer,
 	OrganizationService.layer,
+	OrganizationDeletionService.layer,
 	MobileDevicesService.layer,
 	AgentFeedbackService.layer,
 	SavedViewsService.layer,
