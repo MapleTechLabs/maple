@@ -259,6 +259,7 @@ describe("rawSqlIssue", () => {
 		"SELECT count() AS `gr\u00F6\u00DFe` FROM traces /* \u2265 0, see /docs */ WHERE $__orgFilter",
 		"SELECT 1 /* one */ AS a, 2 /* two */ AS b, '/* not a comment' AS c FROM traces WHERE $__orgFilter",
 		"SELECT 1 / 2 AS half, '//' AS s, ')' AS p FROM traces WHERE $__orgFilter -- see http://x/ (docs",
+		"SELECT\f1 AS a,\v2 AS b FROM traces WHERE $__orgFilter",
 		// A no-break space, as pasted from a chat or a document.
 		"SELECT count()\u00A0AS c FROM\u00A0traces WHERE\u00A0$__orgFilter",
 		"SELECT `a.b` AS x, \"c d\" AS y, 'C:\\\\dir' AS z FROM traces WHERE $__orgFilter",

@@ -490,8 +490,9 @@ const UNMASKED_SYNTAX: ReadonlyArray<readonly [RegExp, string]> = [
 ]
 
 // The server reads curly quotes as string delimiters and zero-width or other Unicode spaces as
-// whitespace; the lexers here read neither that way. A no-break space is whitespace to both.
-const NON_ASCII_RE = /[^\t\n\r\x20-\x7E\xA0]/
+// whitespace; the lexers here read neither that way. ASCII whitespace and a no-break space are
+// whitespace to both.
+const NON_ASCII_RE = /[^\t\n\v\f\r\x20-\x7E\xA0]/
 
 const nonAsciiIssue = (sql: string, maskedSql: string): string | null =>
 	Option.getOrNull(
