@@ -1,4 +1,4 @@
-import { Schema, Array as Arr } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import * as Effect from "effect/Effect"
 import * as Redacted from "effect/Redacted"
 import { deepEqual, isResolved } from "alchemy/Diff"
@@ -191,9 +191,9 @@ const configBody = (props: StatusPageProps, current?: WireConfig) => {
 		...page,
 		components: Arr.map(components ?? [], (component) => {
 			// The API stores names trimmed.
-			const name = component.name.trim()
-			const index = unclaimed.findIndex((existing) => existing.name === name)
-			const match = index === -1 ? undefined : unclaimed.splice(index, 1)[0]
+			const name = Str.trim(component.name)
+			const index = Arr.findFirstIndex(unclaimed, (existing) => existing.name === name)
+			const match = Option.isNone(index) ? undefined : unclaimed.splice(index.value, 1)[0]
 			return {
 				...(match === undefined ? undefined : { id: match.id }),
 				...component,
@@ -245,7 +245,9 @@ export const StatusPageProvider = () =>
 			const observe = Effect.fn(function* (pageId: string) {
 				const page = yield* fetchPage(pageId)
 				if (page === undefined) return undefined
-				return toAttributes(yield* fetchConfig(page.id), page.id, yield* fetchDomain(page.id))
+				const config = yield* fetchConfig(page.id)
+				const domain = yield* fetchDomain(page.id)
+				return toAttributes(config, page.id, domain)
 			})
 
 			const configure = Effect.fn(function* (
@@ -266,18 +268,20 @@ export const StatusPageProvider = () =>
 					olds?.custom_domain !== undefined &&
 					domain.hostname !== null
 				) {
-					domain = yield* decodeWireCustomDomain(yield* api.delete(`${path}/custom_domain`))
+					domain = yield* api
+						.delete(`${path}/custom_domain`)
+						.pipe(Effect.flatMap(decodeWireCustomDomain))
 				}
 				// Conditional on the version read, so a manual status a responder sets meanwhile is
 				// not overwritten with the one read: a conflict reads the config again.
 				const config = yield* Effect.gen(function* () {
 					const current = yield* fetchConfig(page.id)
-					return yield* decodeWireConfig(
-						yield* api.put(
+					return yield* api
+						.put(
 							`${path}/config?if_version=${encodeURIComponent(current.version)}`,
 							configBody(news, current),
-						),
-					)
+						)
+						.pipe(Effect.flatMap(decodeWireConfig))
 				}).pipe(
 					Effect.retry({
 						times: 3,
@@ -285,9 +289,9 @@ export const StatusPageProvider = () =>
 					}),
 				)
 				if (news.custom_domain !== undefined && domain.hostname !== news.custom_domain) {
-					domain = yield* decodeWireCustomDomain(
-						yield* api.put(`${path}/custom_domain`, { hostname: news.custom_domain }),
-					)
+					domain = yield* api
+						.put(`${path}/custom_domain`, { hostname: news.custom_domain })
+						.pipe(Effect.flatMap(decodeWireCustomDomain))
 				}
 				// Removed last: a `password` page refuses to lose its password.
 				if (password === undefined && olds?.password !== undefined && page.has_password) {
@@ -312,13 +316,13 @@ export const StatusPageProvider = () =>
 					if (existing !== undefined) return yield* configure(existing, news, olds)
 					// Created as a draft so no half-configured page is ever served; published in
 					// `configure`. A page that fails to configure is deleted, so a retry can reuse its slug.
-					const created = yield* decodeWirePage(
-						yield* api.post("/v2/status_pages", {
+					const created = yield* api
+						.post("/v2/status_pages", {
 							name: news.name,
 							slug: news.slug,
 							publish: false,
-						}),
-					)
+						})
+						.pipe(Effect.flatMap(decodeWirePage))
 					return yield* configure(created, news, olds).pipe(
 						Effect.tapError(() => Effect.ignore(api.delete(pagePath(created.id)))),
 					)

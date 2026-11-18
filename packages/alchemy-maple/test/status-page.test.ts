@@ -1,7 +1,7 @@
 // BOUNDARY-FILE: The fake HTTP service models JSON documents owned by the Maple API.
 import { describe, it } from "@effect/vitest"
 import { expect } from "vitest"
-import { Effect, Layer, Redacted, Schema } from "effect"
+import { Effect, Layer, Option, Redacted, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { noopSession } from "alchemy/Report"
 import { StatusPage, StatusPageProvider, type StatusPageProps } from "../src/StatusPage"
 import { MapleApi, type MapleApiContract } from "../src/MapleApi"
@@ -55,7 +55,7 @@ const makeFake = () => {
 			recovery: "fix_request",
 		})
 	const configDoc = () => ({
-		...Object.fromEntries(config),
+		...Rec.fromEntries([...config]),
 		version: `v${revision}`,
 		components: structuredClone(components),
 	})
@@ -76,7 +76,7 @@ const makeFake = () => {
 					],
 	})
 	const route = (method: string, path: string, body?: unknown): Effect.Effect<unknown, MapleError> => {
-		calls.push(`${method} ${path.split("?")[0]}`)
+		calls.push(`${method} ${Str.split(path, "?")[0]}`)
 		if (method === "POST" && path === "/v2/status_pages") {
 			const input = decodeBody(body)
 			page = {
@@ -91,8 +91,9 @@ const makeFake = () => {
 			config.set("name", page.name).set("slug", page.slug).set("visibility", "public")
 			return Effect.succeed({ ...page })
 		}
-		if (page === null || !path.startsWith(`/v2/status_pages/${page.id}`)) return Effect.fail(notFound())
-		const [rest = "", query = ""] = path.slice(`/v2/status_pages/${page.id}`.length).split("?")
+		if (page === null || !Str.startsWith(`/v2/status_pages/${page.id}`)(path))
+			return Effect.fail(notFound())
+		const [rest, query = ""] = Str.split(Str.slice(`/v2/status_pages/${page.id}`.length)(path), "?")
 		const ifVersion = new URLSearchParams(query).get("if_version")
 		switch (`${method} ${rest}`) {
 			case "GET ":
@@ -128,15 +129,15 @@ const makeFake = () => {
 				if (visibility === "internal" && hostname !== null)
 					return Effect.fail(invalid("Remove the custom domain first"))
 				const listed = input.components as Array<Record<string, unknown>>
-				components = listed.map((component) => ({
+				components = Arr.map(listed, (component) => ({
 					...component,
 					id: (component.id as string | undefined) ?? `stc_${++sequence}`,
-					name: String(component.name).trim(),
+					name: Str.trim(String(component.name)),
 					manual_status: (component.manual_status as string | null | undefined) ?? null,
 				}))
 				const { components: _components, ...rest } = input
 				config.clear()
-				for (const [key, value] of Object.entries({ ...rest, visibility })) config.set(key, value)
+				for (const [key, value] of Rec.toEntries({ ...rest, visibility })) config.set(key, value)
 				page.visibility = visibility
 				sequence++
 				return Effect.succeed(configDoc())
@@ -175,7 +176,7 @@ const makeFake = () => {
 		page: () => page,
 		components: () => components,
 		setManualStatus: (name: string, status: string) => {
-			components = components.map((c) => (c.name === name ? { ...c, manual_status: status } : c))
+			components = Arr.map(components, (c) => (c.name === name ? { ...c, manual_status: status } : c))
 			revision++
 		},
 		/** Runs `edit` right after the next config read, as a responder racing a deploy. */
@@ -237,7 +238,7 @@ describe("StatusPageProvider", () => {
 				visibility: "password",
 				has_password: true,
 			})
-			expect(attributes.components.map((c) => c.name)).toEqual(["API", "Dashboard"])
+			expect(Arr.map(attributes.components, (c) => c.name)).toEqual(["API", "Dashboard"])
 			expect(attributes.customDomain).toMatchObject({
 				hostname: "status.acme.com",
 				dnsRecords: [{ type: "CNAME", name: "status.acme.com", purpose: "routing" }],
@@ -263,7 +264,10 @@ describe("StatusPageProvider", () => {
 				{ componentId: expect.any(String), name: "Docs" },
 				{ componentId: apiId, name: "API" },
 			])
-			expect(fake.components().find((c) => c.name === "API")?.manual_status).toBe("degraded")
+			expect(
+				Option.getOrUndefined(Arr.findFirst(fake.components(), (c) => c.name === "API"))
+					?.manual_status,
+			).toBe("degraded")
 			const cleared = yield* reconcile(
 				fake,
 				{ ...next, components: [{ name: "API", manual_status: null }] },
@@ -286,7 +290,7 @@ describe("StatusPageProvider", () => {
 			const output = yield* reconcile(fake, olds)
 			fake.calls.length = 0
 			const internal = yield* reconcile(fake, { ...base, visibility: "internal" }, { olds, output })
-			expect(fake.calls.filter((call) => !call.startsWith("GET"))).toEqual([
+			expect(Arr.filter(fake.calls, (call) => !Str.startsWith("GET")(call))).toEqual([
 				"DELETE /v2/status_pages/stp_1/custom_domain",
 				"PUT /v2/status_pages/stp_1/config",
 				"DELETE /v2/status_pages/stp_1/password",
@@ -339,7 +343,10 @@ describe("StatusPageProvider", () => {
 			fake.afterNextConfigRead(() => fake.setManualStatus("API", "major_outage"))
 			const next = { ...base, description: "Live status" }
 			yield* reconcile(fake, next, { olds: base, output })
-			expect(fake.components().find((c) => c.name === "API")?.manual_status).toBe("major_outage")
+			expect(
+				Option.getOrUndefined(Arr.findFirst(fake.components(), (c) => c.name === "API"))
+					?.manual_status,
+			).toBe("major_outage")
 		}),
 	)
 

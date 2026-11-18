@@ -164,18 +164,18 @@ export const UptimeMonitorProvider = () =>
 				reconcile: Effect.fn(function* ({ news, olds, output }) {
 					let observed = output === undefined ? undefined : yield* fetch(output.monitorId)
 					if (observed === undefined) {
-						observed = yield* decodeWireMonitor(
-							yield* api.post("/v2/uptime_monitors", createBody(news)),
-						)
+						observed = yield* api
+							.post("/v2/uptime_monitors", createBody(news))
+							.pipe(Effect.flatMap(decodeWireMonitor))
 					} else if (
 						// A changed prop is sent whole: `covers` cannot see a config key that was removed.
 						olds === undefined ||
 						!deepEqual(olds, news, { stripNullish: true }) ||
 						!covers(desiredBody(news), observed)
 					) {
-						observed = yield* decodeWireMonitor(
-							yield* api.patch(`/v2/uptime_monitors/${observed.id}`, desiredBody(news)),
-						)
+						observed = yield* api
+							.patch(`/v2/uptime_monitors/${observed.id}`, desiredBody(news))
+							.pipe(Effect.flatMap(decodeWireMonitor))
 					}
 					return toAttributes(observed, news)
 				}),
