@@ -402,6 +402,51 @@ describe("an investigation's own pass and query_data_source", () => {
 	})
 })
 
+describe("an investigation's own pass and the data source catalog", () => {
+	const started = (startedBy: AutonomousTurnStarter | undefined) =>
+		asCaller(seeded, {
+			roles: [],
+			turnOrigin: startedBy === undefined ? { kind: "autonomous" } : { kind: "autonomous", startedBy },
+		})
+	const person = (mayReadDataSources: boolean): AutonomousTurnStarter => ({
+		kind: "person",
+		userId: "user_starter",
+		roles: ["org:admin"],
+		mayReadDataSources,
+	})
+	const list = (rt: EvalRuntime) =>
+		rt.runtime.runPromise(
+			McpToolExecutor.pipe(Effect.flatMap((executor) => executor.listDataSources(rt.tenant))),
+		)
+
+	it.each([
+		["a credential that could not read data sources", person(false)],
+		["nobody Maple can name", undefined],
+	])("names no source and reads no entry when started by %s", async (_label, startedBy) => {
+		const pass = started(startedBy)
+		expect(await list(pass)).toEqual([])
+		for (const [tool, params] of [
+			["list_data_sources", {}],
+			["search_data_sources", { query: "payments" }],
+			["describe_data_source", { data_source: "shop-prod" }],
+		] as const) {
+			const result = await runToolDirect(pass, tool, params)
+			expect(result.failureCategory, tool).toBe("permission")
+			expect(markdown(result), tool).toContain("could read the organization's data sources")
+		}
+	})
+
+	it.each([
+		["a credential that could read them", person(true)],
+		["one of Maple's own producers", { kind: "producer", producer: "incident_triage" } as const],
+	])("names the org's sources when started by %s", async (_label, startedBy) => {
+		const pass = started(startedBy)
+		expect(Arr.map(await list(pass), (source) => source.name)).toContain("shop-prod")
+		const described = await runToolDirect(pass, "describe_data_source", { data_source: "shop-prod" })
+		expect(described.isError).not.toBe(true)
+	})
+})
+
 describe("a chat connector nobody is linked in", () => {
 	it("is told Maple cannot check who is asking", async () => {
 		const unlinked = asCaller(seeded, {

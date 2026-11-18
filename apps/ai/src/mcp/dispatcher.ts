@@ -300,7 +300,7 @@ export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExe
 			)
 
 			// An org outside the `dataSources` rollout has none, so prompts and resources never mention them.
-			// Nor does a scoped key without `data_sources:read`, which the list tool refuses as well.
+			// Nor does a scoped key without `data_sources:read`, or a pass started by one: the tools refuse both.
 			const listDataSources = Effect.fn("McpToolExecutor.listDataSources")(function* (
 				tenant: TenantContext,
 			) {

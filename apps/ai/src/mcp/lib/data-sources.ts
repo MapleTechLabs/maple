@@ -33,9 +33,32 @@ export const tenantWithDataSources = Effect.fnUntraced(function* (tool: string) 
 	return tenant
 })
 
-/** Whether the credential may read data sources: the scope `list_data_sources` asks for. */
-export const mayReadDataSources = (tenant: Pick<TenantContext, "scopes">): boolean =>
-	scopeAllows(tenant.scopes, { family: "data_sources", access: "read" })
+/** The same, for a tool that reads the catalog: an unattended pass reads it only as its starter could. */
+export const tenantWithDataSourceCatalog = Effect.fnUntraced(function* (tool: string) {
+	const tenant = yield* tenantWithDataSources(tool)
+	if (!starterMayReadDataSources(tenant)) {
+		return yield* new McpAuthInvalidError({
+			message: `${tool} is not available to this run: nothing shows that whoever started it could read the organization's data sources. Say so instead of trying again.`,
+			reason: "insufficient_scope",
+		})
+	}
+	return tenant
+})
+
+/**
+ * Whether an unattended pass may read data sources. Its tenant carries no scopes, so the answer is
+ * its starter's: a producer may, a person only when their credential could.
+ */
+export const starterMayReadDataSources = (tenant: Pick<TenantContext, "turnOrigin">): boolean => {
+	const origin = tenant.turnOrigin
+	if (origin?.kind !== "autonomous") return true
+	return origin.startedBy?.kind === "producer" || origin.startedBy?.mayReadDataSources === true
+}
+
+/** Whether the caller may read data sources: the scope `list_data_sources` asks for, or its starter's. */
+export const mayReadDataSources = (tenant: Pick<TenantContext, "scopes" | "turnOrigin">): boolean =>
+	scopeAllows(tenant.scopes, { family: "data_sources", access: "read" }) &&
+	starterMayReadDataSources(tenant)
 
 /** Above this many sources the prompt names a count, not every source. */
 export const MAX_PROMPT_SOURCES = 30
