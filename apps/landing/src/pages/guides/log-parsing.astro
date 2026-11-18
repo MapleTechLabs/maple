@@ -6,7 +6,7 @@ import BottomCTA from "../../components/BottomCTA.astro";
 import Breadcrumb from "../../components/Breadcrumb.astro";
 import FAQ from "../../components/FAQ.astro";
 import SeoHead from "../../components/SeoHead.astro";
-import TableOfContents from "../../components/TableOfContents.astro";
+import GuideBody from "../../components/guides/GuideBody.astro";
 import LanguageTabs from "../../components/docs/LanguageTabs.astro";
 import LanguageTab from "../../components/docs/LanguageTab.astro";
 import { CONTRIBUTORS } from "../../lib/changelog-meta";
@@ -39,7 +39,6 @@ const toc = [
     { depth: 2, slug: "mistakes", text: "Best practices and mistakes" },
     { depth: 2, slug: "by-hand", text: "Parse a file by hand" },
 ];
-const sectionNav = toc.filter((h) => h.depth === 2);
 
 // One color per field of the nginx line. The same color marks the field in the
 // raw line, its regex group, the config that renames it and the parsed record.
@@ -393,6 +392,7 @@ const articleJsonLd = {
     <script is:inline type="application/ld+json" set:html={JSON.stringify(articleJsonLd)} />
     <Nav />
     <Breadcrumb
+        class="shell pt-4"
         items={[
             { label: "Home", href: "/" },
             { label: "Guides", href: "/guides" },
@@ -408,7 +408,7 @@ const articleJsonLd = {
                 style="background-image: linear-gradient(to right, oklch(1 0 0 / 4%) 1px, transparent 1px), linear-gradient(to bottom, oklch(1 0 0 / 4%) 1px, transparent 1px); background-size: 60px 60px; mask-image: radial-gradient(ellipse 78% 68% at 22% 26%, black, transparent);"
             >
             </div>
-            <div class="relative mx-auto max-w-6xl px-6 pb-16 pt-20 md:pb-20 md:pt-28">
+            <div class="shell relative pb-16 pt-20 md:pb-20 md:pt-28">
                 <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
                     <span class="border border-primary/40 px-2 py-1 text-primary">Logs</span>
                     <span>9 min read</span>
@@ -429,20 +429,7 @@ const articleJsonLd = {
             </div>
         </header>
 
-        <nav aria-label="Guide sections" class="border-b border-border bg-bg-deep">
-            <div class="mx-auto flex max-w-6xl gap-6 overflow-x-auto px-6 py-4 font-mono text-[10px] whitespace-nowrap text-fg-muted">
-                {sectionNav.map((h) => (
-                    <a href={`#${h.slug}`} class="transition-colors hover:text-primary">{h.text}</a>
-                ))}
-            </div>
-        </nav>
-
-        <div class="mx-auto grid max-w-6xl gap-12 px-6 py-16 md:py-24 lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-16">
-            <aside class="hidden lg:block">
-                <TableOfContents headings={toc} class="sticky top-28" />
-            </aside>
-
-            <article class="lp-guide min-w-0">
+        <GuideBody headings={toc} class="lp-guide">
                 <section class="guide-lead">
                     <p>
                         <strong>Log parsing</strong> is splitting raw log lines into structured fields, such as the timestamp, the severity, the status code or the URL path. Once a line is parsed, tools can filter, count and alert on those fields instead of searching free text.
@@ -736,8 +723,7 @@ const articleJsonLd = {
                         <li><a href="/docs/explore/logs">Maple docs: Logs</a></li>
                     </ul>
                 </section>
-            </article>
-        </div>
+        </GuideBody>
     </main>
 
     <FAQ items={faqs} />
