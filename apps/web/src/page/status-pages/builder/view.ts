@@ -24,9 +24,6 @@ import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { sidePanelSheet } from "@maple/views/ui/sheet"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { heading } from "@maple/views/ui/heading"
-import { grid } from "@maple/views/ui/grid"
-import { cardLink } from "@maple/views/ui/card-button"
-import { badge } from "@maple/views/ui/display"
 import { textLink } from "@maple/views/ui/text-link"
 import { agentPromptButton } from "../../kit/guided-setup"
 import { codeBlock } from "../../kit/code-block"
@@ -35,6 +32,7 @@ import { docsUrl } from "../../kit/docs"
 import { mcpUrl } from "../../../platform/mcp-url"
 import { AppRoute, hrefOf } from "../../../route"
 import { statusPageAgentPrompt } from "./agent-prompt"
+import { methodChoice } from "./setup-choice"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { resourceNotFound } from "../../kit/resource-not-found"
@@ -519,58 +517,6 @@ const builder = (h: H, model: Model): Html =>
 
 const MCP_ENDPOINT = `${mcpUrl}/mcp`
 const AGENT_PROMPT = statusPageAgentPrompt(MCP_ENDPOINT)
-
-const METHODS = [
-	{
-		setup: "agent",
-		icon: "SparkleIcon",
-		title: "Set up with your coding agent",
-		badge: "Recommended",
-		description:
-			"Copy a prompt into Claude Code, Codex or Cursor. Over the Maple MCP, the agent finds your public endpoints, adds uptime monitors for them, matches the page to your brand and sets up your domain, asking you before anything goes live.",
-	},
-	{
-		setup: "manual",
-		icon: "SlidersIcon",
-		title: "Set up in the dashboard",
-		badge: null,
-		description:
-			"Name the page, pick its components from your monitors or add URLs to check, choose a theme and add a domain, with a live preview beside the form.",
-	},
-] as const
-
-const methodChoice = (h: H): Html =>
-	vstack(h, { gap: "4", className: "max-w-4xl" }, [
-		typography(h, { size: "sm", tone: "muted", as: "p" }, [
-			"How do you want to set up your status page? Either way, nothing is public until you approve publishing it.",
-		]),
-		grid(
-			h,
-			{ sm: 2, gap: "3" },
-			Arr.map(METHODS, (method) =>
-				cardLink(
-					h,
-					{
-						href: newStatusPageHref(method.setup),
-						className: vstackClass({ gap: "3", className: "p-5" }),
-						attributes: [h.Key(method.setup)],
-					},
-					[
-						hstack(h, { gap: "2.5" }, [
-							icon(h, method.icon, { size: 16, className: "text-muted-foreground" }),
-							typography(h, { size: "sm", weight: "medium" }, [method.title]),
-							...(method.badge === null
-								? []
-								: [badge(h, { variant: "outline" }, [method.badge])]),
-						]),
-						typography(h, { size: "sm", tone: "muted", as: "p", className: "font-prose" }, [
-							method.description,
-						]),
-					],
-				),
-			),
-		),
-	])
 
 const AGENT_STEPS: ReadonlyArray<string> = [
 	"Connects the Maple MCP if your agent does not have it yet.",

@@ -645,11 +645,11 @@ describe("status page setup method", () => {
 		scene(
 			{ update: builderUpdate, view },
 			given(withMonitors([httpMonitor()], true, null)),
-			expectView(role("link", { name: /^Set up with your coding agent/u })).toHaveAttr(
+			expectView(role("link", { name: "Get the prompt" })).toHaveAttr(
 				"href",
 				"/status-pages/new?setup=agent",
 			),
-			expectView(role("link", { name: /^Set up in the dashboard/u })).toHaveAttr(
+			expectView(role("link", { name: "Open the builder" })).toHaveAttr(
 				"href",
 				"/status-pages/new?setup=manual",
 			),
@@ -688,7 +688,7 @@ describe("status page setup method", () => {
 			{ update: builderUpdate, view },
 			given(withMonitors([httpMonitor()], false, null)),
 			expectView(text("Only org admins and engineers can create status pages")).toExist(),
-			expectView(role("link", { name: /^Set up with your coding agent/u })).not.toExist(),
+			expectView(role("link", { name: "Get the prompt" })).not.toExist(),
 		)
 	})
 })
