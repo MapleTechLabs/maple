@@ -97,6 +97,78 @@ const readAnnotations = GithubProvider.use((provider) =>
 const mints = (paths: ReadonlyArray<string>) =>
 	Arr.filter(paths, (path) => Str.endsWith("/access_tokens")(path))
 
+interface SeenCall {
+	readonly method: string
+	readonly path: string
+	readonly scheme: string
+}
+
+/** Mints a token per mint and answers the installation DELETE as `uninstall` says. */
+const uninstallingGithub = (calls: Array<SeenCall>, uninstall: () => Response) =>
+	fakeGithubHttp(({ url, method, headers }) => {
+		const path = new URL(url).pathname
+		calls.push({ method, path, scheme: Str.split(" ")(headers["authorization"] ?? "")[0] ?? "" })
+		if (Str.endsWith("/access_tokens")(path)) {
+			return Response.json({ token: "installation-token", expires_at: "2099-01-01T00:00:00Z" })
+		}
+		return method === "DELETE" ? uninstall() : Response.json([])
+	})
+
+const clientOver = (github: ReturnType<typeof fakeGithubHttp>) =>
+	Layer.effect(GithubAppClient, GithubAppClient.make).pipe(Layer.provide(github), Layer.provide(env))
+
+const mintCalls = (calls: ReadonlyArray<SeenCall>) =>
+	Arr.filter(calls, (call) => Str.endsWith("/access_tokens")(call.path))
+
+describe("GitHub App uninstall", () => {
+	it.effect("deletes the installation as the App and drops its cached token", () => {
+		const calls: Array<SeenCall> = []
+		return Effect.gen(function* () {
+			const client = yield* GithubAppClient
+			yield* client.mintInstallationToken("42")
+			const result = yield* client.deleteInstallation("42")
+			assert.deepStrictEqual(result, { uninstalled: true })
+			// As the App (its JWT), not as the installation whose token is about to die.
+			assert.deepStrictEqual(
+				Arr.filter(calls, (call) => call.method === "DELETE"),
+				[{ method: "DELETE", path: "/app/installations/42", scheme: "Bearer" }],
+			)
+			// The cache no longer answers for the installation: the next ask goes to GitHub.
+			yield* client.mintInstallationToken("42")
+			assert.lengthOf(mintCalls(calls), 2)
+		}).pipe(
+			Effect.provide(clientOver(uninstallingGithub(calls, () => new Response(null, { status: 204 })))),
+		)
+	})
+
+	it.effect("an installation GitHub no longer has is not a failure", () => {
+		const calls: Array<SeenCall> = []
+		const gone = () => new Response(JSON.stringify({ message: "Not Found" }), { status: 404 })
+		return Effect.gen(function* () {
+			const client = yield* GithubAppClient
+			assert.deepStrictEqual(yield* client.deleteInstallation("42"), { uninstalled: false })
+		}).pipe(Effect.provide(clientOver(uninstallingGithub(calls, gone))))
+	})
+
+	it.effect("a refusal fails, still drops the cached token, and a bad id never reaches GitHub", () => {
+		const calls: Array<SeenCall> = []
+		const refused = () => new Response(JSON.stringify({ message: "Forbidden" }), { status: 403 })
+		return Effect.gen(function* () {
+			const client = yield* GithubAppClient
+			yield* client.mintInstallationToken("42")
+			const failure = yield* client.deleteInstallation("42").pipe(Effect.flip)
+			assert.strictEqual(failure.status, 403)
+			yield* client.mintInstallationToken("42")
+			assert.lengthOf(mintCalls(calls), 2)
+
+			const before = calls.length
+			const badId = yield* client.deleteInstallation("42/suspended").pipe(Effect.flip)
+			assert.strictEqual(badId._tag, "@maple/backend/vcs/GithubAppError")
+			assert.strictEqual(calls.length, before)
+		}).pipe(Effect.provide(clientOver(uninstallingGithub(calls, refused))))
+	})
+})
+
 describe("GitHub installation tokens across queue batches", () => {
 	it.effect("two batches in one isolate mint one token", () => {
 		const paths: Array<string> = []

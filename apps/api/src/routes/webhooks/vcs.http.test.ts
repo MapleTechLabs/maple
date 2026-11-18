@@ -55,6 +55,7 @@ const makeHandler = () => {
 		streamWorkflowJobLog: unused,
 		canReadWorkflowLogs: unused,
 		fetchBillingUsage: unused,
+		uninstallInstallation: unused,
 		installationSettingsUrl: () => "",
 	}
 	const web = HttpRouter.toWebHandler(

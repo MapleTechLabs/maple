@@ -2693,6 +2693,37 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				)
 			})
 
+			/**
+			 * Uninstalls the App from the account (App-JWT auth): GitHub drops the installation and
+			 * every token minted for it. One that is already gone answers `uninstalled: false`. The
+			 * cached token is dropped whatever GitHub answers.
+			 */
+			const deleteInstallation = Effect.fn("GithubAppClient.deleteInstallation")(
+				function* (externalInstallationId: string) {
+					// A DELETE as the App: nothing but an installation id may reach the path.
+					if (!/^\d+$/.test(externalInstallationId)) {
+						return yield* new GithubAppError({
+							message: "The stored installation id is not a GitHub installation id",
+							scope: "installation",
+						})
+					}
+					const config = yield* resolveConfig
+					const jwt = yield* mintAppJwt(config)
+					const response = yield* send({
+						method: "DELETE",
+						url: `${config.apiBaseUrl}/app/installations/${externalInstallationId}`,
+						auth: VendorHttp.bearer(jwt),
+						errorMessage: "Delete installation request failed",
+					})
+					if (statusOf(response) === 404) return { uninstalled: false }
+					if (!isOk(response))
+						return yield* failure(response, "Delete installation", "installation")
+					return { uninstalled: true }
+				},
+				(effect, externalInstallationId) =>
+					Effect.ensuring(effect, installationTokens.remove(externalInstallationId)),
+			)
+
 			// The two calls below prove the user owns the installation they're connecting.
 
 			const exchangeUserOAuthCode = Effect.fn("GithubAppClient.exchangeUserOAuthCode")(function* (
@@ -2854,6 +2885,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				getOrganizationBillingUsage,
 				mintCloneCredentials,
 				getInstallation,
+				deleteInstallation,
 				exchangeUserOAuthCode,
 				listUserInstallationIds,
 			}
