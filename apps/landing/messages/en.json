@@ -402,13 +402,10 @@
 
 	"page_nextjs_title": "Next.js Observability with OpenTelemetry | Maple",
 	"page_nextjs_desc": "Add distributed tracing and logging to a Next.js app with OpenTelemetry and the built-in instrumentation hook, then send it to Maple over OTLP.",
-	"page_nextjs_label": "Next.js",
 	"page_nextjs_heading": "Next.js observability with OpenTelemetry",
 	"page_nextjs_subtitle": "Next.js has an instrumentation hook built in. Register OpenTelemetry there, and server components, API routes and middleware produce spans with no further code.",
 	"page_nextjs_what_you_get": "What you get",
 	"page_nextjs_auto_heading": "Automatic instrumentation for Next.js",
-	"page_nextjs_trace_preview": "Live trace preview",
-	"page_nextjs_trace_heading": "See your Next.js traces",
 
 	"breadcrumb_home": "Home",
 	"breadcrumb_features": "Features",

@@ -395,13 +395,10 @@
 
 	"page_nextjs_title": "OpenTelemetryによるNext.jsオブザーバビリティ | Maple",
 	"page_nextjs_desc": "Next.jsアプリに分散トレーシングとロギングを数分で追加。OpenTelemetryベースでベンダーロックインなし。",
-	"page_nextjs_label": "Next.js",
 	"page_nextjs_heading": "Next.js OpenTelemetry\u30aa\u30d6\u30b6\u30fc\u30d0\u30d3\u30ea\u30c6\u30a3",
 	"page_nextjs_subtitle": "Next.js\u30a2\u30d7\u30ea\u30b1\u30fc\u30b7\u30e7\u30f3\u306b\u5206\u6563\u30c8\u30ec\u30fc\u30b7\u30f3\u30b0\u3092\u6570\u5206\u3067\u8ffd\u52a0\u3002Vercel\u306e\u7d44\u307f\u8fbc\u307finstrumentation\u30d5\u30c3\u30af\u3067\u30b5\u30fc\u30d0\u30fc\u30b3\u30f3\u30dd\u30fc\u30cd\u30f3\u30c8\u3001API\u30eb\u30fc\u30c8\u3001\u30df\u30c9\u30eb\u30a6\u30a7\u30a2\u306e\u30b9\u30d1\u30f3\u3092\u81ea\u52d5\u30ad\u30e3\u30d7\u30c1\u30e3\u3002",
 	"page_nextjs_what_you_get": "\u5f97\u3089\u308c\u308b\u3082\u306e",
 	"page_nextjs_auto_heading": "Next.js\u306e\u81ea\u52d5\u8a08\u88c5",
-	"page_nextjs_trace_preview": "\u30e9\u30a4\u30d6\u30c8\u30ec\u30fc\u30b9\u30d7\u30ec\u30d3\u30e5\u30fc",
-	"page_nextjs_trace_heading": "Next.js\u306e\u30c8\u30ec\u30fc\u30b9\u3092\u898b\u308b",
 
 	"breadcrumb_home": "\u30db\u30fc\u30e0",
 	"breadcrumb_features": "\u6a5f\u80fd",

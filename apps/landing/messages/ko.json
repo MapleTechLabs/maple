@@ -395,13 +395,10 @@
 
 	"page_nextjs_title": "OpenTelemetry 기반 Next.js 옵저버빌리티 | Maple",
 	"page_nextjs_desc": "Next.js 앱에 분산 트레이싱과 로깅을 몇 분 만에 추가. OpenTelemetry 기반으로 벤더 락인 없음.",
-	"page_nextjs_label": "Next.js",
 	"page_nextjs_heading": "Next.js OpenTelemetry \uc635\uc800\ubc84\ube4c\ub9ac\ud2f0",
 	"page_nextjs_subtitle": "Next.js \uc560\ud50c\ub9ac\ucf00\uc774\uc158\uc5d0 \ubd84\uc0b0 \ud2b8\ub808\uc774\uc2f1\uc744 \ubcf4 \ub9cc\uc5d0 \ucd94\uac00. Vercel\uc758 \ub0b4\uc7a5 instrumentation \ud6c5\uc73c\ub85c \uc11c\ubc84 \ucef4\ud3ec\ub10c\ud2b8, API \ub77c\uc6b0\ud2b8, \ubbf8\ub4e4\uc6e8\uc5b4 \uc2a4\ud32c\uc744 \uc790\ub3d9 \uce90\ucc98.",
 	"page_nextjs_what_you_get": "\uc5bb\uc744 \uc218 \uc788\ub294 \uac83",
 	"page_nextjs_auto_heading": "Next.js\uc758 \uc790\ub3d9 \uacc4\uce21",
-	"page_nextjs_trace_preview": "\ub77c\uc774\ube0c \ud2b8\ub808\uc774\uc2a4 \ud504\ub9ac\ubdf0",
-	"page_nextjs_trace_heading": "Next.js \ud2b8\ub808\uc774\uc2a4 \ubcf4\uae30",
 
 	"breadcrumb_home": "\ud648",
 	"breadcrumb_features": "\uae30\ub2a5",
