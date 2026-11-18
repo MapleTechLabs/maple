@@ -297,7 +297,6 @@ export const StatusPageProvider = () =>
 				if (password === undefined && olds?.password !== undefined && page.has_password) {
 					yield* api.delete(`${path}/password`)
 				}
-				if (page.draft) yield* api.post(`${path}/publish`)
 				return toAttributes(config, page.id, domain)
 			})
 
@@ -314,8 +313,8 @@ export const StatusPageProvider = () =>
 				reconcile: Effect.fn(function* ({ news, olds, output }) {
 					const existing = output === undefined ? undefined : yield* fetchPage(output.statusPageId)
 					if (existing !== undefined) return yield* configure(existing, news, olds)
-					// Created as a draft so no half-configured page is ever served; published in
-					// `configure`. A page that fails to configure is deleted, so a retry can reuse its slug.
+					// Created as a draft so no half-configured page is ever served; published once configured.
+					// A page that fails to configure is deleted, so a retry can reuse its slug.
 					const created = yield* api
 						.post("/v2/status_pages", {
 							name: news.name,
@@ -323,7 +322,9 @@ export const StatusPageProvider = () =>
 							publish: false,
 						})
 						.pipe(Effect.flatMap(decodeWirePage))
+					// Only a page created here is published: an adopted draft stays a draft.
 					return yield* configure(created, news, olds).pipe(
+						Effect.tap(() => api.post(`${pagePath(created.id)}/publish`)),
 						Effect.tapError(() => Effect.ignore(api.delete(pagePath(created.id)))),
 					)
 				}),
