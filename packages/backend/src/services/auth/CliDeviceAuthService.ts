@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto"
+import { randomBytes, randomInt, randomUUID } from "node:crypto"
 import {
 	CliDeviceActionResponse,
 	CliDeviceCompleteResponse,
@@ -18,7 +18,7 @@ import {
 	type UserId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { generateApiKey, hashApiKey } from "../../platform/credential-tokens"
+import { generateApiKey, hashApiKey, hashLookupToken } from "../../platform/credential-tokens"
 import { ApiKeys, CliDeviceAuthorizations, type CliDeviceAuthorizationRow } from "@maple/db/tables"
 import { DateTime, Clock, Context, Effect, Layer, Option, Schema, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -41,7 +41,6 @@ const DEVICE_TTL_SECONDS = 15 * 60
 const CLI_KEY_TTL_MS = 90 * 24 * 60 * 60 * 1000
 const POLL_INTERVAL_SECONDS = 5
 const USER_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-const hashCode = (value: string) => createHash("sha256").update(value).digest("hex")
 const normalizeUserCode = (value: string) => Str.replace(/[^A-Z0-9]/g, "")(Str.toUpperCase(value))
 const displayUserCode = (value: string) => `${Str.slice(0, 4)(value)}-${Str.slice(4, 8)(value)}`
 const decodeApiKeyId = Schema.decodeUnknownSync(ApiKeyId)
@@ -157,7 +156,11 @@ export class CliDeviceAuthService extends Context.Service<
 				db.run(
 					PG.from(CliDeviceAuthorizations)
 						.select()
-						.where(($) => [$.userCodeHash.eq(hashCode(normalized))])
+						.where(($) => [
+							$.userCodeHash.eq(
+								hashLookupToken("cli-device/user-code", normalized, apiKeyHmacKey),
+							),
+						])
 						.limit(1),
 				),
 			)
@@ -190,8 +193,8 @@ export class CliDeviceAuthService extends Context.Service<
 			yield* dbExecute((db) =>
 				db.run(
 					PG.insertInto(CliDeviceAuthorizations).values({
-						deviceCodeHash: hashCode(deviceCode),
-						userCodeHash: hashCode(userCode),
+						deviceCodeHash: hashLookupToken("cli-device/device-code", deviceCode, apiKeyHmacKey),
+						userCodeHash: hashLookupToken("cli-device/user-code", userCode, apiKeyHmacKey),
 						deviceName: Str.slice(0, 120)(Str.trim(deviceName)) || "Maple CLI",
 						createdAt: now,
 						expiresAt: now + DEVICE_TTL_SECONDS * 1000,
@@ -287,7 +290,9 @@ export class CliDeviceAuthService extends Context.Service<
 		const loadByDeviceCode = Effect.fn("CliDeviceAuthService.loadByDeviceCode")(function* (
 			deviceCode: string,
 		) {
-			return yield* loadByDeviceCodeHash(hashCode(deviceCode))
+			return yield* loadByDeviceCodeHash(
+				hashLookupToken("cli-device/device-code", deviceCode, apiKeyHmacKey),
+			)
 		})
 
 		const loadByDeviceCodeHash = Effect.fn("CliDeviceAuthService.loadByDeviceCodeHash")(function* (
@@ -417,7 +422,9 @@ export class CliDeviceAuthService extends Context.Service<
 		})
 
 		const poll = Effect.fn("CliDeviceAuthService.poll")(function* (deviceCode: string) {
-			yield* checkRateLimit(`poll:${hashCode(deviceCode)}`)
+			yield* checkRateLimit(
+				`poll:${hashLookupToken("cli-device/device-code", deviceCode, apiKeyHmacKey)}`,
+			)
 			const row = yield* loadByDeviceCode(deviceCode)
 			if (Option.isNone(row)) return new CliDeviceExpiredResponse({ status: "expired" })
 			const now = yield* Clock.currentTimeMillis

@@ -54,7 +54,7 @@ The illustration occupies the right background and fades behind the copy; on sma
 
 ## Documentation home
 
-`/docs` carries the direction into the docs chrome (header, section strip and sidebar stay as they are). The title is set in the heavy display face over the Roman archive from `features/log-management.webp`, the same engraving as the docs social card, placed top right and faded behind the copy; below `lg` it drops to a faint backdrop. "Start here" is a framed strip under the lede, like the pricing rate card. Sections use an eyebrow, a heavy heading and sharp hairline frames; cells have no radius and hover to `--card`. The catch-all "Any OTLP exporter" row spans the language grid so no slot is left empty. Article pages are a reading surface and keep their own type scale. The docs 404 uses the same title weight and sharp list frame.
+`/docs` pairs a heavy display title with the shared Maple Waterfall component on a flat background. The example checkout trace is pre-rendered, and readers can expand or collapse spans once the page loads. "Start here" is a framed strip beneath the opening, with amber icons that match the sidebar. Sections use an eyebrow, a heavy heading and sharp hairline frames. Cells have no radius and hover to `--card`. The "Any OTLP exporter" row spans the language grid. Article pages use the docs reading scale and place diagrams beside the concepts they explain. The docs 404 uses the same title weight and sharp list frame.
 
 ## Social previews
 
