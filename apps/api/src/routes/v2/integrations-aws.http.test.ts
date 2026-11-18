@@ -312,7 +312,7 @@ describe("v2 aws integration over HTTP", () => {
 		await harness.dispose()
 	})
 
-	it("records no events key read for a setup that carries none", async () => {
+	it("records a key read only for a setup that carries one", async () => {
 		const harness = makeHarness()
 		const admin = await harness.adminKey()
 		const created = await harness.request("POST", CONNECTIONS, admin.secret, {
@@ -321,6 +321,31 @@ describe("v2 aws integration over HTTP", () => {
 		})
 		const setup = await harness.request("GET", `${CONNECTIONS}/${created.body.id}/setup`, admin.secret)
 		expect(setup.status).toBe(200)
+		expect(JSON.stringify(setup.body)).not.toMatch(/maple_aws(ev)?_/u)
+		expect(await harness.audited("aws_connection.events_key_read")).toEqual([])
+		expect(await harness.audited("aws_connection.stream_key_read")).toEqual([])
+		await harness.dispose()
+	})
+
+	it("records a setup read that carries the stream access key, without the key", async () => {
+		const harness = makeHarness()
+		const admin = await harness.adminKey()
+		const member = await harness.memberKey()
+		const created = await harness.request("POST", CONNECTIONS, admin.secret, {
+			account_id: "123456789012",
+			metric_stream: { regions: ["us-east-1"], namespaces: ["AWS/ECS"] },
+		})
+		expect(created.status).toBe(200)
+		const path = `${CONNECTIONS}/${created.body.id}/setup`
+		const setup = await harness.request("GET", path, admin.secret)
+		expect(setup.status).toBe(200)
+		expect(JSON.stringify(setup.body)).toMatch(/maple_aws_[\w-]+/u)
+		// A refused read hands nothing out, so it leaves no entry.
+		expect((await harness.request("GET", path, member.secret)).status).toBe(403)
+
+		const reads = await harness.audited("aws_connection.stream_key_read")
+		expect(Arr.map(reads, (entry) => entry.resourceId)).toEqual([created.body.id])
+		expect(JSON.stringify(reads)).not.toContain("maple_aws_")
 		expect(await harness.audited("aws_connection.events_key_read")).toEqual([])
 		await harness.dispose()
 	})

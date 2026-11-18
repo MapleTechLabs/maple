@@ -107,14 +107,17 @@ export const HttpV2AwsIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "awsIn
 					yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
-					// The rendered setup holds the metric stream's access key, which writes to ingest.
+					// A rendered setup can hold the metric stream's access key, which writes to ingest.
 					if (!scopeAllows(tenant.scopes, { family: "integrations", access: "write" })) {
 						return yield* V2InsufficientScope.make(
 							'A connection\'s setup contains its stream access key, so this API key needs "integrations:write".',
 						)
 					}
 					const setup = yield* aws.setup(tenant.orgId, params.id)
-					// The key itself stays out of the entry: it records that the key was handed out.
+					// One entry per key handed out; the keys themselves stay out of the entries.
+					if (setup.containsStreamKey) {
+						yield* recordHttpAudit("aws_connection.stream_key_read", { resourceId: params.id })
+					}
 					if (setup.containsEventsKey) {
 						yield* recordHttpAudit("aws_connection.events_key_read", { resourceId: params.id })
 					}

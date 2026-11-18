@@ -22,8 +22,10 @@ import {
 	V2PlanetScaleQueryInsightList,
 	isoTimestamp,
 	isoTimestampOrNull,
+	scopeAllows,
 	V2CallbackHostUnavailable,
 	V2InsufficientPermissions,
+	V2InsufficientScope,
 	V2TimeRangeInvalid,
 } from "@maple/domain/http/v2"
 import { Array as Arr, Effect, Option, String as Str } from "effect"
@@ -37,6 +39,7 @@ import {
 } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
+import { requirePerson } from "./require-person"
 
 /**
  * Best-effort origin of the incoming request. `x-forwarded-*` is client-supplied
@@ -246,6 +249,8 @@ export const HttpV2PlanetScaleIntegrationsLive = HttpApiBuilder.group(
 							yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
 								V2InsufficientPermissions.make(denial.message),
 							)
+							// The OAuth state is bound to `tenant.userId`, who must be the one finishing it.
+							yield* requirePerson
 							const req = yield* HttpServerRequest.HttpServerRequest
 							const origin = resolveRequestOrigin(req)
 							// v1 skipped this check. The callback URL is persisted as
@@ -411,9 +416,19 @@ export const HttpV2PlanetScaleIntegrationsLive = HttpApiBuilder.group(
 							yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
 								V2InsufficientPermissions.make(denial.message),
 							)
+							// A GET, so the middleware asks a scoped key for read only: hold it to write here.
+							if (!scopeAllows(tenant.scopes, { family: "integrations", access: "write" })) {
+								return yield* V2InsufficientScope.make(
+									'The webhook configuration contains its signing secret, so this API key needs "integrations:write".',
+								)
+							}
 							const config = yield* planetscale
 								.webhookConfig(tenant.orgId)
 								.pipe(tapHttpErrors("PlanetScale webhook config failed"))
+							// The secret itself stays out of the entry: it records that it was handed out.
+							if (config.secret !== null) {
+								yield* recordHttpAudit("planetscale_integration.webhook_secret_read")
+							}
 							return {
 								object: "planetscale_integration.webhook_config" as const,
 								configured: config.configured,

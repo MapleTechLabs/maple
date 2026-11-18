@@ -111,18 +111,22 @@ export const AuditResources = {
 		prefix: PublicIdPrefixes.oncallOverride,
 		verbs: ["created", "deleted"],
 	},
-	/** One connected Google Cloud scope; the scope and what it collects are in `metadata`. */
+	/**
+	 * One connected Google Cloud scope; the scope and what it collects are in `metadata`.
+	 * `push_secret_read` is a render of its scripts, which carry the push secret; the secret is never recorded.
+	 */
 	gcp_connector: {
 		prefix: PublicIdPrefixes.gcpConnector,
-		verbs: ["created", "updated", "removal_confirmed", "deleted"],
+		verbs: ["created", "updated", "removal_confirmed", "deleted", "push_secret_read"],
 	},
 	/**
-	 * One connected AWS account; the account and its modules are in `metadata`. `events_key_read`
-	 * is a setup that carried the key its findings arrive with; the key itself is never recorded.
+	 * One connected AWS account; the account and its modules are in `metadata`. `stream_key_read` and
+	 * `events_key_read` are a setup that carried the metric stream's access key or the key its
+	 * findings arrive with; the keys themselves are never recorded.
 	 */
 	aws_connection: {
 		prefix: PublicIdPrefixes.awsConnection,
-		verbs: ["created", "updated", "deleted", "events_key_read", "events_key_rotated"],
+		verbs: ["created", "updated", "deleted", "stream_key_read", "events_key_read", "events_key_rotated"],
 	},
 	/** Anything that sends data; a token source's secret is never in `changes`. */
 	source: {
@@ -147,7 +151,8 @@ export const AuditResources = {
 	onboarding_reward: { verbs: ["claimed"] },
 	/**
 	 * Org-singleton connections. `*_started` is the admin action Maple sees; the
-	 * OAuth round trip completes at the provider's callback.
+	 * OAuth round trip completes at the provider's callback. `webhook_secret_read` is a
+	 * read of the webhook configuration that returned its signing secret, never the secret.
 	 */
 	planetscale_integration: {
 		verbs: [
@@ -156,6 +161,7 @@ export const AuditResources = {
 			"metrics_token_set",
 			"features_updated",
 			"disconnected",
+			"webhook_secret_read",
 		],
 	},
 	/** Org-singleton connection; per-account zone choices ride in `metadata`. */
@@ -415,9 +421,11 @@ export const AuditActionLabels = {
 	"gcp_connector.updated": "Updated Google Cloud connector",
 	"gcp_connector.removal_confirmed": "Confirmed Google Cloud resources removed",
 	"gcp_connector.deleted": "Removed Google Cloud connector",
+	"gcp_connector.push_secret_read": "Read Google Cloud push secret",
 	"aws_connection.created": "Connected AWS",
 	"aws_connection.updated": "Updated AWS connection",
 	"aws_connection.deleted": "Removed AWS connection",
+	"aws_connection.stream_key_read": "Read AWS stream access key",
 	"aws_connection.events_key_read": "Read AWS events key",
 	"aws_connection.events_key_rotated": "Rotated AWS events key",
 	"ingest_key.rolled": "Rolled ingest key",
@@ -438,6 +446,7 @@ export const AuditActionLabels = {
 	"planetscale_integration.metrics_token_set": "Set PlanetScale metrics token",
 	"planetscale_integration.features_updated": "Changed what PlanetScale collects",
 	"planetscale_integration.disconnected": "Disconnected PlanetScale",
+	"planetscale_integration.webhook_secret_read": "Read PlanetScale webhook secret",
 	"cloudflare_integration.zones_updated": "Updated Cloudflare zones",
 	"cloudflare_integration.features_updated": "Changed what Cloudflare collects",
 	"linear_integration.features_updated": "Changed what Maple does in Linear",
@@ -521,8 +530,9 @@ export const AUDIT_ACCESS_ACTION_SUFFIXES = [
 	".called",
 	".sql_executed",
 	".request",
-	// Reading a setup that carries the events key changes nothing.
-	".events_key_read",
+	// Reading a setup or a configuration that carries a key or a secret changes nothing.
+	"_key_read",
+	"_secret_read",
 ] as const
 
 /** True for an access action (see {@link AUDIT_ACCESS_ACTION_SUFFIXES}). */

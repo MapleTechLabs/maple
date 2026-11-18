@@ -41,6 +41,9 @@ describe("audit action labels", () => {
 describe("access actions", () => {
 	it("counts reading a key as access and replacing it as a change", () => {
 		expect(isAuditAccessAction("aws_connection.events_key_read")).toBe(true)
+		expect(isAuditAccessAction("aws_connection.stream_key_read")).toBe(true)
+		expect(isAuditAccessAction("gcp_connector.push_secret_read")).toBe(true)
+		expect(isAuditAccessAction("planetscale_integration.webhook_secret_read")).toBe(true)
 		expect(isAuditAccessAction("aws_connection.events_key_rotated")).toBe(false)
 		expect(isAuditAccessAction("aws_connection.updated")).toBe(false)
 	})
