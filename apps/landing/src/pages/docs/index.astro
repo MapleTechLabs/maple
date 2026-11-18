@@ -6,8 +6,8 @@ import { getCollection } from "astro:content";
 import DocsLayout from "../../layouts/DocsLayout.astro";
 import DocsCategoryIcon from "../../components/docs/DocsCategoryIcon.astro";
 import LanguageLogo from "../../components/docs/LanguageLogo.astro";
-import TracePreview from "../../components/docs/TracePreview.astro";
 import BrandMarkIcon from "../../components/BrandMarkIcon.astro";
+import MediaFrame from "../../components/home/MediaFrame.astro";
 import { LANGUAGES } from "../../lib/docs-languages";
 import { INSTRUMENTATION_SLUG } from "../../lib/docs-nav";
 
@@ -94,11 +94,8 @@ const introduction = bySlug("getting-started/introduction");
     mdHref="/docs.md"
     bleed
 >
-    {/* ── Hero: title, lede and the four ways in, over the Roman archive ── */}
     <section class="docs-hero">
         <div class="docs-shell docs-hero__inner">
-            {/* Inside the shell so the artwork tracks the content column on wide screens. */}
-            <img class="docs-hero__art" src="/art/features/log-management.webp" width="1536" height="1024" alt="" decoding="async" />
             <div class="docs-hero__overview">
                 <div>
                     <h1 class="docs-hero__title">Documentation</h1>
@@ -111,7 +108,17 @@ const introduction = bySlug("getting-started/introduction");
                         )}
                     </p>
                 </div>
-                <TracePreview />
+                <figure class="docs-hero__capture">
+                    <MediaFrame
+                        src="/screenshots/strip-trace.webp"
+                        label="A failed checkout request in Maple's trace waterfall, with nested spans, durations and HTTP statuses"
+                        width={2880}
+                        height={1620}
+                        crop={{ x: 0.18, y: 0.075, zoom: 1.23 }}
+                        loading="eager"
+                    />
+                    <figcaption>A checkout trace in Maple</figcaption>
+                </figure>
             </div>
 
             <section class="docs-start" aria-labelledby="start-here">
@@ -230,8 +237,6 @@ const introduction = bySlug("getting-started/introduction");
 </DocsLayout>
 
 <style>
-    /* The docs home speaks the homepage and pricing language: heavy Geist
-       display type, a Roman engraving behind the title, sharp hairline frames. */
     .docs-shell {
         margin-inline: auto;
         max-width: 1344px;
@@ -263,31 +268,9 @@ const introduction = bySlug("getting-started/introduction");
     /* ── Hero ── */
     .docs-hero {
         container-type: inline-size;
-        isolation: isolate;
-        overflow: hidden;
         border-bottom: 1px solid var(--border);
     }
-    .docs-hero__art {
-        position: absolute;
-        top: 0;
-        right: calc(-1 * var(--docs-gutter));
-        z-index: -1;
-        width: 100%;
-        height: 360px;
-        object-fit: cover;
-        object-position: 70% 32%;
-        opacity: 0.22;
-        pointer-events: none;
-        mask-image:
-            linear-gradient(to right, transparent 5%, black 80%),
-            linear-gradient(to bottom, transparent, black 22%, black 55%, transparent);
-        mask-composite: intersect;
-    }
-    /* The space between the centred shell and the hero's right edge. The art
-       reaches across it, so it always runs off the edge of the page. */
     .docs-hero__inner {
-        --docs-gutter: max(0px, (100cqw - 1344px) / 2);
-        position: relative;
         padding-top: 8px;
         padding-bottom: 44px;
     }
@@ -298,7 +281,7 @@ const introduction = bySlug("getting-started/introduction");
         gap: 24px;
     }
     .docs-hero__title {
-        font-size: clamp(2.25rem, 5vw, 4rem);
+        font-size: clamp(2.25rem, 5.5cqw, 4rem);
         font-weight: 700;
         line-height: 1.03;
         letter-spacing: -0.04em;
@@ -311,6 +294,18 @@ const introduction = bySlug("getting-started/introduction");
         line-height: 1.65;
         text-wrap: pretty;
         color: var(--foreground);
+    }
+    .docs-hero__capture {
+        width: 100%;
+        max-width: 34rem;
+    }
+    .docs-hero__capture :global(.media-crop) {
+        mask-image: none;
+    }
+    .docs-hero__capture figcaption {
+        margin-top: 8px;
+        color: var(--muted-foreground);
+        font-size: 13px;
     }
     .docs-start {
         margin-top: 44px;
@@ -595,10 +590,10 @@ const introduction = bySlug("getting-started/introduction");
     }
     @container (min-width: 820px) {
         .docs-hero__overview {
-            grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+            grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: clamp(24px, 4cqw, 56px);
         }
-        .docs-hero__overview > :global(.trace-preview) {
+        .docs-hero__capture {
             justify-self: end;
         }
     }
@@ -608,26 +603,11 @@ const introduction = bySlug("getting-started/introduction");
             padding-top: 72px;
             padding-bottom: 56px;
         }
-        .docs-hero__art {
-            width: calc(62% + var(--docs-gutter));
-            height: 420px;
-            opacity: 0.32;
-            mask-image:
-                linear-gradient(to right, transparent 12%, black 88%),
-                linear-gradient(to bottom, transparent, black 18%, black 50%, transparent 94%);
-        }
         .docs-section {
             padding-top: 72px;
         }
     }
     @media (min-width: 1280px) {
-        .docs-hero__art {
-            width: min(calc(72% + var(--docs-gutter)), 1100px);
-            opacity: 0.4;
-            mask-image:
-                linear-gradient(to right, transparent, black 62%),
-                linear-gradient(to bottom, transparent, black 18%, black 50%, transparent 94%);
-        }
         .docs-start__grid,
         .docs-tasks__grid,
         .docs-lang__grid {
