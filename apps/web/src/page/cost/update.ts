@@ -15,6 +15,7 @@ import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
 import { failureMessage, type LoadFailure } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
@@ -28,6 +29,7 @@ import { routeWindowStep, snapModeOf } from "../kit/route-window"
 import type { PresetValue } from "../kit/time-controls"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import {
+	AddGcpCostSource,
 	AddGithubCostSource,
 	AddPlanetScaleCostSource,
 	AddVercelCostSource,
@@ -39,10 +41,12 @@ import {
 	FetchCostSources,
 	FetchCostTimeseries,
 	FetchCostTotals,
+	FetchGcpCostStatus,
 	FetchGithubCostInstallations,
 	FetchPlanetScaleCostStatus,
 	FetchVercelCostStatus,
 	ReadCostGrants,
+	RemoveGcpCostSource,
 	RemoveGithubCostSource,
 	RemovePlanetScaleCostSource,
 	RemoveVercelCostSource,
@@ -66,6 +70,7 @@ import {
 	withoutFilters,
 } from "./derive"
 import { CREDENTIAL_SOURCES } from "./credential-sources"
+import { gcpConnectorOf } from "./gcp-export"
 import { Message } from "./message"
 import { type AddStep, type Model, planetScaleStepOf, type Search, vercelStepOf } from "./model"
 import { COST_PROVIDERS, type CredentialProvider, isCredentialProvider } from "./providers"
@@ -203,12 +208,18 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		grants: isClerkAuthEnabled ? null : Policy.allPermissions,
 		addDialog: Dialog.init("cost-add-source", "dialog"),
 		addStep: "pick",
+		providerSearch: "",
 		credentialDraft: Field.init(),
 		credentialError: null,
 		vercel: Keyed.idle(),
 		vercelError: null,
 		planetscale: Keyed.idle(),
 		planetscaleError: null,
+		gcp: Keyed.idle(),
+		gcpConnectorId: null,
+		gcpTableDraft: Field.init(),
+		gcpError: null,
+		gcpCommandCopy: CopyButton.init(),
 		githubInstallations: AsyncData.Idle(),
 		githubRead: 0,
 		githubAdding: null,
@@ -258,6 +269,8 @@ const clearedDialog = (model: Model): Model => ({
 	githubRefusal: null,
 	vercelError: null,
 	planetscaleError: null,
+	gcpTableDraft: Field.init(),
+	gcpError: null,
 })
 
 /**
@@ -311,10 +324,29 @@ const addablePlanetScaleOrganization = (model: Model): Option.Option<string> =>
 		return step._tag === "Ready" ? Option.some(step.organization) : Option.none()
 	})
 
+/**
+ * The org's GCP connections and exports, read again each time the dialog turns to Google Cloud, as
+ * Vercel's connection is.
+ */
+const requestGcpStatus = (model: Model, context: PageContext): Return =>
+	applySteps<Model, Message>(model, [
+		keyed(
+			emptied(model.gcp),
+			requestKey(context.orgId, "gcpCostStatus", {}),
+			"Supersede",
+			(gcp) => ({ gcp }),
+			(key) => FetchGcpCostStatus({ key }),
+		),
+	])
+
 const openAdd = (model: Model, addStep: AddStep): Return =>
 	model.sourceWrite !== "Idle"
 		? { model }
-		: liftAddDialog({ ...clearedDialog(model), addStep }, Dialog.open(model.addDialog))
+		: // A dialog opened anew starts with no search; Back from a step keeps it.
+			liftAddDialog(
+				{ ...clearedDialog(model), providerSearch: "", addStep },
+				Dialog.open(model.addDialog),
+			)
 
 /**
  * The sources and the window's reads again, after a write's own step: the reads name the org's
@@ -376,6 +408,9 @@ const removeCommand = (source: CostSourceSummary): ReadonlyArray<Cmd> => {
 		// The org has one PlanetScale connection, so one source at most: the call names none.
 		case "planetscale":
 			return [RemovePlanetScaleCostSource()]
+		// The source's connection is the billing export it reads.
+		case "gcp":
+			return [RemoveGcpCostSource({ exportId: source.connectionRef })]
 		// An AWS source leaves with its connection's Cost module, on the integration's page.
 		case "aws":
 			return []
@@ -770,6 +805,66 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				onSuccess: (): Return =>
 					added(model, "PlanetScale added", "The first sync runs within a few minutes.", context),
 			}),
+		ChangedProviderSearch: ({ value }) => ({ model: { ...model, providerSearch: value } }),
+		ClickedAddGcp: () =>
+			model.sourceWrite !== "Idle"
+				? { model }
+				: requestGcpStatus({ ...clearedDialog(model), addStep: "gcp" }, context),
+		CompletedLoadGcpStatus: ({ key, result }) => ({
+			model: { ...model, gcp: Keyed.accept(model.gcp, key, result) },
+		}),
+		PickedGcpConnector: ({ connectorId }) => ({ model: { ...model, gcpConnectorId: connectorId } }),
+		GotGcpTableDraftMessage: ({ message: inner }) =>
+			model.sourceWrite === "Saving"
+				? { model }
+				: {
+						model: {
+							...model,
+							gcpTableDraft: Field.update(model.gcpTableDraft, inner).model,
+							gcpError: inner._tag === "ChangedValue" ? null : model.gcpError,
+						},
+					},
+		GotGcpCommandCopyMessage: ({ message: inner }) => {
+			const next = CopyButton.update(model.gcpCommandCopy, inner)
+			return {
+				model: { ...model, gcpCommandCopy: next.model },
+				commands: Command.mapMessages(next.commands ?? [], (copy) =>
+					Message.GotGcpCommandCopyMessage({ message: copy }),
+				),
+			}
+		},
+		// The add names the connection on show; the API checks the table id and the connection again.
+		SubmittedGcpExport: () => {
+			const tableRef = Str.trim(model.gcpTableDraft.value)
+			const connector = Option.flatMap(AsyncData.getData(model.gcp.data), (status) =>
+				gcpConnectorOf(status, model.gcpConnectorId),
+			)
+			return model.sourceWrite !== "Idle" || tableRef === "" || Option.isNone(connector)
+				? { model }
+				: {
+						model: { ...model, sourceWrite: "Saving", gcpError: null },
+						commands: [AddGcpCostSource({ connectorId: connector.value.id, tableRef })],
+					}
+		},
+		// A refused add keeps the dialog open with the reason under the field, and reads the
+		// connections again: one deleted or switched off since is no longer offered.
+		CompletedAddGcp: ({ result }) =>
+			Result.match(result, {
+				onFailure: (failure): Return =>
+					requestGcpStatus(
+						{ ...model, sourceWrite: "Idle", gcpError: failureMessage(failure) },
+						context,
+					),
+				onSuccess: ({ export: source, created }): Return =>
+					created
+						? added(
+								model,
+								"Google Cloud added",
+								`The first sync of billing account ${source.billingAccountId} runs within a few minutes.`,
+								context,
+							)
+						: added(model, "Already added", `Maple reads ${source.tableRef} already.`, context),
+			}),
 		ClickedRemoveSource: ({ sourceId }) => {
 			const target = sourceOf(model, sourceId)
 			return model.sourceWrite !== "Idle" || target === undefined
@@ -790,5 +885,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedRemoveGithubSource: ({ result }) => removed(model, result, context),
 		CompletedRemoveVercel: ({ result }) => removed(model, result, context),
 		CompletedRemovePlanetScale: ({ result }) => removed(model, result, context),
+		CompletedRemoveGcp: ({ result }) => removed(model, result, context),
 		...chartEnvHandlers(model),
 	})

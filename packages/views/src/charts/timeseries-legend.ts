@@ -11,7 +11,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { pressable } from "../ui/pressable"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../ui/table"
-import { Message, type Model } from "./chart"
+import { hiddenNamesIn, Message, type Model } from "./chart"
 import { bucketSecondsOf, normaliseRows, scaleRates, type SeriesDefinition } from "./timeseries"
 import { hstack } from "../ui/stack"
 import { swatch } from "../ui/swatch"
@@ -51,7 +51,7 @@ const compactLegend = (
 	hidden: ReadonlyArray<string>,
 	layout: LegendLayout,
 ): Html => {
-	const keys = Arr.map(series, (entry) => entry.key)
+	const keys = Arr.map(series, (entry) => entry.label)
 	return h.div(
 		[
 			...maxHeightStyle(h, layout),
@@ -66,11 +66,11 @@ const compactLegend = (
 			pressable(
 				h,
 				{
-					onClick: Message.ToggledLegendSeries({ key: entry.key, keys }),
+					onClick: Message.ToggledLegendSeries({ key: entry.label, keys }),
 					className: cn(
 						// Labels sit one step under the card title, like the plot legend's; the hovered one reads full strength.
 						"text-muted-foreground hover:bg-surface-sunken hover:text-foreground active:bg-surface-sunken active:text-foreground flex min-w-0 max-w-full items-center gap-1.5 rounded-sm px-1 py-0.5 select-none",
-						hidden.includes(entry.key) && "opacity-40",
+						hidden.includes(entry.label) && "opacity-40",
 					),
 					attributes: [h.Key(entry.key), h.Title(entry.label)],
 				},
@@ -107,7 +107,7 @@ const statsTable = (
 	unit: string | undefined,
 	layout: LegendLayout,
 ): Html => {
-	const keys = Arr.map(series, (entry) => entry.key)
+	const keys = Arr.map(series, (entry) => entry.label)
 	return h.div(
 		[
 			...maxHeightStyle(h, layout),
@@ -192,11 +192,11 @@ const statsTable = (
 								],
 								cn(
 									"cursor-pointer select-none in-data-[variant=bare]:hover:bg-surface-sunken in-data-[variant=bare]:active:bg-surface-sunken",
-									hidden.includes(entry.key) && "opacity-40",
+									hidden.includes(entry.label) && "opacity-40",
 								),
 								[
 									h.Key(entry.key),
-									h.OnClick(Message.ToggledLegendSeries({ key: entry.key, keys })),
+									h.OnClick(Message.ToggledLegendSeries({ key: entry.label, keys })),
 								],
 							)
 						}),
@@ -204,6 +204,23 @@ const statsTable = (
 				],
 			),
 		],
+	)
+}
+
+/**
+ * The chart keys of the series the legend has hidden. The legend remembers names, so a series
+ * stays hidden across a refresh that reorders the keys, and a regroup hides nothing by accident.
+ */
+export const hiddenChartKeys = (
+	hiddenNames: ReadonlyArray<string>,
+	definitions: ReadonlyArray<SeriesDefinition>,
+): ReadonlyArray<string> => {
+	const hidden = hiddenNamesIn(
+		hiddenNames,
+		Arr.map(definitions, (definition) => definition.rawKey),
+	)
+	return Arr.flatMap(definitions, (definition) =>
+		hidden.includes(definition.rawKey) ? [definition.chartKey] : [],
 	)
 }
 
@@ -236,7 +253,12 @@ export const timeseriesLegend = (
 		isRight: inputs.legend === "right",
 		maxHeight: inputs.legend === "right" && model.containerHeight > 0 ? model.containerHeight : null,
 	}
+	// The names the plot hides too, so an entry is dimmed exactly when its series is not drawn.
+	const hidden = hiddenNamesIn(
+		model.hiddenKeys,
+		Arr.map(series, (entry) => entry.label),
+	)
 	return inputs.seriesStats
-		? statsTable(h, sorted, stats, model.hiddenKeys, inputs.unit, layout)
-		: compactLegend(h, sorted, model.hiddenKeys, layout)
+		? statsTable(h, sorted, stats, hidden, inputs.unit, layout)
+		: compactLegend(h, sorted, hidden, layout)
 }

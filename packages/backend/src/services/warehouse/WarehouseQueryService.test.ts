@@ -1392,6 +1392,123 @@ describe("BYO ClickHouse redirect refusal", () => {
 	)
 })
 
+describe("customer ClickHouse read-only raw SQL", () => {
+	const chConfig = {
+		kind: "clickhouse" as const,
+		url: "https://ch.example.com",
+		username: "u",
+		password: "p",
+		database: "default",
+	}
+	const limits = { max_execution_time: 10, max_memory_usage: 512_000_000 }
+	const refusal = (setting: string) =>
+		new Response(
+			`Code: 164. DB::Exception: Cannot modify '${setting}' setting in readonly mode. (READONLY)`,
+			{
+				status: 500,
+				headers: { "x-clickhouse-exception-code": "164" },
+			},
+		)
+	/** A server whose account profile has this `readonly` value, recording each request. */
+	const server = (profile: "0" | "2", seen: Array<{ params: URLSearchParams; body: string }>) => {
+		const requestFetch: typeof fetch = async (input, init) => {
+			const params = new URL(String(input instanceof Request ? input.url : input)).searchParams
+			const body = requestBodyText(init?.body)
+			seen.push({ params, body })
+			if (Str.includes("getSetting('readonly')")(body)) {
+				return new Response(`{"readonly":"${profile}"}\n`, { status: 200 })
+			}
+			if (profile === "2" && params.has("readonly")) return refusal("readonly")
+			// A statement that sets `readonly` itself is refused the same way under Maple's readonly=1.
+			if (params.get("readonly") === "1" && /SETTINGS readonly/.test(body)) return refusal("readonly")
+			return new Response('{"n":1}\n', { status: 200 })
+		}
+		return requestFetch
+	}
+
+	it.effect("sends readonly=1 and the limits with the request", () =>
+		Effect.gen(function* () {
+			const seen: Array<{ params: URLSearchParams; body: string }> = []
+			const result = yield* makeClickHouseTestClient(chConfig, server("0", seen)).sql(
+				parseStatement("SELECT 1 AS n"),
+				{ readOnly: { settings: limits } },
+			)
+			assert.deepStrictEqual(result.data, [{ n: 1 }])
+			assert.lengthOf(seen, 1)
+			assert.strictEqual(seen[0]?.params.get("readonly"), "1")
+			assert.strictEqual(seen[0]?.params.get("max_execution_time"), "10")
+		}),
+	)
+
+	it.effect("sends no readonly for a query Maple compiled", () =>
+		Effect.gen(function* () {
+			const seen: Array<{ params: URLSearchParams; body: string }> = []
+			yield* makeClickHouseTestClient(chConfig, server("0", seen)).sql(parseStatement("SELECT 1 AS n"))
+			assert.isFalse(seen[0]?.params.has("readonly"))
+		}),
+	)
+
+	it.effect("keeps the limits on an account whose profile is already read-only, and asks once", () =>
+		Effect.gen(function* () {
+			const seen: Array<{ params: URLSearchParams; body: string }> = []
+			const client = makeClickHouseTestClient(chConfig, server("2", seen))
+			const first = yield* client.sql(parseStatement("SELECT 1 AS n"), {
+				readOnly: { settings: limits },
+			})
+			const second = yield* client.sql(parseStatement("SELECT 1 AS n"), {
+				readOnly: { settings: limits },
+			})
+			assert.deepStrictEqual([first.data, second.data], [[{ n: 1 }], [{ n: 1 }]])
+			// Refused, profile asked, rerun with the limits alone; the second query goes straight through.
+			assert.lengthOf(seen, 4)
+			const reruns = [seen[2], seen[3]]
+			assert.isTrue(Arr.every(reruns, (request) => request?.params.has("readonly") === false))
+			assert.isTrue(Arr.every(reruns, (request) => request?.params.get("max_execution_time") === "10"))
+		}),
+	)
+
+	it.effect("reports the refusal when the profile cannot be read, without rerunning", () =>
+		Effect.gen(function* () {
+			const bodies: Array<string> = []
+			const requestFetch: typeof fetch = async (_input, init) => {
+				const body = requestBodyText(init?.body)
+				bodies.push(body)
+				return Str.includes("getSetting('readonly')")(body)
+					? new Response("Code: 241. DB::Exception: Memory limit exceeded", { status: 500 })
+					: refusal("readonly")
+			}
+			const error = yield* Effect.flip(
+				makeClickHouseTestClient(chConfig, requestFetch).sql(parseStatement("SELECT 1 AS n"), {
+					readOnly: { settings: limits },
+				}),
+			)
+			assert.instanceOf(error, WarehouseDriverError)
+			assert.strictEqual(error.code, "164")
+			assert.lengthOf(
+				Arr.filter(bodies, (body) => Str.includes("SELECT 1 AS n")(body)),
+				1,
+			)
+		}),
+	)
+
+	it.effect("never drops readonly because the statement itself drew the refusal", () =>
+		Effect.gen(function* () {
+			const seen: Array<{ params: URLSearchParams; body: string }> = []
+			const error = yield* Effect.flip(
+				makeClickHouseTestClient(chConfig, server("0", seen)).sql(
+					parseStatement("SELECT 1 AS n SETTINGS readonly = 0"),
+					{ readOnly: { settings: limits } },
+				),
+			)
+			assert.instanceOf(error, WarehouseDriverError)
+			assert.strictEqual(error.code, "164")
+			// The statement never ran without Maple's readonly=1.
+			const statements = Arr.filter(seen, (request) => Str.includes("SETTINGS readonly")(request.body))
+			assert.isTrue(Arr.every(statements, (request) => request.params.get("readonly") === "1"))
+		}),
+	)
+})
+
 describe("warehouse driver Effect boundaries", () => {
 	const chConfig = {
 		kind: "clickhouse" as const,

@@ -80,7 +80,14 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 					),
 					vcsInstallations: db.run(
 						PG.from(VcsInstallations)
-							.select("provider", "accountLogin", "status", "ciTracesEnabled", "createdAt")
+							.select(
+								"provider",
+								"accountLogin",
+								"status",
+								"ciTracesEnabled",
+								"auditLogEnabled",
+								"createdAt",
+							)
 							.where(($) => [$.orgId.eq(orgId)]),
 					),
 					vcsRepositories: db.run(

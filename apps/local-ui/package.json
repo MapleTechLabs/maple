@@ -18,10 +18,10 @@
 		"@maple/ui": "workspace:*",
 		"@maple/views": "workspace:*",
 		"effect": "catalog:effect",
-		"foldkit": "0.170.0"
+		"foldkit": "0.171.0"
 	},
 	"devDependencies": {
-		"@foldkit/vite-plugin": "0.29.0",
+		"@foldkit/vite-plugin": "0.29.1",
 		"@tailwindcss/vite": "catalog:tailwind",
 		"@types/node": "catalog:tooling",
 		"tailwindcss": "catalog:tailwind",

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { Array as Arr, Option } from "effect"
-import { findingEvent } from "./eventbridge-findings"
+import { findingEvent, MAX_FINDINGS_PER_EVENT } from "./eventbridge-findings"
 
 // Events as EventBridge delivers them, trimmed from the samples in each service's documentation.
 
@@ -18,7 +18,10 @@ const envelope = (source: string, detailType: string, detail: unknown, region = 
 	detail,
 })
 
-const read = (event: unknown) => Option.getOrUndefined(findingEvent(ACCOUNT, event))
+/** The tests' "now": every sample is dated before it unless a test says otherwise. */
+const NOW = Date.parse("2026-11-17T00:00:00Z")
+
+const read = (event: unknown) => Option.getOrUndefined(findingEvent(ACCOUNT, event, NOW))
 
 describe("findingEvent", () => {
 	it("reads a GuardDuty finding about an instance, with its count and first and last sighting", () => {
@@ -196,6 +199,58 @@ describe("findingEvent", () => {
 			title: "Unused IAM role",
 			status: "resolved",
 		})
+	})
+
+	it("holds a finding dated ahead of now to now", () => {
+		const event = read(
+			envelope("aws.guardduty", "GuardDuty Finding", {
+				accountId: ACCOUNT,
+				id: "ahead",
+				type: "Recon:EC2/PortProbeUnprotectedPort",
+				createdAt: "2999-01-01T00:00:00Z",
+				updatedAt: "2999-01-02T00:00:00Z",
+				service: { eventFirstSeen: "2999-01-01T00:00:00Z", eventLastSeen: "2999-01-02T00:00:00Z" },
+			}),
+		)
+		expect(event?.findings[0]).toMatchObject({
+			findingId: "ahead",
+			firstSeenAt: NOW,
+			lastSeenAt: NOW,
+			providerUpdatedAt: NOW,
+		})
+	})
+
+	it("takes a bounded number of findings from one Security Hub event", () => {
+		const finding = (index: number) => ({
+			Id: `sh-${index}`,
+			ProductName: "Security Hub",
+			AwsAccountId: ACCOUNT,
+			Region: "us-east-1",
+			UpdatedAt: "2026-11-16T11:00:00.000Z",
+		})
+		const extra = 25
+		const event = read(
+			envelope("aws.securityhub", "Security Hub Findings - Imported", {
+				findings: Arr.makeBy(MAX_FINDINGS_PER_EVENT + extra, finding),
+			}),
+		)
+		expect(event?.findings).toHaveLength(MAX_FINDINGS_PER_EVENT)
+		expect(event?.findings.at(-1)?.findingId).toBe(`sh-${MAX_FINDINGS_PER_EVENT - 1}`)
+		expect([event?.skipped, event?.overCap]).toEqual([0, extra])
+	})
+
+	it("takes a finding that names no account as the event's account, and skips one that names neither", () => {
+		const detail = {
+			id: "no-account",
+			type: "Recon:EC2/PortProbeUnprotectedPort",
+			updatedAt: "2026-11-16T11:59:58Z",
+		}
+		const own = read(envelope("aws.guardduty", "GuardDuty Finding", detail))
+		expect(Arr.map(own?.findings ?? [], (f) => f.findingId)).toEqual(["no-account"])
+		const { account: _account, ...anonymous } = envelope("aws.guardduty", "GuardDuty Finding", detail)
+		expect(read(anonymous)).toMatchObject({ findings: [], skipped: 1 })
+		const foreign = { ...envelope("aws.guardduty", "GuardDuty Finding", detail), account: "222222222222" }
+		expect(read(foreign)).toMatchObject({ findings: [], skipped: 1 })
 	})
 
 	it("ignores events the setup does not forward", () => {

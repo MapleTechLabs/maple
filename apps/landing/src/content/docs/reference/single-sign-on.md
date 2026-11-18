@@ -14,9 +14,9 @@ Both are self-serve add-ons on every plan, added by an organization admin under 
 | Single sign-on    | $100/month | One SAML or OIDC connection, domain verification, break-glass |
 | SCIM provisioning | $100/month | Provisioning, deprovisioning and group to role mapping        |
 
-SCIM provisioning needs single sign-on connected first. If an add-on ends, everything you set up keeps working as it is, and admins can still turn SSO off, pause or remove SCIM, and remove the connection.
+SCIM provisioning needs single sign-on connected first. If an add-on ends, everything you set up keeps working as it is. Admins can still turn SSO off, pause or remove SCIM, and remove the connection. They can also still rotate the SCIM token and replace the connection's SAML certificate, IdP metadata or OIDC client secret, so a leaked credential can always be replaced. Every other change needs the add-on.
 
-Only organization admins can configure SSO and SCIM. Every change is recorded in the organization's audit log, under **Security → Audit log**.
+Only organization admins can configure SSO and SCIM. Other members see whether SSO is connected and required, its domains, and whether SCIM is running. They don't see the identity provider settings, the SCIM endpoint, the IdP groups or the bypass list. Every change made on this tab is recorded in the organization's audit log, under **Security → Audit log**. Changes on the separate **Domains** tab are not.
 
 SSO and SCIM work the same for organizations in the US and EU [regions](/docs/reference/regions).
 
@@ -39,7 +39,11 @@ SSO applies to email addresses on domains you have verified.
 2. Maple shows a value of the form `maple-domain-verification=...`. Publish it as a DNS TXT record named `_maple-challenge.example.com`.
 3. Click **Verify**.
 
-DNS changes can take a few minutes to be visible. If verification fails, wait and try again. Add every domain your members sign in with. Subdomains are not included: `jo@eu.example.com` needs `eu.example.com` verified too.
+DNS changes can take a few minutes to be visible. If verification fails, wait and try again.
+
+Keep the TXT record published after the domain is verified. Maple checks it again when you connect an identity provider, add the domain to a connection, or turn on **Require SSO**, and refuses if the record is missing.
+
+Add every domain your members sign in with. Subdomains are not included: `jo@eu.example.com` needs `eu.example.com` verified too.
 
 ### 2. Connect your identity provider
 
@@ -70,10 +74,13 @@ Add at least one admin to the bypass list before you require SSO. A member on th
 - A person whose email is also on a domain another organization's SSO covers can't be added or removed here.
 - Bypass sign-ins still require any multi-factor authentication your account has set up.
 - Keep the list short. Every entry is a way in that skips your IdP.
+- A member who is removed from the organization is taken off the list, unless another organization's SSO connection still covers their email domain. In that case the entry stays until that connection no longer needs it.
 
 ### 4. Require SSO
 
 Turn on **Require SSO**. From then on, everyone who signs in with an email address on the connection's domains must go through the IdP. The only exception is the bypass list.
+
+Members on a connection's domains can't add other sign-in methods to their account, such as a personal email address, a password, a passkey or a social account.
 
 If the connection's settings have an error, members on those domains can't sign in until it's fixed, so turn it on at a quiet time and try signing in yourself right after. A break-glass admin can turn it off again.
 
@@ -130,16 +137,19 @@ The IdP sends the change on its own schedule, which can take a few minutes. A us
 
 Removing the connection doesn't delete any user. Members on its domains go back to signing in with their email and their other sign-in methods, and the connection's bypass list is cleared.
 
+Deleting the organization removes its connection and SCIM provisioning as well, so its domains are free to use again.
+
 ## Troubleshooting
 
-| Problem                                              | What to do                                                                                                                                                      |
-| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Domain verification says the TXT record is not found | Wait a few minutes for DNS to update, then click **Verify** again. Check that the record is named `_maple-challenge.<domain>`, not the bare domain.             |
-| "Verify the domain before using it for SSO"          | The domain is added but not verified yet. Finish [step 1](#1-verify-a-domain) first.                                                                            |
-| Members can't sign in after you require SSO          | A break-glass admin signs in with an email code and turns off **Require SSO**, then checks the IdP details and, for SAML, that the `mail` attribute is sent.    |
-| OIDC sign-in fails with a redirect error             | The redirect URI Maple shows is missing from the IdP application's allowed redirect URLs.                                                                       |
-| A user fails to provision                            | The user has no email in the SCIM `emails` attribute, or it isn't on one of the connection's domains. Fix the email mapping in the IdP.                         |
-| A user gets the Member role instead of a mapped role | Push the group again from your IdP after saving the mapping. If they are only in a group nested inside the mapped group, add them to the mapped group directly. |
+| Problem                                                                 | What to do                                                                                                                                                      |
+| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Domain verification says the TXT record is not found                    | Wait a few minutes for DNS to update, then click **Verify** again. Check that the record is named `_maple-challenge.<domain>`, not the bare domain.             |
+| "The DNS record that proves the domain is yours is no longer published" | The TXT record was removed after verification. Publish the record named in the message again, wait for DNS to update, then retry.                               |
+| "Verify the domain before using it for SSO"                             | The domain is added but not verified yet. Finish [step 1](#1-verify-a-domain) first.                                                                            |
+| Members can't sign in after you require SSO                             | A break-glass admin signs in with an email code and turns off **Require SSO**, then checks the IdP details and, for SAML, that the `mail` attribute is sent.    |
+| OIDC sign-in fails with a redirect error                                | The redirect URI Maple shows is missing from the IdP application's allowed redirect URLs.                                                                       |
+| A user fails to provision                                               | The user has no email in the SCIM `emails` attribute, or it isn't on one of the connection's domains. Fix the email mapping in the IdP.                         |
+| A user gets the Member role instead of a mapped role                    | Push the group again from your IdP after saving the mapping. If they are only in a group nested inside the mapped group, add them to the mapped group directly. |
 
 ## Next steps
 

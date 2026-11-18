@@ -1,6 +1,7 @@
 import {
 	Array as Arr,
 	Effect,
+	Option,
 	pipe,
 	Record,
 	Schema,
@@ -86,3 +87,31 @@ export const boundedRestSegments = <K extends string>(
 			),
 	}
 }
+
+/** A segment that is one of `values`, or absent: `/settings` and `/settings/keys` both match. */
+export const optionalLiteralSegment = <V extends string>(
+	values: ReadonlyArray<V>,
+): Biparser<{ readonly segment?: V }> => ({
+	parse: (segments) =>
+		Effect.succeed(
+			Option.match(
+				Arr.findFirst(values, (value) => value === segments[0]),
+				{
+					onNone: (): ParseResult<{ readonly segment?: V }> => [{}, segments],
+					onSome: (segment): ParseResult<{ readonly segment?: V }> => [
+						{ segment },
+						segments.slice(1),
+					],
+				},
+			),
+		),
+	print: ({ segment }, state) =>
+		Effect.succeed(segment === undefined ? state : { ...state, segments: [...state.segments, segment] }),
+})
+
+/** `parser` read and printed through `to` and `from`, for a route whose value is not the URL's shape. */
+export const mapBiparser = <A, B>(parser: Biparser<A>, to: (a: A) => B, from: (b: B) => A): Biparser<B> => ({
+	parse: (segments, search) =>
+		Effect.map(parser.parse(segments, search), ([value, rest]): ParseResult<B> => [to(value), rest]),
+	print: (value, state) => parser.print(from(value), state),
+})

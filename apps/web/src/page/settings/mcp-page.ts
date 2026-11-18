@@ -20,7 +20,7 @@ import * as Mcp from "./mcp/update"
 import * as McpView from "./mcp/view"
 import { apiKeyRows } from "./subscription"
 
-// `/mcp`: the same MCP tab as `/settings?tab=mcp`, standalone.
+// `/mcp`: the same MCP tab as `/settings/mcp`, standalone.
 
 const Model = Schema.Struct({
 	nowMs: Schema.Number,

@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Exit, Layer, Option, Schema, Array as Arr } from "effect"
+import { Clock, ConfigProvider, Effect, Exit, Layer, Option, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { ApiKeyId, ApiKeyNotFoundError, OrgId, UserId } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
@@ -157,6 +157,52 @@ describe("ApiKeysService.roll", () => {
 			assert.strictEqual(rolled.expiresAt, created.expiresAt)
 			const stored = yield* svc.get(orgId, rolled.id)
 			assert.strictEqual(stored.expiresAt, created.expiresAt)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("stores no expiry past the ceiling a caller sets, whatever lifetime was asked for", () => {
+		const testDb = createTestDb(trackedDbs)
+
+		return Effect.gen(function* () {
+			const svc = yield* ApiKeysService
+			const now = yield* Clock.currentTimeMillis
+			const ceiling = now + 60_000
+			const longer = yield* svc.create(asOrgId("org_a"), asUserId("user_a"), {
+				name: "longer",
+				expiresInSeconds: 3600,
+				expiresAtCeiling: ceiling,
+			})
+			const unset = yield* svc.create(asOrgId("org_a"), asUserId("user_a"), {
+				name: "unset",
+				expiresAtCeiling: ceiling,
+			})
+			const shorter = yield* svc.create(asOrgId("org_a"), asUserId("user_a"), {
+				name: "shorter",
+				expiresInSeconds: 30,
+				expiresAtCeiling: ceiling,
+			})
+			assert.strictEqual(longer.expiresAt, ceiling)
+			assert.strictEqual(unset.expiresAt, ceiling)
+			assert.strictEqual(shorter.expiresAt, now + 30_000)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("holds the ceiling when time passes between a caller's check and the insert", () => {
+		const testDb = createTestDb(trackedDbs)
+
+		return Effect.gen(function* () {
+			const svc = yield* ApiKeysService
+			// The caller checked a 60 s lifetime against a key with exactly 60 s left.
+			const ceiling = (yield* Clock.currentTimeMillis) + 60_000
+			yield* TestClock.adjust("5 seconds")
+			const created = yield* svc.create(asOrgId("org_a"), asUserId("user_a"), {
+				name: "boundary",
+				expiresInSeconds: 60,
+				expiresAtCeiling: ceiling,
+			})
+			assert.strictEqual(created.expiresAt, ceiling)
+			const stored = yield* svc.get(asOrgId("org_a"), created.id)
+			assert.strictEqual(stored.expiresAt, ceiling)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 

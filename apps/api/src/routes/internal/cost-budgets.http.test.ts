@@ -10,10 +10,6 @@ import {
 	RoleName,
 	UserId,
 } from "@maple/domain/http"
-import {
-	DISABLED_ORGANIZATION_FEATURE_FLAGS,
-	type OrganizationFeatureFlags,
-} from "@maple/domain/organization-feature-flags"
 import { Context, Effect, Layer, Order, Schema, Array as Arr, String as Str } from "effect"
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { HttpRouter } from "effect/http"
@@ -22,7 +18,6 @@ import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { AuditLogService, makeMemoryAuditLog } from "@maple/backend/services/audit/AuditLogService"
 import { CostBudgetSource } from "@maple/backend/services/cost/CostBudgetSource"
 import { CostBudgetsService } from "@maple/backend/services/cost/CostBudgetsService"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { costBudgetPeriodWindow, costBudgetProgress } from "@maple/domain/cost-budget"
 import { HttpCostBudgetsLive } from "./cost-budgets.http"
@@ -50,11 +45,7 @@ const SPENT = 600
  * The route over the real budgets service and an embedded database (`testDb`, shared to read
  * back as another caller), with spend answered from `SPENT` instead of the warehouse.
  */
-const makeHarness = (
-	roles: ReadonlyArray<string>,
-	flags: Partial<OrganizationFeatureFlags> = { cloudCost: true },
-	testDb: TestDb = createTestDb(trackedDbs),
-) => {
+const makeHarness = (roles: ReadonlyArray<string>, testDb: TestDb = createTestDb(trackedDbs)) => {
 	const auditLog = makeMemoryAuditLog()
 	const source = Layer.succeed(CostBudgetSource, {
 		progress: (_tenant, budgets, nowMs) =>
@@ -75,9 +66,6 @@ const makeHarness = (
 		Layer.effect(CostBudgetsService, CostBudgetsService.make).pipe(
 			Layer.provide(Layer.mergeAll(source, testDb.layer)),
 		),
-		Layer.succeed(OrganizationFeatureFlagsService, {
-			flags: () => Effect.succeed({ ...DISABLED_ORGANIZATION_FEATURE_FLAGS, ...flags }),
-		}),
 		Layer.succeed(AuditLogService, auditLog),
 		Layer.succeed(
 			CurrentTenant.SessionAuthorization,
@@ -190,9 +178,9 @@ describe("/internal/cost/budgets", () => {
 	// A budget is an alert rule: who cannot manage alerts reads budgets and writes none.
 	it("lets members and analysts read, and refuses their writes without storing anything", async () => {
 		const testDb = createTestDb(trackedDbs)
-		const engineer = makeHarness(ENGINEER, { cloudCost: true }, testDb)
-		const member = makeHarness(["org:member"], { cloudCost: true }, testDb)
-		const analyst = makeHarness(["org:analyst"], { cloudCost: true }, testDb)
+		const engineer = makeHarness(ENGINEER, testDb)
+		const member = makeHarness(["org:member"], testDb)
+		const analyst = makeHarness(["org:analyst"], testDb)
 		try {
 			const existing = asBudget((await engineer.budgets("POST", "", budgetBody())).body)
 
@@ -212,36 +200,6 @@ describe("/internal/cost/budgets", () => {
 			await engineer.dispose()
 			await member.dispose()
 			await analyst.dispose()
-		}
-	})
-
-	// An org that left the rollout still has its budgets checked: it must be able to stop one.
-	it("answers 403 for an org outside the cloud cost rollout, on everything but delete", async () => {
-		const testDb = createTestDb(trackedDbs)
-		const inRollout = makeHarness(ENGINEER, { cloudCost: true }, testDb)
-		const outside = makeHarness(ENGINEER, { cloudCost: false }, testDb)
-		const outsideMember = makeHarness(["org:member"], { cloudCost: false }, testDb)
-		try {
-			const existing = asBudget((await inRollout.budgets("POST", "", budgetBody())).body)
-
-			const responses = [
-				await outside.budgets("GET"),
-				await outside.budgets("GET", `/${existing.id}`),
-				await outside.budgets("POST", "", budgetBody({ name: "Other" })),
-				await outside.budgets("PATCH", `/${existing.id}`, { amount: 9 }),
-				await outsideMember.budgets("DELETE", `/${existing.id}`),
-			]
-
-			expect(Arr.map(responses, (response) => response.status)).toEqual([403, 403, 403, 403, 403])
-			expect(asFailure(responses[0]?.body)._tag).toBe("@maple/http/errors/CloudCostDisabledError")
-			expect(asBudgets((await inRollout.budgets("GET")).body).budgets).toHaveLength(1)
-
-			expect((await outside.budgets("DELETE", `/${existing.id}`)).status).toBe(200)
-			expect(asBudgets((await inRollout.budgets("GET")).body).budgets).toEqual([])
-		} finally {
-			await inRollout.dispose()
-			await outside.dispose()
-			await outsideMember.dispose()
 		}
 	})
 

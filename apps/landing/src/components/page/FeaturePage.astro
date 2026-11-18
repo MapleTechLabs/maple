@@ -33,6 +33,7 @@ import { SCALE_PROOF_STORY_PATH } from "../../lib/scale-proof";
 import { featurePath, useCasePath } from "../../lib/page-registry";
 import { useCaseBySlug } from "../../lib/use-cases";
 import Layout from "../../layouts/Layout.astro";
+import FAQ from "../FAQ.astro";
 import Footer from "../Footer.astro";
 import Nav from "../Nav.astro";
 import SeoHead from "../SeoHead.astro";
@@ -44,7 +45,7 @@ import PageHero from "./PageHero.astro";
 import PlanFacts from "./PlanFacts.astro";
 import ScreenGallery from "./ScreenGallery.astro";
 import SurfacePanel from "./SurfacePanel.astro";
-import { ARTIFACTS, EXTRA_SECTIONS } from "./slots";
+import { ARTIFACTS, EXTRA_SECTIONS, HERO_ASIDES } from "./slots";
 
 interface Props {
 	slug: string;
@@ -64,10 +65,24 @@ const description = feature.seoDescription();
 const plan = planRows(feature.plan, await getOffer());
 
 const Artifact = feature.artifact ? ARTIFACTS[feature.artifact.id] : null;
+const HeroAside = feature.heroAside ? HERO_ASIDES[feature.heroAside] : null;
+
+const hero = {
+	title: feature.heroTitle(),
+	lede: feature.heroLede(),
+	illustration: feature.illustration,
+	breadcrumb: [
+		{ label: m.breadcrumb_home(), href: "/" },
+		{ label: m.breadcrumb_features(), href: "/#features" },
+		{ label: feature.navLabel() },
+	],
+};
 
 // Resolved here rather than inside the template: Astro's compiler can't parse a
 // block-bodied arrow that returns a component from an expression container.
 const extraSections = feature.extraSections.map((id) => EXTRA_SECTIONS[id]);
+
+const faq = (feature.faq ?? []).map((item) => ({ question: item.question(), answer: item.answer() }));
 
 const crossLinks = [
 	...feature.related.flatMap((related) => {
@@ -91,16 +106,17 @@ const crossLinks = [
 	<SeoHead title={title} description={description} />
 	<Nav />
 
-	<PageHero
-		title={feature.heroTitle()}
-		lede={feature.heroLede()}
-		illustration={feature.illustration}
-		breadcrumb={[
-			{ label: m.breadcrumb_home(), href: "/" },
-			{ label: m.breadcrumb_features(), href: "/#features" },
-			{ label: feature.navLabel() },
-		]}
-	/>
+	<!-- Two branches, not a conditional slot: a slot that renders nothing still counts as filled,
+	     and PageHero would lay out an empty second column. -->
+	{
+		HeroAside ? (
+			<PageHero {...hero} asideClass="hidden lg:block">
+				<HeroAside slot="aside" />
+			</PageHero>
+		) : (
+			<PageHero {...hero} />
+		)
+	}
 
 	{
 		feature.panel && (
@@ -168,6 +184,15 @@ const crossLinks = [
 		proofHref={SCALE_PROOF_STORY_PATH}
 	/>
 
+	<!-- On the ledger's deep floor, like the sections around it: FAQ sets no background of its own. -->
+	{
+		faq.length > 0 && (
+			<div class="bg-bg-deep">
+				<FAQ items={faq} shell />
+			</div>
+		)
+	}
+
 	<CrossLinks
 		class="border-t border-border"
 		eyebrow={m.page_cross_eyebrow()}
@@ -175,6 +200,9 @@ const crossLinks = [
 		links={crossLinks}
 	/>
 
-	<PageCta title={m.page_cta_title()} lede={m.page_cta_lede()} />
+	<PageCta
+		title={feature.cta ? feature.cta.title() : m.page_cta_title()}
+		lede={feature.cta ? feature.cta.lede() : m.page_cta_lede()}
+	/>
 	<Footer />
 </Layout>

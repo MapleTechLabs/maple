@@ -1,0 +1,122 @@
+---
+import DocsFigure from "./DocsFigure.astro";
+
+const requestCount = 5_000;
+const windowSeconds = 60;
+const defaultRate = 10;
+const rates = [1, 5, 10, 25, 50, 100];
+const format = new Intl.NumberFormat("en-US");
+---
+
+<DocsFigure caption={`${format.format(requestCount)} requests in ${windowSeconds} seconds`}>
+    <div class="sampling" data-sampling-example data-requests={requestCount} style={`--sample-rate: ${defaultRate}%`}>
+        <label class="sampling__control" hidden>
+            Sampling rate
+            <select>
+                {rates.map((rate) => <option value={rate} selected={rate === defaultRate}>{rate}%</option>)}
+            </select>
+        </label>
+        <div class="sampling__bar" aria-hidden="true"><div class="sampling__received"></div></div>
+        <dl class="sampling__stats" aria-live="polite" aria-atomic="true">
+            <div>
+                <dt><span class="sampling__key" aria-hidden="true"></span> Sampled entry spans</dt>
+                <dd data-sampled>{format.format(requestCount * defaultRate / 100)}</dd>
+            </div>
+            <div>
+                <dt>Weight per span</dt>
+                <dd data-weight>×{100 / defaultRate}</dd>
+            </div>
+            <div>
+                <dt>Estimated requests/s</dt>
+                <dd>{(requestCount / windowSeconds).toFixed(1)}</dd>
+            </div>
+        </dl>
+    </div>
+</DocsFigure>
+
+<script>
+    const format = new Intl.NumberFormat("en-US");
+
+    for (const example of document.querySelectorAll<HTMLElement>("[data-sampling-example]")) {
+        const control = example.querySelector("label");
+        const select = example.querySelector("select");
+        const sampled = example.querySelector("[data-sampled]");
+        const weight = example.querySelector("[data-weight]");
+        if (!control || !select || !sampled || !weight) continue;
+
+        const requestCount = Number(example.dataset.requests);
+        const update = () => {
+            const rate = Number(select.value);
+            example.style.setProperty("--sample-rate", `${rate}%`);
+            sampled.textContent = format.format(requestCount * rate / 100);
+            weight.textContent = `×${100 / rate}`;
+        };
+
+        update();
+        select.addEventListener("change", update);
+        control.hidden = false;
+    }
+</script>
+
+<style>
+    .sampling {
+        display: grid;
+        gap: 14px;
+    }
+    .sampling__control:not([hidden]) {
+        display: flex;
+        align-items: center;
+        justify-self: start;
+        gap: 12px;
+        color: var(--foreground);
+        font-size: 14px;
+    }
+    .sampling__control select {
+        min-height: 44px;
+        padding-inline: 10px;
+        border: 1px solid var(--input);
+        border-radius: 4px;
+        background: var(--card);
+        color: var(--foreground);
+        font-size: 16px;
+    }
+    .sampling__control select:focus-visible {
+        outline: 2px solid var(--primary);
+        outline-offset: 2px;
+    }
+    .sampling__bar {
+        height: 12px;
+        border: 1px solid var(--border);
+        background: var(--muted);
+    }
+    .sampling__received {
+        width: var(--sample-rate);
+        height: 100%;
+        background: var(--primary);
+    }
+    .sampling__stats {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+    }
+    .sampling__stats dt {
+        color: var(--muted-foreground);
+        font-size: 12px;
+        line-height: 1.4;
+    }
+    .sampling__stats dd {
+        margin-top: 4px;
+        color: var(--foreground);
+        font-family: var(--font-mono);
+        font-size: clamp(1rem, 4cqw, 1.25rem);
+        line-height: 1.3;
+        font-variant-numeric: tabular-nums;
+    }
+    .sampling__key {
+        display: inline-block;
+        width: 7px;
+        height: 7px;
+        margin-inline-end: 2px;
+        background: var(--primary);
+    }
+</style>

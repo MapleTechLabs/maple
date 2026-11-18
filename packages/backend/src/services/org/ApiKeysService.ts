@@ -351,6 +351,8 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 					name: string
 					description?: string
 					expiresInSeconds?: number
+					/** The latest the key may expire, whatever lifetime was asked for (or none). */
+					expiresAtCeiling?: number
 					kind?: ApiKeyKind
 					scopes?: ReadonlyArray<string> | null
 					createdByEmail?: string | null
@@ -364,8 +366,13 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 				const keyHash = hashApiKey(rawKey, hmacKey)
 				const keyPrefix = Str.slice(0, 12)(rawKey) + "..."
 				const now = yield* Clock.currentTimeMillis
-				const expiresAt =
+				const requestedExpiresAt =
 					params.expiresInSeconds !== undefined ? now + params.expiresInSeconds * 1000 : undefined
+				// Applied to the stored time, so the clock moving between a caller's check and here cannot pass it.
+				const expiresAt =
+					params.expiresAtCeiling === undefined
+						? requestedExpiresAt
+						: Math.min(requestedExpiresAt ?? params.expiresAtCeiling, params.expiresAtCeiling)
 				const kind: ApiKeyKind = params.kind ?? "standard"
 				const scopes = params.scopes == null ? null : [...params.scopes]
 				const createdByEmail = params.createdByEmail ?? null

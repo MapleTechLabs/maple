@@ -365,7 +365,7 @@ export class V2GcpIntegrationsApiGroup extends HttpApiGroup.make("gcpIntegration
 				identifier: "createGcpConnector",
 				summary: "Connect a Google Cloud project, folder or organization",
 				description:
-					"Registers a connector for one project, or for every project under a folder or organization. Nothing reaches Maple until an administrator runs the script from `setup_scripts`. A project, folder or organization can be connected once per Maple organization. Requires an org-admin role and the `integrations:write` scope.",
+					"Registers a connector for one project, or for every project under a folder or organization. Nothing reaches Maple until an administrator runs the script from `setup_scripts`. A project, folder or organization can be connected once per Maple organization. Requires an org-admin or engineer role and the `integrations:write` scope.",
 			}),
 		),
 	)
@@ -386,7 +386,7 @@ export class V2GcpIntegrationsApiGroup extends HttpApiGroup.make("gcpIntegration
 				identifier: "updateGcpConnector",
 				summary: "Change what a connector collects",
 				description:
-					"Turns log forwarding or metrics and resource collection on or off. Maple cannot change Google Cloud itself: re-run the script from `setup_scripts` afterwards, which sets up what is now enabled and removes what is not. Requires an org-admin role and the `integrations:write` scope.",
+					"Turns log forwarding or metrics and resource collection on or off. Maple cannot change Google Cloud itself: re-run the script from `setup_scripts` afterwards, which sets up what is now enabled and removes what is not. Requires an org-admin or engineer role and the `integrations:write` scope.",
 			}),
 		),
 	)
@@ -401,7 +401,7 @@ export class V2GcpIntegrationsApiGroup extends HttpApiGroup.make("gcpIntegration
 				identifier: "renderGcpConnectorSetupScripts",
 				summary: "Render a connector's setup and cleanup scripts",
 				description:
-					"Returns the `gcloud` scripts for one connector, and the same setup for the console, Terraform and Alchemy. Rendering changes nothing, but both scripts carry the connector's push secret, so this requires an org-admin role and the `integrations:write` scope.",
+					"Returns the `gcloud` scripts for one connector, and the same setup for the console, Terraform and Alchemy. Rendering changes nothing, but both scripts carry the connector's push secret, so this requires an org-admin or engineer role and the `integrations:write` scope. A render is recorded in the audit log, without the secret.",
 			}),
 		),
 	)
@@ -415,7 +415,7 @@ export class V2GcpIntegrationsApiGroup extends HttpApiGroup.make("gcpIntegration
 				identifier: "confirmGcpConnectorRemoval",
 				summary: "Confirm a removal made without the script",
 				description:
-					"Records that what `logs_enabled` or `metrics_enabled`, now `false`, had set up was removed from Google Cloud in the console or as code, which sends Maple no report. Maple takes the caller's word. Requires an org-admin role and the `integrations:write` scope.",
+					"Records that what `logs_enabled` or `metrics_enabled`, now `false`, had set up was removed from Google Cloud in the console or as code, which sends Maple no report. Maple takes the caller's word. Requires an org-admin or engineer role and the `integrations:write` scope.",
 			}),
 		),
 	)
@@ -429,7 +429,7 @@ export class V2GcpIntegrationsApiGroup extends HttpApiGroup.make("gcpIntegration
 				identifier: "deleteGcpConnector",
 				summary: "Disconnect a Google Cloud project, folder or organization",
 				description:
-					"Deletes the connector, after which Maple rejects its log pushes and stops reading its metrics. Already-ingested data is unaffected. The response carries the cleanup script to run in Google Cloud. Requires an org-admin role and the `integrations:write` scope.",
+					"Deletes the connector, after which Maple rejects its log pushes and stops reading its metrics. Already-ingested data is unaffected. The response carries the cleanup script to run in Google Cloud. Requires an org-admin or engineer role and the `integrations:write` scope.",
 			}),
 		),
 	)

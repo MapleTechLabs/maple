@@ -49,7 +49,7 @@ export const resourceHref = (link: AuditResourceLink): string => {
 		case "/integrations":
 			return hrefOf(AppRoute.Integrations({ search: link.search }))
 		case "/settings":
-			return `/settings?tab=${link.search.tab}`
+			return `/settings/${encodeURIComponent(link.search.tab)}`
 	}
 }
 

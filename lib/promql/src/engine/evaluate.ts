@@ -615,12 +615,17 @@ class Evaluator {
 		const keepName = expr.type === "Aggregate" || (expr.type === "Call" && expr.func === "last_over_time")
 		// Label order, as the selector would have read them; ties in topk depend on it.
 		const ordered = [...data.series].sort((x, y) => compareLabels(x.labels, y.labels))
+		let pending = 0
 		for (const series of ordered) {
 			const labels = keepName ? series.labels : dropMetricName(series.labels)
 			for (const [i, step] of series.steps.entries()) {
 				const t = times[step]
 				const value = series.values[i]
-				if (t !== undefined && value !== undefined) vectors[step]?.push({ labels, value, t })
+				const vector = vectors[step]
+				if (t === undefined || value === undefined || vector === undefined) continue
+				pending += 1
+				if (!this.fits(pending)) return this.tooMany()
+				vector.push({ labels, value, t })
 			}
 		}
 		for (const vector of vectors) {

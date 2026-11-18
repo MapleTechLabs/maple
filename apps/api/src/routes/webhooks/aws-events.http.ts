@@ -1,6 +1,7 @@
 import { Headers, HttpRouter, HttpServerResponse, type HttpServerRequest } from "effect/http"
 import { Effect, Option, Result } from "effect"
 import { readBoundedText } from "@maple/backend/http/bounded-body"
+import { AwsEventsRateLimiter } from "@maple/backend/services/cloud-security/AwsEventsRateLimiter"
 import {
 	AWS_EVENTS_KEY_HEADER,
 	CloudSecurityEventsService,
@@ -23,6 +24,7 @@ const textResponse = (body: string, status: number) => HttpServerResponse.text(b
 export const AwsEventsRouter = HttpRouter.use((router) =>
 	Effect.gen(function* () {
 		const events = yield* CloudSecurityEventsService
+		const rateLimiter = yield* AwsEventsRateLimiter
 
 		const handle = Effect.fn("AwsSecurityEvents.receive")(function* (
 			req: HttpServerRequest.HttpServerRequest,
@@ -35,17 +37,21 @@ export const AwsEventsRouter = HttpRouter.use((router) =>
 					"maple.aws_events.outcome": outcome,
 				}).pipe(Effect.as(textResponse(body, status)))
 
+			// The key decides everything else: without one nothing is looked up and no body is read.
+			const presentedKey = Headers.get(req.headers, AWS_EVENTS_KEY_HEADER)
+			if (Option.isNone(presentedKey)) return yield* respond(403, "missing_key", "Invalid events key")
+			const sender = yield* events.authenticate(params.connectionId ?? "", presentedKey.value)
+			// Counted only for an accepted key, so the connection's budget is its key holder's to spend.
+			if ((yield* rateLimiter.check(sender.connectionId)) === "limited") {
+				return yield* respond(429, "rate_limited", "Too many events")
+			}
 			const read = yield* Effect.result(readBoundedText(req, MAX_EVENT_BYTES))
 			if (Result.isFailure(read)) {
 				return read.failure._tag === "@maple/backend/http/RequestBodyTooLargeError"
 					? yield* respond(413, "body_too_large", "Request body too large")
 					: yield* respond(400, "unreadable_body", "Unreadable request body")
 			}
-			const receipt = yield* events.receive(
-				params.connectionId ?? "",
-				Option.getOrUndefined(Headers.get(req.headers, AWS_EVENTS_KEY_HEADER)),
-				read.success,
-			)
+			const receipt = yield* events.accept(sender, read.success)
 			return yield* receipt.outcome === "stored"
 				? respond(200, "stored", "ok")
 				: respond(200, `ignored:${receipt.reason ?? "unknown"}`, "ignored")

@@ -4,10 +4,7 @@ import { TestClock } from "effect/testing"
 import { HttpClient } from "effect/http"
 import { hashIngestKey } from "../../platform/credential-tokens"
 import { AwsAccountId, AwsRegion, OrgId, UserId } from "@maple/primitives"
-import {
-	DISABLED_ORGANIZATION_FEATURE_FLAGS,
-	type OrganizationFeatureFlags,
-} from "@maple/domain/organization-feature-flags"
+import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import { Env } from "@maple/backend/platform/Env"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import {
@@ -40,17 +37,17 @@ const baseConfig = {
 
 const mapleAws = { MAPLE_AWS_OIDC_SIGNING_KEY: MAPLE_TEST_OIDC_KEY.privateKey }
 
-/** `cloudCost` is off unless a test turns it on: the `cost` module is a rollout. */
+/** Every rollout flag is off unless `flags` says otherwise: a module behind one is refused. */
 const makeLayer = (
 	testDb: TestDb,
 	aws: FakeAws,
 	config: Record<string, string> = mapleAws,
-	flags: Partial<OrganizationFeatureFlags> = {},
+	flags: Layer.Layer<OrganizationFeatureFlagsService> = OrganizationFeatureFlagsService.fixed(
+		DISABLED_ORGANIZATION_FEATURE_FLAGS,
+	),
 ) =>
 	Layer.effect(AwsConnectionService, AwsConnectionService.make).pipe(
-		Layer.provide(
-			OrganizationFeatureFlagsService.fixed({ ...DISABLED_ORGANIZATION_FEATURE_FLAGS, ...flags }),
-		),
+		Layer.provide(flags),
 		Layer.provide(testDb.layer),
 		Layer.provide(Env.layer),
 		Layer.provide(Layer.succeed(HttpClient.HttpClient, aws.client)),
@@ -244,9 +241,9 @@ describe("AwsConnectionService", () => {
 			)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
 			assert.include(error.message, "does not read inventory")
-			// Cost is built: an org outside its rollout is told so, not to wait for it.
+			// Security is built: an org outside its rollout is told so, not to wait for it.
 			const gated = yield* Effect.flip(
-				service.create(orgId, userId, { accountId: account, modules: ["cost"] }),
+				service.create(orgId, userId, { accountId: account, modules: ["security"] }),
 			)
 			assert.include(gated.message, "not enabled for this organization")
 			assert.strictEqual(yield* countSources(testDb), 0)
@@ -261,7 +258,7 @@ describe("AwsConnectionService", () => {
 			const created = yield* service.create(orgId, userId, { accountId: account, modules: [] })
 			const unchanged = yield* service.update(orgId, created.id, {})
 			assert.deepStrictEqual(unchanged.modules, [])
-			const refused = yield* Effect.flip(service.update(orgId, created.id, { modules: ["cost"] }))
+			const refused = yield* Effect.flip(service.update(orgId, created.id, { modules: ["security"] }))
 			assert.strictEqual(refused._tag, "@maple/http/errors/IntegrationsValidationError")
 			const foreign = yield* Effect.flip(service.update(otherOrgId, created.id, { modules: [] }))
 			assert.strictEqual(foreign._tag, "@maple/http/errors/IntegrationsNotFoundError")
@@ -270,21 +267,7 @@ describe("AwsConnectionService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
 
-	it.effect("leaves the cost module planned for an org outside the cloudCost rollout", () => {
-		const testDb = createTestDb(trackedDbs)
-		const aws = makeFakeAws()
-		return Effect.gen(function* () {
-			const service = yield* AwsConnectionService
-			assert.deepStrictEqual(offeredModules(yield* service.status(orgId)), [])
-			const refused = yield* Effect.flip(
-				service.create(orgId, userId, { accountId: account, modules: ["cost"] }),
-			)
-			assert.strictEqual(refused._tag, "@maple/http/errors/IntegrationsValidationError")
-			assert.strictEqual(yield* countSources(testDb), 0)
-		}).pipe(Effect.provide(makeLayer(testDb, aws)))
-	})
-
-	it.effect("offers and accepts the cost module for an org in the cloudCost rollout", () => {
+	it.effect("offers and accepts the cost module for every org", () => {
 		const testDb = createTestDb(trackedDbs)
 		const aws = makeFakeAws()
 		return Effect.gen(function* () {
@@ -296,12 +279,12 @@ describe("AwsConnectionService", () => {
 			assert.deepStrictEqual(cleared.modules, [])
 			const restored = yield* service.update(orgId, created.id, { modules: ["cost"] })
 			assert.deepStrictEqual(restored.modules, ["cost"])
-			// The flag opens `cost` alone: the other planned modules stay refused.
+			// A module behind a rollout stays refused.
 			const refused = yield* Effect.flip(
 				service.update(orgId, created.id, { modules: ["cost", "security"] }),
 			)
 			assert.strictEqual(refused._tag, "@maple/http/errors/IntegrationsValidationError")
-		}).pipe(Effect.provide(makeLayer(testDb, aws, mapleAws, { cloudCost: true })))
+		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
 
 	it.effect("the cost source follows the connection's writes, without waiting for the sync", () => {
@@ -339,7 +322,7 @@ describe("AwsConnectionService", () => {
 
 			yield* service.delete(orgId, created.id)
 			assert.isUndefined(yield* costSource(created.id))
-		}).pipe(Effect.provide(makeLayer(testDb, aws, mapleAws, { cloudCost: true })))
+		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
 
 	it.effect("streams metrics with a secret only this connection's row can verify", () => {
@@ -468,6 +451,54 @@ describe("AwsConnectionService", () => {
 			assert.isDefined(keyOf(first.setupScript))
 			assert.strictEqual(keyOf(again.setupScript), keyOf(first.setupScript))
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
+	})
+
+	it.effect("hands each security connection its own events key, the same on every setup", () => {
+		const testDb = createTestDb(trackedDbs)
+		const aws = makeFakeAws()
+		const eventsKeyOf = (script: string) => /"EventsKey=(maple_awsev_[\w-]+)"/u.exec(script)?.[1]
+		return Effect.gen(function* () {
+			const service = yield* AwsConnectionService
+			const mine = yield* service.create(orgId, userId, { accountId: account, modules: ["security"] })
+			const theirs = yield* service.create(otherOrgId, userId, {
+				accountId: account,
+				modules: ["security"],
+			})
+			const first = yield* service.setup(orgId, mine.id)
+			const again = yield* service.setup(orgId, mine.id)
+			const other = yield* service.setup(otherOrgId, theirs.id)
+			assert.isTrue(first.containsEventsKey)
+			assert.isDefined(eventsKeyOf(first.setupScript))
+			assert.strictEqual(eventsKeyOf(again.setupScript), eventsKeyOf(first.setupScript))
+			assert.notStrictEqual(eventsKeyOf(other.setupScript), eventsKeyOf(first.setupScript))
+			// Without the module the setup carries no events key at all.
+			yield* service.update(orgId, mine.id, { modules: ["cost"] })
+			const costOnly = yield* service.setup(orgId, mine.id)
+			assert.isFalse(costOnly.containsEventsKey)
+			assert.isUndefined(eventsKeyOf(costOnly.setupScript))
+		}).pipe(Effect.provide(makeLayer(testDb, aws, mapleAws, OrganizationFeatureFlagsService.allEnabled)))
+	})
+
+	it.effect("rotates a connection's events key only within its own org", () => {
+		const testDb = createTestDb(trackedDbs)
+		const aws = makeFakeAws()
+		const eventsKeyOf = (script: string) => /"EventsKey=(maple_awsev_[\w-]+)"/u.exec(script)?.[1]
+		return Effect.gen(function* () {
+			const service = yield* AwsConnectionService
+			const created = yield* service.create(orgId, userId, {
+				accountId: account,
+				modules: ["security"],
+			})
+			const before = eventsKeyOf((yield* service.setup(orgId, created.id)).setupScript)
+			const foreign = yield* Effect.flip(service.rotateEventsKey(otherOrgId, created.id))
+			assert.strictEqual(foreign._tag, "@maple/http/errors/IntegrationsNotFoundError")
+			assert.strictEqual(eventsKeyOf((yield* service.setup(orgId, created.id)).setupScript), before)
+			const rotated = yield* service.rotateEventsKey(orgId, created.id)
+			assert.strictEqual(rotated.id, created.id)
+			const after = eventsKeyOf((yield* service.setup(orgId, created.id)).setupScript)
+			assert.isDefined(after)
+			assert.notStrictEqual(after, before)
+		}).pipe(Effect.provide(makeLayer(testDb, aws, mapleAws, OrganizationFeatureFlagsService.allEnabled)))
 	})
 
 	it.effect("is unavailable without a usable OIDC signing key", () => {

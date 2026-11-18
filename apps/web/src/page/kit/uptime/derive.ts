@@ -4,6 +4,7 @@ import { formatSpan } from "../alert-time"
 import { Array as Arr, String as Str } from "effect"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { UPTIME_CERTIFICATE_WARNING_DAYS } from "@maple/domain/uptime"
+import { type StatusPageDayBar, uptimePercent } from "@maple/domain/status-page"
 
 // Pure reads of an uptime monitor shared by the Uptime tab, the monitor page and the service card.
 
@@ -122,6 +123,12 @@ export const requestLine = (monitor: UptimeMonitor): string => {
 /** Share of passing checks, or `null` with none. */
 export const uptimeShare = (recent: ReadonlyArray<RecentCheck>): number | null =>
 	recent.length === 0 ? null : Arr.filter(recent, (check) => check.ok).length / recent.length
+
+/** `99.98%` over daily bars, floored like the public page so downtime never reads 100; null without checks. */
+export const formatDaysUptime = (days: ReadonlyArray<StatusPageDayBar>): string | null => {
+	const percent = uptimePercent(days)
+	return percent === null ? null : `${(Math.floor(Number((percent * 100).toFixed(6))) / 100).toFixed(2)}%`
+}
 
 /** `99.58%`; whole shares drop the decimals. */
 export const formatShare = (share: number | null): string => {

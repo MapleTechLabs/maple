@@ -130,6 +130,7 @@ const githubStatus = (syncing: boolean) =>
 		accountType: "organization",
 		repositorySelection: "all",
 		ciTracesEnabled: true,
+		auditLogEnabled: true,
 		repositoryDiscovery: null,
 		repositories: Arr.map(REPOS, (name, index) => ({
 			id: `0199a005-0000-7000-8000-${Str.padStart(12, "0")(String(index))}`,

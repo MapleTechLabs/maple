@@ -1,7 +1,6 @@
 // The OpenAI Admin API key an org's OpenAI spend is read with: checked with OpenAI, then kept in the
 // shared cost connection store. Admin keys cannot be scoped to costs, which the Cost page says.
 import {
-	CloudCostDisabledError,
 	CostConnectionPersistenceError,
 	CostConnectionValidationError,
 	OPENAI_COST_KEY_MAX_LENGTH,
@@ -10,7 +9,6 @@ import {
 } from "@maple/domain/http"
 import { Clock, Context, Duration, Effect, Layer, Redacted, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { CostConnectionStore, type CostConnectionStoreError } from "./CostConnectionStore"
 import * as OpenAiCosts from "./providers/openai/openai-costs-api"
 import { MAX_PULL_PAGES, unixDayStart } from "./providers/openai/OpenAiCostProvider"
@@ -50,7 +48,7 @@ export interface OpenAiCostConnectionServiceApi {
 		apiKey: string,
 	) => Effect.Effect<
 		{ readonly accountId: string; readonly accountLabel: string },
-		CostConnectionPersistenceError | CostConnectionValidationError | CloudCostDisabledError
+		CostConnectionPersistenceError | CostConnectionValidationError
 	>
 	readonly remove: (orgId: OrgId) => Effect.Effect<void, CostConnectionPersistenceError>
 }
@@ -61,7 +59,6 @@ export class OpenAiCostConnectionService extends Context.Service<
 >()("@maple/backend/services/cost/OpenAiCostConnectionService", {
 	make: Effect.gen(function* () {
 		const connections = yield* CostConnectionStore
-		const featureFlags = yield* OrganizationFeatureFlagsService
 		const httpClient = yield* HttpClient.HttpClient
 
 		/**
@@ -123,12 +120,6 @@ export class OpenAiCostConnectionService extends Context.Service<
 			rawKey: string,
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId })
-			const flags = yield* featureFlags.flags(orgId)
-			if (!flags.cloudCost) {
-				return yield* new CloudCostDisabledError({
-					message: "Cloud cost is not enabled for this organization.",
-				})
-			}
 			const apiKey = Str.trim(rawKey)
 			if (!couldBeKey(apiKey)) {
 				return yield* refused("That is not an OpenAI Admin API key. They start with sk-admin-.")
@@ -165,12 +156,6 @@ export class OpenAiCostConnectionService extends Context.Service<
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(
-			Layer.mergeAll(
-				FetchHttpClient.layer,
-				OrganizationFeatureFlagsService.layer,
-				CostConnectionStore.layer,
-			),
-		),
+		Layer.provide(Layer.mergeAll(FetchHttpClient.layer, CostConnectionStore.layer)),
 	)
 }

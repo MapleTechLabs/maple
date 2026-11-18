@@ -189,6 +189,7 @@ const loadedRail = (h: HtmlBuilder<Message>, model: Model, facets: ReplaysFacets
 			"replays-filters",
 			Arr.filter(
 				[
+					singleSection(h, model, "Service", "service", lists.services),
 					filterSection(h, {
 						title: "Session type",
 						options: tags,
@@ -223,7 +224,6 @@ const loadedRail = (h: HtmlBuilder<Message>, model: Model, facets: ReplaysFacets
 						presets: ACTIVE_TIME_PRESETS,
 					}),
 					singleSection(h, model, "Page visited", "page", lists.pages),
-					singleSection(h, model, "Service", "service", lists.services),
 					singleSection(h, model, "Browser", "browser", lists.browsers, {
 						getOptionIcon: browserIconFor,
 					}),

@@ -36,12 +36,13 @@ interface ChartHostModule {
 }
 
 /** Hosts other than the full one (`./chart-host`, every definition), by name. */
-export const ChartHostName = Schema.Literals(["lab", "logs-volume"])
+export const ChartHostName = Schema.Literals(["lab", "logs-volume", "bar"])
 export type ChartHostName = typeof ChartHostName.Type
 
-/** The landing's host ships here; the `/lab/charts` host lives with the app, which registers it. */
+/** The landing's hosts ship here; the `/lab/charts` host lives with the app, which registers it. */
 const namedHosts = new Map<ChartHostName, () => Promise<ChartHostModule>>([
 	["logs-volume", () => import("./logs-volume-host")],
+	["bar", () => import("./bar-host")],
 ])
 
 /** The first registration of a name wins; a later one is ignored. */

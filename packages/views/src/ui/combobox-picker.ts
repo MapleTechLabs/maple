@@ -27,6 +27,8 @@ export type ComboboxPickerInputs = Readonly<{
 	renderItem?: (h: HtmlBuilder<Message>, value: string) => ReadonlyArray<Html | string>
 	itemClassName?: (value: string) => string | undefined
 	triggerClassName?: string
+	/** The list's width: its own (`fixed`, the default) or the trigger's, for a picker filling a form field. */
+	popupWidth?: "fixed" | "trigger"
 	/** Places the trigger and, while open, the list portal. */
 	toView: (parts: ReadonlyArray<Html>) => Html
 }>
@@ -106,7 +108,10 @@ export const comboboxPicker = Submodel.defineView<Model, Message, ComboboxPicker
 							isPrefiltered: true,
 							emptyText: inputs.emptyText,
 							anchorSelector: `#${triggerId}`,
-							className: "w-90 max-w-[calc(100vw-2rem)] overflow-hidden",
+							className: cn(
+								inputs.popupWidth === "trigger" ? "w-(--anchor-width)" : "w-90",
+								"max-w-[calc(100vw-2rem)] overflow-hidden",
+							),
 							positionerClassName: "z-60",
 							listClassName: "max-h-72 overflow-y-auto p-1",
 							itemClassName: (value) =>

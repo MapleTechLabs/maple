@@ -26,6 +26,44 @@ export const STATUS_PAGE_INCIDENT_HISTORY_DAYS = 14
 export const STATUS_PAGE_STALE_AFTER_MS = 5 * 60_000
 /** Longest page link (website, logo, privacy, terms) the service stores; the editor checks it too. */
 export const STATUS_PAGE_MAX_URL_LENGTH = 2048
+/**
+ * Largest uploaded logo or favicon, in bytes. An upload is stored as a base64 `data:` URL in the
+ * page's URL column, so the edge serves it from the snapshot with no extra storage.
+ */
+export const STATUS_PAGE_MAX_IMAGE_BYTES = 128 * 1024
+/** The image types an upload may be; the editor's file picker accepts the same. */
+export const STATUS_PAGE_IMAGE_TYPES = [
+	"image/png",
+	"image/jpeg",
+	"image/webp",
+	"image/gif",
+	"image/svg+xml",
+	"image/x-icon",
+	"image/vnd.microsoft.icon",
+] as const
+const IMAGE_DATA_URL_PATTERN =
+	/^data:image\/(?:png|jpeg|webp|gif|svg\+xml|x-icon|vnd\.microsoft\.icon);base64,((?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?)$/u
+/** Base64 of the largest upload, plus room for the longest `data:<type>;base64,` prefix: a cheap first cut. */
+const MAX_IMAGE_DATA_URL_LENGTH = Math.ceil(STATUS_PAGE_MAX_IMAGE_BYTES / 3) * 4 + 64
+
+/** Bytes a base64 payload decodes to: three per four characters, less one per `=`. */
+const decodedBytes = (base64: string): number =>
+	(base64.length / 4) * 3 - (Str.endsWith("==")(base64) ? 2 : Str.endsWith("=")(base64) ? 1 : 0)
+
+/** An uploaded image: a base64 `data:` URL of an allowed image type, at most the size cap decoded. */
+export const isStatusPageImageDataUrl = (value: string): boolean => {
+	if (value.length > MAX_IMAGE_DATA_URL_LENGTH) return false
+	const payload = IMAGE_DATA_URL_PATTERN.exec(value)?.[1]
+	return payload !== undefined && payload.length > 0 && decodedBytes(payload) <= STATUS_PAGE_MAX_IMAGE_BYTES
+}
+
+/** A logo or favicon value the page may render: an https URL or an uploaded image. */
+export const isStatusPageImageSource = (value: string): boolean =>
+	isStatusPageImageDataUrl(value) ||
+	(value.length <= STATUS_PAGE_MAX_URL_LENGTH &&
+		URL.canParse(value) &&
+		new URL(value).protocol === "https:")
+
 /** Longest incident update message, in characters; the API, the service and the editor all check it. */
 export const STATUS_PAGE_UPDATE_MAX_LENGTH = 20_000
 
@@ -142,6 +180,14 @@ export const StatusPageCustomDomainDnsRecord = Schema.Struct({
 	purpose: StatusPageCustomDomainRecordPurpose,
 })
 export type StatusPageCustomDomainDnsRecord = Schema.Schema.Type<typeof StatusPageCustomDomainDnsRecord>
+
+/** The DNS label, under the hostname, of the TXT record that proves a claim on a custom domain. */
+export const CUSTOM_DOMAIN_CHALLENGE_LABEL = "_maple-challenge"
+
+/** True for the record that proves a claim: Maple sets a new domain up only once it is published. */
+export const isCustomDomainChallengeRecord = (
+	record: Pick<StatusPageCustomDomainDnsRecord, "type" | "name">,
+): boolean => record.type === "TXT" && Str.startsWith(`${CUSTOM_DOMAIN_CHALLENGE_LABEL}.`)(record.name)
 
 /** A custom domain as the API takes it: any case, trimmed, then checked by {@link customDomainIssue}. */
 export const StatusPageCustomDomainHostname = Schema.String.pipe(
@@ -1082,6 +1128,14 @@ export const StatusPageKeys = {
 	hostObject: (hostname: string) => `hosts/${Str.toLowerCase(hostname)}`,
 	slugObject: (slug: string) => `slugs/${slug}`,
 } as const
+
+/**
+ * What the publisher leaves in R2 where it took a snapshot or a slug route off the edge. The
+ * status Worker reads it as "not here" for certain, where a missing object could be an outage.
+ */
+export const STATUS_PAGE_TOMBSTONE = '{"gone":true}'
+
+export const isStatusPageTombstone = (raw: string): boolean => Str.trim(raw) === STATUS_PAGE_TOMBSTONE
 
 export const decodeStatusPageSnapshotJson = Schema.decodeUnknownOption(
 	Schema.fromJsonString(StatusPageSnapshot),

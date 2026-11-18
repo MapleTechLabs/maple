@@ -5,7 +5,7 @@ import { subscriptions } from "./subscription"
 import { init, routeChanged, update } from "./update"
 import { breadcrumbs, view } from "./view"
 
-/** `/settings`: one instance per org; a tab switch is a search change (`routeChanged`). */
+/** `/settings/<tab>`: one instance per org; a tab switch is a route change (`routeChanged`). */
 export const page = definePage(
 	"Settings",
 	{ Model, Message },

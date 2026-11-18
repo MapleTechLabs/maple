@@ -416,9 +416,21 @@ export interface PromqlPushdownOpts extends Omit<PromqlSelectorOpts, "needsValue
 	readonly limit: number
 }
 
+/** The steps whose window holds bucket `k`: `[first, last]`, empty when `first > last`. */
+const windowSteps = (opts: PromqlPushdownOpts, k: CH.Expr<number>) => {
+	const s = opts.stepBuckets
+	const m = opts.rangeBuckets
+	return {
+		first: sql(T.int64)`toInt64(greatest(0, ceil(${k} / ${s})))`,
+		last: sql(T.int64)`toInt64(least(${opts.steps - 1}, floor((${k} + ${m - 1}) / ${s})))`,
+	}
+}
+
 /**
- * A series' label sources ride on its first bucket only (empty elsewhere), so the fan-out below
- * copies them once per step of that bucket instead of once per (bucket, step).
+ * A series' label sources ride on its first bucket that some step's window holds (empty
+ * elsewhere), so the fan-out below copies them once per step of that bucket instead of once per
+ * (bucket, step). With a range shorter than the step, the series' very first bucket can fall
+ * between windows, so "first" is counted over the buckets that fan out at all.
  */
 const linkedQuery = (opts: PromqlPushdownOpts, groups: PromqlPushdownGroups) =>
 	fromQuery(bucketQuery({ ...opts, needsValues: false, limit: opts.limit }), "buckets").select(($) => {
@@ -427,7 +439,15 @@ const linkedQuery = (opts: PromqlPushdownOpts, groups: PromqlPushdownGroups) =>
 			orderBy: [[$.end, "asc"]],
 			frame: CH.rowsBetween(CH.preceding(1), CH.currentRow),
 		})
-		const later = sql.cond`${CH.over(CH.count(), prev)} = 2`
+		const earlier = CH.windowSpec({
+			partitionBy: [$.sk],
+			orderBy: [[$.end, "asc"]],
+			frame: CH.rowsBetween(CH.unboundedPreceding, CH.preceding(1)),
+		})
+		const k = sql(T.int64)`intDiv(${$.end} - ${param.int("originMs")}, ${opts.widthMs})`
+		const steps = windowSteps(opts, k)
+		const fansOut = sql(T.uint8)`${steps.first} <= ${steps.last}`
+		const later = sql.cond`${CH.over(CH.sum(fansOut), earlier)} > 0`
 		const emptied = (map: CH.Expr<Record<string, string>>) =>
 			sql(stringMap)`if(${later}, mapFilter((_k, _v) -> 0, ${map}), ${map})`
 		return {
@@ -438,7 +458,7 @@ const linkedQuery = (opts: PromqlPushdownOpts, groups: PromqlPushdownGroups) =>
 			ResourceAttributes: emptied($.ResourceAttributes),
 			le: $.le,
 			groups: groups($),
-			k: sql(T.int64)`intDiv(${$.end} - ${param.int("originMs")}, ${opts.widthMs})`,
+			k,
 			pk: sql(
 				T.int64,
 			)`intDiv(${CH.over(CH.lagInFrame($.end, 1, $.end), prev)} - ${param.int("originMs")}, ${opts.widthMs})`,
@@ -467,9 +487,8 @@ const expandedQuery = (opts: PromqlPushdownOpts, groups: PromqlPushdownGroups) =
 	fromQuery(linkedQuery(opts, groups), "linked").select(($) => {
 		const s = opts.stepBuckets
 		const m = opts.rangeBuckets
-		const j = sql(
-			T.int64,
-		)`arrayJoin(range(toInt64(greatest(0, ceil(${$.k} / ${s}))), toInt64(least(${opts.steps - 1}, floor((${$.k} + ${m - 1}) / ${s}))) + 1))`
+		const steps = windowSteps(opts, $.k)
+		const j = sql(T.int64)`arrayJoin(range(${steps.first}, ${steps.last} + 1))`
 		return {
 			sk: $.sk,
 			MetricName: $.MetricName,

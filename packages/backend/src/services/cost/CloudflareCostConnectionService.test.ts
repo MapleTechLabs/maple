@@ -285,7 +285,7 @@ describe("CloudflareCostConnectionService", () => {
 		)
 	})
 
-	it.effect("never sends text that cannot be a token, nor any token of an org outside the rollout", () => {
+	it.effect("never sends text that cannot be a token", () => {
 		const testDb = createTestDb(trackedDbs)
 		const world = makeFakeCloudflare()
 		return run(
@@ -297,10 +297,6 @@ describe("CloudflareCostConnectionService", () => {
 					(text) => Effect.map(Effect.flip(set(text)), (error) => error._tag),
 				)
 				assert.deepStrictEqual(refusals, Arr.replicate(VALIDATION, 5))
-
-				world.cloudCost = false
-				const outside = yield* Effect.flip(set(TOKEN))
-				assert.strictEqual(outside._tag, "@maple/http/errors/CloudCostDisabledError")
 				assert.deepStrictEqual(world.urls, [])
 			}),
 		)
@@ -397,7 +393,7 @@ describe("CloudflareCostConnectionService", () => {
 		)
 	})
 
-	it.effect("removes the token and its source together, without needing the rollout", () => {
+	it.effect("removes the token and its source together", () => {
 		const testDb = createTestDb(trackedDbs)
 		const world = makeFakeCloudflare()
 		return run(
@@ -405,7 +401,6 @@ describe("CloudflareCostConnectionService", () => {
 			world,
 			Effect.gen(function* () {
 				yield* set(TOKEN)
-				world.cloudCost = false
 				yield* remove
 				assert.isUndefined(yield* storedToken(testDb))
 				assert.isUndefined(yield* source(testDb))

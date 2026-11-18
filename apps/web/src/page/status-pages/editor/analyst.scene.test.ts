@@ -76,7 +76,7 @@ describe("status page editor, analyst", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(ANALYST, [])),
-			expectView(text("No open incidents.")).toExist(),
+			expectView(text("No incidents yet")).toExist(),
 			expectView(role("button", { name: "Declare incident" })).toBeDisabled(),
 			expectView(role("group", { name: POST_DENIAL })).toExist(),
 		)

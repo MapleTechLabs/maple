@@ -344,7 +344,7 @@ const loadConfig = (
 				? yield* openSecret(
 						keyring,
 						clickHousePasswordSlot,
-						{ orgId: row.orgId },
+						{ orgId: row.orgId, chUrl: row.chUrl },
 						{
 							ciphertext: row.chPasswordCiphertext,
 							iv: row.chPasswordIv,

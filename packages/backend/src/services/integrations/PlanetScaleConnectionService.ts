@@ -152,10 +152,12 @@ export interface PlanetScaleConnectionServiceApi {
 		IntegrationsNotConnectedError | IntegrationsPersistenceError | ScrapeTargetStoredConfigInvalidError
 	>
 	/** Drop the org binding, the managed scrape target, and the OAuth grant. */
-	readonly disconnect: (
-		orgId: OrgId,
-	) => Effect.Effect<
-		{ readonly disconnected: boolean },
+	readonly disconnect: (orgId: OrgId) => Effect.Effect<
+		{
+			readonly disconnected: boolean
+			/** False when a webhook Maple registered could not be deleted at PlanetScale. */
+			readonly webhooksRemoved: boolean
+		},
 		IntegrationsPersistenceError | ScrapeTargetPersistenceError
 	>
 	/** Load the org's connection row (null when not connected) — for pollers/webhooks. */
@@ -892,11 +894,10 @@ export class PlanetScaleConnectionService extends Context.Service<
 		const disconnect = Effect.fn("PlanetScaleConnectionService.disconnect")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan({ orgId })
 			const connection = yield* selectConnection(orgId)
+			// Before the grant goes: deleting the webhooks needs it.
+			const pendingWebhooks = connection === null ? 0 : yield* webhooks.removeAll(connection)
 
 			if (connection !== null) {
-				// Before the grant goes: deleting the webhooks needs it.
-				yield* webhooks.removeAll(connection)
-
 				// Tear down the managed scrape target — but only if this connection still
 				// owns it (a user-created row adopted by a *different* connection stays).
 				const target = yield* selectManagedTarget(connection)
@@ -933,7 +934,10 @@ export class PlanetScaleConnectionService extends Context.Service<
 			// org bound yet). PlanetScale documents no revoke endpoint.
 			const grant = yield* psOAuth.disconnect(orgId)
 
-			return { disconnected: connection !== null || grant.disconnected }
+			return {
+				disconnected: connection !== null || grant.disconnected,
+				webhooksRemoved: pendingWebhooks === 0,
+			}
 		})
 
 		const loadConnection = Effect.fn("PlanetScaleConnectionService.loadConnection")(function* (

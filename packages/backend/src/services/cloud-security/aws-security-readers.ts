@@ -299,6 +299,10 @@ const windowsError = (read: WindowsRead, noun: string): string | null => {
 const isoOf = (ms: number) => DateTime.formatIso(DateTime.makeUnsafe(ms))
 const dateOf = (ms: number) => DateTime.toDate(DateTime.makeUnsafe(ms))
 
+/** `effect`'s answer with the time it arrived: no finding in it is dated later than that. */
+const mapAt = <A, E, R, B>(effect: Effect.Effect<A, E, R>, f: (answer: A, nowMs: number) => B) =>
+	Effect.flatMap(effect, (answer) => Effect.map(Clock.currentTimeMillis, (nowMs) => f(answer, nowMs)))
+
 /** A sink that also keeps the newest update time it passed on, for readers sorted by it. */
 const trackingNewest = <E>(sink: Sink<FindingRead, E>) =>
 	Effect.map(Ref.make<number | null>(null), (newest) => ({
@@ -367,23 +371,26 @@ const guardDutyResource = (resource: GuardDuty.Resource | undefined) => {
 	return named(undefined)
 }
 
-export const normalizeGuardDuty = (finding: GuardDuty.Finding): Option.Option<FindingRead> => {
+export const normalizeGuardDuty = (finding: GuardDuty.Finding, nowMs: number): Option.Option<FindingRead> => {
 	if (finding.Id === undefined || finding.Type === undefined) return Option.none()
-	return readFinding({
-		findingId: finding.Id,
-		type: finding.Type,
-		title: finding.Title,
-		description: finding.Description,
-		severity: cloudFindingSeverityOfScore(finding.Severity ?? 0),
-		status: finding.Service?.Archived === true ? "archived" : "active",
-		resourceType: finding.Resource?.ResourceType,
-		...guardDutyResource(finding.Resource),
-		occurrences: finding.Service?.Count,
-		firstSeenAt: msOf(finding.Service?.EventFirstSeen ?? finding.CreatedAt),
-		lastSeenAt: msOf(finding.Service?.EventLastSeen ?? finding.UpdatedAt),
-		updatedAt: msOf(finding.UpdatedAt),
-		detail: { arn: finding.Arn, resource: finding.Resource, action: finding.Service?.Action },
-	})
+	return readFinding(
+		{
+			findingId: finding.Id,
+			type: finding.Type,
+			title: finding.Title,
+			description: finding.Description,
+			severity: cloudFindingSeverityOfScore(finding.Severity ?? 0),
+			status: finding.Service?.Archived === true ? "archived" : "active",
+			resourceType: finding.Resource?.ResourceType,
+			...guardDutyResource(finding.Resource),
+			occurrences: finding.Service?.Count,
+			firstSeenAt: msOf(finding.Service?.EventFirstSeen ?? finding.CreatedAt),
+			lastSeenAt: msOf(finding.Service?.EventLastSeen ?? finding.UpdatedAt),
+			updatedAt: msOf(finding.UpdatedAt),
+			detail: { arn: finding.Arn, resource: finding.Resource, action: finding.Service?.Action },
+		},
+		nowMs,
+	)
 }
 
 const guardDutyDetector = (target: ReadTarget) =>
@@ -393,7 +400,7 @@ const guardDutyDetector = (target: ReadTarget) =>
 	)
 
 const guardDutyFindings = (target: ReadTarget, detectorId: string, ids: ReadonlyArray<string>) =>
-	Effect.map(
+	mapAt(
 		callAs(target)(
 			"GuardDuty.GetFindings",
 			GuardDuty.getFindings({
@@ -402,7 +409,7 @@ const guardDutyFindings = (target: ReadTarget, detectorId: string, ids: Readonly
 				FindingIds: Arr.fromIterable(ids),
 			}),
 		),
-		(got) => Arr.getSomes(Arr.map(got.Findings, normalizeGuardDuty)),
+		(got, nowMs) => Arr.getSomes(Arr.map(got.Findings, (finding) => normalizeGuardDuty(finding, nowMs))),
 	)
 
 /** GuardDuty's ids page 50 at a time, oldest update first; each page's findings are fetched by id. */
@@ -454,34 +461,40 @@ const readGuardDuty = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =>
 
 // Security Hub
 
-export const normalizeSecurityHub = (finding: SecurityHub.AwsSecurityFinding): Option.Option<FindingRead> => {
+export const normalizeSecurityHub = (
+	finding: SecurityHub.AwsSecurityFinding,
+	nowMs: number,
+): Option.Option<FindingRead> => {
 	if (finding.Id === undefined) return Option.none()
 	const resource = Option.getOrUndefined(Arr.head(finding.Resources ?? []))
-	return readFinding({
-		findingId: finding.Id,
-		type: finding.GeneratorId ?? Option.getOrElse(Arr.head(finding.Types ?? []), () => "Finding"),
-		title: finding.Title,
-		description: finding.Description,
-		severity: cloudFindingSeverityOfLabel(finding.Severity?.Label),
-		status: securityHubStatus({
-			recordState: finding.RecordState,
-			complianceStatus: finding.Compliance?.Status,
-			workflowStatus: finding.Workflow?.Status,
-		}),
-		resourceType: resource?.Type,
-		resourceId: resource?.Id,
-		resourceName: undefined,
-		occurrences: undefined,
-		firstSeenAt: msOf(finding.FirstObservedAt ?? finding.CreatedAt),
-		lastSeenAt: msOf(finding.LastObservedAt ?? finding.UpdatedAt),
-		updatedAt: msOf(finding.UpdatedAt),
-		detail: {
-			productName: finding.ProductName,
-			compliance: finding.Compliance,
-			remediation: finding.Remediation,
-			resources: finding.Resources,
+	return readFinding(
+		{
+			findingId: finding.Id,
+			type: finding.GeneratorId ?? Option.getOrElse(Arr.head(finding.Types ?? []), () => "Finding"),
+			title: finding.Title,
+			description: finding.Description,
+			severity: cloudFindingSeverityOfLabel(finding.Severity?.Label),
+			status: securityHubStatus({
+				recordState: finding.RecordState,
+				complianceStatus: finding.Compliance?.Status,
+				workflowStatus: finding.Workflow?.Status,
+			}),
+			resourceType: resource?.Type,
+			resourceId: resource?.Id,
+			resourceName: undefined,
+			occurrences: undefined,
+			firstSeenAt: msOf(finding.FirstObservedAt ?? finding.CreatedAt),
+			lastSeenAt: msOf(finding.LastObservedAt ?? finding.UpdatedAt),
+			updatedAt: msOf(finding.UpdatedAt),
+			detail: {
+				productName: finding.ProductName,
+				compliance: finding.Compliance,
+				remediation: finding.Remediation,
+				resources: finding.Resources,
+			},
 		},
-	})
+		nowMs,
+	)
 }
 
 /** This account's findings in this region, not an aggregation region's or an administrator's members'. */
@@ -512,7 +525,7 @@ const readSecurityHub = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =>
 		const tracked = yield* trackingNewest(sink)
 		const read = yield* pagesOf(
 			(token) =>
-				Effect.map(
+				mapAt(
 					callAs(target)(
 						"SecurityHub.GetFindings",
 						SecurityHub.getFindings({
@@ -523,8 +536,10 @@ const readSecurityHub = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =>
 							NextToken: token,
 						}),
 					),
-					(page) => ({
-						items: Arr.getSomes(Arr.map(page.Findings, normalizeSecurityHub)),
+					(page, nowMs) => ({
+						items: Arr.getSomes(
+							Arr.map(page.Findings, (finding) => normalizeSecurityHub(finding, nowMs)),
+						),
 						next: page.NextToken,
 					}),
 				),
@@ -544,31 +559,34 @@ const readSecurityHub = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =>
 
 // Inspector
 
-export const normalizeInspector = (finding: Inspector.Finding): Option.Option<FindingRead> => {
+export const normalizeInspector = (finding: Inspector.Finding, nowMs: number): Option.Option<FindingRead> => {
 	const resource = Option.getOrUndefined(Arr.head(finding.resources))
-	return readFinding({
-		findingId: finding.findingArn,
-		type: finding.packageVulnerabilityDetails?.vulnerabilityId ?? finding.type,
-		title: finding.title,
-		description: finding.description,
-		severity: cloudFindingSeverityOfLabel(finding.severity),
-		status: inspectorStatus(finding.status),
-		resourceType: resource?.type,
-		resourceId: resource?.id,
-		resourceName: undefined,
-		occurrences: undefined,
-		firstSeenAt: msOf(finding.firstObservedAt),
-		lastSeenAt: msOf(finding.lastObservedAt),
-		updatedAt: msOf(finding.updatedAt ?? finding.lastObservedAt),
-		detail: {
-			findingType: finding.type,
-			inspectorScore: finding.inspectorScore,
-			fixAvailable: finding.fixAvailable,
-			exploitAvailable: finding.exploitAvailable,
-			remediation: finding.remediation,
-			packageVulnerabilityDetails: finding.packageVulnerabilityDetails,
+	return readFinding(
+		{
+			findingId: finding.findingArn,
+			type: finding.packageVulnerabilityDetails?.vulnerabilityId ?? finding.type,
+			title: finding.title,
+			description: finding.description,
+			severity: cloudFindingSeverityOfLabel(finding.severity),
+			status: inspectorStatus(finding.status),
+			resourceType: resource?.type,
+			resourceId: resource?.id,
+			resourceName: undefined,
+			occurrences: undefined,
+			firstSeenAt: msOf(finding.firstObservedAt),
+			lastSeenAt: msOf(finding.lastObservedAt),
+			updatedAt: msOf(finding.updatedAt ?? finding.lastObservedAt),
+			detail: {
+				findingType: finding.type,
+				inspectorScore: finding.inspectorScore,
+				fixAvailable: finding.fixAvailable,
+				exploitAvailable: finding.exploitAvailable,
+				remediation: finding.remediation,
+				packageVulnerabilityDetails: finding.packageVulnerabilityDetails,
+			},
 		},
-	})
+		nowMs,
+	)
 }
 
 /**
@@ -605,7 +623,7 @@ const readInspector = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =>
 			(fromMs, toMs, maxPages) =>
 				pagesOf(
 					(token) =>
-						Effect.map(
+						mapAt(
 							callAs(target)(
 								"Inspector.ListFindings",
 								Inspector.listFindings({
@@ -620,8 +638,12 @@ const readInspector = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =>
 									nextToken: token,
 								}),
 							),
-							(page) => ({
-								items: Arr.getSomes(Arr.map(page.findings ?? [], normalizeInspector)),
+							(page, nowMs) => ({
+								items: Arr.getSomes(
+									Arr.map(page.findings ?? [], (finding) =>
+										normalizeInspector(finding, nowMs),
+									),
+								),
 								next: page.nextToken,
 							}),
 						),
@@ -644,24 +666,28 @@ const readInspector = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =>
 
 export const normalizeAccessAnalyzer = (
 	finding: AccessAnalyzer.FindingSummaryV2,
+	nowMs: number,
 ): Option.Option<FindingRead> => {
 	const findingType = finding.findingType ?? "ExternalAccess"
-	return readFinding({
-		findingId: finding.id,
-		type: findingType,
-		title: accessAnalyzerTitle(findingType),
-		description: finding.error,
-		severity: accessAnalyzerSeverity(findingType),
-		status: accessAnalyzerStatus(finding.status),
-		resourceType: finding.resourceType,
-		resourceId: finding.resource,
-		resourceName: undefined,
-		occurrences: undefined,
-		firstSeenAt: msOf(finding.createdAt),
-		lastSeenAt: msOf(finding.analyzedAt),
-		updatedAt: msOf(finding.updatedAt),
-		detail: { resourceOwnerAccount: finding.resourceOwnerAccount },
-	})
+	return readFinding(
+		{
+			findingId: finding.id,
+			type: findingType,
+			title: accessAnalyzerTitle(findingType),
+			description: finding.error,
+			severity: accessAnalyzerSeverity(findingType),
+			status: accessAnalyzerStatus(finding.status),
+			resourceType: finding.resourceType,
+			resourceId: finding.resource,
+			resourceName: undefined,
+			occurrences: undefined,
+			firstSeenAt: msOf(finding.createdAt),
+			lastSeenAt: msOf(finding.analyzedAt),
+			updatedAt: msOf(finding.updatedAt),
+			detail: { resourceOwnerAccount: finding.resourceOwnerAccount },
+		},
+		nowMs,
+	)
 }
 
 /**
@@ -706,7 +732,7 @@ const readAccessAnalyzer = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =
 		const reads = yield* Effect.forEach(active, (analyzer) =>
 			pagesOf(
 				(token) =>
-					Effect.map(
+					mapAt(
 						call(
 							"AccessAnalyzer.ListFindingsV2",
 							AccessAnalyzer.listFindingsV2({
@@ -723,8 +749,10 @@ const readAccessAnalyzer = <E>(target: ReadTarget, sink: Sink<FindingRead, E>) =
 								nextToken: token,
 							}),
 						),
-						(page) => ({
-							items: Arr.getSomes(Arr.map(page.findings, normalizeAccessAnalyzer)),
+						(page, nowMs) => ({
+							items: Arr.getSomes(
+								Arr.map(page.findings, (finding) => normalizeAccessAnalyzer(finding, nowMs)),
+							),
 							next: page.nextToken,
 						}),
 					),
@@ -849,7 +877,7 @@ export const refreshFindings = (
 	const fetch: Effect.Effect<Fetched, AwsSecurityReadError> =
 		source === "inspector"
 			? batches(INSPECTOR_ID_BATCH, (chunk) =>
-					Effect.map(
+					mapAt(
 						callAs(target)(
 							"Inspector.ListFindings",
 							Inspector.listFindings({
@@ -861,7 +889,10 @@ export const refreshFindings = (
 								maxResults: 100,
 							}),
 						),
-						(page) => Arr.getSomes(Arr.map(page.findings ?? [], normalizeInspector)),
+						(page, nowMs) =>
+							Arr.getSomes(
+								Arr.map(page.findings ?? [], (finding) => normalizeInspector(finding, nowMs)),
+							),
 					),
 				)
 			: source === "guardduty"
@@ -871,7 +902,7 @@ export const refreshFindings = (
 							: batches(50, (chunk) => guardDutyFindings(target, detectorId.value, chunk)),
 					)
 				: batches(SECURITY_HUB_ID_BATCH, (chunk) =>
-						Effect.map(
+						mapAt(
 							callAs(target)(
 								"SecurityHub.GetFindings",
 								SecurityHub.getFindings({
@@ -883,7 +914,10 @@ export const refreshFindings = (
 									MaxResults: 100,
 								}),
 							),
-							(page) => Arr.getSomes(Arr.map(page.Findings, normalizeSecurityHub)),
+							(page, nowMs) =>
+								Arr.getSomes(
+									Arr.map(page.Findings, (finding) => normalizeSecurityHub(finding, nowMs)),
+								),
 						),
 					)
 	return fetch.pipe(

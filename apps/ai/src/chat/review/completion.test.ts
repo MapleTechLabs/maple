@@ -142,6 +142,30 @@ describe("reviewCompletion", () => {
 			])
 		})
 
+		// The service decides an approval on what the model sent, not on the report it was tidied into.
+		it("hands the service the verdict as the model sent it and how many findings were dropped", async () => {
+			const filedFor = async (submission: PrReviewSubmission) => {
+				const filed: Array<SubmitPrReviewRequest> = []
+				const submit: SubmitReview = (request) => Effect.sync(() => filed.push(request))
+				assert.isTrue(Result.isSuccess(await submitWith(submit, []).call(submission)))
+				return filed[0]
+			}
+			assert.deepEqual((await filedFor(CLEAN))?.submitted, { verdict: "clean", droppedFindings: 0 })
+			// No verdict at all reads clean in the report, and is still reported as not sent.
+			const { verdict: _verdict, ...silent } = CLEAN
+			const unsaid = await filedFor(silent)
+			assert.equal(unsaid?.report.verdict, "clean")
+			assert.deepEqual(unsaid?.submitted, { droppedFindings: 0 })
+			// A warning with no line cannot be posted: the report is clean, the submission was not.
+			const unanchored = await filedFor({
+				...CLEAN,
+				verdict: "issues",
+				findings: [{ path: "src/a.ts", title: "Drops the retry", severity: "warn" }],
+			})
+			assert.equal(unanchored?.report.verdict, "clean")
+			assert.deepEqual(unanchored?.submitted, { verdict: "issues", droppedFindings: 1 })
+		})
+
 		it("records straight away when every reviewed file was read", async () => {
 			const { filed, submit } = recording()
 			assert.isTrue(Result.isSuccess(await submitWith(submit, []).call(CLEAN)))

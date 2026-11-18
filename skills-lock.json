@@ -21,16 +21,6 @@
 			"sourceType": "github",
 			"computedHash": "86432753a4207b6401df82fbca57fef59cc0cf0d7ecc9c26a0f3c2df4f63a2b9"
 		},
-		"clickhousectl-cloud-deploy": {
-			"source": "clickhouse/agent-skills",
-			"sourceType": "github",
-			"computedHash": "dd9f68a15ae36d1000da2b7153980f675a27887f93cf21dd6e0f8d3226dfb9c7"
-		},
-		"clickhousectl-local-dev": {
-			"source": "clickhouse/agent-skills",
-			"sourceType": "github",
-			"computedHash": "a21e2a6f5c7836afa0a782890a7247f90c21a8d735ea985d6910e7ffc172e2bf"
-		},
 		"coss": {
 			"source": "cosscom/coss",
 			"sourceType": "github",

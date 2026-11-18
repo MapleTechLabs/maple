@@ -15,6 +15,7 @@ import {
 	GithubDisconnectResponse,
 	GithubIntegrationStatus,
 	GithubSetCiTracesResponse,
+	GithubSetAuditLogResponse,
 	GithubSetPrReviewResponse,
 	GithubPrReviewConfigResponse,
 	GithubPrReviewSettingsResponse,
@@ -31,7 +32,10 @@ import {
 	LinearTeamsListResponse,
 	IntegrationsValidationError,
 	MapleInternalApi,
+	mergePrReviewConfig,
 	OrgId,
+	prReviewConfigNeedsAutoApprove,
+	prReviewDefaultsNeedAutoApprove,
 	RailwayDisconnectResponse,
 	RoleName,
 	SearchConsoleAvailableSitesResponse,
@@ -249,6 +253,10 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("linearTeams", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
+						// A live read of the workspace, for the alert destination picker: either manager may.
+						if (!Policy.can(tenant.roles, "alerts:manage")) {
+							yield* requirePermission(tenant.roles, "integrations:manage")
+						}
 						const teams = yield* linear.listTeams(tenant.orgId)
 						return new LinearTeamsListResponse({ teams })
 					}),
@@ -283,6 +291,8 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("searchConsoleSites", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
+						// A live read of every property the Google account holds, for the manager's picker.
+						yield* requirePermission(tenant.roles, "integrations:manage")
 						const sites = yield* searchConsole.listAvailableSites(tenant.orgId)
 						return new SearchConsoleAvailableSitesResponse({ sites })
 					}),
@@ -827,6 +837,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 							accountType: status.accountType,
 							repositorySelection: status.repositorySelection,
 							ciTracesEnabled: status.ciTracesEnabled,
+							auditLogEnabled: status.auditLogEnabled,
 							repositoryDiscovery: status.repositoryDiscovery,
 							repositories: status.repositories,
 						})
@@ -896,14 +907,38 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 						return new GithubSetCiTracesResponse(result)
 					}),
 				)
+				.handle("githubSetAuditLog", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						const result = yield* github.setAuditLogEnabled(tenant.orgId, payload.enabled)
+						return new GithubSetAuditLogResponse(result)
+					}),
+				)
 				.handle("githubSetPrReview", ({ params, payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						yield* requirePermission(tenant.roles, "code_review:configure")
+						// Switching review on for a repository that approves gives Maple that say there.
+						const [settings, stored] = yield* Effect.all([
+							github.getPrReviewSettings(tenant.orgId),
+							github.getPrReviewConfig(tenant.orgId, params.repositoryId),
+						])
+						const autoApprove =
+							mergePrReviewConfig(settings.defaults, stored).autoApprove === true
+						if (payload.enabled && autoApprove) {
+							yield* requirePermission(tenant.roles, "code_review:auto_approve")
+						}
 						const result = yield* github.setPrReviewEnabled(
 							tenant.orgId,
 							params.repositoryId,
 							payload.enabled,
+						)
+						yield* recordHttpAudit(
+							result.enabled
+								? "code_review.repository_enabled"
+								: "code_review.repository_disabled",
+							{ metadata: { repository_id: params.repositoryId, auto_approve: autoApprove } },
 						)
 						return new GithubSetPrReviewResponse(result)
 					}),
@@ -920,11 +955,33 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						yield* requirePermission(tenant.roles, "code_review:configure")
+						const [settings, stored] = yield* Effect.all([
+							github.getPrReviewSettings(tenant.orgId),
+							github.getPrReviewConfig(tenant.orgId, params.repositoryId),
+						])
+						if (
+							prReviewConfigNeedsAutoApprove({
+								defaults: settings.defaults,
+								stored,
+								next: payload.config,
+							})
+						) {
+							yield* requirePermission(tenant.roles, "code_review:auto_approve")
+						}
 						const config = yield* github.setPrReviewConfig(
 							tenant.orgId,
 							params.repositoryId,
 							payload.config,
 						)
+						yield* recordHttpAudit("code_review.repository_rules_updated", {
+							metadata: {
+								repository_id: params.repositoryId,
+								auto_approve:
+									mergePrReviewConfig(settings.defaults, config).autoApprove === true,
+								auto_approve_was:
+									mergePrReviewConfig(settings.defaults, stored).autoApprove === true,
+							},
+						})
 						return new GithubPrReviewConfigResponse({ config })
 					}),
 				)
@@ -939,11 +996,30 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						yield* requirePermission(tenant.roles, "code_review:configure")
+						const stored = yield* github.getPrReviewSettings(tenant.orgId)
+						if (
+							prReviewDefaultsNeedAutoApprove({
+								stored: stored.defaults,
+								next: payload.settings.defaults,
+								repositoryApproves: yield* github.anyReviewedRepositoryAutoApproves(
+									tenant.orgId,
+								),
+							})
+						) {
+							yield* requirePermission(tenant.roles, "code_review:auto_approve")
+						}
 						const settings = yield* github.setPrReviewSettings(
 							tenant.orgId,
 							payload.settings,
 							tenant.userId,
 						)
+						yield* recordHttpAudit("code_review.settings_updated", {
+							metadata: {
+								auto_approve: settings.defaults?.autoApprove === true,
+								auto_approve_was: stored.defaults?.autoApprove === true,
+								...(settings.model === undefined ? undefined : { model: settings.model }),
+							},
+						})
 						return new GithubPrReviewSettingsResponse({ settings })
 					}),
 				)

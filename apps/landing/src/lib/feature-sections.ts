@@ -9,6 +9,7 @@
  */
 import * as m from "../paraglide/messages.js"
 import { Array as Arr } from "effect"
+import { COST_SOURCES, PLANNED_COST_SOURCES } from "./cost-sources"
 import { absolute, blocks } from "./page-markdown"
 import type { SectionId } from "./page-registry"
 
@@ -199,6 +200,36 @@ export const sectionMarkdown = (id: SectionId, site: URL | undefined): string =>
 					],
 					"\n",
 				),
+			)
+		// The demo is not in the twin, and its lede only says what to click.
+		case "cost-explorer":
+			return ""
+		case "cost-sources":
+			return section(
+				m.cost_sources_title({ count: String(COST_SOURCES.length) }),
+				m.cost_sources_lede(),
+				Arr.join(
+					Arr.map(
+						COST_SOURCES,
+						(source) =>
+							`- **${source.name}** (${source.reads}): split by ${source.splitsBy}. Added with ${source.addedWith}. History: ${source.history}.`,
+					),
+					"\n",
+				),
+				`${m.cost_sources_planned()}: ${Arr.join(
+					Arr.map(PLANNED_COST_SOURCES, (source) => source.name),
+					", ",
+				)}. ${m.cost_sources_planned_note()}`,
+			)
+		case "cost-budgets":
+			return section(
+				m.cost_budgets_title(),
+				m.cost_budgets_lede(),
+				...rules([
+					{ title: m.cost_budgets_rule_1_title, body: m.cost_budgets_rule_1_body },
+					{ title: m.cost_budgets_rule_2_title, body: m.cost_budgets_rule_2_body },
+					{ title: m.cost_budgets_rule_3_title, body: m.cost_budgets_rule_3_body },
+				]),
 			)
 		case "status-page-feeds":
 			return section(

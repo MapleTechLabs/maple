@@ -7,6 +7,7 @@ import { StatusPageComponentId, StatusPageId, UptimeMonitorId } from "@maple/pri
 import {
 	DEFAULT_STATUS_PAGE_THEME,
 	STATUS_PAGE_BREAK_GLASS_PREFIX,
+	STATUS_PAGE_MAX_IMAGE_BYTES,
 	sha256Base64Url,
 	type StatusPageTheme,
 } from "@maple/domain/status-page"
@@ -136,6 +137,32 @@ describe("StatusPagesService", () => {
 			const cleared = yield* service.update(ORG, page.id, { privacyUrl: null })
 			assert.isNull(cleared.privacyUrl)
 			assert.strictEqual(cleared.termsUrl, "https://acme.test/terms")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("stores an uploaded logo and refuses a data URL that is not an image or too large", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* StatusPagesService
+			const page = yield* service.create(ORG, {
+				name: "Acme",
+				slug: "uploads",
+				faviconUrl: "data:image/png;base64,iVBORw0KGgo=",
+				createdBy: USER,
+			})
+			assert.strictEqual(page.faviconUrl, "data:image/png;base64,iVBORw0KGgo=")
+
+			const html = yield* Effect.flip(
+				service.update(ORG, page.id, { logoUrl: "data:text/html;base64,PHNjcmlwdD4=" }),
+			)
+			assert.strictEqual(html._tag, "@maple/http/errors/StatusPageValidationError")
+			assert.include(html.message, "Logo URL")
+			const huge = yield* Effect.flip(
+				service.update(ORG, page.id, {
+					logoDarkUrl: `data:image/png;base64,${Str.repeat(STATUS_PAGE_MAX_IMAGE_BYTES * 2)("A")}`,
+				}),
+			)
+			assert.include(huge.message, "Dark mode logo URL")
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 

@@ -8,7 +8,6 @@ import {
 	CostConnectionValidationError,
 } from "./cost-connections"
 import { SessionAuthorization } from "./current-tenant"
-import { CloudCostDisabledError } from "./query-engine"
 
 /** Far above any admin key: it only bounds what the request carries. */
 export const ANTHROPIC_COST_KEY_MAX_LENGTH = 512
@@ -30,7 +29,6 @@ export class AnthropicCostApiGroup extends HttpApiGroup.make("anthropicCost")
 				CostConnectionPersistenceError,
 				CostConnectionForbiddenError,
 				CostConnectionValidationError,
-				CloudCostDisabledError,
 			],
 		}),
 	)

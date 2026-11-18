@@ -61,11 +61,12 @@ export interface RelayWorkspace {
 	/**
 	 * The Maple user the `externalUserId` that was asked about is linked to in that org.
 	 *
-	 * Absent means nobody has linked it, which is a refusal on a connector that can prove who is
-	 * asking or clicking, and irrelevant on one that cannot.
+	 * Absent means nobody has linked it. A click then changes nothing on any connector; a question
+	 * is refused where the connector can prove who is asking, and answered from a reduced read set
+	 * where it cannot.
 	 */
 	readonly linkedUserId?: UserId
-	/** The workspace's "Answer questions" switch; off, mentions and follow-ups go unanswered. */
+	/** The workspace's "Answer questions" switch; off, mentions, follow-ups and approval clicks go unanswered. */
 	readonly assistantEnabled: boolean
 }
 
@@ -121,7 +122,8 @@ export interface RelayPorts<R = never> {
 	 * Whether this connector can prove who asked or clicked.
 	 *
 	 * The connector's `identity` half, as a fact rather than a function: the host knows which
-	 * connector it is running and this file must not.
+	 * connector it is running and this file must not. It decides whether an unlinked question is
+	 * refused and what an unlinked clicker is told; it never decides whether a change is applied.
 	 */
 	readonly supportsIdentity: boolean
 	/** Drop the link for a workspace the bot was removed from. */
@@ -177,6 +179,13 @@ const UNAVAILABLE_NOTICE = "Maple's agent can't be reached from here right now."
 const ALERT_RESOLVED_NOTICE = "That incident is already resolved, so there is nothing to acknowledge."
 const ALERT_GONE_NOTICE = "That incident no longer exists in Maple."
 const ALERT_UNAVAILABLE_NOTICE = "Maple couldn't record that just now. Try again in a moment."
+
+/** A click nobody can attribute to a Maple user. Nothing is applied from one; see `ChatConnector.identity`. */
+const CHANGES_IN_APP_NOTICE =
+	"Maple can't tell which Maple user you are from here, so it changes nothing. Make this change in the Maple app."
+
+const ASSISTANT_OFF_NOTICE =
+	"Maple's assistant is switched off for this workspace, so it changes nothing from here. Make this change in the Maple app."
 
 /** The control outlived what it pointed at: a wiped conversation, or a build that changed the log. */
 const PROPOSAL_GONE_NOTICE = "That change isn't waiting for a decision any more."
@@ -327,7 +336,8 @@ const relayMessage = Effect.fn("ChatBotRelay.relayTurn")(function* <R>(
 
 	// See `ChatConnector.identity`: a connector that can name the asker answers only a linked Maple
 	// user, so a bot added to a public channel reads nothing for strangers. Before the conversation
-	// is opened, so a refused mention leaves no empty thread behind.
+	// is opened, so a refused mention leaves no empty thread behind. One that cannot name anyone
+	// goes on with no acting user, which the agent answers from a reduced read set.
 	if (ports.supportsIdentity && linkedUserId === undefined) {
 		yield* Effect.annotateCurrentSpan({ "maple.chat.relay": "unlinked_author" })
 		if (!message.mentionsBot) return
@@ -495,7 +505,7 @@ const relayMessage = Effect.fn("ChatBotRelay.relayTurn")(function* <R>(
  * is the point:
  *
  *   1. read the control — untrusted wire input, never branded on arrival;
- *   2. resolve the workspace and decide whether this person may approve anything here;
+ *   2. resolve the workspace and the Maple user this person is linked to, without whom nothing is decided;
  *   3. hand the SESSION the decision, which finds the proposal in its own log and runs it.
  *
  * Nothing the click carried reaches the tool. The control names only a call; the session is this
@@ -531,31 +541,36 @@ const settleAction = Effect.fn("ChatBotRelay.settleApproval")(function* <R>(
 	if (Exit.isFailure(workspace) || Option.isNone(workspace.value)) {
 		return yield* Effect.annotateCurrentSpan({ "maple.chat.approval": "unavailable" })
 	}
-	const { orgId, linkedUserId } = workspace.value.value
+	const { orgId, linkedUserId, assistantEnabled } = workspace.value.value
 	// Not before here: the org is the workspace's, never the control's, and an approval nobody can
 	// attribute to an org is not answerable to an auditor.
 	yield* Effect.annotateCurrentSpan({ orgId })
 
-	// The session is THIS conversation's — built from the org that owns the workspace and the
+	// The same switch a message answers to: with the assistant off, a card it left behind is dead.
+	if (!assistantEnabled) {
+		yield* Effect.annotateCurrentSpan({ "maple.chat.approval": "assistant_off" })
+		return yield* tellClicker(transport, action, notice(ASSISTANT_OFF_NOTICE))
+	}
+
+	// See `ChatConnector.identity`: a change is only ever applied as a Maple user. A connector that
+	// can link accounts says how; one that cannot sends the clicker to the Maple app.
+	if (linkedUserId === undefined) {
+		yield* Effect.annotateCurrentSpan({ "maple.chat.approval": "unlinked" })
+		return yield* tellClicker(
+			transport,
+			action,
+			ports.supportsIdentity
+				? linkNotice(action.connector, ports.appBaseUrl, "approve")
+				: notice(CHANGES_IN_APP_NOTICE),
+		)
+	}
+
+	// The session is THIS conversation's: built from the org that owns the workspace and the
 	// conversation the connector says the click landed in, neither of which came off the control.
 	// A control is forgeable by design (see `action-token.ts`), so a call id naming a proposal in
 	// another conversation finds nothing here and is answered as gone.
 	const conversation = yield* transport.conversation(action)
 	const sessionId = connectorSessionId(orgId, action.connector, conversation.conversationKey)
-
-	// See `ChatConnector.identity` for the policy: a connector that can name the clicker requires a
-	// link, and one that cannot lets anyone in the conversation decide.
-	if (ports.supportsIdentity && linkedUserId === undefined) {
-		yield* Effect.annotateCurrentSpan({ "maple.chat.approval": "unlinked" })
-		return yield* tellClicker(
-			transport,
-			action,
-			linkNotice(action.connector, ports.appBaseUrl, "approve"),
-		)
-	}
-	yield* Effect.annotateCurrentSpan({
-		"maple.chat.approval.as": linkedUserId === undefined ? "connector" : "user",
-	})
 
 	const session = ports.chatSession(sessionId)
 	if (session === undefined) {
@@ -578,7 +593,7 @@ const settleAction = Effect.fn("ChatBotRelay.settleApproval")(function* <R>(
 			},
 			// Only ever the user the HOST resolved from its own database, never anything the
 			// click carried: this is what the change runs as.
-			...(linkedUserId === undefined ? undefined : { actingUserId: linkedUserId }),
+			actingUserId: linkedUserId,
 		})
 		.pipe(
 			Effect.mapError(sessionUnreachable(sessionId, "The chat session did not accept a decision")),

@@ -1,0 +1,39 @@
+---
+// Cost · where the numbers come from: a tile per source Maple reads, then the planned ones by
+// name and where to ask for one. No client directive: the grids ship no script.
+import { getRelativeLocaleUrl } from "astro:i18n";
+import * as m from "../../../paraglide/messages.js";
+import { COST_SOURCES } from "../../../lib/cost-sources";
+import { LiveCostSources } from "../../live/LiveCostSources";
+
+const locale = Astro.currentLocale ?? "en";
+---
+
+<section class="border-t border-border bg-bg">
+	<div class="shell py-16 md:py-24">
+		<div class="mb-10 max-w-2xl md:mb-14">
+			<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{m.cost_sources_eyebrow()}</p>
+			<h2
+				class="mt-4 font-display text-3xl font-medium leading-[1.05] tracking-[-0.02em] text-fg md:text-[40px]"
+			>
+				{m.cost_sources_title({ count: String(COST_SOURCES.length) })}
+			</h2>
+			<p class="mt-5 max-w-[62ch] text-sm leading-relaxed text-fg-muted md:text-[15px]">
+				{m.cost_sources_lede()}
+			</p>
+		</div>
+
+		<LiveCostSources
+			availableLabel={m.cost_sources_available()}
+			plannedLabel={m.cost_sources_planned()}
+			docsLabel={m.cost_sources_docs()}
+		/>
+
+		<p class="mt-6 max-w-[62ch] text-[13px] leading-relaxed text-fg-muted">
+			{m.cost_sources_planned_note()}
+			<a href={getRelativeLocaleUrl(locale, "contact")} class="text-fg underline-offset-4 hover:underline">
+				{m.cost_sources_request()}
+			</a>
+		</p>
+	</div>
+</section>

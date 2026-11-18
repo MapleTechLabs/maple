@@ -248,6 +248,12 @@ describeWithChdb("PromQL on the warehouse matches the reference", () => {
 			name: "range 37s",
 			params: { startMs: START + 1_800_000, endMs: START + 5_400_000, stepMs: 37_000 },
 		},
+		// A step longer than most ranges, starting before the data: a series' first bucket can fall
+		// between two steps' windows.
+		{
+			name: "range 5m from before the data",
+			params: { startMs: START - 120_000, endMs: START + 3_600_000, stepMs: 300_000 },
+		},
 		{ name: "instant", params: { startMs: START + 3_600_000, endMs: START + 3_600_000, stepMs: 0 } },
 		{
 			name: "instant off-grid",

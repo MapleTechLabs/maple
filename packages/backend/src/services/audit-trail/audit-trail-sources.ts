@@ -25,6 +25,8 @@ const FEED_OF = {
 	gcp: (resource: IntegrationResource) => resource.kind === "logs",
 	// CloudTrail rides the connection's `security` module, read by the findings poller.
 	aws: (resource: IntegrationResource) => resource.kind === "audit log",
+	// Each active installation's webhooks.
+	github: (resource: IntegrationResource) => resource.kind === "audit log",
 } as const satisfies Record<Exclude<AuditTrailProvider, "maple">, (resource: IntegrationResource) => boolean>
 
 type ConnectableProvider = keyof typeof FEED_OF

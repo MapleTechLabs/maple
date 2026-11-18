@@ -1,13 +1,20 @@
 import { HttpApiBuilder } from "effect/http-api"
 import type { ScrapeTargetResponse } from "@maple/domain/http"
-import { CreateScrapeTargetRequest, CurrentTenant, UpdateScrapeTargetRequest } from "@maple/domain/http"
+import {
+	CreateScrapeTargetRequest,
+	CurrentTenant,
+	SCRAPE_TARGET_REDACTED_VALUE,
+	UpdateScrapeTargetRequest,
+} from "@maple/domain/http"
 import {
 	MapleApiV2,
 	paginateArray,
 	paginateOffsetQuery,
+	scopeAllows,
 	timestamp,
 	V2InsufficientPermissions,
 } from "@maple/domain/http/v2"
+import { redactUrlCredentials } from "@maple/domain/url-redaction"
 import type { V2ScrapeTarget, V2ScrapeTargetCheck } from "@maple/domain/http/v2"
 import { Effect, Array as Arr } from "effect"
 import { auditDiff, redactAuditUrl } from "@/routes/v2/audit-changes"
@@ -20,6 +27,18 @@ import { timestampMs } from "@maple/backend/platform/time"
 // Maple's infrastructure fetch an operator-chosen URL, so `probe` (which sends
 // the stored credential on demand) is a write, not a read. Reads stay on the
 // `scrape_targets:read` scope — they never expose the credential itself.
+
+/** Whether the caller may manage scrape targets: the role, and for a scoped API key the write scope too. */
+const canManageTargets = (tenant: CurrentTenant.TenantContext) =>
+	Policy.can(tenant.roles, "scrape_targets:manage") &&
+	scopeAllows(tenant.scopes, { family: "scrape_targets", access: "write" })
+
+/**
+ * Callers who cannot manage targets read the URL without its userinfo and query values. The path
+ * is shown to them, as it is in the audit log: a token belongs in the query or the credentials.
+ */
+const forReader = (target: V2ScrapeTarget, canManage: boolean): V2ScrapeTarget =>
+	canManage ? target : { ...target, url: redactUrlCredentials(target.url, SCRAPE_TARGET_REDACTED_VALUE) }
 
 const toV2ScrapeTarget = (target: ScrapeTargetResponse): V2ScrapeTarget => ({
 	id: target.id,
@@ -73,7 +92,11 @@ export const HttpV2ScrapeTargetsLive = HttpApiBuilder.group(MapleApiV2, "scrapeT
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					const response = yield* service.list(tenant.orgId)
-					const page = yield* paginateArray(Arr.map(response.targets, toV2ScrapeTarget), query)
+					const canManage = canManageTargets(tenant)
+					const page = yield* paginateArray(
+						Arr.map(response.targets, (target) => forReader(toV2ScrapeTarget(target), canManage)),
+						query,
+					)
 					return { object: "list" as const, ...page }
 				}),
 			)
@@ -82,7 +105,7 @@ export const HttpV2ScrapeTargetsLive = HttpApiBuilder.group(MapleApiV2, "scrapeT
 					const tenant = yield* CurrentTenant.Context
 					const target = yield* service.get(tenant.orgId, params.id)
 
-					return toV2ScrapeTarget(target)
+					return forReader(toV2ScrapeTarget(target), canManageTargets(tenant))
 				}),
 			)
 			.handle("create", ({ payload }) =>
@@ -140,7 +163,7 @@ export const HttpV2ScrapeTargetsLive = HttpApiBuilder.group(MapleApiV2, "scrapeT
 						metadata: { name: created.name },
 					})
 
-					return toV2ScrapeTarget(created)
+					return forReader(toV2ScrapeTarget(created), canManageTargets(tenant))
 				}),
 			)
 			.handle("update", ({ params, payload }) =>
@@ -204,7 +227,7 @@ export const HttpV2ScrapeTargetsLive = HttpApiBuilder.group(MapleApiV2, "scrapeT
 						metadata: { name: updated.name },
 					})
 
-					return toV2ScrapeTarget(updated)
+					return forReader(toV2ScrapeTarget(updated), canManageTargets(tenant))
 				}),
 			)
 			.handle("delete", ({ params }) =>

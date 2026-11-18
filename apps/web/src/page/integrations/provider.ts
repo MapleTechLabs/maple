@@ -20,6 +20,8 @@ export type ProviderEnv<S> = Readonly<{
 	nowMs: number
 	/** The page shows this provider's card or flow. */
 	isShown: boolean
+	/** The viewer holds `integrations:manage`; false until the session's grants are read. */
+	canManage: boolean
 	/** The integration the page shows, if any. */
 	integration: IntegrationId | null
 	context: PageContext
@@ -92,6 +94,8 @@ export type ProviderModule<S, M, Msg> = Readonly<{
 	update: (model: M, message: Msg, env: ProviderEnv<S>) => ProviderReturn<M, Msg>
 	/** The card mounted: the reads it shows. */
 	onEnter?: ProviderHook<S, M, Msg>
+	/** The session's grants were read: the reads only a manager may make. */
+	onSession?: ProviderHook<S, M, Msg>
 	/** The page's clock was read. */
 	onClock?: ProviderHook<S, M, Msg>
 	/** The status read answered (`env.status` already holds the answer). */

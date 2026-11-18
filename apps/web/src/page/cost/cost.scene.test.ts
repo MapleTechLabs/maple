@@ -254,6 +254,8 @@ describe("cost page", () => {
 			given(step.model),
 			resolveTheme,
 			expectView(text("No cost source yet")).toExist(),
+			// Free while in beta, said before anything is connected.
+			expectView(text("Free during the beta")).toExist(),
 			expectView(text(/a PlanetScale organization by database and branch/)).toExist(),
 			expectView(role("button", { name: "Add a cost source" })).toExist(),
 			expectView(text("Group by")).not.toExist(),
@@ -427,14 +429,14 @@ describe("cost page", () => {
 			expectView(text("Replace the OpenRouter key")).toExist(),
 			expectView(role("button", { name: "Back" })).not.toExist(),
 		)
-		// The providers list a source that exists as added, with nothing to click.
+		// The providers list a source that exists as added, its card disabled.
 		scene(
 			{ update: pageUpdate, view },
 			given(pageUpdate(model, Message.ClickedAddSource()).model),
 			resolveTheme,
 			dialogMounted,
-			expectView(text("Already added")).toExist(),
-			expectView(role("button", { name: /^OpenRouter/ })).not.toExist(),
+			expectView(text("Added")).toExist(),
+			expectView(role("button", { name: /^OpenRouter/ })).toBeDisabled(),
 		)
 
 		const confirming = pageUpdate(
@@ -743,8 +745,8 @@ describe("cost page", () => {
 			given(pageUpdate(model, Message.ClickedAddSource()).model),
 			resolveTheme,
 			dialogMounted,
-			expectView(role("button", { name: /^Cloudflare/ })).not.toExist(),
-			expectView(role("button", { name: /^OpenRouter/ })).not.toExist(),
+			expectView(role("button", { name: /^Cloudflare/ })).toBeDisabled(),
+			expectView(role("button", { name: /^OpenRouter/ })).toBeDisabled(),
 			expectView(text("Replace its token in the Sources panel")).toExist(),
 		)
 
@@ -1365,8 +1367,8 @@ describe("cost page", () => {
 			given(pageUpdate(model, Message.ClickedAddSource()).model),
 			resolveTheme,
 			dialogMounted,
-			expectView(text("Already added")).toExist(),
-			expectView(role("button", { name: /^Vercel/ })).not.toExist(),
+			expectView(text("Added")).toExist(),
+			expectView(role("button", { name: /^Vercel/ })).toBeDisabled(),
 			expectView(role("button", { name: /^OpenRouter/ })).toExist(),
 		)
 
@@ -2034,7 +2036,7 @@ describe("cost page", () => {
 			given(pageUpdate(model, Message.ClickedAddSource()).model),
 			resolveTheme,
 			dialogMounted,
-			expectView(role("button", { name: /^PlanetScale/ })).not.toExist(),
+			expectView(role("button", { name: /^PlanetScale/ })).toBeDisabled(),
 			expectView(text("Remove it in the Sources panel")).toExist(),
 		)
 
@@ -2878,8 +2880,8 @@ describe("cost page", () => {
 				watermarkDate: null,
 				backfillDate: null,
 				lastSyncedAt: null,
-				lastError: "Cloud cost is not enabled for this organization.",
-				lastErrorReason: "rollout",
+				lastError: "This month's provider request budget is spent; pulls resume next month.",
+				lastErrorReason: "budget",
 			}),
 		])
 		scene(
@@ -2888,7 +2890,7 @@ describe("cost page", () => {
 			resolveTheme,
 			expectView(text("No cost read yet")).toExist(),
 			expectView(text("The sync is on hold. The source below says why.")).toExist(),
-			expectView(text("Cloud cost is not enabled for this organization.")).toExist(),
+			expectView(text(/provider request budget is spent/)).toExist(),
 			expectView(text(/Each source below is paused/)).not.toExist(),
 		)
 	})
@@ -2911,5 +2913,43 @@ describe("cost page", () => {
 			).toExist(),
 			expectView(text("Sync failing")).not.toExist(),
 		)
+	})
+})
+
+describe("the provider search", () => {
+	test("narrows the cards by name and what they bring in, groups what is left and clears", () => {
+		const opened = pageUpdate(entered({}, []).model, Message.ClickedAddSource()).model
+		scene(
+			{ update: pageUpdate, view },
+			given(opened),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("Cloud and platforms")).toExist(),
+			expectView(text("AI")).toExist(),
+			expectView(role("button", { name: /^Google Cloud/ })).toExist(),
+		)
+		const invoices = pageUpdate(opened, Message.ChangedProviderSearch({ value: "invoice" })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(invoices),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("button", { name: /^PlanetScale/ })).toExist(),
+			expectView(role("button", { name: /^OpenRouter/ })).not.toExist(),
+			expectView(text("AI")).not.toExist(),
+		)
+		const none = pageUpdate(opened, Message.ChangedProviderSearch({ value: "mainframe" })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(none),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("No providers match")).toExist(),
+		)
+		// Back from a provider's step returns to the search as it was left.
+		const stepped = pageUpdate(invoices, Message.ClickedAddPlanetScale()).model
+		expect(pageUpdate(stepped, Message.ClickedBackToProviders()).model.providerSearch).toBe("invoice")
+		// A dialog opened anew starts with no search.
+		expect(pageUpdate(invoices, Message.ClickedAddSource()).model.providerSearch).toBe("")
 	})
 })

@@ -792,6 +792,75 @@ describe("ClerkWebhookRouter", () => {
 		}),
 	)
 
+	it.live(
+		"takes a removed member off the org's SSO bypass list after the sweep, and retries when that fails",
+		() =>
+			Effect.gen(function* () {
+				const revocation = recordingRevocation()
+				const events = recordingProductEvents()
+				const clerk = { down: false }
+				const removals: Array<string> = []
+				const sso = EnterpriseSsoService.webhookOnly(
+					() => Effect.succeed("not_here" as const),
+					() => Effect.succeed(true),
+					(orgId, userId) =>
+						Effect.suspend(() => {
+							// The sweep has already run by the time the bypass entry goes.
+							removals.push(`${orgId}:${userId} after ${revocation.calls.at(-1) ?? "nothing"}`)
+							return clerk.down
+								? Effect.fail(new EnterpriseSsoUnavailableError({ message: "Clerk is down" }))
+								: Effect.succeed("removed" as const)
+						}),
+				)
+				const { handler, dispose } = HttpRouter.toWebHandler(
+					makeRouterLayer(
+						ClerkWebhookRoute,
+						{ CLERK_WEBHOOK_SECRET: CLERK_SECRET },
+						events.layer,
+						revocation.layer,
+						undefined,
+						undefined,
+						undefined,
+						undefined,
+						sso,
+					),
+					{ disableLogger: true },
+				)
+				yield* Effect.gen(function* () {
+					const now = yield* Clock.currentTimeMillis
+					const send = (type: string, id: string) =>
+						Effect.gen(function* () {
+							const body = JSON.stringify({
+								type,
+								data: {
+									organization: { id: "org_9" },
+									public_user_data: { user_id: "user_9" },
+									role: "org:member",
+								},
+							})
+							const headers = yield* signedHeaders(CLERK_SECRET, body, now, id)
+							return yield* post(handler, "/webhooks/clerk", body, headers)
+						})
+
+					// Joining or changing role leaves the list alone.
+					yield* send("organizationMembership.created", "msg_bp_created")
+					yield* send("organizationMembership.updated", "msg_bp_updated")
+					assert.deepStrictEqual(removals, [])
+
+					const removed = yield* send("organizationMembership.deleted", "msg_bp_deleted")
+					assert.strictEqual(removed.status, 200)
+					assert.deepStrictEqual(removals, ["org_9:user_9 after revoke:org_9:user_9"])
+
+					// Clerk redelivers a 500, so a failed removal must not count the member as removed twice.
+					clerk.down = true
+					const tracked = events.tracked.length
+					const failed = yield* send("organizationMembership.deleted", "msg_bp_failed")
+					assert.strictEqual(failed.status, 500)
+					assert.strictEqual(events.tracked.length, tracked)
+				}).pipe(Effect.ensuring(Effect.promise(dispose)))
+			}),
+	)
+
 	it.live("500s a directory group the database could not save, so Clerk redelivers it", () =>
 		Effect.gen(function* () {
 			const failing = EnterpriseSsoService.webhookOnly(() =>

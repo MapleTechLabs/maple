@@ -1,4 +1,9 @@
-import { type StatusPageComponentId, StatusPageId, type StatusPageIncidentId } from "@maple/domain"
+import {
+	type StatusPageComponentId,
+	StatusPageId,
+	type StatusPageIncidentId,
+	type StatusPageVisibility,
+} from "@maple/domain"
 import {
 	type StatusPageConfig,
 	type StatusPagePreviewParams,
@@ -15,7 +20,6 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { readAllPages as readAll } from "../../../platform/read-all-pages"
 import { AppRoute, hrefOf } from "../../../route"
-import { listMonitors } from "../../kit/uptime/commands"
 import { summarizePage } from "./derive"
 
 // The status page reads and writes, as Effects the pages' Commands wrap, and their links.
@@ -37,6 +41,12 @@ const listPageComponents = (id: StatusPageId) =>
 		)
 	})
 
+const viewSnapshot = (id: StatusPageId) =>
+	Effect.gen(function* () {
+		const client = yield* MapleApiV2Client
+		return yield* client.statusPages.view({ params: { id } })
+	})
+
 const listOpenIncidents = Effect.gen(function* () {
 	const client = yield* MapleApiV2Client
 	return yield* readAll((cursor) =>
@@ -44,25 +54,22 @@ const listOpenIncidents = Effect.gen(function* () {
 	)
 })
 
-/** The list's rows: each page with its components' worst status and its open incident count. */
+/**
+ * The list's cards: each page as visitors see it now (statuses and uptime bars, from its live
+ * view) with its open incidents and maintenance, drafts included.
+ */
 export const listPageSummaries = Effect.gen(function* () {
 	const pages = yield* listPages
 	if (pages.length === 0) return []
-	const [incidents, monitors, components] = yield* Effect.all(
-		[
-			listOpenIncidents,
-			// A failed monitor read fails the tab: without it every monitored component would read green.
-			listMonitors,
-			Effect.forEach(pages, (page) => listPageComponents(page.id), { concurrency: 4 }),
-		],
+	const [incidents, snapshots] = yield* Effect.all(
+		[listOpenIncidents, Effect.forEach(pages, (page) => viewSnapshot(page.id), { concurrency: 4 })],
 		{ concurrency: "unbounded" },
 	)
-	return Arr.map(pages, (page, index) =>
+	return Arr.zipWith(pages, snapshots, (page, snapshot) =>
 		summarizePage({
 			page,
-			components: components[index] ?? [],
+			snapshot,
 			incidents: Arr.filter(incidents, (incident) => incident.page_id === page.id),
-			monitors,
 		}),
 	)
 }).pipe(Effect.mapError(toLoadFailure))
@@ -137,11 +144,7 @@ export const removePagePassword = (id: StatusPageId) =>
 	}).pipe(Effect.mapError(toLoadFailure))
 
 /** The page as visitors would see it now, whatever its visibility: how members read an internal page. */
-export const viewPage = (id: StatusPageId) =>
-	Effect.gen(function* () {
-		const client = yield* MapleApiV2Client
-		return yield* client.statusPages.view({ params: { id } })
-	}).pipe(Effect.mapError(toLoadFailure))
+export const viewPage = (id: StatusPageId) => viewSnapshot(id).pipe(Effect.mapError(toLoadFailure))
 
 export const retrieveCustomDomain = (id: StatusPageId) =>
 	Effect.gen(function* () {
@@ -263,7 +266,7 @@ export const pageIdFromUrl = (raw: string): Option.Option<StatusPageId> =>
 export type EditorView = "incidents" | "maintenance" | "settings" | "live"
 
 /** The Settings tab's sections, in menu order. */
-export const SETTINGS_SECTIONS = ["basic", "monitors", "appearance", "access", "advanced"] as const
+export const SETTINGS_SECTIONS = ["basic", "monitors", "appearance", "advanced"] as const
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]
 
 export const statusPageHref = (id: StatusPageId, view?: EditorView, section?: SettingsSection): string =>
@@ -274,7 +277,7 @@ export const statusPageHref = (id: StatusPageId, view?: EditorView, section?: Se
 		}),
 	)
 
-/** The page as members read it inside Maple: an internal page's only address. */
+/** The dev preview: the page as members read it inside Maple, whatever its visibility; an internal page's only address. */
 export const statusPageViewHref = (id: StatusPageId): string =>
 	hrefOf(AppRoute.StatusPageView({ pageId: encodePublicId(id) }))
 
@@ -282,7 +285,7 @@ export const statusPagesHref = (): string => hrefOf(AppRoute.StatusPages())
 
 export const newStatusPageHref = (): string => hrefOf(AppRoute.StatusPageNew())
 
-/** The status Worker's origin; empty where it has no domain yet (prd today). */
+/** The status Worker's origin; empty where the stage has no status domain. */
 export const STATUS_PAGE_BASE_URL: string = Str.replace(
 	/\/+$/u,
 	"",
@@ -298,3 +301,23 @@ export const canonicalUrl = (baseUrl: string, slug: string, customDomain: string
 
 /** The page's address as text: the full URL when known, its `/s/<slug>` path otherwise. */
 export const publicAddress = (slug: string): string => publicUrl(STATUS_PAGE_BASE_URL, slug) ?? `/s/${slug}`
+
+/** The public page to open, or why there is none: it is internal, a draft, or the stage has no status domain. */
+export type PublicPageLink =
+	| Readonly<{ _tag: "Open"; url: string }>
+	| Readonly<{ _tag: "Unavailable"; reason: string }>
+
+/** `url` is where visitors read the page ({@link publicUrl} or {@link canonicalUrl}), null without a status domain. */
+export const publicPageLink = (
+	page: Readonly<{ visibility: StatusPageVisibility; draft: boolean }>,
+	url: string | null,
+): PublicPageLink => {
+	if (page.visibility === "internal")
+		return {
+			_tag: "Unavailable",
+			reason: "Internal pages are not served publicly. Members read them in the dev preview.",
+		}
+	if (url === null) return { _tag: "Unavailable", reason: "No status domain is configured" }
+	if (page.draft) return { _tag: "Unavailable", reason: "Publish the page to open it" }
+	return { _tag: "Open", url }
+}

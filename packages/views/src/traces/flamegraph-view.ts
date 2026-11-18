@@ -10,7 +10,7 @@ import { button } from "../ui/button"
 import { XmarkIcon } from "../ui/control-icons"
 import { kbd } from "../ui/display"
 import { emptyMessage } from "../ui/empty"
-import { iconNode } from "../ui/icon"
+import { iconNode } from "../ui/icon-node"
 import * as Tooltip from "../ui/tooltip"
 import { barTriggerId, focusedSpan, Message, type Model, MountFlamegraph } from "./flamegraph"
 import {
