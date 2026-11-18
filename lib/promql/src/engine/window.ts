@@ -46,30 +46,32 @@ export const sampleCount = (w: Window): number => {
 	return n
 }
 
-const counterDelta = (previous: number, current: number): number =>
-	current < previous ? current : current - previous
-
 interface PairTotals {
 	readonly increase: number
 	readonly resets: number
 	readonly changes: number
 }
 
-/** Pair statistics inside the window: each bucket's own pairs plus the pairs between neighbours. */
-const pairTotals = (w: Window): PairTotals => {
-	let increase = 0
+/**
+ * Pair statistics inside the window: each bucket's own pairs plus the pairs between neighbours.
+ * `increase` starts at `start` and adds the value before every counter reset, as Prometheus does.
+ */
+const pairTotals = (w: Window, start: number): PairTotals => {
+	let increase = start
 	let resets = 0
 	let changes = 0
 	let previous: SampleBucket | undefined
 	for (let i = w.from; i < w.to; i++) {
 		const b = at(w, i)
 		if (b === undefined) continue
-		increase += b.increase
+		if (previous !== undefined && b.firstV < previous.lastV) {
+			increase += previous.lastV
+			resets += 1
+		}
+		increase += b.resetSum
 		resets += b.resets
 		changes += b.changes
 		if (previous !== undefined) {
-			increase += counterDelta(previous.lastV, b.firstV)
-			if (b.firstV < previous.lastV) resets += 1
 			if (b.firstV !== previous.lastV && !(Number.isNaN(b.firstV) && Number.isNaN(previous.lastV)))
 				changes += 1
 		}
@@ -94,7 +96,8 @@ export const extrapolatedRate = (
 	if (first === undefined || last === undefined) return undefined
 	const count = sampleCount(w)
 	if (count < 2) return undefined
-	let result = isCounter ? pairTotals(w).increase : last.lastV - first.firstV
+	const difference = last.lastV - first.firstV
+	let result = isCounter ? pairTotals(w, difference).increase : difference
 	const sampledInterval = (last.lastT - first.firstT) / 1000
 	// Prometheus' storage never holds two samples at one timestamp; ours can, so no result.
 	if (sampledInterval <= 0) return undefined
@@ -144,9 +147,9 @@ export const instantValue = (w: Window, isRate: boolean): number | undefined => 
 	return isRate ? value / (interval / 1000) : value
 }
 
-export const resets = (w: Window): number | undefined => (isEmpty(w) ? undefined : pairTotals(w).resets)
+export const resets = (w: Window): number | undefined => (isEmpty(w) ? undefined : pairTotals(w, 0).resets)
 
-export const changes = (w: Window): number | undefined => (isEmpty(w) ? undefined : pairTotals(w).changes)
+export const changes = (w: Window): number | undefined => (isEmpty(w) ? undefined : pairTotals(w, 0).changes)
 
 interface Moments {
 	readonly count: number
@@ -208,10 +211,12 @@ const kahanOverTime = (w: Window, mean: boolean): number => {
 		const b = at(w, i)
 		if (b === undefined || b.count === 0) continue
 		const next = count + b.count
+		// The bucket's own compensation joins the running one, so no lost low bits are dropped.
+		const bucketC = b.sumC ?? 0
 		if (!incremental) {
 			const [newSum, newC] = kahanInc(b.sum, sum, c)
 			if (!mean || count === 0 || (newSum !== Infinity && newSum !== -Infinity)) {
-				;[sum, c, count] = [newSum, newC, next]
+				;[sum, c, count] = [newSum, newC + bucketC, next]
 				continue
 			}
 			incremental = true
@@ -219,7 +224,7 @@ const kahanOverTime = (w: Window, mean: boolean): number => {
 			c /= count
 		}
 		const q = count / next
-		;[average, c] = kahanInc(b.sum / next, q * average, q * c)
+		;[average, c] = kahanInc(b.sum / next, q * average, q * c + bucketC / next)
 		count = next
 	}
 	if (!mean) return sum === Infinity || sum === -Infinity ? sum : sum + c
@@ -269,27 +274,27 @@ export const lastSample = (w: Window): { readonly t: number; readonly v: number 
 }
 
 /**
- * Prometheus' `linearRegression` with x in seconds relative to `interceptMs`.
- * Bucket sums are relative to `originMs`, so they are shifted first.
+ * Prometheus' `linearRegression` with x in seconds relative to `interceptMs`, Kahan-summed.
+ * A one-sample bucket gives its x exactly; larger buckets' sums are relative to `originMs`, so they are shifted.
  */
 export const linearRegression = (
 	w: Window,
 	originMs: number,
 	interceptMs: number,
 ): { readonly slope: number; readonly intercept: number } | undefined => {
+	const d = (interceptMs - originMs) / 1000
 	let n = 0
-	let sumX = 0
-	let sumY = 0
-	let sumXX = 0
-	let sumXY = 0
+	let [sumX, cX, sumY, cY, sumXX, cXX, sumXY, cXY] = [0, 0, 0, 0, 0, 0, 0, 0]
 	for (let i = w.from; i < w.to; i++) {
 		const b = at(w, i)
 		if (b === undefined) continue
 		n += b.count
-		sumX += b.sumT
-		sumY += b.sum
-		sumXX += b.sumTT
-		sumXY += b.sumTV
+		const x = (b.firstT - interceptMs) / 1000
+		const single = b.count === 1
+		;[sumX, cX] = kahanInc(single ? x : b.sumT - b.count * d, sumX, cX)
+		;[sumY, cY] = kahanInc(b.sum, sumY, cY + (b.sumC ?? 0))
+		;[sumXX, cXX] = kahanInc(single ? x * x : b.sumTT - 2 * d * b.sumT + b.count * d * d, sumXX, cXX)
+		;[sumXY, cXY] = kahanInc(single ? x * b.firstV : b.sumTV - d * b.sum, sumXY, cXY)
 	}
 	if (n < 2) return undefined
 	const m = moments(w)
@@ -300,14 +305,11 @@ export const linearRegression = (
 			? { slope: 0, intercept: m.min }
 			: { slope: Number.NaN, intercept: Number.NaN }
 	}
-	const d = (interceptMs - originMs) / 1000
-	const x = sumX - n * d
-	const xx = sumXX - 2 * d * sumX + n * d * d
-	const xy = sumXY - d * sumY
-	const covXY = xy - (x * sumY) / n
-	const varX = xx - (x * x) / n
+	;[sumX, sumY, sumXX, sumXY] = [sumX + cX, sumY + cY, sumXX + cXX, sumXY + cXY]
+	const covXY = sumXY - (sumX * sumY) / n
+	const varX = sumXX - (sumX * sumX) / n
 	const slope = covXY / varX
-	return { slope, intercept: sumY / n - (slope * x) / n }
+	return { slope, intercept: sumY / n - (slope * sumX) / n }
 }
 
 /** Raw-mode sample values of the window, in time order. */
