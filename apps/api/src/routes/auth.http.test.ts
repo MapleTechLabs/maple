@@ -11,7 +11,7 @@ import {
 	McpOAuthAuthorizationInfoResponse,
 	OrgId,
 } from "@maple/domain/http"
-import { ConfigProvider, Context, Effect, Layer, Schema } from "effect"
+import { Array as Arr, ConfigProvider, Context, Effect, Layer, Schema } from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
@@ -155,7 +155,7 @@ describe("login approval endpoints", () => {
 			const entries = await Effect.runPromise(
 				audit.list(DEFAULT_ORG, { action: "cli_session.approved", limit: 10, offset: 0 }),
 			)
-			expect(entries.map((entry) => entry.metadata?.deviceName)).toEqual(["work laptop"])
+			expect(Arr.map(entries, (entry) => entry.metadata?.deviceName)).toEqual(["work laptop"])
 		} finally {
 			await harness.dispose()
 		}
@@ -194,7 +194,7 @@ describe("login approval endpoints", () => {
 			const entries = await Effect.runPromise(
 				audit.list(DEFAULT_ORG, { action: "mcp_connection.granted", limit: 10, offset: 0 }),
 			)
-			expect(entries.map((entry) => entry.metadata)).toEqual([
+			expect(Arr.map(entries, (entry) => entry.metadata)).toEqual([
 				expect.objectContaining({ clientName: "Editor", redirectHost: "client.example" }),
 			])
 			expect(JSON.stringify(entries)).not.toContain("code=secret")

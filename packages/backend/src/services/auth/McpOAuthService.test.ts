@@ -510,7 +510,7 @@ describe("McpOAuthService", () => {
 			const live = yield* Effect.promise(() =>
 				db.pglite.query<{ name: string }>("select name from api_keys where revoked = false"),
 			)
-			expect(live.rows.map((row) => row.name)).toEqual(["Named Editor"])
+			expect(Arr.map(live.rows, (row) => row.name)).toEqual(["Named Editor"])
 			expect(Option.isSome(yield* apiKeys.resolveByKey(rotated.access_token))).toBe(true)
 		}).pipe(Effect.provide(makeLayer(db)))
 	})

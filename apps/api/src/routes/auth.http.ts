@@ -137,7 +137,9 @@ export const HttpAuthSessionLive = HttpApiBuilder.group(MapleApi, "authSession",
 							resource: pending.resource,
 							scopes: pending.scopes,
 							roles: [...tenant.roles],
-							...(Option.isSome(redirectHost) ? { redirectHost: redirectHost.value } : undefined),
+							...(Option.isSome(redirectHost)
+								? { redirectHost: redirectHost.value }
+								: undefined),
 						},
 					})
 					return approved
