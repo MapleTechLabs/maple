@@ -74,7 +74,7 @@ export const diagnosisCompletion = (origin: ChatTurnOrigin, submitDiagnosis: Sub
 }
 
 const buildDiagnosisCompletion = (
-	{ turnId, usage, modelName, partial, sessionAttributes }: CompletionRun,
+	{ turnId, usage, modelName, partial, sessionAttributes, content }: CompletionRun,
 	submitDiagnosis: SubmitDiagnosis,
 ) => {
 	const toolkit = Toolkit.make(diagnosisTool)
@@ -121,6 +121,7 @@ const buildDiagnosisCompletion = (
 						),
 					),
 			},
+			content,
 			sessionAttributes,
 		),
 		submitted: () => submitted,

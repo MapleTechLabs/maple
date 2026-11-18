@@ -151,7 +151,8 @@ describe("profileForTurn", () => {
 		const profile = profileForTurn(agentForSession(sessionId), origin)
 		return {
 			profile,
-			tools: buildChatToolkit(executor, tenant, profile.ruleset, profile.toolSurface).toolkit.tools,
+			tools: buildChatToolkit(executor, tenant, profile.ruleset, profile.toolSurface, "record").toolkit
+				.tools,
 		}
 	}
 
@@ -169,7 +170,13 @@ describe("profileForTurn", () => {
 		const profile = profileForRoles(profileForTurn(agentForSession(appSession), { kind: "app" }), [
 			"org:analyst",
 		])
-		const { tools } = buildChatToolkit(executor, tenant, profile.ruleset, profile.toolSurface).toolkit
+		const { tools } = buildChatToolkit(
+			executor,
+			tenant,
+			profile.ruleset,
+			profile.toolSurface,
+			"record",
+		).toolkit
 		assert.property(tools, "search_traces")
 		for (const name of MUTATING_TOOL_NAMES) {
 			if (DASHBOARD_AUTHORING_TOOLS.has(name)) {

@@ -16,10 +16,10 @@ const INTERNAL = Schema.decodeSync(OrgId)("org_maple_internal")
 const CUSTOMER = Schema.decodeSync(OrgId)("org_customer")
 const USER = Schema.decodeSync(UserId)("user_feedback")
 
-const tenant = (orgId: OrgId): TenantContext => ({
+const tenant = (orgId: OrgId, role = "root"): TenantContext => ({
 	orgId,
 	userId: USER,
-	roles: [Schema.decodeSync(RoleName)("root")],
+	roles: [Schema.decodeSync(RoleName)(role)],
 	authMode: "self_hosted",
 })
 
@@ -27,7 +27,11 @@ const OAUTH_USER: AuditActorInfo = { type: "user", source: "mcp" }
 
 const layer = (
 	orgId: OrgId,
-	options: { readonly actor?: AuditActorInfo; readonly env?: Record<string, unknown> } = {},
+	options: {
+		readonly actor?: AuditActorInfo
+		readonly env?: Record<string, unknown>
+		readonly role?: string
+	} = {},
 ) =>
 	Layer.mergeAll(
 		AgentFeedbackService.layer.pipe(
@@ -38,7 +42,7 @@ const layer = (
 				),
 			),
 		),
-		Layer.succeed(CurrentMcpTenant, tenant(orgId)),
+		Layer.succeed(CurrentMcpTenant, tenant(orgId, options.role)),
 		Layer.succeed(CurrentAuditActor, "actor" in options ? options.actor : OAUTH_USER),
 	)
 
@@ -91,6 +95,13 @@ describe("list_maple_feedback", () => {
 				expect(result.success.content[0]?.text).toContain("Secret customer context")
 			}
 		}).pipe(Effect.provide(layer(INTERNAL))),
+	)
+
+	it.effect("refuses an internal-org analyst", () =>
+		Effect.gen(function* () {
+			yield* seed
+			expectRefused(yield* call({}))
+		}).pipe(Effect.provide(layer(INTERNAL, { role: "org:analyst" }))),
 	)
 
 	it.effect("refuses a customer org, even for its own feedback", () =>

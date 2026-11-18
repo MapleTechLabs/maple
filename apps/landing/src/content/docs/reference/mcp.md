@@ -275,7 +275,7 @@ These are admin-only. Connecting a provider, and adding a scrape credential, sta
 | Tool                  | Access | What it does                                                                                            |
 | --------------------- | ------ | ------------------------------------------------------------------------------------------------------- |
 | `send_maple_feedback` | write  | Tell the Maple team about a bug, a missing capability or a misleading doc: its kind, the agent, and why |
-| `list_maple_feedback` | read   | Maple team only: read the feedback agents sent. Refused for any other organization                      |
+| `list_maple_feedback` | read   | Maple team admins only: read the feedback agents sent. Refused for any other organization               |
 
 The same feedback can be sent over the REST API with `POST /v2/agent_feedback`.
 

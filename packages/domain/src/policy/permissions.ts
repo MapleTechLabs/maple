@@ -55,6 +55,8 @@ export const permissions = {
 	"llm_keys:manage": { min: "admin", action: "manage the organization's model provider keys" },
 	"sso:manage": { min: "admin", action: "manage single sign-on and SCIM provisioning" },
 	"mcp_connections:view_all": { min: "admin", action: "see every member's MCP connections" },
+	// Only in Maple's own org: feedback from every organization, free text included.
+	"agent_feedback:triage": { min: "admin", action: "read agent feedback from every organization" },
 	// An approval counts toward a branch's required reviews, so who may give Maple that say is
 	// an admin's call, and so are the rules a review runs under while it has it.
 	"code_review:auto_approve": {
