@@ -44,8 +44,6 @@ export class McpOAuthProtocolError extends Schema.TaggedError<McpOAuthProtocolEr
 	{
 		error: Schema.String,
 		message: Schema.String,
-		redirectUri: Schema.optionalKey(Schema.String),
-		state: Schema.optionalKey(Schema.String),
 	},
 ) {}
 
@@ -120,17 +118,9 @@ const decodeApiKeyId = Schema.decodeUnknownSync(ApiKeyId)
 const persistenceError = () =>
 	new McpOAuthPersistenceError({ message: "MCP authorization is temporarily unavailable" })
 
-const protocolError = (
-	error: string,
-	message: string,
-	options?: { readonly redirectUri?: string; readonly state?: string },
-) =>
-	new McpOAuthProtocolError({
-		error,
-		message,
-		...(options?.redirectUri ? { redirectUri: options.redirectUri } : undefined),
-		...(options?.state ? { state: options.state } : undefined),
-	})
+// Never redirected to the client: anyone can register a redirect URI, so an error before
+// consent is answered on Maple's host rather than sent to it (RFC 9700 4.11).
+const protocolError = (error: string, message: string) => new McpOAuthProtocolError({ error, message })
 
 /**
  * `Effect.fn` whose span stays `Ok` on a protocol error: that is the client's 4xx to fix (a
@@ -425,17 +415,13 @@ export class McpOAuthService extends Context.Service<
 						"redirect_uri is not registered for this client",
 					)
 				}
-				const safeRedirect = { redirectUri: input.redirectUri, state: input.state }
 				if (input.state && input.state.length > 1024) {
-					return yield* protocolError("invalid_request", "state is too long", {
-						redirectUri: input.redirectUri,
-					})
+					return yield* protocolError("invalid_request", "state is too long")
 				}
 				if (input.responseType !== "code") {
 					return yield* protocolError(
 						"unsupported_response_type",
 						"Only response_type=code is supported",
-						safeRedirect,
 					)
 				}
 				if (
@@ -445,23 +431,16 @@ export class McpOAuthService extends Context.Service<
 					return yield* protocolError(
 						"invalid_request",
 						"A valid S256 PKCE code challenge is required",
-						safeRedirect,
 					)
 				}
 				if (input.resource !== input.expectedResource) {
 					return yield* protocolError(
 						"invalid_target",
 						"resource must identify this Maple MCP server",
-						safeRedirect,
 					)
 				}
 				const scopes = parseScopes(input.scope)
-				if (!scopes)
-					return yield* protocolError(
-						"invalid_scope",
-						`Only ${MCP_SCOPE} is supported`,
-						safeRedirect,
-					)
+				if (!scopes) return yield* protocolError("invalid_scope", `Only ${MCP_SCOPE} is supported`)
 				const now = yield* Clock.currentTimeMillis
 				yield* purgeExpired(now)
 				const requestId = makeOpaqueToken("mcp_auth_")
