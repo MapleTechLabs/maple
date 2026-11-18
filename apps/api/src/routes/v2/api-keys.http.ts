@@ -93,8 +93,8 @@ export const HttpV2ApiKeysLive = HttpApiBuilder.group(MapleApiV2, "apiKeys", (ha
 
 		/**
 		 * Null for a signed-in session. For an API key caller, whatever its role: that key's
-		 * expiry (null when it never expires), which no key it mints or rolls may pass, so
-		 * revoking or outliving the parent key ends what it handed out.
+		 * expiry (null when it never expires), which no key it mints or rolls may pass. Revoking the
+		 * parent does not reach its children; demoting or removing their creator does (they are pinned).
 		 */
 		const callerKey = Effect.fnUntraced(function* (tenant: CurrentTenant.TenantContext) {
 			const actor = yield* CurrentAuditActor
