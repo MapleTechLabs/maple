@@ -242,22 +242,25 @@ describe("status page card menu", () => {
 		)
 	})
 
-	test("each card opens its dev preview; an internal page's public page is disabled and says why", () => {
+	test("the menu opens the dev preview; an internal or draft page has no public page to open", () => {
+		for (const page of [statusPage({ visibility: "internal" }), statusPage({ draft: true, published_at: null })]) {
+			const model = withPages([summaryOf(page)])
+			expect(names(pick(model, pageId(1), "open-public").commands)).not.toContain(
+				"OpenStatusPageInNewTab",
+			)
+			expect(pick(model, pageId(1), "open-preview").outMessage).toEqual(
+				PageOutMessage.RequestedNavigation({ url: statusPageViewHref(pageId(1)), isReplace: false }),
+			)
+		}
+	})
+
+	test("the card has no open buttons; a member still gets the menu to open the page", () => {
 		scene(
 			{ update: listUpdate, view },
 			given(withPages([summaryOf(statusPage({ visibility: "internal" }))], false)),
-			expectView(role("link", { name: "Open dev preview for Acme Status" })).toHaveAttr(
-				"href",
-				statusPageViewHref(pageId(1)),
-			),
-			expectView(role("button", { name: "Open public page for Acme Status" })).toBeDisabled(),
-			expectView(
-				role("group", {
-					name: "Internal pages are not served publicly. Members read them in the dev preview.",
-				}),
-			).toExist(),
-			// A member who cannot edit gets no actions menu.
-			expectView(role("button", { name: /Actions for/u })).not.toExist(),
+			expectView(role("link", { name: /Open dev preview/u })).not.toExist(),
+			expectView(role("button", { name: /Open public page/u })).not.toExist(),
+			expectView(role("button", { name: "Actions for Acme Status" })).toExist(),
 		)
 	})
 

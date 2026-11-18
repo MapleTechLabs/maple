@@ -13,6 +13,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchPages: { key: Schema.String, result: LoadOutcome(Schema.Array(StatusPageSummary)) },
 	ClickedRetry: {},
 	GotRowMenuMessage: { pageId: StatusPageId, message: Menu.Message },
+	CompletedOpenPage: {},
 	ClickedConfirmDelete: {},
 	CompletedDelete: { result: LoadOutcome(Schema.Void) },
 	GotDeleteDialogMessage: { message: Dialog.Message },

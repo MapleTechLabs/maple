@@ -8,9 +8,22 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import type { AppRoute } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import { statusPageHref } from "../shared/commands"
+import {
+	publicPageLink,
+	publicUrl,
+	STATUS_PAGE_BASE_URL,
+	statusPageHref,
+	statusPageViewHref,
+} from "../shared/commands"
+import { OPEN_PREVIEW_VALUE, OPEN_PUBLIC_VALUE } from "../shared/open-page"
 import type { StatusPageSummary } from "../shared/derive"
-import { DeleteListedPage, FetchListSession, FetchStatusPages, ReadListClock } from "./command"
+import {
+	DeleteListedPage,
+	FetchListSession,
+	FetchStatusPages,
+	OpenPageInNewTab,
+	ReadListClock,
+} from "./command"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import { acceptGrants } from "../../kit/session-grants"
@@ -77,8 +90,15 @@ const liftDeleteDialog = (model: Model, step: ReturnType<typeof Dialog.update>):
 const pickedRowAction = (model: Model, pageId: StatusPageId, value: string): Return =>
 	Option.match(summaryOf(model, pageId), {
 		onNone: () => ({ model }),
-		onSome: (): Return => {
+		onSome: (summary): Return => {
 			switch (value) {
+				case OPEN_PUBLIC_VALUE: {
+					const page = summary.page
+					const link = publicPageLink(page, publicUrl(STATUS_PAGE_BASE_URL, page.slug))
+					return link._tag === "Open" ? { model, commands: [OpenPageInNewTab({ url: link.url })] } : { model }
+				}
+				case OPEN_PREVIEW_VALUE:
+					return navigate(model, statusPageViewHref(pageId))
 				case "edit":
 					return navigate(model, statusPageHref(pageId))
 				case "delete":
@@ -152,6 +172,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		ClickedRetry: () => request(model, context, "Supersede"),
 		GotRowMenuMessage: ({ pageId, message: child }) => updateRowMenu(model, pageId, child),
+		CompletedOpenPage: () => ({ model }),
 		ClickedConfirmDelete: () => confirmDelete(model),
 		CompletedDelete: ({ result }) => deleted(model, context, result),
 		GotDeleteDialogMessage: ({ message: child }) =>

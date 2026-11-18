@@ -3217,6 +3217,25 @@ describe("settings", () => {
 			)
 	})
 
+	test("the Address hint links the saved address of a live page, not an unsaved or unserved one", () => {
+		const live = { ...loaded(ACCESS), publicBaseUrl: "https://status-pages.maple.dev" }
+		const url = "https://status-pages.maple.dev/s/acme-status"
+		scene(
+			{ update: pageUpdate, view },
+			given(live),
+			// The header's address line and the hint.
+			expectAll(all.role("link", { name: url })).toHaveCount(2),
+			type(role("textbox", { name: "Address" }), "not-saved"),
+			expectAll(all.role("link", { name: url })).toHaveCount(1),
+			expectView(role("link", { name: /\/s\/not-saved/u })).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given({ ...loaded({ ...ACCESS, page: statusPage({ visibility: "internal" }) }), publicBaseUrl: live.publicBaseUrl }),
+			expectView(role("link", { name: url })).not.toExist(),
+		)
+	})
+
 	test("with the fields and Who can view both edited, one bar saves the fields, then who can view", () => {
 		const edited = Arr.reduce(
 			[

@@ -45,7 +45,7 @@ import {
 	STATUS_PAGE_BASE_URL,
 	statusPageHref,
 } from "../shared/commands"
-import { openPreviewButton, openPublicPageButton } from "../shared/open-page"
+import { openMenuEntries } from "../shared/open-page"
 import {
 	COMPONENT_STATUS_LABEL,
 	COMPONENT_STATUS_TONE,
@@ -175,19 +175,26 @@ const lastPublished = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Ht
 	])
 }
 
-/** Edit and Delete, for those who may change the page; opening it is the card's buttons. */
-const PAGE_MENU_ENTRIES: ReadonlyArray<MenuEntry> = [
-	{ _tag: "Item", value: "edit", label: "Edit", icon: "PencilIcon" },
-	{ _tag: "Separator" },
-	{ _tag: "Item", value: "delete", label: "Delete", icon: "TrashIcon", variant: "destructive" },
-]
+/** Open public page and Open dev preview for everyone; Edit and Delete for those who may change the page. */
+const pageMenuEntries = (summary: StatusPageSummary, isEditable: boolean): ReadonlyArray<MenuEntry> => {
+	const page = summary.page
+	const open = openMenuEntries(publicPageLink(page, publicUrl(STATUS_PAGE_BASE_URL, page.slug)))
+	if (!isEditable) return open
+	return [
+		...open,
+		{ _tag: "Separator" },
+		{ _tag: "Item", value: "edit", label: "Edit", icon: "PencilIcon" },
+		{ _tag: "Separator" },
+		{ _tag: "Item", value: "delete", label: "Delete", icon: "TrashIcon", variant: "destructive" },
+	]
+}
 
-const pageMenu = (h: H, model: Model, summary: StatusPageSummary): Html => {
+const pageMenu = (h: H, model: Model, summary: StatusPageSummary, isEditable: boolean): Html => {
 	const menuId = rowMenuId(summary.page.id)
 	return rowActionsMenu(h, {
 		slotId: menuId,
 		model: model.rowMenus[menuId] ?? Menu.init(menuId),
-		entries: PAGE_MENU_ENTRIES,
+		entries: pageMenuEntries(summary, isEditable),
 		label: `Actions for ${summary.page.name}`,
 		toParentMessage: (message) => Message.GotRowMenuMessage({ pageId: summary.page.id, message }),
 	})
@@ -223,15 +230,9 @@ const cardHeader = (
 				]),
 			]),
 		]),
-		hstack(h, { gap: "2", align: "center", wrap: true, justify: "end" }, [
+		hstack(h, { gap: "3", align: "center", className: "shrink-0" }, [
 			lastPublished(h, summary, inputs),
-			openPublicPageButton(
-				h,
-				publicPageLink(page, publicUrl(STATUS_PAGE_BASE_URL, page.slug)),
-				page.name,
-			),
-			openPreviewButton(h, page.id, page.name),
-			...(isEditable ? [pageMenu(h, model, summary)] : []),
+			pageMenu(h, model, summary, isEditable),
 		]),
 	])
 }
