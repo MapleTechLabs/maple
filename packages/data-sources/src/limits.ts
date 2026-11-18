@@ -27,6 +27,12 @@ export const DEFAULT_LIMITS = {
 	},
 } as const satisfies Record<QueryWorkload, QueryLimits>
 
+/**
+ * Queries Maple sends one SQL source per period (seconds), across every caller. Each may run for
+ * `timeoutMs` under `MAX_MEMORY_BYTES`, so this bounds what agents can ask of a customer's cluster.
+ */
+export const SQL_QUERY_SHARE = { limit: 30, period: 60 } as const
+
 /** Most time buckets one query may ask for; a finer grid is refused before anything is built. */
 export const MAX_TIME_BUCKETS = 10_000
 

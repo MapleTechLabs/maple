@@ -17,6 +17,7 @@ import {
 	type CatalogEntryView,
 	type CreateExternalDataSourceInput,
 	type DataSourceDriverError,
+	DataSourceForbiddenError,
 	DataSourceLimitError,
 	DataSourceNotFoundError,
 	DataSourcePersistenceError,
@@ -35,6 +36,8 @@ import {
 	type UpdateCatalogEntryInput,
 	type UpdateExternalDataSourceInput,
 } from "@maple/domain/data-sources"
+import type { TenantContext } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import type { OrgId, UserId } from "@maple/primitives"
 import {
 	ExternalDataSourceCatalogEntries,
@@ -86,6 +89,20 @@ export type ExternalDataSourceServiceError =
 export interface Audience {
 	readonly agent: boolean
 }
+
+/**
+ * Who asks for a query to run. A person or a key answers with its roles. One of Maple's own
+ * unattended runs has no person behind it: the source's `agentAccess` is what admits it.
+ */
+export type QueryCaller =
+	| { readonly kind: "principal"; readonly roles: ReadonlyArray<string> }
+	| { readonly kind: "unattended" }
+
+/** The caller behind a tenant. Unattended only when its turn says so, never because roles are absent. */
+export const queryCallerOf = (tenant: Pick<TenantContext, "roles" | "turnOrigin">): QueryCaller =>
+	tenant.turnOrigin?.kind === "autonomous"
+		? { kind: "unattended" }
+		: { kind: "principal", roles: tenant.roles }
 
 export interface QueryInput {
 	readonly startMs: number
@@ -164,13 +181,15 @@ export interface ExternalDataSourceServiceApi {
 		audience: Audience,
 		limit?: number,
 	) => Effect.Effect<ReadonlyArray<DataSourceSearchHit>, DataSourcePersistenceError>
+	/** Refused unless the caller holds `data_sources:query`; an unattended run always reads as an agent. */
 	readonly query: (
 		orgId: OrgId,
 		ref: string,
 		query: ExternalQuery,
 		input: QueryInput,
 		audience: Audience,
-	) => Effect.Effect<DataSourceQueryResult, ExternalDataSourceServiceError>
+		caller: QueryCaller,
+	) => Effect.Effect<DataSourceQueryResult, ExternalDataSourceServiceError | DataSourceForbiddenError>
 }
 
 const toPersistenceError = makePersistenceErrorMapper(
@@ -224,6 +243,7 @@ const toDocument = (
 	row: ExternalDataSourceRow,
 	entryCount: number,
 	storedCount: number,
+	supportsPiiRedaction: boolean,
 ): ExternalDataSourceDocument => ({
 	id: row.id,
 	name: row.name,
@@ -234,6 +254,7 @@ const toDocument = (
 	tags: row.tags,
 	agentAccess: row.agentAccess,
 	agentPii: row.agentPii,
+	supportsPiiRedaction,
 	config: row.config,
 	hasSecret: row.secretCiphertext !== null,
 	secretHint: row.secretHint,
@@ -306,6 +327,10 @@ export class ExternalDataSourceService extends Context.Service<
 					)
 				: Effect.succeed(driver)
 		}
+
+		/** Whether the kind's catalog marks personal data; a kind this deployment cannot query marks none. */
+		const marksPersonalData = (kind: ExternalDataSourceRow["kind"]): boolean =>
+			drivers.get(kind)?.marksPersonalData ?? false
 
 		// A source that answered 429 is left alone until its Retry-After passes. Per isolate: it stops a
 		// burst of widgets or retries from one Worker, the rate-limit bindings cover the fleet.
@@ -440,6 +465,7 @@ export class ExternalDataSourceService extends Context.Service<
 					row,
 					entriesFor(row, entries, audience).length,
 					entriesFor(row, entries, PEOPLE).length,
+					marksPersonalData(row.kind),
 				),
 			)
 		const documentForPeople = (row: ExternalDataSourceRow) => documentFor(row, PEOPLE)
@@ -692,6 +718,7 @@ export class ExternalDataSourceService extends Context.Service<
 						row,
 						entriesFor(row, entries, audience).length,
 						entriesFor(row, entries, PEOPLE).length,
+						marksPersonalData(row.kind),
 					),
 			)
 		})
@@ -939,7 +966,12 @@ export class ExternalDataSourceService extends Context.Service<
 			const shown = Arr.map(entriesFor(row, stored, audience), toEntryView)
 			const redacted = audience.agent && !row.agentPii ? Arr.map(shown, withoutPiiSamples) : shown
 			return {
-				source: toDocument(row, shown.length, entriesFor(row, stored, PEOPLE).length),
+				source: toDocument(
+					row,
+					shown.length,
+					entriesFor(row, stored, PEOPLE).length,
+					marksPersonalData(row.kind),
+				),
 				entries: Arr.sort(
 					redacted,
 					Order.mapInput(Order.String, (entry: CatalogEntryView) => entry.name),
@@ -1030,8 +1062,23 @@ export class ExternalDataSourceService extends Context.Service<
 			ref: string,
 			externalQuery: ExternalQuery,
 			input: QueryInput,
-			audience: Audience,
+			requested: Audience,
+			caller: QueryCaller,
 		) {
+			if (caller.kind === "principal") {
+				yield* Policy.check(
+					caller.roles,
+					"data_sources:query",
+					(denial) =>
+						new DataSourceForbiddenError({
+							message: denial.message,
+							permission: denial.permission,
+						}),
+				)
+			}
+			// Nobody holds an unattended run to a role, so it never reads as a person either.
+			const audience: Audience = caller.kind === "unattended" ? { agent: true } : requested
+			yield* Effect.annotateCurrentSpan({ "maple.data_source.caller": caller.kind })
 			const row = yield* resolve(orgId, ref, audience)
 			yield* Effect.annotateCurrentSpan({
 				"maple.data_source.id": row.id,
@@ -1082,6 +1129,7 @@ export class ExternalDataSourceService extends Context.Service<
 					limits,
 					workload: input.workload,
 					redactPii: audience.agent && !row.agentPii,
+					hiddenEntries: audience.agent ? hiddenOf(row, stored) : [],
 				},
 				sourceCatalogFor(
 					entries,

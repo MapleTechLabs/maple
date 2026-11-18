@@ -330,6 +330,15 @@ export class DataSourceRateLimitedError extends Schema.TaggedError<DataSourceRat
 	},
 ) {}
 
+/** The caller's role may not run queries on connected data sources. */
+export class DataSourceForbiddenError extends Schema.TaggedError<DataSourceForbiddenError>()(
+	"@maple/data-sources/Forbidden",
+	{
+		message: Schema.String,
+		permission: Schema.String,
+	},
+) {}
+
 /** Maple's own storage (Postgres, encryption) failed. */
 export class DataSourcePersistenceError extends Schema.TaggedError<DataSourcePersistenceError>()(
 	"@maple/data-sources/Persistence",
@@ -359,6 +368,8 @@ export const ExternalDataSourceDocument = Schema.Struct({
 	tags: Schema.Array(Schema.String),
 	agentAccess: Schema.Boolean,
 	agentPii: Schema.Boolean,
+	/** Whether this kind of source marks fields as personal data; without it `agentPii` withholds nothing. */
+	supportsPiiRedaction: Schema.Boolean,
 	config: DataSourceConfig,
 	/** Whether a password or key is stored; `secretHint` is null for short secrets even when one is. */
 	hasSecret: Schema.Boolean,

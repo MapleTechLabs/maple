@@ -11,6 +11,7 @@ import {
 import { maskLiteralsAndComments } from "@maple/domain/raw-sql"
 import type { DriverConnection, PreparedQuery, QueryRequest } from "../../port"
 import { mapClickHouseError } from "./errors"
+import { ESCAPED_IDENTIFIER_MESSAGE, hasEscapedIdentifier, hiddenEntryIssue } from "./hidden"
 import { runtimeHint, validationHints } from "./hints"
 import { expandMacros } from "./macros"
 import { openSession, readOnlySettings } from "./session"
@@ -106,6 +107,8 @@ const ALL_COLUMNS_RE = /(?:\bSELECT\s+(?:DISTINCT\s+)?|,\s*)(?:[\w`"]+\.)?\*|\bC
  */
 export const piiIssue = (sql: string, pii: ReadonlySet<string>): string | null => {
 	if (pii.size === 0) return null
+	// An escaped spelling (`\x65mail`) reads as the field on the server and as nothing here.
+	if (hasEscapedIdentifier(sql)) return ESCAPED_IDENTIFIER_MESSAGE
 	const named = Arr.findFirst(Arr.fromIterable(pii), (name) =>
 		new RegExp(`(?<![\\w$])${Str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")(name)}(?![\\w$])`, "i").test(sql),
 	)
@@ -137,6 +140,8 @@ export const prepareClickHouse = (
 		const pii = request.redactPii ? piiFieldNames(catalog) : new Set<string>()
 		const personal = piiIssue(query.sql, pii)
 		if (personal !== null) return yield* refuse(personal)
+		const hidden = hiddenEntryIssue(query.sql, request.hiddenEntries, connection.config.database)
+		if (hidden !== null) return yield* refuse(hidden)
 		const { granularitySeconds, startMs, endMs } = request.window
 		if (
 			!Number.isFinite(granularitySeconds) ||
@@ -196,5 +201,6 @@ export const prepareClickHouse = (
 				},
 			}),
 		)
-		return { summary: { _tag: "sql", sql }, run: () => run }
+		// One unit of the source's query budget per run, taken before anything reaches the cluster.
+		return { summary: { _tag: "sql", sql }, run: (context) => Effect.andThen(context.spend(1), run) }
 	})

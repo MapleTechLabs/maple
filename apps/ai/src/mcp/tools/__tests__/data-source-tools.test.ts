@@ -20,6 +20,7 @@ import {
 	SearchDataSourcesOutput,
 } from "@maple/domain/mcp-outputs"
 import type { McpToolResult } from "../types"
+import { RoleName, type TenantContext } from "@maple/domain/http"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
 import {
 	fakeDataSources,
@@ -51,6 +52,14 @@ afterAll(async () => {
 	await capped.dispose()
 	await flaggedOff.dispose()
 })
+
+const role = Schema.decodeSync(RoleName)
+const ENGINEER = { roles: [role("org:engineer")] }
+/** The same runtime, called by someone else. */
+const as = (
+	rt: EvalRuntime,
+	caller: Pick<TenantContext, "roles"> & Partial<Pick<TenantContext, "turnOrigin" | "scopes">>,
+): EvalRuntime => ({ ...rt, tenant: { ...rt.tenant, ...caller } })
 
 const decode = <S extends Schema.Codec<unknown, unknown>>(schema: S, result: McpToolResult) =>
 	Schema.decodeSync(schema)(result.structuredContent)
@@ -252,11 +261,63 @@ describe("describe_data_source", () => {
 	})
 })
 
+describe("who may run query_data_source", () => {
+	const query = { data_source: "shop-prod", sql: "SELECT count() AS n FROM shop.payments", ...WINDOW }
+
+	it.each([
+		["an analyst", { roles: [role("org:analyst")] }],
+		["a key pinned below the engineer role", { roles: [role("org:member")] }],
+		["a chat turn a person drives without a role", { roles: [], turnOrigin: { kind: "app" } }],
+	] as const)("refuses %s, and nothing reaches the source", async (_who, caller) => {
+		const before = world.runs
+		const result = await runToolDirect(as(seeded, caller), "query_data_source", query)
+		expect(result.failureCategory).toBe("permission")
+		expect(markdown(result)).toContain("Only org admins and engineers can query connected data sources.")
+		expect(world.runs).toBe(before)
+	})
+
+	it.each([
+		["an engineer", ENGINEER],
+		["an admin", { roles: [role("org:admin")] }],
+		["Maple's own unattended run", { roles: [], turnOrigin: { kind: "autonomous" } }],
+	] as const)("runs the query for %s", async (_who, caller) => {
+		const result = await runToolDirect(as(seeded, caller), "query_data_source", query)
+		expect(decode(QueryDataSourceOutput, result)).toMatchObject({ executed: true, rowCount: 2 })
+	})
+
+	it("still lets an analyst read the stored catalog", async () => {
+		const analyst = as(seeded, { roles: [role("org:analyst")] })
+		const listed = decode(ListDataSourcesOutput, await runToolDirect(analyst, "list_data_sources", {}))
+		expect(Arr.map(listed.sources, (source) => source.name)).toContain("shop-prod")
+		const described = await runToolDirect(analyst, "describe_data_source", { data_source: "shop-prod" })
+		expect(described.isError).not.toBe(true)
+	})
+})
+
+describe("the sources a prompt or resource may name", () => {
+	const list = (rt: EvalRuntime) =>
+		rt.runtime.runPromise(
+			McpToolExecutor.pipe(Effect.flatMap((executor) => executor.listDataSources(rt.tenant))),
+		)
+
+	it("are none for a scoped key without data_sources:read", async () => {
+		const scoped = as(seeded, { roles: [role("org:admin")], scopes: ["traces:read", "dashboards:write"] })
+		expect(await list(scoped)).toEqual([])
+	})
+
+	it("are the org's agent-visible sources for a key with the scope", async () => {
+		const scoped = as(seeded, { roles: [role("org:admin")], scopes: ["data_sources:read"] })
+		const names = Arr.map(await list(scoped), (source) => source.name)
+		expect(names).toContain("shop-prod")
+		expect(names).not.toContain("secret-db")
+	})
+})
+
 describe("query_data_source", () => {
 	it("states the source, language and plan first, then the rows", async () => {
 		const sql =
 			"SELECT status, count() AS n FROM shop.payments WHERE $__timeFilter(inserted) GROUP BY status"
-		const result = await runToolDirect(seeded, "query_data_source", {
+		const result = await runToolDirect(as(seeded, ENGINEER), "query_data_source", {
 			data_source: "shop-prod",
 			sql,
 			...WINDOW,
@@ -271,7 +332,7 @@ describe("query_data_source", () => {
 	})
 
 	it("does not count a time macro inside a comment as a time filter", async () => {
-		const result = await runToolDirect(seeded, "query_data_source", {
+		const result = await runToolDirect(as(seeded, ENGINEER), "query_data_source", {
 			data_source: "shop-prod",
 			sql: "SELECT count() AS n FROM shop.payments -- add $__timeFilter(inserted) later",
 			...WINDOW,
@@ -281,7 +342,7 @@ describe("query_data_source", () => {
 
 	it("plans an API query without running it under explain", async () => {
 		const before = world.runs
-		const result = await runToolDirect(seeded, "query_data_source", {
+		const result = await runToolDirect(as(seeded, ENGINEER), "query_data_source", {
 			data_source: "clerk-prod",
 			resource: { resource: "users", measure: { fn: "count" } },
 			explain: true,
@@ -292,7 +353,7 @@ describe("query_data_source", () => {
 	})
 
 	it("refuses SQL sent to an API source with the right form", async () => {
-		const result = await runToolDirect(seeded, "query_data_source", {
+		const result = await runToolDirect(as(seeded, ENGINEER), "query_data_source", {
 			data_source: "clerk-prod",
 			sql: "SELECT count(*) FROM users",
 		})
@@ -304,7 +365,7 @@ describe("query_data_source", () => {
 	})
 
 	it("refuses a resource query sent to a database source with an SQL example", async () => {
-		const result = await runToolDirect(seeded, "query_data_source", {
+		const result = await runToolDirect(as(seeded, ENGINEER), "query_data_source", {
 			data_source: "shop-prod",
 			resource: { resource: "payments", measure: { fn: "count" } },
 		})
@@ -313,7 +374,9 @@ describe("query_data_source", () => {
 	})
 
 	it("asks for exactly one of sql and resource", async () => {
-		const result = await runToolDirect(seeded, "query_data_source", { data_source: "shop-prod" })
+		const result = await runToolDirect(as(seeded, ENGINEER), "query_data_source", {
+			data_source: "shop-prod",
+		})
 		expect(markdown(result)).toContain("Send the query")
 	})
 
@@ -325,7 +388,7 @@ describe("query_data_source", () => {
 		[new DataSourceQueryError({ message: "Unknown column foo" }), "query"],
 	])("maps %s to the %s failure", async (error, category) => {
 		world.failWith = error
-		const result = await runToolDirect(seeded, "query_data_source", {
+		const result = await runToolDirect(as(seeded, ENGINEER), "query_data_source", {
 			data_source: "shop-prod",
 			sql: "SELECT 1",
 		})
@@ -336,12 +399,12 @@ describe("query_data_source", () => {
 
 	it("names the tool's own parameter, not the service field, on a refused value", async () => {
 		world.failWith = new DataSourceValidationError({ field: "granularitySeconds", message: "too fine" })
-		const result = await runToolDirect(seeded, "query_data_source", {
+		const result = await runToolDirect(as(seeded, ENGINEER), "query_data_source", {
 			data_source: "shop-prod",
 			sql: "SELECT 1",
 		})
 		world.failWith = new DataSourceValidationError({ field: "timeField", message: "no time field" })
-		const internal = await runToolDirect(seeded, "query_data_source", {
+		const internal = await runToolDirect(as(seeded, ENGINEER), "query_data_source", {
 			data_source: "shop-prod",
 			sql: "SELECT 1",
 		})

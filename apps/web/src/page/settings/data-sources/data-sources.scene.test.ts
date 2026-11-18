@@ -34,6 +34,7 @@ const source = Schema.decodeSync(V2DataSource)({
 	tags: ["shop"],
 	agent_access: true,
 	agent_pii: false,
+	supports_pii_redaction: false,
 	connection: { type: "clickhouse", url: "https://ch.example.com:8443", user: "reader", database: "shop" },
 	has_secret: true,
 	secret_hint: "9f2c",
@@ -97,6 +98,7 @@ describe("data sources tab", () => {
 			kind: "clerk",
 			query_language: "resource",
 			agent_pii: true,
+			supports_pii_redaction: true,
 			status: "ok",
 			last_error: null,
 			connection: { type: "clerk", instance: "development" },
@@ -114,6 +116,59 @@ describe("data sources tab", () => {
 			expectView(text("Hidden from agents")).toExist(),
 			expectView(text("connection refused")).toExist(),
 		)
+	})
+
+	describe("what agents may read, on a kind that marks no personal data", () => {
+		const clerk = Schema.decodeSync(V2DataSource)({
+			...Schema.encodeSync(V2DataSource)(source),
+			id: encodePublicId(PublicIdPrefixes.dataSource, "0b7e4c1a-2f3d-4e5a-8b6c-7d8e9f0a1b2c"),
+			name: "clerk-prod",
+			kind: "clerk",
+			query_language: "resource",
+			supports_pii_redaction: true,
+			connection: { type: "clerk", instance: "production" },
+		})
+		const piiSwitch = role("switch", { name: "Agents may read personal data" })
+
+		test("the list claims redaction only for the kind that can redact", () => {
+			scene(
+				{ update, view },
+				given(loaded([source])),
+				expectView(text("Agents: every column")).toExist(),
+				expectView(text("Agents: PII redacted")).toBeAbsent(),
+			)
+			scene(
+				{ update, view },
+				given(loaded([clerk])),
+				expectView(text("Agents: PII redacted")).toExist(),
+			)
+		})
+
+		test("the source's page says agents read every column", () => {
+			scene(
+				{ update, view },
+				given(step(loaded([source]), Message.ClickedOpen({ id: source.id }))),
+				expectView(text("Agents can read every column of the tables shown to them")).toExist(),
+				expectView(text("Agents can query, personal data redacted")).toBeAbsent(),
+			)
+		})
+
+		test("the edit form has no personal data switch, and says what turning agents on gives them", () => {
+			scene(
+				{ update, view },
+				given(step(loaded([source]), Message.ClickedEdit({ id: source.id }))),
+				expectView(piiSwitch).toBeAbsent(),
+				expectView(text(/agents can read every column of the tables they can see/u)).toExist(),
+			)
+		})
+
+		test("a kind that marks personal data keeps the switch", () => {
+			scene(
+				{ update, view },
+				given(step(loaded([clerk]), Message.ClickedEdit({ id: clerk.id }))),
+				expectView(piiSwitch).toExist(),
+			)
+		})
 	})
 
 	test("connect goes through the kind picker into an empty form", () => {

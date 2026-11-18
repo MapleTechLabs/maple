@@ -277,7 +277,22 @@ Design consequences:
 
 ### Security and access
 
-- Create/edit/delete/test: org admins. Query: any member through dashboards/alerts/MCP.
+- Create/edit/delete/test: engineers and admins (`data_sources:manage`).
+- Query: engineers and admins (`data_sources:query`), checked in `ExternalDataSourceService.query`
+  for every caller that is a person or a key (MCP session, MCP OAuth client, API key, a chat turn a
+  person drives). Maple's own unattended runs (a turn whose origin is `autonomous`) have no person
+  to hold a role, so the source's `agentAccess` switch is what admits them. The stored catalog
+  (`list`, `search`, `describe`) stays readable by every role with the `data_sources:read` scope.
+- Hidden entries on a SQL source: an agent's SQL is refused when it names a hidden table (as
+  `table` or `db.table`, however quoted), reads the `system` or `information_schema` database, or
+  calls a function that reads a table named by a string (`dictGet`, `joinGet`). A quoted
+  identifier with a backslash escape is refused too, because the name it spells cannot be checked.
+  The check matches names, not tables, so a column or alias spelled like a hidden table is refused.
+  A view or dictionary shown to agents still returns what it reads from a hidden table.
+- `agentPii` only does something on a kind whose catalog marks personal data (Clerk today). The
+  source says so (`supportsPiiRedaction`), and Settings shows no PII switch where it is false.
+- A ClickHouse source takes at most `SQL_QUERY_SHARE` queries per period across all callers
+  (a Cloudflare rate-limit binding keyed by source id).
 - Secrets never leave the backend; `GET` returns `hasPassword: true`.
 - Public dashboard shares: a widget on an external source executes with the org's credentials
   on behalf of an anonymous viewer. v1 renders these widgets on shares only when the source has

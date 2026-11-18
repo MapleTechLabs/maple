@@ -1,8 +1,17 @@
 import { Array as Arr, Effect, String as Str } from "effect"
 import type { ExternalDataSourceServiceError } from "@maple/backend/services/data-sources/ExternalDataSourceService"
+import type { DataSourceForbiddenError } from "@maple/domain/data-sources"
+import type { TenantContext } from "@maple/domain/http"
+import { scopeAllows } from "@maple/domain/http/v2"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import type { ExternalDataSourceDocument, QueryLanguage, QueryPlanSummary } from "@maple/domain/data-sources"
-import { McpInvalidInputError, McpQueryBudgetError, McpQueryError, McpUnavailableError } from "../tools/types"
+import {
+	McpAuthInvalidError,
+	McpInvalidInputError,
+	McpQueryBudgetError,
+	McpQueryError,
+	McpUnavailableError,
+} from "../tools/types"
 import { truncate } from "./format"
 import { CurrentMcpTenant } from "../tenant"
 import { stringifyJson } from "./json"
@@ -22,6 +31,10 @@ export const tenantWithDataSources = Effect.fnUntraced(function* (tool: string) 
 	}
 	return tenant
 })
+
+/** Whether the credential may read data sources: the scope `list_data_sources` asks for. */
+export const mayReadDataSources = (tenant: Pick<TenantContext, "scopes">): boolean =>
+	scopeAllows(tenant.scopes, { family: "data_sources", access: "read" })
 
 /** Above this many sources the prompt names a count, not every source. */
 export const MAX_PROMPT_SOURCES = 30
@@ -100,9 +113,20 @@ const toolParameter = (field: string | undefined): string | undefined =>
 export const toMcpDataSourceError =
 	(tool: string, parameter = "data_source") =>
 	(
-		error: ExternalDataSourceServiceError,
-	): McpInvalidInputError | McpQueryBudgetError | McpQueryError | McpUnavailableError => {
+		error: ExternalDataSourceServiceError | DataSourceForbiddenError,
+	):
+		| McpAuthInvalidError
+		| McpInvalidInputError
+		| McpQueryBudgetError
+		| McpQueryError
+		| McpUnavailableError => {
 		switch (error._tag) {
+			// The credential is good and its role does not reach a query: a permission answer.
+			case "@maple/data-sources/Forbidden":
+				return new McpAuthInvalidError({
+					message: `\`${tool}\` runs a query on a database or API your organization connected. ${error.message} An org admin or engineer can run it, or change your role.`,
+					reason: "insufficient_scope",
+				})
 			case "@maple/data-sources/NotFound":
 				return new McpInvalidInputError({
 					message: withSuggestions(error.message, error.suggestions),
@@ -155,5 +179,5 @@ export const toMcpDataSourceError =
 /** `Effect.mapError` over a service call. */
 export const mapDataSourceError =
 	(tool: string, parameter?: string) =>
-	<A, R>(effect: Effect.Effect<A, ExternalDataSourceServiceError, R>) =>
+	<A, R>(effect: Effect.Effect<A, ExternalDataSourceServiceError | DataSourceForbiddenError, R>) =>
 		Effect.mapError(effect, toMcpDataSourceError(tool, parameter))
