@@ -74,7 +74,7 @@ const load = () => {
 	db.exec(counter("other_requests_total"))
 	db.exec(`
 		INSERT INTO metrics_histogram (OrgId, ResourceAttributes, ServiceName, MetricName, MetricUnit, Attributes, StartTimeUnix, TimeUnix, Count, Sum, BucketCounts, ExplicitBounds, AggregationTemporality)
-		SELECT '${ORG}', map('service.name', 'svc-' || toString(intDiv(number, ${POINTS}) % 10)), 'svc-' || toString(intDiv(number, ${POINTS}) % 10),
+		SELECT '${ORG}', map('service.name', 'svc-' || toString(intDiv(number, ${POINTS}) % 10), 'k8s.pod.name', 'pod-' || toString(intDiv(number, ${POINTS}))), 'svc-' || toString(intDiv(number, ${POINTS}) % 10),
 			'http.server.request.duration', 's', map('http.route', '/r' || toString(intDiv(number, ${POINTS}) % 50)),
 			fromUnixTimestamp64Milli(toInt64(${START - HOUR_MS})), ${ts},
 			(number % ${POINTS}) * 12, toFloat64(number % ${POINTS}) * 3.5,
