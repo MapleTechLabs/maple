@@ -147,8 +147,8 @@ const slides = [
 		let anim: Animation | null = null;
 		let resumeTimer = 0;
 
-		// Four independent reasons to be stopped, resolved by one predicate rather
-		// than four competing play/pause calls — otherwise "tab returns to the
+		// Five independent reasons to be stopped, resolved by one predicate rather
+		// than five competing play/pause calls. Otherwise "tab returns to the
 		// foreground while scrolled away" resumes a timer nobody can see.
 		// `auto` is the standing capability (reduced motion turns it off for good);
 		// `manual` is the temporary hold a hand-picked slide takes out.
@@ -156,7 +156,10 @@ const slides = [
 		let manual = false;
 		let onscreen = true;
 		let focused = false;
-		const running = () => auto && !manual && onscreen && !focused && !document.hidden;
+		// An open lightbox holds the reel: advancing would make its opener's plate
+		// inert, and focus could not return there when it closes.
+		const lightboxOpen = () => document.querySelector("[data-lightbox-content]") !== null;
+		const running = () => auto && !manual && onscreen && !focused && !document.hidden && !lightboxOpen();
 
 		// Fetch the plate after this one ahead of its turn. Slides 2-3 ship
 		// `loading="lazy"` so they never compete with the LCP image, but an

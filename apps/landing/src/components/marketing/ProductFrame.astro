@@ -109,7 +109,7 @@ const shot = capture ? capture[wide ? "wide" : "aside"] : null;
 					<LiveServiceMap />
 				</div>
 				<div class="sm:hidden">
-					<MediaFrame label={MAP_PHONE.label} src={MAP_PHONE.src} width={1440} height={810} crop={MAP_PHONE.crop} />
+					<MediaFrame label={label ?? MAP_PHONE.label} src={MAP_PHONE.src} width={1440} height={810} crop={MAP_PHONE.crop} />
 				</div>
 			</Fragment>
 		) : (
