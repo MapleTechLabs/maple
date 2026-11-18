@@ -1899,6 +1899,7 @@ describe("withReviewStatus", () => {
 			partial: false,
 			headSha: HEAD,
 			repositoryUrl: REPO_URL,
+			isPrivate: true,
 		})
 		assert.isUndefined(
 			withReviewStatus(finished, MARKER, { kind: "failed", headSha: HEAD }, "@maple-review-bot"),
@@ -1917,6 +1918,7 @@ describe("buildPublication", () => {
 			headSha: HEAD,
 			partial: false,
 			repositoryUrl: REPO_URL,
+			isPrivate: true,
 			report: report([
 				new PrReviewFinding({
 					path: "a.ts",
@@ -1955,6 +1957,7 @@ describe("buildPublication", () => {
 			headSha: HEAD,
 			partial: false,
 			repositoryUrl: REPO_URL,
+			isPrivate: true,
 			report: report([]),
 		})
 		assert.equal(publication.conclusion, "success")
@@ -1986,6 +1989,7 @@ describe("buildPublication", () => {
 			partial: true,
 			headSha: HEAD,
 			repositoryUrl: REPO_URL,
+			isPrivate: true,
 		}
 		const comment = renderSummaryComment(prReviewCommentMarker(UNKNOWN_REVIEW), input)
 		assert.include(comment, "Files not reviewed (2)")
@@ -2015,6 +2019,7 @@ describe("buildPublication", () => {
 			partial: false,
 			headSha: HEAD,
 			repositoryUrl: `${REPO_URL}/`,
+			isPrivate: true,
 		})
 		assert.include(comment, `(${REPO_URL}/blob/${HEAD}/src/a%20b.ts#L4-L6)`)
 		assert.include(comment, "🔴 **Confidence 4/10** · risky as written")
@@ -2038,6 +2043,7 @@ describe("buildPublication", () => {
 			partial: true,
 			headSha: HEAD,
 			repositoryUrl: REPO_URL,
+			isPrivate: true,
 		})
 		assert.include(summary, "| POST /orders | entrypoint | no | no withSpan |")
 		assert.include(summary, "observability · SPAN-03 · [`a.ts:1`]")
@@ -2070,6 +2076,7 @@ describe("buildPublication", () => {
 			partial: false,
 			headSha: HEAD,
 			repositoryUrl: REPO_URL,
+			isPrivate: true,
 		})
 		assert.isBelow(
 			Option.getOrElse(Str.indexOf("<b>Critical</b>")(comment), () => -1),
@@ -2087,6 +2094,7 @@ describe("buildPublication", () => {
 			partial: false,
 			headSha: HEAD,
 			repositoryUrl: REPO_URL,
+			isPrivate: true,
 		}
 		const check = renderCheckSummary(input)
 		assert.include(
@@ -2119,6 +2127,7 @@ describe("buildPublication", () => {
 				partial,
 				headSha: HEAD,
 				repositoryUrl: REPO_URL,
+				isPrivate: true,
 			})
 		assert.include(
 			render([]),
@@ -2157,6 +2166,7 @@ describe("buildPublication", () => {
 				headSha: HEAD,
 				partial,
 				repositoryUrl: REPO_URL,
+				isPrivate: true,
 				// The reviewer's own number never moves the check.
 				report: new PrReviewReport({ ...report([]), ...signals, confidence: 1 }),
 			}).conclusion
@@ -2174,6 +2184,7 @@ describe("buildPublication", () => {
 			headSha: HEAD,
 			partial: false,
 			repositoryUrl: REPO_URL,
+			isPrivate: true,
 			report: report([
 				new PrReviewFinding({
 					path: "a.ts",
@@ -2197,6 +2208,7 @@ describe("buildPublication", () => {
 			headSha: HEAD,
 			partial: false,
 			repositoryUrl: REPO_URL,
+			isPrivate: true,
 			report: report([
 				new PrReviewFinding({
 					path: "a.ts",
@@ -2231,6 +2243,7 @@ describe("buildPublication", () => {
 			partial: false,
 			headSha: HEAD,
 			repositoryUrl: REPO_URL,
+			isPrivate: true,
 		})
 		assert.include(summary, "| a\\\\\\|b | k | yes | e |")
 	})
@@ -2251,6 +2264,7 @@ describe("buildPublication", () => {
 			partial: false,
 			headSha: HEAD,
 			repositoryUrl: REPO_URL,
+			isPrivate: true,
 		})
 		assert.isAtMost(new TextEncoder().encode(summary).byteLength, 65_535)
 		assert.include(summary, "cut at GitHub's limit")

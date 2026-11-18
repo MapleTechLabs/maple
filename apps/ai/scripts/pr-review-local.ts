@@ -1290,6 +1290,8 @@ export const reviewLocally = async (
 		// Each run is its own review, so a posted run gets a comment of its own.
 		reviewId: Schema.decodeSync(PrReviewId)(randomUUID()),
 		repositoryUrl: `https://github.com/${repository}`,
+		// A local run has no warehouse attached, so its report carries no telemetry to hide.
+		isPrivate: true,
 		number: args.number,
 		headSha: pr.head.sha,
 		report,

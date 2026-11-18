@@ -264,13 +264,14 @@ const groupIssues = (issues: PrReviewTelemetry["linkedIssues"]) =>
 /**
  * The section on production: what breaks, which open errors live in the changed files, and, on the
  * check run only (`brief` is the comment), where the traffic is and what telemetry the change adds
- * or removes.
+ * or removes. On a public repository it names no alert, dashboard, service, span or error: counts only.
  */
 export const renderTelemetryMarkdown = (
 	telemetry: PrReviewTelemetry | undefined,
-	options: { readonly blocking: boolean; readonly brief?: boolean },
+	options: { readonly blocking: boolean; readonly brief?: boolean; readonly isPrivate: boolean },
 ): ReadonlyArray<string> => {
 	if (telemetry === undefined) return []
+	const withText = options.isPrivate
 	const open = openContractBreaks(telemetry)
 	const dismissed = Arr.filter(telemetry.contractBreaks, (item) => item.dismissed !== undefined)
 	const sections: Array<string> = []
@@ -281,13 +282,20 @@ export const renderTelemetryMarkdown = (
 			...Arr.map(
 				open,
 				(item) =>
-					`> - \`${item.name}\` (${KIND_LABEL[item.kind]}, ~${formatCount(item.perDay ?? 0)}/day): ${referenceList(item)}`,
+					`> - \`${item.name}\` (${KIND_LABEL[item.kind]}, ~${formatCount(item.perDay ?? 0)}/day): ${withText ? referenceList(item) : readerCount(item)}`,
 			),
 			"",
 		)
 	}
 	const issues = groupIssues(telemetry.linkedIssues)
-	if (issues.length > 0) {
+	if (issues.length > 0 && !withText) {
+		const occurrences = Arr.reduce(issues, 0, (sum, issue) => sum + issue.occurrences)
+		sections.push(
+			`${issues.length} open error ${issues.length === 1 ? "group" : "groups"} in the changed files, ${formatCount(occurrences)} occurrences. Details are in Maple.`,
+			"",
+		)
+	}
+	if (issues.length > 0 && withText) {
 		sections.push(
 			`<details><summary>Open errors in the changed files (${issues.length})</summary>`,
 			"",
@@ -310,19 +318,20 @@ export const renderTelemetryMarkdown = (
 		sections.push(
 			`<details><summary>Production traffic of the changed files (last ${telemetry.windowDays} days)</summary>`,
 			"",
-			"| File | Calls/day | Busiest operations |",
-			"| --- | ---: | --- |",
-			...Arr.map(
-				telemetry.hotFiles,
-				(file) =>
-					`| \`${escapeCell(file.path)}\` | ${formatCount(file.perDay)} | ${Arr.join(
-						Arr.map(
-							file.operations.slice(0, 3),
-							(operation) =>
-								`\`${escapeCell(operation.spanName)}\` ${formatCount(operation.perDay)}/day, ${(operation.errorRate * 100).toFixed(1)}% err`,
-						),
-						"<br>",
-					)} |`,
+			...(withText
+				? ["| File | Calls/day | Busiest operations |", "| --- | ---: | --- |"]
+				: ["| File | Calls/day |", "| --- | ---: |"]),
+			...Arr.map(telemetry.hotFiles, (file) =>
+				!withText
+					? `| \`${escapeCell(file.path)}\` | ${formatCount(file.perDay)} |`
+					: `| \`${escapeCell(file.path)}\` | ${formatCount(file.perDay)} | ${Arr.join(
+							Arr.map(
+								file.operations.slice(0, 3),
+								(operation) =>
+									`\`${escapeCell(operation.spanName)}\` ${formatCount(operation.perDay)}/day, ${(operation.errorRate * 100).toFixed(1)}% err`,
+							),
+							"<br>",
+						)} |`,
 			),
 			"",
 			"</details>",

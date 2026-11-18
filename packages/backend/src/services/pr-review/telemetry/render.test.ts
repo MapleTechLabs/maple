@@ -264,14 +264,29 @@ describe("rendering", () => {
 
 	it("says the check blocks only when the repository asked", () => {
 		assert.include(
-			Arr.join(renderTelemetryMarkdown(telemetry(), { blocking: true }), "\n"),
+			Arr.join(renderTelemetryMarkdown(telemetry(), { blocking: true, isPrivate: true }), "\n"),
 			"This check fails",
 		)
 		assert.notInclude(
-			Arr.join(renderTelemetryMarkdown(telemetry(), { blocking: false }), "\n"),
+			Arr.join(renderTelemetryMarkdown(telemetry(), { blocking: false, isPrivate: true }), "\n"),
 			"This check fails",
 		)
-		assert.deepStrictEqual(renderTelemetryMarkdown(undefined, { blocking: false }), [])
+		assert.deepStrictEqual(renderTelemetryMarkdown(undefined, { blocking: false, isPrivate: true }), [])
+	})
+
+	it("names no alert, dashboard, span or error in a public repository's summary", () => {
+		const text = Arr.join(
+			renderTelemetryMarkdown(telemetry({ linkedIssues: [issue("a", "ForbiddenError", 4_600)] }), {
+				blocking: false,
+				isPrivate: false,
+			}),
+			"\n",
+		)
+		assert.include(text, "1 alert")
+		assert.include(text, "1 open error group")
+		for (const name of ["Checkout by provider", "“Payments”", "ForbiddenError", "POST /checkout"]) {
+			assert.notInclude(text, name)
+		}
 	})
 
 	const issue = (id: string, title: string, occurrences: number) =>
@@ -299,7 +314,7 @@ describe("rendering", () => {
 						issue("d", "WarehouseAuthError", 1_500),
 					],
 				}),
-				{ blocking: false },
+				{ blocking: false, isPrivate: true },
 			),
 			"\n",
 		)
@@ -326,19 +341,26 @@ describe("rendering", () => {
 				}),
 			],
 		})
-		const brief = Arr.join(renderTelemetryMarkdown(full, { blocking: false, brief: true }), "\n")
+		const brief = Arr.join(
+			renderTelemetryMarkdown(full, { blocking: false, brief: true, isPrivate: true }),
+			"\n",
+		)
 		assert.include(brief, "`payment.provider` (attribute")
 		assert.include(brief, "Open errors in the changed files (1)")
 		assert.notInclude(brief, "Production traffic")
 		assert.notInclude(brief, "Telemetry this change adds and removes")
 		assert.notInclude(brief, "Ingest cost of new log lines")
-		const check = Arr.join(renderTelemetryMarkdown(full, { blocking: false }), "\n")
+		const check = Arr.join(renderTelemetryMarkdown(full, { blocking: false, isPrivate: true }), "\n")
 		assert.include(check, "Production traffic")
 		assert.include(check, "Telemetry this change adds and removes (1)")
 		assert.include(check, "Ingest cost of new log lines")
 		// Nothing that needs action: the comment has no section at all.
 		assert.deepStrictEqual(
-			renderTelemetryMarkdown(telemetry({ contractBreaks: [] }), { blocking: false, brief: true }),
+			renderTelemetryMarkdown(telemetry({ contractBreaks: [] }), {
+				blocking: false,
+				brief: true,
+				isPrivate: true,
+			}),
 			[],
 		)
 	})

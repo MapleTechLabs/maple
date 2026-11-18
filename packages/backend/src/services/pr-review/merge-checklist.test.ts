@@ -332,6 +332,7 @@ describe("the Before merge section", () => {
 			partial: false,
 			headSha: Schema.decodeSync(GitCommitSha)(Str.repeat(40)("a")),
 			repositoryUrl: "https://github.com/acme/shop",
+			isPrivate: true,
 		})
 		assert.include(body, "### Before merge")
 		assert.include(
@@ -436,6 +437,7 @@ describe("ticks on the comment", () => {
 			partial: false,
 			headSha: Schema.decodeSync(GitCommitSha)(Str.repeat(40)("a")),
 			repositoryUrl: "https://github.com/acme/shop",
+			isPrivate: true,
 		})
 
 	it("tags each task with its key and renders a done step ticked", () => {

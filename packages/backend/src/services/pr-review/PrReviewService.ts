@@ -668,6 +668,8 @@ export interface ReviewMarkdownInput {
 	readonly mention?: string
 	/** The repository fails the check on a broken telemetry contract. */
 	readonly blocking?: boolean
+	/** A public repository's summary is world-readable: its telemetry section names nothing. */
+	readonly isPrivate: boolean
 	/** Why the review did not auto-approve, said under the score; absent when it did or never asked. */
 	readonly notApproved?: ReadonlyArray<string>
 }
@@ -897,7 +899,11 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 		)
 	}
 	lines.push(
-		...renderTelemetryMarkdown(report.telemetry, { blocking: input.blocking === true, brief: comment }),
+		...renderTelemetryMarkdown(report.telemetry, {
+			blocking: input.blocking === true,
+			brief: comment,
+			isPrivate: input.isPrivate,
+		}),
 	)
 	const checked = comment ? [] : (report.checked ?? [])
 	if (checked.length > 0) {
@@ -1076,6 +1082,8 @@ export const buildPublication = (input: {
 	readonly report: PrReviewReport
 	readonly partial: boolean
 	readonly repositoryUrl: string
+	/** Whether the repository is private; a public one's summary names nothing from telemetry. */
+	readonly isPrivate: boolean
 	readonly carried?: CarriedFindings
 	readonly minInlineSeverity?: PrReviewSeverity
 	readonly keys?: ReadonlyMap<string, string>
@@ -1116,6 +1124,7 @@ export const buildPublication = (input: {
 		partial: input.partial,
 		headSha: input.headSha,
 		repositoryUrl: input.repositoryUrl,
+		isPrivate: input.isPrivate,
 		carried,
 		...(input.mention === undefined ? undefined : { mention: input.mention }),
 		...(input.providerRefusal !== undefined
@@ -3332,6 +3341,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						reviewId,
 						commentAttempt: yield* commentAttemptOf(orgId, reviewId),
 						repositoryUrl: repo.htmlUrl,
+						isPrivate: repo.isPrivate,
 						number: review.number,
 						headSha: review.headSha,
 						baseSha: review.baseSha,
