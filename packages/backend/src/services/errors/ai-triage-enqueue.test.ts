@@ -134,10 +134,10 @@ const enableWithLimits = (maxRunsPerDay: number, maxPassesPerDay: number) =>
  * `beginTurn` call on the investigation's session.
  */
 const fakeChatSession = (options?: { readonly busy?: boolean }) => {
-	const turns: Array<{ sessionId: string; text: string }> = []
+	const turns: Array<{ sessionId: string; text: string; origin: unknown }> = []
 	const chatSessions: ChatSessionsApi = fakeChatSessions(() => ({
-		beginTurn: async (input: { sessionId: string; messageId: string; text: string }) => {
-			turns.push({ sessionId: input.sessionId, text: input.text })
+		beginTurn: async (input: { sessionId: string; messageId: string; text: string; origin: unknown }) => {
+			turns.push({ sessionId: input.sessionId, text: input.text, origin: input.origin })
 			return options?.busy === true
 				? undefined
 				: { cursor: 0, messageId: input.messageId, turnMessageId: input.messageId }
@@ -238,6 +238,11 @@ describe("maybeEnqueueTriage", () => {
 			assert.lengthOf(chat.turns, 1)
 			assert.strictEqual(chat.turns[0].sessionId, `${ORG}:inv-${result.investigationId}`)
 			assert.include(chat.turns[0].text, "checkout-api")
+			// Raised by the incident, so no person answers for what the pass reads.
+			assert.deepStrictEqual(chat.turns[0].origin, {
+				kind: "autonomous",
+				startedBy: { kind: "producer", producer: "incident_triage" },
+			})
 
 			const database = yield* Database
 			const rows = yield* database.execute((db) =>

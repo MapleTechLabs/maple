@@ -1,12 +1,18 @@
 /**
  * Status pages: what the org's customers see about its health. Anyone may read them and run
  * incidents, like the REST routes; an agent's incident starts as a draft unless it asks to publish,
- * because every update is public text on the customer's page.
+ * because every update is public text on the customer's page. Admins and engineers set pages up:
+ * an agent's new page is a draft until publish_status_page, and its custom domain has its own
+ * DNS lifecycle (docs/status-page-custom-domains.md).
  */
 import { Clock, Effect, Schema, Array as Arr, String as Str } from "effect"
 import {
 	StatusPageIncidentMutationOutput,
+	type CreateStatusPageOutput,
+	type PublishStatusPageOutput,
+	type SetStatusPageDomainOutput,
 	type StatusPageDetail,
+	type StatusPageDomainRow,
 	type StatusPageIncidentRow,
 	type StatusPageRow,
 } from "@maple/domain/mcp-outputs"
@@ -22,6 +28,7 @@ import type {
 	StatusPageIncidentRecord,
 	StatusPageRecord,
 } from "@maple/domain/http"
+import type { StatusPageCustomDomainRow } from "@maple/db/tables"
 import {
 	StatusPageIncidentId,
 	StatusPageIncidentImpact,
@@ -30,7 +37,14 @@ import {
 	type StatusPageId,
 	type StatusPageIncidentStatus,
 } from "@maple/primitives"
-import { isActiveIncident, overallStatus, pageFreshness } from "@maple/domain/status-page"
+import {
+	isActiveIncident,
+	normalizeCustomDomain,
+	overallStatus,
+	pageFreshness,
+	slugFromName,
+	StatusPageSlug,
+} from "@maple/domain/status-page"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { auditAttribution, originMetadata } from "@maple/backend/services/audit/audit-access"
@@ -39,14 +53,27 @@ import * as Policy from "@maple/domain/policy"
 import { stringifyJsonPretty } from "../lib/json"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
+import {
+	StatusPageCustomDomainsService,
+	type StatusPageCustomDomainView,
+} from "@maple/backend/services/status-pages/StatusPageCustomDomainsService"
 import { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
 import { McpInvalidInputError, McpQueryError, McpUnavailableError, type McpToolRegistrar } from "./types"
 import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 
+/** What setting or checking a custom domain can fail with. */
+type StatusPageCustomDomainError = Effect.Error<
+	| ReturnType<StatusPageCustomDomainsService["Service"]["set"]>
+	| ReturnType<StatusPageCustomDomainsService["Service"]["check"]>
+>
+
 const MUTATION_HINTS = { readOnly: false, destructive: false, idempotent: false, openWorld: true } as const
 const encodeConfig = Schema.encodeSync(StatusPageConfig)
+const matchesSlug = Schema.is(StatusPageSlug)
+/** Not a type guard: a refused slug is still a string to quote back. */
+const isSlug = (value: string): boolean => matchesSlug(value)
 
 const iso = (ms: number) => new Date(ms).toISOString()
 const isoOrNull = (ms: number | null) => (ms === null ? null : iso(ms))
@@ -54,7 +81,10 @@ const isoOrNull = (ms: number | null) => (ms === null ? null : iso(ms))
 /** Service failures as tool errors: a missing or invalid reference is the caller's to fix. */
 const toMcpError =
 	(tool: string) =>
-	(error: { readonly _tag: string; readonly message: string }): McpInvalidInputError | McpQueryError => {
+	(error: {
+		readonly _tag: string
+		readonly message: string
+	}): McpInvalidInputError | McpQueryError | McpUnavailableError => {
 		switch (error._tag) {
 			case "@maple/http/errors/StatusPageNotFoundError":
 			case "@maple/backend/status-pages/StatusPageGoneError":
@@ -75,6 +105,13 @@ const toMcpError =
 			case "@maple/http/errors/StatusPageValidationError":
 			case "@maple/http/errors/StatusPageSlugTakenError":
 				return new McpInvalidInputError({ message: error.message })
+			case "@maple/http/errors/StatusPageCustomDomainTakenError":
+				return new McpInvalidInputError({ message: error.message, parameter: "domain" })
+			case "@maple/http/errors/StatusPageCustomDomainsUnavailableError":
+				return new McpUnavailableError({
+					message: "Custom domains are not available on this Maple deployment.",
+					capability: "status_page_custom_domains",
+				})
 			case "@maple/http/errors/StatusPageConflictError":
 				return new McpInvalidInputError({
 					message: `${error.message} Nothing was applied. Call get_status_page with include_config=true again and redo the edit on the fresh document; applying the old one would undo the other change.`,
@@ -96,6 +133,15 @@ const toPageRow = (page: StatusPageRecord): typeof StatusPageRow.Type => ({
 	publishedRevision: page.publishedRevision,
 	publishedAt: isoOrNull(page.publishedAt),
 	lastPublishError: page.lastPublishError,
+})
+
+const toDomainRow = (domain: StatusPageCustomDomainRow): typeof StatusPageDomainRow.Type => ({
+	hostname: domain.hostname,
+	status: domain.status,
+	dnsRecords: domain.dnsRecords,
+	lastError: domain.lastError,
+	lastCheckedAt: isoOrNull(domain.lastCheckedAt),
+	activatedAt: isoOrNull(domain.activatedAt),
 })
 
 const toIncidentRow = (incident: StatusPageIncidentRecord): typeof StatusPageIncidentRow.Type => {
@@ -135,6 +181,40 @@ const tenantInRollout = Effect.fnUntraced(function* (tool: string) {
 		})
 	}
 	return tenant
+})
+
+/** Setting pages up is for admins and engineers, as on the REST routes (`status_pages:edit`). */
+const requireEditor = (roles: ReadonlyArray<string>, tool: string, action: string) =>
+	Policy.check(
+		roles,
+		"status_pages:edit",
+		() =>
+			new McpUnavailableError({
+				message: `${tool} ${action}, which only org admins and engineers may do. Ask an admin or engineer, or do it in Maple under Status pages.`,
+				capability: "org_admin",
+			}),
+	)
+
+/** The page entries the REST routes write, under the same actions. */
+const auditPage = Effect.fnUntraced(function* (
+	action:
+		| "status_page.created"
+		| "status_page.published"
+		| "status_page.custom_domain_set"
+		| "status_page.custom_domain_removed",
+	pageId: StatusPageId,
+	metadata: Readonly<Record<string, string | number | null>>,
+) {
+	const tenant = yield* CurrentMcpTenant
+	const audit = yield* AuditLogService
+	const actor = yield* CurrentAuditActor
+	yield* audit.record({
+		orgId: tenant.orgId,
+		...auditAttribution(tenant, actor),
+		action,
+		resourceId: pageId,
+		metadata: { ...metadata, ...originMetadata(tenant.turnOrigin) },
+	})
 })
 
 /** The same resource entries the REST routes write, so MCP edits show up per incident. */
@@ -258,7 +338,7 @@ const renderIncident = (title: string, output: typeof StatusPageIncidentMutation
 		title,
 		notices: output.pageDraft
 			? [
-					"The page is a draft, so nothing on it is public, this incident included. Publish the page in Maple under Status pages.",
+					"The page is a draft, so nothing on it is public, this incident included. publish_status_page publishes it once the user wants it public.",
 				]
 			: incident.published
 				? []
@@ -330,7 +410,9 @@ const renderPageList = (pages: ReadonlyArray<typeof StatusPageRow.Type>) => ({
 		? {
 				empty: {
 					message: "This organization has no status pages.",
-					hints: ["Create one in Maple under Status pages, or with POST /v2/status_pages."],
+					hints: [
+						"create_status_page creates one as a draft, or create it in Maple under Status pages.",
+					],
 				},
 			}
 		: undefined),
@@ -379,6 +461,13 @@ const renderPageDetail = (page: typeof StatusPageDetail.Type, config: StatusPage
 		...(page.lastPublishError === null
 			? []
 			: [`The last publish failed: ${page.lastPublishError}. The next minutely publish retries.`]),
+		...(page.customDomain === undefined || page.customDomain.status === "active"
+			? []
+			: [
+					`The custom domain ${page.customDomain.hostname} is not live yet (${page.customDomain.status})${
+						page.customDomain.lastError === null ? "" : `: ${page.customDomain.lastError}`
+					}. set_status_page_domain with the same domain lists its DNS records and checks them now.`,
+				]),
 		...(config === undefined
 			? []
 			: [
@@ -392,6 +481,12 @@ const renderPageDetail = (page: typeof StatusPageDetail.Type, config: StatusPage
 			["Overall", page.overallStatus],
 			["Published", page.draft ? "draft, not public" : (page.publishedAt ?? "not yet")],
 			["Change pending", page.freshness.publishPending ? "yes, publishes within a minute" : "no"],
+			[
+				"Custom domain",
+				page.customDomain === undefined
+					? undefined
+					: `${page.customDomain.hostname} (${page.customDomain.status})`,
+			],
 		]),
 		...(page.components.length === 0
 			? [doc.text("No components yet.")]
@@ -430,8 +525,10 @@ const renderPageDetail = (page: typeof StatusPageDetail.Type, config: StatusPage
 const readPageDetail = Effect.fnUntraced(function* (tool: string, orgId: OrgId, page: StatusPageRecord) {
 	const service = yield* StatusPagesService
 	const builder = yield* StatusPageSnapshotBuilder
+	const customDomains = yield* StatusPageCustomDomainsService
 	const nowMs = yield* Clock.currentTimeMillis
 	const snapshot = yield* builder.build(page.id, nowMs).pipe(Effect.mapError(toMcpError(tool)))
+	const { domain } = yield* customDomains.get(orgId, page.id).pipe(Effect.mapError(toMcpError(tool)))
 	const records = yield* pageComponents(tool, orgId, page.id)
 	const incidents = yield* service.listIncidents(orgId, page.id).pipe(Effect.mapError(toMcpError(tool)))
 	// Answering means Maple is up, so this is the probe side of freshness only, scoped to this org.
@@ -444,6 +541,7 @@ const readPageDetail = Effect.fnUntraced(function* (tool: string, orgId: OrgId, 
 			: pageFreshness({ snapshot, heartbeat: { at: nowMs, probesSeenAt }, nowMs })
 	return {
 		...toPageRow(page),
+		...(domain === null ? undefined : { customDomain: toDomainRow(domain) }),
 		overallStatus: overallStatus(snapshot),
 		components: Arr.map(snapshot.components, (component) => {
 			const record = records.find((candidate) => candidate.id === component.id)
@@ -702,15 +800,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 		handler: Effect.fn("McpTool.applyStatusPageConfig")(function* (params) {
 			const tool = "apply_status_page_config"
 			const tenant = yield* tenantInRollout(tool)
-			yield* Policy.check(
-				tenant.roles,
-				"status_pages:edit",
-				() =>
-					new McpUnavailableError({
-						message: `${tool} changes a public status page, which only org admins and engineers may do. Ask an admin or engineer, or edit it in Maple under Status pages.`,
-						capability: "org_admin",
-					}),
-			)
+			yield* requireEditor(tenant.roles, tool, "changes a public status page")
 			const service = yield* StatusPagesService
 			const page = yield* resolvePage(tool, tenant.orgId, params.page)
 			// Who can read the page has its own permission, checked as the HTTP routes check it. The
@@ -768,7 +858,9 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 				notices: unchanged
 					? ["Nothing changed: the document matched the page."]
 					: output.page.draft
-						? ["The page is a draft, so the change stays private until the page is published."]
+						? [
+								"The page is a draft, so the change stays private until publish_status_page publishes it.",
+							]
 						: ["The change publishes to the public page within a minute."],
 				blocks: [
 					doc.fields([
@@ -782,6 +874,274 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 				next: [
 					doc.next("get_status_page", { page: output.page.slug }, "the page as visitors see it"),
 				],
+			}
+		},
+	})
+	server.define({
+		name: "create_status_page",
+		title: "Create Status Page",
+		description:
+			"Create a status page as a draft: private until publish_status_page. It starts with no components; read its config with get_status_page include_config=true, add components (linked to uptime monitors), theme and links, and write them with apply_status_page_config. Only org admins and engineers may call it.",
+		parameters: Schema.Struct({
+			name: P.text("The page's public name, e.g. `Acme Status`"),
+			slug: P.optionalText(
+				"The page's address on Maple's status domain: 3 to 48 lowercase letters, digits or inner hyphens. Defaults to one made from `name` (`Acme Status` gives `acme-status`)",
+			),
+			description: P.optionalText("Optional public text under the page's title"),
+		}),
+		hints: MUTATION_HINTS,
+		scopeFamily: "status_pages",
+		phrases: ["Creating a status page"],
+		handler: Effect.fn("McpTool.createStatusPage")(function* (params) {
+			const tool = "create_status_page"
+			const tenant = yield* tenantInRollout(tool)
+			yield* requireEditor(tenant.roles, tool, "creates a status page")
+			const name = Str.trim(params.name)
+			const slug = params.slug === undefined ? slugFromName(name) : Str.trim(params.slug)
+			if (!isSlug(slug)) {
+				return yield* new McpInvalidInputError({
+					message:
+						params.slug === undefined
+							? `The name gives the address "${slug}", which is not a valid slug. Pass \`slug\`: 3 to 48 lowercase letters, digits or inner hyphens.`
+							: "`slug` must be 3 to 48 lowercase letters, digits or inner hyphens, e.g. `acme-status`.",
+					parameter: "slug",
+				})
+			}
+			const created = yield* (yield* StatusPagesService)
+				.create(tenant.orgId, {
+					name,
+					slug,
+					...(params.description === undefined ? undefined : { description: params.description }),
+					draft: true,
+					createdBy: tenant.userId,
+				})
+				.pipe(
+					Effect.mapError((error) =>
+						error._tag === "@maple/http/errors/StatusPageSlugTakenError"
+							? new McpInvalidInputError({
+									message: `Another status page already has the address "${error.slug}". Pass a different \`slug\`.`,
+									parameter: "slug",
+								})
+							: toMcpError(tool)(error),
+					),
+				)
+			yield* auditPage("status_page.created", created.id, { name: created.name, slug: created.slug })
+			return { page: toPageRow(created) }
+		}),
+		render: (output: typeof CreateStatusPageOutput.Type) => ({
+			title: `Status page created: ${output.page.name}`,
+			notices: [
+				"It is a draft: nobody outside Maple sees it until publish_status_page. Next, read its config document, add components (each can follow an uptime monitor) and settings, and write the edited document with apply_status_page_config.",
+			],
+			blocks: [
+				doc.fields([
+					["Slug", output.page.slug],
+					["Id", output.page.id],
+					["Published", "draft, not public"],
+				]),
+			],
+			next: [
+				doc.next(
+					"get_status_page",
+					{ page: output.page.slug, include_config: true },
+					"the config document to edit",
+				),
+			],
+		}),
+	})
+
+	server.define({
+		name: "publish_status_page",
+		title: "Publish Status Page",
+		description:
+			"Make a draft status page public: it goes live at its address with the next publish, within a minute, and its published incidents become visible. Calling it on a page that is already public changes nothing. A password page still asks visitors for its password; an internal page is still shown only inside Maple. Only org admins and engineers may call it.",
+		parameters: Schema.Struct({
+			page: P.text("The page's slug, name or id"),
+		}),
+		hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
+		scopeFamily: "status_pages",
+		phrases: ["Publishing a status page"],
+		handler: Effect.fn("McpTool.publishStatusPage")(function* (params) {
+			const tool = "publish_status_page"
+			const tenant = yield* tenantInRollout(tool)
+			yield* requireEditor(tenant.roles, tool, "publishes a status page")
+			const page = yield* resolvePage(tool, tenant.orgId, params.page)
+			if (!page.draft) return { action: "already_public" as const, page: toPageRow(page) }
+			// The minutely publish writes it: this Worker has no edge storage to publish to itself.
+			const published = yield* (yield* StatusPagesService)
+				.makePublic(tenant.orgId, page.id)
+				.pipe(Effect.mapError(toMcpError(tool)))
+			yield* auditPage("status_page.published", published.id, {
+				outcome: "queued",
+				revision: published.revision,
+			})
+			return { action: "published" as const, page: toPageRow(published) }
+		}),
+		render: (output: typeof PublishStatusPageOutput.Type) => ({
+			title:
+				output.action === "published"
+					? `Status page published: ${output.page.name}`
+					: `Status page already public: ${output.page.name}`,
+			notices: [
+				output.action === "published"
+					? "The page is public now and goes live with the next publish, within a minute."
+					: "The page was already public, so nothing changed.",
+				...(output.page.visibility === "password"
+					? ["Visitors need the page's password to read it."]
+					: output.page.visibility === "internal"
+						? ["The page is internal: it is shown only inside Maple, on no public address."]
+						: []),
+			],
+			blocks: [
+				doc.fields([
+					["Slug", output.page.slug],
+					["Id", output.page.id],
+					["Last published", output.page.publishedAt ?? "not yet"],
+					["Publish error", output.page.lastPublishError ?? undefined],
+				]),
+			],
+			next: [doc.next("get_status_page", { page: output.page.slug }, "the page as visitors see it")],
+		}),
+	})
+
+	server.define({
+		name: "set_status_page_domain",
+		title: "Set Status Page Domain",
+		description:
+			"Serve a status page on the org's own subdomain (`status.acme.com`), or remove it with remove=true. Returns the DNS records to add at the domain's DNS provider: a CNAME to Maple and a TXT record proving ownership. Maple checks them on its own (every minute for the first hour, then every 10 minutes) and issues the certificate; a domain not live within 7 days is dropped. Calling it again with the page's current domain checks the records now and reports where the setup stands. One domain per page, none on an internal page. Only org admins and engineers may call it.",
+		parameters: Schema.Struct({
+			page: P.text("The page's slug, name or id"),
+			domain: P.optionalText(
+				"The hostname to serve the page on, a subdomain such as `status.acme.com` (an apex domain cannot take a CNAME). It replaces the page's current domain; the same domain checks it again",
+			),
+			remove: P.optionalFlag(
+				"true removes the page's custom domain; the page stays on its Maple address. Takes no `domain`",
+			),
+		}),
+		hints: { readOnly: false, destructive: true, idempotent: true, openWorld: true },
+		scopeFamily: "status_pages",
+		phrases: ["Setting a status page domain"],
+		handler: Effect.fn("McpTool.setStatusPageDomain")(function* (params) {
+			const tool = "set_status_page_domain"
+			const tenant = yield* tenantInRollout(tool)
+			yield* requireEditor(tenant.roles, tool, "changes a status page's custom domain")
+			const remove = params.remove === true
+			if (remove && params.domain !== undefined) {
+				return yield* new McpInvalidInputError({
+					message: "Pass `domain` to set or check a domain, or remove=true to remove it, not both.",
+					parameter: "remove",
+				})
+			}
+			const requested = params.domain
+			if (!remove && requested === undefined) {
+				return yield* new McpInvalidInputError({
+					message:
+						"Pass `domain` (e.g. `status.acme.com`) to set or check the page's custom domain, or remove=true to remove it.",
+					parameter: "domain",
+				})
+			}
+			const page = yield* resolvePage(tool, tenant.orgId, params.page)
+			const customDomains = yield* StatusPageCustomDomainsService
+			// A domain going live or away bumps the page's revision: report the page as it is after.
+			const pages = yield* StatusPagesService
+			const reread = () => pages.get(tenant.orgId, page.id).pipe(Effect.mapError(toMcpError(tool)))
+			const before = yield* customDomains
+				.get(tenant.orgId, page.id)
+				.pipe(Effect.mapError(toMcpError(tool)))
+			const previous = before.domain?.hostname ?? null
+			if (requested === undefined) {
+				if (previous === null)
+					return { action: "unchanged" as const, page: toPageRow(page), domain: null }
+				yield* customDomains.remove(tenant.orgId, page.id).pipe(Effect.mapError(toMcpError(tool)))
+				yield* auditPage("status_page.custom_domain_removed", page.id, { hostname: previous })
+				const after = yield* reread()
+				return { action: "removed" as const, page: toPageRow(after), domain: null }
+			}
+			const hostname = normalizeCustomDomain(requested)
+			// The same domain again is a check, as the dashboard's Check now: `set` would only re-read it.
+			const same = previous === hostname
+			const written: Effect.Effect<StatusPageCustomDomainView, StatusPageCustomDomainError> = same
+				? customDomains.check(tenant.orgId, page.id)
+				: customDomains.set(tenant.orgId, page.id, requested)
+			const view = yield* written.pipe(
+				Effect.mapError((error) =>
+					// The hostname's issue, or an internal page, both fixed through `domain`.
+					error._tag === "@maple/http/errors/StatusPageValidationError"
+						? new McpInvalidInputError({ message: error.message, parameter: "domain" })
+						: toMcpError(tool)(error),
+				),
+			)
+			if (!same) {
+				yield* auditPage("status_page.custom_domain_set", page.id, {
+					hostname,
+					previous_hostname: previous,
+				})
+			}
+			const after = yield* reread()
+			return {
+				action: same ? ("checked" as const) : ("set" as const),
+				page: toPageRow(after),
+				domain: view.domain === null ? null : toDomainRow(view.domain),
+			}
+		}),
+		render: (output: typeof SetStatusPageDomainOutput.Type) => {
+			const { domain, page } = output
+			if (domain === null) {
+				return {
+					title:
+						output.action === "removed"
+							? `Custom domain removed: ${page.name}`
+							: `No custom domain: ${page.name}`,
+					notices: [
+						output.action === "removed"
+							? "The page is served on its Maple address only. Its DNS records can be deleted."
+							: "The page had no custom domain, so nothing changed.",
+					],
+					blocks: [],
+					next: [doc.next("get_status_page", { page: page.slug }, "the page as visitors see it")],
+				}
+			}
+			const live = domain.status === "active"
+			return {
+				title: `Custom domain ${domain.hostname}: ${page.name}`,
+				notices: [
+					live
+						? `Live: the page answers at https://${domain.hostname}.`
+						: domain.status === "pending_dns"
+							? `Add these records at the DNS provider for ${domain.hostname}. Maple checks them every minute for the first hour, then every 10 minutes; call set_status_page_domain with the same domain to check now. A domain not live within 7 days is removed.`
+							: domain.status === "pending_ssl"
+								? "The DNS records are in place; the certificate is being issued, usually within minutes."
+								: `The setup stopped${domain.lastError === null ? "" : `: ${domain.lastError}`}. Fix the records, then call set_status_page_domain with the same domain to try again.`,
+					...(page.draft
+						? ["The page is a draft: the domain serves it once publish_status_page publishes it."]
+						: []),
+				],
+				blocks: [
+					doc.fields([
+						["Status", domain.status],
+						["Last error", live ? undefined : (domain.lastError ?? undefined)],
+						["Last checked", domain.lastCheckedAt ?? undefined],
+						["Live since", domain.activatedAt ?? undefined],
+					]),
+					doc.table(
+						["Type", "Name", "Value", "For"],
+						Arr.map(domain.dnsRecords, (record) => [
+							record.type,
+							record.name,
+							record.value,
+							record.purpose,
+						]),
+					),
+				],
+				next: live
+					? [doc.next("get_status_page", { page: page.slug }, "the page as visitors see it")]
+					: [
+							doc.next(
+								"set_status_page_domain",
+								{ page: page.slug, domain: domain.hostname },
+								"check the records again once they are added",
+							),
+						],
 			}
 		},
 	})

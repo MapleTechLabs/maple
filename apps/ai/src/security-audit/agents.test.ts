@@ -57,6 +57,7 @@ const scriptedModel = (name: string, parts: ReadonlyArray<Response.StreamPartEnc
 	const calls = { count: 0 }
 	const model: ResolvedModel = {
 		provider: "openrouter",
+		content: "record",
 		name,
 		limits: { context: 100_000, output: 4_000 },
 		layer: AiModel.make(

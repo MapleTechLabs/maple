@@ -11,7 +11,7 @@ import {
 } from "@maple/domain/chat-session"
 import type { TenantContext } from "@maple/domain/http"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
-import { ExternalUserId } from "@maple/primitives"
+import { ExternalUserId, RoleName } from "@maple/primitives"
 import { Effect, Exit, Layer, Schema, Stream, Array as Arr } from "effect"
 import { LanguageModel } from "effect/ai"
 import type { Response } from "effect/ai"
@@ -49,6 +49,8 @@ const ANONYMOUS: ChatTurnOrigin = {
 	displayName: "Ada",
 }
 const LINKED: ChatTurnOrigin = { ...ANONYMOUS, actingUserId: Schema.decodeSync(UserId)("user_ada") }
+/** The tenant a linked asker's turn runs as: their own membership, here an engineer's. */
+const LINKED_TENANT: TenantContext = { ...TENANT, roles: [Schema.decodeSync(RoleName)("org:engineer")] }
 
 const USAGE = { inputTokens: { total: 1, uncached: 1 }, outputTokens: { total: 1, text: 1 } }
 
@@ -69,6 +71,7 @@ const scriptedModel = (script: ReadonlyArray<ReadonlyArray<Response.StreamPartEn
 	const offered: Array<ReadonlyArray<string>> = []
 	const model: ResolvedModel = {
 		provider: "openrouter",
+		content: "record",
 		name: "scripted",
 		limits: { context: 100_000, output: 4_000 },
 		layer: AiModel.make(
@@ -114,12 +117,13 @@ const run = (
 	origin: ChatTurnOrigin,
 	model: ResolvedModel,
 	executor: McpToolExecutorApi,
+	tenant: TenantContext = TENANT,
 ): Promise<Exit.Exit<unknown, unknown>> =>
 	Effect.runPromiseExit(
 		runChatTurn({
 			sessionId: SESSION,
 			messageId: "msg-1",
-			tenant: TENANT,
+			tenant,
 			origin,
 			toolExecutor: executor,
 			model,
@@ -154,7 +158,7 @@ describe("a connector turn nobody is named on", () => {
 		const anonymous = scriptedModel([answer])
 		const linked = scriptedModel([answer])
 		await run(ANONYMOUS, anonymous.model, recordingExecutor().executor)
-		await run(LINKED, linked.model, recordingExecutor().executor)
+		await run(LINKED, linked.model, recordingExecutor().executor, LINKED_TENANT)
 
 		const narrow = new Set(mapleTools(anonymous.offered[0] ?? []))
 		const wide = mapleTools(linked.offered[0] ?? [])

@@ -787,7 +787,7 @@ export class V2UptimeMonitorsApiGroup extends HttpApiGroup.make("uptimeMonitors"
 				identifier: "createUptimeMonitor",
 				summary: "Create an uptime monitor",
 				description:
-					"Creates an uptime monitor. It starts `pending` until its first result. Fails with 402 when the organization already has as many monitors as its plan allows. Requires the `uptime_monitors:write` scope and an org-admin caller.",
+					"Creates an uptime monitor. It starts `pending` until its first result. Fails with 402 when the organization already has as many monitors as its plan allows. Requires the `uptime_monitors:write` scope and a caller with at least the engineer role.",
 			}),
 		),
 	)
@@ -801,7 +801,7 @@ export class V2UptimeMonitorsApiGroup extends HttpApiGroup.make("uptimeMonitors"
 				identifier: "testUptimeMonitor",
 				summary: "Test an uptime check",
 				description:
-					"Runs one HTTP check now with the given config and reports the response, without saving anything. TCP, DNS and heartbeat monitors run after creation. Requires the `uptime_monitors:write` scope and an org-admin caller.",
+					"Runs one HTTP check now with the given config and reports the response, without saving anything. TCP, DNS and heartbeat monitors run after creation. Requires the `uptime_monitors:write` scope and a caller with at least the engineer role.",
 			}),
 		),
 	)
@@ -830,7 +830,7 @@ export class V2UptimeMonitorsApiGroup extends HttpApiGroup.make("uptimeMonitors"
 				identifier: "updateUptimeMonitor",
 				summary: "Update an uptime monitor",
 				description:
-					"Updates a monitor; omitted fields are unchanged. Set `enabled` to pause or resume it. Requires the `uptime_monitors:write` scope and an org-admin caller.",
+					"Updates a monitor; omitted fields are unchanged. Set `enabled` to pause or resume it. Requires the `uptime_monitors:write` scope and a caller with at least the engineer role.",
 			}),
 		),
 	)
@@ -844,7 +844,7 @@ export class V2UptimeMonitorsApiGroup extends HttpApiGroup.make("uptimeMonitors"
 				identifier: "deleteUptimeMonitor",
 				summary: "Delete an uptime monitor",
 				description:
-					"Permanently deletes an uptime monitor and stops its checks. Recorded check spans are unaffected. Requires the `uptime_monitors:write` scope and an org-admin caller.",
+					"Permanently deletes an uptime monitor and stops its checks. Recorded check spans are unaffected. Requires the `uptime_monitors:write` scope and a caller with at least the engineer role.",
 			}),
 		),
 	)

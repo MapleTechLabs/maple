@@ -10,13 +10,13 @@ import { createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { McpToolExecutor } from "../dispatcher"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { EVAL_TENANT, FIXTURES, jsonDepth, MAX_STRUCTURED_OUTPUT_DEPTH } from "./utils"
-import type { TenantContext } from "@maple/domain/http"
+import { RoleName, type TenantContext } from "@maple/domain/http"
 import { SandboxFetcher } from "@maple/backend/platform/bindings"
 import { fakeableWarehouseLayer } from "./fake-warehouse"
 
 const INTERNAL_TOKEN = "eval-internal-token"
 
-const testEnv = (): Record<string, string> => ({
+const testEnv = (extra: Readonly<Record<string, string>>): Record<string, string> => ({
 	PORT: "3472",
 	TINYBIRD_HOST: "https://maple-eval.tinybird.co",
 	TINYBIRD_TOKEN: "eval-token",
@@ -31,6 +31,7 @@ const testEnv = (): Record<string, string> => ({
 	MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "eval-lookup-key",
 	MAPLE_INGEST_PUBLIC_URL: "http://127.0.0.1:3474",
 	MAPLE_APP_BASE_URL: "http://127.0.0.1:3471",
+	...extra,
 })
 
 export interface EvalRuntime {
@@ -58,9 +59,11 @@ export const makeEvalRuntime = (
 	> = OrganizationFeatureFlagsService.layer,
 	/** Fake data source drivers; the runtime then also serves the service, for seeding. */
 	dataSources?: Layer.Layer<ExternalDataSourceService, DataSourcePersistenceError, Database | Env>,
+	/** Config on top of the test defaults, e.g. what turns status page custom domains on. */
+	extraEnv: Readonly<Record<string, string>> = {},
 ): EvalRuntime => {
 	const testDb = createTestDb()
-	const env = testEnv()
+	const env = testEnv(extraEnv)
 
 	const configLive = ConfigProvider.layer(ConfigProvider.fromUnknown(env))
 	const envLive = Env.layer.pipe(Layer.provide(configLive))
@@ -98,6 +101,16 @@ export const makeEvalRuntime = (
 		},
 	}
 }
+
+/** A person who may run queries on connected data sources: the role the data source tools are exercised under. */
+export const ENGINEER_CALLER = { roles: [Schema.decodeSync(RoleName)("org:engineer")] }
+
+/** The same runtime, called by someone else. `EVAL_TENANT` alone holds no role and names no starter. */
+export const asCaller = (
+	rt: EvalRuntime,
+	caller: Pick<TenantContext, "roles"> &
+		Partial<Pick<TenantContext, "userId" | "turnOrigin" | "turnStarter" | "scopes">>,
+): EvalRuntime => ({ ...rt, tenant: { ...rt.tenant, ...caller } })
 
 class StructuredOutputTooDeep extends Schema.TaggedError<StructuredOutputTooDeep>()(
 	"@maple/ai/evals/StructuredOutputTooDeep",

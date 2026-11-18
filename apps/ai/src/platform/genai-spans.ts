@@ -8,6 +8,9 @@
  * Sessions reads all of it off the spans, and without it an investigation renders as a list of
  * models with no conversation in between.
  *
+ * Only a run for Maple's own org records that content (see {@link GenAiContent}): every other run
+ * keeps the counts, sizes, usage and timings, and marks the span `maple.genai.content_redacted`.
+ *
  * Message and tool payloads are capped, and a capped value keeps its *shape*: the read side's
  * `json` decoder admits objects and arrays only, so degrading an over-budget value to a string would
  * make the attribute vanish rather than render truncated. Message lists drop whole oldest messages
@@ -15,6 +18,7 @@
  * place; tool values are wrapped and truncated as objects.
  */
 import {
+	MAPLE_GENAI_CONTENT_REDACTED_ATTR,
 	MAPLE_GENAI_INPUT_MESSAGES_DROPPED_ATTR,
 	MAPLE_GENAI_MODEL_DURATION_MS_ATTR,
 } from "@maple/domain/gen-ai"
@@ -49,6 +53,16 @@ import { coalesceDeltas } from "./coalesce-deltas"
  * pressure. The tool budget is the primary limiter for tool results, not a backstop: upstream bounds
  * them at `MAX_TOOL_OUTPUT_BYTES` (50k, `mcp/tools/tool-output.ts`), six times this cap.
  */
+/**
+ * Whether a run's spans carry the conversation. Maple's traces land in its own org, readable by
+ * every seat there, so only a run for that org records content; every other run is `"redact"`.
+ */
+export type GenAiContent = "record" | "redact"
+
+/** `"record"` only when the run's org is Maple's internal org, and that org is configured. */
+export const genAiContentFor = (orgId: string | undefined, internalOrgId: string | undefined): GenAiContent =>
+	orgId !== undefined && internalOrgId !== undefined && orgId === internalOrgId ? "record" : "redact"
+
 const INPUT_MESSAGES_BUDGET = 20_000
 const OUTPUT_MESSAGES_BUDGET = 8_000
 const TOOL_JSON_BUDGET = 8_000
@@ -283,6 +297,8 @@ export interface ModelCallTelemetry {
 	readonly reasoningLevel?: string
 	/** The agent-session identity every model-call span carries — see `agentSessionSpanAttributes`. */
 	readonly sessionAttributes: Readonly<Record<string, string>>
+	/** Whether the messages and system instructions go on the span; see {@link GenAiContent}. */
+	readonly content: GenAiContent
 }
 
 /** One call's clock, read by the transformer when the stream ends. */
@@ -296,13 +312,35 @@ interface CallTiming {
 	readonly now: () => number
 }
 
+/** The conversation itself, for a run that records content. */
+const contentAttributes = (prompt: Prompt.Prompt, message: SerializedMessage) => {
+	const input = messagesJson(inputMessages(prompt), INPUT_MESSAGES_BUDGET)
+	const system = systemInstructionsJson(prompt)
+	return {
+		"gen_ai.input.messages": input.json,
+		...(input.dropped > 0 ? { [MAPLE_GENAI_INPUT_MESSAGES_DROPPED_ATTR]: input.dropped } : undefined),
+		...(system === undefined ? undefined : { "gen_ai.system_instructions": system }),
+		...(message.parts.length === 0
+			? undefined
+			: { "gen_ai.output.messages": messagesJson([message], OUTPUT_MESSAGES_BUDGET).json }),
+	}
+}
+
+/** Counts and sizes in place of the conversation, for a run that redacts it. */
+const redactedContentAttributes = (prompt: Prompt.Prompt, message: SerializedMessage) => ({
+	[MAPLE_GENAI_CONTENT_REDACTED_ATTR]: true,
+	"maple.genai.input_messages.count": Arr.filter(prompt.content, (entry) => entry.role !== "system").length,
+	"maple.genai.system_instructions.chars": Arr.reduce(prompt.content, 0, (sum, entry) =>
+		entry.role === "system" ? sum + entry.content.length : sum,
+	),
+	"maple.genai.output_parts.count": message.parts.length,
+})
+
 const modelCallTransformer =
 	(telemetry: ModelCallTelemetry, timing: CallTiming): Telemetry.SpanTransformer =>
 	({ span, prompt, response }) => {
 		// Read before the serialization below, which is this side's work and not the model's.
 		const endedMs = timing.now()
-		const input = messagesJson(inputMessages(prompt), INPUT_MESSAGES_BUDGET)
-		const system = systemInstructionsJson(prompt)
 		const { message, finish, failed } = summarizeResponse(response)
 		const cost = finish === undefined ? undefined : reportedCost(finish)
 		// A finish part that reached the transformer without passing the tap was withheld: the run
@@ -317,12 +355,9 @@ const modelCallTransformer =
 			...(telemetry.reasoningLevel === undefined
 				? undefined
 				: { "gen_ai.request.reasoning.level": telemetry.reasoningLevel }),
-			"gen_ai.input.messages": input.json,
-			...(input.dropped > 0 ? { [MAPLE_GENAI_INPUT_MESSAGES_DROPPED_ATTR]: input.dropped } : undefined),
-			...(system === undefined ? undefined : { "gen_ai.system_instructions": system }),
-			...(message.parts.length === 0
-				? undefined
-				: { "gen_ai.output.messages": messagesJson([message], OUTPUT_MESSAGES_BUDGET).json }),
+			...(telemetry.content === "record"
+				? contentAttributes(prompt, message)
+				: redactedContentAttributes(prompt, message)),
 			...(finish === undefined
 				? undefined
 				: {
@@ -680,7 +715,9 @@ export const ReturnedToolFailuresOkLive = Layer.effect(
  * Untraced on purpose: a span of its own would become the current span, one level further from the
  * `execute_tool` span this looks for.
  */
-const annotateExecuteToolSpan = Effect.fnUntraced(function* (attributes: Readonly<Record<string, string>>) {
+const annotateExecuteToolSpan = Effect.fnUntraced(function* (
+	attributes: Readonly<Record<string, string | boolean>>,
+) {
 	const currentSpan = yield* Effect.option(Effect.currentSpan)
 	const span = Option.flatMap(currentSpan, executeToolSpan)
 	if (Option.isNone(span)) return
@@ -712,17 +749,22 @@ export const withToolCallContent = <A, E, R>(
 		readonly description?: string | undefined
 		readonly params: unknown
 		readonly sessionAttributes?: Readonly<Record<string, string>>
+		/** Whether the arguments and result go on the span; see {@link GenAiContent}. */
+		readonly content: GenAiContent
 		/** How a failure reads on the span; a tool whose failure carries more than a message sets it. */
 		readonly failureText?: (error: E) => string
 	},
-): Effect.Effect<A, E, R> =>
-	annotateExecuteToolSpan({
+): Effect.Effect<A, E, R> => {
+	const described = annotateExecuteToolSpan({
 		...call.sessionAttributes,
 		...(call.description === undefined || call.description === ""
 			? undefined
 			: { "gen_ai.tool.description": call.description }),
-		"gen_ai.tool.call.arguments": toolCallJson(call.params),
-	}).pipe(
+		...(call.content === "redact" ? { [MAPLE_GENAI_CONTENT_REDACTED_ATTR]: true } : undefined),
+	})
+	if (call.content === "redact") return Effect.andThen(described, handler)
+	return described.pipe(
+		Effect.andThen(annotateExecuteToolSpan({ "gen_ai.tool.call.arguments": toolCallJson(call.params) })),
 		Effect.andThen(handler),
 		Effect.tap((result) => annotateExecuteToolSpan({ "gen_ai.tool.call.result": toolCallJson(result) })),
 		Effect.tapError((error) =>
@@ -731,6 +773,7 @@ export const withToolCallContent = <A, E, R>(
 			}),
 		),
 	)
+}
 
 /** What `Toolkit.toLayer` registers per tool: the handler and the services it captured. */
 const isToolHandler = (entry: unknown): entry is Tool.Handler<string> =>
@@ -747,6 +790,7 @@ export const toolLayerWithContent = <S extends Schema.Top, A, E, R>(
 	tool: { readonly id: string; readonly failureSchema: S },
 	layer: Layer.Layer<A, E, R>,
 	failure: (failure: S["Type"]) => string,
+	content: GenAiContent,
 ): Layer.Layer<A, E, R> =>
 	Layer.flatMap(layer, (context) => {
 		const entry: unknown = context.mapUnsafe.get(tool.id)
@@ -759,6 +803,7 @@ export const toolLayerWithContent = <S extends Schema.Top, A, E, R>(
 			// @effect-diagnostics-next-line anyUnknownInErrorContext:off -- a registered handler is type-erased
 			return withToolCallContent(run, {
 				params,
+				content,
 				failureText: (error) => (isOwnFailure(error) ? failure(error) : failureText(error)),
 			})
 		}
@@ -786,6 +831,7 @@ export const toolHandlersWithContent = <
 >(
 	toolkit: Toolkit.Toolkit<Tools>,
 	handlers: Handlers,
+	content: GenAiContent,
 	sessionAttributes?: Readonly<Record<string, string>>,
 ) => {
 	const entries = Rec.toEntries(handlers) as ReadonlyArray<
@@ -801,6 +847,7 @@ export const toolHandlersWithContent = <
 					{
 						description: toolkit.tools[name]?.description,
 						params,
+						content,
 						...(sessionAttributes === undefined ? undefined : { sessionAttributes }),
 					},
 				),

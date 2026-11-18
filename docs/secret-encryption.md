@@ -84,8 +84,9 @@ the schema-apply workflow and the ingest gateway.
 ## Resealing
 
 `SecretResealService.resealDue` runs hourly in the alerting Worker (lane `secret_reseal`). It
-rewrites every stored value whose ciphertext does not start with the primary key's prefix
-(`v2.<primary key id>.`), which is every value sealed by a key that is no longer primary. A
+rewrites every stored value whose ciphertext does not start with the primary key's prefix in
+its slot's envelope (`v2.<primary key id>.`, or `v3.` for a slot with a destination): every
+value sealed by a key that is no longer primary, and every v2 value of a destination slot. A
 value left over from before the v2 envelope is not opened: it counts as failed and as
 remaining on every pass, which is how one gets noticed. Each write is conditional on the row still holding the value that was read, so
 it never overwrites a concurrent change. A value that will not open is left as it is, logged as
@@ -117,3 +118,8 @@ The pre-v2 envelope was read, and rewritten by the hourly pass, only by the rele
 the one that introduced v2 and the one that stopped reading it. A deployment that skips those
 releases keeps values nothing can open any more, the ingest keys among them. Run one of them
 until `secretsResealRemaining` is 0 before upgrading further.
+
+The same holds for the v3 envelope: a release that seals v3 but still opens v2 has to run
+until `secretsResealRemaining` is 0 before one that refuses v2 for destination slots. Skipping
+it leaves BYO ClickHouse passwords, scrape credentials, data source secrets and uptime headers
+that no longer open, and they have to be entered again.

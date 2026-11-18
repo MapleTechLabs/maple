@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest"
-import { Array as Arr, Schema, String as Str } from "effect"
+import { Array as Arr, Effect, Schema, String as Str } from "effect"
 import { ExternalDataSourceId, type ExternalDataSourceDocument } from "@maple/domain/data-sources"
-import { dataSourcesPromptSection, MAX_PROMPT_SOURCES, untrustedText } from "./data-sources"
-import { dataSourcesResourceText } from "../resources/data-sources"
+import { dataSourcesPromptSection, MAX_PROMPT_SOURCES } from "./data-sources"
+import { untrustedText } from "./format"
+import { dataSourcesResourceText, readDataSourcesResource } from "../resources/data-sources"
+import { OrgId, RoleName, UserId } from "@maple/domain/http"
 
 const source = (i: number): ExternalDataSourceDocument => ({
 	id: Schema.decodeSync(ExternalDataSourceId)(
@@ -16,6 +18,7 @@ const source = (i: number): ExternalDataSourceDocument => ({
 	tags: [],
 	agentAccess: true,
 	agentPii: false,
+	supportsPiiRedaction: false,
 	config: { _tag: "clerk", instance: "production" },
 	hasSecret: false,
 	secretHint: null,
@@ -61,12 +64,61 @@ describe("dataSourcesPromptSection", () => {
 	})
 })
 
+describe("dataSourcesPromptSection for a turn that cannot query", () => {
+	it("names the catalog tools and says a query takes a role, without naming the query tool", () => {
+		const withQuery = dataSourcesPromptSection([source(0)]) ?? ""
+		const withoutQuery = dataSourcesPromptSection([source(0)], false) ?? ""
+		expect(withQuery).toContain("`query_data_source`")
+		expect(withoutQuery).not.toContain("query_data_source")
+		expect(withoutQuery).toContain("`describe_data_source`")
+		expect(withoutQuery).toContain("engineer or admin role")
+		expect(withoutQuery).toContain("- src-0 (")
+	})
+})
+
 describe("dataSourcesResourceText", () => {
 	it("points to Settings when nothing is connected, and lists sources otherwise", () => {
 		expect(dataSourcesResourceText([])).toContain("Settings -> Data sources")
 		expect(dataSourcesResourceText([source(0)])).toContain(
 			"- src-0 (clickhouse, ClickHouse SQL, production)",
 		)
+	})
+})
+
+describe("readDataSourcesResource", () => {
+	const tenant = {
+		orgId: Schema.decodeSync(OrgId)("org_resource"),
+		userId: Schema.decodeSync(UserId)("user_resource"),
+		roles: [Schema.decodeSync(RoleName)("org:admin")],
+		authMode: "self_hosted",
+	} as const
+	const read = (scopes: ReadonlyArray<string> | undefined) => {
+		const listed: Array<string> = []
+		const text = Effect.runSync(
+			readDataSourcesResource({ ...tenant, scopes }, (reader) =>
+				Effect.sync(() => {
+					listed.push(reader.orgId)
+					return [source(0)]
+				}),
+			),
+		)
+		return { text, listed }
+	}
+
+	it("gives a scoped key without data_sources:read no sources, and never loads them", () => {
+		const { text, listed } = read(["traces:read", "dashboards:write"])
+		expect(text).not.toContain("src-0")
+		expect(text).toContain("`data_sources:read`")
+		expect(listed).toEqual([])
+	})
+
+	it.each([
+		["a key with the read scope", ["traces:read", "data_sources:read"]],
+		["a key that may write data sources", ["data_sources:write"]],
+		["a full-access key", ["*"]],
+		["a session or an unscoped key", undefined],
+	])("lists the sources for %s", (_who, scopes) => {
+		expect(read(scopes).text).toContain("- src-0 (clickhouse, ClickHouse SQL, production)")
 	})
 })
 

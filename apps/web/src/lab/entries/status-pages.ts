@@ -61,7 +61,7 @@ import { labGrants, LabRole, readLabRole } from "../viewer-role"
 // or Maintenance tab with nothing posted (`incidents-empty`, `maintenance-empty`), the full-screen
 // preview "Open page" opens, as a public, password or internal page (`preview&visibility=public|
 // password|internal`), or the new page builder (`new`, `new-empty`, `new-add`, `new-group`,
-// `new-domain`), as the viewer `?role=` names: an analyst reads the incident and gets no control
+// `new-domain`) and its choice of method (`new-choose`) or agent setup (`new-agent`), as the viewer `?role=` names: an analyst reads the incident and gets no control
 // that posts, edits or deletes one. The editor runs for real with no API: a reorder, a component's
 // Save and an Access save land at once, every other read and write is dropped.
 
@@ -85,6 +85,8 @@ const PAGES = [
 	"new-add",
 	"new-group",
 	"new-domain",
+	"new-choose",
+	"new-agent",
 ] as const
 const LabPage = Schema.Literals(PAGES)
 type LabPage = typeof LabPage.Type
@@ -289,7 +291,9 @@ const builderModel = (
 	role: LabRole,
 	page: LabPage,
 ): Update.Return<BuilderModel, BuilderMessage, Resources> => {
-	const entered = builderInit({ _tag: "StatusPageNew" }, context).model
+	const search =
+		page === "new-choose" ? {} : { setup: page === "new-agent" ? ("agent" as const) : ("manual" as const) }
+	const entered = builderInit({ _tag: "StatusPageNew", search }, context).model
 	return Arr.reduce(
 		[
 			BuilderMessage.ReadClock({ nowMs: LAB_NOW_MS }),

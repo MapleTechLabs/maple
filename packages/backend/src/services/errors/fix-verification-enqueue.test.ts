@@ -74,10 +74,10 @@ const makeLayer = () => {
 
 /** Stub `ChatSession` namespace: a start is one `beginTurn` on the investigation's session. */
 const fakeChatSession = () => {
-	const turns: Array<{ sessionId: string; text: string }> = []
+	const turns: Array<{ sessionId: string; text: string; origin: unknown }> = []
 	const chatSessions: ChatSessionsApi = fakeChatSessions(() => ({
-		beginTurn: async (input: { sessionId: string; messageId: string; text: string }) => {
-			turns.push({ sessionId: input.sessionId, text: input.text })
+		beginTurn: async (input: { sessionId: string; messageId: string; text: string; origin: unknown }) => {
+			turns.push({ sessionId: input.sessionId, text: input.text, origin: input.origin })
 			return { cursor: 0, messageId: input.messageId, turnMessageId: input.messageId }
 		},
 	}))
@@ -185,6 +185,10 @@ describe("enqueueFixVerification", () => {
 			assert.strictEqual(chat.turns.length, 1)
 			assert.strictEqual(chat.turns[0]?.sessionId, `${ORG}:inv-${result.investigationId}`)
 			assert.include(chat.turns[0]?.text ?? "", PR_URL)
+			assert.deepStrictEqual(chat.turns[0]?.origin, {
+				kind: "autonomous",
+				startedBy: { kind: "producer", producer: "fix_verification" },
+			})
 			const database = yield* Database
 			const rows = yield* database.execute((db) =>
 				db.run(

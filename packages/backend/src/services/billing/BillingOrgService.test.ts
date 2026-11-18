@@ -106,6 +106,7 @@ const layerFor = (testDb: TestDb, world: World) =>
 					updateCustomerName: die,
 				}),
 				Layer.succeed(OrgMembershipService, {
+					directory: "clerk",
 					verify: (_userId, org) =>
 						Effect.sync(() => {
 							const role = world.roles.get(org)

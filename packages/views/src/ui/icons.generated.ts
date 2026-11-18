@@ -4170,6 +4170,140 @@ export const ICON_TREES = {
 			],
 		],
 	],
+	CircleIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "none"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					["d", "M8 2L16 2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M8 22L16 22"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M2 8L2 16"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M22 8L22 16"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M6 4L6 4.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4 6L4 6.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M18 4L18 4.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M20 6L20 6.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M6 20L6 20.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4 18L4 18.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M18 20L18 20.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M20 18L20 18.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+		],
+	],
 	CircleCheckIcon: [
 		"svg",
 		[

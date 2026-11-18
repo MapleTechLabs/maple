@@ -12,7 +12,8 @@ export const utcLiteral = (epochMs: number): string => {
 	return `toDateTime64('${text}', 3, 'UTC')`
 }
 
-const MACRO_RE = /\$__(timeFilter|timeGroup)\(([^)]*)\)|\$__(interval_s|from|to)(?![\w$])/g
+// Never inside a longer name: `$` and digits are name characters to the server.
+const MACRO_RE = /(?<![\w$])(?:\$__(timeFilter|timeGroup)\(([^)]*)\)|\$__(interval_s|from|to)(?![\w$]))/g
 
 /**
  * Expands every macro outside string literals and comments: matches are found in the masked text

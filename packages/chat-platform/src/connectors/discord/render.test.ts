@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest"
 import type { ChatAlertBlock, ChatBlock } from "../../render/blocks"
 import { decodeChatAlertAckControlId, type ChatActionToken } from "../../action-token"
-import { EMPTY_CONTENT, MAX_ACTION_ROWS, MAX_CONTENT_CHARS, renderDiscordMessage } from "./render"
+import {
+	EMPTY_CONTENT,
+	MAX_ACTION_ROWS,
+	MAX_CONTENT_CHARS,
+	renderDiscordMessage,
+	withoutLinkPreviews,
+} from "./render"
 import { Array as Arr, Option, String as Str } from "effect"
 
 const token = (value: string) => value as ChatActionToken
@@ -67,7 +73,7 @@ describe("renderDiscordMessage", () => {
 			Arr.join(
 				[
 					"Checkout is slow.",
-					"> **Service** [checkout](https://app.maple.dev/services/checkout)\n> p95 1.20s",
+					"> **Service** [checkout](<https://app.maple.dev/services/checkout>)\n> p95 1.20s",
 					"Looking for errors…",
 				],
 				"\n\n",
@@ -140,7 +146,7 @@ describe("renderDiscordMessage", () => {
 		// as spent.
 		expect(payload.components).toEqual([])
 		expect(payload.content).toBe(
-			'I created the alert rule "checkout p95". [Open in Maple](https://app.maple.dev/alerts/ar_1)\n-# Approved by Ada.',
+			'I created the alert rule "checkout p95". [Open in Maple](<https://app.maple.dev/alerts/ar_1>)\n-# Approved by Ada.',
 		)
 	})
 
@@ -214,6 +220,116 @@ describe("renderDiscordMessage", () => {
 		])
 		expect(payload.content).toHaveLength(MAX_CONTENT_CHARS)
 		expect(Str.endsWith("…")(payload.content)).toBe(true)
+	})
+
+	it("keeps a URL's own trailing underscore, and drops one only when it closes emphasis", () => {
+		const payload = renderDiscordMessage([
+			{ kind: "prose", markdown: "get https://x.example/artifact_ or _https://y.example/a_" },
+		])
+		expect(payload.content).toBe("get <https://x.example/artifact_> or _<https://y.example/a>_")
+	})
+
+	it("trims a long emphasis or parenthesis run after a URL without recursing per character", () => {
+		const underscores = Str.repeat(50_000)("_")
+		const parens = Str.repeat(50_000)(")")
+		expect(withoutLinkPreviews(`_https://x.example/a${underscores}`)).toBe(
+			`_<https://x.example/a>${underscores}`,
+		)
+		expect(withoutLinkPreviews(`https://x.example/a${parens}`)).toBe(`<https://x.example/a>${parens}`)
+	})
+
+	it("suppresses a URL whatever the case of its scheme", () => {
+		expect(withoutLinkPreviews("see HTTPS://x.example/a and [y](Http://y.example)")).toBe(
+			"see <HTTPS://x.example/a> and [y](<Http://y.example>)",
+		)
+	})
+
+	it("handles a long run inside a URL that does not end it, in linear time", () => {
+		const underscores = Str.repeat(200_000)("_")
+		const parens = Str.repeat(200_000)(")")
+		const started = performance.now()
+		expect(withoutLinkPreviews(`_https://x.example/${underscores}a`)).toBe(
+			`_<https://x.example/${underscores}a>`,
+		)
+		expect(withoutLinkPreviews(`https://x.example/${parens}a`)).toBe(`<https://x.example/${parens}a>`)
+		expect(performance.now() - started).toBeLessThan(1_000)
+	})
+
+	it("suppresses a URL left in prose when the cut drops a code span's closing backtick", () => {
+		const markdown = `${Str.repeat(1_950)("x")} \`https://a.example/b ${Str.repeat(100)("y")}\``
+		const payload = renderDiscordMessage([{ kind: "prose", markdown }])
+		expect(payload.content.length).toBeLessThanOrEqual(MAX_CONTENT_CHARS)
+		expect(payload.content).toContain("<https://a.example/b>")
+	})
+
+	it("keeps a notice's URL whole, ending underscore included", () => {
+		const payload = renderDiscordMessage([
+			{ kind: "notice", tone: "info", text: "see https://x.example/artifact_" },
+		])
+		expect(payload.content).toBe("*see <https://x.example/artifact_>*")
+	})
+
+	it("suppresses a URL between escaped backticks, which Discord shows as plain text", () => {
+		const payload = renderDiscordMessage([
+			{ kind: "prose", markdown: "see \\`https://x.example/a\\` and `https://code.example`" },
+		])
+		expect(payload.content).toBe("see \\`<https://x.example/a>\\` and `https://code.example`")
+	})
+
+	it("keeps a masked link whose text is itself a URL", () => {
+		const payload = renderDiscordMessage([
+			{ kind: "prose", markdown: "[https://a.example/x](https://b.example/y)" },
+		])
+		expect(payload.content).toBe("[<https://a.example/x>](<https://b.example/y>)")
+	})
+
+	it("leaves emphasis and an unopened parenthesis outside a bare URL", () => {
+		const payload = renderDiscordMessage([
+			{
+				kind: "prose",
+				markdown:
+					"**https://x.example/slow** and (see https://w.org/wiki/Foo_(bar)), or https://a.example).",
+			},
+		])
+		expect(payload.content).toBe(
+			"**<https://x.example/slow>** and (see <https://w.org/wiki/Foo_(bar)>), or <https://a.example>).",
+		)
+	})
+
+	it("keeps a link target's balanced parentheses when it suppresses the preview", () => {
+		const payload = renderDiscordMessage([
+			{ kind: "prose", markdown: "[docs](https://x.example/wiki/Foo_(bar)) here" },
+		])
+		expect(payload.content).toBe("[docs](<https://x.example/wiki/Foo_(bar)>) here")
+	})
+
+	it("posts every URL in the body in Discord's no-preview form, and keeps chart embeds", () => {
+		const payload = renderDiscordMessage([
+			{
+				kind: "prose",
+				markdown:
+					"see https://x.example/a?d=1. Or [x](https://x.example), already <https://y.example>, `https://code.example`",
+			},
+			chart("https://img.maple.dev/a1/0.png"),
+		])
+		expect(payload.content).toBe(
+			"see <https://x.example/a?d=1>. Or [x](<https://x.example>), already <https://y.example>, `https://code.example`",
+		)
+		expect(payload.embeds).toEqual([
+			{
+				title: "Errors by service",
+				description: "1 item, highest checkout (4)",
+				image: { url: "https://img.maple.dev/a1/0.png" },
+			},
+		])
+	})
+
+	it("does not leave a cut URL at the end of a clamped body", () => {
+		const prefix = Str.repeat(MAX_CONTENT_CHARS - 20)("x")
+		const payload = renderDiscordMessage([
+			{ kind: "prose", markdown: `${prefix} https://x.example/${Str.repeat(60)("d")}` },
+		])
+		expect(payload.content).toBe(`${prefix} …`)
 	})
 
 	it("renders an alert as a coloured embed, with the links as a field", () => {
