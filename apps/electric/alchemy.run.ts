@@ -2,7 +2,7 @@ import * as AWS from "@alchemy.run/aws"
 import type * as Output from "alchemy/Output"
 import * as Effect from "effect/Effect"
 import { ecsSecrets, pgUrlRequireSsl, resolveAwsRegion } from "@maple/infra/aws"
-import { issueRegionalCertificate, publishProxiedCname } from "@maple/infra/acm"
+import { cloudflareIpv4Ranges, issueRegionalCertificate, publishProxiedCname } from "@maple/infra/acm"
 import { type MapleDbLogin, type MapleStackContext, resolveWorkerName } from "@maple/infra/cloudflare"
 import { resolveAs } from "@maple/infra/secret-guard"
 import { electricSecrets } from "./alchemy/secrets.ts"
@@ -55,16 +55,15 @@ export const createMapleElectric = ({
 			vpcId: network.vpcId,
 			groupName: name("electric-lb"),
 			description: "Maple ElectricSQL - public HTTPS to the load balancer",
-			ingress: [
-				{
-					ipProtocol: "tcp",
-					fromPort: 443,
-					toPort: 443,
-					// Not narrowed to Cloudflare ranges (they rotate); ELECTRIC_SECRET authorizes.
-					cidrIpv4: "0.0.0.0/0",
-					description: "Shape requests from the electric-sync Worker",
-				},
-			],
+			// Every request comes through the proxied hostname, so only Cloudflare's edge may connect;
+			// the ranges are read at each deploy, so a rotation lands with the next one.
+			ingress: (yield* cloudflareIpv4Ranges).map((cidr) => ({
+				ipProtocol: "tcp",
+				fromPort: 443,
+				toPort: 443,
+				cidrIpv4: cidr,
+				description: "Shape requests from the electric-sync Worker via Cloudflare",
+			})),
 		})
 
 		const taskSecurityGroup = yield* AWS.EC2.SecurityGroup("electric-task-sg", {
