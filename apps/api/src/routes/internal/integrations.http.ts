@@ -252,8 +252,10 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("linearTeams", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						// A live read of the connected workspace, for the pickers only a manager uses.
-						yield* requirePermission(tenant.roles, "integrations:manage")
+						// A live read of the workspace, for the alert destination picker: either manager may.
+						if (!Policy.can(tenant.roles, "alerts:manage")) {
+							yield* requirePermission(tenant.roles, "integrations:manage")
+						}
 						const teams = yield* linear.listTeams(tenant.orgId)
 						return new LinearTeamsListResponse({ teams })
 					}),

@@ -151,15 +151,29 @@ const unavailableNote = (h: H, siteUrls: ReadonlyArray<string>): Html =>
 		)}.`,
 	])
 
-/** What a viewer who cannot manage sees: the imported properties, or that there are none yet. */
+/**
+ * What a viewer who cannot manage sees: the imported properties, from the status, or that there
+ * are none yet. Google's own list is a manager's read.
+ */
 const importedList = (
 	h: H,
-	imported: ReadonlyArray<SearchConsoleSiteChoice>,
+	status: SearchConsoleIntegrationStatus,
 	list: (sites: ReadonlyArray<SearchConsoleSiteChoice>) => Html,
-): Html =>
-	imported.length === 0
+): Html => {
+	const imported = Arr.map(
+		Arr.filter(status.sites, (site) => site.enabled),
+		(site) =>
+			new SearchConsoleSiteChoice({
+				siteUrl: site.siteUrl,
+				permissionLevel: site.permissionLevel,
+				selectable: true,
+				enabled: true,
+			}),
+	)
+	return imported.length === 0
 		? typography(h, { size: "xs", tone: "muted", as: "p" }, ["No properties are imported yet."])
 		: list(imported)
+}
 
 const sitePicker = (h: H, model: Model, status: SearchConsoleIntegrationStatus): Html => {
 	const card = model.searchConsoleCard
@@ -186,17 +200,6 @@ const sitePicker = (h: H, model: Model, status: SearchConsoleIntegrationStatus):
 					)),
 			...(unavailable.length === 0 ? [] : [unavailableNote(h, unavailable)]),
 		])
-	// Google's list is a manager's read; everyone else sees what is imported, from the status.
-	const imported = Arr.map(
-		Arr.filter(status.sites, (site) => site.enabled),
-		(site) =>
-			new SearchConsoleSiteChoice({
-				siteUrl: site.siteUrl,
-				permissionLevel: site.permissionLevel,
-				selectable: true,
-				enabled: true,
-			}),
-	)
 	return vstack(h, { gap: "3" }, [
 		heading(h, { level: 4, variant: "subsection" }, ["Properties to import"]),
 		canManage(model)
@@ -213,7 +216,7 @@ const sitePicker = (h: H, model: Model, status: SearchConsoleIntegrationStatus):
 					onRefreshing: (data) => list(data.sites),
 					onSuccess: (data) => list(data.sites),
 				})
-			: importedList(h, imported, list),
+			: importedList(h, status, list),
 		hstack(h, { gap: "2" }, [
 			gatedControl(h, model, "integrations:manage", (isLocked) =>
 				button(

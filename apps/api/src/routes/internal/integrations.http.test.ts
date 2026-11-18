@@ -178,25 +178,23 @@ const makeHarness = (role: string) => {
 const PICKERS = ["/linear/teams", "/google-search-console/sites"]
 
 describe("/internal/integrations picker lists", () => {
-	it("refuses analysts and members, and never reads the connected account for them", async () => {
-		await Effect.runPromise(
-			Effect.forEach(["org:analyst", "org:member"], (role) =>
-				Effect.promise(async () => {
-					const harness = makeHarness(role)
-					const responses = await Promise.all(Arr.map(PICKERS, (path) => harness.get(path)))
-					expect(Arr.map(responses, (response) => response.status)).toEqual([403, 403])
-					expect(Arr.map(responses, (response) => asFailure(response.body)._tag)).toEqual([
-						"@maple/http/errors/IntegrationsForbiddenError",
-						"@maple/http/errors/IntegrationsForbiddenError",
-					])
-					expect(harness.asked).toEqual([])
-					await harness.dispose()
-				}),
-			),
-		)
-	})
+	it.each(["org:analyst", "org:member"])(
+		"refuses %s, and never reads the connected account for them",
+		async (role) => {
+			const harness = makeHarness(role)
+			const responses = await Promise.all(Arr.map(PICKERS, (path) => harness.get(path)))
+			expect(Arr.map(responses, (response) => response.status)).toEqual([403, 403])
+			expect(Arr.map(responses, (response) => asFailure(response.body)._tag)).toEqual([
+				"@maple/http/errors/IntegrationsForbiddenError",
+				"@maple/http/errors/IntegrationsForbiddenError",
+			])
+			expect(harness.asked).toEqual([])
+			await harness.dispose()
+		},
+	)
 
-	it("lists the account's teams and properties for a member who manages integrations", async () => {
+	// An engineer holds both `alerts:manage` and `integrations:manage`: the Linear list takes either.
+	it("lists the account's teams and properties for a member who manages alerts and integrations", async () => {
 		const harness = makeHarness("org:engineer")
 		const teams = await harness.get("/linear/teams")
 		expect([teams.status, teams.body]).toEqual([200, { teams: TEAMS }])
