@@ -199,6 +199,9 @@ const indexFrom = (text: string, search: string, from: number): number =>
  */
 const tokenizeSql = (sql: string): ReadonlyArray<SqlToken> => lexSql(sql).tokens
 
+/** What `markStrings` leaves where a string literal stood: no identifier or operator is spelled this way. */
+const STRING_TOKEN = "'"
+
 interface LexedSql {
 	readonly tokens: ReadonlyArray<SqlToken>
 	/** A block comment opens another before it closes; the server nests them, this lexer does not. */
@@ -207,7 +210,7 @@ interface LexedSql {
 	readonly escapedIdentifier: boolean
 }
 
-function lexSql(sql: string): LexedSql {
+function lexSql(sql: string, markStrings = false): LexedSql {
 	const tokens: Array<SqlToken> = []
 	const n = sql.length
 	let nestedComment = false
@@ -242,6 +245,7 @@ function lexSql(sql: string): LexedSql {
 					i++
 				}
 			}
+			if (markStrings) tokens.push({ v: STRING_TOKEN, ident: false })
 		} else if (QUOTE_CLOSE.has(c)) {
 			const close = QUOTE_CLOSE.get(c) ?? c
 			i++
@@ -319,7 +323,19 @@ const CLAUSE_BOUNDARY = new Set([
  * expression (inside a call paren), never in a table position.
  */
 export const disallowedTableFunction = (sql: string): string | null => {
-	const tokens = tokenizeSql(sql)
+	const source = disallowedTableSource(tokenizeSql(sql))
+	return source === STRING_TOKEN ? null : source
+}
+
+/**
+ * Whether a string literal stands where a table goes (`FROM 'orders'`, after JOIN or a FROM-list
+ * comma). ClickHouse reads it as a table name, or as a file path where it reads files.
+ */
+export const hasStringTableSource = (sql: string): boolean =>
+	disallowedTableSource(lexSql(sql, true).tokens) === STRING_TOKEN
+
+/** The walk behind both: a disallowed table function's name, or `STRING_TOKEN` for a literal as a table. */
+const disallowedTableSource = (tokens: ReadonlyArray<SqlToken>): string | null => {
 	const parenKind: Array<"call" | "sub" | "group"> = []
 	// The enclosing FROM list survives a paren: a subquery closing must not end it.
 	const outerFromList: Array<number> = []
@@ -330,6 +346,7 @@ export const disallowedTableFunction = (sql: string): string | null => {
 		const t = tokens[i]
 		if (t === undefined) continue
 		if (!t.ident) {
+			if (t.v === STRING_TOKEN && armed) return STRING_TOKEN
 			if (t.v === "(") {
 				const prev = tokens[i - 1]
 				const next = tokens[i + 1]

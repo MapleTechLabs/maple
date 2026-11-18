@@ -11,7 +11,7 @@ import {
 import { maskLiteralsAndComments } from "@maple/domain/raw-sql"
 import type { DriverConnection, PreparedQuery, QueryRequest } from "../../port"
 import { mapClickHouseError } from "./errors"
-import { ESCAPED_IDENTIFIER_MESSAGE, hasEscapedIdentifier, hiddenEntryIssue } from "./hidden"
+import { hiddenEntryIssue } from "./hidden"
 import { runtimeHint, validationHints } from "./hints"
 import { expandMacros } from "./macros"
 import { openSession, readOnlySettings } from "./session"
@@ -107,8 +107,6 @@ const ALL_COLUMNS_RE = /(?:\bSELECT\s+(?:DISTINCT\s+)?|,\s*)(?:[\w`"]+\.)?\*|\bC
  */
 export const piiIssue = (sql: string, pii: ReadonlySet<string>): string | null => {
 	if (pii.size === 0) return null
-	// An escaped spelling (`\x65mail`) reads as the field on the server and as nothing here.
-	if (hasEscapedIdentifier(sql)) return ESCAPED_IDENTIFIER_MESSAGE
 	const named = Arr.findFirst(Arr.fromIterable(pii), (name) =>
 		new RegExp(`(?<![\\w$])${Str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")(name)}(?![\\w$])`, "i").test(sql),
 	)
@@ -137,11 +135,6 @@ export const prepareClickHouse = (
 		) {
 			return yield* refuse("Alert queries must bound their reads with $__timeFilter(col).")
 		}
-		const pii = request.redactPii ? piiFieldNames(catalog) : new Set<string>()
-		const personal = piiIssue(query.sql, pii)
-		if (personal !== null) return yield* refuse(personal)
-		const hidden = hiddenEntryIssue(query.sql, request.hiddenEntries, connection.config.database)
-		if (hidden !== null) return yield* refuse(hidden)
 		const { granularitySeconds, startMs, endMs } = request.window
 		if (
 			!Number.isFinite(granularitySeconds) ||
@@ -154,6 +147,12 @@ export const prepareClickHouse = (
 			)
 		}
 		const sql = expandMacros(stripTerminal(query.sql), request.window)
+		// Read off the SQL as it is sent, so no name is spelled by what a macro expands to.
+		const pii = request.redactPii ? piiFieldNames(catalog) : new Set<string>()
+		const personal = piiIssue(sql, pii)
+		if (personal !== null) return yield* refuse(personal)
+		const hidden = hiddenEntryIssue(sql, request.hiddenEntries, connection.config.database)
+		if (hidden !== null) return yield* refuse(hidden)
 		const { limits } = request
 		const run = Effect.gen(function* () {
 			const session = yield* openSession(connection, limits.timeoutMs)

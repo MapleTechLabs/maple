@@ -104,7 +104,7 @@ describe("ClickHouse driver over HTTP", () => {
 		Effect.gen(function* () {
 			const fake = fakeFetch(() => rows({ n: "1" }))
 			const exit = yield* Effect.exit(fake.provide(run("SELECT `e\\x6dail` FROM shop.payments")))
-			expect(failureOf(exit)).toContain("backslash")
+			expect(failureOf(exit)).toContain("Backslashes are not supported")
 			expect(fake.sent).toHaveLength(0)
 		}),
 	)
@@ -129,6 +129,8 @@ describe("ClickHouse driver over HTTP", () => {
 					"SELECT count() AS n FROM `refunds`",
 					"SELECT name FROM system.tables",
 					"SELECT count() AS n FROM shop.`ref\\x75nds`",
+					"SELECT count() AS n FROM 'refunds'",
+					"SELECT * FROM (EXPLAIN SELECT * FROM shop.payments)",
 				]
 				const failures = yield* Effect.forEach(refused, (sql) =>
 					Effect.exit(fake.provide(asAgent(sql))),
@@ -140,6 +142,31 @@ describe("ClickHouse driver over HTTP", () => {
 				const table = yield* fake.provide(asAgent("SELECT count() AS n FROM shop.payments"))
 				expect(table.rows).toEqual([{ n: "1" }])
 			}),
+	)
+
+	it.effect("checks the names in the SQL as it is sent, after macros expand", () =>
+		Effect.gen(function* () {
+			const fake = fakeFetch(() => rows({ n: "1" }))
+			// The window buckets by 3600 s, so the macro spells the hidden table `shop.3600`.
+			const prepared = prepareClickHouse(
+				connection,
+				{ _tag: "sql", sql: "SELECT count() AS n FROM shop.$__interval_s" },
+				{ ...request, redactPii: false, hiddenEntries: ["shop.3600"] },
+				catalog,
+			)
+			const error = yield* Effect.flip(prepared)
+			expect(error.message).toContain("`shop.3600` names a table")
+			const personal = yield* Effect.flip(
+				prepareClickHouse(
+					connection,
+					{ _tag: "sql", sql: "SELECT count() AS n FROM shop.payments WHERE $__timeFilter(email)" },
+					request,
+					catalog,
+				),
+			)
+			expect(personal.message).toContain("personal data")
+			expect(fake.sent).toHaveLength(0)
+		}),
 	)
 
 	it.effect("takes one unit of the source's budget per query, and sends nothing when it is refused", () =>

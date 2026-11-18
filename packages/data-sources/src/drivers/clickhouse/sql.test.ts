@@ -39,12 +39,31 @@ describe("clickHouseSqlIssue", () => {
 		["SELECT getClientHTTPHeader('Authorization')", "getClientHTTPHeader"],
 		["SELECT `getClientHTTPHeader` /* c */ ('Authorization')", "getClientHTTPHeader"],
 		["SHOW TABLES", "Send a SELECT query"],
+		["SELECT * FROM 'payments'", "A string literal cannot stand where a table goes"],
+		["SELECT 1 FROM shop.orders AS o JOIN 'payments' AS p ON o.id = p.id", "A string literal cannot"],
+		["SELECT 1 FROM shop.orders AS o, 'payments' AS p", "A string literal cannot"],
+		["SELECT * FROM orders_$__interval_s", "$__interval_s is joined to a name or number"],
+		["SELECT * FROM shop.pay$__interval_s", "$__interval_s is joined to a name or number"],
+		["SELECT 1 AS x WHERE ts > 1$__from", "$__from is joined to a name or number"],
 		["SELECT $__orgFilter", "Unknown macro $__orgFilter"],
 		["SELECT $__timeFilter(created_at OR 1)", "must be a column name"],
 		["SELECT $__timeGroup", "takes a column"],
 		["", "between 1 and"],
 	])("refuses %s", (sql, message) => {
 		expect(clickHouseSqlIssue(sql)).toContain(message)
+	})
+
+	it("takes a string anywhere a value goes, and a macro set off from the names around it", () => {
+		expect(
+			clickHouseSqlIssue(
+				"SELECT trim(BOTH ' ' FROM name) AS n, extract(day FROM '2026-11-01'::Date) FROM shop.orders WHERE kind IN ('a', 'b') ORDER BY n, 'x'",
+			),
+		).toBeNull()
+		expect(
+			clickHouseSqlIssue(
+				"SELECT count()/$__interval_s AS rate, ($__from) AS f FROM shop.orders WHERE ts>=$__from AND $__timeFilter(ts)",
+			),
+		).toBeNull()
 	})
 
 	it("ignores keywords inside literals and comments", () => {
@@ -102,6 +121,13 @@ describe("expandMacros", () => {
 		)
 		expect(expanded).toContain("(b >= toDateTime64(")
 		expect(expanded).not.toContain("$__")
+	})
+
+	it("leaves a macro glued to a name alone, so expansion never completes a name", () => {
+		expect(expandMacros("SELECT * FROM orders_$__interval_s", window)).toBe(
+			"SELECT * FROM orders_$__interval_s",
+		)
+		expect(expandMacros("SELECT a$__from", window)).toBe("SELECT a$__from")
 	})
 
 	it("never buckets below one second", () => {

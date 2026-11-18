@@ -1,77 +1,85 @@
 import { Array as Arr, Option, String as Str } from "effect"
 
 // What an agent may not name on a ClickHouse source with entries an admin hid from agents. The
-// checks read the SQL as words (comments and string literals dropped, quoted identifiers
-// unquoted), so quoting, casing or a comment between the parts spells the same name.
+// SQL is read as words (comments and string literals dropped, quoted identifiers unquoted), so
+// quoting, casing or a comment between the parts spells the same name. Runs after
+// `clickHouseSqlIssue`, which refuses what this lexer and the server would read differently.
 
 interface Word {
-	/** Lowercased identifier or keyword; the character itself for punctuation. */
+	/** Lowercased name or keyword; the character itself for punctuation. */
 	readonly text: string
-	readonly kind: "name" | "punctuation" | "literal"
-	/** A quoted identifier written with a backslash, which the server decodes and this does not. */
-	readonly escaped: boolean
+	readonly kind: "name" | "number" | "punctuation" | "literal"
+	readonly quoted: boolean
 }
 
 // One alternative per lexeme, comments and literals first so their bodies are never read as names.
+// A bare name takes `$` and may start with a digit, as the server's does.
 const LEXEME_RE =
-	/--[^\n]*|\/\*[\s\S]*?(?:\*\/|$)|'(?:\\[\s\S]|''|[^'\\])*'?|`(?:\\[\s\S]|``|[^`\\])*`?|"(?:\\[\s\S]|""|[^"\\])*"?|“[^”]*”?|[A-Za-z0-9_$]+|\S/g
-
-const QUOTES = ["`", '"', "“"] as const
+	/--[^\n]*|\/\*[\s\S]*?(?:\*\/|$)|'(?:\\[\s\S]|''|[^'\\])*'?|`(?:``|[^`])*`?|"(?:""|[^"])*"?|[A-Za-z0-9_$]+|\S/g
 
 const unquote = (lexeme: string): string => {
-	const open = Str.slice(0, 1)(lexeme)
-	const close = open === "“" ? "”" : open
-	const body =
-		Str.endsWith(close)(lexeme) && lexeme.length > 1 ? Str.slice(1, -1)(lexeme) : Str.slice(1)(lexeme)
-	return open === "“" ? body : Str.replaceAll(`${open}${open}`, open)(body)
+	const quote = Str.slice(0, 1)(lexeme)
+	const closed = lexeme.length > 1 && Str.endsWith(quote)(lexeme)
+	return Str.replaceAll(`${quote}${quote}`, quote)(Str.slice(1, closed ? -1 : undefined)(lexeme))
 }
 
-const toWord = (lexeme: string): Option.Option<Word> => {
-	if (Str.startsWith("--")(lexeme) || Str.startsWith("/*")(lexeme)) return Option.none()
-	if (Str.startsWith("'")(lexeme)) return Option.some({ text: "", kind: "literal", escaped: false })
-	if (Arr.some(QUOTES, (quote) => Str.startsWith(quote)(lexeme))) {
-		const body = unquote(lexeme)
-		return Option.some({ text: Str.toLowerCase(body), kind: "name", escaped: Str.includes("\\")(body) })
+const toWord = (lexeme: string): Word | null => {
+	if (Str.startsWith("--")(lexeme) || Str.startsWith("/*")(lexeme)) return null
+	if (Str.startsWith("'")(lexeme)) return { text: "", kind: "literal", quoted: false }
+	if (Str.startsWith("`")(lexeme) || Str.startsWith('"')(lexeme)) {
+		return { text: Str.toLowerCase(unquote(lexeme)), kind: "name", quoted: true }
 	}
-	return Option.some({
+	if (/^[0-9]+$/.test(lexeme)) return { text: lexeme, kind: "number", quoted: false }
+	return {
 		text: Str.toLowerCase(lexeme),
 		kind: /^[A-Za-z0-9_$]+$/.test(lexeme) ? "name" : "punctuation",
-		escaped: false,
+		quoted: false,
+	}
+}
+
+const wordsOf = (sql: string): ReadonlyArray<Word> => {
+	// One array, filled in place: a 32 KB query is tens of thousands of lexemes.
+	const words: Array<Word> = []
+	return Arr.reduce(Arr.fromIterable(Str.matchAll(LEXEME_RE)(sql)), words, (all, match) => {
+		const word = toWord(match[0])
+		if (word !== null) all.push(word)
+		return all
 	})
 }
 
-const wordsOf = (sql: string): ReadonlyArray<Word> =>
-	Arr.getSomes(Arr.map(Arr.fromIterable(Str.matchAll(LEXEME_RE)(sql)), (match) => toWord(match[0])))
-
-/** Whether a backtick or double-quoted identifier is written with a backslash escape. */
-export const hasEscapedIdentifier = (sql: string): boolean => Arr.some(wordsOf(sql), (word) => word.escaped)
-
-export const ESCAPED_IDENTIFIER_MESSAGE =
-	"Write quoted identifiers without backslash escapes: Maple checks the names a query reads, and an escaped name cannot be checked."
-
-interface Chains {
-	readonly done: ReadonlyArray<ReadonlyArray<string>>
-	readonly open: ReadonlyArray<string>
-	readonly afterDot: boolean
+interface Chain {
+	readonly parts: Array<string>
+	/** Followed by `(`: the chain is a function's name, not a table or column. */
+	called: boolean
 }
 
-const NO_CHAINS: Chains = { done: [], open: [], afterDot: false }
+interface ChainWalk {
+	readonly chains: Array<Chain>
+	open: Chain | null
+	afterDot: boolean
+}
 
 /** Dotted names as the server reads them: quoted, spaced or split by a comment, `a.b` is `[a, b]`. */
-const chainsOf = (words: ReadonlyArray<Word>): ReadonlyArray<ReadonlyArray<string>> => {
-	const close = (state: Chains): ReadonlyArray<ReadonlyArray<string>> =>
-		state.open.length === 0 ? state.done : [...state.done, state.open]
-	const end = Arr.reduce(words, NO_CHAINS, (state, word): Chains => {
-		if (word.kind === "name") {
-			return state.afterDot
-				? { done: state.done, open: [...state.open, word.text], afterDot: false }
-				: { done: close(state), open: [word.text], afterDot: false }
+const chainsOf = (words: ReadonlyArray<Word>): ReadonlyArray<Chain> => {
+	const start: ChainWalk = { chains: [], open: null, afterDot: false }
+	return Arr.reduce(words, start, (walk, word) => {
+		// After a dot a number is a name too: `db.60` reads a table called `60`.
+		if (walk.open !== null && walk.afterDot && (word.kind === "name" || word.kind === "number")) {
+			walk.open.parts.push(word.text)
+			walk.afterDot = false
+		} else if (word.kind === "name") {
+			walk.open = { parts: [word.text], called: false }
+			walk.chains.push(walk.open)
+			walk.afterDot = false
+		} else if (word.text === "." && walk.open !== null && !walk.afterDot) {
+			walk.afterDot = true
+		} else {
+			if (walk.open !== null && word.text === "(" && !walk.afterDot) walk.open.called = true
+			walk.open = null
+			walk.afterDot = false
 		}
-		return word.text === "." && state.open.length > 0 && !state.afterDot
-			? { ...state, afterDot: true }
-			: { done: close(state), open: [], afterDot: false }
-	})
-	return close(end)
+		return walk
+	}).chains
 }
 
 const SYSTEM_DATABASES: ReadonlySet<string> = new Set(["system", "information_schema"])
@@ -80,37 +88,69 @@ const SYSTEM_DATABASES: ReadonlySet<string> = new Set(["system", "information_sc
 const readsByStringName = (name: string): boolean =>
 	Str.startsWith("dict")(name) || Str.startsWith("joinget")(name) || name === "hascolumnintable"
 
-/** `db.table` and every shorter spelling after a dot (`table`): a bare name resolves by database. */
-const spellingsOf = (entry: string): { readonly full: string; readonly bare: ReadonlyArray<string> } => {
-	const parts = Str.split(".")(Str.toLowerCase(entry))
+/** Statements that print a query's plan or a table's shape, and with it the tables under a view. */
+const INTROSPECTION: ReadonlySet<string> = new Set(["explain", "describe", "desc", "show"])
+
+interface HiddenNames {
+	/** `db.table`, lowercased. */
+	readonly full: ReadonlySet<string>
+	/** `table` alone, for entries in the connection's own database: a bare name resolves there. */
+	readonly bare: ReadonlySet<string>
+	/** The most dotted parts any spelling has, so a chain is only read that far. */
+	readonly maxParts: number
+}
+
+const hiddenNames = (hidden: ReadonlyArray<string>, defaultDatabase: string): HiddenNames => {
+	const prefix = `${Str.toLowerCase(defaultDatabase)}.`
+	const full = Arr.map(hidden, Str.toLowerCase)
 	return {
-		full: Arr.join(parts, "."),
-		bare: Arr.filter(
-			Arr.map(Arr.range(1, parts.length), (from) => Arr.join(Arr.drop(parts, from), ".")),
-			Str.isNonEmpty,
+		full: new Set(full),
+		bare: new Set(
+			Arr.map(
+				Arr.filter(full, (name) => Str.startsWith(prefix)(name) && name.length > prefix.length),
+				(name) => Str.slice(prefix.length)(name),
+			),
 		),
+		maxParts: Arr.reduce(full, 1, (most, name) => Math.max(most, Str.split(".")(name).length)),
 	}
 }
 
-/** The spelling in `chain` that names the hidden entry: all of it anywhere, or its table at the start. */
-const namedIn = (
-	chain: ReadonlyArray<string>,
-	entry: { readonly full: string; readonly bare: ReadonlyArray<string> },
-): Option.Option<string> => {
-	const from = (start: number) =>
-		Arr.map(Arr.range(start + 1, chain.length), (end) => Arr.join(chain.slice(start, end), "."))
-	return Option.orElse(
-		Arr.findFirst(
-			Arr.flatMap(Arr.range(0, chain.length - 1), from),
-			(spelling) => spelling === entry.full,
+/** Every spelling that starts at `start`, at most `max` parts long, shortest first. */
+const spellingsFrom = (parts: ReadonlyArray<string>, start: number, max: number): ReadonlyArray<string> => {
+	const spellings: Array<string> = []
+	return Arr.reduce(Arr.range(start, Math.min(parts.length, start + max) - 1), spellings, (all, index) => {
+		const part = parts[index] ?? ""
+		all.push(all.length === 0 ? part : `${all.at(-1) ?? ""}.${part}`)
+		return all
+	})
+}
+
+type Match = { readonly spelling: string; readonly bare: boolean }
+
+/** The hidden name `chain` spells: `db.table` anywhere in it, or the bare table where it starts. */
+const hiddenNameIn = (chain: Chain, names: HiddenNames): Option.Option<Match> => {
+	const full = Arr.findFirst(
+		Arr.flatMap(Arr.range(0, chain.parts.length - 1), (start) =>
+			spellingsFrom(chain.parts, start, names.maxParts),
 		),
-		() => Arr.findFirst(from(0), (spelling) => Arr.contains(entry.bare, spelling)),
+		(spelling) => names.full.has(spelling),
+	)
+	if (Option.isSome(full)) return Option.some({ spelling: full.value, bare: false })
+	return Option.map(
+		Arr.findFirst(
+			spellingsFrom(chain.parts, 0, names.maxParts),
+			// A whole chain that is called is a function (`count()`), never a table.
+			(spelling, index) =>
+				names.bare.has(spelling) && !(chain.called && index === chain.parts.length - 1),
+		),
+		(spelling) => ({ spelling, bare: true }),
 	)
 }
 
 /**
- * The first reason an agent's SQL may not run on a source with hidden entries, or null. Names are
- * matched wherever they appear, so a column or alias spelled like a hidden table is refused too.
+ * The first reason an agent's SQL may not run on a source with hidden entries, or null. It
+ * matches names, not tables: a column or alias spelled like a hidden table in the connection's
+ * database is refused too, and a view over a hidden table is not.
  */
 export const hiddenEntryIssue = (
 	sql: string,
@@ -119,22 +159,34 @@ export const hiddenEntryIssue = (
 ): string | null => {
 	if (hidden.length === 0) return null
 	const words = wordsOf(sql)
-	if (Arr.some(words, (word) => word.escaped)) return ESCAPED_IDENTIFIER_MESSAGE
 	const chains = chainsOf(words)
-	const system = Arr.findFirst(
-		Arr.flatMap(chains, (chain) => Arr.dropRight(chain, 1)),
-		(name) => SYSTEM_DATABASES.has(name),
+	const database = Str.toLowerCase(defaultDatabase)
+	const system = Arr.findFirst(chains, (chain) =>
+		Arr.some(chain.parts, (part, index) => index < chain.parts.length - 1 && SYSTEM_DATABASES.has(part)),
 	)
-	if (Option.isSome(system) || SYSTEM_DATABASES.has(Str.toLowerCase(defaultDatabase))) {
-		return `Agents cannot read the \`${Option.getOrElse(system, () => Str.toLowerCase(defaultDatabase))}\` database on this source: some of its tables are hidden from agents, and that database lists them. Use describe_data_source for the tables you can query.`
+	if (Option.isSome(system) || SYSTEM_DATABASES.has(database)) {
+		return "Agents cannot read the `system` or `information_schema` databases on this source: some of its tables are hidden from agents, and those databases list them. Use describe_data_source for the tables you can query."
 	}
-	const entries = Arr.map(hidden, spellingsOf)
-	const named = Arr.findFirst(
-		Arr.flatMap(chains, (chain) => Arr.getSomes(Arr.map(entries, (entry) => namedIn(chain, entry)))),
-		() => true,
-	)
+	const names = hiddenNames(hidden, database)
+	const named = Arr.findFirst(chains, (chain) => hiddenNameIn(chain, names))
 	if (Option.isSome(named)) {
-		return `\`${named.value}\` names a table an admin hid from agents on this source, so this query cannot run. Leave it out (rename a column or alias spelled the same), or ask an admin to show it to agents.`
+		const { spelling, bare } = named.value
+		return bare
+			? `\`${spelling}\` names a table an admin hid from agents on this source. If you mean a column or a table in another database, qualify it (\`alias.${spelling}\`, \`other_db.${spelling}\`); otherwise leave it out, or ask an admin to show it to agents.`
+			: `\`${spelling}\` names a table an admin hid from agents on this source, so this query cannot run. Leave it out, or ask an admin to show it to agents.`
+	}
+	const introspection = Arr.findFirst(words, (word, index) => {
+		const after = words[index + 1]
+		return (
+			!word.quoted &&
+			INTROSPECTION.has(word.text) &&
+			words[index - 1]?.text === "(" &&
+			after !== undefined &&
+			(after.kind === "name" || after.kind === "number" || after.text === "(")
+		)
+	})
+	if (Option.isSome(introspection)) {
+		return `\`${Str.toUpperCase(introspection.value.text)}\` in a subquery is not available to agents on this source: it prints the tables a view reads, and some are hidden from agents. Select from the table or view instead.`
 	}
 	const reader = Arr.findFirst(
 		words,
