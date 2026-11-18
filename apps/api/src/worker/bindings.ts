@@ -30,6 +30,7 @@ import {
 	type RateLimiter,
 	ReplayBlobBucket,
 	SchemaApplyWorkflow,
+	SelfHostedLoginRateLimit,
 	ShareLinkRateLimit,
 	VcsBackfillQueueProducer,
 	VcsSyncQueueProducer,
@@ -57,6 +58,10 @@ import {
 	SHARE_LINK_RATE_LIMIT_PERIOD_SECONDS,
 	SHARE_LINK_RATE_LIMIT_REQUESTS,
 } from "@maple/backend/services/auth/ShareRateLimiter"
+import {
+	SELF_HOSTED_LOGIN_RATE_LIMIT_ATTEMPTS,
+	SELF_HOSTED_LOGIN_RATE_LIMIT_PERIOD_SECONDS,
+} from "@maple/backend/services/auth/SelfHostedLoginRateLimiter"
 import {
 	CancellationReviewsQueue,
 	PlanetScaleWebhookQueue,
@@ -93,6 +98,13 @@ export const bindApiClients = Effect.gen(function* () {
 		cliAuthRateLimit: yield* Cloudflare.RateLimit("CLI_AUTH_RATE_LIMITER", {
 			namespaceId: 2026072101,
 			simple: { limit: 30, period: 60 },
+		}),
+		selfHostedLoginRateLimit: yield* Cloudflare.RateLimit("SELF_HOSTED_LOGIN_RATE_LIMITER", {
+			namespaceId: 2026111811,
+			simple: {
+				limit: SELF_HOSTED_LOGIN_RATE_LIMIT_ATTEMPTS,
+				period: SELF_HOSTED_LOGIN_RATE_LIMIT_PERIOD_SECONDS,
+			},
 		}),
 		mcpOAuthRateLimit: yield* Cloudflare.RateLimit("MCP_OAUTH_RATE_LIMITER", {
 			namespaceId: 2026072102,
@@ -201,6 +213,7 @@ export const apiPorts = (
 		Layer.succeed(ApiV2RateLimit, limiter(clients.apiV2RateLimit)),
 		Layer.succeed(ShareLinkRateLimit, limiter(clients.shareLinkRateLimit)),
 		Layer.succeed(CliAuthRateLimit, limiter(clients.cliAuthRateLimit)),
+		Layer.succeed(SelfHostedLoginRateLimit, limiter(clients.selfHostedLoginRateLimit)),
 		Layer.succeed(McpOAuthRateLimit, limiter(clients.mcpOAuthRateLimit)),
 		Layer.succeed(AwsEventsRateLimit, limiter(clients.awsEventsRateLimit)),
 		Layer.succeed(DataSourceProductionCallLimit, limiter(clients.dataSourceProductionCallLimit)),

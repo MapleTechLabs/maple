@@ -6,7 +6,7 @@
 // standalone `apps/electric-sync` worker feeds them its own small config. Auth
 // is the one genuinely cross-service concern, so it lives in this lean package
 // (effect + @maple/domain + @clerk/backend) rather than an app.
-import { createHmac, timingSafeEqual } from "node:crypto"
+import { createHmac, hkdfSync, timingSafeEqual } from "node:crypto"
 import { type ClerkClient, createClerkClient } from "@clerk/backend"
 import {
 	AuthMode,
@@ -209,9 +209,30 @@ const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 const encodeBase64Url = (value: unknown): string => Buffer.from(encodeJson(value)).toString("base64url")
 
+/** HKDF `info` for the session MAC key; bump the version to invalidate every session. */
+const SESSION_KEY_INFO = "maple/self-hosted-session-mac/v1"
+
+/**
+ * The HMAC key self-hosted sessions are signed with. With `MAPLE_SESSION_SIGNING_SECRET` set it is
+ * HKDF-SHA256 over that secret (salted with the root password, so rotating either revokes every
+ * session) and a captured token reveals nothing about the password. Without it the key is derived
+ * from the password alone, which is only as strong as the password.
+ */
+const selfHostedSessionKey = (
+	env: Pick<AuthEnv, "MAPLE_ROOT_PASSWORD" | "MAPLE_SESSION_SIGNING_SECRET">,
+): Effect.Effect<Buffer> =>
+	Effect.map(requireSecret(env.MAPLE_ROOT_PASSWORD, "MAPLE_ROOT_PASSWORD"), (rootPassword) => {
+		const signingSecret = getOptionalSecret(env.MAPLE_SESSION_SIGNING_SECRET ?? Option.none())
+		return Buffer.from(
+			signingSecret === undefined
+				? hkdfSync("sha256", rootPassword, "", SESSION_KEY_INFO, 32)
+				: hkdfSync("sha256", signingSecret, rootPassword, SESSION_KEY_INFO, 32),
+		)
+	})
+
 const verifySelfHostedSessionToken = Effect.fn("AuthService.verifySelfHostedSessionToken")(function* (
 	token: string,
-	secret: string,
+	key: Buffer,
 ): Effect.fn.Return<SelfHostedSessionClaims, UnauthorizedError> {
 	const parts = Str.split(".")(token)
 	const [encodedHeader, encodedPayload, encodedSignature] = parts
@@ -224,13 +245,13 @@ const verifySelfHostedSessionToken = Effect.fn("AuthService.verifySelfHostedSess
 	).pipe(Effect.mapError(() => unauthorized("Invalid JWT header")))
 	// HS256 is pinned, not negotiated: the header cannot select `none`, another MAC,
 	// or an asymmetric algorithm. The only verification below is an HMAC with the
-	// root password, so there is no key-confusion surface either.
+	// session key, so there is no key-confusion surface either.
 	if (header.alg !== "HS256") {
 		return yield* unauthorized("Unsupported JWT algorithm")
 	}
 
 	const data = `${encodedHeader}.${encodedPayload}`
-	const expected = createHmac("sha256", secret).update(data).digest("base64url")
+	const expected = createHmac("sha256", key).update(data).digest("base64url")
 	const expectedBuffer = Buffer.from(expected)
 	const actualBuffer = Buffer.from(encodedSignature)
 
@@ -291,12 +312,12 @@ type SelfHostedTokenClaims = {
 	readonly session_exp: number
 }
 
-const signHs256Jwt = (payload: SelfHostedTokenClaims, secret: string): string => {
+const signHs256Jwt = (payload: SelfHostedTokenClaims, key: Buffer): string => {
 	const header = { alg: "HS256", typ: "JWT" }
 	const encodedHeader = encodeBase64Url(header)
 	const encodedPayload = encodeBase64Url(payload)
 	const data = `${encodedHeader}.${encodedPayload}`
-	const signature = createHmac("sha256", secret).update(data).digest("base64url")
+	const signature = createHmac("sha256", key).update(data).digest("base64url")
 	return `${data}.${signature}`
 }
 
@@ -312,7 +333,7 @@ const mintSelfHostedSessionToken = (
 	tenant: TenantContext,
 	nowSeconds: number,
 	sessionExpiresAt: number,
-	secret: string,
+	key: Buffer,
 ): { readonly token: string; readonly expiresAt: number } => {
 	const expiresAt = Math.min(nowSeconds + SELF_HOSTED_SESSION_TTL_SECONDS, sessionExpiresAt)
 	const token = signHs256Jwt(
@@ -325,7 +346,7 @@ const mintSelfHostedSessionToken = (
 			exp: expiresAt,
 			session_exp: sessionExpiresAt,
 		},
-		secret,
+		key,
 	)
 	return { token, expiresAt }
 }
@@ -389,9 +410,37 @@ export interface AuthEnv {
 	 */
 	readonly MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS?: boolean | undefined
 	readonly MAPLE_ROOT_PASSWORD: Option.Option<Redacted.Redacted>
+	/** High-entropy key self-hosted sessions are signed from; absent, they derive from the root password. */
+	readonly MAPLE_SESSION_SIGNING_SECRET?: Option.Option<Redacted.Redacted> | undefined
 	readonly CLERK_SECRET_KEY: Option.Option<Redacted.Redacted>
 	readonly CLERK_PUBLISHABLE_KEY: Option.Option<string>
 	readonly CLERK_JWT_KEY: Option.Option<Redacted.Redacted>
+}
+
+/** Shortest root password a self-hosted deployment accepts. */
+export const MIN_ROOT_PASSWORD_LENGTH = 16
+const PLACEHOLDER_ROOT_PASSWORDS: ReadonlySet<string> = new Set([
+	"change-me",
+	"changeme",
+	"change-me-please",
+	"password",
+	"placeholder",
+	"maple",
+	"admin",
+	"root",
+])
+
+/** Why a root password is too weak to start with, or undefined when it is acceptable. */
+export const rootPasswordProblem = (password: string): string | undefined => {
+	const trimmed = Str.trim(password)
+	if (trimmed.length === 0) return "MAPLE_ROOT_PASSWORD cannot be empty"
+	if (PLACEHOLDER_ROOT_PASSWORDS.has(Str.toLowerCase(trimmed))) {
+		return "MAPLE_ROOT_PASSWORD is a placeholder value; generate one with `openssl rand -base64 24`"
+	}
+	if (password.length < MIN_ROOT_PASSWORD_LENGTH) {
+		return `MAPLE_ROOT_PASSWORD must be at least ${MIN_ROOT_PASSWORD_LENGTH} characters; generate one with \`openssl rand -base64 24\``
+	}
+	return undefined
 }
 
 const getOptionalString = <A>(option: Option.Option<A>): A | undefined => Option.getOrUndefined(option)
@@ -454,7 +503,10 @@ const makeClerkAuthenticateRequest = (env: ClerkEnv): ClerkAuthenticateRequest |
 }
 
 export const makeLoginSelfHosted = (
-	env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "MAPLE_DEFAULT_ORG_ID" | "MAPLE_ROOT_PASSWORD">,
+	env: Pick<
+		AuthEnv,
+		"MAPLE_AUTH_MODE" | "MAPLE_DEFAULT_ORG_ID" | "MAPLE_ROOT_PASSWORD" | "MAPLE_SESSION_SIGNING_SECRET"
+	>,
 ) =>
 	Effect.fn("AuthService.loginSelfHosted")(function* (
 		password: string,
@@ -481,7 +533,8 @@ export const makeLoginSelfHosted = (
 		// Entering the root password is what starts the absolute clock. Renewal
 		// never restarts it: only another login does.
 		const sessionExpiresAt = now + SELF_HOSTED_SESSION_MAX_LIFETIME_SECONDS
-		const { token, expiresAt } = mintSelfHostedSessionToken(tenant, now, sessionExpiresAt, rootPassword)
+		const sessionKey = yield* selfHostedSessionKey(env)
+		const { token, expiresAt } = mintSelfHostedSessionToken(tenant, now, sessionExpiresAt, sessionKey)
 
 		return new SelfHostedLoginResponse({
 			token,
@@ -501,7 +554,9 @@ export const makeLoginSelfHosted = (
  * thing standing between a token and a new one, so it does its own checking. An
  * expired token cannot be renewed; that is the point of the expiry.
  */
-export const makeRefreshSelfHostedSession = (env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "MAPLE_ROOT_PASSWORD">) =>
+export const makeRefreshSelfHostedSession = (
+	env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "MAPLE_ROOT_PASSWORD" | "MAPLE_SESSION_SIGNING_SECRET">,
+) =>
 	Effect.fn("AuthService.refreshSelfHostedSession")(function* (
 		token: string,
 	): Effect.fn.Return<SelfHostedLoginResponse, SelfHostedAuthDisabledError | UnauthorizedError> {
@@ -511,8 +566,8 @@ export const makeRefreshSelfHostedSession = (env: Pick<AuthEnv, "MAPLE_AUTH_MODE
 			})
 		}
 
-		const rootPassword = yield* requireSecret(env.MAPLE_ROOT_PASSWORD, "MAPLE_ROOT_PASSWORD")
-		const claims = yield* verifySelfHostedSessionToken(token, rootPassword)
+		const sessionKey = yield* selfHostedSessionKey(env)
+		const claims = yield* verifySelfHostedSessionToken(token, sessionKey)
 		const now = Math.floor((yield* Clock.currentTimeMillis) / 1000)
 
 		// A token minted before `session_exp` existed still gets a bounded renewal
@@ -530,7 +585,7 @@ export const makeRefreshSelfHostedSession = (env: Pick<AuthEnv, "MAPLE_AUTH_MODE
 			},
 			now,
 			sessionExpiresAt,
-			rootPassword,
+			sessionKey,
 		)
 
 		return new SelfHostedLoginResponse({
@@ -841,10 +896,10 @@ export const makeResolveTenant = (
 			return yield* unauthorized("Self-hosted mode requires a valid bearer token")
 		}
 
-		const rootPassword = yield* requireSecret(env.MAPLE_ROOT_PASSWORD, "MAPLE_ROOT_PASSWORD")
+		const sessionKey = yield* selfHostedSessionKey(env)
 		// `claims` is already the validated tenant: branded ids, a normalized role
 		// list and a literal `authMode`. Nothing below re-checks it.
-		const claims = yield* verifySelfHostedSessionToken(token, rootPassword)
+		const claims = yield* verifySelfHostedSessionToken(token, sessionKey)
 
 		const tenant: TenantContext = {
 			orgId: claims.org_id,
