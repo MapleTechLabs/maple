@@ -1,6 +1,6 @@
 import type { StatusPageComponentStatus, StatusPageVisibility } from "@maple/domain"
 import type { V2StatusPageIncident } from "@maple/domain/http/v2"
-import { isStatusPageImageSource } from "@maple/domain/status-page"
+import { isStatusPageImageSource, statusPageOrgKey } from "@maple/domain/status-page"
 import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr } from "effect"
@@ -66,7 +66,7 @@ import { stripClass } from "@maple/views/ui/rule"
 // uptime, open incidents and the next maintenance; the builder's on-ramp when there is none.
 
 type H = HtmlBuilder<Message>
-type ViewInputs = Readonly<{ nowMs: number; timeZone: string }>
+type ViewInputs = Readonly<{ nowMs: number; timeZone: string; orgKey: string }>
 
 /** The builder link; a disabled button for a viewer who may not edit status pages. */
 const newPageButton = (h: H, model: Model, label: string): Html =>
@@ -176,9 +176,13 @@ const lastPublished = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Ht
 }
 
 /** Open public page and Open dev preview for everyone; Edit and Delete for those who may change the page. */
-const pageMenuEntries = (summary: StatusPageSummary, isEditable: boolean): ReadonlyArray<MenuEntry> => {
+const pageMenuEntries = (
+	summary: StatusPageSummary,
+	orgKey: string,
+	isEditable: boolean,
+): ReadonlyArray<MenuEntry> => {
 	const page = summary.page
-	const open = openMenuEntries(publicPageLink(page, publicUrl(STATUS_PAGE_BASE_URL, page.slug)))
+	const open = openMenuEntries(publicPageLink(page, publicUrl(STATUS_PAGE_BASE_URL, orgKey, page.slug)))
 	if (!isEditable) return open
 	return [
 		...open,
@@ -189,12 +193,18 @@ const pageMenuEntries = (summary: StatusPageSummary, isEditable: boolean): Reado
 	]
 }
 
-const pageMenu = (h: H, model: Model, summary: StatusPageSummary, isEditable: boolean): Html => {
+const pageMenu = (
+	h: H,
+	model: Model,
+	summary: StatusPageSummary,
+	orgKey: string,
+	isEditable: boolean,
+): Html => {
 	const menuId = rowMenuId(summary.page.id)
 	return rowActionsMenu(h, {
 		slotId: menuId,
 		model: model.rowMenus[menuId] ?? Menu.init(menuId),
-		entries: pageMenuEntries(summary, isEditable),
+		entries: pageMenuEntries(summary, orgKey, isEditable),
 		label: `Actions for ${summary.page.name}`,
 		toParentMessage: (message) => Message.GotRowMenuMessage({ pageId: summary.page.id, message }),
 	})
@@ -226,13 +236,15 @@ const cardHeader = (
 			hstack(h, { gap: "2", align: "center", className: "min-w-0" }, [
 				badge(h, { variant: visibility.variant, size: "sm" }, [visibility.label]),
 				typography(h, { size: "xs", tone: "muted", mono: true, truncate: true }, [
-					page.visibility === "internal" ? "Members only, in Maple" : publicAddress(page.slug),
+					page.visibility === "internal"
+						? "Members only, in Maple"
+						: publicAddress(inputs.orgKey, page.slug),
 				]),
 			]),
 		]),
 		hstack(h, { gap: "3", align: "center", className: "shrink-0" }, [
 			lastPublished(h, summary, inputs),
-			pageMenu(h, model, summary, isEditable),
+			pageMenu(h, model, summary, inputs.orgKey, isEditable),
 		]),
 	])
 }
@@ -452,7 +464,7 @@ const body = (h: H, model: Model, inputs: ViewInputs): Html => {
 	})
 }
 
-const deleteDialog = (h: H, model: Model): Html => {
+const deleteDialog = (h: H, model: Model, orgKey: string): Html => {
 	const page = Option.map(
 		Option.flatMap(Option.fromNullishOr(model.deletingPageId), (id) =>
 			Arr.findFirst(
@@ -467,7 +479,7 @@ const deleteDialog = (h: H, model: Model): Html => {
 		model: model.deleteDialog,
 		toParentMessage: (message) => Message.GotDeleteDialogMessage({ message }),
 		title: `Delete ${Option.match(page, { onNone: () => "this status page", onSome: (p) => p.name })}?`,
-		description: `${Option.match(page, { onNone: () => "The page", onSome: (p) => publicAddress(p.slug) })} goes offline and its components and incidents are deleted. This cannot be undone.`,
+		description: `${Option.match(page, { onNone: () => "The page", onSome: (p) => publicAddress(orgKey, p.slug) })} goes offline and its components and incidents are deleted. This cannot be undone.`,
 		confirmLabel: "Delete status page",
 		isPending: model.isDeleting,
 		onConfirm: Message.ClickedConfirmDelete(),
@@ -491,8 +503,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			body(h, model, {
 				nowMs: model.nowMs ?? 0,
 				timeZone: inputs.context.timeZone,
+				orgKey: statusPageOrgKey(inputs.context.orgId),
 			}),
-			deleteDialog(h, model),
+			deleteDialog(h, model, statusPageOrgKey(inputs.context.orgId)),
 		],
 	),
 )

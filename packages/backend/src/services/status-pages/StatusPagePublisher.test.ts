@@ -6,6 +6,7 @@ import {
 	decodeStatusPageSnapshotJson,
 	isStatusPageTombstone,
 	StatusPageKeys,
+	statusPageAddress,
 	utcDay,
 } from "@maple/domain/status-page"
 import { StatusPageId } from "@maple/primitives"
@@ -21,6 +22,8 @@ import {
 	DAY_MS,
 	NOW,
 	newPageId,
+	ORG,
+	OTHER_ORG,
 	readPage,
 	seedCleanup,
 	seedComponent,
@@ -29,6 +32,9 @@ import {
 	seedCustomDomain,
 	seedPage,
 } from "./status-page-test-support"
+
+/** The edge key a page of the test org gets for a slug. */
+const route = (slug: string) => statusPageAddress(ORG, slug)
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -89,9 +95,9 @@ describe("StatusPagePublisher.publish", () => {
 					objects.get(StatusPageKeys.snapshotObject(pageId)),
 					kv.get(StatusPageKeys.snapshot(pageId)),
 				)
-				assert.strictEqual(kv.get(StatusPageKeys.slug("acme")), pageId)
+				assert.strictEqual(kv.get(StatusPageKeys.slug(route("acme"))), pageId)
 				// The edge's fallback when KV fails.
-				assert.strictEqual(objects.get(StatusPageKeys.slugObject("acme")), pageId)
+				assert.strictEqual(objects.get(StatusPageKeys.slugObject(route("acme"))), pageId)
 				const row = yield* readPage(testDb, pageId)
 				assert.strictEqual(row?.published_revision, "3")
 				assert.isNotNull(row?.published_hash)
@@ -163,12 +169,15 @@ describe("StatusPagePublisher.publish", () => {
 				const pageId = newPageId()
 				yield* seedPage(testDb, { id: pageId, slug: "acme-route" })
 				yield* publisher.publish(pageId)
-				yield* store.api.deleteRoutes({ slug: "acme-route", hostnames: [] })
+				yield* store.api.deleteRoutes({ address: route("acme-route"), hostnames: [] })
 
 				yield* bumpRevision(testDb, pageId)
 				yield* TestClock.adjust("1 minute")
 				assert.isFalse((yield* publisher.publish(pageId)).written)
-				assert.strictEqual((yield* store.contents).kv.get(StatusPageKeys.slug("acme-route")), pageId)
+				assert.strictEqual(
+					(yield* store.contents).kv.get(StatusPageKeys.slug(route("acme-route"))),
+					pageId,
+				)
 			}),
 		),
 	)
@@ -223,7 +232,7 @@ describe("StatusPagePublisher.publish", () => {
 					assert.isTrue(Exit.isFailure(exit))
 					const { kv } = yield* store.contents
 					assert.isFalse(kv.has(StatusPageKeys.snapshot(pageId)))
-					assert.isFalse(kv.has(StatusPageKeys.slug("acme-gone")))
+					assert.isFalse(kv.has(StatusPageKeys.slug(route("acme-gone"))))
 				}),
 			(api, testDb) => ({
 				...api,
@@ -272,11 +281,13 @@ describe("StatusPagePublisher visibility", () => {
 				const hidden = yield* publisher.publish(pageId)
 				assert.isFalse(hidden.written)
 				const { kv, objects } = yield* store.contents
-				assert.isFalse(kv.has(StatusPageKeys.slug("acme-internal")))
+				assert.isFalse(kv.has(StatusPageKeys.slug(route("acme-internal"))))
 				assert.isFalse(kv.has(StatusPageKeys.snapshot(pageId)))
 				// R2 keeps a tombstone in place of each, with nothing of the page in it.
 				assert.isTrue(
-					isStatusPageTombstone(objects.get(StatusPageKeys.slugObject("acme-internal")) ?? ""),
+					isStatusPageTombstone(
+						objects.get(StatusPageKeys.slugObject(route("acme-internal"))) ?? "",
+					),
 				)
 				assert.isTrue(isStatusPageTombstone(objects.get(StatusPageKeys.snapshotObject(pageId)) ?? ""))
 				assert.strictEqual((yield* readPage(testDb, pageId))?.published_revision, "2")
@@ -286,10 +297,13 @@ describe("StatusPagePublisher visibility", () => {
 				const shown = yield* publisher.publish(pageId)
 				assert.isTrue(shown.written)
 				const after = yield* store.contents
-				assert.strictEqual(after.kv.get(StatusPageKeys.slug("acme-internal")), pageId)
+				assert.strictEqual(after.kv.get(StatusPageKeys.slug(route("acme-internal"))), pageId)
 				assert.isTrue(after.kv.has(StatusPageKeys.snapshot(pageId)))
 				// The publish replaces both tombstones.
-				assert.strictEqual(after.objects.get(StatusPageKeys.slugObject("acme-internal")), pageId)
+				assert.strictEqual(
+					after.objects.get(StatusPageKeys.slugObject(route("acme-internal"))),
+					pageId,
+				)
 				assert.strictEqual(
 					after.objects.get(StatusPageKeys.snapshotObject(pageId)),
 					after.kv.get(StatusPageKeys.snapshot(pageId)),
@@ -304,12 +318,12 @@ describe("StatusPagePublisher visibility", () => {
 				const pageId = newPageId()
 				const other = newPageId()
 				yield* seedPage(testDb, { id: pageId, slug: "acme-shared" })
-				yield* store.api.putRoutes(other, { slug: "acme-shared", hostnames: [] })
+				yield* store.api.putRoutes(other, { address: route("acme-shared"), hostnames: [] })
 				yield* setVisibility(testDb, pageId, "internal")
 				yield* publisher.publish(pageId)
 				const { kv, objects } = yield* store.contents
-				assert.strictEqual(kv.get(StatusPageKeys.slug("acme-shared")), other)
-				assert.strictEqual(objects.get(StatusPageKeys.slugObject("acme-shared")), other)
+				assert.strictEqual(kv.get(StatusPageKeys.slug(route("acme-shared"))), other)
+				assert.strictEqual(objects.get(StatusPageKeys.slugObject(route("acme-shared"))), other)
 				assert.isTrue(isStatusPageTombstone(objects.get(StatusPageKeys.snapshotObject(pageId)) ?? ""))
 			}),
 		),
@@ -330,7 +344,7 @@ describe("StatusPagePublisher visibility", () => {
 				)
 				yield* publisher.sweep(NOW)
 				const { objects } = yield* store.contents
-				assert.isFalse(objects.has(StatusPageKeys.slugObject("acme-retired")))
+				assert.isFalse(objects.has(StatusPageKeys.slugObject(route("acme-retired"))))
 				assert.isFalse(objects.has(StatusPageKeys.snapshotObject(pageId)))
 			}),
 		),
@@ -435,7 +449,7 @@ describe("StatusPagePublisher.sweep", () => {
 				const { kv } = yield* store.contents
 				assert.isTrue(kv.has(StatusPageKeys.snapshot(live)))
 				assert.isFalse(kv.has(StatusPageKeys.snapshot(draft)))
-				assert.isFalse(kv.has(StatusPageKeys.slug("sweep-draft")))
+				assert.isFalse(kv.has(StatusPageKeys.slug(route("sweep-draft"))))
 			}),
 		),
 	)
@@ -534,6 +548,48 @@ describe("StatusPagePublisher.sweep", () => {
 })
 
 describe("StatusPagePublisher.sweep edge cleanups", () => {
+	it.effect("gives the same slug in two orgs a route each", () =>
+		withPublisher(({ testDb, store, publisher }) =>
+			Effect.gen(function* () {
+				const mine = newPageId()
+				const theirs = newPageId()
+				yield* seedPage(testDb, { id: mine, slug: "status" })
+				yield* seedPage(testDb, { id: theirs, slug: "status", orgId: OTHER_ORG })
+				yield* publisher.sweep(NOW)
+				const { kv } = yield* store.contents
+				assert.strictEqual(kv.get(StatusPageKeys.slug(route("status"))), mine)
+				assert.strictEqual(
+					kv.get(StatusPageKeys.slug(statusPageAddress(OTHER_ORG, "status"))),
+					theirs,
+				)
+			}),
+		),
+	)
+
+	it.effect("drops the bare-slug route a page kept from before slugs were per org", () =>
+		withPublisher(({ testDb, store, publisher }) =>
+			Effect.gen(function* () {
+				const pageId = newPageId()
+				const other = newPageId()
+				yield* seedPage(testDb, { id: pageId, slug: "old-name" })
+				yield* store.api.putRoutes(pageId, { address: "old-name", hostnames: [] })
+				// Another page's bare-slug route stays.
+				yield* store.api.putRoutes(other, { address: "kept-name", hostnames: [] })
+				yield* seedCleanup(testDb, { pageId, slug: "old-name", deleteSnapshot: true, at: NOW })
+				yield* seedCleanup(testDb, { pageId, slug: "kept-name", deleteSnapshot: false, at: NOW })
+				yield* Effect.promise(() =>
+					executeSql(testDb, `DELETE FROM status_pages WHERE id = $1`, [pageId]),
+				)
+
+				yield* publisher.sweep(NOW + 60_000)
+				const { kv, objects } = yield* store.contents
+				assert.isFalse(kv.has(StatusPageKeys.slug("old-name")))
+				assert.isFalse(objects.has(StatusPageKeys.slugObject("old-name")))
+				assert.strictEqual(kv.get(StatusPageKeys.slug("kept-name")), other)
+			}),
+		),
+	)
+
 	it.effect("drops a renamed page's old slug route, in KV and R2, and the queue row", () =>
 		withPublisher(({ testDb, store, publisher }) =>
 			Effect.gen(function* () {
@@ -552,9 +608,9 @@ describe("StatusPagePublisher.sweep edge cleanups", () => {
 				const result = yield* publisher.sweep(NOW + 60_000)
 				assert.strictEqual(result.cleaned, 1)
 				const { kv, objects } = yield* store.contents
-				assert.isFalse(kv.has(StatusPageKeys.slug("old-name")))
-				assert.isFalse(objects.has(StatusPageKeys.slugObject("old-name")))
-				assert.strictEqual(kv.get(StatusPageKeys.slug("new-name")), pageId)
+				assert.isFalse(kv.has(StatusPageKeys.slug(route("old-name"))))
+				assert.isFalse(objects.has(StatusPageKeys.slugObject(route("old-name"))))
+				assert.strictEqual(kv.get(StatusPageKeys.slug(route("new-name"))), pageId)
 				assert.isTrue(kv.has(StatusPageKeys.snapshot(pageId)))
 				assert.deepStrictEqual(yield* cleanupRows(testDb), [])
 			}),
@@ -572,7 +628,7 @@ describe("StatusPagePublisher.sweep edge cleanups", () => {
 				yield* publisher.sweep(NOW + 60_000)
 				const { kv } = yield* store.contents
 				assert.isTrue(kv.has(StatusPageKeys.snapshot(pageId)))
-				assert.strictEqual(kv.get(StatusPageKeys.slug("still-here")), pageId)
+				assert.strictEqual(kv.get(StatusPageKeys.slug(route("still-here"))), pageId)
 				assert.deepStrictEqual(yield* cleanupRows(testDb), [])
 			}),
 		),
@@ -594,8 +650,8 @@ describe("StatusPagePublisher.sweep edge cleanups", () => {
 				})
 				yield* publisher.sweep(NOW + 60_000)
 				const { kv, objects } = yield* store.contents
-				assert.strictEqual(kv.get(StatusPageKeys.slug("shared")), taker)
-				assert.strictEqual(objects.get(StatusPageKeys.slugObject("shared")), taker)
+				assert.strictEqual(kv.get(StatusPageKeys.slug(route("shared"))), taker)
+				assert.strictEqual(objects.get(StatusPageKeys.slugObject(route("shared"))), taker)
 				assert.deepStrictEqual(yield* cleanupRows(testDb), [])
 			}),
 		),
@@ -629,8 +685,8 @@ describe("StatusPagePublisher.sweep edge cleanups", () => {
 				const { kv, objects } = yield* store.contents
 				assert.isFalse(kv.has(StatusPageKeys.snapshot(pageId)))
 				assert.isFalse(objects.has(StatusPageKeys.snapshotObject(pageId)))
-				assert.isFalse(kv.has(StatusPageKeys.slug("doomed")))
-				assert.isFalse(objects.has(StatusPageKeys.slugObject("doomed")))
+				assert.isFalse(kv.has(StatusPageKeys.slug(route("doomed"))))
+				assert.isFalse(objects.has(StatusPageKeys.slugObject(route("doomed"))))
 				assert.isFalse(kv.has(StatusPageKeys.overlayEntry(pageId, "e1")))
 				assert.isFalse(kv.has(StatusPageKeys.overlayEntry(pageId, "e2")))
 				assert.isTrue(kv.has(StatusPageKeys.overlayEntry(other, "e3")))
@@ -653,7 +709,7 @@ describe("StatusPagePublisher custom domains", () => {
 				const { kv, objects } = yield* store.contents
 				assert.strictEqual(kv.get(StatusPageKeys.host("status.acme.com")), pageId)
 				assert.strictEqual(objects.get(StatusPageKeys.hostObject("status.acme.com")), pageId)
-				assert.strictEqual(kv.get(StatusPageKeys.slug("acme")), pageId)
+				assert.strictEqual(kv.get(StatusPageKeys.slug(route("acme"))), pageId)
 				const snapshot = decodeStatusPageSnapshotJson(kv.get(StatusPageKeys.snapshot(pageId)))
 				assert.strictEqual(Option.getOrNull(snapshot)?.page.customDomain, "status.acme.com")
 			}),
@@ -732,7 +788,7 @@ describe("StatusPagePublisher custom domains", () => {
 				const { kv, objects } = yield* store.contents
 				assert.isFalse(kv.has(StatusPageKeys.host("status.acme.com")))
 				assert.isFalse(objects.has(StatusPageKeys.hostObject("status.acme.com")))
-				assert.strictEqual(kv.get(StatusPageKeys.slug("acme")), pageId)
+				assert.strictEqual(kv.get(StatusPageKeys.slug(route("acme"))), pageId)
 				assert.isTrue(kv.has(StatusPageKeys.snapshot(pageId)))
 				assert.deepStrictEqual(yield* cleanupRows(testDb), [])
 			}),

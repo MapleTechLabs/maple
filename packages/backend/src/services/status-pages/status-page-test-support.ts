@@ -40,6 +40,7 @@ export const makeInMemoryDns = Effect.gen(function* () {
 export type InMemoryDns = Effect.Success<typeof makeInMemoryDns>
 
 export const ORG = Schema.decodeSync(OrgId)("org_status_pages")
+export const OTHER_ORG = Schema.decodeSync(OrgId)("org_status_pages_other")
 export const USER = "user_status_pages"
 /** 2026-10-28T12:00:00Z */
 export const NOW = Date.UTC(2026, 9, 28, 12)
@@ -67,6 +68,7 @@ export const seedPage = (
 		readonly draft?: boolean
 		readonly visibility?: "public" | "password" | "internal"
 		readonly passwordHash?: string | null
+		readonly orgId?: OrgId
 	},
 ) =>
 	sql(
@@ -77,7 +79,7 @@ export const seedPage = (
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, $12, $13, $14, $15)`,
 		[
 			input.id,
-			ORG,
+			input.orgId ?? ORG,
 			`Page ${input.slug}`,
 			input.slug,
 			input.autoIncidents ?? "off",

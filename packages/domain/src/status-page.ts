@@ -1,3 +1,5 @@
+import { sha256 } from "@noble/hashes/sha2"
+import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils"
 import { Effect, Option, Schema, SchemaTransformation, Struct, Array as Arr, String as Str } from "effect"
 import {
 	StatusPageComponentId,
@@ -67,11 +69,21 @@ export const isStatusPageImageSource = (value: string): boolean =>
 /** Longest incident update message, in characters; the API, the service and the editor all check it. */
 export const STATUS_PAGE_UPDATE_MAX_LENGTH = 20_000
 
-/** Lowercase letters, digits and inner hyphens: the `<slug>` in `<slug>.<status domain>`. */
+/** Lowercase letters, digits and inner hyphens: the `<slug>` in `/s/<org key>/<slug>`, unique per org. */
 export const StatusPageSlug = Schema.String.check(
 	Schema.isPattern(/^[a-z0-9](?:[a-z0-9-]{1,46}[a-z0-9])$/u),
 ).annotate({ identifier: "@maple/StatusPageSlug", title: "Status Page Slug" })
 export type StatusPageSlug = Schema.Schema.Type<typeof StatusPageSlug>
+
+/**
+ * The org's part of a hosted address: the first 12 hex digits of SHA-256 over the org id. It
+ * keeps slugs per org without putting the org id in the URL; web and the publisher both derive it.
+ */
+export const statusPageOrgKey = (orgId: string): string =>
+	Str.slice(0, 12)(bytesToHex(sha256(utf8ToBytes(orgId))))
+
+/** A page's hosted address on Maple's status domain, without the `/s/` prefix: `<org key>/<slug>`. */
+export const statusPageAddress = (orgId: string, slug: string): string => `${statusPageOrgKey(orgId)}/${slug}`
 
 /** Longest custom domain hostname Maple stores (DNS caps a name at 253 characters). */
 export const STATUS_PAGE_CUSTOM_DOMAIN_MAX_LENGTH = 253
@@ -739,6 +751,8 @@ export const themeContrastIssue = (theme: StatusPageTheme): string | null => {
 export const StatusPageSnapshotPage = Schema.Struct({
 	name: Schema.String,
 	slug: StatusPageSlug,
+	/** {@link statusPageOrgKey} of the page's org; empty in snapshots published before slugs were per org. */
+	orgKey: Schema.String.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(""))),
 	description: Schema.NullOr(Schema.String),
 	websiteUrl: Schema.NullOr(Schema.String),
 	logoUrl: Schema.NullOr(Schema.String),
@@ -1112,8 +1126,12 @@ export const sha256Base64Url = async (value: string): Promise<string> => {
 /** Edge storage keys, shared by the publisher and the status Worker. */
 export const StatusPageKeys = {
 	host: (hostname: string) => `host:${Str.toLowerCase(hostname)}`,
-	/** Path addressing (`/s/<slug>`), for hosts without a page of their own such as workers.dev. */
-	slug: (slug: string) => `slug:${slug}`,
+	/**
+	 * Path addressing (`/s/<address>`), for hosts without a page of their own such as workers.dev.
+	 * The address is {@link statusPageAddress}; a bare slug is the key of a page published before
+	 * slugs were per org, which the status Worker redirects to its current address.
+	 */
+	slug: (address: string) => `slug:${address}`,
 	snapshot: (pageId: string) => `page:${pageId}:snapshot`,
 	/**
 	 * One key per break-glass entry, written once by the status Worker and deleted by the
@@ -1126,7 +1144,7 @@ export const StatusPageKeys = {
 	/** R2 copy of the snapshot, read when KV fails. */
 	snapshotObject: (pageId: string) => `pages/${pageId}/snapshot.json`,
 	hostObject: (hostname: string) => `hosts/${Str.toLowerCase(hostname)}`,
-	slugObject: (slug: string) => `slugs/${slug}`,
+	slugObject: (address: string) => `slugs/${address}`,
 } as const
 
 /**

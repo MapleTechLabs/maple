@@ -42,6 +42,7 @@ const snapshot = (overrides: Partial<StatusPageSnapshot> = {}): StatusPageSnapsh
 	page: {
 		name: "Acme",
 		slug: "acme",
+		orgKey: "",
 		description: null,
 		websiteUrl: null,
 		logoUrl: null,

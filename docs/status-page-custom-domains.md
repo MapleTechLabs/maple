@@ -17,8 +17,12 @@ on its Maple address (`/feed.atom`, `/feed.rss`, `/api/v1/status.json`, `/api/v1
    wildcard would also take `maple.dev` hostnames that have no Worker of their own (ingest).
 3. The status Worker looks the hostname up (`host:<hostname>` in KV, `hosts/<hostname>` in
    R2). Only Maple's own hosts (the stage's status domain, `*.workers.dev`, local dev) also
-   serve `/s/<slug>`; any other host with no route is a 404, so one customer's domain never
-   serves another customer's page.
+   serve `/s/<org key>/<slug>`; any other host with no route is a 404, so one customer's domain
+   never serves another customer's page. Slugs are unique per org; the org key
+   (`statusPageOrgKey`, 12 hex digits of SHA-256 over the org id) keeps two orgs' `status` apart
+   without putting the org id in the URL. A bare `/s/<slug>` from before slugs were per org
+   answers 301 to the page's current address while its old `slug:<slug>` key lasts (the page's
+   rename or delete drops it).
 
 ## Ownership proof
 

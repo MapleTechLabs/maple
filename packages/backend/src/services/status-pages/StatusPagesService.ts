@@ -338,7 +338,10 @@ const componentNotFound = (componentId: StatusPageComponentId) =>
 const incidentNotFound = (incidentId: StatusPageIncidentId) =>
 	new StatusPageIncidentNotFoundError({ incidentId, message: "Status page incident not found" })
 const slugTaken = (slug: string) =>
-	new StatusPageSlugTakenError({ slug, message: `The address '${slug}' is already taken` })
+	new StatusPageSlugTakenError({
+		slug,
+		message: `This organization already has a status page at '${slug}'`,
+	})
 
 const isValidSlug = Schema.is(StatusPageSlug)
 
@@ -701,18 +704,22 @@ const findIncident = (db: MapleDb, orgId: OrgId, incidentId: StatusPageIncidentI
 			),
 		)
 
-/** The slug check is deliberately global: one hosted address per slug across all orgs. */
+/** Slugs are unique per org: the hosted address `/s/<org key>/<slug>` carries the org. */
 const ensureSlugFree = Effect.fnUntraced(function* (
 	db: MapleDb,
+	orgId: OrgId,
 	slug: string,
 	exceptPageId: StatusPageId | null,
 ) {
 	const rows = yield* db.run(
 		PG.from(StatusPages)
 			.select("id")
-			.where(($) => [$.slug.eq(slug), exceptPageId === null ? undefined : $.id.neq(exceptPageId)])
-			.limit(1)
-			.crossTenant(),
+			.where(($) => [
+				$.orgId.eq(orgId),
+				$.slug.eq(slug),
+				exceptPageId === null ? undefined : $.id.neq(exceptPageId),
+			])
+			.limit(1),
 	)
 	if (rows.length > 0) return yield* slugTaken(slug)
 })
@@ -905,7 +912,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				yield* dbExecuteSlug(slug)((db) =>
 					db.transaction(
 						Effect.gen(function* () {
-							yield* ensureSlugFree(db, slug, null)
+							yield* ensureSlugFree(db, orgId, slug, null)
 							yield* ensureMonitorsInOrg(db, orgId, monitorIds)
 							// A new page starts at revision 1 > published 0, so the publisher picks it up.
 							yield* db.run(
@@ -980,9 +987,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 						? undefined
 						: yield* validateHttpsUrl(patch.websiteUrl, "Website URL")
 				const logoUrl =
-					patch.logoUrl === undefined
-						? undefined
-						: yield* validateImage(patch.logoUrl, "Logo URL")
+					patch.logoUrl === undefined ? undefined : yield* validateImage(patch.logoUrl, "Logo URL")
 				const logoDarkUrl =
 					patch.logoDarkUrl === undefined
 						? undefined
@@ -1016,7 +1021,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 								patch.theme === undefined
 									? undefined
 									: yield* validateTheme({ ...current.theme, ...patch.theme })
-							if (slug !== undefined) yield* ensureSlugFree(db, slug, pageId)
+							if (slug !== undefined) yield* ensureSlugFree(db, orgId, slug, pageId)
 							// The old slug route stays at the edge until the publisher drains this.
 							if (slug !== undefined && slug !== current.slug)
 								yield* queueSlugRemoval(db, orgId, pageId, current.slug)
@@ -1822,7 +1827,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 									`Component ${encodeComponentId(foreign)} is not on this page`,
 								)
 							yield* ensureMonitorsInOrg(db, orgId, monitorIds)
-							yield* ensureSlugFree(db, slug, pageId)
+							yield* ensureSlugFree(db, orgId, slug, pageId)
 							const { fields, created, updated, deleted, reordered } = diffStatusPageConfig(
 								previous,
 								written,

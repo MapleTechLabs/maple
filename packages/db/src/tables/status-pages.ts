@@ -35,7 +35,7 @@ export const StatusPages = PG.table("status_pages", {
 		id: PG.brand(PG.text, StatusPageId),
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
 		name: PG.text,
-		/** Globally unique: the hosted address `<slug>.<status domain>`. */
+		/** Unique per org: the hosted address is `/s/<org key>/<slug>` (`statusPageAddress`). */
 		slug: PG.text,
 		description: PG.nullable(PG.text),
 		websiteUrl: PG.column(PG.nullable(PG.text), { name: "website_url" }),
@@ -81,7 +81,7 @@ export const StatusPages = PG.table("status_pages", {
 	primaryKey: ["id"],
 	indexes: [
 		PG.index("status_pages_org_idx", ["orgId"]),
-		PG.uniqueIndex("status_pages_slug_unq", ["slug"]),
+		PG.uniqueIndex("status_pages_org_slug_unq", ["orgId", "slug"]),
 		PG.index("status_pages_unpublished_idx", ["revision", "publishedRevision"], {
 			where: "revision > published_revision",
 		}),
