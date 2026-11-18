@@ -113,9 +113,9 @@ slow?`. It answers in a thread on that message and edits one message there as th
    answers anyway — and it reads the messages above the reply for context. In a channel it was
    merely invited to, an un-addressed message is not a turn.
 
-One limit worth knowing before reporting a bug: from Slack the agent only reads. It proposes no
-change and posts no approval card, and it tells whoever asks to make the change in the Maple app.
-See "Who may approve" below.
+One limit worth knowing before reporting a bug: from Slack the agent only reads, and only the
+org's telemetry and alerting state. It proposes no change and posts no approval card, and it tells
+whoever asks to make the change in the Maple app. See "Who may approve" below.
 
 ## The bot token
 
@@ -219,10 +219,14 @@ does not have.
 
 Nobody, from Slack. **This connector declares no `identity`**, so Maple cannot tell which Maple user
 asked or clicked, and a change is only ever applied as a Maple user. Anyone in the conversation may
-ask, and the turn answers from a reduced read set with no tool that changes anything, so no
+ask, and the turn answers from the org's telemetry and alerting state only: no session replays or
+user lookups, connected data sources, source code or SQL, and no tool that changes anything, so no
 approval is posted. A click on an approval card from an older conversation changes nothing and
 tells the clicker to make the change in the Maple app. See `ChatConnector.identity` for the three
 cases.
+
+The one action in chat is acknowledging an alert from its card. Anyone in the channel may, and the
+acknowledgement is recorded under their Slack name.
 
 Slack _can_ answer who clicked — "Sign in with Slack", its OpenID Connect flow — and implementing
 it is mechanically small: the same OAuth application, the same client credentials, the same
