@@ -1,3 +1,4 @@
+import * as Clerk from "@distilled.cloud/clerk"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { UPTIME_MONITORS_FEATURE_ID } from "@maple/domain/billing"
 import { trackFeatureUsage } from "@maple/backend/services/billing/autumn-tracker"
@@ -31,16 +32,11 @@ import {
 	purgeConversationRows,
 	queueOrgErasures,
 } from "@maple/backend/services/org/org-erasure"
-import { clerkModeClient } from "@maple/auth"
+import { clerkModeApi } from "@maple/auth"
 
 const toPersistenceError = (error: unknown) =>
 	new OrganizationPersistenceError({
 		message: error instanceof Error ? error.message : "Organization persistence failed",
-	})
-
-const toProviderError = (error: unknown) =>
-	new OrganizationProviderError({
-		message: error instanceof Error ? error.message : "Organization provider call failed",
 	})
 
 type PurgedTable = (typeof ORG_DELETE_REGISTRY.orgScoped)[number]
@@ -108,12 +104,15 @@ export class OrganizationDeletionService extends Context.Service<
 			function* (orgId: OrgId) {
 				yield* Effect.annotateCurrentSpan("orgId", orgId)
 				// Not in Clerk auth mode: there is no directory to delete from.
-				const clerk = Option.fromUndefinedOr(clerkModeClient(env))
+				const clerk = Option.fromUndefinedOr(clerkModeApi(env))
 				if (Option.isNone(clerk)) return
 
-				yield* clerkRequest("Clerk.organizations.deleteOrganization", { orgId }, () =>
-					clerk.value.organizations.deleteOrganization(orgId),
-				).pipe(Effect.mapError((error) => toProviderError(error.cause)))
+				yield* clerkRequest(
+					clerk.value,
+					"Clerk.organizations.deleteOrganization",
+					{ orgId },
+					Clerk.deleteOrganization({ organization_id: orgId }),
+				).pipe(Effect.mapError((error) => new OrganizationProviderError({ message: error.message })))
 			},
 		)
 

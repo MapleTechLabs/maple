@@ -1,7 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Array as Arr, Effect } from "effect"
-import { ClerkRequestError } from "@maple/backend/services/auth/clerk-request"
-import { disambiguatedName, isNameTaken, scanClaimedDomains, updateParams } from "./ClerkSsoGateway"
+import { disambiguatedName, isNameHeldElsewhere, scanClaimedDomains, updateParams } from "./ClerkSsoGateway"
 
 /** `total` connections, the last one serving `partner.io`; pages of 100 like Clerk's. */
 const connections = (total: number) => (offset: number) =>
@@ -87,7 +86,7 @@ describe("connection update body", () => {
 	it("closes other sign-in methods when SSO is required, and never reopens them", () => {
 		assert.deepStrictEqual(updateParams({ active: true }), {
 			active: true,
-			disableAdditionalIdentifications: true,
+			disable_additional_identifications: true,
 		})
 		assert.deepStrictEqual(updateParams({ active: false }), { active: false })
 	})
@@ -101,22 +100,38 @@ describe("connection update body", () => {
 })
 
 describe("connection name collisions", () => {
-	const clerkError = (status: number, errors: unknown) =>
-		new ClerkRequestError({ operation: "create", message: "x", status, cause: { errors } })
+	/** Connections named after their index, with `Okta` held by `ent_owner` at position `at`. */
+	const named =
+		(total: number, at: number, pageSize = 100) =>
+		(offset: number) =>
+			Effect.succeed({
+				totalCount: total,
+				data: Arr.map(Arr.range(offset, Math.min(offset + pageSize, total) - 1), (i) =>
+					i === at
+						? { id: "ent_owner", name: "Okta" }
+						: { id: `ent_${i}`, name: `Connection ${i}` },
+				),
+			})
 
-	it("recognises Clerk's taken-name error, and nothing else", () => {
-		assert.isTrue(
-			isNameTaken(clerkError(422, [{ code: "form_identifier_exists", meta: { paramName: "name" } }])),
-		)
-		assert.isFalse(
-			isNameTaken(
-				clerkError(422, [{ code: "form_identifier_exists", meta: { paramName: "domains" } }]),
-			),
-		)
-		assert.isFalse(
-			isNameTaken(clerkError(400, [{ code: "form_identifier_exists", meta: { paramName: "name" } }])),
-		)
-	})
+	it.effect("finds the name held by another connection, whatever its case", () =>
+		Effect.gen(function* () {
+			assert.isTrue(yield* isNameHeldElsewhere(named(3, 1), null, "okta"))
+			assert.isTrue(yield* isNameHeldElsewhere(named(3, 1), "ent_mine", "Okta"))
+		}),
+	)
+
+	it.effect("does not count the connection being renamed, or a name nobody holds", () =>
+		Effect.gen(function* () {
+			assert.isFalse(yield* isNameHeldElsewhere(named(3, 1), "ent_owner", "Okta"))
+			assert.isFalse(yield* isNameHeldElsewhere(named(3, 1), null, "Entra"))
+		}),
+	)
+
+	it.effect("follows short pages to a holder past the first page", () =>
+		Effect.gen(function* () {
+			assert.isTrue(yield* isNameHeldElsewhere(named(150, 120, 50), null, "Okta"))
+		}),
+	)
 
 	it("disambiguates with the org's own domain", () => {
 		assert.strictEqual(disambiguatedName("Okta", ["acme.com", "acme.io"]), "Okta (acme.com)")

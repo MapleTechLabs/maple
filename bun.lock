@@ -638,6 +638,7 @@
       "name": "@maple/auth",
       "dependencies": {
         "@clerk/backend": "^3.29.0",
+        "@distilled.cloud/clerk": "1.0.0-rc.20",
         "@maple/domain": "workspace:*",
         "effect": "catalog:effect",
       },
@@ -654,6 +655,7 @@
         "@alchemy.run/cloudflare": "catalog:alchemy",
         "@clerk/backend": "^3.29.0",
         "@distilled.cloud/aws": "1.0.0-rc.20",
+        "@distilled.cloud/clerk": "1.0.0-rc.20",
         "@distilled.cloud/core": "1.0.0-rc.20",
         "@distilled.cloud/planetscale": "1.0.0-rc.20",
         "@maple-dev/effect-clickhouse-http": "workspace:*",
@@ -1362,6 +1364,8 @@
     "@distilled.cloud/aws": ["@distilled.cloud/aws@1.0.0-rc.20", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.20", "@distilled.cloud/s3": "1.0.0-rc.20" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-fRh8t95wyYVGPxLVJld0k9NLA9Dt8lb+Juvo6ky9HqOxQ/QfwX8FzONkxEVZy+RnVb5HhHoz19eOtOXvRMpMBw=="],
 
     "@distilled.cloud/aws4signer": ["@distilled.cloud/aws4signer@1.0.0-rc.20", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.20" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-7lYmG5Pj7/hqEhygqMmkeb4eph0Z8BEJFDlGDrNrHNxa03F39JqmZpp+YXO8v85Jx0O5G92Fl9UnfwHxvY4D1w=="],
+
+    "@distilled.cloud/clerk": ["@distilled.cloud/clerk@1.0.0-rc.20", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.20" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-3zeNruvbkvJOTP4wQJSH8C9Tvkhwmk6GQvHO+eVRaNIwot5R0jVQadUp7gO32csd65u3lkQ8iGwej1DTezq/Rw=="],
 
     "@distilled.cloud/cloudflare": ["@distilled.cloud/cloudflare@1.0.0-rc.20", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.20", "@distilled.cloud/s3": "1.0.0-rc.20" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-Vcb9hNRqlrec3pSaf9mOFHg5bKoUfpKytAH9w6+Y9L2HmU2Bval3zAXx4viQx9yqUeU5CbhaEH+/SdKywcaEZw=="],
 
