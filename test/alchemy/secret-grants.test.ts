@@ -17,7 +17,12 @@ import { apiConfiguredEnv } from "../../apps/api/src/resources/env.ts"
 import { chatBotConfiguredEnv } from "../../apps/chat-bot/src/resources/env.ts"
 import { electricSecrets } from "../../apps/electric/alchemy/secrets.ts"
 import { electricSyncConfiguredEnv } from "../../apps/electric-sync/src/resources/env.ts"
-import { ingestPgUrl, ingestSecrets, ingestSlotKeyMasters } from "../../apps/ingest/alchemy/secrets.ts"
+import {
+	ingestPgUrl,
+	ingestSecrets,
+	ingestSlotKeyMasters,
+	ingestWarehouseAdminToken,
+} from "../../apps/ingest/alchemy/secrets.ts"
 import { landingBuildSecrets } from "../../apps/landing/src/resources/env.ts"
 import { sandboxSecrets } from "../../apps/sandbox/alchemy/secrets.ts"
 import { scraperSecrets } from "../../apps/scraper/alchemy/secrets.ts"
@@ -111,7 +116,7 @@ test.each(Rec.toEntries(DEPLOYABLES))(
 
 /** What a deployable derives its own values from, read only through `resolveDerived`. */
 const derivedFrom = (consumer: SecretConsumer): ReadonlyArray<Config.Config<unknown>> =>
-	consumer === "ingest" ? [ingestSlotKeyMasters] : []
+	consumer === "ingest" ? [ingestSlotKeyMasters, ingestWarehouseAdminToken] : []
 
 // Only the reads are under test: every key answers "1", so the derivation itself stops here.
 const readDerived = (consumer: SecretConsumer, config: Config.Config<unknown>) =>
@@ -132,6 +137,12 @@ test.each(Rec.keys(DEPLOYABLES))(
 test("ingest is refused the master keys it derives its slot keys from", () => {
 	expect(() => secretsRead("ingest", ingestSlotKeyMasters)).toThrow(
 		"ingest may receive only a value derived from MAPLE_INGEST_KEY_ENCRYPTION_KEY",
+	)
+})
+
+test("ingest is refused the warehouse admin token it reads its append token with", () => {
+	expect(() => secretsRead("ingest", ingestWarehouseAdminToken)).toThrow(
+		"ingest may receive only a value derived from TINYBIRD_TOKEN",
 	)
 })
 

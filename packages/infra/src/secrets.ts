@@ -23,9 +23,11 @@ export class IngestPgUrl extends Secret<IngestPgUrl>()("MAPLE_INGEST_PG_URL", {
 
 // A preview deploys on its branch's token (docs/pr-previews.md), never prod's. The parent workspace
 // token that creates branches is a GitHub environment secret, so no dev copy of prod's exists.
+// ingest gets only the append token its deploy reads with this one (`maple_ingest_append`).
 export class TinybirdToken extends Secret<TinybirdToken>()("TINYBIRD_TOKEN", {
 	issuer: "tinybird",
-	consumers: ["api", "ai", "alerting", "ingest"],
+	consumers: ["api", "ai", "alerting"],
+	derivedFor: ["ingest"],
 }) {}
 
 export class TinybirdSigningKey extends Secret<TinybirdSigningKey>()("TINYBIRD_SIGNING_KEY", {

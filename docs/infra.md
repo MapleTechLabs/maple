@@ -513,6 +513,12 @@ services. The Prometheus and uptime scraper (`apps/scraper`, one per prd instanc
 same VPC with no inbound traffic; its image is the single-file bundle `alchemy:build-deps`
 writes to `apps/scraper/dist`, and ECS replaces the task when its `/health` stops answering.
 
+- **The gateway writes to the warehouse with an append-only token.** `maple_ingest_append` is
+  declared on the datasources the gateway and its collector post to (`INGEST_WRITTEN_DATASOURCES`,
+  `@maple/domain/tinybird/ingest-token`), added to the datafiles by `scripts/write-tinybird-datafiles.ts`.
+  The ingest deploy reads the token's value with the admin `TINYBIRD_TOKEN` through `resolveDerived`;
+  the task and the collector only ever receive the append token. A new datasource the gateway
+  writes goes in that set, and the warehouse project deploys before ingest.
 - `AWS.providers()` is registered unconditionally: the `Alchemy.Stack` options are evaluated
   before `Alchemy.Stage` is readable, so it cannot be stage-derived.
 - `profile.deploys.ingest` alone decides which stages get a fleet: prd **and PR previews**. Dev
