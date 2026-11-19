@@ -138,8 +138,9 @@ export const createRole = (draft: RoleDraft) =>
 		),
 	)
 
-export const updateRole = (roleId: Policy.CustomRoleId, draft: RoleDraft) =>
-	decodeUpdate(draft).pipe(
+/** `expectedUpdatedAt` is the role as the editor loaded it, so a save never overwrites a newer one. */
+export const updateRole = (roleId: Policy.CustomRoleId, draft: RoleDraft, expectedUpdatedAt: number) =>
+	decodeUpdate({ ...draft, expectedUpdatedAt }).pipe(
 		Effect.flatMap((payload) =>
 			Effect.flatMap(MapleInternalApiClient, (client) =>
 				client.roles.update({ params: { roleId }, payload }),

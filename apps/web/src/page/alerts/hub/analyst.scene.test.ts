@@ -74,7 +74,7 @@ describe("alerts inbox, analyst", () => {
 		)
 	})
 
-	test("an analyst's Incidents page has no New rule button, and a member's keeps it", () => {
+	test("an analyst's Incidents page has no New rule button, and a member's keeps it locked", () => {
 		const analystView = withViewInputs(pageView, { context: { ...context, audience: "analyst" } })()
 		scene(
 			{ update: pageUpdate, view: analystView },
@@ -84,7 +84,7 @@ describe("alerts inbox, analyst", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(MEMBER)),
-			expectView(role("link", { name: "New rule" })).toExist(),
+			expectView(role("button", { name: "New rule" })).toBeDisabled(),
 		)
 	})
 

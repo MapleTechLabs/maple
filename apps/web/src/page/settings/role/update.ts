@@ -222,9 +222,24 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				role.value.ref._tag !== "Custom"
 			)
 				return { model }
+			const roleId = role.value.ref.id
+			const loaded = Arr.findFirst(
+				AsyncData.getOrElse(
+					AsyncData.map(model.list, (list) => list.custom),
+					() => [],
+				),
+				(custom) => custom.id === roleId,
+			)
+			if (Option.isNone(loaded)) return { model }
 			return {
 				model: { ...model, isSaving: true },
-				commands: [SaveRole({ roleId: role.value.ref.id, payload: savePayload(model) })],
+				commands: [
+					SaveRole({
+						roleId,
+						payload: savePayload(model),
+						expectedUpdatedAt: loaded.value.updatedAt,
+					}),
+				],
 			}
 		},
 		CompletedSave: ({ result }) =>

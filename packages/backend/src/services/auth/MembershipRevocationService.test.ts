@@ -14,6 +14,7 @@ import { AuditLogService, type AuditLogRecordInput } from "@maple/backend/servic
 import { CliDeviceAuthService } from "./CliDeviceAuthService"
 import { McpOAuthService } from "./McpOAuthService"
 import { MembershipRevocationService } from "./MembershipRevocationService"
+import { pinAuthority } from "./pinned-authority"
 import { ORG_MEMBERSHIP_CACHE_BUCKET } from "./OrgMembershipService"
 
 const createdDbs: TestDb[] = []
@@ -632,6 +633,43 @@ describe("MembershipRevocationService", () => {
 			}).pipe(Effect.provide(makeLayer(db, cache.layer)))
 		},
 	)
+
+	it.effect("narrows a restricted key whose scopes still fit the new role instead of retiring it", () => {
+		const db = createTestDb(createdDbs)
+		const cache = recordingEdgeCache()
+		return Effect.gen(function* () {
+			const revocation = yield* MembershipRevocationService
+			const apiKeys = yield* ApiKeysService
+			const customRole = Schema.decodeSync(RoleName)(Policy.CUSTOM_ROLE_CLERK_KEY)
+			const minted = (name: string, scopes: ReadonlyArray<string>) =>
+				apiKeys.create(orgId, stayerId, {
+					name,
+					scopes,
+					metadataJson: {
+						source: "maple_api_key",
+						...pinAuthority({
+							roles: [customRole],
+							permissions: Policy.grantsOf([customRole], ["alerts:manage", "dashboards:edit"]),
+						}),
+					},
+				})
+			const dashboards = yield* minted("dashboards", ["dashboards:write"])
+			const alerts = yield* minted("alerts", ["alerts:write"])
+
+			const demoted = yield* revocation.demoteMembership(
+				orgId,
+				stayerId,
+				Policy.grantsOf([customRole], ["dashboards:edit"]),
+			)
+
+			expect(demoted.apiKeysRevoked).toBe(1)
+			expect(Option.isNone(yield* apiKeys.resolveByKey(alerts.secret))).toBe(true)
+			const kept = yield* apiKeys.resolveByKey(dashboards.secret)
+			expect(Option.map(kept, (key) => [...key.permissions].sort())).toEqual(
+				Option.some(["dashboards:edit", "telemetry:read"]),
+			)
+		}).pipe(Effect.provide(makeLayer(db, cache.layer)))
+	})
 
 	it.effect("kills the refresh family behind a demoted member's MCP grant", () => {
 		const db = createTestDb(createdDbs)

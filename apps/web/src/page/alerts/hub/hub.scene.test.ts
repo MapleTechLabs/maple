@@ -206,16 +206,20 @@ describe("alerts hub", () => {
 				expectView(newRule).not.toExist(),
 				expectView(role("button", { name: "More rule types" })).not.toExist(),
 			)
-			// A member's empty state offers nothing to create, so the header keeps its action.
+			// A member's empty state offers nothing to create, so the header keeps its action, locked.
 			scene(
 				{ update: pageUpdate, view },
 				given(firstRun({ tab }, Policy.grantsOf(["org:member"]))),
 				expectView(role("link", { name: "Start from scratch" })).not.toExist(),
-				expectView(newRule).toExist(),
+				expectView(role("button", { name: "New rule" })).toBeDisabled(),
 			)
 		})
 		// Still loading: nothing says the org is empty yet.
-		scene({ update: pageUpdate, view }, given(entered().model), expectView(newRule).toExist())
+		scene(
+			{ update: pageUpdate, view },
+			given(entered().model),
+			expectView(role("button", { name: "New rule" })).toExist(),
+		)
 	})
 
 	test("moving between sections keeps what was read: the Inbox and Rules share it, a section reads its own once", () => {

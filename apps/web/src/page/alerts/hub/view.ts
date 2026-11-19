@@ -6,6 +6,7 @@ import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "@maple/views/ui/button"
+import { gatedLinkButton } from "../../kit/gated-controls"
 import { splitButtonClass } from "@maple/views/ui/split-button"
 import { cn } from "@maple/ui/lib/utils"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
@@ -105,13 +106,11 @@ const newRuleItem = (
 const newRuleButton = (h: H, model: Model): Html => {
 	const serviceName = model.search.serviceName
 	return hstack(h, { align: "center" }, [
-		linkButton(
+		gatedLinkButton(
 			h,
-			{
-				size: "sm",
-				href: createHref({ serviceName }),
-				className: splitButtonClass("lead"),
-			},
+			model,
+			"alerts:manage",
+			{ size: "sm", href: createHref({ serviceName }), className: splitButtonClass("lead") },
 			[icon(h, "PlusIcon"), "New rule"],
 		),
 		h.submodel({

@@ -409,7 +409,12 @@ describe("RolesService.update", () => {
 			const { before, role } = yield* (yield* RolesService).update(
 				adminTenant,
 				ON_CALL,
-				new UpdateRoleRequest({ name: "On-call", description: "", permissions: narrowed }),
+				new UpdateRoleRequest({
+					expectedUpdatedAt: 1,
+					name: "On-call",
+					description: "",
+					permissions: narrowed,
+				}),
 			)
 			assert.deepStrictEqual(before.permissions, [
 				"telemetry:read",
@@ -446,7 +451,12 @@ describe("RolesService.update", () => {
 			yield* (yield* RolesService).update(
 				adminTenant,
 				ON_CALL,
-				new UpdateRoleRequest({ name: "On-call", description: "", permissions: ["alerts:manage"] }),
+				new UpdateRoleRequest({
+					expectedUpdatedAt: 1,
+					name: "On-call",
+					description: "",
+					permissions: ["alerts:manage"],
+				}),
 			)
 			const closed = Policy.encodePermissions(["telemetry:read", "alerts:manage"])
 			assert.deepStrictEqual(clerk.state.roles[0]?.permissions, closed)
@@ -464,6 +474,7 @@ describe("RolesService.update", () => {
 				adminTenant,
 				ON_CALL,
 				new UpdateRoleRequest({
+					expectedUpdatedAt: 1,
 					name: "Responders",
 					description: "",
 					permissions: onCallPermissions,
@@ -490,7 +501,12 @@ describe("RolesService.update", () => {
 			const { role } = yield* (yield* RolesService).update(
 				adminTenant,
 				ON_CALL,
-				new UpdateRoleRequest({ name: "On-call", description: "", permissions: narrowed }),
+				new UpdateRoleRequest({
+					expectedUpdatedAt: 1,
+					name: "On-call",
+					description: "",
+					permissions: narrowed,
+				}),
 			)
 			assert.strictEqual(role.memberCount, 1)
 			assert.deepStrictEqual(clerk.customOf("user_ana"), {
@@ -498,6 +514,32 @@ describe("RolesService.update", () => {
 				permissions: Policy.encodePermissions(narrowed),
 			})
 			assert.deepStrictEqual(revocation.demoted, [{ userId: "user_ana", grants: narrowed }])
+		}).pipe(Effect.provide(layer))
+	})
+})
+
+describe("RolesService.update, from a stale editor", () => {
+	it.effect("refuses a save made from a role another admin saved since, writing nothing", () => {
+		const { layer, clerk, revocation } = setup(
+			[stored(ON_CALL, "On-call", onCallPermissions)],
+			[onCallHolder("user_cat")],
+		)
+		return Effect.gen(function* () {
+			const reason = yield* conflictReason(
+				(yield* RolesService).update(
+					adminTenant,
+					ON_CALL,
+					new UpdateRoleRequest({
+						expectedUpdatedAt: 0,
+						name: "On-call",
+						description: "",
+						permissions: ["telemetry:read"],
+					}),
+				),
+			)
+			assert.strictEqual(reason, "concurrent_edit")
+			assert.deepStrictEqual(clerk.state.writes, [])
+			assert.deepStrictEqual(revocation.demoted, [])
 		}).pipe(Effect.provide(layer))
 	})
 })
@@ -520,6 +562,7 @@ describe("RolesService.update, racing a stale writer", () => {
 					adminTenant,
 					ON_CALL,
 					new UpdateRoleRequest({
+						expectedUpdatedAt: 1,
 						name: "On-call",
 						description: "",
 						permissions: onCallPermissions,
@@ -548,7 +591,12 @@ describe("RolesService.update, racing a narrowing save", () => {
 			yield* (yield* RolesService).update(
 				adminTenant,
 				ON_CALL,
-				new UpdateRoleRequest({ name: "On-call", description: "", permissions: onCallPermissions }),
+				new UpdateRoleRequest({
+					expectedUpdatedAt: 1,
+					name: "On-call",
+					description: "",
+					permissions: onCallPermissions,
+				}),
 			)
 			assert.deepStrictEqual(clerk.state.roles, [narrow])
 			assert.deepStrictEqual(clerk.customOf("user_cat")?.permissions, narrow.permissions)
@@ -573,6 +621,7 @@ describe("RolesService.update, racing a narrowing save", () => {
 					adminTenant,
 					ON_CALL,
 					new UpdateRoleRequest({
+						expectedUpdatedAt: 1,
 						name: "On-call",
 						description: "",
 						permissions: onCallPermissions,

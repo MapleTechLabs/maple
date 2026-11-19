@@ -8,6 +8,7 @@ import {
 } from "./toggle-group.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "./icon"
+import { lockedControl } from "./locked-control"
 import { segmentItemHeight, togglePrimitive } from "./toggle"
 import { Array as Arr } from "effect"
 
@@ -118,6 +119,8 @@ export type SegmentedOption<T extends string> = Readonly<{
 	ariaLabel?: string
 	/** `disabled`: shown, not selectable. */
 	isDisabled?: boolean
+	/** Why the viewer may not pick it: disabled, with this as its tooltip. */
+	lockedReason?: string
 }>
 
 export type SegmentedSelectConfig<T extends string, M> = Readonly<{
@@ -154,8 +157,11 @@ export const segmentedSelect = <T extends string, M>(
 		],
 		Arr.map(config.options, (option) => {
 			const isSelected = option.value === config.value
-			const isDisabled = (config.isDisabled ?? false) || (option.isDisabled ?? false)
-			return togglePrimitive(
+			const isDisabled =
+				(config.isDisabled ?? false) ||
+				(option.isDisabled ?? false) ||
+				option.lockedReason !== undefined
+			const toggle = togglePrimitive(
 				h,
 				{
 					isPressed: isSelected,
@@ -203,6 +209,7 @@ export const segmentedSelect = <T extends string, M>(
 					...(option.label === "" ? [] : [option.label]),
 				],
 			)
+			return option.lockedReason === undefined ? toggle : lockedControl(h, option.lockedReason, toggle)
 		}),
 	)
 }

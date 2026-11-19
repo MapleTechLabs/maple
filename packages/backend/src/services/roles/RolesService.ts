@@ -128,13 +128,17 @@ interface RolesEdit<A> {
 const conflict = (reason: RoleConflictError["reason"], message: string) =>
 	new RoleConflictError({ reason, message })
 
-const isConflict = Schema.is(RoleConflictError)
-
-const isConcurrentEdit = (error: unknown): boolean => isConflict(error) && error.reason === "concurrent_edit"
-
 const concurrentEdit = conflict(
 	"concurrent_edit",
 	"Another admin changed the roles at the same time. Try again.",
+)
+
+/** A write that raced another one, worth retrying; a save from a stale editor is not. */
+const isConcurrentEdit = (error: unknown): boolean => error === concurrentEdit
+
+const staleEdit = conflict(
+	"concurrent_edit",
+	"Another admin saved this role after you opened it. Reload to see their changes, then edit again.",
 )
 
 const sameRole = Schema.toEquivalence(Policy.StoredCustomRole)
@@ -478,6 +482,7 @@ const make = Effect.gen(function* () {
 		const { before, after } = yield* editRoles(tenant.orgId, (roles) =>
 			Effect.gen(function* () {
 				const current = yield* findRole(roles, roleId)
+				if (current.updatedAt !== request.expectedUpdatedAt) return yield* staleEdit
 				yield* checkName(roles, request.name, roleId)
 				const next: Policy.StoredCustomRole = {
 					...current,

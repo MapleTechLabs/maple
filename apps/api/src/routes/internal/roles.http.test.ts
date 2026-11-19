@@ -145,6 +145,7 @@ describe("/internal/roles", () => {
 			name: "Responders",
 			description: "",
 			permissions: ["telemetry:read"],
+			expectedUpdatedAt: 1,
 		})
 		expect(response.status).toBe(200)
 		expect(harness.audited).toEqual([

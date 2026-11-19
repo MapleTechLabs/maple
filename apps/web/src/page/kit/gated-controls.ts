@@ -56,12 +56,21 @@ export const gatedLinkButton = <Message>(
 	h: HtmlBuilder<Message>,
 	model: Grants,
 	permission: Policy.Permission,
-	options: Readonly<{ href: string; size?: "sm"; variant?: "outline" | "ghost" }>,
+	options: Readonly<{ href: string; size?: "sm"; variant?: "outline" | "ghost"; className?: string }>,
 	children: ReadonlyArray<Html | string>,
 ): Html =>
 	gatedControl(h, model, permission, (isDisabled) =>
 		isDisabled
-			? button(h, { size: options.size, variant: options.variant, isDisabled }, children)
+			? button(
+					h,
+					{
+						size: options.size,
+						variant: options.variant,
+						className: options.className,
+						isDisabled,
+					},
+					children,
+				)
 			: linkButton(h, options, children),
 	)
 

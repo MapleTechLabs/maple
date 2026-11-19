@@ -78,6 +78,8 @@ export class UpdateRoleRequest extends Schema.Class<UpdateRoleRequest>("UpdateRo
 	name: CustomRoleName,
 	description: CustomRoleDescription,
 	permissions: Schema.Array(PermissionName),
+	/** The `updatedAt` the editor loaded: another save since is a `concurrent_edit`, not overwritten. */
+	expectedUpdatedAt: Schema.Number,
 }) {}
 
 export class DeleteRoleRequest extends Schema.Class<DeleteRoleRequest>("DeleteRoleRequest")({

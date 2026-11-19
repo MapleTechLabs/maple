@@ -31,7 +31,7 @@ export class IngestRuleNotFoundError extends HttpTaggedError<IngestRuleNotFoundE
 	},
 ) {}
 
-/** Rules drop and rewrite every org's incoming telemetry, so writes are admin-only. */
+/** Rules drop and rewrite the org's incoming telemetry, so writes need `ingest_rules:manage`. */
 export class IngestRuleForbiddenError extends HttpTaggedError<IngestRuleForbiddenError>()(
 	"@maple/http/errors/IngestRuleForbiddenError",
 	{ message: Schema.String, roles: Schema.optionalKey(Schema.Array(RoleName)) },
@@ -39,10 +39,10 @@ export class IngestRuleForbiddenError extends HttpTaggedError<IngestRuleForbidde
 		status: 403,
 		code: "ingest_rule_forbidden",
 		title: "Permission required",
-		message: "Only org admins can manage ingest rules.",
+		message: "You need Manage ingest rules to change ingest rules. Admin and Engineer have it.",
 		retry: "never",
 		recovery: "request_access",
-		exposure: "redacted",
+		exposure: "public_message",
 	},
 ) {}
 

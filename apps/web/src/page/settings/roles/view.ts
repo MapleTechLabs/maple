@@ -39,7 +39,13 @@ type H = HtmlBuilder<Message>
 
 export const description = "A role is a set of permissions. Each member holds one."
 
-const COLUMN = { type: "w-28", members: "w-24", permissions: "w-40", actions: "w-12" } as const
+// Below `sm` the type and permissions columns give their width to the role's name.
+const COLUMN = {
+	type: "w-28 max-sm:hidden",
+	members: "w-24",
+	permissions: "w-40 max-sm:hidden",
+	actions: "w-12",
+} as const
 
 /** The tab's primary action, in the settings page header beside the `<h1>`. */
 export const headerActions = Submodel.defineView<Model, Message, Readonly<{}>>((model, _inputs, h) =>
@@ -93,9 +99,9 @@ const roleRow = (h: H, model: Model, role: RoleEntry): Html => {
 					typography(h, { size: "xs", tone: "muted", truncate: true }, [role.description]),
 				]),
 			]),
-			tableCell(h, [roleTypeBadge(h, role.isBuiltIn)]),
+			tableCell(h, [roleTypeBadge(h, role.isBuiltIn)], COLUMN.type),
 			tableCell(h, [typography(h, { size: "xs", numeric: true }, [String(role.memberCount)])]),
-			tableCell(h, [permissionMeter(h, role.permissions.length, role.isBuiltIn)]),
+			tableCell(h, [permissionMeter(h, role.permissions.length, role.isBuiltIn)], COLUMN.permissions),
 			tableCell(h, [
 				h.span(
 					[h.Class(ROW_LINK_LIFT)],
@@ -121,9 +127,9 @@ const skeletonRow = (h: H, index: number): Html =>
 		h,
 		[
 			tableCell(h, [vstack(h, { gap: "1.5" }, [skeleton(h, "h-3.5 w-28"), skeleton(h, "h-3 w-56")])]),
-			tableCell(h, [skeleton(h, "h-4 w-16")]),
+			tableCell(h, [skeleton(h, "h-4 w-16")], COLUMN.type),
 			tableCell(h, [skeleton(h, "h-3 w-6")]),
-			tableCell(h, [skeleton(h, "h-3 w-28")]),
+			tableCell(h, [skeleton(h, "h-3 w-28")], COLUMN.permissions),
 			tableCell(h, []),
 		],
 		undefined,
@@ -166,10 +172,13 @@ const rolesSection = (h: H, model: Model): Html =>
 			: [rolesTable(h, rolesRows(h, model))],
 	)
 
-/** The roles a deleted role's members may move to: every other one. */
+/**
+ * The roles a deleted role's members may move to: every other one but Admin, which would promote
+ * them all at once; making someone an admin is the Members page's confirmed step.
+ */
 const reassignEntries = (model: Model): ReadonlyArray<SelectView.SelectEntry> =>
 	Arr.flatMap(entriesOf(model), (role): ReadonlyArray<SelectView.SelectEntry> =>
-		role.key === model.deleting?.id
+		role.key === model.deleting?.id || role.key === "admin"
 			? []
 			: [{ _tag: "Item", item: { value: role.key, label: role.name } }],
 	)

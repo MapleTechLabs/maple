@@ -14,7 +14,7 @@ import {
 	MobileDevices,
 } from "@maple/db/tables"
 import { RoleName, type OrgId, type UserId } from "@maple/domain/http"
-import { Clock, Context, Effect, Layer, Schema, Array as Arr } from "effect"
+import { Clock, Context, Effect, Layer, Predicate, Result, Schema, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
@@ -570,19 +570,47 @@ const make = Effect.gen(function* () {
 								)).length
 					const live = yield* db.run(
 						PG.from(ApiKeys)
-							.select("id", "metadataJson")
+							.select("id", "metadataJson", "scopes")
 							.where(($) => [$.orgId.eq(orgId), $.createdBy.eq(userId), $.revoked.eq(false)]),
 					)
-					const stale = Arr.map(
-						Arr.filter(live, (row) => {
-							const pinned = decodePinnedRoles(row.metadataJson)
-							return (
-								pinned._tag === "Some" &&
-								outlivesDemotion(pinned.value.roles, pinned.value.permissions)
-							)
-						}),
-						(row) => row.id,
+					const outlived = Arr.filterMap(live, (row) => {
+						const pinned = decodePinnedRoles(row.metadataJson)
+						return pinned._tag === "Some" &&
+							Predicate.isObject(row.metadataJson) &&
+							outlivesDemotion(pinned.value.roles, pinned.value.permissions)
+							? Result.succeed({
+									id: row.id,
+									scopes: row.scopes,
+									metadata: row.metadataJson,
+									pinned: pinned.value,
+								})
+							: Result.failVoid
+					})
+					// A restricted key whose scopes the member could still grant keeps working: its pin
+					// narrows to what they hold now, the way a custom role pins permission codes.
+					const [narrowed, staleKeys] = Arr.partition(outlived, (key) =>
+						Policy.canGrantScopes((permission) => Policy.can(current, permission), key.scopes)
+							? Result.succeed(key)
+							: Result.fail(key.id),
 					)
+					for (const { id, metadata, pinned } of narrowed) {
+						const held = Arr.filter(
+							pinnedGrants(pinned.roles, pinned.permissions),
+							(permission) => Policy.can(current, permission),
+						)
+						yield* db.run(
+							PG.update(ApiKeys)
+								.set({
+									metadataJson: {
+										...metadata,
+										roles: [Policy.CUSTOM_ROLE_CLERK_KEY],
+										permissions: Policy.encodePermissions(held),
+									},
+								})
+								.where(($) => [$.id.eq(id), $.revoked.eq(false)]),
+						)
+					}
+					const stale = staleKeys
 					const [first, ...rest] = stale
 					if (first === undefined)
 						return {
