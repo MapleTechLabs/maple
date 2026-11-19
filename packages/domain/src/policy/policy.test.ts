@@ -55,12 +55,9 @@ describe("Policy.grantsOf", () => {
 	})
 
 	it("holds the membership's permissions for org:custom, with what they imply", () => {
-		expect(Policy.grantsOf([Policy.CUSTOM_ROLE_CLERK_KEY], ["alerts:manage", "ingest_keys:roll"])).toEqual([
-			"telemetry:read",
-			"alerts:manage",
-			"ingest_keys:view",
-			"ingest_keys:roll",
-		])
+		expect(
+			Policy.grantsOf([Policy.CUSTOM_ROLE_CLERK_KEY], ["alerts:manage", "ingest_keys:roll"]),
+		).toEqual(["telemetry:read", "alerts:manage", "ingest_keys:view", "ingest_keys:roll"])
 		expect(Policy.grantsOf([Policy.CUSTOM_ROLE_CLERK_KEY], ["oncall:manage"])).toEqual(["oncall:manage"])
 	})
 
@@ -85,7 +82,11 @@ describe("Policy.grantsOf", () => {
 
 describe("Policy.check", () => {
 	it.effect("passes when the grants hold the permission", () =>
-		Policy.check(presetOf("org:engineer"), "alerts:manage", (denial) => new Forbidden({ message: denial.message })),
+		Policy.check(
+			presetOf("org:engineer"),
+			"alerts:manage",
+			(denial) => new Forbidden({ message: denial.message }),
+		),
 	)
 
 	it.effect("fails with the caller's error and a message naming the built-in roles that have it", () =>
@@ -98,7 +99,9 @@ describe("Policy.check", () => {
 				),
 			)
 			assert.instanceOf(error, Forbidden)
-			expect(error.message).toBe("You need Manage integrations to manage integrations. Admin and Engineer have it.")
+			expect(error.message).toBe(
+				"You need Manage integrations to manage integrations. Admin and Engineer have it.",
+			)
 		}),
 	)
 
@@ -107,7 +110,9 @@ describe("Policy.check", () => {
 			const error = yield* Effect.flip(
 				Policy.check([], "telemetry:read", (denial) => new Forbidden({ message: denial.message })),
 			)
-			expect(error.message).toBe("You need Read telemetry to read telemetry. Every built-in role has it.")
+			expect(error.message).toBe(
+				"You need Read telemetry to read telemetry. Every built-in role has it.",
+			)
 		}),
 	)
 
@@ -141,14 +146,23 @@ describe("permission codes", () => {
 	})
 
 	it("keeps every way to reach Admin's power out of custom roles", () => {
-		for (const permission of ["members:manage", "roles:manage", "organization:manage", "api_keys:manage", "sso:manage"] as const) {
+		for (const permission of [
+			"members:manage",
+			"roles:manage",
+			"organization:manage",
+			"api_keys:manage",
+			"sso:manage",
+		] as const) {
 			expect(Policy.grantableToCustomRoles(permission)).toBe(false)
 		}
 		expect(Policy.grantableToCustomRoles("billing:manage")).toBe(true)
 	})
 
 	it("drops codes it does not know and permissions a custom role may not hold", () => {
-		const stored = [...Policy.encodePermissions(["members:manage", "roles:manage", "oncall:manage"]), 9999]
+		const stored = [
+			...Policy.encodePermissions(["members:manage", "roles:manage", "oncall:manage"]),
+			9999,
+		]
 		expect(Policy.decodeCustomPermissions(stored)).toEqual(["oncall:manage"])
 	})
 
@@ -170,7 +184,10 @@ describe("custom role metadata", () => {
 				permissions: Policy.encodePermissions(["alerts:manage"]),
 			},
 		}
-		expect(Policy.customPermissionsFromMembershipMetadata(metadata)).toEqual(["telemetry:read", "alerts:manage"])
+		expect(Policy.customPermissionsFromMembershipMetadata(metadata)).toEqual([
+			"telemetry:read",
+			"alerts:manage",
+		])
 	})
 
 	it("grants nothing for missing or malformed membership metadata", () => {
@@ -183,7 +200,14 @@ describe("custom role metadata", () => {
 		const stored = {
 			[Policy.ORG_ROLES_METADATA_KEY]: {
 				roles: [
-					{ id: roleId, name: "On-call", description: "", permissions: [10], createdAt: 1, updatedAt: 2 },
+					{
+						id: roleId,
+						name: "On-call",
+						description: "",
+						permissions: [10],
+						createdAt: 1,
+						updatedAt: 2,
+					},
 				],
 			},
 			region: "eu",

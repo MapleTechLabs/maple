@@ -186,12 +186,7 @@ const affectedMembers = (h: H, model: Model): ReadonlyArray<Html> =>
 				h,
 				{ as: "ul", bordered: true, className: "max-h-48 overflow-y-auto" },
 				Arr.map(members, (member) =>
-					h.li(
-						[h.Key(member.userId), h.Class("px-3 py-2")],
-						[
-							holderLabel(h, member),
-						],
-					),
+					h.li([h.Key(member.userId), h.Class("px-3 py-2")], [holderLabel(h, member)]),
 				),
 			),
 		],

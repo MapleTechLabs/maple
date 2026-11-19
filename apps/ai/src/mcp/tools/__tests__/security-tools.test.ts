@@ -35,7 +35,14 @@ beforeAll(async () => {
 	await seedIntegrationWorld(member)
 	await seedCommitWorld(member)
 	await seedSecurityWorld(member)
-	admin = { ...member, tenant: { ...member.tenant, roles: [Schema.decodeSync(RoleName)("org:admin")], permissions: Policy.grantsOf(["org:admin"]) } }
+	admin = {
+		...member,
+		tenant: {
+			...member.tenant,
+			roles: [Schema.decodeSync(RoleName)("org:admin")],
+			permissions: Policy.grantsOf(["org:admin"]),
+		},
+	}
 })
 afterAll(async () => {
 	globalThis.fetch = realFetch
@@ -282,7 +289,11 @@ describe("inspect_security_finding", () => {
 			failure: { message: "warehouse unavailable", type: "UNKNOWN" },
 		})
 		try {
-			const tenant = { ...isolated.tenant, roles: admin.tenant.roles, permissions: admin.tenant.permissions }
+			const tenant = {
+				...isolated.tenant,
+				roles: admin.tenant.roles,
+				permissions: admin.tenant.permissions,
+			}
 			const result: McpToolResult = await runToolDirect(
 				{ ...isolated, tenant },
 				"inspect_security_finding",
@@ -317,7 +328,11 @@ describe("inspect_security_finding", () => {
 	it("does not answer clean when no repository is connected", async () => {
 		const empty = makeEvalRuntime()
 		try {
-			const tenant = { ...empty.tenant, roles: admin.tenant.roles, permissions: admin.tenant.permissions }
+			const tenant = {
+				...empty.tenant,
+				roles: admin.tenant.roles,
+				permissions: admin.tenant.permissions,
+			}
 			const result: McpToolResult = await runToolDirect(
 				{ ...empty, tenant },
 				"inspect_security_finding",

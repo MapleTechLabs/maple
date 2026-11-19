@@ -29,7 +29,14 @@ beforeAll(async () => {
 	await seedIntegrationWorld(member)
 	await seedCommitWorld(member)
 	// Same database, an org admin calling.
-	admin = { ...member, tenant: { ...member.tenant, roles: [Schema.decodeSync(RoleName)("org:admin")], permissions: Policy.grantsOf(["org:admin"]) } }
+	admin = {
+		...member,
+		tenant: {
+			...member.tenant,
+			roles: [Schema.decodeSync(RoleName)("org:admin")],
+			permissions: Policy.grantsOf(["org:admin"]),
+		},
+	}
 })
 afterAll(async () => {
 	restoreWarehouse()

@@ -81,7 +81,14 @@ let admin: EvalRuntime
 beforeAll(() => {
 	installFakeWarehouse(fixtures, (sql) => failStatusReads && Str.includes("AS serviceName")(sql))
 	member = makeEvalRuntime()
-	admin = { ...member, tenant: { ...member.tenant, roles: [Schema.decodeSync(RoleName)("org:admin")], permissions: Policy.grantsOf(["org:admin"]) } }
+	admin = {
+		...member,
+		tenant: {
+			...member.tenant,
+			roles: [Schema.decodeSync(RoleName)("org:admin")],
+			permissions: Policy.grantsOf(["org:admin"]),
+		},
+	}
 })
 afterAll(async () => {
 	restoreWarehouse()

@@ -75,7 +75,6 @@ export const grantsOf = (roles: ReadonlyArray<string>, custom?: ReadonlyArray<Pe
 /** Whether the grants hold `permission`. */
 export const can = (grants: Grants, permission: Permission): boolean => Arr.contains(grants, permission)
 
-
 /** Whether `pinned` holds something `current` does not: a credential pinned to it outlives `current`. */
 export const exceeds = (pinned: Grants, current: Grants): boolean =>
 	Arr.some(pinned, (permission) => !Arr.contains(current, permission))

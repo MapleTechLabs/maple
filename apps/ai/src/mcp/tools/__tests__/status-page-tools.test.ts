@@ -547,7 +547,10 @@ describe("status page tools outside the statusPages rollout", () => {
 	let off: EvalRuntime
 	beforeAll(() => {
 		// An admin, who may use every tool: what stops them is the rollout alone.
-		off = asRole(makeEvalRuntime(OrganizationFeatureFlagsService.fixed(DISABLED_ORGANIZATION_FEATURE_FLAGS)), "org:admin")
+		off = asRole(
+			makeEvalRuntime(OrganizationFeatureFlagsService.fixed(DISABLED_ORGANIZATION_FEATURE_FLAGS)),
+			"org:admin",
+		)
 	})
 	afterAll(async () => {
 		await off.dispose()
@@ -578,7 +581,11 @@ describe("status page tools outside the statusPages rollout", () => {
 
 const asRole = (runtime: EvalRuntime, role: string): EvalRuntime => ({
 	...runtime,
-	tenant: { ...runtime.tenant, roles: [Schema.decodeSync(RoleName)(role)], permissions: Policy.grantsOf([role]) },
+	tenant: {
+		...runtime.tenant,
+		roles: [Schema.decodeSync(RoleName)(role)],
+		permissions: Policy.grantsOf([role]),
+	},
 })
 
 describe("setting a status page up", () => {

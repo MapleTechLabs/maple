@@ -62,7 +62,8 @@ const signalCard = <P>(
 		{
 			config: {
 				model: { isChecked },
-				toParentMessage: () => config.toParentMessage(Message.ToggledSignal({ signal: signal.value })),
+				toParentMessage: () =>
+					config.toParentMessage(Message.ToggledSignal({ signal: signal.value })),
 				id: `${inputId}-root`,
 				inputId,
 			},

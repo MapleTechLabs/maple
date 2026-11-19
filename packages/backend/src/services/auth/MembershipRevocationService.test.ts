@@ -789,33 +789,38 @@ describe("MembershipRevocationService", () => {
 				}
 			})
 
-		it.effect("a role without telemetry or sharing loses links and digest, and the org keeps its destinations", () => {
-			const db = createTestDb(createdDbs)
-			const audit = recordingAudit()
-			return Effect.gen(function* () {
-				const revocation = yield* MembershipRevocationService
-				yield* seedAll(db)
+		it.effect(
+			"a role without telemetry or sharing loses links and digest, and the org keeps its destinations",
+			() => {
+				const db = createTestDb(createdDbs)
+				const audit = recordingAudit()
+				return Effect.gen(function* () {
+					const revocation = yield* MembershipRevocationService
+					yield* seedAll(db)
 
-				const summary = yield* revocation.demoteMembership(
-					orgId,
-					userId,
-					Policy.grantsOf([custom], ["billing:manage"]),
-				)
+					const summary = yield* revocation.demoteMembership(
+						orgId,
+						userId,
+						Policy.grantsOf([custom], ["billing:manage"]),
+					)
 
-				expect([summary.dashboardSharesRevoked, summary.digestSubscriptionsDisabled]).toEqual([1, 1])
-				expect(yield* state(db)).toEqual({
-					shares: [
-						{ id: "dshare_demoted", revoked: true },
-						{ id: "dshare_stayer", revoked: false },
-					],
-					digests: [false],
-					destinations: [{ enabled: true, disabled_reason: null }],
-				})
-				expect(Arr.map(audit.recorded, (entry) => [entry.action, entry.metadata])).toEqual([
-					["dashboard_share.revoked", { reason: "role_changed" }],
-				])
-			}).pipe(Effect.provide(makeLayer(db, recordingEdgeCache().layer, audit.layer)))
-		})
+					expect([summary.dashboardSharesRevoked, summary.digestSubscriptionsDisabled]).toEqual([
+						1, 1,
+					])
+					expect(yield* state(db)).toEqual({
+						shares: [
+							{ id: "dshare_demoted", revoked: true },
+							{ id: "dshare_stayer", revoked: false },
+						],
+						digests: [false],
+						destinations: [{ enabled: true, disabled_reason: null }],
+					})
+					expect(Arr.map(audit.recorded, (entry) => [entry.action, entry.metadata])).toEqual([
+						["dashboard_share.revoked", { reason: "role_changed" }],
+					])
+				}).pipe(Effect.provide(makeLayer(db, recordingEdgeCache().layer, audit.layer)))
+			},
+		)
 
 		it.effect(
 			"a role that still reads and shares keeps them; losing only sharing revokes the links",

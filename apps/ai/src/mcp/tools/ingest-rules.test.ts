@@ -104,9 +104,11 @@ describe("ingest rule MCP tools", () => {
 		const call = tools()
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
-			const refused = yield* executeRegisteredMcpToolUnscoped("create_ingest_rule", dropDebug, "mcp").pipe(
-				Effect.flip,
-			)
+			const refused = yield* executeRegisteredMcpToolUnscoped(
+				"create_ingest_rule",
+				dropDebug,
+				"mcp",
+			).pipe(Effect.flip)
 			assert.deepInclude(refused, {
 				_tag: "@maple/mcp/errors/McpAuthInvalidError",
 				message: Policy.denialFor("ingest_rules:manage").message,

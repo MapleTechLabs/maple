@@ -60,7 +60,8 @@ describe("MCP tool catalog contract", () => {
 		const openToAnyone = Arr.filter(mapleToolCatalog, (tool) => tool.permission === null)
 		const writesBehindARead = Arr.filter(
 			mapleToolCatalog,
-			(tool) => !tool.hints.readOnly && tool.permission !== null && Arr.contains(READS, tool.permission),
+			(tool) =>
+				!tool.hints.readOnly && tool.permission !== null && Arr.contains(READS, tool.permission),
 		)
 		expect(Arr.map(undeclared, (tool) => tool.name)).toEqual([])
 		expect(Arr.map(openToAnyone, (tool) => tool.name)).toEqual([FEEDBACK_TOOL])

@@ -131,7 +131,10 @@ describe("what an analyst may change over MCP", () => {
 
 	it("is only the feedback channel when their key is read-only", () => {
 		expect(openTo({ permissions: analystGrants, readOnly: true })).toEqual([FEEDBACK_TOOL])
-		const createDashboard = Arr.findFirst(changing, (definition) => definition.name === "create_dashboard")
+		const createDashboard = Arr.findFirst(
+			changing,
+			(definition) => definition.name === "create_dashboard",
+		)
 		expect(
 			Option.map(createDashboard, (definition) =>
 				refusalFor({ permissions: analystGrants, readOnly: true }, toolOf(definition)),

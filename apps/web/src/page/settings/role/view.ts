@@ -355,9 +355,7 @@ const membersPanel = (h: H, model: Model, role: RoleEntry): ReadonlyArray<Html> 
 								Arr.map(members, (member) =>
 									h.li(
 										[h.Key(member.userId), h.Class("px-3 py-2.5")],
-										[
-											holderLabel(h, member),
-										],
+										[holderLabel(h, member)],
 									),
 								),
 							),

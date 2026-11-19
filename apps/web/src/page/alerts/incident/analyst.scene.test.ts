@@ -71,9 +71,7 @@ describe("alert incident, analyst", () => {
 				}),
 			).toExist(),
 			expectView(role("button", { name: "Investigate" })).toBeDisabled(),
-			expectView(
-				role("group", { name: Policy.denialFor("investigations:run").message }),
-			).toExist(),
+			expectView(role("group", { name: Policy.denialFor("investigations:run").message })).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },

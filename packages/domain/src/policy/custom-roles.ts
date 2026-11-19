@@ -91,7 +91,9 @@ export const MembershipRoleMetadata = Schema.Struct({
 export type MembershipRoleMetadata = typeof MembershipRoleMetadata.Type
 
 // Each reads only its own key: the rest of the metadata (region, feature flags) is ignored.
-const decodeStoredRoles = Schema.decodeUnknownOption(Schema.Struct({ [ORG_ROLES_METADATA_KEY]: StoredCustomRoles }))
+const decodeStoredRoles = Schema.decodeUnknownOption(
+	Schema.Struct({ [ORG_ROLES_METADATA_KEY]: StoredCustomRoles }),
+)
 const decodeMembershipRole = Schema.decodeUnknownOption(
 	Schema.Struct({ [MEMBERSHIP_ROLE_METADATA_KEY]: MembershipRoleMetadata }),
 )
@@ -100,7 +102,10 @@ const decodeMembershipRole = Schema.decodeUnknownOption(
 export const versionedCustomRolesFromOrgMetadata = (metadata: unknown): VersionedCustomRoles =>
 	Option.match(decodeStoredRoles(metadata), {
 		onNone: () => ({ version: 0, roles: [] }),
-		onSome: ({ [ORG_ROLES_METADATA_KEY]: stored }) => ({ version: stored.version ?? 0, roles: stored.roles }),
+		onSome: ({ [ORG_ROLES_METADATA_KEY]: stored }) => ({
+			version: stored.version ?? 0,
+			roles: stored.roles,
+		}),
 	})
 
 export const customRolesFromOrgMetadata = (metadata: unknown): ReadonlyArray<StoredCustomRole> =>

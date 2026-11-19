@@ -105,9 +105,7 @@ describe("anomaly detail, analyst", () => {
 					name: Policy.denialFor("incidents:respond").message,
 				}),
 			).toExist(),
-			expectView(
-				role("group", { name: Policy.denialFor("investigations:run").message }),
-			).toExist(),
+			expectView(role("group", { name: Policy.denialFor("investigations:run").message })).toExist(),
 		)
 	})
 
