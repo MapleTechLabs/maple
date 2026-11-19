@@ -14,7 +14,7 @@ import {
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import * as Tables from "@maple/db/tables"
-import { Array as Arr, Context, Effect, Layer, Option } from "effect"
+import { Array as Arr, Clock, Context, Effect, Layer, Option } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
@@ -26,6 +26,7 @@ import {
 	requireOrganizationAdmin,
 } from "@maple/backend/services/org/OrganizationService"
 import { EnterpriseSsoService } from "@maple/backend/services/org/enterprise-sso/EnterpriseSsoService"
+import { queueOrgErasures } from "@maple/backend/services/org/org-erasure"
 import { clerkModeClient } from "@maple/auth"
 
 const toPersistenceError = (error: unknown) =>
@@ -52,6 +53,7 @@ export interface OrganizationDeletionServiceApi {
 
 /**
  * Deleting an organization: its grants at each vendor, its rows, then the Clerk organization.
+ * What it holds outside Postgres is queued for erasure (`org-erasure.ts`) and erased later.
  * Apart from `OrganizationService` because other Workers build that one for its reads, and
  * only the api holds the integrations' credentials this needs.
  */
@@ -73,6 +75,11 @@ export class OrganizationDeletionService extends Context.Service<
 		) {
 			// Public pages live on at the edge until the publisher drains these.
 			yield* dbExecute((db) => queueOrgPageRemovals(db, orgId))
+			// Before the purge drops the rows that name them: conversations and replays outside
+			// Postgres, erased by the api's hourly cron, so a slow store never holds up the delete.
+			const now = yield* Clock.currentTimeMillis
+			const queued = yield* dbExecute((db) => queueOrgErasures(db, orgId, now))
+			yield* Effect.annotateCurrentSpan("maple.org_erasure.queued", queued)
 			const purge = (column: "org_id" | "approved_org_id", tables: ReadonlyArray<PurgedTable>) =>
 				Effect.forEach(
 					tables,

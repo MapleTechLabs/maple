@@ -62,6 +62,7 @@
 		"./search-console": "./src/search-console.ts",
 		"./cost": "./src/cost.ts",
 		"./feature-requests": "./src/feature-requests.ts",
+		"./org-erasure": "./src/org-erasure.ts",
 		"./cost-budget": "./src/cost-budget.ts",
 		"./url-redaction": "./src/url-redaction.ts",
 		"./mcp-clients": "./src/mcp-clients.ts",

@@ -11,7 +11,7 @@ import { StatusSnapshotsBucket, StatusSnapshotsKv } from "@maple/infra/cloudflar
 import { AuditEventsQueue, MapleDb, ReplayBlobs } from "@maple/infra/cloudflare"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { dischargeRuntimeContext } from "@maple/infra/worker-runtime"
-import { Effect, Layer, Option } from "effect"
+import { Array as Arr, Effect, Layer, Option } from "effect"
 import {
 	ApiV2RateLimit,
 	AuditEventsQueueProducer,
@@ -23,12 +23,14 @@ import {
 	DataSourceSqlQueryLimit,
 	EmailSender,
 	McpOAuthRateLimit,
+	type ObjectPrefixEraser,
 	type ObjectStore,
 	ObjectStoreError,
 	PlanetScaleWebhookQueueProducer,
 	RateLimitBindingError,
 	type RateLimiter,
 	ReplayBlobBucket,
+	ReplayBlobEraser,
 	SchemaApplyWorkflow,
 	SelfHostedLoginRateLimit,
 	ShareLinkRateLimit,
@@ -82,8 +84,8 @@ export const bindApiClients = Effect.gen(function* () {
 		planetScaleWebhooks: yield* Cloudflare.Queues.WriteQueue(PlanetScaleWebhookQueue),
 		auditEvents: yield* Cloudflare.Queues.WriteQueue(AuditEventsQueue),
 		cancellationReviews: yield* Cloudflare.Queues.WriteQueue(CancellationReviewsQueue),
-		// Read side of the replay payload store.
-		replayBlobs: yield* Cloudflare.R2.ReadBucket(ReplayBlobs),
+		// The replay payload store: read for playback, deleted from when an org is erased.
+		replayBlobs: yield* Cloudflare.R2.ReadWriteBucket(ReplayBlobs),
 		// Published status pages: the publish endpoint writes snapshots, page deletes clear them.
 		statusKv: yield* Cloudflare.KV.ReadWriteNamespace(StatusSnapshotsKv),
 		statusBucket: yield* Cloudflare.R2.ReadWriteBucket(StatusSnapshotsBucket),
@@ -173,6 +175,22 @@ const objectStore = (client: Cloudflare.R2.ReadBucketClient): ObjectStore => ({
 		),
 })
 
+/** R2 deletes at most 1000 keys per call, which is also a listing's largest page. */
+const ERASE_PAGE_SIZE = 1000
+
+const prefixEraser = (client: Cloudflare.R2.ReadWriteBucketClient): ObjectPrefixEraser => ({
+	deletePage: (prefix) =>
+		dischargeRuntimeContext(client.list({ prefix, limit: ERASE_PAGE_SIZE })).pipe(
+			Effect.flatMap((page) => {
+				const keys = Arr.map(page.objects, (object) => object.key)
+				return keys.length === 0
+					? Effect.succeed(0)
+					: dischargeRuntimeContext(client.delete(keys)).pipe(Effect.as(keys.length))
+			}),
+			Effect.mapError((error) => new ObjectStoreError({ message: error.message, cause: error.cause })),
+		),
+})
+
 /**
  * Alchemy's `create` dies when the binding rejects; recovered here into the
  * port's typed channel, so the caller can release the run it claimed.
@@ -220,6 +238,7 @@ export const apiPorts = (
 		Layer.succeed(DataSourceDevelopmentCallLimit, limiter(clients.dataSourceDevelopmentCallLimit)),
 		Layer.succeed(DataSourceSqlQueryLimit, limiter(clients.dataSourceSqlQueryLimit)),
 		Layer.succeed(ReplayBlobBucket, objectStore(clients.replayBlobs)),
+		Layer.succeed(ReplayBlobEraser, prefixEraser(clients.replayBlobs)),
 		Layer.unwrap(
 			dischargeRuntimeContext(Effect.all([clients.statusKv.raw, clients.statusBucket.raw])).pipe(
 				Effect.map(([kv, bucket]) => StatusPageStore.fromBindings(kv, bucket)),

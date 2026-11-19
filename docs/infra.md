@@ -481,7 +481,7 @@ list of yields. What it composes lives beside it:
   (`consumeQueueMessages` over the declarations, so no binding is read back off the host),
   `events.ts`, `modules.ts` (the dynamic imports), and `bindings.ts`.
 - **Bindings are alchemy capabilities, read as Maple ports.** The init yields
-  `Queues.WriteQueue(VcsSyncQueue)`, `R2.ReadBucket(ReplayBlobs)` and the
+  `Queues.WriteQueue(VcsSyncQueue)`, `R2.ReadWriteBucket(ReplayBlobs)` and the
   `Cloudflare.RateLimit(...)`s (`worker/bindings.ts`). Each yield attaches the native
   binding at plan time, under the resource's logical id (so the queue and bucket bindings
   are `vcs-sync`, `replay-blobs`, …), and resolves it from the env in the isolate. The

@@ -130,6 +130,17 @@ export class ReplayBlobBucket extends Context.Service<ReplayBlobBucket, ObjectSt
 	"@maple/backend/platform/ReplayBlobBucket",
 ) {}
 
+/** Deletes a bucket's objects under a key prefix, one listing page at a time. */
+export interface ObjectPrefixEraser {
+	/** Deletes one page of objects under `prefix` and says how many went; `0` means none are left. */
+	readonly deletePage: (prefix: string) => Effect.Effect<number, ObjectStoreError>
+}
+
+/** The replay bucket's delete side, for erasing a deleted organization's recordings. */
+export class ReplayBlobEraser extends Context.Service<ReplayBlobEraser, ObjectPrefixEraser>()(
+	"@maple/backend/platform/ReplayBlobEraser",
+) {}
+
 /** What the Postgres layers dial: the Hyperdrive connection string and the identity attributes its spans carry. */
 export interface DatabaseConnection {
 	readonly connectionString: string
