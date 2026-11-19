@@ -107,6 +107,9 @@
 	"analytics_eyebrow": "Web analytics",
 	"analytics_title": "Web analytics from the sessions you already record.",
 	"analytics_lede": "Visitors, page views, referrers, countries, devices. No second script, no second vendor.",
+	"analytics_point_1_body": "MapleBrowser.init records the session. Analytics, replay and the trace all read from it.",
+	"analytics_point_2_body": "Crawlers are filtered out and the excluded count is shown.",
+	"analytics_point_3_body": "Click a referrer or a country and the page narrows to it. Every session links to its trace.",
 	"pe_eyebrow": "Product events",
 	"pe_title": "Funnels on the telemetry you already send.",
 	"pe_lede": "Count signups, checkouts and upgrades from the browser, your backend or a span you already emit. See the step where people stop, on the same dashboards as your latency.",
@@ -407,6 +410,7 @@
 	"page_nextjs_desc": "Add distributed tracing and logging to a Next.js app with OpenTelemetry and the built-in instrumentation hook, then send it to Maple over OTLP.",
 	"page_nextjs_heading": "Next.js observability with OpenTelemetry",
 	"page_nextjs_subtitle": "Next.js has an instrumentation hook built in. Register OpenTelemetry there, and server components, API routes and middleware produce spans with no further code.",
+	"page_nextjs_trace_heading": "See your Next.js traces",
 	"page_nextjs_what_you_get": "What you get",
 	"page_nextjs_auto_heading": "Automatic instrumentation for Next.js",
 
@@ -457,6 +461,7 @@
 
 	"platform_eyebrow": "Platform",
 	"platform_title": "Everything else you'd have bought separately.",
+	"platform_lede": "Metrics and dashboards, a service map, error tracking, alerting and on-call, Kubernetes monitoring, web analytics, product events, uptime monitoring and GitHub checks, all on the instrumentation you already send.",
 	"platform_metrics_name": "Metrics & dashboards",
 	"platform_metrics_desc": "Request rate, error rate, latency percentiles. Build the board yourself, or ask the agent to build it.",
 	"platform_map_desc": "Live request flow between your services. When one fails, you see what it takes down with it.",

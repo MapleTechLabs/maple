@@ -94,7 +94,7 @@ const surfaces: Surface[] = [
 		key: "alerts",
 		tab: m.platform_alerts_name(),
 		title: headline("alerts", m.platform_alerts_name()),
-		desc: firstSentence(m.platform_alerts_desc()),
+		desc: m.platform_alerts_desc(),
 		href: l("alerts"),
 		link: m.nav_alerts(),
 		shot: {
@@ -116,7 +116,7 @@ const surfaces: Surface[] = [
 		key: "analytics",
 		tab: m.analytics_eyebrow(),
 		title: m.analytics_title(),
-		desc: m.analytics_lede(),
+		desc: [m.analytics_lede(), m.analytics_point_1_body(), m.analytics_point_2_body(), m.analytics_point_3_body()].join(" "),
 		href: l("browser-sessions"),
 		link: m.nav_browser_sessions(),
 		shot: {
@@ -165,6 +165,8 @@ const githubSteps = [m.home_github_step_1_title(), m.home_github_step_2_title(),
 		>
 			{m.platform_title()}
 		</h2>
+		{/* Names every surface in plain text: most of them are otherwise only in a tab that is not open. */}
+		<p class="mt-5 max-w-[78ch] text-[15px] leading-relaxed text-fg-muted md:text-base">{m.platform_lede()}</p>
 
 		<div data-surface-explorer class="mt-10 md:mt-12">
 			<div role="tablist" aria-label={m.platform_eyebrow()} class="surface-tabs">
@@ -195,14 +197,14 @@ const githubSteps = [m.home_github_step_1_title(), m.home_github_step_2_title(),
 						data-pane={i}
 						hidden={i !== 0}
 					>
-						<div class="flex flex-col gap-x-10 gap-y-3 py-6 md:flex-row md:items-end md:justify-between md:py-8">
+						<div class="surface-head flex flex-col gap-x-10 gap-y-3 py-6 md:flex-row md:items-start md:justify-between md:py-8">
 							<div class="min-w-0">
 								<h3 class="font-display text-xl leading-snug tracking-[-0.01em] text-fg md:text-2xl">
 									{surface.title}
 								</h3>
-								<p class="mt-2 max-w-[92ch] text-[15px] leading-relaxed text-fg-muted">{surface.desc}</p>
+								<p class="mt-2 max-w-[120ch] text-[15px] leading-relaxed text-fg-muted">{surface.desc}</p>
 							</div>
-							<div class="flex shrink-0 flex-wrap gap-x-6 gap-y-2 text-sm">
+							<div class="flex shrink-0 flex-wrap gap-x-6 gap-y-2 text-sm md:pt-1.5">
 								<a href={surface.href} class="text-fg transition-colors hover:text-primary">
 									{surface.link}
 									<span aria-hidden="true"> →</span>
@@ -270,8 +272,12 @@ const githubSteps = [m.home_github_step_1_title(), m.home_github_step_2_title(),
 </section>
 
 <style>
-	/* A live pane is centred in the box a capture takes, so every tab is the same height from lg. */
+	/* A live pane is centred in the box a capture takes, so every tab is the same height from lg.
+	   The head reserves three lines of copy for the same reason: the longest panes need them. */
 	@media (min-width: 1024px) {
+		.surface-head {
+			min-height: 10.75rem;
+		}
 		.surface-live {
 			display: flex;
 			min-height: calc((min(100vw, 1400px) - 104px) / 2.3);
