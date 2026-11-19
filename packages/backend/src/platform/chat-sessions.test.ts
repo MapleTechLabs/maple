@@ -16,6 +16,7 @@ const rpc: ChatSessionRpc = {
 	holdsTurn: () => Effect.succeed(false),
 	endTurn: () => Effect.void,
 	abort: () => Effect.void,
+	erase: () => Effect.succeed(false),
 	alarm: () => Effect.void,
 }
 

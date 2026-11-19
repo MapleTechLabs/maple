@@ -246,6 +246,7 @@ const session = (
 			holdsTurn: () => Promise.resolve(false),
 			endTurn: () => Promise.resolve(),
 			abort: () => Promise.resolve(),
+			erase: () => Promise.resolve(false),
 			settleProposal: (input) => {
 				settlements.push(input)
 				return Promise.resolve(options?.settles ?? "decided")
