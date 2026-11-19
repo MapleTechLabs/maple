@@ -35,7 +35,7 @@ const logos = (await getCollection("logos"))
 			/>
 			<div class="shell">
 				<blockquote>
-					<p class="ledger-proof__quote">
+					<p class="ledger-proof__quote" style={`--n: ${quote.text.split(" ").length}`}>
 						{quote.text.split(" ").map((word, i) => (
 							<>
 								<span style={`--i: ${i}`}>{word}</span>{" "}

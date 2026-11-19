@@ -1,53 +1,88 @@
-import { Duration, Effect, Schema, Stream, Array as Arr } from "effect"
+import { Effect, Queue, Schema, Stream, Array as Arr } from "effect"
 import { Mount } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 
 /**
- * What the scripted chart frames share: the clock that steps their example data, the noise it is
+ * What the scripted chart frames share: the clock their example data moves on, the noise it is
  * made from, and the plain line they draw before the chart has.
  */
 
 export const ScriptMessage = defineMessageUnion({
-	Ticked: {},
+	/** `byMs` of script time passed: the time since the last frame while the frame was on screen. */
+	Advanced: { byMs: Schema.Number },
 })
 export type ScriptMessage = typeof ScriptMessage.Type
 
-/** Whether the element is on screen, kept current for as long as the scope lives. */
-const watchVisibility = (element: Element) =>
-	Effect.acquireRelease(
-		Effect.sync(() => {
-			const seen = { onScreen: false }
-			const observer = new IntersectionObserver(
-				(entries) => {
-					seen.onScreen = Arr.some(entries, (entry) => entry.isIntersecting)
-				},
-				{ threshold: 0.4 },
-			)
-			observer.observe(element)
-			return { seen, observer }
-		}),
-		({ observer }) => Effect.sync(() => observer.disconnect()),
-	)
+/** A tab that was in the background hands back one long frame: the script does not jump over it. */
+const LONGEST_FRAME_MS = 64
 
-/** `Ticked` every `everyMs` while the element is on screen. Never under reduced motion. */
-export const RunScript = Mount.defineStream("RunScript", {
+/**
+ * The clock: `Advanced` on animation frames, at most one per `everyMs`, while the element is on
+ * screen. It stops asking for frames while the element is off screen, and never starts under
+ * reduced motion.
+ */
+export const RunClock = Mount.defineStream("RunClock", {
 	args: { everyMs: Schema.Number },
-	messages: [ScriptMessage.Ticked],
+	messages: [ScriptMessage.Advanced],
 	execute: ({ element, everyMs }) =>
 		matchMedia("(prefers-reduced-motion: reduce)").matches
 			? Stream.never
-			: Stream.scoped(
-					Stream.unwrap(
-						Effect.map(watchVisibility(element), ({ seen }) =>
-							Stream.tick(Duration.millis(everyMs)).pipe(
-								Stream.filter(() => seen.onScreen),
-								Stream.map(() => ScriptMessage.Ticked()),
-							),
-						),
-					),
+			: Stream.callback<ScriptMessage>((queue) =>
+					Effect.acquireRelease(
+						Effect.sync(() => {
+							const clock = { onScreen: false, frame: 0, last: 0 }
+							const step = (now: number) => {
+								clock.frame = 0
+								if (!clock.onScreen) return
+								const byMs = clock.last === 0 ? 0 : now - clock.last
+								if (clock.last === 0 || byMs >= everyMs) {
+									clock.last = now
+									if (byMs > 0)
+										Queue.offerUnsafe(
+											queue,
+											ScriptMessage.Advanced({
+												byMs: Math.min(LONGEST_FRAME_MS, byMs),
+											}),
+										)
+								}
+								clock.frame = requestAnimationFrame(step)
+							}
+							const observer = new IntersectionObserver(
+								(entries) => {
+									clock.onScreen = Arr.some(entries, (entry) => entry.isIntersecting)
+									// Coming back on screen starts from now, not from when it left.
+									if (!clock.onScreen) clock.last = 0
+									else if (clock.frame === 0) clock.frame = requestAnimationFrame(step)
+								},
+								{ threshold: 0.4 },
+							)
+							observer.observe(element)
+							return () => {
+								observer.disconnect()
+								cancelAnimationFrame(clock.frame)
+							}
+						}),
+						(stop) => Effect.sync(stop),
+					).pipe(Effect.flatMap(() => Effect.never)),
 				),
 })
+
+/** How long a shown value takes to cover half of what separates it from its target. */
+const HALF_LIFE_MS = 90
+
+/** `shown` a frame closer to `target`: fast at first, settling, the same at any frame rate. */
+export const follow = (shown: number, target: number, byMs: number): number => {
+	const next = target - (target - shown) * 0.5 ** (byMs / HALF_LIFE_MS)
+	return Math.abs(target - next) < 0.01 ? target : next
+}
+
+/**
+ * The wait before arrival `index`, between `quick` and `slow`: mostly short with the odd long one,
+ * so arrivals bunch and pause the way traffic does.
+ */
+export const gapMs = (index: number, quick: number, slow: number): number =>
+	quick + noise(index + 7) ** 2 * (slow - quick)
 
 /** The same value for the same seed, in [0, 1): the server and the browser draw one frame. */
 export const noise = (seed: number): number => {

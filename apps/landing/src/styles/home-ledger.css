@@ -743,7 +743,8 @@ html:not([lang="en"]) .monumental-home .faq--split h2 {
 	}
 }
 
-/* The quote inks in a word at a time, tied to the scroll and nothing else. */
+/* The quote inks in a word at a time, tied to the scroll and nothing else. The words share one
+   stretch of the scroll whatever their number, so a long quote's last word inks too. */
 @supports (animation-timeline: view()) {
 	@media (prefers-reduced-motion: no-preference) {
 		.ledger-proof__quote {
@@ -751,8 +752,13 @@ html:not([lang="en"]) .monumental-home .faq--split h2 {
 		}
 		.ledger-proof__quote > span {
 			animation: ledger-ink linear both;
+		}
+		/* A rule of its own, on purpose: next to `animation`, the build folds the timeline into the
+		   shorthand, which browsers then drop whole. */
+		.ledger-proof__quote > span:nth-child(n) {
+			--at: calc(14% + var(--i) / var(--n) * 28%);
 			animation-timeline: --proof-quote;
-			animation-range: cover calc(14% + var(--i) * 2.2%) cover calc(22% + var(--i) * 2.2%);
+			animation-range: cover var(--at) cover calc(var(--at) + 8%);
 		}
 	}
 }

@@ -8,23 +8,27 @@ import { Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { makeIsland } from "../../foldkit-island/island"
-import { linePreview, noise, RunScript } from "./live-script"
+import { gapMs, linePreview, noise, RunClock } from "./live-script"
 
 /**
  * The Web Analytics page's traffic chart (`AnalyticsTraffic`, through the `analytics-traffic`
- * host) over an example week, with the totals above it. Each step is a few more visits in the
- * newest bucket, so the tail of the chart and the totals climb together.
+ * host) over an example week, with the totals above it. Visits land at uneven intervals; each
+ * one adds a visitor and a few page views to the totals and to the newest bucket of the chart.
  */
 
 const START_MS = Date.UTC(2026, 3, 27, 0, 0, 0)
 const BUCKET_MS = 2 * 3_600_000
 const BUCKETS = 84
-const STEP_MS = 1700
 const HEIGHT = 200
-const LOOP = 30
 const VISITORS_TOKEN = "var(--chart-1)"
 const PAGE_VIEWS_TOKEN = "var(--chart-2)"
 const TOKENS = ["--border", "--background", VISITORS_TOKEN, PAGE_VIEWS_TOKEN]
+/** How many visits the script has in it, and the shortest and longest wait between two. */
+const VISITS_TO_COME = 420
+const QUICK_MS = 240
+const SLOW_MS = 2100
+/** People on the site right now stay within this range. */
+const ONLINE = { atStart: 34, least: 26, most: 47 }
 
 /** How busy bucket `index` is, 0 to 1: a day's rise and fall, quieter at the weekend. */
 const busy = (index: number): number => {
@@ -36,18 +40,25 @@ const busy = (index: number): number => {
 const visitorsAt = (index: number): number => Math.round(busy(index) * 520 + noise(index + 1) * 60)
 const pageViewsAt = (index: number): number => Math.round(visitorsAt(index) * (3.6 + noise(index + 301)))
 
-/** What a step adds to the newest bucket. */
-const VISITORS_PER_STEP = 7
-const PAGE_VIEWS_PER_STEP = 26
+/** The newest bucket as the frame opens: early in its two hours. */
 const NEWEST_AT_START = { visitors: 96, pageViews: 340 }
 
-const pointsAt = (step: number) =>
+/** Pages visit `index` reads, two to five. */
+const pagesOf = (index: number): number => 2 + Math.floor(noise(index + 900) * 4)
+
+/** Whether visit `index` is someone arriving, someone leaving, or neither, for the online count. */
+const onlineChangeOf = (index: number): number => {
+	const roll = noise(index + 33)
+	return roll < 0.22 ? 1 : roll > 0.82 ? -1 : 0
+}
+
+const pointsAt = (visits: number, pageViews: number) =>
 	Arr.makeBy(BUCKETS, (index) => {
 		const newest = index === BUCKETS - 1
 		return {
 			bucket: new Date(START_MS + index * BUCKET_MS).toISOString(),
-			primary: newest ? NEWEST_AT_START.visitors + step * VISITORS_PER_STEP : visitorsAt(index),
-			companion: newest ? NEWEST_AT_START.pageViews + step * PAGE_VIEWS_PER_STEP : pageViewsAt(index),
+			primary: newest ? NEWEST_AT_START.visitors + visits : visitorsAt(index),
+			companion: newest ? NEWEST_AT_START.pageViews + pageViews : pageViewsAt(index),
 		}
 	})
 
@@ -56,23 +67,27 @@ const sum = (values: ReadonlyArray<number>): number => Arr.reduce(values, 0, (to
 const count = (value: number): string => value.toLocaleString("en-US")
 
 /** The totals over the week, as the tiles read them. */
-const tilesAt = (step: number) => {
-	const points = pointsAt(step)
+const tilesAt = (model: Readonly<{ visits: number; pageViews: number; online: number }>) => {
+	const points = pointsAt(model.visits, model.pageViews)
 	const visitors = sum(Arr.map(points, (point) => point.primary))
 	const pageViews = sum(Arr.map(points, (point) => point.companion))
 	return [
 		{ label: "Unique visitors", value: count(visitors) },
 		{ label: "Page views", value: count(pageViews) },
 		{ label: "Pages / session", value: (pageViews / (visitors * 1.18)).toFixed(1) },
-		{ label: "Online now", value: String(31 + Math.round(noise(step + 77) * 12)) },
+		{ label: "Online now", value: String(model.online) },
 	]
 }
 
 // MODEL
 
 const Model = Schema.Struct({
-	/** Steps since the frame started; it starts over after `LOOP`. */
-	step: Schema.Number,
+	/** Visits that have landed since the frame started, and the pages they read. */
+	visits: Schema.Number,
+	pageViews: Schema.Number,
+	online: Schema.Number,
+	/** Script time left until the next visit lands. */
+	untilNextMs: Schema.Number,
 	chart: Chart.Model,
 	/** Read off the page once the island runs; the server renders the plain lines. */
 	themeColors: Schema.Option(ThemeColors),
@@ -84,7 +99,7 @@ type Model = typeof Model.Type
 // MESSAGE
 
 const Message = defineMessageUnion({
-	Ticked: {},
+	Advanced: { byMs: Schema.Number },
 	ResolvedThemeColors: { colors: ThemeColors },
 	GotChartMessage: { message: Chart.Message },
 })
@@ -94,7 +109,23 @@ type Message = typeof Message.Type
 
 const update = (model: Model, message: Message): Update.Return<Model, Message> =>
 	Message.match<Update.Return<Model, Message>>(message, {
-		Ticked: () => ({ model: { ...model, step: (model.step + 1) % LOOP } }),
+		Advanced: ({ byMs }) => {
+			const left = model.untilNextMs - byMs
+			if (left > 0 || model.visits >= VISITS_TO_COME) return { model: { ...model, untilNextMs: left } }
+			const visits = model.visits + 1
+			return {
+				model: {
+					...model,
+					visits,
+					pageViews: model.pageViews + pagesOf(visits),
+					online: Math.min(
+						ONLINE.most,
+						Math.max(ONLINE.least, model.online + onlineChangeOf(visits)),
+					),
+					untilNextMs: left + gapMs(visits, QUICK_MS, SLOW_MS),
+				},
+			}
+		},
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: Option.some(colors) } }),
 		GotChartMessage: ({ message: inner }) => ({
 			model: {
@@ -107,9 +138,9 @@ const update = (model: Model, message: Message): Update.Return<Model, Message> =
 
 // VIEW
 
-const spec = (step: number, colors: ThemeColors): ChartSpec =>
+const spec = (model: Model, colors: ThemeColors): ChartSpec =>
 	ChartSpec.AnalyticsTraffic({
-		points: pointsAt(step),
+		points: pointsAt(model.visits, model.pageViews),
 		series: [
 			{ key: "companion", metric: "pageViews" },
 			{ key: "primary", metric: "visitors" },
@@ -143,8 +174,8 @@ const plot = Submodel.defineView<Chart.Model, Chart.Message, Readonly<{ spec: Ch
 		}),
 )
 
-const preview = (h: HtmlBuilder<Message>, step: number): Html => {
-	const points = pointsAt(step)
+const preview = (h: HtmlBuilder<Message>, model: Model): Html => {
+	const points = pointsAt(model.visits, model.pageViews)
 	return linePreview(
 		h,
 		[
@@ -163,16 +194,16 @@ const chartPlot = (h: HtmlBuilder<Message>, model: Model): ReadonlyArray<Html> =
 				slotId: "landing-analytics-plot",
 				model: model.chart,
 				view: plot,
-				viewInputs: { spec: spec(model.step, colors) },
+				viewInputs: { spec: spec(model, colors) },
 				toParentMessage: (message) => Message.GotChartMessage({ message }),
 			}),
 		],
 	})
 
-const tiles = (h: HtmlBuilder<Message>, step: number): Html =>
+const tiles = (h: HtmlBuilder<Message>, model: Model): Html =>
 	h.div(
 		[h.Class("border-border grid grid-cols-2 border-b sm:grid-cols-4")],
-		Arr.map(tilesAt(step), (tile) =>
+		Arr.map(tilesAt(model), (tile) =>
 			h.div(
 				[
 					h.Key(tile.label),
@@ -212,9 +243,9 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 					),
 				],
 			),
-			tiles(h, model.step),
+			tiles(h, model),
 			h.div(
-				[h.Class("px-4 pt-3 pb-4"), h.OnMount(RunScript({ everyMs: STEP_MS }))],
+				[h.Class("px-4 pt-3 pb-4"), h.OnMount(RunClock({ everyMs: 0 }))],
 				[
 					h.div(
 						[h.Class("text-fg-muted mb-2 flex gap-4 text-xs")],
@@ -229,7 +260,7 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 							h.Style({ height: `${HEIGHT}px` }),
 							h.OnMount(ResolveThemeColors({ tokens: TOKENS })),
 						],
-						[...(model.isChartDrawn ? [] : [preview(h, model.step)]), ...chartPlot(h, model)],
+						[...(model.isChartDrawn ? [] : [preview(h, model)]), ...chartPlot(h, model)],
 					),
 				],
 			),
@@ -241,7 +272,15 @@ export const LiveWebAnalytics = makeIsland({
 	Props: Schema.Struct({}),
 	Model,
 	init: () => ({
-		model: { step: 0, chart: Chart.init(), themeColors: Option.none(), isChartDrawn: false },
+		model: {
+			visits: 0,
+			pageViews: 0,
+			online: ONLINE.atStart,
+			untilNextMs: 700,
+			chart: Chart.init(),
+			themeColors: Option.none(),
+			isChartDrawn: false,
+		},
 	}),
 	update,
 	view,

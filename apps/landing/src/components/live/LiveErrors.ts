@@ -3,39 +3,47 @@ import * as Chart from "@maple/views/charts/chart"
 import { ChartSpec } from "@maple/views/charts/chart-spec"
 import { plotFrame } from "@maple/views/charts/plot-frame"
 import { ResolveThemeColors, resolveColor, ThemeColors } from "@maple/views/charts/theme-colors"
+import { cn } from "@maple/ui/lib/utils"
 import { Option, Schema, Array as Arr } from "effect"
 import { Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { makeIsland } from "../../foldkit-island/island"
-import { noise, RunScript } from "./live-script"
+import { follow, gapMs, noise, RunClock } from "./live-script"
 
 /**
  * One issue taking events: the dashboard's occurrence chart (`Occurrences`, through the
- * `occurrences` host) over an example day, with the newest hour growing as events arrive. The
- * event count climbs and the issue count does not, which is what grouping means.
+ * `occurrences` host) over an example day. Events land at uneven intervals; each one counts at
+ * once, slides into the list and eases onto the newest hour's bar. The event count climbs and the
+ * issue count does not, which is what grouping means.
  */
 
 const START_MS = Date.UTC(2026, 4, 2, 13, 0, 0)
 const HOUR_MS = 3_600_000
 const HOURS = 24
-const STEP_MS = 1600
 const HEIGHT = 132
 const ERROR_TOKEN = "--severity-error"
-/** Events at the first frame, and how many arrive before the frame starts over. */
+/** Events at the first frame, and how many more the script has in it. */
 const EVENTS_AT_START = 142
-const LOOP = 36
+const EVENTS_TO_COME = 240
 const NEWEST_HOUR_AT_START = 9
+/** The shortest and longest wait between two events. */
+const QUICK_MS = 380
+const SLOW_MS = 3400
 const SERVICES = ["checkout-api", "payment-svc", "order-worker"] as const
+/** Rows the list shows, and the one more it keeps so a row can slide out as one slides in. */
+const ROWS_SHOWN = 3
+const ROW_HEIGHT_PX = 33
 
 /** Events in hour `index` of the day: a quiet issue that got loud in the last three hours. */
 const countAt = (index: number): number =>
 	Math.round(1 + noise(index + 1) * 3 + (index >= HOURS - 4 ? (index - (HOURS - 5)) * 9 : 0))
 
-const pointsAt = (arrived: number) =>
+/** The day's hours; `onNewestBar` is how many of the arrived events the newest bar has taken on. */
+const pointsAt = (onNewestBar: number) =>
 	Arr.makeBy(HOURS, (index) => ({
 		bucket: new Date(START_MS + index * HOUR_MS).toISOString(),
-		count: index === HOURS - 1 ? NEWEST_HOUR_AT_START + arrived : countAt(index),
+		count: index === HOURS - 1 ? NEWEST_HOUR_AT_START + onNewestBar : countAt(index),
 	}))
 
 const hex = (seed: number): string =>
@@ -43,24 +51,33 @@ const hex = (seed: number): string =>
 		.toString(16)
 		.padStart(6, "0")
 
+const FIRST_EVENT_MS = Date.UTC(2026, 4, 3, 12, 10, 0)
+
 /** The newest events, newest first. Event `n` is always the same event. */
 const eventsAt = (arrived: number) =>
-	Arr.makeBy(3, (offset) => {
+	Arr.makeBy(ROWS_SHOWN + 1, (offset) => {
 		const n = EVENTS_AT_START + arrived - offset
-		const second = 3 + ((n * 7) % 54)
 		return {
 			n,
-			time: `12:${String(10 + n - EVENTS_AT_START).padStart(2, "0")}:${String(second).padStart(2, "0")}`,
+			time: new Date(FIRST_EVENT_MS + (n - EVENTS_AT_START) * 3000 + Math.floor(noise(n) * 2000))
+				.toISOString()
+				.slice(11, 19),
 			service: SERVICES[n % SERVICES.length] ?? SERVICES[0],
 			trace: `${hex(n)}${hex(n + 500).slice(0, 2)}`,
+			/** An event that landed while the frame ran slides in; the ones it opened with are just there. */
+			landed: offset === 0 && arrived > 0,
 		}
 	})
 
 // MODEL
 
 const Model = Schema.Struct({
-	/** Events that have arrived since the frame started. */
+	/** Events that have landed since the frame started. */
 	arrived: Schema.Number,
+	/** `arrived` as the newest bar shows it: it eases up to each new event. */
+	onBar: Schema.Number,
+	/** Script time left until the next event lands. */
+	untilNextMs: Schema.Number,
 	chart: Chart.Model,
 	/** Read off the page once the island runs; the server renders plain bars. */
 	themeColors: Schema.Option(ThemeColors),
@@ -72,7 +89,7 @@ type Model = typeof Model.Type
 // MESSAGE
 
 const Message = defineMessageUnion({
-	Ticked: {},
+	Advanced: { byMs: Schema.Number },
 	ResolvedThemeColors: { colors: ThemeColors },
 	GotChartMessage: { message: Chart.Message },
 })
@@ -82,7 +99,19 @@ type Message = typeof Message.Type
 
 const update = (model: Model, message: Message): Update.Return<Model, Message> =>
 	Message.match<Update.Return<Model, Message>>(message, {
-		Ticked: () => ({ model: { ...model, arrived: (model.arrived + 1) % LOOP } }),
+		Advanced: ({ byMs }) => {
+			const left = model.untilNextMs - byMs
+			const lands = left <= 0 && model.arrived < EVENTS_TO_COME
+			const arrived = lands ? model.arrived + 1 : model.arrived
+			return {
+				model: {
+					...model,
+					arrived,
+					onBar: follow(model.onBar, arrived, byMs),
+					untilNextMs: lands ? left + gapMs(arrived, QUICK_MS, SLOW_MS) : left,
+				},
+			}
+		},
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: Option.some(colors) } }),
 		GotChartMessage: ({ message: inner }) => ({
 			model: {
@@ -113,8 +142,8 @@ const plot = Submodel.defineView<Chart.Model, Chart.Message, Readonly<{ spec: Ch
 )
 
 /** The day's hours as plain bars, inset like the chart's plot area. */
-const preview = (h: HtmlBuilder<Message>, arrived: number): Html => {
-	const points = pointsAt(arrived)
+const preview = (h: HtmlBuilder<Message>, onBar: number): Html => {
+	const points = pointsAt(onBar)
 	const max = Math.max(1, ...Arr.map(points, (point) => point.count))
 	return h.div(
 		[h.AriaHidden(true), h.Class("absolute inset-0 flex items-end gap-1 pt-2 pb-[22px] pl-11 pr-1")],
@@ -141,7 +170,8 @@ const chartPlot = (h: HtmlBuilder<Message>, model: Model): ReadonlyArray<Html> =
 				view: plot,
 				viewInputs: {
 					spec: ChartSpec.Occurrences({
-						points: pointsAt(model.arrived),
+						// A twentieth of an event is under a pixel: most frames hand the chart the same spec.
+						points: pointsAt(Math.round(model.onBar * 20) / 20),
 						color: resolveColor(colors, ERROR_TOKEN),
 						timeZone: "UTC",
 					}),
@@ -162,14 +192,21 @@ const figure = (h: HtmlBuilder<Message>, label: string, value: string): Html =>
 
 const events = (h: HtmlBuilder<Message>, arrived: number): Html =>
 	h.div(
-		[h.Class("border-border border-t")],
+		[
+			h.Class("border-border overflow-hidden border-t"),
+			h.Style({ height: `${ROWS_SHOWN * ROW_HEIGHT_PX}px` }),
+		],
 		Arr.map(eventsAt(arrived), (event) =>
 			h.div(
 				[
 					h.Key(String(event.n)),
 					h.Class(
-						"border-border flex items-center gap-3 border-b px-4 py-2 text-xs last:border-b-0",
+						cn(
+							"border-border flex items-center gap-3 border-b px-4 text-xs",
+							event.landed && "live-row-in",
+						),
 					),
+					h.Style({ height: `${ROW_HEIGHT_PX}px`, "--live-row": `${ROW_HEIGHT_PX}px` }),
 				],
 				[
 					h.span([h.Class("text-fg-muted tabular-nums")], [event.time]),
@@ -195,7 +232,7 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 				],
 			),
 			h.div(
-				[h.Class("px-4 pt-3.5 pb-3"), h.OnMount(RunScript({ everyMs: STEP_MS }))],
+				[h.Class("px-4 pt-3.5 pb-3"), h.OnMount(RunClock({ everyMs: 0 }))],
 				[
 					h.div(
 						[h.Class("mb-3 flex min-w-0 items-baseline gap-2 text-sm")],
@@ -231,7 +268,14 @@ export const LiveErrors = makeIsland({
 	Props: Schema.Struct({}),
 	Model,
 	init: () => ({
-		model: { arrived: 0, chart: Chart.init(), themeColors: Option.none(), isChartDrawn: false },
+		model: {
+			arrived: 0,
+			onBar: 0,
+			untilNextMs: 900,
+			chart: Chart.init(),
+			themeColors: Option.none(),
+			isChartDrawn: false,
+		},
 	}),
 	update,
 	view,

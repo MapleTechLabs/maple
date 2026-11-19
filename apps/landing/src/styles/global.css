@@ -500,6 +500,21 @@
 	gap: 6px;
 	color: var(--primary);
 }
+/* A row landing at the top of a scripted list: it opens its own height, pushing the rest down. */
+.live-row-in {
+	animation: live-row-in 340ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@keyframes live-row-in {
+	from {
+		margin-top: calc(var(--live-row) * -1);
+		opacity: 0;
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.live-row-in {
+		animation: none;
+	}
+}
 .live-frame__live-dot {
 	width: 6px;
 	height: 6px;

@@ -9,12 +9,12 @@ import { Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { makeIsland } from "../../foldkit-island/island"
-import { linePreview, noise, RunScript } from "./live-script"
+import { linePreview, RunClock } from "./live-script"
 
 /**
  * A latency chart as a dashboard draws it: the query builder's line chart (`QueryBuilderArea`,
- * through the `area` host) over example percentiles. A new minute arrives every step, so the
- * window slides and the newest bucket is the in-flight one the chart dashes.
+ * through the `area` host) over example percentiles. Time runs on, so the line glides to the left
+ * a little every frame and the newest bucket is the in-flight one the chart dashes.
  */
 
 const PERCENTILES = ["p50", "p95", "p99"] as const
@@ -23,36 +23,42 @@ type Percentile = (typeof PERCENTILES)[number]
 const START_MS = Date.UTC(2026, 4, 3, 11, 0, 0)
 const BUCKET_MS = 60_000
 const WINDOW = 36
-const STEP_MS = 1800
+/** Script time a bucket takes to cross its own width. */
+const MS_PER_BUCKET = 4200
+/** Thirty frames a second is smooth for a line moving two pixels a second. */
+const FRAME_MS = 30
 const HEIGHT = 190
+/** Above the highest p99 the example data reaches. */
+const AXIS_TOP_MS = 700
 const TOKENS = ["--border", "--background", "var(--chart-p50)", "var(--chart-p95)", "var(--chart-p99)"]
 
-/** The percentiles of minute `index`: a calm service with a slow patch every 48 minutes. */
-const valuesAt = (index: number): Readonly<Record<Percentile, number>> => {
-	const slow = Math.max(0, 1 - Math.abs((index % 48) - 30) / 4)
-	const p50 = 24 + 3 * Math.sin(index / 5) + noise(index + 1) * 3 + slow * 9
-	const p95 = 132 + 14 * Math.sin(index / 7 + 1) + noise(index + 101) * 12 + slow * 150
-	return {
-		p50: Math.round(p50),
-		p95: Math.round(p95),
-		p99: Math.round(p95 * 1.7 + noise(index + 201) * 30 + slow * 110),
-	}
+/**
+ * The percentiles at minute `at`, whole or not: a calm service with a slow patch every 64 minutes.
+ * Smooth in `at`, so sampling it a little later moves the line without changing its shape.
+ */
+const valuesAt = (at: number): Readonly<Record<Percentile, number>> => {
+	const slow = Math.exp(-(((at % 64) - 40) ** 2) / 30)
+	const p50 = 24 + 3 * Math.sin(at / 5) + 1.5 * Math.sin(at / 2.1 + 1) + slow * 9
+	const p95 = 132 + 14 * Math.sin(at / 7 + 1) + 8 * Math.sin(at / 2.6) + slow * 150
+	const p99 = p95 * 1.7 + 12 * Math.sin(at / 3.3 + 2) + slow * 110
+	return { p50: Math.round(p50 * 10) / 10, p95: Math.round(p95 * 10) / 10, p99: Math.round(p99 * 10) / 10 }
 }
 
-const rowsAt = (step: number) =>
+/** The window once `minutes` of example time have passed. */
+const rowsAt = (minutes: number) =>
 	Arr.makeBy(WINDOW, (offset) => ({
-		bucket: new Date(START_MS + (step + offset) * BUCKET_MS).toISOString(),
-		...valuesAt(step + offset),
+		bucket: new Date(START_MS + (minutes + offset) * BUCKET_MS).toISOString(),
+		...valuesAt(minutes + offset),
 	}))
 
 /** Half a minute into the newest bucket: it is still filling. */
-const nowAt = (step: number) => START_MS + (step + WINDOW - 1) * BUCKET_MS + BUCKET_MS / 2
+const nowAt = (minutes: number) => START_MS + (minutes + WINDOW - 1) * BUCKET_MS + BUCKET_MS / 2
 
 // MODEL
 
 const Model = Schema.Struct({
-	/** Minutes the window has slid since the frame started. */
-	step: Schema.Number,
+	/** Minutes of example time that have passed since the frame started. */
+	minutes: Schema.Number,
 	chart: Chart.Model,
 	/** Read off the page once the island runs; the server renders the plain lines. */
 	themeColors: Schema.Option(ThemeColors),
@@ -64,7 +70,7 @@ type Model = typeof Model.Type
 // MESSAGE
 
 const Message = defineMessageUnion({
-	Ticked: {},
+	Advanced: { byMs: Schema.Number },
 	ResolvedThemeColors: { colors: ThemeColors },
 	GotChartMessage: { message: Chart.Message },
 })
@@ -74,7 +80,7 @@ type Message = typeof Message.Type
 
 const update = (model: Model, message: Message): Update.Return<Model, Message> =>
 	Message.match<Update.Return<Model, Message>>(message, {
-		Ticked: () => ({ model: { ...model, step: model.step + 1 } }),
+		Advanced: ({ byMs }) => ({ model: { ...model, minutes: model.minutes + byMs / MS_PER_BUCKET } }),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: Option.some(colors) } }),
 		GotChartMessage: ({ message: inner }) => ({
 			model: {
@@ -87,8 +93,8 @@ const update = (model: Model, message: Message): Update.Return<Model, Message> =
 
 // VIEW
 
-const spec = (step: number, colors: ThemeColors): ChartSpec => {
-	const data = rowsAt(step)
+const spec = (minutes: number, colors: ThemeColors): ChartSpec => {
+	const data = rowsAt(minutes)
 	const tokens = seriesColorTokens(seriesDefinitionsOf(data).definitions)
 	return ChartSpec.QueryBuilderArea({
 		data,
@@ -101,13 +107,15 @@ const spec = (step: number, colors: ThemeColors): ChartSpec => {
 		},
 		unit: "duration_ms",
 		timeZone: "UTC",
-		nowMs: nowAt(step),
+		nowMs: nowAt(minutes),
 		containerWidth: 640,
 		gradientPrefix: "landing-metrics",
 		showTooltip: true,
 		mark: "line",
 		curve: "monotone",
 		showPoints: false,
+		// The slow patch's peak is always inside the axis, so the scale holds as the patch glides in and out.
+		axis: { thresholds: [], logScale: false, softMin: 0, softMax: AXIS_TOP_MS, fitYAxisToData: false },
 	})
 }
 
@@ -128,8 +136,8 @@ const plot = Submodel.defineView<Chart.Model, Chart.Message, Readonly<{ spec: Ch
 		}),
 )
 
-const preview = (h: HtmlBuilder<Message>, step: number): Html => {
-	const rows = rowsAt(step)
+const preview = (h: HtmlBuilder<Message>, minutes: number): Html => {
+	const rows = rowsAt(minutes)
 	return linePreview(
 		h,
 		Arr.map(PERCENTILES, (key) => ({
@@ -148,17 +156,17 @@ const chartPlot = (h: HtmlBuilder<Message>, model: Model): ReadonlyArray<Html> =
 				slotId: "landing-metrics-plot",
 				model: model.chart,
 				view: plot,
-				viewInputs: { spec: spec(model.step, colors) },
+				viewInputs: { spec: spec(model.minutes, colors) },
 				toParentMessage: (message) => Message.GotChartMessage({ message }),
 			}),
 		],
 	})
 
-/** The newest complete minute, one figure per percentile. */
-const figures = (h: HtmlBuilder<Message>, step: number): Html => {
-	const latest = valuesAt(step + WINDOW - 2)
+/** The newest complete minute, one figure per percentile: they change when a minute closes, not every frame. */
+const figures = (h: HtmlBuilder<Message>, minutes: number): Html => {
+	const latest = valuesAt(Math.floor(minutes) + WINDOW - 2)
 	return h.div(
-		[h.Class("mb-3 flex flex-wrap gap-x-6 gap-y-2")],
+		[h.Class("mb-3 flex gap-x-5 whitespace-nowrap")],
 		Arr.map(PERCENTILES, (key) =>
 			h.div(
 				[h.Key(key), h.Class("flex items-baseline gap-2")],
@@ -171,7 +179,10 @@ const figures = (h: HtmlBuilder<Message>, step: number): Html => {
 						[],
 					),
 					h.span([h.Class("text-fg-muted text-xs")], [key]),
-					h.span([h.Class("text-fg text-sm font-medium tabular-nums")], [`${latest[key]} ms`]),
+					h.span(
+						[h.Class("text-fg text-sm font-medium tabular-nums")],
+						[`${Math.round(latest[key])} ms`],
+					),
 				],
 			),
 		),
@@ -193,16 +204,16 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 				],
 			),
 			h.div(
-				[h.Class("px-4 pt-3.5 pb-4"), h.OnMount(RunScript({ everyMs: STEP_MS }))],
+				[h.Class("px-4 pt-3.5 pb-4"), h.OnMount(RunClock({ everyMs: FRAME_MS }))],
 				[
-					figures(h, model.step),
+					figures(h, model.minutes),
 					h.div(
 						[
 							h.Class("relative w-full"),
 							h.Style({ height: `${HEIGHT}px` }),
 							h.OnMount(ResolveThemeColors({ tokens: TOKENS })),
 						],
-						[...(model.isChartDrawn ? [] : [preview(h, model.step)]), ...chartPlot(h, model)],
+						[...(model.isChartDrawn ? [] : [preview(h, model.minutes)]), ...chartPlot(h, model)],
 					),
 				],
 			),
@@ -222,7 +233,7 @@ export const LiveMetrics = makeIsland({
 	Props: Schema.Struct({}),
 	Model,
 	init: () => ({
-		model: { step: 0, chart: Chart.init(), themeColors: Option.none(), isChartDrawn: false },
+		model: { minutes: 0, chart: Chart.init(), themeColors: Option.none(), isChartDrawn: false },
 	}),
 	update,
 	view,
