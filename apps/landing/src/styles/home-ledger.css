@@ -494,6 +494,9 @@ html[lang="ko"] .monumental-home [data-scrollstory] > .shell:first-child h2 {
 	font-weight: 650;
 }
 .ledger-bill__scroll {
+	/* The containing block for the link column's hidden header, so it scrolls with the table
+	   instead of widening the page. */
+	position: relative;
 	overflow-x: auto;
 }
 .ledger-bill__note {

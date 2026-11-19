@@ -28,7 +28,10 @@ const labels = billRowLabels();
 					<tr>
 						<td></td>
 						{COLUMNS.map((key) => <th scope="col">{labels[key]}</th>)}
-						<td></td>
+						{/* Named for a table reader: the cells under it are each vendor's comparison link. */}
+						<th scope="col">
+							<span class="sr-only">{m.nav_compare()}</span>
+						</th>
 					</tr>
 				</thead>
 				<tbody>
