@@ -1090,12 +1090,12 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 			const unavailableEntities = Arr.map(unavailable, (state): AuditAffectedEntity => ({
 				kind: "integration",
 				name: state.zoneName ? `${state.dataset} · ${state.zoneName}` : state.dataset,
-				note: "unavailable — Cloudflare dataset settings deny collection",
+				note: "unavailable: the zone's Cloudflare plan does not include this dataset",
 			}))
 			const capability =
 				unavailable.length === 0
 					? ""
-					: ` ${unavailable.length} unavailable (Cloudflare dataset settings deny collection).`
+					: ` ${plural(unavailable.length, "dataset")} not included in the Cloudflare plan.`
 			if (affected.length === 0)
 				return unavailable.length === 0
 					? PASS

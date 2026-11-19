@@ -1897,6 +1897,31 @@ describe("CloudflareAnalyticsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, captured)))
 	})
 
+	it.effect("an already-vanished zone row is not rewritten on later discoveries", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection()
+			const stampedAt = T0 - 3 * 60 * MIN
+			yield* seedStateRow({
+				dataset: "http_requests",
+				zoneId: "gone-zone",
+				zoneName: "gone.example.com",
+				enabled: false,
+				settingsJson: null,
+				settingsFetchedAt: null,
+				lastError: "Zone no longer present on the Cloudflare account",
+				lastErrorAt: stampedAt,
+			})
+			yield* CloudflareAnalyticsService.use((service) => service.pollOrg(ORG))
+			const gone = Option.getOrThrow(
+				Arr.findFirst(yield* loadStateRows, (row) => row.zoneId === "gone-zone"),
+			)
+			assert.isFalse(gone.enabled)
+			assert.strictEqual(gone.lastErrorAt, stampedAt)
+		}).pipe(Effect.provide(makeLayer(testDb, [])))
+	})
+
 	it.effect("pollOrg does NOT disable unseen zones when the zone listing is truncated", () => {
 		const testDb = createTestDb(trackedDbs)
 		const captured: CapturedIngest[] = []

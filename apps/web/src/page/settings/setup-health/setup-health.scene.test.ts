@@ -36,7 +36,7 @@ describe("setup health", () => {
 					title: "Cloudflare datasets are collecting",
 					severity: "warn",
 					status: "pass",
-					detail: "2 unavailable (Cloudflare dataset settings deny collection).",
+					detail: "2 datasets not included in the Cloudflare plan.",
 					affected: [
 						{
 							kind: "integration",
@@ -80,7 +80,7 @@ describe("setup health", () => {
 			},
 			given(model),
 			click(role("button", { name: /Passing/ })),
-			expectView(text("2 unavailable (Cloudflare dataset settings deny collection).")).toExist(),
+			expectView(text("2 datasets not included in the Cloudflare plan.")).toExist(),
 			expectView(text("firewall_events · example.com")).toExist(),
 			expectView(text("+1 more")).toExist(),
 			expectView(text("Skipped")).toExist(),

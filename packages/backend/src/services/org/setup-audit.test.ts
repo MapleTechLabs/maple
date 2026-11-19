@@ -1425,7 +1425,7 @@ describe("integration checks", () => {
 			}
 			const result = check(runSetupAudit(inputs({ cloudflareAnalytics: [state] })), "CFG-INTEG-02")
 			expect(result.status).toBe("pass")
-			expect(result.detail).toContain("unavailable")
+			expect(result.detail).toContain("not included in the Cloudflare plan")
 			expect(result.affected).toEqual([
 				expect.objectContaining({
 					name: "firewall_events · example.com",
@@ -1475,7 +1475,7 @@ describe("integration checks", () => {
 		)
 		expect(result.status).toBe("fail")
 		expect(result.detail).toContain("1 Cloudflare dataset has failed")
-		expect(result.detail).toContain("1 unavailable")
+		expect(result.detail).toContain("1 dataset not included in the Cloudflare plan")
 		expect(result.affected).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({

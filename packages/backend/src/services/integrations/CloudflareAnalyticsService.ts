@@ -1757,7 +1757,11 @@ export class CloudflareAnalyticsService extends Context.Service<
 				? []
 				: Arr.filter(
 						rows,
-						(row) => DATASET_BY_ID.get(row.dataset)?.scope === "zone" && !seen.has(row.zoneId),
+						// Already-vanished rows (off, settings cleared) are written once, not every discovery.
+						(row) =>
+							DATASET_BY_ID.get(row.dataset)?.scope === "zone" &&
+							!seen.has(row.zoneId) &&
+							(row.enabled || row.settingsJson !== null),
 					)
 			yield* updateRows(
 				Arr.map(vanished, (row) => row.id),
@@ -1906,19 +1910,22 @@ export class CloudflareAnalyticsService extends Context.Service<
 										dataset.availableFieldsNeedle,
 									)
 									const disabled = cloudflareDatasetUnavailable(settingsJson)
+									const recovered =
+										!disabled &&
+										settings?.enabled === true &&
+										cloudflareDatasetUnavailable(row.settingsJson)
 									const set: StateRowSet = {
 										settingsJson,
 										settingsFetchedAt: now,
 										quantilesAvailable,
 										...(disabled
 											? { enabled: false, lastError: null, lastErrorAt: null }
-											: settings?.enabled === true &&
-												  cloudflareDatasetUnavailable(row.settingsJson)
+											: recovered
 												? { enabled: true }
 												: undefined),
 										updatedAt: now,
 									}
-									const key = `${settingsJson}|${quantilesAvailable}|${disabled ? "false" : settings?.enabled === true && cloudflareDatasetUnavailable(row.settingsJson) ? "true" : ""}`
+									const key = `${settingsJson}|${quantilesAvailable}|${disabled ? "false" : recovered ? "true" : ""}`
 									const group = updates.get(key)
 									if (group) group.ids.push(row.id)
 									else updates.set(key, { ids: [row.id], set })

@@ -571,7 +571,7 @@ describe("Cloudflare unavailable dataset audit projection", () => {
 				Arr.findFirst(report.checks, (check) => check.id === "CFG-INTEG-02"),
 			)
 			assert.strictEqual(check.status, "fail")
-			assert.include(check.detail!, "1 unavailable")
+			assert.include(check.detail!, "1 dataset not included in the Cloudflare plan")
 			assert.isTrue(
 				Arr.some(
 					check.affected,
