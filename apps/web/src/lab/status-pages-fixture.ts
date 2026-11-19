@@ -1,6 +1,6 @@
 import { StatusPageId, UptimeMonitorId } from "@maple/domain"
 import type { V2StatusPage } from "@maple/domain/http/v2"
-import { DEFAULT_STATUS_PAGE_THEME } from "@maple/domain/status-page"
+import { DEFAULT_STATUS_PAGE_THEME, type StatusPagePublicSnapshot } from "@maple/domain/status-page"
 import { Schema, Array as Arr } from "effect"
 import { makeComponent, makeDays, makeSnapshot } from "@maple/status-page/fixtures"
 import { type StatusPageSummary, summarizePage } from "../page/status-pages/shared/derive"
@@ -56,7 +56,7 @@ const page = (n: number, fields: Partial<V2StatusPage>): V2StatusPage => ({
 })
 
 /** Each monitored component's uptime monitor, so its row links to the monitor's checks. */
-const monitorsOf = (snapshot: ReturnType<typeof makeSnapshot>) =>
+const monitorsOf = (snapshot: StatusPagePublicSnapshot) =>
 	Arr.flatMap(snapshot.components, (component, index) =>
 		component.monitored
 			? [
