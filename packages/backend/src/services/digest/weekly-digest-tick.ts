@@ -8,8 +8,12 @@ import type { MapleDb, MapleDbError } from "@maple/db/client"
 import type { DigestSubscriptionRow } from "@maple/db/tables"
 import type { EdgeCacheServiceApi } from "@maple/cache"
 import type { DigestPersistenceError } from "@maple/domain/http"
-import { Cause, Clock, Effect, Array as Arr, Record as Rec } from "effect"
+import { membershipGrants } from "@maple/auth"
+import { OrgId, UserId } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
+import { Cause, Clock, Effect, Option, Array as Arr, Record as Rec } from "effect"
 import type { EmailServiceApi } from "@maple/backend/platform/EmailService"
+import type { OrgMembershipServiceApi } from "@maple/backend/services/auth/OrgMembershipService"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { runWarehouseOrgTurn } from "@maple/backend/services/warehouse/warehouse-org-quarantine"
 import { digestResendCutoffMs, isDigestDue } from "./digest-schedule"
@@ -61,12 +65,37 @@ export interface WeeklyDigestTickInput<EP, ER, R> {
 	readonly groupBy: (row: DigestSubscriptionRow) => string
 	/** The group's email, or `undefined` when there is nothing to say; `head` speaks for the group. */
 	readonly prepare: (head: DigestSubscriptionRow) => Effect.Effect<DigestEmail<ER> | undefined, EP, R>
-	/** Whether a claimed subscriber may still receive it; asked after the claim, so once a window. */
-	readonly mayReceive?: (row: DigestSubscriptionRow) => Effect.Effect<boolean>
+	/** Asked after the claim, so once a window, whether each claimed subscriber still reads telemetry. */
+	readonly memberships: OrgMembershipServiceApi
 	readonly failureMessage: string
 	readonly skipMessage?: string
 	readonly logQuarantine?: boolean
 }
+
+/**
+ * Whether a subscriber's role still reads telemetry, checked before each send: the daily Clerk sweep
+ * lags a role change by up to a day. Without a directory (self-hosted) everyone does; a failed
+ * lookup skips them this window.
+ */
+const readsTelemetry = (memberships: OrgMembershipServiceApi, sub: DigestSubscriptionRow) =>
+	memberships.directory === "none"
+		? Effect.succeed(true)
+		: memberships.verify(UserId.make(sub.userId), OrgId.make(sub.orgId)).pipe(
+				Effect.map(
+					Option.match({
+						onNone: () => false,
+						onSome: (membership) => Policy.can(membershipGrants(membership), "telemetry:read"),
+					}),
+				),
+				Effect.catch((error) =>
+					Effect.as(
+						Effect.logWarning("Skipping a digest recipient whose role could not be read").pipe(
+							Effect.annotateLogs({ orgId: sub.orgId, error: error.message }),
+						),
+						false,
+					),
+				),
+			)
 
 export const runWeeklyDigestTick = <EP, ER, R>(input: WeeklyDigestTickInput<EP, ER, R>) =>
 	Effect.gen(function* () {
@@ -143,10 +172,9 @@ export const runWeeklyDigestTick = <EP, ER, R>(input: WeeklyDigestTickInput<EP, 
 							}),
 						)
 					}
-					const recipients =
-						input.mayReceive === undefined
-							? claimed
-							: yield* Effect.filter(claimed, input.mayReceive)
+					const recipients = yield* Effect.filter(claimed, (sub) =>
+						readsTelemetry(input.memberships, sub),
+					)
 					if (recipients.length === 0) return []
 					rendered++
 					const message = yield* input.prepare(head)

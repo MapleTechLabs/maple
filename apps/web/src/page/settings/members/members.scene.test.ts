@@ -299,4 +299,33 @@ describe("custom roles on the members page", () => {
 			expectView(role("combobox", { name: "Role of grace" })).toHaveText("On-call responder"),
 		)
 	})
+
+	test("a member whose custom role is gone reads as No role, and an admin gives them one", () => {
+		const roleless = { ...member("eve"), role: "org:custom", customRoleId: null }
+		scene(
+			{ update: (model: Model, message: Message) => update(model, message), view: view_ },
+			given(loaded(Policy.grantsOf(["org:member"]), [roleless])),
+			expectView(text("No role")).toExist(),
+			expectView(text("Holds no permissions until an admin picks a role.")).toExist(),
+			expectView(text("Custom")).not.toExist(),
+		)
+		scene(
+			{ update: (model: Model, message: Message) => update(model, message), view: view_ },
+			given(loaded(ADMIN, [roleless])),
+			expectView(role("combobox", { name: "Role of eve" })).toHaveText("No role"),
+			expectView(text("Holds no permissions. Pick a role.")).toExist(),
+		)
+		const picked = update(
+			loaded(ADMIN, [roleless]),
+			Message.GotRoleSelectMessage({
+				memberId: "eve",
+				message: { _tag: "SelectedItem", index: 1, value: "member" },
+			}),
+		)
+		const save = Arr.findFirst(picked.commands ?? [], (command) => command.name === "SetMemberRole")
+		expect(Option.getOrUndefined(save)?.args).toMatchObject({
+			userId: "user_eve",
+			ref: { _tag: "BuiltIn", clerkKey: "org:member" },
+		})
+	})
 })

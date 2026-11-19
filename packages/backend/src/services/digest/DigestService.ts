@@ -55,7 +55,7 @@ import { verifyUnsubscribeToken } from "./unsubscribe-token"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { systemTenant } from "@maple/backend/services/auth/system-tenant"
 import { runWeeklyDigestTick } from "./weekly-digest-tick"
-import { clerkClientFor, membershipGrants } from "@maple/auth"
+import { clerkClientFor } from "@maple/auth"
 import * as Policy from "@maple/domain/policy"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 const SYSTEM_DIGEST_USER = UserId.make("system-digest")
@@ -1049,32 +1049,6 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			)
 		})
 
-		/**
-		 * Whether a subscriber's role still reads telemetry, checked before each send: the daily sweep
-		 * lags a role change by up to a day. Without a directory (self-hosted) everyone does; a failed
-		 * lookup skips them this window.
-		 */
-		const readsTelemetry = (sub: DigestSubscriptionRow) =>
-			memberships.directory === "none"
-				? Effect.succeed(true)
-				: memberships.verify(UserId.make(sub.userId), OrgId.make(sub.orgId)).pipe(
-						Effect.map(
-							Option.match({
-								onNone: () => false,
-								onSome: (membership) =>
-									Policy.can(membershipGrants(membership), "telemetry:read"),
-							}),
-						),
-						Effect.catch((error) =>
-							Effect.as(
-								Effect.logWarning(
-									"Skipping a digest recipient whose role could not be read",
-								).pipe(Effect.annotateLogs({ orgId: sub.orgId, error: error.message })),
-								false,
-							),
-						),
-					)
-
 		const runDigestTick = Effect.fn("DigestService.runDigestTick")(function* () {
 			if (!email.isConfigured) {
 				return { sentCount: 0, errorCount: 0, skipped: true }
@@ -1146,7 +1120,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 								renderDigestHtml({ ...props, unsubscribeUrl }),
 						}
 					}),
-				mayReceive: readsTelemetry,
+				memberships,
 				failureMessage: "Digest failed for org",
 				skipMessage: "Skipping digest for org with quarantined warehouse",
 			})

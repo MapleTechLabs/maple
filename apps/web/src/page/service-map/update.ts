@@ -2,6 +2,7 @@ import { pickerStep } from "../kit/page-time"
 import { applySteps } from "../kit/keyed-step"
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { DB_NODE_PREFIX } from "@maple/views/service-map/graph/service-map-utils"
+import * as Policy from "@maple/domain/policy"
 import { Option, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -11,7 +12,9 @@ import * as ServiceMap from "@maple/views/service-map/map/service-map"
 import { sameFocus } from "@maple/views/service-map/map/state"
 import * as Select from "@maple/views/ui/select"
 import * as Tabs from "@maple/views/ui/tabs"
+import { isClerkAuthEnabled } from "../../platform/auth-mode"
 import type { PageContext } from "../contract"
+import { acceptGrants } from "../kit/session-grants"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import { routeWindowStep, snapModeOf } from "../kit/route-window"
 import * as TimeRangePicker from "../kit/time-range-picker"
@@ -20,6 +23,7 @@ import * as Tiles from "./tiles/update"
 import { topologyOf } from "./view-scene3d"
 import {
 	CompleteReloadSpin,
+	FetchServiceMapSession,
 	LoadSignalPresence,
 	LoadWorld,
 	ReadStored,
@@ -56,6 +60,8 @@ const toMap = (message: ServiceMap.Message) => Message.GotMapMessage({ message }
 
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
 	const model: Model = {
+		// None until the session answers; self-hosted mode has no session and holds every permission.
+		grants: isClerkAuthEnabled ? [] : Policy.allPermissions,
 		search: route.search,
 		window: null,
 		windowZone: null,
@@ -89,6 +95,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	return {
 		model,
 		commands: [
+			...(isClerkAuthEnabled ? [FetchServiceMapSession({ orgId: context.orgId })] : []),
 			LoadSignalPresence({ orgId: context.orgId }),
 			resolveCommand(model, context, "Load"),
 			ReadStored({ orgId: context.orgId }),
@@ -400,6 +407,7 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
 		}),
 		...chartEnvHandlers(model),
+		CompletedFetchSession: (answer) => ({ model: acceptGrants(model, context.orgId, answer) }),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {

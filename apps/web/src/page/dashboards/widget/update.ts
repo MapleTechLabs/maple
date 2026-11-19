@@ -6,6 +6,7 @@ import {
 	formatBucketSecondsShort,
 	resolveTimeRangeWindow,
 } from "@maple/query-engine"
+import * as Policy from "@maple/domain/policy"
 import { Option, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -291,6 +292,18 @@ export const canApply = (model: Model): boolean => {
 	const rawSql = isSqlSource(model) ? model.rawSql : null
 	return rawSql === null ? validationErrorOf(model.state) === null : isRunnableSql(rawSql)
 }
+
+/**
+ * The permission Apply needs that the viewer may lack: `dashboards:edit`, and `query:sql` once the
+ * Raw SQL differs from what the widget was opened with (the API refuses new SQL without it).
+ */
+export const applyPermission = (model: Model): Policy.Permission =>
+	isSqlSource(model) &&
+	model.rawSql !== null &&
+	model.rawSql.draft.sql !== model.rawSql.initial.sql &&
+	Policy.can(model.grants, "dashboards:edit")
+		? "query:sql"
+		: "dashboards:edit"
 
 /** Run preview: the editing state is staged, unless the query set is invalid. */
 export const runPreview = (model: Model, context: PageContext): Return =>

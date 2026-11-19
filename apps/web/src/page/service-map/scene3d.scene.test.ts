@@ -1,4 +1,5 @@
 import { OrgId } from "@maple/domain"
+import * as Policy from "@maple/domain/policy"
 import {
 	ApplyWorldOpsResponse,
 	IsoDateTimeString,
@@ -84,10 +85,11 @@ const BUNDLE: Bundle = {
 	runtimes: [],
 }
 
-/** `/service-map?view=3d` entered, windowed, with the prefs and the bundle in. */
-const loaded = (): Model => {
+/** `/service-map?view=3d` entered by a session holding `grants`, windowed, with the prefs and the bundle in. */
+const loaded = (grants: ReadonlyArray<Policy.Permission> = Policy.grantsOf(["org:member"])): Model => {
 	const entered = init({ search: { view: "3d" } }, context).model
 	const steps: ReadonlyArray<(model: Model) => Message> = [
+		() => Message.CompletedFetchSession({ orgId, grants }),
 		() =>
 			Message.CompletedResolveWindow({ window, timeZone: "UTC", facetsWindow, nowMs: 0, mode: "Load" }),
 		() => Message.CompletedReadStored({ stored: STORED }),
@@ -571,6 +573,29 @@ describe("service map 3D: customize", () => {
 				Message.CompletedSaveWorld({ orgId, batch: 2, result: Result.fail(toLoadFailure("x")) }),
 			),
 			expectView(text("Not saved")).toExist(),
+		)
+	})
+
+	test("an analyst sees Customize locked with the reason", () => {
+		const ready = run(loaded(Policy.grantsOf(["org:analyst"])), [
+			scene3d(Scene3d.Message.ResolvedTheme({ isDark: false })),
+			scene3d(Scene3d.Message.LoadedWorld({ result: Result.succeed(world([])) })),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(ready),
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
+			Mount.resolve({ name: MountResizeGroup.name }, ResizableMessage.EndedDrag()),
+			Mount.resolve(
+				{ name: Scene3d.WatchTheme.name },
+				scene3d(Scene3d.Message.ResolvedTheme({ isDark: false })),
+			),
+			Mount.resolve(
+				{ name: Scene3d.MountScene.name },
+				scene3d(Scene3d.Message.PickedNode({ nodeId: null })),
+			),
+			expectView(role("button", { name: "Customize" })).toBeDisabled(),
+			expectView(role("group", { name: Policy.denialFor("service_map:edit").message })).toExist(),
 		)
 	})
 })

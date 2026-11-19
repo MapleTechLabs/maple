@@ -296,12 +296,18 @@ export const memberRoleKey = (member: MemberRow): string =>
 		? (member.customRoleId ?? Policy.CUSTOM_ROLE_CLERK_KEY)
 		: Option.getOrElse(builtInKeyOf(toOrgRole(member.role)), () => member.role)
 
+/** On `org:custom` with no role on the membership (its role was deleted mid-change): they hold nothing. */
+export const holdsNoRole = (member: MemberRow): boolean =>
+	member.role === Policy.CUSTOM_ROLE_CLERK_KEY && member.customRoleId === null
+
 /** A member's role by name; a custom role the list does not name reads "Custom". */
 export const memberRoleName = (model: Pick<Model, "roles">, member: MemberRow): string =>
-	Option.match(findRole(roleEntriesOf(model), memberRoleKey(member)), {
-		onNone: () => "Custom",
-		onSome: (role) => role.name,
-	})
+	holdsNoRole(member)
+		? "No role"
+		: Option.match(findRole(roleEntriesOf(model), memberRoleKey(member)), {
+				onNone: () => "Custom",
+				onSome: (role) => role.name,
+			})
 
 export const roleSelectFor = (model: Model, member: MemberRow): Select.Model =>
 	model.roleSelects[member.id] ??

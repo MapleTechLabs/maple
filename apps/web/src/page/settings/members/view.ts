@@ -32,6 +32,7 @@ import { settingsSection, settingsSections } from "../../kit/settings-section"
 import { canManage, type InvitationRow, type MemberRow, Message, type Model } from "./model"
 import {
 	hasMore,
+	holdsNoRole,
 	isSavingFor,
 	MANAGE_ROLES,
 	memberRoleKey,
@@ -127,8 +128,33 @@ const skeletonRow = (h: H, hasActions: boolean, index: number): Html =>
 		[h.Key(`skeleton-${index}`)],
 	)
 
+/** Under "No role": why the member can't do anything, and who can fix it. */
+const noRoleHint = (h: H, member: MemberRow, canEdit: boolean, isInset: boolean): ReadonlyArray<Html> =>
+	holdsNoRole(member)
+		? [
+				typography(
+					h,
+					{
+						as: "div",
+						size: "xs",
+						tone: "muted",
+						className: cn("mt-1 whitespace-normal", isInset && "px-2.5"),
+					},
+					[
+						canEdit
+							? "Holds no permissions. Pick a role."
+							: "Holds no permissions until an admin picks a role.",
+					],
+				),
+			]
+		: []
+
 const roleCell = (h: H, model: Model, member: MemberRow, canEdit: boolean): Html => {
-	if (!canEdit) return tableCell(h, [roleText(h, memberRoleName(model, member), canManage(model))])
+	if (!canEdit)
+		return tableCell(h, [
+			roleText(h, memberRoleName(model, member), canManage(model)),
+			...noRoleHint(h, member, false, canManage(model)),
+		])
 	const isConfirming = model.pendingRole?.memberId === member.id && model.pendingRole._tag !== "Applying"
 	return tableCell(h, [
 		h.submodel({
@@ -146,6 +172,7 @@ const roleCell = (h: H, model: Model, member: MemberRow, canEdit: boolean): Html
 				toView: (parts) => h.div([h.Class("contents")], parts),
 			},
 		}),
+		...noRoleHint(h, member, true, true),
 	])
 }
 

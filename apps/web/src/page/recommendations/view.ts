@@ -17,6 +17,7 @@ import { dashboardPage } from "../kit/dashboard-page"
 import { detailTitle, detailTitleSkeleton } from "../kit/detail-header"
 import { relativeTime } from "../kit/relative-time"
 import { resourceNotFound } from "../kit/resource-not-found"
+import { gatedControl } from "../kit/session-grants"
 import { selectedOf } from "./update"
 import { body, code, isApplyable, isLive } from "./view-body"
 import { RECOMMENDATION_KIND_LABEL, RECOMMENDATION_STATUS_LABEL } from "../kit/recommendations"
@@ -115,16 +116,24 @@ const actionGroup = (h: H, model: Model, issue: V2Recommendation): Html => {
 		])
 	if (issue.status === "dismissed")
 		return vstack(h, { gap: "2" }, [
-			button(
+			gatedControl(
 				h,
-				{
-					variant: "outline",
-					size: "sm",
-					className: "w-full",
-					isLoading: model.busy === "reopen",
-					attributes: [h.OnClick(Message.ClickedReopen())],
-				},
-				[icon(h, "ArrowRotateAnticlockwiseIcon"), "Reopen recommendation"],
+				model,
+				"recommendations:triage",
+				(isDisabled) =>
+					button(
+						h,
+						{
+							variant: "outline",
+							size: "sm",
+							className: "w-full",
+							isDisabled,
+							isLoading: model.busy === "reopen",
+							attributes: [h.OnClick(Message.ClickedReopen())],
+						},
+						[icon(h, "ArrowRotateAnticlockwiseIcon"), "Reopen recommendation"],
+					),
+				{ className: "w-full" },
 			),
 			typography(h, { size: "xs", tone: "muted", as: "p", className: "leading-relaxed" }, [
 				"Dismissed recommendations come back if the key is still emitted.",
@@ -132,26 +141,42 @@ const actionGroup = (h: H, model: Model, issue: V2Recommendation): Html => {
 		])
 	return vstack(h, { gap: "2" }, [
 		isApplyable(issue)
-			? button(
+			? gatedControl(
 					h,
-					{
-						className: "w-full",
-						isLoading: model.busy === "apply",
-						attributes: [h.OnClick(Message.ClickedApply())],
-					},
-					[icon(h, "BoltIcon"), "Apply mapping"],
+					model,
+					"attribute_mappings:manage",
+					(isDisabled) =>
+						button(
+							h,
+							{
+								className: "w-full",
+								isDisabled,
+								isLoading: model.busy === "apply",
+								attributes: [h.OnClick(Message.ClickedApply())],
+							},
+							[icon(h, "BoltIcon"), "Apply mapping"],
+						),
+					{ className: "w-full" },
 				)
 			: typography(h, { size: "xs", tone: "muted", as: "p", className: "leading-relaxed" }, [
 					"This one is a manual fix: rename the attribute at your SDK. Maple can't apply it for you.",
 				]),
-		button(
+		gatedControl(
 			h,
-			{
-				className: "w-full",
-				isLoading: model.busy === "dismiss",
-				attributes: [h.OnClick(Message.ClickedDismiss())],
-			},
-			[icon(h, "XmarkIcon"), "Dismiss recommendation"],
+			model,
+			"recommendations:triage",
+			(isDisabled) =>
+				button(
+					h,
+					{
+						className: "w-full",
+						isDisabled,
+						isLoading: model.busy === "dismiss",
+						attributes: [h.OnClick(Message.ClickedDismiss())],
+					},
+					[icon(h, "XmarkIcon"), "Dismiss recommendation"],
+				),
+			{ className: "w-full" },
 		),
 	])
 }

@@ -17,7 +17,7 @@ import { widgetTile } from "../kit/tiles"
 import { MeasurePreview } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { canApply, previewWidgetOf } from "./update"
+import { applyPermission, canApply, previewWidgetOf } from "./update"
 import type { Widget } from "./lowering"
 import { leaveDialog } from "./view-dialog"
 import { queryEditor } from "./view-query"
@@ -202,7 +202,7 @@ export const topbarActions = Submodel.defineView<Model, Message, PageViewInputs>
 					},
 					["Cancel"],
 				),
-				gatedControl(h, model, "dashboards:edit", (isLocked) =>
+				gatedControl(h, model, applyPermission(model), (isLocked) =>
 					button(
 						h,
 						{
