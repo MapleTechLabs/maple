@@ -130,6 +130,8 @@ export const IngestRoleMembershipProvider = Provider.succeed(IngestRoleMembershi
 			news.loginId === olds.loginId &&
 			news.branch === olds.branch &&
 			news.database === olds.database &&
+			// State from before the URL was echoed has none; that is an update, not a crash.
+			Redacted.isRedacted(olds.url) &&
 			Redacted.value(news.url) === Redacted.value(olds.url)
 		return same ? undefined : ({ action: "update" } as const)
 	}),
