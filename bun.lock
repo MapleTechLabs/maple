@@ -674,6 +674,7 @@
         "@distilled.cloud/clerk": "1.0.0-rc.20",
         "@distilled.cloud/core": "1.0.0-rc.20",
         "@distilled.cloud/planetscale": "1.0.0-rc.20",
+        "@distilled.cloud/supabase": "1.0.0-rc.20",
         "@distilled.cloud/vercel": "1.0.0-rc.20",
         "@maple-dev/effect-clickhouse-http": "workspace:*",
         "@maple-dev/effect-orm": "0.10.0",
@@ -1400,6 +1401,8 @@
     "@distilled.cloud/planetscale": ["@distilled.cloud/planetscale@1.0.0-rc.20", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.20" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-/7Qm2CoTe5ux3Hw0wbnpCXe4C+3YDlvf414J/mo9S7jAU6lEUrBaWMhJCl0fKcHhzxfnJCcyP2+02VTrfvb3Vw=="],
 
     "@distilled.cloud/s3": ["@distilled.cloud/s3@1.0.0-rc.20", "", { "dependencies": { "@distilled.cloud/aws4signer": "1.0.0-rc.20", "@distilled.cloud/core": "1.0.0-rc.20" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-MqJlG+CVCgkIX7iPDo8hb4YlcEELYTlJFLg2Whp8TjBPieViNiiRAJR/5TtDApa38dzrTsMc69ul965Myagrdg=="],
+
+    "@distilled.cloud/supabase": ["@distilled.cloud/supabase@1.0.0-rc.20", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.20" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-4O+0CpOTG3F32GlMQPHJhbDAzJCvgRPBHZ4ycIPA4aUP4LjnT9eNhX49oxq/wFfts9HcbZcyCnS+sp1ZiSnclQ=="],
 
     "@distilled.cloud/vercel": ["@distilled.cloud/vercel@1.0.0-rc.20", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.20" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-uNMP6GsDfR9zZutcWP1APXG6sO8Ck1llfXG5lZ+VuXmrvKEPKjgUu7PkzJRask5MHVr0dsTUV2kJ8vpaNJwSVA=="],
 

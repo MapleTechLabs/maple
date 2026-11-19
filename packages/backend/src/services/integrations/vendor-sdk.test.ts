@@ -14,13 +14,15 @@ const Drain = Schema.Struct({ id: Schema.String })
 const withClient = <A, E>(
 	fake: VendorFake.VendorFake,
 	use: (client: ReturnType<typeof make>) => Effect.Effect<A, E>,
+	rateLimitResetHeader?: string,
 ) =>
 	Effect.gen(function* () {
-		return yield* use(make(yield* HttpClient.HttpClient))
+		return yield* use(make(yield* HttpClient.HttpClient, rateLimitResetHeader))
 	}).pipe(Effect.provide(Layer.merge(FetchHttpClient.layer, fake.layer)))
 
-const make = (httpClient: HttpClient.HttpClient) =>
+const make = (httpClient: HttpClient.HttpClient, rateLimitResetHeader?: string) =>
 	VendorSdk.make({
+		...(rateLimitResetHeader === undefined ? undefined : { rateLimitResetHeader }),
 		httpClient,
 		peerService: "acme",
 		sdk: Layer.mergeAll(
@@ -219,6 +221,31 @@ describe("VendorSdk", () => {
 			Effect.gen(function* () {
 				const error = yield* Effect.flip(createDrain(client))
 				assert.deepStrictEqual([error.kind, error.status], ["upstream", 408])
+			}),
+		)
+	})
+
+	it.effect("reads the wait of a 429 from the vendor's own reset header", () => {
+		const fake = VendorFake.make({
+			routes: [drainsRoute(() => VendorFake.json({ error: {} }, 429, { "x-ratelimit-reset": "120" }))],
+		})
+		return withClient(
+			fake,
+			(client) =>
+				Effect.gen(function* () {
+					const error = yield* Effect.flip(listDrains(client))
+					assert.deepStrictEqual([error.kind, error.retryAfterSeconds], ["rate_limited", 120])
+				}),
+			"x-ratelimit-reset",
+		)
+	})
+
+	it.effect("keeps no message from a refusal whose body had none", () => {
+		const fake = VendorFake.make({ routes: [drainsRoute(() => VendorFake.text("", 403))] })
+		return withClient(fake, (client) =>
+			Effect.gen(function* () {
+				const error = yield* Effect.flip(listDrains(client))
+				assert.deepStrictEqual([error.kind, error.detail], ["forbidden", undefined])
 			}),
 		)
 	})

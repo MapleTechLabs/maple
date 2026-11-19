@@ -27,6 +27,8 @@ export interface VendorSdkOptions<E, R> {
 	/** Per attempt, the answer's body included. */
 	readonly timeout: Duration.Input
 	readonly maxRetryAfter?: Duration.Input
+	/** A header holding the seconds to wait on a 429 without `retry-after`, e.g. `x-ratelimit-reset`. */
+	readonly rateLimitResetHeader?: string
 }
 
 export interface VendorSdkCall {
@@ -93,6 +95,33 @@ const recordAnswer = (answered: Ref.Ref<Answered>) =>
 		}),
 	)
 
+/**
+ * The SDK reads the wait of a 429 from `retry-after` only. A vendor that sends it in another header
+ * gets it copied into `retry-after`, so the wait still reaches the caller.
+ */
+const retryAfterFrom = (header: string) =>
+	HttpClient.transformResponse(
+		Effect.flatMap((response: HttpClientResponse.HttpClientResponse) => {
+			const reset = response.headers[header]
+			if (
+				response.status !== 429 ||
+				response.headers["retry-after"] !== undefined ||
+				reset === undefined
+			) {
+				return Effect.succeed(response)
+			}
+			return Effect.map(response.arrayBuffer, (body) =>
+				HttpClientResponse.fromWeb(
+					response.request,
+					new Response(body.byteLength === 0 ? null : body, {
+						status: response.status,
+						headers: { ...response.headers, "retry-after": reset },
+					}),
+				),
+			)
+		}),
+	)
+
 const DEFAULT_MAX_RETRY_AFTER = Duration.seconds(10)
 
 const retryAfterSecondsOf = (error: SdkFailure): number | undefined =>
@@ -100,13 +129,24 @@ const retryAfterSecondsOf = (error: SdkFailure): number | undefined =>
 		? Math.ceil(Duration.toSeconds(error.retryAfter))
 		: undefined
 
+/** The SDK fills `HTTP <status>` in where the body had no message: that is no vendor message. */
+const STATUS_PLACEHOLDER = /^HTTP \d{3}$/
+
 const messageOf = (error: SdkFailure): string | undefined =>
-	"message" in error && typeof error.message === "string" && error.message !== ""
+	"message" in error &&
+	typeof error.message === "string" &&
+	error.message !== "" &&
+	!STATUS_PLACEHOLDER.test(error.message)
 		? error.message
 		: undefined
 
 export const make = <E, R>(options: VendorSdkOptions<E, R>) => {
 	const { peerService } = options
+	const refusing = refuseRedirects(options.httpClient)
+	const httpClient =
+		options.rateLimitResetHeader === undefined
+			? refusing
+			: retryAfterFrom(options.rateLimitResetHeader)(refusing)
 	const retryPolicy: VendorHttp.VendorRetryPolicy = {
 		schedule: VENDOR_TRANSIENT_RETRY,
 		maxRetryAfterSeconds: Duration.toSeconds(options.maxRetryAfter ?? DEFAULT_MAX_RETRY_AFTER),
@@ -225,7 +265,7 @@ export const make = <E, R>(options: VendorSdkOptions<E, R>) => {
 					options.sdk,
 					Layer.succeed(
 						HttpClient.HttpClient,
-						recordTarget(span)(recordAnswer(answered)(refuseRedirects(options.httpClient))),
+						recordTarget(span)(recordAnswer(answered)(httpClient)),
 					),
 				]),
 				// A redirect is not the vendor answering: the token is never followed to another host.
