@@ -128,6 +128,7 @@ export class OtelIngestKey extends Secret<OtelIngestKey>()("MAPLE_OTEL_INGEST_KE
 	issuer: "maple",
 	consumers: [
 		"api",
+		"audit-archive",
 		"ai",
 		"alerting",
 		"chat-bot",

@@ -122,6 +122,22 @@
         "wrangler": "^4.162.0",
       },
     },
+    "apps/audit-archive": {
+      "name": "@maple/audit-archive",
+      "dependencies": {
+        "@alchemy.run/cloudflare": "catalog:alchemy",
+        "@maple/infra": "workspace:*",
+        "alchemy": "catalog:alchemy",
+        "effect": "catalog:effect",
+      },
+      "devDependencies": {
+        "@cloudflare/workers-types": "catalog:alchemy",
+        "@effect/vitest": "catalog:effect",
+        "@types/node": "catalog:tooling",
+        "typescript": "catalog:tooling",
+        "vitest": "catalog:",
+      },
+    },
     "apps/chat-bot": {
       "name": "@maple/chat-bot",
       "dependencies": {
@@ -1588,6 +1604,8 @@
     "@maple/alerting-core": ["@maple/alerting-core@workspace:packages/alerting-core"],
 
     "@maple/api": ["@maple/api@workspace:apps/api"],
+
+    "@maple/audit-archive": ["@maple/audit-archive@workspace:apps/audit-archive"],
 
     "@maple/auth": ["@maple/auth@workspace:packages/auth"],
 

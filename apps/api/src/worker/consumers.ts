@@ -118,6 +118,7 @@ export const registerQueueConsumers = (
 		)
 		// The dead-letter setting is a plan-time value: the DLQ's resolved props
 		// carry its physical name there and are empty in the isolate.
+		// Fed by the audit-archive Worker once each batch has its write-once copy.
 		const auditEventsDlq = yield* AuditEventsDlq
 		const auditEventsQueue = yield* AuditEventsQueue
 		yield* Cloudflare.Queues.consumeQueueMessages(
