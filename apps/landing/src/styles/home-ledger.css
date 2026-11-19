@@ -1,0 +1,580 @@
+/* The home page below the hero: one ruled sheet. Every section is a `.ledger`
+   with the same head, and frames share hairlines instead of drawing their own. */
+
+.ledger {
+	border-top: 1px solid var(--home-rule);
+	background: var(--home-paper);
+}
+.ledger > .shell {
+	padding-block: clamp(64px, 7.5vw, 108px);
+}
+/* A second beat of the chapter above it: no rule, and the gap closes. */
+.ledger--continued {
+	border-top: 0;
+}
+.ledger--continued > .shell {
+	padding-top: 0;
+}
+
+/* ── Head: one display line, one sentence, one link ── */
+.ledger-head {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) max-content;
+	align-items: end;
+	gap: 20px 48px;
+	margin-bottom: clamp(32px, 4vw, 52px);
+}
+.ledger-head h2 {
+	grid-column: 1 / -1;
+	max-width: 17ch;
+	color: var(--home-ink);
+	font-size: clamp(2.25rem, 6.2vw, 5.5rem);
+	line-height: 1;
+}
+.ledger-head p {
+	max-width: 62ch;
+	color: var(--home-muted);
+	font-size: 17px;
+}
+.ledger-head__links {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10px 28px;
+}
+.ledger-link {
+	padding-bottom: 2px;
+	border-bottom: 1px solid var(--home-orange);
+	color: var(--home-ink);
+	font-size: 15px;
+	white-space: nowrap;
+	transition: color 150ms ease;
+}
+.ledger-link:hover {
+	color: var(--home-orange);
+}
+.ledger-link:focus-visible {
+	outline: 2px solid var(--home-orange);
+	outline-offset: 4px;
+}
+html:not([lang="en"]) .ledger-head h2 {
+	max-width: 22ch;
+	font-size: clamp(1.9rem, 4.4vw, 3.75rem);
+	line-height: 1.14;
+}
+html[lang="ja"] .ledger-head h2 {
+	word-break: auto-phrase;
+}
+html[lang="ko"] .ledger-head h2 {
+	word-break: keep-all;
+}
+
+/* ── Joined frames ── */
+.ledger-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 1px;
+	border: 1px solid var(--home-rule);
+	background: var(--home-rule);
+}
+.ledger-grid--thirds {
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.ledger-grid--agent {
+	grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+}
+.ledger-cell {
+	/* The containing block for anything a live frame positions absolutely, so the phone strip
+	   clips it instead of the page scrolling sideways. */
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	background: var(--home-paper);
+}
+.ledger-cell--wide {
+	grid-column: 1 / -1;
+}
+.ledger-cell--two {
+	grid-column: span 2;
+}
+.ledger-cell--pad {
+	padding: 28px;
+}
+/* A frame inside the sheet takes the sheet's rules. */
+.monumental-home .ledger-cell .live-frame {
+	border: 0;
+}
+.ledger-cap {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) max-content;
+	align-items: baseline;
+	gap: 8px 24px;
+	padding: 24px 28px;
+}
+.ledger-cap--top {
+	border-bottom: 1px solid var(--home-rule);
+}
+.ledger-cap--bottom {
+	flex: 1;
+	align-content: start;
+	border-top: 1px solid var(--home-rule);
+}
+.monumental-home .ledger-cap :where(h2, h3) {
+	color: var(--home-ink);
+	font-size: 22px;
+	font-weight: 700;
+	line-height: 1.2;
+	letter-spacing: -0.03em;
+	text-wrap: balance;
+}
+.ledger-cap p {
+	grid-column: 1 / -1;
+	max-width: 60ch;
+	color: var(--home-muted);
+	font-size: 14.5px;
+}
+.ledger-cap a {
+	color: var(--home-ink);
+	font-size: 14px;
+	white-space: nowrap;
+	transition: color 150ms ease;
+}
+.ledger-cap a:hover {
+	color: var(--home-orange);
+}
+.ledger-cap__links {
+	display: flex;
+	flex-wrap: wrap;
+	grid-column: 1 / -1;
+	gap: 6px 22px;
+	margin-top: 4px;
+}
+.ledger-cap__links a + a {
+	color: var(--home-muted);
+}
+
+/* ── Signals: the request plays once as it scrolls in ── */
+@media (prefers-reduced-motion: no-preference) {
+	.ledger-trace[data-armed] .w-48 > div {
+		opacity: 0.12;
+	}
+	.ledger-trace[data-played] .w-48 > div {
+		opacity: 1;
+		transition: opacity 260ms cubic-bezier(0.22, 1, 0.36, 1);
+		transition-delay: calc(var(--i, 0) * 34ms);
+	}
+}
+
+/* ── Incident walkthrough: same head, the mechanism untouched ── */
+.monumental-home [data-scrollstory] {
+	border-top: 1px solid var(--home-rule);
+}
+.monumental-home [data-scrollstory] > .shell:first-child {
+	padding-top: clamp(64px, 7.5vw, 108px);
+}
+.monumental-home [data-scrollstory] > .shell:last-child {
+	padding-bottom: clamp(64px, 7.5vw, 108px);
+}
+.monumental-home [data-scrollstory] > .shell:first-child h2 {
+	max-width: 17ch;
+	margin-top: 0;
+	font-size: clamp(2.25rem, 6.2vw, 5.5rem);
+	line-height: 1;
+}
+.monumental-home [data-scrollstory] > .shell:first-child p {
+	margin-top: 20px;
+	font-size: 17px;
+}
+html:not([lang="en"]) .monumental-home [data-scrollstory] > .shell:first-child h2 {
+	max-width: 22ch;
+	font-size: clamp(1.9rem, 4.4vw, 3.75rem);
+	line-height: 1.14;
+}
+html[lang="ja"] .monumental-home [data-scrollstory] > .shell:first-child h2 {
+	word-break: auto-phrase;
+}
+html[lang="ko"] .monumental-home [data-scrollstory] > .shell:first-child h2 {
+	word-break: keep-all;
+}
+
+/* ── Proof: the one amber chapter between the hero and the close ── */
+.ledger-proof {
+	position: relative;
+	isolation: isolate;
+	overflow: clip;
+}
+.ledger-proof__art {
+	position: absolute;
+	z-index: -1;
+	right: 0;
+	bottom: 0;
+	left: 0;
+	width: 100%;
+	height: auto;
+	pointer-events: none;
+	mask-image: linear-gradient(to bottom, transparent, #000 45%);
+}
+.ledger-proof > .shell {
+	padding-top: clamp(64px, 7.5vw, 108px);
+	/* Clears the engraving's ground: the sky above it carries the logo row. */
+	padding-bottom: clamp(150px, 19vw, 300px);
+}
+.monumental-home main > section.ledger-proof.ledger-proof .ledger-proof__quote {
+	max-width: 18ch;
+	font-size: clamp(2.25rem, 6.2vw, 5.5rem);
+	font-weight: 750;
+	line-height: 1;
+	letter-spacing: -0.04em;
+	text-wrap: balance;
+}
+.ledger-proof blockquote footer {
+	margin-top: 28px;
+	font-size: 17px;
+}
+.ledger-proof__figures {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	margin-top: clamp(48px, 6vw, 80px);
+	border-top: 1px solid color-mix(in oklab, var(--primary-foreground) 45%, transparent);
+}
+.ledger-proof__figures > div {
+	display: flex;
+	flex-direction: column-reverse;
+	justify-content: flex-end;
+	gap: 10px;
+	padding: 24px 24px 0 0;
+}
+.ledger-proof__figures > div + div {
+	padding-left: 24px;
+	border-left: 1px solid color-mix(in oklab, var(--primary-foreground) 45%, transparent);
+}
+.ledger-proof__figures dd {
+	font-size: clamp(2.5rem, 5.4vw, 4.75rem);
+	font-weight: 750;
+	line-height: 0.95;
+	letter-spacing: -0.04em;
+}
+.monumental-home main > section.ledger-proof.ledger-proof .ledger-proof__figures dt {
+	max-width: 24ch;
+	font-size: 15px;
+	line-height: 1.4;
+}
+.ledger-proof__foot {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 20px 48px;
+	margin-top: clamp(36px, 4vw, 56px);
+	font-size: 15px;
+}
+.ledger-proof__logos {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 14px 30px;
+}
+.ledger-proof__logos li,
+.ledger-proof__logos a {
+	display: inline-flex;
+	align-items: center;
+	gap: 10px;
+	font-weight: 650;
+	letter-spacing: -0.01em;
+}
+.ledger-proof__label {
+	margin-right: 4px;
+	font-weight: 400;
+	opacity: 0.8;
+}
+
+/* ── Platform wall ── */
+.ledger-wall .ledger-cell {
+	flex-direction: column;
+}
+.ledger-wall__stage {
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	aspect-ratio: 4 / 3;
+	overflow: hidden;
+	background: var(--bg-deep);
+}
+/* The heatmap's cells breathe on its own page; in a sheet of nine frames nothing loops. */
+.monumental-home .ledger-wall .k8s-hm-cell {
+	animation: none;
+}
+.ledger-wall__stage > * {
+	min-width: 0;
+}
+.ledger-wall__last {
+	border-top: 0;
+}
+.ledger-wall__strip:focus-visible {
+	outline: 2px solid var(--home-orange);
+	outline-offset: 4px;
+}
+.ledger-wall__github {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 1px;
+	background: var(--home-rule);
+}
+.ledger-wall__github > li {
+	min-width: 0;
+	padding: 24px 28px 28px;
+	background: var(--home-paper);
+}
+.ledger-wall__github p {
+	margin-bottom: 16px;
+	color: var(--home-ink);
+	font-size: 14px;
+	font-weight: 600;
+}
+
+/* ── Ownership: install on the left, the terminal on the right ── */
+.ledger-install {
+	border: 1px solid var(--home-rule);
+	background: var(--home-pale);
+}
+.ledger-install pre {
+	overflow-x: auto;
+	padding: 16px 18px;
+	color: var(--home-ink);
+	font-size: 13px;
+}
+.ledger-install p {
+	padding: 12px 18px;
+	border-top: 1px solid var(--home-rule);
+	color: var(--home-muted);
+	font-size: 12px;
+}
+
+/* ── Agent points ── */
+.ledger-points > div {
+	padding: 22px 28px;
+	border-bottom: 1px solid var(--home-rule);
+}
+.ledger-points > div:last-child {
+	border-bottom: 0;
+}
+.ledger-points dt {
+	color: var(--home-ink);
+	font-size: 17px;
+	font-weight: 650;
+	letter-spacing: -0.02em;
+}
+.ledger-points dd {
+	margin-top: 6px;
+	max-width: 52ch;
+	color: var(--home-muted);
+	font-size: 14.5px;
+}
+
+/* ── The bill: one row per vendor ── */
+.ledger-bill {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 14px;
+	font-variant-numeric: tabular-nums;
+}
+.ledger-bill :where(th, td) {
+	padding: 15px 20px 15px 0;
+	border-bottom: 1px solid var(--home-rule);
+	color: var(--home-ink);
+	font-weight: 400;
+	text-align: left;
+	vertical-align: top;
+}
+.ledger-bill thead th {
+	color: var(--home-muted);
+	font-size: 13px;
+}
+.ledger-bill tbody th {
+	font-weight: 650;
+	white-space: nowrap;
+}
+.ledger-bill tbody th a {
+	border-bottom: 1px solid var(--home-rule);
+	transition: border-color 150ms ease;
+}
+.ledger-bill tbody th a:hover {
+	border-bottom-color: var(--home-ink);
+}
+.ledger-bill tr.is-maple :where(th, td) {
+	border-bottom-color: var(--home-orange);
+	color: var(--home-orange);
+	font-weight: 650;
+}
+.ledger-bill__scroll {
+	overflow-x: auto;
+}
+.ledger-bill__note {
+	margin-top: 18px;
+	max-width: 88ch;
+	color: var(--home-muted);
+	font-size: 12px;
+}
+.ledger-subhead {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 10px 32px;
+	margin-bottom: 20px;
+}
+.monumental-home .ledger-subhead h2,
+.monumental-home .ledger-local__title {
+	color: var(--home-ink);
+	font-size: clamp(1.5rem, 2.6vw, 2.125rem);
+	line-height: 1.1;
+}
+.ledger-subhead p {
+	color: var(--home-muted);
+	font-size: 15px;
+}
+
+/* ── Runtimes: the last row of the ownership chapter ── */
+.ledger-runtimes__label {
+	margin: clamp(40px, 5vw, 64px) 0 16px;
+	color: var(--home-ink);
+	font-size: 17px;
+	font-weight: 650;
+	letter-spacing: -0.02em;
+}
+.ledger-runtimes {
+	display: grid;
+	grid-template-columns: repeat(9, minmax(0, 1fr));
+	gap: 1px;
+	border: 1px solid var(--home-rule);
+	background: var(--home-rule);
+}
+.ledger-runtimes li {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 14px;
+	padding: 20px;
+	background: var(--home-paper);
+	color: var(--home-ink);
+	font-size: 14px;
+}
+.ledger-runtimes svg {
+	color: var(--home-muted);
+}
+
+/* ── Questions ── */
+.monumental-home .faq {
+	padding-block: clamp(64px, 7.5vw, 108px);
+}
+.monumental-home .faq > div {
+	display: grid;
+	grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+	gap: 32px 64px;
+	max-width: 1400px;
+	padding-inline: 52px;
+}
+.monumental-home .faq > div > span {
+	display: none;
+}
+.monumental-home .faq h2 {
+	margin: 0;
+	font-size: clamp(2.25rem, 4.6vw, 4rem);
+	line-height: 1;
+}
+.monumental-home .faq summary {
+	font-size: 16px;
+}
+.monumental-home .faq details > div {
+	max-width: 68ch;
+	font-size: 15px;
+}
+
+@media (max-width: 1023px) {
+	.ledger-grid--thirds {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+	.ledger-grid--thirds .ledger-cell--two {
+		grid-column: 1 / -1;
+	}
+	.ledger-runtimes {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+	}
+	.ledger-wall__github {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+@media (max-width: 767px) {
+	.ledger-head {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 16px;
+	}
+	.ledger-head p {
+		font-size: 16px;
+	}
+	.ledger-grid,
+	.ledger-grid--thirds {
+		grid-template-columns: minmax(0, 1fr);
+	}
+	.ledger-cell--two {
+		grid-column: auto;
+	}
+	.ledger-cap,
+	.ledger-points > div {
+		padding: 20px;
+	}
+	/* The link drops under the title: beside it, the title wraps a word a line. */
+	.ledger-cap {
+		grid-template-columns: minmax(0, 1fr);
+	}
+	.ledger-cell--pad {
+		padding: 20px;
+	}
+	/* The wall becomes a strip: each cell most of the screen wide, the next one showing. */
+	.ledger-wall__strip {
+		display: flex;
+		overflow-x: auto;
+		scroll-snap-type: x mandatory;
+		scrollbar-width: none;
+	}
+	.ledger-wall__strip::-webkit-scrollbar {
+		display: none;
+	}
+	.ledger-wall__strip > .ledger-cell {
+		flex: 0 0 86%;
+		scroll-snap-align: start;
+	}
+	.ledger-wall__stage {
+		justify-content: flex-start;
+		aspect-ratio: 16 / 12;
+	}
+	.ledger-wall .shot-crop {
+		aspect-ratio: 16 / 12 !important;
+	}
+	.ledger-bill {
+		min-width: 880px;
+	}
+	.ledger-bill tbody th {
+		position: sticky;
+		left: 0;
+		background: var(--home-paper);
+	}
+	.ledger-proof__figures {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+	.ledger-proof__figures > div:nth-child(odd) {
+		padding-left: 0;
+		border-left: 0;
+	}
+	.ledger-proof__figures > div:nth-child(n + 3) {
+		margin-top: 24px;
+		border-top: 1px solid color-mix(in oklab, var(--primary-foreground) 45%, transparent);
+	}
+	.ledger-proof > .shell {
+		padding-bottom: 34vw;
+	}
+	.monumental-home .faq > div {
+		grid-template-columns: minmax(0, 1fr);
+		padding-inline: 24px;
+	}
+}

@@ -110,15 +110,12 @@
 	"customers_story_cta": "\uc0ac\ub840 \uc77d\uae30",
 	"ingest_stats_label": "\uc218\uc9d1\ub41c \ud2b8\ub808\uc774\uc2a4 / \uc6d4",
 	"stat_github": "GitHub",
-	"sov_eyebrow": "\uc8fc\uad8c",
 	"sov_title": "Your data, your instrumentation, your bill.",
 	"sov_lede": "OpenTelemetry로 받고, 독점 에이전트는 없으며, 소스는 처음부터 끝까지 GitHub에 있습니다. 가져온 것은 전부 가지고 떠날 수 있습니다.",
 	"sov_link_source": "Read the source",
 	"sov_link_otel": "Why OpenTelemetry",
 	"sov_link_pricing": "See the calculator",
 
-	"mcp_eyebrow": "\uc5d0\uc774\uc804\ud2b8",
-	"analytics_eyebrow": "\uc6f9 \ubd84\uc11d",
 	"mcp_title": "\uc778\uc2dc\ub358\ud2b8 \uc870\uc0ac\ub97c, \uc5d0\uc774\uc804\ud2b8\uc5d0\uac8c.",
 	"mcp_lede": "\ud2b8\ub79c\uc2a4\ud06c\ub9bd\ud2b8\ub294 \uc11c\ube44\uc2a4 \ubaa9\ub85d\ubd80\ud130 \uc218\uc815 \uc81c\uc548\uae4c\uc9c0 MCP \ud074\ub77c\uc774\uc5b8\ud2b8\uac00 Maple\uc5d0 \ud638\ucd9c\ud558\ub294 \ub3c4\uad6c\uc758 \uc21c\uc11c\uc785\ub2c8\ub2e4.",
 	"mcp_point_1_title": "트레이스 뒤의 코드를 읽습니다",
@@ -128,7 +125,6 @@
 	"mcp_point_3_title": "OAuth, \ud50c\ub7ec\uadf8\uc778 \ubd88\ud544\uc694",
 	"mcp_point_3_body": "MCP \ud074\ub77c\uc774\uc5b8\ud2b8\ub97c \uc5d4\ub4dc\ud3ec\uc778\ud2b8\ub85c \ud5a5\ud558\uac8c \ud558\uace0 \ub85c\uadf8\uc778\ud558\uba74 \ub05d. \uac1c\ubc29\ud615 \ud504\ub85c\ud1a0\ucf5c\uc774\ub77c \uc124\uce58\ud560 \uac83\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.",
 
-	"k8s_eyebrow": "Kubernetes",
 	"k8s_title": "\ub290\ub9b0 \uc2a4\ud32c \uc544\ub798\uc5d0 \uc788\ub294 \ud30c\ub4dc.",
 	"k8s_lede": "클러스터에 Helm 차트를 올리기만 하면 됩니다. kubelet, 호스트, 클러스터 상태 메트릭이 흘러들기 시작합니다. 계측된 파드의 스팬은 파드, 노드, namespace를 담고 도착하므로, 느린 요청에서 그것을 처리한 바로 그 레플리카에 닿을 수 있습니다.",
 	"k8s_col_namespace": "Namespace",
@@ -429,7 +425,6 @@
 	"hero_announce_text": "Maple 온콜: 스케줄, 에스컬레이션, 사일런스.",
 	"hero_announce_href": "/changelog/2026-11-07-on-call",
 
-	"signals_eyebrow": "\uc2dc\uadf8\ub110",
 	"signals_trace_title": "\ud2b8\ub808\uc774\uc2a4\ub97c \uc77d\uc73c\uc138\uc694.",
 	"signals_trace_sub": "\ubaa8\ub4e0 \uc694\uccad\uc744 \uc18d\uc131\uc774 \uadf8\ub300\ub85c \ub0a8\uc740 \uc2a4\ud32c \ud2b8\ub9ac\ub85c. \uc2a4\ud32c\uc744 \ud074\ub9ad\ud558\uba74 \ubb34\uc5c7\uc744 \ub2f4\uace0 \uc788\uc5c8\ub294\uc9c0 \ubcf4\uc785\ub2c8\ub2e4.",
 	"signals_logs_title": "\ub85c\uadf8\ub97c \uac80\uc0c9\ud558\uc138\uc694.",
@@ -437,7 +432,6 @@
 	"signals_session_title": "\uc138\uc158\uc744 \uc7ac\uc0dd\ud558\uc138\uc694.",
 	"signals_session_sub": "\ud074\ub9ad, \ub77c\uc6b0\ud2b8 \uc774\ub3d9, \ucf58\uc194 \ucd9c\ub825, \uc2e4\ud328\ud55c \uc694\uccad\uae4c\uc9c0. \ub9ac\ud50c\ub808\uc774\uc640 \uc2a4\ud32c\uc740 \ud558\ub098\uc758 \uc138\uc158 ID\ub97c \uacf5\uc720\ud569\ub2c8\ub2e4.",
 
-	"incident_eyebrow": "\uc778\uc2dc\ub358\ud2b8",
 	"incident_title": "\uc0c8\ubcbd 3\uc2dc\uc758 \uc54c\ub9bc\uc5d0\uc11c \uc6d0\uc778\uc774 \ub41c \ud55c \uc904\uae4c\uc9c0.",
 	"incident_lede": "네 개의 화면, 하나의 트레이스 ID. 아래의 각 단계는 앞 단계에서 열립니다.",
 	"incident_step_1_title": "\uc54c\ub9bc\uc740 \ub9e5\ub77d\uacfc \ud568\uaed8 \ub3c4\ucc29\ud569\ub2c8\ub2e4.",
@@ -449,7 +443,6 @@
 	"incident_step_4_title": "아니면 에이전트에게 맡기세요.",
 	"incident_step_4_body": "Claude, Cursor 또는 임의의 MCP 클라이언트를 Maple로 향하게 하세요. 서비스를 나열하고, 트레이스를 검색하고, 소스를 읽고, 수정을 제안합니다.",
 
-	"platform_eyebrow": "\ud50c\ub7ab\ud3fc",
 	"platform_title": "\ub530\ub85c \uc0ac\uc57c \ud588\uc744 \ub098\uba38\uc9c0 \uc804\ubd80.",
 	"platform_lede": "메트릭과 대시보드, 서비스 맵, 오류 추적, 알림과 온콜, Kubernetes 모니터링, 웹 분석, 프로덕트 이벤트, 업타임 모니터링, GitHub 체크. 모두 이미 보내고 있는 계측 위에서.",
 	"platform_metrics_name": "\uba54\ud2b8\ub9ad\uacfc \ub300\uc2dc\ubcf4\ub4dc",
@@ -460,13 +453,11 @@
 	"platform_alerts_desc": "\uc624\ub958\uc728, \uc9c0\uc5f0, Apdex, \ucc98\ub9ac\ub7c9, \uc784\uc758\uc758 \ucffc\ub9ac \ube4c\ub354 \ucc28\ud2b8 \ub610\ub294 \uc6d0\uc2dc SQL\uc5d0 \uc54c\ub9bc. \uc5d0\uc2a4\uceec\ub808\uc774\uc158 \uccb4\uc778\uacfc \uc628\ucf5c \uc77c\uc815\uc774 \ub2e4\uc74c\uc5d0 \ub204\uad6c\uc5d0\uac8c \uc54c\ub9b4\uc9c0 \uc815\ud569\ub2c8\ub2e4. Slack, Microsoft Teams, Google Chat, Discord, Telegram, PagerDuty, incident.io, \uc774\uba54\uc77c \ub610\ub294 \uc784\uc758\uc758 \uc6f9\ud6c5\uc73c\ub85c.",
 
 
-	"local_eyebrow": "\ub85c\uceec",
 	"local_title": "노트북 위의 Maple, 바이너리 하나로.",
 	"local_body": "\ub2e8\uc77c maple \uc2e4\ud589 \ud30c\uc77c\uc774 OTLP \uc218\uc9d1, \ub0b4\uc7a5 \ub370\uc774\ud130\ubca0\uc774\uc2a4, \ucffc\ub9ac API, \ub300\uc2dc\ubcf4\ub4dc\ub97c 127.0.0.1\uc5d0\uc11c \uc2e4\ud589\ud569\ub2c8\ub2e4. \uacc4\uc815\uc774 \ud544\uc694 \uc5c6\uace0, \ud154\ub808\uba54\ud2b8\ub9ac\ub294 \uc5ec\ub7ec\ubd84\uc758 \uae30\uae30\ub97c \ubc97\uc5b4\ub098\uc9c0 \uc54a\uc2b5\ub2c8\ub2e4.",
 	"local_install_alt": "\ub610\ub294",
 	"local_link_docs": "Maple Local \uc790\uc138\ud788 \ubcf4\uae30 \u2192",
 
-	"pricing_home_eyebrow": "\uc694\uae08",
 	"pricing_home_title": "플랜 하나, 기가바이트 단위 과금.",
 	"pricing_home_lede": "\ud50c\ub79c\uc740 \ud558\ub098. \uc2dc\uadf8\ub110\ub2f9 100 GB \ud3ec\ud568, \ucd08\uacfc\ubd84\uc740 \uc815\uc561. \ud638\uc2a4\ud2b8, \uc88c\uc11d, \ucffc\ub9ac \ub2e8\uc704 \uacfc\uae08\uc740 \uc5c6\uc2b5\ub2c8\ub2e4.",
 
@@ -1315,7 +1306,6 @@
 	"gh_after_rule_2_body": "\uba54\ud2b8\ub9ad \ubcc0\ud654\uac00 \uc6d0\uc778\uc774 \ub41c \ubc30\ud3ec\uc640, \ud568\uaed8 \ubc30\ud3ec\ub41c \ucee4\ubc0b\uc5d0 \ub9de\ucdb0\uc9d1\ub2c8\ub2e4.",
 	"gh_after_rule_3_title": "\ud480 \ub9ac\ud018\uc2a4\ud2b8\ub85c \uc774\uc288 \ub2eb\uae30",
 	"gh_after_rule_3_body": "PR\uc744 \uc624\ub958 \uc774\uc288\uc5d0 \uc5f0\uacb0\ud558\uc138\uc694. \uba38\uc9c0 \ud6c4 \uc624\ub958\uac00 \uba48\ucd94\uba74 Maple\uc774 \uc774\uc288\ub97c \ub2eb\uc2b5\ub2c8\ub2e4.",
-	"home_github_eyebrow": "GitHub",
 	"home_github_title": "\ud480 \ub9ac\ud018\uc2a4\ud2b8\ub97c \ud504\ub85c\ub355\uc158\uacfc \ub300\uc870\ud574\uc11c.",
 	"home_github_lede": "GitHub App\uc744 \uc124\uce58\ud558\uba74 Maple\uc774 \ud480 \ub9ac\ud018\uc2a4\ud2b8\ubd80\ud130 \ubc30\ud3ec \ud55c \uc2dc\uac04 \ub4a4\uae4c\uc9c0 \ubcc0\uacbd\uc744 \ub530\ub77c\uac11\ub2c8\ub2e4.",
 	"home_github_link": "GitHub \u00b7 CI \u00b7 \ucf54\ub4dc \ub9ac\ubdf0",

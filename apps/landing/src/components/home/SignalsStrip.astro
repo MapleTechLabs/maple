@@ -1,22 +1,17 @@
 ---
 /**
- * Signals: the dashboard's own trace waterfall across the shell, with its logs stream and a
- * session replay capture at half the shell. Metrics has a tab in the surface explorer instead.
+ * Signals: the dashboard's own trace waterfall across the sheet, with its logs stream and a
+ * session replay capture sharing the row under it. The request plays once as it scrolls in.
  */
 import * as m from "../../paraglide/messages.js";
 import { featurePath } from "../../lib/page-registry";
 import LiveLogs from "../live/LiveLogs.astro";
 import LiveTraceFrame from "../live/LiveTraceFrame.astro";
+import LedgerHead from "./LedgerHead.astro";
 import MediaFrame from "./MediaFrame.astro";
 
 const locale = Astro.currentLocale ?? "en";
 
-const trace = {
-	title: m.signals_trace_title(),
-	sub: m.signals_trace_sub(),
-	href: featurePath(locale, "distributed-tracing"),
-	link: m.nav_distributed_tracing(),
-};
 const logs = {
 	title: m.signals_logs_title(),
 	sub: m.signals_logs_sub(),
@@ -31,48 +26,70 @@ const session = {
 };
 ---
 
-<section class="bg-bg-deep">
-	<div class="shell py-16 md:py-24">
-		<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{m.signals_eyebrow()}</p>
+<section class="ledger">
+	<div class="shell">
+		<LedgerHead
+			title={m.signals_trace_title()}
+			lede={m.signals_trace_sub()}
+			href={featurePath(locale, "distributed-tracing")}
+			link={m.nav_distributed_tracing()}
+		/>
 
-		<div class="mt-8 md:mt-10">
-			<div class="grid grid-cols-[minmax(0,1fr)_max-content] items-baseline gap-x-8 gap-y-2 lg:grid-cols-[max-content_minmax(0,1fr)_max-content]">
-				<h2 class="font-display text-2xl leading-tight tracking-[-0.01em] text-fg md:text-[28px]">{trace.title}</h2>
-				<p class="col-span-2 row-start-2 max-w-[62ch] text-[15px] leading-relaxed text-fg-muted lg:col-span-1 lg:col-start-2 lg:row-start-1">{trace.sub}</p>
-				<a href={trace.href} class="col-start-2 row-start-1 whitespace-nowrap text-sm text-fg transition-colors hover:text-primary lg:col-start-3">{trace.link}<span aria-hidden="true"> →</span></a>
+		<div class="ledger-grid">
+			<div class="ledger-cell ledger-cell--wide ledger-trace" data-trace-play>
+				<LiveTraceFrame height="19rem" />
 			</div>
-			<LiveTraceFrame class="mt-6" height="17.5rem" />
-		</div>
-
-		<div class="mt-12 grid gap-12 md:mt-16 lg:grid-cols-2 lg:gap-8">
-			<div class="flex min-w-0 flex-col">
-				<div class="grid flex-1 grid-cols-[minmax(0,1fr)_max-content] content-start items-baseline gap-x-8 gap-y-2">
-					<h2 class="font-display text-2xl leading-tight tracking-[-0.01em] text-fg md:text-[28px]">{logs.title}</h2>
-					<p class="col-span-2 row-start-2 max-w-[62ch] text-[15px] leading-relaxed text-fg-muted">{logs.sub}</p>
-					<a href={logs.href} class="col-start-2 row-start-1 whitespace-nowrap text-sm text-fg transition-colors hover:text-primary">{logs.link}<span aria-hidden="true"> →</span></a>
+			<div class="ledger-cell">
+				<div class="ledger-cap ledger-cap--top">
+					<h2>{logs.title}</h2>
+					<a href={logs.href}>{logs.link}<span aria-hidden="true"> →</span></a>
+					<p>{logs.sub}</p>
 				</div>
 				{/* Taller on phones, where 16:10 leaves no room for an expanded row. */}
-				<div class="mt-6 aspect-[4/5] min-h-0 overflow-hidden sm:aspect-[16/10]">
+				<div class="aspect-[4/5] min-h-0 overflow-hidden sm:aspect-[16/10]">
 					<LiveLogs volume={false} streamHeight="fill" />
 				</div>
 			</div>
-			<div class="flex min-w-0 flex-col">
-				<div class="grid flex-1 grid-cols-[minmax(0,1fr)_max-content] content-start items-baseline gap-x-8 gap-y-2">
-					<h2 class="font-display text-2xl leading-tight tracking-[-0.01em] text-fg md:text-[28px]">{session.title}</h2>
-					<p class="col-span-2 row-start-2 max-w-[62ch] text-[15px] leading-relaxed text-fg-muted">{session.sub}</p>
-					<a href={session.href} class="col-start-2 row-start-1 whitespace-nowrap text-sm text-fg transition-colors hover:text-primary">{session.link}<span aria-hidden="true"> →</span></a>
+			<div class="ledger-cell">
+				<div class="ledger-cap ledger-cap--top">
+					<h2>{session.title}</h2>
+					<a href={session.href}>{session.link}<span aria-hidden="true"> →</span></a>
+					<p>{session.sub}</p>
 				</div>
-				{/* Declared 16:10 like the logs plate beside it; the crop window still ends inside the capture. */}
-				<div class="mt-6">
-					<MediaFrame
-						label="A browser session replay showing the recorded page and captured network requests"
-						src="/screenshots/strip-session.webp"
-						width={1440}
-						height={900}
-						crop={{ x: 0.185, y: 0.075, zoom: 1.25 }}
-					/>
-				</div>
+				<MediaFrame
+					label="A browser session replay showing the recorded page and captured network requests"
+					src="/screenshots/strip-session.webp"
+					width={1440}
+					height={900}
+					crop={{ x: 0.185, y: 0.075, zoom: 1.25 }}
+				/>
 			</div>
 		</div>
 	</div>
 </section>
+
+<script>
+	// The timeline cells light in start order, once. The cells are the waterfall's own markup,
+	// so the order is a column index set here and the rest is CSS (home-ledger.css).
+	const root = document.querySelector<HTMLElement>("[data-trace-play]");
+	if (root && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+		root.toggleAttribute("data-armed", true);
+		const play = () => {
+			for (const row of root.querySelectorAll<HTMLElement>(".w-48")) {
+				[...row.children].forEach((cell, i) => (cell as HTMLElement).style.setProperty("--i", String(i)));
+			}
+			root.toggleAttribute("data-played", true);
+		};
+		const observer = new IntersectionObserver(
+			(entries) => {
+				if (entries.some((entry) => entry.isIntersecting)) {
+					observer.disconnect();
+					// The island hydrates on visibility too: give it a beat to draw its rows.
+					setTimeout(play, 350);
+				}
+			},
+			{ threshold: 0.5 },
+		);
+		observer.observe(root);
+	}
+</script>

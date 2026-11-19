@@ -1,0 +1,254 @@
+---
+/**
+ * Platform: every other surface on one ruled sheet, visible without a click, and the link hub to
+ * the feature pages. Each cell is the real product: a legible window of a capture (the lightbox
+ * opens the whole screen) or the live component, then its headline, one sentence and its link.
+ */
+import * as m from "../../paraglide/messages.js";
+import { featureBySlug } from "../../lib/features";
+import { featurePath, type Crop } from "../../lib/page-registry";
+import Shot from "../page/Shot.astro";
+import PostMergeComment from "../github/PostMergeComment.astro";
+import PrReviewComment from "../github/PrReviewComment.astro";
+import LiveFunnel from "../live/LiveFunnel.astro";
+import LiveK8sHeatmap from "../live/LiveK8sHeatmap.astro";
+import LiveUptime from "../live/LiveUptime.astro";
+import LedgerHead from "./LedgerHead.astro";
+
+const locale = Astro.currentLocale ?? "en";
+const l = (slug: string) => featurePath(locale, slug);
+
+// Sentence one of a longer description: a cell takes a line, not a paragraph.
+// Japanese puts no space after its full stop, so it ends a sentence on its own.
+const firstSentence = (text: string) => {
+	const end = text.search(/。|\.(\s|$)/);
+	return end === -1 ? text : text.slice(0, end + 1);
+};
+
+interface Surface {
+	key: string;
+	title: string;
+	desc: string;
+	href: string;
+	link: string;
+	/** A second, quieter link: uptime also owns status pages. */
+	also?: { href: string; link: string };
+	/** A capture, and the window of it this cell shows. */
+	shot?: { src: string; alt: string; width: number; height: number; crop: Crop };
+	/** The service map takes two cells: it is the one surface that needs the width. */
+	wide?: boolean;
+}
+
+// A cell is about 430 px wide, so a 1440 px screen is drawn 2.2 to 2.4 cells wide to keep its
+// text near 10 px. Each window starts on a layout edge of its screen.
+const CELL = 4 / 3;
+// The feature page's own headline, where the surface has no line of its own.
+const headline = (slug: string, fallback: string) => featureBySlug(slug)?.heroTitle() ?? fallback;
+
+const surfaces: Surface[] = [
+	{
+		key: "map",
+		wide: true,
+		title: headline("service-catalog", m.platform_map_name()),
+		desc: m.platform_map_desc(),
+		href: l("service-catalog"),
+		link: m.nav_service_catalog(),
+		shot: {
+			src: "/screenshots/surface-map.webp",
+			alt: "A focused service neighborhood showing API, database, and cache dependencies with live request flow",
+			width: 2880,
+			height: 1620,
+			crop: { x: 0.185, y: 0.29, zoom: 1.25, aspect: 8 / 3 },
+		},
+	},
+	{
+		key: "metrics",
+		title: headline("metrics-dashboards", m.platform_metrics_name()),
+		desc: m.platform_metrics_desc(),
+		href: l("metrics-dashboards"),
+		link: m.nav_metrics_dashboards(),
+		shot: {
+			src: "/screenshots/surface-metrics.webp",
+			alt: "The metric explorer listing every metric with its type and cardinality",
+			width: 2880,
+			height: 1620,
+			crop: { x: 0.185, y: 0.085, zoom: 2.4, aspect: CELL },
+		},
+	},
+	{
+		key: "errors",
+		title: headline("error-tracking", m.platform_errors_name()),
+		desc: m.platform_errors_desc(),
+		href: l("error-tracking"),
+		link: m.nav_error_tracking(),
+		shot: {
+			src: "/screenshots/surface-errors.webp",
+			alt: "Errors grouped by type with counts, affected services and last-seen times",
+			width: 2880,
+			height: 1620,
+			crop: { x: 0.365, y: 0.165, zoom: 2.2, aspect: CELL },
+		},
+	},
+	{
+		key: "alerts",
+		title: headline("alerts", m.platform_alerts_name()),
+		desc: m.platform_alerts_desc(),
+		href: l("alerts"),
+		link: m.nav_alerts(),
+		shot: {
+			src: "/screenshots/surface-alerts.webp",
+			alt: "Alert rules with severity, signal type and current state",
+			width: 2880,
+			height: 1620,
+			crop: { x: 0.19, y: 0.085, zoom: 2.4, aspect: CELL },
+		},
+	},
+	{
+		key: "kubernetes",
+		title: m.k8s_title(),
+		desc: firstSentence(m.k8s_lede()),
+		href: l("kubernetes-monitoring"),
+		link: m.nav_kubernetes(),
+	},
+	{
+		key: "analytics",
+		title: m.analytics_title(),
+		desc: [m.analytics_lede(), m.analytics_point_1_body(), m.analytics_point_2_body(), m.analytics_point_3_body()].join(" "),
+		href: l("browser-sessions"),
+		link: m.nav_browser_sessions(),
+		shot: {
+			src: "/screenshots/surface-analytics.webp",
+			alt: "The Web Analytics page: unique visitors, sessions, page views and bounce rate over the last 7 days, with the live visitor badge and the visitors and page views chart",
+			width: 1792,
+			height: 1392,
+			crop: { x: 0.005, y: 0.3, zoom: 1.5, aspect: CELL },
+		},
+	},
+	{
+		key: "events",
+		title: m.pe_title(),
+		desc: firstSentence(m.pe_lede()),
+		href: l("product-events"),
+		link: m.pe_eyebrow(),
+	},
+	{
+		key: "uptime",
+		title: m.uptime_title(),
+		desc: firstSentence(m.uptime_lede()),
+		href: l("uptime-monitoring"),
+		link: m.uptime_eyebrow(),
+		also: { href: l("status-pages"), link: m.uptime_link_status_pages() },
+	},
+	{
+		key: "github",
+		title: m.home_github_title(),
+		desc: m.home_github_lede(),
+		href: l("github"),
+		link: m.home_github_link(),
+	},
+];
+
+const githubSteps = [m.home_github_step_1_title(), m.home_github_step_2_title(), m.home_github_step_3_title()];
+const github = surfaces.find((surface) => surface.key === "github");
+const cells = surfaces.filter((surface) => surface.key !== "github");
+---
+
+<section id="features" class="ledger ledger-wall">
+	<div class="shell">
+		{/* The lede names every surface in plain text. */}
+		<LedgerHead title={m.platform_title()} lede={m.platform_lede()} />
+
+		{/* On a phone the sheet is a strip to swipe: nine stacked cells would be six screens. */}
+		<div class="ledger-grid ledger-grid--thirds ledger-wall__strip" role="group" aria-label={m.platform_title()} tabindex="0">
+			{
+				cells.map((surface) => (
+					<article class:list={["ledger-cell", surface.wide && "ledger-cell--two"]}>
+						{surface.shot ? (
+							<Shot
+								src={surface.shot.src}
+								alt={surface.shot.alt}
+								width={surface.shot.width}
+								height={surface.shot.height}
+								crop={surface.shot.crop}
+							/>
+						) : (
+							<div class="ledger-wall__stage">
+								{surface.key === "kubernetes" && <LiveK8sHeatmap />}
+								{surface.key === "events" && <LiveFunnel />}
+								{surface.key === "uptime" && <LiveUptime />}
+							</div>
+						)}
+						<div class="ledger-cap ledger-cap--bottom">
+							<h3>{surface.title}</h3>
+							<p>{surface.desc}</p>
+							<div class="ledger-cap__links">
+								<a href={surface.href}>
+									{surface.link}
+									<span aria-hidden="true"> →</span>
+								</a>
+								{surface.also && <a href={surface.also.href}>{surface.also.link}</a>}
+							</div>
+						</div>
+					</article>
+				))
+			}
+		</div>
+
+		{/* GitHub is three artifacts, not one: its own row, joined to the sheet above it. */}
+		<div class="ledger-grid ledger-wall__last">
+			{
+				github && (
+					<article class="ledger-cell ledger-cell--wide">
+						<div class="ledger-cap ledger-cap--top">
+							<h3>{github.title}</h3>
+							<a href={github.href}>
+								{github.link}
+								<span aria-hidden="true"> →</span>
+							</a>
+							<p>{github.desc}</p>
+						</div>
+						<ol class="ledger-wall__github">
+							{githubSteps.map((step, index) => (
+								<li>
+									<p>{step}</p>
+									{index === 0 && <PrReviewComment variant="compact" />}
+									{index === 1 && (
+										<div class="overflow-hidden border border-border bg-bg-deep">
+											<div class="ci-crop">
+												<img
+													src="/screenshots/surface-ci.webp"
+													alt="The CI tab's run count, success rate and p50 run time over a chart of runs by result per day"
+													width="2880"
+													height="1620"
+													loading="lazy"
+													decoding="async"
+												/>
+											</div>
+										</div>
+									)}
+									{index === 2 && <PostMergeComment variant="compact" />}
+								</li>
+							))}
+						</ol>
+					</article>
+				)
+			}
+		</div>
+	</div>
+</section>
+
+<style>
+	/* The 1140 × 885 region of the 2880 × 1620 capture at (545, 385): stat cards and the runs chart. */
+	.ci-crop {
+		aspect-ratio: 1140 / 885;
+		overflow: hidden;
+	}
+	.ci-crop img {
+		display: block;
+		max-width: none;
+		width: calc(2880 / 1140 * 100%);
+		height: auto;
+		margin-left: calc(-545 / 1140 * 100%);
+		margin-top: calc(-385 / 1140 * 100%);
+	}
+</style>

@@ -73,14 +73,12 @@
 	"customers_story_cta": "Read the story",
 	"ingest_stats_label": "traces ingested / month",
 	"stat_github": "on GitHub",
-	"sov_eyebrow": "Sovereignty",
 	"sov_title": "Your data, your instrumentation, your bill.",
 	"sov_lede": "OpenTelemetry in, no proprietary agent, and the source on GitHub the whole time. You can leave with everything you brought.",
 	"sov_link_source": "Read the source",
 	"sov_link_otel": "Why OpenTelemetry",
 	"sov_link_pricing": "See the calculator",
 
-	"mcp_eyebrow": "Agents",
 	"mcp_title": "Let an agent run the investigation.",
 	"mcp_lede": "This is the sequence of tool calls an MCP client makes against Maple, from a service list to a proposed patch.",
 	"mcp_point_1_title": "Reads the code behind the trace",
@@ -90,7 +88,6 @@
 	"mcp_point_3_title": "OAuth, no plugin",
 	"mcp_point_3_body": "Point any MCP client at the endpoint and sign in. Open protocol, nothing to install.",
 
-	"k8s_eyebrow": "Kubernetes",
 	"k8s_title": "The pod behind the slow span.",
 	"k8s_lede": "Install a Helm chart and cluster metrics start flowing. Opt a namespace in, and a slow request takes you straight to the pod that served it.",
 	"k8s_col_namespace": "Namespace",
@@ -104,7 +101,6 @@
 	"k8s_summary_workloads": "Workloads",
 	"k8s_summary_cluster_cpu": "Cluster CPU",
 	"k8s_summary_cluster_mem": "Cluster memory",
-	"analytics_eyebrow": "Web analytics",
 	"analytics_title": "Web analytics from the sessions you already record.",
 	"analytics_lede": "Visitors, page views, referrers, countries, devices. No second script, no second vendor.",
 	"analytics_point_1_body": "MapleBrowser.init records the session. Analytics, replay and the trace all read from it.",
@@ -439,7 +435,6 @@
 	"hero_announce_text": "On-call in Maple: schedules, escalation and silences.",
 	"hero_announce_href": "/changelog/2026-11-07-on-call",
 
-	"signals_eyebrow": "Signals",
 	"signals_trace_title": "Read the trace.",
 	"signals_trace_sub": "Every request as a span tree, attributes intact. Click a span and see what it carried.",
 	"signals_logs_title": "Search the logs.",
@@ -447,7 +442,6 @@
 	"signals_session_title": "Replay the session.",
 	"signals_session_sub": "Every click, route, console line and failed request. Replay and spans share one session id.",
 
-	"incident_eyebrow": "Incident",
 	"incident_title": "From a 3 AM page to the line that caused it.",
 	"incident_lede": "Four surfaces, one trace id. Every step below opens from the one before it.",
 	"incident_step_1_title": "The alert arrives with context.",
@@ -459,7 +453,6 @@
 	"incident_step_4_title": "Or hand it to an agent.",
 	"incident_step_4_body": "Point Claude, Cursor or any MCP client at Maple. It lists services, searches traces, reads the source and proposes the fix.",
 
-	"platform_eyebrow": "Platform",
 	"platform_title": "Everything else you'd have bought separately.",
 	"platform_lede": "Metrics and dashboards, a service map, error tracking, alerting and on-call, Kubernetes monitoring, web analytics, product events, uptime monitoring and GitHub checks, all on the instrumentation you already send.",
 	"platform_metrics_name": "Metrics & dashboards",
@@ -470,13 +463,11 @@
 	"platform_alerts_desc": "Alert on error rate, latency, Apdex, throughput, any query-builder chart or raw SQL. Escalation chains and on-call schedules decide who is notified next. Routed to Slack, Microsoft Teams, Google Chat, Discord, Telegram, PagerDuty, incident.io, email or any webhook.",
 
 
-	"local_eyebrow": "Local",
 	"local_title": "Maple on your laptop, as one binary.",
 	"local_body": "One maple executable runs OTLP ingest, an embedded database, the query API and the dashboard on 127.0.0.1. No account, and your telemetry stays on your machine.",
 	"local_install_alt": "or",
 	"local_link_docs": "More on Maple Local \u2192",
 
-	"pricing_home_eyebrow": "Pricing",
 	"pricing_home_title": "One plan, billed by the gigabyte.",
 	"pricing_home_lede": "100 GB each of logs, traces and metrics included, then a flat rate. Nothing metered by host, seat or query.",
 
@@ -1415,7 +1406,6 @@
 	"gh_after_rule_2_body": "Metric shifts line up with the deploy that caused them, down to the commits that shipped.",
 	"gh_after_rule_3_title": "Pull requests close issues",
 	"gh_after_rule_3_body": "Link a PR to an error issue. Once it merges, Maple closes the issue if the error stops.",
-	"home_github_eyebrow": "GitHub",
 	"home_github_title": "Your pull requests, checked against production.",
 	"home_github_lede": "Install the GitHub App and Maple follows each change from the pull request to the hour after it deploys.",
 	"home_github_link": "GitHub, CI and code review",
