@@ -1,6 +1,15 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Array as Arr, Effect } from "effect"
-import { disambiguatedName, isNameHeldElsewhere, scanClaimedDomains, updateParams } from "./ClerkSsoGateway"
+import { makeClerkApi } from "@maple/auth"
+import { OrgId } from "@maple/domain/http"
+import { Array as Arr, Effect, Layer, Redacted, Schema, String as Str } from "effect"
+import { HttpClient, HttpClientResponse } from "effect/http"
+import {
+	disambiguatedName,
+	isNameHeldElsewhere,
+	makeClerkSsoGateway,
+	scanClaimedDomains,
+	updateParams,
+} from "./ClerkSsoGateway"
 
 /** `total` connections, the last one serving `partner.io`; pages of 100 like Clerk's. */
 const connections = (total: number) => (offset: number) =>
@@ -136,4 +145,99 @@ describe("connection name collisions", () => {
 	it("disambiguates with the org's own domain", () => {
 		assert.strictEqual(disambiguatedName("Okta", ["acme.com", "acme.io"]), "Okta (acme.com)")
 	})
+})
+
+/** A Clerk Backend API holding `existing` connections; create and update answer with `writeStatus` until the name is free. */
+const fakeClerk = (existing: ReadonlyArray<{ id: string; name: string }>, writeStatus: number) => {
+	const writes: Array<{ method: string; name: string }> = []
+	const json = (status: number, body: unknown) =>
+		new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
+	const connection = (id: string, name: string) => ({
+		object: "enterprise_connection",
+		id,
+		name,
+		provider: "saml_okta",
+		active: true,
+		domains: ["acme.com"],
+		organization_id: "org_1",
+		created_at: 0,
+		updated_at: 0,
+	})
+	const http = Layer.succeed(
+		HttpClient.HttpClient,
+		HttpClient.make((request) =>
+			Effect.gen(function* () {
+				const url = new URL(request.url)
+				if (request.method === "GET") {
+					return HttpClientResponse.fromWeb(
+						request,
+						json(200, {
+							data: Arr.map(existing, (c) => connection(c.id, c.name)),
+							total_count: existing.length,
+						}),
+					)
+				}
+				const body =
+					request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "{}"
+				const name = yield* Schema.decodeEffect(
+					Schema.fromJsonString(Schema.Struct({ name: Schema.String })),
+				)(body).pipe(Effect.orDie)
+				writes.push({ method: request.method, name: name.name })
+				const taken = Arr.some(
+					existing,
+					(c) => Str.toLowerCase(c.name) === Str.toLowerCase(name.name),
+				)
+				const id = Str.startsWith("/v1/enterprise_connections/")(url.pathname)
+					? Arr.lastNonEmpty(Str.split(url.pathname, "/"))
+					: "ent_new"
+				return HttpClientResponse.fromWeb(
+					request,
+					taken && writes.length === 1
+						? json(writeStatus, {
+								errors: [{ code: "form_identifier_exists", message: "taken" }],
+							})
+						: json(200, connection(id, name.name)),
+				)
+			}),
+		),
+	)
+	return { gateway: makeClerkSsoGateway(makeClerkApi(Redacted.make("sk_test_fake"), http)), writes }
+}
+
+describe("taken connection names", () => {
+	const input = { name: "Okta", domains: ["acme.com"] }
+
+	it.effect(
+		"a create refused with 422 over a name another org holds retries once, under the org's domain",
+		() =>
+			Effect.gen(function* () {
+				const { gateway, writes } = fakeClerk([{ id: "ent_other", name: "okta" }], 422)
+				const created = yield* gateway.createConnection(OrgId.make("org_1"), "saml_okta", input)
+				assert.strictEqual(created.name, "Okta (acme.com)")
+				assert.deepStrictEqual(
+					Arr.map(writes, (w) => w.name),
+					["Okta", "Okta (acme.com)"],
+				)
+			}),
+	)
+
+	it.effect("a 409 is not a taken name: it fails without a retry", () =>
+		Effect.gen(function* () {
+			const { gateway, writes } = fakeClerk([{ id: "ent_other", name: "Okta" }], 409)
+			const error = yield* Effect.flip(
+				gateway.createConnection(OrgId.make("org_1"), "saml_okta", input),
+			)
+			assert.strictEqual(error.status, 409)
+			assert.strictEqual(writes.length, 1)
+		}),
+	)
+
+	it.effect("an update whose name only its own connection holds fails without a retry", () =>
+		Effect.gen(function* () {
+			const { gateway, writes } = fakeClerk([{ id: "ent_mine", name: "Okta" }], 422)
+			const error = yield* Effect.flip(gateway.updateConnection("ent_mine", input))
+			assert.strictEqual(error.status, 422)
+			assert.strictEqual(writes.length, 1)
+		}),
+	)
 })

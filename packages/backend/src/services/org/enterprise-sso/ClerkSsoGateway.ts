@@ -1,5 +1,5 @@
 import * as Clerk from "@distilled.cloud/clerk"
-import { type ClerkApiServices, clerkModeApi } from "@maple/auth"
+import { type ClerkApi, type ClerkApiServices, clerkModeApi } from "@maple/auth"
 import type { OrgId, SsoProvider, UserId } from "@maple/domain/http"
 import {
 	Array as Arr,
@@ -353,10 +353,8 @@ export const updateParams = (
 	return params
 }
 
-const make = Effect.gen(function* () {
-	const env = yield* Env
-	const api = clerkModeApi(env)
-
+/** The gateway over one Clerk Backend API; `undefined` outside Clerk mode. */
+export const makeClerkSsoGateway = (api: ClerkApi | undefined): ClerkSsoGatewayApi => {
 	const call = <A, E>(
 		operation: string,
 		attributes: Readonly<Record<string, string | number | boolean>>,
@@ -633,6 +631,11 @@ const make = Effect.gen(function* () {
 			).pipe(Effect.asVoid),
 	}
 	return gateway
+}
+
+const make = Effect.gen(function* () {
+	const env = yield* Env
+	return makeClerkSsoGateway(clerkModeApi(env))
 })
 
 export class ClerkSsoGateway extends Context.Service<ClerkSsoGateway, ClerkSsoGatewayApi>()(
