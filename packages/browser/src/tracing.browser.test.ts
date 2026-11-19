@@ -33,7 +33,8 @@ vi.mock("./otlp", async (original) => ({
 	},
 }))
 
-const { resourceAttributes, setupTracing, TraceIdCollector } = await import("./tracing")
+const { isExcusedNetworkFailure, resourceAttributes, setupTracing, TraceIdCollector } =
+	await import("./tracing")
 
 const CONFIG = {
 	ingestKey: "k",
@@ -64,6 +65,7 @@ const CONFIG = {
 	captureUserEmail: true,
 	respectDoNotTrack: false,
 	propagateTraceHeaderCorsUrls: [],
+	ignoreNetworkFailuresFor: [],
 	tracingSampleRate: 1,
 	tracingInstrumentXhr: false,
 	errorFilters: {},
@@ -356,6 +358,8 @@ describe("setupTracing unload flush", () => {
 
 		await expect(fetch(url)).rejects.toThrow(TypeError)
 		await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1), poll)
+		// Past the instrumentation's deferred end: a page unloading inside it excuses the failure.
+		await vi.advanceTimersByTimeAsync(400)
 		window.dispatchEvent(new Event("pagehide"))
 		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
 
@@ -405,6 +409,8 @@ describe("setupTracing unload flush", () => {
 		pending.reject(new TypeError("Failed to fetch"))
 		await expect(request).rejects.toThrow(TypeError)
 		await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1), poll)
+		// Past the instrumentation's deferred end: a page unloading inside it excuses the failure.
+		await vi.advanceTimersByTimeAsync(400)
 		window.dispatchEvent(new Event("pagehide"))
 		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
 
@@ -424,11 +430,150 @@ describe("setupTracing unload flush", () => {
 		pending.reject(new TypeError("Failed to fetch"))
 		await expect(request).rejects.toThrow(TypeError)
 		await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1), poll)
+		// Past the instrumentation's deferred end: a page unloading inside it excuses the failure.
+		await vi.advanceTimersByTimeAsync(400)
 		window.dispatchEvent(new Event("pagehide"))
 		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
 
 		expect(exported[0]?.status.code).toBe(2)
 		expect(exported[0]?.attributes["maple.connection_lost"]).toBeUndefined()
+	})
+
+	it("leaves a fetch a reload cancelled just before pagehide Unset, with the reason", async () => {
+		// A reload rejects the page's requests a moment before `pagehide`, while each span
+		// still waits for its deferred end.
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		const pending = stubPendingFetch()
+		shutdown = setupTracing({ ...CONFIG, tracingInstrumentFetch: true })
+
+		const request = fetch("https://api.test/things")
+		pending.reject(new TypeError("Failed to fetch"))
+		await expect(request).rejects.toThrow(TypeError)
+		await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1), poll)
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
+
+		expect(exported[0]?.status).toEqual({ code: 0 })
+		expect(exported[0]?.attributes["maple.connection_lost"]).toBe("page_unload")
+		expect(exported[0]?.attributes["error.type"]).toBeUndefined()
+	})
+
+	it("leaves a fetch to a URL the app ignores failures for Unset, and marks why", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		const pending = stubPendingFetch()
+		shutdown = setupTracing({
+			...CONFIG,
+			tracingInstrumentFetch: true,
+			// Global, as a host might write it: it must match every request, not every other one.
+			ignoreNetworkFailuresFor: [/^https:\/\/beacon\.test\//g],
+		})
+
+		const requests = [
+			fetch("https://beacon.test/collect"),
+			fetch("https://beacon.test/collect"),
+			fetch("https://api.test/things"),
+		]
+		pending.reject(new TypeError("Failed to fetch"))
+		await Promise.allSettled(requests)
+		await vi.advanceTimersByTimeAsync(400)
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(3), poll)
+
+		const byUrl = exported.map((span) => ({
+			url: span.attributes["url.full"],
+			status: span.status.code,
+			ignored: span.attributes["maple.network_failure_ignored"],
+		}))
+		expect(byUrl).toEqual([
+			{ url: "https://beacon.test/collect", status: 0, ignored: true },
+			{ url: "https://beacon.test/collect", status: 0, ignored: true },
+			{ url: "https://api.test/things", status: 2, ignored: undefined },
+		])
+	})
+
+	it("excuses a fetch rejection to an ignored URL in a session whose traces are sampled out", async () => {
+		// Its span is never recorded, but an unhandled rejection is reported whatever the sampling.
+		const failures = [new TypeError("Failed to fetch"), new TypeError("Failed to fetch")]
+		const rejections = [...failures]
+		vi.stubGlobal("fetch", () => Promise.reject(rejections.shift()))
+		shutdown = setupTracing({
+			...CONFIG,
+			tracingInstrumentFetch: true,
+			tracingSampleRate: 0,
+			ignoreNetworkFailuresFor: [/^https:\/\/beacon\.test\//],
+		})
+
+		await Promise.allSettled([fetch("https://beacon.test/collect"), fetch("https://api.test/things")])
+
+		expect(failures.map(isExcusedNetworkFailure)).toEqual([true, false])
+	})
+
+	it("leaves an XMLHttpRequest that failed just before pagehide Unset, with the reason", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		shutdown = setupTracing({ ...CONFIG, tracingInstrumentXhr: true })
+		const url = URL.createObjectURL(new Blob(["gone"]))
+		URL.revokeObjectURL(url)
+
+		const xhr = new XMLHttpRequest()
+		xhr.open("GET", url)
+		await new Promise<void>((resolve) => {
+			xhr.addEventListener("loadend", () => resolve())
+			xhr.send()
+		})
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
+
+		expect(exported[0]?.status).toEqual({ code: 0 })
+		expect(exported[0]?.attributes["maple.connection_lost"]).toBe("page_unload")
+		expect(exported[0]?.attributes["error.type"]).toBeUndefined()
+	})
+
+	it("still marks an XMLHttpRequest that timed out just before pagehide as an error", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		shutdown = setupTracing({ ...CONFIG, tracingInstrumentXhr: true })
+
+		const xhr = new XMLHttpRequest()
+		xhr.open("GET", "https://api.test/slow")
+		xhr.send()
+		// What the browser fires once `xhr.timeout` passes.
+		xhr.dispatchEvent(new ProgressEvent("timeout"))
+		xhr.abort()
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
+
+		expect(exported[0]?.status.code).toBe(2)
+		expect(exported[0]?.attributes["error.type"]).toBe("timeout")
+		expect(exported[0]?.attributes["maple.connection_lost"]).toBeUndefined()
+	})
+
+	it("leaves a failed XMLHttpRequest to a URL the app ignores failures for Unset", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		const url = URL.createObjectURL(new Blob(["gone"]))
+		URL.revokeObjectURL(url)
+		shutdown = setupTracing({
+			...CONFIG,
+			tracingInstrumentXhr: true,
+			ignoreNetworkFailuresFor: [/^blob:/],
+		})
+
+		const xhr = new XMLHttpRequest()
+		xhr.open("GET", url)
+		await new Promise<void>((resolve) => {
+			xhr.addEventListener("loadend", () => resolve())
+			xhr.send()
+		})
+		await vi.advanceTimersByTimeAsync(400)
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
+
+		expect(exported[0]?.status).toEqual({ code: 0 })
+		expect(exported[0]?.attributes["maple.network_failure_ignored"]).toBe(true)
+		expect(exported[0]?.attributes["error.type"]).toBeUndefined()
 	})
 
 	it("leaves an XMLHttpRequest the page unloaded under Unset, with the reason", async () => {

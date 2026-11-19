@@ -1,4 +1,4 @@
-import { assert, beforeEach, describe, it } from "vitest"
+import { afterEach, assert, beforeEach, describe, it, vi } from "vitest"
 import { SpanStatusCode, trace } from "@opentelemetry/api"
 import { TracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace"
 import type { ReadableSpan } from "@opentelemetry/sdk-trace"
@@ -162,6 +162,68 @@ describe("setupErrorCapture", () => {
 		window.dispatchEvent(new ErrorEvent("error", { message: "Script error.", filename: "" }))
 		assert.strictEqual(exporter.getFinishedSpans().length, 0)
 		stop()
+	})
+})
+
+describe("setupErrorCapture across a page unload", () => {
+	const reject = (reason: unknown): void => {
+		window.dispatchEvent(
+			Object.assign(new Event("unhandledrejection"), { reason, promise: Promise.resolve() }),
+		)
+	}
+	const startMs = (span: ReadableSpan | undefined): number =>
+		span === undefined ? Number.NaN : span.startTime[0] * 1_000 + span.startTime[1] / 1_000_000
+
+	beforeEach(() => {
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] })
+	})
+	afterEach(() => {
+		vi.useRealTimers()
+	})
+
+	it("drops a failed request's rejection when the page unloads right after", () => {
+		// A reload cancels the page's requests a moment before `pagehide`.
+		const stop = setupErrorCapture()
+		reject(new TypeError("Failed to fetch"))
+		reject(new TypeError("NetworkError when attempting to fetch resource."))
+		// How some browsers cancel a request a navigation interrupts.
+		reject(new DOMException("The operation was aborted.", "AbortError"))
+		window.dispatchEvent(new Event("pagehide"))
+		vi.advanceTimersByTime(1_000)
+		stop()
+
+		assert.strictEqual(exporter.getFinishedSpans().length, 0)
+	})
+
+	it("reports a failed request's rejection when the page stays, dated when it happened", () => {
+		vi.setSystemTime(1_700_000_000_000)
+		const stop = setupErrorCapture()
+		reject(new TypeError("Load failed"))
+		assert.strictEqual(exporter.getFinishedSpans().length, 0)
+		vi.advanceTimersByTime(300)
+		stop()
+
+		const [span] = exporter.getFinishedSpans()
+		assert.strictEqual(span?.name, "browser.unhandled_rejection")
+		assert.strictEqual(exceptionEventOf(span)?.attributes?.["exception.message"], "Load failed")
+		assert.strictEqual(startMs(span), 1_700_000_000_000)
+	})
+
+	it("reports every other rejection at once, whatever follows", () => {
+		const stop = setupErrorCapture()
+		reject(new TypeError("x is not a function"))
+		window.dispatchEvent(new Event("pagehide"))
+		stop()
+
+		assert.strictEqual(exporter.getFinishedSpans().length, 1)
+	})
+
+	it("reports a held rejection on teardown rather than losing it", () => {
+		const stop = setupErrorCapture()
+		reject(new TypeError("Failed to fetch"))
+		stop()
+
+		assert.strictEqual(exporter.getFinishedSpans().length, 1)
 	})
 })
 

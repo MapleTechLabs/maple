@@ -120,6 +120,14 @@ class ConsentSpanExporter implements SpanExporter {
 	}
 }
 
+/** What a failed `fetch()` rejected with, when its span does not count the failure. */
+const excusedFailures = new WeakSet()
+
+/** True for a `fetch()` rejection whose request span is not an error, so no issue is opened for it either. */
+export function isExcusedNetworkFailure(reason: unknown): boolean {
+	return typeof reason === "object" && reason !== null && excusedFailures.has(reason)
+}
+
 /** Request spans whose URL is on another origin, marked as they start. */
 const crossOriginRequests = new WeakSet<ApiSpan>()
 
@@ -259,14 +267,40 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 		const atStart = lossesAtStart.get(span)
 		return atStart !== undefined && atStart !== connectionLosses ? lastLossReason : undefined
 	}
-	// XHR spans the instrumentation marks failed after our hook runs; reset before they end.
+	// Requests to URLs whose network failures the app does not count.
+	const ignoredRequests = new WeakSet<ApiSpan>()
+	const isIgnored = (url: unknown): boolean =>
+		// `search`, not `test`: it ignores a `g`/`y` RegExp's `lastIndex`, so none misses every other call.
+		typeof url === "string" &&
+		config.ignoreNetworkFailuresFor.some((pattern) => url.search(pattern) !== -1)
+	// Every request span as it starts, sampled out or not (processors see only recorded
+	// ones), with the URL as requested, before any `sanitizeUrl` rewrite.
+	const noteRequest = (span: ApiSpan, url: unknown): void => {
+		lossesAtStart.set(span, connectionLosses)
+		if (isIgnored(url)) ignoredRequests.add(span)
+	}
+	// XHR spans the connection was lost under, and ones to ignored URLs: the instrumentation
+	// marks them failed after our hook runs.
 	const lostXhrSpans = new WeakSet<ApiSpan>()
+	const ignoredXhrSpans = new WeakSet<ApiSpan>()
+	// Network failures with no loss known when they settled. A reload cancels requests a
+	// moment before `pagehide`, so one still waiting for its deferred end then was the page's.
+	const failedLive = new WeakSet<ApiSpan>()
+	let unloading = false
 	const connectionTracker: SpanProcessor = {
-		onStart: (span) => {
-			lossesAtStart.set(span, connectionLosses)
-		},
+		onStart: () => {},
 		onEnding: (span) => {
-			if (!lostXhrSpans.has(span)) return
+			if (!lostXhrSpans.has(span)) {
+				if (span.status.code !== SpanStatusCode.ERROR) return
+				if (ignoredXhrSpans.has(span)) {
+					span.setAttribute("maple.network_failure_ignored", true)
+				} else if (unloading && failedLive.has(span) && span.status.message !== "timeout") {
+					// An XHR timeout is a real failure; fetch ones never reach `failedLive`.
+					span.setAttribute("maple.connection_lost", "page_unload")
+				} else {
+					return
+				}
+			}
 			span.status.code = SpanStatusCode.UNSET
 			delete span.status.message
 			delete span.attributes["error.type"]
@@ -342,9 +376,14 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 	const onPageHide = (): void => {
 		noteLost("page_unload")
 		flushUnloading(() => {
-			for (const [span, endTime] of settledRequests) {
-				// Entries are only pruned on the next request, so some already ended.
-				if (span.isRecording()) span.end(endTime)
+			unloading = true
+			try {
+				for (const [span, endTime] of settledRequests) {
+					// Entries are only pruned on the next request, so some already ended.
+					if (span.isRecording()) span.end(endTime)
+				}
+			} finally {
+				unloading = false
 			}
 			settledRequests.clear()
 			onExit()
@@ -365,6 +404,20 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 		window.addEventListener("offline", onOffline)
 	}
 
+	// The instrumentations' tracer, noting each request span as it starts.
+	const requestTracerProvider: TracerProvider = {
+		getTracer: (name, version, options) => {
+			const tracer = provider.getTracer(name, version, options)
+			return {
+				startSpan: (spanName, spanOptions, ctx) => {
+					const span = tracer.startSpan(spanName, spanOptions, ctx)
+					noteRequest(span, spanOptions?.attributes?.["url.full"])
+					return span
+				},
+				startActiveSpan: tracer.startActiveSpan.bind(tracer),
+			}
+		},
+	}
 	const requestOptions = {
 		// Maple's own ingest calls are not traced at all.
 		ignoreUrls: [new RegExp(`${escapeRegExp(config.endpoint)}/v1/`)],
@@ -396,13 +449,19 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 								// A rejected fetch (offline, DNS, CORS) ends with status 0 and no error; XHR marks its own.
 								// An abort rejects with its reason, whatever that is, so the signal decides; a
 								// timeout (`AbortSignal.timeout()`) is a failure, not the app changing its mind.
-								// One the page went away or offline under stays Unset, with the reason.
+								// One the page went away or offline under stays Unset, with the reason, as
+								// does one to a URL the app ignores failures for.
 								const lost = connectionLost(span)
 								if (lost !== undefined) {
 									span.setAttribute("maple.connection_lost", lost)
+									excusedFailures.add(result)
+								} else if (ignoredRequests.has(span)) {
+									span.setAttribute("maple.network_failure_ignored", true)
+									excusedFailures.add(result)
 								} else {
 									span.setStatus({ code: SpanStatusCode.ERROR, message: result.message })
 									span.setAttribute("error.type", result.name)
+									if (!isTimeout(result, request.signal)) failedLive.add(span)
 								}
 							}
 						},
@@ -418,10 +477,16 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 							noteSettled(span)
 							// Status 0 is no response: an error, timeout or abort. One the page went away
 							// or offline under stays Unset with the reason, as for fetch.
-							const lost = xhr.status === 0 ? connectionLost(span) : undefined
-							if (lost !== undefined) {
-								span.setAttribute("maple.connection_lost", lost)
-								lostXhrSpans.add(span)
+							if (xhr.status === 0) {
+								const lost = connectionLost(span)
+								if (lost !== undefined) {
+									span.setAttribute("maple.connection_lost", lost)
+									lostXhrSpans.add(span)
+								} else if (ignoredRequests.has(span)) {
+									ignoredXhrSpans.add(span)
+								} else {
+									failedLive.add(span)
+								}
 							}
 							if (headers.response.length === 0) return
 							// One read of the exposed headers: asking for an unexposed one by name logs a console error.
@@ -439,7 +504,7 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 			? registerInstrumentations({
 					// Explicit, not the global: a host app that registered its own provider
 					// first owns the global, and these spans would otherwise go to it.
-					tracerProvider: provider,
+					tracerProvider: requestTracerProvider,
 					instrumentations,
 				})
 			: undefined

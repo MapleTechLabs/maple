@@ -2,7 +2,7 @@
 // End-to-end harness: a fake ingest that records and decodes every request the
 // SDK makes, a static server for the fixture app (built against `dist/`), and
 // a real Chromium driven through Playwright.
-import { createServer, type IncomingMessage, type Server } from "node:http"
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import type { AddressInfo } from "node:net"
 import { readFile } from "node:fs/promises"
 import { extname, join, normalize } from "node:path"
@@ -76,7 +76,7 @@ const CONTENT_TYPES = new Map([
 	[".css", "text/css; charset=utf-8"],
 ])
 
-/** Serves the built fixture app, plus `/api/*` endpoints the app can call. */
+/** Serves the built fixture app, plus `/api/*` endpoints the app can call and `/slow/*` ones that hang. */
 export async function startApp(root: string): Promise<{
 	url: string
 	/** `/api/*` calls the app made, with the headers they arrived with. */
@@ -84,8 +84,26 @@ export async function startApp(root: string): Promise<{
 	close: () => Promise<void>
 }> {
 	const apiRequests: Array<{ path: string; headers: IncomingMessage["headers"] }> = []
+	// `/slow/*` hangs until the next page load, which fails those requests (a malformed
+	// response: a reset one Chrome would retry) and is answered 100ms later, so the old
+	// page sees them fail before it unloads.
+	const held = new Set<ServerResponse>()
 	const server = createServer((req, res) => {
 		const path = (req.url ?? "/").split("?")[0] ?? "/"
+		if (path.startsWith("/slow/")) {
+			held.add(res)
+			res.on("close", () => held.delete(res))
+			return
+		}
+		if (path === "/" && held.size > 0) {
+			for (const pending of held)
+				pending.socket?.end("HTTP/1.1 200 OK\r\nContent-Length: 1\r\nContent-Length: 2\r\n\r\n")
+			setTimeout(() => serve(req, path, res), 100)
+			return
+		}
+		serve(req, path, res)
+	})
+	const serve = (req: IncomingMessage, path: string, res: ServerResponse): void => {
 		if (path.startsWith("/api/")) {
 			apiRequests.push({ path, headers: req.headers })
 			const requested = Number(path.split("/")[2])
@@ -107,7 +125,7 @@ export async function startApp(root: string): Promise<{
 					.end(data),
 			() => res.writeHead(404).end(),
 		)
-	})
+	}
 	const url = await listen(server)
 	return { url, apiRequests, close: () => closeServer(server) }
 }
