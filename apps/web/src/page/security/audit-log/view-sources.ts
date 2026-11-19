@@ -55,9 +55,9 @@ const COPY = {
 	aws: {
 		brand: providerBrand("aws"),
 		sends: "CloudTrail management changes: IAM, keys, sign-ins, resources",
-		// Holds whether the module is off or on but not granted yet: either way the stack needs it.
-		turnOn: "Run the AWS connection's setup script again with the Security scan module on, so the role grants it.",
-		connect: "Connect an AWS account with the Security scan module on.",
+		// Holds whether the switch is off or on but not granted yet: the flow shows which, and the script.
+		turnOn: "Turn on Audit log on the AWS connection, then update its stack.",
+		connect: "Connect an AWS account with Audit log on.",
 	},
 	github: {
 		brand: providerBrand("github"),

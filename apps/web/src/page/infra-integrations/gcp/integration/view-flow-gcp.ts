@@ -12,6 +12,7 @@ import { heading } from "@maple/views/ui/heading"
 import { button } from "@maple/views/ui/button"
 import { skeleton } from "@maple/views/ui/skeleton"
 import {
+	CHANGE_LATER_NOTE,
 	connectionTabItem,
 	type CheckRow,
 	choiceTiles,
@@ -230,7 +231,7 @@ const chooseStep = (h: H, model: Model, configure: ConfigureModel): Html => {
 	return flowColumns(
 		h,
 		[
-			stepCard(h, { icon: "LayersIcon", title: "Choose what to collect" }, [
+			stepCard(h, { icon: "ChartBarIcon", title: "Choose what to collect", note: CHANGE_LATER_NOTE }, [
 				collectFields(h, {
 					flags: configure.newFlags,
 					metricsAvailable: metricsAvailable(model),

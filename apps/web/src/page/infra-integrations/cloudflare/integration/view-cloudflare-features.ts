@@ -5,7 +5,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { type FeatureRow, featureList, featurePanel } from "../../../kit/feature-list"
 import { shownSwitches } from "../../../integrations/feature-switches"
 import type { Message } from "../../../integrations/message"
-import type { Model } from "../../../integrations/model"
+import { type Model, manageLock } from "../../../integrations/model"
 import { CloudflareMessage } from "./cloudflare"
 import { savedCloudflareFeatures } from "./update-cloudflare"
 import { toHub } from "./view-cloudflare-zones"
@@ -34,8 +34,13 @@ export const cloudflareFeaturePanel = (h: H, model: Model, status: CloudflareInt
 		idPrefix: "cloudflare-feature",
 		rows: rows(model, status),
 		error: model.cloudflareCard.features.error,
+		lockReason: manageLock(model),
 	})
 
 /** The connect flow's Choose data list. */
 export const cloudflareFeatureChoice = (h: H, model: Model, status: CloudflareIntegrationStatus): Html =>
-	featureList(h, { idPrefix: "cloudflare-choose", rows: rows(model, status) })
+	featureList(h, {
+		idPrefix: "cloudflare-choose",
+		rows: rows(model, status),
+		lockReason: manageLock(model),
+	})

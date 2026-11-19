@@ -6,7 +6,7 @@ import { type FeatureRow, featurePanel } from "../kit/feature-list"
 import { ChatMessage, savedChatFeatures } from "./chat"
 import { initFeatureSwitches, shownSwitches } from "./feature-switches"
 import { Message } from "./message"
-import { canManage, type Model } from "./model"
+import { manageLock, type Model } from "./model"
 
 // What the bot does in one linked workspace, one switch per feature, under its card.
 
@@ -21,7 +21,7 @@ const rows = (model: Model, workspace: V2ChatWorkspace): ReadonlyArray<FeatureRo
 		return {
 			spec,
 			isChecked: shown[flag],
-			isDisabled: card.features.isSaving || !canManage(model),
+			isDisabled: card.features.isSaving,
 			onToggle: Message.GotChatMessage({
 				message: ChatMessage.ToggledFeature({ workspaceId: workspace.id, flag }),
 			}),
@@ -36,4 +36,5 @@ export const chatFeaturePanel = (h: H, model: Model, workspace: V2ChatWorkspace)
 		title: "What Maple does here",
 		rows: rows(model, workspace),
 		error: model.chatCard.featuresWorkspaceId === workspace.id ? model.chatCard.features.error : null,
+		lockReason: manageLock(model),
 	})

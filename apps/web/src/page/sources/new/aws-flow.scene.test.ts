@@ -2,17 +2,7 @@ import { OrgId } from "@maple/domain"
 import { encodePublicId, PublicIdPrefixes, V2AwsIntegration } from "@maple/domain/http/v2"
 import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
-import {
-	change,
-	click,
-	Command,
-	expect as expectView,
-	given,
-	role,
-	scene,
-	text,
-	withViewInputs,
-} from "foldkit/scene"
+import { click, Command, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import * as Field from "@maple/views/ui/field"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
@@ -274,8 +264,70 @@ describe("aws connect flow", () => {
 			expectView(role("listitem", { current: "step", name: "Go live: needs attention" })).toExist(),
 		)
 	})
+	describe("a connected account's switches", () => {
+		const AUDIT_MODULE = {
+			module: "audit",
+			title: "Audit log",
+			summary: "CloudTrail management events in the audit log.",
+			available: true,
+		}
+		const auditSwitch = role("switch", { name: "Audit log" })
+
+		test("the Connect step lists them, so turning one on there saves it", () => {
+			const model = withConnections(
+				[connection({ ...VERIFIED, granted_modules: [] })],
+				[COST_MODULE, AUDIT_MODULE],
+			)
+			scene(
+				{ update: pageUpdate, view },
+				given(model),
+				expectView(auditSwitch).not.toBeChecked(),
+				expectView(role("switch", { name: "Cost" })).not.toBeChecked(),
+			)
+			const id = idOf(model)
+			expect(id).not.toBeNull()
+			if (id === null) return
+			const toggled = pageUpdate(
+				model,
+				Message.GotIntegrationsMessage({
+					message: IntegrationMessage.ToggledAwsModule({ id, module: "audit" }),
+				}),
+			)
+			expect(names(toggled.commands)).toContain("UpdateAwsModules")
+		})
+
+		test("on but not granted, it asks for the stack update right there", () => {
+			const model = withConnections(
+				[connection({ ...VERIFIED, modules: ["audit"], granted_modules: [] })],
+				[COST_MODULE, AUDIT_MODULE],
+			)
+			scene(
+				{ update: pageUpdate, view },
+				given(model),
+				expectView(auditSwitch).toBeChecked(),
+				expectView(text("Needs a stack update")).toExist(),
+				expectView(role("button", { name: "Update the stack" })).toExist(),
+			)
+			// With the script open, the role can be checked right there once the stack is deployed.
+			const id = idOf(model)
+			expect(id).not.toBeNull()
+			if (id === null) return
+			const open = inner(model, IntegrationMessage.ClickedAwsSetup({ id }))
+			scene(
+				{ update: pageUpdate, view },
+				given(open),
+				expectView(role("button", { name: "Check now" })).toExist(),
+			)
+			const checked = pageUpdate(
+				open,
+				Message.GotIntegrationsMessage({ message: IntegrationMessage.ClickedAwsCheck({ id }) }),
+			)
+			expect(names(checked.commands)).toContain("CheckAwsConnection")
+		})
+	})
+
 	describe("the Cost choice", () => {
-		const costChoice = role("checkbox", { name: "Cost" })
+		const costChoice = role("switch", { name: "Cost" })
 
 		test("it starts unticked, and an account connected without it asks for no module", () => {
 			const model = withAccountId(withConnections([], [COST_MODULE]), "123456789012")
@@ -285,6 +337,9 @@ describe("aws connect flow", () => {
 				expectView(costChoice).not.toBeChecked(),
 				expectView(text(COST_MODULE.summary)).toExist(),
 				expectView(text("Cost policy")).not.toExist(),
+				// The metric stream is listed too: it is scoped on the next step, not switched here.
+				expectView(text("Infrastructure metrics")).toExist(),
+				expectView(text("Picked on the next step")).toExist(),
 			)
 			expect(submitted(model)).toEqual([
 				{ name: "CreateAwsConnection", args: { request: { account_id: "123456789012" } } },
@@ -297,11 +352,11 @@ describe("aws connect flow", () => {
 			scene(
 				{ update: pageUpdate, view },
 				given(model),
-				change(costChoice, "on"),
+				click(costChoice),
 				expectView(costChoice).toBeChecked(),
 				expectView(text("Cost policy")).toExist(),
 				// Ticking again takes it back out.
-				change(costChoice, "on"),
+				click(costChoice),
 				expectView(costChoice).not.toBeChecked(),
 			)
 			expect(submitted(ticked)).toEqual([
@@ -320,13 +375,13 @@ describe("aws connect flow", () => {
 				available: true,
 			}
 			const model = withAccountId(withConnections([], [COST_MODULE, security]), "123456789012")
-			const securityChoice = role("checkbox", { name: "Security scan" })
+			const securityChoice = role("switch", { name: "Security scan" })
 			scene(
 				{ update: pageUpdate, view },
 				given(model),
 				expectView(securityChoice).toExist(),
 				expectView(text("Security policy")).not.toExist(),
-				change(securityChoice, "on"),
+				click(securityChoice),
 				expectView(securityChoice).toBeChecked(),
 				// The stack summary lists the policy the module adds.
 				expectView(text("Security policy")).toExist(),
