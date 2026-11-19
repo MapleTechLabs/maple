@@ -11,7 +11,7 @@ import {
 	ModelProtocolError,
 } from "@yielded/agent/agent-error"
 import { PR_REVIEW_FAILURE_COPY, type PrReviewFailureReason } from "@maple/domain/http"
-import { Cause, Option, Schema, Array as Arr } from "effect"
+import { Cause, Option, Schema, Array as Arr, String as Str } from "effect"
 import { isAiError, type AiError } from "effect/ai/AiError"
 
 /** Whose OpenRouter key the run used: a rejected org key is theirs to fix, a rejected Maple key is ours. */
@@ -34,6 +34,9 @@ const providerReason = (error: AiError, context: ReviewFailureContext): PrReview
 			return "model_error"
 	}
 }
+
+/** How the engine words a stream that ended on the provider's `error` part. */
+const MODEL_RESPONSE_FAILED = "Model response failed:"
 
 /** Provider failures, which rank below any typed limit the same cause carries. */
 const PROVIDER_REASONS: ReadonlySet<PrReviewFailureReason> = new Set([
@@ -60,6 +63,9 @@ const reasonOf = (error: unknown, context: ReviewFailureContext): PrReviewFailur
 	// The engine's run-event and response-part ceilings: the run outgrew its room, like a step limit.
 	if (Schema.is(ModelProtocolError)(error) && /exceeded the \d+-(event|part)/.test(error.message))
 		return "step_limit"
+	// An error part inside a 200 stream (an upstream 500 mid-response): the provider's outage, not ours.
+	if (Schema.is(ModelProtocolError)(error) && Str.startsWith(MODEL_RESPONSE_FAILED)(error.message))
+		return "provider_unavailable"
 	if (isAiError(error)) return providerReason(error, context)
 	return undefined
 }
