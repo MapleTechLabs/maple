@@ -8,11 +8,11 @@ import { MembershipRevocationService } from "@maple/backend/services/auth/Member
 import { ClerkRolesGateway } from "./ClerkRolesGateway"
 import { RolesService } from "./RolesService"
 
-// Clerk binds `fetch` when it loads, so its API is faked before any import runs: the organization
-// answers with `publicMetadata`, and every other call is recorded.
+// Clerk's API is faked before any import runs: the organization answers with `publicMetadata`, its
+// memberships with `memberships`, and every call is recorded.
 const clerkApi = vi.hoisted(() => {
 	const calls: Array<string> = []
-	const state = { publicMetadata: {}, calls }
+	const state = { publicMetadata: {}, memberships: [] as Array<unknown>, calls }
 	globalThis.fetch = async (input, init) => {
 		const request = input instanceof Request ? input : new Request(String(input), init)
 		const url = new URL(request.url)
@@ -28,6 +28,9 @@ const clerkApi = vi.hoisted(() => {
 				created_at: 0,
 				updated_at: 0,
 			})
+		}
+		if (request.method === "GET" && url.pathname === "/v1/organizations/org_roles/memberships") {
+			return Response.json({ data: state.memberships, total_count: state.memberships.length })
 		}
 		return Response.json({ errors: [{ code: "resource_not_found" }] }, { status: 404 })
 	}
@@ -76,6 +79,56 @@ describe("ClerkRolesGateway", () => {
 			clerkApi.publicMetadata = { region: "eu", [Policy.ORG_ROLES_METADATA_KEY]: stored }
 			const clerk = yield* ClerkRolesGateway
 			assert.deepStrictEqual(yield* clerk.customRoles(ORG), stored)
+		}).pipe(Effect.provide(gateway)),
+	)
+
+	it.effect("reads each membership's role, metadata and profile", () =>
+		Effect.gen(function* () {
+			const metadata = {
+				[Policy.MEMBERSHIP_ROLE_METADATA_KEY]: { id: "role_abcdefabcdef", permissions: [36] },
+			}
+			const membership = (userId: string, role: string, firstName: string | null) => ({
+				object: "organization_membership",
+				id: `orgmem_${userId}`,
+				role,
+				permissions: [],
+				public_metadata: role === "org:custom" ? metadata : {},
+				organization: { object: "organization", id: "org_roles", name: "Roles", slug: "roles" },
+				public_user_data: {
+					user_id: userId,
+					first_name: firstName,
+					last_name: "Doe",
+					profile_image_url: null,
+					image_url: `https://img.example/${userId}`,
+					has_image: true,
+					identifier: `${userId}@example.com`,
+				},
+				created_at: 0,
+				updated_at: 0,
+			})
+			clerkApi.memberships = [
+				membership("user_jane", "org:custom", "Jane"),
+				membership("user_john", "org:member", null),
+			]
+			const clerk = yield* ClerkRolesGateway
+			assert.deepStrictEqual(yield* clerk.memberships(ORG), [
+				{
+					userId: "user_jane",
+					role: "org:custom",
+					metadata,
+					name: "Jane Doe",
+					identifier: "user_jane@example.com",
+					imageUrl: "https://img.example/user_jane",
+				},
+				{
+					userId: "user_john",
+					role: "org:member",
+					metadata: {},
+					name: "Doe",
+					identifier: "user_john@example.com",
+					imageUrl: "https://img.example/user_john",
+				},
+			])
 		}).pipe(Effect.provide(gateway)),
 	)
 
