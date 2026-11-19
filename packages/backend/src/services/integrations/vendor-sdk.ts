@@ -5,7 +5,7 @@
  * The SDK's own retries are off: the client passes a no-retry policy in `sdk`. The SDK does not
  * check the bodies it returns, so each call decodes the fields Maple reads with its own schema.
  */
-import { Duration, Effect, Layer, Option, Schema, String as Str } from "effect"
+import { Duration, Effect, Layer, Option, Schema, type Tracer, String as Str } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientError } from "effect/http"
 import * as VendorHttp from "./vendor-http"
 import { VENDOR_TRANSIENT_RETRY } from "./vendor-retry"
@@ -47,6 +47,21 @@ export interface VendorSdkPaging<S extends Schema.Top, C, R> {
 
 /** The SDK reads a 3xx body as an answer; a redirect fails here instead, with its status. */
 const refuseRedirects = HttpClient.filterStatus((status) => status < 300 || status >= 400)
+
+/**
+ * Records the host and path the SDK sent to on the attempt's span, never the query. The span is
+ * passed in: inside the SDK call the current span is the SDK's own, which is off.
+ */
+const recordTarget = (span: Option.Option<Tracer.Span>) =>
+	HttpClient.tapRequest((request) =>
+		Effect.sync(() => {
+			if (Option.isNone(span) || !URL.canParse(request.url)) return
+			const url = new URL(request.url)
+			span.value.attribute("server.address", url.hostname)
+			span.value.attribute("url.scheme", Str.slice(0, -1)(url.protocol))
+			span.value.attribute("url.path", url.pathname)
+		}),
+	)
 
 const DEFAULT_MAX_RETRY_AFTER = Duration.seconds(10)
 
@@ -111,8 +126,41 @@ export const make = <E, R>(options: VendorSdkOptions<E, R>) => {
 		})
 	}
 
-	/** One attempt: the operation over the client, its body decoded by `schema`, within the timeout. */
+	/**
+	 * One attempt: the operation over the client, its body decoded by `schema`, within the timeout, in
+	 * one Client span. The SDK's own span is off (see {@link VendorHttp.vendorSdkRequestSpan}); this
+	 * one records the host and path the SDK sent to, never the query.
+	 */
 	const attempt = <S extends Schema.Top>(
+		schema: S,
+		operation: Effect.Effect<unknown, SdkFailure, R | HttpClient.HttpClient>,
+		call: VendorSdkCall,
+	) =>
+		Effect.flatMap(Effect.option(Effect.currentSpan), (span) =>
+			attemptIn(span, schema, operation, call),
+		).pipe(
+			Effect.tapError((error) =>
+				Effect.annotateCurrentSpan({
+					"error.type": error.kind,
+					...(error.status === undefined
+						? undefined
+						: { "http.response.status_code": error.status }),
+				}),
+			),
+			VendorHttp.vendorSdkRequestSpan(
+				"VendorSdk.request",
+				peerService,
+				(error: VendorHttp.VendorHttpError) =>
+					error.kind === "invalid_response" ? undefined : error.kind,
+			),
+			Effect.annotateSpans({
+				"http.request.method": call.method ?? "GET",
+				...(call.operation === undefined ? undefined : { "maple.vendor.operation": call.operation }),
+			}),
+		)
+
+	const attemptIn = <S extends Schema.Top>(
+		span: Option.Option<Tracer.Span>,
 		schema: S,
 		operation: Effect.Effect<unknown, SdkFailure, R | HttpClient.HttpClient>,
 		call: VendorSdkCall,
@@ -133,11 +181,10 @@ export const make = <E, R>(options: VendorSdkOptions<E, R>) => {
 			// The credentials are per connection, so this cannot be hoisted into the static service graph.
 			Effect.provide([
 				options.sdk,
-				Layer.succeed(HttpClient.HttpClient, refuseRedirects(options.httpClient)),
+				Layer.succeed(HttpClient.HttpClient, recordTarget(span)(refuseRedirects(options.httpClient))),
 			]),
 			// A redirect is not the vendor answering: the token is never followed to another host.
 			Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
-			Effect.tapError((error) => Effect.annotateCurrentSpan("error.type", error.kind)),
 		)
 
 	const call = <S extends Schema.Top>(
@@ -149,7 +196,7 @@ export const make = <E, R>(options: VendorSdkOptions<E, R>) => {
 			retryPolicy,
 			request.retry ?? VendorHttp.isIdempotent(request.method),
 			attempt(schema, operation, request),
-		).pipe(Effect.mapError(options.toError), Effect.annotateSpans("peer.service", peerService))
+		).pipe(Effect.mapError(options.toError))
 
 	/** Pages until `next` is none or `maxPages`; `complete` is false when the cap cut it short. */
 	const paginate = <S extends Schema.Top, C>(paging: VendorSdkPaging<S, C, R>) => {

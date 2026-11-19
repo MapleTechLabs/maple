@@ -1,6 +1,6 @@
 import * as Vercel from "@distilled.cloud/vercel"
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Redacted, Schema, Array as Arr } from "effect"
+import { Effect, Layer, Redacted, Schema, Tracer, Array as Arr, Record as Rec, String as Str } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import * as VendorFake from "@maple/backend/testing/vendor-fake"
 import type * as VendorHttp from "./vendor-http"
@@ -96,6 +96,50 @@ describe("VendorSdk", () => {
 					["manual"],
 				)
 			}),
+		)
+	})
+
+	it.effect("records one Client span per attempt with the path, and none of the SDK's", () => {
+		const spans: Array<Tracer.NativeSpan> = []
+		const tracer = Tracer.make({
+			span(options) {
+				const span = new Tracer.NativeSpan(options)
+				spans.push(span)
+				return span
+			},
+		})
+		const fake = VendorFake.make({
+			routes: [
+				drainsRoute(() => VendorFake.json({ error: { message: "Drains need a Pro plan" } }, 403)),
+			],
+		})
+		return withClient(fake, (client) =>
+			Effect.gen(function* () {
+				yield* Effect.flip(listDrains(client))
+				assert.deepStrictEqual(
+					Arr.map(spans, (span) => [
+						span.name,
+						span.kind,
+						span.status._tag === "Ended" ? span.status.exit._tag : "Open",
+					]),
+					[["VendorSdk.request", "client", "Success"]],
+				)
+				const attributes = Rec.fromEntries([...(spans[0]?.attributes ?? [])])
+				assert.deepStrictEqual(
+					[
+						attributes["peer.service"],
+						attributes["server.address"],
+						attributes["url.path"],
+						attributes["http.request.method"],
+						attributes["http.response.status_code"],
+						attributes["error.type"],
+					],
+					["acme", "api.acme.test", "/v1/drains", "GET", 403, "forbidden"],
+				)
+				// Neither the query nor the vendor's message reaches the span.
+				assert.isFalse(Str.includes("team_1")(JSON.stringify(attributes)))
+				assert.isFalse(Str.includes("Pro plan")(JSON.stringify(attributes)))
+			}).pipe(Effect.withTracer(tracer)),
 		)
 	})
 
