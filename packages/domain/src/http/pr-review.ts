@@ -231,6 +231,7 @@ export const PR_REVIEW_MODELS = [
 	{ id: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna", eu: false },
 	{ id: "openai/gpt-6-luna", label: "GPT-6 Luna", eu: true },
 	{ id: "openai/gpt-6.1-sol", label: "GPT-6.1 Sol", eu: true },
+	{ id: "openai/gpt-6.2-sol", label: "GPT-6.2 Sol", eu: true },
 	{ id: "anthropic/claude-sonnet-5.5", label: "Claude Sonnet 5.5", eu: true },
 	{ id: "anthropic/claude-haiku-5.5", label: "Claude Haiku 5.5", eu: true },
 ] as const
