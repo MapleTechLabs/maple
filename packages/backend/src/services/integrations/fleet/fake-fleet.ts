@@ -21,6 +21,23 @@ export interface FakeFleetActivity {
 	readonly details?: Readonly<Record<string, unknown>> | null
 }
 
+export interface FakeFleetPolicy {
+	readonly id: number
+	readonly name: string
+	readonly critical?: boolean
+	readonly failing_host_count: number
+	readonly passing_host_count: number
+	readonly resolution?: string
+}
+
+export interface FakeFleetSoftware {
+	readonly id: number
+	readonly name: string
+	readonly version: string
+	readonly hosts_count: number
+	readonly vulnerabilities: ReadonlyArray<{ readonly cve: string; readonly cvss_score?: number | null }>
+}
+
 export interface FakeFleet {
 	/** Answers every request with this status instead, when set. */
 	status: number | null
@@ -29,6 +46,11 @@ export interface FakeFleet {
 	orgName: string
 	tier: string
 	activities: Array<FakeFleetActivity>
+	hostCount: number
+	policies: Array<FakeFleetPolicy>
+	/** The devices failing each policy, by policy id. */
+	failingHosts: Record<number, ReadonlyArray<{ readonly id: number; readonly hostname: string }>>
+	software: Array<FakeFleetSoftware>
 	readonly fake: VendorFake.VendorFake
 }
 
@@ -62,6 +84,10 @@ export const makeFakeFleet = (overrides: Partial<Omit<FakeFleet, "fake">> = {}):
 		orgName: "Acme Corp",
 		tier: "free",
 		activities: [],
+		hostCount: 0,
+		policies: [],
+		failingHosts: {},
+		software: [],
 		...overrides,
 		fake: VendorFake.make({
 			routes: [
@@ -95,6 +121,29 @@ export const makeFakeFleet = (overrides: Partial<Omit<FakeFleet, "fake">> = {}):
 							org_info: { org_name: world.orgName },
 							license: { tier: world.tier },
 						}),
+				},
+				{ path: `${PREFIX}/hosts/count`, respond: () => VendorFake.json({ count: world.hostCount }) },
+				{
+					path: `${PREFIX}/global/policies`,
+					respond: () => VendorFake.json({ policies: world.policies }),
+				},
+				{
+					path: `${PREFIX}/hosts`,
+					respond: (request) =>
+						VendorFake.json({
+							hosts: world.failingHosts[Number(request.search.get("policy_id"))] ?? [],
+						}),
+				},
+				{
+					path: `${PREFIX}/software/versions`,
+					respond: (request) => {
+						const page = Number(request.search.get("page") ?? "0")
+						const perPage = Number(request.search.get("per_page") ?? "100")
+						return VendorFake.json({
+							software: world.software.slice(page * perPage, (page + 1) * perPage),
+							meta: { has_next_results: (page + 1) * perPage < world.software.length },
+						})
+					},
 				},
 				{
 					path: `${PREFIX}/activities`,

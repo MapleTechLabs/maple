@@ -42,6 +42,7 @@ import { AwsConnectionService } from "@maple/backend/services/integrations/AwsCo
 import { CostSyncService } from "@maple/backend/services/cost/CostSyncService"
 import { AwsSecurityFindingsService } from "@maple/backend/services/cloud-security/AwsSecurityFindingsService"
 import { FleetAuditService } from "@maple/backend/services/integrations/FleetAuditService"
+import { FleetFindingsService } from "@maple/backend/services/integrations/FleetFindingsService"
 import { SecretResealService } from "@maple/backend/services/secrets/SecretResealService"
 import { SupabaseConnectionService } from "@maple/backend/services/integrations/SupabaseConnectionService"
 import { SupabaseInsightsService } from "@maple/backend/services/integrations/SupabaseInsightsService"
@@ -126,6 +127,7 @@ export const layerTick = (
 		CostSyncService.layer,
 		AwsSecurityFindingsService.layer,
 		FleetAuditService.layer,
+		FleetFindingsService.layer,
 		SecretResealService.layer,
 		SupabaseConnectionService.layer,
 		SupabaseLogsService.layer,
@@ -498,6 +500,20 @@ const fleetTick = makeTick(
 			: undefined,
 )
 
+const fleetFindingsTick = makeTick(
+	FleetFindingsService.use((fleet) => fleet.syncDue),
+	"fleet_findings",
+	(result) =>
+		result.connections > 0
+			? {
+					connections: result.connections,
+					failedConnections: result.failedConnections,
+					policies: result.policies,
+					vulnerabilities: result.vulnerabilities,
+				}
+			: undefined,
+)
+
 const vercelTick = makeTick(
 	VercelIntegrationService.use((vercel) => vercel.pollAllOrgs),
 	"vercel",
@@ -656,6 +672,7 @@ const scheduledTicks = {
 	error: errorTick,
 	escalation: escalationTick,
 	fleet: fleetTick,
+	fleetFindings: fleetFindingsTick,
 	fixVerification: fixVerificationTick,
 	gcpMetrics: gcpMetricsTick,
 	maintenanceWindows: maintenanceWindowsTick,
@@ -719,6 +736,7 @@ const LANE_TICKS = {
 	cost_sync: ["costSync"],
 	aws_security: ["awsSecurity"],
 	fleet: ["fleet"],
+	fleet_findings: ["fleetFindings"],
 	vercel: ["vercel"],
 } as const satisfies Record<TickLane, ReadonlyArray<ScheduledTickName>>
 

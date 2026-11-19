@@ -8,6 +8,7 @@ import { CodeReviewApiGroup } from "./code-review"
 import { DemoApiGroup } from "./demo"
 import { AuditTrailApiGroup } from "./audit-trail"
 import { CloudSecurityApiGroup } from "./cloud-security"
+import { FleetSecurityApiGroup } from "./fleet-security"
 import { AnthropicCostApiGroup } from "./anthropic-cost"
 import { FeatureRequestApiGroup } from "./feature-requests"
 import { CloudflareCostApiGroup } from "./cloudflare-cost"
@@ -72,6 +73,7 @@ export class MapleInternalApi extends HttpApi.make("MapleInternalApi")
 	.add(DependencyScanApiGroup)
 	.add(DigestApiGroup)
 	.add(ErrorsApiGroup)
+	.add(FleetSecurityApiGroup)
 	.add(IntegrationsApiGroup)
 	.add(McpInternalApiGroup)
 	.add(OpenRouterKeyApiGroup)

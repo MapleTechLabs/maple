@@ -190,3 +190,85 @@ export const listActivities = (
 		},
 		operation: "reading the activity feed",
 	})
+
+const NullableNumber = Schema.optionalKey(Schema.NullOr(Schema.Number))
+const NullableBoolean = Schema.optionalKey(Schema.NullOr(Schema.Boolean))
+
+export const FleetPolicy = Schema.Struct({
+	id: Schema.Number,
+	name: Schema.String,
+	description: NullableString,
+	resolution: NullableString,
+	critical: NullableBoolean,
+	platform: NullableString,
+	passing_host_count: NullableNumber,
+	failing_host_count: NullableNumber,
+	host_count_updated_at: NullableString,
+})
+export type FleetPolicy = typeof FleetPolicy.Type
+
+export const FleetHost = Schema.Struct({
+	id: Schema.Number,
+	hostname: NullableString,
+	display_name: NullableString,
+	platform: NullableString,
+})
+export type FleetHost = typeof FleetHost.Type
+
+export const FleetVulnerability = Schema.Struct({
+	cve: Schema.String,
+	details_link: NullableString,
+	cvss_score: NullableNumber,
+	epss_probability: NullableNumber,
+	cisa_known_exploit: NullableBoolean,
+	resolved_in_version: NullableString,
+})
+
+export const FleetSoftwareVersion = Schema.Struct({
+	id: Schema.Number,
+	name: Schema.String,
+	version: Schema.String,
+	source: NullableString,
+	hosts_count: NullableNumber,
+	vulnerabilities: Schema.optionalKey(Schema.NullOr(Schema.Array(FleetVulnerability))),
+})
+export type FleetSoftwareVersion = typeof FleetSoftwareVersion.Type
+
+const PoliciesPage = Schema.Struct({ policies: Schema.NullOr(Schema.Array(FleetPolicy)) })
+const HostsPage = Schema.Struct({ hosts: Schema.NullOr(Schema.Array(FleetHost)) })
+const HostsCount = Schema.Struct({ count: Schema.Number })
+const SoftwareVersionsPage = Schema.Struct({
+	software: Schema.NullOr(Schema.Array(FleetSoftwareVersion)),
+	meta: Schema.optionalKey(
+		Schema.NullOr(Schema.Struct({ has_next_results: Schema.optionalKey(Schema.NullOr(Schema.Boolean)) })),
+	),
+})
+
+/** Every global policy with its passing and failing device counts. */
+export const listGlobalPolicies = (fleet: FleetClient) =>
+	fleet.json(PoliciesPage, { path: "/global/policies", operation: "reading policies" })
+
+/** A sample of the devices failing one policy. */
+export const listFailingHosts = (fleet: FleetClient, policyId: number, perPage: number) =>
+	fleet.json(HostsPage, {
+		path: "/hosts",
+		query: { policy_id: policyId, policy_response: "failing", per_page: perPage, page: 0 },
+		operation: "reading the devices failing a policy",
+	})
+
+export const countHosts = (fleet: FleetClient) =>
+	fleet.json(HostsCount, { path: "/hosts/count", operation: "counting devices" })
+
+/** One page of installed software versions with a known vulnerability, most installed first. */
+export const listVulnerableSoftware = (fleet: FleetClient, page: number, perPage: number) =>
+	fleet.json(SoftwareVersionsPage, {
+		path: "/software/versions",
+		query: {
+			vulnerable: "true",
+			order_key: "hosts_count",
+			order_direction: "desc",
+			page,
+			per_page: perPage,
+		},
+		operation: "reading vulnerable software",
+	})

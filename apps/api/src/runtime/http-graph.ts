@@ -38,6 +38,7 @@ import { HttpSavedViewsLive } from "@/routes/internal/saved-views.http"
 import { HttpCodeReviewLive } from "@/routes/internal/code-review.http"
 import { HttpAuditTrailLive } from "@/routes/internal/audit-trail.http"
 import { HttpCloudSecurityLive } from "@/routes/internal/cloud-security.http"
+import { HttpFleetSecurityLive } from "@/routes/internal/fleet-security.http"
 import { HttpDependencyScanLive } from "@/routes/internal/dependency-scan.http"
 import { HttpErrorsLive } from "@/routes/internal/errors.http"
 import { HttpIntegrationsLive } from "@/routes/internal/integrations.http"
@@ -183,6 +184,7 @@ const ApiInternalRoutes = HttpApiBuilder.layer(MapleInternalApi).pipe(
 			HttpDemoLive,
 			HttpAuditTrailLive,
 			HttpCloudSecurityLive,
+			HttpFleetSecurityLive,
 			HttpDependencyScanLive,
 			HttpDigestLive,
 			HttpSavedViewsLive,

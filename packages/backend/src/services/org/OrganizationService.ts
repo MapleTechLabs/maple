@@ -154,6 +154,9 @@ const PURGE_ORDER: ReadonlyArray<TableName> = [
 	// connection gone no redelivery can arrive for them to catch.
 	"PlanetscaleIssueReceipts",
 	// The encrypted Fleet token would keep the poller reading a device server for a deleted org.
+	// Removed with their connection by the foreign key, and listed before it.
+	"FleetPolicyFindings",
+	"FleetVulnerabilityFindings",
 	"FleetConnections",
 	// The encrypted Railway token would keep the poller reading an account for a deleted org.
 	"RailwayConnections",

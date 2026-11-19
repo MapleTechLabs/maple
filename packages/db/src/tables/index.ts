@@ -77,7 +77,7 @@ import {
 } from "./planetscale-inventory"
 import { CostConnections } from "./cost-connections"
 import { FeatureRequests } from "./feature-requests"
-import { FleetConnections } from "./fleet"
+import { FleetConnections, FleetPolicyFindings, FleetVulnerabilityFindings } from "./fleet"
 import { OrgErasures } from "./org-erasures"
 import { OpenRouterCostConnections } from "./openrouter-cost-connections"
 import { OrgOpenRouterKeys } from "./openrouter-keys"
@@ -291,6 +291,8 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	PlanetscaleEvents,
 	PlanetscaleIssueReceipts,
 	FleetConnections,
+	FleetPolicyFindings,
+	FleetVulnerabilityFindings,
 	RailwayConnections,
 	RailwayEnvironments,
 	SavedViews,

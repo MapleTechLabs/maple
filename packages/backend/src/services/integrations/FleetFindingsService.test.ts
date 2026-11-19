@@ -1,0 +1,194 @@
+import { afterEach, assert, describe, it } from "@effect/vitest"
+import { OrgId, UserId } from "@maple/domain/http"
+import { Array as Arr, Effect, Layer, Schema } from "effect"
+import { TestClock } from "effect/testing"
+import * as VendorFake from "@maple/backend/testing/vendor-fake"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
+import { FleetConnectionService } from "./FleetConnectionService"
+import { FleetFindingsService } from "./FleetFindingsService"
+import { type FakeFleet, fakeFleetDeps, makeFakeFleet } from "./fleet/fake-fleet"
+
+const trackedDbs: TestDb[] = []
+afterEach(() => cleanupTestDbs(trackedDbs))
+
+const ORG = Schema.decodeSync(OrgId)("org_fleet")
+const OTHER_ORG = Schema.decodeSync(OrgId)("org_other")
+const USER = Schema.decodeSync(UserId)("user_fleet")
+const HOUR_MS = 60 * 60_000
+
+const run = <A, E>(
+	testDb: TestDb,
+	world: FakeFleet,
+	effect: Effect.Effect<A, E, FleetFindingsService | FleetConnectionService>,
+) => {
+	const deps = fakeFleetDeps(testDb, world)
+	return effect.pipe(
+		Effect.provide([
+			Layer.effect(FleetFindingsService, FleetFindingsService.make).pipe(Layer.provide(deps)),
+			Layer.effect(FleetConnectionService, FleetConnectionService.make).pipe(Layer.provide(deps)),
+		]),
+	)
+}
+
+const connect = FleetConnectionService.use((service) =>
+	service.connect(ORG, USER, { url: "https://fleet.example.com", token: "fleet-api-token-0123456789" }),
+)
+const syncDue = FleetFindingsService.use((service) => service.syncDue)
+const devices = (orgId = ORG) => FleetFindingsService.use((service) => service.devices(orgId))
+
+const fleetWithFindings = () =>
+	makeFakeFleet({
+		hostCount: 40,
+		policies: [
+			{ id: 1, name: "Firewall on", failing_host_count: 3, passing_host_count: 37 },
+			{ id: 2, name: "Disk encrypted", critical: true, failing_host_count: 1, passing_host_count: 39 },
+			{ id: 3, name: "OS up to date", failing_host_count: 0, passing_host_count: 40 },
+		],
+		failingHosts: {
+			1: [{ id: 11, hostname: "jane-mbp" }],
+			2: [{ id: 12, hostname: "build-box" }],
+		},
+		software: [
+			{
+				id: 100,
+				name: "openssl",
+				version: "3.0.1",
+				hosts_count: 5,
+				vulnerabilities: [{ cve: "CVE-2026-0001", cvss_score: 7.5 }],
+			},
+			{
+				id: 101,
+				name: "openssl",
+				version: "3.0.2",
+				hosts_count: 2,
+				vulnerabilities: [{ cve: "CVE-2026-0001", cvss_score: 7.5 }],
+			},
+			{
+				id: 102,
+				name: "chrome",
+				version: "120",
+				hosts_count: 9,
+				vulnerabilities: [{ cve: "CVE-2026-0002", cvss_score: 9.8 }],
+			},
+		],
+	})
+
+describe("FleetFindingsService", () => {
+	it.effect("lists failing policies and CVEs with links into the Fleet server", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = fleetWithFindings()
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* connect
+				const synced = yield* syncDue
+				assert.deepStrictEqual(synced, {
+					connections: 1,
+					failedConnections: 0,
+					policies: 2,
+					vulnerabilities: 2,
+				})
+
+				const page = yield* devices()
+				assert.strictEqual(page.connection?.hostCount, 40)
+				// Critical first; the passing policy is not a finding.
+				assert.deepStrictEqual(
+					Arr.map(page.policies, (policy) => [policy.name, policy.failingHostCount, policy.url]),
+					[
+						["Disk encrypted", 1, "https://fleet.example.com/policies/2"],
+						["Firewall on", 3, "https://fleet.example.com/policies/1"],
+					],
+				)
+				assert.deepStrictEqual(page.policies[1]?.failingHosts, [
+					{ id: 11, name: "jane-mbp", platform: null, url: "https://fleet.example.com/hosts/11" },
+				])
+				// One finding per CVE across its versions, highest score first.
+				assert.deepStrictEqual(
+					Arr.map(page.vulnerabilities, (finding) => [
+						finding.cve,
+						finding.cvssScore,
+						finding.hostCount,
+						finding.software.length,
+					]),
+					[
+						["CVE-2026-0002", 9.8, 9, 1],
+						["CVE-2026-0001", 7.5, 7, 2],
+					],
+				)
+				// Another org sees nothing of it.
+				assert.isNull((yield* devices(OTHER_ORG)).connection)
+			}),
+		)
+	})
+
+	it.effect("waits an hour between syncs, and drops what was fixed meanwhile", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = fleetWithFindings()
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* connect
+				yield* syncDue
+				const firstSeen = (yield* devices()).policies[1]?.firstSeenAt
+
+				world.policies = [
+					{ id: 1, name: "Firewall on", failing_host_count: 2, passing_host_count: 38 },
+				]
+				world.software = []
+				assert.strictEqual((yield* syncDue).connections, 0)
+
+				yield* TestClock.adjust(HOUR_MS)
+				yield* syncDue
+				const page = yield* devices()
+				assert.deepStrictEqual(
+					Arr.map(page.policies, (policy) => [policy.name, policy.failingHostCount]),
+					[["Firewall on", 2]],
+				)
+				// A finding still open keeps the time it was first seen.
+				assert.strictEqual(page.policies[0]?.firstSeenAt, firstSeen)
+				assert.lengthOf(page.vulnerabilities, 0)
+			}),
+		)
+	})
+
+	it.effect("keeps the last findings and reports why when the server fails", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = fleetWithFindings()
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* connect
+				yield* syncDue
+				yield* TestClock.adjust(HOUR_MS)
+				world.status = 500
+				// 5xx answers are retried with back-off first.
+				assert.strictEqual((yield* VendorFake.elapsing(syncDue)).failedConnections, 1)
+				const page = yield* devices()
+				assert.lengthOf(page.policies, 2)
+				assert.include(page.connection?.error ?? "", "500")
+			}),
+		)
+	})
+
+	it.effect("forgets the findings with the connection", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = fleetWithFindings()
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* connect
+				yield* syncDue
+				yield* FleetConnectionService.use((service) => service.disconnect(ORG))
+				const page = yield* devices()
+				assert.deepStrictEqual(
+					[page.connection, page.policies.length, page.vulnerabilities.length],
+					[null, 0, 0],
+				)
+			}),
+		)
+	})
+})
