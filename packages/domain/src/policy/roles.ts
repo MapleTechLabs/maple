@@ -105,6 +105,14 @@ export const builtInRoles = [
 export type BuiltInRole = (typeof builtInRoles)[number]
 export type ClerkRoleKey = BuiltInRole["clerkKey"]
 
+/** A built-in role's Clerk key. */
+export const BuiltInClerkRole = Schema.Literals(Arr.map(builtInRoles, (entry) => entry.clerkKey))
+export type BuiltInClerkRole = typeof BuiltInClerkRole.Type
+
+/** A built-in role's name, as the Roles page addresses it (`/settings/roles/engineer`). */
+export const BuiltInRoleName = Schema.Literals(Arr.map(builtInRoles, (entry) => entry.role))
+export type BuiltInRoleName = typeof BuiltInRoleName.Type
+
 /** A Clerk role key the Members page may give: a built-in role, or the custom-role carrier. */
 export const AssignableClerkRole = Schema.Literals([
 	...Arr.map(builtInRoles, (entry) => entry.clerkKey),

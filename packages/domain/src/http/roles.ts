@@ -1,8 +1,15 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { UserId } from "@maple/primitives"
-import { CustomRoleDescription, CustomRoleId, CustomRoleName, PermissionName } from "../policy"
-import { AssignableClerkRole } from "../policy/roles"
+import {
+	AssignableClerkRole,
+	BuiltInClerkRole,
+	BuiltInRoleName,
+	CustomRoleDescription,
+	CustomRoleId,
+	CustomRoleName,
+	PermissionName,
+} from "../policy"
 import { EndpointAccess, requires } from "./endpoint-access"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
@@ -14,10 +21,14 @@ import { HttpTaggedError } from "./error-policy"
 
 /** Which role a member holds or moves to. */
 export const RoleRef = Schema.Union([
-	Schema.TaggedStruct("BuiltIn", { clerkKey: Schema.Literals(["org:analyst", "org:member", "org:engineer", "org:admin"]) }),
+	Schema.TaggedStruct("BuiltIn", { clerkKey: BuiltInClerkRole }),
 	Schema.TaggedStruct("Custom", { id: CustomRoleId }),
 ])
 export type RoleRef = typeof RoleRef.Type
+
+/** A role as the Roles page addresses it: a custom role's id, or a built-in role's name. */
+export const RoleKey = Schema.Union([CustomRoleId, BuiltInRoleName])
+export type RoleKey = typeof RoleKey.Type
 
 export class BuiltInRoleResponse extends Schema.Class<BuiltInRoleResponse>("BuiltInRoleResponse")({
 	clerkKey: AssignableClerkRole,
@@ -62,11 +73,11 @@ export class CreateRoleRequest extends Schema.Class<CreateRoleRequest>("CreateRo
 	permissions: Schema.Array(PermissionName),
 }) {}
 
-/** Every field is optional: a rename and a permission change are the same call. */
+/** The whole role as the editor saves it. */
 export class UpdateRoleRequest extends Schema.Class<UpdateRoleRequest>("UpdateRoleRequest")({
-	name: Schema.optionalKey(CustomRoleName),
-	description: Schema.optionalKey(CustomRoleDescription),
-	permissions: Schema.optionalKey(Schema.Array(PermissionName)),
+	name: CustomRoleName,
+	description: CustomRoleDescription,
+	permissions: Schema.Array(PermissionName),
 }) {}
 
 export class DeleteRoleRequest extends Schema.Class<DeleteRoleRequest>("DeleteRoleRequest")({
@@ -174,7 +185,7 @@ export class RolesApiGroup extends HttpApiGroup.make("roles")
 	)
 	.add(
 		HttpApiEndpoint.get("members", "/:roleId/members", {
-			params: { roleId: CustomRoleId },
+			params: { roleId: RoleKey },
 			success: RoleMembersResponse,
 			error: [RolesUnavailableError, RoleNotFoundError],
 		}),

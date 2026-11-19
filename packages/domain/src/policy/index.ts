@@ -12,6 +12,8 @@ export {
 } from "./api-key-scopes"
 export {
 	AssignableClerkRole,
+	BuiltInClerkRole,
+	BuiltInRoleName,
 	type BuiltInRole,
 	builtInRoleOf,
 	builtInRoles,
