@@ -291,7 +291,7 @@ describe("AlertsService", () => {
 					.previewRule(
 						orgId,
 						alertsOnly,
-						Schema.decodeUnknownSync(AlertRulePreviewRequest)({
+						Schema.decodeSync(AlertRulePreviewRequest)({
 							rule: rawRule,
 							startTime: "2026-01-01T00:00:00.000Z",
 							endTime: "2026-01-01T00:30:00.000Z",
