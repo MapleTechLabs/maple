@@ -32,7 +32,9 @@
  * close is mandatory to avoid branch sprawl.
  */
 import { spawnSync } from "node:child_process"
-import { appendFileSync, readFileSync, writeFileSync } from "node:fs"
+import { appendFileSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import path from "node:path"
 import { fetchPreviewState, hasPrStateCredentials } from "./lib/pr-state.ts"
 import { openHandoff, sealHandoff } from "./lib/preview-handoff.ts"
 
@@ -106,9 +108,10 @@ const runTb = (
 	args: string[],
 	opts?: { secret?: boolean },
 ): TbResult => {
-	const proc = spawnSync("tb", ["--cloud", "--host", auth.host, "--token", auth.token, ...args], {
+	// The token goes in the environment (`tb` reads TB_TOKEN), never argv, where `ps` shows it.
+	const proc = spawnSync("tb", ["--cloud", "--host", auth.host, ...args], {
 		encoding: "utf8",
-		env: { ...process.env, TINYBIRD_HOST: auth.host, TINYBIRD_TOKEN: auth.token },
+		env: { ...process.env, TB_TOKEN: auth.token, TINYBIRD_HOST: auth.host, TINYBIRD_TOKEN: auth.token },
 	})
 	if (proc.error) {
 		fail(`Failed to invoke \`tb\` — is the Tinybird CLI installed? (${proc.error.message})`)
@@ -191,9 +194,10 @@ const exportToGithubEnv = (vars: Record<string, string>): void => {
 	const githubEnv = process.env.GITHUB_ENV?.trim()
 	const lines = Object.entries(vars).map(([key, value]) => `${key}=${value}`)
 	if (!githubEnv) {
-		// Local run: just print so a developer can copy them.
-		console.log("\nResolved branch env (GITHUB_ENV unset — printing instead):")
-		for (const line of lines) console.log(`  ${line}`)
+		// Local run: the values hold tokens, so they go to an owner-only file, never the terminal.
+		const file = path.join(mkdtempSync(path.join(tmpdir(), "maple-tb-branch-")), "branch.env")
+		writeFileSync(file, `${lines.join("\n")}\n`, { mode: 0o600 })
+		console.log(`\nResolved branch env written to ${file} (owner-only). Delete it when done.`)
 		return
 	}
 	appendFileSync(githubEnv, `${lines.join("\n")}\n`)

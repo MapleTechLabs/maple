@@ -20,6 +20,7 @@ import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembership
 import { annotateAuthSpan } from "@maple/backend/services/auth/auth-span"
 import { DeviceCredentialsService } from "@maple/backend/services/auth/DeviceCredentialsService"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
+import { recordImpersonation } from "@maple/backend/services/auth/impersonation-audit"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { recordApiDenial } from "@maple/backend/services/auth/audit-denial"
 import { withAuditedRead } from "@maple/backend/services/audit/audit-access"
@@ -341,6 +342,7 @@ export const ApiAuthorizationV2Live = Layer.effect(
 						}),
 					)
 					yield* annotateAuthSpan("session", { orgId: tenant.orgId, userId: tenant.userId })
+					yield* recordImpersonation(audit, request, tenant, "dashboard")
 					if (Option.isSome(regions)) {
 						yield* regions.value
 							.ensureServedHere(tenant.orgId)

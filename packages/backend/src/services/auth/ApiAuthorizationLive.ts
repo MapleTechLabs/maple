@@ -5,6 +5,7 @@ import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { makeResolveTenant } from "@maple/auth"
 import { annotateAuthSpan } from "@maple/backend/services/auth/auth-span"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
+import { recordImpersonation } from "@maple/backend/services/auth/impersonation-audit"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { recordApiDenial } from "@maple/backend/services/auth/audit-denial"
 import { withAuditedRead } from "@maple/backend/services/audit/audit-access"
@@ -101,6 +102,7 @@ export const ApiAuthorizationLive = Layer.effect(
 
 					const tenant = yield* resolveTenant(request.headers)
 					yield* annotateAuthSpan("session", { orgId: tenant.orgId, userId: tenant.userId })
+					yield* recordImpersonation(audit, request, tenant, "dashboard")
 					// API keys are minted per instance; only a session can name an org from elsewhere.
 					yield* regions.ensureServedHere(tenant.orgId)
 					yield* checkAnalystAccess(tenant.roles, options)

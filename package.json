@@ -33,7 +33,7 @@
 		"lint:audit": "oxlint -c .oxlintrc.effect.json alchemy.run.ts scripts test apps packages lib examples",
 		"lint:fix": "oxlint -c .oxlintrc.effect.json --fix alchemy.run.ts scripts test apps packages lib examples",
 		"alchemy:build-deps": "turbo build --filter=@maple-dev/effect-sdk --filter=@maple-dev/alchemy --filter=@maple-dev/browser && bun run --cwd apps/scraper bundle",
-		"alchemy:deploy:prd": "bun run alchemy:build-deps && alchemy deploy --yes --adopt --stage ${MAPLE_STAGE:-prd}",
+		"alchemy:deploy:prd": "bun run ./scripts/prd-deploy-guard.ts && bun run alchemy:build-deps && alchemy deploy --yes --adopt --stage ${MAPLE_STAGE:-prd}",
 		"alchemy:deploy:pr": "bun run alchemy:build-deps && alchemy deploy --yes --adopt --stage pr-${PR_NUMBER}",
 		"alchemy:destroy:pr": "bun run alchemy:build-deps && alchemy destroy --yes --stage pr-${PR_NUMBER}",
 		"test": "turbo test",

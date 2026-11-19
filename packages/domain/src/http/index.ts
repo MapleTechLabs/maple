@@ -58,6 +58,7 @@ export {
 	OrganizationAccessDeniedError,
 	OrganizationWrongRegionError,
 	LimitedRoleError,
+	type SessionImpersonation,
 	type TenantContext,
 } from "./current-tenant"
 export * from "./dashboard-sections"

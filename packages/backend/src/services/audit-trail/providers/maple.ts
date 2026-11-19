@@ -41,6 +41,7 @@ const CATEGORY_BY_RESOURCE = {
 	ingest_key: "credential",
 	mcp_connection: "configuration",
 	cli_session: "credential",
+	auth: "authentication",
 	mcp_tool: "data_access",
 	investigation: "resource",
 	onboarding_reward: "billing",
