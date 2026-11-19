@@ -22,7 +22,7 @@ export const promqlRegexEscape = (value: string): string =>
 type QuoteContext = "code" | '"' | "'" | "`"
 
 /** Code that opens a string as the value of a `=~` or `!~` matcher. */
-const OPENS_REGEX_MATCHER = /[=!]~\s*["'`]$/
+const OPENS_REGEX_MATCHER = /[=!]~(?:\s|#[^\n]*\n)*["'`]$/
 
 /** A value escaped for the inside of a double- or single-quoted PromQL string (no raw newline). */
 export const promqlStringEscape = (value: string, quote: '"' | "'" = '"'): string =>

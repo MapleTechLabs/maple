@@ -46,6 +46,9 @@ describe("interpolatePromqlVariables", () => {
 		expect(interpolatePromqlVariables('up{job=~"$v"}', wide)).toBe('up{job=~"\\\\.\\\\*"}')
 		expect(interpolatePromqlVariables("up{job!~ '[[v]]'}", wide)).toBe("up{job!~ '\\\\.\\\\*'}")
 		expect(interpolatePromqlVariables("up{job=~`${v}`}", wide)).toBe("up{job=~`\\.\\*`}")
+		expect(interpolatePromqlVariables('up{job=~ # pick one\n"$v"}', wide)).toBe(
+			'up{job=~ # pick one\n"\\\\.\\\\*"}',
+		)
 		// Equality matchers read the value literally already.
 		expect(interpolatePromqlVariables('up{job="$v"}', wide)).toBe('up{job=".*"}')
 	})
