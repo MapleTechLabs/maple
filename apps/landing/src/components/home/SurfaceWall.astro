@@ -1,18 +1,20 @@
 ---
 /**
  * Platform: every other surface as one bento, visible without a click, and the link hub to the
- * feature pages. Each cell is its headline, its copy and its link, then the product in a window
- * that runs off the cell's edge: the surface's scripted frame where it has one, and otherwise a
- * legible part of a capture (the lightbox opens the whole screen).
+ * feature pages. Each cell is its headline, its copy and its link, then the surface's scripted
+ * frame in a window that runs off the cell's edge. Metrics, errors and web analytics draw the
+ * dashboard's own charts.
  */
 import * as m from "../../paraglide/messages.js";
 import { featureBySlug } from "../../lib/features";
-import { featurePath, type Crop } from "../../lib/page-registry";
-import Shot from "../page/Shot.astro";
+import { featurePath } from "../../lib/page-registry";
 import PrReviewComment from "../github/PrReviewComment.astro";
 import LiveAlertFiring from "../live/LiveAlertFiring.astro";
 import LiveFunnel from "../live/LiveFunnel.astro";
 import LiveK8sHeatmap from "../live/LiveK8sHeatmap.astro";
+import { LiveErrors } from "../live/LiveErrors";
+import { LiveMetrics } from "../live/LiveMetrics";
+import { LiveWebAnalytics } from "../live/LiveWebAnalytics";
 import LiveServiceMap from "../live/LiveServiceMap.astro";
 import LiveUptime from "../live/LiveUptime.astro";
 import LedgerHead from "./LedgerHead.astro";
@@ -35,16 +37,10 @@ interface Surface {
 	link: string;
 	/** A second, quieter link: uptime also owns status pages. */
 	also?: { href: string; link: string };
-	/** A capture, and the window of it this cell shows. */
-	shot?: { src: string; alt: string; width: number; height: number; crop: Crop };
 	/** Copy beside the window instead of above it: the cells whose copy runs to a paragraph. */
 	side?: boolean;
 }
 
-// A window is 400 to 840 px wide and a capture is drawn 1.4 to 2.8 windows wide, which keeps a
-// 1440 px screen's text near 10 px. Each window starts on a layout edge of its screen and runs
-// off the cell's right and bottom edge, so `aspect` only describes the capture's own crop.
-const CELL = 4 / 3;
 // The feature page's own headline, where the surface has no line of its own.
 const headline = (slug: string, fallback: string) => featureBySlug(slug)?.heroTitle() ?? fallback;
 
@@ -62,13 +58,6 @@ const surfaces: Surface[] = [
 		desc: m.platform_metrics_desc(),
 		href: l("metrics-dashboards"),
 		link: m.nav_metrics_dashboards(),
-		shot: {
-			src: "/screenshots/surface-metrics.webp",
-			alt: "The metric explorer listing every metric with its type and cardinality",
-			width: 2880,
-			height: 1620,
-			crop: { x: 0.185, y: 0.085, zoom: 2.8, aspect: CELL },
-		},
 	},
 	{
 		key: "errors",
@@ -76,13 +65,6 @@ const surfaces: Surface[] = [
 		desc: m.platform_errors_desc(),
 		href: l("error-tracking"),
 		link: m.nav_error_tracking(),
-		shot: {
-			src: "/screenshots/surface-errors.webp",
-			alt: "Errors grouped by type with counts, affected services and last-seen times",
-			width: 2880,
-			height: 1620,
-			crop: { x: 0.365, y: 0.165, zoom: 2.6, aspect: CELL },
-		},
 	},
 	{
 		key: "alerts",
@@ -99,13 +81,6 @@ const surfaces: Surface[] = [
 		desc: [m.analytics_lede(), m.analytics_point_1_body(), m.analytics_point_2_body(), m.analytics_point_3_body()].join(" "),
 		href: l("browser-sessions"),
 		link: m.nav_browser_sessions(),
-		shot: {
-			src: "/screenshots/surface-analytics.webp",
-			alt: "The Web Analytics page: unique visitors, sessions, page views and bounce rate over the last 7 days, with the live visitor badge and the visitors and page views chart",
-			width: 1792,
-			height: 1392,
-			crop: { x: 0.005, y: 0.3, zoom: 1.08, aspect: CELL },
-		},
 	},
 	{
 		key: "kubernetes",
@@ -138,7 +113,7 @@ const surfaces: Surface[] = [
 	},
 ];
 
-// The surfaces that have a scripted frame of their own; the rest show a capture.
+// The scripted frames written in Astro. The three chart frames are islands, mounted by name below.
 const FRAMES = {
 	map: LiveServiceMap,
 	alerts: LiveAlertFiring,
@@ -181,21 +156,14 @@ const groups = [surfaces.slice(0, STRIP), surfaces.slice(STRIP)];
 										{surface.also && <a href={surface.also.href}>{surface.also.link}</a>}
 									</div>
 								</div>
-								{surface.shot ? (
-									<div class="bento-window">
-										<Shot
-											src={surface.shot.src}
-											alt={surface.shot.alt}
-											width={surface.shot.width}
-											height={surface.shot.height}
-											crop={surface.shot.crop}
-										/>
-									</div>
-								) : (
-									<div class:list={["bento-window bento-window--live", surface.key === "github" && "bento-window--pad"]}>
-										{surface.key === "github" ? <PrReviewComment variant="compact" /> : <Frame />}
-									</div>
-								)}
+								<div class:list={["bento-window", surface.key === "github" && "bento-window--pad"]}>
+									{/* An island's `client:*` directive needs its import named at the call site. */}
+									{surface.key === "metrics" && <LiveMetrics client:visible />}
+									{surface.key === "errors" && <LiveErrors client:visible />}
+									{surface.key === "analytics" && <LiveWebAnalytics client:visible />}
+									{surface.key === "github" && <PrReviewComment variant="compact" />}
+									{Frame && <Frame />}
+								</div>
 							</article>
 							);
 						})}

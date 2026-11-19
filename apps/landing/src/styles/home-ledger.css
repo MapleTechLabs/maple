@@ -318,29 +318,15 @@ html[lang="ko"] .monumental-home [data-scrollstory] > .shell:first-child h2 {
 	position: relative;
 	flex: 1;
 	min-width: 0;
-	min-height: 240px;
 	margin-left: 28px;
+	display: flex;
+	flex-direction: column;
 	overflow: hidden;
 	border-top: 1px solid var(--home-rule);
 	border-left: 1px solid var(--home-rule);
 	background: var(--bg-deep);
 }
-.bento-window > figure {
-	position: absolute;
-	inset: 0;
-	background: none;
-}
-.monumental-home .bento-window .shot-crop {
-	height: 100%;
-	aspect-ratio: auto !important;
-	mask-image: none;
-}
-.bento-window--live {
-	display: flex;
-	flex-direction: column;
-	min-height: 0;
-}
-.bento-window--live > * {
+.bento-window > * {
 	min-width: 0;
 }
 .bento-window--pad {
@@ -357,9 +343,9 @@ html[lang="ko"] .monumental-home [data-scrollstory] > .shell:first-child h2 {
 }
 /* A scripted frame runs while it is on screen and holds its frame while it is not, so its story
    starts as the reader arrives (HomeMotion.astro). */
-.bento-window--live[data-held] *,
-.bento-window--live[data-held] *::before,
-.bento-window--live[data-held] *::after {
+.bento-window[data-held] *,
+.bento-window[data-held] *::before,
+.bento-window[data-held] *::after {
 	animation-play-state: paused !important;
 }
 /* The map is drawn a little wider than its window, so its labels stay legible. */
@@ -379,9 +365,6 @@ html[lang="ko"] .monumental-home [data-scrollstory] > .shell:first-child h2 {
 			"events events"
 			"uptime uptime"
 			"github github";
-	}
-	.bento-window:not(.bento-window--live) {
-		min-height: 300px;
 	}
 }
 @media (min-width: 1280px) {

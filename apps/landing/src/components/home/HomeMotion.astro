@@ -132,7 +132,7 @@
 			},
 			{ threshold: 0.4 },
 		);
-		for (const frame of document.querySelectorAll(".bento-window--live")) {
+		for (const frame of document.querySelectorAll(".bento-window")) {
 			frame.toggleAttribute("data-held", true);
 			frames.observe(frame);
 		}
