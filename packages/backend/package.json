@@ -27,6 +27,7 @@
 		"@distilled.cloud/clerk": "1.0.0-rc.20",
 		"@distilled.cloud/core": "1.0.0-rc.20",
 		"@distilled.cloud/planetscale": "1.0.0-rc.20",
+		"@distilled.cloud/vercel": "1.0.0-rc.20",
 		"@maple-dev/effect-clickhouse-http": "workspace:*",
 		"@maple-dev/effect-orm": "0.10.0",
 		"@maple/alerting-core": "workspace:*",
