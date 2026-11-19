@@ -17,6 +17,7 @@ import {
 	SelfHostedAuthDisabledError,
 	SelfHostedInvalidPasswordError,
 	SelfHostedLoginResponse,
+	type SessionImpersonation,
 	type TenantContext,
 	UnauthorizedError,
 	UserId,
@@ -379,6 +380,22 @@ type ClerkSessionAuth = {
 	readonly userId: string | null | undefined
 	readonly orgId: string | null | undefined
 	readonly orgRole: string | null | undefined
+	/** Session tokens only: the session id and Clerk's `act` claim, set when someone signed in as this user. */
+	readonly sessionId?: string | null | undefined
+	readonly actor?: { readonly sub?: unknown } | null | undefined
+}
+
+/**
+ * The impersonation behind a Clerk session token, if any. Only session tokens carry
+ * `act`; an `act` without a usable `sub` or session id still counts, so it is never dropped.
+ */
+export const clerkSessionImpersonation = (auth: ClerkSessionAuth): SessionImpersonation | undefined => {
+	if (auth.tokenType !== "session_token" || auth.actor === null || auth.actor === undefined)
+		return undefined
+	return {
+		actorId: typeof auth.actor.sub === "string" && auth.actor.sub !== "" ? auth.actor.sub : "unknown",
+		sessionId: typeof auth.sessionId === "string" && auth.sessionId !== "" ? auth.sessionId : "unknown",
+	}
 }
 
 type ClerkRequestState = {
@@ -826,6 +843,10 @@ export const makeResolveTenant = (
 				return yield* auth.orgId ? unauthorized("Invalid Clerk token") : noActiveOrganization()
 			}
 
+			const impersonation = clerkSessionImpersonation(auth)
+			const stamp = (tenant: TenantContext): TenantContext =>
+				impersonation === undefined ? tenant : { ...tenant, impersonation }
+
 			const orgIdOverride = getOptionalString(env.MAPLE_ORG_ID_OVERRIDE)
 			const userId = yield* decodeUserId(auth.userId, "Invalid user in Clerk session token")
 
@@ -846,19 +867,24 @@ export const makeResolveTenant = (
 				// org). The role is the verified membership's; a non-member is only let
 				// in with their session's role on an explicitly opted-in development pin.
 				if (auth.orgId === pinnedOrgId) {
-					return { orgId: pinnedOrgId, userId, roles: sessionRoles, authMode: "clerk" }
+					return stamp({ orgId: pinnedOrgId, userId, roles: sessionRoles, authMode: "clerk" })
 				}
 				const membership = verifyOrgMembership
 					? yield* verifyOrgMembership(userId, pinnedOrgId)
 					: Option.none<VerifiedOrgMembership>()
 				if (Option.isSome(membership)) {
-					return { orgId: pinnedOrgId, userId, roles: [membership.value.role], authMode: "clerk" }
+					return stamp({
+						orgId: pinnedOrgId,
+						userId,
+						roles: [membership.value.role],
+						authMode: "clerk",
+					})
 				}
 				if (
 					env.MAPLE_ENVIRONMENT === "development" &&
 					env.MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS === true
 				) {
-					return { orgId: pinnedOrgId, userId, roles: sessionRoles, authMode: "clerk" }
+					return stamp({ orgId: pinnedOrgId, userId, roles: sessionRoles, authMode: "clerk" })
 				}
 				// Otherwise membership the resolver cannot prove (no verifier) is a refusal.
 				return yield* organizationAccessDenied(pinnedOrgId)
@@ -873,12 +899,12 @@ export const makeResolveTenant = (
 				if (Option.isNone(selected)) {
 					return yield* noActiveOrganization()
 				}
-				return {
+				return stamp({
 					orgId: selected.value.orgId,
 					userId,
 					roles: [selected.value.role],
 					authMode: "clerk",
-				}
+				})
 			}
 
 			const clerkTenant: TenantContext = {
@@ -888,7 +914,8 @@ export const makeResolveTenant = (
 				authMode: "clerk",
 			}
 
-			return yield* applyRequestedOrg(clerkTenant, headers, selectable)
+			const selectedTenant = yield* applyRequestedOrg(clerkTenant, headers, selectable)
+			return stamp(selectedTenant)
 		}
 
 		const token = getBearerToken(headers)

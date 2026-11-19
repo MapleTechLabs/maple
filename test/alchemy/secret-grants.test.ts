@@ -92,6 +92,7 @@ const DEPLOYABLES = {
 	"electric-sync": onEveryStage((stage) => electricSyncConfiguredEnv(stage, "us", {})),
 	sandbox: [sandboxSecrets],
 	status: onEveryStage((stage) => selfObservabilityEnv(stage, "us")),
+	"audit-archive": onEveryStage((stage) => selfObservabilityEnv(stage, "us")),
 	web: onEveryStage((stage) => selfObservabilityEnv(stage, "us")),
 	landing: [landingBuildSecrets],
 	ingest: [ingestSecrets, ingestPgUrl],

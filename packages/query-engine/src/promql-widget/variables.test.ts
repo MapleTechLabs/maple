@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest"
 import type { VariableValues } from "../dashboard-variables/interpolate"
 import { planWidgetRequest } from "../widget-request"
-import { collectPromqlVariableRefs, interpolatePromqlBuiltins, interpolatePromqlVariables } from "./variables"
+import {
+	collectPromqlVariableRefs,
+	interpolatePromqlBuiltins,
+	interpolatePromqlVariables,
+	promqlDurationMs,
+} from "./variables"
 
 const one = (value: string) => ({ value, isAll: false, options: [value] })
 const all = (options: string[]) => ({ value: "$__all", isAll: true, options })
@@ -21,13 +26,35 @@ describe("interpolatePromqlVariables", () => {
 		expect(interpolatePromqlVariables(query, values)).toBe(expected)
 	})
 
-	it("regex-escapes a single value only under :regex", () => {
+	it("regex-escapes a single value under :regex or inside a regex matcher, not under :raw", () => {
 		expect(interpolatePromqlVariables('up{instance=~"${host:regex}"}', values)).toBe(
-			'up{instance=~"db-1\\\\.internal"}',
+			'up{instance=~"db\\\\-1\\\\.internal"}',
 		)
 		expect(interpolatePromqlVariables('up{instance="$host"}', values)).toBe(
 			'up{instance="db-1.internal"}',
 		)
+		expect(interpolatePromqlVariables('up{instance=~"$host"}', values)).toBe(
+			'up{instance=~"db\\\\-1\\\\.internal"}',
+		)
+		expect(interpolatePromqlVariables('up{instance=~"${host:raw}"}', values)).toBe(
+			'up{instance=~"db-1.internal"}',
+		)
+	})
+
+	it("keeps a picked value from widening a regex matcher into a pattern", () => {
+		const wide: VariableValues = { v: one(".*") }
+		expect(interpolatePromqlVariables('up{job=~"$v"}', wide)).toBe('up{job=~"\\\\.\\\\*"}')
+		expect(interpolatePromqlVariables("up{job!~ '[[v]]'}", wide)).toBe("up{job!~ '\\\\.\\\\*'}")
+		expect(interpolatePromqlVariables("up{job=~`${v}`}", wide)).toBe("up{job=~`\\.\\*`}")
+		expect(interpolatePromqlVariables('up{job=~ # pick one\n"$v"}', wide)).toBe(
+			'up{job=~ # pick one\n"\\\\.\\\\*"}',
+		)
+		// A hyphen stays literal, even inside the author's character class.
+		expect(interpolatePromqlVariables('up{job=~"[a$v]"}', { v: one("-") })).toBe('up{job=~"[a\\\\-]"}')
+		// An operator inside a comment does not make an equality matcher a regex one.
+		expect(interpolatePromqlVariables('up{job= # =~\n"$v"}', wide)).toBe('up{job= # =~\n".*"}')
+		// Equality matchers read the value literally already.
+		expect(interpolatePromqlVariables('up{job="$v"}', wide)).toBe('up{job=".*"}')
 	})
 
 	it("writes an All selection as a regex alternation", () => {
@@ -164,6 +191,13 @@ describe("variables cannot change a query's structure", () => {
 
 	it("leaves a name like an Object member literal", () => {
 		expect(interpolatePromqlVariables('up{job="$constructor"}', {})).toBe('up{job="$constructor"}')
+	})
+
+	it("refuses a duration wider than a query may read", () => {
+		expect(promqlDurationMs("1y2d")).toBe(367 * 86_400_000)
+		expect(interpolatePromqlVariables("rate(x[$v])", { v: one("400d") })).toBe("rate(x[400d])")
+		expect(interpolatePromqlVariables("rate(x[$v])", { v: one("401d") })).toBe("rate(x[$v])")
+		expect(interpolatePromqlVariables("x offset $v", { v: one("10y") })).toBe("x offset $v")
 	})
 
 	it("places only whole tokens outside strings", () => {

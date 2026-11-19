@@ -30,6 +30,12 @@ export const MAX_QUERY_RANGE_SECONDS = ONE_MONTH_PRESET_SECONDS
 export const MAX_TIMESERIES_RANGE_SECONDS = 60 * 60 * 24 * 367
 
 /**
+ * The widest window one PromQL query may read once range selectors, `offset`, `@` and subqueries
+ * are applied: past the longest metric retention (365-day rollups) plus a lookback margin.
+ */
+export const MAX_PROMQL_READ_WINDOW_SECONDS = 60 * 60 * 24 * 400
+
+/**
  * List queries (recent traces/logs tiles) scan raw rows rather than a rollup,
  * so they carry a much tighter ceiling than charts.
  */

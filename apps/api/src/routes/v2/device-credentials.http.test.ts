@@ -175,7 +175,7 @@ const edgeCacheStub = Layer.succeed(EdgeCacheService, {
 const makeHarness = (trustAnchor?: Uint8Array, limited?: (key: string) => boolean) => {
 	const testDb = createTestDb(createdDbs)
 	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
-	const base = Layer.mergeAll(envLive, testDb.layer, edgeCacheStub)
+	const base = Layer.mergeAll(envLive, testDb.layer, edgeCacheStub, AuditLogService.layerMemory)
 	const devices = DeviceCredentialsService.layer.pipe(
 		trustAnchor === undefined
 			? (layer) => layer
@@ -221,7 +221,6 @@ const makeHarness = (trustAnchor?: Uint8Array, limited?: (key: string) => boolea
 		Layer.provide(Phase1ResourceStubsLayer),
 		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Live),
-		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(
 			limited === undefined
 				? ApiV2RateLimiterAllowAllLayer

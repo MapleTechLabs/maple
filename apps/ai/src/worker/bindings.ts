@@ -9,7 +9,7 @@
  * than reaching resources directly. What is here is what the MCP transport and
  * the tool registry touch on their own.
  */
-import { AuditEventsQueue, MapleDb, prdOnlyBinding } from "@maple/infra/cloudflare"
+import { AuditIntakeQueue, MapleDb, prdOnlyBinding } from "@maple/infra/cloudflare"
 import { dischargeRuntimeContext } from "@maple/infra/worker-runtime"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Context, Effect, Layer, Option } from "effect"
@@ -71,7 +71,7 @@ const bindClients = Effect.gen(function* () {
 			simple: DATA_SOURCE_SQL_QUERY_LIMIT,
 		}),
 		// Audited tool calls send here after the response, as api's requests do; api consumes it.
-		auditEvents: yield* Cloudflare.Queues.WriteQueue(AuditEventsQueue),
+		auditEvents: yield* Cloudflare.Queues.WriteQueue(AuditIntakeQueue),
 	}
 })
 

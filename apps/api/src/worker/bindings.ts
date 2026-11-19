@@ -8,7 +8,7 @@
  */
 import { StatusPageStore } from "@maple/backend/services/status-pages/StatusPageStore"
 import { StatusSnapshotsBucket, StatusSnapshotsKv } from "@maple/infra/cloudflare"
-import { AuditEventsQueue, MapleDb, ReplayBlobs } from "@maple/infra/cloudflare"
+import { AuditIntakeQueue, MapleDb, ReplayBlobs } from "@maple/infra/cloudflare"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { dischargeRuntimeContext } from "@maple/infra/worker-runtime"
 import { Array as Arr, Effect, Layer, Option } from "effect"
@@ -82,7 +82,7 @@ export const bindApiClients = Effect.gen(function* () {
 		vcsSync: yield* Cloudflare.Queues.WriteQueue(VcsSyncQueue),
 		vcsBackfill: yield* Cloudflare.Queues.WriteQueue(VcsBackfillQueue),
 		planetScaleWebhooks: yield* Cloudflare.Queues.WriteQueue(PlanetScaleWebhookQueue),
-		auditEvents: yield* Cloudflare.Queues.WriteQueue(AuditEventsQueue),
+		auditEvents: yield* Cloudflare.Queues.WriteQueue(AuditIntakeQueue),
 		cancellationReviews: yield* Cloudflare.Queues.WriteQueue(CancellationReviewsQueue),
 		// The replay payload store: read for playback, deleted from when an org is erased.
 		replayBlobs: yield* Cloudflare.R2.ReadWriteBucket(ReplayBlobs),
