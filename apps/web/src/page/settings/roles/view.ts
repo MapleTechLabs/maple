@@ -230,31 +230,33 @@ const affectedMembers = (h: H, model: Model): ReadonlyArray<Html> =>
 	})
 
 const reassignControls = (h: H, model: Model, count: number): ReadonlyArray<Html> => [
-	typography(h, { size: "sm", tone: "muted", as: "p" }, [
-		`${memberCountLabel(count)} ${count === 1 ? "holds" : "hold"} it. Choose the role they move to.`,
+	vstack(h, { gap: "4" }, [
+		typography(h, { size: "sm", tone: "muted", as: "p" }, [
+			`${memberCountLabel(count)} ${count === 1 ? "holds" : "hold"} it. Choose the role they move to.`,
+		]),
+		vstack(h, { gap: "1.5" }, [
+			fieldGroupLabel(h, { attributes: [h.Id("role-reassign-label")] }, "Move members to"),
+			h.submodel({
+				slotId: "role-reassign",
+				model: model.reassignTo,
+				view: SelectView.view,
+				toParentMessage: (message) => Message.GotReassignMessage({ message }),
+				viewInputs: {
+					entries: reassignEntries(model),
+					labelledBy: "role-reassign-label",
+					className: "w-full",
+					renderValue: (value) => [
+						Option.match(findRole(entriesOf(model), value), {
+							onNone: () => value,
+							onSome: (role) => role.name,
+						}),
+					],
+					toView: (parts) => h.div([h.Class("contents")], parts),
+				},
+			}),
+		]),
+		vstack(h, { gap: "1.5" }, [fieldGroupLabel(h, {}, "Who moves"), ...affectedMembers(h, model)]),
 	]),
-	vstack(h, { gap: "1.5" }, [
-		fieldGroupLabel(h, { attributes: [h.Id("role-reassign-label")] }, "Move members to"),
-		h.submodel({
-			slotId: "role-reassign",
-			model: model.reassignTo,
-			view: SelectView.view,
-			toParentMessage: (message) => Message.GotReassignMessage({ message }),
-			viewInputs: {
-				entries: reassignEntries(model),
-				labelledBy: "role-reassign-label",
-				className: "w-full",
-				renderValue: (value) => [
-					Option.match(findRole(entriesOf(model), value), {
-						onNone: () => value,
-						onSome: (role) => role.name,
-					}),
-				],
-				toView: (parts) => h.div([h.Class("contents")], parts),
-			},
-		}),
-	]),
-	...affectedMembers(h, model),
 ]
 
 const deleteDialog = (h: H, model: Model): Html => {
