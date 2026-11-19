@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
+import * as Policy from "@maple/domain/policy"
 import { AuthorizationUnavailableError, OrgId, UserId } from "@maple/domain/http"
 import { INVESTIGATION_READ_FAMILIES } from "@maple/domain/http/v2"
 import {
@@ -736,7 +737,7 @@ describe("MCP HTTP authorization", () => {
 })
 
 describe("MCP tools/list per credential", () => {
-	it("hides write tools from a read-only key and all but the dashboard tools from an analyst, in the isolate that shows them to a full key", async () => {
+	it("hides from each credential the tools its key or permissions refuse, in the isolate that shows them to a full key", async () => {
 		const db = createTestDb(createdDbs)
 		const base = Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig())))
 		const services = Layer.mergeAll(
@@ -748,7 +749,7 @@ describe("MCP tools/list per credential", () => {
 		).pipe(Layer.provideMerge(base))
 		const orgId = Schema.decodeSync(OrgId)("org_test")
 		const userId = Schema.decodeSync(UserId)("user_test")
-		const [full, readOnly, analyst] = await Effect.runPromise(
+		const [full, readOnly, analyst, member, telemetryOnly] = await Effect.runPromise(
 			Effect.gen(function* () {
 				const apiKeys = yield* ApiKeysService
 				return [
@@ -761,6 +762,20 @@ describe("MCP tools/list per credential", () => {
 					yield* apiKeys.create(orgId, userId, {
 						name: "Analyst's key",
 						metadataJson: { source: "maple_cli", roles: ["org:analyst"], deviceName: "laptop" },
+					}),
+					yield* apiKeys.create(orgId, userId, {
+						name: "Member's key",
+						metadataJson: { source: "maple_cli", roles: ["org:member"], deviceName: "laptop" },
+					}),
+					// A custom role's permissions are pinned on the key as codes.
+					yield* apiKeys.create(orgId, userId, {
+						name: "Custom role's key",
+						metadataJson: {
+							source: "maple_cli",
+							roles: ["org:custom"],
+							permissions: [...Policy.encodePermissions(["telemetry:read"])],
+							deviceName: "laptop",
+						},
 					}),
 				] as const
 			}).pipe(Effect.provide(services)),
@@ -791,6 +806,8 @@ describe("MCP tools/list per credential", () => {
 				dashboard: names.includes("create_dashboard"),
 				read: names.includes("inspect_trace"),
 				feedback: names.includes("send_maple_feedback"),
+				acknowledge: names.includes("acknowledge_alert_incident"),
+				sql: names.includes("run_sql"),
 			}
 		}
 		try {
@@ -800,6 +817,8 @@ describe("MCP tools/list per credential", () => {
 				dashboard: true,
 				read: true,
 				feedback: true,
+				acknowledge: true,
+				sql: true,
 			})
 			expect(await listFor(readOnly.secret)).toEqual({
 				status: 200,
@@ -807,6 +826,8 @@ describe("MCP tools/list per credential", () => {
 				dashboard: false,
 				read: true,
 				feedback: true,
+				acknowledge: false,
+				sql: true,
 			})
 			// An analyst builds dashboards and operates nothing else.
 			expect(await listFor(analyst.secret)).toEqual({
@@ -815,6 +836,28 @@ describe("MCP tools/list per credential", () => {
 				dashboard: true,
 				read: true,
 				feedback: true,
+				acknowledge: false,
+				sql: true,
+			})
+			// A member responds to incidents, and sets up no alerting.
+			expect(await listFor(member.secret)).toEqual({
+				status: 200,
+				write: false,
+				dashboard: true,
+				read: true,
+				feedback: true,
+				acknowledge: true,
+				sql: true,
+			})
+			// A custom role that only reads telemetry sees the read tools and changes nothing.
+			expect(await listFor(telemetryOnly.secret)).toEqual({
+				status: 200,
+				write: false,
+				dashboard: false,
+				read: true,
+				feedback: true,
+				acknowledge: false,
+				sql: false,
 			})
 		} finally {
 			await dispose()

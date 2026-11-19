@@ -51,6 +51,7 @@ export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 		}),
 		aliases: P.SERVICE_ALIASES,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Finding top operations", "Ranking a service's operations"],
 		handler: Effect.fn("McpTool.getServiceTopOperations")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, "get_service_top_operations")

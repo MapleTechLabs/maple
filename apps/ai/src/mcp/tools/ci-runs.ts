@@ -97,6 +97,7 @@ export function registerCiRunsTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 20, max: 100, noun: "runs to list" }),
 		}),
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		// Maple's own agents only: the org's CI history is not for third-party MCP clients.
 		audience: "agent",
 		phrases: ["Checking CI runs", "Reading workflow runs"],

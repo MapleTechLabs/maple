@@ -85,6 +85,7 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 		aliases: P.SERVICE_ALIASES,
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Searching sessions"],
 		handler: Effect.fn("McpTool.searchSessions")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, "search_sessions")

@@ -86,7 +86,7 @@ export const firstEvaluation = Effect.fn("McpTool.alertFirstEvaluation")(functio
 		startTime: isoAt(now - lookbackMs),
 		endTime: isoAt(now),
 	}).pipe(
-		Effect.flatMap((request) => alerts.previewRule(tenant.orgId, tenant.roles, request)),
+		Effect.flatMap((request) => alerts.previewRule(tenant.orgId, tenant.permissions, request)),
 		Effect.timeoutOption(PREVIEW_TIMEOUT),
 		Effect.map((option) =>
 			Option.match(option, {

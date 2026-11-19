@@ -33,6 +33,7 @@ export function registerUpdateEscalationChainTool(server: McpToolRegistrar) {
 			description: P.optionalText('New notes, or "none" to clear them'),
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: true },
+		permission: "oncall:manage",
 		phrases: ["Updating an escalation chain"],
 		handler: Effect.fn("McpTool.updateEscalationChain")(function* (params) {
 			const chainId = yield* P.decodeResourceId("escalationChain", "chain_id")(params.chain_id)
@@ -65,7 +66,7 @@ export function registerUpdateEscalationChainTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			const chains = yield* EscalationChainsService
 			const chain = yield* chains
-				.update(tenant.orgId, tenant.userId, tenant.roles, chainId, request)
+				.update(tenant.orgId, tenant.userId, tenant.permissions, chainId, request)
 				.pipe(Effect.catchTags(updateChainErrors))
 			const directory = yield* targetDirectory(tenant.orgId)
 			return { chain: toEscalationChainRow(chain, directory) }

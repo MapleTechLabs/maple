@@ -132,11 +132,16 @@ export interface TenantContext {
 	readonly turnOrigin?: ChatTurnOrigin
 	/**
 	 * For an unattended turn, who answers for it, settled when it starts: one of Maple's own
-	 * producers, or a person with the roles they hold now. Absent reads as a person with none.
+	 * producers, or a person with what they hold now. Absent reads as a person holding nothing; a
+	 * person without `permissions` holds what their `roles` grant.
 	 */
 	readonly turnStarter?:
 		| { readonly kind: "producer" }
-		| { readonly kind: "person"; readonly roles: ReadonlyArray<RoleName> }
+		| {
+				readonly kind: "person"
+				readonly roles: ReadonlyArray<RoleName>
+				readonly permissions?: ReadonlyArray<Permission>
+		  }
 	/** Which Maple agent ran the chat-engine turn (investigation, code review, ...), so the audit log can name it. */
 	readonly chatMode?: ChatMode
 }

@@ -25,6 +25,7 @@ import {
 	RoleName,
 	UserId,
 } from "@maple/primitives"
+import { PermissionName } from "./policy"
 
 /**
  * `"<orgId>:<tabId>"`. Mirrors the addressing Flue used (and the chat-agent Durable Object naming
@@ -440,6 +441,11 @@ export const ChatTurnTenant = Schema.Struct({
 	orgId: OrgId,
 	userId: UserId,
 	roles: Schema.Array(RoleName),
+	/**
+	 * What the caller may do. Absent on a turn recorded before permissions existed, and from Maple's
+	 * own producers, which hold none of their own: read as what `roles` grant (`Policy.grantsOf`).
+	 */
+	permissions: Schema.optionalKey(Schema.Array(PermissionName)),
 	authMode: AuthMode,
 	/** Pre-resolved agent identity, when the caller authenticated as one. */
 	actorId: Schema.optionalKey(ActorId),
@@ -472,12 +478,14 @@ export const AutonomousTurnStarter = Schema.Union([
 	}),
 	/**
 	 * A person started or restarted it, or wrote what it reads. `userId` is absent when nobody can
-	 * name them (a pull request's author). `roles` are what their credential held at that moment.
+	 * name them (a pull request's author). `roles` and `permissions` are what their credential held
+	 * at that moment; a start recorded without `permissions` reads as what `roles` grant.
 	 */
 	Schema.Struct({
 		kind: Schema.Literal("person"),
 		userId: Schema.optionalKey(UserId),
 		roles: Schema.Array(RoleName),
+		permissions: Schema.optionalKey(Schema.Array(PermissionName)),
 		/** Whether their credential could read data sources (a scoped key may not). Absent reads as no. */
 		mayReadDataSources: Schema.optionalKey(Schema.Boolean),
 	}),
@@ -598,7 +606,7 @@ export type ChatProposalApproval =
 	| {
 			/** A signed-in person in the Maple app. */
 			readonly approver: Extract<ChatTurnOrigin, { readonly kind: "app" }>
-			/** Who the route authenticated, with the roles they hold: the change runs as them. */
+			/** Who the route authenticated, with the permissions they hold: the change runs as them. */
 			readonly tenant: ChatTurnTenantEncoded
 	  }
 	| {
@@ -607,7 +615,7 @@ export type ChatProposalApproval =
 			 * The Maple user the approver's chat account is linked to, resolved by the host from its own
 			 * database — never from anything the click carried.
 			 *
-			 * The change runs as that user, under the roles they hold in the org at that moment.
+			 * The change runs as that user, under the permissions they hold in the org at that moment.
 			 * Required: a click nobody can attribute to a Maple user applies nothing.
 			 */
 			readonly actingUserId: UserId

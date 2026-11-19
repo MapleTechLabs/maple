@@ -7,9 +7,10 @@ import {
 	McpToolsUnavailableError,
 } from "./executor-loader"
 import { CurrentMcpRequestTenant } from "./tenant"
-import { refusesAnalyst, refusesReadOnlyCredential, type McpToolResult } from "./tools/types"
+import { refusalFor, type McpToolResult } from "./tools/types"
+import type { McpToolModule } from "./tools/registry-core"
+import { MCP_TOOL_MODULES } from "./tool-modules.generated"
 import type { McpToolDescriptor } from "@maple/domain/mcp-tool-contract"
-import * as Policy from "@maple/domain/policy"
 
 /**
  * The text blocks are what a model reads; `structuredContent` is the typed output the tool's
@@ -69,20 +70,22 @@ const annotateToolFailure = (result: McpToolResult) =>
 			})
 		: Effect.void
 
-/**
- * Hides a tool from the `tools/list` of a caller the registry would refuse, and answers a call to
- * it as unknown: a listed tool invites the call.
- */
-const hiddenFrom = (isRefused: (tenant: { readOnly?: true; roles: ReadonlyArray<string> }) => boolean) =>
-	EffectMcpServer.visibility(() =>
-		Effect.gen(function* () {
-			const tenant = yield* CurrentMcpRequestTenant
-			return tenant === undefined || !isRefused(tenant)
-		}),
-	)
+const toolsByName: ReadonlyMap<string, McpToolModule> = new Map(
+	Arr.map(MCP_TOOL_MODULES, (entry) => [entry.name, entry]),
+)
 
-const HiddenFromReadOnlyKeys = hiddenFrom((tenant) => tenant.readOnly === true)
-const HiddenFromAnalysts = hiddenFrom((tenant) => tenant.readOnly === true || Policy.isAnalyst(tenant.roles))
+/**
+ * Hides a tool from the `tools/list` of a caller the registry would refuse (a permission they lack,
+ * a read-only key on a tool that changes data), and answers a call to it as unknown: a listed tool
+ * invites the call.
+ */
+const HiddenFromRefusedCallers = EffectMcpServer.visibility(({ target }) =>
+	Effect.gen(function* () {
+		const tenant = yield* CurrentMcpRequestTenant
+		const tool = toolsByName.get(target)
+		return tenant === undefined || tool === undefined || refusalFor(tenant, tool) === undefined
+	}),
+)
 
 const toBoundaryErrorResult = (error: { readonly _tag: string; readonly message: string }) =>
 	toCallToolResult({
@@ -109,16 +112,10 @@ export class McpToolRegistration extends Context.Service<
 	make: Effect.gen(function* () {
 		const server = yield* EffectMcpServer.McpServer
 		const loader = yield* McpToolExecutorLoader
-		const keyGate = yield* Layer.build(HiddenFromReadOnlyKeys.layer)
-		const analystGate = yield* Layer.build(HiddenFromAnalysts.layer)
-		// A dashboard tool is hidden from read-only keys alone; every other change from analysts too.
-		const gateFor = (name: string, readOnly: boolean) => {
-			if (refusesAnalyst(name, readOnly)) return { services: analystGate }
-			return refusesReadOnlyCredential(name, readOnly) ? { services: keyGate } : undefined
-		}
+		const gate = yield* Layer.build(HiddenFromRefusedCallers.layer)
 		const addTool = (descriptor: McpToolDescriptor) =>
 			server.addTool({
-				...gateFor(descriptor.name, descriptor.annotations?.readOnlyHint === true),
+				services: gate,
 				tool: new McpSchema.Tool({
 					name: descriptor.name,
 					title: descriptor.title,

@@ -17,6 +17,7 @@ export function registerRemoveDashboardWidgetTool(server: McpToolRegistrar) {
 			widget_id: P.text("ID of the widget to remove (get_dashboard lists them)"),
 		}),
 		hints: { readOnly: false, destructive: true, idempotent: false },
+		permission: "dashboards:edit",
 		phrases: ["Removing a widget"],
 		handler: Effect.fn("McpTool.removeDashboardWidget")(function* ({ dashboard_id, widget_id }) {
 			const dashboard = yield* withDashboardMutation(dashboard_id, TOOL, (existingWidgets) =>

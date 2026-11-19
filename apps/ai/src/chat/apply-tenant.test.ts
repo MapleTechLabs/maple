@@ -10,6 +10,7 @@
  *   - anything that cannot be found out refuses, because "could not find out" is not "allowed".
  */
 import { assert, describe, it } from "@effect/vitest"
+import * as Policy from "@maple/domain/policy"
 import { Effect, Layer, Schema } from "effect"
 import {
 	ActorDocument,
@@ -34,6 +35,8 @@ const ORG = Schema.decodeSync(OrgId)("org_1")
 const ADA = Schema.decodeSync(UserId)("user_ada")
 const MEMBER = Schema.decodeSync(RoleName)("org:member")
 const ADMIN = Schema.decodeSync(RoleName)("org:admin")
+const ANALYST = Schema.decodeSync(RoleName)("org:analyst")
+const CUSTOM = Schema.decodeSync(RoleName)("org:custom")
 const CONNECTOR_ACTOR = Schema.decodeSync(ActorId)("00000000-0000-4000-8000-00000000c0de")
 
 const APPROVER: ChatConnectorOrigin = {
@@ -126,7 +129,7 @@ describe("whose authority an approval runs under", () => {
 		Effect.gen(function* () {
 			const tenant: TenantContext = yield* resolveTenant(ORG, proposal(ADA)).pipe(
 				Effect.provide([
-					memberships(() => Effect.succeedSome({ orgId: ORG, role: MEMBER })),
+					memberships(() => Effect.succeedSome({ orgId: ORG, role: MEMBER, customPermissions: [] })),
 					noActors,
 				]),
 			)
@@ -139,6 +142,64 @@ describe("whose authority an approval runs under", () => {
 			assert.isUndefined(tenant.actorId)
 			// The chat account they clicked from still rides along as forensic context.
 			assert.deepStrictEqual(tenant.turnOrigin, APPROVER)
+		}),
+	)
+
+	/** An app approval as the route encodes it, by a caller holding `permissions` (absent: a record from before them). */
+	const appApproval = (roles: ReadonlyArray<RoleName>, permissions?: Policy.Grants) =>
+		resolveTenant(ORG, {
+			env: {},
+			sessionId: `${ORG}:tab-1`,
+			approver: { kind: "app" },
+			tenant: {
+				orgId: ORG,
+				userId: ADA,
+				roles,
+				...(permissions === undefined ? undefined : { permissions }),
+				authMode: "clerk",
+			},
+			tool: "create_alert_rule",
+			input: {},
+		}).pipe(Effect.provide([memberships(die), noActors]))
+
+	it.effect("refuses an app approval by someone who may not act through Maple AI", () =>
+		Effect.gen(function* () {
+			const analyst = yield* appApproval([ANALYST]).pipe(Effect.flip)
+			const custom = yield* appApproval([CUSTOM], ["telemetry:read", "ai:ask", "alerts:manage"]).pipe(
+				Effect.flip,
+			)
+
+			for (const failure of [analyst, custom]) {
+				assert.strictEqual(failure._tag, "@maple/ai/LinkedUserNotPermitted")
+				assert.strictEqual(failure.reason, "not_permitted")
+				assert.strictEqual(failure.message, Policy.denialFor("ai:act").message)
+			}
+		}),
+	)
+
+	it.effect("runs an app approval with the approver's own permissions, and an old record with its roles'", () =>
+		Effect.gen(function* () {
+			const custom = yield* appApproval([CUSTOM], ["ai:act", "alerts:manage"])
+			const recordedBefore = yield* appApproval([MEMBER])
+
+			assert.deepStrictEqual(custom.permissions, ["ai:act", "alerts:manage"])
+			assert.deepStrictEqual(recordedBefore.permissions, Policy.grantsOf([MEMBER]))
+		}),
+	)
+
+	it.effect("refuses a linked approver whose custom role cannot act through Maple AI", () =>
+		Effect.gen(function* () {
+			const failure = yield* resolveTenant(ORG, proposal(ADA)).pipe(
+				Effect.provide([
+					memberships(() =>
+						Effect.succeedSome({ orgId: ORG, role: CUSTOM, customPermissions: ["alerts:manage"] }),
+					),
+					noActors,
+				]),
+				Effect.flip,
+			)
+
+			assert.strictEqual(failure.reason, "not_permitted")
 		}),
 	)
 
@@ -214,7 +275,7 @@ describe("whose authority a connector turn reads under", () => {
 		Effect.gen(function* () {
 			const tenant: TenantContext = yield* run(asking(ADA)).pipe(
 				Effect.provide([
-					memberships(() => Effect.succeedSome({ orgId: ORG, role: MEMBER })),
+					memberships(() => Effect.succeedSome({ orgId: ORG, role: MEMBER, customPermissions: [] })),
 					noActors,
 				]),
 			)
@@ -222,6 +283,23 @@ describe("whose authority a connector turn reads under", () => {
 			assert.strictEqual(tenant.userId, ADA)
 			assert.deepStrictEqual(tenant.roles, [MEMBER])
 			assert.isUndefined(tenant.actorId)
+		}),
+	)
+
+	it.effect("refuses a linked asker whose role may not ask Maple AI", () =>
+		Effect.gen(function* () {
+			const failure = yield* run(asking(ADA)).pipe(
+				Effect.provide([
+					memberships(() =>
+						Effect.succeedSome({ orgId: ORG, role: CUSTOM, customPermissions: ["telemetry:read"] }),
+					),
+					noActors,
+				]),
+				Effect.flip,
+			)
+
+			assert.strictEqual(failure.reason, "not_permitted")
+			assert.strictEqual(failure.message, Policy.denialFor("ai:ask").message)
 		}),
 	)
 

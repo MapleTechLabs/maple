@@ -45,6 +45,7 @@ export function registerDiagnoseServiceTool(server: McpToolRegistrar) {
 		aliases: P.SERVICE_ALIASES,
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Diagnosing a service", "Checking a service's health"],
 		handler: Effect.fn("McpTool.diagnoseService")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, "diagnose_service")

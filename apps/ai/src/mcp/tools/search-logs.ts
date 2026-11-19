@@ -70,6 +70,7 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 		aliases: { ...P.SERVICE_ALIASES, query: "search" },
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Searching logs", "Reading through logs"],
 		handler: Effect.fn("McpTool.searchLogs")(function* (params) {
 			const byTrace =

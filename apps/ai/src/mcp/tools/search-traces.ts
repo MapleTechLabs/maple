@@ -57,6 +57,7 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 		aliases: P.SERVICE_ALIASES,
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Searching traces", "Looking through traces"],
 		handler: Effect.fn("McpTool.searchTraces")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, "search_traces")

@@ -66,6 +66,7 @@ export function registerReplaceDashboardWidgetsTool(server: McpToolRegistrar) {
 			),
 		}),
 		hints: { readOnly: false, destructive: true, idempotent: false },
+		permission: "dashboards:edit",
 		phrases: ["Replacing widgets"],
 		handler: Effect.fn("McpTool.replaceDashboardWidgets")(function* ({
 			dashboard_id,

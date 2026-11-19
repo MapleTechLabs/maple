@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Array as Arr, Option } from "effect"
 import * as Policy from "../policy"
+import { MapleAiApi } from "./ai-api"
 import { MapleApi } from "./api"
 import { Authorization, RegionlessSessionAuthorization, SessionAuthorization } from "./current-tenant"
 import { type CalledEndpoint, decideEndpointAccess, endpointAccessOf } from "./endpoint-access"
@@ -25,7 +26,7 @@ const gated: ReadonlyArray<unknown> = [
 	AuthorizationV2,
 ]
 
-const apis = [MapleApi, MapleInternalApi, MapleApiV2] as const
+const apis = [MapleApi, MapleInternalApi, MapleApiV2, MapleAiApi] as const
 
 const allEndpoints = Arr.flatMap(apis, (api) =>
 	// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.values would need a cast

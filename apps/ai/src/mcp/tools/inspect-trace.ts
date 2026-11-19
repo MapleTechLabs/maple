@@ -39,6 +39,7 @@ export function registerInspectTraceTool(server: McpToolRegistrar) {
 		}),
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Inspecting a trace", "Opening a trace"],
 		handler: Effect.fn("McpTool.inspectTrace")(function* ({
 			trace_id,

@@ -18,6 +18,7 @@ export function registerDeleteMaintenanceWindowTool(server: McpToolRegistrar) {
 			confirm: P.flag("Must be true. There is no undo."),
 		}),
 		hints: { readOnly: false, destructive: true, idempotent: false },
+		permission: "alerts:manage",
 		phrases: ["Deleting a maintenance window"],
 		handler: Effect.fn("McpTool.deleteMaintenanceWindow")(function* (params) {
 			if (params.confirm !== true) {
@@ -33,7 +34,7 @@ export function registerDeleteMaintenanceWindowTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			const windows = yield* AlertMaintenanceWindowsService
 			const deleted = yield* windows
-				.delete(tenant.orgId, tenant.userId, tenant.roles, windowId)
+				.delete(tenant.orgId, tenant.userId, tenant.permissions, windowId)
 				.pipe(Effect.catchTags(deleteWindowErrors))
 			return { id: deleted.id, name: deleted.name }
 		}),

@@ -104,6 +104,7 @@ export function registerInspectChartDataTool(server: McpToolRegistrar) {
 			),
 		}),
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Inspecting chart data"],
 		handler: Effect.fn("McpTool.inspectChartData")(function* ({
 			dashboard_id,

@@ -411,6 +411,7 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 		}),
 		aliases: P.SERVICE_ALIASES,
 		hints: { readOnly: false, destructive: false, idempotent: false },
+		permission: "dashboards:edit",
 		phrases: ["Creating a dashboard"],
 		handler: Effect.fn("McpTool.createDashboard")(function* (params) {
 			if (params.time_range) {

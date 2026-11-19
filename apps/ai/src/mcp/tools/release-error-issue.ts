@@ -31,6 +31,7 @@ export function registerReleaseErrorIssueTool(server: McpToolRegistrar) {
 			note: P.optionalText("Reasoning or context, stored on the release event"),
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: false },
+		permission: "error_issues:triage",
 		phrases: ["Releasing an issue"],
 		handler: Effect.fn("McpTool.releaseErrorIssue")(function* (params) {
 			const tenant = yield* CurrentMcpTenant

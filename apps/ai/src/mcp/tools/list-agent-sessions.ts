@@ -71,6 +71,7 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 		aliases: { service: "services" },
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Listing agent sessions"],
 		handler: Effect.fn("McpTool.listAgentSessions")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, "list_agent_sessions")

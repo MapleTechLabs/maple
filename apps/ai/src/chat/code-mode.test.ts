@@ -3,6 +3,7 @@
  * can call, what it cannot, and which runs are offered the tool at all.
  */
 import { makeRecordingTracer, spansNamed } from "@maple/backend/testing/recording-tracer"
+import * as Policy from "@maple/domain/policy"
 import { OrgId, UserId } from "@maple/domain"
 import { inProcessCodeExecutorLayer } from "@yielded/agent-testing/code-executor-substitute"
 import { Effect, Exit, Layer, Option, Schema, Stream, Array as Arr, String as Str } from "effect"
@@ -31,6 +32,7 @@ const TENANT: TenantContext = {
 	orgId: Schema.decodeSync(OrgId)("org_test"),
 	userId: Schema.decodeSync(UserId)("user_test"),
 	roles: [],
+	permissions: Policy.grantsOf([]),
 	authMode: "self_hosted",
 }
 

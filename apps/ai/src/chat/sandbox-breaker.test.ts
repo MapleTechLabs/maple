@@ -1,4 +1,5 @@
 import { REPO_SANDBOX_IMPLEMENTATION } from "@maple/backend/services/sandbox/repo-mount"
+import * as Policy from "@maple/domain/policy"
 import { SandboxRunCheckoutPending, SandboxRunUnavailable } from "@maple/domain/sandbox"
 import { OrgId, UserId } from "@maple/primitives"
 import { SandboxSpawnError } from "@maple/backend/services/sandbox/contract"
@@ -14,6 +15,7 @@ const tenant: TenantContext = {
 	orgId: Schema.decodeSync(OrgId)("org_test"),
 	userId: Schema.decodeSync(UserId)("user_test"),
 	roles: [],
+	permissions: Policy.grantsOf([]),
 	authMode: "self_hosted",
 }
 

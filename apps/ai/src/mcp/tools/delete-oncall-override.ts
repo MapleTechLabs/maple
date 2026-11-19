@@ -17,6 +17,7 @@ export function registerDeleteOnCallOverrideTool(server: McpToolRegistrar) {
 			override_id: P.resourceId("oncallOverride", "Override to delete"),
 		}),
 		hints: { readOnly: false, destructive: true, idempotent: false },
+		permission: "oncall:manage",
 		phrases: ["Deleting an on-call override"],
 		handler: Effect.fn("McpTool.deleteOnCallOverride")(function* (params) {
 			const scheduleId = yield* P.decodeResourceId("oncallSchedule", "schedule_id")(params.schedule_id)
@@ -32,7 +33,7 @@ export function registerDeleteOnCallOverrideTool(server: McpToolRegistrar) {
 				}),
 			)
 			yield* schedules
-				.deleteOverride(tenant.orgId, tenant.roles, scheduleId, overrideId)
+				.deleteOverride(tenant.orgId, tenant.permissions, scheduleId, overrideId)
 				.pipe(Effect.catchTags(deleteOverrideErrors))
 			return { id: overrideId, scheduleId, scheduleName: schedule.name }
 		}),

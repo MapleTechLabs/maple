@@ -358,6 +358,7 @@ export function registerAuditSetupTool(server: McpToolRegistrar) {
 			),
 		}),
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Auditing the setup", "Checking the telemetry setup"],
 		handler: Effect.fn("McpTool.auditSetup")(function* ({ include_passing }) {
 			const tenant = yield* CurrentMcpTenant

@@ -21,6 +21,7 @@ export function registerListMaintenanceWindowsTool(server: McpToolRegistrar) {
 			offset: P.offset({ max: 1_000 }),
 		}),
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Listing maintenance windows", "Checking maintenance windows"],
 		handler: Effect.fn("McpTool.listMaintenanceWindows")(function* (params) {
 			const tenant = yield* CurrentMcpTenant

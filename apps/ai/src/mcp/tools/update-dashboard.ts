@@ -46,6 +46,7 @@ export function registerUpdateDashboardTool(server: McpToolRegistrar) {
 		}),
 		// `dashboard_json` overwrites every widget: the same call cannot be undone.
 		hints: { readOnly: false, destructive: true, idempotent: true },
+		permission: "dashboards:edit",
 		phrases: ["Updating a dashboard"],
 		handler: Effect.fn("McpTool.updateDashboard")(function* ({
 			dashboard_id,

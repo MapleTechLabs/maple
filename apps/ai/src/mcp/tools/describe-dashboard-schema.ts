@@ -58,6 +58,7 @@ export function registerDescribeDashboardSchemaTool(server: McpToolRegistrar) {
 			section: P.optionalOneOf(SECTIONS, "Omit for the index plus the panel-type table."),
 		}),
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Reading the dashboard schema"],
 		handler: Effect.fn("McpTool.describeDashboardSchema")(function* ({ section }) {
 			if (section === undefined) return { markdown: renderIndex() }

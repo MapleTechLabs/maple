@@ -3,6 +3,7 @@
  * typed output on `structuredContent`, the rendered text, and input errors naming the parameter.
  */
 import { describe, expect, it } from "vitest"
+import * as Policy from "@maple/domain/policy"
 import { Context, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import {
 	AlertChecksListResponse,
@@ -180,6 +181,8 @@ const layer = (seen: Seen) =>
 			orgId: Schema.decodeSync(OrgId)("org_tools"),
 			userId: Schema.decodeSync(UserId)("user_tools"),
 			roles: [],
+			// The services are mocked; what a role may change is the registry's, tested on its own.
+			permissions: Policy.everyPermission,
 			authMode: "self_hosted",
 			...(seen.scopes === undefined ? undefined : { scopes: seen.scopes }),
 		} as never),

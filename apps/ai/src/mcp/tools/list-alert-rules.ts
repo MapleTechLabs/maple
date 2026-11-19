@@ -29,6 +29,7 @@ export function registerListAlertRulesTool(server: McpToolRegistrar) {
 		}),
 		aliases: { service_names: "services" },
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Listing alert rules", "Checking alert rules"],
 		handler: Effect.fn("McpTool.listAlertRules")(function* (params) {
 			const tenant = yield* CurrentMcpTenant

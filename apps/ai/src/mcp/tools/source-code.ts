@@ -59,6 +59,7 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 			"List source repositories connected to this Maple organization. Use before source investigation when telemetry does not identify an exact vcs.repository.url.full. Returns only repositories the organization's GitHub App installation can access.",
 		parameters: Schema.Struct({}),
 		hints: HINTS,
+		permission: "telemetry:read",
 		audience: AGENT,
 		phrases: ["Listing repositories"],
 		handler: Effect.fn("McpTool.listSourceRepositories")(function* () {
@@ -122,6 +123,7 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 			limit: P.limit({ default: 10, max: 20, noun: "matches" }),
 		}),
 		hints: HINTS,
+		permission: "telemetry:read",
 		audience: AGENT,
 		phrases: ["Searching the code", "Searching source code"],
 		handler: Effect.fn("McpTool.searchSourceCode")(function* ({ repository, query, path, limit }) {
@@ -249,6 +251,7 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 			end_line: P.optionalNumber(`Last line to return; at most ${MAX_FILE_LINES} lines per call`),
 		}),
 		hints: HINTS,
+		permission: "telemetry:read",
 		audience: AGENT,
 		phrases: ["Reading a source file", "Reading the code"],
 		handler: Effect.fn("McpTool.readSourceFile")(function* ({

@@ -93,6 +93,7 @@ export function registerAddDashboardWidgetTool(server: McpToolRegistrar) {
 			),
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: false },
+		permission: "dashboards:edit",
 		phrases: ["Adding a widget"],
 		handler: Effect.fn("McpTool.addDashboardWidget")(function* ({
 			dashboard_id,

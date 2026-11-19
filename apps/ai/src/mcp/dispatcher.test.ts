@@ -1,4 +1,5 @@
 import { assert, describe, expect, it } from "@effect/vitest"
+import * as Policy from "@maple/domain/policy"
 import { Context, Effect, Layer, Option, Schema, Tracer, Array as Arr, String as Str } from "effect"
 import type { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import { ActorId } from "@maple/primitives"
@@ -24,6 +25,7 @@ const TENANT: TenantContext = {
 	orgId: "org_test" as TenantContext["orgId"],
 	userId: "user_test" as TenantContext["userId"],
 	roles: [],
+	permissions: Policy.grantsOf([]),
 	authMode: "self_hosted",
 }
 

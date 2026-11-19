@@ -17,6 +17,7 @@ export function registerDeleteEscalationChainTool(server: McpToolRegistrar) {
 			chain_id: P.resourceId("escalationChain", "Escalation chain to delete"),
 		}),
 		hints: { readOnly: false, destructive: true, idempotent: false },
+		permission: "oncall:manage",
 		phrases: ["Deleting an escalation chain"],
 		handler: Effect.fn("McpTool.deleteEscalationChain")(function* (params) {
 			const chainId = yield* P.decodeResourceId("escalationChain", "chain_id")(params.chain_id)
@@ -32,7 +33,7 @@ export function registerDeleteEscalationChainTool(server: McpToolRegistrar) {
 				}),
 			)
 			yield* chains
-				.delete(tenant.orgId, tenant.roles, chainId)
+				.delete(tenant.orgId, tenant.permissions, chainId)
 				.pipe(Effect.catchTags(deleteChainErrors))
 			return { id: chain.id, name: chain.name }
 		}),

@@ -428,6 +428,7 @@ export function registerGetAgentSessionTranscriptTool(server: McpToolRegistrar) 
 		}),
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Reading an agent session"],
 		handler: Effect.fn("McpTool.getAgentSessionTranscript")(
 			function* (params) {

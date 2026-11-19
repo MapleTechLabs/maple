@@ -23,7 +23,8 @@ export const queryCallerOf = (
 		return { kind: "principal", permissions: tenant.permissions }
 	const starter = tenant.turnStarter
 	if (starter?.kind === "producer") return { kind: "unattended" }
-	return { kind: "principal", permissions: starter === undefined ? [] : Policy.grantsOf(starter.roles) }
+	if (starter === undefined) return { kind: "principal", permissions: [] }
+	return { kind: "principal", permissions: starter.permissions ?? Policy.grantsOf(starter.roles) }
 }
 
 /** Whether `query` would admit this caller, for a surface deciding whether to offer it at all. */

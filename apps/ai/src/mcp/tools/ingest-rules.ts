@@ -24,7 +24,6 @@ import {
 import { IngestRuleValidationError, type SelfDescribingHttpError } from "@maple/domain/http"
 import type { ListLogsRow as ListLogsOutput } from "@maple/query-engine/ch"
 import type { OrgId } from "@maple/primitives"
-import * as Policy from "@maple/domain/policy"
 import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
@@ -37,7 +36,7 @@ import {
 	type AttrValue,
 	type RuleRecord,
 } from "@maple/ingest-rules"
-import { McpInvalidInputError, McpUnavailableError, type McpToolRegistrar } from "./types"
+import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { CurrentMcpTenant } from "../tenant"
 import { toMcpHttpError } from "../lib/map-http-error"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
@@ -49,21 +48,6 @@ import { doc } from "../lib/tool-doc"
 const SIGNALS = IngestRuleSignal.literals
 const PREVIEW_WINDOW = P.timeWindow({ defaultHours: 1, maxHours: 24 })
 const PREVIEW_SALT = "preview"
-
-const adminOnly = (tool: string) =>
-	Effect.gen(function* () {
-		const tenant = yield* CurrentMcpTenant
-		yield* Policy.check(
-			tenant.roles,
-			"ingest_rules:manage",
-			() =>
-				new McpUnavailableError({
-					message: `${tool} changes the organization's ingest rules, which only org admins and engineers may do. Ask an admin or engineer, or change it in Settings → Ingestion.`,
-					capability: "org_admin",
-				}),
-		)
-		return tenant
-	})
 
 /** The tool parameter a validator problem is about, so the model knows which argument to fix. */
 export const parameterOfProblem = (problem: string): string => {
@@ -299,6 +283,7 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 			"The organization's ingest rules: what telemetry is dropped or redacted before Maple stores or bills it, in the order they run (drop rules first, then redact rules by position).",
 		parameters: Schema.Struct({}),
 		hints: { readOnly: true, destructive: false, idempotent: true },
+		permission: "telemetry:read",
 		scopeFamily: "ingest_rules",
 		phrases: ["Listing ingest rules"],
 		handler: Effect.fn("McpTool.listIngestRules")(function* () {
@@ -360,6 +345,7 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 		}),
 		aliases: P.SERVICE_ALIASES,
 		hints: { readOnly: true, destructive: false, idempotent: true },
+		permission: "telemetry:read",
 		scopeFamily: "ingest_rules",
 		phrases: ["Previewing an ingest rule"],
 		handler: Effect.fn("McpTool.previewIngestRule")(function* (params) {
@@ -457,10 +443,11 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 			position: P.optionalNumber("Run order among redact rules; default after the last rule"),
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: false },
+		permission: "ingest_rules:manage",
 		scopeFamily: "ingest_rules",
 		phrases: ["Adding an ingest rule"],
 		handler: Effect.fn("McpTool.createIngestRule")(function* (params) {
-			const tenant = yield* adminOnly("create_ingest_rule")
+			const tenant = yield* CurrentMcpTenant
 			const service = yield* IngestRuleService
 			const created = yield* service
 				.create(tenant.orgId, {
@@ -494,10 +481,11 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 			action: P.optionalJson(V2IngestRuleAction, `Replaces the action: ${actionDescription}`),
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: true },
+		permission: "ingest_rules:manage",
 		scopeFamily: "ingest_rules",
 		phrases: ["Updating an ingest rule"],
 		handler: Effect.fn("McpTool.updateIngestRule")(function* (params) {
-			const tenant = yield* adminOnly("update_ingest_rule")
+			const tenant = yield* CurrentMcpTenant
 			const current = yield* resolveRule("update_ingest_rule", tenant.orgId, params.rule)
 			const service = yield* IngestRuleService
 			const specChanged =
@@ -537,6 +525,7 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 			confirm: P.flag("Must be true"),
 		}),
 		hints: { readOnly: false, destructive: true, idempotent: false },
+		permission: "ingest_rules:manage",
 		scopeFamily: "ingest_rules",
 		phrases: ["Deleting an ingest rule"],
 		handler: Effect.fn("McpTool.deleteIngestRule")(function* (params) {
@@ -546,7 +535,7 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 					parameter: "confirm",
 				})
 			}
-			const tenant = yield* adminOnly("delete_ingest_rule")
+			const tenant = yield* CurrentMcpTenant
 			const rule = yield* resolveRule("delete_ingest_rule", tenant.orgId, params.rule)
 			const service = yield* IngestRuleService
 			yield* service

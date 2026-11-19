@@ -32,6 +32,7 @@ export function registerListAlertIncidentsTool(server: McpToolRegistrar) {
 		}),
 		untrustedOutput: true,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Listing alert incidents", "Checking recent alerts"],
 		handler: Effect.fn("McpTool.listAlertIncidents")(function* (params) {
 			const tenant = yield* CurrentMcpTenant

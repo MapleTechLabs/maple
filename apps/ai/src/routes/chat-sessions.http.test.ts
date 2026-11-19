@@ -1,5 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { AuthorizationUnavailableError, OrgId, RoleName, UserId } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import { fakeChatSessionsLayer } from "@maple/backend/testing/chat-sessions-fake"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
@@ -315,10 +316,9 @@ describe("ChatSessionsRouter", () => {
 		)
 	})
 
-	it.effect("lets an analyst read an investigation's thread but not drive or stop it", () => {
-		const testDb = createTestDb(trackedDbs)
-		const turns: Array<BeginTurnInput> = []
-		const asAnalyst = Layer.effect(
+	/** A signed-in caller of the session's org on `role`, holding `permissions`. */
+	const signedInAs = (role: string, permissions: Policy.Grants) =>
+		Layer.effect(
 			AuthService,
 			Effect.gen(function* () {
 				const auth = yield* AuthService
@@ -328,21 +328,26 @@ describe("ChatSessionsRouter", () => {
 						Effect.succeed({
 							orgId: ORG,
 							userId: USER,
-							roles: [Schema.decodeSync(RoleName)("org:analyst")],
+							roles: [Schema.decodeSync(RoleName)(role)],
+							permissions,
 							authMode: "clerk" as const,
 						}),
 				}
 			}),
 		).pipe(Layer.provide(AuthService.layer))
-		const call = (handler: (request: Request) => Promise<Response>, method: string, path: string) =>
-			Effect.promise(() =>
-				handler(
-					new Request(`http://api.localhost${SESSION_PATH}${path}`, {
-						method,
-						headers: { authorization: "Bearer aaa.bbb.ccc" },
-					}),
-				),
-			)
+	const call = (handler: (request: Request) => Promise<Response>, method: string, path: string) =>
+		Effect.promise(() =>
+			handler(
+				new Request(`http://api.localhost${SESSION_PATH}${path}`, {
+					method,
+					headers: { authorization: "Bearer aaa.bbb.ccc" },
+				}),
+			),
+		)
+
+	it.effect("lets an analyst read an investigation's thread but not drive or stop it", () => {
+		const testDb = createTestDb(trackedDbs)
+		const turns: Array<BeginTurnInput> = []
 		return withHandler(
 			testDb,
 			turns,
@@ -353,8 +358,37 @@ describe("ChatSessionsRouter", () => {
 				assert.strictEqual((yield* call(handler, "POST", "/abort")).status, 403)
 				assert.strictEqual((yield* call(handler, "GET", "/history")).status, 200)
 			}),
-			asAnalyst,
+			signedInAs("org:analyst", Policy.grantsOf(["org:analyst"])),
 		)
+	})
+
+	it.effect("lets a custom role drive an investigation only when it may ask Maple AI and run investigations", () => {
+		const testDb = createTestDb(trackedDbs)
+		const turns: Array<BeginTurnInput> = []
+		const driver: Policy.Grants = ["telemetry:read", "ai:ask", "investigations:run"]
+		return Effect.gen(function* () {
+			yield* withHandler(
+				testDb,
+				turns,
+				Effect.fnUntraced(function* (handler) {
+					const sent = yield* send(handler, { authorization: "Bearer aaa.bbb.ccc" })
+					assert.strictEqual(sent.status, 403)
+					assert.include(yield* Effect.promise(() => sent.text()), Policy.denialFor("investigations:run").message)
+				}),
+				signedInAs("org:custom", ["telemetry:read", "ai:ask"]),
+			)
+			assert.strictEqual(turns.length, 0)
+			yield* withHandler(
+				testDb,
+				turns,
+				Effect.fnUntraced(function* (handler) {
+					assert.strictEqual((yield* send(handler, { authorization: "Bearer aaa.bbb.ccc" })).status, 202)
+				}),
+				signedInAs("org:custom", driver),
+			)
+			// The turn runs with the caller's own permissions, not with what their role key grants.
+			assert.deepStrictEqual(turns[0]?.tenant.permissions, driver)
+		})
 	})
 
 	it.effect("hides another org's session as 404", () => {

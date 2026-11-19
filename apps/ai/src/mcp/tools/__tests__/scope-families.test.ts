@@ -3,6 +3,7 @@
  * scope, as the matching `/v2/<family>` routes do.
  */
 import { describe, expect, it } from "vitest"
+import * as Policy from "@maple/domain/policy"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
 import { INVESTIGATION_READ_FAMILIES } from "@maple/domain/http/v2"
 import { Context, Effect, Layer, Schema, Array as Arr } from "effect"
@@ -14,6 +15,7 @@ const tenantWith = (scopes: ReadonlyArray<string>) =>
 		orgId: Schema.decodeSync(OrgId)("org_scope_families"),
 		userId: Schema.decodeSync(UserId)("user_scope_families"),
 		roles: [Schema.decodeSync(RoleName)("org:admin")],
+		permissions: Policy.grantsOf([Schema.decodeSync(RoleName)("org:admin")]),
 		authMode: "self_hosted",
 		scopes,
 	})

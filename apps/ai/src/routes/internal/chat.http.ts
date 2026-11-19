@@ -31,7 +31,8 @@ const sessionCall = <A>(toolCallId: string, call: Effect.Effect<A, ChatSessionCa
 	)
 
 /**
- * `POST /internal/chat/apply` — decide an approval-gated proposal as the signed-in user.
+ * `POST /internal/chat/apply` — decide an approval-gated proposal as the signed-in user, who needs
+ * `ai:act` (the endpoint's `EndpointAccess`); the change runs with their permissions.
  *
  * By reference, through `ChatSession.settleProposal`: the session reads the tool and its arguments
  * out of its own log, refuses a call that is not an open proposal or is already decided, runs it
@@ -64,6 +65,7 @@ export const HttpChatLive = HttpApiBuilder.group(MapleAiApi, "chat", (handlers) 
 						orgId: tenant.orgId,
 						userId: tenant.userId,
 						roles: tenant.roles,
+						permissions: tenant.permissions,
 						authMode: tenant.authMode,
 					}),
 				}),

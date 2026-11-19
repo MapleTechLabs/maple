@@ -60,15 +60,15 @@ export const uptimeRatio = (recent: ReadonlyArray<UptimeRecentCheck>): number | 
 	recent.length === 0 ? null : Arr.filter(recent, (check) => check.ok).length / recent.length
 
 /**
- * Whether the caller may change monitors, as the REST route judges it: the role, a credential
+ * Whether the caller may change monitors, as the REST route judges it: the permission, a credential
  * that is not read-only, and for a scoped key the `uptime_monitors` write scope.
  */
 export const canWriteUptimeMonitors = (tenant: {
-	readonly roles: ReadonlyArray<string>
+	readonly permissions: Policy.Grants
 	readonly readOnly?: true
 	readonly scopes?: ReadonlyArray<string> | undefined
 }): boolean =>
-	Policy.can(tenant.roles, "uptime_monitors:manage") &&
+	Policy.can(tenant.permissions, "uptime_monitors:manage") &&
 	tenant.readOnly !== true &&
 	scopeAllows(tenant.scopes, { family: "uptime_monitors", access: "write" })
 

@@ -19,6 +19,7 @@ export function registerDeleteAlertRuleTool(server: McpToolRegistrar) {
 			confirm: P.flag("Must be true. There is no undo."),
 		}),
 		hints: { readOnly: false, destructive: true, idempotent: false },
+		permission: "alerts:manage",
 		phrases: ["Deleting an alert rule"],
 		handler: Effect.fn("McpTool.deleteAlertRule")(function* (params) {
 			if (params.confirm !== true) {
@@ -32,7 +33,7 @@ export function registerDeleteAlertRuleTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			const alerts = yield* AlertRulesService
 
-			const result = yield* alerts.deleteRule(tenant.orgId, tenant.roles, ruleId).pipe(
+			const result = yield* alerts.deleteRule(tenant.orgId, tenant.permissions, ruleId).pipe(
 				Effect.catchTags({
 					"@maple/http/errors/AlertRuleNotFoundError": ruleNotFoundFromError,
 					"@maple/http/errors/AlertValidationError": (error) =>

@@ -30,6 +30,7 @@ export function registerClaimErrorIssueTool(server: McpToolRegistrar) {
 		}),
 		// Not idempotent: claiming again moves the lease expiry.
 		hints: { readOnly: false, destructive: false, idempotent: false },
+		permission: "error_issues:triage",
 		phrases: ["Claiming an issue"],
 		handler: Effect.fn("McpTool.claimErrorIssue")(function* (params) {
 			const tenant = yield* CurrentMcpTenant

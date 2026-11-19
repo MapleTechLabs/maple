@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import * as Policy from "@maple/domain/policy"
 import { Array as Arr, Effect, Schema, String as Str } from "effect"
 import { ExternalDataSourceId, type ExternalDataSourceDocument } from "@maple/domain/data-sources"
 import { dataSourcesPromptSection, MAX_PROMPT_SOURCES } from "./data-sources"
@@ -90,6 +91,7 @@ describe("readDataSourcesResource", () => {
 		orgId: Schema.decodeSync(OrgId)("org_resource"),
 		userId: Schema.decodeSync(UserId)("user_resource"),
 		roles: [Schema.decodeSync(RoleName)("org:admin")],
+		permissions: Policy.grantsOf(["org:admin"]),
 		authMode: "self_hosted",
 	} as const
 	const read = (scopes: ReadonlyArray<string> | undefined) => {

@@ -186,6 +186,7 @@ export function registerInspectInfraTool(server: McpToolRegistrar) {
 			...WINDOW.fields,
 		}),
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Inspecting infrastructure", "Checking resource usage"],
 		handler: Effect.fn("McpTool.inspectInfra")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, TOOL)
