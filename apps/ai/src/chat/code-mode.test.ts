@@ -251,6 +251,7 @@ describe("run_code", () => {
 							observe: (tool) => observed.push(tool),
 							unread: () => [],
 							wholeDiff: () => true,
+							progress: () => ({ due: [], read: [] }),
 						},
 						ledger: makeReviewLedger(),
 						childFindings: makeChildFindings(),
@@ -436,7 +437,12 @@ describe("run_code", () => {
 					completion: reviewCompletion(
 						{ kind: "autonomous" },
 						{
-							coverage: { observe: () => {}, unread: () => [], wholeDiff: () => true },
+							coverage: {
+								observe: () => {},
+								unread: () => [],
+								wholeDiff: () => true,
+								progress: () => ({ due: [], read: [] }),
+							},
 							ledger: makeReviewLedger(),
 							childFindings: makeChildFindings(),
 						},

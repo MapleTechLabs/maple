@@ -115,7 +115,12 @@ describe("runChatTurn review_files children", () => {
 				completion: reviewCompletion(
 					{ kind: "autonomous" },
 					{
-						coverage: { observe: () => {}, unread: () => [], wholeDiff: () => true },
+						coverage: {
+							observe: () => {},
+							unread: () => [],
+							wholeDiff: () => true,
+							progress: () => ({ due: [], read: [] }),
+						},
 						ledger: makeReviewLedger(),
 						childFindings: makeChildFindings(),
 					},
@@ -155,7 +160,12 @@ describe("runChatTurn review_files children", () => {
 				Effect.succeed({ content: [{ type: "text" as const, text: "src/a.ts (source, +3 -1)" }] }),
 		}
 		const review = {
-			coverage: { observe: () => {}, unread: () => [], wholeDiff: () => true },
+			coverage: {
+				observe: () => {},
+				unread: () => [],
+				wholeDiff: () => true,
+				progress: () => ({ due: [], read: [] }),
+			},
 			ledger: makeReviewLedger(),
 			childFindings: makeChildFindings(),
 		}
@@ -249,7 +259,12 @@ describe("runChatTurn review_files children", () => {
 				completion: reviewCompletion(
 					{ kind: "autonomous" },
 					{
-						coverage: { observe: () => {}, unread: () => [], wholeDiff: () => true },
+						coverage: {
+							observe: () => {},
+							unread: () => [],
+							wholeDiff: () => true,
+							progress: () => ({ due: [], read: [] }),
+						},
 						ledger: makeReviewLedger(),
 						childFindings: makeChildFindings(),
 					},

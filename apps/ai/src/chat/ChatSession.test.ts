@@ -618,31 +618,55 @@ describe("ChatSession eviction recovery", () => {
 		assert.lengthOf(revived.runs, 1)
 	})
 
-	it("gives the review up, and says so, once it has been evicted too often", () => {
+	it("spends its attempts, files what they found with the slot held, then gives the review up", () => {
 		const first = recording()
 		beginReview(first.session)
+		const startedAt = first.runs[0]?.kickoff.startedAt
+		assert.isNumber(startedAt)
 		let state = first.state
-		let last: string | undefined
 		for (let attempt = 1; attempt <= MAX_TURN_RESUMES; attempt++) {
 			const revived = recording(state)
 			revived.session.alarm()
 			assert.strictEqual(revived.runs[0]?.resume?.attempt, attempt)
-			last = revived.runs[0]?.messageId
+			// Every restart answers the same kickoff, so it reads the same checkpoint and clock.
+			assert.deepEqual(revived.runs[0]?.kickoff, { userMessageId: "kickoff", startedAt })
 			state = revived.state
 		}
 
-		const final = recording(state)
-		final.session.alarm()
+		// Attempts spent: one more run only files what they found, still holding the slot and alarm.
+		const settling = recording(state)
+		settling.session.alarm()
+		assert.isTrue(settling.session.running())
+		assert.deepEqual(settling.runs[0]?.abandoned, { attempts: MAX_TURN_RESUMES + 1, fileFindings: true })
+		assert.isUndefined(settling.runs[0]?.resume)
+		const settleRun = settling.runs[0]!.messageId
+		assert.isTrue(settling.session.holdsTurn(settleRun))
 
+		// Reset during that filing too: the review is failed without filing again.
+		const final = recording(settling.state)
+		final.session.alarm()
 		assert.isFalse(final.session.running())
 		assert.lengthOf(final.runs, 1)
-		assert.strictEqual(final.runs[0]?.abandoned, true)
-		assert.strictEqual(final.runs[0]?.messageId, last)
+		assert.deepEqual(final.runs[0]?.abandoned, { attempts: MAX_TURN_RESUMES + 1, fileFindings: false })
+		assert.strictEqual(final.runs[0]?.messageId, settleRun)
 		// A later turn on the same session starts from a clean count.
 		beginReview(final.session)
-		const again = recording(state)
+		const again = recording(final.state)
 		again.session.alarm()
 		assert.strictEqual(again.runs[0]?.resume?.attempt, 1)
+	})
+
+	it("keeps a review's checkpoint by kickoff through a reset, until it is cleared", () => {
+		const { session, state } = recording()
+		beginReview(session)
+		session.saveReviewCheckpoint("kickoff", "first")
+		session.saveReviewCheckpoint("kickoff", "second")
+
+		const revived = recording(state)
+		assert.strictEqual(revived.session.reviewCheckpoint("kickoff"), "second")
+		assert.isUndefined(revived.session.reviewCheckpoint("another-kickoff"))
+		revived.session.clearReviewCheckpoint("kickoff")
+		assert.isUndefined(revived.session.reviewCheckpoint("kickoff"))
 	})
 
 	/** Nothing else moves a reply's row off `running` or tells the pull request it went unanswered. */
@@ -661,7 +685,7 @@ describe("ChatSession eviction recovery", () => {
 
 		assert.isFalse(revived.session.running())
 		assert.lengthOf(revived.runs, 1)
-		assert.strictEqual(revived.runs[0]?.abandoned, true)
+		assert.deepEqual(revived.runs[0]?.abandoned, { attempts: 1, fileFindings: false })
 		assert.isUndefined(revived.runs[0]?.resume)
 		assert.strictEqual(revived.runs[0]?.messageId, orphaned)
 		assert.strictEqual(revived.runs[0]?.sessionId, "org_test:prr-reply_1")

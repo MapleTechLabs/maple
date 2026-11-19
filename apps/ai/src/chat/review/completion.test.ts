@@ -40,7 +40,12 @@ const runFor = (partial = false): CompletionRun => ({
 })
 
 /** Nothing unread and no whole-diff read: a pass whose coverage nobody is checking. */
-const UNWATCHED: ReviewCoverage = { observe: () => {}, unread: () => [], wholeDiff: () => false }
+const UNWATCHED: ReviewCoverage = {
+	observe: () => {},
+	unread: () => [],
+	wholeDiff: () => false,
+	progress: () => ({ due: [], read: [] }),
+}
 
 /** The review completion an unattended pass is handed, with the turn's state defaulted. */
 const reviewFor = (
@@ -92,6 +97,7 @@ describe("reviewCompletion", () => {
 			observe: () => {},
 			unread: () => unread,
 			wholeDiff: () => wholeDiff,
+			progress: () => ({ due: [], read: [] }),
 		})
 		const recording = () => {
 			const filed: Array<unknown> = []
@@ -382,7 +388,12 @@ describe("record_finding", () => {
 		const ledger = makeReviewLedger()
 		const completion = reviewFor((request) => Effect.sync(() => filed.push(request)), {
 			partial,
-			coverage: { observe: () => {}, unread: () => unread, wholeDiff: () => true },
+			coverage: {
+				observe: () => {},
+				unread: () => unread,
+				wholeDiff: () => true,
+				progress: () => ({ due: [], read: [] }),
+			},
 			ledger,
 		})
 		assert.isDefined(completion)
