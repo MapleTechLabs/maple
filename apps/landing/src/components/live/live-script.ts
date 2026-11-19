@@ -104,8 +104,8 @@ const linePath = (values: ReadonlyArray<number>, max: number): string =>
 	}).join(" ")
 
 /**
- * The series as plain lines, inset like a chart's plot area: what the server renders and what
- * shows until the chart has drawn over it.
+ * The series as plain lines, inset like a chart's plot area: what a reader without JavaScript
+ * sees in the chart's place. With JavaScript the box stays clear until the chart fades in.
  */
 export const linePreview = <Message>(
 	h: HtmlBuilder<Message>,
@@ -119,7 +119,7 @@ export const linePreview = <Message>(
 			...attributes(h, [
 				["viewBox", "0 0 100 100"],
 				["preserveAspectRatio", "none"],
-				["class", className],
+				["class", `live-plot-preview ${className}`],
 			]),
 		],
 		Arr.map(lines, (line) =>
@@ -135,3 +135,14 @@ export const linePreview = <Message>(
 		),
 	)
 }
+
+/**
+ * The chart's own layer over its box. It is clear until the chart has drawn and then fades in, so
+ * the chart arrives whole instead of popping in over an empty box.
+ */
+export const plotLayer = <Message>(
+	h: HtmlBuilder<Message>,
+	isDrawn: boolean,
+	plot: ReadonlyArray<Html>,
+): Html =>
+	h.div([h.Class("live-plot absolute inset-0"), ...(isDrawn ? [h.DataAttribute("drawn", "")] : [])], plot)

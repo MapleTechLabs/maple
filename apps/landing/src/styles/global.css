@@ -500,6 +500,25 @@
 	gap: 6px;
 	color: var(--primary);
 }
+/* A scripted chart frame. The chart's layer is clear until it has drawn, then fades in. The plain
+   drawing under it is for readers without JavaScript: with it, it would only flash before the chart. */
+.live-plot {
+	opacity: 0;
+	transition: opacity 360ms ease-out;
+}
+.live-plot[data-drawn] {
+	opacity: 1;
+}
+@media (scripting: enabled) {
+	.live-plot-preview {
+		display: none;
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.live-plot {
+		transition: none;
+	}
+}
 /* A row landing at the top of a scripted list: it opens its own height, pushing the rest down. */
 .live-row-in {
 	animation: live-row-in 340ms cubic-bezier(0.2, 0.7, 0.2, 1) both;

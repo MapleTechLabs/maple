@@ -9,7 +9,7 @@ import { Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { makeIsland } from "../../foldkit-island/island"
-import { linePreview, RunClock } from "./live-script"
+import { linePreview, plotLayer, RunClock } from "./live-script"
 
 /**
  * A latency chart as a dashboard draws it: the query builder's line chart (`QueryBuilderArea`,
@@ -213,7 +213,10 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 							h.Style({ height: `${HEIGHT}px` }),
 							h.OnMount(ResolveThemeColors({ tokens: TOKENS })),
 						],
-						[...(model.isChartDrawn ? [] : [preview(h, model.minutes)]), ...chartPlot(h, model)],
+						[
+							...(model.isChartDrawn ? [] : [preview(h, model.minutes)]),
+							plotLayer(h, model.isChartDrawn, chartPlot(h, model)),
+						],
 					),
 				],
 			),

@@ -8,7 +8,7 @@ import { Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { makeIsland } from "../../foldkit-island/island"
-import { gapMs, linePreview, noise, RunClock } from "./live-script"
+import { gapMs, linePreview, noise, plotLayer, RunClock } from "./live-script"
 
 /**
  * The Web Analytics page's traffic chart (`AnalyticsTraffic`, through the `analytics-traffic`
@@ -260,7 +260,10 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 							h.Style({ height: `${HEIGHT}px` }),
 							h.OnMount(ResolveThemeColors({ tokens: TOKENS })),
 						],
-						[...(model.isChartDrawn ? [] : [preview(h, model)]), ...chartPlot(h, model)],
+						[
+							...(model.isChartDrawn ? [] : [preview(h, model)]),
+							plotLayer(h, model.isChartDrawn, chartPlot(h, model)),
+						],
 					),
 				],
 			),

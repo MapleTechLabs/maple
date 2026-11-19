@@ -123,6 +123,10 @@ const FRAMES = {
 };
 const frameOf = (key: string) => Object.entries(FRAMES).find(([name]) => name === key)?.[1];
 
+// The chart islands start a screen and a half before they scroll in, so the chart is drawn by
+// the time the reader reaches it.
+const EARLY = { rootMargin: "1400px" };
+
 // One bento on a wide screen, two strips to swipe on a phone.
 const STRIP = 5;
 const groups = [surfaces.slice(0, STRIP), surfaces.slice(STRIP)];
@@ -158,9 +162,9 @@ const groups = [surfaces.slice(0, STRIP), surfaces.slice(STRIP)];
 								</div>
 								<div class:list={["bento-window", surface.key === "github" && "bento-window--pad"]}>
 									{/* An island's `client:*` directive needs its import named at the call site. */}
-									{surface.key === "metrics" && <LiveMetrics client:visible />}
-									{surface.key === "errors" && <LiveErrors client:visible />}
-									{surface.key === "analytics" && <LiveWebAnalytics client:visible />}
+									{surface.key === "metrics" && <LiveMetrics client:visible={EARLY} />}
+									{surface.key === "errors" && <LiveErrors client:visible={EARLY} />}
+									{surface.key === "analytics" && <LiveWebAnalytics client:visible={EARLY} />}
 									{surface.key === "github" && <PrReviewComment variant="compact" />}
 									{Frame && <Frame />}
 								</div>

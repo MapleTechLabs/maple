@@ -9,7 +9,7 @@ import { Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { makeIsland } from "../../foldkit-island/island"
-import { follow, gapMs, noise, RunClock } from "./live-script"
+import { follow, gapMs, noise, plotLayer, RunClock } from "./live-script"
 
 /**
  * One issue taking events: the dashboard's occurrence chart (`Occurrences`, through the
@@ -141,12 +141,15 @@ const plot = Submodel.defineView<Chart.Model, Chart.Message, Readonly<{ spec: Ch
 		}),
 )
 
-/** The day's hours as plain bars, inset like the chart's plot area. */
+/** The day's hours as plain bars, inset like the chart's plot area: what a reader without JavaScript sees. */
 const preview = (h: HtmlBuilder<Message>, onBar: number): Html => {
 	const points = pointsAt(onBar)
 	const max = Math.max(1, ...Arr.map(points, (point) => point.count))
 	return h.div(
-		[h.AriaHidden(true), h.Class("absolute inset-0 flex items-end gap-1 pt-2 pb-[22px] pl-11 pr-1")],
+		[
+			h.AriaHidden(true),
+			h.Class("live-plot-preview absolute inset-0 flex items-end gap-1 pt-2 pb-[22px] pl-11 pr-1"),
+		],
 		Arr.map(points, (point) =>
 			h.div([
 				h.Key(point.bucket),
@@ -255,7 +258,10 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 							h.Style({ height: `${HEIGHT}px` }),
 							h.OnMount(ResolveThemeColors({ tokens: [ERROR_TOKEN] })),
 						],
-						[...(model.isChartDrawn ? [] : [preview(h, model.arrived)]), ...chartPlot(h, model)],
+						[
+							...(model.isChartDrawn ? [] : [preview(h, model.arrived)]),
+							plotLayer(h, model.isChartDrawn, chartPlot(h, model)),
+						],
 					),
 				],
 			),
