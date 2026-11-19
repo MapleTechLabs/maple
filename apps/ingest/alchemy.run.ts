@@ -87,6 +87,8 @@ const ec2UserData = (clusterName: string, disk: "instance-store" | "root-volume"
 set -euxo pipefail
 
 # Instance facts for the gateway's telemetry, read while root still reaches the metadata service.
+# Tracing off around the session token so it stays out of the boot log.
+set +x
 imds_token=$(curl -sf -X PUT -H "X-aws-ec2-metadata-token-ttl-seconds: 60" http://169.254.169.254/latest/api/token) || imds_token=""
 imds() { curl -sf -H "X-aws-ec2-metadata-token: $imds_token" "http://169.254.169.254/latest/meta-data/$1"; }
 mkdir -p ${HOST_IDENTITY_HOST_DIR}
@@ -96,6 +98,8 @@ host.type=$(imds instance-type)
 host.image.id=$(imds ami-id)
 cloud.availability_zone=$(imds placement/availability-zone)
 IDENTITY
+unset imds_token
+set -x
 chmod 0644 ${HOST_IDENTITY_HOST_DIR}/host-identity
 
 cat > /usr/local/sbin/maple-imds-block <<'BLOCK'
