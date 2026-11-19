@@ -51,6 +51,11 @@ const SPECS = {
 		"Maple stops collecting metrics from your Railway projects. You can reconnect later.",
 		["railway"],
 	),
+	fleet: named(
+		"fleet",
+		"Maple stops reading admin activity from your Fleet server. Events already in the audit log stay. You can reconnect later.",
+		["fleet"],
+	),
 	supabase: named(
 		"supabase",
 		"Maple revokes its access to your Supabase organization and stops collecting metrics from its projects. Data already collected stays. You can reconnect later.",
@@ -145,6 +150,9 @@ const mutation = (integration: string) =>
 				const result = yield* internal.integrations.vercelDisconnect()
 				return result.drainsRemoved ? integration : "vercel-drains-left"
 			}
+			case "fleet":
+				yield* internal.integrations.fleetDisconnect()
+				return integration
 			case "supabase":
 				yield* internal.integrations.supabaseDisconnect()
 				return integration

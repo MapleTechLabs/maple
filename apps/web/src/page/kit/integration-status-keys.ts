@@ -14,6 +14,7 @@ export const INTEGRATION_STATUS_OPERATION = {
 	linear: "integrations.linearStatus",
 	github: "integrations.githubStatus",
 	searchConsole: "integrations.searchConsoleStatus",
+	fleet: "integrations.fleetStatus",
 	chat: "chatIntegration.connectors",
 	scrapeTargets: "scrapeTargets.list",
 	dataSources: "dataSources.list",
