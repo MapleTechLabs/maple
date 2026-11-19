@@ -47,6 +47,24 @@ export const builtPage = (distDir, site, url) => {
 	return fs.existsSync(file) ? headFacts(fs.readFileSync(file, "utf8")) : undefined
 }
 
+/** A URL belongs in the sitemap when its page is its own canonical and is not an error page. */
+export const sitemapIncludes = (distDir, site, url) =>
+	!/\/404\/?$/.test(url) && builtPage(distDir, site, url)?.canonical === url
+
+/**
+ * A sitemap entry with the alternates and date its page declares, so the two cannot disagree.
+ * A page with no date of its own gets none, not the build time.
+ */
+export const sitemapEntry = (distDir, site, item) => {
+	const facts = builtPage(distDir, site, item.url)
+	const alternates = facts?.alternates.filter((alternate) => alternate.lang !== "x-default") ?? []
+	return {
+		...item,
+		links: alternates.length > 1 ? alternates : undefined,
+		lastmod: facts?.modified ? new Date(facts.modified).toISOString() : undefined,
+	}
+}
+
 const htmlFiles = (dir) =>
 	fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
 		const full = path.join(dir, entry.name)
@@ -54,9 +72,12 @@ const htmlFiles = (dir) =>
 		return entry.name.endsWith(".html") ? [full] : []
 	})
 
-/** Rewrites every built page's internal links to the URL the page is served at. */
-export const trailingSlashLinks = () => ({
-	name: "maple:trailing-slash-links",
+/**
+ * Rewrites every built page's internal links to the URL the page is served at, then fails the
+ * build if the sitemap lost the home page: a filter that matches nothing must not ship quietly.
+ */
+export const buildSeo = ({ site }) => ({
+	name: "maple:build-seo",
 	hooks: {
 		"astro:build:done": ({ dir }) => {
 			// Asked of the output, not of the route list: locale fallback pages are written without a route.
@@ -70,6 +91,10 @@ export const trailingSlashLinks = () => ({
 				const html = fs.readFileSync(file, "utf8")
 				const fixed = withTrailingSlashes(html, isPage)
 				if (fixed !== html) fs.writeFileSync(file, fixed)
+			}
+			const sitemap = path.join(dist, "sitemap-0.xml")
+			if (!fs.existsSync(sitemap) || !fs.readFileSync(sitemap, "utf8").includes(`<loc>${site}/</loc>`)) {
+				throw new Error(`build-seo: ${sitemap} does not list ${site}/, so the sitemap filter dropped the site`)
 			}
 		},
 	},
