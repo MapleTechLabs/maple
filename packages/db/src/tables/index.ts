@@ -76,6 +76,7 @@ import {
 	PlanetscaleIssueReceipts,
 } from "./planetscale-inventory"
 import { CostConnections } from "./cost-connections"
+import { CostSourceRequests } from "./cost-source-requests"
 import { OpenRouterCostConnections } from "./openrouter-cost-connections"
 import { OrgOpenRouterKeys } from "./openrouter-keys"
 import { OrgDirectoryGroups, OrgSsoConnections, OrgSsoDomains } from "./enterprise-sso"
@@ -171,6 +172,7 @@ export * from "./org-recommendation-issues"
 export * from "./planetscale-connections"
 export * from "./planetscale-inventory"
 export * from "./cost-connections"
+export * from "./cost-source-requests"
 export * from "./openrouter-cost-connections"
 export * from "./openrouter-keys"
 export * from "./enterprise-sso"
@@ -268,6 +270,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	OrgIngestSamplingPolicies,
 	OpenRouterCostConnections,
 	CostConnections,
+	CostSourceRequests,
 	OrgOpenRouterKeys,
 	OrgSsoDomains,
 	OrgSsoConnections,

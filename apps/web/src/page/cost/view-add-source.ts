@@ -29,6 +29,7 @@ import { COST_PROVIDERS, type CredentialProvider } from "./providers"
 import { PLANETSCALE_REMOVE, planetScaleStep } from "./view-add-planetscale"
 import { providerMark, vercelStep } from "./view-add-vercel"
 import { GCP_REMOVE, gcpStep } from "./view-add-gcp"
+import { requestStep } from "./view-add-request"
 
 type H = HtmlBuilder<Message>
 
@@ -178,9 +179,21 @@ const providers = (h: H, model: Model, sources: ReadonlyArray<CostSourceSummary>
 					filteredEmpty(h, {
 						noun: "providers",
 						title: "No providers match",
-						description: "Maple reads cost from the providers listed here.",
+						description: "Ask for it, and requests decide which source Maple reads next.",
 						onClear: clear,
 						clearLabel: "Clear search",
+						// What the search found nothing for is what they can ask for.
+						actions: [
+							button(
+								h,
+								{
+									variant: "outline",
+									size: "sm",
+									attributes: [h.OnClick(Message.ClickedRequestProvider())],
+								},
+								[`Request ${Str.trim(model.providerSearch)}`],
+							),
+						],
 						className: "py-8",
 					}),
 				]
@@ -457,36 +470,57 @@ export const addSourceDialog = (h: H, model: Model, sources: ReadonlyArray<CostS
 			className: step === "pick" ? "sm:max-w-2xl" : "",
 			toView: ({ portal }) => portal ?? h.empty,
 			toContent: (close) =>
-				step === "gcp"
-					? gcpStep(h, model, id)
-					: step === "vercel"
-						? vercelStep(h, model, id)
-						: step === "planetscale"
-							? planetScaleStep(h, model, id)
-							: step === "github"
-								? githubStep(h, model, id)
-								: step === "pick"
-									? [
-											DialogView.dialogHeader(h, "dialog", [
-												DialogView.dialogTitle(h, "dialog", id, "Add a cost source"),
-												addTrail(h, null),
-												DialogView.dialogDescription(
-													h,
-													"dialog",
-													id,
-													"Maple reads what the source bills each day and keeps it next to your telemetry.",
-												),
-											]),
-											DialogView.dialogPanel(h, "dialog", id, [
-												providers(h, model, sources),
-											]),
-											DialogView.dialogFooter(h, "dialog", [
-												button(h, { variant: "outline", attributes: [...close] }, [
-													"Close",
+				step === "request"
+					? requestStep(h, model, id)
+					: step === "gcp"
+						? gcpStep(h, model, id)
+						: step === "vercel"
+							? vercelStep(h, model, id)
+							: step === "planetscale"
+								? planetScaleStep(h, model, id)
+								: step === "github"
+									? githubStep(h, model, id)
+									: step === "pick"
+										? [
+												DialogView.dialogHeader(h, "dialog", [
+													DialogView.dialogTitle(
+														h,
+														"dialog",
+														id,
+														"Add a cost source",
+													),
+													addTrail(h, null),
+													DialogView.dialogDescription(
+														h,
+														"dialog",
+														id,
+														"Maple reads what the source bills each day and keeps it next to your telemetry.",
+													),
 												]),
-											]),
-										]
-									: [credentialForm(h, model, step, sources, close)],
+												DialogView.dialogPanel(h, "dialog", id, [
+													providers(h, model, sources),
+												]),
+												DialogView.dialogFooter(h, "dialog", [
+													// Left, apart from Close: the way on when the provider is not listed.
+													button(
+														h,
+														{
+															variant: "ghost",
+															className: "sm:mr-auto",
+															attributes: [
+																h.OnClick(Message.ClickedRequestProvider()),
+															],
+														},
+														["Request a provider"],
+													),
+													button(
+														h,
+														{ variant: "outline", attributes: [...close] },
+														["Close"],
+													),
+												]),
+											]
+										: [credentialForm(h, model, step, sources, close)],
 		},
 	})
 }

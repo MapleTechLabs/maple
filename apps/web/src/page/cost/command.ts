@@ -3,6 +3,7 @@ import {
 	AnthropicCostKeyRequest,
 	CloudflareCostTokenRequest,
 	CostBreakdownSortBy,
+	CostSourceRequestPayload,
 	GcpCostAddRequest,
 	OpenAiCostKeyRequest,
 	OpenRouterKeyUpdateRequest,
@@ -342,4 +343,19 @@ export const RemoveGcpCostSource = Command.define("RemoveGcpCostSource", {
 		Effect.flatMap(MapleInternalApiClient, (client) =>
 			client.gcpCost.remove({ params: { exportId } }),
 		).pipe(settleTo((result) => Message.CompletedRemoveGcp({ result }))),
+})
+
+/** Asks Maple to support a cost provider it does not read yet. */
+export const RequestCostSource = Command.define("RequestCostSource", {
+	args: { provider: Schema.String, note: Schema.String },
+	messages: [Message.CompletedRequestSource],
+	execute: ({ provider, note }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) =>
+			client.costSourceRequests.create({
+				payload: new CostSourceRequestPayload(note === "" ? { provider } : { provider, note }),
+			}),
+		).pipe(
+			Effect.asVoid,
+			settleTo((result) => Message.CompletedRequestSource({ result })),
+		),
 })

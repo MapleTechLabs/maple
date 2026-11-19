@@ -97,6 +97,12 @@ export const Message = defineMessageUnion({
 	GotGcpCommandCopyMessage: { message: CopyButton.Message },
 	SubmittedGcpExport: {},
 	CompletedAddGcp: { result: Schema.Result(GcpCostSourceAdded, LoadFailure) },
+	/** Turns the dialog to the request form, its provider filled from the search. */
+	ClickedRequestProvider: {},
+	GotRequestProviderMessage: { message: Field.Message },
+	ChangedRequestNote: { value: Schema.String },
+	SubmittedRequest: {},
+	CompletedRequestSource: { result: Schema.Result(Schema.Void, LoadFailure) },
 	ClickedBackToProviders: {},
 	/** Opens the dialog on the provider's form, for the source that exists. */
 	ClickedReplaceCredential: { provider: CredentialProvider },

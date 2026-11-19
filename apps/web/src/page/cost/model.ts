@@ -31,9 +31,12 @@ import { CredentialProvider } from "./providers"
 
 export type Search = typeof CostSearch.Type
 
-/** The add-source dialog's faces: the providers, then the chosen one's credential form, list or step. */
+/**
+ * The add-source dialog's faces: the providers, then the chosen one's credential form, list or
+ * step. `request`: asking Maple for a provider it does not read yet.
+ */
 export const AddStep = Schema.Union([
-	Schema.Literals(["pick", "github", "vercel", "planetscale", "gcp"]),
+	Schema.Literals(["pick", "github", "vercel", "planetscale", "gcp", "request"]),
 	CredentialProvider,
 ])
 export type AddStep = typeof AddStep.Type
@@ -136,6 +139,12 @@ export const Model = Schema.Struct({
 	/** Why the last add was refused, shown under the field until the id changes. */
 	gcpError: Schema.NullOr(Schema.String),
 	gcpCommandCopy: CopyButton.Model,
+	/** The provider being asked for; the search on show when the request step opened. */
+	requestProviderDraft: Field.Model,
+	/** Why they want it, optional. */
+	requestNote: Schema.String,
+	/** Why the last request failed, shown in the step until it is sent again or left. */
+	requestError: Schema.NullOr(Schema.String),
 	removeDialog: Dialog.Model,
 	/** The source the remove confirm is about, as it was when Remove was clicked. */
 	removeTarget: Schema.NullOr(CostSourceSummary),

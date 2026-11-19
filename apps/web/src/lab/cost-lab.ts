@@ -46,6 +46,7 @@ import {
 	RemoveVercelCostSource,
 	ResolveWindow,
 	SaveAnthropicCostKey,
+	RequestCostSource,
 	SaveCloudflareCostToken,
 	SaveOpenAiCostKey,
 	SaveOpenRouterCostKey,
@@ -99,6 +100,7 @@ export const LabState = Schema.Literals([
 	"add-source-added",
 	"add-source-search",
 	"add-source-no-match",
+	"request-provider",
 	"add-openrouter",
 	"key-refused",
 	"replace-key",
@@ -189,6 +191,7 @@ const startsEmpty = (state: LabState): boolean =>
 	state === "add-source" ||
 	state === "add-source-search" ||
 	state === "add-source-no-match" ||
+	state === "request-provider" ||
 	state === "add-openrouter" ||
 	state === "key-refused" ||
 	state === "add-cloudflare" ||
@@ -226,6 +229,13 @@ const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
 				CostMessage.ChangedProviderSearch({
 					value: state === "add-source-search" ? "api" : "mainframe",
 				}),
+			]
+		case "request-provider":
+			return [
+				CostMessage.ClickedAddSource(),
+				CostMessage.ChangedProviderSearch({ value: "Hetzner" }),
+				CostMessage.ClickedRequestProvider(),
+				CostMessage.ChangedRequestNote({ value: "Cost per server and per project." }),
 			]
 		case "add-openrouter":
 			return [CostMessage.ClickedAddSource(), CostMessage.PickedProvider({ provider: "openrouter" })]
@@ -599,6 +609,8 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 					result: state === "openai-no-spend" ? Result.fail(noSpendKey) : Result.succeed(undefined),
 				}),
 			)
+		case RequestCostSource.name:
+			return Option.some(CostMessage.CompletedRequestSource({ result: Result.succeed(undefined) }))
 		case RemoveAnthropicCostKey.name:
 			return Option.some(removedAnswer("anthropic"))
 		case RemoveOpenAiCostKey.name:

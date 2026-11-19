@@ -1,4 +1,6 @@
 import {
+	COST_SOURCE_REQUEST_NOTE_MAX_LENGTH,
+	COST_SOURCE_REQUEST_PROVIDER_MAX_LENGTH,
 	type CostSourceSummary,
 	CostSourcesResponse,
 	PLANETSCALE_COST_RECONNECT_CODE,
@@ -50,6 +52,7 @@ import {
 	RemoveGithubCostSource,
 	RemovePlanetScaleCostSource,
 	RemoveVercelCostSource,
+	RequestCostSource,
 	ResolveWindow,
 	type TimeseriesInput,
 	type WindowInput,
@@ -220,6 +223,9 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		gcpTableDraft: Field.init(),
 		gcpError: null,
 		gcpCommandCopy: CopyButton.init(),
+		requestProviderDraft: Field.init(),
+		requestNote: "",
+		requestError: null,
 		githubInstallations: AsyncData.Idle(),
 		githubRead: 0,
 		githubAdding: null,
@@ -271,6 +277,9 @@ const clearedDialog = (model: Model): Model => ({
 	planetscaleError: null,
 	gcpTableDraft: Field.init(),
 	gcpError: null,
+	requestProviderDraft: Field.init(),
+	requestNote: "",
+	requestError: null,
 })
 
 /**
@@ -619,6 +628,67 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				? { model: { ...clearedDialog(model), addStep: "pick" } }
 				: { model },
 		ClickedReplaceCredential: ({ provider }) => openAdd(model, provider),
+		// The search that found nothing is usually the provider they wanted.
+		ClickedRequestProvider: () =>
+			model.sourceWrite !== "Idle"
+				? { model }
+				: {
+						model: {
+							...clearedDialog(model),
+							addStep: "request",
+							requestProviderDraft: Field.init(Str.trim(model.providerSearch)),
+						},
+					},
+		GotRequestProviderMessage: ({ message: inner }) =>
+			model.sourceWrite === "Saving"
+				? { model }
+				: {
+						model: {
+							...model,
+							requestProviderDraft: Field.update(model.requestProviderDraft, inner).model,
+							requestError: inner._tag === "ChangedValue" ? null : model.requestError,
+						},
+					},
+		ChangedRequestNote: ({ value }) =>
+			model.sourceWrite === "Saving" ? { model } : { model: { ...model, requestNote: value } },
+		SubmittedRequest: () => {
+			const provider = Str.trim(model.requestProviderDraft.value)
+			const note = Str.trim(model.requestNote)
+			if (provider === "" || model.sourceWrite !== "Idle") return { model }
+			// The request refuses longer text before it is sent, which would leave it unanswered.
+			if (provider.length > COST_SOURCE_REQUEST_PROVIDER_MAX_LENGTH) {
+				return { model: { ...model, requestError: "Use a shorter name for the provider." } }
+			}
+			if (note.length > COST_SOURCE_REQUEST_NOTE_MAX_LENGTH) {
+				return {
+					model: {
+						...model,
+						requestError: `Keep the note under ${COST_SOURCE_REQUEST_NOTE_MAX_LENGTH} characters.`,
+					},
+				}
+			}
+			return {
+				model: { ...model, sourceWrite: "Saving", requestError: null },
+				commands: [RequestCostSource({ provider, note })],
+			}
+		},
+		CompletedRequestSource: ({ result }) =>
+			Result.match(result, {
+				onFailure: (failure): Return => ({
+					model: { ...model, sourceWrite: "Idle", requestError: failureMessage(failure) },
+				}),
+				onSuccess: (): Return => ({
+					...liftAddDialog(
+						clearedDialog({ ...model, sourceWrite: "Idle" }),
+						Dialog.close(model.addDialog),
+					),
+					outMessage: toast(
+						"success",
+						"Request sent",
+						"Thanks. Requests decide which source Maple reads next.",
+					),
+				}),
+			}),
 		// A save in flight keeps the dialog: its answer decides whether it closes.
 		GotAddDialogMessage: ({ message: inner }) => {
 			if (model.sourceWrite === "Saving") return { model }
