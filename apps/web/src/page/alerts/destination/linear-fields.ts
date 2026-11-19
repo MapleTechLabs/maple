@@ -39,7 +39,7 @@ export type Model = typeof Model.Type
 
 /** Whether the viewer may connect Linear here; `null` while the session read is out. */
 export const canConnect = (model: Model): boolean | null =>
-	model.grants === null ? null : Policy.has(model.grants, "alerts:manage")
+	model.grants === null ? null : Policy.can(model.grants, "alerts:manage")
 
 export const TEAM_SELECT_ID = "destination-linear-team"
 

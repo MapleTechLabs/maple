@@ -10,7 +10,7 @@ import { Message as RoleMessage } from "../page/settings/role/message"
 import * as RoleModel from "../page/settings/role/model"
 import * as RoleUpdate from "../page/settings/role/update"
 import * as RoleView from "../page/settings/role/view"
-import { ON_CALL, roleList, STATUS_EDITOR } from "../page/settings/roles/test-roles"
+import { ON_CALL, roleList, roleMembers, STATUS_EDITOR } from "../page/settings/roles/test-roles"
 import type { Resources } from "../platform/resources"
 import { keepLocal } from "./local-commands"
 
@@ -50,11 +50,11 @@ const ROLE_KEYS = {
 	readonly [State in LabState]: string
 }
 
-const HOLDERS: ReadonlyArray<RoleModel.RoleMember> = [
-	{ userId: "user_grace", name: "Grace Hopper", identifier: "grace@acme.test", imageUrl: "" },
-	{ userId: "user_alan", name: "Alan Turing", identifier: "alan@acme.test", imageUrl: "" },
-	{ userId: "user_katherine", name: "Katherine Johnson", identifier: "katherine@acme.test", imageUrl: "" },
-]
+const HOLDERS = roleMembers([
+	{ id: "user_grace", name: "Grace Hopper" },
+	{ id: "user_alan", name: "Alan Turing" },
+	{ id: "user_katherine", name: "Katherine Johnson" },
+])
 
 /** The custom role's unsaved edits: two permissions added, one removed and a new description. */
 const EDITS: ReadonlyArray<RoleMessage> = [
@@ -74,7 +74,7 @@ export const init = (flags: Flags): Return => {
 			RoleMessage.CompletedFetchSession({ orgId: ORG, grants: Policy.grantsOf(["org:admin"]) }),
 			RoleMessage.CompletedFetchRoles({ result: Result.succeed(roleList([ON_CALL, STATUS_EDITOR])) }),
 			RoleMessage.CompletedFetchMembers({
-				result: Result.succeed(flags.state === "members-empty" ? [] : HOLDERS),
+				result: Result.succeed(flags.state === "members-empty" ? roleMembers([]) : HOLDERS),
 			}),
 			...(flags.state === "custom" ? EDITS : []),
 		],

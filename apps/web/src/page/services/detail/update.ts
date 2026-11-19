@@ -950,7 +950,7 @@ const updateMessage = (model: Model, message: Message, context: PageContext): Re
 			model: {
 				...model,
 				uptimeMonitors: Keyed.accept(model.uptimeMonitors, key, result),
-				canCreateUptimeMonitors: Policy.has(grants, "uptime_monitors:manage"),
+				canCreateUptimeMonitors: Policy.can(grants, "uptime_monitors:manage"),
 			},
 		}),
 		CompletedFetchRuntimes: ({ key, result }) => ({

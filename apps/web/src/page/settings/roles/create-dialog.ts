@@ -6,11 +6,11 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { failureMessage, LoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { alert, alertDescription } from "@maple/views/ui/alert"
+import { radioCard } from "@maple/views/ui/control-card"
 import * as Dialog from "@maple/views/ui/dialog"
 import { fieldGroupLabel } from "@maple/views/ui/field"
 import { formDialog } from "@maple/views/ui/form-dialog"
 import { icon } from "@maple/views/ui/icon"
-import { label } from "@maple/views/ui/label"
 import * as RadioGroup from "@maple/views/ui/radio-group"
 import * as Select from "@maple/views/ui/select"
 import * as SelectView from "@maple/views/ui/select-view"
@@ -223,30 +223,13 @@ const startOptions = (model: Model, entries: ReadonlyArray<RoleEntry>): Readonly
 
 const radioId = (model: Model, value: string) => `${model.dialog.id}-start-${value}`
 
-const startRow = (
-	h: H,
-	model: Model,
-	config: RadioGroup.RadioGroupViewConfig<Message>,
-	option: StartOption,
-) =>
-	label(
-		h,
-		{
-			className:
-				"flex cursor-pointer items-start gap-2.5 rounded-md border p-3 font-normal hover:bg-surface-sunken active:bg-surface-sunken has-data-checked:border-border-strong",
-			attributes: [
-				h.Key(option.value),
-				h.Id(RadioGroup.labelId(`${radioId(model, option.value)}-input`)),
-			],
-		},
-		[
-			...RadioGroup.radio(h, config, option.value, "mt-0.5"),
-			vstack(h, { gap: "0.5", shrink: true, as: "span" }, [
-				typography(h, { size: "sm", weight: "medium" }, [option.title]),
-				typography(h, { size: "xs", tone: "muted" }, [option.detail]),
-			]),
-		],
-	)
+const startCard = (h: H, config: RadioGroup.RadioGroupViewConfig<Message>, option: StartOption) =>
+	radioCard(h, { config, value: option.value }, [
+		vstack(h, { gap: "0.5", shrink: true, as: "span" }, [
+			typography(h, { size: "sm", weight: "medium" }, [option.title]),
+			typography(h, { size: "xs", tone: "muted" }, [option.detail]),
+		]),
+	])
 
 const copyFromSelect = (h: H, model: Model, entries: ReadonlyArray<RoleEntry>): Html =>
 	h.submodel({
@@ -319,7 +302,7 @@ const dialogView = (h: H, model: Model, entries: ReadonlyArray<RoleEntry>): Html
 				RadioGroup.radioGroup(
 					h,
 					{ label: "Start from", className: "gap-2" },
-					Arr.map(options, (option) => startRow(h, model, config, option)),
+					Arr.flatMap(options, (option) => startCard(h, config, option)),
 				),
 				...(startValue(model) === CUSTOM ? [copyFromSelect(h, model, entries)] : []),
 			]),

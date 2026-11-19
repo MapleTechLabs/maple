@@ -327,7 +327,7 @@ const budgetSearch = (model: Model) => perDimension((dimension) => model.search[
 /**
  * The header's right side. Once a source exists, Add source sits here too: the Sources panel is
  * below the chart and table, out of sight. With none, the on-ramp in the body offers it. Set
- * budget is for who manages alerts, once there is cost to budget.
+ * budget is for who manages budgets, once there is cost to budget.
  */
 const headerActions = (h: H, model: Model): Html | undefined => {
 	const time = timeActions(h, model)
@@ -338,7 +338,7 @@ const headerActions = (h: H, model: Model): Html | undefined => {
 					gatedLinkButton(
 						h,
 						{ grants: model.grants },
-						"alerts:manage",
+						"slos:manage",
 						{ variant: "outline", size: "sm", href: budgetFormHref(budgetSearch(model)) },
 						[
 							icon(h, "GaugeIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),

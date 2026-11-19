@@ -9,7 +9,6 @@ import { fieldGroupLabel } from "@maple/views/ui/field"
 import { icon } from "@maple/views/ui/icon"
 import * as Menu from "@maple/views/ui/menu"
 import type { MenuEntry, MenuItemEntry } from "@maple/views/ui/menu-view"
-import { personLabel } from "@maple/views/ui/person-avatar"
 import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
 import * as SelectView from "@maple/views/ui/select-view"
 import { skeleton } from "@maple/views/ui/skeleton"
@@ -32,7 +31,7 @@ import * as CreateDialog from "./create-dialog"
 import { canManageRoles, Message, type Model } from "./model"
 import { findRole, memberCountLabel, type RoleEntry, roleHref } from "./roles"
 import { entriesOf } from "./update"
-import { permissionMeter, roleTypeBadge } from "./view-parts"
+import { holderLabel, permissionMeter, roleTypeBadge } from "./view-parts"
 
 // `/settings/roles`: every role, built-in first, with what each holds and who holds it.
 
@@ -145,50 +144,26 @@ const rolesTable = (h: H, rows: ReadonlyArray<Html>): Html =>
 		tableBody(h, rows),
 	])
 
+/** The rows once the list answers (and while it reads again), skeleton rows before. */
+const rolesRows = (h: H, model: Model): ReadonlyArray<Html> =>
+	AsyncData.hasData(model.list)
+		? Arr.map(entriesOf(model), (role) => roleRow(h, model, role))
+		: Arr.map([0, 1, 2, 3], (index) => skeletonRow(h, index))
+
 const rolesSection = (h: H, model: Model): Html =>
 	settingsSection(
 		h,
 		{ id: "settings-roles", title: "Roles", isLead: true, padded: false },
-		AsyncData.match(model.list, {
-			onIdle: () => [
-				rolesTable(
-					h,
-					Arr.map([0, 1, 2, 3], (index) => skeletonRow(h, index)),
-				),
-			],
-			onLoading: () => [
-				rolesTable(
-					h,
-					Arr.map([0, 1, 2, 3], (index) => skeletonRow(h, index)),
-				),
-			],
-			onFailure: (failure) => [
-				errorState(h, {
-					variant: "row",
-					failure,
-					title: "Couldn't load roles",
-					onRetry: Message.ClickedRetry(),
-				}),
-			],
-			onSuccess: () => [
-				rolesTable(
-					h,
-					Arr.map(entriesOf(model), (role) => roleRow(h, model, role)),
-				),
-			],
-			onRefreshing: () => [
-				rolesTable(
-					h,
-					Arr.map(entriesOf(model), (role) => roleRow(h, model, role)),
-				),
-			],
-			onStale: () => [
-				rolesTable(
-					h,
-					Arr.map(entriesOf(model), (role) => roleRow(h, model, role)),
-				),
-			],
-		}),
+		AsyncData.isFailure(model.list)
+			? [
+					errorState(h, {
+						variant: "row",
+						failure: model.list.error,
+						title: "Couldn't load roles",
+						onRetry: Message.ClickedRetry(),
+					}),
+				]
+			: [rolesTable(h, rolesRows(h, model))],
 	)
 
 /** The roles a deleted role's members may move to: every other one. */
@@ -214,12 +189,7 @@ const affectedMembers = (h: H, model: Model): ReadonlyArray<Html> =>
 					h.li(
 						[h.Key(member.userId), h.Class("px-3 py-2")],
 						[
-							personLabel(h, {
-								name: member.name ?? member.identifier,
-								imageUrl: member.imageUrl ?? "",
-								detail: member.identifier,
-								size: "sm",
-							}),
+							holderLabel(h, member),
 						],
 					),
 				),

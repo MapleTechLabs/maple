@@ -34,7 +34,7 @@ export type Model = typeof Model.Type
 
 /** The viewer may create, change and delete roles (`roles:manage`). */
 export const canManageRoles = (model: Pick<Model, "grants">): boolean =>
-	Policy.has(model.grants, "roles:manage")
+	Policy.can(model.grants, "roles:manage")
 
 export const Message = defineMessageUnion({
 	CompletedFetchRoles: { result: Schema.Result(RoleListResponse, LoadFailure) },

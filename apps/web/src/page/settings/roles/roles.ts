@@ -1,6 +1,7 @@
 import {
 	CreateRoleRequest,
 	DeleteRoleRequest,
+	type RoleKey,
 	type RoleListResponse,
 	type RoleRef,
 	SetMemberRoleRequest,
@@ -8,7 +9,7 @@ import {
 } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import type { UserId } from "@maple/primitives"
-import { Array as Arr, Effect, Option, Order, String as Str } from "effect"
+import { Array as Arr, Effect, Option } from "effect"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 import { AppRoute, hrefOf } from "../../../route"
 
@@ -57,11 +58,7 @@ export const builtInEntries: ReadonlyArray<RoleEntry> = Arr.map(Policy.builtInRo
 	builtInEntry(role, 0),
 )
 
-const byName = Order.mapInput(Order.String, (role: RoleListResponse["custom"][number]) =>
-	Str.toLowerCase(role.name),
-)
-
-/** The list's roles: the four built-in ones, then the organization's own by name. */
+/** The list's roles: the four built-in ones, then the organization's own (the API sends them by name). */
 export const roleEntries = (list: RoleListResponse): ReadonlyArray<RoleEntry> => [
 	...Arr.map(Policy.builtInRoles, (role) =>
 		builtInEntry(
@@ -72,7 +69,7 @@ export const roleEntries = (list: RoleListResponse): ReadonlyArray<RoleEntry> =>
 			),
 		),
 	),
-	...Arr.map(Arr.sort(list.custom, byName), (role): RoleEntry => ({
+	...Arr.map(list.custom, (role): RoleEntry => ({
 		key: role.id,
 		ref: { _tag: "Custom", id: role.id },
 		name: role.name,
@@ -105,7 +102,8 @@ export const memberCountLabel = (count: number): string => `${count} ${count ===
 
 export const listRoles = Effect.flatMap(MapleInternalApiClient, (client) => client.roles.list())
 
-export const listRoleMembers = (roleId: Policy.CustomRoleId) =>
+/** Who holds a role, built-in or custom. */
+export const listRoleMembers = (roleId: RoleKey) =>
 	Effect.flatMap(MapleInternalApiClient, (client) => client.roles.members({ params: { roleId } }))
 
 export const createRole = (input: {

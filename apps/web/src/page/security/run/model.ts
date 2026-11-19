@@ -84,7 +84,7 @@ export type Model = typeof Model.Type
 
 /** The viewer may add targets, change settings and start or stop runs (`security_audit:run`). */
 export const canRunAudits = (model: Pick<Model, "grants">): boolean =>
-	Policy.has(model.grants, "security_audit:run")
+	Policy.can(model.grants, "security_audit:run")
 
 const result = <S extends Schema.Top>(schema: S) => ({
 	key: Schema.String,

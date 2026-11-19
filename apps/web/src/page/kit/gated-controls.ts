@@ -12,7 +12,7 @@ import { denialReason, denialTooltip, gatedControl } from "./session-grants"
 type Grants = Readonly<{ grants: ReadonlyArray<Policy.Permission> }>
 
 const hasGrant = (model: Grants, permission: Policy.Permission): boolean =>
-	Policy.has(model.grants, permission)
+	Policy.can(model.grants, permission)
 
 /**
  * A row menu's entries for a viewer without `permission`: every item disabled, the denial as its

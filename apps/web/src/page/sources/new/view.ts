@@ -98,7 +98,7 @@ const notPermitted = (h: H): Html =>
 	)
 
 const isRefused = (model: Model): boolean =>
-	model.grants !== null && !Policy.has(model.grants, "sources:manage")
+	model.grants !== null && !Policy.can(model.grants, "sources:manage")
 
 const pageBody = (h: H, model: Model, timeZone: string): Html =>
 	model.grants === null

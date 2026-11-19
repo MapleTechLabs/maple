@@ -5,7 +5,7 @@ import { click, expect as expectView, given, Mount, role, scene, text, withViewI
 import * as Tabs from "@maple/views/ui/tabs"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
-import { customRole, ON_CALL, roleList, STATUS_EDITOR } from "../roles/test-roles"
+import { customRole, ON_CALL, roleList, roleMembers, STATUS_EDITOR } from "../roles/test-roles"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, unsavedChanges, update } from "./update"
@@ -23,7 +23,7 @@ const opened = (roleKey: string, grants = Policy.grantsOf(["org:admin"])): Model
 	run(init({ _tag: "RoleEditor", roleId: roleKey }, context).model, [
 		Message.CompletedFetchSession({ orgId: ORG, grants }),
 		Message.CompletedFetchRoles({ result: Result.succeed(roleList([ON_CALL, STATUS_EDITOR])) }),
-		Message.CompletedFetchMembers({ result: Result.succeed([]) }),
+		Message.CompletedFetchMembers({ result: Result.succeed(roleMembers([])) }),
 	])
 
 const RECT = { left: 0, right: 80, top: 0, bottom: 32, width: 80, height: 32 }

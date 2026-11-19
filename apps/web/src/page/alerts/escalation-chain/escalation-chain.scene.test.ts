@@ -454,7 +454,7 @@ describe("escalation chain editor", () => {
 		)
 	})
 
-	test("a viewer who cannot manage alerts reads the chain and its rules, and can change nothing", () => {
+	test("a viewer who cannot manage on-call reads the chain and its rules, and can change nothing", () => {
 		const model = editing(1, MEMBER)
 		scene(
 			{ update: pageUpdate, view },
@@ -465,7 +465,7 @@ describe("escalation chain editor", () => {
 			expectView(role("textbox", { name: "Name" })).toBeDisabled(),
 			expectView(role("button", { name: "Save chain" })).not.toExist(),
 			expectView(role("button", { name: "Delete chain" })).toBeDisabled(),
-			expectView(role("group", { name: Policy.denialFor("alerts:manage").message })).toExist(),
+			expectView(role("group", { name: Policy.denialFor("oncall:manage").message })).toExist(),
 			// The step menu stays, its items disabled with who can use them.
 			expectView(role("button", { name: "Actions for step 1" })).toExist(),
 			expectView(role("button", { name: "Add a step after step 1" })).not.toExist(),

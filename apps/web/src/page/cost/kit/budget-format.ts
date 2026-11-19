@@ -107,7 +107,7 @@ export const reachedSeverity = (
 		onSome: (alert) => alert.severity,
 	})
 
-/** The API refused a write: the viewer does not hold `alerts:manage`, or is an analyst. */
+/** The API refused a write: the viewer does not hold `slos:manage`, or is an analyst. */
 export const isForbidden = (failure: LoadFailure): boolean =>
 	failure.code === "cost_budget_forbidden" || failure.code === "limited_role"
 

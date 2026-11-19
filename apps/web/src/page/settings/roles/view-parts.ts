@@ -1,8 +1,10 @@
+import type { RoleMemberResponse } from "@maple/domain/http"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "@maple/views/ui/display"
 import { field, fieldDescription, type FieldState, fieldLabel, input } from "@maple/views/ui/field"
 import { icon } from "@maple/views/ui/icon"
 import { meter } from "@maple/views/ui/meter"
+import { personLabel } from "@maple/views/ui/person-avatar"
 import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { PERMISSION_TOTAL, permissionCountLabel } from "./roles"
@@ -28,6 +30,14 @@ export const permissionMeter = <M>(h: HtmlBuilder<M>, count: number, isBuiltIn: 
 			className: "w-16",
 		}),
 	])
+
+/** Someone who holds a role: avatar, name (their email or username when they set none) and identifier. */
+export const holderLabel = <M>(h: HtmlBuilder<M>, member: RoleMemberResponse): Html =>
+	personLabel(h, {
+		name: member.name ?? member.identifier,
+		imageUrl: member.imageUrl ?? undefined,
+		detail: member.identifier,
+	})
 
 /** A labelled text input whose value lives in the owner's Model. */
 export const roleTextField = <M>(

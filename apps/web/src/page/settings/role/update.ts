@@ -1,4 +1,4 @@
-import { type CustomRoleResponse, RoleListResponse, UpdateRoleRequest } from "@maple/domain/http"
+import { type CustomRoleResponse, RoleKey, RoleListResponse, UpdateRoleRequest } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { Array as Arr, Option, Result, Schema, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -11,15 +11,10 @@ import { acceptGrants } from "../../kit/session-grants"
 import * as CreateDialog from "../roles/create-dialog"
 import { findRole, type RoleEntry, roleHref } from "../roles/roles"
 import { entriesOf } from "../roles/update"
-import {
-	FetchBuiltInRoleMembers,
-	FetchCustomRoleMembers,
-	FetchRoles,
-	FetchSession,
-	SaveRole,
-} from "./command"
+import { canManageRoles } from "../roles/model"
+import { FetchRoleMembers, FetchRoles, FetchSession, SaveRole } from "./command"
 import { Message } from "./message"
-import { canManageRoles, type EditorTab, type Model } from "./model"
+import type { EditorTab, Model } from "./model"
 
 type Return = PageReturn<Model, Message>
 type RoleRoute = Extract<AppRoute, { readonly _tag: "RoleEditor" }>
@@ -48,15 +43,12 @@ export const unsavedChanges = (model: Model): number =>
 			})
 		: 0
 
-/** A built-in role's holders come from Clerk, a custom role's from the API; a bad id has none to read. */
-const membersCommand = (roleKey: string) => {
-	const builtIn = Arr.findFirst(Policy.builtInRoles, (role) => role.role === roleKey)
-	if (Option.isSome(builtIn)) return [FetchBuiltInRoleMembers({ clerkKey: builtIn.value.clerkKey })]
-	return Option.match(Schema.decodeOption(Policy.CustomRoleId)(roleKey), {
+/** The role's holders; a key that names no role has none to read. */
+const membersCommand = (roleKey: string) =>
+	Option.match(Schema.decodeOption(RoleKey)(roleKey), {
 		onNone: () => [],
-		onSome: (roleId) => [FetchCustomRoleMembers({ roleId })],
+		onSome: (roleId) => [FetchRoleMembers({ roleId })],
 	})
-}
 
 /** Member is the usual baseline; the member role itself is compared with analyst. */
 const defaultCompare = (roleKey: string): string => (roleKey === "member" ? "analyst" : "member")

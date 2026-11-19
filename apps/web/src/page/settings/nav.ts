@@ -91,13 +91,13 @@ const isVisible = (id: string, visibility: Visibility): boolean => {
 	// SSO lives in Clerk; every member reads it, admins change it.
 	if (id === "sso") return visibility.isClerk
 	// Clerk refuses a member reading the domains, so the tab is for admins only.
-	if (id === "domains") return visibility.isClerk && Policy.has(visibility.grants, "organization:manage")
+	if (id === "domains") return visibility.isClerk && Policy.can(visibility.grants, "organization:manage")
 	if (!visibility.isClerk) return true
 	if (id === "data-platform")
 		return visibility.canAccessDataPlatform || visibility.isDataPlatformLocked === true
 	if (id === "data-sources") return visibility.hasDataSources
-	if (id === "audit-log") return Policy.has(visibility.grants, "audit_log:read")
-	if (id === "ai") return Policy.has(visibility.grants, "llm_keys:manage")
+	if (id === "audit-log") return Policy.can(visibility.grants, "audit_log:read")
+	if (id === "ai") return Policy.can(visibility.grants, "llm_keys:manage")
 	return true
 }
 

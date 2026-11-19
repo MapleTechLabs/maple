@@ -416,7 +416,7 @@ describe("on-call schedule page", () => {
 			expectView(role("button", { name: "Add override" })).toBeDisabled(),
 			expectView(role("button", { name: "Edit schedule" })).toBeDisabled(),
 			expectView(role("button", { name: /^Delete Dana Kim's override, /u })).toBeDisabled(),
-			expectView(role("group", { name: Policy.denialFor("alerts:manage").message })).toExist(),
+			expectView(role("group", { name: Policy.denialFor("oncall:manage").message })).toExist(),
 			expectView(text("Your time zone is UTC.")).toExist(),
 		)
 	})

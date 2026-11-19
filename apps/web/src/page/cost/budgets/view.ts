@@ -24,7 +24,7 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { BELOW_LAPTOP, LAPTOP_COLUMN } from "../../kit/laptop-column"
 import { notifiesNoOne } from "../../kit/notifies-no-one"
-import { canManageAlerts, gatedControl } from "../../kit/session-grants"
+import { canManageSlos, gatedControl } from "../../kit/session-grants"
 import { gatedLinkButton, gatedSwitch } from "../../kit/gated-controls"
 import {
 	alertText,
@@ -107,17 +107,17 @@ const alerts = (h: H, budget: CostBudgetStatus): Html =>
 		...(notifiesSomeone(budget) ? [] : [notifiesNoOne(h)]),
 	])
 
-/** Budget actions show once the grants are read: enabled for who manages alerts, else locked. */
-const showsActions = (model: Model): boolean => model.isGrantsRead || canManageAlerts(model)
+/** Budget actions show once the grants are read: enabled for who manages budgets, else locked. */
+const showsActions = (model: Model): boolean => model.isGrantsRead || canManageSlos(model)
 
 const rowActions = (h: H, model: Model, budget: CostBudgetStatus): Html => {
 	const isBusy = Arr.contains(model.togglingIds, budget.id) || model.deletingId === budget.id
-	const isLocked = !canManageAlerts(model)
+	const isLocked = !canManageSlos(model)
 	return hstack(h, { gap: "1", align: "center", justify: "end" }, [
 		...gatedSwitch(
 			h,
 			model,
-			"alerts:manage",
+			"slos:manage",
 			switchControl(h, {
 				id: `budget-switch-${budget.id}`,
 				inputId: `budget-switch-input-${budget.id}`,
@@ -128,7 +128,7 @@ const rowActions = (h: H, model: Model, budget: CostBudgetStatus): Html => {
 				onToggle: Message.ToggledBudget({ id: budget.id }),
 			}),
 		),
-		gatedControl(h, model, "alerts:manage", (isDisabled) =>
+		gatedControl(h, model, "slos:manage", (isDisabled) =>
 			iconButton(
 				h,
 				{
@@ -140,7 +140,7 @@ const rowActions = (h: H, model: Model, budget: CostBudgetStatus): Html => {
 				[icon(h, "PencilIcon")],
 			),
 		),
-		gatedControl(h, model, "alerts:manage", (isDisabled) =>
+		gatedControl(h, model, "slos:manage", (isDisabled) =>
 			iconButton(
 				h,
 				{
@@ -163,7 +163,7 @@ const budgetRow = (h: H, model: Model, budget: CostBudgetStatus): Html =>
 				[
 					vstack(h, { gap: "0.5", shrink: true }, [
 						// The editor is the manager's; anyone else reads the name.
-						canManageAlerts(model)
+						canManageSlos(model)
 							? textLink(
 									h,
 									{
@@ -294,7 +294,7 @@ const deleteDialog = (h: H, model: Model): Html => {
 }
 
 const newBudgetButton = (h: H, model: Model): Html =>
-	gatedLinkButton(h, model, "alerts:manage", { size: "sm", href: budgetFormHref() }, [
+	gatedLinkButton(h, model, "slos:manage", { size: "sm", href: budgetFormHref() }, [
 		icon(h, "PlusIcon"),
 		"New budget",
 	])

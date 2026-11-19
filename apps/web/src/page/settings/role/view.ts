@@ -22,7 +22,6 @@ import { errorState } from "@maple/views/ui/error-state"
 import { grid } from "@maple/views/ui/grid"
 import { icon } from "@maple/views/ui/icon"
 import { label } from "@maple/views/ui/label"
-import { personLabel } from "@maple/views/ui/person-avatar"
 import { dividedList } from "@maple/views/ui/rule"
 import { searchInput } from "@maple/views/ui/search-input"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
@@ -49,9 +48,10 @@ import {
 	rolesHref,
 } from "../roles/roles"
 import { entriesOf } from "../roles/update"
-import { roleTypeBadge, roleTextField } from "../roles/view-parts"
+import { holderLabel, roleTextField, roleTypeBadge } from "../roles/view-parts"
 import { Message } from "./message"
-import { canManageRoles, type Model, type PermissionFilter } from "./model"
+import { canManageRoles } from "../roles/model"
+import type { Model, PermissionFilter } from "./model"
 import { isEditable, roleOf, unsavedChanges } from "./update"
 
 type H = HtmlBuilder<Message>
@@ -333,7 +333,7 @@ const membersPanel = (h: H, model: Model, role: RoleEntry): ReadonlyArray<Html> 
 			onFailure: (failure) => [
 				errorState(h, { variant: "row", failure, title: "Couldn't load who holds it" }),
 			],
-			onSuccess: (members) =>
+			onSuccess: ({ members }) =>
 				members.length === 0
 					? [membersEmpty(h, role)]
 					: [
@@ -344,11 +344,7 @@ const membersPanel = (h: H, model: Model, role: RoleEntry): ReadonlyArray<Html> 
 									h.li(
 										[h.Key(member.userId), h.Class("px-3 py-2.5")],
 										[
-											personLabel(h, {
-												name: member.name,
-												imageUrl: member.imageUrl,
-												detail: member.identifier,
-											}),
+											holderLabel(h, member),
 										],
 									),
 								),

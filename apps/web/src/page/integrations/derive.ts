@@ -344,7 +344,7 @@ export const settingsNavVisibility = (
 	return {
 		isClerk,
 		grants: model.grants,
-		canAccessDataPlatform: Policy.has(model.grants, "warehouse:manage") && hasByoc,
+		canAccessDataPlatform: Policy.can(model.grants, "warehouse:manage") && hasByoc,
 		hasDataSources: model.hasDataSources,
 	}
 }

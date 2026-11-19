@@ -107,7 +107,7 @@ export const Model = Schema.Struct({
 export type Model = typeof Model.Type
 
 /** The viewer may change the plan and payment details (`billing:manage`). */
-export const canManage = (model: Pick<Model, "grants">): boolean => Policy.has(model.grants, "billing:manage")
+export const canManage = (model: Pick<Model, "grants">): boolean => Policy.can(model.grants, "billing:manage")
 
 const result = <A extends Schema.Top>(schema: A) => ({ result: Schema.Result(schema, LoadFailure) })
 

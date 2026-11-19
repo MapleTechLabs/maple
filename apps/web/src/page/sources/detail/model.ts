@@ -67,4 +67,4 @@ export const Model = Schema.Struct({
 export type Model = typeof Model.Type
 
 export const canManage = (model: Pick<Model, "grants">): boolean =>
-	model.grants !== null && Policy.has(model.grants, "sources:manage")
+	model.grants !== null && Policy.can(model.grants, "sources:manage")

@@ -157,7 +157,7 @@ const tabContent = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<H
 					view: DataSourcesView.view,
 					toParentMessage: (message) => Message.GotDataSourcesMessage({ message }),
 					viewInputs: {
-						canManage: Policy.has(visibilityOf(model).grants, "data_sources:manage"),
+						canManage: Policy.can(visibilityOf(model).grants, "data_sources:manage"),
 						nowMs: model.nowMs,
 						timeZone: inputs.context.timeZone,
 					},
@@ -258,7 +258,7 @@ const gatedTabReason = (model: Model, tab: SettingsTab): string => {
 	const label = settingsTabLabels[tab]
 	const visibility = visibilityOf(model)
 	if (!visibility.isClerk) return `${label} isn't available on this deployment.`
-	if (tab === "data-platform" && Policy.has(visibility.grants, "warehouse:manage"))
+	if (tab === "data-platform" && Policy.can(visibility.grants, "warehouse:manage"))
 		return `${label} needs the Bring your own cloud add-on.`
 	return `You need admin access to view ${label}.`
 }
@@ -299,7 +299,7 @@ const pageNote = (h: H, model: Model): ReadonlyArray<Html> => {
 	const linksToPlans =
 		!isRoleUnknown(model) &&
 		model.deniedTab === "data-platform" &&
-		Policy.has(visibilityOf(model).grants, "warehouse:manage")
+		Policy.can(visibilityOf(model).grants, "warehouse:manage")
 	return reason === null
 		? []
 		: [
@@ -399,7 +399,7 @@ const tabActions = (h: H, model: Model): Html | undefined => {
 				model: tab.model,
 				view: DataSourcesView.headerActions,
 				toParentMessage: (message) => Message.GotDataSourcesMessage({ message }),
-				viewInputs: { canManage: Policy.has(visibilityOf(model).grants, "data_sources:manage") },
+				viewInputs: { canManage: Policy.can(visibilityOf(model).grants, "data_sources:manage") },
 			})
 		default:
 			return undefined

@@ -35,17 +35,23 @@ export const acceptGrants = <M extends Grants>(
 	also?: Partial<M>,
 ): M => (answer.orgId === pageOrgId ? { ...model, grants: answer.grants, ...also } : model)
 
-/** The viewer may change alert rules, schedules, SLOs and routing (`alerts:manage`). */
-export const canManageAlerts = (model: Grants): boolean => Policy.has(model.grants, "alerts:manage")
+/** The viewer may change alert rules, destinations, silences and maintenance windows (`alerts:manage`). */
+export const canManageAlerts = (model: Grants): boolean => Policy.can(model.grants, "alerts:manage")
+
+/** The viewer may change on-call schedules, overrides and escalation chains (`oncall:manage`). */
+export const canManageOnCall = (model: Grants): boolean => Policy.can(model.grants, "oncall:manage")
+
+/** The viewer may change SLOs and cost budgets (`slos:manage`). */
+export const canManageSlos = (model: Grants): boolean => Policy.can(model.grants, "slos:manage")
 
 /** The viewer may acknowledge and resolve alert and anomaly incidents (`incidents:respond`). */
-export const canRespondToIncidents = (model: Grants): boolean => Policy.has(model.grants, "incidents:respond")
+export const canRespondToIncidents = (model: Grants): boolean => Policy.can(model.grants, "incidents:respond")
 
 /** The viewer may start, restart and resolve investigations (`investigations:run`). */
-export const canRunInvestigations = (model: Grants): boolean => Policy.has(model.grants, "investigations:run")
+export const canRunInvestigations = (model: Grants): boolean => Policy.can(model.grants, "investigations:run")
 
 /** The viewer may open the audit log (`audit_log:read`); false until the session answers. */
-export const canReadAuditLog = (model: Grants): boolean => Policy.has(model.grants, "audit_log:read")
+export const canReadAuditLog = (model: Grants): boolean => Policy.can(model.grants, "audit_log:read")
 
 /**
  * A control behind `permission`: enabled when the viewer holds it, else drawn disabled with the
@@ -58,7 +64,7 @@ export const gatedControl = <Message>(
 	control: (isDisabled: boolean) => Html,
 	options: Readonly<{ className?: string }> = {},
 ): Html =>
-	Policy.has(model.grants, permission)
+	Policy.can(model.grants, permission)
 		? control(false)
 		: lockedControl(h, denialReason(permission), control(true), {
 				...options,

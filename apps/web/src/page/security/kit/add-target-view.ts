@@ -1,5 +1,4 @@
 import type { GithubRepoSummary } from "@maple/domain/http"
-import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -7,6 +6,7 @@ import { AppRoute, hrefOf } from "../../../route"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { linkButton } from "@maple/views/ui/button"
 import * as Checkbox from "@maple/views/ui/checkbox"
+import { radioCard } from "@maple/views/ui/control-card"
 import * as Field from "@maple/views/ui/field"
 import { formDialog } from "@maple/views/ui/form-dialog"
 import { icon } from "@maple/views/ui/icon"
@@ -178,42 +178,24 @@ const profileField = (h: H, model: Model): Html => {
 		RadioGroup.radioGroup(
 			h,
 			{ label: "Profile", className: gridClass({ cols: 2, gap: "2" }) },
-			Arr.map(PROFILES, (profile) => {
-				const isChecked = Option.contains(model.profile.maybeValue, profile.value)
-				return label(
-					h,
-					{
-						// A card: the kit label's centring and medium weight stay off.
-						className: cn(
-							"flex cursor-pointer items-start gap-2.5 rounded-md border p-3 font-normal",
-							isChecked
-								? "border-border-strong bg-surface-strong"
-								: "hover:bg-surface-sunken active:bg-surface-sunken",
-						),
-						attributes: [
-							h.Key(profile.value),
-							h.Id(RadioGroup.labelId(`${DIALOG_ID}-profile-${profile.value}-input`)),
-						],
-					},
-					[
-						...RadioGroup.radio(h, config, profile.value, "mt-0.5"),
-						vstack(h, { gap: "1", shrink: true, as: "span" }, [
-							typography(h, { size: "sm", weight: "medium" }, [
-								profile.label,
-								...(profile.hint === null
-									? []
-									: [
-											h.span(
-												[h.Class("ml-1.5 text-xs font-normal text-muted-foreground")],
-												[profile.hint],
-											),
-										]),
-							]),
-							typography(h, { size: "xs", tone: "muted" }, [profile.description]),
+			Arr.flatMap(PROFILES, (profile) =>
+				radioCard(h, { config, value: profile.value }, [
+					vstack(h, { gap: "1", shrink: true, as: "span" }, [
+						typography(h, { size: "sm", weight: "medium" }, [
+							profile.label,
+							...(profile.hint === null
+								? []
+								: [
+										h.span(
+											[h.Class("ml-1.5 text-xs font-normal text-muted-foreground")],
+											[profile.hint],
+										),
+									]),
 						]),
-					],
-				)
-			}),
+						typography(h, { size: "xs", tone: "muted" }, [profile.description]),
+					]),
+				]),
+			),
 		),
 	])
 }

@@ -110,7 +110,7 @@ export const Model = Schema.Struct({
 export type Model = typeof Model.Type
 
 /** The viewer may invite, remove and re-role members (`members:manage`). */
-export const canManage = (model: Pick<Model, "grants">): boolean => Policy.has(model.grants, "members:manage")
+export const canManage = (model: Pick<Model, "grants">): boolean => Policy.can(model.grants, "members:manage")
 
 const done = <A extends Schema.Top>(schema: A) => ({ result: Schema.Result(schema, Schema.String) })
 

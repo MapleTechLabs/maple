@@ -1,25 +1,12 @@
 import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
-import { AsyncData } from "foldkit"
-import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Select from "@maple/views/ui/select"
 import * as Tabs from "@maple/views/ui/tabs"
 import * as CreateDialog from "../roles/create-dialog"
-import { RoleListData } from "../roles/model"
+import { RoleListData, RoleMembersData } from "../roles/model"
 
 // `/settings/roles/:roleId`: one role's name, description, permissions and holders. A custom role
 // is edited in drafts until Save; a built-in role opens read-only.
-
-/** Someone who holds the role. */
-export const RoleMember = Schema.Struct({
-	userId: Schema.String,
-	name: Schema.String,
-	identifier: Schema.String,
-	imageUrl: Schema.String,
-})
-export type RoleMember = typeof RoleMember.Type
-
-export const RoleMembersData = AsyncData.Schema(Schema.Array(RoleMember), LoadFailure)
 
 /** Which permissions the list shows: all, the ones the draft holds, or the sensitive ones. */
 export const PermissionFilter = Schema.Literals(["all", "granted", "sensitive"])
@@ -49,7 +36,3 @@ export const Model = Schema.Struct({
 	create: CreateDialog.Model,
 })
 export type Model = typeof Model.Type
-
-/** The viewer may change roles (`roles:manage`). */
-export const canManageRoles = (model: Pick<Model, "grants">): boolean =>
-	Policy.has(model.grants, "roles:manage")

@@ -1,4 +1,5 @@
 import type { AlertIncidentId } from "@maple/domain/http"
+import type * as Policy from "@maple/domain/policy"
 import type { AlertsOverviewReady } from "@maple/web-data/alerts/overview"
 import { makeClientErrorBody } from "@maple/web-data/lib/error-messages"
 import { Option, Array as Arr } from "effect"
@@ -181,8 +182,14 @@ const hasRows = <A>(rows: Option.Option<ReadonlyArray<A>>): boolean =>
 const manageLock = (model: Model): string | undefined =>
 	canManageAlerts(model) ? undefined : denialReason("alerts:manage")
 
-const primaryLink = (h: H, model: Model, href: string, label: string): Html =>
-	gatedControl(h, model, "alerts:manage", (isDisabled) =>
+const primaryLink = (
+	h: H,
+	model: Model,
+	href: string,
+	label: string,
+	permission: Policy.Permission,
+): Html =>
+	gatedControl(h, model, permission, (isDisabled) =>
 		isDisabled
 			? button(h, { size: "sm", isDisabled }, [icon(h, "PlusIcon"), label])
 			: linkButton(h, { size: "sm", href }, [icon(h, "PlusIcon"), label]),
@@ -218,11 +225,11 @@ const headerActions = (
 	switch (tab) {
 		case "uptime":
 			return hasRows(AsyncData.getData(model.monitors.data))
-				? primaryLink(h, model, newMonitorHref({ serviceName }), "New monitor")
+				? primaryLink(h, model, newMonitorHref({ serviceName }), "New monitor", "alerts:manage")
 				: undefined
 		case "slos":
 			return hasRows(AsyncData.getData(model.slos.data))
-				? primaryLink(h, model, newSloHref({ serviceName }), "New SLO")
+				? primaryLink(h, model, newSloHref({ serviceName }), "New SLO", "slos:manage")
 				: undefined
 		case "silences":
 			return primaryButton(h, model, Message.ClickedNewSilence(), "New silence")
@@ -231,7 +238,9 @@ const headerActions = (
 				? primaryButton(h, model, Message.ClickedNewWindow(), "New window", model.nowMs === null)
 				: undefined
 		case "on-call":
-			return hasSchedules(model) ? primaryLink(h, model, newScheduleHref(), "New schedule") : undefined
+			return hasSchedules(model)
+				? primaryLink(h, model, newScheduleHref(), "New schedule", "oncall:manage")
+				: undefined
 		case "routing":
 			return destinationsOf(model).length > 0
 				? primaryButton(h, model, Message.ClickedNewDestination(), "Add destination")

@@ -56,7 +56,7 @@ const slosEmptyState = (h: H, model: Model, serviceName: string | undefined): Ht
 				gatedLinkButton(
 					h,
 					model,
-					"alerts:manage",
+					"slos:manage",
 					{ size: "sm", href: newSloHref({ serviceName }) },
 					[icon(h, "PlusIcon"), "New SLO"],
 				),

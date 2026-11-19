@@ -1,4 +1,4 @@
-import { CustomRoleResponse, RoleListResponse } from "@maple/domain/http"
+import { CustomRoleResponse, RoleListResponse, RoleMembersResponse } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
@@ -7,12 +7,12 @@ import * as Select from "@maple/views/ui/select"
 import * as Tabs from "@maple/views/ui/tabs"
 import { SessionGrants } from "../../kit/session-grants"
 import * as CreateDialog from "../roles/create-dialog"
-import { PermissionFilter, RoleMember } from "./model"
+import { PermissionFilter } from "./model"
 
 export const Message = defineMessageUnion({
 	CompletedFetchSession: SessionGrants,
 	CompletedFetchRoles: { result: Schema.Result(RoleListResponse, LoadFailure) },
-	CompletedFetchMembers: { result: Schema.Result(Schema.Array(RoleMember), LoadFailure) },
+	CompletedFetchMembers: { result: Schema.Result(RoleMembersResponse, LoadFailure) },
 	ClickedRetry: {},
 	ChangedName: { value: Schema.String },
 	ChangedDescription: { value: Schema.String },

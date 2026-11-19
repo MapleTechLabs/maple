@@ -48,7 +48,7 @@ type SettingsRoute = Extract<AppRoute, { readonly _tag: "Settings" }>
 
 export const visibilityOf = (model: Model): Visibility => {
 	const grants = grantsOf(model)
-	const canManageWarehouse = Policy.has(grants, "warehouse:manage")
+	const canManageWarehouse = Policy.can(grants, "warehouse:manage")
 	const hasByoc = AsyncData.getOrElse(AsyncData.map(model.customer, hasBringYourOwnCloudAddOn), () => false)
 	return {
 		isClerk: isClerkAuthEnabled,
@@ -210,7 +210,7 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 				() => false,
 			)
 			const step = Ai.init(
-				Policy.has(grantsOf(model), "llm_keys:manage") && (!isClerkAuthEnabled || hasFlag),
+				Policy.can(grantsOf(model), "llm_keys:manage") && (!isClerkAuthEnabled || hasFlag),
 			)
 			return {
 				model: { ...model, tab: { _tag: "Ai", model: step.model } },
@@ -249,7 +249,7 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 		case "DataSources": {
 			// Connecting is admin-only, so a shared connect link opens the list for members.
 			const step = DataSources.init(
-				Policy.has(grantsOf(model), "data_sources:manage")
+				Policy.can(grantsOf(model), "data_sources:manage")
 					? model.search
 					: { source: model.search.source },
 			)
@@ -297,7 +297,7 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 			}
 		}
 		case "Sso": {
-			const step = Sso.init(Policy.has(grantsOf(model), "sso:manage"))
+			const step = Sso.init(Policy.can(grantsOf(model), "sso:manage"))
 			return {
 				model: { ...model, tab: { _tag: "Sso", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (message) =>

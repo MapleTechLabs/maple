@@ -24,8 +24,7 @@ const run = (model: Model, messages: ReadonlyArray<Message>): Model =>
 
 const loaded = (grants: ReadonlyArray<Policy.Permission> = ADMIN): Model =>
 	run(init(grants).model, [
-		// Out of order on purpose: the list sorts custom roles by name.
-		Message.CompletedFetchRoles({ result: Result.succeed(roleList([STATUS_EDITOR, ON_CALL])) }),
+		Message.CompletedFetchRoles({ result: Result.succeed(roleList([ON_CALL, STATUS_EDITOR])) }),
 	])
 
 const namesOf = (step: { readonly commands?: ReadonlyArray<{ readonly name: string }> }) =>
@@ -37,7 +36,7 @@ const argsOf = (
 ) => Option.getOrUndefined(Arr.findFirst(step.commands ?? [], (command) => command.name === name))?.args
 
 describe("roles list", () => {
-	test("built-in roles come first in their order, then the organization's own by name", () => {
+	test("built-in roles come first in their order, then the organization's own", () => {
 		expect(Arr.map(entriesOf(loaded()), (entry) => entry.name)).toEqual([
 			"Analyst",
 			"Member",
