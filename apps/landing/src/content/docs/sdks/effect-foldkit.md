@@ -125,7 +125,7 @@ const routeName = (pathname: string): string =>
 const maple = MapleFoldkit.make({ serviceName: "acme-web", ingestKey: "maple_pk_...", routeName })
 ```
 
-The full path stays on the span as `url.path`, sanitized as usual. The `routeName` result is used as is, so return a label, never the raw path.
+The full path stays on the span as `url.path`, sanitized as usual. The `routeName` result is used as is, so return a label, never the raw path. Keep ids and user data out of it, like `customer-123`: the SDK sends the label as part of the span name.
 
 ## Sampling
 
