@@ -27,7 +27,7 @@ const make = (httpClient: HttpClient.HttpClient) =>
 			Vercel.credentials({ token: Redacted.make("secret_token"), apiBaseUrl: BASE_URL }),
 			Layer.succeed(Vercel.Retry.Retry, { while: () => false }),
 		),
-		statusByTag: { Forbidden: 403, TooManyRequests: 429, BadGateway: 502 },
+		statusByTag: { Forbidden: 403, TooManyRequests: 429, BadGateway: 502, GatewayTimeout: 504 },
 		toError: (error: VendorHttp.VendorHttpError) => error,
 		timeout: "5 seconds",
 	})
@@ -190,6 +190,35 @@ describe("VendorSdk", () => {
 				const error = yield* Effect.flip(listDrains(client))
 				assert.deepStrictEqual([error.kind, error.retryAfterSeconds], ["rate_limited", 1800])
 				assert.strictEqual(fake.calls.length, 1)
+			}),
+		)
+	})
+
+	it.effect("reads an empty or null 2xx body as no answer, not as an empty listing", () => {
+		// A listing whose fields are all optional: `{}` is a real empty page, nothing at all is not.
+		const Listing = Schema.Struct({ drains: Schema.optionalKey(Schema.Array(Drain)) })
+		const replies = [VendorFake.text(""), VendorFake.text("null"), VendorFake.json({})]
+		const fake = VendorFake.make({
+			routes: [drainsRoute(() => replies.shift() ?? VendorFake.json({}))],
+		})
+		return withClient(fake, (client) =>
+			Effect.gen(function* () {
+				const list = client.call(Listing, Vercel.drains.getDrains({ teamId: "team_1" }), {
+					retry: false,
+				})
+				assert.strictEqual((yield* Effect.flip(list)).kind, "invalid_response")
+				assert.strictEqual((yield* Effect.flip(list)).kind, "invalid_response")
+				assert.deepStrictEqual(yield* list, {})
+			}),
+		)
+	})
+
+	it.effect("reports the status the vendor sent where the SDK's error class stands for two", () => {
+		const fake = VendorFake.make({ routes: [drainsRoute(() => VendorFake.json({ error: {} }, 408))] })
+		return withClient(fake, (client) =>
+			Effect.gen(function* () {
+				const error = yield* Effect.flip(createDrain(client))
+				assert.deepStrictEqual([error.kind, error.status], ["upstream", 408])
 			}),
 		)
 	})

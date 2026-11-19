@@ -5,8 +5,8 @@
  * The SDK's own retries are off: the client passes a no-retry policy in `sdk`. The SDK does not
  * check the bodies it returns, so each call decodes the fields Maple reads with its own schema.
  */
-import { Duration, Effect, Layer, Option, Schema, type Tracer, String as Str } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientError } from "effect/http"
+import { Duration, Effect, Layer, Option, Ref, Schema, type Tracer, String as Str } from "effect"
+import { FetchHttpClient, HttpClient, HttpClientError, HttpClientResponse } from "effect/http"
 import * as VendorHttp from "./vendor-http"
 import { VENDOR_TRANSIENT_RETRY } from "./vendor-retry"
 
@@ -63,6 +63,36 @@ const recordTarget = (span: Option.Option<Tracer.Span>) =>
 		}),
 	)
 
+/** One attempt's answer as it came over the wire; the SDK keeps neither. */
+interface Answered {
+	readonly status: number | undefined
+	readonly empty: boolean
+}
+
+/**
+ * Records the status the vendor sent (the SDK's error classes share some: 408 and 504 are one) and
+ * whether a 2xx body was empty or `null`. The SDK hands those back as `{}`, which a listing schema
+ * with optional fields would read as an empty page; here they reach the schema as `null`.
+ */
+const recordAnswer = (answered: Ref.Ref<Answered>) =>
+	HttpClient.transformResponse(
+		Effect.flatMap((response: HttpClientResponse.HttpClientResponse) => {
+			const { status } = response
+			if (status < 200 || status >= 300)
+				return Effect.as(Ref.set(answered, { status, empty: false }), response)
+			return Effect.flatMap(response.text, (text) => {
+				const trimmed = Str.trim(text)
+				return Effect.as(
+					Ref.set(answered, { status, empty: trimmed === "" || trimmed === "null" }),
+					HttpClientResponse.fromWeb(
+						response.request,
+						new Response(text === "" ? null : text, { status, headers: response.headers }),
+					),
+				)
+			})
+		}),
+	)
+
 const DEFAULT_MAX_RETRY_AFTER = Duration.seconds(10)
 
 const retryAfterSecondsOf = (error: SdkFailure): number | undefined =>
@@ -99,7 +129,11 @@ export const make = <E, R>(options: VendorSdkOptions<E, R>) => {
 		})
 
 	/** An SDK failure as the kit classifies an HTTP one. */
-	const classify = (error: SdkFailure, call: VendorSdkCall): VendorHttp.VendorHttpError => {
+	const classify = (
+		error: SdkFailure,
+		call: VendorSdkCall,
+		answeredStatus: number | undefined,
+	): VendorHttp.VendorHttpError => {
 		if (HttpClientError.isHttpClientError(error)) {
 			const reason = error.reason
 			if (reason._tag !== "StatusCodeError")
@@ -114,7 +148,8 @@ export const make = <E, R>(options: VendorSdkOptions<E, R>) => {
 			return fail("invalid_response", "answered with an unexpected body", call, { cause: error })
 		}
 		const declared = "status" in error && typeof error.status === "number" ? error.status : undefined
-		const status = declared ?? options.statusByTag[error._tag]
+		// What came over the wire first: the SDK's error classes stand for more than one status.
+		const status = answeredStatus ?? declared ?? options.statusByTag[error._tag]
 		if (status === undefined) return fail("upstream", "request failed", call, { cause: error })
 		const detail = messageOf(error)
 		const retryAfterSeconds = retryAfterSecondsOf(error)
@@ -165,26 +200,37 @@ export const make = <E, R>(options: VendorSdkOptions<E, R>) => {
 		operation: Effect.Effect<unknown, SdkFailure, R | HttpClient.HttpClient>,
 		call: VendorSdkCall,
 	) =>
-		operation.pipe(
-			Effect.mapError((error) => classify(error, call)),
-			Effect.flatMap((body) =>
-				Schema.decodeEffect(schema)(body ?? null).pipe(
-					Effect.mapError((cause) =>
-						fail("invalid_response", "answered with an unexpected body", call, { cause }),
+		Effect.flatMap(Ref.make<Answered>({ status: undefined, empty: false }), (answered) =>
+			operation.pipe(
+				Effect.catch((error) =>
+					Effect.flatMap(Ref.get(answered), (answer) =>
+						Effect.fail(classify(error, call, answer.status)),
 					),
 				),
+				Effect.flatMap((body) =>
+					Effect.flatMap(Ref.get(answered), (answer) =>
+						Schema.decodeEffect(schema)(answer.empty ? null : (body ?? null)).pipe(
+							Effect.mapError((cause) =>
+								fail("invalid_response", "answered with an unexpected body", call, { cause }),
+							),
+						),
+					),
+				),
+				Effect.timeoutOrElse({
+					duration: options.timeout,
+					orElse: () => Effect.fail(fail("timeout", "timed out", call)),
+				}),
+				// The credentials are per connection, so this cannot be hoisted into the static service graph.
+				Effect.provide([
+					options.sdk,
+					Layer.succeed(
+						HttpClient.HttpClient,
+						recordTarget(span)(recordAnswer(answered)(refuseRedirects(options.httpClient))),
+					),
+				]),
+				// A redirect is not the vendor answering: the token is never followed to another host.
+				Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
 			),
-			Effect.timeoutOrElse({
-				duration: options.timeout,
-				orElse: () => Effect.fail(fail("timeout", "timed out", call)),
-			}),
-			// The credentials are per connection, so this cannot be hoisted into the static service graph.
-			Effect.provide([
-				options.sdk,
-				Layer.succeed(HttpClient.HttpClient, recordTarget(span)(refuseRedirects(options.httpClient))),
-			]),
-			// A redirect is not the vendor answering: the token is never followed to another host.
-			Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
 		)
 
 	const call = <S extends Schema.Top>(
