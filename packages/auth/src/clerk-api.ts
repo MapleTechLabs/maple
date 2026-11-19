@@ -1,4 +1,5 @@
 import * as Clerk from "@distilled.cloud/clerk"
+import { TelemetryHooks } from "@distilled.cloud/core/telemetry-hooks"
 import { Duration, Effect, Layer, Option, Predicate, type Redacted, Schema } from "effect"
 import { FetchHttpClient, type HttpClient } from "effect/http"
 
@@ -73,12 +74,15 @@ const toRequestError = (cause: unknown): ClerkRequestError =>
  */
 const noRetry = Layer.succeed(Clerk.Retry.Retry, { while: () => false })
 
+/** Tags the SDK's own client span, so a Clerk call carries `peer.service` like every other dependency. */
+const peerService = TelemetryHooks.layer({ onStart: (span) => span.attribute("peer.service", "clerk") })
+
 /** A Clerk Backend API from a secret key; tests pass their own HTTP layer. */
 export const makeClerkApi = (
 	secretKey: Redacted.Redacted,
 	http: Layer.Layer<HttpClient.HttpClient> = FetchHttpClient.layer,
 ): ClerkApi => {
-	const services = Layer.mergeAll(Clerk.fromApiKey({ apiKey: secretKey }), http, noRetry)
+	const services = Layer.mergeAll(Clerk.fromApiKey({ apiKey: secretKey }), http, noRetry, peerService)
 	return {
 		run: (operation) =>
 			operation.pipe(

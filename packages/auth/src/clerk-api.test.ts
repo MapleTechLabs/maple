@@ -68,6 +68,7 @@ describe("ClerkApi.run", () => {
 			)
 			assert.isDefined(span)
 			assert.strictEqual(span.kind, "client")
+			assert.strictEqual(span.attributes.get("peer.service"), "clerk")
 		}),
 	)
 
