@@ -10,7 +10,6 @@ import { badge } from "@maple/views/ui/display"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon, type IconName } from "@maple/views/ui/icon"
-import { inlineCode, inlineCodeClassName } from "@maple/views/ui/inline-code"
 import { panel } from "@maple/views/ui/panel"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { refreshButton } from "@maple/views/ui/refresh-button"
@@ -19,6 +18,7 @@ import { relativeTime } from "../../kit/relative-time"
 import { docsLink } from "../../kit/signal-empty-state"
 import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import { settingsSection, settingsSections } from "../../kit/settings-section"
+import { affectedChips } from "../../kit/affected-chips"
 import {
 	type HealthSegment,
 	healthSegments,
@@ -84,38 +84,6 @@ const actionButton = (h: H, action: SetupHealthAction): Html =>
 				[action.label, icon(h, "ArrowRightIcon", { size: 14 })],
 			)
 
-const chipClassName = "text-2xs leading-4"
-
-const affectedChip = (h: H, entity: V2SetupAuditCheck["affected"][number], index: number): Html => {
-	const title = entity.note === null ? [] : [h.Title(entity.note)]
-	const key = h.Key(entity.id === null ? `index:${index}` : `id:${entity.kind}:${entity.id}`)
-	if (entity.kind === "service")
-		return h.a(
-			[key, h.Href(`/services/${encodeURIComponent(entity.name)}`), ...title],
-			[
-				inlineCode(
-					h,
-					{
-						className: cn(
-							chipClassName,
-							"text-foreground underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground active:decoration-foreground",
-						),
-					},
-					[entity.name],
-				),
-			],
-		)
-	return h.code(
-		[
-			key,
-			...title,
-			h.Class(inlineCodeClassName("chip", cn(chipClassName, "text-muted-foreground"))),
-			h.DataAttribute("slot", "inline-code"),
-		],
-		[entity.name],
-	)
-}
-
 const findingRow = (h: H, check: V2SetupAuditCheck): Html => {
 	const severity = SEVERITY[check.severity]
 	const action = setupHealthAction(check)
@@ -145,24 +113,7 @@ const findingRow = (h: H, check: V2SetupAuditCheck): Html => {
 					typography(h, { size: "xs", tone: "subtle", as: "p", className: "leading-relaxed" }, [
 						check.fix_hint,
 					]),
-					...(check.affected.length === 0
-						? []
-						: [
-								hstack(h, { gap: "1.5", align: "center", wrap: true, className: "pt-0.5" }, [
-									...Arr.map(check.affected, (entity, index) =>
-										affectedChip(h, entity, index),
-									),
-									...(check.affected_count > check.affected.length
-										? [
-												typography(h, { size: "2xs", tone: "subtle" }, [
-													"+",
-													String(check.affected_count - check.affected.length),
-													" more",
-												]),
-											]
-										: []),
-								]),
-							]),
+					...affectedChips(h, check, { className: "pt-0.5" }),
 				]),
 			]),
 			...(action === null ? [] : [h.div([h.Class("pl-7 sm:pl-0")], [actionButton(h, action)])]),
@@ -329,7 +280,7 @@ const passingDisclosure = (
 										h,
 										{
 											gap: "3",
-											align: "center",
+											align: "start",
 											as: "li",
 											className: "px-4 py-2.5",
 											attributes: [h.Key(check.id)],
@@ -344,7 +295,19 @@ const passingDisclosure = (
 														size: 14,
 														className: "text-foreground-subtle shrink-0",
 													}),
-											h.span([h.Class("min-w-0 flex-1 text-xs")], [check.title]),
+											vstack(h, { gap: "1.5", shrink: true, grow: true }, [
+												typography(h, { size: "xs" }, [check.title]),
+												...(check.detail === null || check.status === "skip"
+													? []
+													: [
+															typography(
+																h,
+																{ size: "xs", tone: "muted", as: "p" },
+																[check.detail],
+															),
+														]),
+												...affectedChips(h, check),
+											]),
 											...(check.status === "skip"
 												? [
 														badge(h, { variant: "secondary", size: "xs" }, [

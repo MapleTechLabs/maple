@@ -1,10 +1,9 @@
-import type { ClerkClient, OrganizationMembership } from "@clerk/backend"
-import { clerkModeClient } from "@maple/auth"
+import * as Clerk from "@distilled.cloud/clerk"
+import { type ClerkApiServices, type ClerkRequestError, clerkModeApi } from "@maple/auth"
 import { type OrgId, RolesUnavailableError, UserId } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { Array as Arr, Context, Effect, Layer, Option, Schema, Stream } from "effect"
 import { Env } from "@maple/backend/platform/Env"
-import { type ClerkRequestError, clerkRequest } from "@maple/backend/services/auth/clerk-request"
 
 // Every Clerk call the roles endpoints make: the definitions in the organization's public metadata,
 // and the memberships that hold them. Self-hosted mode has no Clerk, so every call fails.
@@ -52,47 +51,43 @@ const MEMBERSHIP_PAGE_SIZE = 100
 const decodeUserId = Schema.decodeUnknownOption(UserId)
 
 const unavailable = (error: ClerkRequestError) =>
-	new RolesUnavailableError({ message: `Clerk request failed: ${error.operation}`, cause: error })
+	new RolesUnavailableError({ message: `Clerk request failed: ${error.message}`, cause: error })
 
-const memberName = (member: OrganizationMembership): string | null =>
+const memberName = (member: Clerk.OrganizationMembership): string | null =>
 	Arr.join(
 		Arr.filter(
-			[member.publicUserData?.firstName, member.publicUserData?.lastName],
+			[member.public_user_data?.first_name, member.public_user_data?.last_name],
 			(part): part is string => typeof part === "string" && part !== "",
 		),
 		" ",
 	) || null
 
-const toRoleMembership = (member: OrganizationMembership): Option.Option<RoleMembership> =>
-	Option.map(decodeUserId(member.publicUserData?.userId), (userId) => ({
+const toRoleMembership = (member: Clerk.OrganizationMembership): Option.Option<RoleMembership> =>
+	Option.map(decodeUserId(member.public_user_data?.user_id), (userId) => ({
 		userId,
 		role: member.role,
-		metadata: member.publicMetadata,
+		metadata: member.public_metadata,
 		name: memberName(member),
-		identifier: member.publicUserData?.identifier ?? "",
-		imageUrl: member.publicUserData?.imageUrl ?? null,
+		identifier: member.public_user_data?.identifier ?? "",
+		imageUrl: member.public_user_data?.image_url ?? null,
 	}))
 
 const make = Effect.gen(function* () {
 	const env = yield* Env
-	const clerk = clerkModeClient(env)
+	const clerk = clerkModeApi(env)
 
-	const withClerk = <A>(
-		spanName: string,
-		attributes: Readonly<Record<string, string>>,
-		request: (clerk: ClerkClient) => Promise<A>,
+	const withClerk = <A, E>(
+		operation: Effect.Effect<A, E, ClerkApiServices>,
 	): Effect.Effect<A, RolesUnavailableError> =>
 		clerk === undefined
 			? Effect.fail(new RolesUnavailableError({ message: "Roles need Clerk" }))
-			: clerkRequest(spanName, attributes, () => request(clerk)).pipe(Effect.mapError(unavailable))
+			: clerk.run(operation).pipe(Effect.mapError(unavailable))
 
 	const customRoles: ClerkRolesGatewayApi["customRoles"] = (orgId) =>
-		withClerk("Clerk.organizations.getOrganization", { orgId }, (client) =>
-			client.organizations.getOrganization({ organizationId: orgId }),
-		).pipe(
+		withClerk(Clerk.getOrganization({ organization_id: orgId })).pipe(
 			Effect.flatMap((organization) =>
 				Effect.fromOption(
-					Policy.versionedCustomRolesFromOrgMetadata(organization.publicMetadata),
+					Policy.versionedCustomRolesFromOrgMetadata(organization.public_metadata),
 					() =>
 						new RolesUnavailableError({
 							message: "The organization's custom roles could not be read",
@@ -104,9 +99,10 @@ const make = Effect.gen(function* () {
 	// Clerk merges public metadata by key, so the region and rollout flags stay as they are. It has
 	// no conditional write: RolesService re-reads the version just before writing instead.
 	const writeCustomRoles: ClerkRolesGatewayApi["writeCustomRoles"] = (orgId, stored) =>
-		withClerk("Clerk.organizations.updateOrganizationMetadata", { orgId }, (client) =>
-			client.organizations.updateOrganizationMetadata(orgId, {
-				publicMetadata: {
+		withClerk(
+			Clerk.mergeOrganizationMetadata({
+				organization_id: orgId,
+				public_metadata: {
 					[Policy.ORG_ROLES_METADATA_KEY]: stored satisfies Policy.StoredCustomRoles,
 				},
 			}),
@@ -114,16 +110,16 @@ const make = Effect.gen(function* () {
 
 	const memberships: ClerkRolesGatewayApi["memberships"] = (orgId) =>
 		Stream.paginate(0, (offset: number) =>
-			withClerk("Clerk.organizations.getOrganizationMembershipList", { orgId }, (client) =>
-				client.organizations.getOrganizationMembershipList({
-					organizationId: orgId,
+			withClerk(
+				Clerk.listOrganizationMemberships({
+					organization_id: orgId,
 					limit: MEMBERSHIP_PAGE_SIZE,
 					offset,
 				}),
 			).pipe(
 				Effect.map((page) => {
 					const next = offset + page.data.length
-					const done = next >= page.totalCount || page.data.length === 0
+					const done = next >= page.total_count || page.data.length === 0
 					return [page.data, done ? Option.none<number>() : Option.some(next)] as const
 				}),
 			),
@@ -133,23 +129,17 @@ const make = Effect.gen(function* () {
 		)
 
 	const setMembershipRole: ClerkRolesGatewayApi["setMembershipRole"] = (orgId, userId, role) =>
-		withClerk(
-			"Clerk.organizations.updateOrganizationMembership",
-			{ orgId, "tenant.userId": userId },
-			(client) =>
-				client.organizations.updateOrganizationMembership({ organizationId: orgId, userId, role }),
-		).pipe(Effect.asVoid)
+		withClerk(Clerk.updateOrganizationMembership({ organization_id: orgId, user_id: userId, role })).pipe(
+			Effect.asVoid,
+		)
 
 	const setMembershipCustomRole: ClerkRolesGatewayApi["setMembershipCustomRole"] = (orgId, userId, role) =>
 		withClerk(
-			"Clerk.organizations.updateOrganizationMembershipMetadata",
-			{ orgId, "tenant.userId": userId },
-			(client) =>
-				client.organizations.updateOrganizationMembershipMetadata({
-					organizationId: orgId,
-					userId,
-					publicMetadata: { [Policy.MEMBERSHIP_ROLE_METADATA_KEY]: role },
-				}),
+			Clerk.updateOrganizationMembershipMetadata({
+				organization_id: orgId,
+				user_id: userId,
+				public_metadata: { [Policy.MEMBERSHIP_ROLE_METADATA_KEY]: role },
+			}),
 		).pipe(Effect.asVoid)
 
 	return {

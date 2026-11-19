@@ -1,0 +1,389 @@
+---
+/**
+ * UseCaseStory: the use-case hero and its pinned-pane walkthrough as one section, so the story's
+ * first screen sits beside the headline. It reuses ScrollStory's `.story-*` classes but not its
+ * hooks. The steps are two lists because the pane's grid area ends where the second step begins.
+ */
+import { buttonVariants } from "@maple/views/ui/button.styles";
+import * as m from "../../paraglide/messages.js";
+import Breadcrumb from "../Breadcrumb.astro";
+import HeroCta from "../HeroCta.astro";
+import MediaFrame from "../home/MediaFrame.astro";
+
+interface StoryStep {
+	/** The surface this step opens: "alert", "trace", "logs". Never translated. */
+	surface: string;
+	/** The route shown in the frame head, e.g. "/traces". Never translated. */
+	route: string;
+	/** Elapsed clock, e.g. "T+1:10". */
+	elapsed: string;
+	title: string;
+	body: string;
+	/** Alt text for the plate. */
+	shot: string;
+	src: string;
+	/** The inline plate's window, for a capture that is not laid out like the app's main pane. */
+	crop?: { x: number; y: number; zoom: number };
+}
+
+interface Props {
+	eyebrow: string;
+	title: string;
+	lede: string;
+	breadcrumb: { label: string; href?: string }[];
+	/** The literal signal that opens the story. Never translated: the plates show it verbatim. */
+	signal: string;
+	/** The one thing that never changes across the steps. Literal. */
+	constant: string;
+	constantLabel: string;
+	storyEyebrow: string;
+	storyTitle: string;
+	storyLede: string;
+	steps: StoryStep[];
+	/** Capture aspect shared by the plates, e.g. "1440 / 810". */
+	aspect: string;
+}
+
+const {
+	eyebrow,
+	title,
+	lede,
+	breadcrumb,
+	signal,
+	constant,
+	constantLabel,
+	storyEyebrow,
+	storyTitle,
+	storyLede,
+	steps,
+	aspect,
+}: Props = Astro.props;
+
+const [aspectW, aspectH] = aspect.split("/").map((n) => Number(n.trim()));
+const first = steps[0];
+
+// Below lg each step shows its own plate: the app's main pane without the sidebar, tighter on phones (see the style block).
+const INLINE_CROP = { x: 0.18, y: 0, zoom: 1.22 };
+---
+
+<section class="uc-story relative bg-bg" data-usecase-story data-active="1">
+	<!-- The veil belongs to the headline, not to the whole walkthrough below it. -->
+	<div class="pointer-events-none absolute inset-x-0 top-0 h-[42rem]" aria-hidden="true">
+		<div class="dot-grid-veil"></div>
+	</div>
+
+	<div class="relative">
+		<Breadcrumb items={breadcrumb} class="shell pt-24 md:pt-28" />
+
+		<div class="uc-grid shell pb-14 pt-8 md:pb-20 lg:pt-14">
+			<div class="uc-lead min-w-0" data-lead>
+				<p class="mb-5 text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{eyebrow}</p>
+				<h1
+					class="uc-title max-w-[20ch] font-display text-[2.375rem] font-semibold leading-[1.03] tracking-[-0.025em] text-fg sm:text-5xl xl:text-[3.25rem]"
+				>
+					{title}
+				</h1>
+				<p class="mt-6 max-w-[62ch] text-sm leading-relaxed text-fg-muted md:text-base">{lede}</p>
+				<p
+					class="mt-7 inline-flex items-center gap-2.5 rounded-lg border border-border bg-bg-elevated px-3.5 py-2 font-mono text-[12.5px] text-fg"
+				>
+					<span class="op-key">signal</span>
+					{signal}
+				</p>
+				<div class="mt-8 flex flex-wrap items-center gap-3">
+					<HeroCta class={buttonVariants({ size: "xl" })} />
+					<a
+						href="https://github.com/MapleTechLabs/maple"
+						target="_blank"
+						rel="noopener noreferrer"
+						class={buttonVariants({ variant: "outline", size: "xl" })}
+					>
+						{m.cta_github()}
+					</a>
+				</div>
+			</div>
+
+			<!-- Pinned pane, `lg` up. No height of its own: the frame sizes the box. -->
+			<div class="uc-pane hidden self-start lg:block">
+				<div class="story-frame">
+					<div class="story-frame__head">
+						<span>
+							{constantLabel} <span class="text-fg">{constant}</span>
+						</span>
+						<span class="flex items-center gap-4">
+							<span class="story-frame__route">
+								{
+									steps.map((step, i) => (
+										<span data-route={i + 1} data-on={i === 0 ? "" : undefined}>
+											{step.route}
+										</span>
+									))
+								}
+							</span>
+							<span class="story-frame__clock">
+								{
+									steps.map((step, i) => (
+										<span data-clock={i + 1} data-on={i === 0 ? "" : undefined}>
+											{step.elapsed}
+										</span>
+									))
+								}
+							</span>
+						</span>
+					</div>
+					<div class="story-frame__stage" style={`--story-aspect: ${aspect};`}>
+						{
+							steps.map((step, i) => (
+								<img
+									data-pane={i + 1}
+									data-on={i === 0 ? "" : undefined}
+									src={step.src}
+									alt={step.shot}
+									width={aspectW}
+									height={aspectH}
+									loading={i === 0 ? "eager" : "lazy"}
+									decoding="async"
+								/>
+							))
+						}
+					</div>
+				</div>
+			</div>
+
+			<!-- Phones: the first screen of the story, straight after the hero copy. -->
+			{
+				first && (
+					<div class="uc-first min-w-0 lg:hidden">
+						<p class="story-trace mb-3 leading-none">
+							{first.elapsed} · {first.route} · {constantLabel} <span class="text-fg">{constant}</span>
+						</p>
+						<MediaFrame label={first.shot} src={first.src} width={aspectW} height={aspectH} crop={first.crop ?? INLINE_CROP} loading="eager" />
+					</div>
+				)
+			}
+
+			<div class="uc-head min-w-0" data-lead>
+				<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{storyEyebrow}</p>
+				<h2 class="mt-4 max-w-[20ch] font-display text-3xl font-medium leading-[1.08] tracking-[-0.02em] text-fg lg:text-[34px]">
+					{storyTitle}
+				</h2>
+				<p class="mt-4 max-w-[52ch] text-sm leading-relaxed text-fg-muted">{storyLede}</p>
+			</div>
+
+			{
+				[steps.slice(0, 1), steps.slice(1)].map((group, g) => (
+					<ol
+						class:list={["story-steps uc-steps min-w-0", g === 0 ? "uc-steps--first" : "uc-steps--rest"]}
+						start={g === 0 ? undefined : 2}
+					>
+						{group.map((step, k) => (
+							<li
+								data-step={g + k + 1}
+								data-on={g + k === 0 ? "" : undefined}
+								class="grid grid-cols-[9px_1fr] gap-x-6"
+							>
+								<span class="story-node" aria-hidden="true" />
+								<div class="col-start-2 flex items-baseline justify-between gap-4 leading-none">
+									<span class="story-surface">{step.surface}</span>
+									<span class="story-trace lg:hidden">
+										{step.elapsed} · {constantLabel} <span class="text-fg">{constant}</span>
+									</span>
+								</div>
+								<h3 class="col-start-2 mt-3 font-display text-xl leading-snug tracking-[-0.01em] text-fg md:text-2xl">
+									{step.title}
+								</h3>
+								<p class="col-start-2 mt-4 max-w-[46ch] text-sm leading-relaxed text-fg-muted">{step.body}</p>
+								{g === 1 && (
+									<div class="uc-inline col-start-2 mt-7 lg:hidden">
+										<MediaFrame label={step.shot} src={step.src} width={aspectW} height={aspectH} crop={step.crop ?? INLINE_CROP} />
+									</div>
+								)}
+							</li>
+						))}
+					</ol>
+				))
+			}
+		</div>
+	</div>
+</section>
+
+<style>
+	.uc-story {
+		--story-swap: 520ms;
+		--story-ease: cubic-bezier(0.22, 1, 0.36, 1);
+		--uc-gap: 4rem;
+		/* The pane's track, shared with the plates beside the later steps. */
+		--uc-pane: calc((100% - var(--uc-gap)) * 0.618);
+	}
+	.uc-grid {
+		display: grid;
+		gap: 2.5rem;
+	}
+	/* Korean breaks between words, not inside one. */
+	.uc-title:lang(ko) {
+		word-break: keep-all;
+	}
+	/* A whole app screen is unreadable in a phone column: the inline plates tighten to the main pane's top left. */
+	@media (max-width: 639px) {
+		:is(.uc-first, .uc-inline) :global(.media-crop) {
+			--crop-zoom: 2.4 !important;
+		}
+	}
+
+	/* The two lists are one rail: the first list's only step still connects downward. */
+	.uc-steps--first [data-step]::before,
+	.uc-steps--first [data-step]::after {
+		display: block;
+	}
+	/* Phones: a step is its copy, then its plate; the hero already showed the first plate. */
+	.uc-steps [data-step] {
+		--story-step-pad: 1.75rem;
+	}
+	.uc-steps--first [data-step] {
+		padding-top: 0;
+		--story-node-y: 5px;
+	}
+	.uc-steps--rest {
+		margin-top: -2.5rem;
+	}
+	/* Below lg the first step has no top padding, so its rail runs on to the next list's first node. */
+	@media (max-width: 1023px) {
+		.uc-steps--first [data-step]::before,
+		.uc-steps--first [data-step]::after {
+			height: calc(100% + var(--story-step-pad));
+		}
+	}
+
+	@media (min-width: 1024px) {
+		.uc-grid {
+			grid-template-columns: minmax(0, 1fr) var(--uc-pane);
+			column-gap: var(--uc-gap);
+			row-gap: 0;
+		}
+		.uc-lead,
+		.uc-head,
+		.uc-steps {
+			grid-column: 1;
+		}
+		.uc-head {
+			margin-top: 6rem;
+		}
+		.uc-steps--rest {
+			margin-top: 0;
+		}
+		.uc-pane {
+			grid-column: 2;
+			grid-row: 1 / span 4;
+			position: sticky;
+			top: 6rem;
+		}
+		/* Tall enough that one step owns the centre of the viewport at a time. */
+		.uc-steps [data-step] {
+			--story-step-pad: 6.5rem;
+			--story-node-y: calc(var(--story-step-pad) + 5px);
+			padding-top: var(--story-step-pad);
+		}
+		.uc-steps--rest [data-step]:last-child {
+			padding-bottom: 3rem;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.uc-story .story-frame__stage img,
+		.uc-story .story-frame__route > span,
+		.uc-story .story-frame__clock > span,
+		.uc-steps [data-step]::after,
+		.uc-steps .story-node,
+		.uc-steps .story-surface {
+			transition: none;
+		}
+		/* Nothing swaps, so no step is the current one. */
+		.uc-steps [data-step]::after {
+			display: none;
+		}
+		.uc-steps [data-step][data-on] .story-node {
+			background: var(--background);
+			border-color: var(--border);
+			box-shadow: none;
+		}
+		.uc-steps [data-step][data-on] .story-surface {
+			color: var(--muted-foreground);
+		}
+	}
+	@media (prefers-reduced-motion: reduce) and (min-width: 1024px) {
+		/* Hero copy, story heading, first step: the pane lets go where the second step starts. */
+		.uc-pane {
+			grid-row: 1 / span 3;
+		}
+		.uc-steps--rest {
+			grid-column: 1 / -1;
+		}
+		.uc-steps [data-step] {
+			--story-step-pad: 3.5rem;
+		}
+		.uc-steps--rest [data-step] {
+			grid-template-columns: 9px minmax(0, 1fr) var(--uc-pane);
+			grid-template-rows: auto auto 1fr;
+			column-gap: 0;
+		}
+		.uc-steps--rest [data-step] > :not(.story-node):not(.uc-inline) {
+			margin-left: 1.5rem;
+			margin-right: var(--uc-gap);
+		}
+		.uc-steps--rest .uc-inline {
+			display: block;
+			grid-column: 3;
+			grid-row: 1 / span 3;
+			margin-top: 0;
+		}
+	}
+</style>
+
+<script>
+	// One observer per story; the collapsed rootMargin keeps one step active at a time. The hero
+	// copy and the story heading count as step one, so a jump to the top resets the pane.
+	const reduce = matchMedia("(prefers-reduced-motion: reduce)");
+	for (const root of document.querySelectorAll<HTMLElement>("[data-usecase-story]")) {
+		const steps = [...root.querySelectorAll<HTMLElement>("[data-step]")];
+		if (steps.length === 0) continue;
+
+		const leads = [...root.querySelectorAll<HTMLElement>("[data-lead]")];
+		const panes = [...root.querySelectorAll<HTMLElement>("[data-pane]")];
+		const routes = [...root.querySelectorAll<HTMLElement>("[data-route]")];
+		const clocks = [...root.querySelectorAll<HTMLElement>("[data-clock]")];
+
+		const activate = (index: number) => {
+			root.dataset.active = String(index + 1);
+			for (const [i, step] of steps.entries()) {
+				step.toggleAttribute("data-on", i === index);
+				step.toggleAttribute("data-passed", i < index);
+			}
+			for (const [i, pane] of panes.entries()) pane.toggleAttribute("data-on", i === index);
+			for (const [i, route] of routes.entries()) route.toggleAttribute("data-on", i === index);
+			for (const [i, clock] of clocks.entries()) clock.toggleAttribute("data-on", i === index);
+		};
+
+		const observer = new IntersectionObserver(
+			(entries) => {
+				for (const entry of entries) {
+					if (!entry.isIntersecting || !(entry.target instanceof HTMLElement)) continue;
+					const index = steps.indexOf(entry.target);
+					activate(index === -1 ? 0 : index);
+				}
+			},
+			{ rootMargin: "-45% 0px -45% 0px", threshold: 0 },
+		);
+		// Reduced motion never swaps the pane. The preference can change while the page is
+		// open: stop observing then, and go back to the first plate if a swap had happened.
+		const apply = () => {
+			if (!reduce.matches) {
+				for (const el of [...leads, ...steps]) observer.observe(el);
+				return;
+			}
+			observer.disconnect();
+			if (root.dataset.active !== undefined) activate(0);
+		};
+		reduce.addEventListener("change", apply);
+		apply();
+	}
+</script>

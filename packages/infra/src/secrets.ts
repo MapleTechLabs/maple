@@ -14,18 +14,23 @@ export class MaplePgUrl extends Secret<MaplePgUrl>()("MAPLE_PG_URL", {
 	consumers: ["managed-db"],
 }) {}
 
-export class IngestPgUrl extends Secret<IngestPgUrl>()("MAPLE_INGEST_PG_URL", {
-	issuer: "postgres",
-	consumers: ["ingest"],
-}) {}
-
 // Warehouse
 
 // A preview deploys on its branch's token (docs/pr-previews.md), never prod's. The parent workspace
 // token that creates branches is a GitHub environment secret, so no dev copy of prod's exists.
+// ingest gets only the append token its deploy reads with this one (`maple_ingest_append`).
 export class TinybirdToken extends Secret<TinybirdToken>()("TINYBIRD_TOKEN", {
 	issuer: "tinybird",
-	consumers: ["api", "ai", "alerting", "ingest"],
+	consumers: ["api", "ai", "alerting"],
+	derivedFor: ["ingest"],
+}) {}
+
+// Deletes a deleted organization's rows. The narrowest token that can delete rows is workspace-wide
+// (`DATASOURCES:CREATE`), so only the org-eraser Worker, which serves no requests, binds it.
+export class WarehouseDeleteToken extends Secret<WarehouseDeleteToken>()("TINYBIRD_DELETE_TOKEN", {
+	issuer: "tinybird",
+	consumers: ["org-eraser"],
+	environments: PRD_ONLY,
 }) {}
 
 export class TinybirdSigningKey extends Secret<TinybirdSigningKey>()("TINYBIRD_SIGNING_KEY", {
@@ -131,6 +136,7 @@ export class OtelIngestKey extends Secret<OtelIngestKey>()("MAPLE_OTEL_INGEST_KE
 		"audit-archive",
 		"ai",
 		"alerting",
+		"org-eraser",
 		"chat-bot",
 		"electric-sync",
 		"status",

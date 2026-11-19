@@ -243,6 +243,8 @@ const MODEL_LIMITS: Record<string, { readonly context: number; readonly output: 
 	"openai/gpt-6-luna": { context: 1_000_000, output: 128_000 },
 	// OpenRouter's catalogue (US and EU): context_length 1_050_000, max_completion_tokens 128_000.
 	"openai/gpt-6.1-sol": { context: 1_000_000, output: 128_000 },
+	// OpenRouter's catalogue (US and EU): context_length 1_050_000, max_completion_tokens 128_000.
+	"openai/gpt-6.2-sol": { context: 1_000_000, output: 128_000 },
 	// OpenRouter's catalogue (US and EU): context_length 1_000_000, max_completion_tokens 128_000.
 	"anthropic/claude-sonnet-5.5": { context: 950_000, output: 128_000 },
 	// OpenRouter's catalogue (US and EU): context_length 1_000_000, max_completion_tokens 128_000.

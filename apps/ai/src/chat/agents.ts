@@ -53,6 +53,7 @@ import {
 	PR_REPLY_SYSTEM_PROMPT,
 	PR_REVIEW_CLOSE_OUT_PROMPT,
 	PR_REVIEW_CONTINUE_PROMPT,
+	PR_REVIEW_RESUME_PROMPT,
 	PR_REVIEW_SYSTEM_PROMPT,
 	SYSTEM_PROMPT,
 } from "./prompts"
@@ -75,6 +76,8 @@ export interface AgentCompletion {
 	readonly billingSource: Extract<AiUsageSource, "triage" | "review">
 	/** A stuck pass starts over once, and one that answered in prose continues with this prompt. */
 	readonly continuePrompt?: string
+	/** A pass a passing provider outage stopped resumes once from its transcript with this prompt. */
+	readonly resumePrompt?: string
 }
 
 export interface AgentDefinition {
@@ -160,6 +163,7 @@ export const AGENTS: {
 			closedOutAttribute: "maple.pr_review.closed_out",
 			billingSource: "review",
 			continuePrompt: PR_REVIEW_CONTINUE_PROMPT,
+			resumePrompt: PR_REVIEW_RESUME_PROMPT,
 		},
 	},
 	"pr-reply": {

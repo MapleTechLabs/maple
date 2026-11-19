@@ -1,21 +1,8 @@
 ---
 /**
- * PageHero — the hero for feature and use-case pages.
- *
- * The old FeatureHero is still in the tree serving /pricing, /observability,
- * /opentelemetry, /roadmap, /best-… and /integrations/*, so this is an
- * addition rather than an edit. What changes on the pages that adopt it:
- * a 60px line grid becomes the system's own 16×16 dot grid (the /infra
- * texture); `max-w-6xl` becomes `.shell`, so the hero finally lines up with
- * the nav and footer above and below it; the `rounded-full` amber pill becomes
- * the 0.18em eyebrow every homepage section uses; `font-bold` becomes
- * `font-semibold`.
- *
- * Feature pages pair the copy with a decorative Roman engraving. Other pages
- * retain the dot-grid veil and their existing aside layout.
- *
- * The breadcrumb renders inside this component so it sits on the same axis as
- * everything else. It keeps its own BreadcrumbList JSON-LD.
+ * PageHero: the hero for the feature, compare and other marketing pages. Feature pages fill the
+ * `product` slot (the real product beside the copy from `lg`, under it on phones, in front of the
+ * engraving). Other pages use the narrower `aside` column over the dot-grid veil.
  */
 import { buttonVariants } from "@maple/views/ui/button.styles";
 import * as m from "../../paraglide/messages.js";
@@ -28,29 +15,26 @@ interface Props {
 	title: string;
 	lede: string;
 	illustration?: string;
+	/** What the illustration shows. With none, the image stays hidden from assistive tech. */
+	illustrationAlt?: string;
 	breadcrumb: { label: string; href?: string }[];
-	/**
-	 * Use-case pages only: the literal signal that opens the story, e.g.
-	 * "checkout p99 380 ms · threshold 200 ms". Never translated — it is
-	 * product data, and the pages below it show it verbatim.
-	 */
-	signal?: string;
-	/** Classes for the aside's cell: `hidden lg:block` keeps an aside, and its row gap, off phones. */
-	asideClass?: string;
 }
 
-const { eyebrow, title, lede, breadcrumb, signal, illustration, asideClass } = Astro.props;
+const { eyebrow, title, lede, breadcrumb, illustration, illustrationAlt } = Astro.props;
 
 // An optional right-hand column (the /compare logo pairing). Without it the
 // hero keeps its single-column measure; with it, the copy and the aside sit
 // on one row from lg up, centred on each other.
 const hasAside = Astro.slots.has("aside");
+// The wide column for real product. Top-aligned with the copy: a tall frame
+// must not push the headline down the screen.
+const hasProduct = Astro.slots.has("product");
 ---
 
 <section class:list={["relative overflow-hidden bg-bg", illustration && "page-hero--illustrated"]}>
 	{illustration ? (
-		<div class="page-hero__art" aria-hidden="true">
-			<img src={illustration} width="1536" height="1024" alt="" loading="eager" decoding="async" />
+		<div class:list={["page-hero__art", hasProduct && "page-hero__art--behind"]} aria-hidden={illustrationAlt ? undefined : "true"}>
+			<img src={illustration} width="1536" height="1024" alt={illustrationAlt ?? ""} loading="eager" decoding="async" />
 		</div>
 	) : <div class="dot-grid-veil" aria-hidden="true"></div>}
 
@@ -59,31 +43,29 @@ const hasAside = Astro.slots.has("aside");
 
 		<div
 			class:list={[
-				"shell pb-16 pt-8 md:pb-24 md:pt-10",
-				hasAside && "grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,30rem)] lg:items-center lg:gap-16",
+				"shell pt-8",
+				hasProduct ? "pb-12 md:pb-16 lg:pt-14" : "pb-16 md:pb-24 md:pt-10",
+				hasProduct && "grid gap-10 lg:grid-cols-[minmax(0,0.74fr)_minmax(0,1fr)] lg:items-start lg:gap-14",
+				!hasProduct &&
+					hasAside &&
+					"grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,30rem)] lg:items-center lg:gap-16",
 			]}
 		>
-		<div class:list={["min-w-0", illustration && "page-hero__copy"]}>
+		<div class:list={["min-w-0", illustration && !hasProduct && "page-hero__copy"]}>
 			{eyebrow && <p class="mb-5 text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{eyebrow}</p>}
 
 			<h1
-				class="max-w-[20ch] font-display text-[2.375rem] font-semibold leading-[1.03] tracking-[-0.025em] text-fg sm:text-5xl lg:text-6xl"
+				class:list={[
+					"max-w-[20ch] font-display text-[2.375rem] font-semibold leading-[1.03] tracking-[-0.025em] text-fg sm:text-5xl",
+					hasProduct ? "page-hero__title xl:text-[3.25rem]" : "lg:text-6xl",
+				]}
 			>
 				{title}
 			</h1>
 
 			<p class="mt-6 max-w-[62ch] text-sm leading-relaxed text-fg-muted md:text-base">{lede}</p>
 
-			{
-				signal && (
-					<p class="mt-7 inline-flex items-center gap-2.5 rounded-lg border border-border bg-bg-elevated px-3.5 py-2 font-mono text-[12.5px] text-fg">
-						<span class="op-key">signal</span>
-						{signal}
-					</p>
-				)
-			}
-
-			<div class="mt-10 flex flex-wrap items-center gap-3">
+			<div class:list={["flex flex-wrap items-center gap-3", hasProduct ? "mt-8" : "mt-10"]}>
 				<HeroCta class={buttonVariants({ size: "xl" })} />
 				<a
 					href="https://github.com/MapleTechLabs/maple"
@@ -95,7 +77,8 @@ const hasAside = Astro.slots.has("aside");
 				</a>
 			</div>
 		</div>
-		{hasAside && <div class:list={["min-w-0", asideClass]}><slot name="aside" /></div>}
+		{hasProduct && <div class="min-w-0"><slot name="product" /></div>}
+		{!hasProduct && hasAside && <div class="min-w-0"><slot name="aside" /></div>}
 		</div>
 	</div>
 </section>
@@ -118,6 +101,24 @@ const hasAside = Astro.slots.has("aside");
 		object-position: center;
 		opacity: 0.75;
 		mask-image: linear-gradient(to right, transparent, black 55%);
+	}
+
+	/* Behind a product frame the engraving is a backdrop: the frame covers its middle,
+	   so the top band stays at full strength for the monument's crown to show. */
+	.page-hero__art--behind {
+		/* Gone before the frame's caption, which sits in the last 10rem. */
+		mask-image: linear-gradient(to bottom, black calc(100% - 17rem), transparent calc(100% - 9.5rem));
+	}
+	/* Half the hero, anchored on the monument, which every engraving draws right of centre. */
+	.page-hero__art--behind img {
+		width: 50%;
+		object-position: right top;
+		mask-image: linear-gradient(to right, transparent, black 36%);
+	}
+
+	/* Product heroes only. Korean breaks between words, not inside one, and the narrower copy track made mid-word breaks common. */
+	.page-hero__title:lang(ko) {
+		word-break: keep-all;
 	}
 
 	@media (min-width: 1024px) {

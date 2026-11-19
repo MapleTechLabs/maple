@@ -9,7 +9,7 @@ import { OrganizationWrongRegionError, OrgId } from "@maple/domain/http"
 import type { MapleRegion } from "@maple/domain/organization-regions"
 import { Deferred, Effect, Exit, Fiber, Option, Ref, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
-import { ClerkRequestError } from "@maple/backend/services/auth/clerk-request"
+import { ClerkRequestError } from "@maple/auth"
 import {
 	type DirectoryOrganization,
 	makeOrganizationRegionService,
@@ -37,7 +37,6 @@ const makeDirectory = Effect.fnUntraced(function* (initial: Option.Option<Direct
 					onNone: () =>
 						Effect.fail(
 							new ClerkRequestError({
-								operation: "Clerk.organizations.getOrganization",
 								message: "Clerk is down",
 								status: 503,
 								cause: undefined,

@@ -73,8 +73,11 @@ export interface StatusPageProps {
 	/** Left unset, the page keeps its visibility (`public` when created). */
 	visibility?: "public" | "password" | "internal"
 	theme?: StatusPageThemeProps
-	/** Every component, in display order; components left out are deleted. */
-	components?: ReadonlyArray<StatusPageComponentProps>
+	/**
+	 * Every component, in display order; components left out are deleted. Required, as in the
+	 * config document, so a page is never emptied by a missing prop: pass `[]` for none.
+	 */
+	components: ReadonlyArray<StatusPageComponentProps>
 	/**
 	 * The password visitors enter for a `password` page, 8 to 256 characters. Write-only: it is
 	 * set when it changes and removed when this prop is removed. Alchemy state keeps it, even
@@ -191,7 +194,7 @@ const configBody = (props: StatusPageProps, current?: WireConfig) => {
 	const { password: _password, custom_domain: _domain, components, ...page } = props
 	return {
 		...page,
-		components: Arr.map(components ?? [], (component) => {
+		components: Arr.map(components, (component) => {
 			// The API stores names trimmed.
 			const name = Str.trim(component.name)
 			const index = Arr.findFirstIndex(unclaimed, (existing) => existing.name === name)
@@ -264,8 +267,9 @@ export const StatusPageProvider = () =>
 				const password = unwrap(news.password)
 				const setPassword = api.put(`${path}/password`, { password })
 				// Before the config only when the page is turning `password`: it cannot without one, and
-				// must not open under an old one. Otherwise last, so a failed deploy leaves the page as
-				// it was, matching the props Alchemy still holds.
+				// must not open under an old one. Otherwise after the config, so a failed config leaves the
+				// password as it was. These are separate writes: a failure partway leaves the earlier ones
+				// applied, and the next deploy completes the rest.
 				const changed =
 					password !== undefined && (!page.has_password || password !== unwrap(olds?.password))
 				const early = changed && news.visibility === "password" && page.visibility !== "password"

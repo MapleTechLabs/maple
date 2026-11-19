@@ -1,0 +1,97 @@
+---
+/**
+ * Proof: the one amber chapter between the hero and the close. A named person's line from the
+ * published customer story, that story's own figures, and the teams on the logo list. Everything
+ * here is read from content, so the page cannot quote or count something the story does not.
+ * The story is English only, so the quote and its figures are not translated.
+ * The quote is split into words so it can ink in with the scroll (home-ledger.css).
+ */
+import { getCollection } from "astro:content";
+import * as m from "../../paraglide/messages.js";
+import { LOGOS } from "../../lib/customer-logos";
+import { getSortedStories } from "../../lib/customers";
+
+const stories = await getSortedStories();
+const story = stories.find((s) => s.data.featured && s.data.quote) ?? stories.find((s) => s.data.quote);
+const quote = story?.data.quote;
+const storyHref = story ? `/customers/${story.id}` : undefined;
+
+const logos = (await getCollection("logos"))
+	.filter((entry) => LOGOS[entry.id])
+	.sort((a, b) => a.data.order - b.data.order);
+---
+
+{
+	story && quote && (
+		<section class="ledger-proof drenched-amber" aria-label={m.nav_customers()}>
+			<img
+				class="ledger-proof__art"
+				src="/art/maple-compare-panorama.webp"
+				width="2172"
+				height="724"
+				alt="Engraving of a long Roman aqueduct crossing open country"
+				loading="lazy"
+				decoding="async"
+			/>
+			<div class="shell">
+				<blockquote>
+					<p class="ledger-proof__quote" style={`--n: ${quote.text.split(" ").length}`}>
+						{quote.text.split(" ").map((word, i) => (
+							<>
+								<span style={`--i: ${i}`}>{word}</span>{" "}
+							</>
+						))}
+					</p>
+					<footer>
+						<strong>{quote.name}</strong>, {quote.role}
+					</footer>
+				</blockquote>
+
+				<dl class="ledger-proof__figures">
+					{story.data.highlights.map((highlight) => (
+						<div>
+							<dt>{highlight.label}</dt>
+							<dd>{highlight.value}</dd>
+						</div>
+					))}
+				</dl>
+
+				<div class="ledger-proof__foot">
+					<a
+						href={storyHref}
+						class="ink-link"
+						data-track="cta_click"
+						data-track-location="home_proof_story"
+						data-track-destination={storyHref}
+					>
+						{m.customers_story_cta()}
+						<span aria-hidden="true"> →</span>
+					</a>
+					<ul class="ledger-proof__logos">
+						<li class="ledger-proof__label">{m.customers_eyebrow()}</li>
+						{logos.map((logo) => {
+							const Logo = LOGOS[logo.id];
+							const inner = (
+								<>
+									<Logo class="h-5 w-auto" />
+									<span>{logo.data.name}</span>
+								</>
+							);
+							return (
+								<li>
+									{logo.data.href ? (
+										<a href={logo.data.href} target="_blank" rel="noopener noreferrer">
+											{inner}
+										</a>
+									) : (
+										inner
+									)}
+								</li>
+							);
+						})}
+					</ul>
+				</div>
+			</div>
+		</section>
+	)
+}

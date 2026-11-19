@@ -5,9 +5,11 @@
 // wraps these in an `AuthService` Context.Service bound to its `Env`; the
 // standalone `apps/electric-sync` worker feeds them its own small config. Auth
 // is the one genuinely cross-service concern, so it lives in this lean package
-// (effect + @maple/domain + @clerk/backend) rather than an app.
+// (effect + @maple/domain + Clerk) rather than an app. `@clerk/backend` only verifies
+// session tokens; every Backend API call goes through `@distilled.cloud/clerk`.
 import { createHmac, hkdfSync, timingSafeEqual } from "node:crypto"
 import { type ClerkClient, createClerkClient } from "@clerk/backend"
+import * as Clerk from "@distilled.cloud/clerk"
 import {
 	AuthMode,
 	AuthorizationUnavailableError,
@@ -37,6 +39,7 @@ import {
 	Record as Rec,
 	String as Str,
 } from "effect"
+import { type ClerkApi, clerkApiFor } from "./clerk-api"
 
 /**
  * A self-hosted session is bounded by TWO clocks, because the HMAC key IS the
@@ -496,8 +499,8 @@ export type ClerkEnv = Pick<AuthEnv, "CLERK_SECRET_KEY" | "CLERK_PUBLISHABLE_KEY
 
 const clerkClients = new WeakMap<ClerkEnv, ClerkClient>()
 
-/** The deployment's Clerk backend client, built once per env; `undefined` without a secret key. */
-export const clerkClientFor = (env: ClerkEnv): ClerkClient | undefined => {
+/** The session verifier, built once per env; `undefined` without a secret key. */
+const clerkVerifierFor = (env: ClerkEnv): ClerkClient | undefined => {
 	if (Option.isNone(env.CLERK_SECRET_KEY)) return undefined
 	const cached = clerkClients.get(env)
 	if (cached !== undefined) return cached
@@ -510,12 +513,13 @@ export const clerkClientFor = (env: ClerkEnv): ClerkClient | undefined => {
 	return client
 }
 
-/** {@link clerkClientFor}, only in Clerk auth mode. */
-export const clerkModeClient = (env: ClerkEnv & Pick<AuthEnv, "MAPLE_AUTH_MODE">): ClerkClient | undefined =>
-	getAuthMode(env.MAPLE_AUTH_MODE) === "clerk" ? clerkClientFor(env) : undefined
+/** {@link clerkApiFor}, only in Clerk auth mode. */
+export const clerkModeApi = (
+	env: Pick<AuthEnv, "CLERK_SECRET_KEY" | "MAPLE_AUTH_MODE">,
+): ClerkApi | undefined => (getAuthMode(env.MAPLE_AUTH_MODE) === "clerk" ? clerkApiFor(env) : undefined)
 
 const makeClerkAuthenticateRequest = (env: ClerkEnv): ClerkAuthenticateRequest | undefined => {
-	const clerkClient = clerkClientFor(env)
+	const clerkClient = clerkVerifierFor(env)
 	if (clerkClient === undefined) return undefined
 
 	return (request, options) =>
@@ -686,19 +690,22 @@ export type VerifyOrgMembership = (
  * lookup is not kept, and concurrent misses for one user share one lookup.
  */
 export const makeClerkMembershipDirectory = Effect.fnUntraced(function* (
-	env: ClerkEnv & Pick<AuthEnv, "MAPLE_AUTH_MODE">,
+	env: Pick<AuthEnv, "CLERK_SECRET_KEY" | "MAPLE_AUTH_MODE">,
 ) {
-	const clerk = clerkModeClient(env)
+	const clerk = clerkModeApi(env)
 	if (clerk === undefined) return undefined
 	const memberships = yield* Cache.makeWith(
 		Effect.fn("AuthService.clerkMembershipDirectory.load")(function* (userId: UserId) {
-			const page = yield* Effect.tryPromise({
-				try: () => clerk.users.getOrganizationMembershipList({ userId, limit: 100 }),
-				catch: (cause) =>
-					new AuthorizationUnavailableError({
-						message: `Could not verify organization membership: ${cause instanceof Error ? cause.message : String(cause)}`,
-					}),
-			})
+			const page = yield* clerk
+				.run(Clerk.usersGetOrganizationMemberships({ user_id: userId, limit: 100 }))
+				.pipe(
+					Effect.mapError(
+						(error) =>
+							new AuthorizationUnavailableError({
+								message: `Could not verify organization membership: ${error.message}`,
+							}),
+					),
+				)
 			return Arr.flatMap(page.data, (row): ReadonlyArray<VerifiedOrgMembership> => {
 				const orgId = decodeOrgIdOption(row.organization.id)
 				const role = decodeRoleNameOption(row.role)
@@ -709,7 +716,7 @@ export const makeClerkMembershipDirectory = Effect.fnUntraced(function* (
 						role: role.value,
 						customPermissions:
 							role.value === Policy.CUSTOM_ROLE_CLERK_KEY
-								? Policy.customPermissionsFromMembershipMetadata(row.publicMetadata)
+								? Policy.customPermissionsFromMembershipMetadata(row.public_metadata)
 								: [],
 					},
 				]
@@ -1077,67 +1084,40 @@ export const makeResolveMcpTenant = (
 	// acceptsToken, so this just brings Clerk mode to parity.
 	makeResolveTenant(env, { ...options, acceptsToken: ["api_key", "session_token"] })
 
-type ClerkUser = Awaited<ReturnType<ReturnType<typeof createClerkClient>["users"]["getUser"]>>
-
-class ClerkLookupError extends Schema.TaggedError<ClerkLookupError>()("@maple/auth/ClerkLookupError", {
-	operation: Schema.String,
-	cause: Schema.Defect(),
-}) {}
-
-const clerkLookup = <A>(
-	spanName: string,
-	attributes: Readonly<Record<string, string>>,
-	request: () => Promise<A>,
-): Effect.Effect<A, ClerkLookupError> =>
-	Effect.tryPromise({
-		try: request,
-		catch: (cause) => new ClerkLookupError({ operation: spanName, cause }),
-	}).pipe(
-		Effect.withSpan(spanName, {
-			kind: "client",
-			attributes: { "peer.service": "clerk", ...attributes },
-		}),
-	)
+type ClerkUser = Clerk.User
 
 const extractPrimaryEmail = (u: ClerkUser): string | null => {
-	const primary = Arr.findFirst(u.emailAddresses ?? [], (e) => e.id === u.primaryEmailAddressId)
+	const primary = Arr.findFirst(u.email_addresses, (e) => e.id === u.primary_email_address_id)
 	return Option.getOrElse(
-		Option.flatMapNullishOr(primary, (e) => e.emailAddress),
-		() => u.emailAddresses?.[0]?.emailAddress ?? null,
+		Option.map(primary, (e) => e.email_address),
+		() => u.email_addresses[0]?.email_address ?? null,
 	)
 }
 
 /** The primary address only once Clerk has verified it; never a fallback to another address. */
 export const extractVerifiedPrimaryEmail = (u: {
-	readonly primaryEmailAddressId: string | null
-	readonly emailAddresses: ReadonlyArray<{
-		readonly id: string
-		readonly emailAddress: string
+	readonly primary_email_address_id: string | null
+	readonly email_addresses: ReadonlyArray<{
+		readonly id?: string | undefined
+		readonly email_address: string
 		readonly verification: { readonly status: string } | null
 	}>
 }): string | null => {
 	return Option.match(
-		Arr.findFirst(u.emailAddresses, (e) => e.id === u.primaryEmailAddressId),
+		Arr.findFirst(u.email_addresses, (e) => e.id === u.primary_email_address_id),
 		{
 			onNone: () => null,
-			onSome: (primary) => (primary.verification?.status === "verified" ? primary.emailAddress : null),
+			onSome: (primary) => (primary.verification?.status === "verified" ? primary.email_address : null),
 		},
 	)
 }
 
-const makeClerkClient = (env: ClerkEnv & Pick<AuthEnv, "MAPLE_AUTH_MODE">) => clerkModeClient(env) ?? null
-
 /** One Clerk user lookup per call; null outside Clerk mode or on a failed lookup. */
 const makeUserEmailLookup =
 	(spanName: string, extract: (user: ClerkUser) => string | null) =>
-	(
-		env: Pick<
-			AuthEnv,
-			"MAPLE_AUTH_MODE" | "CLERK_SECRET_KEY" | "CLERK_PUBLISHABLE_KEY" | "CLERK_JWT_KEY"
-		>,
-	) => {
-		const clerkClient = makeClerkClient(env)
-		if (!clerkClient) {
+	(env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "CLERK_SECRET_KEY">) => {
+		const api = clerkModeApi(env)
+		if (api === undefined) {
 			return Effect.fn(spanName)(function* (_userId: string) {
 				return null as string | null
 			})
@@ -1145,9 +1125,7 @@ const makeUserEmailLookup =
 
 		return Effect.fn(spanName)(function* (userId: string) {
 			yield* Effect.annotateCurrentSpan("tenant.userId", userId)
-			const user = yield* clerkLookup("Clerk.users.getUser", { "tenant.userId": userId }, () =>
-				clerkClient.users.getUser(userId),
-			).pipe(Effect.option)
+			const user = yield* api.run(Clerk.getUser({ user_id: userId })).pipe(Effect.option)
 
 			return Option.match(user, {
 				onNone: () => null as string | null,
@@ -1163,11 +1141,9 @@ export const makeGetVerifiedPrimaryEmail = makeUserEmailLookup(
 	extractVerifiedPrimaryEmail,
 )
 
-export const makeGetCustomerData = (
-	env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "CLERK_SECRET_KEY" | "CLERK_PUBLISHABLE_KEY" | "CLERK_JWT_KEY">,
-) => {
-	const clerkClient = makeClerkClient(env)
-	if (!clerkClient) {
+export const makeGetCustomerData = (env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "CLERK_SECRET_KEY">) => {
+	const api = clerkModeApi(env)
+	if (api === undefined) {
 		return Effect.fn("AuthService.getCustomerData")(function* (_tenant: TenantContext) {
 			return { email: null as string | null, orgName: null as string | null }
 		})
@@ -1177,14 +1153,8 @@ export const makeGetCustomerData = (
 		yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "tenant.userId": tenant.userId })
 		const [user, org] = yield* Effect.all(
 			[
-				clerkLookup(
-					"Clerk.users.getUser",
-					{ orgId: tenant.orgId, "tenant.userId": tenant.userId },
-					() => clerkClient.users.getUser(tenant.userId),
-				).pipe(Effect.option),
-				clerkLookup("Clerk.organizations.getOrganization", { orgId: tenant.orgId }, () =>
-					clerkClient.organizations.getOrganization({ organizationId: tenant.orgId }),
-				).pipe(Effect.option),
+				api.run(Clerk.getUser({ user_id: tenant.userId })).pipe(Effect.option),
+				api.run(Clerk.getOrganization({ organization_id: tenant.orgId })).pipe(Effect.option),
 			],
 			{ concurrency: "unbounded" },
 		)
@@ -1193,8 +1163,17 @@ export const makeGetCustomerData = (
 			email: Option.match(user, { onNone: () => null as string | null, onSome: extractPrimaryEmail }),
 			orgName: Option.match(org, {
 				onNone: () => null as string | null,
-				onSome: (o) => o.name ?? null,
+				onSome: (o) => o.name,
 			}),
 		}
 	})
 }
+
+export {
+	type ClerkApi,
+	type ClerkApiServices,
+	CLERK_REQUEST_TIMEOUT,
+	clerkApiFor,
+	ClerkRequestError,
+	makeClerkApi,
+} from "./clerk-api"

@@ -9,15 +9,20 @@ import { defineLabWithFlags } from "../define"
 // `/lab/code-review-rules`: the organization's default review rules as two roles see them.
 // `?as=engineer` may edit the rules but not turn automatic approval on; `?as=admin` may do both.
 // `&approval=on` starts with approval saved on, which an engineer may turn off.
+// `&repo=private` or `&repo=public` shows one repository's rules over these defaults instead; a
+// public repository's Maple tools stay off.
 // TODO(lab-save): Save changes nothing; the fixture rules exist nowhere to write to.
 
 const Viewer = Schema.Literals(["admin", "engineer"])
 type Viewer = typeof Viewer.Type
 
-const Flags = Schema.Struct({ viewer: Viewer, approvalOn: Schema.Boolean })
+const Repo = Schema.Literals(["private", "public"])
+type Repo = typeof Repo.Type
+
+const Flags = Schema.Struct({ viewer: Viewer, approvalOn: Schema.Boolean, repo: Schema.NullOr(Repo) })
 type Flags = typeof Flags.Type
 
-const Model = Schema.Struct({ viewer: Viewer, form: RulesForm.Model })
+const Model = Schema.Struct({ viewer: Viewer, repo: Schema.NullOr(Repo), form: RulesForm.Model })
 type Model = typeof Model.Type
 
 const Message = defineMessageUnion({ GotFormMessage: { message: RulesForm.Message } })
@@ -38,7 +43,11 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 				slotId: "lab-code-review-rules",
 				model: model.form,
 				view: rulesFormView,
-				viewInputs: { canEdit: true, canAutoApprove: model.viewer === "admin" },
+				viewInputs: {
+					canEdit: true,
+					canAutoApprove: model.viewer === "admin",
+					isPublic: model.repo === "public",
+				},
 				toParentMessage: (message: RulesForm.Message) => Message.GotFormMessage({ message }),
 			}),
 		],
@@ -53,11 +62,23 @@ export const lab = defineLabWithFlags("Code review rules", {
 			(): Viewer => "engineer",
 		),
 		approvalOn: new URLSearchParams(window.location.search).get("approval") === "on",
+		repo: Option.getOrNull(
+			Schema.decodeUnknownOption(Repo)(new URLSearchParams(window.location.search).get("repo")),
+		),
 	})),
 	init: (flags: Flags) => ({
 		model: {
 			viewer: flags.viewer,
-			form: RulesForm.init("lab-rules", "organization", rules(flags.approvalOn), null),
+			repo: flags.repo,
+			form:
+				flags.repo === null
+					? RulesForm.init("lab-rules", "organization", rules(flags.approvalOn), null)
+					: RulesForm.init(
+							"lab-rules",
+							"repository",
+							new PrReviewRepositoryConfig({}),
+							rules(flags.approvalOn),
+						),
 		},
 	}),
 	update: (model, message) =>

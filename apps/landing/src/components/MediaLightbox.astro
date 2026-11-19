@@ -30,10 +30,10 @@ import { Lightbox } from "./lightbox/Lightbox";
 
 		/* A cropped plate draws its image larger than its frame, so the frame
 		   is the box the viewer opens from. */
-		html:not(:has([data-lightbox-content])) .media-crop:has(> [data-lightbox-origin]) {
+		html:not(:has([data-lightbox-content])) :is(.media-crop, .shot-crop):has(> [data-lightbox-origin]) {
 			view-transition-name: lightbox-media;
 		}
-		html:not(:has([data-lightbox-content])) .media-crop > [data-lightbox-origin] {
+		html:not(:has([data-lightbox-content])) :is(.media-crop, .shot-crop) > [data-lightbox-origin] {
 			view-transition-name: none;
 		}
 	}

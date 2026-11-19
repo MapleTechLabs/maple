@@ -14,7 +14,13 @@ highlights:
       label: "fewer errors"
     - value: "$1000s"
       label: "saved on compute every month"
+quote:
+    text: "I have no idea how [we] lived without Maple for so long."
+    name: "Brian Anglin"
+    role: "CTO, Superwall"
 ---
+
+import ProductFrame from "../../components/marketing/ProductFrame.astro"
 
 A quick disclosure first: I'm not a neutral party here. I work at Superwall, and I started Maple because the observability tools we used at Superwall kept letting me down and slowing us down. So read this as an engineer's account rather than a testimonial: I got fed up with my tools, built a new one, and then had to prove it on the system that made me build it.
 
@@ -53,6 +59,8 @@ Most observability tools are built for a person clicking through a UI. That's fi
 
 Maple ships an MCP server, so an agent can query production directly: find the slowest traces for an endpoint, open a specific trace, look up an error issue and the requests behind it, compare this week against last week. The answers come back in a form the model can reason about, not a picture of a chart.
 
+<ProductFrame surface="agent" size="wide" class="my-8" caption="An example agent session over Maple's MCP server: the tool calls and what came back." />
+
 Here is the loop we use most:
 
 1. An engineer asks their agent why config fetches got slower since yesterday.
@@ -76,11 +84,15 @@ It reached well beyond engineering, too. Our support team uses the same setup to
 
 **P99 from tens of seconds to under a second.** Maple didn't make our code faster; our engineers did. What changed was that they could finally see where the time went. Once the full traces were in front of us, the problems were obvious: request waterfalls where each call waited on the one before it, work that ran one step at a time when it could have run in parallel, and fetches that pulled far more data, far more often, than they needed to. None of it was exotic. We just hadn't been able to look. We cut the waterfalls, parallelized the work, and made fetching more efficient. P99 latency across our services went from an average in the tens of seconds to under a second across the board, and p95 dropped by more than 80%.
 
+<ProductFrame surface="trace" size="wide" class="my-8" caption="An example trace on Maple's waterfall view: every span, its service and how long it took." />
+
 Here is a typical one. In August, a change to our entitlements endpoint, which apps call to check what a user has paid for, pushed its p95 from about 80ms to about 145ms. The trace in Maple showed exactly where the time went: most of the new cost was a single lookup that missed its cache for the long tail of apps, and the rest ran after the database read instead of alongside it. We cached the lookup and started that work before the read, so the two overlap instead of adding up. The fix was written with a coding agent, starting from Maple's breakdown of the slow spans.
 
 **Thousands of dollars a month off our compute bill.** Faster code turned out to be cheaper code. The same traces that showed us where requests spent their time also showed us where our servers did: redundant work, oversized batches, and services doing far more than the request needed. Tightening those up let us run the same traffic on less compute.
 
 **Error count down more than 90%.** Maple groups errors into issues with a fingerprint, a first-seen and last-seen time, and the traces behind them. That turned a wall of alerts into a short, ranked list. Most of our "errors" turned out to be a handful of root causes repeated millions of times. Fixing the handful made most of the noise disappear, and the alerts that are left are ones people actually respond to.
+
+<ProductFrame surface="issue" size="wide" class="my-8" caption="An error issue in Maple, on example data: the fingerprint, first seen, last seen and its occurrences." />
 
 **Our instrumentation gets better every week.** Maple kept showing us where our own telemetry was wrong. One of our internal data services never opened a span for the request itself, so a request that ran five database statements showed up as five unrelated traces, with no endpoint, no status, and no total duration. We wrapped every internal request in a server span, and those five fragments became one trace you can read top to bottom. In another service, expected and harmless skips were being recorded as errored spans, which made its span error rate look about 14 times worse than it really was. Once we fixed that, the errors on that service pointed at real failures again.
 

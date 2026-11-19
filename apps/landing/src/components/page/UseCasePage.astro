@@ -8,10 +8,12 @@
  * doesn't, the constant is a different kind of object (an SLO, an order, a
  * release rather than a trace id), and the story ends in a number.
  *
+ * The hero and the story are one section: the pinned pane starts beside the
+ * headline, so the first screen of the path is in the first viewport.
+ *
  * The spine, and its tonal cadence:
  *
- *   00  PageHero            bg-bg       dot-grid veil       (page top)
- *   01  ScrollStory         bg-bg       border-t            tone flat → hairline
+ *   00  UseCaseStory        bg-bg       dot-grid veil       hero + pinned walkthrough
  *   02  OutcomeBand         bg-bg-deep  no border           the full stop
  *   03  CapabilityLedger    bg-bg       border-t            why the path was short
  *   04  CrossLinks          bg-bg-deep  no border
@@ -23,7 +25,7 @@
  */
 import * as m from "../../paraglide/messages.js";
 import { featureBySlug } from "../../lib/features";
-import { featurePath, storyIsPinnable, useCasePath } from "../../lib/page-registry";
+import { featurePath, useCasePath } from "../../lib/page-registry";
 import { useCaseBySlug } from "../../lib/use-cases";
 import Layout from "../../layouts/Layout.astro";
 import Footer from "../Footer.astro";
@@ -33,8 +35,7 @@ import CapabilityLedger from "./CapabilityLedger.astro";
 import CrossLinks from "./CrossLinks.astro";
 import OutcomeBand from "./OutcomeBand.astro";
 import PageCta from "./PageCta.astro";
-import PageHero from "./PageHero.astro";
-import ScrollStory from "./ScrollStory.astro";
+import UseCaseStory from "./UseCaseStory.astro";
 
 interface Props {
 	slug: string;
@@ -57,6 +58,7 @@ const steps = useCase.steps.map((step) => ({
 	body: step.body(),
 	shot: step.plate.alt,
 	src: step.plate.src,
+	crop: step.plate.crop,
 }));
 
 const crossLinks = [
@@ -81,7 +83,7 @@ const crossLinks = [
 	<SeoHead title={title} description={description} />
 	<Nav />
 
-	<PageHero
+	<UseCaseStory
 		eyebrow={m.breadcrumb_use_cases()}
 		title={useCase.heroTitle()}
 		lede={useCase.heroLede()}
@@ -91,18 +93,13 @@ const crossLinks = [
 			{ label: m.breadcrumb_use_cases() },
 			{ label: useCase.navLabel() },
 		]}
-	/>
-
-	<ScrollStory
-		class="border-t border-border"
 		constant={useCase.constant}
 		constantLabel={useCase.constantLabel}
 		steps={steps}
 		aspect={useCase.storyAspect}
-		inlineOnly={!storyIsPinnable(useCase.steps)}
-		eyebrow={m.page_story_eyebrow()}
-		title={useCase.storyTitle()}
-		lede={useCase.storyLede()}
+		storyEyebrow={m.page_story_eyebrow()}
+		storyTitle={useCase.storyTitle()}
+		storyLede={useCase.storyLede()}
 	/>
 
 	<OutcomeBand

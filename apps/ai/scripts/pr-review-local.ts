@@ -1015,6 +1015,7 @@ export const reviewLocally = async (
 		rules: readRules(clone.dir, pr.base.sha),
 		// A local run posts nothing, so it reads what a private repository's review reads.
 		isPrivate: true,
+		mapleTools: true,
 	})
 	const { executor, cleanup: removeWorktrees } = makeExecutor({
 		repository,

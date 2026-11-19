@@ -470,6 +470,42 @@ describe("VendorHttp", () => {
 		}).pipe(Effect.withTracer(tracer))
 	})
 
+	it.effect("vendorSdkRequestSpan keeps the SDK's own spans out and a refusal off its Client span", () => {
+		const spans: Array<Tracer.NativeSpan> = []
+		const tracer = Tracer.make({
+			span(options) {
+				const span = new Tracer.NativeSpan(options)
+				spans.push(span)
+				return span
+			},
+		})
+		// Stands in for an SDK operation, which opens its own span and fails it on a refusal.
+		const call = (error: AcmeError) =>
+			Effect.fail(error).pipe(
+				Effect.withSpan("Sdk.GetThing"),
+				VendorHttp.vendorSdkRequestSpan("Acme.request", "acme", (failure: AcmeError) =>
+					failure.kind === "forbidden" ? failure.kind : undefined,
+				),
+			)
+		return Effect.gen(function* () {
+			yield* Effect.flip(call(new AcmeError({ message: "vendor words", kind: "forbidden" })))
+			yield* Effect.flip(call(new AcmeError({ message: "bad", kind: "invalid_response" })))
+			assert.deepStrictEqual(
+				Arr.map(spans, (span) => [
+					span.name,
+					span.kind,
+					span.attributes.get("peer.service"),
+					span.attributes.get("error.type"),
+					span.status._tag === "Ended" ? span.status.exit._tag : "Open",
+				]),
+				[
+					["Acme.request", "client", "acme", "forbidden", "Success"],
+					["Acme.request", "client", "acme", undefined, "Failure"],
+				],
+			)
+		}).pipe(Effect.withTracer(tracer))
+	})
+
 	it.effect("records one Client span per attempt with the path, never the query or token", () => {
 		const spans: Array<Tracer.NativeSpan> = []
 		const tracer = Tracer.make({

@@ -28,6 +28,12 @@ export const RULES_COPY = {
 		description:
 			"Reviews pull requests from people without push access, forks included, on public repositories. The agent reads your telemetry and its review is public. One automatic review per pull request, three per author a day.",
 	},
+	mapleTools: {
+		label: "Maple tools",
+		description:
+			"Lets the reviewer and its replies query this organization's traces, logs, metrics and errors. Off, a review reads only the diff and the code. Always off on public repositories, where reviews are public.",
+		publicLock: "Public repositories never get Maple tools: their reviews are world-readable.",
+	},
 	blockBreaks: {
 		label: "Fail the check on broken telemetry",
 		description:

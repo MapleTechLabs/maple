@@ -1,12 +1,13 @@
 ---
 import Layout from "../layouts/Layout.astro";
 import Nav from "../components/Nav.astro";
-import FeatureHero from "../components/FeatureHero.astro";
+import PageHero from "../components/page/PageHero.astro";
+import ProductBand from "../components/marketing/ProductBand.astro";
+import ProductFrame from "../components/marketing/ProductFrame.astro";
 import FAQ from "../components/FAQ.astro";
 import BottomCTA from "../components/BottomCTA.astro";
 import Footer from "../components/Footer.astro";
 import SeoHead from "../components/SeoHead.astro";
-import Breadcrumb from "../components/Breadcrumb.astro";
 import {
     bestObservabilityTools,
     listicleFaqs,
@@ -17,6 +18,11 @@ import {
 const pageTitle = "Best Open-Source Observability Tools in 2026";
 const pageDescription =
     "Seven observability tools you can self-host, compared by the Maple team: Maple, Grafana LGTM, SigNoz, HyperDX, OpenObserve, Uptrace and Jaeger. Licenses, pros and cons.";
+
+// The entries sit two to a row from lg, which halves the longest run of text on the page. Maple's
+// carries product frames and takes a full row; so does the last entry when it would sit alone.
+const others = bestObservabilityTools.filter((tool) => tool.slug !== "maple");
+const fullRow = new Set(["maple", ...(others.length % 2 === 1 ? others.slice(-1).map((tool) => tool.slug) : [])]);
 
 const siteUrl = Astro.site?.toString().replace(/\/$/, "") ?? "https://maple.dev";
 const pageUrl = `${siteUrl}/best-open-source-observability-tools`;
@@ -45,17 +51,18 @@ const itemListJsonLd = {
     <script type="application/ld+json" set:html={JSON.stringify(itemListJsonLd)} />
 
     <Nav />
-    <Breadcrumb items={[{ label: "Home", href: "/" }, { label: "Best open-source observability tools" }]} />
-
-    <FeatureHero
-        label="Guide"
+    <PageHero
+        eyebrow="Guide"
         title="Best open-source observability tools in 2026"
-        subtitle="OpenTelemetry-native traces, logs, and metrics you can self-host, ranked, with pros, cons, licenses, and what each tool is best for."
-    />
+        lede="OpenTelemetry-native traces, logs, and metrics you can self-host, ranked, with pros, cons, licenses, and what each tool is best for."
+        breadcrumb={[{ label: "Home", href: "/" }, { label: "Best open-source observability tools" }]}
+    >
+        <ProductFrame slot="aside" surface="trace" caption="Maple, the first entry below: a trace on its waterfall view." />
+    </PageHero>
 
     <!-- Intro + methodology + last updated -->
     <section class="py-12 md:py-16">
-        <div class="mx-auto max-w-6xl px-6">
+        <div class="shell">
             <p class="max-w-3xl text-sm md:text-base text-fg-muted leading-relaxed">{methodology}</p>
             <p class="mt-6 text-[11px] text-fg-muted uppercase tracking-wider">Last updated: {lastUpdated}</p>
         </div>
@@ -63,7 +70,7 @@ const itemListJsonLd = {
 
     <!-- Quick picks summary -->
     <section class="pb-8">
-        <div class="mx-auto max-w-6xl px-6">
+        <div class="shell">
             <div class="border border-border">
                 <div class="border-b border-border px-5 py-3 text-[11px] uppercase tracking-wider text-primary">
                     At a glance
@@ -87,10 +94,10 @@ const itemListJsonLd = {
 
     <!-- Ranked entries -->
     <section class="pb-16 md:pb-24">
-        <div class="mx-auto max-w-6xl px-6">
-            <div class="grid grid-cols-1 gap-px bg-border border border-border">
+        <div class="shell">
+            <div class="grid grid-cols-1 gap-px bg-border border border-border lg:grid-cols-2">
                 {bestObservabilityTools.map((tool) => (
-                    <article id={tool.slug} class="bg-bg p-6 md:p-8 scroll-mt-24">
+                    <article id={tool.slug} class:list={["bg-bg p-6 md:p-8 scroll-mt-24", fullRow.has(tool.slug) && "lg:col-span-2"]}>
                         <div class="flex items-start justify-between gap-4">
                             <div>
                                 <div class="flex items-center gap-3">
@@ -129,6 +136,13 @@ const itemListJsonLd = {
                             </div>
                         </div>
 
+                        {tool.slug === "maple" && (
+                            <div class="mt-8 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                                <ProductFrame surface="logs" height="min(31rem, 100vw)" caption="The log stream in Maple." />
+                                <ProductFrame surface="agent" caption="An agent session over Maple's MCP server." />
+                            </div>
+                        )}
+
                         <div class="mt-6 flex flex-wrap items-center gap-4 text-xs">
                             <a
                                 href={tool.url}
@@ -150,9 +164,18 @@ const itemListJsonLd = {
         </div>
     </section>
 
+    <ProductBand
+        class="border-t border-border"
+        eyebrow="Maple"
+        title="A service map drawn from the spans"
+        lede="Every service, queue and database, with throughput, error rate and latency on each edge. There is no topology file to maintain."
+        surface="service-map"
+        link={{ href: "/features/service-catalog", label: "See the service catalog" }}
+    />
+
     <!-- How to choose / cross-links -->
-    <section class="pb-16 md:pb-24">
-        <div class="mx-auto max-w-6xl px-6">
+    <section class="py-16 md:py-24">
+        <div class="shell">
             <div class="border border-border p-6 md:p-8 max-w-3xl">
                 <h2 class="text-xl md:text-2xl font-bold text-fg">How to choose</h2>
                 <p class="mt-3 text-sm md:text-base text-fg-muted leading-relaxed">
@@ -166,7 +189,7 @@ const itemListJsonLd = {
         </div>
     </section>
 
-    <FAQ items={listicleFaqs} />
+    <FAQ items={listicleFaqs} shell />
     <BottomCTA />
     <Footer />
 </Layout>

@@ -1,3 +1,4 @@
+import * as Clerk from "@distilled.cloud/clerk"
 /**
  * Which regional instance serves an organization.
  *
@@ -20,8 +21,8 @@ import {
 } from "@maple/domain/organization-regions"
 import { Clock, Context, Effect, Fiber, HashMap, Layer, Option, Ref, Schema } from "effect"
 import { Env } from "@maple/backend/platform/Env"
-import { type ClerkRequestError, clerkRequest } from "@maple/backend/services/auth/clerk-request"
-import { clerkModeClient } from "@maple/auth"
+import type { ClerkRequestError } from "@maple/auth"
+import { clerkModeApi } from "@maple/auth"
 
 /**
  * A region that can no longer change: chosen, or past the choice window (`REGION_CHOICE_WINDOW_MS`,
@@ -432,17 +433,20 @@ export class OrganizationRegionService extends Context.Service<
 >()("@maple/backend/services/org/OrganizationRegionService", {
 	make: Effect.gen(function* () {
 		const env = yield* Env
-		const clerk = Option.fromUndefinedOr(clerkModeClient(env))
+		const clerk = Option.fromUndefinedOr(clerkModeApi(env))
 		return yield* makeOrganizationRegionService(
 			env.MAPLE_REGION,
 			Option.map(
 				clerk,
-				(client): ReadDirectoryOrganization =>
+				(api): ReadDirectoryOrganization =>
 					(orgId) =>
-						clerkRequest("Clerk.organizations.getOrganization", { orgId }, () =>
-							client.organizations.getOrganization({ organizationId: orgId }),
-						).pipe(
-							Effect.asSome,
+						api.run(Clerk.getOrganization({ organization_id: orgId })).pipe(
+							Effect.map((org) =>
+								Option.some({
+									publicMetadata: org.public_metadata,
+									createdAt: org.created_at,
+								}),
+							),
 							Effect.catchIf(
 								(error) => error.status === 404,
 								() => Effect.succeedNone,

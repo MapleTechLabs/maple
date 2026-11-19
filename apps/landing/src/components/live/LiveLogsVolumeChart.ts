@@ -170,7 +170,7 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 					h.span([], ["logs · volume · last 5h"]),
 					h.span(
 						[h.Class("live-frame__live")],
-						[h.span([h.Class("live-frame__live-dot")], []), "LIVE"],
+						[h.span([h.Class("live-frame__live-dot")], []), "DEMO"],
 					),
 				],
 			),

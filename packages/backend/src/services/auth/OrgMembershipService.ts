@@ -1,11 +1,11 @@
+import * as Clerk from "@distilled.cloud/clerk"
 import { EdgeCacheService } from "@maple/cache"
 import { membershipGrants, type VerifiedOrgMembership } from "@maple/auth"
 import { AuthorizationUnavailableError, OrgId, RoleName, UserId } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema, Stream, String as Str } from "effect"
 import { Env } from "@maple/backend/platform/Env"
-import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
-import { clerkModeClient } from "@maple/auth"
+import { clerkModeApi } from "@maple/auth"
 
 export interface OrgMembershipServiceApi {
 	/**
@@ -123,7 +123,7 @@ const unavailable = (cause: unknown) =>
 export interface ClerkMembershipRow {
 	readonly organization: { readonly id: string }
 	readonly role: string
-	readonly publicMetadata?: unknown
+	readonly public_metadata?: unknown
 }
 
 /** Decodes one membership row; `None` for anything Maple cannot model. */
@@ -134,10 +134,13 @@ const decodeMembershipRow = (row: ClerkMembershipRow): Option.Option<CachedMembe
 			membership.role === Policy.CUSTOM_ROLE_CLERK_KEY
 				? {
 						...membership,
-						permissionCodes: Option.match(Policy.membershipRoleFromMetadata(row.publicMetadata), {
-							onNone: () => [],
-							onSome: (role) => role.permissions,
-						}),
+						permissionCodes: Option.match(
+							Policy.membershipRoleFromMetadata(row.public_metadata),
+							{
+								onNone: () => [],
+								onSome: (role) => role.permissions,
+							},
+						),
 					}
 				: membership,
 	)
@@ -192,21 +195,20 @@ const make = Effect.gen(function* () {
 	const env = yield* Env
 	const edgeCache = yield* EdgeCacheService
 
-	const clerk = clerkModeClient(env) ?? null
+	const clerk = clerkModeApi(env) ?? null
 
 	const listFromClerk = (userId: UserId) =>
 		collectMemberships((offset) => {
 			if (clerk === null) return Effect.fail(unavailable("Clerk is not configured"))
-			return clerkRequest(
-				"Clerk.users.getOrganizationMembershipList",
-				{ "tenant.userId": userId },
-				() =>
-					clerk.users.getOrganizationMembershipList({
-						userId,
+			return clerk
+				.run(
+					Clerk.usersGetOrganizationMemberships({
+						user_id: userId,
 						limit: MEMBERSHIP_PAGE_SIZE,
 						offset,
 					}),
-			).pipe(Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: unavailable }))
+				)
+				.pipe(Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: unavailable }))
 		})
 
 	const readShared = (userId: UserId) =>
@@ -245,16 +247,9 @@ const make = Effect.gen(function* () {
 	 */
 	const verifyPair = Effect.fn("OrgMembershipService.verifyPair")(function* (userId: UserId, orgId: OrgId) {
 		if (clerk === null) return yield* unavailable("Clerk is not configured")
-		const response = yield* clerkRequest(
-			"Clerk.organizations.getOrganizationMembershipList",
-			{ "tenant.userId": userId, orgId },
-			() =>
-				clerk.organizations.getOrganizationMembershipList({
-					organizationId: orgId,
-					userId: [userId],
-					limit: 1,
-				}),
-		).pipe(Effect.mapError(unavailable))
+		const response = yield* clerk
+			.run(Clerk.listOrganizationMemberships({ organization_id: orgId, user_id: [userId], limit: 1 }))
+			.pipe(Effect.mapError(unavailable))
 
 		const membership = response.data[0]
 		if (membership === undefined) return Option.none<VerifiedOrgMembership>()
@@ -274,28 +269,30 @@ const make = Effect.gen(function* () {
 		yield* Effect.annotateCurrentSpan({ orgId })
 		if (clerk === null) return yield* unavailable("Clerk is not configured")
 		const rows = yield* Stream.paginate(0, (offset: number) =>
-			clerkRequest("Clerk.organizations.getOrganizationMembershipList", { orgId }, () =>
-				clerk.organizations.getOrganizationMembershipList({
-					organizationId: orgId,
-					limit: MEMBERSHIP_PAGE_SIZE,
-					offset,
-				}),
-			).pipe(
-				Effect.mapBoth({
-					onFailure: unavailable,
-					onSuccess: (page) => {
-						const next = offset + page.data.length
-						const done = next >= page.totalCount || page.data.length === 0
-						return [page.data, done ? Option.none<number>() : Option.some(next)] as const
-					},
-				}),
-			),
+			clerk
+				.run(
+					Clerk.listOrganizationMemberships({
+						organization_id: orgId,
+						limit: MEMBERSHIP_PAGE_SIZE,
+						offset,
+					}),
+				)
+				.pipe(
+					Effect.mapBoth({
+						onFailure: unavailable,
+						onSuccess: (page) => {
+							const next = offset + page.data.length
+							const done = next >= page.total_count || page.data.length === 0
+							return [page.data, done ? Option.none<number>() : Option.some(next)] as const
+						},
+					}),
+				),
 		).pipe(Stream.runCollect)
 		return new Map(
 			Arr.getSomes(
 				Arr.map(rows, (row) =>
 					Option.all([
-						decodeUserIdOption(row.publicUserData?.userId),
+						decodeUserIdOption(row.public_user_data?.user_id),
 						Option.map(decodeMembershipRow(row), (membership) =>
 							membershipGrants(toVerified(membership)),
 						),
@@ -305,7 +302,7 @@ const make = Effect.gen(function* () {
 		)
 	})
 
-	// The auth mode decides it, as `clerkModeClient` does: Clerk mode missing its keys is a broken
+	// The auth mode decides it, as `clerkModeApi` does: Clerk mode missing its keys is a broken
 	// directory, not an absent one.
 	const directory = Str.toLowerCase(env.MAPLE_AUTH_MODE) === "clerk" ? "clerk" : "none"
 	return { directory, verify, orgGrants } satisfies OrgMembershipServiceApi

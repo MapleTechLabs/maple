@@ -5,6 +5,9 @@ import { describe, expect, test } from "vitest"
 import { healthSegments, orderFindings, resolvedChecks, setupHealthAction } from "./derive"
 import { Message } from "./model"
 import { init, update } from "./update"
+import { view } from "./view"
+import type { HtmlBuilder } from "foldkit/html"
+import { click, expect as expectView, given, role, scene, text } from "foldkit/scene"
 import { Array as Arr, Result, Schema } from "effect"
 
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
@@ -21,6 +24,69 @@ const report = Schema.decodeSync(V2SetupAudit)({
 })
 
 describe("setup health", () => {
+	test("opening passing checks shows unavailable capability detail, entities and the capped remainder, but no skip detail", () => {
+		const audit = Schema.decodeSync(V2SetupAudit)({
+			...report,
+			summary: { ...report.summary, pass: 1, skip: 1 },
+			checks: [
+				{
+					object: "setup_audit_check",
+					id: "CFG-INTEG-02",
+					category: "integrations",
+					title: "Cloudflare datasets are collecting",
+					severity: "warn",
+					status: "pass",
+					detail: "2 datasets not included in the Cloudflare plan.",
+					affected: [
+						{
+							kind: "integration",
+							id: null,
+							name: "firewall_events · example.com",
+							note: "unavailable",
+						},
+					],
+					affected_count: 2,
+					fix_hint: "Review Cloudflare settings.",
+				},
+				{
+					object: "setup_audit_check",
+					id: "TRC-01",
+					category: "traces",
+					title: "Traces have complete parents",
+					severity: "warn",
+					status: "skip",
+					detail: "Requires telemetry data, which is currently unavailable.",
+					affected: [],
+					affected_count: 0,
+					fix_hint: "Restore warehouse access.",
+				},
+			],
+		})
+		const model = update(
+			init().model,
+			Message.CompletedFetchAudit({ result: Result.succeed(audit) }),
+		).model
+		scene(
+			{
+				update,
+				view: (model, h: HtmlBuilder<Message>) =>
+					h.submodel({
+						slotId: "audit",
+						model,
+						view,
+						toParentMessage: (message) => message,
+						viewInputs: { nowMs: 0, timeZone: "UTC" },
+					}),
+			},
+			given(model),
+			click(role("button", { name: /Passing/ })),
+			expectView(text("2 datasets not included in the Cloudflare plan.")).toExist(),
+			expectView(text("firewall_events · example.com")).toExist(),
+			expectView(text("+1 more")).toExist(),
+			expectView(text("Skipped")).toExist(),
+			expectView(text("Requires telemetry data, which is currently unavailable.")).not.toExist(),
+		)
+	})
 	test("entry runs the audit; Re-run keeps the report up and asks once while it re-runs", () => {
 		expect(names(init().commands)).toEqual(["FetchSetupAudit"])
 		const loaded = update(

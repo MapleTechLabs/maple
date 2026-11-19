@@ -3,6 +3,7 @@
  * line-item bill for every vendor on one sheet.
  */
 import type { APIRoute } from "astro"
+import { BILL_ROW_KEYS, billRowLabels, billVendors } from "../lib/bill-comparison"
 import { competitors } from "../lib/competitors"
 import { absolute, blocks, docHeader, markdown, table } from "../lib/page-markdown"
 import * as m from "../paraglide/messages.js"
@@ -21,133 +22,18 @@ export const GET: APIRoute = ({ site }) => {
 		),
 	)
 
-	// Mirrors BillComparison.astro cell for cell.
+	// The same cells BillComparison.astro prints, from the same module.
+	const vendors = billVendors()
+	const labels = billRowLabels()
 	const bill = blocks(
 		`## ${m.cmp_hub_matrix_title()}`,
 		m.bill_lede(),
 		table(
-			[
-				m.bill_col_metric(),
-				"Maple",
-				"Datadog",
-				"New Relic",
-				"Grafana Cloud",
-				"Dash0",
-				"SigNoz",
-				"Axiom",
-				"Better Stack",
-				"Honeycomb",
-			],
-			[
-				[
-					m.bill_row_base(),
-					m.bill_v_base_maple(),
-					m.bill_v_none(),
-					m.bill_v_none(),
-					"$19 / mo",
-					m.bill_v_none(),
-					"$49 / mo, incl. $49 usage",
-					"$25 / mo",
-					"None \u00b7 bundles from $30",
-					"$150 / mo (Pro)",
-				],
-				[
-					m.bill_row_free(),
-					m.bill_v_free_maple(),
-					"5 hosts, 1-day metrics",
-					"100 GB / mo, 1 full user",
-					"50 GB logs/traces, 10k series",
-					"No \u00b7 14-day trial",
-					m.bill_v_no(),
-					"500 GB / mo, 25 GB stored",
-					"3 GB logs, 3 GB traces",
-					"20M events / mo",
-				],
-				[
-					m.bill_row_per_host(),
-					m.bill_v_none(),
-					"$15+ / host / mo",
-					m.bill_v_none(),
-					m.bill_v_none(),
-					m.bill_v_none(),
-					m.bill_v_none(),
-					m.bill_v_none(),
-					m.bill_v_none(),
-					m.bill_v_none(),
-				],
-				[
-					m.bill_row_per_seat(),
-					m.bill_v_none(),
-					m.bill_v_none(),
-					"$10 first, then $99–349 / full-platform user / mo",
-					"$8+ / active-user / mo",
-					m.bill_v_none(),
-					m.bill_v_none(),
-					m.bill_v_none(),
-					"$29–34 / on-call responder / mo",
-					m.bill_v_none(),
-				],
-				[
-					m.bill_row_ingest(),
-					m.bill_v_usage(),
-					"$0.10 / GB + $1.70 / M indexed",
-					"$0.40 / GB",
-					"$0.55 / GB",
-					"$0.60 / M spans or logs · $0.20 / M metric points",
-					"$0.30 / GB · $0.10 / M samples",
-					"$0.12 / GB + $0.20 / GB-hr",
-					"$0.10 / GB + $0.05 / GB-mo stored (EU)",
-					"$3.00 / M events (spans, logs)",
-				],
-				[
-					m.bill_row_retention(),
-					"30d logs/traces · 90d metrics",
-					"15d indexed logs",
-					"30d logs · 8d traces",
-					"30d logs/traces · 13mo metrics",
-					"30d spans/logs · 13mo metrics",
-					"15d logs/traces · 1mo metrics",
-					"Configurable · from $0.03 / GB stored",
-					"30d in bundles · billed per GB-mo stored",
-					"60d events and metrics",
-				],
-				[
-					m.bill_row_otel(),
-					m.bill_v_native(),
-					m.bill_v_yes(),
-					m.bill_v_yes(),
-					m.bill_v_yes(),
-					m.bill_v_native(),
-					m.bill_v_native(),
-					m.bill_v_native(),
-					m.bill_v_native(),
-					m.bill_v_native(),
-				],
-				[
-					m.bill_row_oss(),
-					m.bill_v_apache(),
-					m.bill_v_proprietary(),
-					m.bill_v_proprietary(),
-					"AGPL components",
-					m.bill_v_proprietary(),
-					"MIT + commercial ee/",
-					m.bill_v_proprietary(),
-					m.bill_v_proprietary(),
-					m.bill_v_proprietary(),
-				],
-				[
-					m.bill_row_selfhost(),
-					m.bill_v_selfhost_maple(),
-					m.bill_v_no(),
-					m.bill_v_no(),
-					m.bill_v_oss_only(),
-					m.bill_v_no(),
-					m.bill_v_supported(),
-					m.bill_v_no(),
-					m.bill_v_no(),
-					"Enterprise, own AWS account",
-				],
-			],
+			[m.bill_col_metric(), ...Arr.map(vendors, (vendor) => vendor.name)],
+			Arr.map(BILL_ROW_KEYS, (key) => [
+				labels[key],
+				...Arr.map(vendors, (vendor) => vendor.cells[key]),
+			]),
 		),
 		m.bill_footnote(),
 	)

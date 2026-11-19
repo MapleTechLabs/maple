@@ -110,6 +110,8 @@ const customers = defineCollection({
 			.array(z.object({ value: z.string(), label: z.string() }))
 			.max(4)
 			.default([]),
+		// One line a named person at the customer said, as written in the story.
+		quote: z.object({ text: z.string(), name: z.string(), role: z.string() }).optional(),
 		cover: z.string().optional(),
 		coverAlt: z.string().optional(),
 		featured: z.boolean().default(false),

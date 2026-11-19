@@ -1,0 +1,48 @@
+---
+/**
+ * ProductBand: a short heading over one page-wide product frame.
+ *
+ * Breaks up the long text pages (roundups, comparisons) with the surface the text around it is
+ * talking about. Sits on `bg-bg`: a `.live-frame` is `--bg-deep` and would dissolve into a deep floor.
+ */
+import ProductFrame, { type ProductSurface } from "./ProductFrame.astro";
+
+interface Props {
+	eyebrow: string;
+	title: string;
+	lede?: string;
+	surface: ProductSurface;
+	/** Alt text when the surface is a capture. */
+	label?: string;
+	link?: { href: string; label: string };
+	class?: string;
+}
+
+const { eyebrow, title, lede, surface, label, link, class: className = "" } = Astro.props;
+---
+
+<section class={`bg-bg ${className}`}>
+	<div class="shell py-16 md:py-24">
+		<div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between md:gap-10">
+			<div class="min-w-0">
+				<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{eyebrow}</p>
+				<h2 class="mt-4 max-w-[26ch] font-display text-2xl font-medium leading-[1.08] tracking-[-0.02em] text-fg md:text-3xl">
+					{title}
+				</h2>
+				{lede && <p class="mt-4 max-w-[62ch] text-[13px] leading-relaxed text-fg-muted md:text-sm">{lede}</p>}
+			</div>
+			{
+				link && (
+					<a
+						href={link.href}
+						class="group inline-flex shrink-0 items-center gap-1.5 text-[13px] text-fg-muted transition-colors hover:text-fg"
+					>
+						{link.label}
+						<span aria-hidden="true">→</span>
+					</a>
+				)
+			}
+		</div>
+		<ProductFrame surface={surface} size="wide" label={label} class="mt-8 md:mt-10" />
+	</div>
+</section>

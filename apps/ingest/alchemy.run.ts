@@ -6,6 +6,7 @@ import * as Config from "effect/Config"
 import * as ConfigProvider from "effect/ConfigProvider"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
+import { FetchHttpClient } from "effect/http"
 import { ecsSecrets, pgUrlRequireSsl, resolveAwsRegion } from "@maple/infra/aws"
 import { cloudflareIpv4Ranges, issueRegionalCertificate, publishProxiedCname } from "@maple/infra/acm"
 import type { MapleDbLogin, MapleRegion, MapleStackContext, MapleStage } from "@maple/infra/cloudflare"
@@ -19,9 +20,18 @@ import { r2BucketCredentials } from "@maple/infra/r2-credentials"
 // Only the primitives: these values feed ECS `env:` and Secrets Manager, not Worker bindings.
 import { commitShaEnv, optionalPlain, requiredPlain } from "@maple/infra/env"
 import { resolveAs, resolveDerived } from "@maple/infra/secret-guard"
-import { CH_PASSWORD_SLOT_KEYS_ENV, clickHousePasswordSlotKeys } from "@maple/infra/secret-slot-keys"
+import {
+	CH_PASSWORD_SLOT_KEYS_ENV,
+	clickHousePasswordSlotKeys,
+	warehouseTokenByName,
+} from "@maple/infra/secret-slot-keys"
+import { INGEST_APPEND_TOKEN } from "@maple/domain/tinybird/ingest-token"
 import { createIngestCollector } from "./alchemy/collector.ts"
-import { ingestPgUrl, ingestSecrets, ingestSlotKeyMasters } from "./alchemy/secrets.ts"
+import {
+	ingestSecrets,
+	ingestSlotKeyMasters,
+	ingestWarehouseAdminToken,
+} from "./alchemy/secrets.ts"
 import { blockedIngestKeysEnv, blockIngestKeysAtEdge } from "./alchemy/edge-block.ts"
 import { gatewayTuningEnv } from "./alchemy/gateway-env.ts"
 
@@ -96,8 +106,8 @@ CONFIG
 export interface CreateMapleIngestOptions extends Pick<MapleStackContext, "stage" | "region" | "profile"> {
 	/** The public hostname (`domains.ingest`). Every stage that deploys a fleet has one. */
 	hostname: string
-	/** The declared database's gateway login; a stage without one reads `MAPLE_INGEST_PG_URL` instead. */
-	dbLogin?: MapleDbLogin
+	/** The declared database's gateway login. */
+	dbLogin: MapleDbLogin
 }
 
 /**
@@ -278,14 +288,28 @@ export const createMapleIngest = ({ stage, region, hostname, profile, dbLogin }:
 		const secret = ecsSecrets(name("ingest"), tags)
 
 		const secrets = yield* resolveAs("ingest", ingestSecrets)
-		const tinybirdToken = yield* secret("tinybird-token", secrets.tinybirdToken)
+		// Append-only on the datasources the gateway and collector write (`withIngestAppendToken`).
+		const tinybirdHost = yield* requiredPlain("TINYBIRD_HOST")
+		const tinybirdToken = yield* resolveDerived("ingest", ingestWarehouseAdminToken, (admin) =>
+			warehouseTokenByName(tinybirdHost, admin, INGEST_APPEND_TOKEN),
+		).pipe(
+			// @effect-diagnostics-next-line strictEffectProvide:off -- one plan-time lookup, its own client
+			Effect.provide(FetchHttpClient.layer),
+			// No such token means the warehouse project was not deployed first: fail the deploy as config.
+			Effect.catchTag("@maple/infra/ScopedTokenLookupError", (error) =>
+				Effect.fail(
+					new Config.ConfigError(
+						new ConfigProvider.SourceError({
+							message: `${error.tokenName}: ${error.message}. Deploy the warehouse project before ingest.`,
+						}),
+					),
+				),
+			),
+			Effect.flatMap((derived) => secret("tinybird-ingest-append-token", derived.value)),
+		)
 		// NOT `MAPLE_PG_URL`: that is the migration admin's URL. The gateway reads
 		// ingest keys through the pooler as its own role.
-		const pgUrl = dbLogin
-			? yield* secret("maple-pg-url", pgUrlRequireSsl(dbLogin.url))
-			: yield* resolveAs("ingest", ingestPgUrl).pipe(
-					Effect.flatMap((url) => secret("maple-pg-url", url)),
-				)
+		const pgUrl = yield* secret("maple-pg-url", pgUrlRequireSsl(dbLogin.url))
 		// Only the subkeys for the one slot the gateway opens, derived here from the master keys.
 		const chPasswordSlotKeys = yield* resolveDerived(
 			"ingest",
@@ -495,11 +519,11 @@ export const createMapleIngest = ({ stage, region, hostname, profile, dbLogin }:
 				MAPLE_ENVIRONMENT: resolveDeploymentEnvironment(stage),
 				// Lets the unknown-key 401 name the other region's ingest URL.
 				...(stage.kind === "prd" && { MAPLE_REGION: region }),
-				TINYBIRD_HOST: yield* requiredPlain("TINYBIRD_HOST"),
+				TINYBIRD_HOST: tinybirdHost,
 				INGEST_KEY_STORE_BACKEND: "postgres",
 				// A replaced role changes the task definition, so the fleet rolls onto the
 				// new secret before alchemy deletes the old role.
-				...(dbLogin && { MAPLE_PG_ROLE_ID: dbLogin.id }),
+				MAPLE_PG_ROLE_ID: dbLogin.id,
 
 				// Trust `Cf-IPCountry` (fills `session_replays.Country`): the ALB admits only Cloudflare.
 				MAPLE_INGEST_TRUST_PROXY_GEO: "true",

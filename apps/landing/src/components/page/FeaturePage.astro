@@ -5,9 +5,9 @@
  *
  * The spine, and its tonal cadence:
  *
- *   00  PageHero            bg-bg       feature engraving   (page top)
+ *   00  PageHero            bg-bg       copy + the product, over the engraving
  *   01  SurfacePanel        bg-bg       border-t            tone flat → hairline
- *   02  ArtifactSection     bg-bg       border-t            tone flat → hairline
+ *   02  ArtifactSection     bg-bg       border-t            only when the hero holds a capture
  *   03  ScreenGallery       bg-bg       border-t            more of the surface
  *   04  [extra sections]    per section                     kubernetes only
  *   05  CapabilityLedger    bg-bg-deep  no border           tone steps → tone is the rule
@@ -23,6 +23,9 @@
  * A feature page gets ONE live artifact. Several carry an amber
  * `.live-frame__live` pulse and `--severity-warn` fills, which share the
  * primary hue; two of them plus the closing CTA reads speckled rather than rare.
+ *
+ * The hero shows the product, never a second copy of it: an artifact lifted into
+ * the hero keeps its title and lede as the frame's caption and gets no section.
  */
 import { getRelativeLocaleUrl } from "astro:i18n";
 import * as m from "../../paraglide/messages.js";
@@ -30,7 +33,7 @@ import { planRows } from "../../lib/feature-plan";
 import { featureBySlug } from "../../lib/features";
 import { getOffer } from "../../lib/pricing-offer";
 import { SCALE_PROOF_STORY_PATH } from "../../lib/scale-proof";
-import { featurePath, useCasePath } from "../../lib/page-registry";
+import { featurePath, GALLERY_SHOT_SIZE, useCasePath } from "../../lib/page-registry";
 import { useCaseBySlug } from "../../lib/use-cases";
 import Layout from "../../layouts/Layout.astro";
 import FAQ from "../FAQ.astro";
@@ -44,8 +47,9 @@ import PageCta from "./PageCta.astro";
 import PageHero from "./PageHero.astro";
 import PlanFacts from "./PlanFacts.astro";
 import ScreenGallery from "./ScreenGallery.astro";
+import Shot from "./Shot.astro";
 import SurfacePanel from "./SurfacePanel.astro";
-import { ARTIFACTS, EXTRA_SECTIONS, HERO_ASIDES } from "./slots";
+import { ARTIFACTS, EXTRA_SECTIONS, HERO_ARTIFACTS, HERO_ASIDES } from "./slots";
 
 interface Props {
 	slug: string;
@@ -66,11 +70,17 @@ const plan = planRows(feature.plan, await getOffer());
 
 const Artifact = feature.artifact ? ARTIFACTS[feature.artifact.id] : null;
 const HeroAside = feature.heroAside ? HERO_ASIDES[feature.heroAside] : null;
+const heroShot = feature.heroShot;
+// The artifact moves into the hero unless the page gave the hero something else.
+const lifted = !HeroAside && !heroShot && feature.artifact ? feature.artifact : null;
+const HeroArtifact = lifted ? HERO_ARTIFACTS[lifted.id] : null;
+const hasHeroProduct = Boolean(HeroAside ?? heroShot ?? HeroArtifact);
 
 const hero = {
 	title: feature.heroTitle(),
 	lede: feature.heroLede(),
 	illustration: feature.illustration,
+	illustrationAlt: feature.illustrationAlt,
 	breadcrumb: [
 		{ label: m.breadcrumb_home(), href: "/" },
 		{ label: m.breadcrumb_features(), href: "/#features" },
@@ -107,11 +117,35 @@ const crossLinks = [
 	<Nav />
 
 	<!-- Two branches, not a conditional slot: a slot that renders nothing still counts as filled,
-	     and PageHero would lay out an empty second column. -->
+	     and PageHero would lay out an empty second column. The `bg-bg` floor keeps the engraving
+	     from showing through an artifact made of two frames. -->
 	{
-		HeroAside ? (
-			<PageHero {...hero} asideClass="hidden lg:block">
-				<HeroAside slot="aside" />
+		hasHeroProduct ? (
+			<PageHero {...hero}>
+				<figure slot="product">
+					<div class="rounded-xl bg-bg">
+						{HeroAside && <HeroAside />}
+						{heroShot && (
+							<Shot
+								src={`/screenshots/${heroShot.id}.webp`}
+								alt={heroShot.alt}
+								width={GALLERY_SHOT_SIZE.width}
+								height={GALLERY_SHOT_SIZE.height}
+								crop={heroShot.crop}
+								route={heroShot.route}
+								title={heroShot.title}
+								loading="eager"
+							/>
+						)}
+						{HeroArtifact && <HeroArtifact />}
+					</div>
+					{lifted && (
+						<figcaption class="mt-4 max-w-[68ch]">
+							<h2 class="text-sm font-medium text-fg">{lifted.title()}</h2>
+							<p class="mt-1 text-[13px] leading-relaxed text-fg-muted">{lifted.lede()}</p>
+						</figcaption>
+					)}
+				</figure>
 			</PageHero>
 		) : (
 			<PageHero {...hero} />
@@ -129,6 +163,7 @@ const crossLinks = [
 				caption={feature.panel.plate.caption}
 				width={feature.panel.plate.width}
 				height={feature.panel.plate.height}
+				crop={feature.panel.plate.crop}
 				facts={feature.panel.facts}
 				eyebrow={m.page_panel_eyebrow()}
 				title={feature.panel.title()}
@@ -140,7 +175,7 @@ const crossLinks = [
 	<!-- Always hairlined: whatever precedes it — the hero or the panel — is also
 	     bg-bg, so the tone never steps here and cannot be the separator. -->
 	{
-		feature.artifact && Artifact && (
+		feature.artifact && Artifact && !lifted && (
 			<ArtifactSection
 				class="border-t border-border"
 				eyebrow={m.page_artifact_eyebrow()}

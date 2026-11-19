@@ -674,7 +674,7 @@ describe("makeGetCustomerData", () => {
 describe("extractVerifiedPrimaryEmail", () => {
 	const address = (id: string, emailAddress: string, status: "verified" | "unverified") => ({
 		id,
-		emailAddress,
+		email_address: emailAddress,
 		verification: { status },
 	})
 
@@ -682,7 +682,10 @@ describe("extractVerifiedPrimaryEmail", () => {
 		const verified = address("e_1", "ada@acme.test", "verified")
 		const unverified = address("e_2", "someone@else.test", "unverified")
 		const pick = (primaryEmailAddressId: string | null, emailAddresses: ReadonlyArray<typeof verified>) =>
-			extractVerifiedPrimaryEmail({ primaryEmailAddressId, emailAddresses })
+			extractVerifiedPrimaryEmail({
+				primary_email_address_id: primaryEmailAddressId,
+				email_addresses: emailAddresses,
+			})
 
 		assert.strictEqual(pick("e_1", [unverified, verified]), "ada@acme.test")
 		assert.strictEqual(pick("e_2", [verified, unverified]), null)

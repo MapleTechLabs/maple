@@ -201,7 +201,6 @@
 		"apps/web/src/page/settings/mcp/view-clients.ts": 1,
 		"apps/web/src/page/settings/mcp/view-tools.ts": 1,
 		"apps/web/src/page/settings/mcp/view.ts": 1,
-		"apps/web/src/page/settings/setup-health/view.ts": 1,
 		"apps/web/src/page/share/view.ts": 1,
 		"apps/web/src/page/sources/kit/rules-view.ts": 1,
 		"apps/web/src/page/traces/detail/view-findings.ts": 1,

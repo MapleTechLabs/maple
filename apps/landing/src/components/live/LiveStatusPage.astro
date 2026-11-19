@@ -9,6 +9,12 @@
  */
 import { demoPageHtml, MAPLE_DARK } from "../../lib/status-page-demo"
 
+interface Props {
+	/** The page's height from `sm` up, e.g. "30rem". Shorter shows less of the page, never a scaled one. */
+	height?: string
+}
+
+const { height } = Astro.props
 const operational = demoPageHtml(MAPLE_DARK, "operational")
 const outage = demoPageHtml(MAPLE_DARK, "outage")
 ---
@@ -28,7 +34,7 @@ const outage = demoPageHtml(MAPLE_DARK, "outage")
 		A demo of the Acme status page: all systems operational, then a major outage of Checkout API with an
 		open incident.
 	</p>
-	<div class="lsp-stage">
+	<div class="lsp-stage" style={height ? `--lsp-height: ${height};` : undefined}>
 		<iframe class="lsp-page lsp-page--before" srcdoc={operational} sandbox="" loading="lazy" inert title="Acme status page, operational"></iframe>
 		<iframe class="lsp-page lsp-page--after" srcdoc={outage} sandbox="" loading="lazy" inert title="Acme status page, major outage"></iframe>
 	</div>
@@ -45,7 +51,7 @@ const outage = demoPageHtml(MAPLE_DARK, "outage")
 	.lsp-stage {
 		display: grid;
 		/* Tall enough on desktop to reach Checkout API's 90-day bars below the incident. */
-		height: 830px;
+		height: var(--lsp-height, 830px);
 		overflow: hidden;
 		/* The maple theme's dark background, so the frame never flashes while the iframes load. */
 		background: #1a1714;

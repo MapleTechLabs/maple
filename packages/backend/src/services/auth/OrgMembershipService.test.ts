@@ -67,7 +67,7 @@ describe("collectMemberships", () => {
 					{
 						organization: { id: "org_custom" },
 						role: "org:custom",
-						publicMetadata: { maple_role: { id: "role_abcdefghijkl", permissions: [10, 36] } },
+						public_metadata: { maple_role: { id: "role_abcdefghijkl", permissions: [10, 36] } },
 					},
 					row("org_plain"),
 				]),

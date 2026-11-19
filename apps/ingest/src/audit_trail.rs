@@ -479,6 +479,31 @@ pub fn now_ms() -> i64 {
 
 #[cfg(test)]
 mod tests {
+
+    /// The warehouse refuses rows the gateway's append-only token does not cover
+    /// (`INGEST_WRITTEN_DATASOURCES`, `@maple/domain/tinybird/ingest-token`).
+    #[test]
+    fn every_datasource_the_gateway_writes_is_covered_by_its_append_token() {
+        use crate::clickhouse_insert_mappings::{APPEND_TOKEN_DATASOURCES, DATASOURCES};
+        let names = crate::telemetry::DatasourceNames::defaults();
+        let written = [
+            DATASOURCE,
+            crate::profiles::DATASOURCE,
+            &names.traces,
+            &names.logs,
+            &names.metrics_sum,
+            &names.metrics_gauge,
+            &names.metrics_histogram,
+            &names.metrics_exponential_histogram,
+        ]
+        .into_iter()
+        .chain(DATASOURCES.iter().map(|mapping| mapping.datasource));
+        let uncovered: Vec<&str> = written
+            .filter(|name| !APPEND_TOKEN_DATASOURCES.contains(name))
+            .collect();
+        assert!(uncovered.is_empty(), "not covered: {uncovered:?}");
+    }
+
     use super::*;
 
     const NOW: i64 = 1_700_000_060_000;

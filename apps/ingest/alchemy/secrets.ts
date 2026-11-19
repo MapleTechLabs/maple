@@ -3,14 +3,13 @@ import * as Config from "effect/Config"
 import * as Secrets from "@maple/infra/secrets"
 
 export const ingestSecrets = Config.all({
-	tinybirdToken: Secrets.TinybirdToken.requiredValue,
 	keyLookupHmacKey: Secrets.IngestKeyLookupHmacKey.requiredValue,
 	// Autumn absent means billing enforcement is dark.
 	autumnSecretKey: Secrets.AutumnSecretKey.optionalValue,
 })
 
-/** The gateway's own database login, on a stage whose deploy does not declare one. */
-export const ingestPgUrl = Secrets.IngestPgUrl.requiredValue
+/** The admin token the deploy reads the gateway's append-only token with, through `resolveDerived`. */
+export const ingestWarehouseAdminToken = Secrets.TinybirdToken.requiredValue
 
 /**
  * The master keys the deploy derives the gateway's ClickHouse password slot keys from, read only

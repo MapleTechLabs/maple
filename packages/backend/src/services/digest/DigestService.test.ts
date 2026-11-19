@@ -1066,8 +1066,8 @@ describe("digestRecipientsOf", () => {
 	it("enrolls only members with an address whose role reads telemetry", () => {
 		const member = (userId: string, role: string, publicMetadata: unknown = {}) => ({
 			role,
-			publicMetadata,
-			publicUserData: { identifier: `${userId}@example.com`, userId },
+			public_metadata: publicMetadata,
+			public_user_data: { identifier: `${userId}@example.com`, user_id: userId },
 		})
 		const customRole = (list: ReadonlyArray<Policy.Permission>) => ({
 			[Policy.MEMBERSHIP_ROLE_METADATA_KEY]: {
@@ -1080,7 +1080,7 @@ describe("digestRecipientsOf", () => {
 			member("user-reader", "org:custom", customRole(["telemetry:read"])),
 			member("user-billing", "org:custom", customRole(["billing:manage"])),
 			member("user-unset", "org:custom"),
-			{ role: "org:admin", publicMetadata: {}, publicUserData: null },
+			{ role: "org:admin", public_metadata: {} },
 		])
 		assert.deepStrictEqual(
 			Arr.map(recipients, (recipient) => recipient.userId),

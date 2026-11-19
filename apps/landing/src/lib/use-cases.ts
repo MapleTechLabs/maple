@@ -4,13 +4,13 @@
  * Read `page-registry.ts` first — messages are stored uncalled, and this file
  * must not import `.astro` or `astro:i18n`.
  *
- * Each entry drives one `ScrollStory`. The device is the homepage's, but the
+ * Each entry drives one `UseCaseStory`. The device is the homepage's, but the
  * argument is not: what the frame head holds is a different kind of object on
  * every page — an SLO, an order id, a release — and the head also carries a
  * clock, because a use case's claim is partly about how little time it took.
  *
- * Every story here runs at least two real plates, so none falls back to the
- * inline layout (see `storyIsPinnable`).
+ * Every plate here is a real capture: the story's pinned pane opens the page
+ * beside the headline (`UseCaseStory`) and has no placeholder state.
  */
 import * as m from "../paraglide/messages.js"
 import type { UseCase } from "./page-registry"
@@ -70,6 +70,8 @@ export const useCases: UseCase[] = [
 					src: "/screenshots/story-api-releases.webp",
 					width: 1280,
 					height: 660,
+					// This capture has the collapsed icon rail, not the full sidebar.
+					crop: { x: 0.043, y: 0, zoom: 1.045 },
 					alt: "Two releases of one endpoint compared on p50, p95, p99 and error rate",
 					caption:
 						"Commit comparison on order-service: abc123 against def456, p50/p95/p99 and error % per row, with the p99 delta called out.",
@@ -144,6 +146,8 @@ export const useCases: UseCase[] = [
 					src: "/screenshots/story-ecommerce-error.webp",
 					width: 992,
 					height: 600,
+					// This capture has the collapsed icon rail, not the full sidebar.
+					crop: { x: 0.043, y: 0, zoom: 1.045 },
 					alt: "The StripeTimeout issue with its affected-order count and the sessions that produced them",
 					caption:
 						"The StripeTimeout error issue: affected order count, retry-exhaustion log lines carrying the same trace id, and the sessions behind them.",

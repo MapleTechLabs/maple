@@ -7,12 +7,9 @@
  * spent two 881px columns restating the same feature list. This is one priced
  * offer: an amber claim plate on the left, the meter that backs it on the right.
  *
- * The chapter above (BillComparison) is a full-shell table of everyone else's
- * prices. This answers with yours, so it deliberately steps *in* to max-w-5xl , 
- * the width change is what says the argument ended and the offer begins. It
- * borrows that section's one signature, the amber-tinted "this is the answer"
- * column, and spends no other accent: the button is the only other amber thing
- * on the surface.
+ * On /pricing it steps in to max-w-5xl; on the home page it runs the width of
+ * the sheet under the shared head, with the vendor bill as the beat after it.
+ * It spends one accent: the button is the only solid amber on the surface.
  *
  * Enterprise is a one-line rail below the card, not a peer: a "call us" card
  * given equal weight costs self-serve conversion.
@@ -22,6 +19,7 @@ import { APP_SIGN_UP_URL } from "../lib/app-urls";
 import PixelIcon from "./icons/PixelIcon.astro";
 import { DPA_REQUEST_URL } from "../lib/compliance";
 import RegionChip from "./RegionChip.astro";
+import LedgerHead from "./home/LedgerHead.astro";
 import {
     getOffer,
     isUsageCredit,
@@ -97,26 +95,31 @@ const { variant = "page", title, eyebrow, lede, class: className = "" } = Astro.
 const containerClass = variant === "home" ? "shell" : "mx-auto max-w-5xl px-6"
 ---
 
-<section class={`py-16 md:py-32 ${className}`}>
+<section class={variant === "home" ? `ledger ${className}` : `py-16 md:py-32 ${className}`}>
     <div class={containerClass}>
-        {(eyebrow || title || lede) && (
-            <div class="mb-10 md:mb-14">
-                {eyebrow && (
-                    <p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{eyebrow}</p>
-                )}
-                {title && (
-                    <h2 class="mt-4 max-w-[20ch] font-display text-3xl font-medium leading-[1.05] tracking-[-0.02em] text-fg md:text-[40px]">
-                        {title}
-                    </h2>
-                )}
-                {lede && <p class="mt-5 max-w-[62ch] text-sm leading-relaxed text-fg-muted md:text-[15px]">{lede}</p>}
-            </div>
+        {variant === "home" && title ? (
+            <LedgerHead title={title} lede={lede} />
+        ) : (
+            (eyebrow || title || lede) && (
+                <div class="mb-10 md:mb-14">
+                    {eyebrow && (
+                        <p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{eyebrow}</p>
+                    )}
+                    {title && (
+                        <h2 class="mt-4 max-w-[20ch] font-display text-3xl font-medium leading-[1.05] tracking-[-0.02em] text-fg md:text-[40px]">
+                            {title}
+                        </h2>
+                    )}
+                    {lede && <p class="mt-5 max-w-[62ch] text-sm leading-relaxed text-fg-muted md:text-[15px]">{lede}</p>}
+                </div>
+            )
         )}
 
-        <div class="mx-auto max-w-5xl">
+        {/* The home page runs the offer the width of the sheet, like every frame on it. */}
+        <div class={variant === "home" ? "" : "mx-auto max-w-5xl"}>
             {/* gap-px over bg-border draws the rule between rails: the table-rule
                 vocabulary of the section above, without building a table. */}
-            <div class="grid gap-px overflow-hidden rounded-xl border border-border bg-border md:grid-cols-[minmax(0,340px)_1fr]">
+            <div class="offer-grid grid gap-px overflow-hidden rounded-xl border border-border bg-border md:grid-cols-[minmax(0,340px)_1fr]">
                 {/* The claim. */}
                 <div class="bg-primary/[0.06] p-6 md:p-8">
                     <div class="flex flex-wrap items-center gap-2">

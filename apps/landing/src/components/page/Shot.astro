@@ -1,0 +1,98 @@
+---
+/**
+ * Shot: one real capture in a `.live-frame`, whole or as a legible window. It fades only the
+ * edges that cut through content, and tightens from its top-left corner on a phone.
+ */
+import type { Crop } from "../../lib/page-registry";
+
+interface Props {
+	src: string;
+	alt: string;
+	/** The capture's intrinsic size. */
+	width: number;
+	height: number;
+	crop?: Crop;
+	/** Frame head: the route on the left, what to look at on the right. Literal. */
+	route?: string;
+	title?: string;
+	loading?: "eager" | "lazy";
+	class?: string;
+}
+
+const { src, alt, width, height, crop, route, title, loading = "lazy", class: className = "" } = Astro.props;
+
+const captureAspect = width / height;
+const aspect = crop?.aspect ?? captureAspect;
+// How much of the capture the window shows, per axis.
+const shownX = crop ? 1 / crop.zoom : 1;
+const shownY = crop ? captureAspect / (aspect * crop.zoom) : 1;
+const fadeRight = crop ? crop.hardRight !== true && crop.x + shownX < 0.995 : false;
+const fadeBottom = crop ? crop.y + shownY < 0.995 : false;
+// A 1440 px screen drawn 2.4 frames wide puts its 13 px text near 8 px on a 390 px phone.
+const PHONE_ZOOM = 2.4;
+const phoneZoom = crop ? Math.max(crop.zoom, PHONE_ZOOM) : 1;
+---
+
+<figure class={`live-frame min-w-0 ${className}`}>
+	{
+		(route || title) && (
+			<figcaption class="live-frame__head">
+				<span class="shrink-0 whitespace-nowrap">{route}</span>
+				<span class="min-w-0 truncate text-fg normal-case tracking-normal">{title}</span>
+			</figcaption>
+		)
+	}
+	{
+		crop ? (
+			<div
+				class="shot-crop"
+				style={`aspect-ratio: ${aspect}; --shot-x: ${crop.x}; --shot-y: ${crop.y}; --shot-wide: ${crop.zoom}; --shot-phone: ${phoneZoom}; --shot-end-r: ${fadeRight ? "transparent" : "black"}; --shot-end-b: ${fadeBottom ? "transparent" : "black"};`}
+			>
+				<img src={src} alt={alt} width={width} height={height} loading={loading} decoding="async" data-zoomable="" />
+			</div>
+		) : (
+			<img
+				src={src}
+				alt={alt}
+				width={width}
+				height={height}
+				loading={loading}
+				decoding="async"
+				data-zoomable=""
+				class="block h-auto w-full"
+			/>
+		)
+	}
+</figure>
+
+<style>
+	/* The inline style carries both zooms; which one applies is decided here, by width. */
+	.shot-crop {
+		--shot-zoom: var(--shot-wide);
+		--shot-fade-r: var(--shot-end-r);
+		--shot-fade-b: var(--shot-end-b);
+		overflow: hidden;
+		mask-image:
+			linear-gradient(to right, black 84%, var(--shot-fade-r)), linear-gradient(to bottom, black 80%, var(--shot-fade-b));
+		mask-composite: intersect;
+	}
+	.shot-crop > img {
+		display: block;
+		width: calc(var(--shot-zoom) * 100%);
+		max-width: none;
+		height: auto;
+		translate: calc(var(--shot-x) * -100%) calc(var(--shot-y) * -100%);
+	}
+	@media (max-width: 639px) {
+		.shot-crop {
+			--shot-zoom: var(--shot-phone);
+			--shot-fade-r: transparent;
+			--shot-fade-b: transparent;
+		}
+	}
+	/* The image is larger than its window, so its own focus ring is clipped: the frame carries it. */
+	.live-frame:has(> .shot-crop > img:focus-visible) {
+		outline: 2px solid var(--ring);
+		outline-offset: -2px;
+	}
+</style>

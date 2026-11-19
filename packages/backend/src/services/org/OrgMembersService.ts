@@ -1,4 +1,4 @@
-import type { ClerkClient, OrganizationMembership } from "@clerk/backend"
+import * as Clerk from "@distilled.cloud/clerk"
 import {
 	AlertMemberDirectoryNotConfiguredError,
 	AlertMemberDirectoryUnavailableError,
@@ -8,8 +8,7 @@ import {
 } from "@maple/domain/http"
 import { Array as Arr, Context, Effect, Layer, Option, Stream } from "effect"
 import { Env } from "@maple/backend/platform/Env"
-import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
-import { clerkModeClient } from "@maple/auth"
+import { type ClerkApi, clerkModeApi } from "@maple/auth"
 
 export interface OrgMember {
 	readonly userId: string
@@ -82,43 +81,39 @@ export interface OrgMembersServiceApi {
 const make = Effect.gen(function* () {
 	const env = yield* Env
 
-	const clerk = clerkModeClient(env) ?? null
+	const clerk = clerkModeApi(env) ?? null
 
 	const notConfigured = new AlertMemberDirectoryNotConfiguredError({
 		message: "Workspace member lookup requires Clerk authentication",
 	})
 
 	/** Every membership of the org, one Clerk call per 100. */
-	const listMemberships = (clerk: ClerkClient, orgId: OrgId) => {
+	const listMemberships = (clerk: ClerkApi, orgId: OrgId) => {
 		const PAGE_SIZE = 100
 		return Stream.paginate(0, (offset: number) =>
-			clerkRequest("Clerk.organizations.getOrganizationMembershipList", { orgId }, () =>
-				clerk.organizations.getOrganizationMembershipList({
-					organizationId: orgId,
-					limit: PAGE_SIZE,
-					offset,
-				}),
-			).pipe(
-				Effect.mapBoth({
-					onFailure: (cause) =>
-						new AlertMemberDirectoryUnavailableError({
-							message: `Failed to list workspace members for ${orgId}`,
-							cause,
-						}),
-					onSuccess: (page) => {
-						const next = offset + page.data.length
-						const done = next >= page.totalCount || page.data.length === 0
-						return [page.data, done ? Option.none<number>() : Option.some(next)] as const
-					},
-				}),
-			),
+			clerk
+				.run(Clerk.listOrganizationMemberships({ organization_id: orgId, limit: PAGE_SIZE, offset }))
+				.pipe(
+					Effect.mapBoth({
+						onFailure: (cause) =>
+							new AlertMemberDirectoryUnavailableError({
+								message: `Failed to list workspace members for ${orgId}`,
+								cause,
+							}),
+						onSuccess: (page) => {
+							const next = offset + page.data.length
+							const done = next >= page.total_count || page.data.length === 0
+							return [page.data, done ? Option.none<number>() : Option.some(next)] as const
+						},
+					}),
+				),
 		).pipe(Stream.runCollect)
 	}
 
-	const memberName = (member: OrganizationMembership): string | null =>
+	const memberName = (member: Clerk.OrganizationMembership): string | null =>
 		Arr.join(
 			Arr.filter(
-				[member.publicUserData?.firstName, member.publicUserData?.lastName],
+				[member.public_user_data?.first_name, member.public_user_data?.last_name],
 				(part): part is string => typeof part === "string" && part !== "",
 			),
 			" ",
@@ -129,15 +124,15 @@ const make = Effect.gen(function* () {
 		if (clerk === null) return yield* notConfigured
 		const memberships = yield* listMemberships(clerk, orgId)
 		return Arr.flatMap(memberships, (member): Array<OrgMember> => {
-			const userId = member.publicUserData?.userId
-			const email = member.publicUserData?.identifier
+			const userId = member.public_user_data?.user_id
+			const email = member.public_user_data?.identifier
 			if (!userId || !email) return []
 			return [
 				{
 					userId,
 					email,
 					name: memberName(member),
-					imageUrl: member.publicUserData?.imageUrl ?? null,
+					imageUrl: member.public_user_data?.image_url ?? null,
 				},
 			]
 		})
@@ -148,17 +143,13 @@ const make = Effect.gen(function* () {
 		if (clerk === null) return yield* notConfigured
 		const memberships = yield* listMemberships(clerk, orgId)
 		const userIds = Arr.flatMap(memberships, (member) =>
-			Option.toArray(Option.fromNullishOr(member.publicUserData?.userId)),
+			Option.toArray(Option.fromNullishOr(member.public_user_data?.user_id)),
 		)
 		// Clerk filters by at most 100 user ids per call.
 		const users = yield* Effect.forEach(
 			Arr.chunksOf(userIds, 100),
 			(chunk) =>
-				clerkRequest(
-					"Clerk.users.getUserList",
-					{ "maple.organization.member.requested_count": chunk.length },
-					() => clerk.users.getUserList({ userId: [...chunk], limit: chunk.length }),
-				).pipe(
+				clerk.run(Clerk.getUserList({ user_id: [...chunk], limit: chunk.length })).pipe(
 					Effect.mapError(
 						(cause) =>
 							new AlertMemberDirectoryUnavailableError({
@@ -169,20 +160,15 @@ const make = Effect.gen(function* () {
 				),
 			{ concurrency: 2 },
 		)
-		const byId = new Map(
-			Arr.map(
-				Arr.flatMap(users, (page) => page.data),
-				(user) => [user.id, user] as const,
-			),
-		)
+		const byId = new Map(Arr.map(Arr.flatten(users), (user) => [user.id, user] as const))
 		return Arr.map(memberships, (member): MemberActivity => {
-			const user = byId.get(member.publicUserData?.userId ?? "")
+			const user = byId.get(member.public_user_data?.user_id ?? "")
 			return {
 				name: memberName(member),
 				role: member.role,
-				joinedAtMs: member.createdAt,
-				lastSignInAtMs: user?.lastSignInAt ?? null,
-				lastActiveAtMs: user?.lastActiveAt ?? null,
+				joinedAtMs: member.created_at,
+				lastSignInAtMs: user?.last_sign_in_at ?? null,
+				lastActiveAtMs: user?.last_active_at ?? null,
 			}
 		})
 	})
@@ -195,24 +181,22 @@ const make = Effect.gen(function* () {
 				message: "Organization lookup requires Clerk authentication",
 			})
 		}
-		const page = yield* clerkRequest(
-			"Clerk.users.getOrganizationMembershipList",
-			{ "tenant.userId": userId },
-			() => clerk.users.getOrganizationMembershipList({ userId, limit: 100 }),
-		).pipe(
-			Effect.mapError(
-				(cause) =>
-					new AlertMemberDirectoryUnavailableError({
-						message: `Failed to list the organizations of ${userId}`,
-						cause,
-					}),
-			),
-		)
+		const page = yield* clerk
+			.run(Clerk.usersGetOrganizationMemberships({ user_id: userId, limit: 100 }))
+			.pipe(
+				Effect.mapError(
+					(cause) =>
+						new AlertMemberDirectoryUnavailableError({
+							message: `Failed to list the organizations of ${userId}`,
+							cause,
+						}),
+				),
+			)
 		return Arr.map(page.data, (membership): UserOrganization => ({
 			orgId: membership.organization.id,
 			name: membership.organization.name,
-			createdAtMs: membership.organization.createdAt,
-			membersCount: membership.organization.membersCount ?? null,
+			createdAtMs: membership.organization.created_at,
+			membersCount: membership.organization.members_count ?? null,
 		}))
 	})
 

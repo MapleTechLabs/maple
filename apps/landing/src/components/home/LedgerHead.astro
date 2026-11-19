@@ -1,0 +1,31 @@
+---
+/** The head every home section shares: one display line, one sentence, and its links. */
+interface Props {
+	title: string;
+	lede?: string;
+	/** The section's own link; further links go in the default slot. */
+	href?: string;
+	link?: string;
+}
+
+const { title, lede, href, link } = Astro.props;
+const hasLinks = Boolean(href) || Astro.slots.has("default");
+---
+
+<header class="ledger-head">
+	<h2>{title}</h2>
+	{lede && <p>{lede}</p>}
+	{
+		hasLinks && (
+			<div class="ledger-head__links">
+				{href && (
+					<a href={href} class="ledger-link">
+						{link}
+						<span aria-hidden="true"> →</span>
+					</a>
+				)}
+				<slot />
+			</div>
+		)
+	}
+</header>

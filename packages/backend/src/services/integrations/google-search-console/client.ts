@@ -1,11 +1,15 @@
-// Google Search Console API (webmasters v3): the property list and Search Analytics queries.
-// Callers pass an OAuth access token; a 401 fails `SearchConsoleTokenRejectedError`, which the
-// Google OAuth service's refresh-and-retry keys on.
-import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
+// Google Search Console API (webmasters v3) through `@distilled.cloud/gcp`: the property list and
+// Search Analytics queries. Callers pass an OAuth access token; a 401 fails
+// `SearchConsoleTokenRejectedError`, which the Google OAuth service's refresh-and-retry keys on.
+import * as Gcp from "@distilled.cloud/gcp"
+import * as SearchConsole from "@distilled.cloud/gcp/searchconsole_v1"
+import { Effect, Layer, Option, Redacted, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import type { HttpClient } from "effect/http"
-import * as VendorHttp from "../vendor-http"
+import type * as VendorHttp from "../vendor-http"
+import * as VendorSdk from "../vendor-sdk"
 
-export const SEARCH_CONSOLE_API_BASE_URL = "https://www.googleapis.com/webmasters/v3"
+const SEARCH_CONSOLE_API_ORIGIN = "https://www.googleapis.com"
+export const SEARCH_CONSOLE_API_BASE_URL = `${SEARCH_CONSOLE_API_ORIGIN}/webmasters/v3`
 /** Google's per-request maximum for Search Analytics rows. */
 export const SEARCH_ANALYTICS_MAX_ROW_LIMIT = 25_000
 
@@ -98,19 +102,6 @@ export const searchAnalyticsRequestBody = (query: SearchAnalyticsQuery) => ({
 	dataState: query.dataState,
 })
 
-/** The Search Analytics path of one property; the site URL is a single path segment. */
-const searchAnalyticsPath = (siteUrl: string) => `/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`
-
-/** Google's error body: `{ error: { code, message, status } }`. */
-const GoogleErrorBody = Schema.Struct({ error: Schema.Struct({ message: Schema.String }) })
-const decodeGoogleError = Schema.decodeUnknownOption(Schema.fromJsonString(GoogleErrorBody))
-
-const googleDetail = (body: string) =>
-	Option.match(decodeGoogleError(body), {
-		onNone: () => undefined,
-		onSome: (decoded) => decoded.error.message,
-	})
-
 type SearchConsoleError = SearchConsoleTokenRejectedError | SearchConsoleApiError
 
 /** A failed call in the words each status has always had; `unexpected` names a body that does not decode. */
@@ -147,13 +138,31 @@ const toSearchConsoleError =
 		}
 	}
 
+// Google's message from its JSON envelope. The SDK uses a non-JSON body's text as the message;
+// a page of markup is not Google's words, so it is dropped.
+const googleDetail = (error: VendorSdk.SdkFailure, status: number) =>
+	Option.getOrUndefined(
+		Option.filter(
+			Option.fromNullishOr(VendorSdk.messageOf(error, status)),
+			(message) => !Str.includes("<")(message),
+		),
+	)
+
+const STATUS_BY_TAG = Rec.fromEntries(
+	Arr.map(Rec.toEntries(Gcp.HTTP_STATUS_MAP), ([status, error]) => [error.name, Number(status)]),
+)
+
 const searchConsoleClient = (httpClient: HttpClient.HttpClient, accessToken: string, unexpected: string) =>
-	VendorHttp.make({
+	VendorSdk.make({
 		httpClient,
 		peerService: "google-search-console",
-		baseUrl: SEARCH_CONSOLE_API_BASE_URL,
-		auth: VendorHttp.bearer(accessToken),
-		headers: { accept: "application/json" },
+		sdk: Layer.mergeAll(
+			Gcp.fromAccessToken({ accessToken: Redacted.make(accessToken) }),
+			Layer.succeed(Gcp.Retry.Retry, { while: () => false }),
+			// The SDK's default host is `searchconsole.googleapis.com`; this keeps the one Maple has used.
+			Gcp.Endpoint.of(SEARCH_CONSOLE_API_ORIGIN),
+		),
+		statusByTag: STATUS_BY_TAG,
 		toError: toSearchConsoleError(unexpected),
 		detail: googleDetail,
 		timeout: REQUEST_TIMEOUT,
@@ -168,7 +177,7 @@ export const listSites = Effect.fn("SearchConsole.listSites")(function* (
 		httpClient,
 		accessToken,
 		"Search Console returned an unexpected site list",
-	).json(SitesListResponse, { path: "/sites", operation: "listing sites" })
+	).call(SitesListResponse, SearchConsole.listSites({}), { operation: "listing sites" })
 	return body.siteEntry ?? []
 })
 
@@ -188,13 +197,13 @@ export const querySearchAnalytics = Effect.fn("SearchConsole.querySearchAnalytic
 		httpClient,
 		accessToken,
 		"Search Console returned an unexpected Search Analytics payload",
-	).json(SearchAnalyticsResponse, {
-		method: "POST",
-		path: searchAnalyticsPath(siteUrl),
-		body,
-		operation: "querying Search Analytics",
+	).call(
+		SearchAnalyticsResponse,
+		// The site URL is one path segment, encoded whole by the SDK.
+		SearchConsole.querySearchanalytics({ siteUrl, body: { ...body, dimensions: [...body.dimensions] } }),
 		// Not retried here: the import's own day-by-day backoff decides when a failed day runs again.
-	})
+		{ method: "POST", operation: "querying Search Analytics" },
+	)
 	const rows = response.rows ?? []
 	yield* Effect.annotateCurrentSpan("maple.search_console.rows", rows.length)
 	return {

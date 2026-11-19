@@ -276,6 +276,20 @@
         "vitest": "catalog:",
       },
     },
+    "apps/org-eraser": {
+      "name": "@maple/org-eraser",
+      "dependencies": {
+        "@alchemy.run/cloudflare": "catalog:alchemy",
+        "@maple/backend": "workspace:*",
+        "@maple/infra": "workspace:*",
+        "effect": "catalog:effect",
+      },
+      "devDependencies": {
+        "@cloudflare/workers-types": "catalog:alchemy",
+        "@types/node": "catalog:tooling",
+        "typescript": "catalog:tooling",
+      },
+    },
     "apps/sandbox": {
       "name": "@maple/sandbox",
       "dependencies": {
@@ -638,6 +652,8 @@
       "name": "@maple/auth",
       "dependencies": {
         "@clerk/backend": "^3.29.0",
+        "@distilled.cloud/clerk": "1.0.0-rc.20",
+        "@distilled.cloud/core": "1.0.0-rc.20",
         "@maple/domain": "workspace:*",
         "effect": "catalog:effect",
       },
@@ -653,9 +669,14 @@
       "dependencies": {
         "@alchemy.run/cloudflare": "catalog:alchemy",
         "@clerk/backend": "^3.29.0",
+        "@distilled.cloud/anthropic": "1.0.0-rc.20",
         "@distilled.cloud/aws": "1.0.0-rc.20",
+        "@distilled.cloud/clerk": "1.0.0-rc.20",
         "@distilled.cloud/core": "1.0.0-rc.20",
+        "@distilled.cloud/gcp": "1.0.0-rc.20",
         "@distilled.cloud/planetscale": "1.0.0-rc.20",
+        "@distilled.cloud/supabase": "1.0.0-rc.20",
+        "@distilled.cloud/vercel": "1.0.0-rc.20",
         "@maple-dev/effect-clickhouse-http": "workspace:*",
         "@maple-dev/effect-orm": "0.10.0",
         "@maple/alerting-core": "workspace:*",
@@ -883,11 +904,14 @@
       "dependencies": {
         "@alchemy.run/aws": "catalog:alchemy",
         "@alchemy.run/cloudflare": "catalog:alchemy",
+        "@alchemy.run/sql": "2.0.0-beta.87",
         "@distilled.cloud/aws": "1.0.0-rc.20",
         "@distilled.cloud/cloudflare": "1.0.0-rc.20",
+        "@distilled.cloud/planetscale": "1.0.0-rc.20",
         "@maple-dev/alchemy": "workspace:*",
         "@maple-dev/effect-sdk": "workspace:*",
         "@maple/alchemy-portless": "workspace:*",
+        "@maple/db": "workspace:*",
         "@maple/domain": "workspace:*",
         "alchemy": "catalog:alchemy",
         "effect": "catalog:effect",
@@ -1359,13 +1383,19 @@
 
     "@distilled.cloud/acme": ["@distilled.cloud/acme@1.0.0-rc.20", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.20" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-+rLrcJaCJJGOWDmF0cIN47fu6Gjt0QbKV4U5rX5KbYZpSe6qhE6h5ZVo8yfQYIlLkqal7r3Lt/eplDMidqK7pw=="],
 
+    "@distilled.cloud/anthropic": ["@distilled.cloud/anthropic@1.0.0-rc.20", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.20" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-XzzMh/0QPB1SmBjRAvi+aLudc2XUKcAzIrfc6NnxmwNGMqXlLKDSGeh8m1txa/qRkRQ+ephPM/N3/UQe8xl0nQ=="],
+
     "@distilled.cloud/aws": ["@distilled.cloud/aws@1.0.0-rc.20", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.20", "@distilled.cloud/s3": "1.0.0-rc.20" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-fRh8t95wyYVGPxLVJld0k9NLA9Dt8lb+Juvo6ky9HqOxQ/QfwX8FzONkxEVZy+RnVb5HhHoz19eOtOXvRMpMBw=="],
 
     "@distilled.cloud/aws4signer": ["@distilled.cloud/aws4signer@1.0.0-rc.20", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.20" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-7lYmG5Pj7/hqEhygqMmkeb4eph0Z8BEJFDlGDrNrHNxa03F39JqmZpp+YXO8v85Jx0O5G92Fl9UnfwHxvY4D1w=="],
 
+    "@distilled.cloud/clerk": ["@distilled.cloud/clerk@1.0.0-rc.20", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.20" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-3zeNruvbkvJOTP4wQJSH8C9Tvkhwmk6GQvHO+eVRaNIwot5R0jVQadUp7gO32csd65u3lkQ8iGwej1DTezq/Rw=="],
+
     "@distilled.cloud/cloudflare": ["@distilled.cloud/cloudflare@1.0.0-rc.20", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.20", "@distilled.cloud/s3": "1.0.0-rc.20" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-Vcb9hNRqlrec3pSaf9mOFHg5bKoUfpKytAH9w6+Y9L2HmU2Bval3zAXx4viQx9yqUeU5CbhaEH+/SdKywcaEZw=="],
 
     "@distilled.cloud/core": ["@distilled.cloud/core@1.0.0-rc.20", "", { "peerDependencies": { "effect": "^4.1.2" } }, "sha512-uoZ8W5QhxcSyyM6/XZzRJCKc55FC4fZfXWX2ypx8AOIC4PTOtdyDZ3fswGpVp/SRiC4ua0HYGhAgFA8Ub7Ot5Q=="],
+
+    "@distilled.cloud/gcp": ["@distilled.cloud/gcp@1.0.0-rc.20", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.20" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-PzgA5phbgz8bewSM29vh+RXWNt8Vbt/j6BtCUM6280zEpsY4FIiB1ezPJ0Z5pSX3lP0aQmd99UYA/9nrZLgPlQ=="],
 
     "@distilled.cloud/iceberg": ["@distilled.cloud/iceberg@1.0.0-rc.20", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.20" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-m0JErahIw1Z+/EDYJRqDA0A8iW9Xv5xHGFeUqSn/ne8VdZX1GAqX4uxesAFQV0ZdoW2yPh4zoKj3JLWphYTtbw=="],
 
@@ -1374,6 +1404,10 @@
     "@distilled.cloud/planetscale": ["@distilled.cloud/planetscale@1.0.0-rc.20", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.20" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-/7Qm2CoTe5ux3Hw0wbnpCXe4C+3YDlvf414J/mo9S7jAU6lEUrBaWMhJCl0fKcHhzxfnJCcyP2+02VTrfvb3Vw=="],
 
     "@distilled.cloud/s3": ["@distilled.cloud/s3@1.0.0-rc.20", "", { "dependencies": { "@distilled.cloud/aws4signer": "1.0.0-rc.20", "@distilled.cloud/core": "1.0.0-rc.20" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-MqJlG+CVCgkIX7iPDo8hb4YlcEELYTlJFLg2Whp8TjBPieViNiiRAJR/5TtDApa38dzrTsMc69ul965Myagrdg=="],
+
+    "@distilled.cloud/supabase": ["@distilled.cloud/supabase@1.0.0-rc.20", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.20" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-4O+0CpOTG3F32GlMQPHJhbDAzJCvgRPBHZ4ycIPA4aUP4LjnT9eNhX49oxq/wFfts9HcbZcyCnS+sp1ZiSnclQ=="],
+
+    "@distilled.cloud/vercel": ["@distilled.cloud/vercel@1.0.0-rc.20", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.20" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-uNMP6GsDfR9zZutcWP1APXG6sO8Ck1llfXG5lZ+VuXmrvKEPKjgUu7PkzJRask5MHVr0dsTUV2kJ8vpaNJwSVA=="],
 
     "@e2e-dev/web": ["@e2e-dev/web@0.15.5", "", { "dependencies": { "playwright-core": "1.64.1" }, "peerDependencies": { "e2e": ">=0.22.1 <1" }, "bin": { "e2e-web": "./dist/bin.js" } }, "sha512-fUXrSgfii6w/q7OyX9/kEIDLpIMHpEkTH81hrR8WLnqk8li3bRyXJQBGWqtq9NoWpS2UANnhMI45n6Fv1ErCnw=="],
 
@@ -1652,6 +1686,8 @@
     "@maple/local-ui": ["@maple/local-ui@workspace:apps/local-ui"],
 
     "@maple/lockfiles": ["@maple/lockfiles@workspace:lib/lockfiles"],
+
+    "@maple/org-eraser": ["@maple/org-eraser@workspace:apps/org-eraser"],
 
     "@maple/primitives": ["@maple/primitives@workspace:packages/primitives"],
 

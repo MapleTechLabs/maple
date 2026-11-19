@@ -252,7 +252,12 @@ stored state and cannot see a sibling the same deploy creates.
 
 What each kind of Worker keeps beside the module:
 
-- **Crons** (`alerting`, `api`): `Cloudflare.Workers.cron(expression, handler)` in `impl`,
+- **org-eraser** serves no requests. Every ten minutes on production it drains `org_erasures`
+  (a deleted org's conversations, replay objects and warehouse rows). It alone binds the replay
+  bucket read-write and the warehouse delete token (`TINYBIRD_DELETE_TOKEN`), so no request
+  Worker can delete either.
+
+- **Crons** (`alerting`, `api`, `org-eraser`): `Cloudflare.Workers.cron(expression, handler)` in `impl`,
   under `CronEventSourceLive`, attaches the schedule at plan time and the listener at
   runtime. The source reports every fire as successful, so the platform's retry never
   engages. Nothing is lost: the ticks already log and swallow their own failures, the
@@ -505,7 +510,7 @@ list of yields. What it composes lives beside it:
   (`consumeQueueMessages` over the declarations, so no binding is read back off the host),
   `events.ts`, `modules.ts` (the dynamic imports), and `bindings.ts`.
 - **Bindings are alchemy capabilities, read as Maple ports.** The init yields
-  `Queues.WriteQueue(VcsSyncQueue)`, `R2.ReadWriteBucket(ReplayBlobs)` and the
+  `Queues.WriteQueue(VcsSyncQueue)`, `R2.ReadBucket(ReplayBlobs)` and the
   `Cloudflare.RateLimit(...)`s (`worker/bindings.ts`). Each yield attaches the native
   binding at plan time, under the resource's logical id (so the queue and bucket bindings
   are `vcs-sync`, `replay-blobs`, …), and resolves it from the env in the isolate. The
@@ -537,6 +542,12 @@ services. The Prometheus and uptime scraper (`apps/scraper`, one per prd instanc
 same VPC with no inbound traffic; its image is the single-file bundle `alchemy:build-deps`
 writes to `apps/scraper/dist`, and ECS replaces the task when its `/health` stops answering.
 
+- **The gateway writes to the warehouse with an append-only token.** `maple_ingest_append` is
+  declared on the datasources the gateway and its collector post to (`INGEST_WRITTEN_DATASOURCES`,
+  `@maple/domain/tinybird/ingest-token`), added to the datafiles by `scripts/write-tinybird-datafiles.ts`.
+  The ingest deploy reads the token's value with the admin `TINYBIRD_TOKEN` through `resolveDerived`;
+  the task and the collector only ever receive the append token. A new datasource the gateway
+  writes goes in that set, and the warehouse project deploys before ingest.
 - `AWS.providers()` is registered unconditionally: the `Alchemy.Stack` options are evaluated
   before `Alchemy.Stage` is readable, so it cannot be stage-derived.
 - `profile.deploys.ingest` alone decides which stages get a fleet: prd **and PR previews**. Dev
@@ -576,7 +587,18 @@ Runtime roles (ingest gateway, the EU Hyperdrive roles) inherit `DB_ACCESS_ROLES
 (`@maple/db/roles`: `pg_read_all_data` + `pg_write_all_data`): DML on every table, current and
 future, and no DDL, TRUNCATE or ownership. Only migrations, which alchemy runs on a temporary
 `postgres` role, change the schema. Electric stays on `postgres` because PlanetScale grants
-REPLICATION only with it. The US prd Hyperdrive configs are dashboard-managed, so their
+REPLICATION only with it.
+
+The ingest gateway can instead run on a login scoped to its own tables. The
+`ingest_gateway_role` migration creates `maple_ingest` (NOLOGIN) with exactly
+`INGEST_GATEWAY_GRANTS` (`@maple/db/roles`). With `MAPLE_INGEST_DB_SCOPED_ROLE=1` (a GitHub
+environment variable per region, read by the prd deploy) the deploy creates a login that inherits
+no built-in role, grants it `maple_ingest` as a short-lived admin login
+(`IngestRoleMembership`, `@maple/infra/ingest-role-membership`), and only then rolls the
+gateway onto it; the all-tables login is deleted at the end of that deploy. Unset or `0` restores
+the all-tables login on the next deploy. A table the gateway starts using needs a grant
+migration, an `INGEST_GATEWAY_GRANTS` entry and a new statement in `roles.test.ts`'s gateway
+fixtures; the test checks the grants and runs those fixed statements, not the gateway's own queries. The US prd Hyperdrive configs are dashboard-managed, so their
 credentials are outside the deploy.
 
 ## Hyperdrive: why api and alerting have separate configs

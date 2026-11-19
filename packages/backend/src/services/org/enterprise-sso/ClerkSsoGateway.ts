@@ -1,5 +1,5 @@
-import type { ClerkClient, EnterpriseConnection } from "@clerk/backend"
-import { clerkModeClient } from "@maple/auth"
+import * as Clerk from "@distilled.cloud/clerk"
+import { type ClerkApi, type ClerkApiServices, clerkModeApi } from "@maple/auth"
 import type { OrgId, SsoProvider, UserId } from "@maple/domain/http"
 import {
 	Array as Arr,
@@ -11,29 +11,12 @@ import {
 	Order,
 	Predicate,
 	Redacted,
-	Schema,
 	String as Str,
 } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
-import {
-	CLERK_REQUEST_TIMEOUT,
-	ClerkRequestError,
-	clerkRequest,
-} from "@maple/backend/services/auth/clerk-request"
+import { ClerkRequestError } from "@maple/auth"
 
-// Every Clerk call the SSO settings make. Directories, role mappings, the bypass allowlist and the
-// domain ownership override are newer than @clerk/backend's methods, so those go over HTTP.
-
-type ConnectionApi = ClerkClient["enterpriseConnections"]
-// @clerk/backend does not export its param types from the root.
-type CreateEnterpriseConnectionParams = Parameters<ConnectionApi["createEnterpriseConnection"]>[0]
-type UpdateEnterpriseConnectionParams = Parameters<ConnectionApi["updateEnterpriseConnection"]>[1]
-type EnterpriseConnectionSamlParams = NonNullable<CreateEnterpriseConnectionParams["saml"]>
-
-const CLERK_API_URL = "https://api.clerk.com/v1"
-/** The version @clerk/backend 3.29 pins; every directory endpoint used here exists in it. */
-const CLERK_API_VERSION = "2026-05-12"
+// Every Clerk call the SSO settings make, as `@distilled.cloud/clerk` operations.
 
 export interface ClerkSsoConnection {
 	readonly id: string
@@ -76,67 +59,50 @@ export interface ClerkSsoConnectionInput {
 	}
 }
 
-const DirectoryJson = Schema.Struct({
-	id: Schema.String,
-	endpoint_url: Schema.String,
-	enabled: Schema.Boolean,
-	paused: Schema.Boolean,
-	group_role_mapping_enabled: Schema.Boolean,
-	created_at: Schema.Number,
-	api_key: Schema.optionalKey(Schema.NullOr(Schema.String)),
-})
-export type ClerkSsoDirectory = typeof DirectoryJson.Type
+export interface ClerkSsoDirectory {
+	readonly id: string
+	readonly endpoint_url: string
+	readonly enabled: boolean
+	readonly paused: boolean
+	readonly group_role_mapping_enabled: boolean
+	readonly created_at: number
+	readonly api_key?: string | null
+}
 
-const RoleMappingJson = Schema.Struct({
-	directory_group_id: Schema.optionalKey(Schema.NullOr(Schema.String)),
-	scim_group_id: Schema.optionalKey(Schema.NullOr(Schema.String)),
-	directory_group_display_name: Schema.optionalKey(Schema.NullOr(Schema.String)),
-	role: Schema.Struct({ id: Schema.String, key: Schema.String }),
-	precedence: Schema.Number,
-})
 const byPrecedence = Order.mapInput(Num.Order, (m: { readonly precedence: number }) => m.precedence)
-const UserFlags = Schema.Struct({ deprovisioned: Schema.optionalKey(Schema.NullOr(Schema.Boolean)) })
 
 const CONNECTION_PAGE_SIZE = 100
 /** 100 pages of 100 connections; past that the scan refuses rather than guess. */
 const MAX_CONNECTION_PAGES = 100
+const DOMAIN_PAGE_SIZE = 100
+const MAX_ORG_DOMAINS = 1_000
 
-interface ConnectionPage {
-	readonly data: ReadonlyArray<{ readonly id: string; readonly domains: ReadonlyArray<string> }>
+interface ConnectionPage<C> {
+	readonly data: ReadonlyArray<C>
 	readonly totalCount: number
 }
 
 /**
- * Which of `domains` a connection other than `connectionId` serves, reading every page Clerk
- * reports. Fails closed: a scan that cannot reach `totalCount` is an error, never a partial answer,
- * since a miss would let a bypass change reach another org.
+ * Folds every enterprise connection Clerk reports. Fails closed: a scan that cannot reach
+ * `totalCount` is an error, never a partial answer.
  */
-export const scanClaimedDomains = (
-	fetchPage: (offset: number) => Effect.Effect<ConnectionPage, ClerkRequestError>,
-	connectionId: string,
-	domains: ReadonlyArray<string>,
-	maxPages: number = MAX_CONNECTION_PAGES,
-): Effect.Effect<ReadonlyArray<string>, ClerkRequestError> => {
+const scanConnections = <C, S>(
+	fetchPage: (offset: number) => Effect.Effect<ConnectionPage<C>, ClerkRequestError>,
+	initial: S,
+	fold: (state: S, page: ReadonlyArray<C>) => S,
+	maxPages: number,
+): Effect.Effect<S, ClerkRequestError> => {
 	// The offset advances by what Clerk returned, never by the limit: a page may come back short.
-	const step = (
-		page: number,
-		offset: number,
-		claimed: ReadonlySet<string>,
-	): Effect.Effect<ReadonlySet<string>, ClerkRequestError> =>
+	const step = (page: number, offset: number, state: S): Effect.Effect<S, ClerkRequestError> =>
 		fetchPage(offset).pipe(
 			Effect.flatMap((result) => {
-				const next = new Set(claimed)
-				Arr.forEach(result.data, (conn) => {
-					if (conn.id !== connectionId)
-						Arr.forEach(conn.domains, (d) => next.add(Str.toLowerCase(d)))
-				})
+				const next = fold(state, result.data)
 				const read = offset + result.data.length
 				if (read >= result.totalCount) return Effect.succeed(next)
 				// An empty page short of the total, or the page budget spent: the scan is incomplete.
 				if (result.data.length === 0 || page + 1 >= maxPages) {
 					return Effect.fail(
 						new ClerkRequestError({
-							operation: "Clerk.enterpriseConnections.list",
 							message: `Could not read all ${result.totalCount} enterprise connections`,
 							status: null,
 							cause: null,
@@ -146,24 +112,65 @@ export const scanClaimedDomains = (
 				return step(page + 1, read, next)
 			}),
 		)
-	return step(0, 0, new Set()).pipe(Effect.map((claimed) => Arr.filter(domains, (d) => claimed.has(d))))
+	return step(0, 0, initial)
 }
 
-const RoleMappingList = Schema.Struct({ data: Schema.Array(RoleMappingJson) })
+/**
+ * Which of `domains` a connection other than `connectionId` serves, reading every page Clerk
+ * reports. A miss would let a bypass change reach another org, so an incomplete scan fails.
+ */
+export const scanClaimedDomains = (
+	fetchPage: (
+		offset: number,
+	) => Effect.Effect<
+		ConnectionPage<{ readonly id: string; readonly domains: ReadonlyArray<string> }>,
+		ClerkRequestError
+	>,
+	connectionId: string,
+	domains: ReadonlyArray<string>,
+	maxPages: number = MAX_CONNECTION_PAGES,
+): Effect.Effect<ReadonlyArray<string>, ClerkRequestError> =>
+	scanConnections(
+		fetchPage,
+		new Set<string>(),
+		(claimed, page) => {
+			const next = new Set(claimed)
+			Arr.forEach(page, (conn) => {
+				if (conn.id !== connectionId) Arr.forEach(conn.domains, (d) => next.add(Str.toLowerCase(d)))
+			})
+			return next
+		},
+		maxPages,
+	).pipe(Effect.map((claimed) => Arr.filter(domains, (d) => claimed.has(d))))
+
+/**
+ * Clerk keeps connection names unique across the whole instance, but its 422 does not say which
+ * field clashed: true when a connection other than `connectionId` already holds `name`.
+ */
+export const isNameHeldElsewhere = (
+	fetchPage: (
+		offset: number,
+	) => Effect.Effect<ConnectionPage<{ readonly id: string; readonly name: string }>, ClerkRequestError>,
+	connectionId: string | null,
+	name: string,
+	maxPages: number = MAX_CONNECTION_PAGES,
+): Effect.Effect<boolean, ClerkRequestError> => {
+	const wanted = Str.toLowerCase(name)
+	return scanConnections(
+		fetchPage,
+		false,
+		(held, page) =>
+			held ||
+			Arr.some(page, (conn) => conn.id !== connectionId && Str.toLowerCase(conn.name) === wanted),
+		maxPages,
+	)
+}
 
 export interface ClerkSsoRoleMapping {
 	readonly groupId: string
 	readonly groupName: string | null
 	readonly roleKey: string
 }
-
-const BypassUserJson = Schema.Struct({
-	user_id: Schema.String,
-	public_user_data: Schema.optionalKey(
-		Schema.NullOr(Schema.Struct({ identifier: Schema.optionalKey(Schema.NullOr(Schema.String)) })),
-	),
-})
-const BypassUserList = Schema.Array(BypassUserJson)
 
 export interface ClerkSsoBypassUser {
 	readonly userId: string
@@ -228,72 +235,16 @@ export interface ClerkSsoGatewayApi {
 	readonly removeBypassUser: (userId: UserId) => Effect.Effect<void, ClerkRequestError>
 }
 
-const toConnection = (c: EnterpriseConnection): ClerkSsoConnection => ({
-	id: c.id,
-	name: c.name,
-	provider: c.provider,
-	domains: c.domains,
-	organizationId: c.organizationId,
-	active: c.active,
-	createdAt: c.createdAt,
-	saml:
-		c.samlConnection === null
-			? null
-			: {
-					acsUrl: c.samlConnection.acsUrl ?? null,
-					spEntityId: c.samlConnection.spEntityId ?? null,
-					spMetadataUrl: c.samlConnection.spMetadataUrl ?? null,
-					idpMetadataUrl: c.samlConnection.idpMetadataUrl || null,
-					idpSsoUrl: c.samlConnection.idpSsoUrl || null,
-					idpEntityId: c.samlConnection.idpEntityId || null,
-					certificateExpiresAt: c.samlConnection.idpCertificateExpiresAt ?? null,
-				},
-	oidc:
-		c.oauthConfig === null
-			? null
-			: {
-					discoveryUrl: c.oauthConfig.discoveryUrl ?? null,
-					clientId: c.oauthConfig.clientId ?? null,
-					// @clerk/backend drops `redirect_uri`; reads that show it go through `getConnection`.
-					redirectUri: null,
-				},
-})
-
-const nullable = <S extends Schema.Top>(schema: S) => Schema.optionalKey(Schema.NullOr(schema))
-
-/** The connection as the Backend API sends it, `oauth_config.redirect_uri` included. */
-const ConnectionJson = Schema.Struct({
-	id: Schema.String,
-	name: Schema.String,
-	provider: Schema.String,
-	domains: Schema.Array(Schema.String),
-	organization_id: nullable(Schema.String),
-	active: Schema.Boolean,
-	created_at: Schema.Number,
-	saml_connection: nullable(
-		Schema.Struct({
-			acs_url: nullable(Schema.String),
-			sp_entity_id: nullable(Schema.String),
-			sp_metadata_url: nullable(Schema.String),
-			idp_metadata_url: nullable(Schema.String),
-			idp_sso_url: nullable(Schema.String),
-			idp_entity_id: nullable(Schema.String),
-			idp_certificate_expires_at: nullable(Schema.Number),
-		}),
-	),
-	oauth_config: nullable(
-		Schema.Struct({
-			discovery_url: nullable(Schema.String),
-			client_id: nullable(Schema.String),
-			redirect_uri: nullable(Schema.String),
-		}),
-	),
-})
-
 const orNull = (value: string | null | undefined): string | null =>
 	value === undefined || value === null || value === "" ? null : value
 
-const fromConnectionJson = (c: typeof ConnectionJson.Type): ClerkSsoConnection => ({
+/** `oauth_config.redirect_uri` is outside Clerk's spec; the lenient decode keeps it on the wire object. */
+const redirectUri = (config: Clerk.EnterpriseConnectionOauthConfig): string | null =>
+	Predicate.hasProperty(config, "redirect_uri") && Predicate.isString(config.redirect_uri)
+		? orNull(config.redirect_uri)
+		: null
+
+const toConnection = (c: Clerk.EnterpriseConnection): ClerkSsoConnection => ({
 	id: c.id,
 	name: c.name,
 	provider: c.provider,
@@ -319,40 +270,50 @@ const fromConnectionJson = (c: typeof ConnectionJson.Type): ClerkSsoConnection =
 			: {
 					discoveryUrl: orNull(c.oauth_config.discovery_url),
 					clientId: orNull(c.oauth_config.client_id),
-					redirectUri: orNull(c.oauth_config.redirect_uri),
+					redirectUri: redirectUri(c.oauth_config),
 				},
 })
 
-/**
- * Clerk keeps connection names unique across the whole instance (`form_identifier_exists` on
- * `name`), so two customers both naming theirs "Okta" collide.
- */
-export const isNameTaken = (error: ClerkRequestError): boolean => {
-	if (error.status !== 422) return false
-	const cause: unknown = error.cause
-	if (!Predicate.isObject(cause) || !Predicate.hasProperty(cause, "errors") || !Arr.isArray(cause.errors)) {
-		return false
-	}
-	return Arr.some(cause.errors, (entry: unknown) => {
-		if (!Predicate.isObject(entry) || !Predicate.hasProperty(entry, "code")) return false
-		const meta = Predicate.hasProperty(entry, "meta") && Predicate.isObject(entry.meta) ? entry.meta : {}
-		const param = Predicate.hasProperty(meta, "paramName")
-			? meta.paramName
-			: Predicate.hasProperty(meta, "param_name")
-				? meta.param_name
-				: undefined
-		return entry.code === "form_identifier_exists" && param === "name"
-	})
-}
+/** The SCIM key arrives as `Redacted` (a sensitive member); callers hand it to the admin once. */
+const toDirectory = (d: Clerk.Directory): ClerkSsoDirectory => ({
+	id: d.id,
+	endpoint_url: d.endpoint_url,
+	enabled: d.enabled,
+	paused: d.paused,
+	group_role_mapping_enabled: d.group_role_mapping_enabled,
+	created_at: d.created_at,
+	api_key:
+		d.api_key === undefined || d.api_key === null
+			? null
+			: Redacted.isRedacted(d.api_key)
+				? Redacted.value(d.api_key)
+				: d.api_key,
+})
 
 /** A taken name made unique by the org's own domain, which no other org can hold. */
 export const disambiguatedName = (name: string, domains: ReadonlyArray<string>): string =>
 	Option.match(Arr.head(domains), { onNone: () => name, onSome: (domain) => `${name} (${domain})` })
 
-const samlParams = (saml: NonNullable<ClerkSsoConnectionInput["saml"]>): EnterpriseConnectionSamlParams => {
-	if (saml.metadataUrl !== undefined) return { idpMetadataUrl: saml.metadataUrl }
-	const params: EnterpriseConnectionSamlParams = { idpSsoUrl: saml.ssoUrl, idpEntityId: saml.entityId }
-	if (saml.certificate !== undefined) params.idpCertificates = [saml.certificate]
+const samlParams = (
+	saml: NonNullable<ClerkSsoConnectionInput["saml"]>,
+): Clerk.CreateEnterpriseConnectionRequestSaml => {
+	if (saml.metadataUrl !== undefined) return { idp_metadata_url: saml.metadataUrl }
+	const params: Clerk.CreateEnterpriseConnectionRequestSaml = {
+		idp_sso_url: saml.ssoUrl,
+		idp_entity_id: saml.entityId,
+	}
+	if (saml.certificate !== undefined) params.idp_certificates = [saml.certificate]
+	return params
+}
+
+const oidcParams = (
+	oidc: NonNullable<ClerkSsoConnectionInput["oidc"]>,
+): Clerk.CreateEnterpriseConnectionRequestOidc => {
+	const params: Clerk.CreateEnterpriseConnectionRequestOidc = {
+		discovery_url: oidc.discoveryUrl,
+		client_id: oidc.clientId,
+	}
+	if (oidc.clientSecret !== undefined) params.client_secret = oidc.clientSecret
 	return params
 }
 
@@ -360,156 +321,99 @@ const createParams = (
 	orgId: OrgId,
 	provider: SsoProvider,
 	input: ClerkSsoConnectionInput,
-): CreateEnterpriseConnectionParams => {
-	const params: CreateEnterpriseConnectionParams = {
+): Clerk.CreateEnterpriseConnectionRequest => {
+	const params: Clerk.CreateEnterpriseConnectionRequest = {
 		name: input.name,
 		domains: [...input.domains],
-		organizationId: orgId,
+		organization_id: orgId,
 		provider,
 		// Never live on create: the admin enforces it once a sign-in works.
 		active: false,
-		allowOrganizationAccountLinking: true,
+		allow_organization_account_linking: true,
 	}
 	if (input.saml !== undefined) params.saml = samlParams(input.saml)
-	if (input.oidc !== undefined) params.oidc = input.oidc
+	if (input.oidc !== undefined) params.oidc = oidcParams(input.oidc)
 	return params
 }
 
 /** Clerk's update body: only what the caller set, so an omitted secret keeps the stored one. */
 export const updateParams = (
 	input: Partial<ClerkSsoConnectionInput> & { readonly active?: boolean },
-): UpdateEnterpriseConnectionParams => {
-	const params: UpdateEnterpriseConnectionParams = {}
+): Omit<Clerk.UpdateEnterpriseConnectionRequest, "enterprise_connection_id"> => {
+	const params: Omit<Clerk.UpdateEnterpriseConnectionRequest, "enterprise_connection_id"> = {}
 	if (input.name !== undefined) params.name = input.name
 	if (input.domains !== undefined) params.domains = [...input.domains]
 	if (input.active !== undefined) params.active = input.active
 	// Requiring SSO restates Clerk's default: members of the domains cannot add another email,
 	// password, passkey or social account. It is never loosened from here.
-	if (input.active === true) params.disableAdditionalIdentifications = true
+	if (input.active === true) params.disable_additional_identifications = true
 	if (input.saml !== undefined) params.saml = samlParams(input.saml)
-	if (input.oidc !== undefined) params.oidc = input.oidc
+	if (input.oidc !== undefined) params.oidc = oidcParams(input.oidc)
 	return params
 }
 
-/** Clerk's error body is `{ errors: [{ message, long_message }] }`; the long message is user-facing. */
-const clerkErrorMessage = (body: unknown): string | null => {
-	if (!Predicate.isObject(body) || !Predicate.hasProperty(body, "errors") || !Arr.isArray(body.errors)) {
-		return null
-	}
-	const first: unknown = body.errors[0]
-	if (!Predicate.isObject(first)) return null
-	if (Predicate.hasProperty(first, "long_message") && Predicate.isString(first.long_message)) {
-		return first.long_message
-	}
-	return Predicate.hasProperty(first, "message") && Predicate.isString(first.message) ? first.message : null
-}
-
-const make = Effect.gen(function* () {
-	const env = yield* Env
-	const httpClient = yield* HttpClient.HttpClient
-	const clerk: ClerkClient | null = clerkModeClient(env) ?? null
-	const secret = Option.getOrNull(env.CLERK_SECRET_KEY)
-
-	const notConfigured = (operation: string) =>
-		new ClerkRequestError({ operation, message: "Clerk is not configured", status: null, cause: null })
-
-	const sdk = <A>(
-		operation: string,
-		attributes: Readonly<Record<string, string | number | boolean>>,
-		run: (client: ClerkClient) => Promise<A>,
+/** The gateway over one Clerk Backend API; `undefined` outside Clerk mode. */
+export const makeClerkSsoGateway = (api: ClerkApi | undefined): ClerkSsoGatewayApi => {
+	const call = <A, E>(
+		request: Effect.Effect<A, E, ClerkApiServices>,
 	): Effect.Effect<A, ClerkRequestError> =>
-		clerk === null
-			? Effect.fail(notConfigured(operation))
-			: clerkRequest(operation, attributes, () => run(clerk))
-
-	/** One raw Backend API call: JSON in, JSON out, Clerk's message kept on a non-2xx. */
-	const raw = <S extends Schema.Top = typeof Schema.Unknown>(
-		operation: string,
-		method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE",
-		path: string,
-		options: { readonly body?: unknown; readonly decode?: S } = {},
-	): Effect.Effect<S["Type"] | undefined, ClerkRequestError, S["DecodingServices"]> =>
-		Effect.gen(function* () {
-			if (secret === null) return yield* notConfigured(operation)
-			const base = HttpClientRequest.make(method)(`${CLERK_API_URL}${path}`).pipe(
-				HttpClientRequest.bearerToken(Redacted.value(secret)),
-				HttpClientRequest.setHeader("Clerk-API-Version", CLERK_API_VERSION),
-				HttpClientRequest.acceptJson,
-			)
-			const request =
-				options.body === undefined ? base : HttpClientRequest.bodyJsonUnsafe(base, options.body)
-			const response = yield* httpClient.execute(request)
-			const body: unknown = yield* response.json.pipe(Effect.orElseSucceed(() => null))
-			if (response.status >= 300) {
-				return yield* new ClerkRequestError({
-					operation,
-					message: clerkErrorMessage(body) ?? `Clerk answered ${response.status}`,
-					status: response.status,
-					cause: null,
-				})
-			}
-			if (options.decode === undefined) return undefined
-			return yield* Schema.decodeUnknownEffect(options.decode)(body)
-		}).pipe(
-			Effect.catchTags({
-				HttpClientError: (cause) =>
-					Effect.fail(
-						new ClerkRequestError({ operation, message: cause.message, status: null, cause }),
-					),
-				SchemaError: () =>
-					Effect.fail(
-						new ClerkRequestError({
-							operation,
-							message: "Clerk answered in an unexpected shape",
-							status: null,
-							// The decode error can quote the body, which may hold a SCIM key: not kept.
-							cause: null,
-						}),
-					),
-			}),
-			Effect.timeoutOrElse({
-				duration: CLERK_REQUEST_TIMEOUT,
-				orElse: () =>
-					Effect.fail(
-						new ClerkRequestError({
-							operation,
-							message: "Clerk timed out",
-							status: null,
-							cause: null,
-						}),
-					),
-			}),
-			Effect.withSpan(operation, {
-				kind: "client",
-				attributes: { "peer.service": "clerk", "http.request.method": method },
-			}),
-		)
-
-	const directory = (operation: string, method: "GET" | "POST" | "PATCH", path: string, body?: unknown) =>
-		raw(operation, method, path, { body, decode: DirectoryJson }).pipe(
-			Effect.filterOrFail(
-				(d): d is ClerkSsoDirectory => d !== undefined,
-				() =>
+		api === undefined
+			? Effect.fail(
 					new ClerkRequestError({
-						operation,
-						message: "Clerk sent no directory",
+						message: "Clerk is not configured",
 						status: null,
 						cause: null,
 					}),
-			),
+				)
+			: api.run(request)
+
+	const listConnectionsPage = (offset: number) =>
+		call(Clerk.listEnterpriseConnections({ limit: CONNECTION_PAGE_SIZE, offset })).pipe(
+			Effect.map((page) => ({ data: page.data, totalCount: page.total_count })),
 		)
 
-	const api: ClerkSsoGatewayApi = {
-		available: clerk !== null && secret !== null,
-		listRoles: sdk("Clerk.organizationRoles.list", {}, (c) =>
-			c.organizationRoles.getOrganizationRoleList({ limit: 100 }),
-		).pipe(Effect.map((page) => Arr.map(page.data, (role) => ({ id: role.id, key: role.key })))),
+	/** On a 422, retries under the disambiguated name only when another connection holds `name`. */
+	const retryIfNameTaken =
+		<A>(connectionId: string | null, name: string, retry: Effect.Effect<A, ClerkRequestError>) =>
+		(error: ClerkRequestError): Effect.Effect<A, ClerkRequestError> =>
+			error.status !== 422
+				? Effect.fail(error)
+				: isNameHeldElsewhere(listConnectionsPage, connectionId, name).pipe(
+						Effect.mapError(() => error),
+						Effect.flatMap((held) => (held ? retry : Effect.fail(error))),
+					)
+
+	/** The org's domains, a page at a time, up to {@link MAX_ORG_DOMAINS}. */
+	const listOrgDomains = (orgId: OrgId) => {
+		const page = (
+			offset: number,
+			acc: ReadonlyArray<Clerk.OrganizationDomain>,
+		): Effect.Effect<ReadonlyArray<Clerk.OrganizationDomain>, ClerkRequestError> =>
+			call(
+				Clerk.listOrganizationDomains({ organization_id: orgId, limit: DOMAIN_PAGE_SIZE, offset }),
+			).pipe(
+				Effect.flatMap((result) => {
+					const all = Arr.appendAll(acc, result.data)
+					const next = offset + DOMAIN_PAGE_SIZE
+					return result.data.length < DOMAIN_PAGE_SIZE || next >= MAX_ORG_DOMAINS
+						? Effect.succeed(all)
+						: page(next, all)
+				}),
+			)
+		return page(0, [])
+	}
+
+	const gateway: ClerkSsoGatewayApi = {
+		available: api !== undefined,
+		listRoles: call(Clerk.listOrganizationRoles({ limit: 100 })).pipe(
+			Effect.map((page) => Arr.map(page.data, (role) => ({ id: role.id, key: role.key }))),
+		),
 		ensureOrgDomain: (orgId, domain) =>
-			sdk("Clerk.organizations.createOrganizationDomain", { orgId }, (c) =>
-				c.organizations.createOrganizationDomain({
-					organizationId: orgId,
+			call(
+				Clerk.createOrganizationDomain({
+					organization_id: orgId,
 					name: domain,
-					enrollmentMode: "manual_invitation",
+					enrollment_mode: "manual_invitation",
 					verified: true,
 				}),
 			).pipe(
@@ -518,216 +422,155 @@ const make = Effect.gen(function* () {
 				Effect.catchIf(
 					(error) => error.status === 422 || error.status === 409 || error.status === 400,
 					(error) =>
-						sdk("Clerk.organizations.getOrganizationDomainList", { orgId }, async (c) => {
-							const all: Array<{ readonly id: string; readonly name: string }> = []
-							for (let offset = 0; offset < 1_000; offset += 100) {
-								const page = await c.organizations.getOrganizationDomainList({
-									organizationId: orgId,
-									limit: 100,
-									offset,
-								})
-								all.push(...page.data)
-								if (page.data.length < 100) break
-							}
-							return { data: all }
-						}).pipe(
-							Effect.flatMap((page) => {
-								const found = Arr.findFirst(page.data, (d) => d.name === domain)
-								return Option.match(found, {
-									onNone: () => Effect.fail(error),
-									onSome: (d) => Effect.succeed(d.id),
-								})
-							}),
+						listOrgDomains(orgId).pipe(
+							Effect.flatMap((domains) =>
+								Option.match(
+									Arr.findFirst(domains, (d) => d.name === domain),
+									{ onNone: () => Effect.fail(error), onSome: (d) => Effect.succeed(d.id) },
+								),
+							),
 						),
 				),
 			),
 		verifyOrgDomainOwnership: (orgId, domainId) =>
-			raw(
-				"Clerk.organizationDomains.verifyOwnership",
-				"POST",
-				`/organizations/${encodeURIComponent(orgId)}/domains/${encodeURIComponent(domainId)}/verify_ownership`,
+			call(
+				Clerk.verifyOrganizationDomainOwnership({ organization_id: orgId, domain_id: domainId }),
 			).pipe(Effect.asVoid),
 		deleteOrgDomain: (orgId, domainId) =>
-			sdk("Clerk.organizations.deleteOrganizationDomain", { orgId }, (c) =>
-				c.organizations.deleteOrganizationDomain({ organizationId: orgId, domainId }),
-			).pipe(Effect.asVoid),
+			call(Clerk.deleteOrganizationDomain({ organization_id: orgId, domain_id: domainId })).pipe(
+				Effect.asVoid,
+			),
 		getConnection: (id) =>
-			raw(
-				"Clerk.enterpriseConnections.get",
-				"GET",
-				`/enterprise_connections/${encodeURIComponent(id)}`,
-				{
-					decode: ConnectionJson,
-				},
-			).pipe(
-				Effect.filterOrFail(
-					(c): c is typeof ConnectionJson.Type => c !== undefined,
-					() =>
-						new ClerkRequestError({
-							operation: "Clerk.enterpriseConnections.get",
-							message: "Clerk sent no connection",
-							status: null,
-							cause: null,
-						}),
-				),
-				Effect.map(fromConnectionJson),
+			call(Clerk.getEnterpriseConnection({ enterprise_connection_id: id })).pipe(
+				Effect.map(toConnection),
 			),
 		createConnection: (orgId, provider, input) => {
 			const create = (name: string) =>
-				sdk("Clerk.enterpriseConnections.create", { orgId, provider }, (c) =>
-					c.enterpriseConnections.createEnterpriseConnection(
-						createParams(orgId, provider, { ...input, name }),
-					),
-				)
+				call(Clerk.createEnterpriseConnection(createParams(orgId, provider, { ...input, name })))
 			return create(input.name).pipe(
-				Effect.catchIf(isNameTaken, () => create(disambiguatedName(input.name, input.domains))),
+				Effect.catch(
+					retryIfNameTaken(null, input.name, create(disambiguatedName(input.name, input.domains))),
+				),
 				Effect.map(toConnection),
 			)
 		},
 		updateConnection: (id, input) => {
 			const update = (patch: typeof input) =>
-				sdk("Clerk.enterpriseConnections.update", {}, (c) =>
-					c.enterpriseConnections.updateEnterpriseConnection(id, updateParams(patch)),
+				call(
+					Clerk.updateEnterpriseConnection({
+						enterprise_connection_id: id,
+						...updateParams(patch),
+					}),
 				)
+			const name = input.name
 			return update(input).pipe(
-				Effect.catchIf(
-					(error) => input.name !== undefined && isNameTaken(error),
-					() =>
-						update({ ...input, name: disambiguatedName(input.name ?? "", input.domains ?? []) }),
+				Effect.catch((error) =>
+					name === undefined
+						? Effect.fail(error)
+						: retryIfNameTaken(
+								id,
+								name,
+								update({ ...input, name: disambiguatedName(name, input.domains ?? []) }),
+							)(error),
 				),
 				Effect.map(toConnection),
 			)
 		},
 		deleteConnection: (id) =>
-			sdk("Clerk.enterpriseConnections.delete", {}, (c) =>
-				c.enterpriseConnections.deleteEnterpriseConnection(id),
-			).pipe(Effect.asVoid),
+			call(Clerk.deleteEnterpriseConnection({ enterprise_connection_id: id })).pipe(Effect.asVoid),
 		createDirectory: (connectionId, provider) =>
-			directory("Clerk.directories.create", "POST", "/directories", {
-				enterprise_connection_id: connectionId,
-				provider,
-				name: "Maple SCIM",
-			}),
-		getDirectory: (id) =>
-			directory("Clerk.directories.get", "GET", `/directories/${encodeURIComponent(id)}`),
+			call(
+				Clerk.createDirectory({
+					enterprise_connection_id: connectionId,
+					provider,
+					name: "Maple SCIM",
+				}),
+			).pipe(Effect.map(toDirectory)),
+		getDirectory: (id) => call(Clerk.getDirectory({ directory_id: id })).pipe(Effect.map(toDirectory)),
 		updateDirectory: (id, patch) =>
-			directory("Clerk.directories.update", "PATCH", `/directories/${encodeURIComponent(id)}`, patch),
+			call(Clerk.updateDirectory({ directory_id: id, ...patch })).pipe(Effect.map(toDirectory)),
 		rotateDirectoryKey: (id) =>
-			directory(
-				"Clerk.directories.rotateApiKey",
-				"POST",
-				`/directories/${encodeURIComponent(id)}/rotate_api_key`,
-			),
-		deleteDirectory: (id) =>
-			raw("Clerk.directories.delete", "DELETE", `/directories/${encodeURIComponent(id)}`).pipe(
-				Effect.asVoid,
-			),
+			call(Clerk.rotateDirectoryAPIKey({ directory_id: id })).pipe(Effect.map(toDirectory)),
+		deleteDirectory: (id) => call(Clerk.deleteDirectory({ directory_id: id })).pipe(Effect.asVoid),
 		domainsClaimedElsewhere: (connectionId, domains) =>
 			domains.length === 0
 				? Effect.succeed([])
-				: scanClaimedDomains(
-						(offset) =>
-							sdk("Clerk.enterpriseConnections.list", { offset }, (c) =>
-								c.enterpriseConnections.getEnterpriseConnectionList({
-									limit: CONNECTION_PAGE_SIZE,
-									offset,
-								}),
-							),
-						connectionId,
-						domains,
-					),
+				: scanClaimedDomains(listConnectionsPage, connectionId, domains),
 		isDeprovisioned: (userId) =>
-			raw("Clerk.users.get", "GET", `/users/${encodeURIComponent(userId)}`, { decode: UserFlags }).pipe(
-				Effect.map((user) => user?.deprovisioned === true),
+			call(Clerk.getUser({ user_id: userId })).pipe(
+				Effect.map((user) => user.deprovisioned === true),
 				Effect.catchIf(
 					(e) => e.status === 404,
 					() => Effect.succeed(true),
 				),
 			),
 		isMember: (orgId, userId) =>
-			sdk("Clerk.organizations.getOrganizationMembershipList", { orgId }, (c) =>
-				c.organizations.getOrganizationMembershipList({
-					organizationId: orgId,
-					userId: [userId],
-					limit: 1,
-				}),
+			call(
+				Clerk.listOrganizationMemberships({ organization_id: orgId, user_id: [userId], limit: 1 }),
 			).pipe(Effect.map((page) => page.data.length > 0)),
 		verifiedEmailDomains: (userId) =>
-			sdk("Clerk.users.getUser", {}, (c) => c.users.getUser(userId)).pipe(
+			call(Clerk.getUser({ user_id: userId })).pipe(
 				Effect.map((user) =>
-					Arr.flatMap(user.emailAddresses, (e) =>
+					Arr.flatMap(user.email_addresses, (e) =>
 						e.verification?.status === "verified"
 							? Option.toArray(
-									Option.map(Arr.last(Str.split(e.emailAddress, "@")), Str.toLowerCase),
+									Option.map(Arr.last(Str.split(e.email_address, "@")), Str.toLowerCase),
 								)
 							: [],
 					),
 				),
 			),
 		listRoleMappings: (directoryId) =>
-			raw(
-				"Clerk.directories.listGroupRoleMappings",
-				"GET",
-				`/directories/${encodeURIComponent(directoryId)}/group_role_mappings`,
-				{
-					decode: RoleMappingList,
-				},
-			).pipe(
+			call(Clerk.listDirectoryGroupRoleMappings({ directory_id: directoryId })).pipe(
 				Effect.map((list) =>
-					Arr.map(Arr.sort(list?.data ?? [], byPrecedence), (m) => ({
-						groupId: m.directory_group_id ?? m.scim_group_id ?? "",
-						groupName: m.directory_group_display_name ?? null,
-						roleKey: m.role.key,
-					})),
+					Arr.flatMap(Arr.sort(list.data, byPrecedence), (m: Clerk.DirectoryGroupRoleMapping) =>
+						m.role === undefined
+							? []
+							: [
+									{
+										groupId: m.directory_group_id || m.scim_group_id,
+										groupName: orNull(m.directory_group_display_name),
+										roleKey: m.role.key,
+									},
+								],
+					),
 				),
 			),
 		replaceRoleMappings: (directoryId, mappings) =>
-			raw(
-				"Clerk.directories.replaceGroupRoleMappings",
-				"PUT",
-				`/directories/${encodeURIComponent(directoryId)}/group_role_mappings`,
-				{
-					body: {
-						mappings: Arr.map(mappings, (m) => ({
-							directory_group_id: m.groupId,
-							role_id: m.roleId,
-						})),
-					},
-				},
+			call(
+				Clerk.replaceDirectoryGroupRoleMappings({
+					directory_id: directoryId,
+					mappings: Arr.map(mappings, (m) => ({
+						directory_group_id: m.groupId,
+						role_id: m.roleId,
+					})),
+				}),
 			).pipe(Effect.asVoid),
 		listBypassUsers: (connectionId) =>
-			raw(
-				"Clerk.ssoBypassAllowlist.list",
-				"GET",
-				`/sso_bypass_allowlist_users?enterprise_connection_id=${encodeURIComponent(connectionId)}`,
-				{
-					decode: BypassUserList,
-				},
-			).pipe(
+			call(Clerk.listSSOBypassAllowlistUsers({ enterprise_connection_id: connectionId })).pipe(
 				Effect.map((list) =>
-					Arr.map(list ?? [], (u) => ({
+					Arr.map(list, (u) => ({
 						userId: u.user_id,
-						identifier: u.public_user_data?.identifier ?? null,
+						identifier: orNull(u.public_user_data.identifier),
 					})),
 				),
 			),
 		addBypassUser: (userId) =>
-			raw("Clerk.ssoBypassAllowlist.create", "POST", "/sso_bypass_allowlist_users", {
-				body: { user_id: userId },
-			}).pipe(Effect.asVoid),
+			call(Clerk.createSSOBypassAllowlistUser({ user_id: userId })).pipe(Effect.asVoid),
 		removeBypassUser: (userId) =>
-			raw(
-				"Clerk.ssoBypassAllowlist.delete",
-				"DELETE",
-				`/sso_bypass_allowlist_users/${encodeURIComponent(userId)}`,
-			).pipe(Effect.asVoid),
+			call(Clerk.deleteSSOBypassAllowlistUser({ userID: userId })).pipe(Effect.asVoid),
 	}
-	return api
+	return gateway
+}
+
+const make = Effect.gen(function* () {
+	const env = yield* Env
+	return makeClerkSsoGateway(clerkModeApi(env))
 })
 
 export class ClerkSsoGateway extends Context.Service<ClerkSsoGateway, ClerkSsoGatewayApi>()(
 	"@maple/backend/services/org/enterprise-sso/ClerkSsoGateway",
 	{ make },
 ) {
-	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(FetchHttpClient.layer))
+	static readonly layer = Layer.effect(this, this.make)
 }

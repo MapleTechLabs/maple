@@ -48,7 +48,7 @@ describe("code review settings", () => {
 		const picked = pageUpdate(
 			model,
 			Message.GotModelSelectMessage({
-				message: Select.Message.SelectedItem({ index: 8, value: "anthropic/claude-haiku-5.5" }),
+				message: Select.Message.SelectedItem({ index: 9, value: "anthropic/claude-haiku-5.5" }),
 			}),
 		)
 		expect(names(picked.commands)).toContain("SaveCodeReviewSettings")
@@ -67,7 +67,7 @@ describe("code review settings", () => {
 		const picked = pageUpdate(
 			loaded().model,
 			Message.GotModelSelectMessage({
-				message: Select.Message.SelectedItem({ index: 8, value: "anthropic/claude-haiku-5.5" }),
+				message: Select.Message.SelectedItem({ index: 9, value: "anthropic/claude-haiku-5.5" }),
 			}),
 		)
 		const edited = pageUpdate(
@@ -171,7 +171,7 @@ describe("code review settings", () => {
 		const picked = pageUpdate(
 			savingB,
 			Message.GotModelSelectMessage({
-				message: Select.Message.SelectedItem({ index: 8, value: "anthropic/claude-haiku-5.5" }),
+				message: Select.Message.SelectedItem({ index: 9, value: "anthropic/claude-haiku-5.5" }),
 			}),
 		).model
 		const failedB = pageUpdate(

@@ -156,6 +156,9 @@ describe("AnthropicCostProvider", () => {
 				assert.strictEqual((yield* Effect.flip(pull(ORG, connectionRef))).reason, "rate_limited")
 				world.costStatus = 503
 				assert.strictEqual((yield* Effect.flip(pull(ORG, connectionRef))).reason, "upstream")
+				// A redirect is not followed and not read as a report: the key goes to no other host.
+				world.costStatus = 302
+				assert.strictEqual((yield* Effect.flip(pull(ORG, connectionRef))).reason, "upstream")
 			}),
 		)
 	})
