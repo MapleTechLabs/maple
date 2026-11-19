@@ -26,6 +26,7 @@ import { ChatWorkspaceService } from "@maple/backend/services/integrations/ChatW
 import { CloudflareAnalyticsService } from "@maple/backend/services/integrations/CloudflareAnalyticsService"
 import { GcpConnectorService } from "@maple/backend/services/integrations/GcpConnectorService"
 import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
+import { FleetConnectionService } from "@maple/backend/services/integrations/FleetConnectionService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { SearchConsoleImportService } from "@maple/backend/services/integrations/SearchConsoleImportService"
 import { SearchConsoleService } from "@maple/backend/services/integrations/SearchConsoleService"
@@ -137,6 +138,7 @@ const makeHarness = (role: string) => {
 		unreached(CloudflareOAuthService),
 		unreached(CloudflareAnalyticsService),
 		unreached(RailwayMetricsService),
+		unreached(FleetConnectionService),
 		unreached(VercelIntegrationService),
 		unreached(SupabaseOAuthService),
 		unreached(SupabaseConnectionService),
