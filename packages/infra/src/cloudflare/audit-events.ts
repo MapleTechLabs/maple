@@ -53,7 +53,8 @@ export const auditArchiveLocks = (
  * Never add or change `jurisdiction` or `locationHint`: either replaces the bucket.
  */
 export const AuditArchiveBucket = Cloudflare.R2.Bucket(
-	"audit-archive",
+	// Own id: alchemy keys state by id across types, and the Worker is "audit-archive".
+	"audit-archive-r2",
 	Effect.gen(function* () {
 		if (globalThis.__ALCHEMY_RUNTIME__) return {}
 		const { stage, region } = yield* stageDeployment
