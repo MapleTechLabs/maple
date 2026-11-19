@@ -164,7 +164,11 @@ has an S3 gateway endpoint and no NAT, so this traffic is free.
 | `INGEST_REQUEST_TIMEOUT_SECS`     | 30                                  | Gateway request deadline; 0 disables                    |
 
 The bucket, its lifecycle rule (7-day expiry as a backstop for deletes that were lost) and the
-task-role policy are in `apps/ingest/alchemy.run.ts`.
+task-role policy are in `apps/ingest/alchemy.run.ts`. New objects are encrypted with the WAL's own
+KMS key (`alias/<bucket>`, bucket key on), whose policy (`apps/ingest/alchemy/wal-key.ts`) lets only
+the gateway's task role, and the prd deploy role, use it through S3. Objects written before the
+switch keep the SSE-S3 encryption recorded on each of them and stay readable. The key's policy names
+the task role, so the key and the bucket are declared after the ECS service.
 
 ## What bounds the backlog
 

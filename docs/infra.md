@@ -513,6 +513,13 @@ services. The Prometheus and uptime scraper (`apps/scraper`, one per prd instanc
 same VPC with no inbound traffic; its image is the single-file bundle `alchemy:build-deps`
 writes to `apps/scraper/dist`, and ECS replaces the task when its `/health` stops answering.
 
+- **Tasks on a gateway host cannot reach the instance metadata service.** Host networking puts
+  the task in the host's network namespace, where the IMDS hop limit does not apply. The boot
+  script installs `maple-imds-block.service`, required by `ecs.service`, which drops metadata
+  traffic from every non-root uid (the ECS agent and SSM run as root) on every boot. The instance
+  facts the gateway tags its telemetry with are written to `/etc/maple-ingest/host-identity` at
+  boot and mounted read-only (`INGEST_HOST_IDENTITY_FILE`). The task's own credentials come from
+  the ECS agent endpoint, which is a different address.
 - `AWS.providers()` is registered unconditionally: the `Alchemy.Stack` options are evaluated
   before `Alchemy.Stage` is readable, so it cannot be stage-derived.
 - `profile.deploys.ingest` alone decides which stages get a fleet: prd **and PR previews**. Dev
