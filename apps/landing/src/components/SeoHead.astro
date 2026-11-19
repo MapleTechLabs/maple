@@ -8,6 +8,8 @@ interface Props {
     title: string;
     description: string;
     type?: "SoftwareApplication" | "WebPage";
+    /** A `SoftwareApplication` that is not the hosted plan: its own name, and no charge. */
+    freeApplication?: string;
     url?: string;
     includeOrganization?: boolean;
     competitorName?: string;
@@ -21,6 +23,7 @@ const {
     description,
     type = "WebPage",
     url,
+    freeApplication,
     includeOrganization = false,
     competitorName,
     datePublished,
@@ -39,12 +42,12 @@ const resolvedUrl =
 // The product's own name and the plan's real price: a page title is not a product name, and
 // a price of 0 contradicts the pricing the page states.
 const isApplication = type === "SoftwareApplication";
-const offer = isApplication ? await getOffer() : undefined;
+const offer = isApplication && freeApplication === undefined ? await getOffer() : undefined;
 
 const jsonLd = {
     "@context": "https://schema.org",
     "@type": type,
-    name: isApplication ? "Maple" : title,
+    name: isApplication ? (freeApplication ?? "Maple") : title,
     description,
     ...((resolvedUrl) ? ({ url: resolvedUrl }) : undefined),
     ...((datePublished) ? ({ datePublished }) : undefined),
@@ -56,7 +59,7 @@ const jsonLd = {
                   "@type": "Offer",
                   price: String(offer?.price ?? 0),
                   priceCurrency: "USD",
-                  url: Astro.site ? new URL("/pricing/", Astro.site).toString() : undefined,
+                  ...(offer && Astro.site ? { url: new URL("/pricing/", Astro.site).toString() } : undefined),
               },
           }) : undefined),
     ...((competitorName) ? ({
