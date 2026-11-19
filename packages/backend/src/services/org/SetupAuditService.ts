@@ -1,3 +1,4 @@
+import { cloudflareDatasetUnavailable } from "@maple/domain/cloudflare-analytics"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	AlertDestinations,
@@ -263,6 +264,7 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 								PG.from(CloudflareAnalyticsState)
 									.select(
 										"dataset",
+										"settingsJson",
 										"zoneName",
 										"enabled",
 										"lastSuccessAt",
@@ -389,11 +391,16 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 					provider: connection.provider,
 					revokedAt: connection.revokedAt,
 				})),
-				// Disabled datasets are not collected at all, so a stale error on one is not a finding.
+				// Datasets disabled by the user are not collected, so a stale error on one is not a finding.
+				// Datasets Cloudflare's settings deny stay listed so the check can report them as unavailable.
 				cloudflareAnalytics: Arr.map(
-					Arr.filter(rows.cloudflare, (state) => state.enabled),
+					Arr.filter(
+						rows.cloudflare,
+						(state) => state.enabled || cloudflareDatasetUnavailable(state.settingsJson),
+					),
 					(state) => ({
 						dataset: state.dataset,
+						settingsJson: state.settingsJson,
 						zoneName: state.zoneName,
 						lastSuccessAt: state.lastSuccessAt,
 						lastErrorAt: state.lastErrorAt,
