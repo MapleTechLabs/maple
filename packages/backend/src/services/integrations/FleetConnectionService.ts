@@ -173,12 +173,7 @@ export class FleetConnectionService extends Context.Service<
 				(message) => new IntegrationsPersistenceError({ message }),
 			)
 			const now = yield* Clock.currentTimeMillis
-			const previous = (yield* selectRow(orgId))[0]
 			const next = {
-				// Another server's activity ids mean nothing here: its feed starts over.
-				...(previous !== undefined && previous.baseUrl !== baseUrl
-					? { activityCursor: null }
-					: undefined),
 				baseUrl,
 				tokenCiphertext: sealed.ciphertext,
 				tokenIv: sealed.iv,

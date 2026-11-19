@@ -2,6 +2,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import type { AuditTrailEvent } from "@maple/domain/audit-trail"
 import { AuditTrailPersistenceError, OrgId, UserId } from "@maple/domain/http"
 import { Array as Arr, Effect, Layer, Option, Schema } from "effect"
+import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AuditTrailService } from "@maple/backend/services/audit-trail/AuditTrailService"
 import { FleetAuditService } from "./FleetAuditService"
@@ -105,17 +106,18 @@ describe("FleetAuditService", () => {
 						event.account,
 					]),
 					[
-						["org_fleet", "fleet", "1", "Acme Corp"],
-						["org_fleet", "fleet", "2", "Acme Corp"],
+						["org_fleet", "fleet", "fleet.example.com:1", "Acme Corp"],
+						["org_fleet", "fleet", "fleet.example.com:2", "Acme Corp"],
 					],
 				)
 
 				world.activities.push(activityAt(3))
 				const second = yield* pollAll
 				assert.strictEqual(second.events, 1)
+				// The read reaches back past the cursor, but counts only what is new.
 				assert.strictEqual(
 					Option.getOrUndefined(Arr.last(activityCalls(world)))?.search.get("after"),
-					"2",
+					"0",
 				)
 				assert.strictEqual((yield* row(testDb))?.activity_cursor, 3)
 			}),
@@ -190,7 +192,7 @@ describe("FleetAuditService", () => {
 		)
 	})
 
-	it.effect("holds a server that asked Maple to slow down", () => {
+	it.effect("holds a server that asked Maple to slow down, then reads it again", () => {
 		const testDb = createTestDb(trackedDbs)
 		const world = makeFakeFleet({ activities: [activityAt(1)] })
 		const trail: Trail = { written: [], failing: false }
@@ -202,9 +204,50 @@ describe("FleetAuditService", () => {
 				yield* connect
 				world.status = 429
 				assert.strictEqual((yield* pollAll).failedConnections, 1)
+				assert.include((yield* row(testDb))?.last_error ?? "", "slow down")
 				world.status = null
 				// Still held: the next tick does not claim the row.
 				assert.strictEqual((yield* pollAll).connections, 0)
+				yield* TestClock.adjust(15 * 60_000)
+				assert.strictEqual((yield* pollAll).events, 1)
+			}),
+		)
+	})
+
+	it.effect("catches an activity whose id committed after a higher one was read", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeFakeFleet({ activities: [activityAt(10), activityAt(12)] })
+		const trail: Trail = { written: [], failing: false }
+		return run(
+			testDb,
+			world,
+			trail,
+			Effect.gen(function* () {
+				yield* connect
+				yield* pollAll
+				world.activities.push(activityAt(11, "wiped_host"))
+				yield* pollAll
+				assert.isTrue(
+					Arr.some(trail.written, ({ event }) => event.providerEventId === "fleet.example.com:11"),
+				)
+			}),
+		)
+	})
+
+	it.effect("stops paging a server that ignores the cursor once nothing is new", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeFakeFleet({ activities: [activityAt(1), activityAt(2)], ignoresAfter: true })
+		const trail: Trail = { written: [], failing: false }
+		return run(
+			testDb,
+			world,
+			trail,
+			Effect.gen(function* () {
+				yield* connect
+				assert.strictEqual((yield* pollAll).events, 2)
+				const calls = activityCalls(world).length
+				assert.strictEqual((yield* pollAll).events, 0)
+				assert.strictEqual(activityCalls(world).length, calls + 1)
 			}),
 		)
 	})

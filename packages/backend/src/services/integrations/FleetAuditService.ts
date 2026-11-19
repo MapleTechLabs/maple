@@ -6,7 +6,6 @@
  */
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { FleetConnections, type FleetConnectionRow } from "@maple/db/tables"
-import type { AuditTrailEvent } from "@maple/domain/audit-trail"
 import { AuditTrailPersistenceError, IntegrationsPersistenceError } from "@maple/domain/http"
 import { Array as Arr, Clock, Context, DateTime, Effect, Layer, Option, Redacted } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
@@ -27,7 +26,8 @@ const FIRST_READ_MS = 7 * 24 * 60 * 60_000
 const PAGE_SIZE = 500
 /** Pages per server per tick; a backlog longer than this drains over the next ticks. */
 const MAX_PAGES = 10
-const RATE_LIMIT_HOLD_MS = 15 * 60_000
+/** How many ids before the cursor each read reaches back. */
+const OVERLAP_IDS = 20
 
 const toPersistenceError = makePersistenceErrorMapper(
 	IntegrationsPersistenceError,
@@ -132,7 +132,7 @@ export class FleetAuditService extends Context.Service<FleetAuditService, FleetA
 			/** Pages after the cursor until the feed is read or the page cap; stores each page before moving on. */
 			const readFeed = Effect.fnUntraced(function* (lease: FleetLease, fleet: FleetApi.FleetClient) {
 				const { row, now } = lease
-				const account = accountOf(row)
+				const source = { account: accountOf(row), server: new URL(row.baseUrl).host }
 				const since = DateTime.formatIso(DateTime.makeUnsafe(now - FIRST_READ_MS))
 				const step = (
 					cursor: number | null,
@@ -144,24 +144,32 @@ export class FleetAuditService extends Context.Service<FleetAuditService, FleetA
 				> =>
 					Effect.gen(function* () {
 						if (pages >= MAX_PAGES) return events
+						// Ids can commit out of order, so each read reaches back a little; a re-read event writes the same row.
 						const page = yield* FleetApi.listActivities(fleet, {
 							perPage: PAGE_SIZE,
-							...(cursor === null ? { since } : { after: cursor }),
+							...(cursor === null ? { since } : { after: Math.max(0, cursor - OVERLAP_IDS) }),
 						})
-						// A server that ignores `after` repeats what is stored; only newer ids count.
-						const fresh = Arr.filter(
+						const floor = cursor === null ? null : cursor - OVERLAP_IDS
+						const window = Arr.filter(
 							page.activities ?? [],
+							(activity) => floor === null || activity.id > floor,
+						)
+						yield* trail.write(
+							row.orgId,
+							Arr.getSomes(
+								Arr.map(window, (activity) => fleetActivityToEvent(activity, source)),
+							),
+						)
+						const fresh = Arr.filter(
+							window,
 							(activity) => cursor === null || activity.id > cursor,
 						)
+						// Nothing past the cursor: read up, or a server that ignores `after`.
 						if (fresh.length === 0) return events
-						const stored: ReadonlyArray<AuditTrailEvent> = Arr.getSomes(
-							Arr.map(fresh, (activity) => fleetActivityToEvent(activity, account)),
-						)
-						yield* trail.write(row.orgId, stored)
 						const next = Math.max(...Arr.map(fresh, (activity) => activity.id))
 						const ours = yield* lease.write({ activityCursor: next, updatedAt: now })
-						if (!ours || page.meta?.has_next_results !== true) return events + stored.length
-						return yield* step(next, pages + 1, events + stored.length)
+						if (!ours || page.meta?.has_next_results !== true) return events + fresh.length
+						return yield* step(next, pages + 1, events + fresh.length)
 					})
 				return yield* step(row.activityCursor, 0, 0)
 			})
@@ -205,10 +213,12 @@ export class FleetAuditService extends Context.Service<FleetAuditService, FleetA
 					case "unauthorized":
 						return yield* failWith(failure.message, { authFailedAt: now })
 					case "rate_limited":
-						yield* lease.hold(
-							now + Math.max(RATE_LIMIT_HOLD_MS, (failure.retryAfterSeconds ?? 0) * 1000),
-						)
-						return { events: 0, failed: true } satisfies ServerOutcome
+						yield* lease.holdFor({
+							_tag: "RateLimited",
+							message: failure.message,
+							retryAfterMs: (failure.retryAfterSeconds ?? 0) * 1000,
+						})
+						return yield* failWith(failure.message)
 					default:
 						return yield* failWith(failure.message)
 				}

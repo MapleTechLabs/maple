@@ -130,10 +130,19 @@ const actorOf = (activity: FleetActivity, details: Details | undefined): AuditTr
 	return { type: "unknown", email }
 }
 
-/** One activity as the trail stores it, or None when its time does not parse. */
+/** Where an activity came from: the org's name for the server, and its host. */
+export interface FleetActivitySource {
+	readonly account: string
+	readonly server: string
+}
+
+/**
+ * One activity as the trail stores it, or None when its time does not parse. Activity ids count
+ * per server, so the event id names the server: two servers never write the same row.
+ */
 export const fleetActivityToEvent = (
 	activity: FleetActivity,
-	account: string,
+	source: FleetActivitySource,
 ): Option.Option<AuditTrailEvent> => {
 	const occurredAtMs = timestampMs(activity.created_at)
 	if (!Number.isFinite(occurredAtMs)) return Option.none()
@@ -141,8 +150,8 @@ export const fleetActivityToEvent = (
 	const outcome = fleetActivityOutcome(activity.type)
 	return Option.some({
 		provider: "fleet",
-		providerEventId: String(activity.id),
-		account,
+		providerEventId: `${source.server}:${activity.id}`,
+		account: source.account,
 		occurredAtMs,
 		actor: actorOf(activity, details),
 		action: activity.type,
