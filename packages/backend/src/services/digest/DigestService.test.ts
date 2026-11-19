@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Array as Arr, Option, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Array as Arr, Option } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { TestClock } from "effect/testing"
-import { OrgId, RoleName, UserId, WarehouseQueryError } from "@maple/domain/http"
+import { AuthorizationUnavailableError, OrgId, UserId, WarehouseQueryError } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import type { WeeklyDigestProps } from "@maple/email/weekly-digest-core"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -152,22 +152,40 @@ interface DirectoryMember {
 	readonly customPermissions?: ReadonlyArray<Policy.Permission>
 }
 
-/** Clerk's memberships by user id; without them the deployment has no directory (self-hosted). */
-const makeDirectory = (members?: ReadonlyMap<string, DirectoryMember>) =>
-	Layer.succeed(
-		OrgMembershipService,
+/**
+ * Clerk's memberships by user id; without them the deployment has no directory (self-hosted).
+ * `clerk.down` fails the org listing while set; `clerk.listings` counts them.
+ */
+const makeDirectory = (
+	members?: ReadonlyMap<string, DirectoryMember>,
+	clerk: { down: boolean; listings: number } = { down: false, listings: 0 },
+) =>
+	Layer.mock(OrgMembershipService)(
 		members === undefined
-			? { directory: "none", verify: () => Effect.die("self-hosted has no directory") }
+			? { directory: "none" }
 			: {
 					directory: "clerk",
-					verify: (userId, orgId) =>
-						Effect.succeed(
-							Option.map(Option.fromUndefinedOr(members.get(userId)), (member) => ({
-								orgId,
-								role: Schema.decodeSync(RoleName)(member.role),
-								customPermissions: member.customPermissions ?? [],
-							})),
-						),
+					orgGrants: () =>
+						Effect.suspend(() => {
+							clerk.listings++
+							return clerk.down
+								? Effect.fail(new AuthorizationUnavailableError({ message: "Clerk is down" }))
+								: Effect.succeed(
+										new Map(
+											Arr.map(
+												Arr.fromIterable(members),
+												([userId, member]) =>
+													[
+														UserId.make(userId),
+														Policy.grantsOf(
+															[member.role],
+															member.customPermissions,
+														),
+													] as const,
+											),
+										),
+									)
+						}),
 				},
 	)
 
@@ -176,6 +194,7 @@ const makeHarness = (
 	seen?: Array<SeenQuery>,
 	failing?: ReadonlySet<string>,
 	directory?: ReadonlyMap<string, DirectoryMember>,
+	clerk?: { down: boolean; listings: number },
 ) => {
 	const sends: string[] = []
 	const messages: Array<{ to: string; html: string; headers: Readonly<Record<string, string>> }> = []
@@ -197,7 +216,7 @@ const makeHarness = (
 				makeWarehouseStub(fixture, seen, failing),
 				Layer.succeed(EdgeCacheService, edgeCache),
 				SecureRandom.layerWebCrypto,
-				makeDirectory(directory),
+				makeDirectory(directory, clerk),
 			),
 		),
 		Layer.provideMerge(base),
@@ -286,6 +305,32 @@ describe("DigestService.runDigestTick", () => {
 
 			assert.deepStrictEqual(sends, ["reader@example.com"])
 			assert.strictEqual(result.sentCount, 1)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("lists the org once a tick, and leaves the window open when the listing fails", () => {
+		const directory = new Map<string, DirectoryMember>([
+			["user-a", { role: "org:member" }],
+			["user-b", { role: "org:member" }],
+		])
+		const clerk = { down: true, listings: 0 }
+		const { sends, layer } = makeHarness(defaultFixture, undefined, undefined, directory, clerk)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(TICK_MS)
+			const aId = yield* seedSub({ email: "a@example.com", userId: "user-a" })
+			yield* seedSub({ email: "b@example.com", userId: "user-b" })
+			const digest = yield* DigestService
+
+			const failed = yield* digest.runDigestTick()
+			assert.deepStrictEqual([sends, failed.sentCount, clerk.listings], [[], 0, 1])
+			// Not claimed, so the next tick that day tries again.
+			assert.strictEqual((yield* getSub(aId)).lastAttemptedAt, null)
+
+			clerk.down = false
+			yield* TestClock.setTime(TICK_MS + 15 * 60 * 1000)
+			const retried = yield* digest.runDigestTick()
+			assert.deepStrictEqual(sends.sort(), ["a@example.com", "b@example.com"])
+			assert.deepStrictEqual([retried.sentCount, clerk.listings], [2, 2])
 		}).pipe(Effect.provide(layer))
 	})
 

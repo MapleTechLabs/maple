@@ -86,7 +86,7 @@ const actorsThat = (actor: ActorId | undefined): Layer.Layer<ErrorActorsService>
 	})
 
 const memberships = (verify: OrgMembershipService["Service"]["verify"]): Layer.Layer<OrgMembershipService> =>
-	Layer.succeed(OrgMembershipService, { directory: "clerk", verify })
+	Layer.mock(OrgMembershipService)({ directory: "clerk", verify })
 
 /** As the session hands it over: the acting user is whatever the relay sent, checked on arrival. */
 const proposal = (actingUserId?: string) => ({

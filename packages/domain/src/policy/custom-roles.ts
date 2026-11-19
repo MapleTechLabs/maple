@@ -1,4 +1,4 @@
-import { Array as Arr, Option, Order, Record as Rec, Schema } from "effect"
+import { Array as Arr, Option, Order, Predicate, Record as Rec, Schema } from "effect"
 import { type Permission, permissions, withImplied } from "./permissions"
 
 /**
@@ -98,18 +98,24 @@ const decodeMembershipRole = Schema.decodeUnknownOption(
 	Schema.Struct({ [MEMBERSHIP_ROLE_METADATA_KEY]: MembershipRoleMetadata }),
 )
 
-/** The custom roles an organization's public metadata defines; none, at version 0, when unreadable. */
-export const versionedCustomRolesFromOrgMetadata = (metadata: unknown): VersionedCustomRoles =>
-	Option.match(decodeStoredRoles(metadata), {
-		onNone: () => ({ version: 0, roles: [] }),
-		onSome: ({ [ORG_ROLES_METADATA_KEY]: stored }) => ({
-			version: stored.version ?? 0,
-			roles: stored.roles,
-		}),
-	})
+/**
+ * The custom roles an organization's public metadata defines: none, at version 0, without the key.
+ * `None` when the key is there but does not decode: a write over it would erase every role.
+ */
+export const versionedCustomRolesFromOrgMetadata = (metadata: unknown): Option.Option<VersionedCustomRoles> =>
+	Predicate.hasProperty(metadata, ORG_ROLES_METADATA_KEY)
+		? Option.map(decodeStoredRoles(metadata), ({ [ORG_ROLES_METADATA_KEY]: stored }) => ({
+				version: stored.version ?? 0,
+				roles: stored.roles,
+			}))
+		: Option.some({ version: 0, roles: [] })
 
+/** The custom roles an organization defines, none when unreadable: for readers that only need grants. */
 export const customRolesFromOrgMetadata = (metadata: unknown): ReadonlyArray<StoredCustomRole> =>
-	versionedCustomRolesFromOrgMetadata(metadata).roles
+	Option.match(versionedCustomRolesFromOrgMetadata(metadata), {
+		onNone: () => [],
+		onSome: (stored) => stored.roles,
+	})
 
 /** The custom role a membership's public metadata names, if it names one that decodes. */
 export const membershipRoleFromMetadata = (metadata: unknown): Option.Option<MembershipRoleMetadata> =>

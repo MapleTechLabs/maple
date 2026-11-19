@@ -196,7 +196,7 @@ export class V2MobileDevicesApiGroup extends HttpApiGroup.make("mobileDevices")
 			success: V2MobileDevice,
 			error: [persistence],
 		})
-			.annotate(EndpointAccess, requires("devices:connect"))
+			.annotate(EndpointAccess, requires("devices:connect", "telemetry:read"))
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "registerMobileDevice",
@@ -229,7 +229,7 @@ export class V2MobileDevicesApiGroup extends HttpApiGroup.make("mobileDevices")
 			success: V2LiveActivity,
 			error: [notFound, persistence],
 		})
-			.annotate(EndpointAccess, requires("devices:connect"))
+			.annotate(EndpointAccess, requires("devices:connect", "telemetry:read"))
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "registerLiveActivity",

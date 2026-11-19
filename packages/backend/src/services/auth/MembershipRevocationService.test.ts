@@ -144,6 +144,17 @@ const seedMobileDevice = (db: TestDb, id: string, org: OrgId, user: UserId) =>
 		),
 	)
 
+/** A Live Activity running on `deviceId` for one incident. */
+const seedLiveActivity = (db: TestDb, id: string, org: OrgId, deviceId: string) =>
+	Effect.promise(() =>
+		db.pglite.query(
+			`insert into live_activities
+				(id, org_id, device_id, incident_id, activity_id, push_token, created_at, updated_at)
+			 values ($1, $2, $3, 'inc_1', $1, $1, now(), now())`,
+			[id, org, deviceId],
+		),
+	)
+
 /** One linked chat account, which is standing authority to approve changes as that user. */
 const seedChatIdentity = (db: TestDb, id: string, org: OrgId, user: UserId) =>
 	Effect.promise(() =>
@@ -760,6 +771,50 @@ describe("MembershipRevocationService", () => {
 			])
 		}).pipe(Effect.provide(makeLayer(db, cache.layer, audit.layer)))
 	})
+
+	it.effect(
+		"takes a demoted member's phones and Live Activities when the new role reads no telemetry",
+		() => {
+			const db = createTestDb(createdDbs)
+			const custom = Schema.decodeSync(RoleName)(Policy.CUSTOM_ROLE_CLERK_KEY)
+			const devices = (sql: string) =>
+				Effect.promise(() => db.pglite.query<{ id: string }>(sql)).pipe(
+					Effect.map((result) => Arr.map(result.rows, (row) => row.id)),
+				)
+			return Effect.gen(function* () {
+				const revocation = yield* MembershipRevocationService
+				yield* seedMobileDevice(db, "dev_demoted", orgId, userId)
+				yield* seedMobileDevice(db, "dev_demoted_other_org", otherOrgId, userId)
+				yield* seedMobileDevice(db, "dev_stayer", orgId, stayerId)
+				yield* seedLiveActivity(db, "act_demoted", orgId, "dev_demoted")
+				yield* seedLiveActivity(db, "act_stayer", orgId, "dev_stayer")
+
+				// Still reads telemetry: the phone keeps its pushes.
+				yield* revocation.demoteMembership(
+					orgId,
+					userId,
+					Policy.grantsOf([custom], ["telemetry:read"]),
+				)
+				expect(yield* devices("select id from mobile_devices order by id")).toEqual([
+					"dev_demoted",
+					"dev_demoted_other_org",
+					"dev_stayer",
+				])
+
+				const summary = yield* revocation.demoteMembership(
+					orgId,
+					userId,
+					Policy.grantsOf([custom], ["billing:manage"]),
+				)
+				expect(summary.mobileDevicesDeleted).toBe(1)
+				expect(yield* devices("select id from mobile_devices order by id")).toEqual([
+					"dev_demoted_other_org",
+					"dev_stayer",
+				])
+				expect(yield* devices("select id from live_activities order by id")).toEqual(["act_stayer"])
+			}).pipe(Effect.provide(makeLayer(db, recordingEdgeCache().layer)))
+		},
+	)
 
 	describe("a demotion retires what the new role could not set up", () => {
 		const custom = Schema.decodeSync(RoleName)(Policy.CUSTOM_ROLE_CLERK_KEY)

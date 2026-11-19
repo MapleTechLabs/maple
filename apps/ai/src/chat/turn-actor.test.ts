@@ -113,7 +113,7 @@ const STARTER = Schema.decodeSync(UserId)("user_starter")
 
 /** A directory where the starter holds the role `now`, has left (`gone`) or cannot be read (`unavailable`). */
 const memberships = (now: string, directory: "clerk" | "none" = "clerk", custom: Policy.Grants = []) =>
-	Layer.succeed(OrgMembershipService, {
+	Layer.mock(OrgMembershipService)({
 		directory,
 		verify: (_userId, orgId) =>
 			now === "unavailable"

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import * as Policy from "@maple/domain/policy"
-import { Array as Arr, Effect, Schema } from "effect"
+import { Array as Arr, Effect, Layer, Schema } from "effect"
 import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { McpToolExecutor } from "../../dispatcher"
@@ -315,11 +315,13 @@ describe("an investigation's own pass and query_data_source", () => {
 		const origin = { kind: "autonomous", startedBy } as const
 		const turnStarter = await Effect.runPromise(
 			turnStarterOf(seeded.tenant.orgId, origin).pipe(
-				Effect.provideService(OrgMembershipService, {
-					directory: "clerk",
-					verify: (_userId, orgId) =>
-						Effect.succeedSome({ orgId, role: role(holdsNow), customPermissions: [] }),
-				}),
+				Effect.provide(
+					Layer.mock(OrgMembershipService)({
+						directory: "clerk",
+						verify: (_userId, orgId) =>
+							Effect.succeedSome({ orgId, role: role(holdsNow), customPermissions: [] }),
+					}),
+				),
 			),
 		)
 		return asCaller(seeded, { roles: [], turnOrigin: origin, turnStarter })

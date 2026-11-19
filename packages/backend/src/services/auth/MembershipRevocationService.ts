@@ -9,6 +9,7 @@ import {
 	DashboardShares,
 	DeviceCredentials,
 	DigestSubscriptions,
+	LiveActivities,
 	McpOAuthAuthorizations,
 	MobileDevices,
 } from "@maple/db/tables"
@@ -72,6 +73,7 @@ export interface MembershipDemotionSummary {
 	readonly deviceCredentialsRevoked: number
 	readonly dashboardSharesRevoked: number
 	readonly digestSubscriptionsDisabled: number
+	readonly mobileDevicesDeleted: number
 }
 
 export interface MembershipRevocationServiceApi {
@@ -136,6 +138,20 @@ const disableDigests = (db: MapleDb, orgId: OrgId | null, userId: UserId, now: n
 			.where(($) => [orgId === null ? undefined : $.orgId.eq(orgId), $.userId.eq(userId)])
 			.returning("id"),
 	)
+
+/** A phone is pushed alert names, values and Live Activity series; its activities go with it. */
+const deleteMobileDevices = Effect.fnUntraced(function* (db: MapleDb, orgId: OrgId | null, userId: UserId) {
+	const deleted = yield* db.run(
+		PG.deleteFrom(MobileDevices)
+			.where(($) => [orgId === null ? undefined : $.orgId.eq(orgId), $.userId.eq(userId)])
+			.returning("id"),
+	)
+	const [first, ...rest] = Arr.map(deleted, (row) => row.id)
+	if (first !== undefined) {
+		yield* db.run(PG.deleteFrom(LiveActivities).where(($) => [$.deviceId.in_(first, ...rest)]))
+	}
+	return deleted.length
+})
 
 /**
  * A share link serves the board to whoever holds it, with no membership check. Revoked, not
@@ -369,14 +385,7 @@ const make = Effect.gen(function* () {
 							])
 							.returning("requestIdHash"),
 					)
-					const devicesDeleted = yield* db.run(
-						PG.deleteFrom(MobileDevices)
-							.where(($) => [
-								orgId === null ? undefined : $.orgId.eq(orgId),
-								$.userId.eq(userId),
-							])
-							.returning("id"),
-					)
+					const mobileDevicesDeleted = yield* deleteMobileDevices(db, orgId, userId)
 					// A chat identity is standing authority to approve a change AS this user: the bot
 					// reads the row on every button click and runs the tool under whatever roles the
 					// user holds. Membership ending has to end that too, or the next click from their
@@ -407,7 +416,7 @@ const make = Effect.gen(function* () {
 						deviceCredentialsRevoked: revokedDeviceCredentials.length,
 						cliAuthorizationsDeleted: cliDeleted.length,
 						mcpAuthorizationsDeleted: mcpAuthDeleted.length,
-						mobileDevicesDeleted: devicesDeleted.length,
+						mobileDevicesDeleted,
 						chatIdentitiesDeleted: identitiesDeleted.length,
 						digestSubscriptionsDisabled: digestsDisabled.length,
 					}
@@ -477,6 +486,7 @@ const make = Effect.gen(function* () {
 				deviceCredentialsRevoked: 0,
 				dashboardSharesRevoked: 0,
 				digestSubscriptionsDisabled: 0,
+				mobileDevicesDeleted: 0,
 			} satisfies MembershipDemotionSummary
 		}
 		const readsTelemetry = Policy.can(current, "telemetry:read")
@@ -485,8 +495,9 @@ const make = Effect.gen(function* () {
 		const { sharesRevoked, ...summary } = yield* dbExecute((db) =>
 			db.transaction(
 				Effect.gen(function* () {
-					// What carries telemetry to the member that the new role could not: a public link and the
-					// digest. Alert destinations are the org's routing, so a demotion leaves them alone.
+					// What carries telemetry to the member that the new role could not: a public link, the
+					// digest and phone pushes. Alert destinations are the org's routing, so a demotion leaves
+					// them alone.
 					const sharesRevoked =
 						readsTelemetry && Policy.can(current, "dashboards:share")
 							? []
@@ -494,7 +505,10 @@ const make = Effect.gen(function* () {
 					const digestSubscriptionsDisabled = readsTelemetry
 						? 0
 						: (yield* disableDigests(db, orgId, userId, now)).length
-					const retired = { sharesRevoked, digestSubscriptionsDisabled }
+					const mobileDevicesDeleted = readsTelemetry
+						? 0
+						: yield* deleteMobileDevices(db, orgId, userId)
+					const retired = { sharesRevoked, digestSubscriptionsDisabled, mobileDevicesDeleted }
 					// An approval not yet redeemed froze the old role and would mint a credential at it.
 					const cliApprovals = yield* db.run(
 						PG.from(CliDeviceAuthorizations)
@@ -606,6 +620,7 @@ const make = Effect.gen(function* () {
 			"maple.membership.demoted_device_credentials_revoked": demoted.deviceCredentialsRevoked,
 			"maple.membership.demoted_dashboard_shares_revoked": demoted.dashboardSharesRevoked,
 			"maple.membership.demoted_digest_subscriptions_disabled": demoted.digestSubscriptionsDisabled,
+			"maple.membership.demoted_mobile_devices_deleted": demoted.mobileDevicesDeleted,
 		})
 		return demoted
 	})

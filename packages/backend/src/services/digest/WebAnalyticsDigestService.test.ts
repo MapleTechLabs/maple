@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Option, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
-import { OrgId, RoleName } from "@maple/domain/http"
-import type * as Policy from "@maple/domain/policy"
+import { AuthorizationUnavailableError, OrgId, UserId } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { DigestSubscriptions } from "@maple/db/tables"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -66,22 +66,40 @@ interface DirectoryMember {
 	readonly customPermissions?: ReadonlyArray<Policy.Permission>
 }
 
-/** Clerk's memberships by user id; without them the deployment has no directory (self-hosted). */
-const makeDirectory = (members?: ReadonlyMap<string, DirectoryMember>) =>
-	Layer.succeed(
-		OrgMembershipService,
+/**
+ * Clerk's memberships by user id; without them the deployment has no directory (self-hosted).
+ * `clerk.down` fails the org listing while set; `clerk.listings` counts them.
+ */
+const makeDirectory = (
+	members?: ReadonlyMap<string, DirectoryMember>,
+	clerk: { down: boolean; listings: number } = { down: false, listings: 0 },
+) =>
+	Layer.mock(OrgMembershipService)(
 		members === undefined
-			? { directory: "none", verify: () => Effect.die("self-hosted has no directory") }
+			? { directory: "none" }
 			: {
 					directory: "clerk",
-					verify: (userId, orgId) =>
-						Effect.succeed(
-							Option.map(Option.fromUndefinedOr(members.get(userId)), (member) => ({
-								orgId,
-								role: Schema.decodeSync(RoleName)(member.role),
-								customPermissions: member.customPermissions ?? [],
-							})),
-						),
+					orgGrants: () =>
+						Effect.suspend(() => {
+							clerk.listings++
+							return clerk.down
+								? Effect.fail(new AuthorizationUnavailableError({ message: "Clerk is down" }))
+								: Effect.succeed(
+										new Map(
+											Arr.map(
+												Arr.fromIterable(members),
+												([userId, member]) =>
+													[
+														UserId.make(userId),
+														Policy.grantsOf(
+															[member.role],
+															member.customPermissions,
+														),
+													] as const,
+											),
+										),
+									)
+						}),
 				},
 	)
 

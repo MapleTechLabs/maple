@@ -1,6 +1,6 @@
 import { EdgeCacheService } from "@maple/cache"
-import type { VerifiedOrgMembership } from "@maple/auth"
-import { AuthorizationUnavailableError, OrgId, RoleName, type UserId } from "@maple/domain/http"
+import { membershipGrants, type VerifiedOrgMembership } from "@maple/auth"
+import { AuthorizationUnavailableError, OrgId, RoleName, UserId } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema, Stream, String as Str } from "effect"
 import { Env } from "@maple/backend/platform/Env"
@@ -25,6 +25,13 @@ export interface OrgMembershipServiceApi {
 		userId: UserId,
 		orgId: OrgId,
 	) => Effect.Effect<Option.Option<VerifiedOrgMembership>, AuthorizationUnavailableError>
+	/**
+	 * What every member of `orgId` holds now, by user. One uncached Clerk call per 100 members: for
+	 * a sweep that would otherwise ask once per member.
+	 */
+	readonly orgGrants: (
+		orgId: OrgId,
+	) => Effect.Effect<ReadonlyMap<UserId, Policy.Grants>, AuthorizationUnavailableError>
 }
 
 /**
@@ -105,6 +112,7 @@ export const forgetMembershipMemo = (userId: UserId): void => {
 
 const decodeOrgIdOption = Schema.decodeUnknownOption(OrgId)
 const decodeRoleNameOption = Schema.decodeUnknownOption(RoleName)
+const decodeUserIdOption = Schema.decodeUnknownOption(UserId)
 
 const unavailable = (cause: unknown) =>
 	new AuthorizationUnavailableError({
@@ -262,10 +270,45 @@ const make = Effect.gen(function* () {
 		return yield* verifyPair(userId, orgId)
 	})
 
+	const orgGrants = Effect.fn("OrgMembershipService.orgGrants")(function* (orgId: OrgId) {
+		yield* Effect.annotateCurrentSpan({ orgId })
+		if (clerk === null) return yield* unavailable("Clerk is not configured")
+		const rows = yield* Stream.paginate(0, (offset: number) =>
+			clerkRequest("Clerk.organizations.getOrganizationMembershipList", { orgId }, () =>
+				clerk.organizations.getOrganizationMembershipList({
+					organizationId: orgId,
+					limit: MEMBERSHIP_PAGE_SIZE,
+					offset,
+				}),
+			).pipe(
+				Effect.mapBoth({
+					onFailure: unavailable,
+					onSuccess: (page) => {
+						const next = offset + page.data.length
+						const done = next >= page.totalCount || page.data.length === 0
+						return [page.data, done ? Option.none<number>() : Option.some(next)] as const
+					},
+				}),
+			),
+		).pipe(Stream.runCollect)
+		return new Map(
+			Arr.getSomes(
+				Arr.map(rows, (row) =>
+					Option.all([
+						decodeUserIdOption(row.publicUserData?.userId),
+						Option.map(decodeMembershipRow(row), (membership) =>
+							membershipGrants(toVerified(membership)),
+						),
+					]),
+				),
+			),
+		)
+	})
+
 	// The auth mode decides it, as `clerkModeClient` does: Clerk mode missing its keys is a broken
 	// directory, not an absent one.
 	const directory = Str.toLowerCase(env.MAPLE_AUTH_MODE) === "clerk" ? "clerk" : "none"
-	return { directory, verify } satisfies OrgMembershipServiceApi
+	return { directory, verify, orgGrants } satisfies OrgMembershipServiceApi
 })
 
 export class OrgMembershipService extends Context.Service<OrgMembershipService, OrgMembershipServiceApi>()(

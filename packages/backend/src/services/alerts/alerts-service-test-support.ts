@@ -5,6 +5,7 @@ import { LiveActivitiesService } from "@maple/backend/services/push/LiveActiviti
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { ApnsClient } from "@maple/backend/platform/Apns"
 import { MobilePushService, type IncidentPushEvent } from "@maple/backend/services/push/MobilePushService"
+import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { ChatAlertPoster } from "./ChatAlertPoster"
 import {
 	Cause,
@@ -271,6 +272,7 @@ export const makeLayer = (
 							ApnsClient.layer,
 							MobileDevicesService.layer,
 							LiveActivitiesService.layer,
+							Layer.mock(OrgMembershipService)({ directory: "none" }),
 						),
 					),
 				)

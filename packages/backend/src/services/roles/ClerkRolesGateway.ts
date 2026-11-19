@@ -23,7 +23,7 @@ export interface RoleMembership {
 }
 
 export interface ClerkRolesGatewayApi {
-	/** The custom role definitions in the organization's public metadata. */
+	/** The custom role definitions in the organization's public metadata; unavailable when they do not decode. */
 	readonly customRoles: (orgId: OrgId) => Effect.Effect<Policy.VersionedCustomRoles, RolesUnavailableError>
 	/** Replace the organization's custom role definitions; other metadata keys stay. */
 	readonly writeCustomRoles: (
@@ -34,6 +34,11 @@ export interface ClerkRolesGatewayApi {
 	readonly memberships: (
 		orgId: OrgId,
 	) => Effect.Effect<ReadonlyArray<RoleMembership>, RolesUnavailableError>
+	/** One member's membership as Clerk holds it now; `None` once they left. */
+	readonly membership: (
+		orgId: OrgId,
+		userId: UserId,
+	) => Effect.Effect<Option.Option<RoleMembership>, RolesUnavailableError>
 	readonly setMembershipRole: (
 		orgId: OrgId,
 		userId: UserId,
@@ -90,8 +95,14 @@ const make = Effect.gen(function* () {
 		withClerk("Clerk.organizations.getOrganization", { orgId }, (client) =>
 			client.organizations.getOrganization({ organizationId: orgId }),
 		).pipe(
-			Effect.map((organization) =>
-				Policy.versionedCustomRolesFromOrgMetadata(organization.publicMetadata),
+			Effect.flatMap((organization) =>
+				Effect.fromOption(
+					Policy.versionedCustomRolesFromOrgMetadata(organization.publicMetadata),
+					() =>
+						new RolesUnavailableError({
+							message: "The organization's custom roles could not be read",
+						}),
+				),
 			),
 		)
 
@@ -126,6 +137,18 @@ const make = Effect.gen(function* () {
 			Effect.map((members) => Arr.getSomes(Arr.map(members, toRoleMembership))),
 		)
 
+	const membership: ClerkRolesGatewayApi["membership"] = (orgId, userId) =>
+		withClerk(
+			"Clerk.organizations.getOrganizationMembershipList",
+			{ orgId, "tenant.userId": userId },
+			(client) =>
+				client.organizations.getOrganizationMembershipList({
+					organizationId: orgId,
+					userId: [userId],
+					limit: 1,
+				}),
+		).pipe(Effect.map((page) => Option.flatMap(Arr.head(page.data), toRoleMembership)))
+
 	const setMembershipRole: ClerkRolesGatewayApi["setMembershipRole"] = (orgId, userId, role) =>
 		withClerk(
 			"Clerk.organizations.updateOrganizationMembership",
@@ -150,6 +173,7 @@ const make = Effect.gen(function* () {
 		customRoles,
 		writeCustomRoles,
 		memberships,
+		membership,
 		setMembershipRole,
 		setMembershipCustomRole,
 	} satisfies ClerkRolesGatewayApi

@@ -125,4 +125,18 @@ describe("raw SQL on dashboards over MCP", () => {
 				expect(refusal(renamed)).toBe("saved")
 			}).pipe(Effect.provide(layerFor(DASHBOARDS_ONLY))),
 	)
+
+	it.effect("refuses to inspect a raw SQL widget's data without query:sql, the stored SQL unrun", () =>
+		Effect.gen(function* () {
+			const persistence = yield* DashboardPersistenceService
+			const tenant = yield* CurrentMcpTenant
+			const { document } = yield* persistence.create(tenant.orgId, tenant.userId, sqlBoard("Existing"))
+
+			const inspected = yield* call("inspect_chart_data", {
+				dashboard_id: document.id,
+				widget_id: "w-sql",
+			})
+			expect(refusal(inspected)).toEqual(denied)
+		}).pipe(Effect.provide(layerFor(["telemetry:read"]))),
+	)
 })

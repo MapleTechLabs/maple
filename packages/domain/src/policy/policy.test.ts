@@ -215,4 +215,16 @@ describe("custom role metadata", () => {
 		expect(Arr.map(Policy.customRolesFromOrgMetadata(stored), (role) => role.name)).toEqual(["On-call"])
 		expect(Policy.customRolesFromOrgMetadata({ maple_roles: { roles: [{ id: 1 }] } })).toEqual([])
 	})
+
+	it("starts an organization without definitions at version 0, and refuses to read garbled ones", () => {
+		expect(Policy.versionedCustomRolesFromOrgMetadata({ region: "eu" })).toEqual(
+			Option.some({ version: 0, roles: [] }),
+		)
+		// A writer that read this as no roles would replace every role the organization has.
+		expect(
+			Option.isNone(
+				Policy.versionedCustomRolesFromOrgMetadata({ maple_roles: { roles: [{ id: 1 }] } }),
+			),
+		).toBe(true)
+	})
 })

@@ -7,7 +7,7 @@ import type { Permission } from "../policy"
  * endpoint marked `requires("dashboards:edit")` in a group marked `requires("telemetry:read")` needs
  * both, and `"personal"` or `"handler"` on an endpoint keeps its group's `requires`.
  *
- * - `{ requires }`: the caller must hold that permission.
+ * - `{ requires }`: the caller must hold every permission it lists.
  * - `"personal"`: open to every member: the caller's own state (sessions, revoking their own
  *   devices, preferences), or a POST that only reads something that is not telemetry.
  * - `"handler"`: the handler checks named permissions itself, because which one depends on the
@@ -17,14 +17,19 @@ import type { Permission } from "../policy"
  * later cannot change data until someone decides what it needs. `endpoint-access.test.ts` holds every
  * non-GET endpoint marked.
  */
-export type EndpointAccessRule = { readonly requires: Permission } | "personal" | "handler"
+export type EndpointAccessRule =
+	| { readonly requires: Arr.NonEmptyReadonlyArray<Permission> }
+	| "personal"
+	| "handler"
 
 export class EndpointAccess extends Context.Reference<EndpointAccessRule | undefined>(
 	"@maple/http/EndpointAccess",
 	{ defaultValue: () => undefined },
 ) {}
 
-export const requires = (permission: Permission): EndpointAccessRule => ({ requires: permission })
+export const requires = (...permissions: Arr.NonEmptyReadonlyArray<Permission>): EndpointAccessRule => ({
+	requires: permissions,
+})
 
 interface Annotated {
 	readonly annotations: Context.Context<never>
@@ -61,10 +66,9 @@ export const decideEndpointAccess = (
 		return method === "GET" || method === "HEAD" ? { _tag: "Allowed" } : { _tag: "Unmarked" }
 	}
 	return Option.match(
-		Arr.findFirst(rules, (rule) =>
-			typeof rule === "object" && !Arr.contains(permissions, rule.requires)
-				? Option.some(rule.requires)
-				: Option.none(),
+		Arr.findFirst(
+			Arr.flatMap(rules, (rule) => (typeof rule === "object" ? rule.requires : [])),
+			(permission) => (Arr.contains(permissions, permission) ? Option.none() : Option.some(permission)),
 		),
 		{
 			onNone: (): EndpointAccessDecision => ({ _tag: "Allowed" }),

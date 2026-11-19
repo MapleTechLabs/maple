@@ -106,6 +106,25 @@ describe("EndpointAccess", () => {
 		})
 	})
 
+	it("needs telemetry:read beside devices:connect to register a phone for alert pushes", () => {
+		for (const name of ["register", "registerLiveActivity"]) {
+			const endpoint = find(v2.mobileDevices, name)
+			expect(decideEndpointAccess(["devices:connect"], endpoint)).toEqual({
+				_tag: "Denied",
+				permission: "telemetry:read",
+			})
+			expect(decideEndpointAccess(["telemetry:read"], endpoint)).toEqual({
+				_tag: "Denied",
+				permission: "devices:connect",
+			})
+			expect(decideEndpointAccess(ANALYST, endpoint)._tag).toBe("Allowed")
+		}
+		// Signing out stays open to everyone.
+		expect(decideEndpointAccess(["devices:connect"], find(v2.mobileDevices, "unregister"))._tag).toBe(
+			"Allowed",
+		)
+	})
+
 	it("keeps the group's telemetry:read on an endpoint its handler checks", () => {
 		const upsert = find(internal.errors, "upsertEscalationPolicy")
 		expect(decideEndpointAccess(["error_policy:manage"], upsert)).toEqual({

@@ -106,7 +106,7 @@ const layerFor = (testDb: TestDb, world: World) =>
 					updateCustomerBillingControls: die,
 					updateCustomerName: die,
 				}),
-				Layer.succeed(OrgMembershipService, {
+				Layer.mock(OrgMembershipService)({
 					directory: "clerk",
 					verify: (_userId, org) =>
 						Effect.sync(() => {

@@ -2,6 +2,7 @@ import { LiveActivitiesService } from "@maple/backend/services/push/LiveActiviti
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { ApnsClient } from "@maple/backend/platform/Apns"
 import { MobilePushService } from "@maple/backend/services/push/MobilePushService"
+import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { AlertMemberNotifier } from "@maple/backend/services/alerts/AlertMemberNotifier"
 import { ChatAlertPoster } from "@maple/backend/services/alerts/ChatAlertPoster"
 /**
@@ -177,7 +178,12 @@ const makeHarness = () => {
 		Layer.provide(
 			Layer.effect(MobilePushService, MobilePushService.make).pipe(
 				Layer.provide(
-					Layer.mergeAll(ApnsClient.layer, MobileDevicesService.layer, LiveActivitiesService.layer),
+					Layer.mergeAll(
+						ApnsClient.layer,
+						MobileDevicesService.layer,
+						LiveActivitiesService.layer,
+						Layer.mock(OrgMembershipService)({ directory: "none" }),
+					),
 				),
 			),
 		),

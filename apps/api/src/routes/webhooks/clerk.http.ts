@@ -1,9 +1,10 @@
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
-import { Effect, Layer, Option, Schema } from "effect"
+import { Effect, Layer, Option, Predicate, Schema } from "effect"
 import { HttpRouter, type HttpServerRequest } from "effect/http"
 import { DEFAULT_MAPLE_REGION } from "@maple/domain/organization-regions"
 import { ClerkWebhookSecret } from "@maple/infra/secrets"
 import { MembershipRevocationService } from "@maple/backend/services/auth/MembershipRevocationService"
+import { ClerkRolesGateway } from "@maple/backend/services/roles/ClerkRolesGateway"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import {
 	CLERK_MEMBERSHIP_EVENTS,
@@ -42,6 +43,9 @@ import * as Policy from "@maple/domain/policy"
  *
  * - membership removal also takes the member off the organization's SSO bypass list.
  *
+ * - a member moved off `org:custom` in Clerk directly loses the custom role on their membership,
+ *   so moving them back later grants nothing rather than reviving it.
+ *
  * - SCIM: `directoryGroup.*` keeps the org's IdP groups for the role mapping picker (home region
  *   only), and `user.updated` with `deprovisioned` runs the user sweep in every region. A member
  *   whose membership predates directory sync keeps it after deactivation, so this is what ends
@@ -69,6 +73,28 @@ const handler = Effect.gen(function* () {
 	const audit = yield* AuditLogService
 	const regions = yield* OrganizationRegionService
 	const sso = yield* EnterpriseSsoService
+	const clerkRoles = yield* ClerkRolesGateway
+
+	const holdsCustomRole = (metadata: unknown) =>
+		Predicate.hasProperty(metadata, Policy.MEMBERSHIP_ROLE_METADATA_KEY)
+
+	/**
+	 * Re-read before clearing: Maple's own move onto a custom role writes the membership's role
+	 * before Clerk's role becomes `org:custom`, and that write's event must not undo it.
+	 */
+	const clearStaleCustomRole = Effect.fn("ClerkWebhook.clearStaleCustomRole")(function* (
+		orgId: OrgId,
+		userId: UserId,
+	) {
+		const current = yield* clerkRoles.membership(orgId, userId)
+		const stale = Option.exists(
+			current,
+			(membership) =>
+				membership.role !== Policy.CUSTOM_ROLE_CLERK_KEY && holdsCustomRole(membership.metadata),
+		)
+		yield* Effect.annotateCurrentSpan({ "maple.webhook.custom_role_cleared": stale })
+		if (stale) yield* clerkRoles.setMembershipCustomRole(orgId, userId, null)
+	})
 
 	/**
 	 * A revocation that only half-ran is the state this whole handler exists to
@@ -200,7 +226,24 @@ const handler = Effect.gen(function* () {
 			Policy.customPermissionsFromMembershipMetadata(payload.value.public_metadata),
 		)
 		const demoted = yield* revoke(revocation.demoteMembership(orgId.value, userId.value, current))
-		return home === "unknown" && demoted.status === 200 ? yield* regionUnknown : demoted
+		if (demoted.status !== 200) return demoted
+		if (home === "unknown") return yield* regionUnknown
+		// One region writes to Clerk; the write fires another event, which finds nothing to clear.
+		if (
+			recorded &&
+			role.value !== Policy.CUSTOM_ROLE_CLERK_KEY &&
+			holdsCustomRole(payload.value.public_metadata)
+		) {
+			const cleared = yield* clearStaleCustomRole(orgId.value, userId.value).pipe(Effect.option)
+			if (Option.isNone(cleared)) {
+				yield* Effect.annotateCurrentSpan({
+					"http.response.status_code": 500,
+					"maple.webhook.outcome": "custom_role_clear_failed",
+				})
+				return webhookText("Clearing a stale custom role failed", 500)
+			}
+		}
+		return demoted
 	})
 
 	return Effect.fn("ClerkWebhook.receive")(function* (req: HttpServerRequest.HttpServerRequest) {
@@ -338,8 +381,8 @@ const handler = Effect.gen(function* () {
 })
 
 /**
- * The route with `MembershipRevocationService` still an open requirement, so a
- * test can drive the handler against a stub without a database.
+ * The route with `MembershipRevocationService` and `ClerkRolesGateway` still open requirements, so a
+ * test can drive the handler against stubs without a database or Clerk.
  */
 export const ClerkWebhookRoute = HttpRouter.use((router) =>
 	Effect.gen(function* () {
@@ -352,5 +395,5 @@ export const ClerkWebhookRouter = ClerkWebhookRoute.pipe(
 	// Provided here rather than in the HTTP graph: the sweep pulls in the edge
 	// cache and the destination encryption key, and nothing else in the router
 	// tree needs them.
-	Layer.provide(MembershipRevocationService.layer),
+	Layer.provide(Layer.mergeAll(MembershipRevocationService.layer, ClerkRolesGateway.layer)),
 )

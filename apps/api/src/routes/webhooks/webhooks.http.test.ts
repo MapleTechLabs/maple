@@ -7,7 +7,17 @@ import {
 	EnterpriseSsoUnavailableError,
 	OrgId,
 } from "@maple/domain/http"
-import { Clock, ConfigProvider, Context, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import {
+	Clock,
+	ConfigProvider,
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { HttpRouter } from "effect/http"
 import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import { CancellationReviewQueueProducer, QueueSendError } from "@maple/backend/platform/bindings"
@@ -35,6 +45,7 @@ import {
 	type HomeAnswer,
 } from "@maple/backend/services/org/OrganizationRegionService"
 import type { MapleRegion } from "@maple/domain/organization-regions"
+import { ClerkRolesGateway } from "@maple/backend/services/roles/ClerkRolesGateway"
 import { AutumnWebhookRouter } from "./autumn.http"
 import { ClerkWebhookRoute } from "./clerk.http"
 import { SVIX_WEBHOOK_MAX_BYTES } from "./svix-receiver"
@@ -110,6 +121,7 @@ const recordingRevocation = (fail = false) => {
 					deviceCredentialsRevoked: 0,
 					dashboardSharesRevoked: 0,
 					digestSubscriptionsDisabled: 0,
+					mobileDevicesDeleted: 0,
 				})),
 			),
 		invalidateMembership: (userId) =>
@@ -130,6 +142,28 @@ const regionsAnswering = (home: HomeAnswer, region: MapleRegion = "us") =>
 		servedHere: () => Effect.succeed(home),
 		forget: () => Effect.void,
 	})
+
+/** Clerk's memberships as the webhook re-reads them, by user; every custom-role write recorded. */
+const recordingClerkRoles = (
+	current: ReadonlyMap<string, { readonly role: string; readonly metadata: unknown }> = new Map(),
+) => {
+	const writes: Array<string> = []
+	const layer = Layer.mock(ClerkRolesGateway)({
+		membership: (_orgId, userId) =>
+			Effect.succeed(
+				Option.map(Option.fromUndefinedOr(current.get(userId)), (membership) => ({
+					userId,
+					...membership,
+					name: null,
+					identifier: "",
+					imageUrl: null,
+				})),
+			),
+		setMembershipCustomRole: (orgId, userId, role) =>
+			Effect.sync(() => void writes.push(`${orgId}:${userId}:${role === null ? "cleared" : role.id}`)),
+	})
+	return { writes, layer }
+}
 
 const decodeQueuedJob = Schema.decodeUnknownSync(CancellationReviewJob)
 
@@ -173,8 +207,10 @@ const makeRouterLayer = (
 	billingCustomers: Layer.Layer<BillingCustomerResolver> = BillingCustomerResolver.standalone,
 	regions: Layer.Layer<OrganizationRegionService> = OrganizationRegionService.servesAll,
 	sso: Layer.Layer<EnterpriseSsoService> = recordingSso().layer,
+	clerkRoles: Layer.Layer<ClerkRolesGateway> = recordingClerkRoles().layer,
 ) =>
 	router.pipe(
+		Layer.provide(clerkRoles),
 		Layer.provide(sso),
 		Layer.provide(productEvents),
 		Layer.provide(regions),
@@ -891,6 +927,60 @@ describe("ClerkWebhookRouter", () => {
 					assert.strictEqual(events.tracked.length, tracked)
 				}).pipe(Effect.ensuring(Effect.promise(dispose)))
 			}),
+	)
+
+	it.live("clears the custom role a member moved off org:custom in Clerk keeps, so it cannot revive", () =>
+		Effect.gen(function* () {
+			const staleRole = { maple_role: { id: "role_abcdefghijkl", permissions: [36] } }
+			const clerkNow = new Map<string, { role: string; metadata: unknown }>([
+				["user_left", { role: "org:member", metadata: staleRole }],
+				// Maple's own move onto a custom role: the role landed after the metadata write's event.
+				["user_moving", { role: "org:custom", metadata: staleRole }],
+			])
+			const clerkRoles = recordingClerkRoles(clerkNow)
+			const { handler, dispose } = HttpRouter.toWebHandler(
+				makeRouterLayer(
+					ClerkWebhookRoute,
+					{ CLERK_WEBHOOK_SECRET: CLERK_SECRET },
+					recordingProductEvents().layer,
+					undefined,
+					undefined,
+					undefined,
+					undefined,
+					undefined,
+					undefined,
+					clerkRoles.layer,
+				),
+				{ disableLogger: true },
+			)
+			yield* Effect.gen(function* () {
+				const now = yield* Clock.currentTimeMillis
+				const send = (userId: string, role: string) =>
+					Effect.gen(function* () {
+						const body = JSON.stringify({
+							type: "organizationMembership.updated",
+							data: {
+								organization: { id: "org_9" },
+								public_user_data: { user_id: userId },
+								role,
+								public_metadata: staleRole,
+							},
+						})
+						const headers = yield* signedHeaders(CLERK_SECRET, body, now, `msg_${userId}_${role}`)
+						return (yield* post(handler, "/webhooks/clerk", body, headers)).status
+					})
+
+				assert.deepStrictEqual(
+					[
+						yield* send("user_left", "org:member"),
+						yield* send("user_moving", "org:member"),
+						yield* send("user_custom", "org:custom"),
+					],
+					[200, 200, 200],
+				)
+				assert.deepStrictEqual(clerkRoles.writes, ["org_9:user_left:cleared"])
+			}).pipe(Effect.ensuring(Effect.promise(dispose)))
+		}),
 	)
 
 	it.live("500s a directory group the database could not save, so Clerk redelivers it", () =>

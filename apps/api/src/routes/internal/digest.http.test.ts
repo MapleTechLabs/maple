@@ -89,7 +89,7 @@ const makeHarness = (verifiedEmail: string | null) => {
 		Layer.succeed(WarehouseQueryService, makeWarehouseServiceStub()),
 		Layer.succeed(EdgeCacheService, makeEdgeCacheService(makeMemoryBackend())),
 		// Self-hosted: no directory, so every subscriber receives the digest.
-		Layer.succeed(OrgMembershipService, { directory: "none", verify: () => Effect.die("no directory") }),
+		Layer.mock(OrgMembershipService)({ directory: "none" }),
 		SecureRandom.layerWebCrypto,
 	)
 	const services = Layer.mergeAll(
