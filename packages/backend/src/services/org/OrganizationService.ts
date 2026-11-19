@@ -170,6 +170,8 @@ const PURGE_ORDER: ReadonlyArray<TableName> = [
 	"OpenRouterCostConnections",
 	// The same for every provider read with a pasted credential.
 	"CostConnections",
+	// What the org's members asked Maple to support, and who asked.
+	"FeatureRequests",
 	// A deleted member org stops being billed to anyone. A billing org with members is refused.
 	"OrgBillingLinks",
 	// Drop rules and the hash salt: a recreated org must not silently lose data to old rules.

@@ -3,6 +3,7 @@ import { CostProvider } from "@maple/domain/cost"
 import { Array as Arr, String as Str, Struct } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
+import { icon } from "@maple/views/ui/icon"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import * as DialogView from "@maple/views/ui/dialog-view"
 import { badge } from "@maple/views/ui/display"
@@ -29,6 +30,7 @@ import { COST_PROVIDERS, type CredentialProvider } from "./providers"
 import { PLANETSCALE_REMOVE, planetScaleStep } from "./view-add-planetscale"
 import { providerMark, vercelStep } from "./view-add-vercel"
 import { GCP_REMOVE, gcpStep } from "./view-add-gcp"
+import { requestStep } from "./view-add-request"
 
 type H = HtmlBuilder<Message>
 
@@ -178,9 +180,17 @@ const providers = (h: H, model: Model, sources: ReadonlyArray<CostSourceSummary>
 					filteredEmpty(h, {
 						noun: "providers",
 						title: "No providers match",
-						description: "Maple reads cost from the providers listed here.",
+						description: "Ask for it, and requests decide which source Maple reads next.",
 						onClear: clear,
 						clearLabel: "Clear search",
+						// What the search found nothing for is what they can ask for.
+						actions: [
+							button(
+								h,
+								{ size: "sm", attributes: [h.OnClick(Message.ClickedRequestProvider())] },
+								[icon(h, "PlusIcon"), `Request ${Str.trim(model.providerSearch)}`],
+							),
+						],
 						className: "py-8",
 					}),
 				]
@@ -199,6 +209,21 @@ const providers = (h: H, model: Model, sources: ReadonlyArray<CostSourceSummary>
 								]),
 							]
 				})),
+		// After the cards, where someone who did not find theirs is still looking.
+		...(shown.length === 0
+			? []
+			: [
+					button(
+						h,
+						{
+							variant: "dashed",
+							size: "lg",
+							className: "w-full",
+							attributes: [h.OnClick(Message.ClickedRequestProvider())],
+						},
+						[icon(h, "PlusIcon"), "Don't see your provider? Request it"],
+					),
+				]),
 		typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" }, [
 			`AWS bills USD\u00a00.01 for each request Maple makes, a few dollars a month per account. ${FREE_REQUESTS} requests are free. `,
 			textLink(h, { href: AWS_INTEGRATION_HREF, tone: "inherit", className: "underline" }, [
@@ -457,36 +482,45 @@ export const addSourceDialog = (h: H, model: Model, sources: ReadonlyArray<CostS
 			className: step === "pick" ? "sm:max-w-2xl" : "",
 			toView: ({ portal }) => portal ?? h.empty,
 			toContent: (close) =>
-				step === "gcp"
-					? gcpStep(h, model, id)
-					: step === "vercel"
-						? vercelStep(h, model, id)
-						: step === "planetscale"
-							? planetScaleStep(h, model, id)
-							: step === "github"
-								? githubStep(h, model, id)
-								: step === "pick"
-									? [
-											DialogView.dialogHeader(h, "dialog", [
-												DialogView.dialogTitle(h, "dialog", id, "Add a cost source"),
-												addTrail(h, null),
-												DialogView.dialogDescription(
-													h,
-													"dialog",
-													id,
-													"Maple reads what the source bills each day and keeps it next to your telemetry.",
-												),
-											]),
-											DialogView.dialogPanel(h, "dialog", id, [
-												providers(h, model, sources),
-											]),
-											DialogView.dialogFooter(h, "dialog", [
-												button(h, { variant: "outline", attributes: [...close] }, [
-													"Close",
+				step === "request"
+					? requestStep(h, model, id)
+					: step === "gcp"
+						? gcpStep(h, model, id)
+						: step === "vercel"
+							? vercelStep(h, model, id)
+							: step === "planetscale"
+								? planetScaleStep(h, model, id)
+								: step === "github"
+									? githubStep(h, model, id)
+									: step === "pick"
+										? [
+												DialogView.dialogHeader(h, "dialog", [
+													DialogView.dialogTitle(
+														h,
+														"dialog",
+														id,
+														"Add a cost source",
+													),
+													addTrail(h, null),
+													DialogView.dialogDescription(
+														h,
+														"dialog",
+														id,
+														"Maple reads what the source bills each day and keeps it next to your telemetry.",
+													),
 												]),
-											]),
-										]
-									: [credentialForm(h, model, step, sources, close)],
+												DialogView.dialogPanel(h, "dialog", id, [
+													providers(h, model, sources),
+												]),
+												DialogView.dialogFooter(h, "dialog", [
+													button(
+														h,
+														{ variant: "outline", attributes: [...close] },
+														["Close"],
+													),
+												]),
+											]
+										: [credentialForm(h, model, step, sources, close)],
 		},
 	})
 }

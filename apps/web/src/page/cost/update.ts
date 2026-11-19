@@ -27,6 +27,7 @@ import { applySteps, chain, keyed } from "../kit/keyed-step"
 import { pickerStep } from "../kit/page-time"
 import { routeWindowStep, snapModeOf } from "../kit/route-window"
 import type { PresetValue } from "../kit/time-controls"
+import * as FeatureRequest from "../kit/feature-request"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import {
 	AddGcpCostSource,
@@ -220,6 +221,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		gcpTableDraft: Field.init(),
 		gcpError: null,
 		gcpCommandCopy: CopyButton.init(),
+		request: FeatureRequest.init("cost_source"),
 		githubInstallations: AsyncData.Idle(),
 		githubRead: 0,
 		githubAdding: null,
@@ -271,6 +273,7 @@ const clearedDialog = (model: Model): Model => ({
 	planetscaleError: null,
 	gcpTableDraft: Field.init(),
 	gcpError: null,
+	request: FeatureRequest.init("cost_source"),
 })
 
 /**
@@ -615,13 +618,45 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedAddSource: () => openAdd(model, "pick"),
 		PickedProvider: ({ provider }) => ({ model: { ...clearedDialog(model), addStep: provider } }),
 		ClickedBackToProviders: () =>
-			model.sourceWrite === "Idle"
+			model.sourceWrite === "Idle" && !model.request.isSending
 				? { model: { ...clearedDialog(model), addStep: "pick" } }
 				: { model },
 		ClickedReplaceCredential: ({ provider }) => openAdd(model, provider),
+		// The search that found nothing is usually the provider they wanted.
+		ClickedRequestProvider: () =>
+			model.sourceWrite !== "Idle"
+				? { model }
+				: {
+						model: {
+							...clearedDialog(model),
+							addStep: "request",
+							request: FeatureRequest.init("cost_source", model.providerSearch),
+						},
+					},
+		GotRequestMessage: ({ message: inner }) => {
+			const step = FeatureRequest.update(model.request, inner)
+			const next: Return = {
+				model: { ...model, request: step.model },
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotRequestMessage({ message }),
+				),
+			}
+			if (step.outMessage === undefined) return next
+			// Sent: the dialog closes and thanks them.
+			const closed = liftAddDialog(clearedDialog(next.model), Dialog.close(model.addDialog))
+			return {
+				...closed,
+				commands: [...(closed.commands ?? []), ...(next.commands ?? [])],
+				outMessage: toast(
+					"success",
+					"Request sent",
+					"Thanks. Requests decide which source Maple reads next.",
+				),
+			}
+		},
 		// A save in flight keeps the dialog: its answer decides whether it closes.
 		GotAddDialogMessage: ({ message: inner }) => {
-			if (model.sourceWrite === "Saving") return { model }
+			if (model.sourceWrite === "Saving" || model.request.isSending) return { model }
 			const step = Dialog.update(model.addDialog, inner)
 			const lifted = liftAddDialog(model, step)
 			return step.outMessage?._tag === "Closed"

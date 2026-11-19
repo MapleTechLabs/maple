@@ -48,6 +48,7 @@ import {
 	seriesLabels,
 	withFilter,
 } from "./derive"
+import * as FeatureRequest from "../kit/feature-request"
 import { Message } from "./message"
 import { type Model, type Search, sourcesOf } from "./model"
 import { contextChanged, GITHUB_PERMISSION_MISSING_CODE, init, routeChanged, update } from "./update"
@@ -2951,5 +2952,106 @@ describe("the provider search", () => {
 		expect(pageUpdate(stepped, Message.ClickedBackToProviders()).model.providerSearch).toBe("invoice")
 		// A dialog opened anew starts with no search.
 		expect(pageUpdate(invoices, Message.ClickedAddSource()).model.providerSearch).toBe("")
+	})
+})
+
+describe("requesting a provider", () => {
+	const request = (model: Model, message: FeatureRequest.Message) =>
+		pageUpdate(model, Message.GotRequestMessage({ message }))
+	const typedProvider = (model: Model, value: string) =>
+		request(
+			model,
+			FeatureRequest.Message.GotSubjectMessage({ message: Field.Message.ChangedValue({ value }) }),
+		).model
+
+	test("the providers end with a request button; a search that matches nothing offers its own", () => {
+		const opened = pageUpdate(entered({}, []).model, Message.ClickedAddSource()).model
+		scene(
+			{ update: pageUpdate, view },
+			given(opened),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("button", { name: "Don't see your provider? Request it" })).toExist(),
+		)
+		const none = pageUpdate(opened, Message.ChangedProviderSearch({ value: " Hetzner " })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(none),
+			resolveTheme,
+			dialogMounted,
+			click(role("button", { name: "Request Hetzner" })),
+			expectView(text("Request a provider")).toExist(),
+			expectView(role("textbox", { name: "Provider" })).toHaveValue("Hetzner"),
+			expectView(role("button", { name: "Send request" })).not.toBeDisabled(),
+		)
+		// Back returns to the providers with the search as it was left.
+		const requesting = pageUpdate(none, Message.ClickedRequestProvider()).model
+		const back = pageUpdate(requesting, Message.ClickedBackToProviders()).model
+		expect([back.addStep, back.providerSearch]).toEqual(["pick", " Hetzner "])
+	})
+
+	test("sends the provider and note trimmed as a cost source request, then closes with a thanks", () => {
+		const form = pageUpdate(
+			pageUpdate(entered({}, []).model, Message.ClickedAddSource()).model,
+			Message.ClickedRequestProvider(),
+		).model
+		// Nothing typed sends nothing.
+		expect(names(request(form, FeatureRequest.Message.Submitted()).commands)).toEqual([])
+
+		const withNote = request(
+			typedProvider(form, "  Datadog "),
+			FeatureRequest.Message.ChangedNote({ value: "  per monitor  " }),
+		).model
+		const sending = request(withNote, FeatureRequest.Message.Submitted())
+		expect(sending.commands).toMatchObject([
+			{
+				name: "SendFeatureRequest",
+				args: { area: "cost_source", subject: "Datadog", note: "per monitor" },
+			},
+		])
+		// A second submit while the first is in flight sends nothing more, and the dialog stays.
+		expect(names(request(sending.model, FeatureRequest.Message.Submitted()).commands)).toEqual([])
+		expect(pageUpdate(sending.model, Message.ClickedBackToProviders()).model.addStep).toBe("request")
+
+		// A name the request would refuse is never sent.
+		const tooLong = request(typedProvider(form, Str.repeat(81)("a")), FeatureRequest.Message.Submitted())
+		expect(names(tooLong.commands)).toEqual([])
+		expect(tooLong.model.request.error).toBe("Use a shorter name.")
+
+		const failed = request(
+			sending.model,
+			FeatureRequest.Message.CompletedSend({
+				result: Result.fail({
+					...toLoadFailure("unavailable"),
+					message: "Try again in a few seconds.",
+				}),
+			}),
+		).model
+		expect([failed.addDialog.isOpen, failed.request.isSending, failed.request.subject.value]).toEqual([
+			true,
+			false,
+			"  Datadog ",
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("alert")).toHaveText("Try again in a few seconds."),
+		)
+
+		const sent = request(
+			sending.model,
+			FeatureRequest.Message.CompletedSend({ result: Result.succeed(undefined) }),
+		)
+		expect(sent.model.addDialog.isOpen).toBe(false)
+		expect([sent.model.request.subject.value, sent.model.request.note]).toEqual(["", ""])
+		expect(sent.outMessage).toEqual(
+			PageOutMessage.RequestedToast({
+				type: "success",
+				title: "Request sent",
+				description: "Thanks. Requests decide which source Maple reads next.",
+			}),
+		)
 	})
 })

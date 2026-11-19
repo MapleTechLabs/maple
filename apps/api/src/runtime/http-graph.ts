@@ -12,6 +12,7 @@ import { HttpMcpInternalLive } from "@/routes/internal/mcp.http"
 import { HttpUsersInternalLive } from "@/routes/internal/users.http"
 import { HttpAiTriageLive } from "@/routes/internal/ai-triage.http"
 import { HttpAnthropicCostLive } from "@/routes/internal/anthropic-cost.http"
+import { HttpFeatureRequestsLive } from "@/routes/internal/feature-requests.http"
 import { HttpCloudflareCostLive } from "@/routes/internal/cloudflare-cost.http"
 import { HttpOpenAiCostLive } from "@/routes/internal/openai-cost.http"
 import { HttpGithubCostLive } from "@/routes/internal/github-cost.http"
@@ -187,6 +188,7 @@ const ApiInternalRoutes = HttpApiBuilder.layer(MapleInternalApi).pipe(
 			HttpSavedViewsLive,
 			HttpCloudflareCostLive,
 			HttpAnthropicCostLive,
+			HttpFeatureRequestsLive,
 			HttpOpenAiCostLive,
 			HttpGithubCostLive,
 			HttpPlanetScaleCostLive,
