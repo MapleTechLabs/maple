@@ -64,11 +64,12 @@ export const AWS_MODULE_SPECS = {
 	security: {
 		title: "Security scan",
 		summary:
-			"GuardDuty, Security Hub, Inspector and Access Analyzer findings, matched to the services they affect, and the CloudTrail audit log.",
+			"GuardDuty, Security Hub, Inspector and Access Analyzer findings, matched to the services they affect.",
 		available: false,
 		rolloutFlag: "cloudSecurity",
 		managedPolicies: ["arn:aws:iam::aws:policy/SecurityAudit"],
-		// Every read the findings poller and the CloudTrail feed make, so none hangs on the managed policy.
+		// Every read the findings poller makes, so none hangs on the managed policy. SecurityAudit also
+		// allows CloudTrail's LookupEvents, so this module grants `audit` too.
 		actions: [
 			"account:ListRegions",
 			"guardduty:ListDetectors",
@@ -82,6 +83,14 @@ export const AWS_MODULE_SPECS = {
 			"access-analyzer:ListFindingsV2",
 			"cloudtrail:LookupEvents",
 		],
+	},
+	audit: {
+		title: "Audit log",
+		summary:
+			"CloudTrail management events (IAM, access keys, sign-ins, resource changes) in the audit log.",
+		available: true,
+		managedPolicies: [],
+		actions: ["account:ListRegions", "cloudtrail:LookupEvents"],
 	},
 	cost: {
 		title: "Cost",
@@ -196,6 +205,13 @@ export const awsModuleOfPolicyName = (roleName: string, policyName: string): Aws
 	const rest = Str.slice(prefix.length)(policyName)
 	return isAwsModule(rest) ? rest : undefined
 }
+
+/**
+ * The modules a role's attached policies grant. Security scan's SecurityAudit policy allows
+ * CloudTrail's LookupEvents, so a role with it reads the audit log without another stack update.
+ */
+export const awsGrantedModules = (attached: ReadonlyArray<AwsModule>): ReadonlyArray<AwsModule> =>
+	attached.includes("security") && !attached.includes("audit") ? [...attached, "audit"] : attached
 
 export interface AwsSetupPlanInput {
 	readonly connectionId: AwsConnectionId

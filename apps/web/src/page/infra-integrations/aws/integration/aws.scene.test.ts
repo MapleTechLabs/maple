@@ -683,7 +683,7 @@ describe("aws card", () => {
 				{ update: pageUpdate, view },
 				given(withSecurity([verified({ modules: ["security"], granted_modules: ["security"] })])),
 				expectView(securitySwitch).toBeChecked(),
-				expectView(text("Reading")).toExist(),
+				expectView(text("Needs a stack update")).not.toExist(),
 				expectView(role("link", { name: "Open cloud findings" })).toExist(),
 			)
 		})
@@ -872,8 +872,7 @@ describe("aws card", () => {
 				{ update: pageUpdate, view },
 				given(granted),
 				expectView(costSwitch).toBeChecked(),
-				expectView(text("Reading")).toExist(),
-				expectView(text("Maple reads this account's daily spend", { exact: false })).toExist(),
+				expectView(text("Needs a stack update")).not.toExist(),
 				expectView(role("link", { name: "Open Cost" })).toHaveAttr("href", "/cost"),
 				expectView(role("button", { name: "Update the stack" })).not.toExist(),
 			)

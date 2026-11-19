@@ -876,12 +876,12 @@ const aws = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry 
 					return stream(state._tag === "silent" ? "stale" : "healthy", null, regions)
 			}
 		})()
-		// CloudTrail feeds the audit log once the role grants the security module. Before that there is
-		// no feed: the Sources panel reads off and points at the setup script.
+		// CloudTrail feeds the audit log once the role grants the audit module. Before that there is
+		// no feed: the Sources panel reads off and points at the AWS source.
 		const granted =
-			Arr.contains(c.modules, "security") &&
+			Arr.contains(c.modules, "audit") &&
 			c.grantedModules !== null &&
-			Arr.contains(c.grantedModules, "security")
+			Arr.contains(c.grantedModules, "audit")
 		const trailProblem = Arr.findFirst(
 			inputs.awsCloudTrailProblems ?? [],
 			(problem) => problem.accountId === c.accountId,

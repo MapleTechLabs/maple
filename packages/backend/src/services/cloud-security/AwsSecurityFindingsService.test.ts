@@ -88,14 +88,15 @@ type World = ReturnType<typeof makeWorld>
 /** The tests' "now": every fixture is dated before it. */
 const NOW = Date.parse("2026-11-10T00:00:00Z")
 
-const connect = (world: World, granted: ReadonlyArray<AwsModule> = ["security"]) =>
+const connect = (
+	world: World,
+	granted: ReadonlyArray<AwsModule> = ["security", "audit"],
+	modules: ReadonlyArray<AwsModule> = ["security", "audit"],
+) =>
 	Effect.gen(function* () {
 		yield* TestClock.setTime(NOW)
 		const connections = yield* AwsConnectionService
-		const created = yield* connections.create(orgId, userId, {
-			accountId: account,
-			modules: ["security"],
-		})
+		const created = yield* connections.create(orgId, userId, { accountId: account, modules })
 		const setup = yield* connections.setup(orgId, created.id)
 		world.sts.deploy(account, setup.cloudformationTemplate)
 		yield* Effect.promise(() =>
@@ -438,6 +439,32 @@ describe("AwsSecurityFindingsService", () => {
 			assert.deepStrictEqual(world.aws.requests, [])
 		}).pipe(Effect.provide(world.layer))
 	})
+	it.effect("reads only CloudTrail for the audit module, outside the findings rollout too", () => {
+		const world = makeWorld()
+		world.aws.regions["us-east-1"] = { guardduty: [sshBruteForce()] }
+		return Effect.gen(function* () {
+			yield* connect(world, ["audit"], ["audit"])
+			world.rolledOut.clear()
+			assert.strictEqual((yield* poll).connections, 1)
+			assert.deepStrictEqual(Arr.dedupe(Arr.map(world.aws.requests, (request) => request.service)), [
+				"account",
+				"cloudtrail",
+			])
+			assert.deepStrictEqual(yield* findingRows(world), [])
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("reads no CloudTrail for a security-only connection", () => {
+		const world = makeWorld()
+		world.aws.regions["us-east-1"] = { guardduty: [sshBruteForce()] }
+		return Effect.gen(function* () {
+			yield* connect(world, ["security"], ["security"])
+			yield* poll
+			assert.isFalse(Arr.some(world.aws.requests, (request) => request.service === "cloudtrail"))
+			assert.isTrue(Arr.some(world.aws.requests, (request) => request.service === "guardduty"))
+		}).pipe(Effect.provide(world.layer))
+	})
+
 	it.effect("writes CloudTrail changes to the audit log and leaves out role-session plumbing", () => {
 		const world = makeWorld()
 		const at = Date.parse("2026-11-10T00:00:00Z")

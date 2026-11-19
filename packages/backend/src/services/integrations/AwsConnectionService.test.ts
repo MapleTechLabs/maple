@@ -267,12 +267,12 @@ describe("AwsConnectionService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
 
-	it.effect("offers and accepts the cost module for every org", () => {
+	it.effect("offers and accepts the cost and audit modules for every org", () => {
 		const testDb = createTestDb(trackedDbs)
 		const aws = makeFakeAws()
 		return Effect.gen(function* () {
 			const service = yield* AwsConnectionService
-			assert.deepStrictEqual(offeredModules(yield* service.status(orgId)), ["cost"])
+			assert.deepStrictEqual(offeredModules(yield* service.status(orgId)), ["cost", "audit"])
 			const created = yield* service.create(orgId, userId, { accountId: account, modules: ["cost"] })
 			assert.deepStrictEqual(created.modules, ["cost"])
 			const cleared = yield* service.update(orgId, created.id, { modules: [] })

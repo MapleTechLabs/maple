@@ -29,7 +29,13 @@ type RowCommon = Readonly<{
 
 /** A feature switched here. */
 export type FeatureSwitchRow<M> = RowCommon &
-	Readonly<{ isChecked: boolean; isDisabled?: boolean; onToggle: M }>
+	Readonly<{
+		isChecked: boolean
+		isDisabled?: boolean
+		/** Why this person may not flip it; the switch locks and says so. */
+		lockReason?: string
+		onToggle: M
+	}>
 
 /** A feature set elsewhere (per repository, per project): a link to where it is switched. */
 export type FeatureLinkRow = RowCommon & Readonly<{ link: Readonly<{ href: string; label: string }> }>
@@ -75,6 +81,8 @@ export const featureList = <M>(
 		className?: string
 		/** False inside a panel, where the list runs to its edges. */
 		bordered?: boolean
+		/** Why this person may not flip any of them (a missing grant): every switch locks and says so. */
+		lockReason?: string | undefined
 	}>,
 ): Html =>
 	dividedList(
@@ -98,6 +106,9 @@ export const featureList = <M>(
 					isChecked: row.isChecked,
 					onToggle: row.onToggle,
 					...(row.isDisabled !== undefined && { isDisabled: row.isDisabled }),
+					...((row.lockReason ?? options.lockReason) !== undefined && {
+						lockReason: row.lockReason ?? options.lockReason,
+					}),
 					...(note !== undefined && { status: note }),
 				},
 				row.children ?? [],
@@ -114,6 +125,7 @@ export const featurePanel = <M>(
 		/** Why the last change did not save; its switch is back where it was. */
 		error: string | null
 		title?: string
+		lockReason?: string | undefined
 	}>,
 ): Html =>
 	panel(h, {}, [
@@ -129,5 +141,10 @@ export const featurePanel = <M>(
 						]),
 					]),
 				]),
-		featureList(h, { idPrefix: options.idPrefix, rows: options.rows, bordered: false }),
+		featureList(h, {
+			idPrefix: options.idPrefix,
+			rows: options.rows,
+			bordered: false,
+			...(options.lockReason !== undefined && { lockReason: options.lockReason }),
+		}),
 	])

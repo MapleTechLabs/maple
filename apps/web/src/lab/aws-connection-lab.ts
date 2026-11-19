@@ -161,7 +161,12 @@ const fixtureFor = (state: LabState): Fixture => {
 	const isOffered = state !== "before" && state !== "flow-before"
 	if (state === "flow" || state === "flow-before") return { isOffered, connections: [] }
 	if (state === "waiting")
-		return { isOffered, connections: [{ ...CONNECTED, modules: ["cost"], setup_outdated: true }] }
+		return {
+			isOffered,
+			connections: [
+				{ ...CONNECTED, modules: ["cost", "audit"], granted_modules: ["cost"], setup_outdated: true },
+			],
+		}
 	if (state === "granted")
 		return {
 			isOffered,
@@ -212,7 +217,7 @@ const fixtureFor = (state: LabState): Fixture => {
 	return { isOffered, connections: [CONNECTED] }
 }
 
-/** Every module as the API lists it; only Cost can be offered. */
+/** Every module as the API lists it; Cost and Audit log are offered, Security scan is not (its rollout). */
 const statusOf = (fixture: Fixture): V2AwsIntegration => ({
 	object: "aws_integration",
 	available: true,
@@ -220,7 +225,7 @@ const statusOf = (fixture: Fixture): V2AwsIntegration => ({
 		module,
 		title: spec.title,
 		summary: spec.summary,
-		available: module === "cost" && fixture.isOffered,
+		available: (module === "cost" || module === "audit") && fixture.isOffered,
 	})),
 	connections: fixture.connections,
 })
