@@ -69,6 +69,10 @@ if [[ -n "$clerk_key" && "$clerk_key" != pk_test_* ]]; then
 fi
 if [[ -n "$api" ]]; then
 	api_host="${api#*://}"; api_host="${api_host%%[/?#]*}"; api_host="${api_host##*@}"; api_host="${api_host%%:*}"; api_host="${api_host%.}"
+	# Plain host names only: an encoded or unusual spelling could still resolve to production.
+	if [[ ! "$api_host" =~ ^[A-Za-z0-9.-]+$ ]]; then
+		echo "--api host must be a plain host name" >&2; exit 2
+	fi
 	case "$(printf %s "$api_host" | tr "[:upper:]" "[:lower:]")" in
 	maple.dev | api.maple.dev | api.eu.maple.dev | app.maple.dev | app.eu.maple.dev | "")
 		echo "--api must be a dev or preview API, not production" >&2; exit 2 ;;
