@@ -230,6 +230,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/dashboard-share",
+		title: "Dashboard share",
+		description:
+			"The dashboard's Share dialog, open: not shared, shared with no expiry, a link that expires and one that already has (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/analytics-search",
 		title: "Web analytics: Search",
 		description:

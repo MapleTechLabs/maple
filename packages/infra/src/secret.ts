@@ -9,8 +9,10 @@ import { requiredTrimmed, trimmedOption } from "./config-helpers.ts"
  */
 export type SecretConsumer =
 	| "api"
+	| "audit-archive"
 	| "ai"
 	| "alerting"
+	| "org-eraser"
 	| "chat-bot"
 	| "electric-sync"
 	| "sandbox"

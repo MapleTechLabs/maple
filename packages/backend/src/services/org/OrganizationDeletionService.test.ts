@@ -15,7 +15,7 @@ import {
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { ErrorIssueVerifications } from "@maple/db/tables"
+import { ErrorIssueVerifications, OrgErasures } from "@maple/db/tables"
 import {
 	EnterpriseSsoUnavailableError,
 	IntegrationsPersistenceError,
@@ -328,6 +328,36 @@ describe("OrganizationDeletionService.delete", () => {
 			assert.deepStrictEqual(tornDown, [])
 		}).pipe(Effect.provide(makeLayer(testDb, ssoDown, offboarding)))
 	})
+
+	it.effect(
+		"queues the org's conversations and replays for erasure, then purges the rows naming them",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				yield* seedOrgRow(testDb, "investigations", "org_id", ORG_A)
+				yield* seedOrgRow(testDb, "investigations", "org_id", ORG_B)
+				const organizations = yield* OrganizationDeletionService
+				yield* organizations.delete(ORG_A, [role("org:admin")])
+
+				const database = yield* Database
+				const queued = yield* database.execute((db) =>
+					db.run(
+						PG.from(OrgErasures)
+							.select("orgId", "kind")
+							.orderBy(($) => [[$.kind, "asc"]]),
+					),
+				)
+				assert.isTrue(Arr.every(queued, (row) => row.orgId === ORG_A))
+				assert.deepStrictEqual(Arr.dedupe(Arr.map(queued, (row) => row.kind)), [
+					"chat_session",
+					"replay_blobs",
+					"warehouse",
+				])
+				assert.strictEqual(yield* countOrgRows(testDb, "investigations", "org_id", ORG_A), 0)
+				assert.strictEqual(yield* countOrgRows(testDb, "investigations", "org_id", ORG_B), 1)
+			}).pipe(Effect.provide(Layer.merge(makeLayer(testDb), testDb.layer)))
+		},
+	)
 
 	it.effect("leaves the verification tick nothing due for the deleted org", () => {
 		const testDb = createTestDb(trackedDbs)

@@ -145,6 +145,11 @@ const PURGE_ORDER: ReadonlyArray<TableName> = [
 	// Holds the encrypted per-connection webhook HMAC secret — standing
 	// authority to have inbound writes attributed to an org that is gone.
 	"PlanetscaleConnections",
+	// Text derived from the org's telemetry: diagnoses, notification payloads, database events.
+	// Their chat sessions are queued for erasure first (`queueOrgErasures`).
+	"Investigations",
+	"ErrorNotificationDeliveries",
+	"PlanetscaleEvents",
 	// Dedupe receipts for the org's error issues, which are purged above; with the
 	// connection gone no redelivery can arrive for them to catch.
 	"PlanetscaleIssueReceipts",
@@ -226,9 +231,7 @@ export const UNPURGED_ORG_SCOPED_TABLES = [
 	"CloudflareZoneSettings",
 	"ErrorFingerprintCandidates",
 	"ErrorIssuePullRequests",
-	"ErrorNotificationDeliveries",
 	"ErrorTickStates",
-	"Investigations",
 	"IssueEscalationPolicies",
 	"IssueEscalations",
 	"LinearFeatureSettings",
@@ -238,11 +241,12 @@ export const UNPURGED_ORG_SCOPED_TABLES = [
 	"OrgOnboardingState",
 	"OrgRecommendationIssues",
 	"PlanetscaleDatabases",
-	"PlanetscaleEvents",
 	"PlanetscalePollState",
 	"ScrapeTargetChecks",
 	// Edge cleanups queued by the delete itself; the publisher removes each row once done.
 	"StatusPageCleanups",
+	// Erasures outside Postgres queued by the delete itself; the drain removes each row once done.
+	"OrgErasures",
 	"VcsRepositoryBranches",
 ] as const satisfies ReadonlyArray<TableName>
 

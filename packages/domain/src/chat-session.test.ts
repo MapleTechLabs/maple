@@ -40,6 +40,7 @@ describe("chatSessionClient", () => {
 		holdsTurn: unused,
 		endTurn: unused,
 		abort: unused,
+		erase: unused,
 		alarm: unused,
 		...overrides,
 	})

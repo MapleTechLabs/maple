@@ -155,6 +155,7 @@ const session = (options?: {
 		holdsTurn: () => Promise.resolve(false),
 		endTurn: () => Promise.resolve(),
 		abort: () => Promise.resolve(),
+		erase: () => Promise.resolve(false),
 		settleProposal: () => Promise.resolve("unknown"),
 		beginTurn: (input) => Promise.resolve({ cursor: 0, messageId: input.messageId, turnMessageId: "a1" }),
 		subscribe: () => Promise.resolve(options?.open === true ? sse(turn.slice(0, 3), true) : sse(turn)),

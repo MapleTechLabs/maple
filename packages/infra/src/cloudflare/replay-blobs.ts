@@ -1,6 +1,7 @@
 /**
  * Session-replay payloads: the ingest gateway writes them over S3 (token minted in
- * `apps/ingest/alchemy.run.ts`) and api reads them back. Stage-isolated.
+ * `apps/ingest/alchemy.run.ts`), api reads them back, and the org-eraser Worker deletes a deleted
+ * org's prefix. Stage-isolated.
  * Expiry (32d) must outlive the table's 30-day TTL, or sessions list but play empty.
  * Never add or change `locationHint` or `jurisdiction`: either replaces the
  * name-pinned bucket, which GC then deletes. Colocation needs a new bucket.

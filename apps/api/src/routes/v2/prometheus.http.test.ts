@@ -327,6 +327,13 @@ describe("v2 Prometheus query API", () => {
 				error: "the time range exceeds the maximum of 32 days",
 			})
 		}
+		// A narrow request whose selectors read years back is refused the same way.
+		const reach = await harness.send(
+			key.secret,
+			`/query?query=${encodeURIComponent("rate(up[10y])")}&time=${T}`,
+		)
+		expect(reach.status).toBe(400)
+		expect(reach.body).toMatchObject({ errorType: "bad_data", error: expect.stringMatching(/400 days/) })
 		await harness.dispose()
 	})
 

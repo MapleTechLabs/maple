@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, String as Str } from "effect"
+import { interpolatePromqlVariables } from "@maple/query-engine"
 import { resolveShareVariables } from "./share-variables"
 
 const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(Effect.result(effect))
@@ -224,5 +225,20 @@ describe("resolveShareVariables", () => {
 			resolveShareVariables([definition], { env: "a AND status = 500" }, {}, ["environment = $env"]),
 		)
 		expect(result._tag).toBe("Failure")
+	})
+
+	it("holds a PromQL widget's regex matcher to the value the viewer was allowed", async () => {
+		const query = 'up{service=~"$service", q=~"$search"}'
+		const outside = await run(resolveShareVariables([custom], { service: ".*" }))
+		expect(outside._tag).toBe("Failure")
+
+		const allowed = await run(resolveShareVariables([custom, textbox], { service: "api", search: "a.b" }))
+		expect(allowed._tag).toBe("Success")
+		if (allowed._tag === "Success") {
+			// A free-text `.` reaches the matcher as itself, not as "any character".
+			expect(interpolatePromqlVariables(query, allowed.success)).toBe(
+				'up{service=~"api", q=~"a\\\\.b"}',
+			)
+		}
 	})
 })

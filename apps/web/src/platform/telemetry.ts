@@ -9,7 +9,8 @@ import { sanitizeSelfTelemetryUrl } from "./telemetry-url"
 /** `navigate ServiceDetail`, not one span name per service, trace or dashboard id. */
 const routeName = (pathname: string): string =>
 	Option.match(fromString(`https://maple.invalid${pathname}`), {
-		onNone: () => pathname,
+		// The span name is never the raw path: it can hold ids from customer telemetry.
+		onNone: () => "NotFound",
 		onSome: (url) => urlToAppRoute(url)._tag,
 	})
 

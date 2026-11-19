@@ -28,6 +28,14 @@ export class TinybirdToken extends Secret<TinybirdToken>()("TINYBIRD_TOKEN", {
 	consumers: ["api", "ai", "alerting", "ingest"],
 }) {}
 
+// Deletes a deleted organization's rows. The narrowest token that can delete rows is workspace-wide
+// (`DATASOURCES:CREATE`), so only the org-eraser Worker, which serves no requests, binds it.
+export class WarehouseDeleteToken extends Secret<WarehouseDeleteToken>()("TINYBIRD_DELETE_TOKEN", {
+	issuer: "tinybird",
+	consumers: ["org-eraser"],
+	environments: PRD_ONLY,
+}) {}
+
 export class TinybirdSigningKey extends Secret<TinybirdSigningKey>()("TINYBIRD_SIGNING_KEY", {
 	issuer: "tinybird",
 	consumers: ["api", "ai", "alerting"],
@@ -128,8 +136,10 @@ export class OtelIngestKey extends Secret<OtelIngestKey>()("MAPLE_OTEL_INGEST_KE
 	issuer: "maple",
 	consumers: [
 		"api",
+		"audit-archive",
 		"ai",
 		"alerting",
+		"org-eraser",
 		"chat-bot",
 		"electric-sync",
 		"status",

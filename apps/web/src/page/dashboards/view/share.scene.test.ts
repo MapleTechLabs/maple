@@ -45,6 +45,21 @@ const withShares = (
 	)
 
 describe("dashboard sharing", () => {
+	test("a picked expiry preset writes the board link once and keeps its mode", () => {
+		const opened = openShare(withShares([{ widgetId: null, mode: "org", token: "t" }])).model
+		const picked = pageUpdate(opened, share(ShareMessage.PickedExpiry({ value: "7" })))
+		expect(names(picked.commands)).toEqual([WriteShare.name])
+		expect(picked.model.sharing.isBusy).toBe(true)
+		// The stored expiry's own entry is not a preset, and an unshared board has nothing to expire.
+		expect(
+			names(pageUpdate(opened, share(ShareMessage.PickedExpiry({ value: "current" }))).commands),
+		).toEqual([])
+		const unshared = openShare(withShares([])).model
+		expect(
+			names(pageUpdate(unshared, share(ShareMessage.PickedExpiry({ value: "7" }))).commands),
+		).toEqual([])
+	})
+
 	test("a picked access writes once and holds the pick until the list confirms it", () => {
 		const opened = openShare(withShares([])).model
 		const picked = pageUpdate(
