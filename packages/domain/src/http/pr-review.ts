@@ -264,6 +264,11 @@ export class PrReviewRepositoryConfig extends Schema.Class<PrReviewRepositoryCon
 	 * automatic review per pull request and three per author a day; a maintainer starts more.
 	 */
 	reviewExternalContributors: Schema.optionalKey(Schema.Boolean),
+	/**
+	 * Whether the reviewer and its replies may call Maple's telemetry tools and read telemetry text.
+	 * On by default, and never on a public repository whatever this says: its review is world-readable.
+	 */
+	mapleToolAccess: Schema.optionalKey(Schema.Boolean),
 	/** Reviews this repository may start per UTC day. */
 	dailyLimit: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 500 }))),
 	/**

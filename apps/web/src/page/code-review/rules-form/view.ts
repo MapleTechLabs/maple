@@ -31,7 +31,8 @@ import { hstack } from "@maple/views/ui/stack"
 type H = HtmlBuilder<Message>
 
 /** `canAutoApprove`: the viewer holds `code_review:auto_approve`; without it that one control is locked. */
-export type ViewInputs = Readonly<{ canEdit: boolean; canAutoApprove: boolean }>
+/** `isPublic`: a public repository's form, where Maple tools stay off and cannot be turned on. */
+export type ViewInputs = Readonly<{ canEdit: boolean; canAutoApprove: boolean; isPublic?: boolean }>
 
 const entries = (items: ReadonlyArray<readonly [string, string]>): ReadonlyArray<SelectEntry> =>
 	Arr.map(items, ([value, label]) => ({ _tag: "Item", item: { value, label } }))
@@ -68,7 +69,8 @@ const selectField = (
 								Message.GotSelectMessage({ field: options.name, message }),
 							viewInputs: {
 								entries: entries(options.items),
-								className: options.className,
+								// Locked, the wrapper takes the width and the select fills it.
+								className: options.lockReason === undefined ? options.className : "w-full",
 								labelledBy: ids.label,
 								describedBy: options.description === undefined ? undefined : ids.description,
 								isDisabled: options.lockReason !== undefined,
@@ -142,6 +144,8 @@ const toggleSetting = (
 		description: string
 		inherited: boolean
 		lockReason?: string
+		/** Off whatever is saved (a public repository's Maple tools): every option reads "Off". */
+		forcedOff?: boolean
 	}>,
 ): Html =>
 	model.mode === "organization"
@@ -153,11 +157,18 @@ const toggleSetting = (
 				className: "w-full sm:w-1/2",
 				description: options.description,
 				...(options.lockReason === undefined ? undefined : { lockReason: options.lockReason }),
-				items: [
-					[INHERIT, `Organization default (${options.inherited ? "On" : "Off"})`],
-					["on", "On"],
-					["off", "Off"],
-				],
+				items:
+					options.forcedOff === true
+						? [
+								[INHERIT, "Off"],
+								["on", "Off"],
+								["off", "Off"],
+							]
+						: [
+								[INHERIT, `Organization default (${options.inherited ? "On" : "Off"})`],
+								["on", "On"],
+								["off", "Off"],
+							],
 			})
 
 const limitPlaceholder = (model: Model, value: number | undefined) =>
@@ -317,6 +328,16 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 				label: RULES_COPY.external.label,
 				description: RULES_COPY.external.description,
 				inherited: parent.reviewExternalContributors ?? BUILT_IN.reviewExternalContributors,
+			}),
+			toggleSetting(h, model, {
+				name: "mapleToolAccess",
+				slug: "maple-tools",
+				label: RULES_COPY.mapleTools.label,
+				description: RULES_COPY.mapleTools.description,
+				inherited: parent.mapleToolAccess ?? BUILT_IN.mapleToolAccess,
+				...(inputs.isPublic === true
+					? { lockReason: RULES_COPY.mapleTools.publicLock, forcedOff: true }
+					: undefined),
 			}),
 			toggleSetting(h, model, {
 				name: "blockOnContractBreaks",

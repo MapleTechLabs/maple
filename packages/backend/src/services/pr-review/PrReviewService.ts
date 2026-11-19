@@ -370,7 +370,10 @@ export const buildReviewKickoff = (input: {
 	readonly telemetry?: PrReviewTelemetry
 	/** A public repository's review is world-readable: it reads no telemetry text and no tools. */
 	readonly isPrivate: boolean
+	/** The repository's Maple tools switch; off, a private repository's agent reads as a public one's. */
+	readonly mapleTools: boolean
 }): string => {
+	const readsTelemetry = input.isPrivate && input.mapleTools
 	const body = Str.trim(input.body ?? "")
 	const quoted =
 		body.length === 0
@@ -394,11 +397,13 @@ export const buildReviewKickoff = (input: {
 		"",
 		...renderConfigRules(input.config),
 		...(input.followUp === undefined || input.followUp.length === 0 ? [] : [...input.followUp, ""]),
-		...renderTelemetryKickoff(input.telemetry, input),
-		...(input.isPrivate
+		...renderTelemetryKickoff(input.telemetry, { isPrivate: readsTelemetry }),
+		...(readsTelemetry
 			? []
 			: [
-					"This repository is public, so its review is world-readable: no telemetry tools are offered. Review from the diff and the code.",
+					input.isPrivate
+						? "Maple's tools are turned off for this repository: no telemetry tools are offered. Review from the diff and the code."
+						: "This repository is public, so its review is world-readable: no telemetry tools are offered. Review from the diff and the code.",
 					"",
 				]),
 		"Start with pr_changed_files. Read every hunk that adds code with pr_file_diff before you decide anything. Finish with submit_review.",
@@ -2241,6 +2246,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					...(rules === undefined ? undefined : { rules }),
 					...(telemetry === undefined ? undefined : { telemetry }),
 					isPrivate: repo.isPrivate,
+					// Off, the agent reads what a public repository's would.
+					mapleTools: config.mapleToolAccess !== false,
 				})
 				// Before the turn, so a fast turn's finished summary is never overwritten by this notice.
 				yield* postReviewStatus(orgId, reviewId, repo, job.number, { kind: "reviewing", headSha })
@@ -2249,7 +2256,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						sessionId,
 						messageId: randomUUID(),
 						text,
-						origin: pullRequestTurnOrigin(repo),
+						origin: pullRequestTurnOrigin(repo, config),
 						tenant: encodeChatTurnTenant({
 							orgId,
 							userId: internalServiceUserId,

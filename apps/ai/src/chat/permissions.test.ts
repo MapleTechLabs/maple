@@ -44,8 +44,8 @@ describe("PR_REVIEW_RULESET", () => {
 })
 
 describe("profileForTurn for the reviewer", () => {
-	const PUBLIC = pullRequestTurnOrigin({ isPrivate: false })
-	const PRIVATE = pullRequestTurnOrigin({ isPrivate: true })
+	const PUBLIC = pullRequestTurnOrigin({ isPrivate: false }, {})
+	const PRIVATE = pullRequestTurnOrigin({ isPrivate: true }, {})
 	// Every org telemetry read the private reviewer has: none may reach a world-readable comment.
 	const telemetryTools = Arr.filter(PR_REVIEW_TOOLS, (name) => !PR_REVIEW_PUBLIC_TOOLS.includes(name))
 
@@ -85,6 +85,22 @@ describe("profileForTurn for the reviewer", () => {
 			}
 		},
 	)
+
+	it("runs a private repository with Maple tools turned off as public", () => {
+		const off = pullRequestTurnOrigin({ isPrivate: true }, { mapleToolAccess: false })
+		for (const agent of [AGENTS["pr-review"], AGENTS["pr-reply"]]) {
+			assert.strictEqual(profileForTurn(agent, off).ruleset, PR_REVIEW_PUBLIC_RULESET)
+		}
+		assert.equal(
+			evaluatePermission(profileForTurn(AGENTS["pr-review"], off).ruleset, "find_errors"),
+			"deny",
+		)
+	})
+
+	it("never offers telemetry on a public repository, even with Maple tools turned on", () => {
+		const on = pullRequestTurnOrigin({ isPrivate: false }, { mapleToolAccess: true })
+		assert.strictEqual(profileForTurn(AGENTS["pr-review"], on).ruleset, PR_REVIEW_PUBLIC_RULESET)
+	})
 
 	it("treats a pass that does not say where it posts as public", () => {
 		assert.strictEqual(

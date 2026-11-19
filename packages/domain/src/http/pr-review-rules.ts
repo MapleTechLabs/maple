@@ -59,6 +59,7 @@ export const mergePrReviewConfig = (
 			...pick("minInlineSeverity"),
 			...pick("reviewDrafts"),
 			...pick("reviewExternalContributors"),
+			...pick("mapleToolAccess"),
 			...pick("dailyLimit"),
 			...pick("automaticReviewLimit"),
 			...pick("feedbackScope"),
