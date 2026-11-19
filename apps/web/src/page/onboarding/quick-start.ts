@@ -415,11 +415,13 @@ const withPlanSeen = (result: UpdateReturn): UpdateReturn => {
 	const isReturnUnwaited = model.isCheckoutReturn && !model.isPlansRequested
 	if (!model.isCheckoutReturn || !(isWaiting || isReturnUnwaited)) return result
 	const next = PricingCards.update(model.pricing, PricingCards.Message.SawPlan({ isReturnUnwaited }))
+	// A finished save leaves with `Finish`'s replace; clearing the marker too would race it back here.
+	const isFinishing = model.state !== null && isQuickStartFinished(model.state)
 	return {
 		...result,
 		model: { ...model, isCheckoutReturn: false, pricing: next.model },
 		commands: [...(result.commands ?? []), ...Command.mapMessages(next.commands ?? [], toPricing)],
-		outMessage: result.outMessage ?? next.outMessage,
+		outMessage: result.outMessage ?? (isFinishing ? undefined : next.outMessage),
 	}
 }
 

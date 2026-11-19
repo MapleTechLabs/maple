@@ -197,6 +197,18 @@ describe("quick start", () => {
 		).not.toContain("TrackCheckoutReturned")
 	})
 
+	test("a finished save back from Stripe leaves for its target, with no marker clear racing it", () => {
+		const finished = {
+			...DEFAULT_QUICK_START_STATE,
+			completedSteps: Rec.fromEntries(Arr.map(STEP_IDS, (id) => [id, true] as const)),
+		}
+		const returning = init("maple-onboarding-v6-org_1", true).model
+		const early = updateWith(returning, Message.LoadedQuickStartState({ state: finished }), null)
+		const seen = updateWith(early.model, Message.SettledPlan({ isPlanActive: true }), true)
+		expect(names(seen)).toEqual(expect.arrayContaining(["FinishQuickStart", "TrackCheckoutReturned"]))
+		expect(seen.outMessage).toBeUndefined()
+	})
+
 	test("app access without a live subscription keeps the return waiting", () => {
 		// A failed customer read, or one holding only a lapsed plan, still lets the app render.
 		const returning = init("maple-onboarding-v6-org_1", true).model
