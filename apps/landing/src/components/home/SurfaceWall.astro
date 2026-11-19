@@ -1,8 +1,9 @@
 ---
 /**
- * Platform: every other surface on one ruled sheet, visible without a click, and the link hub to
- * the feature pages. Each cell is the real product: a legible window of a capture (the lightbox
- * opens the whole screen) or the live component, then its headline, its copy and its link.
+ * Platform: every other surface as one bento, visible without a click, and the link hub to the
+ * feature pages. Each cell is its headline, its copy and its link, then the real product in a
+ * window that runs off the cell's edge: a legible part of a capture (the lightbox opens the whole
+ * screen) or the live component.
  */
 import * as m from "../../paraglide/messages.js";
 import { featureBySlug } from "../../lib/features";
@@ -34,12 +35,13 @@ interface Surface {
 	also?: { href: string; link: string };
 	/** A capture, and the window of it this cell shows. */
 	shot?: { src: string; alt: string; width: number; height: number; crop: Crop };
-	/** The service map takes two cells: it is the one surface that needs the width. */
-	wide?: boolean;
+	/** Copy beside the window instead of above it: the cells whose copy runs to a paragraph. */
+	side?: boolean;
 }
 
-// A cell is about 430 px wide, so a 1440 px screen is drawn 2.2 to 2.4 cells wide to keep its
-// text near 10 px. Each window starts on a layout edge of its screen.
+// A window is 400 to 840 px wide and a capture is drawn 1.4 to 2.8 windows wide, which keeps a
+// 1440 px screen's text near 10 px. Each window starts on a layout edge of its screen and runs
+// off the cell's right and bottom edge, so `aspect` only describes the capture's own crop.
 const CELL = 4 / 3;
 // The feature page's own headline, where the surface has no line of its own.
 const headline = (slug: string, fallback: string) => featureBySlug(slug)?.heroTitle() ?? fallback;
@@ -47,7 +49,6 @@ const headline = (slug: string, fallback: string) => featureBySlug(slug)?.heroTi
 const surfaces: Surface[] = [
 	{
 		key: "map",
-		wide: true,
 		title: headline("service-catalog", m.platform_map_name()),
 		desc: m.platform_map_desc(),
 		href: l("service-catalog"),
@@ -57,7 +58,7 @@ const surfaces: Surface[] = [
 			alt: "A focused service neighborhood showing API, database, and cache dependencies with live request flow",
 			width: 2880,
 			height: 1620,
-			crop: { x: 0.185, y: 0.29, zoom: 1.25, aspect: 8 / 3 },
+			crop: { x: 0.185, y: 0.29, zoom: 1.45, aspect: 8 / 3 },
 		},
 	},
 	{
@@ -71,7 +72,7 @@ const surfaces: Surface[] = [
 			alt: "The metric explorer listing every metric with its type and cardinality",
 			width: 2880,
 			height: 1620,
-			crop: { x: 0.185, y: 0.085, zoom: 2.4, aspect: CELL },
+			crop: { x: 0.185, y: 0.085, zoom: 2.8, aspect: CELL },
 		},
 	},
 	{
@@ -85,11 +86,12 @@ const surfaces: Surface[] = [
 			alt: "Errors grouped by type with counts, affected services and last-seen times",
 			width: 2880,
 			height: 1620,
-			crop: { x: 0.365, y: 0.165, zoom: 2.2, aspect: CELL },
+			crop: { x: 0.365, y: 0.165, zoom: 2.6, aspect: CELL },
 		},
 	},
 	{
 		key: "alerts",
+		side: true,
 		title: headline("alerts", m.platform_alerts_name()),
 		desc: m.platform_alerts_desc(),
 		href: l("alerts"),
@@ -111,6 +113,7 @@ const surfaces: Surface[] = [
 	},
 	{
 		key: "analytics",
+		side: true,
 		title: m.analytics_title(),
 		desc: [m.analytics_lede(), m.analytics_point_1_body(), m.analytics_point_2_body(), m.analytics_point_3_body()].join(" "),
 		href: l("browser-sessions"),
@@ -120,7 +123,7 @@ const surfaces: Surface[] = [
 			alt: "The Web Analytics page: unique visitors, sessions, page views and bounce rate over the last 7 days, with the live visitor badge and the visitors and page views chart",
 			width: 1792,
 			height: 1392,
-			crop: { x: 0.005, y: 0.3, zoom: 1.5, aspect: CELL },
+			crop: { x: 0.005, y: 0.3, zoom: 1.08, aspect: CELL },
 		},
 	},
 	{
@@ -147,11 +150,12 @@ const surfaces: Surface[] = [
 	},
 ];
 
-// Captures read at a third of the sheet. The live components lay themselves out by viewport
-// width, so they get half of it each and are never squeezed into a narrow cell.
-const CAPTURES = ["map", "metrics", "errors", "alerts", "analytics"];
-const captures = surfaces.filter((surface) => CAPTURES.includes(surface.key));
-const live = surfaces.filter((surface) => !CAPTURES.includes(surface.key));
+// One bento on a wide screen, two strips to swipe on a phone: the captures, then the live frames.
+const LIVE = ["kubernetes", "events", "uptime", "github"];
+const groups = [
+	surfaces.filter((surface) => !LIVE.includes(surface.key)),
+	surfaces.filter((surface) => LIVE.includes(surface.key)),
+];
 ---
 
 <section id="features" class="ledger ledger-wall">
@@ -159,48 +163,50 @@ const live = surfaces.filter((surface) => !CAPTURES.includes(surface.key));
 		{/* The lede names every surface in plain text. */}
 		<LedgerHead title={m.platform_title()} lede={m.platform_lede()} />
 
-		{/* On a phone each sheet is a strip to swipe: nine stacked cells would be six screens. */}
-		{
-			[captures, live].map((group, groupIndex) => (
-				<div
-					class:list={[
-						"ledger-grid ledger-wall__strip",
-						groupIndex === 0 ? "ledger-grid--thirds" : "ledger-wall__live",
-					]}
-				>
-					{group.map((surface) => (
-						<article class:list={["ledger-cell", surface.wide && "ledger-cell--two"]}>
-							{surface.shot ? (
-								<Shot
-									src={surface.shot.src}
-									alt={surface.shot.alt}
-									width={surface.shot.width}
-									height={surface.shot.height}
-									crop={surface.shot.crop}
-								/>
-							) : (
-								<div class:list={["ledger-wall__stage", surface.key === "github" && "ledger-wall__stage--pad"]}>
-									{surface.key === "kubernetes" && <LiveK8sHeatmap />}
-									{surface.key === "events" && <LiveFunnel />}
-									{surface.key === "uptime" && <LiveUptime />}
-									{surface.key === "github" && <PrReviewComment variant="compact" />}
+		<div class="bento">
+			{
+				groups.map((group) => (
+					<div class="bento__group">
+						{group.map((surface) => (
+							<article
+								class:list={["ledger-cell bento-cell", surface.side && "bento-cell--side"]}
+								style={`grid-area: ${surface.key}`}
+								data-surface={surface.key}
+							>
+								<div class="ledger-cap bento-cap">
+									<h3>{surface.title}</h3>
+									<p>{surface.desc}</p>
+									<div class="ledger-cap__links">
+										<a href={surface.href}>
+											{surface.link}
+											<span aria-hidden="true"> →</span>
+										</a>
+										{surface.also && <a href={surface.also.href}>{surface.also.link}</a>}
+									</div>
 								</div>
-							)}
-							<div class="ledger-cap ledger-cap--bottom">
-								<h3>{surface.title}</h3>
-								<p>{surface.desc}</p>
-								<div class="ledger-cap__links">
-									<a href={surface.href}>
-										{surface.link}
-										<span aria-hidden="true"> →</span>
-									</a>
-									{surface.also && <a href={surface.also.href}>{surface.also.link}</a>}
-								</div>
-							</div>
-						</article>
-					))}
-				</div>
-			))
-		}
+								{surface.shot ? (
+									<div class="bento-window">
+										<Shot
+											src={surface.shot.src}
+											alt={surface.shot.alt}
+											width={surface.shot.width}
+											height={surface.shot.height}
+											crop={surface.shot.crop}
+										/>
+									</div>
+								) : (
+									<div class:list={["bento-window bento-window--live", surface.key === "github" && "bento-window--pad"]}>
+										{surface.key === "kubernetes" && <LiveK8sHeatmap />}
+										{surface.key === "events" && <LiveFunnel />}
+										{surface.key === "uptime" && <LiveUptime />}
+										{surface.key === "github" && <PrReviewComment variant="compact" />}
+									</div>
+								)}
+							</article>
+						))}
+					</div>
+				))
+			}
+		</div>
 	</div>
 </section>

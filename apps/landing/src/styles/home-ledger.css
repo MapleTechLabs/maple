@@ -86,22 +86,6 @@ html[lang="ko"] .ledger-head h2 {
 		grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
 	}
 }
-@media (min-width: 768px) {
-	.ledger-grid--thirds {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-	}
-	.ledger-grid--thirds .ledger-cell--two {
-		grid-column: 1 / -1;
-	}
-}
-@media (min-width: 1280px) {
-	.ledger-grid--thirds {
-		grid-template-columns: repeat(3, minmax(0, 1fr));
-	}
-	.ledger-grid--thirds .ledger-cell--two {
-		grid-column: span 2;
-	}
-}
 .ledger-cell {
 	/* The containing block for anything a live frame positions absolutely, so the phone strip
 	   clips it instead of the page scrolling sideways. */
@@ -309,38 +293,111 @@ html[lang="ko"] .monumental-home [data-scrollstory] > .shell:first-child h2 {
 	opacity: 0.8;
 }
 
-/* ── Platform wall ── */
-/* A cell is two rows of its sheet, frame then caption, so every frame in a row is one height and
-   every caption starts on one line whatever the copy runs to. */
-.ledger-wall .ledger-grid {
-	grid-auto-rows: auto;
-}
-.ledger-wall .ledger-grid > .ledger-cell {
+/* ── Platform wall: a bento ── */
+/* Every cell is copy, then a window onto the product that starts inside the cell's padding and
+   runs off its right and bottom edge. Nothing fades: a window ends where the cell does. */
+.bento {
 	display: grid;
-	grid-template-rows: subgrid;
-	grid-row: span 2;
-	row-gap: 0;
+	grid-template-columns: minmax(0, 1fr);
+	gap: 1px;
+	border: 1px solid var(--home-rule);
+	background: var(--home-rule);
 }
-.ledger-wall__live {
-	border-top: 0;
+.bento__group {
+	display: contents;
 }
-.ledger-wall__stage {
-	display: flex;
-	flex-direction: column;
-	justify-content: center;
+.bento-cell {
+	overflow: hidden;
+}
+.bento-cap {
+	grid-template-columns: minmax(0, 1fr);
+	align-content: start;
+	padding: 28px 28px 24px;
+}
+.bento-window {
+	position: relative;
+	flex: 1;
 	min-width: 0;
+	min-height: 240px;
+	margin-left: 28px;
+	overflow: hidden;
+	border-top: 1px solid var(--home-rule);
+	border-left: 1px solid var(--home-rule);
 	background: var(--bg-deep);
 }
-.ledger-wall__stage > * {
+.bento-window > figure {
+	position: absolute;
+	inset: 0;
+	background: none;
+}
+.monumental-home .bento-window .shot-crop {
+	height: 100%;
+	aspect-ratio: auto !important;
+	mask-image: none;
+}
+.bento-window--live {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+}
+.bento-window--live > * {
 	min-width: 0;
 }
-.ledger-wall__stage--pad {
-	padding: 28px;
+.bento-window--pad {
+	padding: 20px;
+}
+/* The session capture above the wall ends on its cell's edge too. */
+.monumental-home .ledger .media-crop {
+	mask-image: none;
 }
 /* The live frames loop on their own pages. In a sheet of nine nothing does: each holds the
    still it shows under reduced motion. */
 .monumental-home .ledger-wall .ledger-cell :is(.k8s-hm-cell, .fn-anim, .ut-anim) {
 	animation: none;
+}
+@media (min-width: 768px) {
+	.bento {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		grid-template-areas:
+			"map map"
+			"metrics errors"
+			"alerts alerts"
+			"analytics analytics"
+			"kubernetes kubernetes"
+			"events events"
+			"uptime uptime"
+			"github github";
+	}
+	.bento-window:not(.bento-window--live) {
+		min-height: 300px;
+	}
+}
+@media (min-width: 1280px) {
+	.bento {
+		grid-template-columns: repeat(12, minmax(0, 1fr));
+		grid-template-rows: minmax(460px, auto) minmax(400px, auto) minmax(420px, auto) 540px auto;
+		grid-template-areas:
+			"map map map map map map map map metrics metrics metrics metrics"
+			"errors errors errors errors alerts alerts alerts alerts alerts alerts alerts alerts"
+			"analytics analytics analytics analytics analytics analytics analytics analytics analytics analytics analytics analytics"
+			"kubernetes kubernetes kubernetes kubernetes kubernetes kubernetes events events events events events events"
+			"uptime uptime uptime uptime uptime uptime uptime uptime github github github github";
+	}
+	/* Copy beside the window, for the two cells whose copy runs to a paragraph. */
+	.bento-cell--side {
+		flex-direction: row;
+	}
+	.bento-cell--side .bento-cap {
+		flex: 0 0 var(--bento-copy, 42%);
+		padding-right: 20px;
+	}
+	.bento-cell--side .bento-window {
+		margin: 28px 0 0;
+	}
+	/* A full row: its copy ends on the column line the row above divides on. */
+	.bento-cell[data-surface="analytics"] {
+		--bento-copy: 33.333%;
+	}
 }
 
 /* ── Ownership: install on the left, the terminal on the right ── */
@@ -570,31 +627,44 @@ html:not([lang="en"]) .monumental-home .faq--split h2 {
 		padding: 20px;
 	}
 	/* The wall becomes two strips: each cell most of the screen wide, the next one showing. */
-	.ledger-wall__strip {
+	.bento {
+		display: block;
+	}
+	.bento__group {
 		display: flex;
+		gap: 1px;
 		overflow-x: auto;
 		scroll-snap-type: x mandatory;
 		scrollbar-width: none;
 	}
-	.ledger-wall__strip::-webkit-scrollbar {
+	.bento__group + .bento__group {
+		border-top: 1px solid var(--home-rule);
+	}
+	.bento__group::-webkit-scrollbar {
 		display: none;
 	}
-	.ledger-wall .ledger-wall__strip > .ledger-cell {
-		display: flex;
+	.bento-cell {
 		flex: 0 0 88%;
 		scroll-snap-align: start;
 	}
-	.ledger-wall__stage {
-		flex: 1;
-	}
-	.ledger-wall__stage--pad {
+	.bento-cap {
 		padding: 20px;
 	}
-	.ledger-wall .shot-crop {
-		aspect-ratio: 16 / 12 !important;
+	/* Cells in a strip share its height. The window leads, so the spare height falls under the
+	   copy, or inside a live frame's own ground. */
+	.bento-window {
+		order: -1;
+		margin-left: 0;
+		border-top: 0;
+		border-bottom: 1px solid var(--home-rule);
+		border-left: 0;
 	}
-	.ledger-cap--bottom {
+	.bento-window:not(.bento-window--live) {
 		flex: none;
+		height: 260px;
+	}
+	.bento-window--pad {
+		padding: 16px;
 	}
 	.ledger-runtimes li {
 		padding: 16px 12px;
