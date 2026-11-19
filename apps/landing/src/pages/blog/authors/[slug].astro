@@ -26,7 +26,7 @@ const jsonLd = {
 };
 ---
 
-<Layout title={pageTitle} description={pageDescription} {...(author.avatar ? { image: author.avatar } : {})} ogType="profile">
+<Layout title={pageTitle} description={pageDescription} {...(author.avatar ? { image: author.avatar } : {})} ogType="profile" alternates={["en"]}>
     <SeoHead title={pageTitle} description={pageDescription} />
     <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
     <Nav />

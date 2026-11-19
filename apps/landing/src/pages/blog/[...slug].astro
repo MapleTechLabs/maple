@@ -62,7 +62,7 @@ const jsonLd = {
 const quietLink = "cursor-pointer border-0 bg-transparent p-0 text-left hover:text-fg active:text-fg";
 ---
 
-<Layout title={pageTitle} description={description} image={cover} ogType="article">
+<Layout title={pageTitle} description={description} image={cover} ogType="article" alternates={["en"]}>
     <SeoHead title={pageTitle} description={description} />
     <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
     <Nav />

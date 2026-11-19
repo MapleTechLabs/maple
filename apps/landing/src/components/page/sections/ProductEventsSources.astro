@@ -10,14 +10,12 @@
  * The cards share one subgrid so header, body, code and link rows line up
  * across all three, and the code frames stretch to the tallest snippet.
  */
-import { getRelativeLocaleUrl } from "astro:i18n";
 import { Code } from "astro:components";
 import * as m from "../../../paraglide/messages.js";
 import { codeTheme } from "../../../lib/code-theme.mjs";
 import { PRODUCT_EVENT_SOURCES } from "../../../lib/feature-sections";
 import PixelIcon, { type PixelIconName } from "../../icons/PixelIcon.astro";
 
-const locale = Astro.currentLocale ?? "en";
 
 const ICONS = {
 	browser: "globe",
@@ -72,7 +70,7 @@ const sources = PRODUCT_EVENT_SOURCES.map((source) => ({
 						</div>
 
 						<a
-							href={getRelativeLocaleUrl(locale, source.href)}
+							href={source.href}
 							class="mt-5 inline-flex w-fit text-[13px] text-fg-muted transition-colors hover:text-fg"
 						>
 							{m.pe_src_docs_link()}

@@ -15,7 +15,11 @@ interface Props {
 
 const { items, class: className = "mx-auto max-w-6xl px-6 pt-4" } = Astro.props;
 const locale = Astro.currentLocale ?? "en";
-const l = (path: string) => getRelativeLocaleUrl(locale, path);
+// The fragment stays outside the localised path, or `/#features` comes back as `/#features/`.
+const l = (href: string) => {
+    const [path = "", fragment] = href.split("#");
+    return getRelativeLocaleUrl(locale, path) + (fragment === undefined ? "" : `#${fragment}`);
+};
 
 const siteUrl = Astro.site?.toString().replace(/\/$/, '') ?? 'https://maple.dev';
 // Astro.url.pathname reports the *English* path on a fallback-rewritten locale

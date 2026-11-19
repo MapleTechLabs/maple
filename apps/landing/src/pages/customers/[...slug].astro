@@ -61,7 +61,7 @@ const backLink =
     "inline-flex items-center gap-1.5 font-mono text-xs text-fg-muted transition-colors hover:text-primary";
 ---
 
-<Layout title={pageTitle} description={description} image={cover} ogType="article">
+<Layout title={pageTitle} description={description} image={cover} ogType="article" alternates={["en"]}>
     <SeoHead title={pageTitle} description={description} />
     <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
     <Nav />
