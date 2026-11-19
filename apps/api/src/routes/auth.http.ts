@@ -128,6 +128,7 @@ export const HttpAuthSessionLive = HttpApiBuilder.group(MapleApi, "authSession",
 						orgId: tenant.orgId,
 						userId: tenant.userId,
 						roles: tenant.roles,
+						permissions: tenant.permissions,
 						userEmail,
 					})
 					yield* recordHttpAudit("cli_session.approved", {
@@ -147,6 +148,7 @@ export const HttpAuthSessionLive = HttpApiBuilder.group(MapleApi, "authSession",
 						orgId: tenant.orgId,
 						userId: tenant.userId,
 						roles: tenant.roles,
+						permissions: tenant.permissions,
 						userEmail,
 					})
 					// The redirect's host only: its query can carry the client's state.

@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { assert, describe, it } from "@effect/vitest"
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import { BillingOrgService } from "@maple/backend/services/billing/BillingOrgService"
@@ -632,7 +633,13 @@ describe("billing writes over HTTP", () => {
 	const decodeTenant = Schema.decodeUnknownSync(CurrentTenant.TenantSchema)
 	const PAYER_ORG = Schema.decodeSync(OrgId)("org_billing_payer")
 	const tenantWithRoles = (roles: ReadonlyArray<string>) =>
-		decodeTenant({ orgId: ORG, userId: "user_billing_test", roles, authMode: "self_hosted" })
+		decodeTenant({
+			orgId: ORG,
+			userId: "user_billing_test",
+			roles,
+			permissions: Policy.grantsOf(roles),
+			authMode: "self_hosted",
+		})
 
 	const die = () => Effect.die(new Error("not reachable once the admin gate rejects"))
 

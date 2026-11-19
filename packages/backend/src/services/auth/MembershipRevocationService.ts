@@ -26,6 +26,7 @@ import { alertDestinationSecretSlot } from "@maple/backend/platform/secret-slots
 import { ORG_MEMBERSHIP_CACHE_BUCKET, forgetMembershipMemo } from "./OrgMembershipService"
 import * as Policy from "@maple/domain/policy"
 import { revokeFamiliesForAccessKeys, revokeRefreshFamiliesForMember } from "./mcp-oauth-family"
+import { PinnedPermissionCodes, pinnedGrants } from "./pinned-authority"
 
 /**
  * What has to happen the moment somebody stops being a member of an org.
@@ -90,14 +91,15 @@ export interface MembershipRevocationServiceApi {
 		userId: UserId,
 	) => Effect.Effect<MembershipRevocationSummary, MembershipRevocationError>
 	/**
-	 * `organizationMembership.updated`: evict the caches, and retire the keys the
-	 * member's *old* role is still pinned onto. `roles` is the role set the
-	 * member has now: a promotion strips nothing.
+	 * A member's role changed (`organizationMembership.updated`, or a custom role rewritten): evict
+	 * the caches, and retire every credential pinned to a permission `current` no longer holds.
+	 * `current` is what the member holds now (`Policy.grantsOf(roles, custom)`): a promotion strips
+	 * nothing.
 	 */
 	readonly demoteMembership: (
 		orgId: OrgId,
 		userId: UserId,
-		roles: ReadonlyArray<RoleName>,
+		current: Policy.Grants,
 	) => Effect.Effect<MembershipDemotionSummary, MembershipRevocationError>
 	/** Evict the membership caches only: the one step that never fails. */
 	readonly invalidateMembership: (userId: UserId) => Effect.Effect<void>
@@ -110,11 +112,11 @@ const toRevocationError = (error: unknown) =>
 
 /**
  * The shape every role-bearing key metadata shares (`maple_cli`, `maple_mcp`,
- * `maple_mcp_oauth`, `maple_ios_widget`): the minting user's roles, frozen onto
- * the key. `resolveByKey` reads them back with no membership recheck, which is
+ * `maple_mcp_oauth`, `maple_ios_widget`): the minting user's roles (and a custom
+ * role's permission codes), frozen onto the key. `resolveByKey` reads them back with no membership recheck, which is
  * why a demotion has to come and take them away.
  */
-const PinnedRoles = Schema.Struct({ roles: Schema.Array(RoleName) })
+const PinnedRoles = Schema.Struct({ roles: Schema.Array(RoleName), permissions: PinnedPermissionCodes })
 const decodePinnedRoles = Schema.decodeUnknownOption(PinnedRoles)
 
 const decodePublicConfig = Schema.decodeUnknownOption(DestinationPublicConfigSchema)
@@ -426,9 +428,9 @@ const make = Effect.gen(function* () {
 	 * device keys pin the minting user's roles into `metadata_json` and
 	 * `resolveByKey` reads them back without ever re-checking the membership, so
 	 * an admin who ran `maple auth login` and was then demoted keeps admin on
-	 * that key until it expires. Any key pinned to a role above the one the member
-	 * now holds (admin, or engineer for a new member) is retired here; MCP families go with their access key, or
-	 * the next hourly rotation would mint the authority straight back.
+	 * that key until it expires. Any credential pinned to a permission the member no
+	 * longer holds is retired here; MCP families go with their access key, or the
+	 * next hourly rotation would mint the authority straight back.
 	 *
 	 * Known residue: a plain `standard` key carries no pinned roles and resolves
 	 * with the `root` default, so a demoted admin's ordinary API keys keep full
@@ -439,15 +441,16 @@ const make = Effect.gen(function* () {
 	const demoteMembership = Effect.fn("MembershipRevocationService.demoteMembership")(function* (
 		orgId: OrgId,
 		userId: UserId,
-		roles: ReadonlyArray<RoleName>,
+		current: Policy.Grants,
 	) {
 		yield* Effect.annotateCurrentSpan({ orgId, "tenant.userId": userId })
 		yield* invalidateMembership(userId)
-		// Anything pinned above the role the member now holds is retired; admins keep everything.
-		const nowRole = Policy.highestRole(roles)
-		const outlivesDemotion = (pinned: ReadonlyArray<string>) =>
-			Policy.outranks(Policy.highestRole(pinned), nowRole)
-		if (Policy.isAtLeast(nowRole, "admin")) {
+		// Anything pinned to a permission the member no longer holds is retired.
+		const outlivesDemotion = (
+			roles: ReadonlyArray<string> | null,
+			codes: ReadonlyArray<number> | null | undefined,
+		) => roles !== null && Policy.exceeds(pinnedGrants(roles, codes ?? undefined), current)
+		if (!Policy.exceeds(Policy.allPermissions, current)) {
 			return {
 				apiKeysRevoked: 0,
 				mcpFamiliesRevoked: 0,
@@ -462,11 +465,13 @@ const make = Effect.gen(function* () {
 					// An approval not yet redeemed froze the old role and would mint a credential at it.
 					const cliApprovals = yield* db.run(
 						PG.from(CliDeviceAuthorizations)
-							.select("deviceCodeHash", "approvedRoles")
+							.select("deviceCodeHash", "approvedRoles", "approvedPermissions")
 							.where(($) => [$.approvedOrgId.eq(orgId), $.approvedUserId.eq(userId)]),
 					)
 					const [firstCli, ...restCli] = Arr.map(
-						Arr.filter(cliApprovals, (row) => outlivesDemotion(row.approvedRoles ?? [])),
+						Arr.filter(cliApprovals, (row) =>
+							outlivesDemotion(row.approvedRoles, row.approvedPermissions),
+						),
 						(row) => row.deviceCodeHash,
 					)
 					if (firstCli !== undefined) {
@@ -478,11 +483,13 @@ const make = Effect.gen(function* () {
 					}
 					const mcpApprovals = yield* db.run(
 						PG.from(McpOAuthAuthorizations)
-							.select("requestIdHash", "approvedRoles")
+							.select("requestIdHash", "approvedRoles", "approvedPermissions")
 							.where(($) => [$.approvedOrgId.eq(orgId), $.approvedUserId.eq(userId)]),
 					)
 					const [firstMcp, ...restMcp] = Arr.map(
-						Arr.filter(mcpApprovals, (row) => outlivesDemotion(row.approvedRoles ?? [])),
+						Arr.filter(mcpApprovals, (row) =>
+							outlivesDemotion(row.approvedRoles, row.approvedPermissions),
+						),
 						(row) => row.requestIdHash,
 					)
 					if (firstMcp !== undefined) {
@@ -495,11 +502,11 @@ const make = Effect.gen(function* () {
 					// Device credentials pin roles in a column rather than key metadata.
 					const liveDevices = yield* db.run(
 						PG.from(DeviceCredentials)
-							.select("id", "roles")
+							.select("id", "roles", "permissions")
 							.where(($) => [$.orgId.eq(orgId), $.userId.eq(userId), $.revokedAt.isNull()]),
 					)
 					const [firstDevice, ...restDevices] = Arr.map(
-						Arr.filter(liveDevices, (row) => outlivesDemotion(row.roles)),
+						Arr.filter(liveDevices, (row) => outlivesDemotion(row.roles, row.permissions)),
 						(row) => row.id,
 					)
 					const deviceCredentialsRevoked =
@@ -522,7 +529,10 @@ const make = Effect.gen(function* () {
 					const stale = Arr.map(
 						Arr.filter(live, (row) => {
 							const pinned = decodePinnedRoles(row.metadataJson)
-							return pinned._tag === "Some" && outlivesDemotion(pinned.value.roles)
+							return (
+								pinned._tag === "Some" &&
+								outlivesDemotion(pinned.value.roles, pinned.value.permissions)
+							)
 						}),
 						(row) => row.id,
 					)

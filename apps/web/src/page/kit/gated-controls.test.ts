@@ -23,7 +23,7 @@ describe("gatedEntries", () => {
 		expect(separator).toEqual(entries[1])
 		expect(toggle).toMatchObject({
 			isDisabled: true,
-			tooltip: { content: ["Only org admins and engineers can manage alerts."] },
+			tooltip: { content: [Policy.denialFor("alerts:manage").message] },
 		})
 	})
 })

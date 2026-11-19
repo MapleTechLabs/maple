@@ -23,6 +23,7 @@ import * as SetupHealth from "./setup-health/update"
 import * as Ai from "./ai/update"
 import * as Billing from "./billing/update"
 import * as Members from "./members/update"
+import * as Roles from "./roles/update"
 import * as General from "./general/update"
 import * as Domains from "./domains/update"
 import * as Sso from "./sso/update"
@@ -101,6 +102,7 @@ const TAB_TAGS = {
 	"data-sources": "DataSources",
 	general: "General",
 	members: "Members",
+	roles: "Roles",
 	domains: "Domains",
 	sso: "Sso",
 	billing: "Billing",
@@ -276,6 +278,15 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 				),
 			}
 		}
+		case "Roles": {
+			const step = Roles.init(grantsOf(model))
+			return {
+				model: { ...model, tab: { _tag: "Roles", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotRolesMessage({ message }),
+				),
+			}
+		}
 		case "Domains": {
 			const step = Domains.init()
 			return {
@@ -433,6 +444,15 @@ const revisitTab = (model: Model, kept: TabModel, context: PageContext): Return 
 				model: { ...model, tab: { _tag: "Members", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (message) =>
 					Message.GotMembersMessage({ message }),
+				),
+			}
+		}
+		case "Roles": {
+			const step = Roles.revisit(kept.model)
+			return {
+				model: { ...model, tab: { _tag: "Roles", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotRolesMessage({ message }),
 				),
 			}
 		}
@@ -765,6 +785,18 @@ const updateMessage = (model: Model, message: Message, context: PageContext): Re
 				model: putTab(model, { _tag: "Members", model: step.model }),
 				commands: Command.mapMessages(step.commands ?? [], (child) =>
 					Message.GotMembersMessage({ message: child }),
+				),
+				outMessage: step.outMessage,
+			}
+		},
+		GotRolesMessage: ({ message: inner }) => {
+			const tab = tabNamed(model, "Roles")
+			if (tab === undefined) return { model }
+			const step = Roles.update(tab.model, inner)
+			return {
+				model: putTab(model, { _tag: "Roles", model: step.model }),
+				commands: Command.mapMessages(step.commands ?? [], (child) =>
+					Message.GotRolesMessage({ message: child }),
 				),
 				outMessage: step.outMessage,
 			}

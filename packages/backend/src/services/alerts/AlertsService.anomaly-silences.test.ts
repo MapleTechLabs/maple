@@ -17,7 +17,7 @@ import { AlertSilencesService } from "./AlertSilencesService"
 import { AnomalyAlertSource } from "./anomaly/AnomalyAlertSource"
 import {
 	DEFAULT_CLOCK_EPOCH_MS,
-	adminRoles,
+	adminGrants,
 	asOrgId,
 	asUserId,
 	createWebhookDestination,
@@ -93,7 +93,7 @@ const createUnscopedAnomalyRule = (alerts: AlertsServiceApi) =>
 		return yield* alerts.createRule(
 			orgId,
 			userId,
-			adminRoles,
+			adminGrants,
 			new AlertRuleUpsertRequest({
 				name: "Production anomalies",
 				enabled: true,
@@ -122,7 +122,7 @@ const silence = (matchers: AlertSilenceMatchers) =>
 		return yield* silences.create(
 			orgId,
 			userId,
-			adminRoles,
+			adminGrants,
 			new AlertSilenceCreateRequest({
 				reason: "checkout maintenance",
 				matchers,
@@ -206,7 +206,7 @@ describe("alert silences on anomaly rules", () => {
 			yield* ticks(alerts, 2)
 			assert.deepStrictEqual(sent, [])
 
-			yield* silences.end(orgId, userId, adminRoles, created.id)
+			yield* silences.end(orgId, userId, adminGrants, created.id)
 			yield* ticks(alerts, 3)
 
 			const [incident] = (yield* alerts.listIncidents(orgId)).incidents

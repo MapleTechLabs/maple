@@ -629,14 +629,16 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 			payload: V2DashboardTemplatePreviewParams,
 			success: V2DashboardTemplatePreview,
 			error: [V2ParameterInvalid.schema, dashboardTemplateNotFound],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "previewDashboardTemplate",
-				summary: "Preview a dashboard template",
-				description:
-					"Builds the template for the given parameters and returns the resulting dashboard without saving it. Read-only — use `instantiate` to create the dashboard.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("telemetry:read"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "previewDashboardTemplate",
+					summary: "Preview a dashboard template",
+					description:
+						"Builds the template for the given parameters and returns the resulting dashboard without saving it. Read-only — use `instantiate` to create the dashboard.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.post("instantiateTemplate", "/templates/:template_id/instantiate", {
@@ -686,6 +688,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 				dashboardStoredConfigInvalid,
 			],
 		})
+			.annotate(EndpointAccess, requires("telemetry:read"))
 			.annotate(AuditedRead, "telemetry.read")
 			.annotateMerge(
 				OpenApi.annotations({

@@ -167,6 +167,7 @@ const routers = {
 		Route.mapTo(AppRoute.IngestRule),
 	),
 	BillingAiCredits: pipe(path("settings", "billing", "ai-credits"), Route.mapTo(AppRoute.BillingAiCredits)),
+	RoleEditor: pipe(path("settings", "roles"), slash(segment("roleId")), Route.mapTo(AppRoute.RoleEditor)),
 	// Retired: `routeRedirect` sends it to `/status-pages/$pageId`.
 	AlertsStatusPage: pipe(
 		path("alerts", "status-pages"),

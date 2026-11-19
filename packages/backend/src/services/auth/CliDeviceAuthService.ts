@@ -28,6 +28,8 @@ import { Env } from "@maple/backend/platform/Env"
 import { openSecret, sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { cliDeviceTokenSlot } from "@maple/backend/platform/secret-slots"
 import { CliAuthRateLimit } from "@maple/backend/platform/bindings"
+import type * as Policy from "@maple/domain/policy"
+import { pinAuthority } from "./pinned-authority"
 
 const DEVICE_TTL_SECONDS = 15 * 60
 /**
@@ -61,6 +63,7 @@ type ApprovalIdentity = {
 	readonly orgId: OrgId
 	readonly userId: UserId
 	readonly roles: ReadonlyArray<RoleName>
+	readonly permissions: Policy.Grants
 	readonly userEmail: string | null
 }
 
@@ -239,13 +242,15 @@ export class CliDeviceAuthService extends Context.Service<
 				return yield* new CliDeviceConflictError({ message: "CLI login code was already used" })
 			}
 			const now = yield* Clock.currentTimeMillis
+			const pinned = pinAuthority(identity)
 			const updated = yield* dbExecute((db) =>
 				db.run(
 					PG.update(CliDeviceAuthorizations)
 						.set({
 							approvedOrgId: identity.orgId,
 							approvedUserId: identity.userId,
-							approvedRoles: [...identity.roles],
+							approvedRoles: pinned.roles,
+							approvedPermissions: pinned.permissions ?? null,
 							approvedUserEmail: identity.userEmail,
 							approvedAt: now,
 						})
@@ -373,6 +378,9 @@ export class CliDeviceAuthService extends Context.Service<
 								metadataJson: {
 									source: "maple_cli",
 									roles: [...approvedRoles],
+									...(row.approvedPermissions === null
+										? undefined
+										: { permissions: [...row.approvedPermissions] }),
 									deviceName: row.deviceName,
 								},
 								expiresAt: now + CLI_KEY_TTL_MS,

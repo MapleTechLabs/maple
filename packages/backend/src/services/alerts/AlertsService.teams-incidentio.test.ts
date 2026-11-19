@@ -7,7 +7,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Array as Arr, Effect } from "effect"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import {
-	adminRoles,
+	adminGrants,
 	asOrgId,
 	asUserId,
 	emptyWarehouseRows,
@@ -67,7 +67,7 @@ describe("AlertsService: Microsoft Teams destinations", () => {
 				alerts.createDestination(
 					orgId,
 					userId,
-					adminRoles,
+					adminGrants,
 					new MicrosoftTeamsAlertDestinationConfig({
 						type: "microsoft-teams",
 						name: "Ops",
@@ -89,7 +89,7 @@ describe("AlertsService: Microsoft Teams destinations", () => {
 			const destination = yield* alerts.createDestination(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new MicrosoftTeamsAlertDestinationConfig({
 					type: "microsoft-teams",
 					name: "Ops",
@@ -99,7 +99,7 @@ describe("AlertsService: Microsoft Teams destinations", () => {
 			assert.strictEqual(destination.summary, "Workflow 9f8e7d6c…")
 			assert.notInclude(JSON.stringify(destination), "t3ams-s1g")
 
-			const response = yield* alerts.testDestination(orgId, userId, adminRoles, destination.id)
+			const response = yield* alerts.testDestination(orgId, userId, adminGrants, destination.id)
 			assert.isTrue(response.success)
 			assert.lengthOf(requests, 1)
 			assert.strictEqual(new URL(requests[0]?.url ?? "").searchParams.get("sig"), "t3ams-s1g")
@@ -118,7 +118,7 @@ describe("AlertsService: incident.io destinations", () => {
 				alerts.createDestination(
 					orgId,
 					userId,
-					adminRoles,
+					adminGrants,
 					new IncidentIoAlertDestinationConfig({
 						type: "incident-io",
 						name: "Paging",
@@ -140,7 +140,7 @@ describe("AlertsService: incident.io destinations", () => {
 			const destination = yield* alerts.createDestination(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new IncidentIoAlertDestinationConfig({
 					type: "incident-io",
 					name: "Paging",
@@ -153,13 +153,13 @@ describe("AlertsService: incident.io destinations", () => {
 			assert.notInclude(JSON.stringify(destination), "inc-s3cret")
 
 			// Renaming sends no token: the stored one must survive.
-			yield* alerts.updateDestination(orgId, userId, adminRoles, destination.id, {
+			yield* alerts.updateDestination(orgId, userId, adminGrants, destination.id, {
 				type: "incident-io",
 				name: "Paging (prod)",
 			})
 			// A different alert source has its own token: moving the id alone is refused.
 			const moved = yield* Effect.exit(
-				alerts.updateDestination(orgId, userId, adminRoles, destination.id, {
+				alerts.updateDestination(orgId, userId, adminGrants, destination.id, {
 					type: "incident-io",
 					alertSourceConfigId: "01HZZZZZZZZZZZZZZZZZZZZZZZ",
 				}),
@@ -167,7 +167,7 @@ describe("AlertsService: incident.io destinations", () => {
 			const movedError = getError(moved)
 			assert.instanceOf(movedError, AlertValidationError)
 			assert.include(movedError.message, "needs its own token")
-			const response = yield* alerts.testDestination(orgId, userId, adminRoles, destination.id)
+			const response = yield* alerts.testDestination(orgId, userId, adminGrants, destination.id)
 			assert.isTrue(response.success)
 			// A test opens an alert and closes it at once.
 			assert.deepStrictEqual(
@@ -200,7 +200,7 @@ describe("AlertsService: incident.io destinations", () => {
 			const destination = yield* alerts.createDestination(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new IncidentIoAlertDestinationConfig({
 					type: "incident-io",
 					name: "Paging",
@@ -208,13 +208,13 @@ describe("AlertsService: incident.io destinations", () => {
 					token: "old-token",
 				}),
 			)
-			const moved = yield* alerts.updateDestination(orgId, userId, adminRoles, destination.id, {
+			const moved = yield* alerts.updateDestination(orgId, userId, adminGrants, destination.id, {
 				type: "incident-io",
 				alertSourceConfigId: "01HZZZZZZZZZZZZZZZZZZZZZZZ",
 				token: "new-token",
 			})
 			assert.strictEqual(moved.channelLabel, "01HZZZZZZZZZZZZZZZZZZZZZZZ")
-			yield* alerts.testDestination(orgId, userId, adminRoles, destination.id)
+			yield* alerts.testDestination(orgId, userId, adminGrants, destination.id)
 			assert.deepStrictEqual(
 				Arr.dedupe(Arr.map(requests, (request) => `${request.url} ${request.authorization}`)),
 				["https://api.incident.io/v2/alert_events/http/01HZZZZZZZZZZZZZZZZZZZZZZZ Bearer new-token"],

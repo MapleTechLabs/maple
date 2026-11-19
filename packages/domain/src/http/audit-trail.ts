@@ -5,6 +5,7 @@ import { AlertSeverity } from "../alerts"
 import { AuditDetectionFilters } from "../audit-trail"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
+import { EndpointAccess } from "./endpoint-access"
 
 // The Security hub's audit log: audit events from connected platforms and Maple itself in one
 // list. Dashboard only (the session tier refuses API keys) and behind `audit_log:read`.
@@ -300,4 +301,5 @@ export class AuditTrailApiGroup extends HttpApiGroup.make("auditTrail")
 		}),
 	)
 	.prefix("/internal/audit-trail")
-	.middleware(SessionAuthorization) {}
+	.middleware(SessionAuthorization)
+	.annotate(EndpointAccess, "handler") {}

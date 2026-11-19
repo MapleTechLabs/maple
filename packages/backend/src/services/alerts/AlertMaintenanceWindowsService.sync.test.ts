@@ -28,7 +28,7 @@ import {
 } from "./alert-maintenance-window-store"
 import {
 	DEFAULT_CLOCK_EPOCH_MS,
-	adminRoles,
+	adminGrants,
 	asOrgId,
 	asUserId,
 	getError,
@@ -71,14 +71,14 @@ const createWindow = (schedule: AlertMaintenanceSchedule, name = "Nightly DB") =
 		windows.create(
 			orgId,
 			userId,
-			adminRoles,
+			adminGrants,
 			new AlertMaintenanceWindowCreateRequest({ name, matchers: { services: ["checkout"] }, schedule }),
 		),
 	)
 
 const updateWindow = (windowId: AlertMaintenanceWindowId, request: AlertMaintenanceWindowUpdateRequest) =>
 	AlertMaintenanceWindowsService.use((windows) =>
-		windows.update(orgId, userId, adminRoles, windowId, request),
+		windows.update(orgId, userId, adminGrants, windowId, request),
 	)
 
 const byStart = Order.mapInput(Order.Number, (silence: { readonly startsAt: string }) =>
@@ -421,7 +421,7 @@ describe("maintenance window sync", () => {
 				silences.create(
 					orgId,
 					userId,
-					adminRoles,
+					adminGrants,
 					new AlertSilenceCreateRequest({
 						reason: "deploy",
 						matchers: { services: ["checkout"] },
@@ -440,12 +440,12 @@ describe("maintenance window sync", () => {
 			const window = yield* createWindow(nightly, "Nightly DB")
 			const [first] = yield* occurrenceSilences(window.id)
 			const silences = yield* AlertSilencesService
-			const ended = yield* Effect.exit(silences.end(orgId, userId, adminRoles, first.id))
+			const ended = yield* Effect.exit(silences.end(orgId, userId, adminGrants, first.id))
 			const edited = yield* Effect.exit(
 				silences.update(
 					orgId,
 					userId,
-					adminRoles,
+					adminGrants,
 					first.id,
 					new AlertSilenceUpdateRequest({ endsAt: at(NOW + 10 * HOUR) }),
 				),
@@ -495,10 +495,10 @@ describe("maintenance window sync", () => {
 			// Deleted mid-occurrence: that occurrence's silence is kept, ended at the delete.
 			yield* TestClock.setTime(TUE_2330 + 10 * MINUTE)
 			yield* AlertMaintenanceWindowsService.use((service) =>
-				service.delete(orgId, userId, adminRoles, window.id),
+				service.delete(orgId, userId, adminGrants, window.id),
 			)
 			const silences = yield* AlertSilencesService
-			const error = getError(yield* Effect.exit(silences.end(orgId, userId, adminRoles, first.id)))
+			const error = getError(yield* Effect.exit(silences.end(orgId, userId, adminGrants, first.id)))
 			assert.strictEqual(
 				Schema.is(AlertValidationError)(error) ? error.message : String(error),
 				"This silence came from a maintenance window that was deleted, so it cannot be edited",
@@ -514,7 +514,7 @@ describe("maintenance window sync", () => {
 			const deletedAt = NOW + HOUR
 			yield* TestClock.setTime(deletedAt)
 			yield* AlertMaintenanceWindowsService.use((service) =>
-				service.delete(orgId, userId, adminRoles, window.id),
+				service.delete(orgId, userId, adminGrants, window.id),
 			)
 
 			const database = yield* Database

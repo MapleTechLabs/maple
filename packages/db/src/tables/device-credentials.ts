@@ -31,6 +31,8 @@ const deviceCredentialsColumns = {
 	/** RFC 7638 SHA-256 thumbprint of `publicJwk`, base64url. A key is never registered twice. */
 	jkt: PG.text,
 	roles: PG.jsonb(Schema.Array(RoleName)),
+	/** Permission codes pinned next to the roles when one of them is a custom role. */
+	permissions: PG.nullable(PG.jsonb(Schema.Array(Schema.Int))),
 	scopes: PG.jsonb(Schema.Array(Schema.String)),
 	attested: PG.column(PG.bool, { default: false }),
 	attestation: PG.nullable(PG.jsonb(DeviceCredentialAttestation)),

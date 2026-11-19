@@ -5,6 +5,7 @@ import { Effect } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
+import { pinAuthority } from "@maple/backend/services/auth/pinned-authority"
 
 /**
  * The widget credential's ceilings, all of them the server's.
@@ -49,10 +50,10 @@ export const HttpV2WidgetCredentialsLive = HttpApiBuilder.group(MapleApiV2, "wid
 						name: WIDGET_CREDENTIAL_NAME,
 						scopes: WIDGET_CREDENTIAL_SCOPES,
 						expiresInSeconds: WIDGET_CREDENTIAL_TTL_SECONDS,
-						// The signed-in user's own roles. A credential must never
+						// The signed-in user's own authority. A credential must never
 						// outrank the human who asked for it, and the alternative —
 						// letting it resolve with the API-key default — is `root`.
-						roles: tenant.roles,
+						pinned: pinAuthority(tenant),
 					})
 					// A credential mint is the security event; the secret itself never
 					// reaches the row, only which installation it was issued to.

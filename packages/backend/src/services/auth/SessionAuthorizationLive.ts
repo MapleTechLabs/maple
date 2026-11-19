@@ -1,7 +1,7 @@
 import { HttpServerRequest } from "effect/http"
 import { API_KEY_PREFIX } from "../../platform/credential-tokens"
 import { CurrentTenant } from "@maple/domain/http"
-import { Effect, Layer, String as Str } from "effect"
+import { Effect, Layer, Option, String as Str } from "effect"
 import { makeResolveTenant } from "@maple/auth"
 import { annotateAuthSpan } from "@maple/backend/services/auth/auth-span"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
@@ -11,7 +11,24 @@ import { withAuditedRead } from "@maple/backend/services/audit/audit-access"
 import { Env } from "@maple/backend/platform/Env"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import { getBearerToken } from "./bearer-token"
-import { checkAnalystAccess } from "./analyst-gate"
+import { checkEndpointAccess } from "./endpoint-gate"
+import { OrgMembershipService } from "./OrgMembershipService"
+
+/**
+ * The session resolver both layers use. The membership directory looks up an `org:custom`
+ * session's permissions (absent, such a session holds nothing); the header stays refused.
+ */
+const sessionResolver = Effect.gen(function* () {
+	const env = yield* Env
+	const membership = yield* Effect.serviceOption(OrgMembershipService)
+	return makeResolveTenant(
+		env,
+		undefined,
+		undefined,
+		undefined,
+		Option.getOrUndefined(Option.map(membership, (service) => service.verify)),
+	)
+})
 
 /**
  * Authorization for the internal API: Clerk sessions only.
@@ -29,10 +46,9 @@ import { checkAnalystAccess } from "./analyst-gate"
 export const SessionAuthorizationLive = Layer.effect(
 	CurrentTenant.SessionAuthorization,
 	Effect.gen(function* () {
-		const env = yield* Env
 		const audit = yield* AuditLogService
 		const regions = yield* OrganizationRegionService
-		const resolveTenant = makeResolveTenant(env)
+		const resolveTenant = yield* sessionResolver
 
 		return CurrentTenant.SessionAuthorization.of({
 			bearer: (httpEffect, options) =>
@@ -50,7 +66,7 @@ export const SessionAuthorizationLive = Layer.effect(
 					yield* annotateAuthSpan("session", { orgId: tenant.orgId, userId: tenant.userId })
 					yield* regions.ensureServedHere(tenant.orgId)
 					yield* recordImpersonation(audit, request, tenant, "dashboard")
-					yield* checkAnalystAccess(tenant.roles, options)
+					yield* checkEndpointAccess(tenant.permissions, options)
 					const actor = { type: "user", source: "dashboard" } as const
 					return yield* httpEffect.pipe(
 						Effect.provideService(CurrentTenant.Context, new CurrentTenant.TenantSchema(tenant)),
@@ -74,9 +90,8 @@ export const SessionAuthorizationLive = Layer.effect(
 export const RegionlessSessionAuthorizationLive = Layer.effect(
 	CurrentTenant.RegionlessSessionAuthorization,
 	Effect.gen(function* () {
-		const env = yield* Env
 		const audit = yield* AuditLogService
-		const resolveTenant = makeResolveTenant(env)
+		const resolveTenant = yield* sessionResolver
 
 		return CurrentTenant.RegionlessSessionAuthorization.of({
 			bearer: (httpEffect, options) =>
@@ -90,7 +105,7 @@ export const RegionlessSessionAuthorizationLive = Layer.effect(
 					const tenant = yield* resolveTenant(request.headers)
 					yield* annotateAuthSpan("session", { orgId: tenant.orgId, userId: tenant.userId })
 					yield* recordImpersonation(audit, request, tenant, "dashboard")
-					yield* checkAnalystAccess(tenant.roles, options)
+					yield* checkEndpointAccess(tenant.permissions, options)
 					const actor = { type: "user", source: "dashboard" } as const
 					return yield* httpEffect.pipe(
 						Effect.provideService(CurrentTenant.Context, new CurrentTenant.TenantSchema(tenant)),

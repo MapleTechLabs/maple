@@ -207,4 +207,5 @@ export class V2PrometheusApiGroup extends HttpApiGroup.make("prometheus")
 			description:
 				"The Prometheus HTTP query API over Maple metrics, for Grafana and other Prometheus clients.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, requires("telemetry:read")) {}

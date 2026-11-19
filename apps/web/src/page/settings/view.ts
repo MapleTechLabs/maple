@@ -26,6 +26,7 @@ import * as McpView from "./mcp/view"
 import * as AiView from "./ai/view"
 import * as BillingView from "./billing/view"
 import * as MembersView from "./members/view"
+import * as RolesView from "./roles/view"
 import * as GeneralView from "./general/view"
 import * as DomainsView from "./domains/view"
 import * as SsoView from "./sso/view"
@@ -186,6 +187,16 @@ const tabContent = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<H
 					},
 				}),
 			]
+		case "Roles":
+			return [
+				h.submodel({
+					slotId: "settings-roles",
+					model: tab.model,
+					view: RolesView.view,
+					toParentMessage: (message) => Message.GotRolesMessage({ message }),
+					viewInputs: {},
+				}),
+			]
 		case "Domains":
 			return [
 				h.submodel({
@@ -259,6 +270,7 @@ const isRoleUnknown = (model: Model): boolean =>
 const ROLE_GATED_TABS: ReadonlySet<SettingsTab> = new Set([
 	"general",
 	"members",
+	"roles",
 	"billing",
 	"keys",
 	"automation",
@@ -329,6 +341,8 @@ const tabDescription = (model: Model): string | undefined => {
 			return KeysView.description
 		case "Members":
 			return MembersView.description
+		case "Roles":
+			return RolesView.description
 		case "Domains":
 			return DomainsView.description
 		case "Sso":
@@ -361,6 +375,14 @@ const tabActions = (h: H, model: Model): Html | undefined => {
 				model: tab.model,
 				view: MembersView.headerActions,
 				toParentMessage: (message) => Message.GotMembersMessage({ message }),
+				viewInputs: {},
+			})
+		case "Roles":
+			return h.submodel({
+				slotId: "settings-roles-actions",
+				model: tab.model,
+				view: RolesView.headerActions,
+				toParentMessage: (message) => Message.GotRolesMessage({ message }),
 				viewInputs: {},
 			})
 		case "Domains":

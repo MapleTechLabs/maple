@@ -8,6 +8,7 @@ import {
 	UserSessionAuthorization,
 } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
+import { EndpointAccess } from "./endpoint-access"
 
 export class DeleteOrganizationResponse extends Schema.Class<DeleteOrganizationResponse>(
 	"DeleteOrganizationResponse",
@@ -101,7 +102,8 @@ export class OrganizationsApiGroup extends HttpApiGroup.make("organizations")
 		}),
 	)
 	.prefix("/internal/organizations")
-	.middleware(SessionAuthorization) {}
+	.middleware(SessionAuthorization)
+	.annotate(EndpointAccess, "handler") {}
 
 export class CreateOrganizationRequest extends Schema.Class<CreateOrganizationRequest>(
 	"CreateOrganizationRequest",
@@ -132,7 +134,8 @@ export class OrganizationCreationApiGroup extends HttpApiGroup.make("organizatio
 		}),
 	)
 	.prefix("/internal/organizations")
-	.middleware(UserSessionAuthorization) {}
+	.middleware(UserSessionAuthorization)
+	.annotate(EndpointAccess, "personal") {}
 
 /**
  * Onboarding's region step, for an organization created without one. Once only, within a week of
@@ -149,4 +152,5 @@ export class OrganizationRegionApiGroup extends HttpApiGroup.make("organizationR
 		}),
 	)
 	.prefix("/internal/organizations")
-	.middleware(RegionlessSessionAuthorization) {}
+	.middleware(RegionlessSessionAuthorization)
+	.annotate(EndpointAccess, "handler") {}

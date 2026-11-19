@@ -42,6 +42,7 @@ import { V2ParameterInvalid } from "./errors"
 import { publicError, publicErrors } from "./public-error"
 import { V2ManagedWarehouseErrors, V2QueryEngineRouteErrors, V2WarehouseErrors } from "./query-errors"
 import { AlertIncidentPublicId, AlertRulePublicId, EscalationChainPublicId } from "./resource-ids"
+import { EndpointAccess, requires } from "../endpoint-access"
 
 export { AlertIncidentPublicId, AlertRulePublicId } from "./resource-ids"
 
@@ -1057,14 +1058,16 @@ export class V2AlertRulesApiGroup extends HttpApiGroup.make("alertRules")
 				...V2WarehouseErrors,
 				...V2QueryEngineRouteErrors,
 			],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "previewAlertRule",
-				summary: "Preview an alert rule",
-				description:
-					"Replays a rule definition over a historical range and returns the per-window observations and would-have-fired spans. Read-only (sends nothing). Requires the `alerts:read` scope (`alerts:write` for `raw_query`) plus read scopes for the telemetry the rule queries (`traces:read` for the built-in signals, the draft's source for `builder_query`, and all of `traces:read`, `logs:read`, `metrics:read` for `raw_query`).",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("telemetry:read"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "previewAlertRule",
+					summary: "Preview an alert rule",
+					description:
+						"Replays a rule definition over a historical range and returns the per-window observations and would-have-fired spans. Read-only (sends nothing). Requires the `alerts:read` scope (`alerts:write` for `raw_query`) plus read scopes for the telemetry the rule queries (`traces:read` for the built-in signals, the draft's source for `builder_query`, and all of `traces:read`, `logs:read`, `metrics:read` for `raw_query`).",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.get("checks", "/:id/checks", {
@@ -1109,4 +1112,5 @@ export class V2AlertRulesApiGroup extends HttpApiGroup.make("alertRules")
 			description:
 				"Monitors over your telemetry: error rate, latency percentiles, Apdex, throughput, metrics, query-builder queries, and raw SQL. Rules evaluate on a rolling window, open incidents after consecutive breaches, and notify their alert destinations. Mutations are admin-only.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, "handler") {}

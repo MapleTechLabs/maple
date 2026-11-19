@@ -15,7 +15,7 @@ import {
 	LinkBillingOrgRequest,
 } from "./billing-account"
 import { WarehouseQueryError } from "./warehouse-errors"
-import { EndpointAccess, requires } from "./endpoint-access"
+import { EndpointAccess } from "./endpoint-access"
 
 // Contract for raw Autumn proxy responses. Schemas model only consumed fields
 // and tolerate additive upstream fields.
@@ -811,7 +811,8 @@ export class BillingApiGroup extends HttpApiGroup.make("billing")
 		}),
 	)
 	.prefix("/internal/billing")
-	.middleware(SessionAuthorization) {}
+	.middleware(SessionAuthorization)
+	.annotate(EndpointAccess, "handler") {}
 
 // The plan catalog is global, so `listPlans` stays public — a transient
 // onboarding token gap serves the catalog instead of a 401. The handler still

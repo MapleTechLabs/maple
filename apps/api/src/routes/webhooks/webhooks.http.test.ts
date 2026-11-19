@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { assert, describe, it } from "@effect/vitest"
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import {
@@ -101,8 +102,8 @@ const recordingRevocation = (fail = false) => {
 	const layer = Layer.succeed(MembershipRevocationService, {
 		revokeMembership: (orgId, userId) => run(`revoke:${orgId}:${userId}`),
 		revokeUser: (userId) => run(`revokeUser:${userId}`),
-		demoteMembership: (orgId, userId, roles) =>
-			run(`demote:${orgId}:${userId}:${Arr.join(roles, ",")}`).pipe(
+		demoteMembership: (orgId, userId, current) =>
+			run(`demote:${orgId}:${userId}:${Arr.join(current, ",")}`).pipe(
 				Effect.map(() => ({ apiKeysRevoked: 0, mcpFamiliesRevoked: 0, deviceCredentialsRevoked: 0 })),
 			),
 		invalidateMembership: (userId) =>
@@ -433,7 +434,7 @@ describe("ClerkWebhookRouter", () => {
 				status: 200,
 				audited: 0,
 				tracked: 0,
-				calls: ["demote:org_9:user_9:org:member"],
+				calls: [`demote:org_9:user_9:${Arr.join(Policy.grantsOf(["org:member"]), ",")}`],
 			})
 			// A join has nothing to sweep: the other region only acknowledges it.
 			assert.deepStrictEqual(yield* deliver("elsewhere", "organizationMembership.created"), {
@@ -613,13 +614,36 @@ describe("ClerkWebhookRouter", () => {
 				// keys pinned to the role the member just lost are retired.
 				assert.deepStrictEqual(revocation.calls, [
 					"revoke:org_9:user_9",
-					"demote:org_9:user_9:org:member",
+					`demote:org_9:user_9:${Arr.join(Policy.grantsOf(["org:member"]), ",")}`,
 					"revokeUser:user_9",
 				])
 				// The removal is a product event on the member and org; a role change is not.
 				assert.deepStrictEqual(
 					Arr.map(events.tracked, (event) => [event.name, event.userId, event.groupId]),
 					[["member_removed", "user_9", "org_9"]],
+				)
+
+				// A custom role's permissions come from the membership's public metadata.
+				const custom = JSON.stringify({
+					type: "organizationMembership.updated",
+					data: {
+						organization: { id: "org_9" },
+						public_user_data: { user_id: "user_9" },
+						role: "org:custom",
+						public_metadata: {
+							maple_role: {
+								id: "role_abcdefghijkl",
+								permissions: Policy.encodePermissions(["telemetry:read", "alerts:manage"]),
+							},
+						},
+					},
+				})
+				const customHeaders = yield* signedHeaders(CLERK_SECRET, custom, now, "msg_upd_custom")
+				const customResponse = yield* post(handler, "/webhooks/clerk", custom, customHeaders)
+				assert.strictEqual(customResponse.status, 200)
+				assert.strictEqual(
+					revocation.calls.at(-1),
+					`demote:org_9:user_9:${Arr.join(Policy.grantsOf(["org:custom"], ["telemetry:read", "alerts:manage"]), ",")}`,
 				)
 
 				// No role in the payload: we cannot tell demotion from promotion, so

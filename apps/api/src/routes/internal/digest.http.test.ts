@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import {
 	ApiSchemaErrors,
@@ -72,6 +73,7 @@ const authorizationStub = Layer.succeed(
 					orgId: ORG_ID,
 					userId: USER_ID,
 					roles: [],
+					permissions: Policy.grantsOf([]),
 					authMode: "clerk",
 				}),
 			),

@@ -12,6 +12,10 @@ export const CliDeviceAuthorizations = PG.table("cli_device_authorizations", {
 		approvedRoles: PG.column(PG.nullable(PG.jsonb(Schema.Array(Schema.String))), {
 			name: "approved_roles",
 		}),
+		/** Permission codes pinned next to the roles when one of them is a custom role. */
+		approvedPermissions: PG.column(PG.nullable(PG.jsonb(Schema.Array(Schema.Int))), {
+			name: "approved_permissions",
+		}),
 		approvedUserEmail: PG.column(PG.nullable(PG.text), { name: "approved_user_email" }),
 		apiKeyId: PG.column(PG.nullable(PG.brand(PG.text, ApiKeyId)), { name: "api_key_id" }),
 		tokenCiphertext: PG.column(PG.nullable(PG.text), { name: "token_ciphertext" }),

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "@effect/vitest"
 import { createHash } from "node:crypto"
 import { EdgeCacheService, type EdgeCacheServiceApi } from "@maple/cache"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import { ConfigProvider, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { parseSecretKeyring, sealSecret } from "@maple/backend/platform/SecretBox"
@@ -477,10 +478,10 @@ describe("MembershipRevocationService", () => {
 			const elsewhereToken = yield* cli.poll(elsewhere.deviceCode)
 
 			// A promotion strips nothing.
-			const promoted = yield* revocation.demoteMembership(orgId, userId, [adminRole])
+			const promoted = yield* revocation.demoteMembership(orgId, userId, Policy.grantsOf([adminRole]))
 			expect(promoted.apiKeysRevoked).toBe(0)
 
-			const demoted = yield* revocation.demoteMembership(orgId, userId, [memberRole])
+			const demoted = yield* revocation.demoteMembership(orgId, userId, Policy.grantsOf([memberRole]))
 			expect(demoted.apiKeysRevoked).toBe(1)
 			expect(cache.invalidated).toEqual([
 				{ bucket: ORG_MEMBERSHIP_CACHE_BUCKET, key: userId },
@@ -498,7 +499,7 @@ describe("MembershipRevocationService", () => {
 			}
 
 			// Idempotent, so a Clerk retry converges.
-			const retry = yield* revocation.demoteMembership(orgId, userId, [memberRole])
+			const retry = yield* revocation.demoteMembership(orgId, userId, Policy.grantsOf([memberRole]))
 			expect(retry.apiKeysRevoked).toBe(0)
 		}).pipe(Effect.provide(makeLayer(db, cache.layer)))
 	})
@@ -528,16 +529,28 @@ describe("MembershipRevocationService", () => {
 
 			// An admin demoted to engineer loses the admin key.
 			const adminToken = yield* login(userId, adminRole)
-			const toEngineer = yield* revocation.demoteMembership(orgId, userId, [engineerRole])
+			const toEngineer = yield* revocation.demoteMembership(
+				orgId,
+				userId,
+				Policy.grantsOf([engineerRole]),
+			)
 			expect(toEngineer.apiKeysRevoked).toBe(1)
 			expect(yield* stillWorks(adminToken)).toBe(false)
 
 			// An engineer keeps an engineer key while still an engineer, and loses it as a member.
 			const engineerToken = yield* login(stayerId, engineerRole)
-			const unchanged = yield* revocation.demoteMembership(orgId, stayerId, [engineerRole])
+			const unchanged = yield* revocation.demoteMembership(
+				orgId,
+				stayerId,
+				Policy.grantsOf([engineerRole]),
+			)
 			expect(unchanged.apiKeysRevoked).toBe(0)
 			expect(yield* stillWorks(engineerToken)).toBe(true)
-			const toMember = yield* revocation.demoteMembership(orgId, stayerId, [memberRole])
+			const toMember = yield* revocation.demoteMembership(
+				orgId,
+				stayerId,
+				Policy.grantsOf([memberRole]),
+			)
 			expect(toMember.apiKeysRevoked).toBe(1)
 			expect(yield* stillWorks(engineerToken)).toBe(false)
 
@@ -557,11 +570,57 @@ describe("MembershipRevocationService", () => {
 				roles: [memberRole],
 				userEmail: null,
 			})
-			yield* revocation.demoteMembership(orgId, stayerId, [memberRole])
+			yield* revocation.demoteMembership(orgId, stayerId, Policy.grantsOf([memberRole]))
 			expect((yield* cli.poll(pending.deviceCode)).status).toBe("expired")
 			expect((yield* cli.poll(kept.deviceCode)).status).toBe("complete")
 		}).pipe(Effect.provide(makeLayer(db, cache.layer)))
 	})
+
+	it.effect(
+		"retires a custom-role key when the new grants are narrower, and keeps it when they cover it",
+		() => {
+			const db = createTestDb(createdDbs)
+			const cache = recordingEdgeCache()
+			return Effect.gen(function* () {
+				const revocation = yield* MembershipRevocationService
+				const cli = yield* CliDeviceAuthService
+				const apiKeys = yield* ApiKeysService
+				const customRole = Schema.decodeSync(RoleName)(Policy.CUSTOM_ROLE_CLERK_KEY)
+
+				const started = yield* cli.start("Custom laptop", "127.0.0.1")
+				yield* cli.approve(started.userCode, {
+					orgId,
+					userId: stayerId,
+					roles: [customRole],
+					permissions: ["telemetry:read", "alerts:manage"],
+					userEmail: null,
+				})
+				const token = yield* cli.poll(started.deviceCode)
+				expect(token.status).toBe("complete")
+				const resolve = () =>
+					token.status === "complete" ? apiKeys.resolveByKey(token.token) : Effect.succeedNone
+
+				const widened = yield* revocation.demoteMembership(
+					orgId,
+					stayerId,
+					Policy.grantsOf([customRole], ["telemetry:read", "alerts:manage", "slos:manage"]),
+				)
+				expect(widened.apiKeysRevoked).toBe(0)
+				const kept = yield* resolve()
+				expect(Option.map(kept, (key) => [...key.permissions].sort())).toEqual(
+					Option.some(["alerts:manage", "telemetry:read"]),
+				)
+
+				const narrowed = yield* revocation.demoteMembership(
+					orgId,
+					stayerId,
+					Policy.grantsOf([customRole], ["telemetry:read"]),
+				)
+				expect(narrowed.apiKeysRevoked).toBe(1)
+				expect(Option.isNone(yield* resolve())).toBe(true)
+			}).pipe(Effect.provide(makeLayer(db, cache.layer)))
+		},
+	)
 
 	it.effect("kills the refresh family behind a demoted member's MCP grant", () => {
 		const db = createTestDb(createdDbs)
@@ -572,7 +631,7 @@ describe("MembershipRevocationService", () => {
 			const apiKeys = yield* ApiKeysService
 
 			const grant = yield* issueMcpGrant(oauth, userId, orgId, [adminRole])
-			const summary = yield* revocation.demoteMembership(orgId, userId, [memberRole])
+			const summary = yield* revocation.demoteMembership(orgId, userId, Policy.grantsOf([memberRole]))
 
 			// The visible key alone would be re-minted by the next rotation.
 			expect(summary.apiKeysRevoked).toBe(1)
@@ -596,7 +655,7 @@ describe("MembershipRevocationService", () => {
 
 			const pending = yield* approveMcpAuthorization(oauth, stayerId, orgId, [engineerRole])
 			const kept = yield* approveMcpAuthorization(oauth, stayerId, orgId, [memberRole])
-			yield* revocation.demoteMembership(orgId, stayerId, [memberRole])
+			yield* revocation.demoteMembership(orgId, stayerId, Policy.grantsOf([memberRole]))
 
 			const refused = yield* Effect.result(exchangeMcpCode(oauth, pending))
 			expect(refused._tag).toBe("Failure")

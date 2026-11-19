@@ -3,6 +3,7 @@ import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { lockedControl } from "@maple/views/ui/locked-control"
+import { typography } from "@maple/views/ui/typography"
 import type { CallableTaggedStruct } from "foldkit/schema"
 import { readGrants } from "../../data/session-tenant"
 
@@ -59,7 +60,25 @@ export const gatedControl = <Message>(
 ): Html =>
 	Policy.has(model.grants, permission)
 		? control(false)
-		: lockedControl(h, Policy.denialFor(permission).message, control(true), options)
+		: lockedControl(h, denialReason(permission), control(true), {
+				...options,
+				tooltip: denialTooltip(permission),
+			})
 
 /** The denial a disabled menu item or field shows for `permission`. */
 export const denialReason = (permission: Policy.Permission): string => Policy.denialFor(permission).message
+
+const denialTitle = (permission: Policy.Permission): string => `Needs ${Policy.permissions[permission].label}`
+
+/** A locked control's tooltip: "Needs Manage alerts", then the denial on its own line. */
+export const denialTooltip = (permission: Policy.Permission): string =>
+	`${denialTitle(permission)}\n${denialReason(permission)}`
+
+/** {@link denialTooltip} for a menu item's tooltip, whose content is markup. */
+export const denialTooltipContent = <Message>(
+	h: HtmlBuilder<Message>,
+	permission: Policy.Permission,
+): ReadonlyArray<Html> => [
+	typography(h, { as: "div", weight: "medium" }, [denialTitle(permission)]),
+	typography(h, { as: "div" }, [denialReason(permission)]),
+]

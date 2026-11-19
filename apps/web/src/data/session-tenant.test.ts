@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { CurrentTenant } from "@maple/domain/http"
 import { Effect, Ref, Schema } from "effect"
 import { describe, expect, test } from "vitest"
@@ -7,6 +8,7 @@ const tenant = Schema.decodeSync(CurrentTenant.TenantSchema)({
 	orgId: "org_parity",
 	userId: "user_ada",
 	roles: ["root"],
+	permissions: Policy.allPermissions,
 	authMode: "self_hosted",
 })
 

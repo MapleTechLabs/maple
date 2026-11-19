@@ -40,8 +40,8 @@ import {
 	makeLayer,
 	asOrgId,
 	asUserId,
-	adminRoles,
-	memberRoles,
+	adminGrants,
+	memberGrants,
 	createWebhookDestination,
 	createErrorRateRule,
 	okFetch,
@@ -70,7 +70,7 @@ describe("AlertsService", () => {
 				return yield* alerts.testRule(
 					orgId,
 					userId,
-					adminRoles,
+					adminGrants,
 					new AlertRuleUpsertRequest({
 						name: "Checkout error logs",
 						severity: "critical",
@@ -161,7 +161,7 @@ describe("AlertsService", () => {
 			const rule = yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				request(["checkout", "payments"], destination.id),
 			)
 			assert.deepStrictEqual([...rule.serviceNames], [])
@@ -219,7 +219,7 @@ describe("AlertsService", () => {
 				return yield* alerts.testRule(
 					orgId,
 					userId,
-					adminRoles,
+					adminGrants,
 					new AlertRuleUpsertRequest({
 						name: "Raw SQL alert",
 						severity: "critical",
@@ -270,7 +270,7 @@ describe("AlertsService", () => {
 			const rule = yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new AlertRuleUpsertRequest({
 					name: "Grouped metrics alert",
 					severity: "warning",
@@ -325,7 +325,7 @@ describe("AlertsService", () => {
 				return yield* alerts.createDestination(
 					asOrgId("org_pd_shape"),
 					asUserId("user_pd_shape"),
-					adminRoles,
+					adminGrants,
 					new PagerDutyAlertDestinationConfig({
 						type: "pagerduty",
 						name: "Paging",
@@ -375,7 +375,7 @@ describe("AlertsService", () => {
 				return yield* alerts.createDestination(
 					asOrgId("org_pd_invalid"),
 					asUserId("user_pd_invalid"),
-					adminRoles,
+					adminGrants,
 					new PagerDutyAlertDestinationConfig({
 						type: "pagerduty",
 						name: "Paging",
@@ -411,7 +411,7 @@ describe("AlertsService", () => {
 			const destination = yield* alerts.createDestination(
 				asOrgId("org_pd_ok"),
 				asUserId("user_pd_ok"),
-				adminRoles,
+				adminGrants,
 				new PagerDutyAlertDestinationConfig({
 					type: "pagerduty",
 					name: "Paging",
@@ -439,7 +439,7 @@ describe("AlertsService", () => {
 			const destination = yield* alerts.createDestination(
 				asOrgId("org_pd_open"),
 				asUserId("user_pd_open"),
-				adminRoles,
+				adminGrants,
 				new PagerDutyAlertDestinationConfig({
 					type: "pagerduty",
 					name: "Paging",
@@ -492,13 +492,13 @@ describe("AlertsService", () => {
 				.createDestination(
 					orgId,
 					userId,
-					adminRoles,
+					adminGrants,
 					new ChatAlertDestinationConfig({ ...request, channelId: "their-channel" }),
 				)
 				.pipe(Effect.flip)
 			assert.instanceOf(foreign, AlertValidationError)
 
-			const destination = yield* alerts.createDestination(orgId, userId, adminRoles, request)
+			const destination = yield* alerts.createDestination(orgId, userId, adminGrants, request)
 			// Connector and channel name come from the lookup, never the request.
 			assert.strictEqual(destination.chatConnector, "testchat")
 			assert.strictEqual(destination.chatWorkspaceId, workspaceId)
@@ -506,20 +506,20 @@ describe("AlertsService", () => {
 			assert.strictEqual(destination.channelLabel, "#incidents")
 
 			const refused = yield* alerts
-				.updateDestination(orgId, userId, adminRoles, destination.id, {
+				.updateDestination(orgId, userId, adminGrants, destination.id, {
 					type: "chat",
 					channelId: "their-channel",
 				})
 				.pipe(Effect.flip)
 			assert.instanceOf(refused, AlertValidationError)
 
-			const renamed = yield* alerts.updateDestination(orgId, userId, adminRoles, destination.id, {
+			const renamed = yield* alerts.updateDestination(orgId, userId, adminGrants, destination.id, {
 				type: "chat",
 				name: "Renamed",
 			})
 			assert.strictEqual(renamed.channelLabel, "#incidents")
 
-			const moved = yield* alerts.updateDestination(orgId, userId, adminRoles, destination.id, {
+			const moved = yield* alerts.updateDestination(orgId, userId, adminGrants, destination.id, {
 				type: "chat",
 				channelId: "channel-2",
 			})
@@ -554,7 +554,7 @@ describe("AlertsService", () => {
 			const created = yield* alerts.createDestination(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new PagerDutyAlertDestinationConfig({
 					type: "pagerduty",
 					name: "Paging",
@@ -564,7 +564,7 @@ describe("AlertsService", () => {
 			)
 			assert.strictEqual(calls, 1) // create validated once
 
-			const updated = yield* alerts.updateDestination(orgId, userId, adminRoles, created.id, {
+			const updated = yield* alerts.updateDestination(orgId, userId, adminGrants, created.id, {
 				type: "pagerduty",
 				name: "Paging renamed",
 			})
@@ -589,7 +589,7 @@ describe("AlertsService", () => {
 			const destination = yield* alerts.createDestination(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new EmailAlertDestinationConfig({
 					type: "email",
 					name: "On-call inbox",
@@ -603,7 +603,7 @@ describe("AlertsService", () => {
 			assert.strictEqual(destination.channelLabel, "ops@acme.test")
 			assert.deepStrictEqual(destination.memberUserIds, ["user_ops", "user_oncall"])
 
-			const response = yield* alerts.testDestination(orgId, userId, adminRoles, destination.id)
+			const response = yield* alerts.testDestination(orgId, userId, adminGrants, destination.id)
 			assert.isTrue(response.success)
 			assert.deepStrictEqual(
 				Arr.map(sent, (s) => s.to),
@@ -633,7 +633,7 @@ describe("AlertsService", () => {
 				return yield* alerts.createDestination(
 					asOrgId("org_email_invalid"),
 					asUserId("user_email_invalid"),
-					adminRoles,
+					adminGrants,
 					new EmailAlertDestinationConfig({
 						type: "email",
 						name: "Bad",
@@ -666,7 +666,7 @@ describe("AlertsService", () => {
 			const created = yield* alerts.createDestination(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new EmailAlertDestinationConfig({
 					type: "email",
 					name: "On-call inbox",
@@ -676,7 +676,7 @@ describe("AlertsService", () => {
 			)
 
 			// Omitted member ids → recipients unchanged.
-			const renamed = yield* alerts.updateDestination(orgId, userId, adminRoles, created.id, {
+			const renamed = yield* alerts.updateDestination(orgId, userId, adminGrants, created.id, {
 				type: "email",
 				name: "Renamed inbox",
 			})
@@ -684,7 +684,7 @@ describe("AlertsService", () => {
 			assert.strictEqual(renamed.summary, "Ops Team")
 
 			// Supplied member ids → replaced wholesale.
-			const replaced = yield* alerts.updateDestination(orgId, userId, adminRoles, created.id, {
+			const replaced = yield* alerts.updateDestination(orgId, userId, adminGrants, created.id, {
 				type: "email",
 				memberUserIds: ["user_oncall", "user_lead"],
 			})
@@ -692,7 +692,7 @@ describe("AlertsService", () => {
 			assert.strictEqual(replaced.channelLabel, "oncall@acme.test")
 			assert.deepStrictEqual(replaced.memberUserIds, ["user_oncall", "user_lead"])
 
-			yield* alerts.testDestination(orgId, userId, adminRoles, created.id)
+			yield* alerts.testDestination(orgId, userId, adminGrants, created.id)
 			assert.deepStrictEqual(
 				Arr.map(sent, (s) => s.to),
 				["oncall@acme.test", "lead@acme.test"],
@@ -722,7 +722,7 @@ describe("AlertsService", () => {
 			yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new AlertRuleUpsertRequest({
 					name: "All services error logs",
 					severity: "critical",
@@ -806,7 +806,7 @@ describe("AlertsService", () => {
 			const rule = yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new AlertRuleUpsertRequest({
 					name: "Error logs by service (draft grouping)",
 					severity: "critical",
@@ -969,7 +969,7 @@ describe("AlertsService", () => {
 			const withDestination = (overrides: Partial<{ threshold: number; groupBy: string[] }>) =>
 				new AlertRuleUpsertRequest({ ...request(overrides), destinationIds: [destination.id] })
 
-			const rule = yield* alerts.createRule(orgId, userId, adminRoles, withDestination({}))
+			const rule = yield* alerts.createRule(orgId, userId, adminGrants, withDestination({}))
 
 			yield* alerts.runSchedulerTick()
 			yield* TestClock.adjust(Duration.minutes(1))
@@ -979,7 +979,7 @@ describe("AlertsService", () => {
 			assert.strictEqual(open.incidents[0]?.status, "open")
 
 			// A non-structural edit (threshold) keeps the incident open.
-			yield* alerts.updateRule(orgId, userId, adminRoles, rule.id, withDestination({ threshold: 12 }))
+			yield* alerts.updateRule(orgId, userId, adminGrants, rule.id, withDestination({ threshold: 12 }))
 			const afterThreshold = yield* alerts.listIncidents(orgId)
 			assert.strictEqual(afterThreshold.incidents[0]?.status, "open")
 
@@ -988,7 +988,7 @@ describe("AlertsService", () => {
 			yield* alerts.updateRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				rule.id,
 				withDestination({ threshold: 12, groupBy: ["severity"] }),
 			)
@@ -1030,7 +1030,7 @@ describe("AlertsService", () => {
 				return yield* alerts.testRule(
 					orgId,
 					userId,
-					adminRoles,
+					adminGrants,
 					new AlertRuleUpsertRequest({
 						name: "Grouped test rule",
 						severity: "critical",
@@ -1090,7 +1090,7 @@ describe("AlertsService", () => {
 				const userId = asUserId("user_delete_guard")
 				const destination = yield* createWebhookDestination(alerts, orgId, userId)
 				yield* createErrorRateRule(alerts, orgId, userId, destination.id)
-				return yield* alerts.deleteDestination(orgId, adminRoles, destination.id)
+				return yield* alerts.deleteDestination(orgId, adminGrants, destination.id)
 			}).pipe(
 				Effect.provide(
 					makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows })),
@@ -1117,7 +1117,7 @@ describe("AlertsService", () => {
 				return yield* alerts.createDestination(
 					asOrgId("org_forbidden"),
 					asUserId("user_forbidden"),
-					memberRoles,
+					memberGrants,
 					new WebhookAlertDestinationConfig({
 						type: "webhook",
 						name: "Member webhook",
@@ -1151,7 +1151,7 @@ describe("AlertsService", () => {
 			const secondary = yield* alerts.createDestination(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new WebhookAlertDestinationConfig({
 					type: "webhook",
 					name: "Secondary webhook",
@@ -1181,7 +1181,7 @@ describe("AlertsService", () => {
 			const created = yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new AlertRuleUpsertRequest({
 					...baseRule,
 					destinationIds: [primary.id, secondary.id, primary.id],
@@ -1193,7 +1193,7 @@ describe("AlertsService", () => {
 			const updated = yield* alerts.updateRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				created.id,
 				new AlertRuleUpsertRequest({
 					...baseRule,
@@ -1241,7 +1241,7 @@ describe("AlertsService", () => {
 			const created = yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new AlertRuleUpsertRequest({ ...baseRule, tags: ["Prod", " payments ", "prod", ""] }),
 			)
 			assert.deepStrictEqual(created.tags, ["prod", "payments"])
@@ -1254,7 +1254,7 @@ describe("AlertsService", () => {
 			const updated = yield* alerts.updateRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				created.id,
 				new AlertRuleUpsertRequest({ ...baseRule, tags: [] }),
 			)
@@ -1295,7 +1295,7 @@ describe("AlertsService", () => {
 			yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new AlertRuleUpsertRequest({
 					name: "Multi-service error rate",
 					severity: "critical",
@@ -1382,7 +1382,7 @@ describe("AlertsService", () => {
 			yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new AlertRuleUpsertRequest({
 					name: "All services error rate",
 					severity: "critical",

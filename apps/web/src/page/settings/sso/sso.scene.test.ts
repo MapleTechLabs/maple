@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { AttachResult, EnterpriseSsoDocument, ScimTokenIssued } from "@maple/domain/http"
 import { Array as Arr, Option, Result, Schema } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
@@ -114,9 +115,7 @@ describe("sso tab", () => {
 			expectView(text("Only admins can change SSO and SCIM settings.")).toExist(),
 			expectView(role("button", { name: "Add domain" })).toBeDisabled(),
 			expectView(role("button", { name: "Edit" })).toBeDisabled(),
-			expectView(
-				role("group", { name: "Only org admins can manage single sign-on and SCIM provisioning." }),
-			).toExist(),
+			expectView(role("group", { name: Policy.denialFor("sso:manage").message })).toExist(),
 		)
 		expect(names(update(model, Message.ClickedConfirmEnforce()))).toEqual([])
 		expect(names(update(model, Message.ClickedSetUpScim()))).toEqual([])

@@ -1,6 +1,7 @@
 import { EdgeCacheService } from "@maple/cache"
 import type { VerifiedOrgMembership } from "@maple/auth"
 import { AuthorizationUnavailableError, OrgId, RoleName, type UserId } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema, Stream, String as Str } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
@@ -13,7 +14,7 @@ export interface OrgMembershipServiceApi {
 	 */
 	readonly directory: "clerk" | "none"
 	/**
-	 * Is `userId` a member of `orgId`, and with what role?
+	 * Is `userId` a member of `orgId`, and with what role (and, for `org:custom`, which permissions)?
 	 *
 	 * `Option.none()` is a definite no. A failure is "could not find out": the
 	 * caller must reject the request, never fall back to the credential's own
@@ -69,9 +70,17 @@ const MEMBERSHIP_PAGE_SIZE = 100
 const MEMBERSHIP_MAX_PAGES = 5
 
 const CachedMemberships = Schema.Struct({
-	memberships: Schema.Array(Schema.Struct({ orgId: OrgId, role: RoleName })),
+	memberships: Schema.Array(
+		Schema.Struct({
+			orgId: OrgId,
+			role: RoleName,
+			// An `org:custom` membership's permission codes, from its public metadata.
+			permissionCodes: Schema.optionalKey(Schema.Array(Schema.Int)),
+		}),
+	),
 	truncated: Schema.Boolean,
 })
+type CachedMembership = CachedMemberships["memberships"][number]
 type CachedMemberships = Schema.Schema.Type<typeof CachedMemberships>
 
 interface MemoEntry {
@@ -106,7 +115,30 @@ const unavailable = (cause: unknown) =>
 export interface ClerkMembershipRow {
 	readonly organization: { readonly id: string }
 	readonly role: string
+	readonly publicMetadata?: unknown
 }
+
+/** Decodes one membership row; `None` for anything Maple cannot model. */
+const decodeMembershipRow = (row: ClerkMembershipRow): Option.Option<CachedMembership> =>
+	Option.map(
+		Option.all({ orgId: decodeOrgIdOption(row.organization.id), role: decodeRoleNameOption(row.role) }),
+		(membership): CachedMembership =>
+			membership.role === Policy.CUSTOM_ROLE_CLERK_KEY
+				? {
+						...membership,
+						permissionCodes: Option.match(Policy.membershipRoleFromMetadata(row.publicMetadata), {
+							onNone: () => [],
+							onSome: (role) => role.permissions,
+						}),
+					}
+				: membership,
+	)
+
+const toVerified = (membership: CachedMembership): VerifiedOrgMembership => ({
+	orgId: membership.orgId,
+	role: membership.role,
+	customPermissions: Policy.decodeCustomPermissions(membership.permissionCodes ?? []),
+})
 
 /**
  * Pages a user's memberships and decodes them, with the fetch injected so the
@@ -137,14 +169,7 @@ export const collectMemberships = Effect.fnUntraced(function* (
 	// A Clerk role Maple does not model must not 500 an unrelated request:
 	// it simply is not a membership we can act on. Counted so the span says
 	// it happened rather than the count quietly disagreeing with Clerk.
-	const memberships = Arr.getSomes(
-		Arr.map(rows, (row) =>
-			Option.all({
-				orgId: decodeOrgIdOption(row.organization.id),
-				role: decodeRoleNameOption(row.role),
-			}),
-		),
-	)
+	const memberships = Arr.getSomes(Arr.map(rows, decodeMembershipRow))
 	const undecodable = rows.length - memberships.length
 
 	yield* Effect.annotateCurrentSpan({
@@ -225,15 +250,14 @@ const make = Effect.gen(function* () {
 
 		const membership = response.data[0]
 		if (membership === undefined) return Option.none<VerifiedOrgMembership>()
-		const role = decodeRoleNameOption(membership.role)
-		return Option.map(role, (value): VerifiedOrgMembership => ({ orgId, role: value }))
+		return Option.map(decodeMembershipRow(membership), toVerified)
 	})
 
 	const verify = Effect.fn("OrgMembershipService.verify")(function* (userId: UserId, orgId: OrgId) {
 		yield* Effect.annotateCurrentSpan({ "tenant.userId": userId, "tenant.requestedOrgId": orgId })
 		const { memberships, truncated } = yield* load(userId)
 		const found = Arr.findFirst(memberships, (membership) => membership.orgId === orgId)
-		if (Option.isSome(found)) return Option.some<VerifiedOrgMembership>(found.value)
+		if (Option.isSome(found)) return Option.some(toVerified(found.value))
 		if (!truncated) return Option.none<VerifiedOrgMembership>()
 		return yield* verifyPair(userId, orgId)
 	})

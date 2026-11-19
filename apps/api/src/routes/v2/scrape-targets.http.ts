@@ -30,7 +30,7 @@ import { timestampMs } from "@maple/backend/platform/time"
 
 /** Whether the caller may manage scrape targets: the role, and for a scoped API key the write scope too. */
 const canManageTargets = (tenant: CurrentTenant.TenantContext) =>
-	Policy.can(tenant.roles, "scrape_targets:manage") &&
+	Policy.can(tenant.permissions, "scrape_targets:manage") &&
 	scopeAllows(tenant.scopes, { family: "scrape_targets", access: "write" })
 
 /**
@@ -111,7 +111,7 @@ export const HttpV2ScrapeTargetsLive = HttpApiBuilder.group(MapleApiV2, "scrapeT
 			.handle("create", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "scrape_targets:manage", (denial) =>
+					yield* Policy.check(tenant.permissions, "scrape_targets:manage", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const created = yield* service.create(
@@ -169,7 +169,7 @@ export const HttpV2ScrapeTargetsLive = HttpApiBuilder.group(MapleApiV2, "scrapeT
 			.handle("update", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "scrape_targets:manage", (denial) =>
+					yield* Policy.check(tenant.permissions, "scrape_targets:manage", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const current = yield* service.get(tenant.orgId, params.id)
@@ -233,7 +233,7 @@ export const HttpV2ScrapeTargetsLive = HttpApiBuilder.group(MapleApiV2, "scrapeT
 			.handle("delete", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "scrape_targets:manage", (denial) =>
+					yield* Policy.check(tenant.permissions, "scrape_targets:manage", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const deleted = yield* service.delete(tenant.orgId, params.id)
@@ -245,7 +245,7 @@ export const HttpV2ScrapeTargetsLive = HttpApiBuilder.group(MapleApiV2, "scrapeT
 			.handle("probe", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "scrape_targets:manage", (denial) =>
+					yield* Policy.check(tenant.permissions, "scrape_targets:manage", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const result = yield* service.probe(tenant.orgId, params.id)

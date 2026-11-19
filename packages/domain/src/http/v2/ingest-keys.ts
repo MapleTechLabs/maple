@@ -5,6 +5,7 @@ import { AuthorizationV2 } from "./auth"
 import { wireExample, Timestamp } from "./envelopes"
 import { V2InsufficientPermissions } from "./errors"
 import { publicErrors } from "./public-error"
+import { EndpointAccess } from "../endpoint-access"
 
 const ingestKeysExample = {
 	object: "ingest_keys",
@@ -132,4 +133,5 @@ export class V2IngestKeysApiGroup extends HttpApiGroup.make("ingestKeys")
 			description:
 				"Telemetry ingest credentials for your organization: a public key for client-side senders and a private key for server-side senders. Retrieve them or roll either key. Any member may read the public key; reading both keys takes an engineer or admin, and rolling one takes an admin.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, "handler") {}

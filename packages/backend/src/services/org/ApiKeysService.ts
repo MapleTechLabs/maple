@@ -23,6 +23,13 @@ import { currentTxid, readTxid } from "@maple/backend/platform/electric-txid"
 import { Env } from "@maple/backend/platform/Env"
 import { revokeFamiliesForAccessKeys } from "@maple/backend/services/auth/mcp-oauth-family"
 import { ingestKeyLookupHmacKey } from "@maple/backend/platform/Crypto"
+import type * as Policy from "@maple/domain/policy"
+import {
+	type PinnedAuthority,
+	PinnedPermissionCodes,
+	pinnedGrants,
+} from "@maple/backend/services/auth/pinned-authority"
+import { API_KEY_DEFAULT_ROLES } from "@maple/backend/services/auth/bearer-token"
 
 export interface ResolvedApiKey {
 	readonly orgId: OrgId
@@ -35,6 +42,8 @@ export interface ResolvedApiKey {
 	/** v2 scope strings; null = legacy full access. */
 	readonly scopes: ReadonlyArray<string> | null
 	readonly roles: ReadonlyArray<RoleName> | null
+	/** What the key acts with: its pinned roles (and codes), or everything for an unpinned key. */
+	readonly permissions: Policy.Grants
 	readonly cliManaged: boolean
 	readonly mcpOAuthResource: string | null
 }
@@ -42,6 +51,7 @@ export interface ResolvedApiKey {
 const CliApiKeyMetadata = Schema.Struct({
 	source: Schema.Literal("maple_cli"),
 	roles: Schema.Array(RoleName),
+	permissions: PinnedPermissionCodes,
 	deviceName: Schema.String,
 })
 const decodeCliApiKeyMetadata = Schema.decodeUnknownOption(CliApiKeyMetadata)
@@ -54,6 +64,7 @@ const decodeCliApiKeyMetadata = Schema.decodeUnknownOption(CliApiKeyMetadata)
 const McpApiKeyMetadata = Schema.Struct({
 	source: Schema.Literal("maple_mcp"),
 	roles: Schema.Array(RoleName),
+	permissions: PinnedPermissionCodes,
 })
 const decodeMcpApiKeyMetadata = Schema.decodeUnknownOption(McpApiKeyMetadata)
 
@@ -64,6 +75,7 @@ const decodeMcpApiKeyMetadata = Schema.decodeUnknownOption(McpApiKeyMetadata)
 const RestrictedApiKeyMetadata = Schema.Struct({
 	source: Schema.Literal("maple_api_key"),
 	roles: Schema.Array(RoleName),
+	permissions: PinnedPermissionCodes,
 })
 const decodeRestrictedApiKeyMetadata = Schema.decodeUnknownOption(RestrictedApiKeyMetadata)
 
@@ -82,6 +94,7 @@ const decodeRestrictedApiKeyMetadata = Schema.decodeUnknownOption(RestrictedApiK
 const DeviceApiKeyMetadata = Schema.Struct({
 	source: Schema.Literal("maple_ios_widget"),
 	roles: Schema.Array(RoleName),
+	permissions: PinnedPermissionCodes,
 	deviceId: Schema.String,
 })
 const decodeDeviceApiKeyMetadata = Schema.decodeUnknownOption(DeviceApiKeyMetadata)
@@ -92,6 +105,7 @@ export const WIDGET_DEVICE_KEY_SOURCE = "maple_ios_widget"
 const McpOAuthApiKeyMetadata = Schema.Struct({
 	source: Schema.Literal("maple_mcp_oauth"),
 	roles: Schema.Array(RoleName),
+	permissions: PinnedPermissionCodes,
 	clientId: Schema.String,
 	resource: Schema.String,
 })
@@ -108,9 +122,21 @@ const ROLE_BEARING_SOURCES = [
 
 interface KeyRoleMetadata {
 	readonly roles: ReadonlyArray<RoleName> | null
+	readonly permissionCodes: ReadonlyArray<number> | undefined
 	readonly cliManaged: boolean
 	readonly mcpOAuthResource: string | null
 }
+
+const UNPINNED: KeyRoleMetadata = {
+	roles: null,
+	permissionCodes: undefined,
+	cliManaged: false,
+	mcpOAuthResource: null,
+}
+
+/** What a key acts with: its pinned roles and codes, or `root` when unpinned. */
+const keyGrants = (metadata: KeyRoleMetadata): Policy.Grants =>
+	pinnedGrants(metadata.roles ?? API_KEY_DEFAULT_ROLES, metadata.permissionCodes)
 
 /**
  * Read the roles pinned onto a key by its metadata. Fails closed: metadata that
@@ -119,39 +145,40 @@ interface KeyRoleMetadata {
  */
 const readKeyRoleMetadata = (metadata: unknown): Option.Option<KeyRoleMetadata> => {
 	if (typeof metadata !== "object" || metadata === null || !("source" in metadata)) {
-		return Option.some({ roles: null, cliManaged: false, mcpOAuthResource: null })
+		return Option.some(UNPINNED)
 	}
 
 	const source = (metadata as { source?: unknown }).source
+	const pinned = (decoded: { roles: ReadonlyArray<RoleName>; permissions?: ReadonlyArray<number> }) => ({
+		...UNPINNED,
+		roles: decoded.roles,
+		permissionCodes: decoded.permissions,
+	})
 	const cli = decodeCliApiKeyMetadata(metadata)
 	if (Option.isSome(cli)) {
-		return Option.some({ roles: cli.value.roles, cliManaged: true, mcpOAuthResource: null })
+		return Option.some({ ...pinned(cli.value), cliManaged: true })
 	}
 	const mcp = decodeMcpApiKeyMetadata(metadata)
 	if (Option.isSome(mcp)) {
-		return Option.some({ roles: mcp.value.roles, cliManaged: false, mcpOAuthResource: null })
+		return Option.some(pinned(mcp.value))
 	}
 	const restricted = decodeRestrictedApiKeyMetadata(metadata)
 	if (Option.isSome(restricted)) {
-		return Option.some({ roles: restricted.value.roles, cliManaged: false, mcpOAuthResource: null })
+		return Option.some(pinned(restricted.value))
 	}
 	const device = decodeDeviceApiKeyMetadata(metadata)
 	if (Option.isSome(device)) {
-		return Option.some({ roles: device.value.roles, cliManaged: false, mcpOAuthResource: null })
+		return Option.some(pinned(device.value))
 	}
 	const mcpOAuth = decodeMcpOAuthApiKeyMetadata(metadata)
 	if (Option.isSome(mcpOAuth)) {
-		return Option.some({
-			roles: mcpOAuth.value.roles,
-			cliManaged: false,
-			mcpOAuthResource: mcpOAuth.value.resource,
-		})
+		return Option.some({ ...pinned(mcpOAuth.value), mcpOAuthResource: mcpOAuth.value.resource })
 	}
 
 	if (typeof source === "string" && (ROLE_BEARING_SOURCES as ReadonlyArray<string>).includes(source)) {
 		return Option.none()
 	}
-	return Option.some({ roles: null, cliManaged: false, mcpOAuthResource: null })
+	return Option.some(UNPINNED)
 }
 
 const decodeApiKeyIdSync = Schema.decodeUnknownSync(ApiKeyId)
@@ -265,16 +292,16 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 			})
 
 			/**
-			 * The roles pinned onto a key; none for an unpinned key (it resolves as `root`) or
-			 * metadata that does not decode.
+			 * The permissions a key's pinned roles (and codes) grant; none for an unpinned key (it
+			 * resolves as `root`) or metadata that does not decode.
 			 */
-			const pinnedRoles = Effect.fn("ApiKeysService.pinnedRoles")(function* (
+			const pinnedGrantsOf = Effect.fn("ApiKeysService.pinnedGrants")(function* (
 				orgId: OrgId,
 				keyId: ApiKeyId,
 			) {
 				const row = yield* requireById(orgId, keyId)
 				return Option.flatMap(readKeyRoleMetadata(row.metadataJson), (metadata) =>
-					Option.fromNullishOr(metadata.roles),
+					metadata.roles === null ? Option.none() : Option.some(keyGrants(metadata)),
 				)
 			})
 
@@ -458,7 +485,8 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 					name: string
 					scopes: ReadonlyArray<string>
 					expiresInSeconds: number
-					roles: ReadonlyArray<RoleName>
+					/** The minting session's authority, so the key on the phone never outranks its human. */
+					pinned: PinnedAuthority
 					createdByEmail?: string | null
 				},
 			) {
@@ -501,9 +529,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 										createdByEmail,
 										metadataJson: {
 											source: WIDGET_DEVICE_KEY_SOURCE,
-											// The minting session's roles, so the key on the
-											// phone can never outrank the human who created it.
-											roles: [...params.roles],
+											...params.pinned,
 											deviceId: params.deviceId,
 										},
 									})
@@ -718,6 +744,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 					metadataJson: row.value.metadataJson == null ? null : encodeJson(row.value.metadataJson),
 					scopes: row.value.scopes ?? null,
 					roles: roleMetadata.value.roles,
+					permissions: keyGrants(roleMetadata.value),
 					cliManaged: roleMetadata.value.cliManaged,
 					mcpOAuthResource: roleMetadata.value.mcpOAuthResource,
 				} satisfies ResolvedApiKey)
@@ -802,7 +829,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 
 			return {
 				get,
-				pinnedRoles,
+				pinnedGrants: pinnedGrantsOf,
 				list,
 				hasUsedKeyOfKind,
 				create,

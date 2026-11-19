@@ -4,6 +4,7 @@
  * row or the signed claims, never from the caller. `userId` names the job for attribution.
  */
 import { RoleName, UserId, type OrgId, type TenantContext } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 
 const SYSTEM_ROLES = [RoleName.make("root")]
 
@@ -14,5 +15,6 @@ export const systemTenant = (orgId: OrgId, userId: UserId): TenantContext => ({
 	orgId,
 	userId,
 	roles: SYSTEM_ROLES,
+	permissions: Policy.allPermissions,
 	authMode: "self_hosted",
 })

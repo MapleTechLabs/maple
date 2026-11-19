@@ -95,7 +95,7 @@ export const HttpV2EscalationChainsLive = HttpApiBuilder.group(MapleApiV2, "esca
 					const created = yield* chains.create(
 						tenant.orgId,
 						tenant.userId,
-						tenant.roles,
+						tenant.permissions,
 						new EscalationChainCreateRequest({
 							name: payload.name,
 							...(payload.description === undefined
@@ -121,7 +121,7 @@ export const HttpV2EscalationChainsLive = HttpApiBuilder.group(MapleApiV2, "esca
 					const updated = yield* chains.update(
 						tenant.orgId,
 						tenant.userId,
-						tenant.roles,
+						tenant.permissions,
 						params.id,
 						new EscalationChainUpdateRequest({
 							...(payload.name === undefined ? undefined : { name: payload.name }),
@@ -151,7 +151,7 @@ export const HttpV2EscalationChainsLive = HttpApiBuilder.group(MapleApiV2, "esca
 			.handle("delete", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* chains.delete(tenant.orgId, tenant.roles, params.id)
+					yield* chains.delete(tenant.orgId, tenant.permissions, params.id)
 					yield* recordHttpAudit("escalation_chain.deleted", { resourceId: params.id })
 					const deleted: V2EscalationChainDeleteResponse = {
 						id: params.id,

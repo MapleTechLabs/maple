@@ -9,7 +9,7 @@ import * as VendorFake from "@maple/backend/testing/vendor-fake"
 import { LinearIssueTracker } from "./LinearIssueTracker"
 import {
 	DEFAULT_CLOCK_EPOCH_MS,
-	adminRoles,
+	adminGrants,
 	asOrgId,
 	asUserId,
 	createErrorRateRule,
@@ -200,7 +200,7 @@ describe("AlertsService with a Linear destination", () => {
 			const destination = yield* alerts.createDestination(
 				orgId,
 				asUserId("user_linear"),
-				adminRoles,
+				adminGrants,
 				new LinearAlertDestinationConfig({
 					type: "linear",
 					name: "Engineering triage",
@@ -214,7 +214,7 @@ describe("AlertsService with a Linear destination", () => {
 			const tested = yield* alerts.testDestination(
 				orgId,
 				asUserId("user_linear"),
-				adminRoles,
+				adminGrants,
 				destination.id,
 			)
 			assert.strictEqual(tested.message, "Linear team Engineering (ENG) is reachable")
@@ -227,7 +227,7 @@ describe("AlertsService with a Linear destination", () => {
 				.createDestination(
 					orgId,
 					asUserId("user_linear"),
-					adminRoles,
+					adminGrants,
 					new LinearAlertDestinationConfig({
 						type: "linear",
 						name: "Elsewhere",
@@ -256,7 +256,7 @@ describe("AlertsService with a Linear destination", () => {
 			const destination = yield* alerts.createDestination(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new LinearAlertDestinationConfig({
 					type: "linear",
 					name: "Engineering triage",
@@ -324,7 +324,7 @@ describe("AlertsService with a Linear destination", () => {
 			const destination = yield* alerts.createDestination(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new LinearAlertDestinationConfig({
 					type: "linear",
 					name: "Engineering triage",

@@ -14,6 +14,7 @@ import { V2ParameterInvalid } from "./errors"
 import { publicErrors } from "./public-error"
 import { PublicId, PublicIdPrefixes } from "./public-id"
 import { AlertMaintenanceWindowPublicId, AlertRulePublicId } from "./resource-ids"
+import { EndpointAccess } from "../endpoint-access"
 
 export const AlertSilencePublicId = PublicId(PublicIdPrefixes.alertSilence, AlertSilenceId)
 
@@ -247,4 +248,5 @@ export class V2AlertSilencesApiGroup extends HttpApiGroup.make("alertSilences")
 			description:
 				"Maintenance windows for alerting: quiet a deploy or a planned migration without disabling rules. Rules keep evaluating and incidents still open and resolve; only notifications are held back.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, "handler") {}

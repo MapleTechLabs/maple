@@ -8,11 +8,14 @@ import * as MembersUpdate from "../page/settings/members/update"
 import * as MembersView from "../page/settings/members/view"
 import type { Resources } from "../platform/resources"
 import { keepLocal } from "./local-commands"
+import { ON_CALL, roleList, STATUS_EDITOR } from "../page/settings/roles/test-roles"
+import * as Select from "@maple/views/ui/select"
 
 // `/lab/members`: the settings members tab over fixtures, seen by an admin. `?state=` picks a start:
-// the list, or a role change waiting on its inline confirm strip, or that change saving.
+// the list, a change to admin waiting on its inline confirm strip, that change saving, or the role
+// picker open with the organization's custom roles (`picker`).
 
-export const LabState = Schema.Literals(["list", "confirming", "saving"])
+export const LabState = Schema.Literals(["list", "confirming", "saving", "picker"])
 export type LabState = typeof LabState.Type
 
 export const Flags = Schema.Struct({ state: LabState })
@@ -43,7 +46,9 @@ const ROWS: ReadonlyArray<MembersModel.MemberRow> = [
 		name: "Ada Lovelace",
 		identifier: "ada@acme.test",
 		imageUrl: "",
+		userId: "user_ada",
 		role: "org:admin",
+		customRoleId: null,
 		createdAtMs: NOW - 90 * DAY,
 		isCurrentUser: true,
 	},
@@ -52,7 +57,9 @@ const ROWS: ReadonlyArray<MembersModel.MemberRow> = [
 		name: "Miguel Santos",
 		identifier: "miguel@acme.test",
 		imageUrl: "",
+		userId: "user_miguel",
 		role: "org:member",
+		customRoleId: null,
 		createdAtMs: NOW - 12 * DAY,
 		isCurrentUser: false,
 	},
@@ -61,7 +68,9 @@ const ROWS: ReadonlyArray<MembersModel.MemberRow> = [
 		name: "Grace Hopper",
 		identifier: "grace@acme.test",
 		imageUrl: "",
-		role: "org:engineer",
+		userId: "user_grace",
+		role: "org:custom",
+		customRoleId: ON_CALL.id,
 		createdAtMs: NOW - 40 * DAY,
 		isCurrentUser: false,
 	},
@@ -79,6 +88,9 @@ export const init = (flags: Flags): Return => {
 				generation: 0,
 				result: Result.succeed({ rows: ROWS, total: ROWS.length }),
 			}),
+			MembersModel.Message.CompletedFetchRoles({
+				result: Result.succeed(roleList([ON_CALL, STATUS_EDITOR])),
+			}),
 			MembersModel.Message.CompletedFetchInvitations({
 				page: 1,
 				generation: 0,
@@ -89,15 +101,28 @@ export const init = (flags: Flags): Return => {
 		step,
 	)
 	const pending: MembersModel.Model["pendingRole"] =
-		flags.state === "list"
-			? null
-			: {
+		flags.state === "confirming" || flags.state === "saving"
+			? {
 					_tag: flags.state === "saving" ? "Saving" : "Confirming",
 					memberId: "user_miguel",
+					userId: "user_miguel",
 					name: "Miguel Santos",
-					next: "org:engineer",
+					next: "admin",
+					roleName: "Admin",
+					ref: { _tag: "BuiltIn", clerkKey: "org:admin" },
 				}
-	return { model: { members: { ...loaded, pendingRole: pending } } }
+			: null
+	const roleSelects: MembersModel.Model["roleSelects"] =
+		flags.state === "picker"
+			? {
+					user_miguel: Select.init("member-role-user_miguel", {
+						value: "member",
+						selectedIndex: 1,
+						isOpen: true,
+					}),
+				}
+			: {}
+	return { model: { members: { ...loaded, pendingRole: pending, roleSelects } } }
 }
 
 /** Kit commands run; every Clerk read and write is dropped, so a confirm stays saving. */

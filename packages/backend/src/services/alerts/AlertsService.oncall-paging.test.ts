@@ -37,7 +37,7 @@ import { EscalationChainsService } from "./EscalationChainsService"
 import { OnCallSchedulesService } from "./OnCallSchedulesService"
 import { memberNotificationDedupeKey } from "./alert-escalation-runs"
 import {
-	adminRoles,
+	adminGrants,
 	asOrgId,
 	asUserId,
 	getError,
@@ -292,7 +292,7 @@ const apiPrimary = (orgId: OrgId, options: { readonly gap?: boolean; readonly ov
 		const schedule = yield* schedules.create(
 			orgId,
 			ana,
-			adminRoles,
+			adminGrants,
 			new OnCallScheduleCreateRequest({
 				name: "API primary",
 				timeZone: "Europe/Berlin",
@@ -314,7 +314,7 @@ const apiPrimary = (orgId: OrgId, options: { readonly gap?: boolean; readonly ov
 			yield* schedules.createOverride(
 				orgId,
 				ana,
-				adminRoles,
+				adminGrants,
 				schedule.id,
 				new OnCallOverrideCreateRequest({
 					userId: ben,
@@ -387,7 +387,7 @@ const setup = (
 		const team = yield* alerts.createDestination(
 			orgId,
 			ana,
-			adminRoles,
+			adminGrants,
 			new WebhookAlertDestinationConfig({
 				type: "webhook",
 				name: "team",
@@ -408,13 +408,13 @@ const setup = (
 		const chain = yield* chains.create(
 			orgId,
 			ana,
-			adminRoles,
+			adminGrants,
 			new EscalationChainCreateRequest({ name: "API escalation", steps }),
 		)
 		yield* alerts.createRule(
 			orgId,
 			ana,
-			adminRoles,
+			adminGrants,
 			new AlertRuleUpsertRequest({
 				name: "Checkout error rate",
 				enabled: true,
@@ -995,7 +995,7 @@ describe("escalation chain targets", () => {
 					chains.create(
 						orgId,
 						ana,
-						adminRoles,
+						adminGrants,
 						new EscalationChainCreateRequest({ name: "Guarded", steps }),
 					)
 
@@ -1030,12 +1030,12 @@ describe("escalation chain targets", () => {
 					},
 				])
 				assert.deepStrictEqual((yield* schedules.get(orgId, schedule.id)).chainIds, [chain.id])
-				const inUse = getError(yield* Effect.exit(schedules.delete(orgId, adminRoles, schedule.id)))
+				const inUse = getError(yield* Effect.exit(schedules.delete(orgId, adminGrants, schedule.id)))
 				if (!Schema.is(OnCallScheduleInUseError)(inUse)) return assert.fail("expected in use")
 				assert.deepStrictEqual(inUse.chainNames, ["Guarded"])
 
-				yield* chains.delete(orgId, adminRoles, chain.id)
-				yield* schedules.delete(orgId, adminRoles, schedule.id)
+				yield* chains.delete(orgId, adminGrants, chain.id)
+				yield* schedules.delete(orgId, adminGrants, schedule.id)
 				assert.lengthOf((yield* schedules.list(orgId)).schedules, 0)
 			}).pipe(Effect.provide(layerFor(testDb, state, emails, chat)))
 		})

@@ -9,6 +9,7 @@ import {
 import { AuthorizationV2 } from "./auth"
 import { Timestamp, wireExample } from "./envelopes"
 import { publicError, publicErrors } from "./public-error"
+import { EndpointAccess, requires } from "../endpoint-access"
 
 export const V2SupportChannelStatus = Schema.Literals(["unavailable", "not_created", "active"])
 export type V2SupportChannelStatus = Schema.Schema.Type<typeof V2SupportChannelStatus>
@@ -80,15 +81,17 @@ export class V2SupportChannelApiGroup extends HttpApiGroup.make("supportChannel"
 				SupportChannelNoEmailError,
 				SupportChannelUnavailableError,
 			),
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "inviteToSupportChannel",
-				summary: "Join the shared Slack channel",
-				description:
-					"Creates the org's shared Slack channel if it does not exist yet, then sends a Slack Connect invite to the calling member's email. Calling it again sends a fresh invite to whoever calls it, so each teammate can join on their own. " +
-					"Answers `503 support_channel_not_configured` on instances without a Slack workspace. Requires a member session or the `support:write` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("support:join"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "inviteToSupportChannel",
+					summary: "Join the shared Slack channel",
+					description:
+						"Creates the org's shared Slack channel if it does not exist yet, then sends a Slack Connect invite to the calling member's email. Calling it again sends a fresh invite to whoever calls it, so each teammate can join on their own. " +
+						"Answers `503 support_channel_not_configured` on instances without a Slack workspace. Requires a member session or the `support:write` scope.",
+				}),
+			),
 	)
 	.prefix("/v2/support/slack_channel")
 	.middleware(AuthorizationV2)

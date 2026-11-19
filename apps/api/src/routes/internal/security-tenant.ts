@@ -5,7 +5,7 @@ import { Effect } from "effect"
 /** The caller's tenant, once they hold `security:manage`: the Security Center is for engineers and admins. */
 export const securityTenant = Effect.tap(CurrentTenant.Context, (tenant) =>
 	Policy.check(
-		tenant.roles,
+		tenant.permissions,
 		"security:manage",
 		(denial) => new DependencyScanForbiddenError({ message: denial.message }),
 	),

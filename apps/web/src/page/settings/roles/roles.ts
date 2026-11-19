@@ -1,0 +1,140 @@
+import {
+	CreateRoleRequest,
+	DeleteRoleRequest,
+	type RoleListResponse,
+	type RoleRef,
+	SetMemberRoleRequest,
+	UpdateRoleRequest,
+} from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
+import type { UserId } from "@maple/primitives"
+import { Array as Arr, Effect, Option, Order, String as Str } from "effect"
+import { MapleInternalApiClient } from "../../../platform/api-clients"
+import { AppRoute, hrefOf } from "../../../route"
+
+// The roles the Roles tab, the role editor and the Members page share: one entry per role, built-in
+// roles first, and the reads and writes behind them.
+
+/** One role as the pages list it. */
+export type RoleEntry = Readonly<{
+	/** The editor's URL segment and the pickers' value: a built-in role's name (`engineer`) or a custom role's id. */
+	key: string
+	ref: RoleRef
+	name: string
+	description: string
+	permissions: ReadonlyArray<Policy.Permission>
+	memberCount: number
+	isBuiltIn: boolean
+}>
+
+/** Every permission there is: a role's count reads "N of" this. */
+export const PERMISSION_TOTAL = Policy.allPermissions.length
+
+export const isSensitive = (permission: Policy.Permission): boolean =>
+	"sensitive" in Policy.permissions[permission]
+
+/** `/settings/roles`. */
+export const rolesHref = (): string => hrefOf(AppRoute.Settings({ search: { tab: "roles" } }))
+
+/** `/settings/roles/:roleId`: a role's editor (read-only for a built-in role). */
+export const roleHref = (key: string): string => hrefOf(AppRoute.RoleEditor({ roleId: key }))
+
+/** `/settings/members`. */
+export const membersHref = (): string => hrefOf(AppRoute.Settings({ search: { tab: "members" } }))
+
+const builtInEntry = (role: Policy.BuiltInRole, memberCount: number): RoleEntry => ({
+	key: role.role,
+	ref: { _tag: "BuiltIn", clerkKey: role.clerkKey },
+	name: role.label,
+	description: role.summary,
+	permissions: role.permissions,
+	memberCount,
+	isBuiltIn: true,
+})
+
+/** The four built-in roles before the list answers (no member counts yet). */
+export const builtInEntries: ReadonlyArray<RoleEntry> = Arr.map(Policy.builtInRoles, (role) =>
+	builtInEntry(role, 0),
+)
+
+const byName = Order.mapInput(Order.String, (role: RoleListResponse["custom"][number]) =>
+	Str.toLowerCase(role.name),
+)
+
+/** The list's roles: the four built-in ones, then the organization's own by name. */
+export const roleEntries = (list: RoleListResponse): ReadonlyArray<RoleEntry> => [
+	...Arr.map(Policy.builtInRoles, (role) =>
+		builtInEntry(
+			role,
+			Option.match(
+				Arr.findFirst(list.builtIn, (entry) => entry.clerkKey === role.clerkKey),
+				{ onNone: () => 0, onSome: (entry) => entry.memberCount },
+			),
+		),
+	),
+	...Arr.map(Arr.sort(list.custom, byName), (role): RoleEntry => ({
+		key: role.id,
+		ref: { _tag: "Custom", id: role.id },
+		name: role.name,
+		description: role.description,
+		permissions: role.permissions,
+		memberCount: role.memberCount,
+		isBuiltIn: false,
+	})),
+]
+
+export const findRole = (entries: ReadonlyArray<RoleEntry>, key: string): Option.Option<RoleEntry> =>
+	Arr.findFirst(entries, (entry) => entry.key === key)
+
+/** A built-in role's key from its Clerk key (`org:engineer` is `engineer`). */
+export const builtInKeyOf = (clerkKey: string): Option.Option<string> =>
+	Option.map(Policy.builtInRoleOf(clerkKey), (role) => role.role)
+
+/** What a custom role may hold: members, roles and the organization stay with Admin. */
+export const grantablePermissions = (permissions: ReadonlyArray<Policy.Permission>) =>
+	Arr.filter(permissions, Policy.grantableToCustomRoles)
+
+/** "All 49" or "16 of 49". */
+export const permissionCountLabel = (count: number): string =>
+	count === PERMISSION_TOTAL ? `All ${PERMISSION_TOTAL}` : `${count} of ${PERMISSION_TOTAL}`
+
+/** "1 member", "3 members". */
+export const memberCountLabel = (count: number): string => `${count} ${count === 1 ? "member" : "members"}`
+
+// Reads and writes, through the internal API.
+
+export const listRoles = Effect.flatMap(MapleInternalApiClient, (client) => client.roles.list())
+
+export const listRoleMembers = (roleId: Policy.CustomRoleId) =>
+	Effect.flatMap(MapleInternalApiClient, (client) => client.roles.members({ params: { roleId } }))
+
+export const createRole = (input: {
+	readonly name: string
+	readonly description: string
+	readonly permissions: ReadonlyArray<Policy.Permission>
+}) =>
+	Effect.flatMap(MapleInternalApiClient, (client) =>
+		client.roles.create({
+			payload: new CreateRoleRequest(
+				input.description === ""
+					? { name: input.name, permissions: input.permissions }
+					: { name: input.name, permissions: input.permissions, description: input.description },
+			),
+		}),
+	)
+
+export const updateRole = (roleId: Policy.CustomRoleId, payload: UpdateRoleRequest) =>
+	Effect.flatMap(MapleInternalApiClient, (client) => client.roles.update({ params: { roleId }, payload }))
+
+export const deleteRole = (roleId: Policy.CustomRoleId, reassignTo: RoleRef | null) =>
+	Effect.flatMap(MapleInternalApiClient, (client) =>
+		client.roles.delete({
+			params: { roleId },
+			payload: new DeleteRoleRequest(reassignTo === null ? {} : { reassignTo }),
+		}),
+	)
+
+export const setMemberRole = (userId: UserId, role: RoleRef) =>
+	Effect.flatMap(MapleInternalApiClient, (client) =>
+		client.roles.setMemberRole({ params: { userId }, payload: new SetMemberRoleRequest({ role }) }),
+	)

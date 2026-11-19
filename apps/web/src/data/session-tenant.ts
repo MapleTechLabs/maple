@@ -66,10 +66,10 @@ export class SessionTenant extends Context.Service<
 	).pipe(Layer.provide([MapleApiClient.layer, SessionBearer.layer]))
 }
 
-/** Every permission the session's roles hold; none when the session read fails. */
+/** Every permission the session holds (a custom role's included); none when the session read fails. */
 export const readGrants: Effect.Effect<ReadonlyArray<Policy.Permission>, never, SessionTenant> = Effect.gen(
 	function* () {
 		const session = yield* (yield* SessionTenant).get
-		return Policy.grantsOf(session.roles)
+		return session.permissions
 	},
 ).pipe(Effect.orElseSucceed((): ReadonlyArray<Policy.Permission> => []))

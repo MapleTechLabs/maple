@@ -28,7 +28,7 @@ import {
 	makeLayer,
 	asOrgId,
 	asUserId,
-	adminRoles,
+	adminGrants,
 	createWebhookDestination,
 	createErrorRateRule,
 	okFetch,
@@ -104,7 +104,7 @@ describe("AlertsService evaluation error persistence", () => {
 			yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new AlertRuleUpsertRequest({
 					name: "Retry rule",
 					severity: "warning",
@@ -357,7 +357,7 @@ describe("AlertsService evaluation error persistence", () => {
 			const rule = yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new AlertRuleUpsertRequest({
 					name: "Checkout goes blind",
 					severity: "critical",
@@ -415,7 +415,7 @@ describe("AlertsService evaluation error persistence", () => {
 			const throughput = yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				request({ serviceNames: ["checkout"] }),
 			)
 			assert.strictEqual(throughput.noDataBehavior, "alert")
@@ -429,7 +429,7 @@ describe("AlertsService evaluation error persistence", () => {
 				.createRule(
 					orgId,
 					userId,
-					adminRoles,
+					adminGrants,
 					request({ name: "Grouped", groupBy: ["service.name"] }),
 				)
 				.pipe(Effect.flip)
@@ -510,7 +510,7 @@ describe("AlertsService.previewRule", () => {
 				endTime: "2026-01-01T00:30:00.000Z",
 			})
 
-			const response = yield* alerts.previewRule(orgId, adminRoles, request)
+			const response = yield* alerts.previewRule(orgId, adminGrants, request)
 
 			assert.strictEqual(response.bucketSeconds, 300)
 			assert.strictEqual(response.windowMinutes, 5)
@@ -563,7 +563,7 @@ describe("AlertsService.previewRule", () => {
 				endTime: "2026-01-02T00:00:00.000Z",
 			})
 
-			const response = yield* alerts.previewRule(orgId, adminRoles, request)
+			const response = yield* alerts.previewRule(orgId, adminGrants, request)
 
 			// 288 windows — the bucket cap used to stop at 200, so the chart drew
 			// only the newest 16h40m of a full-width 24h axis.
@@ -605,7 +605,7 @@ describe("AlertsService.previewRule", () => {
 				endTime: "2026-01-31T00:00:00.000Z",
 			})
 
-			const response = yield* alerts.previewRule(orgId, adminRoles, request)
+			const response = yield* alerts.previewRule(orgId, adminGrants, request)
 
 			const points = response.series[0].points
 			assert.lengthOf(points, 1500)
@@ -650,7 +650,7 @@ describe("AlertsService.previewRule", () => {
 				endTime: "2026-01-01T00:32:30.000Z",
 			})
 
-			const response = yield* alerts.previewRule(orgId, adminRoles, request)
+			const response = yield* alerts.previewRule(orgId, adminGrants, request)
 
 			assert.lengthOf(response.series, 1)
 			const points = response.series[0].points
@@ -704,7 +704,7 @@ describe("AlertsService.previewRule", () => {
 
 			// Raw SQL used to be rejected here even though the UI offers the chart.
 			// It is now just another evaluate source, so the preview renders.
-			const preview = yield* alerts.previewRule(orgId, adminRoles, request)
+			const preview = yield* alerts.previewRule(orgId, adminGrants, request)
 			assert.isAbove(preview.series.length, 0)
 			const points = preview.series[0]?.points ?? []
 			assert.isAbove(points.length, 0)
@@ -736,7 +736,11 @@ describe("AlertsService.previewRule", () => {
 					endTime: "2026-01-01T03:30:00.000Z",
 				})
 
-				const preview = yield* alerts.previewRule(asOrgId("org_preview_untimed"), adminRoles, request)
+				const preview = yield* alerts.previewRule(
+					asOrgId("org_preview_untimed"),
+					adminGrants,
+					request,
+				)
 				assert.strictEqual(preview.seriesFailure, "not_time_grouped")
 				assert.lengthOf(preview.series, 0)
 				assert.lengthOf(preview.wouldFire, 0)
@@ -785,7 +789,7 @@ describe("AlertsService.previewRule", () => {
 				const alerts = yield* alertServices
 				const preview = yield* alerts.previewRule(
 					asOrgId("org_timing_fits"),
-					adminRoles,
+					adminGrants,
 					rawPreview(5),
 				)
 				assert.deepStrictEqual(preview.queryTiming && { ...preview.queryTiming }, {
@@ -812,7 +816,7 @@ describe("AlertsService.previewRule", () => {
 				const alerts = yield* alertServices
 				const preview = yield* alerts.previewRule(
 					asOrgId("org_timing_slow"),
-					adminRoles,
+					adminGrants,
 					rawPreview(5),
 				)
 				assert.strictEqual(preview.queryTiming?.elapsedMs, null)
@@ -843,7 +847,7 @@ describe("AlertsService.previewRule", () => {
 				const alerts = yield* alertServices
 				const preview = yield* alerts.previewRule(
 					asOrgId("org_timing_heavy"),
-					adminRoles,
+					adminGrants,
 					rawPreview(5),
 				)
 				assert.strictEqual(preview.seriesFailure, "query_too_slow")
@@ -875,7 +879,7 @@ describe("AlertsService.previewRule", () => {
 				const alerts = yield* alertServices
 				const preview = yield* alerts.previewRule(
 					asOrgId("org_timing_builder"),
-					adminRoles,
+					adminGrants,
 					decodePreviewRequest({
 						rule: {
 							name: "Error rate",
@@ -918,7 +922,7 @@ describe("AlertsService.previewRule", () => {
 			})
 
 			// The scheduler sees one no-data observation per tick here, so the preview must too.
-			const preview = yield* alerts.previewRule(asOrgId("org_preview_raw_empty"), adminRoles, request)
+			const preview = yield* alerts.previewRule(asOrgId("org_preview_raw_empty"), adminGrants, request)
 			assert.lengthOf(preview.series, 1)
 			const points = preview.series[0]?.points ?? []
 			assert.lengthOf(points, 6)
@@ -955,7 +959,11 @@ describe("AlertsService.previewRule", () => {
 				endTime: "2026-01-01T00:30:00.000Z",
 			})
 
-			const preview = yield* alerts.previewRule(asOrgId("org_preview_raw_grouped"), adminRoles, request)
+			const preview = yield* alerts.previewRule(
+				asOrgId("org_preview_raw_grouped"),
+				adminGrants,
+				request,
+			)
 			const byGroup = new Map(Arr.map(preview.series, (series) => [series.groupKey, series.points]))
 			// A group missing from a tick is not evaluated by the scheduler, so it never breaches.
 			const a = byGroup.get("a") ?? []
@@ -983,7 +991,7 @@ describe("AlertsService.previewRule", () => {
 			const second = yield* alerts.createDestination(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new WebhookAlertDestinationConfig({
 					type: "webhook",
 					name: "Secondary webhook",
@@ -996,7 +1004,7 @@ describe("AlertsService.previewRule", () => {
 			const rule = yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new AlertRuleUpsertRequest({
 					name: "Deduped rule",
 					severity: "warning",
@@ -1055,7 +1063,7 @@ describe("AlertsService.previewRule", () => {
 					alerts.createRule(
 						orgId,
 						userId,
-						adminRoles,
+						adminGrants,
 						new AlertRuleUpsertRequest({
 							name: `Scaling rule ${index}`,
 							severity: "warning",
@@ -1127,7 +1135,7 @@ describe("AlertsService.previewRule", () => {
 			yield* alerts.createRule(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new AlertRuleUpsertRequest({
 					name: "Grouped error rate",
 					severity: "critical",

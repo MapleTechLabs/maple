@@ -8,7 +8,6 @@ import {
 	AgentFeedbackSource,
 	AgentFeedbackTriageForbiddenError,
 	AgentType,
-	type RoleName,
 } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { AgentFeedbackId, type OrgId, type UserId } from "@maple/primitives"
@@ -66,7 +65,7 @@ export interface AgentFeedbackTriageFilter {
 
 export interface AgentFeedbackTriageCaller {
 	readonly orgId: OrgId
-	readonly roles: ReadonlyArray<RoleName>
+	readonly permissions: Policy.Grants
 }
 
 export interface AgentFeedbackServiceApi {
@@ -215,9 +214,10 @@ export class AgentFeedbackService extends Context.Service<AgentFeedbackService, 
 						message: "Reading agent feedback across organizations is limited to the Maple team.",
 					})
 				}
+				// An admin of the Maple team's own organization.
 				yield* Policy.check(
-					caller.roles,
-					"agent_feedback:triage",
+					caller.permissions,
+					"members:manage",
 					(denial) => new AgentFeedbackTriageForbiddenError({ message: denial.message }),
 				)
 				const related = nonBlank(filter.relatedTo)

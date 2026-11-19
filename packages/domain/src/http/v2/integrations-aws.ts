@@ -15,6 +15,7 @@ import { V2InsufficientPermissions } from "./errors"
 import { publicErrors } from "./public-error"
 import { V2WarehouseReadErrors } from "./query-errors"
 import { PublicId, PublicIdPrefixes } from "./public-id"
+import { EndpointAccess } from "../endpoint-access"
 
 // AWS integration. No OAuth and no stored AWS secret: an org registers a connection for an account,
 // an administrator deploys the generated CloudFormation stack, and Maple assumes the role it creates
@@ -452,4 +453,5 @@ export class V2AwsIntegrationsApiGroup extends HttpApiGroup.make("awsIntegration
 			description:
 				"Connect AWS accounts: register a connection, choose what Maple may read, fetch the CloudFormation stack that sets it up, and see whether Maple can assume its role.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, "handler") {}

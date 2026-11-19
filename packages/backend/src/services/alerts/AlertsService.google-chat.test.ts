@@ -3,7 +3,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect } from "effect"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import {
-	adminRoles,
+	adminGrants,
 	asOrgId,
 	asUserId,
 	emptyWarehouseRows,
@@ -32,7 +32,7 @@ describe("AlertsService: Google Chat destinations", () => {
 				alerts.createDestination(
 					asOrgId("org_gchat"),
 					asUserId("user_gchat"),
-					adminRoles,
+					adminGrants,
 					new GoogleChatAlertDestinationConfig({
 						type: "google-chat",
 						name: "Ops",
@@ -66,7 +66,7 @@ describe("AlertsService: Google Chat destinations", () => {
 			const destination = yield* alerts.createDestination(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				new GoogleChatAlertDestinationConfig({
 					type: "google-chat",
 					name: "Ops",
@@ -76,7 +76,7 @@ describe("AlertsService: Google Chat destinations", () => {
 			assert.strictEqual(destination.summary, "Space AAAAops")
 			assert.notInclude(JSON.stringify(destination), "secret-token")
 
-			const response = yield* alerts.testDestination(orgId, userId, adminRoles, destination.id)
+			const response = yield* alerts.testDestination(orgId, userId, adminGrants, destination.id)
 			assert.isTrue(response.success)
 			assert.lengthOf(requests, 1)
 			const url = new URL(requests[0]?.url ?? "")

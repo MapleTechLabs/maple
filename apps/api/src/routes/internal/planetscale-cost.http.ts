@@ -13,9 +13,9 @@ import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { PlanetScaleCostSourceService } from "@maple/backend/services/cost/PlanetScaleCostSourceService"
 
 // A cost source is a connection like any other: the role that manages integrations manages it.
-const requireIntegrationsManager = (roles: CurrentTenant.TenantSchema["roles"]) =>
+const requireIntegrationsManager = (permissions: CurrentTenant.TenantSchema["permissions"]) =>
 	Policy.check(
-		roles,
+		permissions,
 		"integrations:manage",
 		(denial) => new IntegrationsForbiddenError({ message: denial.message }),
 	)
@@ -35,7 +35,7 @@ export const HttpPlanetScaleCostLive = HttpApiBuilder.group(MapleInternalApi, "p
 			.handle("add", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireIntegrationsManager(tenant.roles)
+					yield* requireIntegrationsManager(tenant.permissions)
 					const added = yield* sources.add(tenant.orgId, payload.organization)
 					// Adding what is a source already changed nothing, so it leaves no entry.
 					if (added.created) {
@@ -49,7 +49,7 @@ export const HttpPlanetScaleCostLive = HttpApiBuilder.group(MapleInternalApi, "p
 			.handle("remove", () =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireIntegrationsManager(tenant.roles)
+					yield* requireIntegrationsManager(tenant.permissions)
 					const removed = yield* sources.remove(tenant.orgId)
 					// Removing what is not there changed nothing, so it leaves no entry.
 					if (removed.removed) {

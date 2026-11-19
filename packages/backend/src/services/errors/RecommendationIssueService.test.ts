@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Schema } from "effect"
 import { OrgId, RecommendationIssueId, UserId, type TenantContext } from "@maple/domain/http"
@@ -22,6 +23,7 @@ const tenant: TenantContext = {
 	orgId: ORG,
 	userId: Schema.decodeSync(UserId)("user_recommendations"),
 	roles: ["org:admin"],
+	permissions: Policy.grantsOf(["org:admin"]),
 	authMode: "self_hosted",
 }
 

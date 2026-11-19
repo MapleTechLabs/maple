@@ -1,0 +1,182 @@
+import { RoleConflictError } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
+import { Array as Arr, Option, Result } from "effect"
+import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import * as Dialog from "@maple/views/ui/dialog"
+import { describe, expect, test } from "vitest"
+import { toLoadFailure } from "@maple/views/data/load-failure"
+import * as CreateDialog from "./create-dialog"
+import { Message, type Model } from "./model"
+import { ON_CALL, roleList, roleMembers, STATUS_EDITOR } from "./test-roles"
+import { entriesOf, init, update } from "./update"
+import { headerActions, view as tabView } from "./view"
+
+const ADMIN = Policy.grantsOf(["org:admin"])
+const MEMBER = Policy.grantsOf(["org:member"])
+
+const view = withViewInputs(tabView, {})()
+const actions = withViewInputs(headerActions, {})()
+
+const dialogMounted = Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog())
+
+const run = (model: Model, messages: ReadonlyArray<Message>): Model =>
+	Arr.reduce(messages, model, (current, message) => update(current, message).model)
+
+const loaded = (grants: ReadonlyArray<Policy.Permission> = ADMIN): Model =>
+	run(init(grants).model, [
+		// Out of order on purpose: the list sorts custom roles by name.
+		Message.CompletedFetchRoles({ result: Result.succeed(roleList([STATUS_EDITOR, ON_CALL])) }),
+	])
+
+const namesOf = (step: { readonly commands?: ReadonlyArray<{ readonly name: string }> }) =>
+	Arr.map(step.commands ?? [], (command) => command.name)
+
+const argsOf = (
+	step: { readonly commands?: ReadonlyArray<{ readonly name: string; readonly args?: unknown }> },
+	name: string,
+) => Option.getOrUndefined(Arr.findFirst(step.commands ?? [], (command) => command.name === name))?.args
+
+describe("roles list", () => {
+	test("built-in roles come first in their order, then the organization's own by name", () => {
+		expect(Arr.map(entriesOf(loaded()), (entry) => entry.name)).toEqual([
+			"Analyst",
+			"Member",
+			"Engineer",
+			"Admin",
+			"On-call responder",
+			"Status page editor",
+		])
+	})
+
+	test("each row says what the role holds and how many people hold it", () => {
+		scene(
+			{ update, view },
+			given(loaded()),
+			expectView(role("link", { name: "Admin" })).toExist(),
+			expectView(text("All 49")).toExist(),
+			expectView(text("16 of 49")).toExist(),
+			expectView(text(`${ON_CALL.permissions.length} of 49`)).toExist(),
+		)
+	})
+
+	test("a failed load offers Try again, which reads the list again", () => {
+		const failed = run(init(ADMIN).model, [
+			Message.CompletedFetchRoles({ result: Result.fail(toLoadFailure(new Error("down"))) }),
+		])
+		scene({ update, view }, given(failed), expectView(role("button", { name: "Try again" })).toExist())
+		expect(namesOf(update(failed, Message.ClickedRetry()))).toEqual(["FetchRoles"])
+	})
+
+	test("someone who cannot manage roles sees Create role locked with who can", () => {
+		scene(
+			{ update, view: actions },
+			given(loaded(MEMBER)),
+			expectView(role("group", { name: Policy.denialFor("roles:manage").message })).toExist(),
+		)
+	})
+})
+
+describe("create role dialog", () => {
+	const opened = () => update(loaded(), Message.ClickedCreate()).model
+	const child = (message: CreateDialog.Message) => Message.GotCreateMessage({ message })
+
+	test("a copy of Engineer starts with what Engineer holds that a custom role may", () => {
+		const filled = run(opened(), [
+			child(CreateDialog.Message.ChangedName({ value: " Incident commander " })),
+			child(
+				CreateDialog.Message.GotStartMessage({
+					message: { _tag: "SelectedRadio", value: "engineer" },
+				}),
+			),
+		])
+		const submitted = update(filled, child(CreateDialog.Message.SubmittedCreate()))
+		expect(argsOf(submitted, "CreateRole")).toEqual({
+			name: "Incident commander",
+			description: "",
+			permissions: Arr.filter(Policy.builtInRoles[2].permissions, Policy.grantableToCustomRoles),
+		})
+		const created = update(
+			submitted.model,
+			child(CreateDialog.Message.CompletedCreate({ result: Result.succeed(STATUS_EDITOR) })),
+		)
+		expect(created.outMessage).toMatchObject({
+			_tag: "RequestedNavigation",
+			url: `/settings/roles/${STATUS_EDITOR.id}`,
+		})
+	})
+
+	test("a taken name is said in the dialog, which stays open to fix it", () => {
+		const failure = toLoadFailure(
+			new RoleConflictError({
+				message: "A role named Incident commander already exists.",
+				reason: "name_taken",
+			}),
+		)
+		const failed = run(opened(), [
+			child(CreateDialog.Message.ChangedName({ value: "Incident commander" })),
+			child(CreateDialog.Message.SubmittedCreate()),
+			child(CreateDialog.Message.CompletedCreate({ result: Result.fail(failure) })),
+		])
+		expect(failed.create.dialog.isOpen).toBe(true)
+		scene({ update, view }, given(failed), dialogMounted, expectView(text(failure.message)).toExist())
+	})
+
+	test("a nameless role cannot be submitted", () => {
+		const submitted = update(opened(), child(CreateDialog.Message.SubmittedCreate()))
+		expect(namesOf(submitted)).not.toContain("CreateRole")
+	})
+})
+
+describe("delete role dialog", () => {
+	const deleting = () => {
+		const step = update(
+			loaded(),
+			Message.GotRowMenuMessage({
+				menuId: `role-actions-${ON_CALL.id}`,
+				message: { _tag: "ClickedItem", index: 2, item: { kind: "Item", value: "delete" } },
+			}),
+		)
+		return { step, model: step.model }
+	}
+
+	test("a role people hold asks where they move, lists them, and sends the pick", () => {
+		const { step, model } = deleting()
+		expect(argsOf(step, "FetchDeletedRoleMembers")).toEqual({ roleId: ON_CALL.id })
+		const withMembers = run(model, [
+			Message.CompletedFetchDeleteMembers({
+				roleId: ON_CALL.id,
+				result: Result.succeed(
+					roleMembers([
+						{ id: "user_grace", name: "Grace Hopper" },
+						{ id: "user_alan", name: "Alan Turing" },
+						{ id: "user_katherine", name: "Katherine Johnson" },
+					]),
+				),
+			}),
+			Message.GotReassignMessage({ message: { _tag: "SelectedItem", index: 2, value: "engineer" } }),
+		])
+		scene(
+			{ update, view },
+			given(withMembers),
+			dialogMounted,
+			expectView(text("3 members hold it. Choose the role they move to.")).toExist(),
+			expectView(text("Grace Hopper")).toExist(),
+		)
+		expect(argsOf(update(withMembers, Message.ClickedConfirmDelete()), "DeleteRole")).toEqual({
+			roleId: ON_CALL.id,
+			name: ON_CALL.name,
+			reassignTo: { _tag: "BuiltIn", clerkKey: "org:engineer" },
+		})
+	})
+
+	test("deleted, the list reads again and the toast names the role", () => {
+		const { model } = deleting()
+		const confirmed = update(model, Message.ClickedConfirmDelete()).model
+		const done = update(
+			confirmed,
+			Message.CompletedDelete({ name: ON_CALL.name, result: Result.succeed(undefined) }),
+		)
+		expect(namesOf(done)).toContain("FetchRoles")
+		expect(done.outMessage).toMatchObject({ _tag: "RequestedToast", title: "On-call responder deleted" })
+	})
+})

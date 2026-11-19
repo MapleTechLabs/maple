@@ -35,6 +35,7 @@ import { AwsOidcRouter } from "@/routes/aws-oidc.http"
 import { DiscoveryRouter, instanceApiV2, NotFoundRouter } from "@/routes/discovery.http"
 import { HttpDigestLive } from "@/routes/internal/digest.http"
 import { HttpSavedViewsLive } from "@/routes/internal/saved-views.http"
+import { HttpRolesLive } from "@/routes/internal/roles.http"
 import { HttpCodeReviewLive } from "@/routes/internal/code-review.http"
 import { HttpAuditTrailLive } from "@/routes/internal/audit-trail.http"
 import { HttpCloudSecurityLive } from "@/routes/internal/cloud-security.http"
@@ -186,6 +187,7 @@ const ApiInternalRoutes = HttpApiBuilder.layer(MapleInternalApi).pipe(
 			HttpDependencyScanLive,
 			HttpDigestLive,
 			HttpSavedViewsLive,
+			HttpRolesLive,
 			HttpCloudflareCostLive,
 			HttpAnthropicCostLive,
 			HttpFeatureRequestsLive,

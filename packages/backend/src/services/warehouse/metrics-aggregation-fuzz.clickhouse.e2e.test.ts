@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 // Differential fuzz of the metrics builder's two aggregation stages: a seeded
 // world of gauges and counters goes into the real migrated tables, random
 // queries run through the real query engine, and every bucket and group must
@@ -35,6 +36,7 @@ const tenant: TenantContext = {
 	orgId: Schema.decodeSync(OrgId)("org_metrics_fuzz"),
 	userId: Schema.decodeSync(UserId)("user_metrics_fuzz"),
 	roles: [],
+	permissions: Policy.grantsOf([]),
 	authMode: "self_hosted",
 }
 

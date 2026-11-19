@@ -2074,7 +2074,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		HttpApiEndpoint.post("oauthComplete", "/oauth/complete", {
 			payload: OAuthCompleteRequest,
 			success: OAuthCompleteResponse,
-		}),
+		}).annotate(EndpointAccess, requires("integrations:manage")),
 	)
 	.add(
 		HttpApiEndpoint.post("githubStart", "/github/start", {
@@ -2274,4 +2274,5 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		}),
 	)
 	.prefix("/internal/integrations")
-	.middleware(SessionAuthorization) {}
+	.middleware(SessionAuthorization)
+	.annotate(EndpointAccess, "handler") {}
