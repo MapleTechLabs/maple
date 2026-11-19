@@ -147,7 +147,10 @@ export interface VendorHttpClient<E> {
 const IDEMPOTENT = new Set(["GET", "PUT", "DELETE"])
 const DEFAULT_MAX_RETRY_AFTER = Duration.seconds(10)
 
-const defaultKind = (status: number): VendorFailureKind =>
+/** Whether a request is retried on a transient failure when it does not say: GET, PUT and DELETE. */
+export const isIdempotent = (method: VendorRequest["method"]): boolean => IDEMPOTENT.has(method ?? "GET")
+
+export const defaultKind = (status: number): VendorFailureKind =>
 	status === 401
 		? "unauthorized"
 		: status === 403
@@ -161,6 +164,45 @@ const defaultKind = (status: number): VendorFailureKind =>
 const isTransient = (error: VendorHttpError) =>
 	error.kind === "timeout" ||
 	(error.kind === "upstream" && (error.status === undefined || error.status >= 500))
+
+export interface VendorRetryPolicy {
+	/** Transient failures (5xx, transport, timeout); `false` turns retries off. */
+	readonly schedule: Schedule.Schedule<unknown> | false
+	/** The longest `retry-after` waited out before failing as `rate_limited`. */
+	readonly maxRetryAfterSeconds: number
+	readonly replayRateLimit?: boolean
+	readonly retryInvalidResponse?: boolean
+}
+
+/**
+ * Transient retries when `retryable`, then one wait for a short `retry-after`. A 429 means the
+ * request was not processed, so even a POST may be sent again.
+ */
+export const retryVendorCall = <A, R>(
+	policy: VendorRetryPolicy,
+	retryable: boolean,
+	effect: Effect.Effect<A, VendorHttpError, R>,
+): Effect.Effect<A, VendorHttpError, R> => {
+	const { schedule } = policy
+	const retried =
+		schedule === false || !retryable
+			? effect
+			: Effect.retry(effect, {
+					schedule,
+					while: (error) =>
+						isTransient(error) ||
+						(policy.retryInvalidResponse === true && error.kind === "invalid_response"),
+				})
+	return Effect.catchIf(
+		retried,
+		(error) =>
+			error.kind === "rate_limited" &&
+			error.retryAfterSeconds !== undefined &&
+			error.retryAfterSeconds <= policy.maxRetryAfterSeconds &&
+			policy.replayRateLimit !== false,
+		(error) => Effect.sleep(Duration.seconds(error.retryAfterSeconds ?? 0)).pipe(Effect.andThen(retried)),
+	)
+}
 
 /** Only an answer we could not decode may be our own bug; anything else is the vendor's or the customer's state. */
 const failsAttemptSpan = (error: VendorHttpError) => error.kind === "invalid_response"
@@ -335,30 +377,18 @@ export const make = <E>(options: VendorHttpOptions<E>): VendorHttpClient<E> => {
 		)
 	}
 
-	/** Transient retries for idempotent requests, then one wait for a short `retry-after`. */
-	const withRetries = <A, R>(request: VendorRequest, effect: Effect.Effect<A, VendorHttpError, R>) => {
-		const retryable = request.retry ?? IDEMPOTENT.has(request.method ?? "GET")
-		const retried =
-			schedule === false || !retryable
-				? effect
-				: Effect.retry(effect, {
-						schedule,
-						while: (error) =>
-							isTransient(error) ||
-							(options.retryInvalidResponse === true && error.kind === "invalid_response"),
-					})
-		// A 429 means the request was not processed, so even a POST may be sent again.
-		return Effect.catchIf(
-			retried,
-			(error) =>
-				error.kind === "rate_limited" &&
-				error.retryAfterSeconds !== undefined &&
-				error.retryAfterSeconds <= maxRetryAfterSeconds &&
-				options.replayRateLimit !== false,
-			(error) =>
-				Effect.sleep(Duration.seconds(error.retryAfterSeconds ?? 0)).pipe(Effect.andThen(retried)),
-		)
+	const retryPolicy: VendorRetryPolicy = {
+		schedule,
+		maxRetryAfterSeconds,
+		...(options.replayRateLimit === undefined ? undefined : { replayRateLimit: options.replayRateLimit }),
+		...(options.retryInvalidResponse === undefined
+			? undefined
+			: { retryInvalidResponse: options.retryInvalidResponse }),
 	}
+
+	/** Transient retries for idempotent requests, then one wait for a short `retry-after`. */
+	const withRetries = <A, R>(request: VendorRequest, effect: Effect.Effect<A, VendorHttpError, R>) =>
+		retryVendorCall(retryPolicy, request.retry ?? isIdempotent(request.method), effect)
 
 	const send = <A, R>(
 		request: VendorRequest,
