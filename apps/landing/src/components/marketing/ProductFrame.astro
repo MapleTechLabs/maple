@@ -1,0 +1,140 @@
+---
+/**
+ * ProductFrame: one real product surface, sized for a hero aside or a page-wide band.
+ *
+ * The marketing pages outside /features pick a surface by id here, so every one of them shows the
+ * same live components and captures the feature pages do, and none draws its own.
+ */
+import MediaFrame from "../home/MediaFrame.astro";
+import LiveLogs from "../live/LiveLogs.astro";
+import LiveMcpTranscript from "../live/LiveMcpTranscript.astro";
+import LiveServiceMap from "../live/LiveServiceMap.astro";
+import LiveTraceFrame from "../live/LiveTraceFrame.astro";
+
+export type ProductSurface =
+	| "trace"
+	| "logs"
+	| "service-map"
+	| "agent"
+	| "overview"
+	| "usage"
+	| "services"
+	| "issue";
+
+interface Props {
+	surface: ProductSurface;
+	/** `aside` fits a 30rem hero column; `wide` fills a section. */
+	size?: "aside" | "wide";
+	/** Alt text for a capture. Pass a translated string on localized pages. */
+	label?: string;
+	/** One line under the frame. */
+	caption?: string;
+	loading?: "eager" | "lazy";
+	/** Body height of a live trace or log frame, to line frames up in a row. */
+	height?: string;
+	class?: string;
+}
+
+const { surface, size = "aside", label, caption, loading = "lazy", height, class: className = "" } = Astro.props;
+const wide = size === "wide";
+
+// Windows of the 2880 x 1620 captures: each starts on a layout edge past the app sidebar.
+// `phoneZoom` narrows the window under 640px, where the frame is a phone wide and the same window would be unreadable.
+const CAPTURES = {
+	overview: {
+		src: "/screenshots/hero-dashboard.webp",
+		label: "The Maple overview page: service health, and the logs, traces and metrics received",
+		aside: { crop: { x: 0.183, y: 0.158, zoom: 2.5 }, phoneZoom: 3.5, width: 480, height: 372 },
+		wide: { crop: { x: 0.183, y: 0.158, zoom: 1.224 }, phoneZoom: 3.5, width: 1296, height: 600 },
+	},
+	// The same capture, opened on the totals row: volumes the plan meters, over request volume.
+	usage: {
+		src: "/screenshots/hero-dashboard.webp",
+		label: "The Maple overview page: the logs, traces and metrics received, over request volume and latency",
+		aside: { crop: { x: 0.183, y: 0.305, zoom: 2.5 }, phoneZoom: 3.5, width: 480, height: 372 },
+		wide: { crop: { x: 0.183, y: 0.305, zoom: 1.224 }, phoneZoom: 3.5, width: 1296, height: 600 },
+	},
+	services: {
+		src: "/screenshots/hero-services.webp",
+		label: "The Maple services page: latency percentiles, error rate and throughput per service",
+		// The phone window stays wide enough to reach the latency columns, past the names.
+		aside: { crop: { x: 0.362, y: 0.215, zoom: 2.4 }, phoneZoom: 2.8, width: 480, height: 372 },
+		wide: { crop: { x: 0.362, y: 0.215, zoom: 1.568 }, phoneZoom: 2.8, width: 1296, height: 600 },
+	},
+	issue: {
+		src: "/screenshots/gallery-issue-detail.webp",
+		label: "A Maple error issue: the message, its fingerprint, first and last seen, and occurrences over time",
+		aside: { crop: { x: 0.18, y: 0.085, zoom: 2.2 }, phoneZoom: 3.08, width: 480, height: 372 },
+		wide: { crop: { x: 0.18, y: 0.085, zoom: 1.6 }, phoneZoom: 3.2, width: 1296, height: 760 },
+	},
+} as const;
+
+// The live map's labels are about 3px tall on a phone, so a phone gets a window of the capture instead.
+const MAP_PHONE = {
+	src: "/screenshots/surface-map.webp",
+	label: "The Maple service map: services, their dependencies and the request flow between them",
+	crop: { x: 0.2, y: 0.3, zoom: 2 },
+};
+
+const capture =
+	surface === "overview" || surface === "usage" || surface === "services" || surface === "issue"
+		? CAPTURES[surface]
+		: null;
+const shot = capture ? capture[wide ? "wide" : "aside"] : null;
+// Logs render as the stream alone: the volume chart's frame is labelled LIVE, which a scripted frame may not be.
+---
+
+{/* An aside capture keeps its 30rem width between the phone and the two-column layout, where a full column would blow it up. */}
+<figure
+	class:list={["product-frame m-0 min-w-0", shot && !wide && "max-w-[30rem]", className]}
+	style={shot ? `--phone-zoom: ${shot.phoneZoom};` : surface === "service-map" ? `--phone-zoom: ${MAP_PHONE.crop.zoom};` : undefined}
+>
+	{
+		capture && shot ? (
+			<MediaFrame
+				label={label ?? capture.label}
+				src={capture.src}
+				width={shot.width}
+				height={shot.height}
+				crop={shot.crop}
+				loading={loading}
+			/>
+		) : surface === "trace" ? (
+			<LiveTraceFrame height={height ?? (wide ? "17rem" : "18.5rem")} />
+		) : surface === "logs" ? (
+			<LiveLogs volume={false} streamHeight={height ?? (wide ? "19rem" : "21rem")} />
+		) : surface === "service-map" ? (
+			<Fragment>
+				<div class="hidden sm:block">
+					<LiveServiceMap />
+				</div>
+				<div class="sm:hidden">
+					<MediaFrame label={label ?? MAP_PHONE.label} src={MAP_PHONE.src} width={1440} height={810} crop={MAP_PHONE.crop} />
+				</div>
+			</Fragment>
+		) : (
+			<LiveMcpTranscript />
+		)
+	}
+	{caption && <figcaption class="mt-3 text-[12px] leading-relaxed text-fg-muted">{caption}</figcaption>}
+</figure>
+
+<style>
+	/* MediaFrame sets the zoom inline, so the phone window needs !important to win. */
+	@media (max-width: 639px) {
+		.product-frame :global(.media-crop) {
+			--crop-zoom: var(--phone-zoom) !important;
+		}
+	}
+
+	/* Article prose restyles every img (full width, border, margin). A cropped capture keeps its own window. */
+	:global(.docs-content) .product-frame :global(.media-crop > img) {
+		width: calc(var(--crop-zoom) * 100%);
+		max-width: none;
+		height: auto;
+		margin: 0;
+		border: 0;
+		border-radius: 0;
+		aspect-ratio: auto;
+	}
+</style>

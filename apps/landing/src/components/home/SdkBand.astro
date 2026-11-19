@@ -1,15 +1,11 @@
 ---
 /**
- * The runtime band.
+ * The runtimes row, the last row of the ownership chapter (`LocalSection`): which runtimes are
+ * covered, each mark with its name. Logos are runtimes, not customers; the customers are in the
+ * hero and the proof chapter.
  *
- * This slot is Raindrop's "Loved by developers" wall. Maple has no
- * testimonials, so rather than fake quotes it carries the information a
- * developer actually wants here: which runtimes are covered. Logos are
- * runtimes, not customers — the customer logos live in the hero foot.
- *
- * Marks come from `lib/brand-marks.ts` (simple-icons paths), rendered
- * monochrome so the row reads as one hairline object rather than a row of
- * brand colours.
+ * Marks come from `lib/brand-marks.ts` (simple-icons paths), drawn in one colour so the row
+ * reads as one ruled object.
  */
 import * as m from "../../paraglide/messages.js";
 import { BRAND_MARKS } from "../../lib/brand-marks";
@@ -19,27 +15,16 @@ const MARKS = (["nodejs", "nextjs", "python", "go", "effect", "opentelemetry", "
 );
 ---
 
-<div class="border-t border-border bg-bg">
-	<div class="shell py-10 md:py-14">
-		<p class="text-center text-[10px] uppercase tracking-[0.2em] text-fg-muted">{m.trustbar_text()}</p>
-		<div class="mt-8 flex flex-wrap items-center justify-center gap-x-8 gap-y-5 md:gap-x-12">
-			{
-				MARKS.map((mark) => (
-					<span class="text-fg-muted opacity-60 transition-opacity hover:opacity-100" title={mark.name}>
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							viewBox="0 0 24 24"
-							width="24"
-							height="24"
-							fill="currentColor"
-							role="img"
-							aria-label={mark.name}
-						>
-							<path d={mark.path} />
-						</svg>
-					</span>
-				))
-			}
-		</div>
-	</div>
-</div>
+<p class="ledger-runtimes__label">{m.trustbar_text()}</p>
+<ul class="ledger-runtimes">
+	{
+		MARKS.map((mark) => (
+			<li>
+				<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
+					<path d={mark.path} />
+				</svg>
+				{mark.name}
+			</li>
+		))
+	}
+</ul>

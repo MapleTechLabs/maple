@@ -5,6 +5,7 @@ import Footer from "../../components/Footer.astro";
 import BottomCTA from "../../components/BottomCTA.astro";
 import SeoHead from "../../components/SeoHead.astro";
 import StoryCard from "../../components/customers/StoryCard.astro";
+import ProductFrame from "../../components/marketing/ProductFrame.astro";
 import { getSortedStories } from "../../lib/customers";
 
 const stories = await getSortedStories();
@@ -29,12 +30,12 @@ const pageDescription =
         >
         </div>
 
-        <div class="relative mx-auto max-w-6xl px-6 pt-24 pb-10 md:pt-28 md:pb-14">
+        <div class="relative mx-auto grid max-w-6xl gap-10 px-6 pt-24 pb-10 md:pt-28 md:pb-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,30rem)] lg:items-center lg:gap-14">
+            <div class="min-w-0">
             <div class="inline-flex items-center gap-2 font-mono text-[11px] tracking-[0.02em]">
                 <span class="text-fg-muted">~/maple/customers</span>
                 <span class="text-primary">$</span>
                 <span class="text-fg-muted">ls stories/</span>
-                <span class="inline-block h-[11px] w-[7px] bg-primary motion-safe:animate-pulse" aria-hidden="true"></span>
             </div>
 
             <h1 class="mt-5 m-0 font-display text-[clamp(34px,8vw,72px)] font-semibold leading-[0.95] tracking-[-0.035em] text-foreground">
@@ -45,6 +46,9 @@ const pageDescription =
                 How engineering teams run production on Maple: what they were fighting before, what
                 changed after they switched, and the numbers behind it.
             </p>
+            </div>
+            {/* What the stories are about: reading production, one request at a time. */}
+            <ProductFrame surface="trace" />
         </div>
     </section>
 

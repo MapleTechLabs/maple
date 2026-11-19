@@ -1,0 +1,179 @@
+---
+/**
+ * Platform: every other surface as one bento, visible without a click, and the link hub to the
+ * feature pages. Each cell is its headline, its copy and its link, then the surface's scripted
+ * frame in a window that runs off the cell's edge. Metrics, errors and web analytics draw the
+ * dashboard's own charts.
+ */
+import * as m from "../../paraglide/messages.js";
+import { featureBySlug } from "../../lib/features";
+import { featurePath } from "../../lib/page-registry";
+import PrReviewComment from "../github/PrReviewComment.astro";
+import LiveAlertFiring from "../live/LiveAlertFiring.astro";
+import LiveFunnel from "../live/LiveFunnel.astro";
+import LiveK8sHeatmap from "../live/LiveK8sHeatmap.astro";
+import { LiveErrors } from "../live/LiveErrors";
+import { LiveMetrics } from "../live/LiveMetrics";
+import { LiveWebAnalytics } from "../live/LiveWebAnalytics";
+import LiveServiceMap from "../live/LiveServiceMap.astro";
+import LiveUptime from "../live/LiveUptime.astro";
+import LedgerHead from "./LedgerHead.astro";
+
+const locale = Astro.currentLocale ?? "en";
+const l = (slug: string) => featurePath(locale, slug);
+
+// Sentence one of a longer description: a cell takes a line, not a paragraph.
+// Japanese puts no space after its full stop, so it ends a sentence on its own.
+const firstSentence = (text: string) => {
+	const end = text.search(/。|\.(\s|$)/);
+	return end === -1 ? text : text.slice(0, end + 1);
+};
+
+interface Surface {
+	key: string;
+	title: string;
+	desc: string;
+	href: string;
+	link: string;
+	/** A second, quieter link: uptime also owns status pages. */
+	also?: { href: string; link: string };
+	/** Copy beside the window instead of above it: the cells whose copy runs to a paragraph. */
+	side?: boolean;
+}
+
+// The feature page's own headline, where the surface has no line of its own.
+const headline = (slug: string, fallback: string) => featureBySlug(slug)?.heroTitle() ?? fallback;
+
+const surfaces: Surface[] = [
+	{
+		key: "map",
+		title: headline("service-catalog", m.platform_map_name()),
+		desc: m.platform_map_desc(),
+		href: l("service-catalog"),
+		link: m.nav_service_catalog(),
+	},
+	{
+		key: "metrics",
+		title: headline("metrics-dashboards", m.platform_metrics_name()),
+		desc: m.platform_metrics_desc(),
+		href: l("metrics-dashboards"),
+		link: m.nav_metrics_dashboards(),
+	},
+	{
+		key: "errors",
+		title: headline("error-tracking", m.platform_errors_name()),
+		desc: m.platform_errors_desc(),
+		href: l("error-tracking"),
+		link: m.nav_error_tracking(),
+	},
+	{
+		key: "alerts",
+		side: true,
+		title: headline("alerts", m.platform_alerts_name()),
+		desc: m.platform_alerts_desc(),
+		href: l("alerts"),
+		link: m.nav_alerts(),
+	},
+	{
+		key: "analytics",
+		side: true,
+		title: m.analytics_title(),
+		desc: [m.analytics_lede(), m.analytics_point_1_body(), m.analytics_point_2_body(), m.analytics_point_3_body()].join(" "),
+		href: l("browser-sessions"),
+		link: m.nav_browser_sessions(),
+	},
+	{
+		key: "kubernetes",
+		title: m.k8s_title(),
+		desc: firstSentence(m.k8s_lede()),
+		href: l("kubernetes-monitoring"),
+		link: m.nav_kubernetes(),
+	},
+	{
+		key: "events",
+		title: m.pe_title(),
+		desc: firstSentence(m.pe_lede()),
+		href: l("product-events"),
+		link: m.pe_eyebrow(),
+	},
+	{
+		key: "uptime",
+		title: m.uptime_title(),
+		desc: firstSentence(m.uptime_lede()),
+		href: l("uptime-monitoring"),
+		link: m.uptime_eyebrow(),
+		also: { href: l("status-pages"), link: m.uptime_link_status_pages() },
+	},
+	{
+		key: "github",
+		title: m.home_github_title(),
+		desc: m.home_github_lede(),
+		href: l("github"),
+		link: m.home_github_link(),
+	},
+];
+
+// The scripted frames written in Astro. The three chart frames are islands, mounted by name below.
+const FRAMES = {
+	map: LiveServiceMap,
+	alerts: LiveAlertFiring,
+	kubernetes: LiveK8sHeatmap,
+	events: LiveFunnel,
+	uptime: LiveUptime,
+};
+const frameOf = (key: string) => Object.entries(FRAMES).find(([name]) => name === key)?.[1];
+
+// The chart islands start a screen and a half before they scroll in, so the chart is drawn by
+// the time the reader reaches it.
+const EARLY = { rootMargin: "1400px" };
+
+// One bento on a wide screen, two strips to swipe on a phone.
+const STRIP = 5;
+const groups = [surfaces.slice(0, STRIP), surfaces.slice(STRIP)];
+---
+
+<section id="features" class="ledger ledger-wall">
+	<div class="shell">
+		{/* The lede names every surface in plain text. */}
+		<LedgerHead title={m.platform_title()} lede={m.platform_lede()} />
+
+		<div class="bento">
+			{
+				groups.map((group) => (
+					<div class="bento__group">
+						{group.map((surface) => {
+							const Frame = frameOf(surface.key);
+							return (
+							<article
+								class:list={["ledger-cell bento-cell", surface.side && "bento-cell--side"]}
+								style={`grid-area: ${surface.key}`}
+								data-surface={surface.key}
+							>
+								<div class="ledger-cap bento-cap">
+									<h3>{surface.title}</h3>
+									<p>{surface.desc}</p>
+									<div class="ledger-cap__links">
+										<a href={surface.href}>
+											{surface.link}
+											<span aria-hidden="true"> →</span>
+										</a>
+										{surface.also && <a href={surface.also.href}>{surface.also.link}</a>}
+									</div>
+								</div>
+								<div class:list={["bento-window", surface.key === "github" && "bento-window--pad"]}>
+									{/* An island's `client:*` directive needs its import named at the call site. */}
+									{surface.key === "metrics" && <LiveMetrics client:visible={EARLY} />}
+									{surface.key === "errors" && <LiveErrors client:visible={EARLY} />}
+									{surface.key === "analytics" && <LiveWebAnalytics client:visible={EARLY} />}
+									{surface.key === "github" && <PrReviewComment variant="compact" />}
+									{Frame && <Frame />}
+								</div>
+							</article>
+							);
+						})}
+					</div>
+				))
+			}
+		</div>
+	</div>
+</section>

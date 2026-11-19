@@ -313,7 +313,7 @@ const articleJsonLd = {
                 </p>
                 <div class="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
                     <a href={authorUrl} rel="noopener" class="flex items-center gap-2 transition-colors hover:text-fg">
-                        <img src={author.avatar} alt="" width="20" height="20" class="h-5 w-5 rounded-full ring-1 ring-border" />
+                        <img src={author.avatar} alt={author.name} width="20" height="20" class="h-5 w-5 rounded-full ring-1 ring-border" />
                         <span>By {author.name}</span>
                     </a>
                     <time datetime={published}>Updated {updatedLabel}</time>

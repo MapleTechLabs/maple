@@ -19,6 +19,8 @@ import SeoHead from "../../components/SeoHead.astro";
 import CrossLinks from "../../components/page/CrossLinks.astro";
 import PageCta from "../../components/page/PageCta.astro";
 import PageHero from "../../components/page/PageHero.astro";
+import ProductBand from "../../components/marketing/ProductBand.astro";
+import ProductFrame from "../../components/marketing/ProductFrame.astro";
 
 export const getStaticPaths = () => alternativesPages.map((page) => ({ params: { slug: page.slug } }));
 
@@ -48,6 +50,14 @@ const itemListJsonLd = {
 		url: alt.url,
 	})),
 };
+
+// The entries sit two to a row from lg, which halves the longest run of text on the page. Maple's
+// carries product frames and takes a full row; so does the last entry when it would sit alone.
+const others = page.alternatives.filter((alt) => !alt.ours);
+const fullRow = new Set([
+	...page.alternatives.filter((alt) => alt.ours).map((alt) => alt.id),
+	...(others.length % 2 === 1 ? others.slice(-1).map((alt) => alt.id) : []),
+]);
 
 // The full Maple vs X breakdown for every listed tool that has one.
 const crossLinks = page.alternatives.flatMap((alt) => {
@@ -83,7 +93,9 @@ const crossLinks = page.alternatives.flatMap((alt) => {
 			{ label: m.breadcrumb_compare(), href: "/compare" },
 			{ label: `${page.vendor} alternatives` },
 		]}
-	/>
+	>
+		<ProductFrame slot="aside" surface="trace" caption="Maple, the first entry below: a trace on its waterfall view." />
+	</PageHero>
 
 	<section class="border-t border-border bg-bg">
 		<div class="shell py-14 md:py-20">
@@ -159,10 +171,10 @@ const crossLinks = page.alternatives.flatMap((alt) => {
 
 	<section class="bg-bg-deep">
 		<div class="shell py-16 md:py-24">
-			<div class="grid gap-px overflow-hidden rounded-xl border border-border bg-border">
+			<div class="grid gap-px overflow-hidden rounded-xl border border-border bg-border lg:grid-cols-2">
 				{
 					page.alternatives.map((alt) => (
-						<article id={alt.id} class="scroll-mt-28 bg-bg p-6 md:p-8">
+						<article id={alt.id} class:list={["scroll-mt-28 bg-bg p-6 md:p-8", fullRow.has(alt.id) && "lg:col-span-2"]}>
 							<div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
 								<h2 class="font-display text-xl font-medium tracking-[-0.01em] text-fg md:text-2xl">{alt.name}</h2>
 								{alt.ours && <span class="text-[11px] text-fg-muted">Built by us</span>}
@@ -195,6 +207,13 @@ const crossLinks = page.alternatives.flatMap((alt) => {
 								</div>
 							</div>
 
+							{alt.ours && (
+								<div class="mt-8 grid grid-cols-1 gap-4 lg:grid-cols-2">
+									<ProductFrame surface="logs" height="min(31rem, 100vw)" caption="The log stream in Maple." />
+									<ProductFrame surface="agent" caption="An agent session over Maple's MCP server." />
+								</div>
+							)}
+
 							<p class="mt-6 text-[12px] text-fg-muted">
 								{alt.pricing} · {alt.openSource}
 							</p>
@@ -217,6 +236,15 @@ const crossLinks = page.alternatives.flatMap((alt) => {
 			</div>
 		</div>
 	</section>
+
+	<ProductBand
+		class="border-t border-border"
+		eyebrow="Maple"
+		title="A service map drawn from the spans"
+		lede="Every service, queue and database, with throughput, error rate and latency on each edge. There is no topology file to maintain."
+		surface="service-map"
+		link={{ href: "/features/service-catalog", label: "See the service catalog" }}
+	/>
 
 	<section class="border-t border-border bg-bg">
 		<div class="shell py-16 md:py-24">
@@ -276,7 +304,7 @@ const crossLinks = page.alternatives.flatMap((alt) => {
 
 	<CrossLinks eyebrow={m.cmp_related_eyebrow()} title="Every comparison in full" links={crossLinks} />
 
-	<PageCta title={m.cmp_cta_title()} lede={m.cmp_cta_lede()} artwork="/art/maple-compare-panorama.webp" />
+	<PageCta title={m.cmp_cta_title()} lede={m.cmp_cta_lede()} artwork="/art/maple-compare-panorama.webp" artworkAlt="Engraving of a long Roman aqueduct crossing a valley" />
 
 	<Footer />
 </Layout>

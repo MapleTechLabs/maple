@@ -4,7 +4,7 @@
  * it existing.
  *
  * Two things and a CTA: the line-item bill every vendor on one sheet (the
- * homepage's BillComparison, re-headed), then one cell per comparison page.
+ * home page's bill, a column per vendor), then one cell per comparison page.
  * Nothing vendor-specific here: that lives on the per-vendor pages.
  */
 import * as m from "../../paraglide/messages.js";
@@ -20,6 +20,7 @@ import Nav from "../Nav.astro";
 import SeoHead from "../SeoHead.astro";
 import PageCta from "../page/PageCta.astro";
 import PageHero from "../page/PageHero.astro";
+import ProductFrame from "../marketing/ProductFrame.astro";
 
 const locale = Astro.currentLocale ?? "en";
 const title = m.cmp_hub_seo_title();
@@ -53,7 +54,10 @@ const cards = competitors.map((competitor, i) => ({
 		lede={m.cmp_hub_lede()}
 		breadcrumb={[{ label: m.breadcrumb_home(), href: "/" }, { label: m.breadcrumb_compare() }]}
 	>
-		<HubPair slot="aside" />
+		<div slot="aside" class="flex flex-col gap-4">
+			<HubPair />
+			<ProductFrame surface="overview" label={m.cmp_hub_shot()} loading="eager" />
+		</div>
 	</PageHero>
 
 	<section class="border-t border-border bg-bg">
@@ -111,9 +115,9 @@ const cards = competitors.map((competitor, i) => ({
 		</div>
 	</section>
 
-	<BillComparison eyebrow={m.cmp_hub_matrix_eyebrow()} title={m.cmp_hub_matrix_title()} lede={m.bill_lede()} links={false} />
+	<BillComparison eyebrow={m.cmp_hub_matrix_eyebrow()} title={m.cmp_hub_matrix_title()} lede={m.bill_lede()} />
 
-	<PageCta title={m.cmp_cta_title()} lede={m.cmp_cta_lede()} artwork="/art/maple-compare-panorama.webp" />
+	<PageCta title={m.cmp_cta_title()} lede={m.cmp_cta_lede()} artwork="/art/maple-compare-panorama.webp" artworkAlt="Engraving of a long Roman aqueduct crossing a valley" />
 
 	<Footer />
 </Layout>

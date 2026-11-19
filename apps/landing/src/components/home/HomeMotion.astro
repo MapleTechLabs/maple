@@ -1,0 +1,175 @@
+---
+/**
+ * The sheet's two entrances, each played once: section headlines rise a line at a time, and the
+ * captures resolve out of coarse blocks. Both skip anything already on screen at load. It also
+ * holds the bento's scripted frames still until they are on screen. None of it runs under reduced
+ * motion, and without this script the page is simply drawn. Styles are in home-ledger.css.
+ */
+---
+
+<script>
+	const HEADLINES = ".ledger-head h2, [data-scrollstory] > .shell:first-child h2";
+	const CAPTURES = ".ledger .shot-crop, .ledger .media-crop";
+	const CELL = 14;
+	const RESOLVE_MS = 620;
+	// The rise's duration and per-line delay, as home-ledger.css sets them.
+	const RISE_MS = 760;
+	const RISE_STAGGER_MS = 85;
+
+	const belowFold = (el: Element) => el.getBoundingClientRect().top >= innerHeight;
+	/** Mostly past the right edge: a frame waiting in a phone's swipe strip. */
+	const offToTheSide = (el: Element) => {
+		const rect = el.getBoundingClientRect();
+		return rect.left + rect.width / 2 > innerWidth;
+	};
+
+	/** The headline's text as the browser wrapped it, one string per line. */
+	const wrappedLines = (node: Text): Array<string> => {
+		const segmenter = new Intl.Segmenter(document.documentElement.lang || "en", { granularity: "word" });
+		const range = document.createRange();
+		const lines: Array<string> = [];
+		let lineTop: number | undefined;
+		for (const { segment, index } of segmenter.segment(node.data)) {
+			range.setStart(node, index);
+			range.setEnd(node, index + segment.length);
+			const rect = range.getClientRects()[0];
+			const startsLine = rect !== undefined && (lineTop === undefined || rect.top - lineTop > 2);
+			if (startsLine) {
+				lineTop = rect.top;
+				lines.push(segment);
+			} else if (lines.length > 0) {
+				lines[lines.length - 1] += segment;
+			}
+		}
+		return lines.map((line) => line.trim()).filter((line) => line !== "");
+	};
+
+	const rise = (headline: HTMLElement) => {
+		const node = headline.firstChild;
+		// Reduced motion turned on since the page loaded: the headline is simply drawn.
+		const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+		if (still || !(node instanceof Text) || headline.childNodes.length !== 1) {
+			delete headline.dataset.rise;
+			return;
+		}
+		headline.dataset.rise = "play";
+		const text = node.data;
+		const lines = wrappedLines(node).map((line, i) => {
+			const mask = document.createElement("span");
+			const inner = document.createElement("span");
+			mask.className = "rise-line";
+			inner.style.setProperty("--i", String(i));
+			inner.textContent = line;
+			mask.append(inner);
+			return mask;
+		});
+		if (lines.length === 0) {
+			delete headline.dataset.rise;
+			return;
+		}
+		headline.replaceChildren(...lines);
+		// Back to plain text once drawn, so the headline wraps for itself on resize. A rise that is
+		// cancelled (reduced motion turned on, a print) never ends, so that and a timer restore it too.
+		const restore = () => {
+			if (headline.dataset.rise !== "play") return;
+			headline.textContent = text;
+			delete headline.dataset.rise;
+		};
+		const last = lines.at(-1)?.firstElementChild;
+		last?.addEventListener("animationend", restore, { once: true });
+		last?.addEventListener("animationcancel", restore, { once: true });
+		setTimeout(restore, RISE_MS + lines.length * RISE_STAGGER_MS + 400);
+	};
+
+	/** The page colour behind a frame: what the blocks are drawn in. */
+	const groundOf = (el: Element): string => {
+		for (let node: Element | null = el; node; node = node.parentElement) {
+			const colour = getComputedStyle(node).backgroundColor;
+			if (colour !== "rgba(0, 0, 0, 0)" && colour !== "transparent") return colour;
+		}
+		return "#000";
+	};
+
+	/** One canvas pixel per block, scaled up unsmoothed. */
+	const cover = (frame: HTMLElement) => {
+		const canvas = document.createElement("canvas");
+		canvas.className = "resolve-cover";
+		canvas.width = Math.max(1, Math.ceil(frame.clientWidth / CELL));
+		canvas.height = Math.max(1, Math.ceil(frame.clientHeight / CELL));
+		canvas.setAttribute("aria-hidden", "true");
+		const context = canvas.getContext("2d");
+		if (!context) return undefined;
+		context.fillStyle = groundOf(frame);
+		context.fillRect(0, 0, canvas.width, canvas.height);
+		frame.append(canvas);
+		return { canvas, context };
+	};
+
+	const resolve = (canvas: HTMLCanvasElement, context: CanvasRenderingContext2D) => {
+		const { width, height } = canvas;
+		// Each block clears at its own moment: a sweep from the left, roughened.
+		const due = Float32Array.from({ length: width * height }, (_, i) => ((i % width) / width) * 0.5 + Math.random() * 0.5);
+		const started = performance.now();
+		const frame = (now: number) => {
+			const progress = (now - started) / RESOLVE_MS;
+			due.forEach((at, i) => {
+				if (at <= progress) context.clearRect(i % width, Math.floor(i / width), 1, 1);
+			});
+			if (progress < 1) requestAnimationFrame(frame);
+			else canvas.remove();
+		};
+		requestAnimationFrame(frame);
+	};
+
+	if (!matchMedia("(prefers-reduced-motion: reduce)").matches && "Segmenter" in Intl) {
+		const headlines = new IntersectionObserver(
+			(entries, observer) => {
+				for (const entry of entries) {
+					if (!entry.isIntersecting || !(entry.target instanceof HTMLElement)) continue;
+					observer.unobserve(entry.target);
+					rise(entry.target);
+				}
+			},
+			{ rootMargin: "0px 0px -12% 0px" },
+		);
+		for (const headline of document.querySelectorAll<HTMLElement>(HEADLINES)) {
+			if (!belowFold(headline)) continue;
+			headline.dataset.rise = "armed";
+			headlines.observe(headline);
+		}
+
+		// The bento's scripted frames hold their first frame until they are on screen.
+		const frames = new IntersectionObserver(
+			(entries) => {
+				for (const entry of entries) entry.target.toggleAttribute("data-held", !entry.isIntersecting);
+			},
+			{ threshold: 0.4 },
+		);
+		for (const frame of document.querySelectorAll(".bento-window")) {
+			frame.toggleAttribute("data-held", true);
+			frames.observe(frame);
+		}
+
+		const covers = new Map<Element, { canvas: HTMLCanvasElement; context: CanvasRenderingContext2D }>();
+		const captures = new IntersectionObserver(
+			(entries, observer) => {
+				for (const entry of entries) {
+					const covered = covers.get(entry.target);
+					if (!entry.isIntersecting || !covered) continue;
+					observer.unobserve(entry.target);
+					covers.delete(entry.target);
+					resolve(covered.canvas, covered.context);
+				}
+			},
+			{ threshold: 0.35 },
+		);
+		for (const frame of document.querySelectorAll<HTMLElement>(CAPTURES)) {
+			// Its visible edge is the cue to swipe, so it stays drawn.
+			if (!belowFold(frame) || offToTheSide(frame)) continue;
+			const covered = cover(frame);
+			if (!covered) continue;
+			covers.set(frame, covered);
+			captures.observe(frame);
+		}
+	}
+</script>

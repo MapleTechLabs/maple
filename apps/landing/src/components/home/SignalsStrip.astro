@@ -1,77 +1,99 @@
 ---
 /**
- * 01 · Signals — the three-up strip directly under the hero.
- *
- * Three parallel imperatives over three plates. Not the three OTel signals:
- * metrics is the least differentiated surface Maple has and the least legible
- * at plate size, while session replay joined to a trace id is a real
- * differentiator. Metrics gets a named slot in §03 instead.
- *
- * Columns are separated by the grid gap, not by rules — vertical rules here
- * would turn a strip into a table.
- *
- * The trace and logs plates are the dashboard's own waterfall and logs stream
- * on example data. The session plate is still a capture, cropped to the part
- * of the screen the heading is about. All three share the capture's 16:9 box.
+ * Signals: the dashboard's own trace waterfall across the sheet, with its logs stream and a
+ * session replay capture sharing the row under it. The request plays once as it scrolls in.
  */
 import * as m from "../../paraglide/messages.js";
+import { featurePath } from "../../lib/page-registry";
 import LiveLogs from "../live/LiveLogs.astro";
 import LiveTraceFrame from "../live/LiveTraceFrame.astro";
+import LedgerHead from "./LedgerHead.astro";
 import MediaFrame from "./MediaFrame.astro";
 
-const columns = [
-	{ title: m.signals_trace_title(), sub: m.signals_trace_sub(), plate: "trace" },
-	{ title: m.signals_logs_title(), sub: m.signals_logs_sub(), plate: "logs" },
-	{
-		plate: "session",
-		title: m.signals_session_title(),
-		sub: m.signals_session_sub(),
-		shot: "A browser session replay showing the recorded page and captured network requests",
-		src: "/screenshots/strip-session.webp",
-		width: 1440,
-		height: 810,
-		crop: { x: 0.185, y: 0.075, zoom: 1.6 },
-	},
-] as const;
+const locale = Astro.currentLocale ?? "en";
+
+const logs = {
+	title: m.signals_logs_title(),
+	sub: m.signals_logs_sub(),
+	href: featurePath(locale, "log-management"),
+	link: m.nav_log_management(),
+};
+const session = {
+	title: m.signals_session_title(),
+	sub: m.signals_session_sub(),
+	href: featurePath(locale, "browser-sessions"),
+	link: m.nav_browser_sessions(),
+};
 ---
 
-<section class="bg-bg-deep">
-	<div class="shell py-16 md:py-32">
-		<p class="mb-10 text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted md:mb-14">
-			{m.signals_eyebrow()}
-		</p>
+<section class="ledger">
+	<div class="shell">
+		<LedgerHead
+			title={m.signals_trace_title()}
+			lede={m.signals_trace_sub()}
+			href={featurePath(locale, "distributed-tracing")}
+			link={m.nav_distributed_tracing()}
+		/>
 
-		<div class="grid gap-12 lg:grid-cols-3 lg:gap-8">
-			{
-				columns.map((col) => (
-					<div class="flex flex-col gap-5">
-						{/* flex-1 so the three plates share a top edge whatever the copy wraps to. */}
-						<div class="flex-1">
-							<h2 class="font-display text-[22px] leading-tight tracking-[-0.01em] text-fg md:text-2xl lg:text-[26px]">
-								{col.title}
-							</h2>
-							<p class="mt-3 max-w-[38ch] text-[15px] leading-relaxed text-fg-muted">{col.sub}</p>
-						</div>
-						{col.plate === "trace" ? (
-							<div class="aspect-[16/9] min-h-0 overflow-hidden">
-								<LiveTraceFrame height="fill" />
-							</div>
-						) : col.plate === "logs" ? (
-							<div class="aspect-[16/9] min-h-0 overflow-hidden">
-								<LiveLogs volume={false} streamHeight="fill" />
-							</div>
-						) : (
-							<MediaFrame
-								label={col.shot}
-								src={col.src}
-								width={col.width}
-								height={col.height}
-								crop={col.crop}
-							/>
-						)}
-					</div>
-				))
-			}
+		<div class="ledger-grid">
+			<div class="ledger-cell ledger-cell--wide ledger-trace" data-trace-play>
+				<LiveTraceFrame height="19rem" />
+			</div>
+			<div class="ledger-cell">
+				<div class="ledger-cap ledger-cap--top">
+					<h2>{logs.title}</h2>
+					<a href={logs.href}>{logs.link}<span aria-hidden="true"> →</span></a>
+					<p>{logs.sub}</p>
+				</div>
+				{/* Taller on phones, where 16:10 leaves no room for an expanded row. */}
+				<div class="aspect-[4/5] min-h-0 overflow-hidden sm:aspect-[16/10]">
+					<LiveLogs volume={false} streamHeight="fill" />
+				</div>
+			</div>
+			<div class="ledger-cell">
+				<div class="ledger-cap ledger-cap--top">
+					<h2>{session.title}</h2>
+					<a href={session.href}>{session.link}<span aria-hidden="true"> →</span></a>
+					<p>{session.sub}</p>
+				</div>
+				<MediaFrame
+					label="A browser session replay showing the recorded page and captured network requests"
+					src="/screenshots/strip-session.webp"
+					width={1440}
+					height={900}
+					crop={{ x: 0.185, y: 0.075, zoom: 1.25 }}
+				/>
+			</div>
 		</div>
 	</div>
 </section>
+
+<script>
+	// The timeline cells light in start order, once. The cells are the waterfall's own markup,
+	// so the order is a column index set here and the rest is CSS (home-ledger.css).
+	const root = document.querySelector<HTMLElement>("[data-trace-play]");
+	// Already on screen at load (a restored scroll position): leave it drawn, with no dim-then-play.
+	const onScreen = root ? root.getBoundingClientRect().top < innerHeight : true;
+	if (root && !onScreen && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+		root.toggleAttribute("data-armed", true);
+		const play = () => {
+			// `.w-48` is the waterfall's timeline column. If the kit renames it nothing matches and the
+			// cells simply stay lit: the dimmed state is keyed on the same selector.
+			for (const row of root.querySelectorAll<HTMLElement>(".w-48")) {
+				[...row.children].forEach((cell, i) => (cell as HTMLElement).style.setProperty("--i", String(i)));
+			}
+			root.toggleAttribute("data-played", true);
+		};
+		const observer = new IntersectionObserver(
+			(entries) => {
+				if (entries.some((entry) => entry.isIntersecting)) {
+					observer.disconnect();
+					// The island hydrates on visibility too: give it a beat to draw its rows.
+					setTimeout(play, 350);
+				}
+			},
+			{ threshold: 0.5 },
+		);
+		observer.observe(root);
+	}
+</script>

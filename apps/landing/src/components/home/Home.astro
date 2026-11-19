@@ -3,6 +3,7 @@
  * homepage-only; product screenshots and all interactive sections stay intact. */
 import Layout from "../../layouts/Layout.astro";
 import "../../styles/home-monument.css";
+import "../../styles/home-ledger.css";
 import Nav from "../Nav.astro";
 import SeoHead from "../SeoHead.astro";
 import HomeHero from "./HomeHero.astro";
@@ -10,18 +11,13 @@ import HomeObjections from "./HomeObjections.astro";
 import HomeProductPlate from "./HomeProductPlate.astro";
 import SignalsStrip from "./SignalsStrip.astro";
 import IncidentStory from "./IncidentStory.astro";
-import PlatformSheet from "./PlatformSheet.astro";
-import Sovereignty from "../Sovereignty.astro";
+import HomeProof from "./HomeProof.astro";
+import SurfaceWall from "./SurfaceWall.astro";
 import LocalSection from "./LocalSection.astro";
-import KubernetesSection from "./KubernetesSection.astro";
-import WebAnalyticsSection from "./WebAnalyticsSection.astro";
-import ProductEventsSection from "./ProductEventsSection.astro";
-import UptimeSection from "./UptimeSection.astro";
 import AgentSection from "./AgentSection.astro";
-import GitHubSection from "./GitHubSection.astro";
-import BillComparison from "../BillComparison.astro";
+import HomeBill from "./HomeBill.astro";
+import HomeMotion from "./HomeMotion.astro";
 import PricingTable from "../PricingTable.astro";
-import SdkBand from "./SdkBand.astro";
 import FAQ from "../FAQ.astro";
 import FinalCta from "./FinalCta.astro";
 import Footer from "../Footer.astro";
@@ -66,66 +62,37 @@ const homeFaqs = [
         <!-- The hero's product screenshots, as their own section. -->
         <HomeProductPlate />
 
-        <!-- 01 — the three surfaces you actually look at. -->
+        <!-- From here down the page is one ruled sheet (home-ledger.css): the same head on every
+             section, frames that share hairlines, and no art until the proof chapter. -->
+
+        <!-- The three surfaces you actually look at. -->
         <SignalsStrip />
 
-        <!-- 02 — the signature section: one incident, four surfaces, one trace id. -->
+        <!-- One incident, four surfaces, one trace id. -->
         <IncidentStory />
 
-        <!-- 03 — Maple Local. Promoted out of the second half: it holds readers
-             longer than anything else on the site (the deepest read time of any
-             entry point, the lowest bounce), so it earns a slot people reach. -->
+        <!-- The amber chapter: a named customer, the story's own figures, the logo list. -->
+        <HomeProof />
+
+        <!-- Every other surface, visible without a click, and the link hub. -->
+        <SurfaceWall />
+
+        <!-- Your data, your instrumentation, your bill: the whole product on a laptop, and the
+             runtimes it takes telemetry from. -->
         <LocalSection />
 
-        <!-- 04 — everything that didn't get a narrative, and the link hub. -->
-        <PlatformSheet />
-
-        <!-- Orange identity section. -->
-        <span id="sovereignty"></span>
-        <Sovereignty />
-
-        <!-- 06 — the infrastructure proof point. -->
-        <KubernetesSection />
-
-        <!-- 07 — the audience above the trace: web analytics read from the
-             sessions the browser SDK already records. A real capture, media-left
-             so 06 → 07 → 08 alternate instead of stacking three copy-left sections. -->
-        <WebAnalyticsSection />
-
-        <!-- 08: what that audience does once it is in: funnels on events from
-             the browser, the server, or a span you already emit. -->
-        <ProductEventsSection />
-
-        <!-- 08b: the same services watched from outside. Uptime checks land as
-             spans in the org's own traces; media-left between two copy-left sections. -->
-        <UptimeSection />
-
-        <!-- 09: the same investigation as 02, run by an agent instead of a human. -->
+        <!-- The same investigation as the incident story, run by an agent instead of a human. -->
         <AgentSection />
 
-        <!-- 10: the same telemetry pointed at code before it ships: the PR review,
-             CI runs as traces, and the check-in after the deploy. -->
-        <GitHubSection />
+        <!-- The money chapter: the one plan first, then everyone else's list price under it. -->
+        <PricingTable variant="home" title={m.pricing_home_title()} lede={m.pricing_home_lede()} />
+        <HomeBill />
 
-        <!-- 10 + 11: the money chapter: one deep floor, two beats, one internal
-             hairline. The bill runs first because Maple's pricing only reads as
-             remarkable next to Datadog's. -->
-        <BillComparison />
-        <PricingTable
-            variant="home"
-            class="border-t border-border bg-bg-deep"
-            eyebrow={m.pricing_home_eyebrow()}
-            title={m.pricing_home_title()}
-            lede={m.pricing_home_lede()}
-        />
-
-        <!-- The runtimes band — this slot's honest answer to a testimonial wall. -->
-        <SdkBand />
-
-        <FAQ items={homeFaqs} />
+        <FAQ items={homeFaqs} split />
 
         <!-- Generated portal closes the page. -->
         <FinalCta />
+        <HomeMotion />
     </main>
 
     <Footer />

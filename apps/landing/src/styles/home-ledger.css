@@ -1,0 +1,772 @@
+/* The home page below the hero: one ruled sheet. Every section is a `.ledger`
+   with the same head, and frames share hairlines instead of drawing their own. */
+
+.ledger {
+	border-top: 1px solid var(--home-rule);
+	background: var(--home-paper);
+}
+.ledger > .shell {
+	padding-block: clamp(64px, 7.5vw, 108px);
+}
+/* A second beat of the chapter above it: no rule, and the gap closes. */
+.ledger--continued {
+	border-top: 0;
+}
+.ledger--continued > .shell {
+	padding-top: 0;
+}
+
+/* ── Head: one display line, one sentence, one link ── */
+.ledger-head {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) max-content;
+	align-items: end;
+	gap: 20px 48px;
+	margin-bottom: clamp(32px, 4vw, 52px);
+}
+.ledger-head h2 {
+	grid-column: 1 / -1;
+	max-width: 17ch;
+	color: var(--home-ink);
+	font-size: clamp(2.25rem, 6.2vw, 5.5rem);
+	line-height: 1;
+}
+.ledger-head p {
+	max-width: 62ch;
+	color: var(--home-muted);
+	font-size: 17px;
+}
+.ledger-head__links {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10px 28px;
+}
+.ledger-link {
+	padding-bottom: 2px;
+	border-bottom: 1px solid var(--home-orange);
+	color: var(--home-ink);
+	font-size: 15px;
+	white-space: nowrap;
+	transition: color 150ms ease;
+}
+.ledger-link:hover {
+	color: var(--home-orange);
+}
+.ledger-link:focus-visible {
+	outline: 2px solid var(--home-orange);
+	outline-offset: 4px;
+}
+html:not([lang="en"]) .ledger-head h2 {
+	max-width: 22ch;
+	font-size: clamp(1.9rem, 4.4vw, 3.75rem);
+	line-height: 1.14;
+}
+html[lang="ja"] .ledger-head h2 {
+	word-break: auto-phrase;
+}
+html[lang="ko"] .ledger-head h2 {
+	word-break: keep-all;
+}
+
+/* ── Joined frames ── */
+.ledger-grid {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: 1px;
+	border: 1px solid var(--home-rule);
+	background: var(--home-rule);
+}
+/* Two cells to a row once each is wide enough for the frame it holds. The live components lay
+   out by viewport width, so half a tablet would squeeze them. */
+@media (min-width: 1024px) {
+	.ledger-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+	.ledger-grid--agent {
+		grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+	}
+}
+.ledger-cell {
+	/* The containing block for anything a live frame positions absolutely, so the phone strip
+	   clips it instead of the page scrolling sideways. */
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	background: var(--home-paper);
+}
+.ledger-cell--wide {
+	grid-column: 1 / -1;
+}
+.ledger-cell--pad {
+	padding: 28px;
+}
+/* A frame inside the sheet takes the sheet's rules. */
+.monumental-home .ledger-cell .live-frame {
+	border: 0;
+}
+.ledger-cap {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) max-content;
+	align-items: baseline;
+	gap: 8px 24px;
+	padding: 24px 28px;
+}
+.ledger-cap--top {
+	border-bottom: 1px solid var(--home-rule);
+}
+.ledger-cap--bottom {
+	flex: 1;
+	align-content: start;
+	border-top: 1px solid var(--home-rule);
+}
+.monumental-home .ledger-cap :where(h2, h3) {
+	color: var(--home-ink);
+	font-size: 22px;
+	font-weight: 700;
+	line-height: 1.2;
+	letter-spacing: -0.03em;
+	text-wrap: balance;
+}
+.ledger-cap p {
+	grid-column: 1 / -1;
+	max-width: 60ch;
+	color: var(--home-muted);
+	font-size: 14.5px;
+}
+.ledger-cap a {
+	color: var(--home-ink);
+	font-size: 14px;
+	white-space: nowrap;
+	transition: color 150ms ease;
+}
+.ledger-cap a:hover {
+	color: var(--home-orange);
+}
+.ledger-cap__links {
+	display: flex;
+	flex-wrap: wrap;
+	grid-column: 1 / -1;
+	gap: 6px 22px;
+	margin-top: 4px;
+}
+.ledger-cap__links a + a {
+	color: var(--home-muted);
+}
+
+/* ── Signals: the request plays once as it scrolls in ── */
+@media (prefers-reduced-motion: no-preference) {
+	.ledger-trace[data-armed] .w-48 > div {
+		opacity: 0.12;
+	}
+	.ledger-trace[data-played] .w-48 > div {
+		opacity: 1;
+		transition: opacity 260ms cubic-bezier(0.22, 1, 0.36, 1);
+		transition-delay: calc(var(--i, 0) * 34ms);
+	}
+}
+
+/* ── Incident walkthrough: same head, the mechanism untouched ── */
+.monumental-home [data-scrollstory] {
+	border-top: 1px solid var(--home-rule);
+}
+.monumental-home [data-scrollstory] > .shell:first-child {
+	padding-top: clamp(64px, 7.5vw, 108px);
+}
+.monumental-home [data-scrollstory] > .shell:last-child {
+	padding-bottom: clamp(64px, 7.5vw, 108px);
+}
+.monumental-home [data-scrollstory] > .shell:first-child h2 {
+	max-width: 17ch;
+	margin-top: 0;
+	font-size: clamp(2.25rem, 6.2vw, 5.5rem);
+	line-height: 1;
+}
+.monumental-home [data-scrollstory] > .shell:first-child p {
+	margin-top: 20px;
+	font-size: 17px;
+}
+html:not([lang="en"]) .monumental-home [data-scrollstory] > .shell:first-child h2 {
+	max-width: 22ch;
+	font-size: clamp(1.9rem, 4.4vw, 3.75rem);
+	line-height: 1.14;
+}
+html[lang="ja"] .monumental-home [data-scrollstory] > .shell:first-child h2 {
+	word-break: auto-phrase;
+}
+html[lang="ko"] .monumental-home [data-scrollstory] > .shell:first-child h2 {
+	word-break: keep-all;
+}
+
+/* ── Proof: the one amber chapter between the hero and the close ── */
+.ledger-proof {
+	position: relative;
+	isolation: isolate;
+	overflow: clip;
+}
+.ledger-proof__art {
+	position: absolute;
+	z-index: -1;
+	right: 0;
+	bottom: 0;
+	left: 0;
+	width: 100%;
+	height: auto;
+	pointer-events: none;
+	mask-image: linear-gradient(to bottom, transparent, #000 45%);
+}
+.ledger-proof > .shell {
+	padding-top: clamp(64px, 7.5vw, 108px);
+	/* Clears the engraving's ground: the sky above it carries the logo row. */
+	padding-bottom: clamp(150px, 19vw, 300px);
+}
+.monumental-home main > section.ledger-proof.ledger-proof .ledger-proof__quote {
+	max-width: 18ch;
+	font-size: clamp(2.25rem, 6.2vw, 5.5rem);
+	font-weight: 750;
+	line-height: 1;
+	letter-spacing: -0.04em;
+	text-wrap: balance;
+}
+.ledger-proof blockquote footer {
+	margin-top: 28px;
+	font-size: 17px;
+}
+.ledger-proof__figures {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	margin-top: clamp(48px, 6vw, 80px);
+	border-top: 1px solid color-mix(in oklab, var(--primary-foreground) 45%, transparent);
+}
+.ledger-proof__figures > div {
+	display: flex;
+	flex-direction: column-reverse;
+	justify-content: flex-end;
+	gap: 10px;
+	padding: 24px 24px 0 0;
+}
+.ledger-proof__figures > div + div {
+	padding-left: 24px;
+	border-left: 1px solid color-mix(in oklab, var(--primary-foreground) 45%, transparent);
+}
+.ledger-proof__figures dd {
+	font-size: clamp(2rem, 4.8vw, 4.75rem);
+	font-weight: 750;
+	line-height: 0.95;
+	letter-spacing: -0.04em;
+}
+.monumental-home main > section.ledger-proof.ledger-proof .ledger-proof__figures dt {
+	max-width: 24ch;
+	font-size: 15px;
+	line-height: 1.4;
+}
+.ledger-proof__foot {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 20px 48px;
+	margin-top: clamp(36px, 4vw, 56px);
+	font-size: 15px;
+}
+.ledger-proof__logos {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 14px 30px;
+}
+.ledger-proof__logos li,
+.ledger-proof__logos a {
+	display: inline-flex;
+	align-items: center;
+	gap: 10px;
+	font-weight: 650;
+	letter-spacing: -0.01em;
+}
+/* The marks are drawn for a dark ground; on amber they take the band's one ink. */
+.ledger-proof__logos :is(svg, img) {
+	filter: brightness(0);
+}
+.ledger-proof__label {
+	margin-right: 4px;
+	font-weight: 400;
+	opacity: 0.8;
+}
+
+/* ── Platform wall: a bento ── */
+/* Every cell is copy, then a window onto the product that starts inside the cell's padding and
+   runs off its right and bottom edge. Nothing fades: a window ends where the cell does. */
+.bento {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: 1px;
+	border: 1px solid var(--home-rule);
+	background: var(--home-rule);
+}
+.bento__group {
+	display: contents;
+}
+.bento-cell {
+	overflow: hidden;
+}
+.bento-cap {
+	grid-template-columns: minmax(0, 1fr);
+	align-content: start;
+	padding: 28px 28px 24px;
+}
+.bento-window {
+	position: relative;
+	flex: 1;
+	min-width: 0;
+	margin-left: 28px;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	border-top: 1px solid var(--home-rule);
+	border-left: 1px solid var(--home-rule);
+	background: var(--bg-deep);
+}
+.bento-window > * {
+	min-width: 0;
+}
+.bento-window--pad {
+	padding: 20px;
+}
+/* The session capture above the wall ends on its cell's edge too. */
+.monumental-home .ledger .media-crop {
+	mask-image: none;
+}
+/* The pod heatmap's cells breathe on their own page. Here they hold still: it is the one frame
+   whose motion is a pulse and not a story. */
+.monumental-home .ledger-wall .k8s-hm-cell {
+	animation: none;
+}
+/* A scripted frame runs while it is on screen and holds its frame while it is not, so its story
+   starts as the reader arrives (HomeMotion.astro). */
+.bento-window[data-held] *,
+.bento-window[data-held] *::before,
+.bento-window[data-held] *::after {
+	animation-play-state: paused !important;
+}
+/* The map is drawn a little wider than its window, so its labels stay legible. */
+.bento-cell[data-surface="map"] svg {
+	width: 116%;
+	max-width: none;
+}
+@media (min-width: 768px) {
+	.bento {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		grid-template-areas:
+			"map map"
+			"metrics errors"
+			"alerts alerts"
+			"analytics analytics"
+			"kubernetes kubernetes"
+			"events events"
+			"uptime uptime"
+			"github github";
+	}
+}
+@media (min-width: 1280px) {
+	.bento {
+		grid-template-columns: repeat(12, minmax(0, 1fr));
+		grid-template-rows: minmax(460px, auto) minmax(400px, auto) minmax(420px, auto) 540px auto;
+		grid-template-areas:
+			"map map map map map map map map metrics metrics metrics metrics"
+			"errors errors errors errors alerts alerts alerts alerts alerts alerts alerts alerts"
+			"analytics analytics analytics analytics analytics analytics analytics analytics analytics analytics analytics analytics"
+			"kubernetes kubernetes kubernetes kubernetes kubernetes kubernetes events events events events events events"
+			"uptime uptime uptime uptime uptime uptime uptime uptime github github github github";
+	}
+	/* Copy beside the window, for the two cells whose copy runs to a paragraph. */
+	.bento-cell--side {
+		flex-direction: row;
+	}
+	.bento-cell--side .bento-cap {
+		flex: 0 0 var(--bento-copy, 42%);
+		padding-right: 20px;
+	}
+	.bento-cell--side .bento-window {
+		margin: 28px 0 0;
+	}
+	/* A full row: its copy ends on the column line the row above divides on. */
+	.bento-cell[data-surface="analytics"] {
+		--bento-copy: 33.333%;
+	}
+	/* The alert frame is two panes and needs the width for both. */
+	.bento-cell[data-surface="alerts"] {
+		--bento-copy: 34%;
+	}
+}
+
+/* ── Ownership: install on the left, the terminal on the right ── */
+.ledger-install {
+	border: 1px solid var(--home-rule);
+	background: var(--home-pale);
+}
+.ledger-install pre {
+	overflow-x: auto;
+	padding: 16px 18px;
+	color: var(--home-ink);
+	font-size: 13px;
+}
+.ledger-install p {
+	padding: 12px 18px;
+	border-top: 1px solid var(--home-rule);
+	color: var(--home-muted);
+	font-size: 12px;
+}
+
+/* ── Agent points ── */
+.ledger-points > div {
+	padding: 22px 28px;
+	border-bottom: 1px solid var(--home-rule);
+}
+.ledger-points > div:last-child {
+	border-bottom: 0;
+}
+.ledger-points dt {
+	color: var(--home-ink);
+	font-size: 17px;
+	font-weight: 650;
+	letter-spacing: -0.02em;
+}
+.ledger-points dd {
+	margin-top: 6px;
+	max-width: 52ch;
+	color: var(--home-muted);
+	font-size: 14.5px;
+}
+
+/* ── The offer: PricingTable's card, the width of the sheet ── */
+/* Its own two columns start at 768px, where the price rail is squeezed to nothing. Here the
+   rails stack until there is room, and the price is set like the page's display type. */
+.monumental-home .ledger .offer-grid {
+	grid-template-columns: minmax(0, 1fr);
+}
+.monumental-home .ledger .offer-grid .text-\[44px\] {
+	font-family: "Geist Variable", sans-serif;
+	font-size: clamp(3.5rem, 6vw, 5.5rem);
+	font-weight: 700;
+	letter-spacing: -0.04em;
+}
+@media (min-width: 1024px) {
+	.monumental-home .ledger .offer-grid {
+		grid-template-columns: minmax(0, 0.42fr) minmax(0, 1fr);
+	}
+}
+
+/* ── The bill: one row per vendor ── */
+.ledger-bill {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 14px;
+	font-variant-numeric: tabular-nums;
+}
+.ledger-bill :where(th, td) {
+	padding: 15px 20px 15px 0;
+	border-bottom: 1px solid var(--home-rule);
+	color: var(--home-ink);
+	font-weight: 400;
+	text-align: left;
+	vertical-align: top;
+}
+.ledger-bill thead th {
+	color: var(--home-muted);
+	font-size: 13px;
+}
+.ledger-bill tbody th {
+	font-weight: 650;
+	white-space: nowrap;
+}
+.ledger-bill__link {
+	white-space: nowrap;
+}
+.ledger-bill__link a {
+	transition: color 150ms ease;
+}
+.ledger-bill__link a:hover {
+	color: var(--home-orange);
+}
+.ledger-bill tr.is-maple :where(th, td) {
+	border-bottom-color: var(--home-orange);
+	color: var(--home-orange);
+	font-weight: 650;
+}
+.ledger-bill__scroll {
+	/* The containing block for the link column's hidden header, so it scrolls with the table
+	   instead of widening the page. */
+	position: relative;
+	overflow-x: auto;
+}
+.ledger-bill__note {
+	margin-top: 18px;
+	max-width: 88ch;
+	color: var(--home-muted);
+	font-size: 12px;
+}
+.ledger-subhead {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 10px 32px;
+	margin-bottom: 20px;
+}
+.monumental-home .ledger-subhead h2,
+.monumental-home .ledger-local__title {
+	color: var(--home-ink);
+	font-size: clamp(1.5rem, 2.6vw, 2.125rem);
+	line-height: 1.1;
+}
+.ledger-subhead p {
+	color: var(--home-muted);
+	font-size: 15px;
+}
+
+/* ── Runtimes: the last row of the ownership chapter ── */
+.ledger-runtimes__label {
+	margin: clamp(40px, 5vw, 64px) 0 16px;
+	color: var(--home-ink);
+	font-size: 17px;
+	font-weight: 650;
+	letter-spacing: -0.02em;
+}
+.ledger-runtimes {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 1px;
+	border: 1px solid var(--home-rule);
+	background: var(--home-rule);
+}
+.ledger-runtimes li {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 14px;
+	padding: 20px;
+	background: var(--home-paper);
+	color: var(--home-ink);
+	font-size: 14px;
+}
+.ledger-runtimes svg {
+	color: var(--home-muted);
+}
+@media (min-width: 1200px) {
+	.ledger-runtimes {
+		grid-template-columns: repeat(9, minmax(0, 1fr));
+	}
+}
+
+/* ── Questions ── */
+.monumental-home .faq--split {
+	padding-block: clamp(64px, 7.5vw, 108px);
+}
+.monumental-home .faq--split h2 {
+	margin: 0;
+	font-size: clamp(2.25rem, 4.6vw, 4rem);
+	line-height: 1;
+}
+html:not([lang="en"]) .monumental-home .faq--split h2 {
+	font-size: clamp(1.9rem, 3.6vw, 3rem);
+	line-height: 1.14;
+}
+.monumental-home .faq--split summary {
+	font-size: 16px;
+}
+.monumental-home .faq--split details > div {
+	max-width: 68ch;
+	font-size: 15px;
+}
+@media (min-width: 1024px) {
+	.monumental-home .faq--split > .shell {
+		display: grid;
+		grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+		gap: 0 64px;
+	}
+}
+
+/* ── Focus: one ring on the sheet, ink on amber ── */
+.ledger :where(a, summary):focus-visible,
+.monumental-home .faq--split :where(a, summary):focus-visible {
+	outline: 2px solid var(--home-orange);
+	outline-offset: 4px;
+}
+.ledger-proof a:focus-visible {
+	outline: 2px solid var(--primary-foreground);
+	outline-offset: 4px;
+}
+
+@media (max-width: 1023px) {
+	/* Beside three links the sentence would be a word wide: the links go under it. */
+	.ledger-head {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 16px;
+	}
+	/* Four price lines do not fit a tablet: the table scrolls inside its frame. */
+	.ledger-bill {
+		min-width: 900px;
+	}
+	.ledger-bill tbody th {
+		position: sticky;
+		left: 0;
+		background: var(--home-paper);
+	}
+}
+@media (max-width: 767px) {
+	.ledger-head p {
+		font-size: 16px;
+	}
+	.ledger-cap,
+	.ledger-points > div {
+		padding: 20px;
+	}
+	/* The link drops under the title: beside it, the title wraps a word a line. */
+	.ledger-cap {
+		grid-template-columns: minmax(0, 1fr);
+	}
+	.ledger-cell--pad {
+		padding: 20px;
+	}
+	/* The wall becomes two strips: each cell most of the screen wide, the next one showing. */
+	.bento {
+		display: block;
+	}
+	.bento__group {
+		display: flex;
+		gap: 1px;
+		overflow-x: auto;
+		scroll-snap-type: x mandatory;
+		scrollbar-width: none;
+	}
+	.bento__group + .bento__group {
+		border-top: 1px solid var(--home-rule);
+	}
+	.bento__group::-webkit-scrollbar {
+		display: none;
+	}
+	.bento-cell {
+		flex: 0 0 88%;
+		scroll-snap-align: start;
+	}
+	.bento-cap {
+		padding: 20px;
+	}
+	/* Every window in a strip is one height and leads its cell, so the copy lines up under them.
+	   A frame taller than that runs off the bottom, as the captures do. */
+	.bento-window {
+		flex: none;
+		order: -1;
+		height: 400px;
+		margin-left: 0;
+		border-top: 0;
+		border-bottom: 1px solid var(--home-rule);
+		border-left: 0;
+	}
+	.bento-cell[data-surface="map"] svg {
+		width: 260%;
+	}
+	.bento-window--pad {
+		padding: 16px;
+	}
+	.ledger-runtimes li {
+		padding: 16px 12px;
+		font-size: 13px;
+		overflow-wrap: anywhere;
+	}
+	.ledger-proof__figures {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+	.ledger-proof__figures > div:nth-child(odd) {
+		padding-left: 0;
+		border-left: 0;
+	}
+	.ledger-proof__figures > div:nth-child(n + 3) {
+		margin-top: 24px;
+		border-top: 1px solid color-mix(in oklab, var(--primary-foreground) 45%, transparent);
+	}
+	.ledger-proof > .shell {
+		padding-bottom: 34vw;
+	}
+}
+
+/* ── Entrances (HomeMotion.astro): each plays once, and none exists under reduced motion ── */
+@media screen and (prefers-reduced-motion: no-preference) {
+	/* Opacity, not visibility: find-in-page still reaches a headline that has not played. */
+	[data-rise="armed"],
+	[data-rise="armed"] ~ * {
+		opacity: 0;
+	}
+	/* A column, so the lines' negative margins below do not collapse into each other. */
+	[data-rise="play"] {
+		display: flex;
+		flex-direction: column;
+	}
+	/* The padding is room for descenders inside the clip; the margin gives the height back. */
+	.rise-line {
+		display: block;
+		overflow: clip;
+		margin-block: -0.14em;
+		padding-block: 0.14em;
+		white-space: nowrap;
+	}
+	.rise-line > span {
+		display: block;
+		animation: ledger-rise 760ms cubic-bezier(0.2, 0.7, 0.1, 1) both;
+		animation-delay: calc(var(--i) * 85ms);
+	}
+	[data-rise="play"] ~ * {
+		animation: ledger-settle 520ms 260ms ease-out both;
+	}
+}
+@keyframes ledger-rise {
+	from {
+		transform: translateY(130%);
+	}
+}
+@keyframes ledger-settle {
+	from {
+		opacity: 0;
+	}
+}
+.ledger :is(.shot-crop, .media-crop) {
+	position: relative;
+}
+.resolve-cover {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	pointer-events: none;
+	image-rendering: pixelated;
+}
+@media print {
+	.resolve-cover {
+		display: none;
+	}
+}
+
+/* The quote inks in a word at a time, tied to the scroll and nothing else. The words share one
+   stretch of the scroll whatever their number, so a long quote's last word inks too. */
+@supports (animation-timeline: view()) {
+	@media (prefers-reduced-motion: no-preference) {
+		.ledger-proof__quote {
+			view-timeline: --proof-quote block;
+		}
+		.ledger-proof__quote > span {
+			animation: ledger-ink linear both;
+		}
+		/* A rule of its own, on purpose: next to `animation`, the build folds the timeline into the
+		   shorthand, which browsers then drop whole. */
+		.ledger-proof__quote > span:nth-child(n) {
+			--at: calc(14% + var(--i) / var(--n) * 28%);
+			animation-timeline: --proof-quote;
+			animation-range: cover var(--at) cover calc(var(--at) + 8%);
+		}
+	}
+}
+@keyframes ledger-ink {
+	from {
+		opacity: 0.2;
+	}
+}
