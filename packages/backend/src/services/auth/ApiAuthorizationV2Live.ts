@@ -20,6 +20,7 @@ import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembership
 import { annotateAuthSpan } from "@maple/backend/services/auth/auth-span"
 import { DeviceCredentialsService } from "@maple/backend/services/auth/DeviceCredentialsService"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
+import { recordImpersonation } from "@maple/backend/services/auth/impersonation-audit"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { recordApiDenial } from "@maple/backend/services/auth/audit-denial"
 import { withAuditedRead } from "@maple/backend/services/audit/audit-access"
@@ -346,6 +347,7 @@ export const ApiAuthorizationV2Live = Layer.effect(
 							.ensureServedHere(tenant.orgId)
 							.pipe(Effect.mapError((error) => V2OrganizationAccessDenied.make(error.message)))
 					}
+					yield* recordImpersonation(audit, request, tenant, "dashboard")
 					const { route } = yield* HttpRouter.RouteContext
 					yield* checkAnalystAccessV2(tenant.roles, options, route.path)
 					return yield* httpEffect.pipe(

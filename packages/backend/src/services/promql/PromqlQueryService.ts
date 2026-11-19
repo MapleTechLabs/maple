@@ -32,6 +32,7 @@ import {
 	CH,
 	formatWarehouseDateTime,
 	interpolatePromqlBuiltins,
+	MAX_PROMQL_READ_WINDOW_SECONDS,
 	parseWarehouseDateTime,
 	promqlRowsForDisplay,
 	promqlStepSeconds,
@@ -366,6 +367,14 @@ const make = Effect.gen(function* () {
 		if (entries.length > 0 && !(inDateRange(window.startMs) && inDateRange(window.endMs))) {
 			return yield* new PromqlBadQueryError({
 				message: "query reads samples outside the supported time range",
+			})
+		}
+		// Range selectors, `offset`, `@` and subqueries move and widen reads past [start, end]; bound both.
+		const readFrom = Math.min(window.startMs, input.startMs)
+		const readTo = Math.max(window.endMs, input.endMs)
+		if (entries.length > 0 && readTo - readFrom > MAX_PROMQL_READ_WINDOW_SECONDS * 1000) {
+			return yield* new PromqlBadQueryError({
+				message: `query reads samples over more than ${MAX_PROMQL_READ_WINDOW_SECONDS / 86_400} days; shorten its ranges, offsets or @ timestamps`,
 			})
 		}
 		const catalog = entries.length === 0 ? [] : yield* readCatalog(tenant, window)

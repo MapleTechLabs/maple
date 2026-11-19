@@ -13,6 +13,8 @@ export const ShareRow = Schema.Struct({
 	widgetId: Schema.NullOr(Schema.String),
 	mode: DashboardShareMode,
 	token: Schema.String,
+	/** ISO instant the link stops resolving; absent = never. */
+	expiresAt: Schema.optionalKey(Schema.String),
 })
 export type ShareRow = typeof ShareRow.Type
 
@@ -22,9 +24,22 @@ export type SharesData = typeof SharesData.schema.Type
 export const Access = Schema.Literals(["off", "org", "public"])
 export type Access = typeof Access.Type
 
+/** Expiry presets for the board link, in days from now; "never" clears it. */
+export const EXPIRY_PRESETS = [
+	{ value: "never", label: "Never", days: null },
+	{ value: "1", label: "In 1 day", days: 1 },
+	{ value: "7", label: "In 7 days", days: 7 },
+	{ value: "30", label: "In 30 days", days: 30 },
+	{ value: "90", label: "In 90 days", days: 90 },
+] as const
+
 /** A share write: the board's mode, a link replaced, a chart link minted. */
 export const ShareWrite = Schema.Union([
 	Schema.TaggedStruct("SetBoardMode", { access: Access }),
+	Schema.TaggedStruct("SetBoardExpiry", {
+		mode: DashboardShareMode,
+		days: Schema.NullOr(Schema.Number),
+	}),
 	Schema.TaggedStruct("RotateBoard", {}),
 	Schema.TaggedStruct("RotateChart", { widgetId: Schema.String }),
 	Schema.TaggedStruct("MintChart", { widgetId: Schema.String }),
@@ -77,6 +92,7 @@ export const ShareMessage = defineMessageUnion({
 	GotOrigin: { origin: Schema.String },
 	GotDialogMessage: { message: Dialog.Message },
 	GotAccessMessage: { message: RadioGroup.Message },
+	PickedExpiry: { value: Schema.String },
 	ClickedReplace: {},
 	GotReplaceDialogMessage: { message: Dialog.Message },
 	ConfirmedReplace: {},

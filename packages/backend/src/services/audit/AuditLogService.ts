@@ -5,7 +5,18 @@ import type { AuditActorType, AuditChanges, AuditLogSource, AuditOutcome } from 
 import type { ActorId, ApiKeyId, OrgId, UserId } from "@maple/primitives"
 import { AuditLogEntryId as AuditLogEntryIdSchema } from "@maple/primitives"
 import * as CH from "@maple/query-engine/ch"
-import { Clock, Context, DateTime, Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
+import {
+	Clock,
+	Context,
+	DateTime,
+	Effect,
+	Layer,
+	Metric,
+	Option,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { runAfterResponse } from "@maple/backend/platform/after-response"
 import { AuditEventsQueueProducer } from "@maple/backend/platform/bindings"
 import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/auth/system-tenant"
@@ -38,12 +49,34 @@ class AuditQueueSendError extends Schema.TaggedError<AuditQueueSendError>()(
 export const AUDIT_LOG_DATASOURCE = "audit_log"
 
 /**
- * `queue.send` sits on the response path of every mutation, denial, and
- * audited read, and is the only thing that does. A healthy send is tens of ms;
- * 2s bounds a stalling broker, after which the entry is dropped with a warning
- * rather than charged to the response as a second network round trip.
+ * A healthy queue send is tens of ms; 2s bounds a stalling broker. The send runs after the
+ * response, so a timeout is retried once and only then dropped (see {@link auditDroppedTotal}).
  */
 export const AUDIT_QUEUE_SEND_TIMEOUT = "2 seconds"
+
+/** Entries lost because the queue send failed on both attempts. Any non-zero value is lost evidence. */
+export const auditDroppedTotal = Metric.counter("maple.audit.dropped", {
+	description: "Audit entries dropped after the queue send failed twice",
+	incremental: true,
+})
+
+/** The drop is loud on every channel: counter, span attribute and an Error log. */
+const reportDropped = (event: AuditLogEvent, error: AuditQueueSendError) =>
+	Effect.all(
+		[
+			Metric.update(auditDroppedTotal, 1),
+			Effect.annotateCurrentSpan("maple.audit.dropped", true),
+			Effect.logError("Audit entry dropped: queue send failed twice").pipe(
+				Effect.annotateLogs({
+					orgId: event.orgId,
+					action: event.action,
+					entryId: event.id,
+					error: error.message,
+				}),
+			),
+		],
+		{ discard: true },
+	)
 
 const toPersistenceError = (error: { readonly _tag: string; readonly message?: string }) =>
 	new AuditLogPersistenceError({ message: error.message ?? error._tag, cause: error })
@@ -273,22 +306,13 @@ export class AuditLogService extends Context.Service<AuditLogService, AuditLogSe
 				})
 
 			/**
-			 * One queue send, and that is the whole write path wherever a queue
-			 * exists. It used to fall back to a direct warehouse write when the
-			 * send failed — which put a second network round trip on the response
-			 * path exactly when the platform was already degraded, turning a
-			 * Queues brown-out into slow requests for every audited read. The
-			 * queue is the durability story (retries, DLQ); if the send itself
-			 * cannot be made, the entry is lost and says so in the logs rather
-			 * than being bought at the caller's expense.
-			 *
-			 * `writeDirect` remains for runtimes with no queue binding at all —
-			 * local dev, crons, and the consumer itself — none of which are
-			 * serving a response.
+			 * One queue send, retried once, is the whole write path wherever a queue exists:
+			 * no direct-write fallback, which would add a warehouse round trip exactly when the
+			 * platform is degraded. `writeDirect` is for runtimes with no queue binding at all.
 			 */
 			const publish = (
 				event: AuditLogEvent,
-			): Effect.Effect<void, Effect.Error<ReturnType<typeof writeDirect>> | AuditQueueSendError> =>
+			): Effect.Effect<void, Effect.Error<ReturnType<typeof writeDirect>>> =>
 				Option.isNone(queue)
 					? writeDirect(event)
 					: queue.value.sendBatch([{ body: encodeAuditLogEventSync(event) }]).pipe(
@@ -307,6 +331,10 @@ export class AuditLogService extends Context.Service<AuditLogService, AuditLogSe
 										cause: error,
 									}),
 								),
+							),
+							Effect.retry({ times: 1 }),
+							Effect.catchTag("@maple/backend/services/audit/AuditQueueSendError", (error) =>
+								reportDropped(event, error),
 							),
 						)
 

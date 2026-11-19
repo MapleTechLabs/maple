@@ -1040,6 +1040,38 @@ describe("v2 dashboard shares", () => {
 		await harness.dispose()
 	})
 
+	it("takes an expires_at, and an expired link answers like a revoked one", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(SHARE_SCOPES)
+		const id = await createDashboard(harness, key.secret)
+		const later = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+
+		const shared = await harness.request("PUT", `/v2/dashboards/${id}/share`, key.secret, {
+			mode: "public",
+			expires_at: later,
+		})
+		expect(shared.body.expires_at).toBe(later)
+		const token: string = shared.body.token
+		expect(await resolve(harness, token)).not.toBe("__not_found__")
+
+		const past = new Date(Date.now() - 1000).toISOString()
+		await harness.request("PUT", `/v2/dashboards/${id}/share`, key.secret, {
+			mode: "public",
+			expires_at: past,
+		})
+		expect(await resolve(harness, token)).toBe("__not_found__")
+
+		const cleared = await harness.request("PUT", `/v2/dashboards/${id}/share`, key.secret, {
+			mode: "public",
+			expires_at: null,
+		})
+		expect(cleared.body.expires_at).toBeUndefined()
+		expect(cleared.body.token).toBe(token)
+		expect(await resolve(harness, token)).not.toBe("__not_found__")
+
+		await harness.dispose()
+	})
+
 	it("stops resolving when the dashboard itself is deleted", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(SHARE_SCOPES)

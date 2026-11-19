@@ -19,6 +19,7 @@ import { AwsRegionMismatchError, resolveAwsRegion } from "@maple/infra/aws"
 import { withSecretGuard } from "@maple/infra/secret-guard"
 import {
 	ApiWorker,
+	AuditArchiveBucket,
 	AiWorker,
 	SandboxWorker,
 	declareStatusDomainsOrigin,
@@ -54,6 +55,7 @@ import MapleSandbox from "./apps/sandbox/alchemy.run.ts"
 import { createMapleElectric } from "./apps/electric/alchemy.run.ts"
 import ElectricSync from "./apps/electric-sync/src/worker.ts"
 import StatusWorker from "./apps/status/src/worker.ts"
+import AuditArchiveWorker from "./apps/audit-archive/src/worker.ts"
 import { createMapleIngest } from "./apps/ingest/alchemy.run.ts"
 import { createMapleScraper } from "./apps/scraper/alchemy.run.ts"
 import Landing from "./apps/landing/src/worker.ts"
@@ -353,6 +355,11 @@ export default Alchemy.Stack(
 		yield* serveWorker("ai", ai)
 		const api = yield* Effect.provideService(MapleApi, AiWorker, ai)
 		yield* serveWorker("api", api)
+
+		// Sole consumer of the audit queue: writes the write-once copy, then feeds api's
+		// warehouse consumer. The bucket is yielded here so its retention read stays out of Worker init.
+		yield* AuditArchiveBucket
+		yield* AuditArchiveWorker
 
 		// prd's electric-sync reads `ELECTRIC_URL` from the secret store, so its cutover is
 		// separate; a preview's points at this one. Electric runs in ingest's VPC, hence `ingest &&`.
