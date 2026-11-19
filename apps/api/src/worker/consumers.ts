@@ -7,7 +7,7 @@
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect, Layer, Stream } from "effect"
 import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
-import { AuditEventsDlq, AuditEventsQueue } from "@maple/infra/cloudflare"
+import { AuditEventsDlq, AuditLogIngestQueue } from "@maple/infra/cloudflare"
 import {
 	CancellationReviewsQueue,
 	PlanetScaleWebhookQueue,
@@ -118,10 +118,12 @@ export const registerQueueConsumers = (
 		)
 		// The dead-letter setting is a plan-time value: the DLQ's resolved props
 		// carry its physical name there and are empty in the isolate.
+		// Fed by the audit-archive Worker once each batch has its write-once copy; api never
+		// consumes `audit-events` itself (packages/infra/src/cloudflare/audit-events.ts).
 		const auditEventsDlq = yield* AuditEventsDlq
-		const auditEventsQueue = yield* AuditEventsQueue
+		const auditLogIngestQueue = yield* AuditLogIngestQueue
 		yield* Cloudflare.Queues.consumeQueueMessages(
-			auditEventsQueue,
+			auditLogIngestQueue,
 			{ ...AUDIT_EVENTS_CONSUMER, deadLetterQueue: auditEventsDlq.Props.name },
 			(stream) =>
 				Effect.flatMap(auditEventsModule, ({ AuditEventsLive, processAuditEventsBatch }) =>

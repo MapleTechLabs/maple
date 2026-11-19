@@ -586,6 +586,34 @@ Workers with `MAPLE_STATUS_DOMAINS_API_TOKEN`. Never a `*/*` route on the zone: 
 proxied hostnames without a Worker, such as ingest. Setup steps and the lifecycle are in
 [`status-page-custom-domains.md`](status-page-custom-domains.md).
 
+## Audit log: the write-once copy
+
+Audit entries flow `api` / `maple-ai` -> `audit-events` queue -> the `audit-archive` Worker
+(`apps/audit-archive`) -> `audit-log-ingest` queue -> api's consumer -> warehouse. The archive
+Worker is the only consumer of `audit-events`: it writes each batch, per org, to the
+`audit-archive` R2 bucket before forwarding it, so nothing reaches the warehouse without a kept
+copy. api holds no binding to that bucket and cannot consume `audit-events`, so a compromised api
+can neither delete the copy nor drain entries before they are archived. Both queues dead-letter to
+`audit-events-dlq`. Resources: `packages/infra/src/cloudflare/audit-events.ts`.
+
+- **Lock.** On prd the bucket carries an R2 bucket lock rule (`audit-write-once`, prefix `audit/`):
+  objects cannot be deleted or overwritten for `MAPLE_AUDIT_ARCHIVE_RETENTION_DAYS` days (default
+  365), whoever signs the request. Preview and dev buckets are unlocked so their stages can be torn
+  down. The bucket follows the instance's storage jurisdiction (EU data stays in the EU bucket) and
+  is retained on removal.
+- **Layout.** `audit/<orgId>/<yyyy>/<mm>/<dd>/<batch-id>.ndjson`, dated by archive time (UTC). Each
+  line is `{"messageId": "...", "body": <the audit event as produced>}`; the body's `id` is the entry
+  id. A redelivered batch writes a second object, so dedupe on `body.id`. A body without a usable org
+  goes under `audit/_unattributed/`.
+- **Reading it.** List and download with any S3 client using a read-only R2 token scoped to the
+  bucket, e.g. `aws s3 ls s3://<bucket>/audit/<orgId>/2026/11/ --endpoint-url
+  https://<account>.r2.cloudflarestorage.com` (the EU bucket uses `<account>.eu.r2...`). Bucket
+  name: `resolveWorkerName("audit-archive", stage, region)`. Mint the token in the dashboard for the
+  investigation and revoke it after; no Worker holds one.
+- **Dropped sends.** A producer's queue send runs after the response, times out at 2 s and is retried
+  once. If both attempts fail the entry is lost: `maple.audit.dropped` (counter and span attribute)
+  plus an Error log `Audit entry dropped: queue send failed twice`. Alert on any non-zero value.
+
 ## Cost decisions
 
 These are cash-flow calls, not design ones. Revisit them rather than treating them as
