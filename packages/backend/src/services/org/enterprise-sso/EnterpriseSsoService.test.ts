@@ -12,7 +12,7 @@ import {
 	type TestDb,
 } from "@maple/backend/testing/test-pglite"
 import { AutumnClient, type AutumnResult } from "@maple/backend/services/billing/autumn-http"
-import { ClerkRequestError } from "@maple/backend/services/auth/clerk-request"
+import { ClerkRequestError } from "@maple/auth"
 import { ClerkSsoGateway, type ClerkSsoConnection, type ClerkSsoDirectory } from "./ClerkSsoGateway"
 import { DnsLookupError, DnsTxtResolver } from "@maple/backend/platform/DnsTxtResolver"
 import { EnterpriseSsoService } from "./EnterpriseSsoService"
@@ -81,11 +81,9 @@ const fakeClerk = (): FakeClerk => ({
 	updates: [],
 })
 
-const notFound = (operation: string) =>
-	new ClerkRequestError({ operation, message: "not found", status: 404, cause: null })
+const notFound = () => new ClerkRequestError({ message: "not found", status: 404, cause: null })
 
-const down = (operation: string) =>
-	new ClerkRequestError({ operation, message: "down", status: 503, cause: null })
+const down = () => new ClerkRequestError({ message: "down", status: 503, cause: null })
 
 const gatewayLayer = (clerk: FakeClerk) =>
 	Layer.succeed(ClerkSsoGateway, {
@@ -97,15 +95,13 @@ const gatewayLayer = (clerk: FakeClerk) =>
 		deleteOrgDomain: () => Effect.void,
 		getConnection: (id) => {
 			const c = clerk.connections.get(id)
-			return c === undefined ? Effect.fail(notFound("get")) : Effect.succeed(c)
+			return c === undefined ? Effect.fail(notFound()) : Effect.succeed(c)
 		},
 		createConnection: (orgId, provider, input) =>
 			Effect.suspend(() => {
 				if (clerk.rejectCreate !== null) {
 					const { status, message } = clerk.rejectCreate
-					return Effect.fail(
-						new ClerkRequestError({ operation: "create", message, status, cause: null }),
-					)
+					return Effect.fail(new ClerkRequestError({ message, status, cause: null }))
 				}
 				const id = `ent_${clerk.nextId++}`
 				const c: ClerkSsoConnection = {
@@ -142,7 +138,7 @@ const gatewayLayer = (clerk: FakeClerk) =>
 		updateConnection: (id, input) =>
 			Effect.suspend(() => {
 				const c = clerk.connections.get(id)
-				if (c === undefined) return Effect.fail(notFound("update"))
+				if (c === undefined) return Effect.fail(notFound())
 				clerk.updates.push({ ...input.saml, ...input.oidc })
 				const next = {
 					...c,
@@ -156,7 +152,7 @@ const gatewayLayer = (clerk: FakeClerk) =>
 		// Like Clerk: deleting a connection drops the bypass entries no remaining connection serves.
 		deleteConnection: (id) =>
 			Effect.suspend(() => {
-				if (clerk.failDeletes) return Effect.fail(down("deleteConnection"))
+				if (clerk.failDeletes) return Effect.fail(down())
 				clerk.connections.delete(id)
 				const served = new Set(Arr.flatMap([...clerk.connections.values()], (c) => c.domains))
 				clerk.bypass = Arr.filter(clerk.bypass, (userId) =>
@@ -182,12 +178,12 @@ const gatewayLayer = (clerk: FakeClerk) =>
 			}),
 		getDirectory: (id) => {
 			const d = clerk.directories.get(id)
-			return d === undefined ? Effect.fail(notFound("dir")) : Effect.succeed({ ...d, api_key: null })
+			return d === undefined ? Effect.fail(notFound()) : Effect.succeed({ ...d, api_key: null })
 		},
 		updateDirectory: (id, patch) =>
 			Effect.suspend(() => {
 				const d = clerk.directories.get(id)
-				if (d === undefined) return Effect.fail(notFound("dir"))
+				if (d === undefined) return Effect.fail(notFound())
 				const next = { ...d, ...patch }
 				clerk.directories.set(id, next)
 				return Effect.succeed({ ...next, api_key: null })
@@ -195,7 +191,7 @@ const gatewayLayer = (clerk: FakeClerk) =>
 		rotateDirectoryKey: (id) =>
 			Effect.suspend(() => {
 				const d = clerk.directories.get(id)
-				if (d === undefined) return Effect.fail(notFound("dir"))
+				if (d === undefined) return Effect.fail(notFound())
 				const next = { ...d, api_key: `scim_${clerk.nextId++}` }
 				clerk.directories.set(id, next)
 				const hook = clerk.onRotate
@@ -203,7 +199,7 @@ const gatewayLayer = (clerk: FakeClerk) =>
 			}),
 		deleteDirectory: (id) =>
 			Effect.suspend(() => {
-				if (clerk.failDeletes) return Effect.fail(down("deleteDirectory"))
+				if (clerk.failDeletes) return Effect.fail(down())
 				clerk.directories.delete(id)
 				return Effect.void
 			}),
@@ -238,7 +234,6 @@ const gatewayLayer = (clerk: FakeClerk) =>
 				return clerk.deprovisioned === "unreachable"
 					? Effect.fail(
 							new ClerkRequestError({
-								operation: "get",
 								message: "down",
 								status: 503,
 								cause: null,

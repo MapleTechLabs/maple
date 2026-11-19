@@ -1,7 +1,7 @@
 import type { OrgId } from "@maple/domain/http"
+import * as Clerk from "@distilled.cloud/clerk"
 import { Effect } from "effect"
-import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
-import { type ClerkEnv, clerkModeClient } from "@maple/auth"
+import { type AuthEnv, clerkModeApi } from "@maple/auth"
 
 /**
  * Resolve a human-friendly org name via Clerk for email headers and subjects.
@@ -9,16 +9,14 @@ import { type ClerkEnv, clerkModeClient } from "@maple/auth"
  * back to the raw orgId on any error or when Clerk isn't configured.
  */
 export const resolveOrgName = Effect.fn("Digest.resolveOrgName")(function* (
-	env: ClerkEnv & { readonly MAPLE_AUTH_MODE: string },
+	env: Pick<AuthEnv, "CLERK_SECRET_KEY" | "MAPLE_AUTH_MODE">,
 	orgId: OrgId,
 ) {
 	yield* Effect.annotateCurrentSpan("orgId", orgId)
-	const clerk = clerkModeClient(env)
-	if (clerk === undefined) return String(orgId)
+	const api = clerkModeApi(env)
+	if (api === undefined) return String(orgId)
 
-	return yield* clerkRequest("Clerk.organizations.getOrganization", { orgId }, () =>
-		clerk.organizations.getOrganization({ organizationId: orgId }),
-	).pipe(
+	return yield* api.run(Clerk.getOrganization({ organization_id: orgId })).pipe(
 		Effect.map((org) => org.name || String(orgId)),
 		Effect.orElseSucceed(() => String(orgId)),
 	)

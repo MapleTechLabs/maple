@@ -1,4 +1,5 @@
-import { createClerkClient } from "@clerk/backend"
+import * as Clerk from "@distilled.cloud/clerk"
+import { type ClerkApi, clerkApiFor } from "@maple/auth"
 import {
 	PreviewSignInDisabledError,
 	PreviewSignInInvalidKeyError,
@@ -9,7 +10,7 @@ import {
 import { Context, Effect, Layer, Option, Redacted, Array as Arr, String as Str } from "effect"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
 import { PreviewSigninKey } from "@maple/infra/secrets"
-import { clerkRequest, type ClerkRequestError } from "@maple/backend/services/auth/clerk-request"
+import { ClerkRequestError } from "@maple/auth"
 import { secretsEqual } from "./secret-equal"
 
 /**
@@ -107,36 +108,43 @@ export const makePreviewSignIn = (
 	}
 }
 
-const clerkPort = (secretKey: string): PreviewClerk => {
-	const clerk = createClerkClient({ secretKey })
-	return {
-		findUserIdByEmail: (email) =>
-			clerkRequest("Clerk.users.getUserList", {}, () =>
-				clerk.users.getUserList({ emailAddress: [email], limit: 1 }),
-			).pipe(Effect.map((response) => Option.fromNullishOr(response.data[0]?.id))),
-		createUser: (email) =>
-			clerkRequest("Clerk.users.createUser", {}, () =>
-				clerk.users.createUser({
-					emailAddress: [email],
-					firstName: "Preview",
-					lastName: "Reviewer",
-					skipPasswordRequirement: true,
+const clerkPort = (api: ClerkApi): PreviewClerk => ({
+	findUserIdByEmail: (email) =>
+		api
+			.run(Clerk.getUserList({ email_address: [email], limit: 1 }))
+			.pipe(Effect.map((users) => Option.fromNullishOr(users[0]?.id))),
+	createUser: (email) =>
+		api
+			.run(
+				Clerk.createUser({
+					email_address: [email],
+					first_name: "Preview",
+					last_name: "Reviewer",
+					skip_password_requirement: true,
 				}),
-			).pipe(Effect.map((user) => user.id)),
-		isMemberOf: (userId, name) =>
-			clerkRequest("Clerk.users.getOrganizationMembershipList", { "tenant.userId": userId }, () =>
-				clerk.users.getOrganizationMembershipList({ userId, limit: MEMBERSHIP_PAGE_LIMIT }),
-			).pipe(Effect.map((response) => Arr.some(response.data, (m) => m.organization.name === name))),
-		createOrganization: (userId, name) =>
-			clerkRequest("Clerk.organizations.createOrganization", { "tenant.userId": userId }, () =>
-				clerk.organizations.createOrganization({ name, createdBy: userId }),
-			).pipe(Effect.asVoid),
-		createSignInToken: (userId, ttlSeconds) =>
-			clerkRequest("Clerk.signInTokens.createSignInToken", { "tenant.userId": userId }, () =>
-				clerk.signInTokens.createSignInToken({ userId, expiresInSeconds: ttlSeconds }),
-			).pipe(Effect.map((token) => token.token)),
-	}
-}
+			)
+			.pipe(Effect.map((user) => user.id)),
+	isMemberOf: (userId, name) =>
+		api
+			.run(Clerk.usersGetOrganizationMemberships({ user_id: userId, limit: MEMBERSHIP_PAGE_LIMIT }))
+			.pipe(Effect.map((response) => Arr.some(response.data, (m) => m.organization.name === name))),
+	createOrganization: (userId, name) =>
+		api.run(Clerk.createOrganization({ name, created_by: userId })).pipe(Effect.asVoid),
+	createSignInToken: (userId, ttlSeconds) =>
+		api.run(Clerk.createSignInToken({ user_id: userId, expires_in_seconds: ttlSeconds })).pipe(
+			Effect.flatMap((token) =>
+				token.token === undefined
+					? Effect.fail(
+							new ClerkRequestError({
+								message: "Clerk sent no sign-in token",
+								status: null,
+								cause: null,
+							}),
+						)
+					: Effect.succeed(token.token),
+			),
+		),
+})
 
 export class PreviewSignInService extends Context.Service<PreviewSignInService, PreviewSignInServiceApi>()(
 	"@maple/backend/services/auth/PreviewSignInService",
@@ -145,7 +153,7 @@ export class PreviewSignInService extends Context.Service<PreviewSignInService, 
 			const env = yield* Env
 			const signinKey = yield* PreviewSigninKey
 			const key = previewKey({ ...env, PREVIEW_SIGNIN_KEY: signinKey })
-			const clerk = Option.map(env.CLERK_SECRET_KEY, (secret) => clerkPort(Redacted.value(secret)))
+			const clerk = Option.map(Option.fromUndefinedOr(clerkApiFor(env)), clerkPort)
 			return makePreviewSignIn(Option.zipWith(key, clerk, (key, clerk) => ({ key, clerk })))
 		}),
 	},

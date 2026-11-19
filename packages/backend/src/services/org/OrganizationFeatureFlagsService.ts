@@ -1,3 +1,4 @@
+import * as Clerk from "@distilled.cloud/clerk"
 /**
  * An organization's rollout flags, as the server sees them.
  *
@@ -18,8 +19,7 @@ import {
 import type { OrgId } from "@maple/domain/http"
 import { Clock, Context, Effect, Layer, String as Str } from "effect"
 import { Env } from "@maple/backend/platform/Env"
-import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
-import { clerkClientFor } from "@maple/auth"
+import { clerkApiFor } from "@maple/auth"
 
 /**
  * How long one organization's flags are reused within an isolate. Short enough that withdrawing a
@@ -39,7 +39,7 @@ export class OrganizationFeatureFlagsService extends Context.Service<
 	make: Effect.gen(function* () {
 		const env = yield* Env
 		const clerkMode = Str.toLowerCase(env.MAPLE_AUTH_MODE) === "clerk"
-		const clerk = clerkClientFor(env)
+		const clerk = clerkApiFor(env)
 
 		const cache = new Map<OrgId, { readonly flags: OrganizationFeatureFlags; readonly atMs: number }>()
 
@@ -48,10 +48,8 @@ export class OrganizationFeatureFlagsService extends Context.Service<
 				yield* Effect.annotateCurrentSpan("maple.feature_flags.source", "no_clerk_secret")
 				return DISABLED_ORGANIZATION_FEATURE_FLAGS
 			}
-			return yield* clerkRequest("Clerk.organizations.getOrganization", { orgId }, () =>
-				clerk.organizations.getOrganization({ organizationId: orgId }),
-			).pipe(
-				Effect.map((organization) => organizationFeatureFlagsFrom(organization.publicMetadata)),
+			return yield* clerk.run(Clerk.getOrganization({ organization_id: orgId })).pipe(
+				Effect.map((organization) => organizationFeatureFlagsFrom(organization.public_metadata)),
 				Effect.catch((error) =>
 					Effect.logWarning(
 						"Could not read organization feature flags; treating every rollout as off",
