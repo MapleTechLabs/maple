@@ -177,6 +177,27 @@ describe("EndpointAccess", () => {
 		}
 	})
 
+	it("needs telemetry:read for reads of org data derived from telemetry", () => {
+		const reads = [
+			find(v2.statusPages, "view"),
+			find(internal.costBudgets, "list"),
+			find(internal.integrations, "vcsCommitDetail"),
+			find(internal.integrations, "vcsCommitDetails"),
+			find(internal.integrations, "vcsCommitRanges"),
+			find(internal.integrations, "vcsPullRequests"),
+			find(internal.integrations, "cloudflareHyperdrives"),
+			find(internal.integrations, "vercelDeployments"),
+			find(internal.integrations, "gcpResources"),
+			find(v2.sources, "usage"),
+			find(v2.sources, "usageSummary"),
+			find(v2.scrapeTargets, "listChecks"),
+		]
+		for (const read of reads) {
+			expect(decideEndpointAccess([], read)).toEqual({ _tag: "Denied", permission: "telemetry:read" })
+			expect(decideEndpointAccess(ANALYST, read)._tag).toBe("Allowed")
+		}
+	})
+
 	it("needs dashboards:share to publish a share link", () => {
 		const share = find(v2.dashboards, "upsertShare")
 		expect(decideEndpointAccess(ANALYST, share)._tag).toBe("Allowed")

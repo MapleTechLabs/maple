@@ -22,7 +22,7 @@ import { V2InsufficientPermissions, V2ParameterInvalid } from "./errors"
 import { publicErrors } from "./public-error"
 import { V2WarehouseReadErrors } from "./query-errors"
 import { PublicId, PublicIdPrefixes } from "./public-id"
-import { EndpointAccess } from "../endpoint-access"
+import { EndpointAccess, requires } from "../endpoint-access"
 
 /** `src_…` public ID ⇄ internal `SourceId` (raw UUID). */
 export const SourcePublicId = PublicId(PublicIdPrefixes.source, SourceId)
@@ -413,14 +413,16 @@ export class V2SourcesApiGroup extends HttpApiGroup.make("sources")
 		HttpApiEndpoint.get("usageSummary", "/usage", {
 			success: V2SourceUsageSummary,
 			error: [V2InsufficientPermissions.schema, ...sourceErrors, ...V2WarehouseReadErrors],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "getSourcesUsage",
-				summary: "Retrieve usage for all sources",
-				description:
-					"Returns span, log and metric data point counts and estimated stored bytes per source, over 24 whole hours ending with the current one. Sources without data in the window are omitted. Open to every member of the organization; requires the `sources:read` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("telemetry:read"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "getSourcesUsage",
+					summary: "Retrieve usage for all sources",
+					description:
+						"Returns span, log and metric data point counts and estimated stored bytes per source, over 24 whole hours ending with the current one. Sources without data in the window are omitted. Open to every role that reads telemetry; requires the `sources:read` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.get("retrieve", "/:id", {
@@ -504,14 +506,16 @@ export class V2SourcesApiGroup extends HttpApiGroup.make("sources")
 				...sourceErrors,
 				...V2WarehouseReadErrors,
 			],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "getSourceUsage",
-				summary: "Retrieve source usage",
-				description:
-					"Returns hourly span, log and metric data point counts and estimated stored bytes from the source, over 24 whole hours ending with the current one. Open to every member of the organization; requires the `sources:read` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("telemetry:read"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "getSourceUsage",
+					summary: "Retrieve source usage",
+					description:
+						"Returns hourly span, log and metric data point counts and estimated stored bytes from the source, over 24 whole hours ending with the current one. Open to every role that reads telemetry; requires the `sources:read` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.delete("delete", "/:id", {

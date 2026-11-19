@@ -1245,14 +1245,16 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 			params: pageParams,
 			success: StatusPagePublicSnapshot,
 			error: [pageNotFound, persistence, disabled],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "viewStatusPage",
-				summary: "View a status page",
-				description:
-					"Builds the page as visitors would see it now, whatever its visibility: how members read an `internal` page. Writes nothing. Requires the `status_pages:read` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("telemetry:read"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "viewStatusPage",
+					summary: "View a status page",
+					description:
+						"Builds the page as visitors would see it now, whatever its visibility: how members read an `internal` page. Writes nothing. Requires the `status_pages:read` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.patch("update", "/:id", {

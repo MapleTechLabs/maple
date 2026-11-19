@@ -350,6 +350,14 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 				.handle("getDailySpend", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
+						// Billing managers see what they pay for; telemetry readers see their volume.
+						if (!Policy.can(tenant.permissions, "telemetry:read")) {
+							yield* Policy.check(
+								tenant.permissions,
+								"billing:manage",
+								(denial) => new BillingForbiddenError({ message: denial.message }),
+							)
+						}
 						// The cycle window comes from the subscription, not the calendar:
 						// an org that subscribed mid-month is billed on its own anniversary
 						// and a calendar-month chart would disagree with the invoice.

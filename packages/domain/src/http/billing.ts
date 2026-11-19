@@ -703,11 +703,12 @@ export class BillingApiGroup extends HttpApiGroup.make("billing")
 	)
 	// Warehouse-backed, unlike every other read in this group: Autumn only knows
 	// cycle totals, so the daily shape behind the spend chart comes from
-	// `service_usage` + `session_replays`.
+	// `service_usage` + `session_replays`. The handler asks for billing:manage or
+	// telemetry:read.
 	.add(
 		HttpApiEndpoint.get("getDailySpend", "/daily-spend", {
 			success: DailySpendResponse,
-			error: [...billingTransportErrors, WarehouseQueryError],
+			error: [BillingForbiddenError, ...billingTransportErrors, WarehouseQueryError],
 		}),
 	)
 	.add(

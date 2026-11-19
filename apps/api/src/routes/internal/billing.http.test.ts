@@ -632,12 +632,12 @@ describe("billing writes over HTTP", () => {
 
 	const decodeTenant = Schema.decodeUnknownSync(CurrentTenant.TenantSchema)
 	const PAYER_ORG = Schema.decodeSync(OrgId)("org_billing_payer")
-	const tenantWithRoles = (roles: ReadonlyArray<string>) =>
+	const tenantWithRoles = (roles: ReadonlyArray<string>, custom?: ReadonlyArray<Policy.Permission>) =>
 		decodeTenant({
 			orgId: ORG,
 			userId: "user_billing_test",
 			roles,
-			permissions: Policy.grantsOf(roles),
+			permissions: Policy.grantsOf(roles, custom),
 			authMode: "self_hosted",
 		})
 
@@ -666,6 +666,9 @@ describe("billing writes over HTTP", () => {
 			readonly billedThrough?: OrgId
 			readonly billingOrgs?: object
 			readonly codeReviews?: object
+			readonly dailySpend?: object
+			/** What an `org:custom` member holds. */
+			readonly custom?: ReadonlyArray<Policy.Permission>
 		} = {},
 	) => {
 		const routes = HttpApiBuilder.layer(BillingOnlyApi).pipe(
@@ -676,12 +679,16 @@ describe("billing writes over HTTP", () => {
 					CurrentTenant.SessionAuthorization,
 					CurrentTenant.SessionAuthorization.of({
 						bearer: (httpEffect) =>
-							Effect.provideService(httpEffect, CurrentTenant.Context, tenantWithRoles(roles)),
+							Effect.provideService(
+								httpEffect,
+								CurrentTenant.Context,
+								tenantWithRoles(roles, overrides.custom),
+							),
 					}),
 				),
 			),
 			Layer.provideMerge(Layer.succeed(EdgeCacheService, makeCache())),
-			Layer.provideMerge(Layer.succeed(DailySpendService, { get: die })),
+			Layer.provideMerge(Layer.succeed(DailySpendService, { get: die, ...overrides.dailySpend })),
 			Layer.provideMerge(
 				Layer.succeed(PrReviewAnalyticsService, {
 					analytics: die,
@@ -743,6 +750,28 @@ describe("billing writes over HTTP", () => {
 		} finally {
 			await harness.dispose()
 		}
+	})
+
+	it("shows the daily spend chart to telemetry readers and billing managers, and no one else", async () => {
+		const spend = new DailySpendResponse({ days: [], cycleStart: 1_000, cycleEnd: 2_000 })
+		const overrides = {
+			dailySpend: { get: () => Effect.succeed(spend) },
+			autumn: {
+				getOrCreateCustomer: () =>
+					Effect.succeed({ statusCode: 200, response: { id: ORG, subscriptions: [] } }),
+			},
+		}
+		const outcomes = []
+		for (const custom of [["telemetry:read"], ["billing:manage"], []] as const) {
+			const harness = makeHarness(["org:custom"], { ...overrides, custom })
+			try {
+				const response = await harness.get("/internal/billing/daily-spend")
+				outcomes.push(response.status === 200 ? response.status : response.body.message)
+			} finally {
+				await harness.dispose()
+			}
+		}
+		assert.deepStrictEqual(outcomes, [200, 200, Policy.denialFor("billing:manage").message])
 	})
 
 	it("answers a details save against a customer Stripe no longer has as unavailable", async () => {

@@ -1891,7 +1891,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		HttpApiEndpoint.get("cloudflareHyperdrives", "/cloudflare/hyperdrive", {
 			success: CloudflareHyperdrivesResponse,
 			error: IntegrationsPersistenceError,
-		}),
+		}).annotate(EndpointAccess, requires("telemetry:read")),
 	)
 	.add(
 		HttpApiEndpoint.get("railwayStatus", "/railway/status", {
@@ -2047,7 +2047,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 			}),
 			success: VercelDeploymentsResponse,
 			error: IntegrationsPersistenceError,
-		}),
+		}).annotate(EndpointAccess, requires("telemetry:read")),
 	)
 	.add(
 		// The inventory behind Infrastructure -> Google Cloud. Connectors are public v2
@@ -2061,7 +2061,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 			}),
 			success: GcpResourcesResponse,
 			error: IntegrationsPersistenceError,
-		}),
+		}).annotate(EndpointAccess, requires("telemetry:read")),
 	)
 	.add(
 		HttpApiEndpoint.get("githubStatus", "/github/status", {
@@ -2221,7 +2221,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 				IntegrationsUpstreamError,
 				IntegrationsPersistenceError,
 			],
-		}),
+		}).annotate(EndpointAccess, requires("telemetry:read")),
 	)
 	.add(
 		// Bulk sibling of vcsCommitDetail, for list views that would otherwise
@@ -2235,7 +2235,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 			}),
 			success: VcsCommitDetailsResponse,
 			error: [IntegrationsNotConnectedError, IntegrationsUpstreamError, IntegrationsPersistenceError],
-		}),
+		}).annotate(EndpointAccess, requires("telemetry:read")),
 	)
 	.add(
 		// `ranges` is `base..head` pairs, comma-separated, answered in request order.
@@ -2251,7 +2251,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 			}),
 			success: VcsCommitRangesResponse,
 			error: [IntegrationsPersistenceError],
-		}),
+		}).annotate(EndpointAccess, requires("telemetry:read")),
 	)
 	.add(
 		// Scoped to one repository the org has connected, so the picker's options can
@@ -2274,7 +2274,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 				IntegrationsUpstreamError,
 				IntegrationsPersistenceError,
 			],
-		}),
+		}).annotate(EndpointAccess, requires("telemetry:read")),
 	)
 	.prefix("/internal/integrations")
 	.middleware(SessionAuthorization)

@@ -391,7 +391,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 						return cached.value
 					}),
 				)
-				// No admin gate — any org member may read the inventory (service map needs it).
+				// No admin gate: any role that reads telemetry may read the inventory (service map needs it).
 				// Not connected / never discovered simply reads as an empty config list.
 				.handle("cloudflareHyperdrives", () =>
 					Effect.gen(function* () {

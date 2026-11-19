@@ -11,7 +11,7 @@
     - a member on one holds the Clerk role `org:custom`, and their membership's public metadata
       (`maple_role`) holds the role id and a copy of its permission codes.
 - Only Maple's backend writes either (`RolesService`, `ClerkRolesGateway`). `org:custom` with
-  nothing on the membership holds nothing.
+  nothing on the membership holds no permissions; it can still open settings pages that need none.
 - Enforcement: `EndpointAccess` on HTTP endpoints (`packages/domain/src/http/endpoint-access.ts`),
   `permission` on MCP tools, and `MembershipRevocationService.demoteMembership` retiring
   credentials, links, digests and phones a narrower role no longer covers.
