@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "6b14d3c2952a19b40276767f565b4ed44138387b2defefc912bdb61c6f1716d8",
+	"id": "2ffcb2dfbdbd5c548ba4e057b4b661826e1ce4d09da46e52036b424cf6b349bf",
 	"prevIds": [
-		"6b14d3c2952a19b40276767f565b4ed44138387b2defefc912bdb61c6f1716d8"
+		"2ffcb2dfbdbd5c548ba4e057b4b661826e1ce4d09da46e52036b424cf6b349bf"
 	],
 	"entities": [
 		{
@@ -808,6 +808,16 @@
 				"columns": [
 					"directory_id",
 					"group_id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "org_erasures",
+			"primaryKey": {
+				"name": "org_erasures_pkey",
+				"columns": [
+					"id"
 				]
 			}
 		},
@@ -6785,6 +6795,16 @@
 		},
 		{
 			"kind": "column",
+			"table": "dashboard_shares",
+			"name": "expires_at",
+			"position": 15,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
 			"table": "dashboard_versions",
 			"name": "org_id",
 			"position": 0,
@@ -12510,6 +12530,96 @@
 			"position": 5,
 			"type": "timestamp with time zone",
 			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_erasures",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_erasures",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_erasures",
+			"name": "kind",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_erasures",
+			"name": "target",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_erasures",
+			"name": "job_id",
+			"position": 4,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_erasures",
+			"name": "attempts",
+			"position": 5,
+			"type": "integer",
+			"notNull": true,
+			"default": "0",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_erasures",
+			"name": "last_error",
+			"position": 6,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_erasures",
+			"name": "next_attempt_at",
+			"position": 7,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_erasures",
+			"name": "created_at",
+			"position": 8,
+			"type": "timestamp with time zone",
+			"notNull": true,
 			"default": null,
 			"identity": null
 		},
@@ -22530,6 +22640,30 @@
 			"method": "btree",
 			"columns": [
 				"\"org_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "org_erasures",
+			"name": "org_erasures_due_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"next_attempt_at\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "org_erasures",
+			"name": "org_erasures_target_idx",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"kind\"",
+				"\"target\""
 			],
 			"where": null
 		},
