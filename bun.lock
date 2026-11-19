@@ -276,6 +276,20 @@
         "vitest": "catalog:",
       },
     },
+    "apps/org-eraser": {
+      "name": "@maple/org-eraser",
+      "dependencies": {
+        "@alchemy.run/cloudflare": "catalog:alchemy",
+        "@maple/backend": "workspace:*",
+        "@maple/infra": "workspace:*",
+        "effect": "catalog:effect",
+      },
+      "devDependencies": {
+        "@cloudflare/workers-types": "catalog:alchemy",
+        "@types/node": "catalog:tooling",
+        "typescript": "catalog:tooling",
+      },
+    },
     "apps/sandbox": {
       "name": "@maple/sandbox",
       "dependencies": {
@@ -1652,6 +1666,8 @@
     "@maple/local-ui": ["@maple/local-ui@workspace:apps/local-ui"],
 
     "@maple/lockfiles": ["@maple/lockfiles@workspace:lib/lockfiles"],
+
+    "@maple/org-eraser": ["@maple/org-eraser@workspace:apps/org-eraser"],
 
     "@maple/primitives": ["@maple/primitives@workspace:packages/primitives"],
 
