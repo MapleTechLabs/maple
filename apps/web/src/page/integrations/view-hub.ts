@@ -263,6 +263,7 @@ const FILTER_LABEL = {
 	query: CAPABILITY_LABEL.query.filter,
 	alerts: CAPABILITY_LABEL.alerts.filter,
 	analytics: CAPABILITY_LABEL.analytics.filter,
+	security: CAPABILITY_LABEL.security.filter,
 	attention: "Needs attention",
 } as const satisfies Record<HubFilter, string>
 

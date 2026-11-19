@@ -20,6 +20,7 @@ export type ProviderId =
 	| "linear"
 	| "github"
 	| "google-search-console"
+	| "fleet"
 
 export interface Provider {
 	readonly id: ProviderId
@@ -125,6 +126,14 @@ export const PROVIDERS = {
 		name: "Google Search Console",
 		icon: "GoogleIcon",
 		accent: "#4285F4",
+	},
+	/** Fleet has no mark in the icon set, so it shows a generic device glyph. */
+	fleet: {
+		id: "fleet",
+		name: "Fleet",
+		icon: "LaptopIcon",
+		accent: "#192147",
+		iconClassName: "text-foreground",
 	},
 } as const satisfies { readonly [K in ProviderId]: Provider & { readonly id: K } }
 
