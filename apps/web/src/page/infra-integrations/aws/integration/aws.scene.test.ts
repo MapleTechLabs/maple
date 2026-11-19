@@ -114,6 +114,15 @@ describe("aws card", () => {
 		const verified_at = Schema.decodeSync(Timestamp)("2026-10-21T12:05:00.000Z")
 		const model = withStatus(entered(), [connection({ verified_at })])
 		expect(overviewOf(model.statuses, model.nowMs, "aws")).toMatchObject({ issue: "Metrics off" })
+		// The stream is the first thing the card lists as collected, with its Edit data action.
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(text("Infrastructure metrics")).toExist(),
+			expectView(text("Off")).toExist(),
+			click(role("button", { name: "Edit data" })),
+			expectView(role("button", { name: "Edit data", expanded: true })).toExist(),
+		)
 
 		const opened = pageUpdate(model, Message.ClickedAwsMetrics({ id: connectionId })).model
 		const edited = Arr.reduce(
@@ -683,7 +692,7 @@ describe("aws card", () => {
 				{ update: pageUpdate, view },
 				given(withSecurity([verified({ modules: ["security"], granted_modules: ["security"] })])),
 				expectView(securitySwitch).toBeChecked(),
-				expectView(text("Reading")).toExist(),
+				expectView(text("Needs a stack update")).not.toExist(),
 				expectView(role("link", { name: "Open cloud findings" })).toExist(),
 			)
 		})
@@ -872,8 +881,7 @@ describe("aws card", () => {
 				{ update: pageUpdate, view },
 				given(granted),
 				expectView(costSwitch).toBeChecked(),
-				expectView(text("Reading")).toExist(),
-				expectView(text("Maple reads this account's daily spend", { exact: false })).toExist(),
+				expectView(text("Needs a stack update")).not.toExist(),
 				expectView(role("link", { name: "Open Cost" })).toHaveAttr("href", "/cost"),
 				expectView(role("button", { name: "Update the stack" })).not.toExist(),
 			)

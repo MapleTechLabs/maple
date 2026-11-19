@@ -1,4 +1,4 @@
-import { AwsMetricStream } from "@maple/domain/aws"
+import { AwsMetricStream, awsModuleGranted } from "@maple/domain/aws"
 import {
 	V2AwsConnection,
 	V2AwsCreateConnectionRequest,
@@ -157,7 +157,7 @@ export const isSelectionSaved = (connection: V2AwsConnection, selection: AwsSele
 export type AwsModuleInfo = V2AwsIntegration["modules"][number]
 
 /** The modules the dashboard lets a person turn on, in the order the connect form and the card list them. */
-export const AWS_OPT_IN_MODULES = ["cost", "security"] as const satisfies ReadonlyArray<AwsModule>
+export const AWS_OPT_IN_MODULES = ["cost", "audit", "security"] as const satisfies ReadonlyArray<AwsModule>
 export type AwsOptInModule = (typeof AWS_OPT_IN_MODULES)[number]
 
 /** The module as the status offers it to this org; none for one the org cannot turn on. */
@@ -173,7 +173,7 @@ export type AwsModuleState = "off" | "ungranted" | "granted"
 export const moduleStateOf = (connection: V2AwsConnection, module: AwsModule): AwsModuleState =>
 	!connection.modules.includes(module)
 		? "off"
-		: (connection.granted_modules ?? []).includes(module)
+		: awsModuleGranted(connection.granted_modules, module)
 			? "granted"
 			: "ungranted"
 

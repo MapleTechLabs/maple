@@ -15,6 +15,8 @@ import {
 	AWS_NO_DELIVERY,
 	AWS_TEMPLATE_VERSION,
 	type AwsMetricStream,
+	awsGrantsMatch,
+	awsModuleGranted,
 	awsStreamState,
 } from "@maple/domain/aws"
 import { GCP_PROJECT_ASSET_TYPE } from "@maple/domain/gcp-metrics"
@@ -809,16 +811,13 @@ const gcp = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry 
 	})
 }
 
-const sameModules = (a: ReadonlyArray<string>, b: ReadonlyArray<string>) =>
-	a.length === b.length && Arr.every(a, (module) => b.includes(module))
-
 const aws = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry | null => {
 	const connections = inputs.awsConnections
 	if (connections.length === 0) return null
 	const resources = Arr.flatMap(connections, (c): ReadonlyArray<IntegrationResource> => {
 		const outdated =
 			c.grantedModules !== null &&
-			(c.templateVersion !== AWS_TEMPLATE_VERSION || !sameModules(c.modules, c.grantedModules))
+			(c.templateVersion !== AWS_TEMPLATE_VERSION || !awsGrantsMatch(c.modules, c.grantedModules))
 		// Before the first check that assumed the role, the setup is still being done.
 		const role: IntegrationResource =
 			c.verifiedAt === null
@@ -876,12 +875,9 @@ const aws = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry 
 					return stream(state._tag === "silent" ? "stale" : "healthy", null, regions)
 			}
 		})()
-		// CloudTrail feeds the audit log once the role grants the security module. Before that there is
-		// no feed: the Sources panel reads off and points at the setup script.
-		const granted =
-			Arr.contains(c.modules, "security") &&
-			c.grantedModules !== null &&
-			Arr.contains(c.grantedModules, "security")
+		// CloudTrail feeds the audit log once the role grants the audit module. Before that there is
+		// no feed: the Sources panel reads off and points at the AWS source.
+		const granted = Arr.contains(c.modules, "audit") && awsModuleGranted(c.grantedModules, "audit")
 		const trailProblem = Arr.findFirst(
 			inputs.awsCloudTrailProblems ?? [],
 			(problem) => problem.accountId === c.accountId,

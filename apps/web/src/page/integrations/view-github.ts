@@ -11,12 +11,12 @@ import { refreshButton } from "@maple/views/ui/refresh-button"
 import { skeleton, skeletonBlock } from "@maple/views/ui/skeleton"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { INTEGRATION_FEATURES, type IntegrationFeatureSpec } from "@maple/domain/integration-features"
-import { featureList } from "../kit/feature-list"
+import { type FeatureRow, featureList, featurePanel } from "../kit/feature-list"
 import { integrationIconPlate } from "../kit/integration-empty"
 import { integrationNotice } from "./kit/notice"
 import { Message } from "./message"
 import { integrationStatusCard } from "./view-integration-card"
-import { canManage, type Model } from "./model"
+import { manageLock, type Model } from "./model"
 import { auditLogShown, ciTracesShown, githubStatusOf } from "./update-github"
 import { disconnectDialog } from "./view-disconnect"
 import { repositoriesPanels, repoDialogs } from "./view-github-repos"
@@ -137,7 +137,13 @@ export const githubInstallationPicker = (h: H, model: Model): ReadonlyArray<Html
 }
 
 /** CI traces and the audit log switch here; PR review is per repository, so its row counts them and links there. */
-export const githubFeatures = (h: H, model: Model, status: GithubIntegrationStatus): Html => {
+/** GitHub's switches: a titled panel on the card, a plain list inside the flow's Choose data step. */
+export const githubFeatures = (
+	h: H,
+	model: Model,
+	status: GithubIntegrationStatus,
+	place: "card" | "flow" = "card",
+): Html => {
 	// Each position's id is pinned, so a reorder of the catalog fails to compile instead of
 	// binding a switch to another feature's toggle.
 	const [ciTraces, auditLog, prReview]: readonly [
@@ -147,32 +153,32 @@ export const githubFeatures = (h: H, model: Model, status: GithubIntegrationStat
 	] = INTEGRATION_FEATURES.github
 	const active = Arr.filter(status.repositories, (repo) => repo.status === "active")
 	const reviewed = Arr.filter(active, (repo) => repo.prReviewEnabled).length
-	return featureList(h, {
-		idPrefix: "github",
-		className: "bg-card",
-		rows: [
-			{
-				spec: ciTraces,
-				isChecked: ciTracesShown(model),
-				isDisabled: model.githubCard.isSavingCiTraces || !canManage(model),
-				onToggle: Message.ToggledCiTraces(),
+	const rows: ReadonlyArray<FeatureRow<Message>> = [
+		{
+			spec: ciTraces,
+			isChecked: ciTracesShown(model),
+			isDisabled: model.githubCard.isSavingCiTraces,
+			onToggle: Message.ToggledCiTraces(),
+		},
+		{
+			spec: auditLog,
+			isChecked: auditLogShown(model),
+			isDisabled: model.githubCard.isSavingAuditLog,
+			onToggle: Message.ToggledAuditLog(),
+		},
+		{
+			spec: prReview,
+			link: { href: hrefOf(AppRoute.CodeReviewSettings()), label: "Choose repositories" },
+			note: {
+				_tag: "Info",
+				text: `${reviewed} of ${countLabel(active.length, "repository", "repositories")}`,
 			},
-			{
-				spec: auditLog,
-				isChecked: auditLogShown(model),
-				isDisabled: model.githubCard.isSavingAuditLog || !canManage(model),
-				onToggle: Message.ToggledAuditLog(),
-			},
-			{
-				spec: prReview,
-				link: { href: hrefOf(AppRoute.CodeReviewSettings()), label: "Choose repositories" },
-				note: {
-					_tag: "Info",
-					text: `${reviewed} of ${countLabel(active.length, "repository", "repositories")}`,
-				},
-			},
-		],
-	})
+		},
+	]
+	const lockReason = manageLock(model)
+	return place === "card"
+		? featurePanel(h, { idPrefix: "github", title: "What Maple does", rows, error: null, lockReason })
+		: featureList(h, { idPrefix: "github", rows, lockReason })
 }
 
 const connectedView = (h: H, model: Model, status: GithubIntegrationStatus, timeZone: string): Html => {

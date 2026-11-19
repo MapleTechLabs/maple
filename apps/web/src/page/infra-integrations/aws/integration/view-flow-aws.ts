@@ -9,6 +9,7 @@ import { icon } from "@maple/views/ui/icon"
 import { input } from "@maple/views/ui/input"
 import { skeleton } from "@maple/views/ui/skeleton"
 import {
+	CHANGE_LATER_NOTE,
 	type CheckRow,
 	type RailItem,
 	flowColumns,
@@ -19,9 +20,8 @@ import {
 	stepCard,
 } from "../../../kit/connect-flow"
 import { relativeTime } from "../../../kit/relative-time"
-import { choiceCard, choiceCheckClass } from "@maple/views/ui/choice-card"
+import { type FeatureRow, featureList } from "../../../kit/feature-list"
 import {
-	type AwsModuleInfo,
 	decodeCreateRequest,
 	isSavingMetricsOf,
 	isSelectionSaved,
@@ -37,12 +37,12 @@ import { awsStreamOf, isoMs } from "../../../integrations/derive"
 import type { FlowStage } from "../../../integrations/flow"
 import { awsFlowConnection, awsStatusOf } from "./flow-aws"
 import { Message } from "../../../integrations/message"
-import type { Model } from "../../../integrations/model"
-import { ingestPanel, roleName } from "./view-aws"
+import { manageLock, type Model } from "../../../integrations/model"
+import { ingestPanel, METRICS_SPEC, moduleList, moduleSpec, roleName, setupPanel } from "./view-aws"
 import { dataPicker, NAMESPACE_LABEL } from "./view-aws-choose"
 import { methodSelect, SMALL, setupBody } from "./view-aws-setup"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
+import { hstack, vstackClass } from "@maple/views/ui/stack"
 
 // AWS in the connect flow: deploy a read-only role, pick regions and services, then deploy the
 // metric stream and watch the first delivery.
@@ -71,10 +71,15 @@ const MODULE_POLICIES = {
 		title: "Cost policy",
 		detail: "Read-only billing access (spend, savings recommendations, data exports), attached to the role",
 	},
+	audit: {
+		icon: "HistoryIcon",
+		title: "Audit log policy",
+		detail: "Read-only access to CloudTrail management events, attached to the role",
+	},
 	security: {
 		icon: "ShieldCheckIcon",
 		title: "Security policy",
-		detail: "Read-only access to GuardDuty, Security Hub, Inspector, Access Analyzer findings and CloudTrail events, attached to the role",
+		detail: "Read-only access to GuardDuty, Security Hub, Inspector and Access Analyzer findings, attached to the role",
 	},
 } as const satisfies Record<AwsOptInModule, RailItem>
 
@@ -105,37 +110,38 @@ const stackRail = (h: H, connection: V2AwsConnection | null, modules: ReadonlyAr
 		docs: docs("Setup docs"),
 	})
 
-/** An opt-in module for the account about to be connected, unticked until the user picks it. */
-const moduleChoice = (h: H, model: Model, info: AwsModuleInfo): Html => {
-	const isChecked = model.awsCard.newModules.includes(info.module)
-	return choiceCard(
-		h,
-		{
-			type: "checkbox",
-			isChecked,
-			isDisabled: model.awsCard.isCreating,
-			label: info.title,
-			onChange: Message.ToggledAwsNewModule({ module: info.module }),
-			className: "items-start gap-3 px-3 py-2.5",
-		},
-		[
-			hstack(
-				h,
-				{
-					as: "span",
-					align: "center",
-					justify: "center",
-					className: choiceCheckClass(isChecked, false, "mt-0.5"),
-				},
-				isChecked ? [icon(h, "CheckIcon", { size: 12 })] : [],
-			),
-			vstack(h, { gap: "0.5", grow: true, shrink: true, as: "span" }, [
-				typography(h, { size: "sm", weight: "medium" }, [info.title]),
-				typography(h, { size: "xs", tone: "muted" }, [info.summary]),
-			]),
-		],
-	)
+/** What the account sends: the metric stream (scoped next), then the opt-in modules, off until turned on. */
+const newModuleCard = (h: H, model: Model): ReadonlyArray<Html> => {
+	const rows: ReadonlyArray<FeatureRow<Message>> = [
+		{ spec: METRICS_SPEC, note: { _tag: "Info", text: "Picked on the next step" }, control: [] },
+		...Arr.flatMap(AWS_OPT_IN_MODULES, (module) =>
+			Option.match(offeredModule(awsStatusOf(model), module), {
+				onNone: () => [],
+				onSome: (info) => [
+					{
+						spec: moduleSpec(module, info),
+						isChecked: model.awsCard.newModules.includes(module),
+						isDisabled: model.awsCard.isCreating,
+						onToggle: Message.ToggledAwsNewModule({ module }),
+					},
+				],
+			}),
+		),
+	]
+	return [collectCard(h, [featureList(h, { idPrefix: "aws-new", rows, lockReason: manageLock(model) })])]
 }
+
+/** "Choose what to collect": the stream is scoped on Choose data; each module is a policy on the role. */
+const collectCard = (h: H, body: ReadonlyArray<Html>): Html =>
+	stepCard(h, { icon: "ChartBarIcon", title: "Choose what to collect", note: CHANGE_LATER_NOTE }, [
+		h.p(
+			[h.Class(SMALL)],
+			[
+				"Metrics stream from the regions and services you pick on the next step. Each other switch adds a read-only policy to the role, so the stack carries it.",
+			],
+		),
+		...body,
+	])
 
 const accountForm = (h: H, model: Model): Html => {
 	const card = model.awsCard
@@ -194,13 +200,6 @@ const accountForm = (h: H, model: Model): Html => {
 							card.createError,
 						),
 			]),
-			// Every module this org is offered, in the order the connection card lists them.
-			...Arr.flatMap(AWS_OPT_IN_MODULES, (module) =>
-				Option.match(offeredModule(awsStatusOf(model), module), {
-					onNone: () => [],
-					onSome: (info) => [moduleChoice(h, model, info)],
-				}),
-			),
 		],
 	)
 }
@@ -221,6 +220,7 @@ const newAccount = (h: H, model: Model): ReadonlyArray<Html> => [
 		),
 		accountForm(h, model),
 	]),
+	...newModuleCard(h, model),
 	model.awsCard.isCreating
 		? statusRow(h, { tone: "working", text: "Building the role stack for this account…" })
 		: statusRow(h, {
@@ -347,6 +347,19 @@ const roleDeployed = (
 				["Connect another account"],
 			),
 		]),
+		// The same switches as the source's card: turning one on here is not lost on the way out.
+		...Arr.match(moduleList(h, model, awsStatusOf(model), connection, "flow"), {
+			onEmpty: () => [],
+			onNonEmpty: (list) => [
+				collectCard(h, [
+					...list,
+					// Deploying the stack changes nothing Maple sees until the role is checked again.
+					...(model.awsCard.setupId === connection.id
+						? [setupPanel(h, model, connection), checkButton(h, model, connection, "Check now")]
+						: []),
+				]),
+			],
+		}),
 		statusRow(h, {
 			tone: "ok",
 			text: `Role found. Maple assumed ${roleName(connection)} through OIDC.`,

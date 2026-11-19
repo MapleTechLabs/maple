@@ -1,4 +1,5 @@
 import { AWS_METRICS_OFF } from "@maple/domain/aws"
+import type { IntegrationFeatureSignal, IntegrationFeatureSpec } from "@maple/domain/integration-features"
 import type { V2AwsConnection, V2AwsIngest, V2AwsIntegration } from "@maple/domain/http/v2"
 import { countLabel, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
@@ -6,6 +7,7 @@ import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { heading } from "@maple/views/ui/heading"
+import { textLink } from "@maple/views/ui/text-link"
 import { AppRoute, hrefOf } from "../../../../route/index"
 import { button, linkButton } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
@@ -15,7 +17,12 @@ import type { IconName } from "@maple/views/ui/icons.generated"
 import { skeletonBlock } from "@maple/views/ui/skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import { relativeTime } from "../../../kit/relative-time"
-import { switchRow } from "../../../kit/switch-row"
+import {
+	type FeatureControlRow,
+	type FeatureRow,
+	type FeatureSwitchRow,
+	featureList,
+} from "../../../kit/feature-list"
 import {
 	type AwsModuleInfo,
 	isMetricsPanelOpen,
@@ -37,8 +44,7 @@ import {
 	awsStreamOf,
 } from "../../../integrations/derive"
 import { Message } from "../../../integrations/message"
-import { canManage, type Model } from "../../../integrations/model"
-import { denialReason } from "../../../kit/session-grants"
+import { manageLock, type Model } from "../../../integrations/model"
 import { dataPicker } from "./view-aws-choose"
 import { CLOUDSHELL_URL, fileBlock, methodSelect, SMALL, setupBody } from "./view-aws-setup"
 import { disconnectConfirm } from "../../../integrations/view-disconnect"
@@ -56,42 +62,41 @@ export const AWS_FLOW_HREF = hrefOf(AppRoute.SourcesNew({ search: { integration:
 
 const COST_HREF = hrefOf(AppRoute.Cost({ search: {} }))
 
-const COST_BILLING_NOTE = "AWS bills USD 0.01 per Cost Explorer request."
-
-interface ModuleRow {
-	readonly module: AwsOptInModule
-	readonly icon: IconName
+interface ModuleCopy {
+	readonly signal: IntegrationFeatureSignal
+	/** The role allows it, the stack is not deployed yet. */
 	readonly waiting: string
+	/** Asked for on a deployed role that does not grant it yet. */
 	readonly needsUpdate: string
-	readonly reading: string
-	readonly href: string
-	readonly open: string
+	readonly open: Readonly<{ href: string; label: string }>
 }
 
-/** How each opt-in module reads on a connection card; a module with no row here is a type error. */
-const MODULE_ROWS = {
+/** How each opt-in module reads on a connection card; a module with no copy here is a type error. */
+const MODULE_COPY = {
 	cost: {
-		module: "cost",
-		icon: "CircleDollarIcon",
+		signal: "metrics",
 		waiting: "Maple starts reading this account's cost once the stack is deployed.",
 		needsUpdate:
 			"The role does not allow cost reads yet. Update the stack to add read-only billing access.",
-		reading: `Maple reads this account's daily spend. ${COST_BILLING_NOTE}`,
-		href: COST_HREF,
-		open: "Open Cost",
+		open: { href: COST_HREF, label: "Open Cost" },
+	},
+	audit: {
+		signal: "events",
+		waiting: "Maple starts reading CloudTrail once the stack is deployed.",
+		needsUpdate: "The role does not allow CloudTrail reads yet. Update the stack to add them.",
+		open: {
+			href: hrefOf(AppRoute.SecurityAuditLog({ search: { provider: "aws" } })),
+			label: "Open audit log",
+		},
 	},
 	security: {
-		module: "security",
-		icon: "ShieldCheckIcon",
+		signal: "events",
 		waiting: "Maple starts reading this account's security findings once the stack is deployed.",
 		needsUpdate:
 			"The role does not allow security reads yet. Update the stack to add read-only security access.",
-		reading:
-			"Maple reads GuardDuty, Security Hub, Inspector and Access Analyzer findings, and CloudTrail changes, in every enabled region.",
-		href: hrefOf(AppRoute.SecurityCloud({ search: {} })),
-		open: "Open cloud findings",
+		open: { href: hrefOf(AppRoute.SecurityCloud({ search: {} })), label: "Open cloud findings" },
 	},
-} as const satisfies Record<AwsOptInModule, ModuleRow>
+} as const satisfies Record<AwsOptInModule, ModuleCopy>
 
 const CONDITION_VARIANT = {
 	setup: "muted",
@@ -557,85 +562,167 @@ const setupToggle = (
 	)
 }
 
-type CostRowState = Readonly<{
-	/** What the module is doing, beside its name; nothing while it is off. */
-	badge: Readonly<{ variant: "ok" | "warn" | "muted"; label: string }> | null
-	description: string
-	/** The one thing to do next, beside the switch. */
-	action: Html | null
-}>
+/** What the metric stream sends: the account's main data, picked by region and service, not a policy. */
+export const METRICS_SPEC: IntegrationFeatureSpec = {
+	id: "metrics",
+	title: "Infrastructure metrics",
+	summary:
+		"CloudWatch metrics of the services you pick (ECS, EC2, RDS, Lambda, load balancers and more), streamed from each region you pick to the Infrastructure pages.",
+	signal: "metrics",
+	defaultEnabled: true,
+	countsTowardIngest: true,
+	apply: "setupUpdate",
+}
 
-/** What a module is doing on this connection: off, waiting for the stack, or being read. */
-const moduleState = (
+/** The metric stream's scope in a few words, or Off. */
+const streamScope = (connection: V2AwsConnection): string => {
+	const stream = connection.metric_stream
+	return stream === null
+		? "Off"
+		: `${countLabel(stream.regions.length, "region")} · ${countLabel(stream.namespaces.length, "service")}`
+}
+
+/** The metric stream as the first row: its scope, and on the card the Edit data panel it opens. */
+const metricsFeature = (
 	h: H,
 	model: Model,
 	connection: V2AwsConnection,
-	row: ModuleRow,
+	place: "card" | "flow",
+): FeatureControlRow => {
+	if (place === "flow")
+		return { spec: METRICS_SPEC, note: { _tag: "Info", text: "Picked on the next step" }, control: [] }
+	const isEditing = isMetricsPanelOpen(model.awsCard.metrics, connection.id)
+	return {
+		spec: METRICS_SPEC,
+		note: { _tag: "Info", text: streamScope(connection) },
+		control:
+			connection.verified_at === null
+				? []
+				: [
+						actionButton(
+							h,
+							"Edit data",
+							isEditing
+								? Message.ClickedAwsMetricsCancel()
+								: Message.ClickedAwsMetrics({ id: connection.id }),
+							{ isExpanded: isEditing },
+						),
+					],
+		children: isEditing ? [h.div([h.Class("mt-3")], [editDataPanel(h, model, connection)])] : [],
+	}
+}
+
+/** A module as the feature list names it. Every module is a policy on the role: it takes a stack update. */
+export const moduleSpec = (module: AwsOptInModule, info: AwsModuleInfo): IntegrationFeatureSpec => ({
+	id: module,
+	title: info.title,
+	summary: info.summary,
+	signal: MODULE_COPY[module].signal,
+	defaultEnabled: false,
+	countsTowardIngest: false,
+	apply: "setupUpdate",
+})
+
+/** One module as a switch row: its state as a note, and the next step under it. */
+const moduleFeature = (
+	h: H,
+	model: Model,
+	connection: V2AwsConnection,
+	module: AwsOptInModule,
 	info: AwsModuleInfo,
-): CostRowState => {
-	switch (moduleStateOf(connection, row.module)) {
+): FeatureSwitchRow<Message> => {
+	const copy = MODULE_COPY[module]
+	const state = moduleStateOf(connection, module)
+	const spec = moduleSpec(module, info)
+	const next = (text: string, action: Html | null): ReadonlyArray<Html> => [
+		hstack(h, { gap: "3", align: "center", justify: "between", wrap: true, className: "mt-2" }, [
+			typography(h, { size: "xs", tone: "muted", as: "p" }, [text]),
+			...(action === null ? [] : [action]),
+		]),
+	]
+	const base = {
+		spec,
+		isChecked: state !== "off",
+		isDisabled: model.awsCard.moduleSave._tag === "Saving",
+		onToggle: Message.ToggledAwsModule({ id: connection.id, module }),
+	}
+	switch (state) {
 		case "off":
-			return { badge: null, description: info.summary, action: null }
+			return base
 		case "ungranted":
 			// Before the first deploy the role step already asks for the stack.
 			return connection.verified_at === null
 				? {
-						badge: { variant: "muted", label: "Waiting for the stack" },
-						description: row.waiting,
-						action: null,
+						...base,
+						note: { _tag: "Pending", text: "Waiting for the stack" },
+						children: next(copy.waiting, null),
 					}
 				: {
-						badge: { variant: "warn", label: "Needs a stack update" },
-						description: row.needsUpdate,
-						action: setupToggle(h, model, connection, "Update the stack"),
+						...base,
+						note: { _tag: "Pending", text: "Needs a stack update" },
+						children: next(
+							copy.needsUpdate,
+							setupToggle(h, model, connection, "Update the stack"),
+						),
 					}
 		case "granted":
 			return {
-				badge: { variant: "ok", label: "Reading" },
-				description: row.reading,
-				action: linkButton(h, { size: "sm", variant: "outline", href: row.href }, [row.open]),
+				...base,
+				children: [
+					typography(h, { size: "xs", tone: "muted", as: "p", className: "mt-1.5" }, [
+						textLink(h, { href: copy.open.href }, [copy.open.label]),
+					]),
+				],
 			}
 	}
 }
 
-/** A module's switch and state; only for an org the status offers the module to. */
-const moduleRow = (
+/**
+ * Every module the org is offered, as one switch list, the same on the card and in the connect flow;
+ * the error of a change that did not save under it, and the stack update when one is open.
+ */
+export const moduleList = (
 	h: H,
 	model: Model,
+	status: V2AwsIntegration | null,
 	connection: V2AwsConnection,
-	row: ModuleRow,
-	info: AwsModuleInfo,
-): Html => {
-	const save = model.awsCard.moduleSave
-	const error = moduleErrorOf(save, connection.id, row.module)
-	const state = moduleState(h, model, connection, row, info)
-	return switchRow(
-		h,
-		{
-			id: `aws-${row.module}-${connection.id}`,
-			framed: true,
-			icon: icon(h, row.icon, { size: 16, className: "mt-0.5 text-muted-foreground" }),
-			label: info.title,
-			...(state.badge !== null && {
-				status: badge(h, { variant: state.badge.variant }, [state.badge.label]),
+	place: "card" | "flow" = "card",
+): ReadonlyArray<Html> => {
+	const rows: ReadonlyArray<FeatureRow<Message>> = [
+		metricsFeature(h, model, connection, place),
+		...Arr.flatMap(AWS_OPT_IN_MODULES, (module) =>
+			Option.match(offeredModule(status, module), {
+				onNone: () => [],
+				onSome: (info) => [moduleFeature(h, model, connection, module, info)],
 			}),
-			description: state.description,
-			isChecked: moduleStateOf(connection, row.module) !== "off",
-			isDisabled: save._tag === "Saving",
-			...(!canManage(model) && { lockReason: denialReason("integrations:manage") }),
-			onToggle: Message.ToggledAwsModule({ id: connection.id, module: row.module }),
-			before: state.action === null ? [] : [state.action],
-		},
-		error === null
-			? []
-			: [
+		),
+	]
+	const error = Arr.findFirst(
+		AWS_OPT_IN_MODULES,
+		(module) => moduleErrorOf(model.awsCard.moduleSave, connection.id, module) !== null,
+	).pipe(
+		Option.flatMap((module) =>
+			Option.fromNullOr(moduleErrorOf(model.awsCard.moduleSave, connection.id, module)),
+		),
+	)
+	return [
+		vstack(h, { gap: "2" }, [
+			...(place === "card"
+				? [heading(h, { level: 4, variant: "subsection" }, ["What Maple collects"])]
+				: []),
+			featureList(h, { idPrefix: `aws-${connection.id}`, rows, lockReason: manageLock(model) }),
+			...Option.match(error, {
+				onNone: () => [],
+				onSome: (text) => [
 					typography(
 						h,
 						{ size: "xs", tone: "destructive", as: "p", attributes: [h.Role("alert")] },
-						[error],
+						[text],
 					),
 				],
-	)
+			}),
+		]),
+	]
 }
 
 const connectionRow = (
@@ -648,7 +735,6 @@ const connectionRow = (
 	const condition = awsConditionOf(connection, model.nowMs)
 	const isChecking = Arr.some(model.awsCard.checking, (entry) => entry.id === connection.id)
 	const isOpen = model.awsCard.setupId === connection.id
-	const isEditing = isMetricsPanelOpen(model.awsCard.metrics, connection.id)
 	const action = (
 		label: string,
 		message: Message,
@@ -668,12 +754,7 @@ const connectionRow = (
 				deliveryStep(h, model, connection, timeZone),
 			]),
 			...ingestPanel(h, model, connection, timeZone),
-			...Arr.flatMap(AWS_OPT_IN_MODULES, (module) =>
-				Option.match(offeredModule(status, module), {
-					onNone: () => [],
-					onSome: (info) => [moduleRow(h, model, connection, MODULE_ROWS[module], info)],
-				}),
-			),
+			...moduleList(h, model, status, connection),
 		],
 		actions: hstack(h, { gap: "2", align: "stretch", wrap: true, className: "pt-1" }, [
 			// The stack's script: it finishes a setup, which is the one thing to do then, and
@@ -681,17 +762,6 @@ const connectionRow = (
 			connection.verified_at === null
 				? setupToggle(h, model, connection, "Finish setup", "default")
 				: setupToggle(h, model, connection, "Reconnect"),
-			...(connection.verified_at === null
-				? []
-				: [
-						action(
-							"Edit data",
-							isEditing
-								? Message.ClickedAwsMetricsCancel()
-								: Message.ClickedAwsMetrics({ id: connection.id }),
-							{ isExpanded: isEditing },
-						),
-					]),
 			action("Sync now", Message.ClickedAwsCheck({ id: connection.id }), {
 				isLoading: isChecking,
 			}),
@@ -705,15 +775,12 @@ const connectionRow = (
 				],
 			),
 		]),
-		afterActions: [
-			...(isEditing ? [editDataPanel(h, model, connection)] : []),
-			...(isOpen ? [setupPanel(h, model, connection)] : []),
-		],
+		afterActions: isOpen ? [setupPanel(h, model, connection)] : [],
 		contentGap: "gap-3",
 	})
 }
 
-const setupPanel = (h: H, model: Model, connection: V2AwsConnection): Html => {
+export const setupPanel = (h: H, model: Model, connection: V2AwsConnection): Html => {
 	const waiting = connection.verified_at === null
 	return vstack(h, { gap: "3", className: "mt-2 w-full rounded-md border bg-surface-faint p-3" }, [
 		hstack(h, { gap: "2", wrap: true }, [

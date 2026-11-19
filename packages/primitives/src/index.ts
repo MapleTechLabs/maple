@@ -161,7 +161,7 @@ export type AwsAccountId = Schema.Schema.Type<typeof AwsAccountId>
  * What an AWS connection lets Maple read. Each module is its own managed policy on the role, so
  * turning one on is a stack update, not a reconnect.
  */
-export const AWS_MODULES = ["observability", "inventory", "security", "cost"] as const
+export const AWS_MODULES = ["observability", "inventory", "security", "cost", "audit"] as const
 export const AwsModule = Schema.Literals(AWS_MODULES)
 export type AwsModule = Schema.Schema.Type<typeof AwsModule>
 
