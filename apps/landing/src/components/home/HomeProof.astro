@@ -4,6 +4,7 @@
  * published customer story, that story's own figures, and the teams on the logo list. Everything
  * here is read from content, so the page cannot quote or count something the story does not.
  * The story is English only, so the quote and its figures are not translated.
+ * The quote is split into words so it can ink in with the scroll (home-ledger.css).
  */
 import { getCollection } from "astro:content";
 import * as m from "../../paraglide/messages.js";
@@ -34,7 +35,13 @@ const logos = (await getCollection("logos"))
 			/>
 			<div class="shell">
 				<blockquote>
-					<p class="ledger-proof__quote">{quote.text}</p>
+					<p class="ledger-proof__quote">
+						{quote.text.split(" ").map((word, i) => (
+							<>
+								<span style={`--i: ${i}`}>{word}</span>{" "}
+							</>
+						))}
+					</p>
 					<footer>
 						<strong>{quote.name}</strong>, {quote.role}
 					</footer>
