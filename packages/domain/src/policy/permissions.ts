@@ -194,6 +194,7 @@ export const permissions = {
 		label: "Manage uptime monitors",
 		description: "Create, pause and delete HTTP and TCP checks.",
 		action: "manage uptime monitors",
+		implies: ["telemetry:read"],
 	},
 	"error_policy:manage": {
 		code: 17,
@@ -226,6 +227,7 @@ export const permissions = {
 		label: "Edit status pages",
 		description: "Components, monitors, appearance and custom domains.",
 		action: "edit status pages",
+		implies: ["telemetry:read"],
 	},
 	"status_pages:access": {
 		code: 21,
@@ -281,6 +283,7 @@ export const permissions = {
 		label: "Manage ingest rules",
 		description: "Drop, sample and redact data before it is stored.",
 		action: "manage ingest rules",
+		implies: ["telemetry:read"],
 	},
 	"attribute_mappings:manage": {
 		code: 14,
@@ -336,6 +339,7 @@ export const permissions = {
 		label: "Configure code review",
 		description: "Which repositories Maple reviews, and the review rules.",
 		action: "change code review settings",
+		implies: ["telemetry:read"],
 	},
 	// An approval counts toward a branch's required reviews, so who may give Maple that say is
 	// an admin's call, and so are the rules a review runs under while it has it.
@@ -346,6 +350,7 @@ export const permissions = {
 		description: "Let Maple approve pull requests, and change the rules while it does.",
 		action: "turn on automatic pull request approval or change the review rules while it is on",
 		sensitive: true,
+		implies: ["telemetry:read"],
 	},
 	"security:manage": {
 		code: 19,

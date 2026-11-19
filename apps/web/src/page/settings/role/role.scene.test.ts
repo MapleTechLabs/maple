@@ -105,7 +105,9 @@ describe("custom role editor", () => {
 	})
 
 	test("ticking a permission ticks what it needs, which stays ticked while it is", () => {
+		// Status page edits need telemetry too, so untick them first to free Read telemetry.
 		const reader = run(opened(STATUS_EDITOR.id), [
+			Message.ToggledPermission({ permission: "status_pages:edit" }),
 			Message.ToggledPermission({ permission: "telemetry:read" }),
 		])
 		expect(reader.permissions).not.toContain("telemetry:read")
