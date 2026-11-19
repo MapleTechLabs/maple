@@ -61,6 +61,20 @@ export function untrustedText(text: string, max = 300): string {
 	return stringifyJson(line) ?? `"${Str.replace(/"/g, "'")(line)}"`
 }
 
+/** A log's cause-bearing attributes, one indented `key: value` line each, for under its log line. */
+export function logAttributeLines(
+	attributes: Readonly<Record<string, string>> | undefined,
+	indent: string,
+): string {
+	return Arr.join(
+		Arr.map(
+			Rec.toEntries(attributes ?? {}),
+			([key, value]) => `\n${indent}${untrustedText(key, 120)}: ${untrustedText(value, 300)}`,
+		),
+		"",
+	)
+}
+
 const unicodeEscape = (char: string) =>
 	`\\u${Str.padStart(4, "0")(Option.getOrElse(Str.codePointAt(0)(char), () => 0).toString(16))}`
 
