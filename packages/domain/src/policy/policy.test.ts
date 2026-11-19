@@ -58,7 +58,9 @@ describe("Policy.grantsOf", () => {
 		expect(
 			Policy.grantsOf([Policy.CUSTOM_ROLE_CLERK_KEY], ["alerts:manage", "ingest_keys:roll"]),
 		).toEqual(["telemetry:read", "alerts:manage", "ingest_keys:view", "ingest_keys:roll"])
-		expect(Policy.grantsOf([Policy.CUSTOM_ROLE_CLERK_KEY], ["billing:manage"])).toEqual(["billing:manage"])
+		expect(Policy.grantsOf([Policy.CUSTOM_ROLE_CLERK_KEY], ["billing:manage"])).toEqual([
+			"billing:manage",
+		])
 	})
 
 	it("holds what any of several roles holds", () => {
